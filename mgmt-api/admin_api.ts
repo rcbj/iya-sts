@@ -11137,7 +11137,8 @@ class AdminApi {
         // and /admin/applications/new's RFC 9728 import, whose load and create
         // post to that page so a refusal can redraw it. The console suite reads
         // this field to learn which console paths take a POST.
-        mirrors: 'POST /admin/applications and POST /admin/applications/new',
+        mirrors: 'POST /admin/applications, POST /admin/applications/new ' +
+                 'and POST /admin/applications/edit',
         handler: function (req, res) {
           log.debug("Entering the management API applications action " +
                     "endpoint.");
@@ -11429,6 +11430,46 @@ class AdminApi {
               additionalProperties: false
             },
             responseDescription: 'The application as it now stands.' },
+
+          // THE FIELD GRID'S SAVE (2026-09-30): the application page's one
+          // form, and every attribute it carries at once.
+          { action: 'update-fields', operationId: 'updateApplicationFields',
+            summary: 'Set several attributes of an application at once',
+            description: 'What the Save button of an application\'s field ' +
+                         'grid on the console does. Each member of ' +
+                         '`fields` names an editable attribute and gives ' +
+                         'what it should hold: a single-valued attribute is ' +
+                         'SET (an empty string or array clears it), and a ' +
+                         'multi-valued one has the values not given ' +
+                         'removed and the values not yet held added — ' +
+                         'exactly `set`, `add` and `remove`, applied per ' +
+                         'attribute, so every rule those hold still holds. ' +
+                         'An attribute whose values did not change is not ' +
+                         'written. `protocols`, when given, replaces the ' +
+                         'declared protocol families, and is written first, ' +
+                         'so a family-scoped attribute may be set in the ' +
+                         'same call that declares its family.\n\nWhat ' +
+                         'one attribute refuses does not undo another: the ' +
+                         'reply names what was saved (`changed`) and every ' +
+                         'refusal, and answers 400 when there was any.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                application: { type: 'string' },
+                fields: { type: 'object' },
+                protocols: { type: 'array', items: { type: 'string' } }
+              },
+              required: ['application'],
+              examples: [{ application: 'my-web-app',
+                           fields: { oauthRedirectUri: [
+                             'https://app.example.com/callback'],
+                                     oauthRequirePushedAuthorizationRequests:
+                                       'TRUE' } }],
+              additionalProperties: false
+            },
+            responseDescription: 'The attributes saved (`changed`) and the ' +
+                                 'application as it now stands.' },
 
           // THE PROVENANCE PAIR (2026-09-12). The console's application page
           // draws a Confirm and a Discard button beside every return address a

@@ -3893,6 +3893,247 @@ const IDENTIFIER_ATTRIBUTES = declarationAttributes().filter(function (row) {
 });
 
 // ---------------------------------------------------------------------------
+// EVERY PER-APPLICATION FIELD, TYPED, FOR THE CONSOLE'S FIELD GRID
+// (2026-09-30).
+//
+// `/admin/applications/new` and an application's own page draw one grid of
+// every attribute EDITABLE allows, each with the control its TYPE needs: a
+// pair of true/false radio buttons for a boolean, a text box for a string,
+// and a list of text boxes with a "+" and a delete button for an array of
+// strings. The grid is drawn from `applicationFields()` below, so the two
+// pages and `GET /admin-api/applications/new` cannot offer different fields.
+//
+// **THE TYPE OF AN ARRAY IS THE SCHEMA'S `multi`**; nothing else is needed.
+// **A BOOLEAN IS NAMED HERE**, because the schema records an LDAP shape
+// (`single`) and not a vocabulary: every attribute in BOOLEAN_ATTRIBUTES is
+// read as TRUE or FALSE by the code that uses it (its schema row says so),
+// and an attribute that overrides a `bool` setting is one too, which the
+// console works out from the setting's own row. A load-time check below warns
+// about a name here that is not a single-valued editable attribute, for the
+// reason `declarationAttributes()` warns.
+//
+// **WHICH FAMILIES A FIELD BELONGS TO** is what decides whether the grid shows
+// it for an application declared for a given set of protocols. Three sources,
+// most specific first: the schema row's own `families` (the rule
+// `familyRefusal()` enforces), then the families whose PROTOCOLS row names
+// the attribute, then the attribute's prefix (FIELD_FAMILY_PREFIXES). An
+// `app…` attribute with none of the three belongs to every family.
+// ---------------------------------------------------------------------------
+/**
+ * The single-valued attributes that take TRUE or FALSE.
+ */
+const BOOLEAN_ATTRIBUTES = [
+  'oauthFrontchannelLogoutSessionRequired',
+  'oauthBackchannelLogoutSessionRequired', 'oauthNativeSso',
+  'oauthBackchannelUserCodeParameter', 'oauthRequireSignedRequestObject',
+  'oauthRequirePushedAuthorizationRequests',
+  'oauthTlsClientCertificateBoundAccessTokens', 'oauthConfidential',
+  'saml2EncryptAssertion', 'saml2EncryptLogoutNameId',
+  'oauthRevokeRefreshOnLogout', 'appTrustedToImpersonate', 'appGroupsClaim',
+  'saml2SignAssertion', 'saml2SignResponse', 'saml11SignAssertion',
+  'saml11SignResponse', 'gnapBearerTokens', 'gnapSkipInteraction',
+  'gnapScopedSignals', 'appFederationAutoRedirect'
+];
+
+/**
+ * The single-valued attributes that hold a document (JSON, PEM, XML) and so
+ * get a box of several lines rather than one.
+ */
+const LONG_TEXT_ATTRIBUTES = [
+  'oauthJwks', 'samlSpMetadata', 'samlEncryptionCertificate',
+  'samlSpMetadataSigningCertificate', 'oauthSamlAssertionSigningCertificate',
+  'gnapKey', 'gnapJweKey', 'oauthResourceMetadata'
+];
+
+// THE ATTRIBUTES THE GRID DOES NOT DRAW, because a control of their own does:
+// the name and the declared families (the page's own fields above the grid),
+// the rotation bookkeeping of a client secret, and every attribute of a
+// managed key pair (the Credentials section issues, uploads and takes off a
+// pair whole — a text box over one of its seven attributes would be a way to
+// leave a pair half-replaced). The software statement this realm issued is
+// its own section's too.
+/**
+ * Editable attributes the field grid leaves to a control of their own.
+ *
+ * @returns the attribute names
+ */
+function gridExcludedAttributes() {
+  log.debug("Entering gridExcludedAttributes().");
+  const out = ['appName', 'appAllowedProtocol', 'oauthClientSecretPrevious',
+               'oauthClientSecretPreviousUntil', 'oauthClientSecretExpiresAt',
+               'oauthIssuedSoftwareStatement', 'appRegistrationAccessToken'];
+  Object.keys(KEY_PAIR_ATTRIBUTES).forEach(function (profile) {
+    const row = KEY_PAIR_ATTRIBUTES[profile];
+    ['certificate', 'chain', 'privateKey', 'handle', 'expires', 'source',
+     'jwks'].forEach(function (member) {
+      if (row[member] && out.indexOf(row[member]) < 0) {
+        out.push(row[member]);
+      }
+    });
+  });
+  log.debug("Leaving gridExcludedAttributes().");
+  return out;
+}
+
+/**
+ * The attribute-name prefixes that say which families a field belongs to,
+ * most specific first.
+ */
+const FIELD_FAMILY_PREFIXES = [
+  ['oauthTls', ['oauth2', 'oidc', 'mtls']],
+  ['oauth', ['oauth2', 'oidc', 'oid4vci']],
+  ['saml2', ['saml2']],
+  ['saml11', ['saml11']],
+  ['saml', ['saml2', 'saml11']],
+  ['wsfed', ['wsfed']],
+  ['wstrust', ['wstrust']],
+  ['krb5', ['krb5']],
+  ['oid4vp', ['oid4vp']],
+  ['federation', ['federation']],
+  ['ldap', ['ldap']],
+  ['scim', ['scim']],
+  ['spiffe', ['spiffe']],
+  ['ssf', ['ssf']],
+  ['gnap', ['gnap']]
+];
+
+/**
+ * The groups the field grid draws its fields in, in order. A field is put in
+ * the first group one of whose families it belongs to.
+ */
+const FIELD_GROUPS = [
+  { id: 'every', label: 'Every protocol', families: [] },
+  { id: 'oauth', label: 'OAuth 2.0 / OpenID Connect',
+    families: ['oauth2', 'oidc', 'oid4vci'] },
+  { id: 'mtls', label: 'TLS / mutual TLS', families: ['mtls'] },
+  { id: 'saml', label: 'SAML 2.0 and SAML 1.1',
+    families: ['saml2', 'saml11'] },
+  { id: 'wsfed', label: 'WS-Federation', families: ['wsfed'] },
+  { id: 'wstrust', label: 'WS-Trust', families: ['wstrust'] },
+  { id: 'krb5', label: 'Kerberos v5', families: ['krb5'] },
+  { id: 'oid4vp', label: 'OpenID4VP', families: ['oid4vp'] },
+  { id: 'federation', label: 'Federation', families: ['federation'] },
+  { id: 'ldap', label: 'LDAP', families: ['ldap'] },
+  { id: 'scim', label: 'SCIM 2.0', families: ['scim'] },
+  { id: 'spiffe', label: 'SPIFFE', families: ['spiffe'] },
+  { id: 'ssf', label: 'Shared Signals', families: ['ssf'] },
+  { id: 'gnap', label: 'GNAP', families: ['gnap'] }
+];
+
+/**
+ * Says which protocol families a field belongs to.
+ *
+ * @param name - the attribute
+ * @returns `{ families, everyFamily }`
+ */
+function fieldFamiliesOf(name) {
+  log.debug("Entering fieldFamiliesOf(). name=" + name);
+  const row = ATTRIBUTE_BY_NAME[name];
+  if (row && Array.isArray(row.families) && row.families.length) {
+    log.debug("Leaving fieldFamiliesOf(). From the schema row.");
+    return { families: row.families.slice(0), everyFamily: false };
+  }
+  const declared = [];
+  declarationAttributesOnce().forEach(function (one) {
+    if (one.attribute === name) {
+      one.families.forEach(function (family) {
+        if (declared.indexOf(family.id) < 0) {
+          declared.push(family.id);
+        }
+      });
+    }
+  });
+  if (declared.length) {
+    log.debug("Leaving fieldFamiliesOf(). From the protocol table.");
+    return { families: declared, everyFamily: false };
+  }
+  const prefix = FIELD_FAMILY_PREFIXES.filter(function (one) {
+    return name.indexOf(one[0]) === 0;
+  })[0];
+  if (prefix) {
+    log.debug("Leaving fieldFamiliesOf(). From the prefix.");
+    return { families: prefix[1].slice(0), everyFamily: false };
+  }
+  log.debug("Leaving fieldFamiliesOf(). Every family.");
+  return { families: [], everyFamily: true };
+}
+
+// declarationAttributes() walks PROTOCOLS and can warn; the grid asks it once
+// per field, so it is computed once.
+let declarationRowsCache = null;
+
+/**
+ * Returns `declarationAttributes()`, computed once.
+ *
+ * @returns the rows
+ */
+function declarationAttributesOnce() {
+  log.debug("Entering declarationAttributesOnce().");
+  if (!declarationRowsCache) {
+    declarationRowsCache = declarationAttributes();
+  }
+  log.debug("Leaving declarationAttributesOnce().");
+  return declarationRowsCache;
+}
+
+/**
+ * Returns every field the console's field grid offers: each editable
+ * attribute not left to a control of its own, with its type, the families it
+ * belongs to and the group it is drawn in.
+ *
+ * `type` is `array` (a multi-valued attribute), `boolean` (BOOLEAN_ATTRIBUTES)
+ * or `string`; an attribute that overrides a setting carries `overrides`, and
+ * the console refines its type from the setting's row.
+ *
+ * @returns the rows, in schema order
+ */
+function applicationFields() {
+  log.debug("Entering applicationFields().");
+  const excluded = gridExcludedAttributes();
+  const declared = DECLARATION_ATTRIBUTE_NAMES;
+  const rows = SCHEMA.attributes.filter(function (row) {
+    return !!row.editable && excluded.indexOf(row.name) < 0;
+  }).map(function (row) {
+    const scope = fieldFamiliesOf(row.name);
+    const group = scope.everyFamily ? FIELD_GROUPS[0]
+      : FIELD_GROUPS.filter(function (one) {
+        return one.families.some(function (id) {
+          return scope.families.indexOf(id) >= 0;
+        });
+      })[0] || FIELD_GROUPS[0];
+    return {
+      attribute: row.name,
+      type: row.kind === 'multi' ? 'array'
+        : (BOOLEAN_ATTRIBUTES.indexOf(row.name) >= 0 ? 'boolean' : 'string'),
+      long: LONG_TEXT_ATTRIBUTES.indexOf(row.name) >= 0,
+      editable: row.editable,
+      sensitive: !!row.sensitive,
+      overrides: row.overrides || '',
+      what: row.what || '',
+      families: scope.families,
+      everyFamily: scope.everyFamily,
+      declaration: declared.indexOf(row.name) >= 0,
+      group: group.id
+    };
+  });
+  log.debug("Leaving applicationFields(). " + rows.length + " field(s).");
+  return rows;
+}
+
+// THE CHECK THE TABLES ABOVE ARE HELD TO, at load: a boolean that is not a
+// single-valued editable attribute would draw a pair of radio buttons whose
+// value the action refuses or silently mangles.
+BOOLEAN_ATTRIBUTES.concat(LONG_TEXT_ATTRIBUTES).forEach(function (name) {
+  const row = ATTRIBUTE_BY_NAME[name];
+  if (!row || row.kind !== 'single' || row.editable !== 'set') {
+    log.warn(errorCodes.tag('STS-ADMIN-0833') + 'applications: "' + name +
+             '" is named as a boolean or a document field and is not a ' +
+             'single-valued editable attribute, so the field grid draws it ' +
+             'as an ordinary one. Correct the table in applications.js.');
+  }
+});
+
+// ---------------------------------------------------------------------------
 // WHAT THIS APPLICATION ANSWERS TO, AND WHAT EACH PROTOCOL CALLS THAT NAME.
 //
 // Added 2026-08-27 for the delegation pictures, which draw an application by
@@ -13483,6 +13724,12 @@ module.exports = {
   recordFromAttributes: recordFromAttributes,
   labelFor: labelFor,
   editableAttributes: editableAttributes,
+  // The console's field grid (2026-09-30): every field, typed, with the
+  // families and group each is drawn under.
+  applicationFields: applicationFields,
+  FIELD_GROUPS: FIELD_GROUPS,
+  BOOLEAN_ATTRIBUTES: BOOLEAN_ATTRIBUTES,
+  LONG_TEXT_ATTRIBUTES: LONG_TEXT_ATTRIBUTES,
   // The family scope, exported so that the console can leave a field out of the
   // two selects on an entry the action would refuse it on — "a form cannot
   // offer a field the action would refuse", which is the rule

@@ -508,7 +508,8 @@ const FIELD_PREFIX = 'field.';
  * them.
  */
 const APPLICATION_ACTIONS = ['create', 'set', 'add', 'remove',
-                             'confirm-address', 'discard-address',
+                             'update-fields', 'confirm-address',
+                             'discard-address',
                              'regenerate-secret', 'rotate-secret',
                              'generate-secret',
                              'issue-software-statement',
@@ -3669,7 +3670,7 @@ class AdminActions {
    * @returns the attributes by name
    */
   applicationFieldsFrom(body) {
-    const { log } = this.deps;
+    const { log, applications } = this.deps;
     log.debug("Entering AdminActions.applicationFieldsFrom().");
     const fields: Record<string, any> = {};
     // A JSON body's own `fields` object first, so a caller sending both gets
@@ -3678,6 +3679,12 @@ class AdminActions {
     const given = (body && typeof body.fields === 'object' && body.fields) ||
                   {};
     Object.keys(given).forEach(function (name) { fields[name] = given[name]; });
+    // THE FIELD GRID'S LISTS (2026-09-30) post one box per value, named
+    // `field.<attribute>.<n>`, so they are gathered here in box order. An
+    // empty box is dropped from the values; `emptyListBoxesIn()` is what
+    // refuses a body carrying one, before this is reached.
+    const indexed: Record<string, Array<{ n: number, value: string }>> = {};
+    const long = applications.LONG_TEXT_ATTRIBUTES || [];
     Object.keys(body || {}).forEach(function (key) {
       if (key.indexOf(FIELD_PREFIX) !== 0) {
         return;
@@ -3686,9 +3693,30 @@ class AdminActions {
       if (!name) {
         return;
       }
-      const values = String(body[key] === undefined ? '' : body[key])
-        .split(/\r?\n/)
-        .map(function (one) { return one.trim(); })
+      const box = /^(.+)\.(\d+)$/.exec(name);
+      if (box) {
+        (indexed[box[1]] = indexed[box[1]] || []).push({
+          n: Number(box[2]),
+          value: String(body[key] === undefined ? '' : body[key]).trim()
+        });
+        return;
+      }
+      // A DOCUMENT (JSON, PEM, XML) is one value whose lines belong
+      // together; every other box holds one value per line.
+      const whole = String(body[key] === undefined ? '' : body[key]);
+      const values = long.indexOf(name) >= 0
+        ? (whole.trim() ? [whole.trim()] : [])
+        : whole.split(/\r?\n/)
+          .map(function (one) { return one.trim(); })
+          .filter(function (one) { return one !== ''; });
+      if (values.length) {
+        fields[name] = values;
+      }
+    });
+    Object.keys(indexed).forEach(function (name) {
+      const values = indexed[name].sort(function (a, b) {
+        return a.n - b.n;
+      }).map(function (one) { return one.value; })
         .filter(function (one) { return one !== ''; });
       if (values.length) {
         fields[name] = values;
@@ -3699,6 +3727,230 @@ class AdminActions {
         " " +
         "field(s).");
     return fields;
+  }
+
+  // A LIST BOX WITH NOTHING IN IT (2026-09-30). The field grid posts one box
+  // per value of a multi-valued attribute, `field.<attribute>.<n>`, and every
+  // box that is there must hold a value: an empty list is NO boxes, so an
+  // empty one is a box somebody added and did not fill, and silently dropping
+  // it would save a list one shorter than the page showed.
+  /**
+   * Returns the attributes whose list boxes include an empty one.
+   *
+   * @param body - the parsed body
+   * @returns the attribute names, each once
+   */
+  emptyListBoxesIn(body) {
+    const { log } = this.deps;
+    log.debug("Entering AdminActions.emptyListBoxesIn().");
+    const out = [];
+    Object.keys(body || {}).forEach(function (key) {
+      if (key.indexOf(FIELD_PREFIX) !== 0) {
+        return;
+      }
+      const box = /^(.+)\.(\d+)$/.exec(key.slice(FIELD_PREFIX.length));
+      if (box && String(body[key] === undefined ? '' : body[key]).trim() ===
+          '' && out.indexOf(box[1]) < 0) {
+        out.push(box[1]);
+      }
+    });
+    log.debug("Leaving AdminActions.emptyListBoxesIn(). " + out.length +
+              " attribute(s).");
+    return out;
+  }
+
+  /**
+   * The refusal sentence for list boxes left empty.
+   *
+   * @param names - the attributes with an empty box
+   * @returns the sentence
+   */
+  emptyListBoxesSentence(names) {
+    const { log } = this.deps;
+    log.debug("Entering AdminActions.emptyListBoxesSentence().");
+    log.debug("Leaving AdminActions.emptyListBoxesSentence().");
+    return 'Every box shown for a list must hold a value. Fill in or delete ' +
+           'the empty box' + (names.length === 1 ? '' : 'es') + ' of ' +
+           names.join(', ') + '. A list with no values is a list with no ' +
+           'boxes.';
+  }
+
+  // THE ATTRIBUTES A FIELD-GRID SAVE COVERS: the form's `present` list (it
+  // names every field it drew, so a field emptied on the page is cleared),
+  // the members of a JSON `fields` object, and every `field.` name posted.
+  /**
+   * Returns the attributes an `update-fields` body covers.
+   *
+   * @param body - the parsed body
+   * @returns the attribute names, each once
+   */
+  fieldsCoveredBy(body) {
+    const { log } = this.deps;
+    log.debug("Entering AdminActions.fieldsCoveredBy().");
+    const out = [];
+    const note = function (name) {
+      const clean = String(name || '').trim();
+      if (clean && out.indexOf(clean) < 0) {
+        out.push(clean);
+      }
+    };
+    [].concat(body && body.present !== undefined ? body.present : [])
+      .forEach(function (one) {
+        String(one).split(/[\s,]+/).forEach(note);
+      });
+    if (body && body.fields && typeof body.fields === 'object') {
+      Object.keys(body.fields).forEach(note);
+    }
+    Object.keys(body || {}).forEach(function (key) {
+      if (key.indexOf(FIELD_PREFIX) === 0) {
+        note(key.slice(FIELD_PREFIX.length).replace(/\.\d+$/, ''));
+      }
+    });
+    log.debug("Leaving AdminActions.fieldsCoveredBy(). " + out.length +
+              " attribute(s).");
+    return out;
+  }
+
+  /**
+   * Saves every attribute a field-grid form or an `update-fields` body
+   * covers: a single-valued attribute is set (empty clears it), and a
+   * multi-valued one has the values taken out removed and those put in
+   * added. An attribute whose values did not change is not written.
+   *
+   * @param identifier - the application
+   * @param body - the parsed body
+   * @param protocols - the declared families, when the body carries them
+   * @returns `{ ok, changed, errors, message }`
+   */
+  updateApplicationFields(identifier, body, protocols) {
+    const { log, applications } = this.deps;
+    log.debug("Entering AdminActions.updateApplicationFields(). " +
+              "identifier=" + identifier);
+    const empty = this.emptyListBoxesIn(body);
+    if (empty.length) {
+      log.debug("Leaving AdminActions.updateApplicationFields(). An empty " +
+                "list box.");
+      return this.refused('STS-ADMIN-0834', { ok: false,
+        errors: [this.emptyListBoxesSentence(empty)] });
+    }
+    const entry = applications.get(identifier);
+    if (!entry) {
+      log.debug("Leaving AdminActions.updateApplicationFields(). No such " +
+                "application.");
+      return this.refused('STS-ADMIN-0531', { ok: false,
+        errors: ['No application called "' + identifier + '" is in this ' +
+                 'realm\'s registry.'] });
+    }
+    const given = this.applicationFieldsFrom(body);
+    const covered = this.fieldsCoveredBy(body);
+    // THE DECLARED FAMILIES, when the body says it carries them: the form's
+    // checkbox column posts nothing when every box is unticked, so the form
+    // says `protocolsPresent` and an empty list then means "none".
+    const withProtocols = !!(body && (body.protocolsPresent ||
+                                      body.protocols !== undefined));
+    if (!covered.length && !withProtocols) {
+      log.debug("Leaving AdminActions.updateApplicationFields(). Nothing " +
+                "named.");
+      return this.refused('STS-ADMIN-0835', { ok: false,
+        errors: ['Name the attributes to change: `fields` (each member an ' +
+                 'attribute, a string or an array of strings; empty clears ' +
+                 'it), `protocols`, or both.'] });
+    }
+    const modes = {};
+    applications.editableAttributes().forEach(function (row) {
+      modes[row.name] = row.editable;
+    });
+    const valuesOf = function (value) {
+      return [].concat(value === undefined || value === null ? [] : value)
+        .map(function (one) { return String(one).trim(); })
+        .filter(function (one) { return one !== ''; });
+    };
+    const changes = [];
+    if (withProtocols) {
+      changes.push({ attribute: 'appAllowedProtocol',
+                     values: valuesOf(protocols && protocols.length
+                       ? protocols : body.protocols) });
+    }
+    covered.forEach(function (name) {
+      if (name !== 'appAllowedProtocol') {
+        changes.push({ attribute: name, values: valuesOf(given[name]) });
+      }
+    });
+    const changed = [];
+    const errors = [];
+    changes.forEach(function (change) {
+      const name = change.attribute;
+      const mode = modes[name];
+      if (!mode) {
+        errors.push(name + ' cannot be edited here.');
+        return;
+      }
+      const current = valuesOf(entry.fields[name]);
+      const wanted = change.values;
+      const same = current.length === wanted.length &&
+        current.every(function (one) { return wanted.indexOf(one) >= 0; });
+      if (same) {
+        return;
+      }
+      if (mode === 'set') {
+        if (wanted.length > 1) {
+          errors.push(name + ' holds one value, and ' + wanted.length +
+                      ' were given.');
+          return;
+        }
+        const set = applications.updateApplication(identifier, {
+          mode: 'set', attribute: name, value: wanted[0] || '' });
+        if (set.ok) {
+          changed.push(name);
+        } else {
+          (set.errors || []).forEach(function (one) { errors.push(one); });
+        }
+        return;
+      }
+      let ok = true;
+      current.filter(function (one) { return wanted.indexOf(one) < 0; })
+        .forEach(function (value) {
+          const removed = applications.updateApplication(identifier, {
+            mode: 'remove', attribute: name, value: value });
+          if (!removed.ok) {
+            ok = false;
+            (removed.errors || []).forEach(function (one) {
+              errors.push(one);
+            });
+          }
+        });
+      wanted.filter(function (one) { return current.indexOf(one) < 0; })
+        .forEach(function (value) {
+          const added = applications.updateApplication(identifier, {
+            mode: 'add', attribute: name, value: value });
+          if (!added.ok) {
+            ok = false;
+            (added.errors || []).forEach(function (one) {
+              errors.push(one);
+            });
+          }
+        });
+      if (ok) {
+        changed.push(name);
+      }
+    });
+    if (errors.length) {
+      log.debug("Leaving AdminActions.updateApplicationFields(). " +
+                errors.length + " refusal(s).");
+      return this.refused('STS-ADMIN-0836', { ok: false, changed: changed,
+        errors: (changed.length
+          ? ['Saved ' + changed.join(', ') + '; the rest was refused:']
+          : []).concat(errors) });
+    }
+    log.debug("Leaving AdminActions.updateApplicationFields(). " +
+              changed.length + " attribute(s) changed.");
+    return { ok: true, changed: changed,
+             application: applications.get(identifier),
+             message: changed.length
+               ? 'Saved ' + changed.length + ' attribute(s) of "' +
+                 identifier + '": ' + changed.join(', ') + '.'
+               : 'Nothing changed: every field already held what was ' +
+                 'submitted.' };
   }
 
   // `context` is what an action may not derive from a parsed body: the
@@ -3728,7 +3980,8 @@ class AdminActions {
               (body.action || '(none)'));
     const action = String(body.action || '');
     const identifier = String(body.application || '').trim();
-    const needsOne = ['set', 'add', 'remove', 'confirm-address',
+    const needsOne = ['set', 'add', 'remove', 'update-fields',
+                      'confirm-address',
                       'discard-address', 'regenerate-secret',
                       'rotate-secret', 'issue-software-statement',
                       'issue-tls-client-certificate',
@@ -3761,6 +4014,13 @@ class AdminActions {
       const asked = protocols === undefined
         ? (body.protocols === undefined ? [] : body.protocols)
         : protocols;
+      const empty = this.emptyListBoxesIn(body);
+      if (empty.length) {
+        log.debug("Leaving AdminActions.applicationsAction(). create carried " +
+                  "an empty list box.");
+        return this.refused('STS-ADMIN-0834', { ok: false,
+          errors: [this.emptyListBoxesSentence(empty)] });
+      }
       const result = applications.createApplication({
         identifier: String(body.identifier || body.application || ''),
         name: String(body.name || ''),
@@ -3841,6 +4101,22 @@ class AdminActions {
       log.debug("Leaving AdminActions.applicationsAction(). " + action + " " +
                 (result.ok ? 'ok' : 'refused') + ".");
       return this.refusedBy('STS-ADMIN-0531', result);
+    }
+
+    // ---------------------------------------------------------------------
+    // THE FIELD GRID'S SAVE (2026-09-30): every attribute the form drew, at
+    // once. It is `set`, `add` and `remove` above, applied per attribute —
+    // a single-valued one is SET (empty clears it), a multi-valued one has
+    // what was taken out removed and what was put in added — so every rule
+    // `updateApplication()` holds still holds, value by value. An attribute
+    // whose values did not change is not written at all, which is what lets
+    // a form carry every field and still refuse nothing it did not touch.
+    if (action === 'update-fields') {
+      const result = this.updateApplicationFields(identifier, body,
+                                                  protocols);
+      log.debug("Leaving AdminActions.applicationsAction(). update-fields " +
+                (result.ok ? 'ok' : 'refused') + ".");
+      return result;
     }
 
     // ---------------------------------------------------------------------

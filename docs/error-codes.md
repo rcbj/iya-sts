@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3879** of them, in **41** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3883** of them, in **41** subsystems.
 
 ## Where a code appears
 
@@ -84,7 +84,7 @@ is an ordinary outcome.
 * [Device register (`STS-DEVICE`)](#sts-device) — 45
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 83
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 32
-* [Admin console (`STS-ADMIN`)](#sts-admin) — 211
+* [Admin console (`STS-ADMIN`)](#sts-admin) — 215
 * [Management API (`STS-API`)](#sts-api) — 75
 * [User portal (`STS-PORTAL`)](#sts-portal) — 77
 * [Sign-out (`STS-LOGOUT`)](#sts-logout) — 7
@@ -3998,6 +3998,10 @@ Raised from: admin-ui/ (except pki_admin.js), admin-core/.
 | `STS-ADMIN-0830` | create-role named an application that is not in the realm's registry (#310). | none (a console or management API refusal, HTTP 400) |
 | `STS-ADMIN-0831` | add-permission put another application's permission on an application's role, which may authorize only its own application's permissions (#310). | none (a console or management API refusal, HTTP 400) |
 | `STS-ADMIN-0832` | add-attribute-claim named no directory attribute for the claim to carry (#94). | HTTP 400 (console and API) |
+| `STS-ADMIN-0833` | common/applications.js names an attribute as a boolean or a document field of the console's field grid and the schema has no single-valued editable attribute of that name; the grid draws it as an ordinary field. | none (startup log) |
+| `STS-ADMIN-0834` | A create or update-fields from the field grid carried a box for a value of a multi-valued attribute with nothing in it; every box present for a list must hold a value, and an empty list is no boxes. | HTTP 400 (console and API) |
+| `STS-ADMIN-0835` | update-fields named no attribute to change: neither `fields` nor `protocols` was given. | HTTP 400 (console and API) |
+| `STS-ADMIN-0836` | update-fields changed some attributes of an application and was refused one or more others; the reply names each refusal. | HTTP 400 (console and API) |
 
 ## STS-API
 

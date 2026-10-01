@@ -16677,6 +16677,26 @@ const CODES = [
     summary: 'add-attribute-claim named no directory attribute for the ' +
       'claim to carry (#94).',
     spec: 'HTTP 400 (console and API)' },
+  { code: 'STS-ADMIN-0833',
+    summary: 'common/applications.js names an attribute as a boolean or a ' +
+      'document field of the console\'s field grid and the schema has no ' +
+      'single-valued editable attribute of that name; the grid draws it as ' +
+      'an ordinary field.',
+    spec: 'none (startup log)' },
+  { code: 'STS-ADMIN-0834',
+    summary: 'A create or update-fields from the field grid carried a box ' +
+      'for a value of a multi-valued attribute with nothing in it; every ' +
+      'box present for a list must hold a value, and an empty list is no ' +
+      'boxes.',
+    spec: 'HTTP 400 (console and API)' },
+  { code: 'STS-ADMIN-0835',
+    summary: 'update-fields named no attribute to change: neither `fields` ' +
+      'nor `protocols` was given.',
+    spec: 'HTTP 400 (console and API)' },
+  { code: 'STS-ADMIN-0836',
+    summary: 'update-fields changed some attributes of an application and ' +
+      'was refused one or more others; the reply names each refusal.',
+    spec: 'HTTP 400 (console and API)' },
   { code: 'STS-API-0001',
     summary: 'A management API request carried no Bearer access token while ' +
       'adminApi.authRequired is on.',

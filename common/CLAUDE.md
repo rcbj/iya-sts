@@ -781,6 +781,20 @@ written" would refuse addresses operators really did register. That half stays
 a review by hand and every surface says so. `tests/return_address_provenance.js`
 pins it, seventeen mutants caught.
 
+## `applicationFields()`: THE CATALOGUE THE CONSOLE'S FIELD GRID DRAWS (2026-09-30)
+
+One row per editable attribute the grid shows: `{ attribute, type (array |
+boolean | string), long, editable, sensitive, overrides, what, families,
+everyFamily, declaration, group }`. The type is the SCHEMA's — `multi` is a
+list — and `BOOLEAN_ATTRIBUTES` names the single-valued ones that hold TRUE or
+FALSE; `LONG_TEXT_ATTRIBUTES` the ones drawn as a textarea (a JSON document).
+A name in either table that is not a single-valued editable attribute is
+logged at load (`STS-ADMIN-0833`) and drawn as an ordinary field. Families come
+from the PROTOCOLS table (declaration attributes), a schema row's own
+`families`, or `FIELD_FAMILY_PREFIXES`; `FIELD_GROUPS` orders the sections.
+`gridExcludedAttributes()` is what the grid leaves to another control.
+`tests/application_form_roles.js` holds it to the schema.
+
 ## `appHomePageUrl`: THE ONE URL ON AN APPLICATION ENTRY THAT IS FOR A PERSON
 
 Added 2026-09-10 for `/portal/applications`, which lists the applications a

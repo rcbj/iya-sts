@@ -6,26 +6,37 @@
 // File: application_form_roles.js
 //
 // ---------------------------------------------------------------------------
-// EVERY ROLE THE APPLICATION REGISTRY DECLARES HAS A SECTION ON THE CREATE
-// FORM.
+// EVERY FIELD THE APPLICATION REGISTRY DECLARES IS ON THE CREATE FORM, AND
+// THE FIELD GRID'S CATALOGUE IS COMPLETE AND TYPED.
 //
 // `applications.declarationAttributes()` walks the PROTOCOLS table and gives
 // every family attribute a ROLE — identifier, redirect, logout, secret,
-// delivery, events — and adds `cors` (2026-09-18), the one row that belongs to
-// every family (`appCorsOrigin`). Three readers take that one list:
-// `createApplication()`'s
-// accepted fields, `GET /admin-api/applications/new`, and the console form at
-// `/admin/applications/new`. The first two take every row whatever its role;
-// the form draws a section PER ROLE, by name, in `admin-ui/admin.ts`.
+// delivery, events, cors. Three readers take that one list:
+// `createApplication()`'s accepted fields, `GET /admin-api/applications/new`,
+// and the console form at `/admin/applications/new`.
 //
-// **SO A NEW ROLE REACHES THE API AND SILENTLY NOT THE FORM**, and that is not
-// hypothetical: `delivery` (`ssfDeliveryEndpoint`) was accepted by the API from
-// the day it was added and drawn by nothing until 2026-09-12. No request fails
-// and no page errors — a field simply is not there — which is why this is a
-// check on the SOURCE rather than something an HTTP job would notice.
+// **SO A NEW ROLE COULD REACH THE API AND SILENTLY NOT THE FORM**, and that
+// was not hypothetical: `delivery` (`ssfDeliveryEndpoint`) was accepted by the
+// API from the day it was added and drawn by nothing until 2026-09-12. This
+// file read the form's per-role sections out of `admin-ui/admin.ts` until
+// 2026-09-30, when the sections became one FIELD GRID drawn from
+// `applications.applicationFields()`. The rule it holds now is the same one
+// read through the grid:
 //
-// In process, reading `admin-ui/admin.ts` as text: requiring the console would
-// register every /admin route on the shared app in `run.js`'s one process.
+//   1. every declaration attribute is a grid field marked `declaration`, so
+//      the create form's simplified view — which draws exactly those, the
+//      setting overrides and the SAML key fields — draws it;
+//   2. every editable attribute is a grid field, unless it is one the grid
+//      leaves to a control of its own;
+//   3. each field's type is the one its schema row and the BOOLEAN table say:
+//      a multi-valued attribute is a list, a boolean is single-valued;
+//   4. every field belongs to a group the grid draws, and to families that
+//      exist;
+//   5. the simplified view's filter in the console still reads `declaration`.
+//
+// In process, reading `admin-ui/admin.ts` as text for the last: requiring the
+// console would register every /admin route on the shared app in `run.js`'s
+// one process.
 // ---------------------------------------------------------------------------
 
 delete process.env.CONFIG_FILE;
@@ -40,49 +51,112 @@ const applications = require('../common/applications');
 const log = require('bunyan').createLogger({ name: 'application_form_roles',
   level: process.env.LOG_LEVEL || 'info' });
 
+// The editable attributes the grid leaves to a control of its own, as its
+// header in applications.js names them: the name and the families (the
+// form's own fields), the secret's rotation bookkeeping, the issued software
+// statement, the registration access token, and every attribute of a managed
+// key pair except the issuer declaration and the by-value certificate.
+const LEFT_TO_THEIR_OWN_CONTROL = [
+  'appName', 'appAllowedProtocol', 'oauthClientSecretPrevious',
+  'oauthClientSecretPreviousUntil', 'oauthClientSecretExpiresAt',
+  'oauthIssuedSoftwareStatement', 'appRegistrationAccessToken'
+];
+
 function run(t) {
   log.debug("Entering run().");
+  const fields = applications.applicationFields();
+  const byName = {};
+  fields.forEach(function (row) { byName[row.attribute] = row; });
+
+  // --- 1. Every declaration attribute is a declaration field ---------------
   const roles = [];
   applications.declarationAttributes().forEach(function (row) {
     if (roles.indexOf(row.role) < 0) {
       roles.push(row.role);
     }
+    t.check(byName[row.attribute] && byName[row.attribute].declaration,
+            '1. the "' + row.role + '" field ' + row.attribute + ' is in ' +
+            'the grid as a declaration, so the simplified view draws it',
+            JSON.stringify(byName[row.attribute] || null));
   });
-  t.check(roles.length >= 6, 'the registry declares at least the six roles ' +
-                             'it had on 2026-09-12',
-          roles.join(', '));
+  t.check(roles.length >= 6, '1. the registry declares at least the six ' +
+                             'roles it had on 2026-09-12', roles.join(', '));
+
+  // --- 2. Every editable attribute is a field, or has its own control ------
+  const keyPairs = [];
+  Object.keys(applications.KEY_PAIR_ATTRIBUTES).forEach(function (profile) {
+    const row = applications.KEY_PAIR_ATTRIBUTES[profile];
+    ['certificate', 'chain', 'privateKey', 'handle', 'expires', 'source',
+     'jwks'].forEach(function (member) {
+      if (row[member]) {
+        keyPairs.push(row[member]);
+      }
+    });
+  });
+  applications.editableAttributes().forEach(function (row) {
+    const own = LEFT_TO_THEIR_OWN_CONTROL.indexOf(row.name) >= 0 ||
+                keyPairs.indexOf(row.name) >= 0;
+    t.check(own ? !byName[row.name] : !!byName[row.name],
+            '2. ' + row.name + (own
+              ? ' is left to a control of its own'
+              : ' is a field of the grid'),
+            JSON.stringify(byName[row.name] || null));
+  });
+
+  // --- 3. Types ------------------------------------------------------------
+  fields.forEach(function (row) {
+    const schema = applications.SCHEMA.attributes.filter(function (one) {
+      return one.name === row.attribute;
+    })[0];
+    const expected = schema.kind === 'multi' ? 'array'
+      : (applications.BOOLEAN_ATTRIBUTES.indexOf(row.attribute) >= 0
+        ? 'boolean' : 'string');
+    t.equal(row.type, expected, '3. ' + row.attribute + ' is a ' + expected);
+  });
+  applications.BOOLEAN_ATTRIBUTES.forEach(function (name) {
+    const schema = applications.SCHEMA.attributes.filter(function (one) {
+      return one.name === name;
+    })[0];
+    t.check(schema && schema.kind === 'single' && schema.editable === 'set',
+            '3. the boolean ' + name + ' is a single-valued editable ' +
+            'attribute', JSON.stringify(schema && {
+              kind: schema.kind, editable: schema.editable }));
+  });
+
+  // --- 4. Groups and families ---------------------------------------------
+  const groups = applications.FIELD_GROUPS.map(function (g) { return g.id; });
+  const families = applications.PROTOCOLS.map(function (p) { return p.id; });
+  fields.forEach(function (row) {
+    t.check(groups.indexOf(row.group) >= 0 &&
+            row.families.every(function (f) {
+              return families.indexOf(f) >= 0;
+            }) && (row.everyFamily ? row.families.length === 0 : true),
+            '4. ' + row.attribute + ' is in a group the grid draws, for ' +
+            'families that exist',
+            row.group + ' / ' + row.families.join(','));
+  });
+  t.equal(byName.oauthRedirectUri.group, 'oauth',
+          '4. a redirect URI is an OAuth field');
+  t.equal(byName.samlAssertionConsumerService.group, 'saml',
+          '4. an ACS is a SAML field');
+  t.check(byName.appCorsOrigin.everyFamily,
+          '4. the CORS origins belong to every family');
+  t.equal(byName.oauthNativeSso.families.join(','), 'oidc',
+          '4. a schema row\'s own families win over the prefix');
+
+  // --- 5. The console's simplified view reads `declaration` ---------------
   const source = fs.readFileSync(path.join(__dirname, '..', 'admin-ui',
                                            'admin.ts'), 'utf8');
-  const drawn = [];
-  const re = /declarationFieldsSection\(\s*'([a-z-]+)'/g;
-  let m = re.exec(source);
-  while (m) {
-    drawn.push(m[1]);
-    m = re.exec(source);
-  }
-  roles.forEach(function (role) {
-    const attributes = applications.declarationAttributes()
-                                   .filter(function (row) {
-      return row.role === role;
-    }).map(function (row) { return row.attribute; });
-    t.check(drawn.indexOf(role) >= 0,
-            'the create form draws a section for the "' + role + '" role (' +
-            attributes.join(', ') + ')',
-            'admin-ui/admin.ts calls declarationFieldsSection() for: ' +
-            drawn.join(', '));
-  });
-  drawn.forEach(function (role) {
-    t.check(roles.indexOf(role) >= 0,
-            'the form\'s "' + role + '" section names a role the registry ' +
-                                     'still declares',
-            'declared roles: ' + roles.join(', '));
-  });
+  t.check(/view === 'advanced' \|\| row\.declaration \|\| !!row\.overrides/
+            .test(source),
+          '5. newApplicationFields() draws every declaration in the ' +
+          'simplified view');
   log.debug("Leaving run().");
 }
 
 module.exports = {
   name: 'application_form_roles',
-  describe: 'every role applications.declarationAttributes() declares has a ' +
-            'section on /admin/applications/new',
+  describe: 'every field applications.declarationAttributes() declares is on ' +
+            '/admin/applications/new, and the field grid is complete and typed',
   run: run
 };

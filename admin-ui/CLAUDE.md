@@ -6838,3 +6838,44 @@ processes and their memory. Totals are over the nodes not gone.
 `tests/node_snapshots.js` holds it in process; the two `local: true` jobs hold
 it over HTTP, and in the `cluster` mode wait for both nodes to be live.
 
+
+## AN APPLICATION'S CONFIGURATION IS ONE FIELD GRID, ON BOTH PAGES (2026-09-30)
+
+rcbj asked for `/admin/applications/new` and an application's own page to show
+the same set of per-protocol fields, typed: a boolean as true/false radio
+buttons, a string as a text box, a list of strings as boxes with a **+** to add
+one and a trash can beside each. `applications.applicationFields()`
+(`common/CLAUDE.md`) is the catalogue; `fieldGrid()` in `admin.ts` draws it, in
+the groups `FIELD_GROUPS` names, each field carrying the `.pf-<family>` classes
+the existing `:has()` rules hide by.
+
+* **NO SCRIPT, AGAIN.** **+** and the trash can are submit buttons with
+  `formaction` and `formnovalidate`, posting `grow=<attribute>` or
+  `drop=<attribute>.<n>`: the server redraws the form with one box more or
+  one fewer, everything else as typed. A round trip per press, which every
+  control here already pays.
+* **A BOX PRESENT FOR A LIST MUST HOLD A VALUE**, and no boxes is the empty
+  list. It is refused on the server (`STS-ADMIN-0834`) rather than with
+  `required`, because a list hidden by its family's CSS rule would block the
+  submit with nothing visible to fix.
+* **`present` AND `protocolsPresent`** are hidden fields naming what the form
+  drew, so a save can CLEAR a field (all boxes gone, a string emptied) and
+  untick a family — an absent value cannot otherwise be told from an
+  undrawn one.
+* **THE CREATE FORM HAS A SIMPLE AND AN ADVANCED VIEW**: simple draws the
+  declaration fields, the setting overrides and the SAML key fields (what the
+  page drew before), advanced every field. A hidden `view` and a *switch*
+  button carry it across round trips.
+* **THE APPLICATION PAGE'S SAVE POSTS `update-fields` TO
+  `/admin/applications/edit`** (Admin Write only), which answers a redraw on a
+  refusal and a 303 to `#fields` on success. A save that changed some
+  attributes and was refused others is `STS-ADMIN-0836` and the page lists
+  both. The old set/add/remove forms are kept, folded, under *Change one
+  attribute by name*, for anything the grid does not draw.
+* **WHAT THE GRID DOES NOT DRAW**: a SENSITIVE field (a secret, a private key)
+  is left to the Credentials section, for #352's rule that a page does not
+  unseal; the name and families are the form's own; managed key-pair
+  attributes are the Credentials section's.
+
+`tests/application_form_roles.js` holds the catalogue; nothing drives the grid
+in a browser yet.

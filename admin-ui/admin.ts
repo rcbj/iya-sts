@@ -104,8 +104,9 @@
 // method of the same name — with ONE exception each for two names the old
 // file declared TWICE (`credentialCell()`, `samlOverrideFieldRow()`): the
 // later declaration is the one JavaScript's hoisting gave every caller, so
-// it keeps the name. The earlier `samlOverrideFieldRow()` is kept as an
-// `unreached…()` method nothing calls; the earlier `credentialCell()` was
+// it keeps the name. Both `samlOverrideFieldRow()`s went with the create
+// form's per-role tables on 2026-09-30 (the field grid); the earlier
+// `credentialCell()` was
 // the delegation table's own and is `delegationCredentialCell()` since #70,
 // which fixed that table's two calls to reach it.
 //
@@ -5457,6 +5458,30 @@ class AdminConsole {
       // browsers skip when choosing the button Enter presses.
       '.default-submit{position:absolute;left:-10000px;width:1px;height:1px;' +
       'overflow:hidden}' +
+      // ---------------------------------------------------------------------
+      // THE APPLICATION FIELD GRID (2026-09-30): cells that wrap to as many
+      // columns as the card has room for, each a field's name, the families
+      // it belongs to and its control; a list's boxes each with a delete
+      // button, and a "+" under them.
+      '.fg{display:grid;grid-template-columns:repeat(auto-fill,' +
+      'minmax(19rem,1fr));gap:.6rem .8rem;margin:.4em 0 1em}' +
+      '.fg-cell{border:1px solid #e3e3ea;border-radius:8px;padding:8px 10px;' +
+      'background:#fbfbfd;min-width:0}' +
+      '.fg-name{display:block;font-weight:600;overflow-wrap:anywhere}' +
+      '.fg-for{display:block;color:#666;font-size:.78em;margin:.1em 0 .4em}' +
+      '.fg-cell input[type=text],.fg-cell input[type=number],' +
+      '.fg-cell select,.fg-cell textarea{width:100%;box-sizing:border-box;' +
+      'min-height:0}' +
+      '.fg-item{display:flex;gap:.3em;align-items:center;margin:.2em 0}' +
+      '.fg-item input{flex:1 1 auto}' +
+      'button.fg-drop,button.fg-grow{padding:2px 8px;line-height:1.2;' +
+      'min-width:0}' +
+      'button.fg-grow{font-weight:700;margin-top:.2em}' +
+      '.fg-bool{display:flex;flex-wrap:wrap;gap:.2em .9em}' +
+      '.fg-radio{font-weight:400;white-space:nowrap}' +
+      '.fg-protos{display:flex;flex-wrap:wrap;gap:.3em 1em;margin:.4em 0 1em}' +
+      '.fg-proto{font-weight:400;white-space:nowrap}' +
+      '.fg-view{align-items:center;gap:.8em}' +
       // ---------------------------------------------------------------------
       // /admin/applications/new's RFC 9728 IMPORT (2026-09-13): a checkbox that
       // shows the three ways to give a document, and a pane of three TABS over
@@ -15973,12 +15998,12 @@ class AdminConsole {
   // ordinary case.
   //
   // **THE FIELD NAME IS `field.<attribute>` AND THE ATTRIBUTE IS THE SCHEMA'S
-  // OWN NAME**, which is `declarationFieldRow()`'s rule applied to people. Two
-  // reasons, and the second is the load-bearing one: an `ldapsearch` on this
-  // entry shows exactly the name that was on the form, and `POST
-  // /admin-api/users/create` takes the same names in its `attributes` object —
-  // so the console and the management API are one vocabulary and somebody who
-  // learns this page can drive the API.
+  // OWN NAME**, which is the application field grid's rule applied to people.
+  // Two reasons, and the second is the load-bearing one: an `ldapsearch` on
+  // this entry shows exactly the name that was on the form, and `POST
+  // /admin-api/users/create` takes the same names in its `attributes` object
+  // — so the console and the management API are one vocabulary and somebody
+  // who learns this page can drive the API.
   //
   // The schema reference is drawn beside each one because this directory has NO
   // SCHEMA: nothing here would refuse `schacDateOfBirth` on a group or `l` on
@@ -17875,6 +17900,89 @@ class AdminConsole {
     };
   }
 
+  // ---------------------------------------------------------------------------
+  // THE APPLICATION'S FIELD GRID (2026-09-30): the protocol families it is
+  // declared for, as a row of checkboxes, and every field of
+  // `applications.applicationFields()` the page can edit, typed, shown for the
+  // families ticked — one form, saved by `update-fields`.
+  //
+  // **It posts to `/admin/applications/edit`, not to `/admin/applications`**,
+  // because a refused save has to come back to THIS page with every box as
+  // the reader left it, and the list page's 303 cannot carry a form. The same
+  // route redraws for "+" and delete. `present` names every field drawn, so a
+  // field emptied on the page is cleared; `protocolsPresent` says the
+  // checkbox column was drawn, so unticking every box means "none".
+  //
+  // **It leaves out what has a control of its own**: credentials (the
+  // Credentials section regenerates, issues and uploads them, and a secret
+  // re-posted by every save is a secret in every request body) and what
+  // `applications.applicationFields()` already leaves out.
+  // ---------------------------------------------------------------------------
+  /**
+   * Draws an application's field grid: its declared families and every
+   * editable field for them, in one form saved by `update-fields`.
+   *
+   * @param req - the request
+   * @param row - the application's view
+   * @param carryBack - the hidden `back` field
+   * @param state - optional; a redraw: `draft`, the posted form
+   * @returns the section as HTML
+   */
+  applicationFieldsSection(req, row, carryBack, state?) {
+    const { log, applications } = this.deps;
+    const self = this;
+    log.debug("Entering AdminConsole.applicationFieldsSection().");
+    const draft = state && state.draft ? state.draft : null;
+    const rows = applications.applicationFields().filter(function (one) {
+      return !one.sensitive;
+    });
+    const names = rows.map(function (one) { return one.attribute; });
+    const values = draft ? this.gridValuesFromDraft(draft)
+      : this.gridValuesFromEntry(row.fields, names);
+    const declared = draft
+      ? this.listField(req, draft, 'protocol')
+      : [].concat(row.allowedProtocols || []);
+    const families = '<div class="fg-protos" role="group" ' +
+      'aria-label="Protocol families it is declared for">' +
+      applications.PROTOCOLS.map(function (family) {
+        return '<label class="fg-proto"' + self.tip(family.what) + '>' +
+          '<input type="checkbox" id="proto-' + self.esc(family.id) +
+          '" name="protocol" value="' + self.esc(family.id) + '"' +
+          (declared.indexOf(family.id) >= 0 ? ' checked' : '') + '>' +
+          self.esc(family.label) + '</label>';
+      }).join('') + '</div>';
+    log.debug("Leaving AdminConsole.applicationFieldsSection(). " +
+              rows.length + " field(s).");
+    return '<h2 id="fields">Its configuration</h2>' +
+      this.note('Every field for the protocol families ticked here, as the ' +
+      'entry holds it now. Tick a family to show its fields. A field that ' +
+      'holds a value is shown whatever is ticked. <strong>Save</strong> ' +
+      'writes what changed and nothing else: a single value is set, and an ' +
+      'empty one is cleared; a list has the values taken out removed and the ' +
+      'values put in added. A list shows one box per value, with + to add ' +
+      'one and the bin to delete one; every box that is there must hold a ' +
+      'value. These write the same entry an <code>ldapmodify</code> writes, ' +
+      'and RFC 9700 mode reads it on the very next request.') +
+      '<form method="post" action="/admin/applications/edit" ' +
+      'class="newapp appgrid">' + carryBack +
+      '<input type="hidden" name="action" value="update-fields">' +
+      '<input type="hidden" name="application" value="' +
+      this.esc(row.identifier) + '">' +
+      '<input type="hidden" name="protocolsPresent" value="1">' +
+      '<input type="hidden" name="present" value="' +
+      this.esc(names.join(' ')) + '">' +
+      // THE DEFAULT BUTTON, first in the form, for the reason the create
+      // form has one: Enter in a box presses the first submit button, which
+      // would otherwise be a "+" or a delete.
+      '<button type="submit" class="default-submit" tabindex="-1" ' +
+      'aria-hidden="true">Save</button>' +
+      '<h3>Protocol families it is declared for</h3>' + families +
+      this.fieldGrid(rows, values, { redraw: '/admin/applications/edit',
+                                     showSet: true }) +
+      '<div class="formrow"><button type="submit">Save</button></div>' +
+      '</form>';
+  }
+
   // THE TWO PROTOCOL LISTS AN APPLICATION ENTRY CARRIES, SIDE BY SIDE.
   //
   // `appAllowedProtocol` is DECLARED — ticked on /admin/applications/new, or
@@ -18498,7 +18606,7 @@ class AdminConsole {
     log.debug("Leaving AdminConsole.applicationReturnTo().");
     return '/admin/applications' +
            queryWith(listView, { application: String(identifier) }) +
-           (anchor === '#credentials' ? anchor : '');
+           (anchor === '#credentials' || anchor === '#fields' ? anchor : '');
   }
 
   // And a PERSON's page (2026-09-13), whose Credentials section draws the same
@@ -19211,10 +19319,12 @@ class AdminConsole {
    *
    * @param req - the request
    * @param identifier - the application's identifier
+   * @param state - optional; a redraw of the field grid's own form: `draft`
+   *   (the posted form) and `error` (a refusal's sentences)
    * @returns `inner` (the page body as HTML), `json`, and `missing` when
    *   not found
    */
-  applicationDetailPage(req, identifier) {
+  applicationDetailPage(req, identifier, state?) {
     const { log, adminViews, queryWith, pageParamsOf } = this.deps;
     const self = this;
     log.debug("Entering AdminConsole.applicationDetailPage(). identifier=" +
@@ -19281,7 +19391,13 @@ class AdminConsole {
           '</td></tr>';
     }).join('');
 
-    const inner = this.messagesOf(req) +
+    const refused = state && state.error && state.error.length
+      ? '<div class="warn"><strong>The save was refused.</strong><ul>' +
+        state.error.map(function (one) {
+          return '<li>' + self.esc(one) + '</li>';
+        }).join('') + '</ul></div>'
+      : '';
+    const inner = this.messagesOf(req) + refused +
       '<h2><code>' + this.esc(row.identifier) + '</code></h2>' +
       '<div class="tiles">' +
       this.tile(row.authentications, 'Authentications') +
@@ -19367,7 +19483,14 @@ class AdminConsole {
 
       this.applicationObservedAddressesSection(req, view, carryBack) +
 
-      '<h2>Change what it is allowed to do</h2>' +
+      // THE FIELD GRID (2026-09-30): every field relevant to the protocols
+      // this application is declared for, typed, in one form. The three
+      // one-attribute forms below it still reach every editable attribute by
+      // name, folded, for the attribute the grid leaves to a control of its
+      // own and for an ldapmodify-shaped edit.
+      this.applicationFieldsSection(req, row, carryBack, state) +
+      '<details class="fold section"><summary><h3>Change one attribute by ' +
+      'name</h3></summary>' +
       this.note('These write the same entry an <code>ldapmodify</code> ' +
       'writes, through the same functions &mdash; the console is a set of ' +
       'controls in front of this registry and not a second copy of it. A ' +
@@ -19427,7 +19550,7 @@ class AdminConsole {
       'HERE is the difference between offering an operation and merely not ' +
       'preventing it. <code>appRegistrationJson</code> is not offered either ' +
       '&mdash; edit the attributes beside it instead, which is what the ' +
-      'registration is rebuilt from.') +
+      'registration is rebuilt from.') + '</details>' +
 
       // AFTER the generic attribute editor and before the metadata refresh. The
       // editor can already write `oauthDelegatedPermission` by hand — it is an
@@ -19614,6 +19737,354 @@ class AdminConsole {
   // works out, and on `/realm/acme/admin/applications/new` it says `acme`'s.
   // ---------------------------------------------------------------------------
 
+  // ---------------------------------------------------------------------------
+  // THE FIELD GRID (2026-09-30): EVERY PER-APPLICATION FIELD, TYPED, ON BOTH
+  // APPLICATION PAGES.
+  //
+  // `/admin/applications/new` (its simplified and advanced views) and an
+  // application's own page draw one grid of fields out of
+  // `applications.applicationFields()`, each with the control its type needs:
+  //
+  //   * a BOOLEAN is three radio buttons — true, false, and not set (an
+  //     attribute left unset is a state of its own: for an override it means
+  //     the service-wide default, and that default is named on the button);
+  //   * a STRING is a text box (a document — JSON, PEM, XML — a box of a few
+  //     lines), an enumerated override a select, a number override a number
+  //     box;
+  //   * an ARRAY OF STRINGS is one text box per value, each with a delete
+  //     button beside it, and a "+" that adds a box. **A list with no values
+  //     is no boxes**, and every box that is there must hold a value — the
+  //     action refuses an empty one (`STS-ADMIN-0834`) rather than saving a
+  //     list one shorter than the page showed.
+  //
+  // **"+" AND DELETE ARE SUBMIT BUTTONS, NOT A SCRIPT.** `script-src 'none'`
+  // holds on both pages, and the test for an exception is that the page cannot
+  // work without one: a round trip answers it. Each button posts the whole
+  // form, through a `formaction`, to the page's redraw route with `grow` or
+  // `drop` naming the list and box; the page comes back with one box more or
+  // one fewer and every other box as it was, and nothing is written. Neither
+  // is named `action`, which is the trap `/admin/users/new` records (two
+  // submits named `action` make `form.elements.action` a RadioNodeList).
+  // `formnovalidate`, so a box left empty does not stop the round trip that
+  // is about to delete it.
+  //
+  // **WHICH FIELDS SHOW is the declared protocol families**, by the same
+  // `:has()` rules the create form has used since 2026-08-27 (the `pf` and
+  // `pf-<family>` classes): a cell belongs to the families of its attribute,
+  // and an attribute for every family is always shown. On an application's
+  // own page a field that HOLDS a value is shown whatever is ticked, so a
+  // value is never hidden from the page that edits it.
+  // ---------------------------------------------------------------------------
+  /**
+   * Reads the grid's values out of an entry's fields: each named attribute as
+   * a list of strings.
+   *
+   * @param fields - the entry's fields
+   * @param names - the attributes the grid draws
+   * @returns the values by attribute
+   */
+  gridValuesFromEntry(fields, names) {
+    const { log } = this.deps;
+    log.debug("Entering AdminConsole.gridValuesFromEntry().");
+    const out = {};
+    // ONLY THE NAMED ATTRIBUTES ARE READ: a sealed field of a view opens its
+    // key when it is read (#352), and the grid never draws one.
+    (names || []).forEach(function (name) {
+      const value = fields ? fields[name] : undefined;
+      out[name] = [].concat(value === undefined || value === null
+        ? [] : value).map(function (one) { return String(one); });
+    });
+    log.debug("Leaving AdminConsole.gridValuesFromEntry().");
+    return out;
+  }
+
+  /**
+   * Reads the grid's values out of a posted form, keeping every list box —
+   * an empty one included — in box order, and applies a "+" or a delete.
+   *
+   * @param draft - the posted form
+   * @returns the values by attribute
+   */
+  gridValuesFromDraft(draft) {
+    const { log, applications } = this.deps;
+    log.debug("Entering AdminConsole.gridValuesFromDraft().");
+    const out = {};
+    const boxes = {};
+    const long = applications.LONG_TEXT_ATTRIBUTES || [];
+    Object.keys(draft || {}).forEach(function (key) {
+      if (key.indexOf('field.') !== 0) {
+        return;
+      }
+      const name = key.slice('field.'.length);
+      const value = String(draft[key] === undefined ? '' : draft[key]);
+      const box = /^(.+)\.(\d+)$/.exec(name);
+      if (box) {
+        (boxes[box[1]] = boxes[box[1]] || []).push({ n: Number(box[2]),
+                                                     value: value });
+        return;
+      }
+      // A box of the older shape — one value per line — or a single value.
+      out[name] = long.indexOf(name) >= 0 ? [value]
+        : value.split(/\r?\n/).filter(function (one) {
+          return one.trim() !== '';
+        });
+    });
+    Object.keys(boxes).forEach(function (name) {
+      out[name] = boxes[name].sort(function (a, b) { return a.n - b.n; })
+        .map(function (one) { return one.value; });
+    });
+    const grow = String((draft && draft.grow) || '');
+    if (grow) {
+      out[grow] = (out[grow] || []).concat(['']);
+    }
+    const drop = /^(.+)\.(\d+)$/.exec(String((draft && draft.drop) || ''));
+    if (drop && out[drop[1]]) {
+      out[drop[1]].splice(Number(drop[2]), 1);
+    }
+    log.debug("Leaving AdminConsole.gridValuesFromDraft().");
+    return out;
+  }
+
+  /**
+   * Refines a field's type from the setting it overrides: a `bool` setting
+   * makes it a boolean, an `enum` a select, an `int` a number box.
+   *
+   * @param row - the field's row from `applicationFields()`
+   * @returns the row with `type`, and `choices`, `described` where they apply
+   */
+  gridFieldTyped(row) {
+    const { log, configSettingFor, config } = this.deps;
+    log.debug("Entering AdminConsole.gridFieldTyped().");
+    if (!row.overrides) {
+      log.debug("Leaving AdminConsole.gridFieldTyped(). Not an override.");
+      return row;
+    }
+    const setting = configSettingFor(row.overrides);
+    if (!setting) {
+      log.debug("Leaving AdminConsole.gridFieldTyped(). Unknown setting.");
+      return row;
+    }
+    const described = config.describe(setting);
+    const typed = Object.assign({}, row, { described: described });
+    if (described.type === 'bool') {
+      typed.type = 'boolean';
+    } else if (described.type === 'enum') {
+      typed.type = 'enum';
+      typed.choices = (described.enumValues || []).filter(function (one) {
+        return one !== '';
+      });
+    } else if (described.type === 'int') {
+      typed.type = 'int';
+    }
+    log.debug("Leaving AdminConsole.gridFieldTyped().");
+    return typed;
+  }
+
+  /**
+   * The trash-can icon a list box's delete button carries, inline so the
+   * console still makes no image request.
+   *
+   * @returns the SVG as HTML
+   */
+  trashIcon() {
+    const { log } = this.deps;
+    log.debug("Entering AdminConsole.trashIcon().");
+    log.debug("Leaving AdminConsole.trashIcon().");
+    return '<svg viewBox="0 0 16 16" width="14" height="14" ' +
+      'aria-hidden="true" ' +
+      'focusable="false"><path fill="currentColor" d="M6 1h4l1 1h3v2H2V2h3z' +
+      'M3 5h10l-1 10H4zm3 2v6h1V7zm3 0v6h1V7z"/></svg>';
+  }
+
+  /**
+   * Draws one field of the grid: its name (with its sentence as a tooltip),
+   * the families it belongs to, and the control its type needs.
+   *
+   * @param row - the field's row, typed by `gridFieldTyped()`
+   * @param values - the grid's values by attribute
+   * @param options - `redraw` (the route "+" and delete post to), `showSet`
+   *   (show a cell holding a value whatever is ticked), `generateSecret`
+   * @returns the cell as HTML
+   */
+  fieldGridCell(row, values, options) {
+    const { log, applications } = this.deps;
+    const self = this;
+    log.debug("Entering AdminConsole.fieldGridCell(). " + row.attribute);
+    const opts = options || {};
+    const name = 'field.' + row.attribute;
+    const id = 'fg-' + row.attribute;
+    const held = values[row.attribute] || [];
+    const first = held.length ? String(held[0]) : '';
+    const hint = this.tip(row.what || row.attribute);
+    const defaultText = row.described
+      ? 'default — currently ' + row.described.text : '';
+    let control = '';
+    if (row.type === 'array') {
+      control = '<div class="fg-list">' + held.map(function (value, n) {
+        return '<div class="fg-item"><input type="text" id="' +
+          self.esc(id + '-' + n) + '" name="' + self.esc(name + '.' + n) +
+          '" value="' + self.esc(value) + '" aria-label="' +
+          self.esc(row.attribute + ' value ' + (n + 1)) + '">' +
+          '<button type="submit" class="secondary fg-drop" name="drop" ' +
+          'value="' + self.esc(row.attribute + '.' + n) + '" formaction="' +
+          self.esc(opts.redraw) + '" formnovalidate title="Delete this ' +
+          'value" aria-label="Delete value ' + (n + 1) + ' of ' +
+          self.esc(row.attribute) + '">' + self.trashIcon() +
+          '</button></div>';
+      }).join('') +
+      (held.length ? '' : '<span class="state-none">no values</span>') +
+      '<button type="submit" class="secondary fg-grow" name="grow" value="' +
+      this.esc(row.attribute) + '" formaction="' + this.esc(opts.redraw) +
+      '" formnovalidate title="Add a value" aria-label="Add a value to ' +
+      this.esc(row.attribute) + '">+</button></div>';
+    } else if (row.type === 'boolean') {
+      const upper = first.toUpperCase();
+      const radio = function (value, label) {
+        return '<label class="fg-radio"><input type="radio" name="' +
+          self.esc(name) + '" value="' + value + '"' +
+          (upper === value ? ' checked' : '') + '>' + self.esc(label) +
+          '</label>';
+      };
+      control = '<div class="fg-bool" role="radiogroup" aria-label="' +
+        this.esc(row.attribute) + '">' + radio('TRUE', 'true') +
+        radio('FALSE', 'false') +
+        radio('', defaultText || 'not set') + '</div>';
+    } else if (row.type === 'enum') {
+      control = '<select id="' + this.esc(id) + '" name="' + this.esc(name) +
+        '"><option value="">' + this.esc(defaultText || 'not set') +
+        '</option>' + (row.choices || []).map(function (option) {
+          return '<option value="' + self.esc(option) + '"' +
+            (option === first ? ' selected' : '') + '>' + self.esc(option) +
+            '</option>';
+        }).join('') + '</select>';
+    } else if (row.long) {
+      control = '<textarea id="' + this.esc(id) + '" name="' +
+        this.esc(name) + '" rows="3" placeholder="not set">' +
+        this.esc(held.join('\n')) + '</textarea>';
+    } else {
+      const d = row.described;
+      control = '<input type="' + (row.type === 'int' ? 'number' : 'text') +
+        '" id="' + this.esc(id) + '" name="' + this.esc(name) + '" value="' +
+        this.esc(first) + '"' +
+        (d && typeof d.min === 'number' ? ' min="' + d.min + '"' : '') +
+        (d && typeof d.max === 'number' ? ' max="' + d.max + '"' : '') +
+        ' placeholder="' + this.esc(defaultText || 'not set') + '">' +
+        (row.attribute === 'oauthClientSecret' && opts.generateSecret
+          ? ' <button type="submit" class="secondary" name="action" ' +
+            'value="generate-secret" formaction="' +
+            this.esc(opts.generateSecret) + '" formnovalidate' +
+            this.tip('Mint a client secret the way POST /oauth2/register ' +
+                     'does and put it in this box. Nothing is written until ' +
+                     'the application is created. Everything else you have ' +
+                     'typed on this page is kept.') +
+            '>Generate Secret</button>'
+          : '');
+    }
+    const labels = row.everyFamily ? 'every protocol'
+      : row.families.map(function (family) {
+        const known = applications.PROTOCOLS.filter(function (one) {
+          return one.id === family;
+        })[0];
+        return known ? known.label : family;
+      }).join(', ');
+    const conditional = !row.everyFamily && row.families.length &&
+      !(opts.showSet && held.some(function (one) {
+        return String(one).trim() !== '';
+      }));
+    log.debug("Leaving AdminConsole.fieldGridCell().");
+    return '<div class="fg-cell' + (conditional
+      ? ' ' + this.esc(this.familyClasses(row.families)) : '') + '">' +
+      // A label names one control; a list and a radio group are several, so
+      // their name is a heading of the cell rather than a label.
+      (row.type === 'array' || row.type === 'boolean'
+        ? '<span class="fg-name"' + hint + '><code>' +
+          this.esc(row.attribute) + '</code></span>'
+        : '<label class="fg-name" for="' + this.esc(id) + '"' + hint +
+          '><code>' + this.esc(row.attribute) + '</code></label>') +
+      '<span class="fg-for">' + this.esc(labels) +
+      (row.type === 'array' ? ' &middot; a list' : '') +
+      (row.sensitive ? ' &middot; a credential' : '') + '</span>' +
+      control + '</div>';
+  }
+
+  /**
+   * Draws the field grid: the rows grouped as `applications.FIELD_GROUPS`
+   * says, each group a heading over a grid of cells, shown while any of its
+   * cells is.
+   *
+   * @param rows - the fields to draw, from `applicationFields()`
+   * @param values - the grid's values by attribute
+   * @param options - as `fieldGridCell()` takes
+   * @returns the grid as HTML
+   */
+  fieldGrid(rows, values, options) {
+    const { log, applications } = this.deps;
+    const self = this;
+    log.debug("Entering AdminConsole.fieldGrid(). " + rows.length +
+              " field(s).");
+    const typed = rows.map(function (row) { return self.gridFieldTyped(row); });
+    const html = applications.FIELD_GROUPS.map(function (group) {
+      const mine = typed.filter(function (row) {
+        return row.group === group.id;
+      });
+      if (!mine.length) {
+        return '';
+      }
+      const cells = mine.map(function (row) {
+        return self.fieldGridCell(row, values, options);
+      });
+      // THE GROUP CARRIES THE UNION OF ITS CELLS' FAMILIES, or none when any
+      // cell is unconditional, so a
+      // group whose every cell is hidden leaves no bare heading behind.
+      const always = cells.some(function (cell) {
+        return cell.indexOf('<div class="fg-cell">') === 0;
+      });
+      const families = [];
+      mine.forEach(function (row) {
+        row.families.forEach(function (one) {
+          if (families.indexOf(one) < 0) {
+            families.push(one);
+          }
+        });
+      });
+      return '<div class="fg-group' + (always ? '' : ' ' +
+        self.esc(self.familyClasses(families))) + '"><h3>' +
+        self.esc(group.label) + '</h3><div class="fg">' + cells.join('') +
+        '</div></div>';
+    }).join('');
+    log.debug("Leaving AdminConsole.fieldGrid().");
+    return html;
+  }
+
+  /**
+   * The fields `/admin/applications/new` draws in a view: `simple` is the
+   * set the page has always offered (the declarations, the per-application
+   * setting overrides and where SAML encryption gets its key), `advanced`
+   * every field.
+   *
+   * @param view - `simple` or `advanced`
+   * @param omit - attributes another part of the page draws
+   * @returns the rows
+   */
+  newApplicationFields(view, omit) {
+    const { log, applications } = this.deps;
+    log.debug("Entering AdminConsole.newApplicationFields(). view=" + view);
+    const skip = omit || [];
+    const keySource = SAML_KEY_SOURCE_FIELDS.map(function (one) {
+      return one.attribute;
+    });
+    const rows = applications.applicationFields().filter(function (row) {
+      if (skip.indexOf(row.attribute) >= 0) {
+        return false;
+      }
+      return view === 'advanced' || row.declaration || !!row.overrides ||
+        keySource.indexOf(row.attribute) >= 0;
+    });
+    log.debug("Leaving AdminConsole.newApplicationFields(). " + rows.length +
+              " field(s).");
+    return rows;
+  }
+
   // One protocol family as a row of the checkbox table. `kind` is what the
   // registry WOULD record this application as when a protocol of that family
   // finally recognises the identifier — shown rather than written, because a
@@ -19658,34 +20129,6 @@ class AdminConsole {
       '<td class="why">' + this.note(this.esc(row.what)) + '</td></tr>';
   }
 
-  // ---------------------------------------------------------------------------
-  // ONE DECLARED ATTRIBUTE AS A ROW OF ONE OF THE DECLARATION TABLES
-  // (`declarationFieldRow()`, below `familyClasses()`).
-  //
-  // The rows come from `applications.declarationAttributes()`, which walks the
-  // PROTOCOLS table and dedupes by ATTRIBUTE — so this renders one field per
-  // attribute rather than one per family, and names the families each field
-  // serves underneath it. Building that list here instead was the obvious
-  // thing and would have been a second opinion about which attribute a family's
-  // identifier goes in; `createApplication()` has the first.
-  //
-  // **THE FIELD NAME IS `field.<attribute>` AND THE ATTRIBUTE IS THE SCHEMA'S
-  // OWN NAME**, not a friendly one. Two reasons, and the second is the
-  // load-bearing one: an `ldapsearch` on this entry shows exactly the name that
-  // was on the form, and `POST /admin-api/applications/create` takes the same
-  // names in its `fields` object — so the console and the management API are
-  // one vocabulary and a person who learns the page can drive the API.
-  //
-  // A `multi` attribute gets a TEXTAREA, one value per line, and a `single` one
-  // gets an input. Newline-separated rather than comma-separated because a
-  // redirect URI may legally contain a comma and may not contain a newline;
-  // splitting on commas would silently cut one URI into two that both fail to
-  // match. There was once exactly one single-valued field here — mutual TLS's
-  // `oauthTlsClientAuthSubjectDn` — and the row's note says why that one is a
-  // different shape. There are four now (`oauthClientSecret`, `gnapInstanceId`
-  // and `gnapSymmetricKey` joined it), and the note under the input still gives
-  // the RFC 8705 reason on every one of them.
-  // ---------------------------------------------------------------------------
   // The classes that make a block appear only when one of its families is
   // ticked. `pf` is what the stylesheet hides; each `pf-<id>` is what a checked
   // box shows. A block serving several families carries several, and appears
@@ -19713,483 +20156,6 @@ class AdminConsole {
     return 'pf ' + list.map(function (id) { return 'pf-' + id; }).join(' ');
   }
 
-  /**
-   * Draws one declared attribute as a form row named `field.<attribute>`:
-   * a textarea for a multi-valued attribute, an input otherwise.
-   *
-   * @param row - the attribute's row from `declarationAttributes()`
-   * @param draft - optional; the posted form, to redraw its value
-   * @returns the table row as HTML
-   */
-  declarationFieldRow(row, draft?) {
-    const { log } = this.deps;
-    const self = this;
-    log.debug("Entering AdminConsole.declarationFieldRow().");
-    // WHAT WAS POSTED, drawn back — `newApplicationPage()`'s `draft`, present
-    // only when this page is redrawn from a round trip of its own form.
-    const posted = draft ? draft['field.' + row.attribute] : undefined;
-    const value = posted == null ? '' : String(posted);
-    // A row that belongs to EVERY family (`appCorsOrigin`, 2026-09-18) has an
-    // empty `families` on purpose — that is what keeps its section
-    // unconditional — so the cell says what the emptiness means rather than
-    // being blank, which would read as "applies to nothing".
-    const families = row.everyFamily
-      ? '<strong>every family</strong> &mdash; every published endpoint'
-      : row.families.map(function (one) {
-        return self.esc(one.label);
-      }).join(', ');
-    // The attribute's sentence, on the control itself. The schema's name is
-    // unfriendly on purpose (see the header above) — it is the name an
-    // ldapsearch and the management API both use — so the one place a reader
-    // can find out what `appWsFedRealm` is for without leaving the field is a
-    // tooltip on it. The same sentence is in the last column, folded.
-    const hint = this.tip(row.what);
-    const control = row.kind === 'multi'
-      ? '<textarea id="field-' + this.esc(row.attribute) + '" name="field.' +
-        this.esc(row.attribute) +
-        '"' + hint + ' rows="3" cols="42" placeholder="one per line; leave ' +
-                     'empty for none">' + this.esc(value) + '</textarea>'
-      : '<input type="text" id="field-' + this.esc(row.attribute) +
-        '" name="field.' +
-        this.esc(row.attribute) + '"' + hint +
-        ' size="42" placeholder="optional" value="' + this.esc(value) + '">';
-    // GENERATE SECRET (2026-09-18), beside `oauthClientSecret` and no other
-    // field — the `secret` role also holds GNAP's `gnapSymmetricKey`, which
-    // is a key and not a client secret. A SUBMIT BUTTON AND NOT A SCRIPT:
-    // `script-src 'none'` holds on this page, and the test for an exception
-    // is that the page cannot work without one, which a round trip answers.
-    // Its `formaction` sends the whole form to `/admin/applications/new`
-    // with `action=generate-secret` — the button's pair comes after the
-    // hidden `action=create` in the body and `parseBody()` keeps the last —
-    // and that page is drawn again with every box as it was and a new
-    // secret in this one. `formnovalidate`, because the Identifier is
-    // `required` and a person may want the secret before they have named
-    // the application.
-    const generate = row.attribute === 'oauthClientSecret'
-      ? ' <button type="submit" class="secondary" name="action" ' +
-        'value="generate-secret" formaction="/admin/applications/new" ' +
-        'formnovalidate' +
-        this.tip('Mint a client secret the way POST /oauth2/register does ' +
-                 'and put it in this box. Nothing is written until the ' +
-                 'application is created. Everything else you have typed ' +
-                 'on this page is kept.') +
-        '>Generate Secret</button>'
-      : '';
-    const shape = row.kind === 'multi'
-      ? '<span class="note">a list &mdash; one value per line</span>'
-      : '<span class="state-none">one value only &mdash; an RFC 8705 check ' +
-        'compares this string to a certificate\'s subject by exact equality, ' +
-        'so it cannot hold a list until somebody decides what &ldquo;any of ' +
-        'these&rdquo; should mean to that check</span>';
-    log.debug("Leaving AdminConsole.declarationFieldRow().");
-    // The row is conditional on the families it serves — see familyClasses().
-    return '<tr class="' +
-           this.esc(this.familyClasses(row.families.map(function (one) {
-        return one.id;
-      }))) + '"><td><label for="field-' + this.esc(row.attribute) + '"' + hint +
-      '><code>' +
-      this.esc(row.attribute) + '</code></label></td>' +
-      '<td>' + families + '</td>' +
-      '<td>' + control + generate + '<br>' + shape + '</td>' +
-      '<td class="why">' + this.note(this.esc(row.what)) + '</td></tr>';
-  }
-
-  // ---------------------------------------------------------------------------
-  // THE PER-APPLICATION SAML SETTINGS, AS FORM FIELDS.
-  //
-  // THIS DECLARATION IS DEAD: an identical `samlOverrideFieldRow()` is declared
-  // again under *THE PER-APPLICATION SETTINGS* below, and the later function
-  // declaration is the one every caller gets. Its header is the current one.
-  // A class cannot hold two methods of one name, so under #50 this one became
-  // `unreachedSamlOverrideFieldRow()`, which nothing calls.
-  //
-  // Written when there were ten attributes, five per SAML profile, each
-  // overriding one `config.js` setting for this application alone. They are
-  // drawn from `applications.overridableSettings()` — the same table
-  // `saml2_sso.ts` resolves through and `/admin/saml-assertions` names the
-  // attribute from — so a setting added there reaches this form without anybody
-  // editing it.
-  //
-  // **EVERY FIELD IS EMPTY BY DEFAULT AND EMPTY MEANS INHERIT.** That is the
-  // whole of the interaction and it is why there is no "use the default"
-  // checkbox beside each one: the absence of the attribute IS the default, so a
-  // blank box and an unticked box would be two spellings of one state. The
-  // placeholder carries the value that would be used, read live off the
-  // setting, so somebody can see what they are overriding without opening
-  // another page.
-  //
-  // A `select` for a bool rather than a checkbox, for `configRow()`'s reason —
-  // an unticked checkbox posts NOTHING, which here is indistinguishable from
-  // "leave it alone". The empty option is what makes "inherit" expressible.
-  /**
-   * Draws one per-application setting override as a form row. Nothing calls
-   * it; `samlOverrideFieldRow()` is the live copy.
-   *
-   * @param row - the overridable setting's row
-   * @returns the table row as HTML, or an empty string for an unknown
-   *   setting
-   */
-  unreachedSamlOverrideFieldRow(row) {
-    const { log, configSettingFor, config } = this.deps;
-    const self = this;
-    log.debug("Entering AdminConsole.unreachedSamlOverrideFieldRow().");
-    const setting = configSettingFor(row.setting);
-    if (!setting) {
-      log.debug("Leaving AdminConsole.unreachedSamlOverrideFieldRow().");
-      return '';
-    }
-    const described = config.describe(setting);
-    const id = 'field-' + row.attribute;
-    const hint = this.tip(described.description);
-    const inherits = 'inherit — currently ' + described.text;
-    // A BOOL AND AN ENUM ARE THE SAME CONTROL WITH DIFFERENT OPTIONS, which is
-    // why the enum joined this branch rather than getting one of its own: both
-    // are a closed vocabulary plus the empty option that means inherit, and a
-    // bool is the two-word case of it. The options come off `enumValues` on the
-    // setting's own row, so a value added there reaches this form with nothing
-    // edited here — the same rule the section itself follows about
-    // `overridableSettings()`. A text box would have been the alternative and
-    // is the wrong one: this attribute is read back through `config.parseAs()`,
-    // so a typo is a warning in the log and the service-wide value silently in
-    // force, which is the failure a select cannot have.
-    const choices = described.type === 'bool' ? ['true', 'false']
-      : (described.type === 'enum'
-        // The empty value is the inherit option drawn first, not a second
-        // blank line (#86).
-        ? (described.enumValues || []).filter(function (option) {
-            return option !== '';
-          })
-        : null);
-    const control = choices
-      ? '<select id="' + this.esc(id) + '" name="field.' +
-        this.esc(row.attribute) + '"' +
-        hint + '><option ' +
-        'value="">' + this.esc(inherits) + '</option>' +
-        choices.map(function (option) {
-          return '<option value="' + self.esc(option) + '">' +
-                 self.esc(option) +
-                 '</option>';
-        }).join('') + '</select>'
-      : '<input type="' + (described.type === 'int' ? 'number' : 'text') + '"' +
-        ' id="' + this.esc(id) + '" name="field.' + this.esc(row.attribute) +
-        '"' + hint +
-        (typeof described.min === 'number' ? ' min="' + described.min + '"' :
-         '') +
-        (typeof described.max === 'number' ? ' max="' + described.max + '"' :
-         '') +
-        (typeof described.step === 'number' ? ' step="' + described.step + '"' :
-         '') +
-        ' size="' + (described.type === 'int' ? '10' : '42') + '"' +
-        ' placeholder="' + this.esc(inherits) + '">';
-    log.debug("Leaving AdminConsole.unreachedSamlOverrideFieldRow().");
-    return '<tr><td><label for="' + this.esc(id) + '"' + hint + '><code>' +
-      this.esc(row.attribute) + '</code></label></td>' +
-      '<td><code>' + this.esc(row.setting) + '</code></td>' +
-      '<td>' + control + '</td>' +
-      '<td class="why">' + this.note(this.esc(described.description)) +
-      '</td></tr>';
-  }
-
-  // ---------------------------------------------------------------------------
-  // THE PER-APPLICATION SETTINGS, AS FORM FIELDS.
-  //
-  // Twenty-six attributes as of 2026-09-16 — twenty-five across the five
-  // sections and `gnap.accessTokenLifetimeS`, which matches none — each
-  // overriding one `config.js` setting for this application alone. They are
-  // drawn from `applications.overridableSettings()` — the same table the
-  // protocol modules resolve through and each defaults page names the
-  // attribute from — so a setting that becomes per-application reaches this
-  // form without anybody editing it. What it DOES need is a row in
-  // OVERRIDE_SECTIONS above, and a setting whose prefix matches none of them is
-  // drawn in a section of its own at the end rather than silently dropped.
-  //
-  // **EVERY FIELD IS EMPTY BY DEFAULT AND EMPTY MEANS INHERIT.** That is the
-  // whole of the interaction and it is why there is no "use the default"
-  // checkbox beside each one: the absence of the attribute IS the default, so a
-  // blank box and an unticked box would be two spellings of one state. The
-  // placeholder carries the value that would be used, read live off the
-  // setting.
-  //
-  // A `select` for a bool rather than a checkbox, for `configRow()`'s reason —
-  // an unticked checkbox posts NOTHING, which here cannot be told from "leave
-  // it alone". The empty option is what makes "inherit" expressible.
-  /**
-   * Draws one per-application setting override as a form row, empty by
-   * default (inherit) with the inherited value as its placeholder.
-   *
-   * @param row - the overridable setting's row
-   * @param draft - optional; the posted form, to redraw its value
-   * @returns the table row as HTML, or an empty string for an unknown
-   *   setting
-   */
-  samlOverrideFieldRow(row, draft?) {
-    const { log, configSettingFor, config } = this.deps;
-    const self = this;
-    log.debug("Entering AdminConsole.samlOverrideFieldRow().");
-    // What was posted, on a redraw of this page's own form — see
-    // declarationFieldRow().
-    const posted = draft ? draft['field.' + row.attribute] : undefined;
-    const value = posted == null ? '' : String(posted);
-    const setting = configSettingFor(row.setting);
-    if (!setting) {
-      log.debug("Leaving AdminConsole.samlOverrideFieldRow().");
-      return '';
-    }
-    const described = config.describe(setting);
-    const id = 'field-' + row.attribute;
-    const hint = this.tip(described.description);
-    const inherits = 'inherit — currently ' + described.text;
-    // A BOOL AND AN ENUM ARE THE SAME CONTROL WITH DIFFERENT OPTIONS, which is
-    // why the enum joined this branch rather than getting one of its own: both
-    // are a closed vocabulary plus the empty option that means inherit, and a
-    // bool is the two-word case of it. The options come off `enumValues` on the
-    // setting's own row, so a value added there reaches this form with nothing
-    // edited here — the same rule the section itself follows about
-    // `overridableSettings()`. A text box would have been the alternative and
-    // is the wrong one: this attribute is read back through `config.parseAs()`,
-    // so a typo is a warning in the log and the service-wide value silently in
-    // force, which is the failure a select cannot have.
-    const choices = described.type === 'bool' ? ['true', 'false']
-      : (described.type === 'enum'
-        // The empty value is the inherit option drawn first, not a second
-        // blank line (#86).
-        ? (described.enumValues || []).filter(function (option) {
-            return option !== '';
-          })
-        : null);
-    const control = choices
-      ? '<select id="' + this.esc(id) + '" name="field.' +
-        this.esc(row.attribute) + '"' +
-        hint + '><option ' +
-        'value="">' + this.esc(inherits) + '</option>' +
-        choices.map(function (option) {
-          return '<option value="' + self.esc(option) + '"' +
-                 (option === value ? ' selected' : '') + '>' +
-                 self.esc(option) +
-                 '</option>';
-        }).join('') + '</select>'
-      : '<input type="' + (described.type === 'int' ? 'number' : 'text') + '"' +
-        ' id="' + this.esc(id) + '" name="field.' + this.esc(row.attribute) +
-        '"' + hint + ' value="' + this.esc(value) + '"' +
-        (typeof described.min === 'number' ? ' min="' + described.min + '"' :
-         '') +
-        (typeof described.max === 'number' ? ' max="' + described.max + '"' :
-         '') +
-        (typeof described.step === 'number' ? ' step="' + described.step + '"' :
-         '') +
-        ' size="' + (described.type === 'int' ? '10' : '42') + '"' +
-        ' placeholder="' + this.esc(inherits) + '">';
-    log.debug("Leaving AdminConsole.samlOverrideFieldRow().");
-    return '<tr><td><label for="' + this.esc(id) + '"' + hint + '><code>' +
-      this.esc(row.attribute) + '</code></label></td>' +
-      '<td><code>' + this.esc(row.setting) + '</code></td>' +
-      '<td>' + control + '</td>' +
-      '<td class="why">' + this.note(this.esc(described.description)) +
-      '</td></tr>';
-  }
-
-  /**
-   * Draws the fields saying where SAML 2.0 encryption gets the service
-   * provider's key, shown only while SAML 2.0 is ticked.
-   *
-   * @param draft - optional; the posted form, to redraw its values
-   * @returns the section as HTML
-   */
-  samlKeySourceSection(draft?) {
-    const { log } = this.deps;
-    const self = this;
-    log.debug("Entering AdminConsole.samlKeySourceSection().");
-    const rows = SAML_KEY_SOURCE_FIELDS.map(function (row) {
-      const id = 'field-' + row.attribute;
-      const hint = self.tip(row.what);
-      // What was posted, on a redraw — see declarationFieldRow().
-      const posted = draft ? draft['field.' + row.attribute] : undefined;
-      const value = posted == null ? '' : String(posted);
-      const control = row.multi
-        ? '<textarea id="' + self.esc(id) + '" name="field.' +
-          self.esc(row.attribute) +
-          '"' + hint +
-          ' rows="4" cols="42" placeholder="paste the document, or leave it ' +
-          'to Refresh">' + self.esc(value) + '</textarea>'
-        : '<input type="text" id="' + self.esc(id) + '" name="field.' +
-          self.esc(row.attribute) + '"' +
-          hint + ' size="42" placeholder="optional" value="' +
-          self.esc(value) + '">';
-      return '<tr><td><label for="' + self.esc(id) + '"' + hint + '><code>' +
-        self.esc(row.attribute) + '</code></label></td>' +
-        '<td>' + self.esc(row.label) + '</td><td>' + control + '</td>' +
-        '<td class="why">' + self.note(self.esc(row.what)) + '</td></tr>';
-    }).join('');
-    log.debug("Leaving AdminConsole.samlKeySourceSection().");
-    return '<div class="' + this.esc(this.familyClasses(['saml2'])) + '">' +
-      '<h3>Where SAML 2.0 encryption gets this service provider\'s key</h3>' +
-      this.note('Encrypting an assertion needs the RECIPIENT\'S certificate, ' +
-      'and this service does not consume metadata unless it is told to. It ' +
-      'looks in three places, most specific first: ' +
-      '<code>samlEncryptionCertificate</code> below, then a REGISTERED ' +
-      '<code>samlSigningCertificate</code>, then — in development mode only ' +
-      '— the certificate a signed AuthnRequest carried, which is recorded as ' +
-      'observed and not trusted. With none, an assertion that was meant to ' +
-      'be encrypted goes out <strong>in clear</strong> in development and ' +
-      'says so in the log, and is refused in product. A metadata document ' +
-      'pasted below is CONSUMED when the application is created.') +
-      '<table><tr><th>Attribute</th><th>What</th><th>Value</th><th>Notes</th>' +
-      '</tr>' +
-      rows + '</table></div>';
-  }
-
-  /**
-   * Draws every per-application setting override, grouped by
-   * OVERRIDE_SECTIONS, with unmatched settings in a section of their own.
-   *
-   * @param draft - optional; the posted form, to redraw its values
-   * @returns the section as HTML, or an empty string when there are none
-   */
-  samlOverrideFieldsSection(draft?) {
-    const { log, applications } = this.deps;
-    const self = this;
-    log.debug("Entering AdminConsole.samlOverrideFieldsSection().");
-    const rows = applications.overridableSettings();
-    if (!rows.length) {
-      log.debug("Leaving AdminConsole.samlOverrideFieldsSection(). Nothing " +
-                "to offer.");
-      return '';
-    }
-    const placed = {};
-    const sections = OVERRIDE_SECTIONS.map(function (group) {
-      const mine = rows.filter(function (one) {
-        return one.setting.indexOf(group.prefix) === 0;
-      });
-      mine.forEach(function (one) { placed[one.attribute] = true; });
-      if (!mine.length) return '';
-      return '<div class="' + self.esc(self.familyClasses(group.families)) +
-             '">' +
-        '<h3>' + self.esc(group.heading) + '</h3>' + self.note(group.intro) +
-        '<table><tr><th>Attribute</th><th>Overrides</th><th>Value</th>' +
-        '<th>What it is</th></tr>' +
-        mine.map(function (row) {
-          return self.samlOverrideFieldRow(row, draft);
-        }).join('') +
-        '</table></div>';
-    }).join('');
-
-    // A SETTING THAT MATCHED NO SECTION IS DRAWN ANYWAY, unconditionally, and
-    // that is the safe direction rather than a loose end: the alternative is a
-    // per-application setting that exists, is resolved by some protocol module,
-    // and has no box on the one form meant to offer every one of them. It is
-    // also visible, which is how somebody notices a row is missing from
-    // OVERRIDE_SECTIONS.
-    const leftovers =
-        rows.filter(function (one) { return !placed[one.attribute]; });
-    const extra = leftovers.length
-      ? '<h3>Other per-application settings</h3>' +
-        this.warn('These ' + leftovers.length + ' override a setting whose ' +
-        'family this page does not know, so they are shown always rather ' +
-        'than with a protocol. Add a row to <code>OVERRIDE_SECTIONS</code> ' +
-        'in <code>admin-ui/admin.ts</code> naming the families they belong ' +
-        'to.') +
-        '<table><tr><th>Attribute</th><th>Overrides</th><th>Value</th>' +
-        '<th>What it is</th></tr>' +
-        leftovers.map(function (row) {
-          return self.samlOverrideFieldRow(row, draft);
-        }).join('') +
-        '</table>'
-      : '';
-
-    log.debug("Leaving AdminConsole.samlOverrideFieldsSection(). " +
-              rows.length + " field(s), " +
-              leftovers.length + " unplaced.");
-    return '<h2>What each protocol issues for this application</h2>' +
-      this.note('These are OPTIONAL and every one of them means ' +
-      '<em>inherit</em> when left alone. Each overrides one service-wide ' +
-      'setting for this application only — the box says which, and its ' +
-      'placeholder says what would be used instead. The defaults live on <a ' +
-      'href="/admin/token-lifetimes">Token lifetimes</a> and <a ' +
-      'href="/admin/saml-assertions">SAML assertions</a>, and changing one ' +
-      'there moves every application that has not been given an answer of ' +
-      'its own.') +
-      this.note('<strong>They apply whether or not the protocol is ticked ' +
-      'above &mdash; with one exception, named below.</strong> A declaration ' +
-      'grants and refuses nothing here &mdash; an application declared for ' +
-      'nothing at all still gets a token if it asks for one &mdash; so these ' +
-      'are read whenever this service issues to this application. Ticking a ' +
-      'family only decides what this page SHOWS you. What ticking SAML 2.0 ' +
-      'or SAML 1.1 does do is give the entry a <code>samlEntityId</code> if ' +
-      'you leave that blank, so its metadata is publishable immediately.') +
-      this.note('<strong>The exception is ' +
-      '<code>oauthTokenExchangeRefreshToken</code>, and it is REFUSED rather ' +
-      'than inert on an entry declared for neither OAuth 2.0 nor OpenID ' +
-      'Connect.</strong> Every other field here is a default something reads ' +
-      'if it ever gets the chance, so writing one onto an application that ' +
-      'never reaches that protocol costs nothing and says nothing false. ' +
-      'That one decides what the <em>token endpoint</em> does for one ' +
-      '<code>client_id</code> &mdash; so on an entry no token request could ' +
-      'ever name, it would sit there reading like a policy that was in ' +
-      'force. Tick OAuth 2.0 or OpenID Connect and it is accepted. An ' +
-      '<code>ldapmodify</code> reaches the attribute either way, as it ' +
-      'reaches every attribute here.') +
-      sections + extra + this.samlKeySourceSection(draft);
-  }
-
-  // The tables, one per ROLE (`identifier`, `redirect`, `logout`, `secret`,
-  // `delivery`, `events`), split by what the attribute IS rather than drawn as
-  // one list. A reader filling this in is answering different questions — "what
-  // is this application called", "where does a response go back to" — and each
-  // of the later ones exists only for the families that have one. `omit` names
-  // attributes another part of the page already draws a box for — the RFC 9728
-  // pane draws `oauthClientId` — because two fields with one name in one form
-  // post the name twice and `parseBody()` keeps whichever came LAST, which
-  // would be the empty box below the one the reader filled in.
-  /**
-   * Draws the declared attributes of one role as a table, shown while any
-   * of its families is ticked.
-   *
-   * @param role - the role to draw (`identifier`, `redirect`, and so on)
-   * @param heading - the section's heading, as HTML
-   * @param intro - the section's introduction, as HTML
-   * @param omit - optional; attributes another part of the form draws
-   * @param draft - optional; the posted form, to redraw its values
-   * @returns the section as HTML, or an empty string when it has no rows
-   */
-  declarationFieldsSection(role, heading, intro, omit?, draft?) {
-    const { log, applications } = this.deps;
-    const self = this;
-    log.debug("Entering AdminConsole.declarationFieldsSection(). role=" + role);
-    const skip = omit || [];
-    const rows = applications.declarationAttributes().filter(function (one) {
-      return one.role === role && skip.indexOf(one.attribute) < 0;
-    });
-    if (!rows.length) {
-      // Not reachable with the table as it stands, and drawn as nothing rather
-      // than as an empty table if a family is ever the last of its kind to be
-      // removed. An empty <table> with a header row reads as data having gone
-      // missing.
-      log.debug("Leaving AdminConsole.declarationFieldsSection(). Nothing to " +
-                "offer.");
-      return '';
-    }
-    // THE SECTION carries the UNION of its rows' families, so that a table
-    // whose every row is hidden does not leave a heading and a bare header row
-    // behind — which reads as data having gone missing rather than as nothing
-    // applying.
-    const families = [];
-    rows.forEach(function (one) {
-      one.families.forEach(function (family) {
-        if (families.indexOf(family.id) < 0) families.push(family.id);
-      });
-    });
-    log.debug("Leaving AdminConsole.declarationFieldsSection(). " +
-              rows.length +
-              " field(s).");
-    return '<div class="' + this.esc(this.familyClasses(families)) + '">' +
-      '<h2>' + heading + '</h2>' + intro +
-      '<table><tr><th>Attribute</th><th>Families it serves</th><th>Value</th>' +
-      '<th>What it is</th></tr>' +
-      rows.map(function (row) {
-        return self.declarationFieldRow(row, draft);
-      }).join('') +
-      '</table></div>';
-  }
 
   // The form that gives the document. The checkbox shows the three sources; it
   // has no name, so it is never posted, and it is ticked whenever a document is
@@ -20644,6 +20610,10 @@ class AdminConsole {
     // round trips — a refused create, or Generate Secret — so that no box
     // comes back empty. Absent on a plain GET.
     const draft = given.draft || null;
+    // WHICH FIELDS: the simplified view by default, the advanced one when the
+    // switch, a redraw or `?view=advanced` says so.
+    const view = (given.view || (req.query && req.query.view)) === 'advanced'
+      ? 'advanced' : 'simple';
     const drafted = function (name) {
       const value = draft ? draft[name] : undefined;
       return value == null ? '' : String(value);
@@ -20748,10 +20718,12 @@ class AdminConsole {
 
       this.resourceMetadataLoadSection(given) +
 
-      '<form method="post" action="' +
-      (loaded ? '/admin/applications/new' : '/admin/applications') +
-      '" class="newapp">' +
+      // EVERY POST OF THIS FORM COMES BACK HERE (2026-09-30), so a refused
+      // create redraws this page with every box kept rather than 303ing to the
+      // list with a message; the create itself is the same action.
+      '<form method="post" action="/admin/applications/new" class="newapp">' +
       '<input type="hidden" name="action" value="create">' +
+      '<input type="hidden" name="view" value="' + this.esc(view) + '">' +
       // THE DEFAULT BUTTON. Enter in a text box submits with the FIRST submit
       // button in the form, and since 2026-09-18 that would otherwise be
       // Generate Secret, halfway down — so a person who pressed Enter in the
@@ -20782,49 +20754,42 @@ class AdminConsole {
       }).join('') +
       '</table>' +
 
-      // THE CORS ORIGINS, ABOVE THE LINE (2026-09-18). Every section below
-      // the hint depends on which families are ticked; this one does not —
-      // its row belongs to every family, so it carries no `pf` class and is
-      // always shown — and putting it below the hint would make the hint's
-      // first sentence false.
-      this.declarationFieldsSection('cors',
-                                    'Which web origins may call it (CORS)',
-                                    NEW_APPLICATION_CORS_INTRO, [], draft) +
-
+      // THE FIELD GRID (2026-09-30): the simplified view is the fields this
+      // page has always offered — the declarations, the per-application
+      // setting overrides and where SAML 2.0 encryption gets its key — and
+      // the advanced view is every field an application has. Both are one
+      // grid, typed, shown for the families ticked; the switch is a submit
+      // button, so whatever has been typed is carried into the other view.
+      '<h2>' + (view === 'advanced' ? 'Every field' : 'Its fields') +
+      '</h2>' +
+      '<div class="formrow fg-view"><span class="sub">' +
+      (view === 'advanced'
+        ? 'Advanced view: every field an application has, for the families ' +
+          'ticked.'
+        : 'Simplified view: the fields most applications need.') +
+      '</span><button type="submit" class="secondary" name="switchview" ' +
+      'value="' + (view === 'advanced' ? 'simple' : 'advanced') +
+      '" formaction="/admin/applications/new" formnovalidate>' +
+      (view === 'advanced' ? 'Show the simplified view'
+        : 'Show every field (advanced view)') + '</button></div>' +
       // THE PROMPT THAT STANDS IN FOR THE HIDDEN FIELDS. It is inside the form
       // so the `:has()` rule that hides it can reach it, and it is always in
       // the markup: a browser without `:has()` shows it beside every field,
       // where it reads as a description of the page rather than as a broken
       // instruction.
-      '<div class="pf-hint">Everything below this line depends on which ' +
-      'families you tick above &mdash; a field appears when the protocol it ' +
-      'belongs to is selected, so an OAuth client is not asked for a SAML ' +
-      'entityID. Tick a family to see its fields. <strong>If you can see the ' +
-      'fields already</strong>, this browser does not support the ' +
-      '<code>:has()</code> selector and the form is showing everything, ' +
-      'which is the same form it was before this page could hide anything ' +
+      '<div class="pf-hint">Most fields depend on which families you tick ' +
+      'above &mdash; a field appears when the protocol it belongs to is ' +
+      'selected, so an OAuth client is not asked for a SAML entityID. Tick a ' +
+      'family to see its fields. <strong>If you can see them all ' +
+      'already</strong>, this browser does not support the ' +
+      '<code>:has()</code> selector and the form is showing everything ' +
       '&mdash; nothing you type is affected either way, because the server ' +
       'reads what was posted and not what was visible.</div>' +
-
-      this.declarationFieldsSection('identifier',
-                                    'What each protocol will call it',
-                                    NEW_APPLICATION_IDENTIFIERS_INTRO,
-                                    loaded ? RESOURCE_METADATA_OWNED : [],
-                                    draft) +
-      this.declarationFieldsSection('redirect', 'Where responses go back to',
-                                    NEW_APPLICATION_REDIRECTS_INTRO, [],
-                                    draft) +
-      this.declarationFieldsSection('logout', 'Where a sign-out goes',
-                                    NEW_APPLICATION_LOGOUT_INTRO, [], draft) +
-      this.declarationFieldsSection('secret', 'The client secret',
-                                    NEW_APPLICATION_SECRET_INTRO, [], draft) +
-      this.declarationFieldsSection('delivery', 'Where events are pushed',
-                                    NEW_APPLICATION_DELIVERY_INTRO, [],
-                                    draft) +
-      this.declarationFieldsSection('events', 'Which Shared Signals events ' +
-                                              'it may receive',
-                                    NEW_APPLICATION_EVENTS_INTRO, [], draft) +
-      this.samlOverrideFieldsSection(draft) +
+      this.fieldGrid(this.newApplicationFields(view,
+                       loaded ? RESOURCE_METADATA_OWNED : []),
+                     draft ? this.gridValuesFromDraft(draft) : {},
+                     { redraw: '/admin/applications/new',
+                       generateSecret: '/admin/applications/new' }) +
 
       '<div class="formrow"><button type="submit">Create the ' +
       'application</button>' +
@@ -37502,6 +37467,21 @@ class AdminConsole {
 
       const protocols = self.listField(req, body, 'protocol').concat(
           self.listField(req, body, 'protocols'));
+      // The RFC 9728 document a redraw reads again for the pane, or null.
+      const reloadedMetadata = function () {
+        log.debug("Entering reloadedMetadata().");
+        if (!body.metadata) {
+          log.debug("Leaving reloadedMetadata(). None loaded.");
+          return null;
+        }
+        const again = resourceMetadata.analyse(String(body.metadata), {
+          source: String(body.metadataSource || 'pasted'),
+          url: String(body['field.oauthResourceMetadataUrl'] || ''),
+          filename: String(body.metadataFilename || '')
+        }, context);
+        log.debug("Leaving reloadedMetadata().");
+        return again.ok ? again : null;
+      };
       // GENERATE SECRET (2026-09-18): the whole create form, posted here by
       // the button's `formaction`, drawn again with a new secret in
       // `oauthClientSecret` and every other box as it was. The secret comes
@@ -37509,22 +37489,31 @@ class AdminConsole {
       // nothing is written. With an RFC 9728 document loaded, the pane is
       // read again from the ORIGINAL document, as a refused create's is. A
       // JSON caller falls through and gets the action's reply.
+      // THE FIELD GRID'S ROUND TRIPS (2026-09-30): "+", a delete and the
+      // view switch each post the whole form here, and the page is drawn
+      // again with that change and every other box as it was. Nothing is
+      // written. With an RFC 9728 document loaded, the pane is read again
+      // from the ORIGINAL document, as Generate Secret's is.
+      if (!wantsJson && (body.grow !== undefined || body.drop !== undefined ||
+                         body.switchview !== undefined)) {
+        self.newApplicationRedraw(req, res, {
+          loaded: reloadedMetadata(), draft: body, protocols: protocols,
+          view: String(body.switchview || body.view || ''),
+          tab: body.metadata ? 'fields' : undefined
+        });
+        log.debug("Leaving the admin new-application action endpoint. A " +
+                  "field grid round trip.");
+        return;
+      }
       if (action === 'generate-secret' && !wantsJson) {
         const minted = applicationsAction(body, protocols, context);
         const draft = Object.assign({}, body, {
           'field.oauthClientSecret': minted.clientSecret
         });
-        let loaded = null;
-        if (body.metadata) {
-          const again = resourceMetadata.analyse(String(body.metadata), {
-            source: String(body.metadataSource || 'pasted'),
-            url: String(body['field.oauthResourceMetadataUrl'] || ''),
-            filename: String(body.metadataFilename || '')
-          }, context);
-          loaded = again.ok ? again : null;
-        }
+        const loaded = reloadedMetadata();
         self.newApplicationRedraw(req, res, {
           loaded: loaded, draft: draft, protocols: protocols,
+          view: String(body.view || ''),
           tab: loaded ? 'fields' : undefined,
           notice: 'A client secret was generated and is in the ' +
                   'oauthClientSecret box below. Nothing has been written: ' +
@@ -37569,6 +37558,17 @@ class AdminConsole {
             return;
           }
         }
+        if (action === 'create' && !outcome.ok && !wantsJson) {
+          // A REFUSED CREATE COMES BACK TO THIS PAGE with every box as it
+          // was (2026-09-30), rather than to the list with a message.
+          self.newApplicationRedraw(req, res, {
+            draft: body, protocols: protocols, view: String(body.view || ''),
+            error: outcome.errors,
+            errorTitle: 'The application was not created.'
+          }, errorCodes.codeOf(outcome) || 'STS-ADMIN-0645');
+          log.debug("Leaving answer(). Redrawn after a refusal.");
+          return;
+        }
         self.respondToApplicationAction(req, res, body, outcome);
         log.debug("Leaving answer().");
       };
@@ -37580,6 +37580,63 @@ class AdminConsole {
       }
       answer(result);
       log.debug("Leaving the admin new-application action endpoint.");
+    });
+
+    // POST /admin/applications/edit — THE APPLICATION PAGE'S FIELD GRID
+    // (2026-09-30). "+" and a delete redraw the page with one box more or
+    // fewer and write nothing; Save is `update-fields`, the same action
+    // `POST /admin-api/applications/update-fields` calls, and lands on the
+    // page's grid with a message, or — refused — redraws the page with every
+    // box as the reader left it. A JSON caller gets the action's reply.
+    app.post('/admin/applications/edit', function (req, res) {
+      log.debug("Entering the admin application edit endpoint.");
+      const body = parseBody(req);
+      const wantsJson = /json/i.test(String(req.headers['content-type'] || ''));
+      const identifier = String(body.application || '').trim();
+      const protocols = self.listField(req, body, 'protocol').concat(
+          self.listField(req, body, 'protocols'));
+      const redraw = function (state, code?) {
+        log.debug("Entering redraw().");
+        if (code) {
+          errorCodes.mark(res, code);
+        }
+        const detail = self.applicationDetailPage(req, identifier, state);
+        if (detail.missing) {
+          errorCodes.mark(res, 'STS-ADMIN-0021');
+        }
+        self.respond(req, res, detail.json, 'Application ' + identifier,
+                     '/admin/applications', detail.inner,
+                     self.upTo('/admin/applications', identifier,
+                               self.listViewFromBack('/admin/applications',
+                                                     body.back)));
+        log.debug("Leaving redraw().");
+      };
+      if (!wantsJson && (body.grow !== undefined || body.drop !== undefined)) {
+        redraw({ draft: body });
+        log.debug("Leaving the admin application edit endpoint. A field " +
+                  "grid round trip.");
+        return;
+      }
+      const result = applicationsAction(Object.assign({}, body,
+        { action: 'update-fields' }), protocols, {
+        authorizationServers: resourceMetadata.authorizationServersOf(req),
+        base: baseUrlOf(req)
+      });
+      if (wantsJson) {
+        self.respondToAction(req, res, '/admin/applications', result);
+        log.debug("Leaving the admin application edit endpoint. JSON.");
+        return;
+      }
+      if (!result.ok) {
+        redraw({ draft: body, error: result.errors },
+               errorCodes.codeOf(result) || 'STS-ADMIN-0836');
+        log.debug("Leaving the admin application edit endpoint. Refused.");
+        return;
+      }
+      self.respondToAction(req, res,
+                           self.applicationReturnTo(body, identifier,
+                                                    '#fields'), result);
+      log.debug("Leaving the admin application edit endpoint. Saved.");
     });
 
     app.get('/admin/authorization-servers', function (req, res) {
@@ -45060,52 +45117,6 @@ const KEY_SOURCE_SENTENCES = {
             'here &mdash; written by hand, or by a build older than the ' +
             'provenance attribute.'
 };
-
-// WHICH FAMILIES EACH OVERRIDABLE SETTING BELONGS TO, so the section can be
-// grouped and made conditional. Keyed by the setting's PREFIX, which is the one
-// thing a setting key reliably carries — and the group claim is the case that
-// makes this a table rather than a split on the dot: `groups.*` reaches an
-// access token, an ID Token and both SAML assertions, so it belongs to five
-// families at once and appears whenever any of them is ticked.
-const OVERRIDE_SECTIONS = [
-  { prefix: 'oauth2.', heading: 'What OAuth 2.0 / OIDC issues for this client',
-    families: ['oauth2', 'oidc'],
-    intro: 'The three token lifetimes, the refresh idle timeout, whether ' +
-           'signing out revokes this client\'s refresh tokens, and whether ' +
-           'an RFC 8693 token exchange it performs comes back with a refresh ' +
-           'token. The idle timeout and the sign-out revocation are read ' +
-           'only in RFC 9700 mode. The last is the ONE field on this whole ' +
-           'form that is refused rather than merely inert when the family ' +
-           'above is not ticked &mdash; it decides what the token endpoint ' +
-           'does for a client_id, so an entry no token request can name ' +
-           'would carry it looking like a policy in force.' },
-  { prefix: 'saml2.', heading: 'What SAML 2.0 issues for this service provider',
-    families: ['saml2'],
-    intro: 'The assertion lifetime, the two signature switches, the default ' +
-           'NameID format and the artifact lifetime.' },
-  { prefix: 'saml11.', heading: 'What SAML 1.1 issues for this relying party',
-    families: ['saml11'],
-    intro: 'The same five for the older profiles. They are separate settings ' +
-           'because 1.1 and 2.0 are separate implementations here, so an ' +
-           'application declared for both carries two answers.' },
-  { prefix: 'wsfed.', heading: 'What WS-Federation issues for this relying ' +
-                               'party',
-    families: ['wsfed'],
-    intro: 'One setting: how long the SAML 1.1 assertion inside a sign-in ' +
-           'response lasts. It also sets the wsu:Lifetime of the ' +
-           'RequestSecurityTokenResponse around it, so the envelope and the ' +
-           'assertion cannot disagree.' },
-  { prefix: 'groups.', heading: 'The groups claim for this application',
-    families: ['oauth2', 'oidc', 'saml2', 'saml11', 'wsfed'],
-    intro: 'THE ONE GROUP HERE THAT IS NOT A PROTOCOL\'S. These four reach ' +
-           'an access token, an ID Token, a SAML 2.0 assertion and a SAML ' +
-           '1.1 one at once, so an application declared for two protocols ' +
-           'gets the same claim name in both — which is what a claim mapping ' +
-           'should do. The name is the one that differs in practice: ' +
-           '<code>groups</code>, <code>roles</code> and ' +
-           '<code>memberOf</code> are all ordinary.' }
-];
-
 // THE THREE ATTRIBUTES THAT SAY WHERE A SERVICE PROVIDER'S KEY COMES FROM.
 //
 // They are not setting overrides — nothing in config.js corresponds to them —
@@ -45114,7 +45125,7 @@ const OVERRIDE_SECTIONS = [
 // family.
 //
 // `samlSpMetadata` is a TEXTAREA and the other two are inputs, which is the
-// same shape rule declarationFieldRow() follows: a document is not something
+// same shape rule the field grid follows: a document is not something
 // anybody types on one line, and offering a single-line box for one invites a
 // paste that loses its newlines.
 const SAML_KEY_SOURCE_FIELDS = [
@@ -45135,226 +45146,6 @@ const SAML_KEY_SOURCE_FIELDS = [
           'is the way to configure an air-gapped service provider, or one ' +
           'behind a proxy this service cannot dial.' }
 ];
-
-// ---------------------------------------------------------------------------
-// WHERE A SIGN-OUT GOES. Four families have one and the rest do not, and the
-// absences are the interesting half — each is a fact about the protocol rather
-// than a gap in this form.
-// ---------------------------------------------------------------------------
-let NEW_APPLICATION_LOGOUT_INTRO: string;
-WIRE_STEPS.push(function (instance: AdminConsole): void {
-  NEW_APPLICATION_LOGOUT_INTRO =
-    instance.note('Where this application is sent, or pinged, when a ' +
-    'session it was part of ends. <strong>Every one of these takes MORE THAN ' +
-    'ONE address, one per line</strong> — a service provider commonly has a ' +
-    'different endpoint per binding, and an OAuth client registering several ' +
-    'environments has a post-logout URI for each.') +
-    instance.note('<strong>ONLY FOUR FAMILIES HAVE ONE, AND THE ' +
-    'ABSENCES ARE NOT AN OVERSIGHT.</strong> SAML 1.1 is the one people look ' +
-    'for: it has NO Single Logout at all &mdash; that arrived with SAML 2.0 ' +
-    '&mdash; so a field here would be a box whose value nothing could ever ' +
-    'read. WS-Trust issues a token and holds no session to end; Kerberos ' +
-    'hands out a ticket this service cannot recall; and federation ' +
-    'deliberately does not consume a partner\'s sign-out. The rule this form ' +
-    'follows is the one the identifiers follow: a field is offered where an ' +
-    'attribute exists to ' +
-    'hold it, and nowhere else.') +
-    instance.warn('<strong>These are DECLARED and, today, mostly not ' +
-    'yet READ.</strong> <code>samlSingleLogoutService</code> is the ' +
-    'exception and always has been &mdash; SAML 2.0 Single Logout really ' +
-    'does send a LogoutRequest there. The OAuth post-logout URIs are matched ' +
-    'by RP-Initiated Logout when a client supplies one, and ' +
-    '<code>wsfedSignOutUri</code> is NEW and is not read by the sign-out ' +
-    'yet: a <code>wsignoutcleanup1.0</code> ping goes to the ' +
-    '<code>wreply</code> this service OBSERVED during sign-in, which is a ' +
-    'different fact from the one an operator declares here. Storing it is ' +
-    'this change; changing where a cleanup goes is a change to what the ' +
-    'protocol does, and is deliberately ' +
-    'separate.');
-});
-
-// ---------------------------------------------------------------------------
-// WHERE A RECEIVER EXPECTS ITS EVENTS PUSHED. The `delivery` role of
-// `applications.declarationAttributes()`, which `createApplication()` and
-// `GET /admin-api/applications/new` both accepted while this form drew no field
-// for it until 2026-09-12 — the one role of six the form had no section for.
-// `tests/application_form_roles.js` is what stops a seventh going the same way.
-// ---------------------------------------------------------------------------
-let NEW_APPLICATION_DELIVERY_INTRO: string;
-WIRE_STEPS.push(function (instance: AdminConsole): void {
-  NEW_APPLICATION_DELIVERY_INTRO =
-    instance.note('Where this Shared Signals receiver expects its ' +
-    'Security Event Tokens POSTed &mdash; an RFC 8935 push endpoint, one per ' +
-    'line if it runs one per environment.') +
-    instance.warn('<strong>This is a DECLARATION and nothing dials ' +
-    'it.</strong> A push goes to the <code>endpoint_url</code> on the ' +
-    'STREAM, which the receiver names when it creates one at ' +
-    '<code>/ssf/stream</code>; this service will not take a URL to open a ' +
-    'connection to from an application entry. What this field is for is ' +
-    'writing down what the ' +
-    'receiver is EXPECTED to use, beside everything else the application is.');
-});
-
-// ---------------------------------------------------------------------------
-// WHICH SHARED SIGNALS EVENTS A RECEIVER MAY BE SENT (2026-09-12). One field,
-// one family, and unlike the fields above it is ENFORCED.
-// ---------------------------------------------------------------------------
-let NEW_APPLICATION_EVENTS_INTRO: string;
-WIRE_STEPS.push(function (instance: AdminConsole): void {
-  NEW_APPLICATION_EVENTS_INTRO =
-    instance.note('Shared Signals has no separate CAEP or RISC checkbox ' +
-    'because both are sent over it: <strong>CAEP</strong> is what happens to ' +
-    'a SESSION, <strong>RISC</strong> what happens to an ACCOUNT. A receiver ' +
-    'chooses event types itself, in the <code>events_requested</code> of the ' +
-    'stream it creates at <code>/ssf/stream</code>. This field is where an ' +
-    'operator LIMITS that choice for one application.') +
-    instance.warn('<strong>Leave it empty and nothing is ' +
-    'limited.</strong> Otherwise write one value per line: ' +
-    '<code>caep</code>, <code>risc</code>, or an event type URI. A stream ' +
-    'this application owns is agreed only those types, and every delivery ' +
-    'checks again, so removing a value later stops existing streams ' +
-    'receiving it. SSF\'s own ' +
-    'verification and stream-updated events are always allowed.');
-});
-
-// ---------------------------------------------------------------------------
-// THE CLIENT SECRET. The `secret` role — `oauthClientSecret` for the two OAuth
-// families and, since GNAP arrived, `gnapSymmetricKey` too, though the intro
-// below still speaks of OAuth only — and a warning that is the whole point of
-// it.
-// ---------------------------------------------------------------------------
-let NEW_APPLICATION_SECRET_INTRO: string;
-WIRE_STEPS.push(function (instance: AdminConsole): void {
-  NEW_APPLICATION_SECRET_INTRO =
-    instance.note('The <code>client_secret</code> for the two OAuth ' +
-    'families. Leave it empty and the entry simply has none, which is what a ' +
-    'public client is; a client registering through <code>POST ' +
-    '/oauth2/register</code> is minted one instead. <em>Generate ' +
-    'Secret</em> mints one the same way and puts it in the box, keeping ' +
-    'everything else on this page as you left it; with a secret, the create ' +
-    'records <code>client_secret_basic</code>, and the token endpoint takes ' +
-    'the secret by an <code>Authorization: Basic</code> header or a ' +
-    '<code>client_secret</code> form parameter alike.') +
-    instance.warn('<strong>IT IS STORED IN THE CLEAR, IN A DIRECTORY ' +
-    'WHERE EVERY BIND SUCCEEDS.</strong> That is deliberate and it is the ' +
-    'same decision <code>GET /krb5/principals</code> makes about the ' +
-    'Kerberos passwords: a debugger whose accounts are unusable without ' +
-    'reading the source is worse than one that says what they are. Anybody ' +
-    'who can reach port 389 can read this value. It is never written to the ' +
-    'audit log, which is the one place it is kept back.\n\nNothing checks it ' +
-    'today outside RFC 9700 mode. A mode that enforces client authentication ' +
-    'everywhere is the intended next step, and this field is what it will ' +
-    'check against &mdash; so a secret typed here is worth setting now even ' +
-    'though it is not yet a ' +
-    'credential this service refuses anybody for.');
-});
-
-let NEW_APPLICATION_IDENTIFIERS_INTRO: string;
-WIRE_STEPS.push(function (instance: AdminConsole): void {
-  NEW_APPLICATION_IDENTIFIERS_INTRO =
-    instance.note('The name this application answers to in each family ' +
-    'it speaks. They are all optional and all independent of the ' +
-    '<em>Identifier</em> above &mdash; that one is the KEY this registry ' +
-    'files the entry under, and these are what the protocols will present. ' +
-    'For an ordinary OAuth client the two are the same string, which is what ' +
-    'a protocol sighting writes anyway; they differ when one application ' +
-    'answers to a client_id in one environment and another in the next, or ' +
-    'when it is a SAML service provider whose entityID is a URN and whose ' +
-    'entry you would ' +
-    'rather file under a readable name.') +
-    instance.note('<strong>Several families share a field where the ' +
-    'specifications share the identifier.</strong> An OpenID Connect relying ' +
-    'party IS an OAuth client and an OpenID4VCI wallet authenticates as one, ' +
-    'so all three declare their name in <code>oauthClientId</code>; both ' +
-    'SAML profiles name the same party, so both use ' +
-    '<code>samlEntityId</code>. Two boxes writing one attribute would be a ' +
-    'form that silently kept whichever ' +
-    'was filled in second.') +
-    instance.note('<strong>Four of these are declaration and only ever ' +
-    'declaration.</strong> Nothing in this service writes ' +
-    '<code>federationPartnerId</code>, <code>ldapBindDn</code>, ' +
-    '<code>scimClientId</code> or <code>spiffeWorkloadId</code>, because ' +
-    'those surfaces either authenticate the CALLER rather than an ' +
-    'application, or file the identity in a container of their own. The ' +
-    'value is a note about what this application is, in the one place the ' +
-    'rest of what it is already lives &mdash; and, like every other field ' +
-    'here, it grants nothing: a federation partner declared here federates ' +
-    'with nobody until a ' +
-    'relationship under <code>ou=federations</code> says so.');
-});
-
-// THE CORS SECTION'S INTRO (2026-09-18). Its first sentence is the one the
-// section exists to say, and it is unfolded on purpose: `note()` folds prose
-// longer than a line under its opening sentence, so whatever comes first is
-// what a reader sees without opening anything.
-let NEW_APPLICATION_CORS_INTRO: string;
-WIRE_STEPS.push(function (instance: AdminConsole): void {
-  NEW_APPLICATION_CORS_INTRO =
-    '<p><strong>These origins configure CORS on every published protocol ' +
-    'endpoint of this service</strong> &mdash; OAuth 2.0 and OpenID Connect, ' +
-    'SAML, WS-Federation, OpenID4VCI and OpenID4VP, DID, SCIM, GNAP, the ' +
-    'certificate enrollment protocols and the management API alike. A ' +
-    'browser page on one of them may read this service\'s answers; a page ' +
-    'on any other origin may not.</p>' +
-    instance.note('<strong>Which list is asked depends on the request, not ' +
-    'on the family.</strong> A request that names this application as its ' +
-    'client &mdash; a <code>client_id</code>, a Basic credential, a client ' +
-    'assertion, or an access token issued to it &mdash; is answered with ' +
-    '<code>Access-Control-Allow-Origin</code> only for an origin listed ' +
-    'HERE. A request that names no client at all &mdash; discovery, a ' +
-    'JWKS, a DID document, every CORS preflight &mdash; is answered for an ' +
-    'origin listed on ANY application in this realm. That is why this field ' +
-    'is shown whatever families are ticked below: it is not a property of ' +
-    'one protocol.') +
-    instance.note('<strong>One exact origin per line</strong> &mdash; ' +
-    '<code>https://app.example.com</code>, or with a port, ' +
-    '<code>https://app.example.com:8443</code> &mdash; with no path and no ' +
-    'wildcard. Each is stored normalised: scheme and host lower-cased and a ' +
-    'default port dropped, so two spellings of one origin are one value. A ' +
-    'value that is not an origin refuses the whole create ' +
-    '(<code>STS-REG-0150</code>) rather than being written beside the ' +
-    'others.') +
-    instance.note('<strong>Empty allows no third-party origin, in both ' +
-    'modes.</strong> This service\'s own origins &mdash; its listeners, ' +
-    '<code>global.publicBaseUrl</code>, the embedded debugger and ' +
-    '<code>global.corsOrigins</code> &mdash; never need listing. After the ' +
-    'application exists, its page lists these origins one per row, with a ' +
-    'Remove button on each and a box to add another.');
-});
-
-let NEW_APPLICATION_REDIRECTS_INTRO: string;
-WIRE_STEPS.push(function (instance: AdminConsole): void {
-  NEW_APPLICATION_REDIRECTS_INTRO =
-    instance.note('Where a response goes back to. Only three families ' +
-    'send one through a browser, which is why there are three of these and ' +
-    'fourteen identifiers above.') +
-    instance.note('<strong>Only the OAuth list is ever CHECKED, and ' +
-    'only in RFC 9700 mode.</strong> <code>oauthRedirectUri</code> is what ' +
-    'section 2.1\'s exact string comparison reads &mdash; give an ' +
-    'application its redirect URIs here and the next authorization request ' +
-    'is judged against them rather than against the ' +
-    '<code>oauth2.redirectUris</code> setting, which is most of the reason ' +
-    'to create an entry before the application connects. ' +
-    '<code>samlAssertionConsumerService</code> and ' +
-    '<code>wsfedReplyUrl</code> are checked in PRODUCT mode only: in ' +
-    'development a SAML response goes wherever the AuthnRequest asked and a ' +
-    '<code>wsignin1.0</code> response goes to whatever <code>wreply</code> ' +
-    'named, because a mock that refused would remove a test case rather than ' +
-    'add one &mdash; unless the SAML service provider\'s metadata has been ' +
-    'consumed, when a request is answered only at an endpoint it ' +
-    'registered, in every mode. The SAML one is READ for something else ' +
-    '&mdash; it is the ' +
-    'fallback used when a Single Logout has nowhere else to go, which is why ' +
-    'WS-Federation\'s <code>wreply</code> stopped being written into it on ' +
-    '2026-08-25 and has a ' +
-    'field of its own.') +
-    instance.note('<strong>What a client has actually USED is a ' +
-    'different attribute and is not here.</strong> ' +
-    '<code>appRedirectUriObserved</code> records a redirect_uri seen on a ' +
-    'request this service answered, it is not editable anywhere in this ' +
-    'console, and RFC 9700 section 2.1 is entirely about not confusing the ' +
-    'two.');
-});
 
 let NEW_APPLICATION_NOTES: string;
 WIRE_STEPS.push(function (instance: AdminConsole): void {
