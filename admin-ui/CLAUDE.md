@@ -6898,3 +6898,38 @@ The overrides themselves are edited in the field grid's Shared Signals group.
 `applicationReturnTo()` to `#signals`. So `changeStatus()` still announces the
 change to the receiver first, and `POST /admin-api/ssf/status` is still the
 one mirror. `ssf/CLAUDE.md` argues which settings are exposed.
+
+## A PRESSED BUTTON COMES BACK TO WHERE IT WAS (2026-10-01)
+
+rcbj: every button on the application page did what it should and then
+sent the reader to the top of the page, and the same was true across the
+console. Every form here answers with a new page, either a 303 or a redraw,
+and with no script there is no scroll position to restore. **What there is,
+is the fragment.**
+
+* **`withReturnAnchors()`, run by `withCsrf()` on every finished page**, gives
+  each h2 to h4 an id (`sec-<slug>`, deduplicated; an existing id is kept). It
+  then appends the id of the nearest heading above each form to that form's
+  root-relative `action` and to each `formaction` inside it. A redraw lands
+  there because the fragment is in the URL that was posted to. A 303 lands
+  there because a Location with no fragment inherits the request's (RFC 9110
+  section 10.2.2).
+* **What it leaves alone, and why**:
+  * a form or redirect that already names a fragment, so
+    `applicationReturnTo(..., '#signals')` and the tokens page keep theirs;
+  * an absolute or empty action, which leaves the page or resolves against
+    a URL this function cannot see;
+  * any form above the first section heading (the sidebar, the account
+    menu), which is the top of the page already.
+* **The field grid goes one level finer**: each cell is `id="fgc-<attribute>"`,
+  and its `+` and bin buttons name it, so a list grows or shrinks under the
+  pointer.
+* **THE MESSAGE STAYS ON SCREEN.** `messagesOf()` and the two field-grid
+  refusal blocks are drawn through `flash()`, a strip that is
+  `position: sticky` at the top of the window, because a notice drawn at the
+  top of the card would be off screen once the page lands mid-way.
+  `scroll-margin-top` on anchored headings and cells keeps them below it.
+
+**What it cannot do**: a section whose heading text changes with the action
+(a count in it) gets a new id and the page opens at its top, as before. A
+link is not a form, so a pager link still opens a page at its top.

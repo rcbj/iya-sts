@@ -4960,6 +4960,14 @@ class AdminConsole {
       '14px}.err{background:#fdecea;border:1px solid ' +
       '#f5c6c2;color:#b00020;padding:8px ' +
       '11px;border-radius:5px;font-size:.85em;margin:0 0 14px}' +
+      // THE MESSAGE A PRESSED BUTTON CAME BACK WITH STAYS ON SCREEN
+      // (2026-10-01). A form's answer lands at the section the button was in
+      // (withReturnAnchors()), so a notice drawn at the top of the card would
+      // be off screen; it sticks to the top of the window instead. The
+      // sections a page is anchored at leave room under it.
+      '.flash{position:sticky;top:0;z-index:30;padding-top:6px;' +
+      'background:#fff}.flash>*:last-child{margin-bottom:10px}' +
+      'h2[id],h3[id],h4[id],.fg-cell[id]{scroll-margin-top:5rem}' +
       // A VALUE THAT EXISTS ONCE. It is drawn big, monospaced and wrapping —
       // `word-break:break-all` rather than a scroll box — because the two
       // things that land in it are a base64url password and an activation URL,
@@ -5649,6 +5657,7 @@ class AdminConsole {
     log.debug("Entering AdminConsole.withCsrf().");
     const session = consoleRpSession(req);
     const field = session ? websecurity.field(session.session.id) : '';
+    html = this.withReturnAnchors(html);
     if (!field) {
       log.debug("Leaving AdminConsole.withCsrf().");
       return html;
@@ -5656,6 +5665,86 @@ class AdminConsole {
     log.debug("Leaving AdminConsole.withCsrf().");
     return String(html).replace(/(<form\b[^>]*\bmethod\s*=\s*["']post["'][^>]*>)/gi,
                                 function (whole) { return whole + field; });
+  }
+
+  // ---------------------------------------------------------------------------
+  // A PRESSED BUTTON BRINGS THE READER BACK TO WHERE IT WAS (2026-10-01).
+  //
+  // Every form here answers with a new page — a 303 to the page it was on, or
+  // the page redrawn — and a new page opens at its top, so a button half way
+  // down a long page sent the reader back to the top every time. With no
+  // script there is no scroll position to restore; what there is, is the
+  // FRAGMENT. So every section heading (h2-h4) gets an id, and every form
+  // after one has that id appended to its `action` and to each `formaction`
+  // inside it. A redraw lands there because the fragment is in the URL that
+  // was posted to; a 303 lands there because a Location with no fragment
+  // inherits the request's (RFC 9110 section 10.2.2). A form that already
+  // names a fragment, or a redirect target that names one
+  // (`applicationReturnTo(..., '#signals')`), wins.
+  //
+  // **ONLY ROOT-RELATIVE ADDRESSES.** An absolute action (the realm switcher)
+  // leaves the page, and an empty one would be resolved against a URL this
+  // function cannot see. A form before the first section heading (the
+  // account menu, the sidebar) is the top of the page already and is left
+  // alone. Run on the finished page by withCsrf(), which every page goes out
+  // through. The message the action came back with is drawn in a strip that
+  // sticks to the top of the window (flash()), so it is seen wherever the
+  // page lands.
+  // ---------------------------------------------------------------------------
+  /**
+   * Gives every section heading an id and every form after one a fragment
+   * naming it, so a pressed button comes back to its own section.
+   *
+   * @param html - the finished page
+   * @returns the page with the ids and fragments added
+   */
+  withReturnAnchors(html) {
+    const { log } = this.deps;
+    log.debug("Entering AdminConsole.withReturnAnchors().");
+    const used: Record<string, boolean> = {};
+    String(html).replace(/\bid\s*=\s*["']([^"']+)["']/g,
+                         function (whole, id) {
+      used[id] = true;
+      return whole;
+    });
+    let current = '';
+    const slug = function (text) {
+      const base = 'sec-' + (String(text).replace(/<[^>]*>/g, '')
+        .replace(/&[a-z#0-9]+;/gi, ' ').toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
+        .slice(0, 48) || 'section');
+      let id = base;
+      for (let n = 2; used[id]; n++) {
+        id = base + '-' + n;
+      }
+      used[id] = true;
+      return id;
+    };
+    const withFragment = function (tag, attribute) {
+      return tag.replace(new RegExp('(\\b' + attribute +
+        '\\s*=\\s*")(/[^"#]*)(")', 'gi'),
+        function (whole, open, address, close) {
+          return current ? open + address + '#' + current + close : whole;
+        });
+    };
+    const out = String(html).replace(
+      /<h([2-4])\b([^>]*)>([\s\S]*?)<\/h\1>|<form\b[^>]*>|<button\b[^>]*>|<input\b[^>]*>/gi,
+      function (whole, level, attributes, text) {
+        if (level) {
+          const named = /\bid\s*=\s*["']([^"']+)["']/.exec(attributes || '');
+          if (named) {
+            current = named[1];
+            return whole;
+          }
+          current = slug(text);
+          return '<h' + level + ' id="' + current + '"' + attributes + '>' +
+            text + '</h' + level + '>';
+        }
+        return /^<form/i.test(whole) ? withFragment(whole, 'action')
+          : withFragment(whole, 'formaction');
+      });
+    log.debug("Leaving AdminConsole.withReturnAnchors().");
+    return out;
   }
 
   // ---------------------------------------------------------------------------
@@ -6260,8 +6349,24 @@ class AdminConsole {
     const notice = String(req.query.notice || '').slice(0, 500);
     const error = String(req.query.error || '').slice(0, 500);
     log.debug("Leaving AdminConsole.messagesOf().");
-    return (notice ? '<div class="ok">' + this.esc(notice) + '</div>' : '') +
-           (error ? '<div class="err">' + this.esc(error) + '</div>' : '');
+    return this.flash((notice ? '<div class="ok">' + this.esc(notice) +
+                       '</div>' : '') +
+                      (error ? '<div class="err">' + this.esc(error) +
+                       '</div>' : ''));
+  }
+
+  /**
+   * Wraps the messages a pressed button came back with in the strip that
+   * stays at the top of the window, so they are seen wherever the page lands.
+   *
+   * @param html - the messages as HTML
+   * @returns the strip, or '' for no messages
+   */
+  flash(html) {
+    const { log } = this.deps;
+    log.debug("Entering AdminConsole.flash().");
+    log.debug("Leaving AdminConsole.flash().");
+    return html ? '<div class="flash" role="status">' + html + '</div>' : '';
   }
 
   /**
@@ -19508,7 +19613,7 @@ class AdminConsole {
           return '<li>' + self.esc(one) + '</li>';
         }).join('') + '</ul></div>'
       : '';
-    const inner = this.messagesOf(req) + refused +
+    const inner = this.flash(this.messagesOf(req) + refused) +
       '<h2><code>' + this.esc(row.identifier) + '</code></h2>' +
       '<div class="tiles">' +
       this.tile(row.authentications, 'Authentications') +
@@ -20040,14 +20145,16 @@ class AdminConsole {
           self.esc(row.attribute + ' value ' + (n + 1)) + '">' +
           '<button type="submit" class="secondary fg-drop" name="drop" ' +
           'value="' + self.esc(row.attribute + '.' + n) + '" formaction="' +
-          self.esc(opts.redraw) + '" formnovalidate title="Delete this ' +
+          self.esc(opts.redraw + '#fgc-' + row.attribute) + '" formnovalidate ' +
+          'title="Delete this ' +
           'value" aria-label="Delete value ' + (n + 1) + ' of ' +
           self.esc(row.attribute) + '">' + self.trashIcon() +
           '</button></div>';
       }).join('') +
       (held.length ? '' : '<span class="state-none">no values</span>') +
       '<button type="submit" class="secondary fg-grow" name="grow" value="' +
-      this.esc(row.attribute) + '" formaction="' + this.esc(opts.redraw) +
+      this.esc(row.attribute) + '" formaction="' +
+      this.esc(opts.redraw + '#fgc-' + row.attribute) +
       '" formnovalidate title="Add a value" aria-label="Add a value to ' +
       this.esc(row.attribute) + '">+</button></div>';
     } else if (row.type === 'boolean') {
@@ -20105,8 +20212,10 @@ class AdminConsole {
         return String(one).trim() !== '';
       }));
     log.debug("Leaving AdminConsole.fieldGridCell().");
-    return '<div class="fg-cell' + (conditional
-      ? ' ' + this.esc(this.familyClasses(row.families)) : '') + '">' +
+    // The cell's id is what "+" and the bin come back to (withReturnAnchors()).
+    return '<div id="fgc-' + this.esc(row.attribute) + '" class="fg-cell' +
+      (conditional
+        ? ' ' + this.esc(this.familyClasses(row.families)) : '') + '">' +
       // A label names one control; a list and a radio group are several, so
       // their name is a heading of the cell rather than a label.
       (row.type === 'array' || row.type === 'boolean'
@@ -20793,7 +20902,7 @@ class AdminConsole {
     const ticked = given.protocols ||
                    (loaded ? loaded.plan.protocols : []);
 
-    const inner = this.messagesOf(req) +
+    const inner = this.flash(this.messagesOf(req) +
       (given.error && given.error.length
         ? '<div class="warn"><strong>' +
           this.esc(given.errorTitle || 'That was refused.') + '</strong><ul>' +
@@ -20803,7 +20912,7 @@ class AdminConsole {
         : '') +
       (loaded ? '<div class="ok">' + this.esc(loaded.message) + '</div>' : '') +
       (given.notice ? '<div class="ok">' + this.esc(given.notice) + '</div>' :
-       '') +
+       '')) +
       '<div class="tiles">' +
       this.tile(held, 'In the registry') +
       this.tile(applications.PROTOCOLS.length, 'Protocol families') +

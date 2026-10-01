@@ -2147,7 +2147,7 @@ async function everyControlReachesSomething(driver, pages) {
 function actionValuesIn(form) {
   log.debug("Entering actionValuesIn().");
   const values = [];
-  const inQuery = String(form.resolvedAction || "").match(/[?&]action=([^&]*)/);
+  const inQuery = String(form.resolvedAction || "").match(/[?&]action=([^&#]*)/);
   if (inQuery) {
     values.push(decodeURIComponent(inQuery[1]));
     log.debug("Leaving actionValuesIn().");
