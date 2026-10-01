@@ -893,6 +893,7 @@ var config = {
     setCertificateHeader: "x5u",                                                                                                                          // SET certificate header
     deliveryMethods: "urn:ietf:rfc:8935,urn:ietf:rfc:8936",                                                                                               // Delivery methods offered
     defaultSubjects: "ALL",                                                                                                                               // What an empty subject list means
+    personStreamsSelfOnly: true,                                                                                                                          // A person's own stream carries only their events
     streamStatusOnCreate: "enabled",                                                                                                                      // Status a new stream is created in
     minVerificationInterval: 60,                                                                                                                          // Minimum verification interval (s)
     verificationRateLimit: false,                                                                                                                         // Enforce the verification interval

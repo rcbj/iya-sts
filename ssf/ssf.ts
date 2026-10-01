@@ -1875,8 +1875,13 @@ class SharedSignals {
   private contextOf(req: Req, decision: Json | null): Json {
     const { log } = this.deps;
     log.debug('Entering SharedSignals.contextOf().');
+    // `owner` is what KIND of party authenticated (ssf_auth.ts), from the
+    // decision and never from the request body, so a person's stream is
+    // recorded as theirs (ssf_streams.ts, "A PERSON'S STREAM IS ABOUT THAT
+    // PERSON").
     const out = { issuer: this.issuerFor(req),
-      principal: String((decision || {}).principal || '') };
+      principal: String((decision || {}).principal || ''),
+      owner: (decision || {}).owner || null };
     log.debug('Leaving SharedSignals.contextOf().');
     return out;
   }
@@ -2355,6 +2360,28 @@ class SharedSignals {
       const id = String(body.stream_id || '');
       if (!this.ownedStream(res, decision, id)) {
         log.debug('Leaving POST /ssf/subjects/add. No such stream.');
+        return;
+      }
+      // A PERSON MAY NAME ONLY THEMSELVES on a stream they own (#336,
+      // 2026-09-28).
+      // SSF 1.0 section 8.1.3.2 lets a transmitter refuse an Add Subject; this
+      // one says why rather than ignoring it silently, because a receiver
+      // that believed it had subscribed to somebody would otherwise wait for
+      // events that never come. Delivery refuses the same subjects anyway
+      // (`streamCoversSubject()`); this is the answer that says so.
+      // A malformed subject is left to addSubject()'s 400 (STS-SSF-0017).
+      const wellFormed = subjects.validateSubjectId(body.subject, {
+        path: 'subject', criticalMembers: this.criticalMembers() }).ok;
+      if (wellFormed && streams.ownerPersonCovers(streams.getStream(id),
+                                                  body.subject) === false) {
+        errorCodes.mark(res, 'STS-SSF-0131');
+        this.fail(res, 403, 'access_denied',
+                  'This stream belongs to a person, who was authenticated ' +
+                  'with their own credential, and it carries events only ' +
+                  'about that person. The subject names somebody else. A ' +
+                  'receiver that is a relying party creates its stream with ' +
+                  'its own client credentials token.');
+        log.debug('Leaving POST /ssf/subjects/add. Not the owner.');
         return;
       }
       const added: Json = streams.addSubject(id, body.subject,
