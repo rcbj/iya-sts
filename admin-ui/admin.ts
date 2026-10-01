@@ -957,9 +957,15 @@ const MAX_WHO = 12;
 //     `upTo()`, the trail, `consoleJson().pages` — reads NAV and so cannot tell
 //     a grouped page from an ungrouped one, which is the point: grouping is a
 //     fact about the SIDEBAR, not about the pages.
-//   * NESTING STOPS HERE. A group holds pages, never another group. Nothing
-//     enforces it beyond `sectionPages()` not recursing, which is deliberate —
-//     a fourth level would be a sidebar that needs its own breadcrumb.
+//   * A GROUP MAY HOLD A GROUP, AND ONE DOES (2026-10-01, rcbj's ask):
+//     Cert issuance › SPIFFE, the four SPIFFE pages under a heading of their
+//     own inside the certificate group. It was "nesting stops here" until
+//     then, on the argument that a fourth level needs its own breadcrumb —
+//     and it does not, for the first rule's reason: a group is not a crumb,
+//     so the trail is the same at any depth. `groupPages()` is the one walk
+//     that flattens every depth; the sidebar, the guide and the realm
+//     administrator's filter each recurse. Keep it to that one case unless a
+//     heading passes the group test on its own.
 //
 // ONE PLACEMENT IN HERE IS A JUDGEMENT RATHER THAN AN OBVIOUS FACT, and it is
 // worth knowing which. `Credential claims` (`/admin/vc`) is the OID4VCI
@@ -1648,38 +1654,50 @@ const SECTIONS = [
                    'GetCACaps, GetCACert and PKIOperation over CMS, the RA ' +
                    'certificate, and single-use challenge passwords issued ' +
                    'for one entry and one profile.' },
-          // ===== SPIFFE's three pages (spiffe/spiffe_server.ts) =====
-          { path: '/admin/spiffe', label: 'SPIFFE',
-            blurb: 'The trust domain, the signing authority behind every ' +
-                   'X509-SVID and JWT-SVID, the four sockets the Workload ' +
-                   'API and the SPIRE Server API answer on, and how a caller ' +
-                   'at the Workload API is identified — the ' +
-                   '<code>transport:</code>, <code>endpoint:</code> and ' +
-                   '<code>peer:</code> selectors, and whether an ASSERTED ' +
-                   'one is believed. A caller on the Unix socket is ' +
-                   'ATTESTED (unix, docker, k8s) and a caller over TCP is ' +
-                   'not; an agent is attested by its node attestor.' },
-          { path: '/admin/spiffe/entries', label: 'Registration entries',
-            blurb: 'Which workload gets which SPIFFE ID, and what an SVID ' +
-                   'issued against that entry carries. The store is the ' +
-                   'embedded directory under ' +
-                   '<code>ou=entries,ou=spiffe</code>, so a form here, an ' +
-                   '<code>ldapmodify</code> and the SPIRE Server API\'s ' +
-                   '<code>BatchUpdateEntry</code> are three doors onto one ' +
-                   'entry, and nothing caches it — a change takes effect on ' +
-                   'the next SVID.' },
-          { path: '/admin/spiffe/agents', label: 'Agents',
-            blurb: 'Every agent that has attested, with what it was given ' +
-                   'and when. These entries are a RECORD rather than ' +
-                   'configuration — this service wrote all of it when the ' +
-                   'agent attested — which is why nothing on an agent is ' +
-                   'editable and the ban is the only control.' },
-          { path: '/admin/spiffe/brokers', label: 'Brokers',
-            blurb: 'Who may call the SPIFFE Broker API — the node proxies ' +
-                   'and meshes that ask for a workload\'s SVIDs by ' +
-                   'referencing it — and which kinds of reference each may ' +
-                   'use. The list is <code>spiffe.brokers</code>, read on ' +
-                   'every call.' },
+          // ===== SPIFFE's four pages (spiffe/spiffe_server.ts) =====
+          // A GROUP INSIDE THE GROUP (2026-10-01, rcbj's ask): moving SPIFFE
+          // into Cert issuance on 2026-09-22 dropped its own heading, and
+          // four pages — `Registration entries`, `Agents`, `Brokers` among
+          // them — then sat beside ACME, EST and SCEP reading as more
+          // enrollment protocols. The heading names a family the pages under
+          // it are aspects of, the test any group passes.
+          { title: 'SPIFFE',
+            what: 'Workload identity: the trust domain, the entries that ' +
+                  'decide what a workload gets, the agents that ask for it ' +
+                  'and the brokers that ask on a workload\'s behalf.',
+            items: [
+            { path: '/admin/spiffe', label: 'SPIFFE',
+              blurb: 'The trust domain, the signing authority behind every ' +
+                     'X509-SVID and JWT-SVID, the four sockets the Workload ' +
+                     'API and the SPIRE Server API answer on, and how a ' +
+                     'caller at the Workload API is identified — the ' +
+                     '<code>transport:</code>, <code>endpoint:</code> and ' +
+                     '<code>peer:</code> selectors, and whether an ASSERTED ' +
+                     'one is believed. A caller on the Unix socket is ' +
+                     'ATTESTED (unix, docker, k8s) and a caller over TCP is ' +
+                     'not; an agent is attested by its node attestor.' },
+            { path: '/admin/spiffe/entries', label: 'Registration entries',
+              blurb: 'Which workload gets which SPIFFE ID, and what an SVID ' +
+                     'issued against that entry carries. The store is the ' +
+                     'embedded directory under ' +
+                     '<code>ou=entries,ou=spiffe</code>, so a form here, an ' +
+                     '<code>ldapmodify</code> and the SPIRE Server API\'s ' +
+                     '<code>BatchUpdateEntry</code> are three doors onto one ' +
+                     'entry, and nothing caches it — a change takes effect ' +
+                     'on the next SVID.' },
+            { path: '/admin/spiffe/agents', label: 'Agents',
+              blurb: 'Every agent that has attested, with what it was given ' +
+                     'and when. These entries are a RECORD rather than ' +
+                     'configuration — this service wrote all of it when the ' +
+                     'agent attested — which is why nothing on an agent is ' +
+                     'editable and the ban is the only control.' },
+            { path: '/admin/spiffe/brokers', label: 'Brokers',
+              blurb: 'Who may call the SPIFFE Broker API — the node proxies ' +
+                     'and meshes that ask for a workload\'s SVIDs by ' +
+                     'referencing it — and which kinds of reference each may ' +
+                     'use. The list is <code>spiffe.brokers</code>, read on ' +
+                     'every call.' },
+            ] },
         ] },
       { path: '/admin/tls', label: 'TLS / mutual TLS',
         blurb: 'The certificate the main port and LDAPS 636 present, ' +
@@ -3296,7 +3314,8 @@ class AdminConsole {
   }
 
   // Every PAGE in one section, in sidebar order, with a group's pages spliced
-  // in where the group sits. One level only — see the note above SECTIONS.
+  // in where the group sits — and a group inside a group spliced in the same
+  // way (Cert issuance › SPIFFE, 2026-10-01). See the note above SECTIONS.
   /**
    * Lists every page in one section, in sidebar order, groups flattened.
    *
@@ -3305,19 +3324,37 @@ class AdminConsole {
    */
   sectionPages(section) {
     const { log } = this.deps;
-    const self = this;
     log.debug("Entering AdminConsole.sectionPages(). section=" + section.title);
+    const pages = this.groupPages(section.items);
+    log.debug("Leaving AdminConsole.sectionPages(). " + pages.length +
+              " page(s).");
+    return pages;
+  }
+
+  // The pages in a list of rows, in order, every group at every depth
+  // flattened into it. The one walk `sectionPages()`, the sidebar's open
+  // state and the guide share, so none of them can stop a level short.
+  /**
+   * Lists the pages in a list of section rows, groups flattened at any depth.
+   *
+   * @param items - a section's or a group's `items`
+   * @returns the pages, in sidebar order
+   */
+  groupPages(items) {
+    const { log } = this.deps;
+    const self = this;
+    log.debug("Entering AdminConsole.groupPages().");
     const pages = [];
-    section.items.forEach(function (item) {
+    items.forEach(function (item) {
       if (self.isNavGroup(item)) {
-        item.items.forEach(function (page) {
+        self.groupPages(item.items).forEach(function (page) {
           pages.push(page);
         });
         return;
       }
       pages.push(item);
     });
-    log.debug("Leaving AdminConsole.sectionPages(). " + pages.length +
+    log.debug("Leaving AdminConsole.groupPages(). " + pages.length +
               " page(s).");
     return pages;
   }
@@ -3644,15 +3681,22 @@ class AdminConsole {
       log.debug("Leaving shown().");
       return adminScope.pageVisible(state, item.path);
     };
-    const out = SECTIONS.map(function (section) {
-      const items = section.items.map(function (item) {
+    // A group is kept with what is left of it, at any depth, and dropped when
+    // nothing is.
+    const visible = function (items) {
+      log.debug("Entering visible().");
+      const kept = items.map(function (item) {
         if (!self.isNavGroup(item)) {
           return shown(item) ? item : null;
         }
-        const pages = item.items.filter(shown);
-        return pages.length ? Object.assign({}, item, { items: pages }) : null;
+        const inner = visible(item.items);
+        return inner.length ? Object.assign({}, item, { items: inner }) : null;
       }).filter(Boolean);
-      return Object.assign({}, section, { items: items });
+      log.debug("Leaving visible().");
+      return kept;
+    };
+    const out = SECTIONS.map(function (section) {
+      return Object.assign({}, section, { items: visible(section.items) });
     }).filter(function (section) {
       return section.items.length > 0;
     });
@@ -3681,14 +3725,16 @@ class AdminConsole {
       log.debug("Leaving AdminConsole.navItem(). A page.");
       return this.navLink(item, active, up);
     }
-    const open = item.items.filter(function (page) {
+    const open = this.groupPages(item.items).filter(function (page) {
       return page.path === active;
     }).length > 0;
+    // A row of a group may itself be a group (Cert issuance › SPIFFE), so
+    // each row is drawn by this method again rather than by navLink().
     const html = '<li class="navgrp' + (open ? ' open' : '') + '">' +
       '<p class="navsub" title="' + this.esc(item.what) + '">' +
       this.esc(item.title) +
-      '</p><ul>' + item.items.map(function (page) {
-        return self.navLink(page, active, up);
+      '</p><ul>' + item.items.map(function (row) {
+        return self.navItem(row, active, up);
       }).join('') + '</ul></li>';
     log.debug("Leaving AdminConsole.navItem(). A group of " +
               item.items.length + " page(s).");
@@ -4924,8 +4970,10 @@ class AdminConsole {
       // than upper, so that two headings above one link cannot be read as two
       // sections — the section is the shout, the group is the aside.
       '.navsub{margin:0 0 3px;padding:0 6px;font-size:.78em;color:#6a6a80;' +
-      'font-weight:700;letter-spacing:.01em}.navgrp.open ' +
-      '.navsub{color:#12107c}.navgrp>ul{margin:0;padding-left:8px;' +
+      'font-weight:700;letter-spacing:.01em}.navgrp.open' +
+      // `>` and not a descendant: inside an open group, a group the page is
+      // NOT in keeps the grey heading.
+      '>.navsub{color:#12107c}.navgrp>ul{margin:0;padding-left:8px;' +
       'border-left:1px solid ' +
       '#e2e2ea}.navgrp.open>ul{border-left-color:#c3c0e0}nav ' +
       'ul{list-style:none;margin:0;padding:0}nav ' +
@@ -8104,29 +8152,35 @@ class AdminConsole {
     const out = [];
     this.visibleSections(state).forEach(function (section) {
       const items = [];
-      section.items.forEach(function (item) {
-        if (self.isNavGroup(item)) {
-          const pages = item.items.filter(function (page) {
-            return page.path !== activePath;
-          });
-          if (!pages.length) {
-            return;
-          }
-          // The group's own description folds like a page's, for the same
-          // reason: SAML's runs to five lines and sat between the heading and
-          // the three pages under it.
-          items.push('<li><span class="grp">' + self.esc(item.title) +
+      // One list of rows, a group drawn as its heading over its own rows —
+      // which may hold a group again (Cert issuance › SPIFFE) — and dropped
+      // when the page being drawn was all it held.
+      const rows = function (list, out) {
+        log.debug("Entering rows().");
+        list.forEach(function (item) {
+          if (self.isNavGroup(item)) {
+            const inner = [];
+            rows(item.items, inner);
+            if (!inner.length) {
+              return;
+            }
+            // The group's own description folds like a page's, for the same
+            // reason: SAML's runs to five lines and sat between the heading
+            // and the three pages under it.
+            out.push('<li><span class="grp">' + self.esc(item.title) +
                      '</span>' +
                      self.note(self.esc(item.what)) +
-                     '<ul>' + pages.map(self.guideItem.bind(self)).join('') +
-                     '</ul></li>');
-          return;
-        }
-        if (item.path === activePath) {
-          return;
-        }
-        items.push(self.guideItem(item));
-      });
+                     '<ul>' + inner.join('') + '</ul></li>');
+            return;
+          }
+          if (item.path === activePath) {
+            return;
+          }
+          out.push(self.guideItem(item));
+        });
+        log.debug("Leaving rows().");
+      };
+      rows(section.items, items);
       if (!items.length) {
         log.debug("consoleGuide(). Section " + section.title +
                   " is empty here.");
@@ -17611,6 +17665,17 @@ class AdminConsole {
     // method, the key's type and algorithm, and its thumbprint. Only public
     // halves exist here; the private halves were handed out when generated.
     const keys = answer.ok ? answer.document.verificationMethod : [];
+    // Which published keys have a private half kept here, by kid: the ones
+    // Generate made. Only that a half is kept is drawn, never the half.
+    let keptKids = [];
+    try {
+      keptKids = JSON.parse(String((row.fields || {}).didPrivateKeys || '[]'))
+        .map(function (one) { return String(one && one.kid || ''); });
+    } catch (e) {
+      log.debug("Caught in AdminConsole.applicationDidPanel(): " +
+                ((e && e.message) || e));
+      keptKids = [];
+    }
     const keyTable = keys.length
       ? '<table><tr><th>Verification method</th><th>Key</th>' +
         '<th>Algorithm</th><th>Private half</th></tr>' +
@@ -17631,72 +17696,6 @@ class AdminConsole {
         '<code>didPublicKeyJwk</code> by hand has only its public half here. ' +
         'To change a key, generate a new one with <em>replace</em> ticked.')
       : '<p class="sub">No key pair yet.</p>';
-    const html = '<table><tr><th>DID</th><td><code>' + this.esc(did) +
-      '</code></td></tr><tr><th>Document</th><td><a href="' + this.esc(url) +
-      '"><code>' + this.esc(url) + '</code></a><div class="sub">' +
-      (answer.ok
-        ? '<span class="state-valid">advertised</span>, ' +
-          answer.document.verificationMethod.length + ' key(s)'
-        : '<span class="state-none">not advertised yet</span>: ' +
-          this.esc(answer.why)) +
-      '</div></td></tr></table>' +
-      this.note('<code>did:web</code> under this realm&rsquo;s address: a ' +
-      'resolver turns the DID into the document&rsquo;s address above and ' +
-      'fetches it from this service. The document publishes the keys, ' +
-      'services and other names below. The DID follows the address this ' +
-      'console is reached on; pin <code>global.publicBaseUrl</code> so it ' +
-      'does not change with the host name.') + keyTable + linkage +
-      (canWrite
-        ? '<form method="post" action="/admin/applications' + anchor +
-          '">' + carryBack +
-          '<input type="hidden" name="action" value="generate-did-key">' +
-          '<input type="hidden" name="from" value="' +
-          (where === 'credentials' ? 'credentials' : 'config') + '">' +
-          '<input type="hidden" name="application" value="' +
-          this.esc(identifier) + '"><div class="formrow">' +
-          '<span>Generate a key pair:</span> ' +
-          algorithms.map(function (alg, index) {
-            return '<label' + self.tip({
-              ES256: 'ECDSA on P-256 with SHA-256: the default, and what ' +
-                     'most DID resolvers and wallets expect.',
-              ES384: 'ECDSA on P-384 with SHA-384.',
-              EdDSA: 'Ed25519. Compact, and widely supported by DID tooling.'
-            }[alg]) + '><input type="radio" name="algorithm" value="' +
-              alg + '"' + (index === 0 ? ' checked' : '') + '> ' + alg +
-              '</label>';
-          }).join(' ') +
-          ' <label' + this.tip('Take the keys already in the document off ' +
-            'first, so the new key is the only one.') + '><input ' +
-          'type="checkbox" name="replace" value="yes"> replace the keys ' +
-          'there</label> <button type="submit"' +
-          this.tip('Make a key pair, add its public key to the DID document ' +
-    // Which published keys have a private half kept here, by kid: the ones
-    // Generate made. Only that a half is kept is drawn, never the half.
-    let keptKids = [];
-    try {
-      keptKids = JSON.parse(String((row.fields || {}).didPrivateKeys || '[]'))
-        .map(function (one) { return String(one && one.kid || ''); });
-    } catch (e) {
-      log.debug("Caught in AdminConsole.applicationDidPanel(): " +
-                ((e && e.message) || e));
-      keptKids = [];
-    }
-                   'and show the private key once.') +
-          '>Generate</button></div>' +
-          '</form>' +
-          this.note('The public key is added to the document. The private ' +
-          'key is shown once on the next page, and kept here sealed so this ' +
-          'service can sign the Domain Linkage Credentials.')
-        : '');
-    log.debug("Leaving AdminConsole.applicationDidPanel().");
-    return html;
-  }
-
-  // The one-time answer to *Generate a key pair*: the private key, as a JWK
-  // and as PKCS#8 PEM, each a download and a read-only box, `no-store` —
-  // `answerIssuedTlsClientCertificate()`'s arrangement, because this page is
-  // the only copy.
-  /**
     // THE DOMAIN LINKAGE, one per LinkedDomains origin (2026-10-01): a
     // download of the DID Configuration resource to host at
     // https://<origin>/.well-known/did-configuration.json, signed on request
@@ -17737,6 +17736,61 @@ class AdminConsole {
         '<code>didService</code>, such as ' +
         '<code>LinkedDomains|https://app.example.com</code>, to link the DID ' +
         'to an origin.</p>');
+    const html = '<table><tr><th>DID</th><td><code>' + this.esc(did) +
+      '</code></td></tr><tr><th>Document</th><td><a href="' + this.esc(url) +
+      '"><code>' + this.esc(url) + '</code></a><div class="sub">' +
+      (answer.ok
+        ? '<span class="state-valid">advertised</span>, ' +
+          answer.document.verificationMethod.length + ' key(s)'
+        : '<span class="state-none">not advertised yet</span>: ' +
+          this.esc(answer.why)) +
+      '</div></td></tr></table>' +
+      this.note('<code>did:web</code> under this realm&rsquo;s address: a ' +
+      'resolver turns the DID into the document&rsquo;s address above and ' +
+      'fetches it from this service. The document publishes the keys, ' +
+      'services and other names below. The DID follows the address this ' +
+      'console is reached on; pin <code>global.publicBaseUrl</code> so it ' +
+      'does not change with the host name.') + keyTable + linkage +
+      (canWrite
+        ? '<form method="post" action="/admin/applications' + anchor +
+          '">' + carryBack +
+          '<input type="hidden" name="action" value="generate-did-key">' +
+          '<input type="hidden" name="from" value="' +
+          (where === 'credentials' ? 'credentials' : 'config') + '">' +
+          '<input type="hidden" name="application" value="' +
+          this.esc(identifier) + '"><div class="formrow">' +
+          '<span>Generate a key pair:</span> ' +
+          algorithms.map(function (alg, index) {
+            return '<label' + self.tip({
+              ES256: 'ECDSA on P-256 with SHA-256: the default, and what ' +
+                     'most DID resolvers and wallets expect.',
+              ES384: 'ECDSA on P-384 with SHA-384.',
+              EdDSA: 'Ed25519. Compact, and widely supported by DID tooling.'
+            }[alg]) + '><input type="radio" name="algorithm" value="' +
+              alg + '"' + (index === 0 ? ' checked' : '') + '> ' + alg +
+              '</label>';
+          }).join(' ') +
+          ' <label' + this.tip('Take the keys already in the document off ' +
+            'first, so the new key is the only one.') + '><input ' +
+          'type="checkbox" name="replace" value="yes"> replace the keys ' +
+          'there</label> <button type="submit"' +
+          this.tip('Make a key pair, add its public key to the DID document ' +
+                   'and show the private key once.') +
+          '>Generate</button></div>' +
+          '</form>' +
+          this.note('The public key is added to the document. The private ' +
+          'key is shown once on the next page, and kept here sealed so this ' +
+          'service can sign the Domain Linkage Credentials.')
+        : '');
+    log.debug("Leaving AdminConsole.applicationDidPanel().");
+    return html;
+  }
+
+  // The one-time answer to *Generate a key pair*: the private key, as a JWK
+  // and as PKCS#8 PEM, each a download and a read-only box, `no-store` —
+  // `answerIssuedTlsClientCertificate()`'s arrangement, because this page is
+  // the only copy.
+  /**
    * Answers a generated DID key pair with a page carrying the private key
    * once, served `no-store`.
    *
@@ -38337,6 +38391,21 @@ class AdminConsole {
         self.answerGeneratedDidKey(req, res, body, result);
         return;
       }
+      // A SIGNED DID CONFIGURATION (2026-10-01) is answered with the FILE,
+      // to host at the origin; a JSON caller gets the action's reply.
+      if (result && result.ok && result.didConfiguration &&
+          String(body.action || '') === 'sign-domain-linkage' &&
+          !/json/i.test(String(req.headers['content-type'] || ''))) {
+        res.set('Cache-Control', 'no-store');
+        res.set('Content-Disposition', 'attachment; filename="' +
+                String(result.filename).replace(/[^A-Za-z0-9._-]/g, '_') +
+                '"');
+        res.status(200).type('application/json')
+           .send(JSON.stringify(result.didConfiguration, null, 2));
+        log.debug("Leaving the admin applications action endpoint. A DID " +
+                  "configuration.");
+        return;
+      }
       self.respondToApplicationAction(req, res, body, result);
     });
 
@@ -38391,21 +38460,6 @@ class AdminConsole {
       if (action === 'load-resource-metadata') {
         // THE FILE, with its name, off the multipart parts. `parseBody()` has
         // put its content under `file` as text already; this adds the filename
-      // A SIGNED DID CONFIGURATION (2026-10-01) is answered with the FILE,
-      // to host at the origin; a JSON caller gets the action's reply.
-      if (result && result.ok && result.didConfiguration &&
-          String(body.action || '') === 'sign-domain-linkage' &&
-          !/json/i.test(String(req.headers['content-type'] || ''))) {
-        res.set('Cache-Control', 'no-store');
-        res.set('Content-Disposition', 'attachment; filename="' +
-                String(result.filename).replace(/[^A-Za-z0-9._-]/g, '_') +
-                '"');
-        res.status(200).type('application/json')
-           .send(JSON.stringify(result.didConfiguration, null, 2));
-        log.debug("Leaving the admin applications action endpoint. A DID " +
-                  "configuration.");
-        return;
-      }
         // the page names it by, and ignores a file input left empty — a browser
         // posts one with no filename and no bytes, which is not a document.
         const input = Object.assign({}, body);
