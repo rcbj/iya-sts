@@ -6891,6 +6891,15 @@ form's `present` list clears the attribute when every box is unticked. A
 stored value that is not one of the choices is still drawn, marked, so a
 save does not drop it without a word.
 
+**OPENID4VCI AND OPENID4VP ARE ONE CHECKBOX, *Verifiable Credentials*
+(rcbj, 2026-10-01)**, on the create form and the Protocol families tab, and
+one field group (`vc`, the *Verifiable Credentials* sub-tab). They stay two
+families in the data, because the issuance policy reads them apart:
+`applications.FAMILY_CHOICES` is the list of checkboxes, the box posts `vc`,
+and `applications.familiesOfChoices()` expands it to both where a console form
+is read. The box is ticked when either family is declared, and saving it
+declares both. The API still takes the two family ids.
+
 `tests/application_form_roles.js` holds the catalogue, and
 `tests/vendored/sts_admin_console.js`'s `theFieldGridIsPressed()` presses the
 grid in a browser.

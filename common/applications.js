@@ -4317,6 +4317,80 @@ function gridExcludedAttributes() {
   return out;
 }
 
+// ---------------------------------------------------------------------------
+// THE CHOICES THE CONSOLE OFFERS (rcbj, 2026-10-01): one checkbox per family,
+// except that OpenID4VCI and OpenID4VP are ONE checkbox, Verifiable
+// Credentials, which declares both. The families stay two in the data — the
+// issuance policy reads them apart, and an access token for a wallet is
+// OpenID4VCI's while a verifier's client_id is OpenID4VP's — so the choice is
+// a console vocabulary and nothing more: a ticked `vc` is expanded to both by
+// `familiesOfChoices()` where a console form is read, and the API takes the
+// two family ids as it always did. A choice is checked when the entry is
+// declared for any of its families.
+// ---------------------------------------------------------------------------
+const COMBINED_CHOICES = [
+  { id: 'vc', label: 'Verifiable Credentials',
+    families: ['oid4vci', 'oid4vp'],
+    what: 'OpenID4VCI and OpenID4VP together: a wallet collecting a ' +
+          'verifiable credential from the issuer (it authenticates as an ' +
+          'OAuth client), and a verifier client_id in an Authorization ' +
+          'Request asking for a presentation. Ticking it declares both ' +
+          'families.' }
+];
+
+/**
+ * The protocol choices the console draws as checkboxes: one per family, with
+ * the families a combined choice stands for drawn as that one choice, where
+ * the first of them is.
+ */
+const FAMILY_CHOICES = (function () {
+  const out = [];
+  PROTOCOLS.forEach(function (family) {
+    const combined = COMBINED_CHOICES.filter(function (choice) {
+      return choice.families.indexOf(family.id) >= 0;
+    })[0];
+    if (!combined) {
+      out.push({ id: family.id, label: family.label, families: [family.id],
+                 kind: family.kind || '', what: family.what });
+      return;
+    }
+    if (combined.families[0] === family.id) {
+      out.push({ id: combined.id, label: combined.label,
+                 families: combined.families.slice(),
+                 kind: PROTOCOLS.filter(function (one) {
+                   return combined.families.indexOf(one.id) >= 0 && one.kind;
+                 }).map(function (one) { return one.kind; }).join(', '),
+                 what: combined.what });
+    }
+  });
+  return out;
+})();
+
+/**
+ * Expands the console's protocol choices into family ids: a combined choice
+ * becomes its families, a family id stays itself, and each id appears once.
+ *
+ * @param values - the posted choices
+ * @returns the family ids
+ */
+function familiesOfChoices(values) {
+  log.debug("Entering familiesOfChoices().");
+  const out = [];
+  [].concat(values || []).forEach(function (value) {
+    const id = String(value).trim().toLowerCase();
+    const combined = COMBINED_CHOICES.filter(function (choice) {
+      return choice.id === id;
+    })[0];
+    (combined ? combined.families : [id]).forEach(function (one) {
+      if (one && out.indexOf(one) < 0) {
+        out.push(one);
+      }
+    });
+  });
+  log.debug("Leaving familiesOfChoices().");
+  return out;
+}
+
 /**
  * The attribute-name prefixes that say which families a field belongs to,
  * most specific first.
@@ -4353,7 +4427,8 @@ const FIELD_GROUPS = [
   { id: 'wsfed', label: 'WS-Federation', families: ['wsfed'] },
   { id: 'wstrust', label: 'WS-Trust', families: ['wstrust'] },
   { id: 'krb5', label: 'Kerberos v5', families: ['krb5'] },
-  { id: 'oid4vp', label: 'OpenID4VP', families: ['oid4vp'] },
+  { id: 'vc', label: 'Verifiable Credentials',
+    families: ['oid4vci', 'oid4vp'] },
   { id: 'federation', label: 'Federation', families: ['federation'] },
   { id: 'ldap', label: 'LDAP', families: ['ldap'] },
   { id: 'scim', label: 'SCIM 2.0', families: ['scim'] },
@@ -14255,6 +14330,8 @@ module.exports = {
   // families and group each is drawn under.
   applicationFields: applicationFields,
   FIELD_GROUPS: FIELD_GROUPS,
+  FAMILY_CHOICES: FAMILY_CHOICES,
+  familiesOfChoices: familiesOfChoices,
   BOOLEAN_ATTRIBUTES: BOOLEAN_ATTRIBUTES,
   LONG_TEXT_ATTRIBUTES: LONG_TEXT_ATTRIBUTES,
   // The family scope, exported so that the console can leave a field out of the

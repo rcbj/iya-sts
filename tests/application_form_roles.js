@@ -170,6 +170,33 @@ function run(t) {
           '6. a method outside the set is refused, one inside it and a clear ' +
           'are not');
 
+  // --- 7. Verifiable Credentials is one choice -----------------------------
+  // OpenID4VCI and OpenID4VP are one checkbox on the console and one field
+  // group, and stay two families in the data. Every other family is a choice
+  // of its own, and every family is in exactly one choice.
+  const choices = applications.FAMILY_CHOICES;
+  const vc = choices.filter(function (c) { return c.id === 'vc'; })[0];
+  t.check(vc && vc.families.join(',') === 'oid4vci,oid4vp' &&
+          !choices.some(function (c) {
+            return c.id === 'oid4vci' || c.id === 'oid4vp';
+          }),
+          '7. OpenID4VCI and OpenID4VP are one choice, Verifiable Credentials',
+          JSON.stringify(vc || null));
+  const covered = [];
+  choices.forEach(function (c) {
+    c.families.forEach(function (f) { covered.push(f); });
+  });
+  t.equal(covered.slice().sort().join(','), families.slice().sort().join(','),
+          '7. every family is in exactly one choice');
+  t.equal(applications.familiesOfChoices(['oauth2', 'vc', 'oid4vp']).join(','),
+          'oauth2,oid4vci,oid4vp',
+          '7. a ticked vc declares both families, each once');
+  t.check(applications.FIELD_GROUPS.some(function (g) {
+    return g.id === 'vc' && g.families.join(',') === 'oid4vci,oid4vp';
+  }) && byName.oid4vpClientId.group === 'vc',
+          '7. the configuration has one Verifiable Credentials group',
+          byName.oid4vpClientId && byName.oid4vpClientId.group);
+
   // --- 5. The console's simplified view reads `declaration` ---------------
   const source = fs.readFileSync(path.join(__dirname, '..', 'admin-ui',
                                            'admin.ts'), 'utf8');

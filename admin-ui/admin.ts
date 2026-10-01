@@ -5455,10 +5455,13 @@ class AdminConsole {
       // One rule per family, generated from the same PROTOCOLS table the
       // checkboxes are drawn from — so a family added there gets its rule for
       // nothing, and cannot get a checkbox without one.
-      applications.PROTOCOLS.map(function (family) {
-        return 'form.newapp:has(#proto-' + family.id + ':checked) .pf-' +
-               family.id +
-               '{display:revert}';
+      // One CHECKBOX per choice, and a combined choice (Verifiable
+      // Credentials) shows every family it stands for.
+      applications.FAMILY_CHOICES.map(function (choice) {
+        return choice.families.map(function (family) {
+          return 'form.newapp:has(#proto-' + choice.id + ':checked) .pf-' +
+                 family + '{display:revert}';
+        }).join('');
       }).join('') +
       // The prompt that replaces the fields until something is ticked, and its
       // own disappearance. Without it the page below the checkbox table is
@@ -18097,7 +18100,7 @@ class AdminConsole {
       });
     }
     const declared = draft && draft.protocolsPresent
-      ? this.listField(req, draft, 'protocol')
+      ? applications.familiesOfChoices(this.listField(req, draft, 'protocol'))
       : [].concat(row.allowedProtocols || []);
     // A FIELD IS SHOWN when it belongs to every family or to a family this
     // application is declared for, and to no other (rcbj, 2026-10-01): a
@@ -18143,12 +18146,16 @@ class AdminConsole {
                '<input type="hidden" name="protocolsPresent" value="1">') +
       '<div class="fg-protos" role="group" ' +
       'aria-label="Protocol families it is declared for">' +
-      applications.PROTOCOLS.map(function (family) {
-        return '<label class="fg-proto"' + self.tip(family.what) + '>' +
+      // One box per CHOICE: OpenID4VCI and OpenID4VP are one, Verifiable
+      // Credentials, ticked when either is declared and declaring both.
+      applications.FAMILY_CHOICES.map(function (choice) {
+        const on = choice.families.some(function (family) {
+          return declared.indexOf(family) >= 0;
+        });
+        return '<label class="fg-proto"' + self.tip(choice.what) + '>' +
           '<input type="checkbox" name="protocol" value="' +
-          self.esc(family.id) + '"' +
-          (declared.indexOf(family.id) >= 0 ? ' checked' : '') + '>' +
-          self.esc(family.label) + '</label>';
+          self.esc(choice.id) + '"' + (on ? ' checked' : '') + '>' +
+          self.esc(choice.label) + '</label>';
       }).join('') + '</div>' + saveButton('Save the families') + '</form>' +
       '</div>';
     const groupPanels = groups.map(function (group) {
@@ -20510,7 +20517,8 @@ class AdminConsole {
    * Draws one protocol family as a checkbox row of the new-application
    * form, with the kind it would be recorded as.
    *
-   * @param row - the family's row from the PROTOCOLS table
+   * @param row - the choice's row from FAMILY_CHOICES: a family, or a
+   *   combined choice standing for several
    * @param checked - true to draw the box ticked
    * @returns the table row as HTML
    */
@@ -20534,7 +20542,8 @@ class AdminConsole {
       '<td><label for="proto-' + this.esc(row.id) + '"' + this.tip(row.what) +
       '>' +
       this.esc(row.label) + '</label></td>' +
-      '<td><code>' + this.esc(row.id) + '</code></td>' +
+      '<td><code>' + this.esc((row.families || [row.id]).join(', ')) +
+      '</code></td>' +
       '<td>' + kindCell + '</td>' +
       '<td class="why">' + this.note(this.esc(row.what)) + '</td></tr>';
   }
@@ -21159,8 +21168,10 @@ class AdminConsole {
       'to be declared for two spellings of one thing.') +
       '<table><tr><th>For</th><th>Family</th><th>Value</th>' +
       '<th>Recorded as, when it turns up</th><th>What it means</th></tr>' +
-      applications.PROTOCOLS.map(function (row) {
-        return self.protocolChoiceRow(row, ticked.indexOf(row.id) >= 0);
+      applications.FAMILY_CHOICES.map(function (row) {
+        return self.protocolChoiceRow(row, row.families.some(function (id) {
+          return ticked.indexOf(id) >= 0;
+        }));
       }).join('') +
       '</table>' +
 
@@ -37743,8 +37754,9 @@ class AdminConsole {
       // carries one `protocols` array. helpers.parseBody() cannot see a repeat
       // — it builds a plain object, so the last box ticked would be the only
       // one to arrive — which is what listField() exists for.
-      const protocols = self.listField(req, body, 'protocol').concat(
-          self.listField(req, body, 'protocols'));
+      const protocols = applications.familiesOfChoices(
+        self.listField(req, body, 'protocol').concat(
+          self.listField(req, body, 'protocols')));
       // The realm's authorization servers, for `load-resource-metadata` — the
       // one action that compares something against the address this request
       // arrived on, and which every other action ignores.
@@ -37875,8 +37887,9 @@ class AdminConsole {
         return;
       }
 
-      const protocols = self.listField(req, body, 'protocol').concat(
-          self.listField(req, body, 'protocols'));
+      const protocols = applications.familiesOfChoices(
+        self.listField(req, body, 'protocol').concat(
+          self.listField(req, body, 'protocols')));
       // The RFC 9728 document a redraw reads again for the pane, or null.
       const reloadedMetadata = function () {
         log.debug("Entering reloadedMetadata().");
@@ -38011,8 +38024,9 @@ class AdminConsole {
       const body = parseBody(req);
       const wantsJson = /json/i.test(String(req.headers['content-type'] || ''));
       const identifier = String(body.application || '').trim();
-      const protocols = self.listField(req, body, 'protocol').concat(
-          self.listField(req, body, 'protocols'));
+      const protocols = applications.familiesOfChoices(
+        self.listField(req, body, 'protocol').concat(
+          self.listField(req, body, 'protocols')));
       const redraw = function (state, code?) {
         log.debug("Entering redraw().");
         if (code) {
