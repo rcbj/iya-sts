@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: BUSL-1.1
 
 # AWS's `Project = STS` and `Environment` tags, on every resource through the
 # resource group's own (locals.tf, `tags`). On AWS the tag is also a fence

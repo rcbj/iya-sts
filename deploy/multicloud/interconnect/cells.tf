@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: BUSL-1.1
 #
 # Every cell, as its own `base` apply left it: AWS cells from the AWS bucket,
 # GCP cells from the GCP bucket.

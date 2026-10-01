@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: BUSL-1.1
 #
 # ---------------------------------------------------------------------------
 # WHAT EVERY REGION AN ENVIRONMENT MAY BE IN NEEDS, AND OUTLIVES IT (#96).

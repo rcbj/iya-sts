@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: BUSL-1.1
 
 # `project = sts` is AWS's `Project = STS` tag, lower-cased because a GCP
 # label value may not hold a capital letter. Nothing here is fenced by it the

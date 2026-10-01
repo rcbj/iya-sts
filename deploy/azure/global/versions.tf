@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: BUSL-1.1
 #
 # ---------------------------------------------------------------------------
 # A MULTI-REGION ENVIRONMENT'S GLOBAL TIER AND WHAT JOINS ITS CELLS (#96) —

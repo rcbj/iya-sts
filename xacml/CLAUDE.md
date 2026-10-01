@@ -464,7 +464,7 @@ policy system.
 **454 of 455 mandatory cases**, with the one exception recorded in
 `conformance/MANIFEST.js`'s `EXPECTED_FAILURES` and argued there. The
 VENDORED OASIS conformance suite is **Apache-2.0 rather than this repository's
-MIT** and says so in `conformance/LICENSE`.
+Business Source License** and says so in `conformance/LICENSE`.
 
 ```
 IIA   attribute references     18 of 18

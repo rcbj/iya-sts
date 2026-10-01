@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: BUSL-1.1
 
 variable "aws_region" {
   description = "The region of a single-cell environment. A cell's is `cells[cell].region` (cells.tf, #98)."

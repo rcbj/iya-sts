@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: BUSL-1.1
 
 # THE DEFAULT PROVIDER IS THE PRIMARY CELL'S REGION: the global database's
 # writer and the global secrets (whose replicas are made from here) live

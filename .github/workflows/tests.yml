@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: BUSL-1.1
 #
 # Runs this repository's whole test suite, in containers — THREE TIMES, in
 # three jobs that do not depend on each other: the plain suite, the same suite

@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: BUSL-1.1
 #
 # ---------------------------------------------------------------------------
 # WHAT JOINS THE TWO CLOUDS INTO ONE ENVIRONMENT, AND WHAT PUTS IT BEHIND ONE

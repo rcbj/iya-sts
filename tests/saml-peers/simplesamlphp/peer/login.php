@@ -1,6 +1,6 @@
 <?php
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 //
 // GET ?as=sp|sp-artifact&idp=<entityID>[&forceAuthn=1][&isPassive=1]
 // [&nameIdFormat=…]: start an SP-initiated sign-in at that identity

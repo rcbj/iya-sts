@@ -856,12 +856,14 @@ copies, the `node-ldapjs` submodule and the non-`local` copies in
 * **One blank line between one function and the next.**
 * **Every source file this repository owns starts with its two SPDX lines**
   (2026-09-27) — the copyright text naming Iya CyberSecurity Solutions, LLC
-  and the licence identifier MIT, in the form `LICENSE.md` shows, after a `#!`
+  and the licence identifier BUSL-1.1 (the Business Source License 1.1 since
+  2026-09-30; MIT until then), in the form `LICENSE.md` shows, after a `#!`
   line or `// @ts-check`, in the file's own comment syntax. A file that cannot carry a
   comment, a vendored copy and third-party material are declared in
-  `REUSE.toml` instead, and never given a header. `tests/copyright_notices.js`
-  fails on a missing one; `LICENSE.md` says what is not MIT, and `reuse lint`
-  is the whole-repository check.
+  `REUSE.toml` instead, and never given a header — the parent project's
+  copies stay MIT there. `tests/copyright_notices.js` fails on a missing
+  one; `LICENSE.md` says what is not under the BSL, and `reuse lint` is the
+  whole-repository check.
 * **The log level is `info` in every appconfig file in `env/`** (2026-09-12),
   because every function now logs its entry and exit at `debug`.
   `STS_LOG_LEVEL=debug` is the run that asks for the whole record.

@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: BUSL-1.1
 
 # ONE PROVIDER FOR EVERY REGION: an Azure resource names its own `location`,
 # so the regional parts (modules/region) are one `for_each` through it — the

@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: BUSL-1.1
 
 # One provider for every region, as in the foundation; the deployer
 # registers no resource provider (../environment/providers.tf argues both).

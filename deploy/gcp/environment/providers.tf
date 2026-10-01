@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: BUSL-1.1
 
 # AWS's `Project = STS` and `Environment` tags, as labels (lower case: a label
 # value may not hold a capital). On AWS the tag is also a fence the deployer

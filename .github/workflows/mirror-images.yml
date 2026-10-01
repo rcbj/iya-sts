@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: BUSL-1.1
 name: Mirror Images
 
 # THE TEST STACK'S THIRD-PARTY IMAGES, COPIED INTO A PRIVATE ghcr.io MIRROR

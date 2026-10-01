@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: BUSL-1.1
 
 output "deployer_user_name" {
   description = "Create its access key by hand: aws iam create-access-key --user-name <this>"

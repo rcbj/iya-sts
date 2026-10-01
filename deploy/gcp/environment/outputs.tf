@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: BUSL-1.1
 #
 # The names follow deploy/aws/environment/outputs.tf wherever there is a
 # counterpart, so a script reading either cloud's outputs (run-suite.sh, and

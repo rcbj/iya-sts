@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: BUSL-1.1
 #
 # Every variable that has an AWS counterpart keeps its name and its default,
 # so an `envs/<env>.tfvars` reads the same on both sides where it can.

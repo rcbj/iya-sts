@@ -168,9 +168,15 @@ new test goes.
 
 ## Licence
 
-MIT — see [LICENSE.md](LICENSE.md), which also carries the notices for the
-third-party code this repository includes and names the four paths that are
-under another licence. Every file declares its copyright and licence in SPDX
+The [Business Source License 1.1](LICENSE.md) since 2026-09-30: you may
+copy, modify and make non-production use of iya-sts freely, and **production
+use requires a commercial license, granted as part of a paid support
+subscription** from Iya CyberSecurity Solutions, LLC. Each version becomes MIT
+four years after it is published, and everything published before
+2026-09-30 stays MIT. [LICENSE.md](LICENSE.md) also carries the notices for
+the third-party code this repository includes and names the paths that are
+under another licence, among them the parent project's copies, which stay
+MIT. Every file declares its copyright and licence in SPDX
 form, and the repository passes `reuse lint`
 ([REUSE](https://reuse.software/)). The only third-party dataset distributed is
 Natural Earth's public-domain country outlines.

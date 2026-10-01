@@ -1,6 +1,6 @@
 #!/bin/bash
 # SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: BUSL-1.1
 #
 # run-tests.sh — THE ONE LAUNCHER FOR THE WHOLE SUITE, WHEREVER THE SERVICE IS
 # (2026-09-21; it was ./run-tests.sh, which only knew the first target).

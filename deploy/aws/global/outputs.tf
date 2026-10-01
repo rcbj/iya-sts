@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: BUSL-1.1
 #
 # What each cell's `full` apply reads from this stack's state
 # (../environment/cells.tf, `local.global`). A rename here is a rename there.
