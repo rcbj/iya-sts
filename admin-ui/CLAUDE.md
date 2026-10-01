@@ -4120,11 +4120,15 @@ above still argues why the register EXISTS; this says where it is drawn.
   exposes* with Remove, *Expose an API* and *Define a permission* with
   `resource` a HIDDEN field set to this entry — so no form there reaches
   another application's permissions — and *Grants — the delegation
-  relationships*, the grants of ITS permissions, with Revoke and a form whose
-  client select offers every other application and whose permission select
-  offers only its own. That page therefore draws TWO `grant-permission`
-  forms; the resource half's is the one with a `client` select (the console
-  test finds it that way). Every form carries `page`, which
+  relationships*, the grants of ITS permissions, with Revoke and a grant
+  whose permission select offers only its own. **The client is found with a
+  `chooserPane()` search, not a `<select>`**, because the registry may hold
+  thousands: `granttoq` / `granttofrom` are the pane's search and offset, a
+  result links back with `grantto` naming the pick, and only then is the
+  form drawn, carrying it as a hidden `client` — honoured only while it names
+  another application in the registry. That page therefore draws TWO
+  `grant-permission` forms; the resource half's is the one carrying `page`
+  (the console test finds it that way). Every form carries `page`, which
   `permissionsReturnTo()` spends — only when the registry knows the name — to
   bring the reader back to the page they were on, since a grant made from the
   resource names a different `client`.

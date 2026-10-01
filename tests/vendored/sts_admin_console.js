@@ -4069,10 +4069,9 @@ async function theDelegationPageDefinesAndGrants(driver) {
 
   // 6. THE RESOURCE'S OWN PAGE (2026-10-01). Its Permissions tab defines,
   //    grants and removes ITS OWN permissions only: `resource` is a hidden
-  //    field there, and the grant form offers a CLIENT select beside a
-  //    select of this application's permissions. Two `grant-permission`
-  //    forms are on that page — the client half's has no `client` select —
-  //    so the resource half's is found by the select it carries.
+  //    field there, and the client is found with a search pane and picked
+  //    before the grant form (a select of this application's permissions)
+  //    is drawn.
   const resourcePage = realm("/admin/applications?application=" +
                              encodeURIComponent(resource) + "#tab-permissions");
   await open(driver, resourcePage);
@@ -4092,17 +4091,43 @@ async function theDelegationPageDefinesAndGrants(driver) {
       afterDefine.text.slice(0, 400));
   });
 
-  const ownGrant = await formIndexPostingWithField(driver, "grant-permission",
-                                                   "select[name=client]");
-  check("the resource's own page grants its permission to a client",
+  // THE CLIENT IS FOUND BY A SEARCH, NOT A <select> (2026-10-01): a
+  // chooserPane() whose results link back here with `grantto` naming the
+  // pick. So: search, follow the result, and only then is there a form.
+  const resourceBase = "/admin/applications?application=" +
+                       encodeURIComponent(resource);
+  const searched = await open(driver, realm(resourceBase + "&granttoq=" +
+                              encodeURIComponent(client) + "#find-granttoq"));
+  const pickHref = await driver.executeScript(`
+    const wanted = 'grantto=' + encodeURIComponent(arguments[0]);
+    const hit = Array.from(document.querySelectorAll('.chooser a'))
+      .find(function (a) { return a.href.indexOf(wanted) >= 0; });
+    return hit ? hit.href : '';
+  `, client);
+  check("the resource's page finds the client by searching for it",
+        function () {
+    assert.ok(pickHref,
+      "searching the Grant to pane for " + client + " should list it as a " +
+      "link that picks it (grantto=). The page says " +
+      searched.text.slice(0, 400));
+  });
+  let ownGrant = -1;
+  if (pickHref) {
+    await open(driver, pickHref);
+    // Two `grant-permission` forms are on this page; the resource half's is
+    // the one carrying `page`.
+    ownGrant = await formIndexPostingWithField(driver, "grant-permission",
+                                               "input[name=page]");
+  }
+  check("and, once picked, grants its permission to that client",
         function () {
     assert.ok(ownGrant >= 0,
-      "the Permissions tab of a RESOURCE application should draw a form " +
-      "granting one of ITS OWN permissions to another application.");
+      "with an application picked, the Permissions tab of a RESOURCE " +
+      "application should draw a form granting one of ITS OWN permissions " +
+      "to it.");
   });
   if (ownGrant >= 0) {
-    await fillAndPress(driver, ownGrant,
-                       { client: client, permission: baseUri + "read" });
+    await fillAndPress(driver, ownGrant, { permission: baseUri + "read" });
   }
   const clientPage = await open(driver, realm(
     "/admin/applications?application=" + encodeURIComponent(client) +

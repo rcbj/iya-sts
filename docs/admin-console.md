@@ -983,8 +983,8 @@ handler, `POST /admin/delegation-settings`, which is
   what it holds, with *Revoke*, and grants it another application's
   permission. As a **resource** it sets its base URI, defines and removes its
   own permissions, and lists which other applications hold them, with
-  *Revoke* and a form that grants one of ITS permissions to another
-  application.
+  *Revoke* and a grant of one of ITS permissions to another application,
+  which you find with a search box and pick from a paged list of matches.
 
 Granting is only on an application's page, because there one half of the pair
 is settled by the URL: a grant written to the resource instead of the client

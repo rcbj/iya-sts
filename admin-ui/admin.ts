@@ -19789,12 +19789,45 @@ class AdminConsole {
       return '<option value="' + self.esc(one.id) + '">' + self.esc(one.id) +
              '</option>';
     }).join('');
-    const clientOptions = state.clients.map(function (one) {
-      return '<option value="' + self.esc(one.identifier) + '">' +
-        self.esc(one.name !== one.identifier
-          ? one.name + ' — ' + one.identifier : one.identifier) +
-        '</option>';
-    }).join('');
+    // WHO TO GRANT IT TO: A SEARCH, NOT A <select> (2026-10-01, rcbj). A
+    // registry can hold thousands of applications, and a dropdown of every
+    // one of them is a control whose size is the registry's. It is
+    // chooserPane() — the same twenty-at-a-time pane, the same clamped
+    // offset — and, as on /admin/caep, a result is a LINK back to this page
+    // with `grantto` naming the pick, which the grant form below then
+    // carries as a hidden `client`. Its three names (`granttoq`,
+    // `granttofrom`, `grantto`) are this pane's own: `q` is the application
+    // list's search, carried in the page's query, and `grantq` is the
+    // register's on the delegation pages.
+    const grantCarry = pageParamsOf(req.query);
+    delete grantCarry.grantto;
+    const grantEntries = state.clients.map(function (one) {
+      return {
+        key: one.identifier,
+        names: [one.identifier, one.name],
+        label: one.name !== one.identifier
+          ? one.name + ' — ' + one.identifier : one.identifier,
+        href: '/admin/applications' + queryWith(grantCarry,
+          { application: identifier, grantto: one.identifier }) +
+          '#find-granttoq'
+      };
+    });
+    // THE PICK, honoured only when it is still an application this page
+    // offers — another application in the registry, never this one. A
+    // hand-written `grantto` naming anything else draws no form at all.
+    const picked = String(pageParamsOf(req.query).grantto || '').trim();
+    const grantTo = state.clients.filter(function (one) {
+      return one.identifier === picked;
+    })[0] || null;
+    const grantChooser = !state.clients.length ? '' : this.chooserPane({
+      here: { path: '/admin/applications', query: req.query },
+      param: 'granttoq', fromParam: 'granttofrom',
+      label: 'Grant to',
+      placeholder: 'part of an application name or identifier',
+      entries: grantEntries, selectedKey: grantTo ? grantTo.identifier : '',
+      nothing: 'No other application in this registry has a name or ' +
+        'identifier containing that.'
+    });
     const grantedRows = grantedOutPage.shown.map(function (one) {
       return '<tr><td><a href="' + self.esc('/admin/applications' +
           queryWith(self.listViewOf('/admin/applications', req.query),
@@ -20047,7 +20080,8 @@ class AdminConsole {
       this.note('<strong>Which other applications hold this one\'s ' +
       'permissions</strong>, one row per (client, permission). Granting ' +
       'here offers only permissions <code>' + this.esc(identifier) +
-      '</code> exposes, to any application but itself; the grant still ' +
+      '</code> exposes, to any application but itself, found by a search ' +
+      'rather than a list of every one; the grant still ' +
       'lands on the CLIENT\'s entry, so it reads back on that ' +
       'application\'s own tab as something it holds.') +
       grantedNav.head +
@@ -20058,15 +20092,23 @@ class AdminConsole {
         'one of its permissions.</td></tr>') +
       '</table>' +
       grantedNav.foot +
-      (grantOwnOptions && clientOptions
-        ? '<form method="post" action="/admin/delegation-settings">' +
-          resourceHidden('grant-permission') +
-          '<div class="formrow"><label for="grant-own-client">Grant to' +
-          '</label><select id="grant-own-client" name="client">' +
-          clientOptions + '</select><label for="grant-own-permission">' +
-          'the permission</label><select id="grant-own-permission" ' +
-          'name="permission">' + grantOwnOptions + '</select>' +
-          '<button type="submit">Grant it</button></div></form>'
+      (grantOwnOptions && state.clients.length
+        ? grantChooser +
+          (grantTo
+            ? '<form method="post" action="/admin/delegation-settings">' +
+              resourceHidden('grant-permission') +
+              '<input type="hidden" name="client" value="' +
+              this.esc(grantTo.identifier) + '">' +
+              '<div class="formrow"><span>Grant <strong>' +
+              this.esc(grantTo.name !== grantTo.identifier
+                ? grantTo.name + ' — ' + grantTo.identifier
+                : grantTo.identifier) +
+              '</strong></span><label for="grant-own-permission">the ' +
+              'permission</label><select id="grant-own-permission" ' +
+              'name="permission">' + grantOwnOptions + '</select>' +
+              '<button type="submit">Grant it</button></div></form>'
+            : this.note('Search for the application above and pick it; ' +
+              'the grant form appears here with it chosen.'))
         : this.note(grantOwnOptions
           ? 'There is no other application in this registry to grant one ' +
             'to.'
