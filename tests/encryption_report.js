@@ -43,8 +43,11 @@ const encryption = require('../admin-ui/encryption_admin');
 const log = require('bunyan').createLogger({ name: 'encryption_report',
   level: process.env.LOG_LEVEL || 'info' });
 
-const KEK = 'a'.repeat(64);
-const OTHER_KEK = 'b'.repeat(64);
+// ENVELOPE ENCRYPTION (#391): the funnel is the DATA ENCRYPTION KEY's
+// encrypt and decrypt, so the probes seal under a data encryption key.
+const DEK = Buffer.alloc(32, 0x61);
+const OTHER_DEK = Buffer.alloc(32, 0x62);
+const DEK_ID = 'probe-data-key';
 
 async function run(t) {
   log.debug("Entering run().");
@@ -62,13 +65,13 @@ async function run(t) {
   t.equal(params.keyBits, 256, 'a 256-bit key');
   t.equal(params.ivBits, 96,
           'a 96-bit nonce, which is NIST SP 800-38D\'s recommended GCM length');
-  t.equal(params.kdf, 'HKDF-SHA256',
-          'and a per-record subkey rather than the key-encryption key ' +
-          'encrypting anything directly');
-  t.check(params.perRecordSubkey === true && params.kdfSaltBits === 128,
-          'derived over a random salt per record, so no record\'s IV matters ' +
-          'to any other — one key encrypting many records under many IVs is ' +
-          'one IV-reuse bug away from catastrophic in GCM');
+  t.equal(params.version, '2',
+          'version 2: envelope encryption (#391)');
+  t.check(params.perRecordSubkey === false && /per realm per data class/
+            .test(params.dataKeys) && /dekwrap/.test(params.dekWrap),
+          'a data encryption key per realm per data class, wrapped under the ' +
+          'key-encryption key, rather than the key-encryption key ' +
+          'encrypting any value', JSON.stringify(params));
 
   const view = encryption.encryptionView();
   t.equal(view.algorithm.cipher, params.cipher,
@@ -81,7 +84,7 @@ async function run(t) {
 
   const PLAINTEXT = 'a signing key, say';
   const before = crypto.kekAccounting();
-  const sealed = crypto.encryptWithKek(KEK, PLAINTEXT, 'probe-a');
+  const sealed = crypto.encryptWithDek(DEK_ID, DEK, PLAINTEXT, 'probe-a');
   // MEASURED AFTER THE ENCRYPT AND BEFORE THE DECRYPT, on purpose. The
   // decrypt counts the plaintext it produced, so a check made after both
   // passes even when the encrypt counts nothing — which is a mutant that
@@ -92,7 +95,7 @@ async function run(t) {
           'an encryption counts the plaintext it was given, exactly');
   t.check(midway.ciphertextBytes > before.ciphertextBytes,
           'and the ciphertext it produced');
-  const opened = crypto.decryptWithKek(KEK, sealed, 'probe-a');
+  const opened = crypto.decryptWithDek(DEK, sealed, 'probe-a');
   t.equal(opened, PLAINTEXT, 'a round trip works');
 
   const after = crypto.kekAccounting();
@@ -121,7 +124,7 @@ async function run(t) {
   // reason the count is taken here rather than at the call sites: a missing
   // label costs a ROW and never a NUMBER.
   const anonymousBefore = crypto.kekAccounting().encryptions;
-  crypto.encryptWithKek(KEK, 'no label on this one');
+  crypto.encryptWithDek(DEK_ID, DEK, 'no label on this one');
   const anonymousAfter = crypto.kekAccounting();
   t.equal(anonymousAfter.encryptions, anonymousBefore + 1,
           'an operation with no label is counted in the TOTAL');
@@ -137,13 +140,13 @@ async function run(t) {
   const failuresBefore = crypto.kekAccounting().failures;
   let threw = false;
   try {
-    crypto.decryptWithKek(OTHER_KEK, sealed, 'probe-a');
+    crypto.decryptWithDek(OTHER_DEK, sealed, 'probe-a');
   } catch (e) {
     log.debug("Caught in run(): " + ((e && e.message) || e));
     threw = true;
   }
   t.check(threw,
-          'decrypting under the WRONG key-encryption key THROWS and is not ' +
+          'decrypting under the WRONG data encryption key THROWS and is not ' +
           'softened into a return. That is the whole point of GCM here: ' +
           '`keystore.js` turns it into a fatal at startup, because a service ' +
           'that cannot read its own signing key must not come up generating ' +
@@ -159,7 +162,8 @@ async function run(t) {
 
   let malformedThrew = false;
   try {
-    crypto.decryptWithKek(KEK, 'this is not a sealed value at all', 'probe-a');
+    crypto.decryptWithDek(DEK, 'this is not a sealed value at all',
+                          'probe-a');
   } catch (e) {
     log.debug("Caught in run(): " + ((e && e.message) || e));
     malformedThrew = true;
@@ -213,7 +217,7 @@ async function run(t) {
   const live = encryption.encryptionView();
   t.check(Array.isArray(live.unclassified),
           'the view reports labels it counted and cannot classify');
-  crypto.encryptWithKek(KEK, 'x', 'a-label-no-row-describes');
+  crypto.encryptWithDek(DEK_ID, DEK, 'x', 'a-label-no-row-describes');
   const drifted = encryption.encryptionView();
   t.check(drifted.unclassified.some(function (one) {
             return one.label === 'a-label-no-row-describes';
@@ -235,9 +239,10 @@ async function run(t) {
           'authenticator\'s shared secret or somebody\'s recovery codes, and ' +
           'printing either half of one would hand over exactly what the ' +
           'sealing exists to protect');
-  t.check(serialised.indexOf(KEK) < 0,
-          'and the key-encryption key itself is not in it — `key.where` ' +
-          'names the PROVIDER it is read from and never the key');
+  t.check(serialised.indexOf(DEK.toString('base64')) < 0 &&
+          serialised.indexOf(DEK.toString('hex')) < 0,
+          'and no data encryption key is in it — `key.where` names the ' +
+          'PROVIDER a key is read from and never a key');
   t.check(typeof drifted.noSamples === 'string' &&
           drifted.noSamples.length > 60,
           'and the reply SAYS that it carries none, because a machine ' +

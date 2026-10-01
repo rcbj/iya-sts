@@ -146,7 +146,7 @@ const NOT_APPLICABLE = [
    'or SHA-512/t OAEP digest'],
   [/^rsa_three_primes_oaep_.*sha224/, 'no door names a SHA-224 OAEP digest'],
   [/^(hkdf|pbkdf2|pbes2)_/, 'no door takes a caller\'s salt, info or ' +
-   'iterations: encryptWithKek() derives with HKDF over fixed labels, ' +
+   'iterations: wrapDek() and deriveDek() use HKDF over fixed labels, ' +
    'pbes2Key() prefixes the salt with the JWE alg (RFC 7518 4.8.1.1), and ' +
    'Wycheproof\'s PBES2 is PKCS#5 with AES-CBC, not JWE\'s PBES2+AESKW'],
   [/^mldsa_\d+_sign_noseed_/, 'crypto.js holds an ML-DSA private key only ' +

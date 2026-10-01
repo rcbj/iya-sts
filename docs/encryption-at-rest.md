@@ -46,32 +46,34 @@ Two properties of the mechanism matter for what follows:
   deliberately — sealing an attribute under a key that will not survive the
   restart the attribute does would turn a certificate into permanent garbage.
 
-### ONE KEY FOR THE WHOLE SERVICE, NOT ONE PER TRUST REALM
+### ENVELOPE ENCRYPTION: DATA KEYS UNDER ONE KEY-ENCRYPTION KEY
 
-This is the part that surprises people who have read about trust realms, so it
-is said plainly: **there is a single key-encryption key per deployment.** It is
-read once at startup and used for every sealed value in every realm.
+Since #391 the key-encryption key never encrypts a stored value. Every value is
+encrypted under a **data encryption key** (DEK) — a random 256-bit AES key —
+and only the DEKs are encrypted ("wrapped") under the key-encryption key.
 
-Every sealed record does get its own AES key — a random 16-byte salt per record
-through HKDF-SHA256, so no two records share a key stream — but the derivation
-takes no realm and no tenant, so **the separation is per record, not per
-realm.**
+* **One DEK per trust realm per kind of data**, and no DEK is ever shared
+  between realms: a realm's sessions, its signing keys and its people's
+  authenticator secrets are three keys of that realm's, and another realm's are
+  others.
+* **The DEKs are stored wrapped**, in the same table as the signing keys, and
+  each process unwraps the ones it needs once and holds them. So the
+  key-encryption key is used once per DEK, never once per value, which is what
+  lets it live in a key management service.
+* **A value names its DEK**, and is bound to it: moved under another DEK's name
+  it does not open, and a wrapped DEK moved to another realm does not unwrap.
 
-What IS per realm is the material being sealed: each realm has its own signing
-keys, and each has its own branch of the certificate authority under one shared
-Root. The realm boundary is around *which keys exist*, not around *which key
-encrypts them*.
+**There is still one key-encryption key per deployment.** It wraps every
+realm's DEKs, so:
 
-Three operational consequences, which are the reason this section exists:
-
-* Anyone who can read the key-encryption key can open **every realm's** sealed
-  data. A realm is not a cryptographic boundary at rest.
-* **Rotating the key rotates all realms at once.** A value written under the
-  previous key does not open afterwards; the service reports how many and drops
-  them rather than refusing to start, because the alternative is a deployment
-  that will not come up because of a session from last week.
-* Per-tenant key separation, if you need it, is a change to this service rather
-  than a configuration — see *Making it per realm* at the end.
+* Anyone who can read the key-encryption key can unwrap **every realm's** data
+  keys. A realm has keys of its own; it is not an independent boundary at rest.
+* **Rotating the key-encryption key re-wraps every realm's data keys at once**
+  — a handful of keys, not the whole store.
+* A store written before #391 (each value under a subkey of the
+  key-encryption key, with no data keys) is not read by this build; recreate
+  it. The service refuses to start on one rather than generate new keys over
+  it.
 
 ---
 
@@ -328,27 +330,11 @@ leaked-snapshot cases for everything in the store; the second is what protects
 the credentials if the database itself is read by somebody who should not; the
 third is a large operational commitment for a narrower gain.
 
-## Making it per realm
+## A key-encryption key per realm
 
-If a realm has to be a cryptographic boundary at rest — one tenant's sealed data
-unreadable with another tenant's key — that is a change to this service and not
-a setting. **Neither of these is implemented**; they are written down so that
-the next person to ask does not have to re-derive the costs.
-
-* **Derive a per-realm subkey from the one master key.** Put the realm id into
-  the HKDF `info` beside the constant that is there now, pass the realm through
-  the seal and open calls, and bump the envelope version so records written
-  before the change still open. This gets cryptographic separation per realm
-  from a single secret, with no new key provisioning and no extra secret-store
-  round trips. It does not protect one realm from an operator who holds the
-  master key — it is separation, not independence.
-* **A separate key-encryption key per realm, from the secret store.** Genuine
-  independence, and a much larger change: the secret provider grows a keyed
-  read, the keystore can no longer read one value at startup before the realm
-  registry exists, every call site needs an ambient realm — and the minted-row
-  flush, which runs on a timer rather than inside a request, does not have one.
-  It also moves per-realm key provisioning into whoever creates realms, which
-  today is a single API call.
-
-The first is contained. The second is a design change worth planning rather
-than starting.
+If one tenant's data must be unreadable with another tenant's key, the data
+keys are already per realm; what is shared is the key-encryption key that
+wraps them. A separate key-encryption key per realm is **not implemented**: the
+secret provider would need a keyed read, the keystore could not read one key at
+startup before the realm registry exists, and creating a realm would become a
+key-provisioning act where today it is one API call.

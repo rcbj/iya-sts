@@ -2492,6 +2492,30 @@ const CODES = [
       'service does not agree over; refused before any key operation ' +
       '(#193 — it was reported as a key encrypted to another certificate).',
     spec: 'the caller\'s refusal' },
+  { code: 'STS-KEYS-0091',
+    summary: 'A stored data encryption key could not be unwrapped under the ' +
+      'key-encryption key — almost always the wrong key-encryption key. At ' +
+      'startup the service does not start (#391).',
+    spec: '' },
+  { code: 'STS-KEYS-0092',
+    summary: 'A sealed value names a data encryption key this process does ' +
+      'not hold, so it does not open; the stored data-key rows are read ' +
+      'again in the background. Said once per key (#391).',
+    spec: '' },
+  { code: 'STS-KEYS-0093',
+    summary: 'A data-key row could not be written to the store; what was ' +
+      'sealed under its new keys will not open after a restart until it is ' +
+      '(#391).',
+    spec: '' },
+  { code: 'STS-KEYS-0094',
+    summary: 'A stored data-key row could not be read, so the data ' +
+      'encryption keys in it are not held (#391). It is not overwritten.',
+    spec: '' },
+  { code: 'STS-KEYS-0095',
+    summary: 'A stored key row is not a version-2 envelope: the store was ' +
+      'written before data encryption keys (#391) and this build does not ' +
+      'read it. The service does not start; recreate the store.',
+    spec: '' },
   { code: 'STS-PKI-0001',
     summary: 'A certificate-authority use case prefers a key algorithm this ' +
       'service cannot use, so its Issuing CA was built with the ' +

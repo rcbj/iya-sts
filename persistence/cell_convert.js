@@ -77,10 +77,11 @@
 // and "done" would be a lie.
 //
 // **NOTHING IS RE-SEALED.** A row sealed in a single-cell store is sealed
-// under the service key; the global rows stay under it (every cell holds
-// it), and the cell rows too — `keystore.open()` tries the cell key and then
-// the service key, so they open where they are and are sealed under the cell
-// key when next written.
+// under the service scope's data encryption keys (#391), whose wrapped rows
+// are in `sts_keys` and so in the GLOBAL tier every cell reads; the cell rows
+// keep them too — `keystore.open()` finds the data encryption key a value
+// names whatever its scope, so they open where they are and are sealed under
+// the cell's own keys when next written.
 //
 // **THE CHANGE LOGS ARE NOT COPIED.** `sts_changes` is a list of pointers to
 // rows, read by processes that are running; nothing is running across a

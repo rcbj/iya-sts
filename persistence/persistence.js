@@ -1472,7 +1472,11 @@ function flush() {
   const realmChanges = wantRealms ? realmsDelta(removals) : null;
   const configChanges = wantConfig ? appconfigDelta() : null;
 
-  flushing = Promise.resolve().then(function () {
+  // THE DATA-KEY ROWS LAND FIRST (#391): a directory entry carrying a value
+  // sealed under a data encryption key made since the last flush must not
+  // reach another process before the key does.
+  flushing = Promise.resolve(typeof keystore.settleDeks === 'function'
+    ? keystore.settleDeks() : null).then(function () {
     if (!changes) {
       return null;
     }

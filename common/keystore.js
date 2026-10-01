@@ -20,7 +20,9 @@
 // the keys are written down — which is the moment this service acquires a
 // private key at rest and everything in this file exists because of it:
 //
-//   * it is ENCRYPTED, AES-256-GCM, by `crypto.js`'s `encryptWithKek()`;
+//   * it is ENCRYPTED, AES-256-GCM, under a data encryption key that is
+//     itself wrapped under the key-encryption key (#391 — see DATA
+//     ENCRYPTION KEYS below, and `crypto.js`'s `encryptWithDek()`);
 //   * the key that opens it is READ from outside — a mounted file, AWS, GCP,
 //     Azure or HashiCorp Vault — by `secrets.js`, and is never generated here
 //     and never written anywhere by this service;
@@ -133,9 +135,10 @@ const pkiMerge = require('./pki_merge');
 const capabilities = require('../cluster/cluster_capabilities');
 
 // The KEK, read once in `start()` and held for the life of the process. Never
-// written anywhere, never logged, and never handed out — `encryptWithKek()` and
-// `decryptWithKek()` take it as an argument and this is the only variable in
-// the service that holds it.
+// written anywhere, never logged, and never handed out — `wrapDek()` and
+// `unwrapDek()` take it as an argument, it wraps the data encryption keys and
+// nothing else (#391), and this is the only variable in the service that holds
+// it.
 let kek = null;
 // THE CELL KEY (#98, 2026-09-28), read beside it when `keys.cellKekProvider`
 // names one: what a cell stores of its own — the people homed in it and what
@@ -1165,6 +1168,9 @@ async function start() {
   // Fail here rather than at the first decrypt, so the message names the KEK
   // rather than a record.
   crypto.kekBytes(kek);
+  // THE DATA ENCRYPTION KEYS ARE RANDOM AND STORED from here on (#391).
+  durableKek = true;
+  ephemeral = false;
   // ONLY WHERE A CELL KEY IS CONFIGURED (#98). An `await` here, even one that
   // answers "none" at once, yields to the event loop in the middle of every
   // start — and a key write another caller left pending then landed in the
@@ -1185,12 +1191,34 @@ async function start() {
   }
   let loaded = 0;
   let pkiLoaded = 0;
+  let dekRows = 0;
+  // THE DATA-KEY ROWS FIRST (#391): every other row is sealed under one of
+  // their DEKs. A DEK of this process's scope that will not unwrap stops the
+  // start here, for the reason the error below gives about a signing key.
+  rows.forEach(function (row) {
+    const rowKey = String(row.realm || '');
+    if (rowKey.indexOf(DEK_ROW_PREFIX) === 0) {
+      adoptDekRow(rowKey, row.material, true);
+      dekRows += 1;
+    }
+  });
   rows.forEach(function (row) {
     const realmId = String(row.realm || '');
+    if (realmId.indexOf(DEK_ROW_PREFIX) === 0) {
+      return;
+    }
     let plain;
     try {
-      plain = crypto.decryptWithKek(kek, row.material, 'signing-keys');
+      plain = openRow(row.material, 'signing-keys');
     } catch (e) {
+      if (String(e.message).indexOf('STS-KEYS-0095') >= 0) {
+        throw new Error(errorCodes.tag('STS-KEYS-0095') + 'the stored key ' +
+                        'material for the "' + realmId + '" realm was ' +
+                        'written before data encryption keys (#391), and ' +
+                        'this build does not read that format. Recreate the ' +
+                        'store: this service will not start rather than ' +
+                        'generate new signing keys over it.');
+      }
       // THE MOST IMPORTANT ERROR IN THIS FILE. The overwhelmingly likely cause
       // is the wrong key-encryption key — a rotated secret, a different
       // provider, the wrong file mounted — and the overwhelmingly wrong
@@ -1245,15 +1273,16 @@ async function start() {
   }
   log.info('keystore: key material is PERSISTED. ' + loaded + ' realm(s) ' +
            'loaded from the ' + config.value('persistence.mode') + ' store, ' +
-           'encrypted with AES-256-GCM under a key read from ' +
-           secrets.describe().label + '. A realm with no stored keys gets ' +
+           'encrypted with AES-256-GCM under ' + deks.size + ' data ' +
+           'encryption key(s) from ' + dekRows + ' row(s), each wrapped ' +
+           'under a key read from ' + secrets.describe().label + '. A realm with no stored keys gets ' +
            'them generated and written on first use. WHAT IS RESIDENT IN ' +
            'THIS PROCESS IS THE CIPHERTEXT: a private key is decrypted when ' +
            'something signs with it and dropped again (' +
            retentionSentence() + ').');
   log.debug('Leaving start(). ' + loaded + ' realm(s).');
   return { persisting: true, loaded: loaded, pki: pkiLoaded,
-           provider: secrets.describe().provider };
+           dataKeys: deks.size, provider: secrets.describe().provider };
 }
 
 // ---------------------------------------------------------------------------
@@ -1961,8 +1990,7 @@ function storedFor(realmId) {
   }
   let buffer;
   try {
-    buffer = Buffer.from(crypto.decryptWithKek(kek, entry.cipher,
-                                               'signing-keys'), 'utf8');
+    buffer = Buffer.from(openRow(entry.cipher, 'signing-keys'), 'utf8');
   } catch (e) {
     // The wrong KEK cannot be the cause here — `start()` decrypted this very
     // record — so this is corruption or a bug, and it is louder for that.
@@ -2287,8 +2315,7 @@ function replaceKeySet(realmId, keys, why) {
 // a key set it did not build.
 function hold(id, blob, why) {
   log.debug('Entering hold(). realm=' + id + ' why=' + why);
-  const cipher = crypto.encryptWithKek(kek, JSON.stringify(blob),
-                                       'signing-keys');
+  const cipher = sealRow(JSON.stringify(blob), 'signing-keys', id);
   material.set(id, { cipher: cipher, createdAt: blob.createdAt || Date.now(),
                      plain: blob, parsed: null, buffer: null,
                      timer: null, immediate: false });
@@ -2422,6 +2449,12 @@ realms.onRemove(function (id) {
   // issued to the applications of a realm that is gone would go on chaining.
   pkiHeld.delete(realmId);
   pkiBase.delete(realmId);
+  // AND ITS DATA ENCRYPTION KEYS (#391): a realm re-created under the same
+  // name gets keys of its own, and nothing of the last one's opens under them.
+  const dekRealmId = dekRealm(realmId);
+  dropDeks(function (rec) {
+    return rec.realm === dekRealmId;
+  });
   if (!store || typeof store.deleteKeys !== 'function') {
     log.debug('Leaving the keystore realm purge. Nothing is stored.');
     return;
@@ -2430,6 +2463,11 @@ realms.onRemove(function (id) {
     return store.deleteKeys(realmId);
   }).then(function () {
     return store.deleteKeys(PKI_ROW_PREFIX + realmId);
+  }).then(function () {
+    return store.deleteKeys(dekRowKey('service', dekRealmId));
+  }).then(function () {
+    return cellKek ? store.deleteKeys(dekRowKey(ownCellScope(), dekRealmId))
+                   : null;
   }).then(function () {
     log.info('keystore: the "' + realmId + '" realm was removed, and its ' +
              'stored signing keys went with it.');
@@ -2477,8 +2515,16 @@ function report() {
       : [],
     kek: secrets.describe(),
     kekRead: !!kek,
-    encryption: 'AES-256-GCM, with a per-record subkey derived from the ' +
-                'key-encryption key by HKDF-SHA256',
+    encryption: 'AES-256-GCM under a data encryption key per realm per ' +
+                'data class, each wrapped under the key-encryption key (#391)',
+    // HOW MANY DATA ENCRYPTION KEYS ARE HELD, and how (#391). Never a key.
+    dataKeys: {
+      held: deks.size,
+      stored: deksStored(),
+      derived: dataKeys().filter(function (one) {
+        return one.derived;
+      }).length
+    },
     storeOpen: !!store,
     note: on
       ? 'Signing keys are generated once and read back on every start, so a ' +
@@ -2559,6 +2605,11 @@ function useEphemeralCellKek(hex) {
     return false;
   }
   const bytes = String(hex || '');
+  // THE CELL SCOPE'S DATA ENCRYPTION KEYS GO WITH THE KEY THEY CAME FROM
+  // (#391): what was sealed in the cell no longer opens without it.
+  dropDeks(function (rec) {
+    return rec.scope.indexOf('cell.') === 0;
+  });
   if (!bytes) {
     cellKek = null;
     log.debug("Leaving useEphemeralCellKek(). Dropped.");
@@ -2586,6 +2637,12 @@ function useEphemeralKek(hex) {
     return false;
   }
   kek = bytes;
+  // Derived data encryption keys from here on (#391): every thread holding
+  // this key derives the same ones.
+  durableKek = false;
+  dropDeks(function () {
+    return true;
+  });
   try {
     crypto.kekBytes(kek);
   } catch (e) {
@@ -2631,6 +2688,651 @@ function ephemeralKek() {
   log.debug("Entering ephemeralKek().");
   log.debug("Leaving ephemeralKek().");
   return ephemeral ? kek : null;
+}
+
+// ---------------------------------------------------------------------------
+// DATA ENCRYPTION KEYS (#391, 2026-10-01): ENVELOPE ENCRYPTION AT REST.
+//
+// Every value this file seals — its own key-set and certificate-authority
+// rows, and everything `seal()` is handed — is encrypted under a DATA
+// ENCRYPTION KEY, and only the DEK is encrypted under the key-encryption key.
+// rcbj's decisions on #391:
+//
+//   * **ONE DEK PER REALM PER DATA CLASS, never shared between realms.** The
+//     class is the caller's label (`minted-rows`, `totp-secret`, …), made safe
+//     by `dekClass()`; the realm is the one named, or the ambient one. A
+//     value's envelope names its DEK, so opening it needs neither.
+//   * **A SCOPE BESIDE THE REALM**: `service` for what every cell reads, and
+//     `cell.<id>` for what `seal(…, 'cell')` keeps in one cell (#98), wrapped
+//     under that cell's own key. A DEK row of another cell's scope is held
+//     unopened and never written here.
+//   * **THE DEKS ARE UNWRAPPED ONCE AND HELD.** A minted-row flush seals
+//     thousands of values, so a DEK cannot be asked of a key management
+//     service per value; it is asked per DEK.
+//
+// **WHERE KEYS PERSIST A DEK IS RANDOM AND STORED WRAPPED**, one `sts_keys`
+// row per scope and realm (`dek:<scope>:<realm>`, plain JSON — the DEKs in it
+// are wrapped one by one, and nothing else in it is secret). Two processes may
+// make a DEK for one class at once; the row is a UNION, merged under the row's
+// lock, so both are kept and every value either sealed still opens, and every
+// process converges on the same ACTIVE one (the oldest, then the lowest id).
+// What makes a DEK known before anything sealed under it is read is ORDER: a
+// DEK row is queued the moment the DEK is made, and every writer of sealed
+// rows — this file's own, `persistence.js`'s and `persistence_minted.js`'s
+// flushes — waits for `settleDeks()` first, so the change log carries the DEK
+// row ahead of anything sealed under it. A value naming a DEK this process
+// does not hold yet is refused (`open()` answers null, STS-KEYS-0092) and the
+// rows are read again in the background.
+//
+// **WHERE NOTHING IS STORED A DEK IS DERIVED** (`crypto.deriveDek()`), and
+// its id carries what it was derived for, so a sibling thread holding the
+// same ephemeral key derives the same DEK from the id alone.
+// ---------------------------------------------------------------------------
+const DEK_ROW_PREFIX = 'dek:';
+const DEK_ROW_VERSION = 1;
+const DERIVED_DEK_PREFIX = 'd.';
+const DEK_ID_PATTERN = /^[A-Za-z0-9_.-]{8,200}$/;
+// A bound on DEKs derived from ids nobody here made: an id is attacker-shaped
+// only for somebody who can already write the store, and the bound keeps even
+// that from growing a map without end.
+const MAX_DERIVED_DEKS = 4096;
+const DEK_RELOAD_INTERVAL_MS = 2000;
+const deks = new Map();        // DEK id -> record
+const dekActive = new Map();   // scope|realm|class -> DEK id
+let dekDrops = 0;
+let dekReloadAt = 0;
+let dekReloading = null;
+const dekMissWarned = new Set();
+
+function dekRealm(realm) {
+  log.debug("Entering dekRealm().");
+  log.debug("Leaving dekRealm().");
+  return String(realm || '') || 'default';
+}
+
+// The data class a caller's label names: lower-case letters, digits, dots
+// and hyphens, at most 48, and `general` for no label at all.
+function dekClass(label) {
+  log.debug("Entering dekClass().");
+  const id = String(label || '').toLowerCase()
+    .replace(/[^a-z0-9.-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 48);
+  log.debug("Leaving dekClass().");
+  return id || 'general';
+}
+
+function ownCellScope() {
+  log.debug("Entering ownCellScope().");
+  let id = '';
+  try {
+    id = String(config.value('cells.id') || '');
+  } catch (e) {
+    log.debug("Caught in ownCellScope(): " + ((e && e.message) || e));
+    id = '';
+  }
+  log.debug("Leaving ownCellScope().");
+  return 'cell.' + (id || 'local');
+}
+
+// The scope a tier seals in: the cell's own where a cell key is held, the
+// service's everywhere else — exactly the key `seal()` chose before #391.
+function dekScopeFor(tier) {
+  log.debug("Entering dekScopeFor().");
+  log.debug("Leaving dekScopeFor().");
+  return tier === 'cell' && cellKek ? ownCellScope() : 'service';
+}
+
+// The key-encryption key a scope's DEKs are wrapped under, or null for a
+// scope this process holds no key for (another cell's).
+function wrappingKeyOf(scope) {
+  log.debug("Entering wrappingKeyOf().");
+  if (scope === 'service') {
+    log.debug("Leaving wrappingKeyOf(). The service key.");
+    return kek;
+  }
+  log.debug("Leaving wrappingKeyOf().");
+  return scope === ownCellScope() ? cellKek : null;
+}
+
+function dekSlot(scope, realm, cls) {
+  log.debug("Entering dekSlot().");
+  log.debug("Leaving dekSlot().");
+  return scope + '|' + realm + '|' + cls;
+}
+
+function dekRowKey(scope, realm) {
+  log.debug("Entering dekRowKey().");
+  log.debug("Leaving dekRowKey().");
+  return DEK_ROW_PREFIX + scope + ':' + realm;
+}
+
+// What a wrapped DEK is bound to: a wrapped DEK copied onto another realm's
+// row, or relabelled as another class, does not unwrap.
+function dekAad(rec) {
+  log.debug("Entering dekAad().");
+  log.debug("Leaving dekAad().");
+  return 'sts dek v1|' + rec.id + '|' + rec.scope + '|' + rec.realm + '|' +
+         rec.cls;
+}
+
+// Where the DEKs are random and stored, rather than derived: where `start()`
+// read a key-encryption key from its provider for a store to keep keys in.
+// A process-wide fact rather than `persists()`, which follows the AMBIENT
+// realm's mode and would make one process derive some DEKs and store others.
+let durableKek = false;
+
+function deksStored() {
+  log.debug("Entering deksStored().");
+  log.debug("Leaving deksStored().");
+  return durableKek && !!store;
+}
+
+// The oldest usable DEK of a slot, then the lowest id: what every process
+// converges on once it holds the same row.
+function chooseActive(scope, realm, cls) {
+  log.debug("Entering chooseActive().");
+  let best = null;
+  deks.forEach(function (rec) {
+    if (rec.scope !== scope || rec.realm !== realm || rec.cls !== cls ||
+        rec.status === 'retired' || !rec.key) {
+      return;
+    }
+    if (!best || rec.createdAt < best.createdAt ||
+        (rec.createdAt === best.createdAt && rec.id < best.id)) {
+      best = rec;
+    }
+  });
+  const slot = dekSlot(scope, realm, cls);
+  if (best) {
+    dekActive.set(slot, best.id);
+  } else {
+    dekActive.delete(slot);
+  }
+  log.debug("Leaving chooseActive().");
+  return best;
+}
+
+// The DEK a value of this scope, realm and class is sealed under: the one
+// held, or a new one — derived where nothing is stored, random and queued for
+// the store where it is. Null without the scope's key-encryption key.
+function activeDek(scope, realm, cls) {
+  log.debug("Entering activeDek().");
+  const slot = dekSlot(scope, realm, cls);
+  const held = dekActive.has(slot) ? deks.get(dekActive.get(slot)) : null;
+  if (held && held.key) {
+    log.debug("Leaving activeDek(). Held.");
+    return held;
+  }
+  const wk = wrappingKeyOf(scope);
+  if (!wk) {
+    log.debug("Leaving activeDek(). No key for the scope.");
+    return null;
+  }
+  if (!deksStored()) {
+    const derived = deriveDekFor(scope, realm, cls, wk);
+    dekActive.set(slot, derived.id);
+    log.debug("Leaving activeDek(). Derived.");
+    return derived;
+  }
+  const rec = { id: crypto.generateDekId(), scope: scope, realm: realm,
+                cls: cls, createdAt: Date.now(), status: 'active',
+                wrapped: null, key: crypto.generateDek(), derived: false };
+  rec.wrapped = crypto.wrapDek(wk, rec.key, dekAad(rec));
+  deks.set(rec.id, rec);
+  dekActive.set(slot, rec.id);
+  queueWrite(dekRowKey(scope, realm), { scope: scope, realm: realm },
+             writeDekRow);
+  log.info('keystore: a data encryption key was made for "' + cls +
+           '" in the "' + realm + '" realm (' + scope + '), wrapped under ' +
+           'the key-encryption key and queued for the store.');
+  log.debug("Leaving activeDek(). Made.");
+  return rec;
+}
+
+function deriveDekFor(scope, realm, cls, wk) {
+  log.debug("Entering deriveDekFor().");
+  const context = dekSlot(scope, realm, cls);
+  const derived = crypto.deriveDek(wk, context);
+  const id = DERIVED_DEK_PREFIX +
+             Buffer.from(context, 'utf8').toString('base64url');
+  const rec = { id: id, scope: scope, realm: realm, cls: cls, createdAt: 0,
+                status: 'active', wrapped: null, key: derived.key,
+                derived: true };
+  deks.set(id, rec);
+  log.debug("Leaving deriveDekFor().");
+  return rec;
+}
+
+// The DEK a sealed value names, unwrapped or derived as needed; null when this
+// process cannot hold it.
+function dekFor(id) {
+  log.debug("Entering dekFor().");
+  const rec = deks.get(id);
+  if (rec && rec.key) {
+    log.debug("Leaving dekFor(). Held.");
+    return rec;
+  }
+  if (rec && rec.wrapped) {
+    const wk = wrappingKeyOf(rec.scope);
+    if (!wk) {
+      log.debug("Leaving dekFor(). Another scope's.");
+      return null;
+    }
+    try {
+      rec.key = crypto.unwrapDek(wk, rec.wrapped, dekAad(rec));
+    } catch (e) {
+      log.debug("Caught in dekFor(): " + ((e && e.message) || e));
+      log.debug("Leaving dekFor(). It would not unwrap.");
+      return null;
+    }
+    log.debug("Leaving dekFor(). Unwrapped.");
+    return rec;
+  }
+  if (!rec && !deksStored() && id.indexOf(DERIVED_DEK_PREFIX) === 0 &&
+      deks.size < MAX_DERIVED_DEKS) {
+    const context = Buffer.from(id.slice(DERIVED_DEK_PREFIX.length),
+                                'base64url').toString('utf8').split('|');
+    if (context.length === 3) {
+      const wk = wrappingKeyOf(context[0]);
+      if (wk) {
+        log.debug("Leaving dekFor(). Derived from its id.");
+        return deriveDekFor(context[0], context[1], context[2], wk);
+      }
+    }
+  }
+  log.debug("Leaving dekFor(). Not held.");
+  return null;
+}
+
+// A value named a DEK this process does not hold: said once per DEK, and the
+// stored rows read again (at most every two seconds), because the ordinary
+// cause is a DEK another process made a moment ago.
+function noteDekMiss(id, label) {
+  log.debug("Entering noteDekMiss().");
+  if (!dekMissWarned.has(id)) {
+    if (dekMissWarned.size < MAX_DERIVED_DEKS) {
+      dekMissWarned.add(id);
+    }
+    log.warn(errorCodes.tag('STS-KEYS-0092') + 'keystore: a "' +
+             dekClass(label) + '" value names the data encryption key "' +
+             id + '", which this process does not hold; it does not open. ' +
+             'Said once per key.');
+  }
+  reloadDekRows();
+  log.debug("Leaving noteDekMiss().");
+}
+
+/**
+ * Reads every stored data-key row again and adopts what is new, at most every
+ * two seconds; for a process that met a value under a DEK it does not hold.
+ *
+ * @returns a promise of how many DEKs were adopted
+ */
+function reloadDekRows() {
+  log.debug("Entering reloadDekRows().");
+  if (!deksStored() || dekReloading ||
+      Date.now() - dekReloadAt < DEK_RELOAD_INTERVAL_MS) {
+    log.debug("Leaving reloadDekRows(). Not now.");
+    return dekReloading || Promise.resolve(0);
+  }
+  log.debug("Leaving reloadDekRows().");
+  return refreshDekRows();
+}
+
+/**
+ * Reads every stored data-key row again now, whatever the interval: for a
+ * caller about to open a row another process wrote, which may be sealed under
+ * a data encryption key made a moment ago. One read at a time is shared.
+ *
+ * @returns a promise of how many DEKs were adopted
+ */
+function refreshDekRows() {
+  log.debug("Entering refreshDekRows().");
+  if (!deksStored()) {
+    log.debug("Leaving refreshDekRows(). Nothing is stored.");
+    return Promise.resolve(0);
+  }
+  if (dekReloading) {
+    log.debug("Leaving refreshDekRows(). One is running.");
+    return dekReloading;
+  }
+  dekReloadAt = Date.now();
+  dekReloading = Promise.resolve().then(function () {
+    return store.loadKeys();
+  }).then(function (rows) {
+    let adopted = 0;
+    (rows || []).forEach(function (row) {
+      if (String(row.realm || '').indexOf(DEK_ROW_PREFIX) === 0) {
+        adopted += adoptDekRow(String(row.realm), row.material, false);
+      }
+    });
+    return adopted;
+  }, function (e) {
+    log.debug("Caught in reloadDekRows(): " + ((e && e.message) || e));
+    return 0;
+  }).then(function (adopted) {
+    dekReloading = null;
+    return adopted;
+  });
+  log.debug("Leaving refreshDekRows().");
+  return dekReloading;
+}
+
+// Whether a sealed row names a data encryption key this process does not
+// hold yet.
+function namesUnheldDek(cipher) {
+  log.debug("Entering namesUnheldDek().");
+  const id = crypto.dekIdOf(cipher);
+  log.debug("Leaving namesUnheldDek().");
+  return !!id && !dekFor(id);
+}
+
+// A key or certificate-authority row is written once the data-key rows queued
+// before it have landed, and — where the store merges, so the row another
+// process wrote is opened under the row's lock — once this process has read
+// the data-key rows the other processes wrote. A merge that still meets a
+// data encryption key it does not hold (made in between) reads them again and
+// tries once more.
+function writeAfterDeks(perform, rowKey, payload) {
+  log.debug("Entering writeAfterDeks(). row=" + rowKey);
+  const merges = !!store && typeof store.mergeKeys === 'function';
+  log.debug("Leaving writeAfterDeks().");
+  return settleDeks().then(function () {
+    return merges ? refreshDekRows() : 0;
+  }).then(function () {
+    return perform(rowKey, payload);
+  }).then(function (outcome) {
+    if (merges && outcome && outcome.ok === false &&
+        /it names is not held here/.test(String(outcome.error || ''))) {
+      return refreshDekRows().then(function () {
+        return perform(rowKey, payload);
+      });
+    }
+    return outcome;
+  });
+}
+
+function parseDekRow(text) {
+  log.debug("Entering parseDekRow().");
+  if (!text) {
+    log.debug("Leaving parseDekRow(). None.");
+    return null;
+  }
+  const row = JSON.parse(String(text));
+  if (!row || row.v !== DEK_ROW_VERSION || !Array.isArray(row.deks) ||
+      typeof row.scope !== 'string' || typeof row.realm !== 'string') {
+    throw new Error('this is not a data-key row');
+  }
+  log.debug("Leaving parseDekRow().");
+  return row;
+}
+
+// A stored data-key row, adopted: every DEK in it this process does not hold
+// is added (unwrapped where the scope is ours, held wrapped where it is not),
+// and the active DEK of each class chosen again. A DEK of our scope that will
+// not unwrap is the wrong key-encryption key, and `fatal` makes it stop the
+// start; otherwise it is logged and left out.
+function adoptDekRow(rowKey, text, fatal) {
+  log.debug("Entering adoptDekRow(). row=" + rowKey);
+  let row = null;
+  try {
+    row = parseDekRow(text);
+  } catch (e) {
+    log.error(errorCodes.tag('STS-KEYS-0094') + 'keystore: the "' + rowKey +
+              '" data-key row could not be read: ' + e.message + '.');
+    if (fatal) {
+      throw new Error(errorCodes.tag('STS-KEYS-0094') + 'the "' + rowKey +
+                      '" data-key row could not be read: ' + e.message);
+    }
+    log.debug("Leaving adoptDekRow(). Unreadable.");
+    return 0;
+  }
+  if (!row) {
+    log.debug("Leaving adoptDekRow(). No row.");
+    return 0;
+  }
+  let adopted = 0;
+  const classes = new Set();
+  row.deks.forEach(function (one) {
+    if (!one || !DEK_ID_PATTERN.test(String(one.id || ''))) {
+      return;
+    }
+    const held = deks.get(one.id);
+    if (held) {
+      if (one.status === 'retired' && held.status !== 'retired') {
+        held.status = 'retired';
+        classes.add(held.cls);
+      }
+      return;
+    }
+    const rec = { id: String(one.id), scope: row.scope, realm: row.realm,
+                  cls: dekClass(one.cls), createdAt: Number(one.createdAt) || 0,
+                  status: one.status === 'retired' ? 'retired' : 'active',
+                  wrapped: String(one.wrapped || ''), key: null,
+                  derived: false };
+    const wk = wrappingKeyOf(rec.scope);
+    if (wk) {
+      try {
+        rec.key = crypto.unwrapDek(wk, rec.wrapped, dekAad(rec));
+      } catch (e) {
+        const why = errorCodes.tag('STS-KEYS-0091') + 'the data encryption ' +
+          'key "' + rec.id + '" (' + rec.cls + ', "' + rec.realm + '" realm, ' +
+          rec.scope + ') could not be unwrapped. The key-encryption key is ' +
+          'almost certainly not the one it was wrapped under (provider: ' +
+          secrets.describe().provider + '): ' + e.message;
+        if (fatal) {
+          throw new Error(why + '. This service will NOT start rather than ' +
+                          'make new keys, because everything sealed under ' +
+                          'this one would stop opening.');
+        }
+        // `why` opens with its STS-KEYS-0091 tag.
+        log.error(errorCodes.tag('STS-KEYS-0091') + 'keystore: ' +
+                  why.slice(why.indexOf(']') + 1).trim() + '.');
+        return;
+      }
+    }
+    deks.set(rec.id, rec);
+    classes.add(rec.cls);
+    adopted += 1;
+  });
+  classes.forEach(function (cls) {
+    chooseActive(row.scope, row.realm, cls);
+  });
+  log.debug("Leaving adoptDekRow(). " + adopted + " adopted.");
+  return adopted;
+}
+
+// The row this process would write for a scope and realm: every DEK it holds
+// there, oldest first.
+function dekRowText(scope, realm) {
+  log.debug("Entering dekRowText().");
+  const list = [];
+  deks.forEach(function (rec) {
+    if (rec.scope === scope && rec.realm === realm && rec.wrapped &&
+        !rec.derived) {
+      list.push({ id: rec.id, cls: rec.cls, createdAt: rec.createdAt,
+                  status: rec.status, wrapped: rec.wrapped });
+    }
+  });
+  list.sort(function (a, b) {
+    return a.createdAt - b.createdAt || (a.id < b.id ? -1 : 1);
+  });
+  log.debug("Leaving dekRowText().");
+  return JSON.stringify({ v: DEK_ROW_VERSION, scope: scope, realm: realm,
+                          deks: list });
+}
+
+// The union of two data-key rows: every DEK of either, a retirement on either
+// side kept. Null when `mine` adds nothing to `current`.
+function unionDekRows(current, mine) {
+  log.debug("Entering unionDekRows().");
+  const byId = new Map();
+  (current ? current.deks : []).forEach(function (one) {
+    byId.set(one.id, Object.assign({}, one));
+  });
+  let changed = !current;
+  mine.deks.forEach(function (one) {
+    const theirs = byId.get(one.id);
+    if (!theirs) {
+      byId.set(one.id, Object.assign({}, one));
+      changed = true;
+    } else if (one.status === 'retired' && theirs.status !== 'retired') {
+      theirs.status = 'retired';
+      changed = true;
+    }
+  });
+  if (!changed) {
+    log.debug("Leaving unionDekRows(). Nothing new.");
+    return null;
+  }
+  const list = Array.from(byId.values()).sort(function (a, b) {
+    return a.createdAt - b.createdAt || (a.id < b.id ? -1 : 1);
+  });
+  log.debug("Leaving unionDekRows().");
+  return { v: DEK_ROW_VERSION, scope: mine.scope, realm: mine.realm,
+           deks: list };
+}
+
+// Writes a scope and realm's data-key row: a union under the row's lock where
+// the store can merge (two processes making a DEK for one class at once keep
+// both), an upsert where it cannot (one process, an ldif store). What the
+// store then holds is adopted.
+function writeDekRow(rowKey, payload) {
+  log.debug("Entering writeDekRow(). row=" + rowKey);
+  const text = dekRowText(payload.scope, payload.realm);
+  const merges = typeof store.mergeKeys === 'function' &&
+                 typeof store.loadKey === 'function';
+  log.debug("Leaving writeDekRow().");
+  return Promise.resolve().then(function () {
+    if (!merges) {
+      return Promise.resolve(store.saveKeys(rowKey, text)).then(function () {
+        return { material: text };
+      });
+    }
+    return store.mergeKeys(rowKey, text, function (current) {
+      log.debug("Entering the data-key row merge. row=" + rowKey);
+      let theirs = null;
+      try {
+        theirs = parseDekRow(current);
+      } catch (e) {
+        // A row this build cannot read is NOT overwritten: replacing it would
+        // throw away DEKs other values were sealed under.
+        log.debug("Caught in the data-key row merge: " +
+                  ((e && e.message) || e));
+        throw new Error('the stored row is not a data-key row (' +
+                        e.message + ')');
+      }
+      const merged = unionDekRows(theirs, JSON.parse(text));
+      log.debug("Leaving the data-key row merge.");
+      return merged ? JSON.stringify(merged) : null;
+    });
+  }).then(function (result) {
+    if (result && result.material) {
+      adoptDekRow(rowKey, result.material, false);
+    }
+    return { ok: true };
+  }, function (e) {
+    log.error(errorCodes.tag('STS-KEYS-0093') + 'keystore: the "' + rowKey +
+              '" data-key row could not be written: ' + e.message + '. ' +
+              'What was sealed under its new keys will not open after a ' +
+              'restart until it is.');
+    return { ok: false, error: e.message };
+  });
+}
+
+/**
+ * Waits for every queued data-key row to land, so a writer of sealed values
+ * stores nothing before the keys it was sealed under. Every flusher of sealed
+ * rows calls it first.
+ *
+ * @returns a promise, resolved when they have (whatever their outcome)
+ */
+function settleDeks() {
+  log.debug("Entering settleDeks().");
+  const tails = [];
+  writes.forEach(function (slot, rowKey) {
+    if (rowKey.indexOf(DEK_ROW_PREFIX) === 0) {
+      tails.push(slot.tail);
+    }
+  });
+  log.debug("Leaving settleDeks(). " + tails.length + " row(s).");
+  return tails.length ? Promise.all(tails) : Promise.resolve([]);
+}
+
+// Drops every DEK of a scope, or of a realm, from memory: the scope's key is
+// gone (a dropped cell key) or the realm is.
+function dropDeks(test) {
+  log.debug("Entering dropDeks().");
+  let dropped = 0;
+  Array.from(deks.keys()).forEach(function (id) {
+    const rec = deks.get(id);
+    if (rec && test(rec)) {
+      deks.delete(id);
+      dekActive.delete(dekSlot(rec.scope, rec.realm, rec.cls));
+      dropped += 1;
+    }
+  });
+  if (dropped) {
+    dekDrops += 1;
+  }
+  log.debug("Leaving dropDeks(). " + dropped + " dropped.");
+  return dropped;
+}
+
+// A keystore row of this file's own, sealed under the service scope's DEK for
+// its realm and class. Throws without one: these rows are written only where
+// a key-encryption key is held.
+function sealRow(text, label, realmId) {
+  log.debug("Entering sealRow().");
+  const rec = activeDek('service', dekRealm(realmId), dekClass(label));
+  if (!rec) {
+    throw new Error('no key-encryption key is held');
+  }
+  log.debug("Leaving sealRow().");
+  return crypto.encryptWithDek(rec.id, rec.key, String(text), label);
+}
+
+// A keystore row of this file's own, opened. Throws when it cannot be, which
+// at startup is fatal.
+function openRow(cipher, label) {
+  log.debug("Entering openRow().");
+  const id = crypto.dekIdOf(cipher);
+  if (!id) {
+    throw new Error(errorCodes.tag('STS-KEYS-0095') + 'the row is not a ' +
+                    'version-2 envelope. A store written before data ' +
+                    'encryption keys (#391) is not read by this build: ' +
+                    'recreate it');
+  }
+  const rec = dekFor(id);
+  if (!rec) {
+    throw new Error('the data encryption key "' + id + '" it names is not ' +
+                    'held here');
+  }
+  log.debug("Leaving openRow().");
+  return crypto.decryptWithDek(rec.key, cipher, label);
+}
+
+/**
+ * Reports the data encryption keys held, for the console: how many per scope,
+ * realm and class, and which is active; never a key.
+ *
+ * @returns the rows
+ */
+function dataKeys() {
+  log.debug("Entering dataKeys().");
+  const rows = [];
+  deks.forEach(function (rec) {
+    rows.push({ id: rec.id, scope: rec.scope, realm: rec.realm, cls: rec.cls,
+                createdAt: rec.createdAt, status: rec.status,
+                derived: !!rec.derived, held: !!rec.key,
+                active: dekActive.get(dekSlot(rec.scope, rec.realm,
+                                              rec.cls)) === rec.id });
+  });
+  rows.sort(function (a, b) {
+    return (a.realm + '|' + a.cls).localeCompare(b.realm + '|' + b.cls) ||
+           a.createdAt - b.createdAt;
+  });
+  log.debug("Leaving dataKeys().");
+  return rows;
 }
 
 // ---------------------------------------------------------------------------
@@ -2712,26 +3414,35 @@ function keyedDigest(label, text) {
 // that knows that is the caller. It reaches `crypto.js`'s tally unchanged; a
 // caller that passes none is still counted, in `(unlabelled)`.
 /**
- * Seals text under the key-encryption key, which never leaves this file.
+ * Seals text under the data encryption key of its realm and class, itself
+ * wrapped under the key-encryption key, which never leaves this file (#391).
  *
  * @param plaintext - the text
- * @param label - what kind of data it is, for `/admin/encryption`'s accounting
- * only
- * @param tier - 'cell' to seal under the cell key where one is held (#98);
- * anything else seals under the service key
+ * @param label - what kind of data it is: its DEK's class, and the row
+ * `/admin/encryption` counts it on
+ * @param tier - 'cell' to seal under this cell's own DEKs where a cell key is
+ * held (#98); anything else seals under the service's
+ * @param options - `{ realm }`: the realm whose DEK seals it, when that is not
+ * the ambient realm (a flush writing another realm's rows)
  * @returns the ciphertext, or null without a key-encryption key
  */
-function seal(plaintext, label, tier) {
+function seal(plaintext, label, tier, options) {
   log.debug('Entering seal().');
   if (!kek) {
     log.debug('Leaving seal(). No key-encryption key.');
     return null;
   }
-  // THE CELL TIER UNDER THE CELL KEY (#98) when there is one; everything
-  // else, and everything in single-cell mode, under the service key.
-  const under = tier === 'cell' && cellKek ? cellKek : kek;
   try {
-    const out = crypto.encryptWithKek(under, String(plaintext), label);
+    const realm = options && options.realm !== undefined
+      ? options.realm : realms.currentId();
+    const rec = activeDek(dekScopeFor(tier), dekRealm(realm),
+                          dekClass(label));
+    if (!rec) {
+      log.debug('Leaving seal(). No data encryption key.');
+      return null;
+    }
+    const out = crypto.encryptWithDek(rec.id, rec.key, String(plaintext),
+                                      label);
     log.debug('Leaving seal(). Sealed.');
     return out;
   } catch (e) {
@@ -2743,44 +3454,34 @@ function seal(plaintext, label, tier) {
 }
 
 /**
- * Opens text sealed under the key-encryption key.
+ * Opens text `seal()` sealed: the envelope names its data encryption key, and
+ * a DEK this process holds — of either tier, any realm — opens it.
  *
  * @param ciphertext - the sealed text
  * @param label - what kind of data it is, for accounting only
- * @returns the plaintext, or null without a key-encryption key or when it will
- * not open
+ * @returns the plaintext, or null when it will not open
  */
 function open(ciphertext, label) {
   log.debug('Entering open().');
-  if (!kek) {
-    log.debug('Leaving open(). No key-encryption key.');
+  const id = crypto.dekIdOf(ciphertext);
+  if (!id) {
+    log.debug('Leaving open(). Not a version-2 envelope.');
     return null;
   }
-  // THE CELL KEY FIRST, THEN THE SERVICE KEY (#98). The envelope does not say
-  // which key sealed it — `$aesgcm$1$` is one shape for both, deliberately,
-  // so every `isSealed()` prefix test in the service still holds — and
-  // AES-GCM's tag makes the wrong key fail rather than answer, so trying
-  // both is exact. A caller never has to know the tier of what it opens.
-  if (cellKek) {
-    try {
-      const inCell = crypto.decryptWithKek(cellKek, ciphertext, label);
-      log.debug('Leaving open(). Opened under the cell key.');
-      return inCell;
-    } catch (e) {
-      log.debug("Caught in open(): not under the cell key (" +
-                ((e && e.message) || e) + "); trying the service key.");
-    }
+  const rec = dekFor(id);
+  if (!rec) {
+    noteDekMiss(id, label);
+    log.debug('Leaving open(). Its data encryption key is not held.');
+    return null;
   }
   try {
-    const out = crypto.decryptWithKek(kek, ciphertext, label);
+    const out = crypto.decryptWithDek(rec.key, ciphertext, label);
     log.debug('Leaving open(). Opened.');
     return out;
   } catch (e) {
     // NOT rethrown, and the caller is what makes that right: a row that will
-    // not open was written under a DIFFERENT key-encryption key, which is the
-    // ordinary consequence of rotating one. The restore reports how many and
-    // drops them; the alternative is a service that will not start because of
-    // a session from last week.
+    // not open is reported and dropped by its reader, and the alternative is
+    // a service that will not start because of a session from last week.
     log.debug('Leaving open(). It would not open: ' + e.message);
     return null;
   }
@@ -2804,7 +3505,7 @@ function open(ciphertext, label) {
 // compared by identity inside this file and nothing derived from them leaves:
 // no digest, no fingerprint, only how many times they have changed.
 // ---------------------------------------------------------------------------
-let epochSeen = { kek: null, cellKek: null, epoch: 0 };
+let epochSeen = { kek: null, cellKek: null, drops: 0, epoch: 0 };
 
 /**
  * Returns a number that changes whenever the keys `open()` tries change, for
@@ -2814,8 +3515,12 @@ let epochSeen = { kek: null, cellKek: null, epoch: 0 };
  */
 function kekEpoch() {
   log.debug("Entering kekEpoch().");
-  if (epochSeen.kek !== kek || epochSeen.cellKek !== cellKek) {
-    epochSeen = { kek: kek, cellKek: cellKek, epoch: epochSeen.epoch + 1 };
+  // AND WHENEVER DATA ENCRYPTION KEYS WERE DROPPED (#391): a value under a
+  // dropped DEK no longer opens, so a verdict remembered before is stale.
+  if (epochSeen.kek !== kek || epochSeen.cellKek !== cellKek ||
+      epochSeen.drops !== dekDrops) {
+    epochSeen = { kek: kek, cellKek: cellKek, drops: dekDrops,
+                  epoch: epochSeen.epoch + 1 };
   }
   log.debug("Leaving kekEpoch().");
   return epochSeen.epoch;
@@ -3292,12 +3997,21 @@ function queueWrite(rowKey, payload, perform) {
     log.debug("Leaving queueWrite(). Coalesced into the waiting write.");
     return slot.queued.promise;
   }
-  const entry = { payload: payload, promise: null };
+  // THE STORE THE WRITE WAS QUEUED FOR (#391): a write still waiting when
+  // the store is replaced — a restart in a test, `setStore()` after
+  // `reset()` — is abandoned rather than landing in the new store, sealed
+  // under data encryption keys that store has never held.
+  const entry = { payload: payload, promise: null, store: store };
   slot.queued = entry;
   slot.pending += 1;
   entry.promise = slot.tail.then(function () {
     if (slot.queued === entry) {
       slot.queued = null;
+    }
+    if (entry.store !== store) {
+      log.debug("queueWrite(): the store was replaced; " + rowKey +
+                " is not written.");
+      return { ok: true, abandoned: true };
     }
     return perform(rowKey, entry.payload);
   }).then(function (outcome) {
@@ -3520,7 +4234,7 @@ function decideKeys(stored, offered) {
 function openBlob(cipher, label) {
   log.debug("Entering openBlob().");
   log.debug("Leaving openBlob().");
-  return JSON.parse(crypto.decryptWithKek(kek, cipher, label));
+  return JSON.parse(openRow(cipher, label));
 }
 
 // ---------------------------------------------------------------------------
@@ -3556,10 +4270,19 @@ function adoptStoredKeys(id, blob, cipher, options) {
   log.debug("Leaving adoptStoredKeys().");
 }
 
+// A key set's row is written only once every data-key row queued before it
+// has landed: the row is sealed under a DEK that may be new, and a process
+// reading the row must find that DEK's row first (#391).
 function writeKeys(id, payload) {
   log.debug("Entering writeKeys(). realm=" + id);
+  log.debug("Leaving writeKeys(). After the data-key rows.");
+  return writeAfterDeks(writeKeysNow, id, payload);
+}
+
+function writeKeysNow(id, payload) {
+  log.debug("Entering writeKeysNow(). realm=" + id);
   if (!arbitrates()) {
-    log.debug("Leaving writeKeys(). An upsert.");
+    log.debug("Leaving writeKeysNow(). An upsert.");
     return Promise.resolve().then(function () {
       return store.saveKeys(id, payload.cipher);
     }).then(function () {
@@ -3575,7 +4298,7 @@ function writeKeys(id, payload) {
     });
   }
   let decided = null;
-  log.debug("Leaving writeKeys(). A merge under the row's lock.");
+  log.debug("Leaving writeKeysNow(). A merge under the row's lock.");
   return Promise.resolve().then(function () {
     return store.mergeKeys(id, payload.cipher, function (current) {
       log.debug("Entering the key-set merge. realm=" + id);
@@ -3587,8 +4310,7 @@ function writeKeys(id, payload) {
       }
       return decided.blob === payload.blob
         ? payload.cipher
-        : crypto.encryptWithKek(kek, JSON.stringify(decided.blob),
-                                'signing-keys');
+        : sealRow(JSON.stringify(decided.blob), 'signing-keys', id);
     });
   }).then(function (result) {
     if (!decided) {
@@ -3635,20 +4357,27 @@ function writeKeys(id, payload) {
   });
 }
 
+// The same, for a certificate-authority row (#391).
 function writePki(rowKey, payload) {
   log.debug("Entering writePki(). row=" + rowKey);
+  log.debug("Leaving writePki(). After the data-key rows.");
+  return writeAfterDeks(writePkiNow, rowKey, payload);
+}
+
+function writePkiNow(rowKey, payload) {
+  log.debug("Entering writePkiNow(). row=" + rowKey);
   const id = rowKey.slice(PKI_ROW_PREFIX.length);
   const chain = payload.chain;
   if (!chain) {
-    log.debug("Leaving writePki(). A removal.");
+    log.debug("Leaving writePkiNow(). A removal.");
     return Promise.resolve().then(function () {
       return typeof store.deleteKeys === 'function'
         ? store.deleteKeys(rowKey)
         // A driver with no delete is told to store an EMPTY hierarchy rather
         // than being left with the old one. `start()` reads a falsy `tiers`
         // back as no hierarchy, so the two spellings mean the same thing.
-        : store.saveKeys(rowKey, crypto.encryptWithKek(kek, JSON.stringify({}),
-                                                       'pki-hierarchy'));
+        : store.saveKeys(rowKey, sealRow(JSON.stringify({}),
+                                         'pki-hierarchy', id));
     }).then(function () {
       pkiBase.delete(id);
       log.info('keystore: the "' + id + '" realm\'s certificate authority ' +
@@ -3684,9 +4413,9 @@ function writePki(rowKey, payload) {
              'get into the row is how that happens.');
   }
   const text = JSON.stringify(chain);
-  const cipher = crypto.encryptWithKek(kek, text, 'pki-hierarchy');
+  const cipher = sealRow(text, 'pki-hierarchy', id);
   if (!mergesPkiRows()) {
-    log.debug("Leaving writePki(). An upsert.");
+    log.debug("Leaving writePkiNow(). An upsert.");
     return Promise.resolve().then(function () {
       return store.saveKeys(rowKey, cipher);
     }).then(function () {
@@ -3703,7 +4432,7 @@ function writePki(rowKey, payload) {
   }
   const baseCipher = pkiBase.has(id) ? pkiBase.get(id) : null;
   let decided = null;
-  log.debug("Leaving writePki(). A merge under the row's lock.");
+  log.debug("Leaving writePkiNow(). A merge under the row's lock.");
   return Promise.resolve().then(function () {
     return store.mergeKeys(rowKey, cipher, function (current) {
       log.debug("Entering the hierarchy merge. scope=" + id);
@@ -3722,8 +4451,7 @@ function writePki(rowKey, payload) {
                   displaced: answer.displaced, row: answer.row,
                   orphaned: answer.orphaned || [] };
       log.debug("Leaving the hierarchy merge. Merged.");
-      return crypto.encryptWithKek(kek, JSON.stringify(answer.row),
-                                   'pki-hierarchy');
+      return sealRow(JSON.stringify(answer.row), 'pki-hierarchy', id);
     });
   }).then(function (result) {
     const newer = pkiLocalGen.get(id) !== payload.gen;
@@ -3848,6 +4576,17 @@ function applyStoredChange(rowKey, round) {
   log.debug("Entering applyStoredChange(). row=" + rowKey);
   const key = String(rowKey || '');
   const turn = Number(round) || 0;
+  // A DATA-KEY ROW (#391) is a union nobody arbitrates: whatever another
+  // process added is adopted, in every mode a store can be shared in.
+  if (key.indexOf(DEK_ROW_PREFIX) === 0) {
+    log.debug("Leaving applyStoredChange(). A data-key row.");
+    return Promise.resolve().then(function () {
+      return store.loadKey(key);
+    }).then(function (text) {
+      const adopted = adoptDekRow(key, text, false);
+      return { kind: 'deks', realm: key, adopted: adopted > 0 };
+    });
+  }
   const isPki = key.indexOf(PKI_ROW_PREFIX) === 0;
   const id = isPki ? key.slice(PKI_ROW_PREFIX.length) : key;
   const kind = isPki ? 'pki' : 'keys';
@@ -3882,6 +4621,14 @@ function applyStoredChange(rowKey, round) {
   log.debug("Leaving applyStoredChange(). Reading the row.");
   return Promise.resolve().then(function () {
     return store.loadKey(key);
+  }).then(function (cipher) {
+    // A ROW SEALED UNDER A DATA ENCRYPTION KEY ANOTHER PROCESS MADE A MOMENT
+    // AGO (#391): its data-key row landed first, so read them again now.
+    return (cipher && namesUnheldDek(cipher) ? refreshDekRows()
+                                             : Promise.resolve(0))
+      .then(function () {
+        return cipher;
+      });
   }).then(function (cipher) {
     if (writes.has(key)) {
       return afterOurWrite();
@@ -4022,6 +4769,15 @@ function reset() {
   log.debug('Entering reset().');
   purgeAll();
   material.clear();
+  // The data encryption keys go with the key-encryption key that wrapped
+  // them (#391); a restart reads them back from the store.
+  deks.clear();
+  dekActive.clear();
+  dekMissWarned.clear();
+  dekDrops += 1;
+  dekReloadAt = 0;
+  dekReloading = null;
+  durableKek = false;
   kek = null;
   cellKek = null;
   log.debug('Leaving reset().');
@@ -4078,6 +4834,11 @@ module.exports = {
   seal: seal,
   open: open,
   kekEpoch: kekEpoch,
+  // ENVELOPE ENCRYPTION (#391): every writer of sealed rows waits for the
+  // data-key rows first; the console reads what is held.
+  settleDeks: settleDeks,
+  reloadDekRows: reloadDekRows,
+  dataKeys: dataKeys,
   start: start,
   storedFor: storedFor,
   privateMaterialFor: privateMaterialFor,

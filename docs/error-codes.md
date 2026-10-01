@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3920** of them, in **41** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3925** of them, in **41** subsystems.
 
 ## Where a code appears
 
@@ -57,7 +57,7 @@ is an ordinary outcome.
 * [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 28
 * [Cells and residency (`STS-CELL`)](#sts-cell) — 86
 * [Scheduler (`STS-SCHED`)](#sts-sched) — 18
-* [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 79
+* [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 84
 * [Certificate authority (`STS-PKI`)](#sts-pki) — 205
 * [Certificate enrollment core (`STS-ENROLL`)](#sts-enroll) — 56
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 72
@@ -603,6 +603,11 @@ Raised from: common/crypto.js, common/pq_jose.js, common/keystore.js, common/sec
 | `STS-KEYS-0077` | An XML signature was checked with an ECDSA key on a curve weaker than P-256 (secp160, secp192, secp224 and the like), and the realm is in product mode, where such a key verifies nothing (#202). | the caller's refusal: the signature does not verify, and each protocol answers that as it answers a wrong signature |
 | `STS-KEYS-0078` | An AES-CBC XML-encrypted element did not decrypt to a well-formed element: its padding, its UTF-8 or its XML was wrong, and which is deliberately one answer — the padding oracle of XML Encryption 1.1 section 6.1.3, closed (#202). | refusal by the calling protocol |
 | `STS-KEYS-0090` | An XML element encrypted by ECDH-ES key agreement derives its key with something other than a SHA-256/384/512 ConcatKDF (PBKDF2, a SHA-1 digest, none), or names its originator key on a curve this service does not agree over; refused before any key operation (#193 — it was reported as a key encrypted to another certificate). | the caller's refusal |
+| `STS-KEYS-0091` | A stored data encryption key could not be unwrapped under the key-encryption key — almost always the wrong key-encryption key. At startup the service does not start (#391). | — |
+| `STS-KEYS-0092` | A sealed value names a data encryption key this process does not hold, so it does not open; the stored data-key rows are read again in the background. Said once per key (#391). | — |
+| `STS-KEYS-0093` | A data-key row could not be written to the store; what was sealed under its new keys will not open after a restart until it is (#391). | — |
+| `STS-KEYS-0094` | A stored data-key row could not be read, so the data encryption keys in it are not held (#391). It is not overwritten. | — |
+| `STS-KEYS-0095` | A stored key row is not a version-2 envelope: the store was written before data encryption keys (#391) and this build does not read it. The service does not start; recreate the store. | — |
 
 ## STS-PKI
 

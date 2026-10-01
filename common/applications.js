@@ -6079,7 +6079,7 @@ function redirectOriginsOfRealm() {
 // whole promise is that nothing it minted survives a restart.
 //
 // **THE VALUE SAYS WHICH IT IS AND NOTHING HAS TO REMEMBER.** A sealed value
-// is `crypto.encryptWithKek()`'s own envelope, which begins `$aesgcm$`; a PEM
+// is `crypto.encryptWithDek()`'s own envelope, which begins `$aesgcm$`; a PEM
 // begins `-----BEGIN`. So `isSealed()` is a prefix test rather than a marker
 // attribute beside it — a second attribute would be a second fact to keep in
 // step, and an entry carried between two modes would be read wrongly the first

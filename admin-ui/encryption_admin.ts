@@ -139,6 +139,19 @@ interface EncryptionAdminDeps {
  */
 const DATA_CLASSES = [
   {
+    label: 'data-keys',
+    what: 'The data encryption keys themselves (#391): one per realm per ' +
+          'data class below, each wrapped and unwrapped under the ' +
+          'key-encryption key',
+    where: 'the `dek:<scope>:<realm>` rows of `sts_keys`',
+    sealed: true,
+    why: 'Envelope encryption: every value is encrypted under a data ' +
+         'encryption key, and only the data encryption keys are encrypted ' +
+         'under the key-encryption key. A wrap counts here as an encryption ' +
+         'and an unwrap as a decryption; a process unwraps each key once and ' +
+         'holds it, so these figures stay small whatever is sealed.'
+  },
+  {
     label: 'signing-keys',
     what: 'This service’s own signing keys, one row per trust realm — and, ' +
           'in the same row since 2026-09-12, that realm’s OpenID4VCI ' +
@@ -535,10 +548,13 @@ class EncryptionAdmin {
         'bytes would produce signatures nothing can verify, and the failure ' +
         'would surface at a relying party as "the signature is invalid" — as ' +
         'far from the cause as it is possible to get. The key-encryption key ' +
-        'NEVER ENCRYPTS ANYTHING DIRECTLY: every record derives a subkey of ' +
-        'its own with HKDF-SHA256 over a random salt, so no record’s IV ' +
-        'matters to any other — and a single key encrypting many records ' +
-        'under many IVs is one IV-reuse bug away from catastrophic in GCM.',
+        'NEVER ENCRYPTS A VALUE (#391): every value is encrypted under a ' +
+        'data encryption key — 256 random bits, one per realm per data ' +
+        'class — and the data encryption keys are what the key-encryption ' +
+        'key wraps. A process unwraps each once and holds it, so a key ' +
+        'held in a key management service is asked per data key, never per ' +
+        'value, and rotating the key-encryption key re-wraps a handful of ' +
+        'keys rather than re-encrypting the store.',
       // ---------------------------------------------------------------------
       // THE TWO LIMITS OF EVERYTHING ABOVE (2026-09-12), and they are on the
       // JSON as well as on the page for `pki_admin.ts`'s `revocationNote`
@@ -554,17 +570,16 @@ class EncryptionAdmin {
         // Answered as a FIELD and not only as prose, so a test or a dashboard
         // can assert it rather than matching on a sentence.
         perRealmKey: false,
+        perRealmDataKey: true,
         realms:
           'THERE IS ONE KEY-ENCRYPTION KEY FOR THIS SERVICE, NOT ONE PER ' +
-          'TRUST REALM. It is read once at startup and used for every sealed ' +
-          'value in every realm. Each record does get a key of its own — ' +
-          'HKDF over a random salt per record — but the derivation takes no ' +
-          'realm, so the separation is per RECORD and not per TENANT. What ' +
-          'is per realm is the material being sealed (each realm has its own ' +
-          'signing keys and its own branch of the certificate authority), ' +
-          'not the key that seals it. So a realm is NOT a cryptographic ' +
-          'boundary at rest: whoever can read this key can open every ' +
-          'realm\'s sealed data, and rotating it rotates every realm at once.',
+          'TRUST REALM, AND A DATA ENCRYPTION KEY PER REALM PER DATA CLASS ' +
+          '(#391). No data encryption key is shared between realms, so a ' +
+          'value of one realm is never sealed under a key another realm\'s ' +
+          'values are. But every data encryption key is wrapped under the one ' +
+          'key-encryption key, so a realm is NOT an independent boundary at ' +
+          'rest: whoever can read that key can unwrap every realm\'s data ' +
+          'keys, and rotating it re-wraps every realm\'s at once.',
         storage:
           'EVERYTHING NOT IN THE TABLE ABOVE IS PLAINTEXT IN THE STORE — the ' +
           'directory entries, the groups, the applications, the realms and ' +
@@ -608,7 +623,9 @@ class EncryptionAdmin {
       },
       accountingNote:
         'Counted at the ONE funnel both operations pass through — ' +
-        '`crypto.js`’s `encryptWithKek()` and `decryptWithKek()` — ' +
+        '`crypto.js`’s `encryptWithDek()` and `decryptWithDek()`, with ' +
+        'the data encryption keys’ own wraps and unwraps under ' +
+        '`data-keys` — ' +
         'rather than at the call sites, because a total assembled from call ' +
         'sites is wrong the first time somebody adds another one and is ' +
         'wrong SILENTLY. The breakdown below is by a LABEL each call site ' +

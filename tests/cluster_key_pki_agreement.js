@@ -44,6 +44,7 @@ const path = require('path');
 const nodeCrypto = require('crypto');
 
 const crypto = require('../common/crypto');
+const sealedRows = require('./tools/sealed_rows');
 const pkiMerge = require('../common/pki_merge');
 
 const log = require('bunyan').createLogger({
@@ -88,13 +89,15 @@ function freshNode(names) {
 // THE STORE BOTH NODES SHARE. `mergeKeys()` serialises per row and waits
 // `delayMs` holding the "lock", which is what a SELECT … FOR UPDATE does to a
 // second transaction.
+const STORES = [];
+
 function sharedStore(delayMs) {
   log.debug("Entering sharedStore().");
   const rows = new Map();
   const locks = new Map();
   const adopted = [];
   log.debug("Leaving sharedStore().");
-  return {
+  const made = {
     rows: rows,
     adopted: adopted,
     loadKeys: function () {
@@ -148,6 +151,8 @@ function sharedStore(delayMs) {
       log.debug("Leaving hierarchyAdopted().");
     }
   };
+  STORES.push(made);
+  return made;
 }
 
 // Something shaped like a serialised key set, as far as the keystore's write
@@ -168,7 +173,7 @@ function keySet(label, extra) {
 function opened(kek, cipher) {
   log.debug("Entering opened().");
   log.debug("Leaving opened().");
-  return JSON.parse(crypto.decryptWithKek(kek, cipher));
+  return JSON.parse(sealedRows.openRowIn(STORES, kek, cipher));
 }
 
 async function startNode(store, spies) {
@@ -221,8 +226,8 @@ async function offSection(t, kek) {
                    intermediate: { serialHex: '01', certificatePem: 'I1' },
                    issuing: { scep: { serialHex: '02', certificatePem: 'S1' } },
                    revoked: {}, crlNumbers: {}, issuedKeyPairs: [] };
-    store.rows.set('pki:solo', crypto.encryptWithKek(kek,
-      JSON.stringify(seed), 'pki-hierarchy'));
+    store.rows.set('pki:solo', sealedRows.sealRowIn(store, kek, 'solo',
+    'pki-hierarchy', JSON.stringify(seed)));
     const c = await startNode(store, { adopted: [], published: [] });
     const d = await startNode(store, { adopted: [], published: [] });
     const rowC = JSON.parse(JSON.stringify(c.pkiFor('solo')));
@@ -364,8 +369,8 @@ async function mergeSection(t, kek) {
     crlNumbers: { jose: 4 },
     issuedKeyPairs: []
   };
-  store.rows.set('pki:acme', crypto.encryptWithKek(kek, JSON.stringify(seed),
-                                                   'pki-hierarchy'));
+  store.rows.set('pki:acme', sealedRows.sealRowIn(store, kek, 'acme',
+    'pki-hierarchy', JSON.stringify(seed)));
   const spies = { adopted: [], published: [] };
   const a = await startNode(store, spies);
   const b = await startNode(store, { adopted: [], published: [] });
@@ -757,8 +762,8 @@ async function publishedNotRevokedSection(t, kek) {
     crlNumbers: { root: 1 },
     issuedKeyPairs: []
   };
-  store.rows.set('pki:acme', crypto.encryptWithKek(kek, JSON.stringify(seed),
-                                                   'pki-hierarchy'));
+  store.rows.set('pki:acme', sealedRows.sealRowIn(store, kek, 'acme',
+    'pki-hierarchy', JSON.stringify(seed)));
   const a = await startNode(store, { adopted: [], published: [] });
 
   // A REBUILD THAT SUPERSEDED THE INTERMEDIATE AND DID NOT REPLACE IT — the
@@ -825,8 +830,8 @@ async function unadoptedMergeSection(t, kek) {
     crlNumbers: {},
     issuedKeyPairs: []
   };
-  store.rows.set('pki:acme', crypto.encryptWithKek(kek, JSON.stringify(seed),
-                                                   'pki-hierarchy'));
+  store.rows.set('pki:acme', sealedRows.sealRowIn(store, kek, 'acme',
+    'pki-hierarchy', JSON.stringify(seed)));
   const a = await startNode(store, { adopted: [], published: [] });
   const b = await startNode(store, { adopted: [], published: [] });
 
@@ -889,8 +894,8 @@ async function orphanedSlotSection(t, kek) {
     crlNumbers: {},
     issuedKeyPairs: []
   };
-  store.rows.set('pki:acme', crypto.encryptWithKek(kek, JSON.stringify(seed),
-                                                   'pki-hierarchy'));
+  store.rows.set('pki:acme', sealedRows.sealRowIn(store, kek, 'acme',
+    'pki-hierarchy', JSON.stringify(seed)));
   const a = await startNode(store, { adopted: [], published: [] });
   const b = await startNode(store, { adopted: [], published: [] });
   const told = [];
@@ -952,8 +957,8 @@ async function applyWaitsSection(t, kek) {
     crlNumbers: { xml: 1 },
     issuedKeyPairs: []
   };
-  store.rows.set('pki:pinrace', crypto.encryptWithKek(
-    kek, JSON.stringify(seed), 'pki-hierarchy'));
+  store.rows.set('pki:pinrace', sealedRows.sealRowIn(store, kek, 'pinrace',
+    'pki-hierarchy', JSON.stringify(seed)));
   const a = await startNode(store, { adopted: [], published: [] });
   const b = await startNode(store, { adopted: [], published: [] });
   // Node A's change commits: the one node B must see.
@@ -1005,8 +1010,8 @@ async function broadcastNudgeSection(t, kek) {
     crlNumbers: { xml: 1 },
     issuedKeyPairs: []
   };
-  store.rows.set('pki:nudge', crypto.encryptWithKek(
-    kek, JSON.stringify(seed), 'pki-hierarchy'));
+  store.rows.set('pki:nudge', sealedRows.sealRowIn(store, kek, 'nudge',
+    'pki-hierarchy', JSON.stringify(seed)));
   const a = await startNode(store, { adopted: [], published: [] });
   const b = await startNode(store, { adopted: [], published: [] });
   // A's change commits and B adopts the stored row carrying it.

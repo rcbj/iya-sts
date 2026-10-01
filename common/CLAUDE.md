@@ -5898,11 +5898,18 @@ would produce signatures nothing can verify, and the failure would surface at a
 relying party as "the signature is invalid" — as far from the cause as it is
 possible to get.
 
-**A per-record subkey, derived with HKDF.** The KEK never encrypts anything
-directly: each record uses HKDF-SHA256(KEK, random salt, purpose), so the same
-KEK protects the whole store without any record's IV mattering to any other —
-and a single key encrypting many records under many IVs is one IV-reuse bug away
-from catastrophic in GCM.
+**ENVELOPE ENCRYPTION SINCE #391 (2026-10-01): THE KEK WRAPS DATA KEYS AND
+NOTHING ELSE.** A value is AES-256-GCM under a DATA ENCRYPTION KEY (32 random
+bytes), and only the DEK is encrypted under the KEK. The envelope is
+`$aesgcm$2$<dek id>$<iv>$<tag>$<ciphertext>`, its version and DEK id the
+additional authenticated data; a wrapped DEK is `$dekwrap$1$…` under
+HKDF-SHA256(KEK, info `sts dek wrapping v1`), with the DEK's id, scope, realm
+and class as its AAD, so a wrapped DEK moved onto another realm's row does not
+unwrap. `crypto.js` holds the primitives (`encryptWithDek()`,
+`decryptWithDek()`, `wrapDek()`, `unwrapDek()`, `deriveDek()`); `keystore.js`
+holds the registry. **Version 1 — a per-value HKDF subkey of the KEK, no DEK —
+is gone, and a store written before #391 is recreated, not migrated**
+(rcbj's decision; `STS-KEYS-0095` stops the start).
 
 **A KEK shorter than 32 bytes is refused rather than stretched.** Stretching
 would let a four-character password protect every signing key this service holds
@@ -5910,66 +5917,57 @@ while the log said AES-256, which is the kind of comfortable lie this repository
 refuses everywhere else. Hex is tried before base64, because a 64-character hex
 string is also valid base64 and reading it that way produces 48 different bytes.
 
-### ONE KEK FOR THE SERVICE, NOT ONE PER REALM — AND THE HKDF ABOVE IS NOT THAT (2026-09-12)
+### THE DATA ENCRYPTION KEYS: ONE PER REALM PER CLASS, HELD UNWRAPPED (#391)
 
-Asked directly, and written down here because the per-record subkey paragraph
-above reads like an answer to it and is not.
+rcbj's decisions on #391: **one DEK per realm per data class, never shared
+between realms**; the DEKs **unwrapped once and held in memory** (a minted
+flush seals thousands of values, so a KEK in a key management service is asked
+per DEK, never per value). The design is in `keystore.js`'s *DATA ENCRYPTION
+KEYS* block; what a caller needs:
 
-**There is a single key-encryption key per PROCESS.** `keystore.js` holds one
-module-level `kek`, filled by the only call to `secrets.readKek()` there is;
-that function takes no realm and reads one value from one provider. `seal()` and
-`open()` take `(plaintext, label)` and **no realm** — the `label` is accounting
-for `/admin/encryption`'s per-kind counters and reaches no key derivation, which
-that function's own header says in as many words. Every call site agrees:
-`'totp-secret'`, `'application-private-key'`, `'person-private-key'`,
-`'minted-rows'`. Labels, never realms.
+* **`seal(plaintext, label, tier, options)`**: the class is the LABEL (made
+  safe by `dekClass()`); the realm is `options.realm`, else the AMBIENT realm.
+  A writer of another realm's rows outside a request passes the realm —
+  `persistence_minted.js`'s flush does, per row. `open()` needs neither: the
+  envelope names its DEK.
+* **A SCOPE beside the realm**: `service`, or `cell.<cells.id>` for
+  `seal(…, 'cell')` where a cell key is held (#98) — wrapped under the cell's
+  own key. Another cell's DEK rows are held unopened and never written here.
+* **WHERE KEYS PERSIST A DEK IS RANDOM AND STORED**, wrapped, in a
+  `dek:<scope>:<realm>` row of `sts_keys` (plain JSON; the global tier). The
+  row is a UNION merged under the row's lock, so two processes making a DEK for
+  one class at once keep both, and all converge on the oldest as active.
+  **ORDER is what makes a DEK known before anything sealed under it is read**:
+  a new DEK's row is queued at once, and every writer of sealed rows waits for
+  `keystore.settleDeks()` first — this file's own key and PKI rows,
+  `persistence.js`'s flush, `persistence_minted.js`'s flush, and
+  `cluster_secrets.ts`. **A new direct writer of sealed values owes the same
+  wait.** A value under a DEK not held is refused (`STS-KEYS-0092`) and the
+  rows are read again in the background.
+* **WHERE NOTHING IS STORED A DEK IS DERIVED** from the KEK (`deriveDek()`),
+  and its id (`d.` + the base64url context) names what it was derived for, so a
+  sibling thread with the same ephemeral KEK derives it from the id alone.
+  "Stored or derived" is a PROCESS fact (`start()` read a KEK for a store), not
+  `persists()`, which follows the ambient realm's mode.
+* **What a realm IS at rest now**: no DEK is shared between realms, but every
+  DEK is wrapped under the one KEK, so whoever holds the KEK unwraps every
+  realm's. A realm is a separate key, not an independent boundary; a KEK per
+  realm is still not built, and the costs of one are below.
+* **`open()` still swallows a failure** rather than throwing: a value under a
+  DEK this process cannot hold is reported and dropped by its reader, and the
+  alternative is a service that will not start because of a session from last
+  week. **A DEK of this process's own scope that will not unwrap at START is
+  fatal** (`STS-KEYS-0091`), for the signing key's reason.
 
-**The HKDF `info` IS A CONSTANT** (`'sts key material v1'`), so the
-separation the paragraph above buys is **per record and not per tenant**: every
-sealed value has its own key and IV, and one master key opens all of them in
-every realm.
+`docs/encryption-at-rest.md` is the operator-facing half.
 
-**THE DISTINCTION TO KEEP STRAIGHT IS WHICH KEY IS THE SUBJECT.** Realm
-separation in this service is about *which keys exist* — signing keys per realm
-in `material`, a certificate-authority branch per realm since the Root was
-shared — not about *which key encrypts them*. A reader who knows the first can
-reasonably assume the second, and it is not true.
+#### A key-encryption key per realm — NOT IMPLEMENTED
 
-Three consequences, and the third is already visible in the code:
-
-* whoever can read the KEK can open **every realm's** sealed data, so a realm is
-  not a cryptographic boundary at rest;
-* rotating the KEK rotates every realm at once;
-* **and that is why `open()` swallows a failure rather than throwing.** A value
-  written under a previous KEK is the ordinary outcome of a rotation, so the
-  restore counts them and drops them — the alternative is a service that will
-  not start because of a session from last week.
-
-`docs/encryption-at-rest.md` is the operator-facing half, and
-`docs/trust-realms.md`'s *what a realm does not separate* names it beside the
-three socket families.
-
-#### Making it per realm, if it is ever asked for — NEITHER IS IMPLEMENTED
-
-Written down so the costs are not re-derived. **Nothing below describes code
-that exists.**
-
-* **A per-realm subkey from the one master key.** Put the realm id into the
-  HKDF `info` beside the constant, thread the realm through `seal()` / `open()`,
-  and bump the envelope version (`$aesgcm$2$…`) so records written before the
-  change still open under v1. Cryptographic separation per realm from one
-  secret, no new provisioning, no extra secret-store round trips — and it is
-  SEPARATION rather than INDEPENDENCE: an operator holding the master key still
-  opens everything.
-* **A key-encryption key per realm, from the secret store.** Genuine
-  independence and a much larger change. `secrets.js` grows a keyed read;
-  `keystore.start()` can no longer read one value before the realm registry
-  exists, which inverts the ordering `start()` is built on; every call site
-  needs an ambient realm, **and `persistence_minted.js`'s flush does not have
-  one** — it runs on a timer rather than inside a request, which is the same
-  shape of problem the request pool's barrier hit from the other direction.
-  Creating a realm would also become a key-provisioning act, where today it is
-  one API call.
+Written down so the cost is not re-derived. Genuine independence per realm
+needs `secrets.js` to grow a keyed read; `keystore.start()` could no longer read
+one value before the realm registry exists, and creating a realm would become a
+key-provisioning act, where today it is one API call. With DEKs per realm it is
+now a change to what WRAPS a realm's DEKs and nothing else.
 
 
 ### `storeReport()`: THE SAME MODULE ANSWERING A MONITORING QUESTION (2026-09-12)

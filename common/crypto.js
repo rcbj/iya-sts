@@ -7776,37 +7776,43 @@ function scryptParameters() {
 // use as a parameter) and it is what keeps the question "where does the master
 // key live" answerable in one place rather than in this one too.
 //
-// **A PER-RECORD SUBKEY, DERIVED WITH HKDF.** The KEK itself never encrypts
-// anything: each record is encrypted under HKDF-SHA256(KEK, salt, info), where
-// the salt is 16 random bytes stored with the record. Two reasons, and the
-// second is the operational one: a single key encrypting many records under
-// many IVs is one IV-reuse bug away from catastrophic in GCM, and a derived
-// subkey per record means the same KEK can protect the whole store without any
-// record's IV mattering to any other. The `info` string pins the PURPOSE, so a
-// ciphertext from this store cannot be decrypted by a future caller deriving
-// for something else.
+// **DATA KEYS, WRAPPED UNDER THE KEK (#391, 2026-10-01): ENVELOPE ENCRYPTION.**
+// The KEK never encrypts a value. Each value is encrypted under a DATA
+// ENCRYPTION KEY (DEK) — 32 random bytes, one per realm per data class — and
+// the DEK is stored WRAPPED under the KEK (`wrapDek()`). A process unwraps the
+// DEKs it needs once and holds them; a value names the DEK that sealed it, so
+// opening it is a lookup and one AES-256-GCM decryption. Rotating the KEK is
+// re-wrapping a handful of DEKs, not re-encrypting the store, and a KEK held
+// in a key management service is asked once per DEK, never once per value.
+// Until #391 each value was encrypted under HKDF-SHA256(KEK, a random salt):
+// no DEK, every value tied directly to the KEK, and that format (version 1)
+// is gone — a store written before #391 is recreated, not migrated.
 //
 // **THE STORED FORM IS SELF-DESCRIBING**, modelled on `hashSecret()` above and
-// for the same reason: `$aesgcm$1$salt$iv$tag$ciphertext`, all base64. A
-// version at the front so the scheme can change without a migration that has to
-// guess what it is reading, and every parameter beside the data rather than in
-// a constant somewhere that a later build might disagree about.
+// for the same reason: `$aesgcm$2$<dek id>$<iv>$<tag>$<ciphertext>`, the last
+// three base64. The DEK id is base64url and so never holds a `$`. The version
+// and the DEK id are the additional authenticated data, so a value moved
+// under another DEK's name, or rewritten as another version, does not open.
+// The LABEL a caller passes is accounting and is deliberately NOT in the AAD:
+// a row is opened under a different label than it was sealed under in places
+// (a re-homed entry), and the DEK already binds the realm and the class.
 //
-// **THE INFO STRING WAS `mock-sts key material v1` UNTIL 2026-09-12**, when
-// the product name in every identifier this service stores and emits became
-// `sts`. No migration was written, and that is a decision rather than an
-// oversight: development data does not persist between runs, so nothing
-// sealed under the old label ever has to be read back. **A PRODUCT deployment
-// holding records sealed under the old label would need RE-KEYING** — the info
-// is an HKDF input, so a record sealed under `mock-sts key material v1`
-// derives a different subkey and cannot be opened under this one; `open()`
-// would report it as undecryptable exactly as it reports a rotated KEK.
+// **A WRAPPED DEK IS `$dekwrap$1$<iv>$<tag>$<ciphertext>`**: AES-256-GCM under
+// a wrapping key derived ONCE from the KEK (HKDF-SHA256, no salt, info
+// `sts dek wrapping v1`), with the DEK's id, scope, realm and class as the
+// AAD — so a wrapped DEK copied onto another realm's row does not unwrap. The
+// wrapping key is derived rather than the KEK used directly so that a KEK
+// longer than 32 bytes is all used, and so that nothing else derived from the
+// KEK (`keystore.keyedDigest()`) can ever equal it.
 // ---------------------------------------------------------------------------
 
-const KEK_INFO = 'sts key material v1';
-const KEK_SALT_BYTES = 16;
+const DEK_ENVELOPE_VERSION = '2';
+const DEK_WRAP_INFO = 'sts dek wrapping v1';
+const DEK_DERIVE_INFO = 'sts derived dek v1|';
+const DEK_ID_INFO = 'sts derived dek id v1';
 const KEK_IV_BYTES = 12;      // NIST SP 800-38D's recommended GCM nonce length.
 const KEK_KEY_BYTES = 32;     // AES-256.
+const DEK_ID_PATTERN = /^[A-Za-z0-9_.-]{8,200}$/;
 
 // The KEK as bytes, however it arrived. A provider may hand back raw bytes, hex
 // or base64 — a human pasting a secret into a vault writes text — so the shape
@@ -7991,55 +7997,27 @@ function kekAccounting() {
 // on the page. `/admin/crypto-metadata`'s rule one layer along: an algorithm
 // this service performs must be in a table here, so that a page describing it
 // cannot go on looking complete while being wrong.
-/** The parameters of the key-encryption key's encryption, for the pages. */
+/** The parameters of the envelope encryption at rest, for the pages. */
 const KEK_PARAMETERS = {
-  envelope: '$aesgcm$1$salt$iv$tag$ciphertext, each field base64',
-  version: '1',
+  envelope: '$aesgcm$2$<dek id>$<iv>$<tag>$<ciphertext>, the last three ' +
+            'base64',
+  version: DEK_ENVELOPE_VERSION,
   cipher: 'aes-256-gcm',
   keyBits: KEK_KEY_BYTES * 8,
   ivBits: KEK_IV_BYTES * 8,
   tagBits: 128,
-  kdf: 'HKDF-SHA256',
-  kdfSaltBits: KEK_SALT_BYTES * 8,
-  kdfInfo: KEK_INFO,
-  perRecordSubkey: true
+  dataKeys: 'one 256-bit data encryption key per realm per data class, ' +
+            'random, stored wrapped',
+  dekWrap: '$dekwrap$1$<iv>$<tag>$<ciphertext>: AES-256-GCM under ' +
+           'HKDF-SHA256(KEK, info "' + DEK_WRAP_INFO + '"), the DEK\'s id, ' +
+           'scope, realm and class as additional authenticated data',
+  aad: 'the version and the DEK id',
+  perRecordSubkey: false
 };
 
 /**
- * Encrypts a value under the key-encryption key: AES-256-GCM under an
- * HKDF-SHA-256 subkey, as `$aesgcm$1$salt$iv$tag$body`, and counted.
- *
- * @param kek - the key-encryption key
- * @param plaintext - the value
- * @param label - what it is, for the accounting
- * @returns the stored form
- */
-function encryptWithKek(kek, plaintext, label) {
-  log.debug('Entering encryptWithKek().');
-  const master = kekBytes(kek);
-  const salt = nodeCrypto.randomBytes(KEK_SALT_BYTES);
-  const subkey = nodeCrypto.hkdfSync('sha256', master, salt,
-                                     Buffer.from(KEK_INFO, 'utf8'),
-                                     KEK_KEY_BYTES);
-  const iv = nodeCrypto.randomBytes(KEK_IV_BYTES);
-  const cipher = nodeCrypto.createCipheriv('aes-256-gcm', Buffer.from(subkey),
-                                           iv);
-  const body = Buffer.concat([cipher.update(Buffer.from(String(plaintext),
-                                                        'utf8')),
-                              cipher.final()]);
-  const tag = cipher.getAuthTag();
-  const out = '$aesgcm$1$' + salt.toString('base64') + '$' +
-              iv.toString('base64') + '$' + tag.toString('base64') + '$' +
-              body.toString('base64');
-  countKek(label, 'encryptions', Buffer.byteLength(String(plaintext), 'utf8'),
-           body.length);
-  log.debug('Leaving encryptWithKek(). ' + body.length + ' byte(s) of ' +
-      'ciphertext.');
-  return out;
-}
-
-/**
- * Says whether a stored value is one `encryptWithKek()` wrote.
+ * Says whether a stored value is a sealed value this service wrote (the
+ * `$aesgcm$` envelope).
  *
  * @param stored - the value
  * @returns true when it is
@@ -8051,66 +8029,252 @@ function isEncryptedWithKek(stored) {
 }
 
 /**
- * Decrypts a value `encryptWithKek()` wrote, and counts it.
+ * Returns the data encryption key a sealed value names, or null for anything
+ * that is not a version-2 envelope.
  *
- * @param kek - the key-encryption key
+ * @param stored - the sealed value
+ * @returns the DEK id, or null
+ */
+function dekIdOf(stored) {
+  log.debug("Entering dekIdOf().");
+  const parts = String(stored || '').split('$');
+  if (parts.length !== 7 || parts[1] !== 'aesgcm' ||
+      parts[2] !== DEK_ENVELOPE_VERSION || !DEK_ID_PATTERN.test(parts[3])) {
+    log.debug("Leaving dekIdOf(). Not a version-2 envelope.");
+    return null;
+  }
+  log.debug("Leaving dekIdOf().");
+  return parts[3];
+}
+
+// A DEK as bytes: exactly 32, or refused, because a short key here would be a
+// value sealed under less than the AES-256 every page says it is.
+function dekBytes(key) {
+  log.debug("Entering dekBytes().");
+  if (!Buffer.isBuffer(key) || key.length !== KEK_KEY_BYTES) {
+    throw new Error('a data encryption key must be ' + KEK_KEY_BYTES +
+                    ' bytes');
+  }
+  log.debug("Leaving dekBytes().");
+  return key;
+}
+
+function envelopeAad(dekId) {
+  log.debug("Entering envelopeAad().");
+  log.debug("Leaving envelopeAad().");
+  return Buffer.from('sts envelope v' + DEK_ENVELOPE_VERSION + '|' + dekId,
+                     'utf8');
+}
+
+/**
+ * Encrypts a value under a data encryption key: AES-256-GCM, as
+ * `$aesgcm$2$<dek id>$<iv>$<tag>$<ciphertext>`, and counted.
+ *
+ * @param dekId - the DEK's id, which the envelope names
+ * @param key - the DEK, 32 bytes
+ * @param plaintext - the value
+ * @param label - what it is, for the accounting
+ * @returns the stored form
+ */
+function encryptWithDek(dekId, key, plaintext, label) {
+  log.debug('Entering encryptWithDek().');
+  if (!DEK_ID_PATTERN.test(String(dekId || ''))) {
+    throw new Error('a data encryption key id must be base64url');
+  }
+  const iv = nodeCrypto.randomBytes(KEK_IV_BYTES);
+  const cipher = nodeCrypto.createCipheriv('aes-256-gcm', dekBytes(key), iv);
+  cipher.setAAD(envelopeAad(dekId));
+  const body = Buffer.concat([cipher.update(Buffer.from(String(plaintext),
+                                                        'utf8')),
+                              cipher.final()]);
+  const tag = cipher.getAuthTag();
+  const out = '$aesgcm$' + DEK_ENVELOPE_VERSION + '$' + dekId + '$' +
+              iv.toString('base64') + '$' + tag.toString('base64') + '$' +
+              body.toString('base64');
+  countKek(label, 'encryptions', Buffer.byteLength(String(plaintext), 'utf8'),
+           body.length);
+  log.debug('Leaving encryptWithDek(). ' + body.length + ' byte(s) of ' +
+      'ciphertext.');
+  return out;
+}
+
+/**
+ * Decrypts a value `encryptWithDek()` wrote, and counts it.
+ *
+ * @param key - the DEK the value names (the caller looked it up by
+ * `dekIdOf()`)
  * @param stored - the stored form
  * @param label - what it is, for the accounting
  * @returns the plaintext
  * @throws Error for a value this service did not write, an unknown version,
  *   or the wrong key
  */
-function decryptWithKek(kek, stored, label) {
-  log.debug('Entering decryptWithKek().');
+function decryptWithDek(key, stored, label) {
+  log.debug('Entering decryptWithDek().');
   const parts = String(stored || '').split('$');
-  // `$aesgcm$1$salt$iv$tag$body` splits to ['', 'aesgcm', '1', s, i, t, b].
+  // `$aesgcm$2$id$iv$tag$body` splits to ['', 'aesgcm', '2', d, i, t, b].
   //
-  // **THE TWO REFUSALS BELOW COUNT AS FAILURES AND THE ONE AT THE BOTTOM DOES
-  // TOO, which is a deliberate flattening.** A caller cannot tell them apart
-  // and neither should the figure: what a reader of that number wants to know
-  // is *how often did this service fail to read something it had written*, and
-  // splitting it into wrong-shape, wrong-version and wrong-key would be three
-  // columns of which two are always zero.
+  // **EVERY REFUSAL COUNTS AS A FAILURE**, a deliberate flattening: what a
+  // reader of that number wants to know is *how often did this service fail
+  // to read something it had written*.
   if (parts.length !== 7 || parts[1] !== 'aesgcm') {
     countKek(label, 'failures', 0, 0);
     throw new Error('this is not a record encrypted by this service');
   }
-  if (parts[2] !== '1') {
+  if (parts[2] !== DEK_ENVELOPE_VERSION) {
     countKek(label, 'failures', 0, 0);
     throw new Error('the record names encryption version "' + parts[2] +
-                    '", which this build does not know how to read');
+                    '", which this build does not read (version 1 records ' +
+                    'were written before data encryption keys, #391)');
   }
-  const master = kekBytes(kek);
-  const salt = Buffer.from(parts[3], 'base64');
   const iv = Buffer.from(parts[4], 'base64');
   const tag = Buffer.from(parts[5], 'base64');
   const body = Buffer.from(parts[6], 'base64');
-  const subkey = nodeCrypto.hkdfSync('sha256', master, salt,
-                                     Buffer.from(KEK_INFO, 'utf8'),
-                                     KEK_KEY_BYTES);
-  const decipher = nodeCrypto.createDecipheriv('aes-256-gcm',
-                                               Buffer.from(subkey), iv);
-  decipher.setAuthTag(tag);
-  // THROWS ON A BAD TAG, and that is the whole point of GCM here: the caller
-  // gets an error rather than the wrong key.
-  // **THE `final()` IS WRAPPED SO THAT A BAD TAG IS COUNTED AND STILL
-  // THROWS.** The throw is the whole point of GCM here and must not be
-  // softened into a return: `keystore.js` turns it into a fatal at startup,
-  // because a service that cannot read its own signing key must not come up
-  // generating a new one and silently invalidating every token it ever issued.
-  // Counting it costs nothing and is the figure an operator who has just
-  // rotated a key-encryption key actually wants.
   let out = null;
   try {
+    const decipher = nodeCrypto.createDecipheriv('aes-256-gcm',
+                                                 dekBytes(key), iv);
+    decipher.setAAD(envelopeAad(parts[3]));
+    decipher.setAuthTag(tag);
+    // THROWS ON A BAD TAG, and that is the whole point of GCM here: the
+    // caller gets an error rather than the wrong bytes. Counted, and still
+    // thrown — `keystore.js` turns it into a fatal at startup.
     out = Buffer.concat([decipher.update(body), decipher.final()]);
   } catch (e) {
     countKek(label, 'failures', 0, 0);
-    log.debug('Leaving decryptWithKek(). It would not open.');
+    log.debug('Leaving decryptWithDek(). It would not open.');
     throw e;
   }
   countKek(label, 'decryptions', out.length, body.length);
-  log.debug('Leaving decryptWithKek(). ' + out.length + ' byte(s).');
+  log.debug('Leaving decryptWithDek(). ' + out.length + ' byte(s).');
   return out.toString('utf8');
+}
+
+// The key a DEK is wrapped under: derived once from the KEK, so the whole KEK
+// is used whatever its length and nothing else derived from it can equal it.
+function dekWrappingKey(kek) {
+  log.debug("Entering dekWrappingKey().");
+  log.debug("Leaving dekWrappingKey().");
+  return Buffer.from(nodeCrypto.hkdfSync('sha256', kekBytes(kek),
+                                         Buffer.alloc(0),
+                                         Buffer.from(DEK_WRAP_INFO, 'utf8'),
+                                         KEK_KEY_BYTES));
+}
+
+/**
+ * Generates a data encryption key: 32 random bytes.
+ *
+ * @returns the key
+ */
+function generateDek() {
+  log.debug("Entering generateDek().");
+  log.debug("Leaving generateDek().");
+  return nodeCrypto.randomBytes(KEK_KEY_BYTES);
+}
+
+/**
+ * Generates a data encryption key's id: 16 random bytes, base64url.
+ *
+ * @returns the id
+ */
+function generateDekId() {
+  log.debug("Entering generateDekId().");
+  log.debug("Leaving generateDekId().");
+  return nodeCrypto.randomBytes(16).toString('base64url');
+}
+
+/**
+ * Wraps a data encryption key under the key-encryption key, as
+ * `$dekwrap$1$<iv>$<tag>$<ciphertext>`, binding the AAD given.
+ *
+ * @param kek - the key-encryption key
+ * @param key - the DEK, 32 bytes
+ * @param aad - what the wrap is bound to: the DEK's id, scope, realm, class
+ * @returns the wrapped form
+ */
+function wrapDek(kek, key, aad) {
+  log.debug("Entering wrapDek().");
+  const iv = nodeCrypto.randomBytes(KEK_IV_BYTES);
+  const cipher = nodeCrypto.createCipheriv('aes-256-gcm',
+                                           dekWrappingKey(kek), iv);
+  cipher.setAAD(Buffer.from(String(aad), 'utf8'));
+  const body = Buffer.concat([cipher.update(dekBytes(key)), cipher.final()]);
+  const tag = cipher.getAuthTag();
+  countKek('data-keys', 'encryptions', KEK_KEY_BYTES, body.length);
+  log.debug("Leaving wrapDek().");
+  return '$dekwrap$1$' + iv.toString('base64') + '$' +
+         tag.toString('base64') + '$' + body.toString('base64');
+}
+
+/**
+ * Unwraps a data encryption key `wrapDek()` wrote.
+ *
+ * @param kek - the key-encryption key
+ * @param wrapped - the wrapped form
+ * @param aad - what the wrap was bound to
+ * @returns the DEK, 32 bytes
+ * @throws Error for a value that is not a wrapped DEK, the wrong key, or AAD
+ *   that is not the one it was wrapped with
+ */
+function unwrapDek(kek, wrapped, aad) {
+  log.debug("Entering unwrapDek().");
+  const parts = String(wrapped || '').split('$');
+  if (parts.length !== 6 || parts[1] !== 'dekwrap' || parts[2] !== '1') {
+    countKek('data-keys', 'failures', 0, 0);
+    throw new Error('this is not a data encryption key wrapped by this ' +
+                    'service');
+  }
+  let out = null;
+  try {
+    const decipher = nodeCrypto.createDecipheriv(
+      'aes-256-gcm', dekWrappingKey(kek), Buffer.from(parts[3], 'base64'));
+    decipher.setAAD(Buffer.from(String(aad), 'utf8'));
+    decipher.setAuthTag(Buffer.from(parts[4], 'base64'));
+    out = Buffer.concat([decipher.update(Buffer.from(parts[5], 'base64')),
+                         decipher.final()]);
+  } catch (e) {
+    countKek('data-keys', 'failures', 0, 0);
+    log.debug("Leaving unwrapDek(). It would not unwrap.");
+    throw e;
+  }
+  countKek('data-keys', 'decryptions', out.length, out.length);
+  log.debug("Leaving unwrapDek().");
+  return dekBytes(out);
+}
+
+// ---------------------------------------------------------------------------
+// A DEK DERIVED RATHER THAN STORED — ONLY WHERE NOTHING IS STORED. A process
+// that persists no key material (development, where every process of the
+// request pool shares one ephemeral KEK) has nowhere to keep a wrapped DEK
+// that its sibling threads could read, so the DEK for a (scope, realm, class)
+// is derived from the KEK, and so is its id: every process holding that KEK
+// arrives at the same key under the same name, and nothing has to be shared.
+// It is never used where keys persist — there every DEK is random and wrapped.
+// ---------------------------------------------------------------------------
+/**
+ * Derives a data encryption key and its id from the key-encryption key, for a
+ * process that stores none.
+ *
+ * @param kek - the key-encryption key
+ * @param context - what the DEK is for: scope, realm and class
+ * @returns `{ id, key }`
+ */
+function deriveDek(kek, context) {
+  log.debug("Entering deriveDek().");
+  const info = DEK_DERIVE_INFO + String(context);
+  const key = Buffer.from(nodeCrypto.hkdfSync('sha256', kekBytes(kek),
+                                              Buffer.alloc(0),
+                                              Buffer.from(info, 'utf8'),
+                                              KEK_KEY_BYTES));
+  const idKey = Buffer.from(nodeCrypto.hkdfSync('sha256', kekBytes(kek),
+                                                Buffer.alloc(0),
+                                                Buffer.from(DEK_ID_INFO,
+                                                            'utf8'),
+                                                KEK_KEY_BYTES));
+  const id = 'x' + nodeCrypto.createHmac('sha256', idKey).update(info, 'utf8')
+    .digest('base64url').slice(0, 22);
+  log.debug("Leaving deriveDek().");
+  return { id: id, key: key };
 }
 
 // ---------------------------------------------------------------------------
@@ -10921,8 +11085,16 @@ module.exports = {
   // The cost a NEW hash is written under, for the console and the tests.
   scryptParameters: scryptParameters,
   hashSecretAsync: hashSecretAsync,
-  encryptWithKek: encryptWithKek,
-  decryptWithKek: decryptWithKek,
+  // ENVELOPE ENCRYPTION AT REST (#391): data encryption keys wrapped under
+  // the key-encryption key, and values sealed under the DEKs.
+  encryptWithDek: encryptWithDek,
+  decryptWithDek: decryptWithDek,
+  dekIdOf: dekIdOf,
+  generateDek: generateDek,
+  generateDekId: generateDekId,
+  wrapDek: wrapDek,
+  unwrapDek: unwrapDek,
+  deriveDek: deriveDek,
   kekAccounting: kekAccounting,
   KEK_PARAMETERS: KEK_PARAMETERS,
   isEncryptedWithKek: isEncryptedWithKek,
