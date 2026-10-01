@@ -1978,3 +1978,13 @@ is `STS-ADMIN-0835`; an empty list box `0834`; a partial save `0836`, naming
 what was saved and what was refused. Its resource's `mirrors` names three
 console paths (`/admin/applications`, `/admin/applications/new`,
 `/admin/applications/edit`).
+
+**THE SHARED SIGNALS OVERRIDES ARE WRITTEN THROUGH IT, AND READ BACK UNDER
+`sharedSignals`** (2026-10-01). The twenty `ssf*` overrides (`ssf/CLAUDE.md`)
+are ordinary editable attributes, so `update-fields`, `set` and `create` take
+them, refusing an unusable value with `STS-REG-0202`.
+`GET /admin-api/applications?application=` answers `sharedSignals`: the
+streams the application owns, with the members their receiver set, and each
+override's value in force and its source. That is the same view model the
+console's Shared Signals section draws. Pausing and enabling a stream is
+`POST /admin-api/ssf/status`, as it always was.

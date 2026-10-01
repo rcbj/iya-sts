@@ -795,6 +795,26 @@ from the PROTOCOLS table (declaration attributes), a schema row's own
 `gridExcludedAttributes()` is what the grid leaves to another control.
 `tests/application_form_roles.js` holds it to the schema.
 
+## `ssfSettingFor()` AND THE `strictOverride` ROWS (2026-10-01)
+
+Twenty `ssf*` application attributes override a `caep.*`, `risc.*` or `ssf.*`
+setting for the Shared Signals streams that application owns
+(`ssf/CLAUDE.md`, *A receiver application's streams*, argues which and why).
+`ssfSettingFor(principal, key)` answers `{ value, source: 'application' |
+'setting', application }`, finding the owner by identifier or
+`ssfReceiverId` through the same cached lookup `ssfAllowedEventsFor()` uses,
+and parsing the stored text with `config.parseAs()` and `mode.inForce()`.
+`ssfOverrideRows()` lists them.
+
+**THEY ARE THE FIRST OVERRIDE ROWS REFUSED AT THE WRITE.** The older ones
+(`saml2SignAssertion` and the rest) warn when a stored value does not parse and
+let the setting decide; a row carrying `strictOverride: true` is refused at a
+create and an update instead (`strictOverrideProblem()`, `STS-REG-0202`), and a
+reason language must also be a BCP 47 tag. A value an `ldapmodify` wrote that
+does not parse is still read as the setting, with `STS-REG-0025` logged. They
+are `families: ['ssf']` and `'set'` in `EDITABLE`, so the field grid draws them
+in its Shared Signals group and `update-fields` writes them.
+
 ## `appHomePageUrl`: THE ONE URL ON AN APPLICATION ENTRY THAT IS FOR A PERSON
 
 Added 2026-09-10 for `/portal/applications`, which lists the applications a

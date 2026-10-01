@@ -18606,7 +18606,8 @@ class AdminConsole {
     log.debug("Leaving AdminConsole.applicationReturnTo().");
     return '/admin/applications' +
            queryWith(listView, { application: String(identifier) }) +
-           (anchor === '#credentials' || anchor === '#fields' ? anchor : '');
+           (anchor === '#credentials' || anchor === '#fields' ||
+            anchor === '#signals' ? anchor : '');
   }
 
   // And a PERSON's page (2026-09-13), whose Credentials section draws the same
@@ -18689,6 +18690,116 @@ class AdminConsole {
   // **NO SCRIPT.** The secret is behind a `<details>`, which is how this
   // console folds everything, and the upload is two textareas.
   // ---------------------------------------------------------------------------
+  // ---------------------------------------------------------------------------
+  // THE APPLICATION'S SHARED SIGNALS STREAMS (2026-10-01). Each stream this
+  // application created at /ssf/stream, with the members its RECEIVER set
+  // (SSF 1.0 section 8.1.1: delivery, events_requested, format,
+  // description) shown and not edited here — changing them is the
+  // receiver's act through the stream management API. What an administrator
+  // may do to a stream is its STATUS, which is a transmitter-initiated change
+  // section 8.1.2 says must be announced: Pause and Enable post the existing
+  // `status` action, which sends stream-updated first. Beneath it, every
+  // per-receiver setting in force for these streams and where it comes from;
+  // they are edited in the field grid's Shared Signals group.
+  // ---------------------------------------------------------------------------
+  /**
+   * Draws the Shared Signals section of an application's page: its streams,
+   * Pause and Enable for each, and the settings in force for them.
+   *
+   * @param view - the page's view, from `applicationDetailJson()`
+   * @param carryBack - the hidden field carrying the list's place
+   * @param writable - whether the reader holds Admin Write, which is what
+   *   draws the Pause and Enable buttons
+   * @returns the section as HTML, or '' for an application that has no
+   *   Shared Signals family declared and owns no stream
+   */
+  applicationSignalsSection(view, carryBack, writable) {
+    const { log } = this.deps;
+    const self = this;
+    log.debug("Entering AdminConsole.applicationSignalsSection().");
+    const row = view.row;
+    const state = view.signalsState;
+    const declared = (row.allowedProtocols || []).indexOf('ssf') >= 0;
+    if (!state || (!declared && !state.streams.length)) {
+      log.debug("Leaving AdminConsole.applicationSignalsSection(). Not a " +
+                "receiver.");
+      return '';
+    }
+    const statusForm = function (stream, status, label) {
+      return '<form method="post" action="/admin/ssf" class="inline">' +
+        carryBack +
+        '<input type="hidden" name="action" value="status">' +
+        '<input type="hidden" name="stream_id" value="' +
+        self.esc(stream.stream_id) + '">' +
+        '<input type="hidden" name="status" value="' + status + '">' +
+        '<input type="hidden" name="reason" value="set by an administrator ' +
+        'from the application\'s page">' +
+        '<input type="hidden" name="from" value="application">' +
+        '<input type="hidden" name="application" value="' +
+        self.esc(row.identifier) + '">' +
+        '<button type="submit" class="secondary">' + label +
+        '</button></form>';
+    };
+    const list = function (values) {
+      return values.length ? values.map(function (one) {
+        return '<code>' + self.esc(one) + '</code>';
+      }).join('<br>') : '<span class="state-none">none</span>';
+    };
+    const streams = state.streams.map(function (stream) {
+      return '<tr><td><code>' + self.esc(stream.stream_id) + '</code><br>' +
+        '<span class="sub">aud <code>' + self.esc(String(stream.aud)) +
+        '</code></span></td><td>' + self.esc(stream.status) +
+        (stream.statusReason
+          ? '<br><span class="sub">' + self.esc(stream.statusReason) +
+            '</span>' : '') + '</td><td><code>' +
+        self.esc((stream.delivery && stream.delivery.method) || '') +
+        '</code>' + (stream.delivery && stream.delivery.endpoint_url
+          ? '<br><code>' + self.esc(stream.delivery.endpoint_url) + '</code>'
+          : '') + '</td><td>' + list(stream.events_requested) + '</td><td>' +
+        list(stream.events_delivered) + '</td><td>' +
+        (stream.format ? '<code>' + self.esc(stream.format) + '</code>'
+          : '<span class="state-none">default</span>') +
+        (stream.description
+          ? '<br><span class="sub">' + self.esc(stream.description) +
+            '</span>' : '') + '</td><td>' +
+        (writable
+          ? (stream.status === 'enabled'
+            ? statusForm(stream, 'paused', 'Pause')
+            : statusForm(stream, 'enabled', 'Enable'))
+          : '') + '</td></tr>';
+    }).join('');
+    const settings = state.settings.map(function (one) {
+      return '<tr><td><code>' + self.esc(one.setting) + '</code></td><td>' +
+        '<code>' + self.esc(String(one.value)) + '</code></td><td>' +
+        (one.source === 'application'
+          ? 'this application (<code>' + self.esc(one.attribute) +
+            '</code>)'
+          : 'the setting') + '</td></tr>';
+    }).join('');
+    log.debug("Leaving AdminConsole.applicationSignalsSection(). " +
+              state.streams.length + " stream(s).");
+    return '<h2 id="signals">Shared Signals</h2>' +
+      this.note('The CAEP and RISC streams this application created at ' +
+        '<code>/ssf/stream</code>, matched by its identifier or its ' +
+        '<code>ssfReceiverId</code> values. The members each shows are the ' +
+        'ones its receiver set (SSF 1.0 section 8.1.1), so they are changed ' +
+        'by the receiver and not here. Pausing or enabling a stream is the ' +
+        'transmitter\'s act, and its receiver is sent a ' +
+        '<code>stream-updated</code> event first. Every new stream starts ' +
+        'from the defaults in the second table; change one in the field ' +
+        'grid\'s Shared Signals group below.') +
+      (state.installed ? '' : this.warn('ssf/ssf.ts is not loaded in this ' +
+        'process, so no stream can be listed.')) +
+      (state.streams.length
+        ? '<table><tr><th>Stream</th><th>Status</th><th>Delivery</th>' +
+          '<th>Requested</th><th>Delivered</th><th>Format</th><th></th></tr>' +
+          streams + '</table>'
+        : '<p class="sub">This application has created no stream yet.</p>') +
+      '<h3>What its streams are sent with</h3>' +
+      '<table><tr><th>Setting</th><th>In force</th><th>From</th></tr>' +
+      settings + '</table>';
+  }
+
   /**
    * Draws an application's Credentials section: the client secret with its
    * regenerate and rotate forms, the assertion profiles' key pairs with
@@ -19446,6 +19557,8 @@ class AdminConsole {
       // THE CREDENTIALS, above the raw entry because they are what a reader
       // most often opens this page to find — see the section's header.
       this.applicationCredentialsSection(req, view, carryBack) +
+      this.applicationSignalsSection(view, carryBack,
+        this.mayWrite(req)) +
       this.applicationSoftwareStatementSection(req, view, carryBack) +
       '<h2>Its directory entry</h2><p class="sub">Every attribute the entry ' +
       'carries &mdash; the operational ones and <code>entryDN</code> ' +
@@ -41823,7 +41936,14 @@ class AdminConsole {
       // answering before either had happened would be this page reporting
       // "sent" about nothing.
       ssfAction(body).then(function (result) {
-        self.respondToAction(req, res, '/admin/ssf', result);
+        // A Pause or Enable pressed on an application's own page (2026-10-01)
+        // goes back there: the destination is REBUILT from the identifier,
+        // never echoed, as applicationReturnTo() does for every control on
+        // that page.
+        const back = body.from === 'application' && body.application
+          ? self.applicationReturnTo(body, body.application, '#signals')
+          : '/admin/ssf';
+        self.respondToAction(req, res, back, result);
         log.debug("Leaving the admin Shared Signals action endpoint.");
       }).catch(function (e) {
         // A rejected promise here is a bug in ssf/ssf.ts rather than anything a

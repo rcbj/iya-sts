@@ -747,6 +747,12 @@ function normaliseProtocols(value) {
  * every attribute with its kind (single or multi), whether it is editable, the
  * families it applies to and a sentence on what it holds.
  */
+// Why every per-receiver Shared Signals override is family-scoped: one
+// sentence, shared by the twenty rows that carry it.
+const SSF_OVERRIDE_FAMILY_WHY = 'It changes what this application\'s ' +
+  'Shared Signals streams are sent, so on an entry declared for no Shared ' +
+  'Signals family it would read like a setting in force.';
+
 const SCHEMA = {
   objectClasses: [
     { name: 'top', where: 'RFC 4512', standard: true,
@@ -3005,6 +3011,141 @@ const SCHEMA = {
             'to /ssf/stream, matched against this entry\'s identifier or its ' +
             'ssfReceiverId values.' },
     // ---------------------------------------------------------------------
+    // PER-RECEIVER SHARED SIGNALS SETTINGS (2026-10-01). Each overrides one
+    // caep.*, risc.* or ssf.* setting for the streams this application owns,
+    // read through ssfSettingFor(). They are the ones that stay inside SSF
+    // 1.0, CAEP 1.0 and RISC 1.0 when two receivers differ: optional members
+    // of a SET, transmitter-supplied stream members, and the transmitter's
+    // own limits. Left service-wide on purpose: what the metadata document
+    // publishes (default_subjects, the delivery methods), what describes the
+    // SUBJECT rather than the delivery (a risk level, an assurance
+    // namespace), what the stream's own `format` already chooses, and the
+    // account holder's RISC opt-out. Empty means the setting decides, and
+    // the console shows its value. `strictOverride` refuses a value that
+    // does not parse at the write, where the older overrides warn on read.
+    // ---------------------------------------------------------------------
+    { name: 'ssfCaepIncludeReasons', kind: 'single',
+      from: 'the console, the management API, or by hand',
+      overrides: 'caep.includeReasons', families: ['ssf'],
+      strictOverride: true, familyWhy: SSF_OVERRIDE_FAMILY_WHY,
+      what: 'TRUE or FALSE: send reason_admin and reason_user on the CAEP ' +
+            'events this receiver\'s streams carry. Both are OPTIONAL ' +
+            'members (CAEP 1.0 section 2), so either answer conforms.' },
+    { name: 'ssfCaepReasonLanguage', kind: 'single',
+      from: 'the console, the management API, or by hand',
+      overrides: 'caep.reasonLanguage', families: ['ssf'],
+      strictOverride: true, familyWhy: SSF_OVERRIDE_FAMILY_WHY,
+      what: 'The BCP 47 language tag the CAEP reason members are keyed ' +
+            'under on this receiver\'s streams. They stay objects keyed ' +
+            'by a tag either way.' },
+    { name: 'ssfCaepOmitEventTimestamp', kind: 'single',
+      from: 'the console, the management API, or by hand',
+      overrides: 'caep.omitEventTimestamp', families: ['ssf'],
+      strictOverride: true, familyWhy: SSF_OVERRIDE_FAMILY_WHY,
+      what: 'TRUE or FALSE: leave event_timestamp (OPTIONAL, CAEP 1.0 ' +
+            'section 2) off the CAEP events this receiver\'s streams ' +
+            'carry.' },
+    { name: 'ssfRiscIncludeReasons', kind: 'single',
+      from: 'the console, the management API, or by hand',
+      overrides: 'risc.includeReasons', families: ['ssf'],
+      strictOverride: true, familyWhy: SSF_OVERRIDE_FAMILY_WHY,
+      what: 'TRUE or FALSE: send reason_admin and reason_user on the RISC ' +
+            'events that define them, on this receiver\'s streams.' },
+    { name: 'ssfRiscReasonLanguage', kind: 'single',
+      from: 'the console, the management API, or by hand',
+      overrides: 'risc.reasonLanguage', families: ['ssf'],
+      strictOverride: true, familyWhy: SSF_OVERRIDE_FAMILY_WHY,
+      what: 'The BCP 47 language tag the RISC reason members are keyed ' +
+            'under on this receiver\'s streams.' },
+    { name: 'ssfRiscOmitEventTimestamp', kind: 'single',
+      from: 'the console, the management API, or by hand',
+      overrides: 'risc.omitEventTimestamp', families: ['ssf'],
+      strictOverride: true, familyWhy: SSF_OVERRIDE_FAMILY_WHY,
+      what: 'TRUE or FALSE: leave event_timestamp off the RISC events ' +
+            'that define it, on this receiver\'s streams.' },
+    { name: 'ssfSigningAlgorithm', kind: 'single',
+      from: 'the console, the management API, or by hand',
+      overrides: 'ssf.signingAlgorithm', families: ['ssf'],
+      strictOverride: true, familyWhy: SSF_OVERRIDE_FAMILY_WHY,
+      what: 'The JWS algorithm this receiver\'s Security Event Tokens are ' +
+            'signed with. Each is one this transmitter publishes a key ' +
+            'for in its JWKS, so the receiver can always verify.' },
+    { name: 'ssfMinVerificationInterval', kind: 'single',
+      from: 'the console, the management API, or by hand',
+      overrides: 'ssf.minVerificationInterval', families: ['ssf'],
+      strictOverride: true, familyWhy: SSF_OVERRIDE_FAMILY_WHY,
+      what: 'Seconds: min_verification_interval (SSF 1.0 section 8.1.1, ' +
+            'transmitter-supplied) on this receiver\'s streams. A ' +
+            'receiver asking for a shorter one is refused.' },
+    { name: 'ssfInactivityTimeoutS', kind: 'single',
+      from: 'the console, the management API, or by hand',
+      overrides: 'ssf.inactivityTimeoutS', families: ['ssf'],
+      strictOverride: true, familyWhy: SSF_OVERRIDE_FAMILY_WHY,
+      what: 'Seconds: inactivity_timeout (SSF 1.0 section 8.1.1, ' +
+            'transmitter-supplied) on this receiver\'s streams; 0 means ' +
+            'none.' },
+    { name: 'ssfInactivityAction', kind: 'single',
+      from: 'the console, the management API, or by hand',
+      overrides: 'ssf.inactivityAction', families: ['ssf'],
+      strictOverride: true, familyWhy: SSF_OVERRIDE_FAMILY_WHY,
+      what: 'What happens to one of this receiver\'s streams when its ' +
+            'inactivity timeout passes.' },
+    { name: 'ssfVerificationEveryS', kind: 'single',
+      from: 'the console, the management API, or by hand',
+      overrides: 'ssf.verificationEveryS', families: ['ssf'],
+      strictOverride: true, familyWhy: SSF_OVERRIDE_FAMILY_WHY,
+      what: 'Seconds between the verification events this transmitter ' +
+            'sends on this receiver\'s streams by itself; 0 means none.' },
+    { name: 'ssfStreamStatusOnCreate', kind: 'single',
+      from: 'the console, the management API, or by hand',
+      overrides: 'ssf.streamStatusOnCreate', families: ['ssf'],
+      strictOverride: true, familyWhy: SSF_OVERRIDE_FAMILY_WHY,
+      what: 'The status a stream this receiver creates starts in.' },
+    { name: 'ssfMaxStreams', kind: 'single',
+      from: 'the console, the management API, or by hand',
+      overrides: 'ssf.maxStreams', families: ['ssf'],
+      strictOverride: true, familyWhy: SSF_OVERRIDE_FAMILY_WHY,
+      what: 'How many streams this receiver may hold at once.' },
+    { name: 'ssfMaxSubjectsPerStream', kind: 'single',
+      from: 'the console, the management API, or by hand',
+      overrides: 'ssf.maxSubjectsPerStream', families: ['ssf'],
+      strictOverride: true, familyWhy: SSF_OVERRIDE_FAMILY_WHY,
+      what: 'How many subjects one of this receiver\'s streams may name.' },
+    { name: 'ssfMaxQueuedEvents', kind: 'single',
+      from: 'the console, the management API, or by hand',
+      overrides: 'ssf.maxQueuedEvents', families: ['ssf'],
+      strictOverride: true, familyWhy: SSF_OVERRIDE_FAMILY_WHY,
+      what: 'How many undelivered events one of this receiver\'s streams ' +
+            'holds.' },
+    { name: 'ssfPollMaxEvents', kind: 'single',
+      from: 'the console, the management API, or by hand',
+      overrides: 'ssf.pollMaxEvents', families: ['ssf'],
+      strictOverride: true, familyWhy: SSF_OVERRIDE_FAMILY_WHY,
+      what: 'The most events one poll of this receiver\'s stream returns ' +
+            '(RFC 8936 lets a transmitter return fewer than maxEvents).' },
+    { name: 'ssfDeadLetterMaxPerStream', kind: 'single',
+      from: 'the console, the management API, or by hand',
+      overrides: 'ssf.deadLetterMaxPerStream', families: ['ssf'],
+      strictOverride: true, familyWhy: SSF_OVERRIDE_FAMILY_WHY,
+      what: 'How many dead letters one of this receiver\'s streams keeps.' },
+    { name: 'ssfPushTimeoutMs', kind: 'single',
+      from: 'the console, the management API, or by hand',
+      overrides: 'ssf.pushTimeoutMs', families: ['ssf'],
+      strictOverride: true, familyWhy: SSF_OVERRIDE_FAMILY_WHY,
+      what: 'Milliseconds to wait for this receiver\'s push endpoint to ' +
+            'answer.' },
+    { name: 'ssfPushRetries', kind: 'single',
+      from: 'the console, the management API, or by hand',
+      overrides: 'ssf.pushRetries', families: ['ssf'],
+      strictOverride: true, familyWhy: SSF_OVERRIDE_FAMILY_WHY,
+      what: 'How many times a failed push to this receiver is tried again ' +
+            'before it becomes a dead letter.' },
+    { name: 'ssfPushRetryDelayMs', kind: 'single',
+      from: 'the console, the management API, or by hand',
+      overrides: 'ssf.pushRetryDelayMs', families: ['ssf'],
+      strictOverride: true, familyWhy: SSF_OVERRIDE_FAMILY_WHY,
+      what: 'Milliseconds between push attempts to this receiver.' },
+    // ---------------------------------------------------------------------
     // GNAP (RFC 9635 + RFC 9767), 2026-09-12. See gnap/CLAUDE.md.
     // ---------------------------------------------------------------------
     { name: 'gnapInstanceId', kind: 'single', from: 'the console, or by hand',
@@ -3552,6 +3693,28 @@ const EDITABLE = {
   ssfReceiverId: 'multi',
   ssfDeliveryEndpoint: 'multi',
   ssfAllowedEvents: 'multi',
+  // The per-receiver Shared Signals overrides, each one value an empty
+  // write clears (the setting then decides); see their SCHEMA rows.
+  ssfCaepIncludeReasons: 'set',
+  ssfCaepReasonLanguage: 'set',
+  ssfCaepOmitEventTimestamp: 'set',
+  ssfRiscIncludeReasons: 'set',
+  ssfRiscReasonLanguage: 'set',
+  ssfRiscOmitEventTimestamp: 'set',
+  ssfSigningAlgorithm: 'set',
+  ssfMinVerificationInterval: 'set',
+  ssfInactivityTimeoutS: 'set',
+  ssfInactivityAction: 'set',
+  ssfVerificationEveryS: 'set',
+  ssfStreamStatusOnCreate: 'set',
+  ssfMaxStreams: 'set',
+  ssfMaxSubjectsPerStream: 'set',
+  ssfMaxQueuedEvents: 'set',
+  ssfPollMaxEvents: 'set',
+  ssfDeadLetterMaxPerStream: 'set',
+  ssfPushTimeoutMs: 'set',
+  ssfPushRetries: 'set',
+  ssfPushRetryDelayMs: 'set',
   // GNAP. `gnapKeyIdentity` and `gnapMacaroonKey` are the authorization
   // server's to write and are deliberately absent: an identity that disagreed
   // with gnapKey, or a macaroon key that was not the derived one, would be an
@@ -3932,7 +4095,9 @@ const BOOLEAN_ATTRIBUTES = [
   'oauthRevokeRefreshOnLogout', 'appTrustedToImpersonate', 'appGroupsClaim',
   'saml2SignAssertion', 'saml2SignResponse', 'saml11SignAssertion',
   'saml11SignResponse', 'gnapBearerTokens', 'gnapSkipInteraction',
-  'gnapScopedSignals', 'appFederationAutoRedirect'
+  'gnapScopedSignals', 'appFederationAutoRedirect',
+  'ssfCaepIncludeReasons', 'ssfCaepOmitEventTimestamp',
+  'ssfRiscIncludeReasons', 'ssfRiscOmitEventTimestamp'
 ];
 
 /**
@@ -4667,16 +4832,93 @@ function ssfAllowedEventsFor(principal) {
   return found;
 }
 
+// ---------------------------------------------------------------------------
+// ONE caep.*, risc.* OR ssf.* SETTING AS IT APPLIES TO ONE STREAM OWNER
+// (2026-10-01). The owner's application entry may override it; otherwise the
+// setting decides. Read off ssfAllowedEventsFor()'s cached answer and never
+// through get(), because it is asked per event per stream — the cost that
+// answer's comment records. A stored value that no longer parses (an
+// ldapmodify, a narrowed enum) falls back to the setting with a warning.
+// ---------------------------------------------------------------------------
+/**
+ * Returns a Shared Signals setting's value for the streams one principal
+ * owns: its application's override where it carries one, else the setting.
+ *
+ * @param principal - the stream owner's name
+ * @param settingKey - the setting
+ * @returns `{ value, source, application }`: `source` is `application` or
+ *   `setting`
+ */
+function ssfSettingFor(principal, settingKey) {
+  log.debug("Entering ssfSettingFor(). setting=" + settingKey);
+  const fallback = { value: mode.inForce(settingKey,
+                                         config.value(settingKey),
+                                         settingKey),
+                     source: 'setting', application: '' };
+  const owner = principal ? ssfAllowedEventsFor(principal) : null;
+  const raw = owner && owner.overrides ? owner.overrides[settingKey] : null;
+  if (!owner || raw === undefined || raw === null) {
+    if (owner) {
+      fallback.application = owner.identifier;
+    }
+    log.debug("Leaving ssfSettingFor(). The setting decides.");
+    return fallback;
+  }
+  fallback.application = owner.identifier;
+  const parsed = config.parseAs(settingKey, raw);
+  if (!parsed.ok) {
+    log.warn(errorCodes.tag('STS-REG-0025') + 'applications: ' +
+             owner.identifier + ' overrides ' + settingKey + ' with "' + raw +
+             '", which is not usable — ' + parsed.problem + '. The ' +
+             'service-wide value is used.');
+    log.debug("Leaving ssfSettingFor(). Unusable; the setting decides.");
+    return fallback;
+  }
+  log.debug("Leaving ssfSettingFor(). " + owner.identifier + " overrides it.");
+  return { value: mode.inForce(settingKey, parsed.value,
+                               OVERRIDE_ATTRIBUTES[settingKey] || settingKey),
+           source: 'application', application: owner.identifier };
+}
+
+/**
+ * Lists the per-receiver Shared Signals overrides: each attribute with the
+ * setting it overrides, in schema order.
+ *
+ * @returns `{ attribute, setting }` rows
+ */
+function ssfOverrideRows() {
+  log.debug("Entering ssfOverrideRows().");
+  const out = SCHEMA.attributes.filter(function (row) {
+    return !!(row.strictOverride && row.overrides);
+  }).map(function (row) {
+    return { attribute: row.name, setting: row.overrides };
+  });
+  log.debug("Leaving ssfOverrideRows(). " + out.length + " row(s).");
+  return out;
+}
+
 function findSsfOwner(backing, wanted) {
   log.debug("Entering findSsfOwner().");
   const answer = function (entry) {
     const indexed = byLowerName(entry.attributes);
     // `receiverIds` (#144): the other names the receiver is associated
     // with, which `ssf_streams.ts` offers as a stream's `aud`.
+    // `overrides` (2026-10-01): the per-receiver Shared Signals settings
+    // this entry carries, raw, by setting key — what ssfSettingFor() reads.
+    const overrides = {};
+    SCHEMA.attributes.forEach(function (row) {
+      if (row.strictOverride && row.overrides) {
+        const raw = valuesOf(indexed[row.name.toLowerCase()])[0];
+        if (raw !== undefined && raw !== null && String(raw).trim() !== '') {
+          overrides[row.overrides] = String(raw).trim();
+        }
+      }
+    });
     return { identifier: firstValue(indexed, 'appIdentifier') ||
                          firstValue(indexed, 'cn') || wanted,
              values: valuesOf(indexed.ssfallowedevents),
-             receiverIds: valuesOf(indexed.ssfreceiverid) };
+             receiverIds: valuesOf(indexed.ssfreceiverid),
+             overrides: overrides };
   };
   const direct = backing.readApplication(wanted);
   if (direct) {
@@ -9646,6 +9888,16 @@ function createApplication(detail) {
     log.debug("Leaving createApplication().");
     return errorCodes.mark({ ok: false, errors: wrongFamily }, 'STS-REG-0010');
   }
+  // The strict overrides' parse (2026-10-01), for the same reason.
+  const strictProblems = Object.keys(given.fields).map(function (name) {
+    return strictOverrideProblem(name, valuesOf(given.fields[name])[0]);
+  }).filter(function (one) { return !!one; });
+  if (strictProblems.length) {
+    log.debug("Leaving createApplication(). An override that does not " +
+              "parse.");
+    return errorCodes.mark({ ok: false, errors: strictProblems },
+                           'STS-REG-0202');
+  }
   // And the mode rule `updateApplication()` applies (#181): a create is the
   // other door an override attribute can be written through.
   const modeProblems = Object.keys(given.fields).map(function (name) {
@@ -9855,6 +10107,50 @@ function overrideModeProblem(attribute, value) {
     mode.writeRefusalReason(setting ? setting.onlyWhile : '');
 }
 
+// ---------------------------------------------------------------------------
+// AN OVERRIDE WHOSE VALUE DOES NOT PARSE (2026-10-01). The rows carrying
+// `strictOverride` — the per-receiver Shared Signals settings — are refused
+// at the write when the value is not one the setting takes, where the older
+// overrides are written and then ignored with a warning when read. A wrong
+// language tag or algorithm here is a SET a receiver cannot read, so it is
+// caught where somebody can still fix it. A reason language must also be a
+// BCP 47 tag, which the setting's own type (a string) does not check. A clear
+// is never refused. Answers the sentence, or ''.
+// ---------------------------------------------------------------------------
+const BCP47_TAG = /^[A-Za-z]{2,8}(-[A-Za-z0-9]{1,8})*$/;
+
+/**
+ * Says why a value may not be written to a strictly checked override
+ * attribute, or answers '' when it may.
+ *
+ * @param attribute - the attribute
+ * @param value - the value to be written
+ * @returns the refusal, or ''
+ */
+function strictOverrideProblem(attribute, value) {
+  log.debug("Entering strictOverrideProblem(). attribute=" + attribute);
+  const row = ATTRIBUTE_BY_NAME[attribute];
+  if (!row || !row.strictOverride || !row.overrides || value === undefined ||
+      value === null || String(value).trim() === '') {
+    log.debug("Leaving strictOverrideProblem(). Not checked, or a clear.");
+    return '';
+  }
+  const parsed = config.parseAs(row.overrides, String(value).trim());
+  if (!parsed.ok) {
+    log.debug("Leaving strictOverrideProblem(). Does not parse.");
+    return '"' + attribute + '" overrides ' + row.overrides + ' and ' +
+      'cannot hold "' + value + '": ' + parsed.problem;
+  }
+  if (/\.reasonLanguage$/.test(row.overrides) &&
+      !BCP47_TAG.test(String(parsed.value))) {
+    log.debug("Leaving strictOverrideProblem(). Not a language tag.");
+    return '"' + attribute + '" must be a BCP 47 language tag such as en ' +
+      'or fr-CA; "' + value + '" is not one.';
+  }
+  log.debug("Leaving strictOverrideProblem(). Allowed.");
+  return '';
+}
+
 /**
  * Changes one attribute of an application, in the mode its schema row allows:
  * the door every console and API edit, and the delegated-permission actions, go
@@ -9973,6 +10269,12 @@ function updateApplication(identifier, change) {
   // behind by a family being untimed from the entry after it was set, and
   // refusing to remove it would shut the one door that could tidy it up.
   if (mode === 'set' && value) {
+    const strictProblem = strictOverrideProblem(attribute, value);
+    if (strictProblem) {
+      log.debug("Leaving updateApplication(). Not a value the setting takes.");
+      return errorCodes.mark({ ok: false, errors: [strictProblem] },
+                             'STS-REG-0202');
+    }
     const modeProblem = overrideModeProblem(attribute, value);
     if (modeProblem) {
       log.debug("Leaving updateApplication(). Development-only value.");
@@ -13632,6 +13934,9 @@ module.exports = {
   corsOriginsOf: corsOriginsOf,
   corsOriginsForClient: corsOriginsForClient,
   ssfAllowedEventsFor: ssfAllowedEventsFor,
+  ssfSettingFor: ssfSettingFor,
+  ssfOverrideRows: ssfOverrideRows,
+  strictOverrideProblem: strictOverrideProblem,
   corsOriginsOfRealm: corsOriginsOfRealm,
   redirectOriginsOfRealm: redirectOriginsOfRealm,
   ssfAllowedEventProblem: ssfAllowedEventProblem,

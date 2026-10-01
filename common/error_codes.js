@@ -18030,6 +18030,11 @@ const CODES = [
     summary: 'A JWT or UserInfo attribute claim named a type that is not ' +
       'string, number, boolean or json (#94).',
     spec: 'HTTP 400 (console and API)' },
+  { code: 'STS-REG-0202',
+    summary: 'A per-receiver Shared Signals override on an application ' +
+      'entry was given a value its setting does not take, or a reason ' +
+      'language that is not a BCP 47 tag.',
+    spec: 'HTTP 400 (console and API)' },
   { code: 'STS-DBG-0001',
     summary: 'The debugger permission was asked for by somebody who may ' +
       'not hold it — not a person, not signed in, not in the ' +

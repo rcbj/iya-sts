@@ -192,6 +192,12 @@ interface PushResult {
 
 interface PushOptions {
   authorizationHeader?: unknown;
+  // The receiving stream's own values (2026-10-01), where its owning
+  // application overrides ssf.pushTimeoutMs, ssf.pushRetries or
+  // ssf.pushRetryDelayMs; absent, the setting decides.
+  timeoutMs?: number;
+  retries?: number;
+  retryDelayMs?: number;
 }
 
 interface SsfHttpDeps {
@@ -288,10 +294,11 @@ class SsfHttp {
     return OutboundTls.describe(PUSH_TRANSPORT);
   }
 
-  private timeoutMs(): any {
+  private timeoutMs(asked?: number): any {
     const { log, config } = this.deps;
     log.debug("Entering SsfHttp.timeoutMs().");
-    const value = config.value('ssf.pushTimeoutMs');
+    const value = typeof asked === 'number' && asked > 0 ? asked
+      : config.value('ssf.pushTimeoutMs');
     log.debug("Leaving SsfHttp.timeoutMs(). " + value);
     return value;
   }
@@ -731,7 +738,7 @@ class SsfHttp {
     // Read once per push, so a runtime change cannot move the bound half way
     // through one response.
     const limit = this.maxBodyBytes();
-    const timeoutMs = this.timeoutMs.bind(this);
+    const timeoutMs = this.timeoutMs.bind(this, opts.timeoutMs);
     log.debug("Leaving SsfHttp.pushSet(). Dialling " + target.origin + '.');
     return new Promise(function (resolve) {
       const done = function (result: PushResult): void {
@@ -1120,8 +1127,12 @@ class SsfHttp {
                      options?: PushOptions | null): Promise<PushResult> {
     const { log, config } = this.deps;
     log.debug("Entering SsfHttp.pushSetWithRetries().");
-    const retries = config.value('ssf.pushRetries');
-    const delay = config.value('ssf.pushRetryDelayMs');
+    const asked = options || {};
+    const retries = typeof asked.retries === 'number' && asked.retries >= 0
+      ? asked.retries : config.value('ssf.pushRetries');
+    const delay = typeof asked.retryDelayMs === 'number' &&
+      asked.retryDelayMs >= 0
+      ? asked.retryDelayMs : config.value('ssf.pushRetryDelayMs');
     const attempts = [];
     const attempt = (n: number): Promise<PushResult> => {
       log.debug("Entering attempt().");

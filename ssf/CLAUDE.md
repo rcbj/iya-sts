@@ -2304,3 +2304,51 @@ person's own device proved, the device takes that sign-in's level, so the
 `risk-level-change` with principal `DEVICE` above now fires on risk as well
 as on a compromise (`risk/CLAUDE.md`, *The registered device*).
 
+
+## A RECEIVER APPLICATION'S STREAMS ARE SENT WITH ITS OWN SETTINGS (2026-10-01)
+
+rcbj asked for an inbound CAEP or RISC stream to be tied to the application
+that created it, and for the settings that make sense per receiver to be
+exposed on that application. A stream's owner is its `createdBy` principal,
+matched to an application by identifier or by `ssfReceiverId`
+(`applications.ssfAllowedEventsFor()`'s lookup, cached per realm on
+`applicationsVersion()`, so it costs nothing per event).
+
+**Twenty settings may be overridden on the application entry** —
+`ssfCaepIncludeReasons`, `ssfCaepReasonLanguage`, `ssfCaepOmitEventTimestamp`,
+their three RISC twins, and `ssfSigningAlgorithm`, `ssfMinVerificationInterval`,
+`ssfInactivityTimeoutS`, `ssfInactivityAction`, `ssfVerificationEveryS`,
+`ssfStreamStatusOnCreate`, `ssfMaxStreams`, `ssfMaxSubjectsPerStream`,
+`ssfMaxQueuedEvents`, `ssfPollMaxEvents`, `ssfDeadLetterMaxPerStream`,
+`ssfPushTimeoutMs`, `ssfPushRetries` and `ssfPushRetryDelayMs`. An empty one
+inherits the service setting, which is the default every new stream starts
+from. **Left off, each for a reason:** `ssf.defaultSubjects` and
+`ssf.deliveryMethods` (published transmitter metadata, one answer for every
+receiver), `caep.defaultRiskLevel` and `caep.assuranceNamespace` (facts about
+the SUBJECT, not the delivery), `risc.subjectFormat` (the stream's own
+`format` already chooses it), `risc.honourOptOut` (the account holder's RISC
+section 2.8 choice is not a receiver's to waive), and the `enabled` and
+`eventsSupported` switches (`ssfAllowedEvents` narrows per receiver already).
+
+**NOTHING HERE CAN MAKE A SET NON-CONFORMANT, AND THAT IS HOW THE LIST WAS
+CHOSEN.** The reason and timestamp switches move only OPTIONAL members, and a
+reason stays an object keyed by a language tag, which is BCP 47-checked at the
+write. Every algorithm `ssf.signingAlgorithm` allows is asymmetric with a key
+in this transmitter's JWKS. The limits, timeouts and retries are this
+transmitter's own behaviour. Pausing and enabling still go through
+`changeStatus()`, so the receiver gets `stream-updated` first (SSF 1.0 section
+8.1.5). A stream's receiver-set members are the receiver's (section 8.1.1) and
+are shown, never edited, on the application's page.
+
+**ONE PAYLOAD, MANY STREAMS.** `caep.ts` and `risc.ts` build a payload once
+and every stream is sent it. `commonClaims()` now hangs a non-enumerable
+`Symbol.for('sts.ssf.commonSource')` on it: the family, the timestamp and the
+two reason texts. `ssf.ts`'s `commonClaimsForStream()` rebuilds a COPY for a
+stream whose owner overrides one of the three, and returns the payload
+untouched otherwise. `signingOptionsFor()` and `pushOptionsFor()` do the same
+for the algorithm and the push's timeout and retries. The limits read
+`SsfStreams.ownerSetting()` through `limit()`, with the owner passed at each
+place a limit is read; an internal stream asks no application.
+
+`tests/ssf_application_settings.js` holds it (five mutants, all caught); the
+console section is `admin-ui/CLAUDE.md`'s, the write rule `common/CLAUDE.md`'s.

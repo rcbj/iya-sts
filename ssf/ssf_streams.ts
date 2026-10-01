@@ -296,6 +296,9 @@ interface ApplicationsReader {
   ssfAllowedEventsFor(name: string): { identifier: string;
                                        values: string[];
                                        receiverIds?: string[] } | null;
+  ssfSettingFor?(name: string, key: string): { value: unknown;
+                                               source: string;
+                                               application: string };
 }
 
 // `persistence/persistence.js`, as far as this module reads it.
@@ -336,10 +339,58 @@ class SsfStreams {
     deps.log.debug("Leaving SsfStreams.constructor().");
   }
 
-  private limit(key?, fallback?) {
-    const { log, config } = this.deps;
+  // ---------------------------------------------------------------------------
+  // ONE SETTING AS IT APPLIES TO ONE STREAM'S OWNER (2026-10-01). The owning
+  // application may override some caep.*, risc.* and ssf.* settings for its
+  // own streams (`common/applications.js`, the per-receiver Shared Signals
+  // rows, read by `ssfSettingFor()`). `owner` is a principal or a stream
+  // record; this service's own two streams, and a stream nobody owns, take
+  // the setting. A process with no registry takes the setting too.
+  // ---------------------------------------------------------------------------
+  /**
+   * Returns a setting's value for a stream's owner: the owning application's
+   * override where it carries one, else the setting.
+   *
+   * @param owner - a principal, or a stream record
+   * @param key - the setting
+   * @returns `{ value, source, application }`
+   */
+  ownerSetting(owner?, key?) {
+    const { log, config, loadApplications } = this.deps;
+    log.debug("Entering SsfStreams.ownerSetting(). " + key);
+    const plain = { value: config.value(key), source: 'setting',
+                    application: '' };
+    const record = owner && typeof owner === 'object' ? owner : null;
+    const principal = record ? record.createdBy : owner;
+    const name = String(principal || '');
+    if ((record && this.isInternal(record)) || !name ||
+        name === '(unauthenticated)') {
+      log.debug("Leaving SsfStreams.ownerSetting(). No owner to ask.");
+      return plain;
+    }
+    let applications;
+    try {
+      applications = loadApplications();
+    } catch (e) {
+      log.debug("Caught in SsfStreams.ownerSetting(): " +
+                ((e && e.message) || e));
+      log.debug("Leaving SsfStreams.ownerSetting(). No registry.");
+      // No registry in this process: the setting decides.
+      return plain;
+    }
+    if (!applications || typeof applications.ssfSettingFor !== 'function') {
+      log.debug("Leaving SsfStreams.ownerSetting(). No per-owner reader.");
+      return plain;
+    }
+    const answer = applications.ssfSettingFor(name, key);
+    log.debug("Leaving SsfStreams.ownerSetting(). " + answer.source);
+    return answer;
+  }
+
+  private limit(key?, fallback?, owner?) {
+    const { log } = this.deps;
     log.debug("Entering SsfStreams.limit(). " + key);
-    const value = Number(config.value(key));
+    const value = Number(this.ownerSetting(owner, key).value);
     const out = (Number.isFinite(value) && value > 0) ? value : fallback;
     log.debug("Leaving SsfStreams.limit(). " + out);
     return out;
@@ -391,7 +442,7 @@ class SsfStreams {
     // service's own two streams are not counted against anybody.
     const internal = !!ctx.internalSurface;
     if (!internal) {
-      const max = this.limit('ssf.maxStreams', 25);
+      const max = this.limit('ssf.maxStreams', 25, ctx.principal);
       const held = this.streamsOwnedBy(ctx.principal).length;
       if (held >= max) {
         errors.push('This receiver already holds ' + held + ' stream(s) ' +
@@ -437,7 +488,8 @@ class SsfStreams {
     }
 
     const interval = Number(body.min_verification_interval);
-    const configured = this.limit('ssf.minVerificationInterval', 60);
+    const configured = this.limit('ssf.minVerificationInterval', 60,
+                                  internal ? null : ctx.principal);
     if (Number.isFinite(interval) && interval > 0 && interval < configured) {
       errors.push('"min_verification_interval" is ' + interval + ' seconds ' +
           'and this transmitter will not go below ' + configured +
@@ -479,7 +531,9 @@ class SsfStreams {
       format: format,
       min_verification_interval: configured,
       description: String(body.description || ''),
-      status: String(config.value('ssf.streamStatusOnCreate') || 'enabled'),
+      status: String(this.ownerSetting(internal ? null : ctx.principal,
+                                       'ssf.streamStatusOnCreate').value ||
+                     'enabled'),
       statusReason: 'created',
       createdAt: now,
       updatedAt: now,
@@ -1136,14 +1190,17 @@ class SsfStreams {
   // The inactivity timeout this transmitter publishes, in seconds; 0 is none.
   /**
    * Returns the inactivity timeout this transmitter publishes
-   * (`ssf.inactivityTimeoutS`).
+   * (`ssf.inactivityTimeoutS`), for one stream when it is named: its owning
+   * application may override the setting.
    *
+   * @param record - the stream, when there is one
    * @returns the timeout, in seconds; 0 for none
    */
-  inactivityTimeout() {
-    const { log, config } = this.deps;
+  inactivityTimeout(record?) {
+    const { log } = this.deps;
     log.debug("Entering SsfStreams.inactivityTimeout().");
-    const value = Number(config.value('ssf.inactivityTimeoutS'));
+    const value = Number(this.ownerSetting(record || null,
+                                           'ssf.inactivityTimeoutS').value);
     log.debug("Leaving SsfStreams.inactivityTimeout().");
     return Number.isFinite(value) && value > 0 ? Math.floor(value) : 0;
   }
@@ -1453,7 +1510,7 @@ class SsfStreams {
       log.debug("Leaving SsfStreams.addSubject(). Invalid subject.");
       return { ok: false, errors: verdict.errors };
     }
-    const max = this.limit('ssf.maxSubjectsPerStream', 100);
+    const max = this.limit('ssf.maxSubjectsPerStream', 100, record);
     const key = subjects.subjectKey(subject);
     const existing = record.subjects.filter((one) => {
       return one.key === key;
@@ -1850,7 +1907,7 @@ class SsfStreams {
       log.debug("Leaving SsfStreams.enqueue(). The stream is disabled.");
       return { ok: false, reason: 'the stream is disabled' };
     }
-    const max = this.limit('ssf.maxQueuedEvents', 200);
+    const max = this.limit('ssf.maxQueuedEvents', 200, record);
     const waiting = this.queueOf(record);
     let over = waiting.length - max + 1;
     while (over > 0 && waiting.length) {
@@ -1994,7 +2051,7 @@ class SsfStreams {
     }
     const held = (counts.get(record.stream_id) || 0) + 1;
     counts.set(record.stream_id, held);
-    const max = this.limit('ssf.deadLetterMaxPerStream', 1000);
+    const max = this.limit('ssf.deadLetterMaxPerStream', 1000, record);
     const seen = tally();
     if (held > max) {
       seen.trimmed += this.trimDeadLetters(record.stream_id, max);
@@ -2114,11 +2171,13 @@ class SsfStreams {
     expired.concat(orphaned).forEach((key) => {
       deadLetters.delete(key);
     });
-    const max = this.limit('ssf.deadLetterMaxPerStream', 1000);
     const seen = tally();
     const counts = deadCounts();
     counts.clear();
     perStream.forEach((held, streamId) => {
+      // Each stream's own cap: its owner may override the setting.
+      const max = this.limit('ssf.deadLetterMaxPerStream', 1000,
+                             streams.get(streamId) || null);
       if (held > max) {
         seen.trimmed += this.trimDeadLetters(streamId, max);
       } else {
@@ -2415,7 +2474,7 @@ class SsfStreams {
     // which section 8.1.5 requires to be sent BEFORE the stream stops and
     // which, on a poll stream, is only ever sent by being collected here.
     const stopped = record.status !== 'enabled';
-    const cap = this.limit('ssf.pollMaxEvents', 20);
+    const cap = this.limit('ssf.pollMaxEvents', 20, record);
     const wanted = Number(asked.maxEvents);
     const take = (Number.isFinite(wanted) && wanted >= 0)
       ? Math.min(wanted, cap) : cap;
@@ -2619,7 +2678,7 @@ class SsfStreams {
     // SSF 1.0 section 8.1.1, Transmitter-Supplied and OPTIONAL: published
     // while there is one to publish. Never on this service's own receivers,
     // which are never timed out.
-    const timeout = this.inactivityTimeout();
+    const timeout = this.inactivityTimeout(record);
     if (timeout && !this.isInternal(record)) {
       out.inactivity_timeout = timeout;
     }
@@ -2715,6 +2774,7 @@ export = {
   streamsOwnedBy: slot.forward('streamsOwnedBy'),
   noteActivity: slot.forward('noteActivity'),
   inactivityTimeout: slot.forward('inactivityTimeout'),
+  ownerSetting: slot.forward('ownerSetting'),
   isStreamUpdated: slot.forward('isStreamUpdated'),
   allowedEventsFor: slot.forward('allowedEventsFor'),
   deliversEvent: slot.forward('deliversEvent'),

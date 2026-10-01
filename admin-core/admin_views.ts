@@ -6402,6 +6402,7 @@ class AdminViews {
     const credentialsState = this.applicationCredentialsState(row);
     const softwareStatementState = this.applicationSoftwareStatementState(row);
     const rolesState = this.applicationRolesState(row.identifier);
+    const signalsState = this.applicationSignalsState(req, row);
     log.debug("Leaving AdminViews.applicationDetailJson().");
     return {
       row: row, attributeRows: attributeRows, paged: paged, paging: paging,
@@ -6410,6 +6411,7 @@ class AdminViews {
       rolesState: rolesState,
       credentialsState: credentialsState,
       softwareStatementState: softwareStatementState,
+      signalsState: signalsState,
       json: (function () {
       return Object.assign({ found: true }, row, {
           attributesShown: paged.shown,
@@ -6425,6 +6427,10 @@ class AdminViews {
           // the party registered itself. No secret and no private key: see
           // applicationCredentialsState().
           credentials: credentialsState.json,
+          // THE SHARED SIGNALS SECTION, AS DATA (2026-10-01): the streams this
+          // application owns and every per-receiver setting in force for
+          // them. See applicationSignalsState().
+          sharedSignals: signalsState.json,
           // THE SOFTWARE STATEMENTS SECTION, AS DATA (2026-09-13): the issuers
           // this application vouches for as a publisher, the statement this
           // realm issued it, and how it registered if a statement let it in. A
@@ -6609,6 +6615,73 @@ class AdminViews {
       log.debug("Leaving AdminViews.registeredJwksKeys(). Not JSON.");
       return { keys: [], problem: 'not valid JSON: ' + e.message };
     }
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE SHARED SIGNALS STREAMS AN APPLICATION OWNS (2026-10-01), and the
+  // per-receiver settings in force for them. A stream is this application's
+  // when the principal that created it resolves to this entry — its
+  // identifier, or one of its ssfReceiverId values — which is the same match
+  // `ssf_streams.ts` narrows events and applies settings by, so the page and
+  // the transmitter cannot disagree about whose a stream is. This service's
+  // own two streams are nobody's. The stream's members are shown as the
+  // receiver set them (SSF 1.0 section 8.1.1); only its status is an
+  // administrator's to change, through the existing `status` action.
+  // ---------------------------------------------------------------------------
+  /**
+   * Builds the Shared Signals state of one application's page.
+   *
+   * @param req - the request
+   * @param row - the application's view
+   * @returns `{ installed, streams, settings, json }`
+   */
+  applicationSignalsState(req, row) {
+    const { log, applications } = this.deps;
+    log.debug("Entering AdminViews.applicationSignalsState(). identifier=" +
+              row.identifier);
+    const settings = applications.ssfOverrideRows().map(function (one) {
+      const answer = applications.ssfSettingFor(row.identifier, one.setting);
+      return { setting: one.setting, attribute: one.attribute,
+               value: answer.value, source: answer.source };
+    });
+    if (!signalsReporter) {
+      log.debug("Leaving AdminViews.applicationSignalsState(). Not loaded.");
+      return { installed: false, streams: [], settings: settings,
+               json: { installed: false, streams: [], settings: settings } };
+    }
+    let detail = [];
+    try {
+      detail = signalsReporter.report(req).streamDetail || [];
+    } catch (e) {
+      log.debug("Caught in AdminViews.applicationSignalsState(): " +
+                ((e && e.message) || e));
+      // A report that could not be built shows no streams rather than
+      // costing the application's page.
+      detail = [];
+    }
+    const owned = detail.filter(function (stream) {
+      if (stream.internal || !stream.createdBy) {
+        return false;
+      }
+      const owner = applications.ssfAllowedEventsFor(stream.createdBy);
+      return !!owner && owner.identifier === row.identifier;
+    }).map(function (stream) {
+      return { stream_id: stream.stream_id, status: stream.status,
+               statusReason: stream.statusReason, aud: stream.aud,
+               delivery: stream.delivery,
+               events_requested: stream.events_requested || [],
+               events_delivered: stream.events_delivered || [],
+               format: stream.format || '',
+               description: stream.description || '',
+               createdBy: stream.createdBy, createdAt: stream.createdAt,
+               updatedAt: stream.updatedAt,
+               lastPushAt: stream.lastPushAt || '',
+               lastPushError: stream.lastPushError || '' };
+    });
+    log.debug("Leaving AdminViews.applicationSignalsState(). " +
+              owned.length + " stream(s).");
+    return { installed: true, streams: owned, settings: settings,
+             json: { installed: true, streams: owned, settings: settings } };
   }
 
   private applicationCredentialsState(row) {

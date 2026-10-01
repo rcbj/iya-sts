@@ -842,7 +842,7 @@ class SharedSignals {
       issuer: record.iss,
       audience: record.aud,
       uri: uri,
-      payload: asked.payload || {},
+      payload: this.commonClaimsForStream(record, asked.payload || {}),
       subject: subject,
       // Every SET carries one (#144): an automatic emission never set it.
       txn: asked.txn || this.newTxn(),
@@ -880,7 +880,8 @@ class SharedSignals {
     }
 
     log.debug("Leaving SharedSignals.transmitNow().");
-    return events.signSet(claims).then((token): TransmitReport |
+    return events.signSet(claims, this.signingOptionsFor(record))
+      .then((token): TransmitReport |
                                            Promise<TransmitReport> => {
       // THE RECORD HELD NOW, AND NOT THE ONE READ BEFORE THE SIGNATURE. Signing
       // may go to libuv's thread pool and take seconds, and in a service whose
@@ -1006,6 +1007,111 @@ class SharedSignals {
   // queue already; a delivery takes it off, a failure moves it to the
   // dead-letter queue. Never rejects.
   // -------------------------------------------------------------------------
+  // -------------------------------------------------------------------------
+  // WHAT ONE RECEIVER IS SENT, WHERE ITS APPLICATION SAYS (2026-10-01).
+  //
+  // A CAEP or RISC payload is built once and fanned out to every stream that
+  // takes it. Three of its members are OPTIONAL — `event_timestamp`,
+  // `reason_admin` and `reason_user` (CAEP 1.0 section 2; RISC defines the
+  // same three on the types that carry them) — so whether each is present,
+  // and the language tag the reasons are keyed under, may differ between
+  // receivers without either SET leaving the profile. `caep.ts` and
+  // `risc.ts` keep what they were built from under a symbol, and a stream
+  // whose owner overrides any of the three settings gets its own copy rebuilt
+  // from it. A payload with no such record (a hand-built one, a type RISC
+  // gives none of them) is sent as it is. Nothing about the SUBJECT or the
+  // event's facts changes per stream: only optional members.
+  // -------------------------------------------------------------------------
+  /**
+   * Returns the payload one stream is sent: the shared one, or a copy whose
+   * optional common claims follow the owning application's overrides.
+   *
+   * @param record - the stream
+   * @param payload - the payload as built for every stream
+   * @returns the payload for this stream
+   */
+  private commonClaimsForStream(record: Json, payload: Json): Json {
+    const { log, streams } = this.deps;
+    log.debug('Entering SharedSignals.commonClaimsForStream().');
+    const source = payload && payload[Symbol.for('sts.ssf.commonSource')];
+    if (!source || (source.family !== 'caep' && source.family !== 'risc')) {
+      log.debug('Leaving SharedSignals.commonClaimsForStream(). Shared.');
+      return payload;
+    }
+    const family = source.family;
+    const omit = streams.ownerSetting(record, family + '.omitEventTimestamp');
+    const include = streams.ownerSetting(record, family + '.includeReasons');
+    const tag = streams.ownerSetting(record, family + '.reasonLanguage');
+    if (omit.source !== 'application' && include.source !== 'application' &&
+        tag.source !== 'application') {
+      log.debug('Leaving SharedSignals.commonClaimsForStream(). No ' +
+                'override.');
+      return payload;
+    }
+    const copy: Json = Object.assign({}, payload);
+    delete copy.event_timestamp;
+    delete copy.reason_admin;
+    delete copy.reason_user;
+    if (!omit.value) {
+      copy.event_timestamp = source.eventTimestamp;
+    }
+    const language = String(tag.value || 'en');
+    if (include.value) {
+      // Objects keyed by a language tag, never strings — see caep.ts.
+      if (source.reasonAdmin) {
+        copy.reason_admin = { [language]: source.reasonAdmin };
+      }
+      if (source.reasonUser) {
+        copy.reason_user = { [language]: source.reasonUser };
+      }
+    }
+    log.debug('Leaving SharedSignals.commonClaimsForStream(). Rebuilt for ' +
+              (omit.application || include.application || tag.application) +
+              '.');
+    return copy;
+  }
+
+  /**
+   * The signing options for one stream's SETs: the algorithm its owning
+   * application chose, or none (the setting decides). Every algorithm the
+   * setting allows is one this transmitter publishes a key for in its JWKS.
+   *
+   * @param record - the stream
+   * @returns `{ algorithm }`, or `{}`
+   */
+  private signingOptionsFor(record: Json): Json {
+    const { log, streams } = this.deps;
+    log.debug('Entering SharedSignals.signingOptionsFor().');
+    const answer = streams.ownerSetting(record, 'ssf.signingAlgorithm');
+    log.debug('Leaving SharedSignals.signingOptionsFor(). ' + answer.source);
+    return answer.source === 'application'
+      ? { algorithm: String(answer.value) } : {};
+  }
+
+  /**
+   * The push options for one stream: its authorization header, and the
+   * timeout and retries its owning application may set for it.
+   *
+   * @param record - the stream
+   * @returns the options `ssf_http.ts`'s push doors take
+   */
+  private pushOptionsFor(record: Json): Json {
+    const { log, streams } = this.deps;
+    log.debug('Entering SharedSignals.pushOptionsFor().');
+    const out: Json = {
+      authorizationHeader: record.delivery.authorization_header
+    };
+    [['timeoutMs', 'ssf.pushTimeoutMs'], ['retries', 'ssf.pushRetries'],
+     ['retryDelayMs', 'ssf.pushRetryDelayMs']].forEach(function (pair) {
+      const answer = streams.ownerSetting(record, pair[1]);
+      if (answer.source === 'application') {
+        out[pair[0]] = Number(answer.value);
+      }
+    });
+    log.debug('Leaving SharedSignals.pushOptionsFor().');
+    return out;
+  }
+
   private pushEntry(record: Json, entry: Json): Promise<TransmitReport> {
     const { log, streams, transport } = this.deps;
     const { iso } = this.deps.helpers;
@@ -1017,9 +1123,7 @@ class SharedSignals {
     // Through the retrying door, which with `ssf.pushRetries` at its default
     // of 0 is exactly one push — see ssf_http.ts.
     return transport.pushSetWithRetries(record.delivery.endpoint_url, token,
-      {
-        authorizationHeader: record.delivery.authorization_header
-      }).then((result: Json): TransmitReport => {
+      this.pushOptionsFor(record)).then((result: Json): TransmitReport => {
       // The push was a network round trip, so the same reason as above.
       record = streams.liveRecord(record);
       record.lastPushAt = iso();
@@ -1429,12 +1533,12 @@ class SharedSignals {
     }
     const signed: Promise<string> = oldest.token
       ? Promise.resolve(oldest.token)
-      : events.signSet(oldest.claims);
+      : events.signSet(oldest.claims, this.signingOptionsFor(record));
     log.debug('Leaving SharedSignals.probeDeadStream(). Probing with ' +
               oldest.jti + '.');
-    return signed.then(function (token) {
-      return transport.pushSetGated(record.delivery.endpoint_url, token, {
-        authorizationHeader: record.delivery.authorization_header });
+    return signed.then((token: string) => {
+      return transport.pushSetGated(record.delivery.endpoint_url, token,
+                                    this.pushOptionsFor(record));
     }).then((result: Json) => {
       const live: Json = streams.liveRecord(record);
       if (!result.ok) {
@@ -1613,11 +1717,6 @@ class SharedSignals {
     log.debug('Entering SharedSignals.maintainStreams().');
     const now = typeof nowSecOverride === 'number' ? nowSecOverride
       : Math.floor(Date.now() / 1000);
-    const timeout = streams.inactivityTimeout();
-    const everyValue = Number(config.value('ssf.verificationEveryS'));
-    const every = Number.isFinite(everyValue) && everyValue > 0
-      ? Math.floor(everyValue) : 0;
-    const action = String(config.value('ssf.inactivityAction') || 'pause');
     const summary: Json = { inactive: 0, verified: 0, streams: 0 };
     const work: Promise<unknown>[] = [];
     streams.listStreams().forEach((record: Json) => {
@@ -1625,6 +1724,15 @@ class SharedSignals {
         return;
       }
       summary.streams += 1;
+      // EACH STREAM'S OWN VALUES (2026-10-01): the owning application may
+      // override all three for its streams (`ssfSettingFor()`).
+      const timeout = streams.inactivityTimeout(record);
+      const everyValue = Number(streams.ownerSetting(record,
+        'ssf.verificationEveryS').value);
+      const every = Number.isFinite(everyValue) && everyValue > 0
+        ? Math.floor(everyValue) : 0;
+      const action = String(streams.ownerSetting(record,
+        'ssf.inactivityAction').value || 'pause');
       const idle = now - Number(record.lastActivityAt ||
         Math.floor(Date.parse(record.createdAt || '') / 1000) || now);
       if (timeout && idle >= timeout) {
@@ -1700,10 +1808,21 @@ class SharedSignals {
       kind: 'cluster',
       scope: 'realm',
       everySetting: 'ssf.streamMaintenanceSweepS', everySettingUnit: 's',
-      off: function () {
-        return !Number(config.value('ssf.inactivityTimeoutS')) &&
+      off: () => {
+        // Off only while BOTH are 0 for every stream: an application may
+        // turn either on for its own streams when the setting is 0.
+        const streams = this.deps.streams;
+        const anyStream = streams.listStreams().some((record: Json) => {
+          return !streams.isInternal(record) &&
+            (Number(streams.ownerSetting(record,
+              'ssf.inactivityTimeoutS').value) > 0 ||
+             Number(streams.ownerSetting(record,
+               'ssf.verificationEveryS').value) > 0);
+        });
+        return !anyStream && !Number(config.value('ssf.inactivityTimeoutS')) &&
                !Number(config.value('ssf.verificationEveryS'))
-          ? 'ssf.inactivityTimeoutS and ssf.verificationEveryS are both 0'
+          ? 'ssf.inactivityTimeoutS and ssf.verificationEveryS are both 0, ' +
+            'and no application sets either for its streams'
           : '';
       },
       run: () => {
@@ -3170,6 +3289,8 @@ class SharedSignals {
         createdAt: record.createdAt,
         updatedAt: record.updatedAt,
         createdBy: record.createdBy,
+        // This service's own receivers belong to no application (#144).
+        internal: streams.isInternal(record),
         counters: record.counters,
         lastPushError: record.lastPushError,
         lastPushAt: record.lastPushAt,

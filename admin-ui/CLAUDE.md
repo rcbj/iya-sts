@@ -6879,3 +6879,22 @@ the existing `:has()` rules hide by.
 
 `tests/application_form_roles.js` holds the catalogue; nothing drives the grid
 in a browser yet.
+
+## AN APPLICATION'S PAGE HAS A SHARED SIGNALS SECTION (2026-10-01)
+
+`applicationSignalsSection()` draws `adminViews.applicationSignalsState()`
+under the Credentials section of any application declared for Shared Signals
+or owning a stream. It has two tables:
+* the streams it created at `/ssf/stream`, with the members their receiver set
+  (read-only, since SSF 1.0 section 8.1.1 makes them the receiver's) and a
+  Pause or Enable button for Admin Write;
+* every per-application override with its value in force and whether the
+  application or the setting gives it, so the defaults a new stream starts
+  from are on the page.
+
+The overrides themselves are edited in the field grid's Shared Signals group.
+**The buttons are a form moved, not an action**: they post `status` to
+`/admin/ssf` with `from=application`, and that handler returns through
+`applicationReturnTo()` to `#signals`. So `changeStatus()` still announces the
+change to the receiver first, and `POST /admin-api/ssf/status` is still the
+one mirror. `ssf/CLAUDE.md` argues which settings are exposed.

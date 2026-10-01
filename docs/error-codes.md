@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3883** of them, in **41** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3884** of them, in **41** subsystems.
 
 ## Where a code appears
 
@@ -88,7 +88,7 @@ is an ordinary outcome.
 * [Management API (`STS-API`)](#sts-api) — 75
 * [User portal (`STS-PORTAL`)](#sts-portal) — 77
 * [Sign-out (`STS-LOGOUT`)](#sts-logout) — 7
-* [Registries (`STS-REG`)](#sts-reg) — 135
+* [Registries (`STS-REG`)](#sts-reg) — 136
 * [Protocol debugger (`STS-DBG`)](#sts-dbg) — 28
 
 ## STS-HTTP
@@ -4332,6 +4332,7 @@ Raised from: common/applications.js, common/consent.ts, common/app_permissions.t
 | `STS-REG-0199` | A command_endpoint (OpenID Provider Commands, #151) was not an https URL with no fragment, at registration or update (a console or API write is refused under STS-REG-0071). | HTTP 400 {error: invalid_client_metadata} |
 | `STS-REG-0200` | A claim-set attribute claim named an attribute it may not carry: not an attribute name, a secret or binary value (userPassword, jpegPhoto, a certificate), or one this service keeps (sts*, hoba*, app*, pwd*) (#94). | HTTP 400 (console and API) |
 | `STS-REG-0201` | A JWT or UserInfo attribute claim named a type that is not string, number, boolean or json (#94). | HTTP 400 (console and API) |
+| `STS-REG-0202` | A per-receiver Shared Signals override on an application entry was given a value its setting does not take, or a reason language that is not a BCP 47 tag. | HTTP 400 (console and API) |
 
 ## STS-DBG
 
