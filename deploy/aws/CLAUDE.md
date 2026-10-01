@@ -8,13 +8,14 @@ Dockerfile removes this directory from the image.
 |---|---|---|---|
 | `bootstrap-state.sh` | once | the S3 state bucket `mock-sts-terraform-state-<account>` — not Terraform, because it holds Terraform's state | an administrator |
 | `foundation/` | long-lived | the deployer IAM user, the role it assumes, the two permissions boundaries (the workload one, and the ECS infrastructure role's since #214), the KMS key, the ECR repository, the container log group, the test report bucket `mock-sts-test-reports-<account>` — and since #98, for every region in `permitted_regions`, a single-region CELL key, a replica of the multi-region GLOBAL key, a log group and a replica of the repository (`modules/region`), with ECR replication to them (*Cells*, below) | an administrator |
-| `environment/` | per run | VPC, NLB (443, 389, 636, the plain-HTTP CRL/OCSP port on 80, and TCP 88 for the KDC — the same in every environment since 2026-09-21), and with `public_hostname` a public ACM certificate and a CNAME (`dns.tf`), RDS primary + replica, secrets, ECS cluster, task and execution roles, the ECS infrastructure role, with `mail_ses_domain` an SES identity and its DKIM records (`mail.tf`, #311), three services — each task with an EBS volume for risk dataset uploads (#214) | the deployer role |
+| `environment/` | per run | VPC, NLB (443, 389, 636, the plain-HTTP CRL/OCSP port on 80, and TCP 88 for the KDC — the same in every environment since 2026-09-21), and with `public_hostname` a CNAME (`dns.tf`) — and the public certificate's ARN, READ from `certificate/`'s state, since 2026-10-01, RDS primary + replica, secrets, ECS cluster, task and execution roles, the ECS infrastructure role, with `mail_ses_domain` an SES identity and its DKIM records (`mail.tf`, #311), three services — each task with an EBS volume for risk dataset uploads (#214) | the deployer role |
+| `certificate/` | **kept across destroys** | **the public ACM certificate (2026-10-01, rcbj)**: the exportable certificate the nodes present, its DNS validation records — one state per environment (`environment/<env>/certificate.tfstate`) and per cell (`environment/<env>/<cell>/certificate.tfstate`). Applied before every environment apply, NEVER destroyed with the environment, and its first apply ADOPTS an existing certificate rather than requesting one (*The public certificate is kept*, below) | the deployer role, through `entrypoint.sh` |
 | `spiffe-realm/` | per realm | one trust realm's two SPIFFE ports (Workload API, SPIRE Server API) on an existing environment's NLB: two listeners, two target groups with the nodes registered BY ADDRESS, and the security-group rules — state at `environment/<env>/spiffe-realm/<realm>.tfstate` (*A realm's SPIFFE ports*, below) | the deployer role |
 | `environment/envs/<env>.tfvars` | per environment | what a named environment sets differently; `entrypoint.sh` passes it when it exists. `dev` and `ci` have none | the deployer role |
 | `environment/envs/<env>.cells.tfvars.json` | per environment | **a multi-cell environment's cells (#98)**: each cell's region, jurisdiction and VPC CIDR, which cell holds the global database's writer, and (since #367) each jurisdiction's pinned countries. Its presence is what makes an environment multi-cell; `testidpna` (two cells) and `globalidp` (six, the target test case) are the two there are | the deployer role |
 | `environment/envs/<env>.conversion.tfvars.json` | per conversion | **a single-region environment converted into this one's cells (#98)**: which old environment, each converted cell's source snapshot and the copy it restores from, and the carry-over secret. Laid over the cells file by `entrypoint.sh` ONLY with `TF_CONVERT=1` (*Converting a single-region environment into cells*, below); `testidpna`'s converts `testidp` | the deployer role |
 | `convert-to-cells.sh` | per conversion | the conversion's runbook: checks (read only, the default), `--carry-secrets`, `--copy-snapshot`, and the `terraform-local.sh` commands in order — never an apply or a destroy itself | a person |
-| `*/tests/render.tftest.hcl` | — | **offline renders (#367)** of `foundation/`, `global/` and `environment/`: `terraform test` with nothing asked of AWS — the region rule, the mesh, the DNS tree (*What was checked*, below) | a person, after changing a stack |
+| `*/tests/render.tftest.hcl` | — | **offline renders (#367)** of `foundation/`, `global/`, `environment/` and `certificate/`: `terraform test` with nothing asked of AWS — the region rule, the mesh, the DNS tree (*What was checked*, below) | a person, after changing a stack |
 | `global/` | per multi-cell environment | the global tier of a multi-cell environment (#98): the global PostgreSQL writer and a cross-region read replica per other cell, the global secrets and their replicas, the peering mesh and the inter-cell name associations — state at `environment/<env>/global.tfstate` (*Cells*, below) | the deployer role, through `entrypoint.sh` |
 | `schema-init/` | per image | a `postgres:18` image that applies `postgres/schema.sql` as the RDS master user | built by CI |
 | `cert-init/` | per image | an `aws-cli` image that exports the public ACM certificate into the task before the node starts, so the NODE presents it (only where `public_hostname` is set) | built by CI |
@@ -212,7 +213,7 @@ pointed at. The listener is TCP again and the certificate moved DOWN to the
 node:
 
 * the certificate is requested **exportable** (`options { export = "ENABLED" }`
-  in `dns.tf`), which is the only way AWS releases a public certificate's
+  in `certificate/main.tf` since 2026-10-01, `dns.tf` before), which is the only way AWS releases a public certificate's
   private key, is billed per certificate, and **cannot be turned on afterwards**
   — an existing certificate has to be replaced by one requested that way;
 * `cert-init` exports it in the task, on every start, and writes the leaf-first
@@ -405,9 +406,54 @@ and plan no change.
   have invented addresses and every one is sent security notices; refused by
   IAM they cost no quota and cannot bounce against the account's reputation,
   and they dead-letter in the outbox with the AccessDenied as the reason.
-* **The identity is destroyed with the environment**, like the certificate,
+* **The identity is destroyed with the environment** (the certificate is not, since 2026-10-01),
   and re-verified from the CNAMEs on the next build. Mail queued before it
   verifies waits in the outbox and is retried by `mail.deliver`.
+
+## The public certificate is kept, and reused (2026-10-01)
+
+**rcbj: the destroy step leaves the certificate in place, and later builds
+reuse it.** The certificate is EXPORTABLE (`options { export }`, so a node
+can present it — *TLS passes through the NLB*, above), an exportable ACM
+certificate is billed per issuance, and an environment that requested one on
+every apply and deleted it on every destroy made it the single largest line
+item of September's AWS bill. So:
+
+* **It is `certificate/`'s**, a stack of its own: the certificate, its DNS
+  validation records and the validation, one state per environment
+  (`environment/<env>/certificate.tfstate`) and per cell
+  (`environment/<env>/<cell>/certificate.tfstate` — an ACM certificate is
+  regional). It reads the environment's own `envs/<env>.tfvars` and cells
+  file.
+* **The environment READS the ARN** from that state
+  (`environment/dns.tf`, `terraform_remote_state`) and owns no certificate;
+  a `check` block says so when the certificate stack has not been applied.
+* **`entrypoint.sh` applies the certificate stack before every environment
+  apply** (`apply_certificate_stack`; per cell in a multi-cell apply). An
+  unchanged certificate applies as no change and costs nothing.
+* **No destroy touches it.** The environment's destroy, single-cell or
+  multi-cell, the GitHub workflows and `run-tests.sh --target=aws-ephemeral`
+  all go through `entrypoint.sh`, which: lists the certificate's state as
+  *kept* among the dependent stacks; takes the three old certificate
+  addresses out of an environment's state before destroying it
+  (`forget_environment_certificate`), with `removed { destroy = false }`
+  blocks in `dns.tf` saying the same thing to Terraform; and REFUSES
+  `TF_STACK=certificate TF_ACTION=destroy` unless
+  `STS_DESTROY_CERTIFICATE=yes`.
+* **Its first apply adopts what is there** (`adopt_existing_certificate`):
+  with no certificate in its state, it looks in ACM, in the stack's region,
+  for an ISSUED, EXPORTABLE `EC_prime256v1` certificate for the name (and,
+  for a cell, carrying the cell's console name), takes the newest, and
+  `certificate/main.tf`'s import block takes it into the state. So the
+  certificate an environment made before this change, or one a previous build
+  left, is reused, not re-requested.
+* **What still issues a new one** is a change that forces it — another name,
+  a cell's console name added to the SANs, another key algorithm — once,
+  created before the old one is deleted.
+* **Deleting it on purpose**: `STS_DESTROY_CERTIFICATE=yes TF_STACK=certificate
+  TF_ACTION=destroy` (with `TF_CELL` for a cell), after the environment is
+  gone. Its validation records go with it; the certificate's ARN changes on
+  the next build.
 
 ## A deployment beside the tests: `testidp` (2026-09-16)
 
@@ -417,8 +463,8 @@ plan against its state showed two new empty outputs and nothing else.
 `environment/envs/testidp.tfvars` holds what differs:
 
 * **`public_hostname = test-idp.iyasec.io`** in the public `iyasec.io` zone.
-  `dns.tf` requests an **exportable** ACM certificate for it (DNS-validated in
-  that zone) and writes the CNAME to the NLB. **The NODES present it**, on
+  `certificate/` holds an **exportable** ACM certificate for it (DNS-validated in
+  that zone, and kept across builds) and `dns.tf` writes the CNAME to the NLB. **The NODES present it**, on
   their own 8081, through `tls.certificateFile` — the load balancer passes TCP
   through here exactly as it does for `dev` and `ci`, so a client certificate
   reaches the service and `GET /tls/sign-in` and RFC 8705 work under a

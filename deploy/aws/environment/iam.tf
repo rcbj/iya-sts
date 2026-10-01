@@ -89,7 +89,7 @@ data "aws_iam_policy_document" "task" {
     content {
       sid       = "ExportThePublicCertificateForTheNodeToServe"
       actions   = ["acm:ExportCertificate"]
-      resources = [aws_acm_certificate.public[0].arn]
+      resources = [local.public_certificate_arn]
     }
   }
 

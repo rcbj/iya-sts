@@ -297,7 +297,7 @@ resource "aws_ecs_task_definition" "node" {
       environment = [
         # The VALIDATED certificate's ARN, so the export cannot run against
         # one that has not been issued yet.
-        { name = "STS_ACM_CERTIFICATE_ARN", value = aws_acm_certificate_validation.public[0].certificate_arn },
+        { name = "STS_ACM_CERTIFICATE_ARN", value = local.public_certificate_arn },
         { name = "STS_TLS_DIR", value = local.tls_dir },
         { name = "AWS_REGION", value = local.region },
       ]

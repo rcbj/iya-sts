@@ -243,6 +243,16 @@ case "${TF_STACK}" in
     STATE_KEY="environment/${TF_ENV}/spiffe-realm/${TF_REALM}.tfstate"
     export TF_VAR_environment="${TF_ENV}" TF_VAR_realm="${TF_REALM}"
     ;;
+  certificate)
+    # THE PUBLIC CERTIFICATE (deploy/aws/certificate/, rcbj 2026-10-01): one
+    # state per environment, and per cell (below), that NO environment
+    # destroy touches — an exportable certificate is billed per issuance. It
+    # is applied before every environment apply (`apply_certificate_stack`)
+    # and refused a destroy unless STS_DESTROY_CERTIFICATE=yes.
+    TF_DIR=/workspace/deploy/aws/certificate
+    STATE_KEY="environment/${TF_ENV}/certificate.tfstate"
+    export TF_VAR_environment="${TF_ENV}"
+    ;;
   suite-callbacks)
     # The suite's callback task for one run (deploy/aws/suite-callbacks/),
     # created and destroyed by run-suite.sh around each run.
@@ -250,7 +260,7 @@ case "${TF_STACK}" in
     STATE_KEY="environment/${TF_ENV}/suite-callbacks.tfstate"
     export TF_VAR_environment="${TF_ENV}"
     ;;
-  *) die "unknown TF_STACK='${TF_STACK}' (environment | global | foundation | spiffe-realm | suite-callbacks)." ;;
+  *) die "unknown TF_STACK='${TF_STACK}' (environment | global | foundation | certificate | spiffe-realm | suite-callbacks)." ;;
 esac
 
 # A STACK BUILT ON ONE CELL (#98) is that cell's: its state is under the
@@ -258,7 +268,7 @@ esac
 if [ -n "${MULTI_CELL}" ];
 then
   case "${TF_STACK}" in
-    spiffe-realm|suite-callbacks)
+    spiffe-realm|suite-callbacks|certificate)
       [ -n "${TF_CELL:-}" ] || \
         die "${TF_ENV} is multi-cell (${CELLS[*]}): TF_STACK=${TF_STACK} needs TF_CELL, the cell whose load balancer it is for."
       STATE_KEY="environment/${TF_ENV}/${TF_CELL}/${STATE_KEY#"environment/${TF_ENV}/"}"
@@ -389,6 +399,12 @@ destroy_dependent_stacks() {
         MOCK_STS_DEPLOYER_ROLE_ARN= TF_DATA_DIR= TF_STACK=suite-callbacks \
           TF_CELL="${cell}" TF_ACTION=destroy "$0" || \
           die "the suite-callbacks stack would not destroy, so '${TF_ENV}' was left alone. Fix that stack and run this again."
+        ;;
+      "${prefix}certificate.tfstate")
+        # THE PUBLIC CERTIFICATE (deploy/aws/certificate/): never a dependent
+        # to destroy. It outlives the environment so the next apply reuses it
+        # rather than paying for another issuance (rcbj, 2026-10-01).
+        say "kept: the public certificate's stack (${key})"
         ;;
       "${prefix}"*/*|"${prefix}global.tfstate")
         # A multi-cell environment's cell prefixes, its cells' own states and
@@ -945,13 +961,17 @@ say "${TF_DIR}"
 # `dev` and `ci` have none and take the variables' defaults, which are the test
 # arrangement; a deployment (`testidp`) names what differs.
 VAR_FILE_ARGS=()
-if [ "${TF_STACK}" = "environment" ] && [ -f "envs/${TF_ENV}.tfvars" ];
+# The certificate stack reads the SAME files (public_hostname,
+# public_zone_name, the cells' regions), from the environment's directory.
+ENV_DIR=/workspace/deploy/aws/environment
+if { [ "${TF_STACK}" = "environment" ] || [ "${TF_STACK}" = "certificate" ]; } && [ -f "${ENV_DIR}/envs/${TF_ENV}.tfvars" ];
 then
   say "variables: envs/${TF_ENV}.tfvars"
-  VAR_FILE_ARGS=(-var-file="envs/${TF_ENV}.tfvars")
+  VAR_FILE_ARGS=(-var-file="${ENV_DIR}/envs/${TF_ENV}.tfvars")
 fi
-# A cell and the global stack both read the environment's cells file (#98).
-if [ -n "${MULTI_CELL}" ] && { [ "${TF_STACK}" = "global" ] || [ "${TF_STACK}" = "environment" ]; };
+# A cell, the global stack and a cell's certificate read the environment's
+# cells file (#98).
+if [ -n "${MULTI_CELL}" ] && { [ "${TF_STACK}" = "global" ] || [ "${TF_STACK}" = "environment" ] || [ "${TF_STACK}" = "certificate" ]; };
 then
   say "cells: envs/${TF_ENV}.cells.tfvars.json"
   VAR_FILE_ARGS+=(-var-file="${CELLS_FILE}")
@@ -1003,12 +1023,113 @@ else
     -backend-config="bucket=${bucket}" >&2
 fi
 
+# ---------------------------------------------------------------------------
+# THE PUBLIC CERTIFICATE IS KEPT AND REUSED (rcbj, 2026-10-01). An exportable
+# ACM certificate is billed per issuance, and requesting a new one on every
+# build was the largest line item of September's AWS bill. So it is
+# deploy/aws/certificate/'s, a stack applied before every environment apply
+# and never destroyed with the environment; certificate/main.tf argues it.
+# ---------------------------------------------------------------------------
+
+# Before an environment apply: apply its certificate stack, which changes
+# nothing when the certificate is already there. A child of this script, as
+# `step` runs one, so the certificate's state and lock are its own.
+apply_certificate_stack() {
+  say "the public certificate first (deploy/aws/certificate)"
+  step TF_STACK=certificate TF_CELL="${TF_CELL:-}" TF_ACTION=apply || \
+    die "the certificate stack did not apply, so ${TF_ENV}${TF_CELL:+ cell ${TF_CELL}} was left alone. Fix it and apply again."
+}
+
+# The first apply of a certificate stack ADOPTS an existing certificate rather
+# than requesting another: an issued, EXPORTABLE ACM certificate for the
+# name, in this stack's region — the one an environment made before the
+# certificate moved, or one a previous certificate stack held. The newest
+# wins; a cell's must name its console name too, or a new one is requested
+# (a SAN cannot be added to an existing certificate). Sets TF_VAR_adopt_\
+# certificate_arn, which certificate/main.tf's import block reads.
+adopt_existing_certificate() {
+  if terraform state list 2>/dev/null | grep -q '^aws_acm_certificate\.public\[0\]$';
+  then
+    return 0
+  fi
+  local facts host region console arns arn best="" best_at="" described
+  facts="$(echo 'jsonencode({ host = var.public_hostname, region = var.cell != "" ? var.cells[var.cell].region : var.aws_region, console = var.cell != "" && var.public_hostname != "" ? "${var.cell}.${var.public_hostname}" : "" })' | \
+    terraform console -no-color "${VAR_FILE_ARGS[@]}" 2>/dev/null | tail -n 1)" || facts=""
+  facts="$(printf '%s' "${facts}" | jq -r 'fromjson? // .' 2>/dev/null)" || facts=""
+  host="$(printf '%s' "${facts}" | jq -r '.host // empty' 2>/dev/null)"
+  region="$(printf '%s' "${facts}" | jq -r '.region // empty' 2>/dev/null)"
+  console="$(printf '%s' "${facts}" | jq -r '.console // empty' 2>/dev/null)"
+  if [ -z "${host}" ];
+  then
+    return 0
+  fi
+  arns="$(aws acm list-certificates --region "${region}" \
+    --certificate-statuses ISSUED --includes keyTypes=EC_prime256v1 \
+    --query "CertificateSummaryList[?DomainName=='${host}'].CertificateArn" \
+    --output text 2>/dev/null)" || arns=""
+  [ "${arns}" = "None" ] && arns=""
+  for arn in ${arns}; do
+    described="$(aws acm describe-certificate --region "${region}" \
+      --certificate-arn "${arn}" --output json 2>/dev/null)" || continue
+    printf '%s' "${described}" | jq -e '.Certificate.Options.Export == "ENABLED"' >/dev/null || continue
+    if [ -n "${console}" ];
+    then
+      printf '%s' "${described}" | \
+        jq -e --arg c "${console}" '.Certificate.SubjectAlternativeNames | index($c)' >/dev/null || continue
+    fi
+    local at
+    at="$(printf '%s' "${described}" | jq -r '.Certificate.IssuedAt // .Certificate.CreatedAt // ""')"
+    if [ -z "${best}" ] || [[ "${at}" > "${best_at}" ]];
+    then
+      best="${arn}"
+      best_at="${at}"
+    fi
+  done
+  if [ -n "${best}" ];
+  then
+    say "adopting the existing certificate for ${host}: ${best}"
+    export TF_VAR_adopt_certificate_arn="${best}"
+  else
+    say "no existing exportable certificate for ${host}${console:+ (and ${console})} in ${region}: one will be requested"
+  fi
+}
+
+# An environment that recorded the certificate before it moved: take it (and
+# its validation) out of the environment's state before a destroy, so the
+# destroy cannot delete it whatever Terraform makes of the `removed` blocks.
+forget_environment_certificate() {
+  local address
+  for address in $(terraform state list 2>/dev/null | \
+    grep -E '^(aws_acm_certificate\.public|aws_acm_certificate_validation\.public|aws_route53_record\.certificate_validation)(\[|$)'); do
+    say "kept: ${address} (forgotten by this state; the certificate stack adopts it)"
+    terraform state rm -no-color "${address}" >&2 || \
+      die "could not take ${address} out of ${TF_ENV}'s state, so the destroy was not started: it would have deleted the certificate."
+  done
+}
+
+if [ "${TF_STACK}" = "environment" ] && [ "${TF_ACTION}" = "apply" ];
+then
+  apply_certificate_stack
+fi
+if [ "${TF_STACK}" = "certificate" ] && [ "${TF_ACTION}" = "apply" ];
+then
+  adopt_existing_certificate
+fi
+
 case "${TF_ACTION}" in
   init)     say "init only." ;;
   validate) terraform validate -no-color ;;
   plan)     tf plan -input=false -no-color "${VAR_FILE_ARGS[@]}" ;;
   apply)    tf apply -input=false -no-color -auto-approve "${VAR_FILE_ARGS[@]}" ;;
   destroy)
+    if [ "${TF_STACK}" = "certificate" ] && [ "${STS_DESTROY_CERTIFICATE:-}" != "yes" ];
+    then
+      die "the public certificate is kept across builds (an exportable certificate is billed per issuance), so this destroy was refused. Set STS_DESTROY_CERTIFICATE=yes to delete it anyway."
+    fi
+    if [ "${TF_STACK}" = "environment" ];
+    then
+      forget_environment_certificate
+    fi
     if [ "${TF_STACK}" = "environment" ];
     then
       if [ -n "${MULTI_CELL}" ];

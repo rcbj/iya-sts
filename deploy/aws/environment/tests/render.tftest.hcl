@@ -40,10 +40,6 @@ mock_provider "aws" {
   mock_data "aws_cloudwatch_log_group" {
     defaults = { arn = "arn:aws:logs:us-west-2:111122223333:log-group:/mock-sts/containers" }
   }
-  mock_resource "aws_acm_certificate" {
-    override_during = plan
-    defaults        = { domain_validation_options = [{ domain_name = "x", resource_record_name = "_x", resource_record_type = "CNAME", resource_record_value = "_y" }] }
-  }
   mock_data "aws_network_interfaces" {
     defaults = { ids = [] }
   }
@@ -53,6 +49,15 @@ override_data {
   values = { outputs = {
     primary_address = "p", db_port = 5432, db_name = "sts", db_app_user = "sts_app",
     read_addresses  = {}, secret_arns = {}, master_secret_arn = "m"
+  } }
+}
+# The public certificate is deploy/aws/certificate's (dns.tf), read from its
+# state.
+override_data {
+  target = data.terraform_remote_state.certificate
+  values = { outputs = {
+    certificate_arn = "arn:aws:acm:us-west-2:111122223333:certificate/c",
+    public_hostname = "global-idp.iyasec.io"
   } }
 }
 variables {
@@ -124,6 +129,13 @@ run "testidpna_cac1_pins_ca" {
     public_hostname = "test-idp.iyasec.io"
     cells           = jsondecode(file("envs/testidpna.cells.tfvars.json")).cells
     jurisdictions   = jsondecode(file("envs/testidpna.cells.tfvars.json")).jurisdictions
+  }
+  override_data {
+    target = data.terraform_remote_state.certificate
+    values = { outputs = {
+      certificate_arn = "arn:aws:acm:ca-central-1:111122223333:certificate/c",
+      public_hostname = "test-idp.iyasec.io"
+    } }
   }
   assert {
     condition     = keys(aws_route53_record.pinned) == ["CA"] && aws_route53_record.pinned["CA"].alias[0].name == "ca.cells.test-idp.iyasec.io" && aws_route53_record.pinned["CA"].alias[0].evaluate_target_health == false
