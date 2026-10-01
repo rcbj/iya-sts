@@ -1771,8 +1771,11 @@ SHARED SIGNALS*) argues it. What lives here:
   first three fall back to `fedTokenUrl`, `fedClientId` and
   `fedClientSecret`. **The two signals credentials are sealed** under the
   key-encryption key wherever keys persist (`sealSignalsSecret()`,
-  `sealed:` on the entry); `fedClientSecret` predates that and is still in
-  clear. `signalsCredentialOf()`, `signalsIssuerOf()`, `signalsEnabled()`
+  `sealed:` on the entry); `fedClientSecret` is sealed since 2026-10-01
+  (`sealClientSecret()`, label `federation-client-secret`), but only under a
+  DURABLE key-encryption key, and read through `clientSecretOf()` — the
+  token request in `federation_sp.ts` and the signals fallback.
+  `signalsCredentialOf()`, `signalsIssuerOf()`, `signalsEnabled()`
   and `signalsReadinessOf()` are the one reading of them.
 * **`ssf` is a sixth protocol, service-provider side only** (create refuses
   the other role). `fieldsForRole(role, mode, protocol)` narrows it to

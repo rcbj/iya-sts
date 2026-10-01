@@ -105,6 +105,10 @@ import mode = require('./mode');
 // was.
 import realms = require('./realms');
 import keystore = require('./keystore');
+
+// The label a person's identity verifications are sealed under, which
+// /admin/encryption counts by.
+const IDA_SEAL_LABEL = 'identity-verifications';
 import totp = require('./totp');
 // THE THIRD SECOND FACTOR (2026-09-10), and it is on this list for the same
 // reason `totp` is: it owns what a recovery code IS and this file owns where
@@ -5422,6 +5426,19 @@ class Credentials {
     }
     const value = String(directory.readIdaVerifications(
       String(username || '')) || '');
+    // SEALED SINCE 2026-10-01 (see writeIdaVerifications()); a value written
+    // before then, or without a durable key, is the JSON as it is.
+    if (value.indexOf('$aesgcm$') === 0) {
+      const opened = this.deps.keystore.open(value, IDA_SEAL_LABEL);
+      if (!opened) {
+        log.warn(this.deps.errorCodes.tag('STS-OAUTH-0788') + 'credentials: ' +
+                 'the identity verifications of ' + username + ' are sealed ' +
+                 'and will not open under this process\'s key-encryption ' +
+                 'key; read as none.');
+      }
+      log.debug('Leaving Credentials.readIdaVerifications(). Sealed.');
+      return opened ? String(opened) : '';
+    }
     log.debug('Leaving Credentials.readIdaVerifications().');
     return value;
   }
@@ -5441,8 +5458,29 @@ class Credentials {
       log.debug('Leaving Credentials.writeIdaVerifications(). No store.');
       return false;
     }
+    // SEALED (2026-10-01, rcbj): the evidence carries document numbers. A
+    // person's material, so under their home CELL's key where there is one,
+    // as the authenticator secret is; and only under a DURABLE key — keys
+    // persist, one is held, and it is not development's ephemeral one —
+    // for applications.js's sealsClientSecrets() reason: a product-mode
+    // realm on a development container would otherwise refuse every record
+    // or seal one under a key that dies with the process.
+    let stored = String(value || '');
+    const keystore = this.deps.keystore;
+    if (stored && keystore.persists() && keystore.sealed() &&
+        !keystore.hasEphemeralKek()) {
+      const sealed = keystore.seal(stored, IDA_SEAL_LABEL, 'cell');
+      if (!sealed) {
+        log.error(this.deps.errorCodes.tag('STS-OAUTH-0788') +
+                  'credentials: the identity verifications of ' + username +
+                  ' could not be sealed, so they were NOT written.');
+        log.debug('Leaving Credentials.writeIdaVerifications(). Not sealed.');
+        return false;
+      }
+      stored = sealed;
+    }
     const written = !!directory.writeIdaVerifications(String(username || ''),
-                                                      value);
+                                                      stored);
     log.debug('Leaving Credentials.writeIdaVerifications(). ' + written);
     return written;
   }

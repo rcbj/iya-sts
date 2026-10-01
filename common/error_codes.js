@@ -8367,6 +8367,13 @@ const CODES = [
       '(#345): that token, if it is still unexpired, is accepted again by ' +
       'a check that asks only this register.',
     spec: 'none — logged, at most once a minute per process' },
+  { code: 'STS-OAUTH-0788',
+    summary: 'A person\'s identity verifications could not be sealed under a ' +
+      'durable key-encryption key, so they were not written; or the sealed ' +
+      'value on the entry will not open under this process\'s key and is ' +
+      'read as none.',
+    spec: 'none (a refusal of the console or API write; verified_claims is ' +
+      'omitted on a read)' },
   { code: 'STS-SAML-0001',
     summary: 'A SAML 2.0 sign-in resumed with a held-request id that is ' +
       'unknown or has expired (saml2.requestTtlMin), so there is no ' +
@@ -9672,6 +9679,11 @@ const CODES = [
       'this person; its account-enabled, or an administrator, lifts it ' +
       '(#373).',
     spec: 'HTTP 403 page' },
+  { code: 'STS-FED-0157',
+    summary: 'A federation relationship\'s client secret (fedClientSecret) ' +
+      'could not be sealed under a durable key-encryption key, so it was ' +
+      'not written.',
+    spec: 'HTTP 400 (console and API)' },
   // ===== OIDFED ============================================================
   { code: 'STS-OIDFED-0001',
     summary: 'A metadata_policy is not the three levels of JSON objects ' +

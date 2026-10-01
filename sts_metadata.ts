@@ -3273,10 +3273,9 @@ const ENDPOINTS: EndpointEntry[] = [
           'the one question that container answers unanswerable. It ' +
           'publishes the schema for the same reason /admin/ldap/applications ' +
           'does, plus a column that page has no need of: which DIRECTION ' +
-          'each attribute is for. fedClientSecret is in the clear here, and ' +
-          'it is this service\'s own credential at somebody else\'s — a ' +
-          'stronger statement than anything else in this directory, made for ' +
-          'the reason /krb5/principals prints the Kerberos passwords.' },
+          'each attribute is for. fedClientSecret, this service\'s own ' +
+          'credential at somebody else\'s, is sealed at rest wherever the ' +
+          'process holds a durable key-encryption key.' },
   { path: '/admin/ldap/applications', group: 'LDAP', name: 'The application ' +
       'registry, and its schema',
     specs: ['rfc4511', 'rfc4512', 'rfc4519', 'rfc7591'],

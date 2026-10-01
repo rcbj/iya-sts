@@ -47520,14 +47520,12 @@ WIRE_STEPS.push(function (instance: AdminConsole): void {
     '<code>oauthClientSecret</code> at the token endpoint. With that mode ' +
     'off, ' +
     'these entries are a record and nothing more.') +
-    instance.note('<strong>Two attributes hold credentials in the ' +
-    'clear</strong> &mdash; <code>oauthClientSecret</code> and ' +
-    '<code>appRegistrationAccessToken</code> &mdash; in a directory where ' +
-    'every bind succeeds. That is the same decision ' +
-    '<code>/krb5/principals</code> makes about the Kerberos passwords and it ' +
-    'costs more here than it does there: in RFC 9700 mode that secret is ' +
-    'checked, so anyone who can read this directory can authenticate as that ' +
-    'client. They are never written to the audit log.');
+    instance.note('<strong>Two attributes hold credentials</strong> &mdash; ' +
+    '<code>oauthClientSecret</code> and ' +
+    '<code>appRegistrationAccessToken</code>. Both are SEALED at rest ' +
+    'wherever this process holds a durable key-encryption key, so this page ' +
+    'shows their ciphertext; without one (development) they are in the ' +
+    'clear. They are never written to the audit log.');
 });
 
 const APPLICATIONS_LINKS =

@@ -1075,15 +1075,13 @@ const SCHEMA = {
             'one.' },
     { name: 'oauthClientSecret', kind: 'multi', from: 'POST /oauth2/register',
       sensitive: true,
-      what: 'THE SECRETS THIS SERVICE MINTED OR WAS GIVEN, in the clear, in ' +
-            'a directory where every bind succeeds. Deliberate, and it is ' +
-            'the same decision GET /krb5/principals makes about the ' +
-            'Kerberos passwords: a debugger whose accounts are unusable ' +
-            'without reading the source is worse than one that says what ' +
-            'they are. In RFC 9700 mode these secrets are CHECKED, so ' +
-            'anyone who can read this directory can authenticate as this ' +
-            'client — which is the honest state of a service that ' +
-            'authenticates nobody. Never written to the audit log.\n\n' +
+      what: 'THE SECRETS THIS SERVICE MINTED OR WAS GIVEN. Each value is ' +
+            'SEALED under the key-encryption key wherever the process holds ' +
+            'a durable one (since 2026-10-01), so a directory read, a ' +
+            'database row and a backup hold ciphertext; without one ' +
+            '(development) it is in the clear. The console and ' +
+            '/admin-api, behind a credential, show it opened. Never ' +
+            'written to the audit log.\n\n' +
             'SEVERAL SINCE 2026-10-01, EACH A RECORD: ' +
             '{"id","secret","created","expires","description"}, the two ' +
             'times in seconds since the epoch and `expires` 0 for never. ' +
@@ -2984,9 +2982,10 @@ const SCHEMA = {
         '/oauth2/register',
       sensitive: true,
       what: 'The RFC 7592 registration access token, which is what guards ' +
-            'the read, update and delete operations on this client. In the ' +
-            'clear for the same stated reason oauthClientSecret is, and ' +
-            'never written to the audit log.' },
+            'the read, update and delete operations on this client. Sealed ' +
+            'like oauthClientSecret wherever the process holds a durable ' +
+            'key-encryption key (since 2026-10-01), and never written to ' +
+            'the audit log.' },
     { name: 'oid4vpClientId', kind: 'multi', from: 'OpenID4VP',
       identifier: true,
       identifierName: 'client_id',
@@ -6139,7 +6138,10 @@ const SEAL_LABELS = {
   gnapMacaroonKey: 'gnap-macaroon-key',
   // Not in SEALED_FIELDS: it is multi-valued and each value is sealed WHOLE,
   // as a record — see sealClientSecretText().
-  oauthClientSecret: 'client-secret'
+  oauthClientSecret: 'client-secret',
+  // Not in SEALED_FIELDS either: sealed in setField() under a durable key
+  // only — see registrationAccessTokenOf().
+  appRegistrationAccessToken: 'registration-access-token'
 };
 
 function sealLabelOf(name) {
@@ -6350,9 +6352,26 @@ function openSealedFields(fields, identifier) {
   // read like the private keys, so `/admin/applications` and `GET
   // /admin-api/applications` show the records as they always did and an
   // LDAP read, a database row and a backup hold `$aesgcm$…`.
+  // THE REGISTRATION ACCESS TOKEN (2026-10-01), likewise.
+  const token = out.appRegistrationAccessToken;
+  if (token && isSealed(token)) {
+    out = Object.assign({}, fields);
+    Object.defineProperty(out, 'appRegistrationAccessToken', {
+      configurable: true,
+      enumerable: true,
+      get: function () {
+        return registrationAccessTokenOf({ appRegistrationAccessToken:
+                                            token }) || String(token);
+      },
+      set: function (next) {
+        Object.defineProperty(this, 'appRegistrationAccessToken', {
+          configurable: true, enumerable: true, writable: true, value: next });
+      }
+    });
+  }
   const secrets = out.oauthClientSecret;
   if (Array.isArray(secrets) && secrets.some(isSealed)) {
-    out = Object.assign({}, fields);
+    out = out === fields ? Object.assign({}, fields) : out;
     Object.defineProperty(out, 'oauthClientSecret', {
       configurable: true,
       enumerable: true,
@@ -9365,6 +9384,13 @@ function setField(record, name, value) {
     log.debug("Leaving setField(). A client secret.");
     return putClientSecret(record, value);
   }
+  // THE REGISTRATION ACCESS TOKEN IS SEALED HERE (2026-10-01), the one door
+  // every write of it goes through; a value already sealed (copied off
+  // another entry) is kept as it is. See registrationAccessTokenOf().
+  if (name === 'appRegistrationAccessToken' && !isSealed(value)) {
+    value = sealCredentialText(String(value), REGISTRATION_TOKEN_LABEL,
+                               'A registration access token');
+  }
   if (row.kind === 'multi') {
     if (!record.fields[name]) record.fields[name] = [];
     let changed = false;
@@ -10396,7 +10422,7 @@ function registrationOf(clientId) {
     document.client_secret_expires_at = primarySecret.expiresAt;
   }
   if (fields.appRegistrationAccessToken !== undefined) {
-    document.registration_access_token = fields.appRegistrationAccessToken;
+    document.registration_access_token = registrationAccessTokenOf(fields);
   }
   if (fields.oauthRedirectUri) document.redirect_uris =
       fields.oauthRedirectUri.slice(0);
@@ -12326,20 +12352,29 @@ function sealsClientSecrets() {
 
 function sealClientSecretText(text) {
   log.debug("Entering sealClientSecretText().");
+  log.debug("Leaving sealClientSecretText().");
+  return sealCredentialText(text, 'client-secret', 'A client secret');
+}
+
+// The same rule for any credential this module seals under a DURABLE key:
+// the text as it is where there is none (sealsClientSecrets()), the sealed
+// text otherwise, and a marked refusal (STS-REG-0213) where a durable key
+// will not seal it. `what` names the credential in that refusal.
+function sealCredentialText(text, label, what) {
+  log.debug("Entering sealCredentialText(). label=" + label);
   if (!sealsClientSecrets()) {
-    log.debug("Leaving sealClientSecretText(). No durable key.");
+    log.debug("Leaving sealCredentialText(). No durable key.");
     return text;
   }
-  const sealed = keystore.seal(text, 'client-secret');
+  const sealed = keystore.seal(text, label);
   if (!sealed) {
-    log.debug("Leaving sealClientSecretText(). It would not seal.");
-    throw errorCodes.mark(new Error('A client secret could not be ' +
-      'encrypted, so it was not stored. Storing it in the clear where keys ' +
-      'persist would put a working client credential in every directory ' +
-      'dump. The key-encryption key is the one /admin/persistence reports ' +
-      'on.'), 'STS-REG-0213');
+    log.debug("Leaving sealCredentialText(). It would not seal.");
+    throw errorCodes.mark(new Error(what + ' could not be encrypted, so it ' +
+      'was not stored. Storing it in the clear where keys persist would put ' +
+      'a working credential in every directory dump. The key-encryption key ' +
+      'is the one /admin/persistence reports on.'), 'STS-REG-0213');
   }
-  log.debug("Leaving sealClientSecretText().");
+  log.debug("Leaving sealCredentialText().");
   return sealed;
 }
 
@@ -12349,19 +12384,49 @@ function sealClientSecretText(text) {
 const unopenedSecretsReported = new Set();
 function openClientSecretText(text) {
   log.debug("Entering openClientSecretText().");
-  const opened = keystore.open(text, 'client-secret');
+  log.debug("Leaving openClientSecretText().");
+  return openCredentialText(text, 'client-secret', 'a client secret');
+}
+
+function openCredentialText(text, label, what) {
+  log.debug("Entering openCredentialText(). label=" + label);
+  const opened = keystore.open(text, label);
   if (!opened && !unopenedSecretsReported.has(text)) {
     if (unopenedSecretsReported.size > 1000) {
       unopenedSecretsReported.clear();
     }
     unopenedSecretsReported.add(text);
-    log.warn(errorCodes.tag('STS-REG-0212') + 'applications: a client ' +
-             'secret is sealed and will not open under this process\'s ' +
-             'key-encryption key; it authenticates nothing. Add or ' +
-             'regenerate one on /admin/applications.');
+    log.warn(errorCodes.tag('STS-REG-0212') + 'applications: ' + what +
+             ' is sealed and will not open under this process\'s ' +
+             'key-encryption key; it authenticates nothing. Issue a new one ' +
+             'on /admin/applications.');
   }
-  log.debug("Leaving openClientSecretText().");
+  log.debug("Leaving openCredentialText().");
   return opened || '';
+}
+
+// THE RFC 7592 REGISTRATION ACCESS TOKEN IS SEALED TOO (2026-10-01, rcbj):
+// whoever holds it reads, changes or deletes the registration, and the read
+// hands back the client secret. Sealed in setField() — the one door every
+// write goes through: a registration, a seed, a create, a console Set — and
+// opened by registrationAccessTokenOf() for every reader.
+const REGISTRATION_TOKEN_LABEL = 'registration-access-token';
+
+/**
+ * Returns an entry's RFC 7592 registration access token, opened.
+ *
+ * @param fields - the entry's fields
+ * @returns the token, or '' for none (or one that will not open)
+ */
+function registrationAccessTokenOf(fields) {
+  log.debug("Entering registrationAccessTokenOf().");
+  const stored = String(valuesOf((fields || {})
+    .appRegistrationAccessToken)[0] || '');
+  log.debug("Leaving registrationAccessTokenOf().");
+  return isSealed(stored)
+    ? openCredentialText(stored, REGISTRATION_TOKEN_LABEL,
+                         'a registration access token')
+    : stored;
 }
 
 /**
@@ -13754,16 +13819,17 @@ function revokeRegistrationAccessToken(token) {
     return '';
   }
   const holder = list().filter(function (row) {
-    const held = String(((row && row.fields) || {})
-      .appRegistrationAccessToken || '');
+    const held = registrationAccessTokenOf((row && row.fields) || {});
     return held !== '' && stsCrypto.constantTimeEquals(presented, held);
   })[0];
   if (!holder) {
     log.debug("Leaving revokeRegistrationAccessToken(). Nobody holds it.");
     return '';
   }
+  // A SET TO NOTHING, not a remove of the presented value: the stored value
+  // is sealed and would never equal it.
   updateApplication(holder.identifier, { attribute:
-    'appRegistrationAccessToken', mode: 'remove', value: presented });
+    'appRegistrationAccessToken', mode: 'set', value: '' });
   log.warn(errorCodes.tag('STS-OAUTH-0596') + 'applications: a registration ' +
            'access token of "' + holder.identifier + '" was presented for ' +
            'another client, and is revoked (RFC 7592 section 2).');
@@ -15814,6 +15880,7 @@ module.exports = {
   sweepClientSecrets: sweepClientSecrets,
   secretExpiryOf: secretExpiryOf,
   clientSecretRecordsOf: clientSecretRecordsOf,
+  registrationAccessTokenOf: registrationAccessTokenOf,
   clientSecretSummariesOf: clientSecretSummariesOf,
   primaryClientSecretOf: primaryClientSecretOf,
   mintClientSecret: mintClientSecret,

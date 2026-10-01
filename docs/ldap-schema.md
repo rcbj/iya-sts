@@ -432,7 +432,10 @@ mail-verification tokens, each recovery code and each app password.
 key-encryption key, in product; clear in development): the TOTP secret,
 `stsKrb5Keys`, `krb5ServiceKeys`, every RFC 7523 and RFC 7522 private key, the
 EAB keys, enrolled private keys and `fedEncryptionKey` private keys.
-`oauthClientSecret` is withheld but stored in the clear.
+`oauthClientSecret`, `appRegistrationAccessToken`, `fedClientSecret` and
+`stsIdaVerification` are sealed too, but only where the key-encryption key is
+durable (not development's ephemeral one, and not a product-mode realm inside
+a development process).
 [Encryption at rest](encryption-at-rest.md) has the rest.
 
 `pwdHistory` and `pwdChangedTime` are maintained by the service and refused on

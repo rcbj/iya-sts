@@ -196,6 +196,42 @@ const DATA_CLASSES = [
          'in the clear until the secret is next written.'
   },
   {
+    label: 'registration-access-token',
+    what: 'An application’s RFC 7592 registration access token — ' +
+          '`appRegistrationAccessToken`',
+    where: 'an attribute on the application’s own entry under ' +
+           '`ou=applications`',
+    sealed: true,
+    why: 'Whoever holds it reads, changes or deletes the client’s ' +
+         'registration, and the read hands back the client secret. Sealed ' +
+         'at rest since 2026-10-01 under a durable key-encryption key, ' +
+         'opened for the RFC 7592 endpoints and for a reader that came ' +
+         'through `applications.js`.'
+  },
+  {
+    label: 'federation-client-secret',
+    what: 'A federation relationship’s client secret — `fedClientSecret`, ' +
+          'this service’s own credential at the partner’s token endpoint',
+    where: 'an attribute on the relationship’s entry under ' +
+           '`ou=federations`',
+    sealed: true,
+    why: 'It is SENT to somebody else’s service, so it must be recoverable ' +
+         '— sealed, not hashed. Sealed at rest since 2026-10-01 under a ' +
+         'durable key-encryption key; no page and no API reply returns it.'
+  },
+  {
+    label: 'identity-verifications',
+    what: 'A person’s identity verifications — `stsIdaVerification` ' +
+          '(OpenID Connect for Identity Assurance), whose evidence carries ' +
+          'document numbers',
+    where: 'an attribute on the person’s entry',
+    sealed: true,
+    why: 'Not a credential, but personal data no backup should carry ' +
+         'readable. Sealed at rest since 2026-10-01 under a durable ' +
+         'key-encryption key — the home cell’s where there is one — and ' +
+         'withheld from every LDAP read.'
+  },
+  {
     label: 'gnap-shared-key',
     what: 'A GNAP client instance’s shared secret for a key reference — ' +
           '`gnapSymmetricKey` (RFC 9635 section 7.1.1)',
@@ -331,17 +367,16 @@ const DATA_CLASSES = [
   },
   {
     label: null,
-    what: 'Client secrets — `oauthClientSecret`, `fedClientSecret`, and ' +
-          'the RFC 7592 registration access tokens',
+    what: 'Client secrets, RFC 7592 registration access tokens and ' +
+          'federation client secrets, WITHOUT a durable key-encryption key',
     where: 'attributes on application and federation entries',
     sealed: false,
-    why: 'IN THE CLEAR, and it is the honest state of a service that ' +
-         'authenticates nobody: a federation relationship’s secret is ' +
-         'SENT to somebody else’s token endpoint, so it has to be ' +
-         'recoverable, and anybody who can read this directory can already ' +
-         'authenticate as that client. Sealing them would hide the fact ' +
-         'rather than change it. This is why the directory pages moved ' +
-         'behind the console gate in the first place.'
+    why: 'In the clear only where the process holds no durable ' +
+         'key-encryption key — development mode, or a product-mode realm ' +
+         'on a development container — because sealing under an ephemeral ' +
+         'key would leave a credential that opens to nothing after a ' +
+         'restart. With a durable key all three are sealed: see their ' +
+         'rows above.'
   },
   {
     label: null,

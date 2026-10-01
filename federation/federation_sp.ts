@@ -4007,9 +4007,9 @@ class FederationSp {
         .then(function (assertion) {
           form.client_assertion = assertion;
         });
-    } else if (record.fedClientSecret) {
+    } else if (federation.clientSecretOf(record)) {
       options.basic = { user: record.fedClientId,
-                        pass: record.fedClientSecret };
+                        pass: federation.clientSecretOf(record) };
     } else {
       // A public client. The client_id goes in the body, which is what RFC 6749
       // section 4.1.3 requires when the client does not authenticate.

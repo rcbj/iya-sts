@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3918** of them, in **41** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3920** of them, in **41** subsystems.
 
 ## Where a code appears
 
@@ -64,11 +64,11 @@ is an ordinary outcome.
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 26
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 47
 * [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 253
-* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 667
+* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 668
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 97
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 21
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 16
-* [Federation (`STS-FED`)](#sts-fed) — 140
+* [Federation (`STS-FED`)](#sts-fed) — 141
 * [OpenID Federation (`STS-OIDFED`)](#sts-oidfed) — 67
 * [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 169
 * [LDAP directory (`STS-LDAP`)](#sts-ldap) — 91
@@ -1992,6 +1992,7 @@ Raised from: oauth-oidc/, common/person_assertions.js.
 | `STS-OAUTH-0785` | An RP-Initiated Logout request carried a post_logout_redirect_uri with neither an id_token_hint nor a client_id, so it was not followed (section 2: nothing confirms the address, #187). | none (the sign-out page says so; no redirect) |
 | `STS-OAUTH-0786` | A CAEP session-revoked (or, for a replay, risk-level-change) about a revoked OAuth grant could not be delivered; the revocation stands (#239). | none (a log line) |
 | `STS-OAUTH-0787` | A realm's register of revoked token ids reached oauth2.maxRevokedJtis and none of its entries had expired, so the revocation whose token expires soonest was forgotten to make room (#345): that token, if it is still unexpired, is accepted again by a check that asks only this register. | none — logged, at most once a minute per process |
+| `STS-OAUTH-0788` | A person's identity verifications could not be sealed under a durable key-encryption key, so they were not written; or the sealed value on the entry will not open under this process's key and is read as none. | none (a refusal of the console or API write; verified_claims is omitted on a read) |
 
 ## STS-SAML
 
@@ -2302,6 +2303,7 @@ Raised from: federation/.
 | `STS-FED-0154` | A federation relationship's Shared Signals credential (fedSignalsClientSecret or fedSignalsBearer) could not be sealed under the key-encryption key where keys persist, so it was not written (#373). | HTTP 400 (console and API) |
 | `STS-FED-0155` | A federated sign-in was started through an ssf relationship, which only sends Shared Signals and signs nobody in (#374). | HTTP 400 page |
 | `STS-FED-0156` | A federated sign-in was refused because the partner's own Shared Signals (a verified account-disabled) blocked its sign-ins of this person; its account-enabled, or an administrator, lifts it (#373). | HTTP 403 page |
+| `STS-FED-0157` | A federation relationship's client secret (fedClientSecret) could not be sealed under a durable key-encryption key, so it was not written. | HTTP 400 (console and API) |
 
 ## STS-OIDFED
 

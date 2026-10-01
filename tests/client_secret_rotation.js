@@ -29,7 +29,9 @@
 //      registered.
 //   F. SEALED AT REST: where the key-encryption key persists every record
 //      is sealed whole on the entry, every reader opens it, and an
-//      unrelated edit or a remove leaves the rest sealed.
+//      unrelated edit or a remove leaves the rest sealed — and the
+//      registration access token, a federation relationship's client
+//      secret and a person's identity verifications are sealed too.
 //
 // In a child process, with the whole stack. Time is moved by replacing
 // Date.now in the child, never by waiting.
@@ -328,6 +330,62 @@ function childMain() {
          plain(SEALED).length === 1 && applications.isSealed(plain(SEALED)[0]),
          'F6. a remove by id finds the sealed record and leaves the rest ' +
          'sealed');
+    // THE REGISTRATION ACCESS TOKEN, sealed in setField() and opened by
+    // every reader.
+    const TOKEN = 'cs-rotation-registration-token-0123456789abcdef';
+    applications.updateApplication(SEALED, { attribute:
+      'appRegistrationAccessToken', mode: 'set', value: TOKEN });
+    const storedToken = String([].concat(applications.get(SEALED)
+      .attributes.appRegistrationAccessToken || [])[0] || '');
+    note(applications.isSealed(storedToken) && storedToken.indexOf(TOKEN) < 0,
+         'F7. the registration access token is sealed on the entry',
+         storedToken.slice(0, 16));
+    note(applications.get(SEALED).fields.appRegistrationAccessToken ===
+           TOKEN &&
+         applications.registrationAccessTokenOf(
+           applications.get(SEALED).fields) === TOKEN,
+         'F8. and opened for the view and for registrationAccessTokenOf()');
+    note(applications.revokeRegistrationAccessToken(TOKEN) === SEALED &&
+         !applications.get(SEALED).attributes.appRegistrationAccessToken,
+         'F9. RFC 7592 section 2: the sealed token is found by the one ' +
+         'presented and taken off its entry');
+
+    // A FEDERATION RELATIONSHIP'S CLIENT SECRET.
+    const federation = require(ROOT + '/federation/federation');
+    const FED = 'cs-rotation-fed';
+    const FED_SECRET = 'cs-rotation-federation-secret-0123456789';
+    const fedMade = federation.create({ fedId: FED,
+      fedRole: 'service-provider', fedProtocol: 'oidc',
+      fedPeer: 'https://partner.cs-rotation.example' });
+    const fedSet = federation.update(FED, { field: 'fedClientSecret',
+                                            value: FED_SECRET });
+    const fedStored = String((federation.get(FED) || {}).fedClientSecret || '');
+    note(fedMade.ok && fedSet.ok && fedStored.indexOf('sealed:') === 0 &&
+         fedStored.indexOf(FED_SECRET) < 0,
+         'F10. a federation relationship\'s client secret is sealed on its ' +
+         'entry', JSON.stringify({ made: fedMade.errors, set: fedSet.errors,
+                                   stored: fedStored.slice(0, 16) }));
+    note(federation.clientSecretOf(federation.get(FED)) === FED_SECRET,
+         'F11. and clientSecretOf() opens it for the token request');
+
+    // A PERSON'S IDENTITY VERIFICATIONS, under the home cell's key.
+    const ldapServer = require(ROOT + '/ldap/ldap_server');
+    const credentials = require(ROOT + '/common/credentials');
+    const PERSON = 'cs-rotation-ida-person';
+    ldapServer.createUser(PERSON, {});
+    const IDA = JSON.stringify([{ verification: { trust_framework: 'x' },
+      claims: { given_name: 'Ida' }, evidence: 'passport P0123456' }]);
+    const idaWritten = credentials.writeIdaVerifications(PERSON, IDA);
+    const rawEntry = ldapServer.existingUserEntry(PERSON) || {};
+    const rawIda = String([].concat(((rawEntry.attributes || {})
+      .stsidaverification) || [])[0] || '');
+    note(idaWritten && applications.isSealed(rawIda) &&
+         rawIda.indexOf('P0123456') < 0,
+         'F12. a person\'s identity verifications are sealed on the entry',
+         rawIda.slice(0, 16));
+    note(credentials.readIdaVerifications(PERSON) === IDA,
+         'F13. and opened for the reader');
+
     delete process.env.STS_KEYS_SOURCE;
     delete process.env.STS_KEYS_KEK_PROVIDER;
     delete process.env.STS_KEYS_KEK_FILE;

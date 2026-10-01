@@ -152,11 +152,11 @@
 // foreign service, which is a stronger statement than anything else in this
 // directory: `oauthClientSecret` is a secret this service minted for a mock
 // client and can mint again, and this one is not ours to regenerate. It is
-// held in the clear for the reason that attribute's header gives, it is marked
-// `sensitive` so no page prints it and no audit row carries it, and the honest
-// consequence is stated here rather than buried: anybody who can read this
-// directory can authenticate as this service at that partner. A deployment
-// that federates with something real should say so out loud.
+// marked `sensitive` so no page prints it and no audit row carries it, and
+// since 2026-10-01 it is SEALED on the entry wherever the process holds a
+// durable key-encryption key (sealClientSecret(), clientSecretOf()), so a
+// directory dump or a backup no longer authenticates anybody at the partner.
+// Without a durable key (a development process) it is in the clear.
 //
 // `fedSigningCertificate` is the opposite — the partner's PUBLIC key, worth
 // nothing to whoever reads it, and it is the single most important attribute
@@ -1215,8 +1215,7 @@ const SCHEMA = {
       role: 'service-provider', sensitive: true, from: 'this register',
       what: 'THE SECRET FOR fedSignalsClientId, SEALED under the ' +
             'key-encryption key wherever keys persist and never shown. ' +
-            'Empty uses fedClientSecret, which is held in the clear — see ' +
-            'the note at the foot of the page.' },
+            'Empty uses fedClientSecret, sealed the same way.' },
     { name: 'fedSignalsScope', kind: 'single', role: 'service-provider',
       from: 'this register',
       what: 'The scope asked for with client credentials. Empty asks for ' +
@@ -2601,6 +2600,66 @@ function openSignalsSecret(stored) {
   return opened ? String(opened) : '';
 }
 
+// THE RELATIONSHIP'S CLIENT SECRET IS SEALED TOO (2026-10-01, rcbj): this
+// service's own credential at the partner's token endpoint, so it must be
+// recoverable — sealed, not hashed — with the Shared Signals credentials'
+// `sealed:` prefix and a label of its own. Sealed only under a DURABLE
+// key-encryption key (keys persist, a key is held, and it is not
+// development's ephemeral one): `keystore.persists()` reads the ambient
+// realm's mode, so a product-mode realm on a development container would
+// otherwise refuse every secret or seal one under a key that dies with the
+// process. `applications.js`'s sealsClientSecrets() makes the same choice.
+const CLIENT_SECRET_SEAL_LABEL = 'federation-client-secret';
+
+/**
+ * Seals a relationship's client secret where the process holds a durable
+ * key-encryption key; returns it as given where it does not.
+ *
+ * @param value - the secret
+ * @returns `{ ok, value }`, `ok` false when it should be sealed and cannot be
+ */
+function sealClientSecret(value) {
+  log.debug("Entering sealClientSecret().");
+  const keystore = require('../common/keystore');
+  if (!keystore.persists() || !keystore.sealed() ||
+      keystore.hasEphemeralKek()) {
+    log.debug("Leaving sealClientSecret(). No durable key.");
+    return { ok: true, value: String(value) };
+  }
+  const closed = keystore.seal(String(value), CLIENT_SECRET_SEAL_LABEL);
+  log.debug("Leaving sealClientSecret(). " + (closed ? 'Sealed.' :
+                                                      'Not sealed.'));
+  return closed ? { ok: true, value: SEALED_PREFIX + closed }
+                : { ok: false, value: '' };
+}
+
+/**
+ * Returns a relationship's client secret, opened.
+ *
+ * @param record - the relationship
+ * @returns the secret, or empty when there is none or it will not open
+ */
+function clientSecretOf(record) {
+  log.debug("Entering clientSecretOf().");
+  const text = String((record && record.fedClientSecret) || '');
+  if (text.indexOf(SEALED_PREFIX) !== 0) {
+    log.debug("Leaving clientSecretOf(). In clear.");
+    return text;
+  }
+  const keystore = require('../common/keystore');
+  const opened = keystore.open(text.slice(SEALED_PREFIX.length),
+                               CLIENT_SECRET_SEAL_LABEL);
+  if (!opened) {
+    log.warn(errorCodes.tag('STS-FED-0157') + 'federation: the client ' +
+             'secret of relationship "' + String(record.fedId || '') +
+             '" is sealed and will not open under this process\'s ' +
+             'key-encryption key; set it again.');
+  }
+  log.debug("Leaving clientSecretOf(). " + (opened ? 'Opened.' :
+                                                     'Will not open.'));
+  return opened ? String(opened) : '';
+}
+
 /**
  * Returns how this realm authenticates to the partner's stream management:
  * a bearer token, or client credentials, the token endpoint, client and
@@ -2629,7 +2688,7 @@ function signalsCredentialOf(record) {
     // own, or — only when no signals client is named — the sign-in one.
     clientSecret: own ? openSignalsSecret(r.fedSignalsClientSecret)
       : (openSignalsSecret(r.fedSignalsClientSecret) ||
-         String(r.fedClientSecret || '')),
+         clientSecretOf(r)),
     scope: String(r.fedSignalsScope || '').trim() || 'ssf:read ssf:write'
   };
 }
@@ -3909,8 +3968,21 @@ function update(id, change) {
   // THE TWO SHARED SIGNALS CREDENTIALS ARE SEALED (#373) wherever keys
   // persist, as the transmitter register #153 replaced held them — and
   // refused rather than written in clear where they should be sealed and
-  // cannot be. `fedClientSecret` predates this and is still in clear; its
-  // header says so.
+  // cannot be. `fedClientSecret` is sealed since 2026-10-01, under a
+  // durable key only — see sealClientSecret().
+  if (row.name === 'fedClientSecret' && value !== '' &&
+      String(value).indexOf(SEALED_PREFIX) !== 0) {
+    const sealed = sealClientSecret(value);
+    if (!sealed.ok) {
+      log.debug('Leaving update(). The client secret could not be sealed.');
+      actionRefused('STS-FED-0157', id, field + ' could not be sealed');
+      log.debug("Leaving update().");
+      return { ok: false, errors: [field + ' could not be sealed under ' +
+               'the key-encryption key, and a credential at a partner is ' +
+               'never written in clear where keys persist.'] };
+    }
+    record[field] = sealed.value;
+  }
   if ((row.name === 'fedSignalsClientSecret' ||
        row.name === 'fedSignalsBearer') && value !== '') {
     const sealed = sealSignalsSecret(value);
@@ -4494,6 +4566,7 @@ function recordFailure(id, why) {
  * @namespace
  */
 module.exports = {
+  clientSecretOf: clientSecretOf,
   PATHS: PATHS,
   ROLES: ROLES,
   ROLE_IDS: ROLE_IDS,

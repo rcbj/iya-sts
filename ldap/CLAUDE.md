@@ -797,12 +797,12 @@ part of why federation refuses by default rather than accepting. In product mode
 a socket write needs Admin Write (*WHO MAY WRITE THIS DIRECTORY OVER THE SOCKET*,
 below).
 
-`fedClientSecret` is on these entries in the clear, and it is a stronger claim
-than `oauthClientSecret` one container over: that one is a secret this service
-MINTED for a mock client and can mint again, and this one is this service's own
-credential at a REAL foreign service. Same decision, same reason
-(`/krb5/principals` prints the Kerberos passwords), worth restating because the
-consequence is different.
+`fedClientSecret` is a stronger claim than `oauthClientSecret` one container
+over: that one is a secret this service MINTED for a mock client and can mint
+again, and this one is this service's own credential at a REAL foreign
+service. Both are SEALED on the entry since 2026-10-01 wherever the process
+holds a durable key-encryption key (`federation.js`'s `sealClientSecret()`),
+and in the clear without one.
 
 ## `ou=devices`: A DEVICE IS AN ENTRY (2026-09-23, #130)
 

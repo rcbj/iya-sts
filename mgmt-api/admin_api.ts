@@ -11169,12 +11169,11 @@ class AdminApi {
                      'reply pages its attribute list under `attributesPage` ' +
                      'rather than `page`, which is the convention for a ' +
                      'reply holding a list that is not the top-level ' +
-                     'one.\n\n**Two attributes hold credentials in the ' +
-                     'clear** — `oauthClientSecret` and ' +
-                     '`appRegistrationAccessToken` — for the reason GET ' +
-                     '/krb5/principals prints the Kerberos passwords. In RFC ' +
-                     '9700 mode that secret is CHECKED, so anyone who can ' +
-                     'reach this endpoint can authenticate as that client.',
+                     'one.\n\n**This reply carries credentials** — ' +
+                     '`oauthClientSecret` and `appRegistrationAccessToken`, ' +
+                     'opened. They are sealed at rest wherever the process ' +
+                     'holds a durable key-encryption key, but anyone who ' +
+                     'can read this reply can authenticate as that client.',
         mirrors: 'GET /admin/applications',
         parameters: [
           { name: 'application', in: 'query', required: false,

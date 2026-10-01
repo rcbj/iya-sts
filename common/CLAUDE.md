@@ -3816,11 +3816,12 @@ with `Cannot find module` naming a file the operator never mentioned.
      identifier and a change), so this bullet described a behaviour nothing had
      ever performed. `common/oidc_rp.ts`'s `ensureRedirectUri()` carries both.
 
-   **ONE ATTRIBUTE HOLDS A CREDENTIAL IN THE CLEAR** — `appRegistrationAccessToken`
-   — which is the `/krb5/principals` decision about the Kerberos passwords, made
-   again and for the same reason. **`oauthClientSecret` WAS THE OTHER UNTIL
-   2026-10-01** and is SEALED now wherever the process holds a DURABLE
-   key-encryption key (`sealsClientSecrets()`: `keystore.persists()`, as for
+   **NO APPLICATION CREDENTIAL IS STORED IN THE CLEAR UNDER A DURABLE KEY SINCE
+   2026-10-01.** `appRegistrationAccessToken` is sealed in `setField()` and
+   opened by `registrationAccessTokenOf()` (the RFC 7592 endpoints, the view,
+   section 2's revocation, which clears rather than removes because the stored
+   value never equals the presented one), and `oauthClientSecret` is SEALED
+   wherever the process holds a DURABLE key-encryption key (`sealsClientSecrets()`: `keystore.persists()`, as for
    the issued private keys, and a key that is not development's ephemeral one —
    so a product-mode realm on a development container writes it as it is
    rather than refusing every registration): each value — one record per
@@ -3828,9 +3829,13 @@ with `Cannot find module` naming a file the operator never mentioned.
    `parseClientSecretValue()` opens what it reads so every verifier and the
    sweep meet one shape, and `view()` opens them for a reader that came through
    this module. A value written before that date stays in the clear until the
-   secret is next written; nothing migrates it. A seal that fails is a refusal
-   (`STS-REG-0213`), one that will not open authenticates nothing
-   (`STS-REG-0212`). Neither is ever given to `audit.js`.
+   secret is next written; nothing migrates it (no database here is
+   anything but deletable). A seal that fails is a refusal (`STS-REG-0213`),
+   one that will not open authenticates nothing (`STS-REG-0212`). Neither is
+   ever given to `audit.js`. A federation relationship's `fedClientSecret`
+   (`federation/CLAUDE.md`) and a person's `stsIdaVerification`
+   (`credentials.ts`, under the home cell's key) are sealed by the same
+   durable-key rule.
 
 
 ---
