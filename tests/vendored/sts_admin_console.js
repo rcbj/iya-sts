@@ -739,6 +739,18 @@ async function fillAndPress(driver, formIndex, values, options) {
   // The index comes back from the same script that found the control, so the
   // element typed into is the one that was chosen, by construction. It is the
   // device `submitButtonOf()` below already uses for the same reason.
+  // A FORM ON A TAB THAT IS NOT SHOWN (2026-10-01) — an application's page
+  // is tabs — is reached by opening its tab, which is the fragment of the
+  // panel it is in, as a person clicking the tab does. It is opened BEFORE
+  // anything is typed: Chrome will not type into a field it does not display
+  // (`ElementNotInteractableError`, an application's drill-down, b2b64e4b).
+  await driver.executeScript(`
+    const f = document.forms[arguments[0]];
+    const panel = f && f.closest('.subpanel, .tabpanel');
+    if (panel && panel.id && !f.checkVisibility()) {
+      location.hash = panel.id;
+    }
+  `, formIndex);
   if (typed.firstText && values && values[typed.firstText] !== undefined &&
       !opts.noTyping && typed.firstTextIndex >= 0) {
     // A FIELD IN A CLOSED <details> IS OPENED FIRST, AS A PERSON WOULD
@@ -770,16 +782,6 @@ async function fillAndPress(driver, formIndex, values, options) {
     }
   }
 
-  // A FORM ON A TAB THAT IS NOT SHOWN (2026-10-01) — an application's page
-  // is tabs — is reached by opening its tab, which is the fragment of the
-  // panel it is in, as a person clicking the tab does.
-  await driver.executeScript(`
-    const f = document.forms[arguments[0]];
-    const panel = f && f.closest('.subpanel, .tabpanel');
-    if (panel && panel.id && !f.checkVisibility()) {
-      location.hash = panel.id;
-    }
-  `, formIndex);
   const from = mark();
   const button = await submitButtonOf(driver, formIndex, opts.buttonText);
   // THE OLD DOCUMENT HAS TO GO BEFORE ANYTHING IS READ (#311). The settle
