@@ -2207,7 +2207,7 @@ const SETTINGS = [
     csvValues: ['ML-DSA-44', 'ML-DSA-65', 'ML-DSA-87', 'ESP256', 'ES256',
                 'Ed25519', 'EdDSA', 'ESP384', 'ES384', 'ESP512', 'ES512',
                 'Ed448', 'ES256K', 'PS256', 'PS384', 'PS512', 'RS256',
-                'RS384', 'RS512'],
+                'RS384', 'RS512', 'RS1'],
     description: '`pubKeyCredParams`, in preference order — the COSE ' +
                  'algorithms this service will accept a credential in. The ' +
                  'names are JOSE spellings and are mapped to COSE ' +
@@ -2228,7 +2228,41 @@ const SETTINGS = [
                  'and then never works. **The default requests every one, ' +
                  'ML-DSA first**; an authenticator takes the first it ' +
                  'supports, so the order is a preference. SHA-1\'s `RS1` ' +
-                 '(-65535) is never offered or accepted.' },
+                 '(-65535) may be named but is offered and accepted only ' +
+                 'while `webauthn.insecureAlgorithms` is on (development ' +
+                 'only); `webauthn.pqcOnly` narrows the list to ML-DSA.' },
+
+  // THE TWO ALGORITHM FLAGS (2026-10-01, rcbj). Per realm, like every
+  // runtime row. `authn/webauthn_policy.ts` reads both.
+  { key: 'webauthn.insecureAlgorithms', group: 'WebAuthn',
+    label: 'Use insecure algorithms (development only)',
+    path: 'webauthn.insecureAlgorithms',
+    env: 'STS_WEBAUTHN_INSECURE_ALGORITHMS', type: 'bool', dflt: false,
+    runtime: true, onlyWhile: 'usesBrokenAlgorithms',
+    description: 'WARNING — DEVELOPMENT MODE ONLY. On requests and accepts ' +
+                 'the broken passkey algorithms — SHA-1\'s `RS1` (-65535) — ' +
+                 'as well: offered last in `pubKeyCredParams`, so only an ' +
+                 'authenticator that supports nothing better uses it, and ' +
+                 'its signatures verified at sign-in. Off, `RS1` is neither ' +
+                 'requested nor accepted, even where `webauthn.algorithms` ' +
+                 'names it, and a key enrolled with it is refused at sign-in ' +
+                 '(STS-AUTHN-0294). In product mode it cannot be set and is ' +
+                 'ignored: product never uses a broken algorithm.' },
+  { key: 'webauthn.pqcOnly', group: 'WebAuthn',
+    label: 'Request post-quantum algorithms only',
+    path: 'webauthn.pqcOnly',
+    env: 'STS_WEBAUTHN_PQC_ONLY', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'On requests ONLY the post-quantum passkey algorithms — RFC ' +
+                 '9964\'s `ML-DSA-44` (-48), `ML-DSA-65` (-49) and ' +
+                 '`ML-DSA-87` (-50) — whichever of them ' +
+                 '`webauthn.algorithms` names, and all three where it names ' +
+                 'none. A new passkey must then be ML-DSA: one made with ' +
+                 'another algorithm is refused at registration (WebAuthn ' +
+                 'section 7.1). It narrows what is REQUESTED: a classical ' +
+                 'key already enrolled goes on signing in. Most ' +
+                 'authenticators support no ML-DSA yet and cannot register ' +
+                 'while this is on.' },
 
   { key: 'webauthn.userVerification', group: 'WebAuthn',
     label: 'User verification', path: 'webauthn.userVerification',

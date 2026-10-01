@@ -9198,9 +9198,13 @@ function sessionStateHash(clientId, origin, browserState, salt) {
 // draft-ietf-cose-dilithium-11): kty AKP (7), `pub` at -1, and the three
 // algorithm identifiers -48, -49 and -50, verified by `pq_jose.js`, which
 // holds the one ML-DSA implementation this process uses for JOSE as well.
-// SHA-1 (RS1, -65535) is not in the table: product never uses a broken
-// algorithm (`mode.usesBrokenAlgorithms()`), and no current authenticator
-// needs it.
+// SHA-1 (RS1, -65535) is in the table MARKED `insecure` (2026-10-01, rcbj:
+// "a use insecure passkey algorithms flag that is disabled by default"):
+// `verifyCoseSignature()` refuses it unless its caller passes
+// `{ allowInsecure: true }`, which only `webauthn.insecureAlgorithms` — a
+// development-only setting, off by default — ever makes true. Product never
+// uses a broken algorithm (`mode.usesBrokenAlgorithms()`). This module stays
+// a leaf and reads no setting; the caller decides.
 //
 // **EVERY OTHER SIGNATURE ALGORITHM AN AUTHENTICATOR CAN USE (2026-10-01,
 // rcbj: "support and request every possible algorithm").** RFC 9864's FULLY
@@ -9246,7 +9250,9 @@ const COSE_SIGNATURE_ALGS = {
   '-19': { name: 'Ed25519', family: 'eddsa', hash: null, kty: 'OKP',
            okp: 'ed25519' },
   '-53': { name: 'Ed448', family: 'eddsa', hash: null, kty: 'OKP',
-           okp: 'ed448' }
+           okp: 'ed448' },
+  '-65535': { name: 'RS1', family: 'rsa-pkcs1', hash: 'sha1', kty: 'RSA',
+              insecure: true }
 };
 
 // The COSE entry for an identifier, or null.
@@ -9309,13 +9315,20 @@ function nodePublicKeyOf(key) {
  * @param key - the public key, or for ML-DSA an AKP JWK or the raw bytes
  * @param data - the bytes signed
  * @param signature - the signature
+ * @param opts - `allowInsecure`: accept an algorithm marked insecure (RS1);
+ *   refused otherwise
  * @returns true when it verifies
  */
-function verifyCoseSignature(coseAlg, key, data, signature) {
+function verifyCoseSignature(coseAlg, key, data, signature, opts) {
   log.debug("Entering verifyCoseSignature(). alg=" + coseAlg);
   const spec = coseSignatureAlg(coseAlg);
   if (!spec) {
     log.debug("Leaving verifyCoseSignature(). Unknown algorithm.");
+    return false;
+  }
+  if (spec.insecure && !(opts && opts.allowInsecure)) {
+    log.debug("Leaving verifyCoseSignature(). " + spec.name + " is insecure " +
+              "and its caller did not allow it.");
     return false;
   }
   const message = Buffer.from(data || []);

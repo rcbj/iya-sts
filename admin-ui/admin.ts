@@ -13906,6 +13906,9 @@ class AdminConsole {
         // both, and the cell rendered the literal characters `<code title=…>`.
         '<td>' + self.shortened(one.credentialId || '', 24) + '</td>' +
         '<td class="num">' + self.esc(String(one.signCount || 0)) + '</td>' +
+        // THE SIGNATURE ALGORITHM (2026-10-01): the one this key signs with,
+        // and so the one every sign-in with it is verified with.
+        '<td>' + self.keyAlgorithmCell(one) + '</td>' +
         '<td>' + self.attestationCell(one.attestation, one.aaguid) + '</td>' +
         '<td>' +
         self.esc(one.enrolledAt ? self.whenText(one.enrolledAt) : '—') +
@@ -13927,7 +13930,8 @@ class AdminConsole {
     const keysBlock = '<h3>Security keys (WebAuthn)</h3>' +
       (allKeys.length
         ? '<table><tr><th>Label</th><th>Role</th><th>Credential id</th>' +
-          '<th class="num">Sign count</th><th>Attestation</th>' +
+          '<th class="num">Sign count</th><th>Algorithm</th>' +
+          '<th>Attestation</th>' +
           '<th>Enrolled</th><th></th></tr>' +
           allKeys.map(keyRow).join('') + '</table>' +
           this.note('<strong>The sign count is WebAuthn\'s replay ' +
@@ -30805,6 +30809,27 @@ class AdminConsole {
       'metadata names.');
     log.debug("Leaving AdminConsole.attestationPolicyBlock().");
     return html;
+  }
+
+  // A STORED KEY'S SIGNATURE ALGORITHM (2026-10-01), `credentials.
+  // keyAlgorithm()`'s answer: the JOSE name and COSE identifier, marked
+  // post-quantum (ML-DSA) or insecure (RS1).
+  /**
+   * Draws a stored security key's signature algorithm.
+   *
+   * @param key - the stored WebAuthn key
+   * @returns the cell's content as HTML
+   */
+  keyAlgorithmCell(key) {
+    const { log, credentials } = this.deps;
+    log.debug("Entering AdminConsole.keyAlgorithmCell().");
+    const algorithm = credentials.keyAlgorithm(key);
+    log.debug("Leaving AdminConsole.keyAlgorithmCell().");
+    return '<code>' + this.esc(algorithm.text) + '</code>' +
+      (algorithm.postQuantum
+        ? ' <span class="state-valid">post-quantum</span>' : '') +
+      (algorithm.insecure
+        ? ' <span class="state-revoked">insecure</span>' : '');
   }
 
   // A key's attestation, for its row (#105): what the statement proved, or

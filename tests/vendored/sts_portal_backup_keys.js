@@ -924,6 +924,15 @@ async function aKeyInsteadOfAPasswordAtActivation(authenticator) {
     assert.strictEqual(factors.password, false,
       "a password was set, and none was asked for.");
   });
+  check("AND THE KEY'S SIGNATURE ALGORITHM IS RECORDED AND REPORTED " +
+        "(2026-10-01) — the authenticator here signs with ES256 (-7)",
+        function () {
+    const algorithm = (factors.keys[0] || {}).algorithm || {};
+    assert.strictEqual(algorithm.name, "ES256",
+      "the key's algorithm: " + JSON.stringify(algorithm));
+    assert.strictEqual(algorithm.coseAlg, -7,
+      "the key's COSE identifier: " + JSON.stringify(algorithm));
+  });
 
   const again = await b.go("GET", url);
   check("and the link is spent only now, once the key is registered",
@@ -961,6 +970,31 @@ async function aKeyInsteadOfAPasswordAtActivation(authenticator) {
       "the assertion answered " + r.status + " " +
       String(r.text).slice(0, 400));
   });
+
+  // THE EVENT LOG NAMES THE ALGORITHM (2026-10-01): the enrolment and the
+  // sign-in it verified, each read one action at a time for
+  // sts_portal_backup_codes.js's reason.
+  const rowsFor = async function (action) {
+    const answer = await get("/audit?per=200&action=" +
+                             encodeURIComponent(action));
+    return ((answer.body && (answer.body.events || answer.body.rows)) || [])
+      .filter(function (e) {
+        return e.actor === NEWCOMER;
+      });
+  };
+  const enrolRows = await rowsFor("portal.activate.key.enrolled");
+  const signInRows = await rowsFor("session.start");
+  check("the audit log records the algorithm the key was registered with " +
+        "and the one the sign-in was verified with", function () {
+    assert.ok(enrolRows.some(function (e) {
+      return String((e.detail || {}).algorithm) === "ES256 (-7)";
+    }), "no portal.activate.key.enrolled row naming ES256 (-7): " +
+      JSON.stringify(enrolRows).slice(0, 400));
+    assert.ok(signInRows.some(function (e) {
+      return String((e.detail || {}).credentialAlgorithm) === "ES256 (-7)";
+    }), "no session.start row naming ES256 (-7): " +
+      JSON.stringify(signInRows).slice(0, 400));
+  });
   log.debug("Leaving aKeyInsteadOfAPasswordAtActivation().");
 }
 
@@ -981,7 +1015,7 @@ async function test() {
   // A FLOOR ON THE CHECK COUNT, for `sts_roles.js`'s reason: a section that
   // stops being called takes its assertions with it and the run still says
   // "passed".
-  assert.ok(checks >= 19,
+  assert.ok(checks >= 21,
     "only " + checks + " checks ran; a section has stopped being called.");
   log.info(checks + " check(s) passed.");
   log.info("Test completed successfully.");

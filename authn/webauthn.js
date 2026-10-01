@@ -228,7 +228,16 @@ const COSE_ALGS = {
   '-48': 'ML-DSA-44', '-49': 'ML-DSA-65', '-50': 'ML-DSA-87',
   '-9': 'ESP256', '-51': 'ESP384', '-52': 'ESP512', '-47': 'ES256K',
   '-19': 'Ed25519', '-53': 'Ed448',
+  // SHA-1. INSECURE (2026-10-01): verified only where the caller passes
+  // `allowInsecure`, which `webauthn.insecureAlgorithms` (development only,
+  // off by default) decides — see `INSECURE_COSE_ALGS` below.
+  '-65535': 'RS1',
 };
+/**
+ * The COSE algorithms that are broken, accepted only where the caller says
+ * so (`allowInsecure`): SHA-1's RS1.
+ */
+const INSECURE_COSE_ALGS = [-65535];
 // COSE key type AKP (RFC 9964 section 4) and its `pub` label.
 /**
  * The COSE key type AKP (RFC 9964), which an ML-DSA key has.
@@ -456,11 +465,12 @@ function coseAlgOfJwk(jwk) {
 // Does `signature` verify over `data` under the stored `jwk`? Through
 // `common/crypto.js` in the service; a copy of this file loaded on its own
 // checks the classical algorithms with node and refuses the rest.
-function verifyWithJwk(jwk, data, signature) {
+function verifyWithJwk(jwk, data, signature, allowInsecure) {
   log.debug("Entering verifyWithJwk().");
   const coseAlg = coseAlgOfJwk(jwk);
   if (stsCrypto && typeof stsCrypto.verifyCoseSignature === 'function') {
-    const ok = stsCrypto.verifyCoseSignature(coseAlg, jwk, data, signature);
+    const ok = stsCrypto.verifyCoseSignature(coseAlg, jwk, data, signature,
+      { allowInsecure: !!allowInsecure });
     log.debug("Leaving verifyWithJwk(). " + ok);
     return ok;
   }
@@ -631,10 +641,11 @@ function verifyRegistration(input) {
  * authenticator data and the client data hash.
  * @param input - `authenticatorData`, `clientDataJSON` and `signature`
  * (base64url), `publicKeyJwk`, `expectedChallenge`, `expectedOrigin`,
- * `expectedRpId`, and optionally `requireUserVerification` and
- * `previousSignCount`
+ * `expectedRpId`, and optionally `requireUserVerification`,
+ * `previousSignCount` and `allowInsecure` (accept RS1)
  * @returns `ok`, every check with its result, whether the signature is
- * valid, the signature counter and the flags
+ * valid, the signature counter, the flags, and the algorithm checked with
+ * (`coseAlg`, `algorithm`)
  * @throws when the authenticator data cannot be parsed
  */
 function verifyAssertion(input) {
@@ -670,12 +681,24 @@ function verifyAssertion(input) {
           'now ' + authData.signCount + ', was ' + input.previousSignCount);
   }
 
+  // WHICH ALGORITHM THIS ASSERTION IS CHECKED WITH (2026-10-01): the stored
+  // key's, reported on the result so the sign-in can record it, and refused
+  // by name — its own check, not a bad signature — where it is insecure and
+  // the caller did not allow it (`webauthn.insecureAlgorithms`).
+  const coseAlg = coseAlgOfJwk(input.publicKeyJwk);
+  if (INSECURE_COSE_ALGS.indexOf(coseAlg) >= 0) {
+    c.add('algorithm is allowed', !!input.allowInsecure,
+          COSE_ALGS[String(coseAlg)] + ' is insecure and ' +
+          'webauthn.insecureAlgorithms is off');
+  }
+
   // The signed message: raw authenticator data, then the HASH of the client
   // data.
   const signedData = Buffer.concat([authDataBuf, sha256(clientDataJSON)]);
   let signatureValid = false;
   try {
-    signatureValid = verifyWithJwk(input.publicKeyJwk, signedData, signature);
+    signatureValid = verifyWithJwk(input.publicKeyJwk, signedData, signature,
+                                   input.allowInsecure);
   } catch (e) {
     // A key node cannot import, or a signature it cannot parse. Both are
     // verification failures rather than crashes, and the reason belongs in the
@@ -700,6 +723,9 @@ function verifyAssertion(input) {
     signatureValid: signatureValid,
     signCount: authData.signCount,
     flags: authData.flags,
+    // The algorithm the signature was checked with: COSE identifier and name.
+    coseAlg: coseAlg,
+    algorithm: COSE_ALGS[String(coseAlg)] || null,
   };
   log.debug('Leaving verifyAssertion(). ok=' + result.ok);
   return result;
@@ -720,6 +746,7 @@ module.exports = {
   // file verifies, and the alternative was a list of algorithms typed into a
   // console page that would have drifted the first time one was added here.
   COSE_ALGS,
+  INSECURE_COSE_ALGS,
   COSE_CURVES,
   COSE_KTY_AKP,
   MAX_CREDENTIAL_ID_BYTES,

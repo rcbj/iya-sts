@@ -3876,6 +3876,14 @@ class Authn {
     if (typeof given.backupState === 'boolean') {
       credential.backupState = given.backupState;
     }
+    // The signature algorithm a WebAuthn ceremony was verified with
+    // (2026-10-01).
+    if (given.algorithm) {
+      credential.algorithm = String(given.algorithm);
+    }
+    if (typeof given.coseAlg === 'number') {
+      credential.coseAlg = given.coseAlg;
+    }
     // THE BROWSER FINGERPRINT (#62 P6), where the realm asked for one and
     // the sign-in form carried it — as a digest, like the User-Agent: the
     // value itself is personal data and is never kept.
@@ -5296,6 +5304,13 @@ class Authn {
         acr: acr || '',
         authTime: session.authTime,
         expiresAt: new Date(session.expires).toISOString(),
+        // THE PASSKEY'S SIGNATURE ALGORITHM (2026-10-01), where a WebAuthn
+        // ceremony — the only factor or the second — signed this session in.
+        credentialAlgorithm: extra.credential && extra.credential.algorithm
+          ? String(extra.credential.algorithm) +
+            (extra.credential.coseAlg ? ' (' + extra.credential.coseAlg + ')'
+                                      : '')
+          : undefined,
         // The caller's own sentence where it has one. A federated sign-in's
         // "No password was checked" is true and useless — nothing was typed
         // here at all — and the row is the only place that distinction will
@@ -10083,7 +10098,12 @@ class Authn {
         aaguid: answered.aaguid
           ? credentials.Credentials.aaguidString(answered.aaguid) : '',
         backupEligible: typeof flags.be === 'boolean' ? flags.be : undefined,
-        backupState: typeof flags.bs === 'boolean' ? flags.bs : undefined } };
+        backupState: typeof flags.bs === 'boolean' ? flags.bs : undefined,
+        // THE SIGNATURE ALGORITHM THIS CEREMONY WAS VERIFIED WITH
+        // (2026-10-01): the registration's or the assertion's, which is
+        // the key's. On the event and the session.start row.
+        algorithm: String(verdict.algorithm || ''),
+        coseAlg: Number(verdict.coseAlg) || undefined } };
     const started = this.startSession(res, step.username, amr, acr,
                                       step.authn.protocol, said);
     if (this.refusedSession(res, base, step.authn, step.username, started,
@@ -11896,7 +11916,8 @@ class Authn {
                 discoverable: this.discoverableFrom(credential),
                 userVerified: !!(verdict.flags && verdict.flags.uv),
                 aaguid: verdict.aaguid || null,
-                algorithm: verdict.algorithm || null
+                algorithm: verdict.algorithm || null,
+                coseAlg: verdict.coseAlg || null
               }, registration: verdict };
             }
           }
@@ -11942,7 +11963,10 @@ class Authn {
             // demanded user verification to enrol and not to sign in would be
             // demanding it exactly once, at the moment it matters least.
             requireUserVerification: webauthnPolicy.requireUserVerification(),
-            previousSignCount: known.signCount
+            previousSignCount: known.signCount,
+            // RS1 only where `webauthn.insecureAlgorithms` allows it
+            // (2026-10-01).
+            allowInsecure: webauthnPolicy.insecureAlgorithmsAllowed()
           });
           // A CLONE, BY THE ENTRY'S COUNTER (#231): everything else verified
           // and the counter did not go up. Refused below like any failed

@@ -114,6 +114,7 @@ function clear(keys) {
 }
 
 const TOUCHED = ['global.mode', 'webauthn.attestationPolicy',
+                 'webauthn.insecureAlgorithms',
                  'webauthn.attestationTrustAnchors',
                  'webauthn.attestationAllowedAaguids',
                  'webauthn.attestationMinCertificationLevel',
@@ -263,6 +264,48 @@ async function run(t) {
           stsCrypto.verifyCoseSignature(-8, ed448.publicKey, msg, ed448Sig),
     'B2. ESP256 under a P-384 key and Ed25519 under an Ed448 key are ' +
     'refused; ES256, Ed448 and EdDSA accept their keys');
+
+  // RS1 (SHA-1) IS INSECURE (2026-10-01): an assertion by an RS1 key is
+  // refused by name ('algorithm is allowed', STS-AUTHN-0294) unless the
+  // caller allows it, and its self attestation verifies only while
+  // webauthn.insecureAlgorithms is on.
+  c = await kit.ceremony({ alg: -65535 });
+  set('webauthn.attestationPolicy', 'verify-if-present');
+  r = await register(c, kit.packedSelf(c), [-65535]);
+  const rs1Refused = !!(r.result && !r.result.ok);
+  set('webauthn.insecureAlgorithms', true);
+  r = await register(c, kit.packedSelf(c), [-65535]);
+  const rs1Accepted = !!(r.result && r.result.ok);
+  clear(['webauthn.insecureAlgorithms', 'webauthn.attestationPolicy']);
+  const rs1Jwk = r.verdict.publicKeyJwk || {};
+  const rs1Auth = Buffer.concat([
+    nodeCrypto.createHash('sha256').update('localhost').digest(),
+    Buffer.from([0x05]), Buffer.from([0, 0, 0, 1])]);
+  const rs1Cdj = Buffer.from(JSON.stringify({
+    type: 'webauthn.get', challenge: 'abc',
+    origin: 'https://localhost:8081' }));
+  const rs1Sig = c.credential.sign(Buffer.concat([rs1Auth,
+    nodeCrypto.createHash('sha256').update(rs1Cdj).digest()]));
+  const rs1Assert = function (allowInsecure) {
+    return webauthn.verifyAssertion({
+      authenticatorData: rs1Auth.toString('base64url'),
+      clientDataJSON: rs1Cdj.toString('base64url'),
+      signature: rs1Sig.toString('base64url'), publicKeyJwk: rs1Jwk,
+      expectedChallenge: 'abc', expectedOrigin: 'https://localhost:8081',
+      expectedRpId: 'localhost', previousSignCount: 0,
+      allowInsecure: allowInsecure });
+  };
+  const rs1Off = rs1Assert(false);
+  const rs1On = rs1Assert(true);
+  t.check(rs1Jwk.alg === 'RS1' && rs1Refused && rs1Accepted &&
+          !rs1Off.ok && rs1Off.failed.indexOf('algorithm is allowed') >= 0 &&
+          policy.failureCodeFor(rs1Off) === 'STS-AUTHN-0294' &&
+          rs1On.ok && rs1On.algorithm === 'RS1' && rs1On.coseAlg === -65535,
+    'B3. RS1: its self attestation and its assertion refused while ' +
+    'insecure algorithms are off (STS-AUTHN-0294) and accepted with them ' +
+    'on, the assertion reporting RS1 (-65535)',
+    JSON.stringify({ refused: rs1Refused, accepted: rs1Accepted,
+                     off: rs1Off.failed, on: rs1On.failed }));
 
   // =========================================================================
   t.log.info('=== C. each format, valid and wrong in one way ===');

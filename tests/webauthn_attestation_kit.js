@@ -215,7 +215,10 @@ async function credential(alg) {
                 '-53': ['ed448', 7] }[String(a)];
   const rsa = { '-257': ['sha256', 0], '-258': ['sha384', 0],
                 '-259': ['sha512', 0], '-37': ['sha256', 32],
-                '-38': ['sha384', 48], '-39': ['sha512', 64] }[String(a)];
+                '-38': ['sha384', 48], '-39': ['sha512', 64],
+                // RS1, SHA-1: insecure, accepted only behind
+                // webauthn.insecureAlgorithms.
+                '-65535': ['sha1', 0] }[String(a)];
   if (a === -7) {
     const pair = await keyPair('ec');
     const jwk = pair.publicKey.export({ format: 'jwk' });

@@ -138,12 +138,88 @@ function run(t) {
   // AND EVERY ONE IS OFFERED, ML-DSA FIRST (2026-10-01, rcbj: "support and
   // request every possible algorithm", the PQC three in particular).
   const ids = policy.algorithmIds();
-  t.check(verifiable.every(function (name) {
+  t.check(verifiable.filter(function (name) {
+    // The insecure ones (RS1) only behind webauthn.insecureAlgorithms.
+    return policy.INSECURE_ALGS.indexOf(name) < 0;
+  }).every(function (name) {
     return policy.algorithmsOffered().indexOf(name) >= 0;
   }) && ids.slice(0, 3).join(',') === '-48,-49,-50' &&
           ids.indexOf(-65535) < 0,
   'the default requests EVERY algorithm the verifier checks, ML-DSA-44, ' +
   '-65 and -87 (-48, -49, -50) first, and never RS1', ids.join(', '));
+
+  // -------------------------------------------------------------------------
+  t.log.info('=== the two algorithm flags (2026-10-01) ===');
+  // -------------------------------------------------------------------------
+  // webauthn.insecureAlgorithms: off, RS1 is dropped even where named; on
+  // (development), it is requested LAST; in product it is ignored and
+  // cannot be set.
+  withSetting('webauthn.algorithms', 'RS1,ES256', function () {
+    t.check(policy.algorithmsOffered().join(',') === 'ES256' &&
+            !policy.insecureAlgorithmsAllowed(),
+      'insecure off: RS1 is not requested even where webauthn.algorithms ' +
+      'names it', policy.algorithmsOffered().join(','));
+  });
+  withSetting('webauthn.insecureAlgorithms', true, function () {
+    const offered = policy.algorithmsOffered();
+    t.check(policy.insecureAlgorithmsAllowed() &&
+            offered[offered.length - 1] === 'RS1' &&
+            policy.algorithmIds().indexOf(-65535) === offered.length - 1,
+      'insecure on (development): RS1 (-65535) is requested, LAST',
+      offered.join(','));
+    withSetting('global.mode', 'product', function () {
+      t.check(!policy.insecureAlgorithmsAllowed() &&
+              policy.algorithmsOffered().indexOf('RS1') < 0,
+        'and in product mode the flag is ignored: product never uses a ' +
+        'broken algorithm', policy.algorithmsOffered().join(','));
+    });
+  });
+  withSetting('global.mode', 'product', function () {
+    t.check(config.setOverride('webauthn.insecureAlgorithms', true).ok ===
+            false,
+      'product mode refuses to switch webauthn.insecureAlgorithms on');
+    config.clearOverride('webauthn.insecureAlgorithms');
+  });
+  // A STORED KEY'S ALGORITHM (2026-10-01): the recorded one, the stored
+  // JWK's `alg`, and for a key older than both its key type's.
+  const legacy = credentials.keyAlgorithm({ publicKeyJwk:
+    { kty: 'EC', crv: 'P-256', x: 'x', y: 'y' } });
+  const recorded = credentials.keyAlgorithm({ algorithm: 'ML-DSA-65',
+    coseAlg: -49, publicKeyJwk: { kty: 'AKP', alg: 'ML-DSA-65' } });
+  const fromJwk = credentials.keyAlgorithm({ publicKeyJwk:
+    { kty: 'RSA', alg: 'RS1', n: 'n', e: 'AQAB' } });
+  t.check(legacy.text === 'ES256 (-7)' && !legacy.postQuantum &&
+          recorded.text === 'ML-DSA-65 (-49)' && recorded.postQuantum &&
+          fromJwk.name === 'RS1' && fromJwk.coseAlg === -65535 &&
+          fromJwk.insecure,
+    'a key\'s algorithm: recorded, from its JWK, or by key type for a key ' +
+    'older than both; ML-DSA marked post-quantum and RS1 insecure',
+    JSON.stringify([legacy, recorded, fromJwk]));
+
+  // webauthn.pqcOnly: ML-DSA only, all three where the list names none,
+  // and it beats the insecure flag.
+  withSetting('webauthn.pqcOnly', true, function () {
+    t.check(policy.algorithmIds().join(',') === '-48,-49,-50',
+      'PQC only: the default list narrows to ML-DSA-44, -65 and -87',
+      policy.algorithmIds().join(','));
+    withSetting('webauthn.algorithms', 'ES256,ML-DSA-87,RS256', function () {
+      t.check(policy.algorithmsOffered().join(',') === 'ML-DSA-87',
+        'PQC only keeps the ML-DSA the list names, in its order',
+        policy.algorithmsOffered().join(','));
+    });
+    withSetting('webauthn.algorithms', 'ES256,RS256', function () {
+      t.check(policy.algorithmsOffered().join(',') ===
+              'ML-DSA-44,ML-DSA-65,ML-DSA-87',
+        'PQC only with a list naming no ML-DSA requests all three, never a ' +
+        'classical one and never an empty list',
+        policy.algorithmsOffered().join(','));
+    });
+    withSetting('webauthn.insecureAlgorithms', true, function () {
+      t.check(policy.algorithmsOffered().indexOf('RS1') < 0,
+        'PQC only beats the insecure flag: RS1 is not post-quantum',
+        policy.algorithmsOffered().join(','));
+    });
+  });
 
   t.check(config.setOverride('webauthn.algorithms', 'ES256,NOSUCHALG').ok ===
           false,

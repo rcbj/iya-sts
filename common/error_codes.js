@@ -5322,6 +5322,11 @@ const CODES = [
       'list\'s counts and second-factor filter asked each person\'s ' +
       'credentials one at a time instead — slower, and the same answer.',
     spec: 'none — logged' },
+  { code: 'STS-AUTHN-0294',
+    summary: 'A passkey assertion was refused because the key\'s algorithm ' +
+      'is insecure (SHA-1\'s RS1) and webauthn.insecureAlgorithms is off in ' +
+      'this realm, or the service is in product mode.',
+    spec: 'none — the sign-in screen is drawn again' },
   { code: 'STS-OAUTH-0001',
     summary: 'A JWT client assertion could not be read as a JWT (its header ' +
       'is not base64url JSON).',

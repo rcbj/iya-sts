@@ -2866,13 +2866,20 @@ class Portal {
         : 'You have no security keys enrolled.') + '</p>' +
       (keys.length
         ? '<table class="grid"><tr><th>Key</th><th>Role</th>' +
-          '<th>Kind</th><th>Authenticator</th><th>Enrolled</th><th></th>' +
-          '</tr>' +
+          '<th>Kind</th><th>Algorithm</th><th>Authenticator</th>' +
+          '<th>Enrolled</th><th></th></tr>' +
           keys.map(function (one) {
+            // THE SIGNATURE ALGORITHM (2026-10-01): the one this key signs
+            // with, which is the one every sign-in with it is verified with.
+            const algorithm = credentials.keyAlgorithm(one);
             return '<tr><td>' +
               self.esc(one.label || 'security key') + '</td>' +
               '<td>' + self.esc(one.role) + '</td>' +
               '<td>' + self.esc(credentials.keyKind(one).text) + '</td>' +
+              '<td><code>' + self.esc(algorithm.text) + '</code>' +
+              (algorithm.postQuantum ? ' post-quantum' : '') +
+              (algorithm.insecure ? ' <strong>insecure</strong>' : '') +
+              '</td>' +
               '<td>' + self.attestationText(one.attestation) + '</td>' +
               '<td>' +
               self.esc(new Date(one.enrolledAt || 0).toISOString()
@@ -5265,6 +5272,9 @@ class Portal {
           summary: username + ' registered a security key as a ' +
                    enrolled.role + ' credential while activating',
           detail: { role: enrolled.role,
+                    // Its signature algorithm (2026-10-01).
+                    algorithm: credentials.keyAlgorithm(heldKey)
+                      .text,
                     address: websecurity.addressOf(req) }
         });
         log.info('portal: ' + username + ' registered a "' + enrolled.role +
@@ -6845,6 +6855,9 @@ class Portal {
             summary: username + ' enrolled a security key as a ' + done.role +
                      ' credential',
             detail: { role: done.role, held: done.held,
+                      // Its signature algorithm (2026-10-01).
+                      algorithm: credentials.keyAlgorithm(enrolled)
+                        .text,
                       address: websecurity.addressOf(req) }
           });
           log.info('portal: ' + username + ' enrolled a "' + done.role +
