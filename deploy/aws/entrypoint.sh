@@ -374,14 +374,20 @@ destroy_dependent_stacks() {
         # child's own assume step sees an assumed-role ARN, not a user's,
         # and leaves them alone. The forced-role variable is cleared so it
         # cannot try to chain a second assume from them.
-        MOCK_STS_DEPLOYER_ROLE_ARN= TF_STACK=spiffe-realm TF_CELL="${cell}" \
-          TF_REALM="${realm}" TF_ACTION=destroy "$0" || \
+        # TF_DATA_DIR CLEARED (#372): this process exported its own, and a
+        # child that inherited it would `init` its backend into it — so the
+        # environment's destroy below would read the child's state and
+        # destroy nothing, reporting success. Empty, the child derives one
+        # of its own.
+        MOCK_STS_DEPLOYER_ROLE_ARN= TF_DATA_DIR= TF_STACK=spiffe-realm \
+          TF_CELL="${cell}" TF_REALM="${realm}" TF_ACTION=destroy "$0" || \
           die "the spiffe-realm stack for '${realm}' would not destroy, so '${TF_ENV}' was left alone. Fix that stack and run this again."
         ;;
       "${prefix}suite-callbacks.tfstate")
         say "dependent stack first: suite-callbacks"
-        MOCK_STS_DEPLOYER_ROLE_ARN= TF_STACK=suite-callbacks TF_CELL="${cell}" \
-          TF_ACTION=destroy "$0" || \
+        # TF_DATA_DIR cleared for the same reason (#372).
+        MOCK_STS_DEPLOYER_ROLE_ARN= TF_DATA_DIR= TF_STACK=suite-callbacks \
+          TF_CELL="${cell}" TF_ACTION=destroy "$0" || \
           die "the suite-callbacks stack would not destroy, so '${TF_ENV}' was left alone. Fix that stack and run this again."
         ;;
       "${prefix}"*/*|"${prefix}global.tfstate")
@@ -466,8 +472,12 @@ state_exists() {
 # step — measured when cells_in_parallel was written — and an interrupted
 # multi-cell apply ran its current step to the end. `tf` in the child turns
 # TERM into terraform's interrupt.
+#
+# TF_DATA_DIR IS CLEARED TOO (#372), so a step never inherits a data
+# directory this process exported and `init`s its backend into it; a step
+# that names one in its arguments still gets it, since those come after.
 step() {
-  env MOCK_STS_DEPLOYER_ROLE_ARN= "$@" "$0" &
+  env MOCK_STS_DEPLOYER_ROLE_ARN= TF_DATA_DIR= "$@" "$0" &
   local pid=$! rc=0
   trap 'kill -TERM "${pid}" 2>/dev/null || true' INT TERM
   while :; do
