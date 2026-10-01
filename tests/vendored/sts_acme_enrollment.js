@@ -358,7 +358,7 @@ async function test() {
     await setting(realm, "acme.attemptsPerAddress", 100000);
   }
   await ok(realmApi(REALM) + "/applications/create",
-           { identifier: APP, protocols: ["oauth2"],
+           { identifier: APP, protocols: ["oauth2", "acme"],
              fields: { oauthClientId: APP } }, "created an application");
   await ok(realmApi(REALM) + "/acme/add-host-name",
            { kind: "person", identifier: ALICE,

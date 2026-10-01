@@ -344,7 +344,7 @@ async function test() {
                            mail: OTHER + "@est.example.test" } },
            "created a second person");
   await ok(realmApi + "/applications/create",
-           { identifier: APP, protocols: ["oauth2"],
+           { identifier: APP, protocols: ["oauth2", "est"],
              fields: { oauthClientId: APP, oauthClientSecret: APP_SECRET } },
            "created an application");
   await ok(realmApi + "/est/add-host-name",
@@ -962,7 +962,7 @@ async function test() {
     "created a person with a generated password in the product realm");
   const productSecret = nodeCrypto.randomBytes(18).toString("base64url");
   await ok(productApi + "/applications/create",
-           { identifier: APP, protocols: ["oauth2"],
+           { identifier: APP, protocols: ["oauth2", "est"],
              fields: { oauthClientId: APP, oauthClientSecret: productSecret } },
            "created the application in the product realm");
   const productPlain = (await csrFor("ec-p256", PERSON, [])).der;
