@@ -5010,6 +5010,20 @@ const ENDPOINTS: EndpointEntry[] = [
           'the list page\'s 303 cannot carry. A save goes through the same ' +
           'update-fields action as POST /admin-api/applications/update-fields ' +
           'and lands on the protocol\'s sub-tab.' },
+  { path: '/admin/users/edit', group: 'Admin',
+    name: 'A person\'s field grid',
+    // What it writes is a person's directory entry, whose attribute names are
+    // RFC 4519's and RFC 2798's.
+    specs: ['rfc4511', 'rfc4519'],
+    what: 'NON-SPEC console form, POST ONLY. The Attributes tab of a ' +
+          'person\'s page on /admin/users — every attribute ' +
+          'ldap/person_editor.ts edits, typed, one sub-tab per group with ' +
+          'its own Save — posts here, because a refused save, a "+" and a ' +
+          'delete have to come back to the same page with every box as the ' +
+          'reader left it, which the list page\'s 303 cannot carry. A save ' +
+          'goes through the same update-fields action as POST ' +
+          '/admin-api/users/update-fields and lands on the group\'s ' +
+          'sub-tab.' },
   { path: '/admin/spiffe', group: 'Admin', name: 'SPIFFE',
     specs: ['spiffe-id', 'spiffe-bundle', 'spiffe-x509-svid',
             'spiffe-jwt-svid'],

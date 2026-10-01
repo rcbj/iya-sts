@@ -6330,12 +6330,9 @@ function personAttributesFrom(given) {
   const out = {};
   const unknown = [];
   const source = (given && typeof given === 'object') ? given : {};
+  const refused = [];
   Object.keys(source).forEach(function (name) {
     const row = vcClaims.personField(name);
-    if (!row) {
-      unknown.push(String(name).slice(0, 64));
-      return;
-    }
     // valuesOf() is the store's own coercion, so a string, an array and a
     // number all land the way an LDAP add of the same thing would. Empty
     // strings are dropped rather than stored: a blank box on the form means
@@ -6344,11 +6341,30 @@ function personAttributesFrom(given) {
     const values = valuesOf(source[name]).map(function (one) {
       return String(one).trim();
     }).filter(function (one) { return one !== ''; });
-    if (!values.length) {
+    // THE PERSON EDITOR'S ATTRIBUTES AS WELL (2026-10-01): /admin/users/new
+    // draws the same typed fields as a person's Attributes tab, so a create
+    // takes every attribute that tab edits and holds it to the same rules —
+    // a country code's shape, a date, one value where the schema allows one.
+    const checked = personEditor.checkCreateValues(name, values);
+    if (!row && !checked) {
+      unknown.push(String(name).slice(0, 64));
       return;
     }
-    out[row.ldap] = values;
+    if (checked && checked.error) {
+      refused.push(checked.error);
+      return;
+    }
+    const kept = checked ? checked.values : values;
+    if (!kept.length) {
+      return;
+    }
+    out[checked ? checked.name : row.ldap] = kept;
   });
+  if (refused.length && !unknown.length) {
+    log.debug('Leaving personAttributesFrom(). ' + refused.length +
+              ' value(s) refused.');
+    return coded('STS-LDAP-0106', { ok: false, errors: refused });
+  }
   if (unknown.length) {
     log.debug('Leaving personAttributesFrom(). ' + unknown.length +
               ' unknown.');

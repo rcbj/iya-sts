@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3906** of them, in **41** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3908** of them, in **41** subsystems.
 
 ## Where a code appears
 
@@ -84,7 +84,7 @@ is an ordinary outcome.
 * [Device register (`STS-DEVICE`)](#sts-device) — 45
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 84
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 34
-* [Admin console (`STS-ADMIN`)](#sts-admin) — 216
+* [Admin console (`STS-ADMIN`)](#sts-admin) — 218
 * [Management API (`STS-API`)](#sts-api) — 75
 * [User portal (`STS-PORTAL`)](#sts-portal) — 77
 * [Sign-out (`STS-LOGOUT`)](#sts-logout) — 7
@@ -2644,7 +2644,7 @@ Raised from: ldap/.
 | `STS-LDAP-0103` | A person's attribute edit (#228) named an attribute the editor does not change: a credential, a binary value, the username or the address (which have doors of their own), or one outside the person schema. | HTTP 400 (API) or a 303 with error= |
 | `STS-LDAP-0104` | A person's attribute edit (#228) named the attribute the entry's own DN is built from, which would leave the DN and the entry disagreeing. | HTTP 400 (API) or a 303 with error= |
 | `STS-LDAP-0105` | A person's attribute edit (#228) was not set, add or remove, or was an add to an attribute that holds one value. | HTTP 400 (API) or a 303 with error= |
-| `STS-LDAP-0106` | A person's attribute edit (#228) carried a value that is too long, holds a control character, does not have its attribute's shape (a country code, a date, a language range, an http(s) URL, a DN), or was empty for an add or a remove. | HTTP 400 (API) or a 303 with error= |
+| `STS-LDAP-0106` | A person's attribute edit (#228), or a create from the field grid, carried a value that is too long, holds a control character, does not have its attribute's shape (a country code, a date, a language range, an http(s) URL, a DN), or was empty for an add or a remove. | HTTP 400 (API) or a 303 with error= |
 | `STS-LDAP-0107` | A person's attribute edit (#228) added a value the attribute already holds. | HTTP 400 (API) or a 303 with error= |
 | `STS-LDAP-0108` | A person's attribute edit (#228) removed a value the attribute does not hold. | HTTP 400 (API) or a 303 with error= |
 | `STS-LDAP-0109` | A person's attribute edit (#228) would have left cn or sn, which RFC 4519 3.12 requires of every person, with no value. | HTTP 400 (API) or a 303 with error= |
@@ -4020,6 +4020,8 @@ Raised from: admin-ui/ (except pki_admin.js), admin-core/.
 | `STS-ADMIN-0835` | update-fields named no attribute to change: neither `fields` nor `protocols` was given. | HTTP 400 (console and API) |
 | `STS-ADMIN-0836` | update-fields changed some attributes of an application and was refused one or more others; the reply names each refusal. | HTTP 400 (console and API) |
 | `STS-ADMIN-0837` | generate-did-key was refused: no such application, one not declared for the did family, an algorithm other than ES256, ES384 or EdDSA, or the public key could not be written. | none (a console or management API refusal, HTTP 400) |
+| `STS-ADMIN-0838` | A person's update-fields named no attribute to change: `fields` was absent or empty and the form named no field. | HTTP 400 (console and API) |
+| `STS-ADMIN-0839` | A person's update-fields was refused one or more attributes, possibly after saving others; the reply names what was saved and each refusal. | HTTP 400 (console and API) |
 
 ## STS-API
 

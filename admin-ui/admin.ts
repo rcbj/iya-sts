@@ -467,6 +467,7 @@ import realms = require('../common/realms');
 // (rule 3): it registers no route, and reaches the directory module through
 // the require cache, so this require moves nothing in the route order.
 import createClaims = require('../ldap/directory_create_claims');
+import personEditor = require('../ldap/person_editor');
 import stats = require('../common/admin_stats');
 // The browser sign-on sessions, from the authentication service that creates
 // them — shared between the OAuth 2.0 / OIDC flow, WS-Federation and SAML 2.0.
@@ -3127,6 +3128,16 @@ const APPLICATION_TAB_IDS = ['tab-overview', 'tab-config', 'tab-credentials',
   'tab-origins', 'tab-signals', 'tab-statements', 'tab-addresses',
   'tab-permissions', 'tab-roles', 'tab-metadata', 'tab-entry', 'tab-remove'];
 
+// A PERSON'S PAGE AS TABS (rcbj, 2026-10-01), the application page's model:
+// seven tabs, the Attributes tab one sub-tab per field group (ufg-<group>,
+// each with its own Save) and the Credentials tab one per kind of credential.
+const USER_TAB_IDS = ['utab-overview', 'utab-activity', 'utab-attributes',
+  'utab-credentials', 'utab-federation', 'utab-entry', 'utab-signout'];
+const USER_SUB_TAB_IDS = ['ucred-factors', 'ucred-password', 'ucred-keys',
+  'ucred-kerberos'].concat(personEditor.FIELD_GROUPS.map(function (group) {
+  return 'ufg-' + group.id;
+}));
+
 class AdminConsole {
   // What the Cluster page's `prepare` step last read from the other cells
   // (#361): `{ at, rows, error? }`, or null in single-cell mode.
@@ -5660,9 +5671,11 @@ class AdminConsole {
       // link's href with the id that is targeted, so the ids are named.
       APPLICATION_TAB_IDS.concat(applications.FIELD_GROUPS.map(function (g) {
         return 'cfg-' + g.id;
-      }), ['cfg-families']).map(function (id) {
-        const outer = id.indexOf('cfg-') === 0 ? '.subtabs' : '.tabs';
-        const bar = id.indexOf('cfg-') === 0 ? '.subbar' : '.tabbar';
+      }), ['cfg-families'], USER_TAB_IDS, USER_SUB_TAB_IDS).map(function (id) {
+        const sub = id.indexOf('cfg-') === 0 ||
+          USER_SUB_TAB_IDS.indexOf(id) >= 0;
+        const outer = sub ? '.subtabs' : '.tabs';
+        const bar = sub ? '.subbar' : '.tabbar';
         return outer + ':has(#' + id + ':target,#' + id + ' :target)>' + bar +
           ' a[href="#' + id + '"]';
       }).join(',') + '{background:#fff;font-weight:700;' +
@@ -13655,8 +13668,8 @@ class AdminConsole {
             adminViews, mode } = this.deps;
     const self = this;
     log.debug("Entering AdminConsole.mfaSection(). key=" + key);
-    const heading = '<h2>Second factors, and what this person can sign in ' +
-                    'with</h2>';
+    const heading = '<h2 id="second-factors">Second factors, and what this ' +
+                    'person can sign in with</h2>';
     if (!credentials.storable()) {
       log.debug("Leaving AdminConsole.mfaSection(). No credential store.");
       return {
@@ -14791,17 +14804,226 @@ class AdminConsole {
     return heading + state + why + form;
   }
 
+  /**
+   * Draws panels as sub-tabs: a bar of links, then each panel with something
+   * in it, the first shown when no fragment picks one. `tabbedPanels()`'s
+   * mechanism one level down.
+   *
+   * @param label - what the bar is, for a screen reader
+   * @param panels - `{ id, label, html }` in tab order
+   * @returns the sub-tabs as HTML
+   */
+  subTabbedPanels(label, panels) {
+    const { log } = this.deps;
+    const self = this;
+    log.debug("Entering AdminConsole.subTabbedPanels().");
+    const shown = panels.filter(function (one) {
+      return String(one.html || '').trim() !== '';
+    });
+    log.debug("Leaving AdminConsole.subTabbedPanels(). " + shown.length +
+              " sub-tab(s).");
+    return '<div class="subtabs"><nav class="tabbar subbar" aria-label="' +
+      this.esc(label) + '">' +
+      shown.map(function (one, n) {
+        return '<a' + (n === 0 ? ' class="first"' : '') + ' href="#' +
+          self.esc(one.id) + '">' + self.esc(one.label) + '</a>';
+      }).join('') + '</nav>' +
+      shown.map(function (one, n) {
+        return '<div class="subpanel' + (n === 0 ? ' first' : '') + '" id="' +
+          self.esc(one.id) + '">' + one.html + '</div>';
+      }).join('') + '</div>';
+  }
+
+  // ---------------------------------------------------------------------------
+  // A PERSON'S ATTRIBUTES AS A TYPED FIELD GRID (rcbj, 2026-10-01), the
+  // application page's model: one sub-tab per group of
+  // `ldap/person_editor.ts`'s FIELD_GROUPS, each its own form with its own
+  // Save, a single value a text box and a list one box per value with + and
+  // the bin, an example of a valid value as every box's placeholder and the
+  // attribute's sentence as its tooltip.
+  //
+  // **It posts to `/admin/users/edit`**, for `/admin/applications/edit`'s
+  // reason: a refused save comes back to THIS page with every box as the
+  // reader left it, and "+" and the bin redraw it with one box more or fewer
+  // and write nothing. Save is `update-fields`, the action
+  // `POST /admin-api/users/update-fields` calls, so every rule a one-attribute
+  // edit holds still holds. `present` names every field the tab drew, so a
+  // box emptied on the page clears it.
+  //
+  // **The address is not a field**: `set-mail` marks what it writes verified
+  // and tells the former address, so its form heads the Contact tab.
+  // ---------------------------------------------------------------------------
+  /**
+   * Draws a person's attributes as a typed field grid, one sub-tab per group
+   * with its own Save, and the address form on the Contact tab.
+   *
+   * @param key - the person's key
+   * @param editor - `personEditor.editorFor()`'s answer, or null
+   * @param gate - the gate state; `write` draws the forms
+   * @param back - the list to return to after an action
+   * @param state - optional; a redraw: `draft` (the posted form) and `error`
+   * @returns the section as HTML
+   */
+  personFieldsSection(key, editor, gate, back, state?) {
+    const { log } = this.deps;
+    const self = this;
+    log.debug("Entering AdminConsole.personFieldsSection(). key=" + key);
+    const heading = '<h2 id="person-fields">Their attributes</h2>';
+    if (!editor) {
+      log.debug("Leaving AdminConsole.personFieldsSection(). No entry.");
+      return heading + this.note('There is no directory entry for this ' +
+        'person here, so there is nothing to change. The Directory entry ' +
+        'tab says why.');
+    }
+    const draft = state && state.draft ? state.draft : null;
+    const values = {};
+    editor.attributes.forEach(function (row) {
+      values[row.name] = row.values.map(String);
+    });
+    if (draft) {
+      const posted = this.gridValuesFromDraft(draft);
+      String(draft.present || '').split(/[\s,]+/).forEach(function (name) {
+        if (name && Object.prototype.hasOwnProperty.call(values, name)) {
+          values[name] = posted[name] || [];
+        }
+      });
+    }
+    const naming = editor.attributes.filter(function (row) {
+      return !row.editable;
+    });
+    const gridRow = function (row) {
+      return {
+        attribute: row.name,
+        type: row.multi ? 'array' : 'string',
+        what: row.label + ' — ' + row.schema + '.' +
+              (row.note ? ' It takes ' + row.note + '.' : '') +
+              (row.must ? ' Every person must hold it.' : '') +
+              (row.multi ? '' : ' It holds one value.'),
+        example: row.example,
+        forText: row.label + (row.must ? ' · required' : ''),
+        families: [], everyFamily: true
+      };
+    };
+    const mailForm = gate.write
+      ? '<h3 id="mail">Email address</h3>' +
+        '<form method="post" action="/admin/users">' +
+        '<input type="hidden" name="action" value="set-mail">' +
+        '<input type="hidden" name="user" value="' + this.esc(key) + '">' +
+        '<input type="hidden" name="from" value="user">' +
+        '<input type="hidden" name="back" value="' + this.esc(back) + '">' +
+        '<div class="formrow"><label for="personmail"' +
+        this.tip('The address mail is sent to. Set here it is marked ' +
+                 'VERIFIED, because an administrator set it, and the ' +
+                 'former address is told it changed.') +
+        '>Set the address to</label><input type="email" id="personmail" ' +
+        'name="mail" size="34" required value="' +
+        this.esc(String(editor.mail || '')) + '" placeholder="e.g. ' +
+        'alice@example.com"><button type="submit">Set the address</button>' +
+        '<span class="sub">Verified, because an administrator set it; the ' +
+        'former address is told.</span></div></form>'
+      : '<h3 id="mail">Email address</h3>' + (editor.mail
+        ? '<p><code>' + this.esc(editor.mail) + '</code></p>'
+        : this.note('None.'));
+    const panels = personEditor.FIELD_GROUPS.map(function (group) {
+      const mine = editor.attributes.filter(function (row) {
+        return row.editable && row.group === group.id;
+      });
+      const contact = group.id === 'contact' ? mailForm : '';
+      if (!mine.length) {
+        return { id: 'ufg-' + group.id, label: group.label, html: contact };
+      }
+      if (!gate.write) {
+        return { id: 'ufg-' + group.id, label: group.label,
+          html: contact + '<table><tr><th>Attribute</th><th>What it is</th>' +
+            '<th>Values</th></tr>' + mine.map(function (row) {
+              return '<tr><td><code>' + self.esc(row.name) + '</code></td>' +
+                '<td>' + self.esc(row.label) + '</td><td>' +
+                (row.values.length
+                  ? row.values.map(function (one) {
+                    return '<code>' + self.esc(one) + '</code>';
+                  }).join('<br>')
+                  : '<span class="state-none">none</span>') + '</td></tr>';
+            }).join('') + '</table>' };
+      }
+      const cells = mine.map(function (row) {
+        return self.fieldGridCell(gridRow(row), values,
+                                  { redraw: '/admin/users/edit' });
+      }).join('');
+      return { id: 'ufg-' + group.id, label: group.label,
+        html: contact + self.note(self.esc(group.what)) +
+          '<form method="post" action="/admin/users/edit#ufg-' +
+          self.esc(group.id) + '" class="appgrid">' +
+          '<input type="hidden" name="action" value="update-fields">' +
+          '<input type="hidden" name="user" value="' + self.esc(key) + '">' +
+          '<input type="hidden" name="from" value="user">' +
+          '<input type="hidden" name="group" value="' + self.esc(group.id) +
+          '">' +
+          '<input type="hidden" name="back" value="' + self.esc(back) + '">' +
+          '<input type="hidden" name="present" value="' +
+          self.esc(mine.map(function (row) { return row.name; }).join(' ')) +
+          '">' +
+          // THE DEFAULT BUTTON, first in the form: Enter in a box presses
+          // the first submit button, which would otherwise be a "+" or a bin.
+          '<button type="submit" class="default-submit" tabindex="-1" ' +
+          'aria-hidden="true">Save</button>' +
+          '<div class="fg">' + cells + '</div>' +
+          '<div class="formrow"><button type="submit"' +
+          self.tip('Write this tab to the person\'s entry. Nothing on the ' +
+                   'other tabs changes, and a refused value is shown with ' +
+                   'what was typed kept.') + '>Save ' +
+          self.esc(group.label.toLowerCase()) + '</button></div></form>' };
+    });
+    log.debug("Leaving AdminConsole.personFieldsSection(). " +
+              editor.attributes.length + " attribute(s).");
+    return heading +
+      (state && state.error && state.error.length
+        ? this.flash('<div class="err"><strong>Not everything was saved.' +
+            '</strong><ul>' + state.error.map(function (one) {
+              return '<li>' + self.esc(one) + '</li>';
+            }).join('') + '</ul></div>')
+        : '') +
+      this.note('One tab per group, each with its own Save, writing <code>' +
+      this.esc(editor.dn) + '</code> in place as an <code>ldapmodify</code> ' +
+      'would — and the directory tells Shared Signals of the change as it ' +
+      'tells it of a SCIM or LDAP write. <strong>Save</strong> writes what ' +
+      'changed on that tab and nothing else: a single value is set, and an ' +
+      'empty one is cleared; a list has the values put in added and the ' +
+      'values taken out removed. A list shows one box per value, with + to ' +
+      'add one and the bin to delete one; every box that is there must ' +
+      'hold a value. An identity verification covers a value only while the ' +
+      'entry still holds it, so changing a verified value lets that ' +
+      'verification lapse for it.') +
+      (naming.length
+        ? this.note('<strong>Not on these tabs:</strong> ' +
+            naming.map(function (row) {
+              return '<code>' + self.esc(row.name) + '</code>, which names ' +
+                'the entry';
+            }).join('; ') + '. The password and every other credential are ' +
+            'on Credentials, and the username, binary values and group ' +
+            'memberships are not edited here.')
+        : this.note('<strong>Not on these tabs:</strong> the password and ' +
+            'every other credential (Credentials), the username, binary ' +
+            'values such as certificates and photographs, and group ' +
+            'memberships (<a href="/admin/groups">Groups</a>).')) +
+      (gate.write ? '' : this.note('Changing an attribute needs ' +
+        '<strong>Admin Write</strong>.')) +
+      this.subTabbedPanels('Their attributes', panels);
+  }
+
   // -------------------------------------------------------------------------
-  // CHANGE THEIR ATTRIBUTES (#228, 2026-09-26): the application page's three
-  // forms, for a person. What may be changed, and every refusal, are
+  // CHANGE ONE ATTRIBUTE BY NAME (#228, 2026-09-26): the application page's
+  // three forms, for a person. What may be changed, and every refusal, are
   // `ldap/person_editor.ts`'s; this draws its answer. The Set select offers
   // every attribute this entry lets be edited, Add to only the multi-valued
   // ones, and Remove from only those that hold a value — so a form cannot
-  // offer what the action would refuse for the plainest reason.
+  // offer what the action would refuse for the plainest reason. Since the
+  // page became tabs (2026-10-01) the Attributes tab is the usual door and
+  // these are on the Directory entry tab, folded, as the application page's
+  // are; the address form moved to the Attributes tab's Contact group.
   // -------------------------------------------------------------------------
   /**
-   * Draws the forms that set, add to and remove from a person's editable
-   * attributes, and set their address, from ldap/person_editor.ts's answer.
+   * Draws the forms that set, add to and remove from one of a person's
+   * editable attributes by name, from ldap/person_editor.ts's answer.
    *
    * @param key - the person's key
    * @param editor - the person editor's answer, or null with no entry
@@ -14813,7 +15035,7 @@ class AdminConsole {
     const { log } = this.deps;
     const self = this;
     log.debug("Entering AdminConsole.userAttributesSection(). key=" + key);
-    const heading = '<h2 id="attributes">Change their attributes</h2>';
+    const heading = '<h2 id="attributes">Change one attribute by name</h2>';
     if (!editor) {
       log.debug("Leaving AdminConsole.userAttributesSection(). No entry.");
       return heading + this.note('There is no directory entry for this ' +
@@ -14877,8 +15099,9 @@ class AdminConsole {
       'covers a value only while the entry still holds it, so changing a ' +
       'verified value lets that verification lapse for it.') +
       this.note('<strong>What these will not change.</strong> The password ' +
-      'and every other credential (the controls below), the address (its ' +
-      'own form, below, because a write of it is verified), the username ' +
+      'and every other credential (the Credentials tab), the address (its ' +
+      'own form on the Attributes tab, because a write of it is verified), ' +
+      'the username ' +
       'and the attribute the entry is named ' +
       'by, binary values such as certificates and photographs, group ' +
       'memberships (<a href="/admin/groups">Groups</a>), and what this ' +
@@ -14898,29 +15121,13 @@ class AdminConsole {
     });
     log.debug("Leaving AdminConsole.userAttributesSection(). " +
               usable.length + " editable.");
-    // THE ADDRESS, which the editor withholds: `set-mail` (#64) marks what it
-    // writes VERIFIED and tells the former address, which a generic Set
-    // would not. The action was the management API's alone until #228; a
-    // form here is its console half (rule 7).
-    const current = String(editor.mail || '');
-    const mailForm = '<form method="post" action="/admin/users">' +
-      '<input type="hidden" name="action" value="set-mail">' +
-      '<input type="hidden" name="user" value="' + this.esc(key) + '">' +
-      '<input type="hidden" name="from" value="user">' +
-      '<input type="hidden" name="back" value="' + this.esc(back) + '">' +
-      '<div class="formrow"><label for="personmail">Set the address to' +
-      '</label><input type="email" id="personmail" name="mail" size="34" ' +
-      'required value="' + this.esc(current) + '"><button ' +
-      'type="submit">Set the address</button><span class="sub">Verified, ' +
-      'because an administrator set it; the former address is told.' +
-      '</span></div></form>';
     return heading + explain +
       form('set-attribute', 'Set', usable, false, 'empty clears it') +
       (multi.length
         ? form('add-attribute', 'Add to', multi, true, '') : '') +
       (held.length
         ? form('remove-attribute', 'Remove from', held, true, '') : '') +
-      mailForm + listing;
+      listing;
   }
 
   /**
@@ -15204,10 +15411,12 @@ class AdminConsole {
    * @param key - the person's key
    * @param risk - optional; their risk standing as userDetailJson() takes
    *   it, undefined to draw no badge
+   * @param state - optional; a redraw of the Attributes tab's form: `draft`
+   *   (the posted form) and `error` (a refusal's sentences)
    * @returns an object of inner (the page body as HTML) and json, or null
    *   when the identity is not one this service knows
    */
-  userDetailPage(req, key, risk?: any) {
+  userDetailPage(req, key, risk?: any, state?: any) {
     const { log, adminViews, gateStateFor, queryWith, DEFAULT_BLOCKS_PER_PAGE,
             DEFAULT_PER_PAGE } = this.deps;
     const self = this;
@@ -15276,6 +15485,13 @@ class AdminConsole {
         this.tile(expired, 'tokens expired') +
         this.tile(detail.artifacts.length, 'assertions, tickets, credentials') +
       '</div>' +
+      // A PERSON'S PAGE AS TABS (rcbj, 2026-10-01), the application page's
+      // model: one tab per part of the page, the Attributes tab a typed field
+      // grid one sub-tab per group, and Credentials one sub-tab per kind of
+      // credential. `tabbedPanels()` argues the mechanism: a control's answer
+      // lands at a fragment inside its own tab, so the tab is shown again.
+      this.tabbedPanels('usertabs', [
+        { id: 'utab-overview', label: 'Overview', html:
       this.note('Everything below is about the identity <code>' +
                 this.esc(row.name) +
       '</code>, ' +
@@ -15336,8 +15552,8 @@ class AdminConsole {
           '<td>' + self.esc(self.whenText(family.lastAt)) + '</td></tr>';
       }).join('') || '<tr><td colspan="4">Never, here.</td></tr>') +
         '</table>' +
-      this.authenticationTable(row) +
-
+      this.authenticationTable(row) },
+        { id: 'utab-activity', label: 'Sessions & tokens', html:
       this.perPageForm('/admin/users', 'user', key, artifactPage.paging.perPage,
                        'The session BLOCKS below start at ' +
                        DEFAULT_BLOCKS_PER_PAGE +
@@ -15397,47 +15613,42 @@ class AdminConsole {
       'change a number on this page and nothing at all out there. The only ' +
       'distinction is whether the validity window has closed.') +
       artifactNav.head + this.userArtifactTable(artifactPage.shown) +
-      artifactNav.foot +
-
-      directory.html +
-
-      // WHAT AN ADMINISTRATOR MAY CHANGE ON THAT ENTRY (#228), directly under
-      // the entry it changes — the application page's Set / Add to / Remove
-      // from, over `ldap/person_editor.ts`'s list.
-      this.userAttributesSection(key, view.attributeEditor, gateStateFor(req),
-                                 back) +
-
-      // ---------------------------------------------------------------------
-      // AFTER THE DIRECTORY ENTRY AND BEFORE THE TWO SIGN-OUT BUTTONS
-      // (2026-09-10), which is where it belongs by what a reader is doing. The
-      // entry above says what this person IS; this says what they can sign in
-      // WITH; the buttons below end what they currently hold. A reader arriving
-      // from the Second factor column of the list lands on the section that
-      // column summarises, with the whole account above it for context.
-      // ---------------------------------------------------------------------
-      mfa.html +
-
-      // What they can SIGN a grant with (2026-09-13), after what they sign IN
-      // with and before the buttons that end what they hold.
-      this.userCredentialsSection(key, view.credentialsState, gateStateFor(req),
-                                  back) +
-
-      // WHICH PARTNERS' SUBJECTS SIGN THEM IN (#109, 2026-09-22): the links,
-      // after what they sign a grant with and before what an administrator
-      // can do to their password — a link is another way in.
-      this.userFederationLinksSection(key, view.federationLinkPage,
-                                      gateStateFor(req), back, params) +
-
-      // WHAT AN ADMINISTRATOR CAN DO TO THEIR PASSWORD AND SECOND FACTORS
-      // (2026-09-13), before the sign-out buttons, which it partly subsumes: a
-      // reset signs the person out as well.
-      this.userCredentialControlsSection(key, view.mfa.json, gateStateFor(req),
-                                         back) +
-
-      // THEIR KERBEROS ACCOUNT, AND A KEYTAB FOR IT (#59): after the password
-      // controls, because the one control here IS a password reset.
-      this.userKerberosSection(key, view.kerberos, gateStateFor(req)) +
-
+      artifactNav.foot },
+        { id: 'utab-attributes', label: 'Attributes', html:
+          this.personFieldsSection(key, view.attributeEditor,
+                                   gateStateFor(req), back, state) },
+        { id: 'utab-credentials', label: 'Credentials', html:
+          this.subTabbedPanels('Credentials', [
+            // What they sign IN with, as a second factor or alone.
+            { id: 'ucred-factors', label: 'Second factors', html: mfa.html },
+            // What an administrator can do to their password and second
+            // factors (2026-09-13); a reset signs the person out as well.
+            { id: 'ucred-password', label: 'Password',
+              html: this.userCredentialControlsSection(key, view.mfa.json,
+                                                       gateStateFor(req),
+                                                       back) },
+            // What they can SIGN a grant with (2026-09-13).
+            { id: 'ucred-keys', label: 'Key pairs',
+              html: this.userCredentialsSection(key, view.credentialsState,
+                                                gateStateFor(req), back) },
+            // Their Kerberos account, and a keytab for it (#59).
+            { id: 'ucred-kerberos', label: 'Kerberos',
+              html: this.userKerberosSection(key, view.kerberos,
+                                             gateStateFor(req)) }
+          ]) },
+        // Which partners' subjects sign them in (#109): a link is another way
+        // in, so it has a tab of its own beside Credentials.
+        { id: 'utab-federation', label: 'Federation links',
+          html: this.userFederationLinksSection(key, view.federationLinkPage,
+                                                gateStateFor(req), back,
+                                                params) },
+        // Every attribute the entry holds, and the one-attribute forms the
+        // Attributes tab replaced as the usual door (#228).
+        { id: 'utab-entry', label: 'Directory entry',
+          html: directory.html +
+            this.userAttributesSection(key, view.attributeEditor,
+                                       gateStateFor(req), back) },
+        { id: 'utab-signout', label: 'Sign out', html:
       // ---------------------------------------------------------------------
       // TWO BUTTONS, AND THE ORDER IS THE ARGUMENT (2026-09-05).
       //
@@ -15515,7 +15726,8 @@ class AdminConsole {
         '<input type="hidden" name="from" value="users">' +
         '<input type="hidden" name="back" value="' + this.esc(back) + '">' +
         '<div class="formrow"><button class="danger">Revoke every token for ' +
-        this.esc(row.name) + '</button></div></form>';
+        this.esc(row.name) + '</button></div></form>' }
+      ]);
 
     log.debug("Leaving AdminConsole.userDetailPage(). " +
               sessionPage.shown.length + " session(s), " +
@@ -16067,10 +16279,7 @@ class AdminConsole {
     const who = String(body.user || body.username || '').trim();
     const back = String(body.from || '') === 'user' && who
       ? this.userReturnTo(body, who,
-          /^federation-/.test(String(body.action || ''))
-            ? '#federation-links'
-            : (/-attribute$|^set-mail$/.test(String(body.action || ''))
-                ? '#attributes' : '#credential-controls'))
+          this.userActionAnchor(String(body.action || '')))
       : '/admin/users' +
         queryWith(this.listViewFromBack('/admin/users', body.back), {});
     // A ONE-TIME SECRET IS ANSWERED WITH A PAGE (2026-09-13): a reset password
@@ -16091,6 +16300,37 @@ class AdminConsole {
     }
     this.respondToAction(req, res, back, result);
     log.debug("Leaving AdminConsole.usersPost().");
+  }
+
+  // WHERE ON A PERSON'S PAGE AN ACTION'S ANSWER LANDS (2026-10-01): the
+  // anchor of the section its control is in, which is inside the tab that
+  // section is on, so the tab is shown again.
+  /**
+   * Names the section of a person's page an action's control is in.
+   *
+   * @param action - the action posted
+   * @returns the anchor, `#` and an id
+   */
+  userActionAnchor(action) {
+    const { log } = this.deps;
+    log.debug("Entering AdminConsole.userActionAnchor(). " + action);
+    let anchor = '#credential-controls';
+    if (/^federation-/.test(action)) {
+      anchor = '#federation-links';
+    } else if (action === 'set-mail') {
+      anchor = '#mail';
+    } else if (/-attribute$/.test(action)) {
+      anchor = '#attributes';
+    } else if (['clear-totp', 'clear-key', 'clear-backup-codes',
+                'clear-email-factor', 'create-app-password',
+                'revoke-app-password', 'record-verification',
+                'remove-verification', 'remove-device',
+                'enrol-self-issued-subject',
+                'remove-self-issued-subject'].indexOf(action) >= 0) {
+      anchor = '#second-factors';
+    }
+    log.debug("Leaving AdminConsole.userActionAnchor(). " + anchor);
+    return anchor;
   }
 
   // THE PAGE A RESET ANSWERS WITH (2026-09-13): the generated password or the
@@ -16285,53 +16525,6 @@ class AdminConsole {
     return out;
   }
 
-  // One attribute as a row of the form's table. `values` is what to put in the
-  // box — a prefill after a refusal, or what Fill wrote — and empty is the
-  // ordinary case.
-  //
-  // **THE FIELD NAME IS `field.<attribute>` AND THE ATTRIBUTE IS THE SCHEMA'S
-  // OWN NAME**, which is the application field grid's rule applied to people.
-  // Two reasons, and the second is the load-bearing one: an `ldapsearch` on
-  // this entry shows exactly the name that was on the form, and `POST
-  // /admin-api/users/create` takes the same names in its `attributes` object
-  // — so the console and the management API are one vocabulary and somebody
-  // who learns this page can drive the API.
-  //
-  // The schema reference is drawn beside each one because this directory has NO
-  // SCHEMA: nothing here would refuse `schacDateOfBirth` on a group or `l` on
-  // an application, so where the name comes from is the only thing that makes
-  // it more than a string somebody chose. Three of them are this service's own
-  // or SCHAC's rather than an RFC's, and those say so rather than being left to
-  // look like the others.
-  /**
-   * Draws one directory attribute as a row of the new-user form, its input
-   * named `field.<attribute>`, with the claim it reaches and its schema.
-   *
-   * @param row - the attribute's catalogue row
-   * @param values - the values to put in the boxes, by attribute
-   * @returns the row as HTML
-   */
-  personFieldRow(row, values) {
-    const { log } = this.deps;
-    log.debug("Entering AdminConsole.personFieldRow().");
-    const id = 'field-' + row.ldap;
-    const value = (values || {})[row.ldap];
-    const hint = this.tip(row.label + ' — ' + row.schema + '. It reaches a ' +
-                                                           'credential as ' +
-                          row.claim.join('.') + '.');
-    log.debug("Leaving AdminConsole.personFieldRow().");
-    return '<tr><td><label for="' + this.esc(id) + '"' + hint + '><code>' +
-      this.esc(row.ldap) + '</code></label></td>' +
-      '<td>' + this.esc(row.label) + '</td>' +
-      '<td><input type="text" id="' + this.esc(id) + '" name="field.' +
-      this.esc(row.ldap) +
-      '"' +
-      hint + ' size="36" maxlength="512" placeholder="no value" value="' +
-      this.esc(value === undefined ? '' : value) + '"></td>' +
-      '<td><code>' + this.esc(row.claim.join('.')) + '</code></td>' +
-      '<td class="sub">' + this.esc(row.schema) + '</td></tr>';
-  }
-
   // THE "MAIL IT TO THEM" BOX (#63): `deliver=mail` on the reset link and
   // the activation link, TICKED when the realm has a mail transport — an
   // administrator who never sees a person's link cannot be the one who used
@@ -16383,6 +16576,119 @@ class AdminConsole {
       'class="why">' + this.note(choice.what) + '</td></tr>';
   }
 
+  /**
+   * The fields `/admin/users/new` draws, as field grid rows: every attribute
+   * a person's Attributes tab edits, and the credential catalogue's others
+   * (the address), each with its group, example and tooltip.
+   *
+   * @param view - `simple` or `advanced`
+   * @returns the rows, in group order
+   */
+  newUserFieldRows(view) {
+    const { log, vcClaims } = this.deps;
+    log.debug("Entering AdminConsole.newUserFieldRows(). view=" + view);
+    const catalogue = vcClaims.personFields();
+    const claimOf = {};
+    catalogue.forEach(function (row) {
+      claimOf[row.ldap.toLowerCase()] = row.claim.join('.');
+    });
+    const rows = personEditor.editableAttributes().map(function (row) {
+      return { name: row.name, label: row.label, schema: row.schema,
+               multi: row.multi, must: row.must, note: row.note,
+               group: row.group, example: row.example, simple: row.simple };
+    });
+    catalogue.forEach(function (row) {
+      const known = rows.some(function (one) {
+        return one.name.toLowerCase() === row.ldap.toLowerCase();
+      });
+      if (!known) {
+        rows.push({ name: row.ldap, label: row.label, schema: row.schema,
+                    multi: false, must: false, note: '',
+                    group: personEditor.groupOf(row.ldap) === 'other' &&
+                      row.ldap.toLowerCase() === 'mail'
+                      ? 'contact' : personEditor.groupOf(row.ldap),
+                    example: personEditor.FIELD_EXAMPLES[
+                      row.ldap.toLowerCase()] || '',
+                    simple: row.ldap.toLowerCase() === 'mail' });
+      }
+    });
+    const shown = rows.filter(function (row) {
+      return view === 'advanced' || row.simple;
+    }).map(function (row) {
+      const claim = claimOf[row.name.toLowerCase()];
+      return {
+        attribute: row.name,
+        type: row.multi ? 'array' : 'string',
+        what: row.label + ' — ' + row.schema + '.' +
+              (row.note ? ' It takes ' + row.note + '.' : '') +
+              (row.multi ? '' : ' It holds one value.') +
+              (claim ? ' It reaches a credential as ' + claim + '.' : ''),
+        example: row.example,
+        forText: row.label,
+        families: [], everyFamily: true, group: row.group
+      };
+    });
+    log.debug("Leaving AdminConsole.newUserFieldRows(). " + shown.length +
+              " field(s).");
+    return shown;
+  }
+
+  /**
+   * Draws `/admin/users/new`'s field grid: the view's fields under the
+   * person field groups' headings.
+   *
+   * @param view - `simple` or `advanced`
+   * @param values - the boxes' values by attribute
+   * @param draft - the posted form of a redraw, or null on a first draw. A
+   *   list the form did not draw before (a first draw, or a field the view
+   *   switch has just added) gets one empty box, which a create reads as no
+   *   value; a list the form did draw keeps its boxes as posted
+   * @returns the grid as HTML
+   */
+  newUserFieldGrid(view, values, draft) {
+    const { log } = this.deps;
+    const self = this;
+    log.debug("Entering AdminConsole.newUserFieldGrid().");
+    const rows = this.newUserFieldRows(view);
+    // ONE BOX FOR A LIST ON THE FIRST DRAW: cn, sn and the telephone numbers
+    // are multi-valued in their RFCs, and a form showing only "+" for the
+    // names a person is created with reads as a form with no name boxes.
+    const drawn = {};
+    Object.keys(draft || {}).forEach(function (key) {
+      if (key.indexOf('field.') === 0) {
+        drawn[key.slice('field.'.length).replace(/\.\d+$/, '')] = true;
+      }
+    });
+    if (draft && draft.grow) {
+      drawn[String(draft.grow)] = true;
+    }
+    if (draft && draft.drop) {
+      drawn[String(draft.drop).replace(/\.\d+$/, '')] = true;
+    }
+    rows.forEach(function (row) {
+      if (row.type === 'array' && !drawn[row.attribute] &&
+          !(values[row.attribute] || []).length) {
+        values[row.attribute] = [''];
+      }
+    });
+    const html = personEditor.FIELD_GROUPS.map(function (group) {
+      const mine = rows.filter(function (row) {
+        return row.group === group.id;
+      });
+      if (!mine.length) {
+        return '';
+      }
+      return '<div class="fg-group"><h3' + self.tip(group.what) + '>' +
+        self.esc(group.label) + '</h3><div class="fg">' +
+        mine.map(function (row) {
+          return self.fieldGridCell(row, values,
+                                    { redraw: '/admin/users/new' });
+        }).join('') + '</div></div>';
+    }).join('');
+    log.debug("Leaving AdminConsole.newUserFieldGrid().");
+    return html;
+  }
+
   // THE PAGE. `prefill` is what to put back in the boxes — absent on a first
   // visit, and on a refusal it is what was posted, so nobody retypes
   // twenty-five fields because of one bad username.
@@ -16421,6 +16727,20 @@ class AdminConsole {
     const container = directoryReader ? newUserContainer() : null;
     const fields = vcClaims.personFields();
     const development = mode.isDevelopment();
+    const view = String(given.view || '') === 'advanced' ? 'advanced'
+      : 'simple';
+    // THE BOXES' VALUES: a redraw ("+", the bin, the view switch) keeps every
+    // box as it was, an empty one included; otherwise what was posted, or
+    // what Fill invented.
+    const gridValues = given.draft ? this.gridValuesFromDraft(given.draft)
+      : {};
+    if (!given.draft) {
+      Object.keys(values).forEach(function (name) {
+        gridValues[name] = [].concat(values[name] === undefined ||
+                                     values[name] === null
+          ? [] : values[name]).map(String);
+      });
+    }
 
     // NO DIRECTORY IN THIS PROCESS. The form is left OUT rather than drawn and
     // refused, which is `newApplicationPage()`'s shape and is right for the
@@ -16444,7 +16764,8 @@ class AdminConsole {
 
     const inner = this.messagesOf(req) +
       '<div class="tiles">' +
-        this.tile(fields.length, 'fields you may fill') +
+        this.tile(this.newUserFieldRows('advanced').length,
+                  'fields you may fill') +
         this.tile(1, 'that is required') +
         this.tile(CREDENTIAL_CHOICES.length, 'ways in to choose from') +
         this.tile(development ? 'yes' : 'no', 'example data offered') +
@@ -16528,27 +16849,42 @@ class AdminConsole {
       'credential, and the page says why.') +
       this.mailLinkBox('the activation link') +
 
-      '<h2>What is known about them</h2>' +
-      this.note('Every attribute a person in this directory can carry, which ' +
-      'is the same catalogue <a href="/admin/vc">Credential claims</a> ' +
-      'chooses from — so an attribute filled in here is the value an issued ' +
-      'credential asserts, rather than a value that agrees with one by ' +
-      'coincidence. <strong>Fill in as few or as many as you like.</strong> ' +
-      'The claim column is where each one lands in a token or a credential; ' +
-      'the last column is where the attribute name comes from, which matters ' +
-      'because <strong>this directory has no schema</strong> and would not ' +
-      'refuse any of these on any entry.') +
+      // THE FIELD GRID (rcbj, 2026-10-01): the same typed fields, under the
+      // same group headings, as a person's Attributes tab, drawn from
+      // `ldap/person_editor.ts` and the credential catalogue — so this form
+      // and the tab cannot offer different attributes, and a create holds
+      // every value to the rules an edit does. The simplified view is the
+      // names and contact details somebody creating a person usually has; the
+      // advanced view is every field. The switch, "+" and the bin are submit
+      // buttons that redraw this form with everything typed kept.
+      '<h2>' + (view === 'advanced' ? 'Everything known about them'
+                                    : 'What is known about them') + '</h2>' +
+      this.note('Every attribute here is one a person in this directory can ' +
+      'carry, and an attribute in the <a href="/admin/vc">Credential ' +
+      'claims</a> catalogue is the value an issued credential asserts — its ' +
+      'tooltip says which claim. <strong>Fill in as few or as many as you ' +
+      'like.</strong> A list takes one box per value, with + to add one and ' +
+      'the bin to delete one; an empty box records nothing.') +
       (development
         ? this.note('<strong><code>uid</code> is not on this list and that ' +
           'is not an omission.</strong> It is the username, asked for once ' +
           'at the top; a second box for it would let one form create ' +
           '<code>uid=alice</code> whose uid says <code>bob</code>.')
         : '') +
-      '<table><tr><th>Attribute</th><th>What it is</th><th>Value</th>' +
-      '<th>Reaches a credential as</th><th>Defined by</th></tr>' +
-      fields.map(function (row) { return self.personFieldRow(row, values); })
-            .join('') +
-      '</table>' +
+      '<input type="hidden" name="view" value="' + this.esc(view) + '">' +
+      '<div class="formrow fg-view"><span class="sub">' +
+      (view === 'advanced'
+        ? 'Advanced view: every attribute a person here can carry.'
+        : 'Simplified view: the names and contact details most people ' +
+          'need.') +
+      '</span><button type="submit" class="secondary" name="switchview" ' +
+      'value="' + (view === 'advanced' ? 'simple' : 'advanced') +
+      '" formaction="/admin/users/new" formnovalidate' +
+      this.tip('Draw the other view of this form. Nobody is created, and ' +
+               'everything typed so far is kept.') + '>' +
+      (view === 'advanced' ? 'Show the simplified view'
+        : 'Show every field (advanced view)') + '</button></div>' +
+      this.newUserFieldGrid(view, gridValues, given.draft || null) +
 
       // TWO SUBMITS, AND ONLY ONE OF THEM CARRIES A NAME. `action=create` is a
       // HIDDEN FIELD, the way every other form on this console spells its
@@ -19697,9 +20033,13 @@ class AdminConsole {
     log.debug("Entering AdminConsole.userReturnTo(). key=" + key);
     const listView = this.listViewFromBack('/admin/users', body && body.back);
     log.debug("Leaving AdminConsole.userReturnTo().");
+    // Each anchor is inside one tab of the person's page (2026-10-01), so
+    // landing on it shows that tab.
     return '/admin/users' + queryWith(listView, { user: String(key) }) +
-           (['#credentials', '#credential-controls',
-             '#attributes'].indexOf(anchor) >= 0
+           (['#credentials', '#credential-controls', '#second-factors',
+             '#attributes', '#mail', '#person-fields',
+             '#federation-links'].indexOf(anchor) >= 0 ||
+            /^#ufg-[a-z]+$/.test(String(anchor || ''))
              ? anchor : '');
   }
 
@@ -21280,7 +21620,8 @@ class AdminConsole {
             '>Generate Secret</button>'
           : '');
     }
-    const labels = row.everyFamily ? 'every protocol'
+    const labels = row.forText !== undefined ? String(row.forText)
+      : row.everyFamily ? 'every protocol'
       : row.families.map(function (family) {
         const known = applications.PROTOCOLS.filter(function (one) {
           return one.id === family;
@@ -38745,6 +39086,71 @@ class AdminConsole {
       log.debug("Leaving the admin users action endpoint.");
     });
 
+    // POST /admin/users/edit — A PERSON'S FIELD GRID (2026-10-01),
+    // `/admin/applications/edit`'s arrangement. "+" and the bin redraw the
+    // page with one box more or fewer and write nothing; Save is
+    // `update-fields`, the action `POST /admin-api/users/update-fields`
+    // calls, and lands on the tab it was pressed on with a message, or —
+    // refused — redraws the page with every box as the reader left it. A
+    // JSON caller gets the action's reply.
+    app.post('/admin/users/edit', function (req, res) {
+      log.debug("Entering the admin person edit endpoint.");
+      const body = parseBody(req);
+      const wantsJson = /json/i.test(String(req.headers['content-type'] || ''));
+      const who = String(body.user || body.username || '').trim();
+      const group = /^[a-z]+$/.test(String(body.group || ''))
+        ? String(body.group) : '';
+      const redraw = function (state, code?) {
+        log.debug("Entering redraw().");
+        if (code) {
+          errorCodes.mark(res, code);
+        }
+        const detail = self.userDetailPage(req, who, undefined, state);
+        if (!detail) {
+          errorCodes.mark(res, 'STS-LDAP-0102');
+          self.respondToAction(req, res, '/admin/users' +
+            queryWith(self.listViewFromBack('/admin/users', body.back), {}),
+            { ok: false, errors: ['There is no person called "' +
+                                  who.slice(0, 80) + '" here.'] });
+          log.debug("Leaving redraw(). Nobody there.");
+          return;
+        }
+        self.respond(req, res, Object.assign({ known: true }, detail.json),
+                     'User ' + who, '/admin/users', detail.inner,
+                     self.upTo('/admin/users', who,
+                               self.listViewFromBack('/admin/users',
+                                                     body.back)));
+        log.debug("Leaving redraw().");
+      };
+      if (!wantsJson && (body.grow !== undefined || body.drop !== undefined)) {
+        redraw({ draft: body });
+        log.debug("Leaving the admin person edit endpoint. A field grid " +
+                  "round trip.");
+        return;
+      }
+      const result = usersAction(Object.assign({}, body,
+        { action: 'update-fields' }), { via: 'console',
+                                        actor: gateStateFor(req).username,
+                                        base: baseUrlOf(req) });
+      if (wantsJson) {
+        self.respondToAction(req, res, '/admin/users', result);
+        log.debug("Leaving the admin person edit endpoint. JSON.");
+        return;
+      }
+      if (!result.ok) {
+        redraw({ draft: body, error: result.errors },
+               errorCodes.codeOf(result) || 'STS-ADMIN-0839');
+        log.debug("Leaving the admin person edit endpoint. Refused.");
+        return;
+      }
+      self.respondToAction(req, res,
+                           self.userReturnTo(body, who,
+                                             group ? '#ufg-' + group
+                                                   : '#person-fields'),
+                           result);
+      log.debug("Leaving the admin person edit endpoint. Saved.");
+    });
+
     app.get('/admin/users/new', function (req, res) {
       log.debug("Entering the admin new-user page.");
       const view = self.newUserView(req);
@@ -38766,13 +39172,29 @@ class AdminConsole {
                      String(body.action || 'create');
       const posted = { username: String(body.username || ''),
                        credential: String(body.credential || 'none'),
-                       fields: userFieldsFrom(body) };
+                       fields: userFieldsFrom(body),
+                       view: String(body.view || '') };
 
       // A JSON caller gets JSON, exactly as every other action on this console
       // does. It is /admin-api that a script should be driving, and this branch
       // is here so that a script pointed at the page does not get a wall of
       // HTML back with the secret buried in it.
       const wantsJson = /json/i.test(String(req.headers['content-type'] || ''));
+
+      // THE FIELD GRID'S ROUND TRIPS (2026-10-01): the view switch, "+" and
+      // the bin redraw this form with every box as it was and create nobody.
+      if (!wantsJson && (body.switchview !== undefined ||
+                         body.grow !== undefined || body.drop !== undefined)) {
+        const view = self.newUserPage(req, Object.assign({}, posted, {
+          view: body.switchview !== undefined ? String(body.switchview)
+            : posted.view,
+          draft: body }));
+        self.respond(req, res, view.json, 'New user', '/admin/users',
+                     view.inner, self.newUserUp());
+        log.debug("Leaving the admin new-user action endpoint. A field " +
+                  "grid round trip.");
+        return;
+      }
 
       // ------------------------------------------------------------------
       // FILL. It creates nothing and answers with this same form, filled in.
@@ -48530,6 +48952,9 @@ const consoleExports = {
   // header: a require in either direction fails rule 3e's test.
   setRolePreviewer: slot.forward('setRolePreviewer'),
   usersView: slot.forward('usersView'),
+  // A person's page and the new-user form, for tests/person_fields.js.
+  userDetailPage: slot.forward('userDetailPage'),
+  newUserPage: slot.forward('newUserPage'),
   // The create page's own view, for GET /admin-api/users/new. Rule 7, and the
   // same argument `newApplicationView` makes below: what it answers is the
   // CATALOGUE the create takes — every attribute a person here may be given,

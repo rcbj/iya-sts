@@ -5187,6 +5187,19 @@ class AdminViews {
         return { attribute: row.ldap, label: row.label, schema: row.schema,
                  claim: row.claim.slice(0), invented: !!row.from };
       }),
+      // THE FIELD GRID THE FORM DRAWS (2026-10-01): every attribute a
+      // person's Attributes tab edits, which a create takes too and holds to
+      // the same rules, with the group it is drawn under, whether it is a
+      // list, an example of a valid value and whether the simplified view
+      // offers it. `fields` above is the credential catalogue, unchanged.
+      fieldGroups: personEditor.FIELD_GROUPS.map(function (group) {
+        return { id: group.id, label: group.label, what: group.what };
+      }),
+      gridFields: personEditor.editableAttributes().map(function (row) {
+        return { attribute: row.name, label: row.label, group: row.group,
+                 multi: row.multi, example: row.example,
+                 simple: row.simple, takes: row.note || 'text' };
+      }),
       credentials: CREDENTIAL_CHOICES.map(function (one) {
         return { id: one.id, label: one.label };
       }),

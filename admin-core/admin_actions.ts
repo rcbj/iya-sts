@@ -382,7 +382,10 @@ const USERS_ACTIONS = ['create', 'set-password', 'issue-activation',
                        'answer-ciba-request',
                        // One attribute of their entry (#228, 2026-09-26).
                        'set-attribute', 'add-attribute',
-                       'remove-attribute'];
+                       'remove-attribute',
+                       // Several at once, a person's field grid's Save
+                       // (2026-10-01).
+                       'update-fields'];
 
 // ---------------------------------------------------------------------------
 // WHAT AN ADMINISTRATOR DOES TO SOMEBODY'S CREDENTIALS FROM THEIR PAGE
@@ -2039,6 +2042,18 @@ class AdminActions {
         return;
       }
       const value = String(body[key] === undefined ? '' : body[key]).trim();
+      // A LIST'S BOXES (2026-10-01): the field grid posts one box per value
+      // of a multi-valued attribute, `field.<attribute>.<n>`, gathered here
+      // in box order.
+      const box = /^(.+)\.(\d+)$/.exec(name);
+      if (box) {
+        if (value !== '') {
+          const held = fields[box[1]];
+          fields[box[1]] = (Array.isArray(held) ? held
+            : (held === undefined ? [] : [held])).concat([value]);
+        }
+        return;
+      }
       // AN EMPTY BOX IS NOT A VALUE. Every field on that form is drawn whether
       // or not it was filled in, so a create posts twenty-five of them and
       // typically means four — and "no value is recorded" is the promise the
@@ -2893,6 +2908,14 @@ class AdminActions {
       log.debug("Leaving AdminActions.usersAction(). " + action + " " +
                 (result.ok ? "ok." : "refused."));
       return this.refusedBy('STS-ADMIN-0819', result);
+    }
+
+    // SEVERAL OF A PERSON'S ATTRIBUTES AT ONCE (2026-10-01), the Save of a
+    // tab of their field grid and `POST /admin-api/users/update-fields`.
+    if (action === 'update-fields') {
+      log.debug("Leaving AdminActions.usersAction(). update-fields.");
+      return this.updatePersonFields(String(body.user || body.username || '')
+        .trim(), body, ctx);
     }
 
     // A FEDERATION LINK, MADE OR REMOVED BY AN ADMINISTRATOR (#109).
@@ -3962,6 +3985,169 @@ class AdminActions {
              message: changed.length
                ? 'Saved ' + changed.length + ' attribute(s) of "' +
                  identifier + '": ' + changed.join(', ') + '.'
+               : 'Nothing changed: every field already held what was ' +
+                 'submitted.' };
+  }
+
+  // ---------------------------------------------------------------------------
+  // A PERSON'S FIELD GRID SAVE (2026-10-01), `updateApplicationFields()`'s
+  // shape for a person. Every attribute the body covers is brought to the
+  // values given — a single-valued one SET (empty clears it), a multi-valued
+  // one with the values taken out removed and those put in added — through
+  // `ldap/person_editor.ts`'s `update()`, so every rule an edit of one
+  // attribute holds (the allowlist, a value's shape, a MUST attribute, the
+  // entry's own name, the audit row) holds here. An attribute whose values
+  // did not change is not written. What one attribute refuses does not undo
+  // another: the reply names what was saved and every refusal.
+  // ---------------------------------------------------------------------------
+  /**
+   * Saves every attribute a person's field-grid form or an `update-fields`
+   * body covers.
+   *
+   * @param who - the person, as /admin/users names them
+   * @param body - the parsed body: `fields` (JSON), `field.<name>` and
+   *   `field.<name>.<n>` boxes, and `present`
+   * @param ctx - `actor` and `via`, for the audit rows
+   * @returns `{ ok, changed, errors, message }`
+   */
+  updatePersonFields(who, body, ctx) {
+    const { log, personEditor } = this.deps;
+    log.debug("Entering AdminActions.updatePersonFields(). who=" + who);
+    if (!who) {
+      log.debug("Leaving AdminActions.updatePersonFields(). No person.");
+      return this.refused('STS-ADMIN-0518', { ok: false, errors: ['Name ' +
+          'the person in `user`.'] });
+    }
+    const empty = this.emptyListBoxesIn(body);
+    if (empty.length) {
+      log.debug("Leaving AdminActions.updatePersonFields(). An empty list " +
+                "box.");
+      return this.refused('STS-ADMIN-0834', { ok: false,
+        errors: [this.emptyListBoxesSentence(empty)] });
+    }
+    const editor = personEditor.editorFor(who);
+    if (!editor) {
+      log.debug("Leaving AdminActions.updatePersonFields(). Nobody there.");
+      return this.refused('STS-LDAP-0102', { ok: false, errors: ['There is ' +
+          'no person called "' + who.slice(0, 80) + '" in this realm\'s ' +
+          'directory.'] });
+    }
+    const given = this.applicationFieldsFrom(body);
+    const covered = this.fieldsCoveredBy(body);
+    if (!covered.length) {
+      log.debug("Leaving AdminActions.updatePersonFields(). Nothing named.");
+      return this.refused('STS-ADMIN-0838', { ok: false,
+        errors: ['Name the attributes to change in `fields`: each member an ' +
+                 'attribute, a string or an array of strings; empty clears ' +
+                 'it.'] });
+    }
+    const rows = {};
+    editor.attributes.forEach(function (row) {
+      rows[row.name.toLowerCase()] = row;
+    });
+    const valuesOf = function (value) {
+      return [].concat(value === undefined || value === null ? [] : value)
+        .map(function (one) { return String(one).trim(); })
+        .filter(function (one) { return one !== ''; });
+    };
+    const changed = [];
+    const errors = [];
+    const context = { actor: ctx && ctx.actor, via: ctx && ctx.via };
+    covered.forEach(function (asked) {
+      const row = rows[asked.toLowerCase()];
+      if (!row) {
+        // Refused by the editor, which names the door to use instead.
+        const refusal = personEditor.update(who, { attribute: asked,
+          mode: 'set', value: '' }, context);
+        (refusal.errors || [asked + ' is not edited here.'])
+          .forEach(function (one) { errors.push(one); });
+        return;
+      }
+      const name = row.name;
+      const current = row.values.map(String);
+      const wanted = [];
+      valuesOf(given[asked] !== undefined ? given[asked] : given[name])
+        .forEach(function (one) {
+          if (!wanted.some(function (held) {
+            return held.toLowerCase() === one.toLowerCase();
+          })) {
+            wanted.push(one);
+          }
+        });
+      const same = current.length === wanted.length &&
+        current.every(function (one) { return wanted.indexOf(one) >= 0; });
+      if (same) {
+        return;
+      }
+      if (!row.editable) {
+        errors.push(name + ' is not edited here. ' + row.why);
+        return;
+      }
+      if (!row.multi || wanted.length <= 1 && !current.length) {
+        if (wanted.length > 1) {
+          errors.push(name + ' holds one value, and ' + wanted.length +
+                      ' were given.');
+          return;
+        }
+        const set = personEditor.update(who, { attribute: name, mode: 'set',
+                                               value: wanted[0] || '' },
+                                        context);
+        if (set.ok) {
+          changed.push(name);
+        } else {
+          (set.errors || []).forEach(function (one) { errors.push(one); });
+        }
+        return;
+      }
+      // A LIST: the values put in are ADDED before the ones taken out are
+      // removed, so a MUST attribute (cn) changed from one value to another
+      // is never empty in between.
+      let ok = true;
+      const lower = function (list) {
+        return list.map(function (one) { return one.toLowerCase(); });
+      };
+      wanted.filter(function (one) {
+        return lower(current).indexOf(one.toLowerCase()) < 0;
+      }).forEach(function (value) {
+        const added = personEditor.update(who, { attribute: name,
+                                                 mode: 'add', value: value },
+                                          context);
+        if (!added.ok) {
+          ok = false;
+          (added.errors || []).forEach(function (one) { errors.push(one); });
+        }
+      });
+      current.filter(function (one) {
+        return lower(wanted).indexOf(one.toLowerCase()) < 0;
+      }).forEach(function (value) {
+        const removed = personEditor.update(who, { attribute: name,
+                                                   mode: 'remove',
+                                                   value: value }, context);
+        if (!removed.ok) {
+          ok = false;
+          (removed.errors || []).forEach(function (one) {
+            errors.push(one);
+          });
+        }
+      });
+      if (ok) {
+        changed.push(name);
+      }
+    });
+    if (errors.length) {
+      log.debug("Leaving AdminActions.updatePersonFields(). " +
+                errors.length + " refusal(s).");
+      return this.refused('STS-ADMIN-0839', { ok: false, changed: changed,
+        errors: (changed.length
+          ? ['Saved ' + changed.join(', ') + '; the rest was refused:']
+          : []).concat(errors) });
+    }
+    log.debug("Leaving AdminActions.updatePersonFields(). " +
+              changed.length + " attribute(s) changed.");
+    return { ok: true, changed: changed, user: who,
+             message: changed.length
+               ? 'Saved ' + changed.length + ' attribute(s) of ' + who +
+                 ': ' + changed.join(', ') + '.'
                : 'Nothing changed: every field already held what was ' +
                  'submitted.' };
   }

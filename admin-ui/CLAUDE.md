@@ -7106,3 +7106,70 @@ configuration grid split by protocol.
   grid section's `press()` set the fragment of a hidden button's panel before
   clicking it, and `go()` loads a URL without its fragment and sets the
   fragment afterwards, because a fragment is not fetched.
+
+## A PERSON'S PAGE IS TABS, AND THEIR ATTRIBUTES A TYPED FIELD GRID (2026-10-01)
+
+rcbj asked for `/admin/users?user=` to be organised the way an application's
+page now is. He chose:
+* seven tabs;
+* a typed grid with one sub-tab per group, each with its own Save;
+* the same grid on `/admin/users/new`.
+
+**The tabs.** `tabbedPanels('usertabs', …)` draws them, ids
+`USER_TAB_IDS`, with no script:
+* **Overview**: the tiles, the names seen and the authentications.
+* **Sessions & tokens**.
+* **Attributes**: `personFieldsSection()`.
+* **Credentials**: four sub-tabs, `ucred-factors`, `ucred-password`,
+  `ucred-keys` and `ucred-kerberos`, each one of the four sections that were
+  stacked.
+* **Federation links**.
+* **Directory entry**: the LDAP object, and `userAttributesSection()`
+  retitled *Change one attribute by name*.
+* **Sign out**: both buttons.
+
+`subTabbedPanels()` is `tabbedPanels()` one level down, and
+`USER_SUB_TAB_IDS` are in the stylesheet's tab-highlight list.
+
+**A control comes back to its tab.**
+* `usersPost()` asks `userActionAnchor()` for the section its control is in:
+  `#second-factors`, `#credential-controls`, `#attributes`, `#mail` or
+  `#federation-links`.
+* `userReturnTo()` admits those and `#ufg-<group>`.
+* The anchor is inside its tab, so the tab is shown again.
+
+**The grid.** The groups are `ldap/person_editor.ts`'s `FIELD_GROUPS`, and the
+same file holds an example per attribute (`FIELD_EXAMPLES`) and which fields
+the simplified create view offers. So the two pages cannot group or describe
+an attribute differently.
+* Each group is a form posting `update-fields` to `/admin/users/edit`, with
+  its own `present`. A refused save, "+" and the bin redraw the page there,
+  `/admin/applications/edit`'s arrangement.
+* `admin-core/admin_actions.ts`'s `updatePersonFields()` applies each
+  attribute through the editor's `update()`, so every rule and audit row of a
+  one-attribute edit holds.
+  * A list is added to before it is taken from, so `cn` is never empty in
+    between.
+  * Refusals are `STS-ADMIN-0834`, `0838` and `0839`.
+* `fieldGridCell()` takes `row.forText` for the label beside the name, since
+  a person's field belongs to no protocol family.
+* The address is not a field. The `set-mail` form heads the Contact sub-tab
+  (`#mail`).
+
+**Rule 7.** `POST /admin-api/users/update-fields` mirrors the grid's Save,
+and the users resource's `mirrors` names `POST /admin/users/edit`.
+`GET /admin-api/users/new` publishes `fieldGroups` and `gridFields`.
+
+**`/admin/users/new`.**
+* It draws `newUserFieldRows()` under the same group headings, with a
+  simplified view and an advanced one (`switchview`, as
+  `/admin/applications/new` does).
+* On the first draw a list gets one empty box, so the names a person is
+  created with have boxes; a create reads an empty box as no value.
+* A create takes every attribute the editor edits, through
+  `ldap_server.js`'s `personAttributesFrom()`, held to the editor's rules by
+  `checkCreateValues()` (`STS-LDAP-0106`).
+
+`tests/person_fields.js` holds all of it in process. The browser job opens a
+hidden form's tab by the id of the panel it is in, which works for a sub-tab
+too.

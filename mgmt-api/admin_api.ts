@@ -5210,8 +5210,11 @@ class AdminApi {
         // that a generated password and an activation link can be answered in a
         // page body rather than in a 303's query string. Naming only the first
         // would leave the console suite unable to tell that page's Create
-        // button from a control that reaches nothing.
-        mirrors: 'POST /admin/users and POST /admin/users/new',
+        // button from a control that reaches nothing. A THIRD since
+        // 2026-10-01: a person's field grid posts to /admin/users/edit, which
+        // reaches `update-fields` here.
+        mirrors: 'POST /admin/users, POST /admin/users/new and POST ' +
+                 '/admin/users/edit',
         handler: function (req, res) {
           log.debug("Entering the management API users action endpoint.");
           const body = parseBody(req);
@@ -5868,6 +5871,48 @@ class AdminApi {
             },
             responseDescription: 'The attribute and every value it now ' +
                                  'holds.' },
+
+          // SEVERAL OF A PERSON'S ATTRIBUTES AT ONCE (2026-10-01): what the
+          // Save of a tab of the person's field grid on /admin/users does.
+          { action: 'update-fields', operationId: 'updateUserFields',
+            summary: 'Set several of somebody\'s attributes at once',
+            description: 'What the Save button of a tab of a person\'s ' +
+                         'Attributes on the console does. Each member of ' +
+                         '`fields` names an attribute `attributeEditor` in ' +
+                         'GET /admin-api/users?user= lists as editable, and ' +
+                         'gives what it should hold: a single-valued ' +
+                         'attribute is SET (an empty string or array clears ' +
+                         'it), and a multi-valued one has the values put in ' +
+                         'added and then the values taken out removed — ' +
+                         'exactly `set-attribute`, `add-attribute` and ' +
+                         '`remove-attribute`, applied per attribute, so ' +
+                         'every rule those hold still holds, and each ' +
+                         'change is audited and told to Shared Signals as ' +
+                         'one of those is. An attribute whose values did ' +
+                         'not change is not written.\n\nWhat one attribute ' +
+                         'refuses does not undo another: the reply names ' +
+                         'what was saved (`changed`) and every refusal, and ' +
+                         'answers 400 when there was any.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                user: { type: 'string',
+                        description:
+                          'The person, as /admin-api/users names them.' },
+                username: { type: 'string',
+                            description: 'Accepted for `user`.' },
+                fields: { type: 'object',
+                          description: 'Attribute name to a string or an ' +
+                                       'array of strings; empty clears it.' }
+              },
+              required: ['user', 'fields'],
+              examples: [{ user: 'alice',
+                           fields: { title: 'Principal Engineer',
+                                     mobile: ['+46 70 000 00 00'] } }],
+              additionalProperties: false
+            },
+            responseDescription: 'The attributes saved (`changed`).' },
 
           // -----------------------------------------------------------------
           // WHAT AN ADMINISTRATOR DOES TO SOMEBODY'S CREDENTIALS (2026-09-13),

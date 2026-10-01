@@ -284,7 +284,21 @@ A request that was *refused* records nothing, so this is a list of identities
 that got somewhere, not of names that were tried. Applications are never listed
 here — they are on [Applications](applications.md).
 
-`?user=<name>` drills into one: the names they were seen under, every
+`?user=<name>` drills into one person's page, **drawn as tabs**:
+
+| Tab | What it holds |
+|---|---|
+| **Overview** | the tiles, the names they were seen under, and every authentication with the method that performed it |
+| **Sessions & tokens** | each sign-on session with the tokens issued on it, the tokens on no session, and the assertions, tickets and credentials |
+| **Attributes** | their attributes as typed fields, one sub-tab per group — Name, Contact, Organization, Address, Identity, Other — each with its own **Save**, and the address on Contact |
+| **Credentials** | sub-tabs for second factors, the password controls, signing key pairs and Kerberos |
+| **Federation links** | the partners' subjects that sign them in |
+| **Directory entry** | the LDAP object, every attribute, and *Change one attribute by name* |
+| **Sign out** | sign them out of everything, or revoke their tokens and nothing else |
+
+A control's answer comes back to the tab it was pressed on.
+
+The drill-down holds the names they were seen under, every
 authentication with the method that performed it, each sign-on session they
 hold **with the tokens issued on that session underneath it**, the tokens that
 belong to no session, and the assertions, tickets and credentials issued to
@@ -347,15 +361,35 @@ entry that is not there.
 
 #### Changing a person's attributes
 
-Under the entry, **Change their attributes** offers the three controls the
-[Applications](applications.md) page has: **Set** replaces every value of an
+The **Attributes** tab draws every attribute that may be changed as a typed
+field, the way an [application's](applications.md) configuration is drawn:
+one sub-tab per group, each a form with its own **Save**. A single-valued
+attribute is a text box (empty clears it); a multi-valued one is one box per
+value, with **+** to add a box and the bin to delete one. Every box shows an
+example of a valid value, and every field's name carries a tooltip saying
+what it is and what it takes. **Save** writes what changed on that tab and
+nothing else; what one attribute refuses does not undo another, and a refused
+save comes back with every box as you left it. It needs **Admin Write**.
+`POST /admin-api/users/update-fields` is the same save, with `fields` naming
+each attribute and its value or values.
+
+The address is set by its own form on the **Contact** sub-tab, because an
+address an administrator sets is marked verified and the former address is
+told.
+
+On the **Directory entry** tab, **Change one attribute by name** keeps the
+three single-attribute controls: **Set** replaces every value of an
 attribute with one (an empty value removes it), **Add to** appends a value to
-an attribute that holds several, and **Remove from** takes one value off. Each
-writes that one attribute of the entry in place, as an `ldapmodify` would, and
-needs **Admin Write**. `POST /admin-api/users/set-attribute`,
-`/add-attribute` and `/remove-attribute` are the same three, and
+an attribute that holds several, and **Remove from** takes one value off.
+`POST /admin-api/users/set-attribute`, `/add-attribute` and
+`/remove-attribute` are the same three, and
 `GET /admin-api/users?user=<name>` publishes the list under
-`attributeEditor`, with what each attribute holds.
+`attributeEditor`, with what each attribute holds, its group and an example.
+
+**Creating a person** (`/admin/users/new`) draws the same fields under the
+same group headings, in a simplified view (names and contact details) and an
+advanced view (every field). A value a create writes is held to the same
+rules as an edit.
 
 **What may be changed** is the person schema — `person`,
 `organizationalPerson`, `inetOrgPerson` and the Identity Assurance claims —

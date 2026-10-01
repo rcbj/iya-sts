@@ -11053,7 +11053,8 @@ const CODES = [
       'or was an add to an attribute that holds one value.',
     spec: 'HTTP 400 (API) or a 303 with error=' },
   { code: 'STS-LDAP-0106',
-    summary: 'A person\'s attribute edit (#228) carried a value that is too ' +
+    summary: 'A person\'s attribute edit (#228), or a create from the field ' +
+      'grid, carried a value that is too ' +
       'long, holds a control character, does not have its ' +
       'attribute\'s shape (a country code, a date, a language range, ' +
       'an http(s) URL, a DN), or was empty for an add or a remove.',
@@ -16805,6 +16806,15 @@ const CODES = [
       'declared for the did family, an algorithm other than ES256, ES384 ' +
       'or EdDSA, or the public key could not be written.',
     spec: 'none (a console or management API refusal, HTTP 400)' },
+  { code: 'STS-ADMIN-0838',
+    summary: 'A person\'s update-fields named no attribute to change: ' +
+      '`fields` was absent or empty and the form named no field.',
+    spec: 'HTTP 400 (console and API)' },
+  { code: 'STS-ADMIN-0839',
+    summary: 'A person\'s update-fields was refused one or more ' +
+      'attributes, possibly after saving others; the reply names what was ' +
+      'saved and each refusal.',
+    spec: 'HTTP 400 (console and API)' },
   { code: 'STS-API-0001',
     summary: 'A management API request carried no Bearer access token while ' +
       'adminApi.authRequired is on.',
