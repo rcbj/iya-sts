@@ -17786,6 +17786,281 @@ class AdminConsole {
     return html;
   }
 
+  // AN APPLICATION'S CERTIFICATES OVER ACME, EST AND SCEP (rcbj,
+  // 2026-10-01): generation and tracking on the application's own page, on
+  // its Credentials tab and on its Certificate enrollment configuration
+  // tab, for an application declared for any of the three. It DRAWS
+  // `adminViews.applicationEnrollmentState()` and POSTS to the three
+  // protocols' own console actions (`/admin/acme`, `/admin/est`,
+  // `/admin/scep`) — moving a form is not moving an action, so every control
+  // keeps its `/admin-api` mirror (rule 7) — each carrying `from=application`,
+  // `where` and the application, which `enrollmentReturnTo()` turns back into
+  // this page. Nothing here reads a secret: an EAB HMAC key, a challenge and
+  // a server-generated private key are shown once on the page the action
+  // answers with, which links back here.
+  /**
+   * Draws an application's certificate enrollment: the rules in force, its
+   * certificates with a Revoke each, its EAB keys and SCEP challenges, the
+   * three generation forms and its host names.
+   *
+   * @param req - the request
+   * @param row - the application's view
+   * @param carryBack - the hidden `back` field
+   * @param where - `credentials` or `config`, which tab it is drawn on
+   * @returns the markup
+   */
+  applicationEnrollmentPanel(req, row, carryBack, where) {
+    const { log, adminViews, pageParamsOf } = this.deps;
+    const self = this;
+    log.debug("Entering AdminConsole.applicationEnrollmentPanel().");
+    const state = adminViews.applicationEnrollmentState(req, row);
+    if (!state.families.length) {
+      log.debug("Leaving AdminConsole.applicationEnrollmentPanel(). Not " +
+                "declared for any of the three.");
+      return '<p class="sub">Tick ACME, EST or SCEP on the Protocol ' +
+        'families tab to issue this application certificates.</p>';
+    }
+    const id = String(row.identifier || '');
+    const canWrite = this.mayWrite(req);
+    const tab = where === 'credentials' ? 'credentials' : 'config';
+    const anchor = tab === 'credentials' ? '#credentials-enroll'
+                                         : '#cfg-enroll';
+    const source = function (one) {
+      return one === 'application'
+        ? ' <span class="sub">(this application)</span>'
+        : ' <span class="sub">(the realm)</span>';
+    };
+    // Every form here opens the same way: the protocol's action, the
+    // application named as the entry, and where to come back to.
+    const formOpen = function (family, action, extra?) {
+      return '<form method="post" action="/admin/' + family + anchor +
+        '" class="inline">' + carryBack +
+        '<input type="hidden" name="action" value="' + self.esc(action) +
+        '"><input type="hidden" name="from" value="application">' +
+        '<input type="hidden" name="where" value="' + tab + '">' +
+        '<input type="hidden" name="application" value="' + self.esc(id) +
+        '">' + (extra || '');
+    };
+    const entryFields = '<input type="hidden" name="kind" ' +
+      'value="application"><input type="hidden" name="identifier" value="' +
+      this.esc(id) + '">';
+    const profileSelect = function (rule) {
+      return '<select name="profile">' + rule.allowedProfiles.map(
+        function (one) {
+          return '<option value="' + self.esc(one) + '"' +
+            (one === rule.defaultProfile ? ' selected' : '') + '>' +
+            self.esc(one) + '</option>';
+        }).join('') + '</select>';
+    };
+    // THE RULES IN FORCE, so a reader sees what an override changed.
+    const rulesTable = '<table><tr><th>Protocol</th><th>Profiles it may be ' +
+      'issued</th><th>Default</th><th>Lifetime</th></tr>' +
+      state.rules.map(function (rule) {
+        return '<tr><td>' + self.esc(rule.label) + '</td><td>' +
+          rule.allowedProfiles.map(function (one) {
+            return '<code>' + self.esc(one) + '</code>';
+          }).join(' ') + source(rule.allowedProfilesSource) + '</td><td>' +
+          '<code>' + self.esc(rule.defaultProfile) + '</code>' +
+          source(rule.defaultProfileSource) + '</td><td>' +
+          rule.certificateLifetimeDays + ' days' +
+          source(rule.certificateLifetimeSource) + '</td></tr>';
+      }).join('') + '</table><p class="sub">Certificates it may hold ' +
+      '(ACME, EST and SCEP together): ' + state.cap.value +
+      source(state.cap.source) + '.' + (state.est
+        ? ' EST: client id and secret ' +
+          (state.est.basicAuthentication.on ? 'accepted' : 'refused') +
+          source(state.est.basicAuthentication.source) + ', certificate ' +
+          (state.est.certificateAuthentication.on ? 'accepted' : 'refused') +
+          source(state.est.certificateAuthentication.source) +
+          ', server-generated keys ' +
+          (state.est.serverKeyGeneration.on ? 'allowed' : 'refused') +
+          source(state.est.serverKeyGeneration.source) + '.'
+        : '') + ' The overrides are on the Certificate enrollment ' +
+      'configuration tab; a value set there replaces the realm\'s.</p>';
+    // THE CERTIFICATES IT WAS ISSUED, newest first, paged.
+    const nav = this.pageNavPair('/admin/applications',
+      Object.assign({}, pageParamsOf(req.query), { application: id }),
+      state.paged.paging);
+    const serialField = { acme: 'serial', est: 'serialHex', scep: 'serial' };
+    const certificateRows = state.paged.shown.length
+      ? state.paged.shown.map(function (one) {
+        const family = String(one.family || '');
+        const download = one.certificatePem
+          ? '<a download="' + self.esc(one.serialHex) + '.pem" href="' +
+            self.esc('data:application/x-pem-file;base64,' +
+              Buffer.from(String(one.certificatePem), 'utf8')
+                .toString('base64')) + '"' +
+            self.tip('Download the certificate (PEM). No private key is ' +
+                     'here.') + '>PEM</a>'
+          : '';
+        const revoke = canWrite && one.status === 'valid' &&
+          serialField[family]
+          ? formOpen(family, 'revoke-certificate',
+              '<input type="hidden" name="' + serialField[family] +
+              '" value="' + self.esc(one.serialHex) + '">') +
+            '<button type="submit" class="secondary"' +
+            self.tip('Revoke this certificate: its serial goes on the ' +
+                     'Issuing CA\'s CRL and its OCSP responder answers ' +
+                     'revoked.') + '>Revoke</button></form>'
+          : '';
+        return '<tr><td>' + self.esc(String(family).toUpperCase()) +
+          '</td><td><code>' + self.esc(one.profile || '') + '</code></td>' +
+          '<td><code>' + self.esc(one.serialHex || '') + '</code></td><td>' +
+          (one.names || []).map(function (n) {
+            return '<code>' + self.esc(n) + '</code>';
+          }).join('<br>') + '</td><td>' + self.esc(one.issuedAt || '') +
+          '</td><td>' + self.esc(one.notAfter || '') + '</td><td>' +
+          '<span class="state-' + (one.status === 'valid' ? 'valid'
+                                                           : 'none') + '">' +
+          self.esc(one.status || '') + '</span></td><td>' + download + ' ' +
+          revoke + '</td></tr>';
+      }).join('')
+      : '<tr><td colspan="8" class="sub">No certificate has been issued ' +
+        'to this application over ACME, EST or SCEP.</td></tr>';
+    const certificates = '<h4>Certificates issued to it</h4>' + nav.head +
+      '<table><tr><th>Protocol</th><th>Profile</th><th>Serial</th>' +
+      '<th>Names</th><th>Issued</th><th>Expires</th><th>Status</th>' +
+      '<th></th></tr>' + certificateRows + '</table>' + nav.foot;
+    // GENERATION, per declared protocol.
+    let generation = '';
+    if (state.families.indexOf('acme') >= 0) {
+      const eabRows = state.eabKeys.length
+        ? state.eabKeys.map(function (k) {
+          return '<tr><td><code>' + self.esc(k.kid) + '</code></td><td>' +
+            self.esc(k.createdAt || '') + '</td><td>' +
+            self.esc(k.expiresAt || '') + '</td><td>' + self.esc(k.status) +
+            (k.boundAccount ? ' <span class="sub">account ' +
+              self.esc(k.boundAccount) + '</span>' : '') + '</td><td>' +
+            (canWrite && !k.boundAccount
+              ? formOpen('acme', 'delete-eab', '<input type="hidden" ' +
+                  'name="kid" value="' + self.esc(k.kid) + '">') +
+                '<button type="submit" class="secondary">Delete</button>' +
+                '</form>'
+              : '') + '</td></tr>';
+        }).join('')
+        : '<tr><td colspan="5" class="sub">None.</td></tr>';
+      generation += '<h4>ACME: External Account Binding keys</h4>' +
+        '<table><tr><th>Key id</th><th>Created</th><th>Unused until</th>' +
+        '<th>Status</th><th></th></tr>' + eabRows + '</table>' +
+        (canWrite
+          ? formOpen('acme', 'create-eab', entryFields) +
+            '<button type="submit"' + this.tip('Make an EAB key bound to ' +
+              'this application. The HMAC key is shown once on the next ' +
+              'page; give it and the key id to the ACME client, which ' +
+              'binds one account to this application for life.') +
+            '>Create an EAB key</button></form>'
+          : '');
+    }
+    if (state.families.indexOf('est') >= 0) {
+      const rule = state.rules.filter(function (one) {
+        return one.family === 'est';
+      })[0];
+      generation += '<h4>EST: a certificate with a server-generated key</h4>' +
+        (canWrite && state.est.serverKeyGeneration.on
+          ? formOpen('est', 'issue-server-key', entryFields) +
+            '<label>Profile ' + profileSelect(rule) + '</label> ' +
+            '<label>Key <select name="keyAlg">' +
+            state.keyAlgorithms.map(function (alg) {
+              return '<option value="' + self.esc(alg) + '"' +
+                (alg === 'ec-p256' ? ' selected' : '') + '>' +
+                self.esc(alg) + '</option>';
+            }).join('') + '</select></label> ' +
+            '<button type="submit"' + this.tip('Generate a key pair here, ' +
+              'issue this application a certificate for it from the EST ' +
+              'Issuing CA, and show the private key once. A sealed copy is ' +
+              'kept on the entry.') + '>Issue</button></form>'
+          : '<p class="sub">' + (state.est.serverKeyGeneration.on
+            ? 'Needs Admin Write.'
+            : 'Server-generated keys are turned off for this application.') +
+            '</p>') +
+        '<p class="sub">An EST client authenticates as this application ' +
+        'with its client id and secret (Basic) or a certificate this realm ' +
+        'issued it.</p>';
+    }
+    if (state.families.indexOf('scep') >= 0) {
+      const rule = state.rules.filter(function (one) {
+        return one.family === 'scep';
+      })[0];
+      const challengeRows = state.challenges.length
+        ? state.challenges.map(function (c) {
+          return '<tr><td><code>' + self.esc(c.id) + '</code></td><td>' +
+            '<code>' + self.esc(c.profile || '') + '</code></td><td>' +
+            self.esc(c.createdAt || '') + '</td><td>' +
+            self.esc(c.expiresAt || '') + '</td><td>' + self.esc(c.status) +
+            '</td><td>' + (canWrite && c.status === 'unused'
+              ? formOpen('scep', 'delete-challenge', '<input type="hidden" ' +
+                  'name="id" value="' + self.esc(c.id) + '">') +
+                '<button type="submit" class="secondary">Delete</button>' +
+                '</form>'
+              : '') + '</td></tr>';
+        }).join('')
+        : '<tr><td colspan="6" class="sub">None.</td></tr>';
+      generation += '<h4>SCEP: challenge passwords</h4>' +
+        '<table><tr><th>Id</th><th>Profile</th><th>Created</th>' +
+        '<th>Expires</th><th>Status</th><th></th></tr>' + challengeRows +
+        '</table>' + (canWrite
+          ? formOpen('scep', 'create-challenge', entryFields) +
+            '<label>Profile ' + profileSelect(rule) + '</label> ' +
+            '<button type="submit"' + this.tip('Make a one-time challenge ' +
+              'password for this application and profile. It is shown once ' +
+              'on the next page, with the SCEP URL and an sscep example.') +
+            '>Create a challenge</button></form>'
+          : '');
+    }
+    // THE HOST NAMES, shared by the three: a server certificate names only a
+    // host registered here.
+    const hostFamily = state.families[0];
+    const hostRows = state.hostNames.length
+      ? state.hostNames.map(function (h) {
+        return '<li><code>' + self.esc(h) + '</code> ' + (canWrite
+          ? formOpen(hostFamily, 'remove-host-name', entryFields +
+              '<input type="hidden" name="hostName" value="' + self.esc(h) +
+              '">') + '<button type="submit" class="secondary">Remove' +
+            '</button></form>'
+          : '') + '</li>';
+      }).join('')
+      : '<li class="sub">None.</li>';
+    const hosts = '<h4>Host names</h4><ul>' + hostRows + '</ul>' + (canWrite
+      ? formOpen(hostFamily, 'add-host-name', entryFields) +
+        '<input type="text" name="hostName" placeholder="web1.example.com"' +
+        this.tip('A DNS name or IP address this application may be issued a ' +
+                 'server certificate for, over ACME, EST or SCEP.') + '> ' +
+        '<button type="submit">Add</button></form>'
+      : '') + '<p class="sub">A dNSName or iPAddress is issued only when ' +
+      'it is registered here; one registration serves all three ' +
+      'protocols.</p>';
+    log.debug("Leaving AdminConsole.applicationEnrollmentPanel().");
+    return rulesTable + certificates + generation + hosts;
+  }
+
+  // Where a form posted from an application's enrollment panel to
+  // `/admin/acme`, `/admin/est` or `/admin/scep` returns: that application's
+  // page at the tab it came from, rebuilt from the body and never echoed;
+  // the protocol page otherwise.
+  /**
+   * Returns the path a protocol's console action redirects to: the
+   * application's page when the form came from its enrollment panel, else
+   * the protocol's page.
+   *
+   * @param body - the posted form body
+   * @param fallback - the protocol page's path
+   * @returns the path
+   */
+  enrollmentReturnTo(body, fallback) {
+    const { log } = this.deps;
+    log.debug("Entering AdminConsole.enrollmentReturnTo().");
+    const id = String((body && body.application) || '');
+    if (!body || String(body.from || '') !== 'application' || !id) {
+      log.debug("Leaving AdminConsole.enrollmentReturnTo(). The protocol " +
+                "page.");
+      return fallback;
+    }
+    log.debug("Leaving AdminConsole.enrollmentReturnTo(). The application.");
+    return this.applicationReturnTo(body, id,
+      String(body.where || '') === 'config' ? '#cfg-enroll'
+                                            : '#credentials-enroll');
+  }
+
   // The one-time answer to *Generate a key pair*: the private key, as a JWK
   // and as PKCS#8 PEM, each a download and a read-only box, `no-store` —
   // `answerIssuedTlsClientCertificate()`'s arrangement, because this page is
@@ -18460,6 +18735,9 @@ class AdminConsole {
       return '<div class="subpanel" id="cfg-' + self.esc(group.id) + '">' +
         (group.id === 'did'
           ? self.applicationDidPanel(req, row, carryBack, 'config') : '') +
+        (group.id === 'enroll'
+          ? self.applicationEnrollmentPanel(req, row, carryBack, 'config')
+          : '') +
         formOpen(group.id, mine.map(function (one) {
           return one.attribute;
         })) +
@@ -19112,7 +19390,8 @@ class AdminConsole {
     return '/admin/applications' +
            queryWith(listView, { application: String(identifier) }) +
            (anchor === '#credentials' || anchor === '#fields' ||
-            anchor === '#signals' || /^#(?:tab|cfg)-[a-z0-9-]+$/.test(
+            anchor === '#signals' ||
+            /^#(?:tab|cfg|credentials)-[a-z0-9-]+$/.test(
               String(anchor || '')) ? anchor : '');
   }
 
@@ -20120,7 +20399,11 @@ class AdminConsole {
         html: forFamilies(OAUTH,
           this.applicationCredentialsSection(req, view, carryBack)) +
           forFamilies(['did'], '<h3 id="credentials-did">DID key pair</h3>' +
-            this.applicationDidPanel(req, row, carryBack, 'credentials')) },
+            this.applicationDidPanel(req, row, carryBack, 'credentials')) +
+          forFamilies(['acme', 'est', 'scep'],
+            '<h3 id="credentials-enroll">Certificates over ACME, EST and ' +
+            'SCEP</h3>' + this.applicationEnrollmentPanel(req, row, carryBack,
+                                                          'credentials')) },
       { id: 'tab-origins', label: 'Browser origins',
         html: this.applicationCorsSection(row, carryBack) },
       { id: 'tab-signals', label: 'Shared Signals',
@@ -47657,6 +47940,7 @@ const consoleExports = {
   // For `admin-ui/pki_admin.ts`, whose key-pair controls are drawn on an
   // application's page too — see applicationReturnTo().
   applicationReturnTo: slot.forward('applicationReturnTo'),
+  enrollmentReturnTo: slot.forward('enrollmentReturnTo'),
   userReturnTo: slot.forward('userReturnTo'),
   // And the trail a page drawn there hangs under, so the one-time key page an
   // issue from a person's own page answers with is `Users › Signing key pair`

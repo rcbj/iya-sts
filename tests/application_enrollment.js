@@ -18,17 +18,21 @@
 //      realm, an application declared for other families is refused
 //      (STS-ENROLL-0094), one declared for the family or for nothing is not;
 //      a development realm refuses nothing;
-//   B. the profiles: <family>AllowedProfiles narrows the realm's list and
-//      never widens it, checkProfile() refuses a profile outside it
-//      (STS-ENROLL-0095), <family>DefaultProfile replaces the realm default
-//      for a request that named none, and only where allowed;
-//   C. the lifetime and the cap are the smaller of the realm's and the
-//      application's;
-//   D. EST: estBasicAuthentication and estCertificateAuthentication FALSE
-//      refuse that method when the application authenticated itself, and
-//      estServerKeyGeneration FALSE refuses /serverkeygen (STS-ENROLL-0096);
+//   B. the profiles: <family>AllowedProfiles OVERRIDES the realm's list —
+//      narrower or wider, never a CA profile — checkProfile() refuses a
+//      profile outside it (STS-ENROLL-0095), <family>DefaultProfile replaces
+//      the realm default for a request that named none, where allowed;
+//   C. the lifetime and the cap are the application's where it set them,
+//      longer or shorter than the realm's;
+//   D. EST: estBasicAuthentication, estCertificateAuthentication and
+//      estServerKeyGeneration override the realm's switches both ways —
+//      FALSE refuses (STS-ENROLL-0096), TRUE turns on what the realm off;
 //   E. the choices the tab offers: every profile, and `device` for EST and
-//      SCEP only; a person's entry is untouched by all of it.
+//      SCEP only; a person's entry is untouched by all of it;
+//   F. the panel the application's Credentials and Certificate enrollment
+//      tabs draw (`applicationEnrollmentState()`): the rules in force, the
+//      certificates it was issued, its EAB keys and challenges with no
+//      secret, its host names; and `enrollmentReturnTo()`.
 // ---------------------------------------------------------------------------
 
 delete process.env.CONFIG_FILE;
@@ -110,7 +114,7 @@ function childMain() {
                                       estDefaultProfile: one } });
       const narrowed = core.allowedProfiles('est', app('ae-narrow'));
       note(narrowed.length === 1 && narrowed[0] === one,
-           'B1. estAllowedProfiles narrows the realm\'s list',
+           'B1. estAllowedProfiles replaces the realm\'s list (narrower)',
            JSON.stringify(narrowed));
       if (other) {
         const outside = core.checkProfile('est', other, app('ae-narrow'));
@@ -139,9 +143,15 @@ function childMain() {
           protocols: ['est'], fields: {
             estAllowedProfiles: [one, outsideRealm] } });
         note(core.allowedProfiles('est', app('ae-wide')).indexOf(
-          outsideRealm) < 0,
-             'B6. an application list never widens the realm\'s',
-             outsideRealm);
+          outsideRealm) >= 0 &&
+             core.checkProfile('est', outsideRealm, app('ae-wide')).ok &&
+             core.checkProfile('est', outsideRealm).ok === false,
+             'B6. an application list may widen the realm\'s, for that ' +
+             'application only', outsideRealm);
+        applications.createApplication({ identifier: 'ae-ca',
+          protocols: ['est'], fields: {} });
+        note(core.checkProfile('est', 'root-ca', app('ae-ca')).ok === false,
+             'B7. a CA profile is refused whatever the application lists');
       }
 
       // --- C. Lifetime and cap -------------------------------------------
@@ -153,10 +163,19 @@ function childMain() {
                                       enrollMaxCertificates: '1' } });
       const short = core.applicationRules('est', app('ae-short'), {},
                                           realmList[0]);
-      note(short.ok && short.days === Math.min(1, realmDays) &&
-           short.cap === Math.min(1, realmCap),
+      note(short.ok && short.days === 1 && short.cap === 1,
            'C1. a shorter lifetime and a lower cap are used',
            JSON.stringify(short));
+      applications.createApplication({ identifier: 'ae-long',
+        protocols: ['est'], fields: {
+          estCertificateLifetimeDays: String(realmDays + 100),
+          enrollMaxCertificates: String(realmCap + 7) } });
+      const long = core.applicationRules('est', app('ae-long'), {},
+                                         realmList[0]);
+      note(long.ok && long.days === realmDays + 100 &&
+           long.cap === realmCap + 7,
+           'C3. a longer lifetime and a higher cap override the realm\'s',
+           JSON.stringify(long));
       const plain = core.applicationRules('est', app('ae-est-plain'), {},
                                           realmList[0]);
       note(plain.days === realmDays && plain.cap === realmCap,
@@ -190,6 +209,22 @@ function childMain() {
       note(core.applicationRules('scep', app('ae-noauth'),
         { principal: self }, 'tls-client').ok,
            'D2. the EST overrides do not reach SCEP');
+      // TRUE turns on what the realm turned off, for that application only.
+      config.setOverride('est.basicAuthentication', false);
+      config.setOverride('est.serverKeyGeneration', false);
+      applications.createApplication({ identifier: 'ae-on',
+        protocols: ['est'], fields: { estBasicAuthentication: 'TRUE',
+                                      estServerKeyGeneration: 'TRUE' } });
+      const on = { kind: 'application', id: 'ae-on' };
+      note(core.estSwitch('basicAuthentication', app('ae-on')) === true &&
+           core.estSwitch('basicAuthentication', app('ae-noauth')) === false &&
+           core.estSwitch('basicAuthentication') === false &&
+           core.applicationRules('est', app('ae-on'),
+             { principal: on, keySource: 'server' }, realmList[0]).ok,
+           'D3. TRUE overrides a realm switch that is off, for that ' +
+           'application only');
+      config.clearOverride('est.basicAuthentication');
+      config.clearOverride('est.serverKeyGeneration');
 
       // --- E. The choices ------------------------------------------------
       const rows = applications.applicationFields();
@@ -209,6 +244,68 @@ function childMain() {
       }).every(function (r) { return r.group === 'enroll'; }),
            'E2. every enrollment override is in the Certificate enrollment ' +
            'group');
+
+      // --- F. The panel's model, and where its forms come back to -------
+      const pki = require(ROOT + '/common/pki');
+      const adminViews = require(ROOT + '/admin-core/admin_views');
+      const consoleUi = require(ROOT + '/admin-ui/admin');
+      const estConsole = require(ROOT + '/est/est_console');
+      if (!pki.hasRoot()) {
+        await pki.start({});
+      }
+      await pki.ensureScope(realms.currentId());
+      applications.createApplication({ identifier: 'ae-panel',
+        protocols: ['acme', 'est', 'scep'], fields: {
+          estCertificateLifetimeDays: '30' } });
+      const panelEntry = { kind: 'application', id: 'ae-panel' };
+      const issued = await estConsole.estAction({
+        action: 'issue-server-key', kind: 'application',
+        identifier: 'ae-panel', profile: 'tls-client' }, { via: 'api' });
+      const eab = core.createEab({ target: panelEntry, createdBy: 'test' });
+      const challenge = core.createScepChallenge({ target: panelEntry,
+        profile: 'tls-client', createdBy: 'test' });
+      core.addHostName(panelEntry, 'web1.example.com', 'test');
+      const state = adminViews.applicationEnrollmentState({ query: {} },
+        applications.get('ae-panel'));
+      const estRule = state.rules.filter(function (r) {
+        return r.family === 'est';
+      })[0] || {};
+      note(issued && issued.ok && eab.ok && challenge.ok,
+           'F0. a certificate, an EAB key and a challenge were made',
+           JSON.stringify([issued && issued.errors, eab.errors,
+                           challenge.errors]));
+      note(state.families.join(',') === 'acme,est,scep' &&
+           estRule.certificateLifetimeDays === 30 &&
+           estRule.certificateLifetimeSource === 'application',
+           'F1. the rules in force name the application\'s own lifetime',
+           JSON.stringify(estRule));
+      note(state.certificates.length === 1 &&
+           state.certificates[0].serialHex === issued.record.serialHex &&
+           state.certificates[0].privateKeyPem === undefined &&
+           state.json.certificatesPaging.total === 1,
+           'F2. the certificate it was issued is listed, with no private ' +
+           'key, and paged');
+      note(state.eabKeys.length === 1 && !('hmacKey' in state.eabKeys[0]) &&
+           state.challenges.length === 1 &&
+           JSON.stringify(state.json).indexOf(eab.hmacKey) < 0 &&
+           JSON.stringify(state.json).indexOf(challenge.challenge) < 0,
+           'F3. its EAB key and challenge are listed with no secret');
+      note(state.hostNames.indexOf('web1.example.com') >= 0,
+           'F4. its host names are listed');
+      const person = adminViews.applicationEnrollmentState({ query: {} },
+        { identifier: 'nobody', allowedProtocols: ['oauth2'], fields: {} });
+      note(person.families.length === 0 && person.certificates.length === 0,
+           'F5. an application declared for none of the three gets nothing');
+      note(consoleUi.enrollmentReturnTo({ from: 'application',
+             application: 'ae-panel', where: 'config' }, '/admin/est') ===
+           '/admin/applications?application=ae-panel#cfg-enroll' &&
+           consoleUi.enrollmentReturnTo({ from: 'application',
+             application: 'ae-panel' }, '/admin/est') ===
+           '/admin/applications?application=ae-panel#credentials-enroll' &&
+           consoleUi.enrollmentReturnTo({ application: 'ae-panel' },
+                                    '/admin/est') === '/admin/est',
+           'F6. a form from the application\'s page comes back to its tab, ' +
+           'and any other to the protocol page');
     });
   })().catch(function (e) {
     note(false, 'the child ran to the end', e && e.stack);

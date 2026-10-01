@@ -414,7 +414,7 @@ class EstAdmin {
    * @param result - the issue action's result
    * @returns the HTML
    */
-  issuedKeyPage(result) {
+  issuedKeyPage(result, backHref?) {
     const { log, admin, esc } = this.deps;
     log.debug("Entering EstAdmin.issuedKeyPage().");
     log.debug("Leaving EstAdmin.issuedKeyPage().");
@@ -431,7 +431,9 @@ class EstAdmin {
       esc(result.record.notAfter) + '</td></tr></table><pre>' +
       esc(result.certificatePem) + '</pre><h3>Chain</h3><pre>' +
       esc((result.chainPem || []).join('')) + '</pre>' +
-      '<p class="links"><a href="/admin/est">Back to EST</a></p>';
+      '<p class="links">' + (backHref
+        ? '<a href="' + esc(backHref) + '">Back to the application</a> · '
+        : '') + '<a href="/admin/est">Back to EST</a></p>';
   }
 
   // ---------------------------------------------------------------------------
@@ -493,16 +495,19 @@ class EstAdmin {
       const body = parseBody(req);
       consoleModel.estAction(body, { via: 'console', req: req })
         .then(function (result) {
+          // A form on an application's page comes back there (2026-10-01).
+          const back = admin.enrollmentReturnTo(body, '/admin/est');
           if (result && result.ok && result.privateKeyPem) {
             admin.respond(req, res, result, 'EST — a server-generated key',
-                          '/admin/est', self.issuedKeyPage(result));
+                          '/admin/est', self.issuedKeyPage(result,
+                            back === '/admin/est' ? '' : back));
             log.debug("Leaving the admin EST action. A one-time key page.");
             return;
           }
           if (result && !result.ok) {
             errorCodes.mark(res, errorCodes.codeOf(result) || 'STS-EST-0031');
           }
-          admin.respondToAction(req, res, '/admin/est', result);
+          admin.respondToAction(req, res, back, result);
           log.debug("Leaving the admin EST action. ok=" + !!(result &&
                                                              result.ok));
         }, function (e) {

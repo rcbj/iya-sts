@@ -1204,8 +1204,9 @@ class CertEnrollment {
    * `allowedProfiles` setting.
    *
    * @param family - the enrollment family
-   * @param entry - optional `{ kind, id }`: an application's
-   *   `<family>AllowedProfiles` narrows the realm's list
+   * @param entry - optional `{ kind, id }`: an application's own
+   *   `<family>AllowedProfiles`, where it lists something, REPLACES the
+   *   realm's list for it (the five profiles never issued stay refused)
    * @returns the profile ids
    */
   allowedProfiles(family, entry?) {
@@ -1218,11 +1219,17 @@ class CertEnrollment {
     const listed = (Array.isArray(raw) ? raw : String(raw || '').split(','))
       .map(function (one) { return String(one).trim(); })
       .filter(function (one) { return known.indexOf(one) >= 0; });
-    const own = this.applicationProfileList(family, entry);
-    log.debug("Leaving CertEnrollment.allowedProfiles().");
+    // AN APPLICATION'S OWN LIST OVERRIDES THE REALM'S (rcbj, 2026-10-01):
+    // where it lists something, it is the whole answer for that application,
+    // and the realm's list is not consulted. Only a known profile counts, so
+    // the five never issued cannot be listed back in.
+    const own = this.applicationProfileList(family, entry).filter(
+      function (one) { return known.indexOf(one) >= 0; });
+    const chosen = own.length ? own : listed;
+    log.debug("Leaving CertEnrollment.allowedProfiles(). " +
+              (own.length ? "The application's list." : "The realm's list."));
     return known.filter(function (one) {
-      return listed.indexOf(one) >= 0 &&
-        (!own.length || own.indexOf(one) >= 0);
+      return chosen.indexOf(one) >= 0;
     });
   }
 
@@ -1256,10 +1263,13 @@ class CertEnrollment {
    *
    * @param family - the enrollment family
    * @param profileId - the profile
-   * @param entry - optional `{ kind, id }`, whose own list also applies
+   * @param entry - optional `{ kind, id }`: an application's own list,
+   *   where it has one, is asked instead of the realm's
+   * @param options - `structural: true` asks only whether it is an issued
+   *   profile at all, not whether it is allowed
    * @returns `ok` and the profile, or a refusal
    */
-  checkProfile(family, profileId, entry?) {
+  checkProfile(family, profileId, entry?, options?) {
     const { log } = this.deps;
     const self = this;
     log.debug("Entering CertEnrollment.checkProfile(). profile=" + profileId);
@@ -1287,13 +1297,21 @@ class CertEnrollment {
                          ' issued over ' + FAMILY_LABELS[family] + ' are: ' +
                          PROFILE_IDS.join(', ') + '.');
     }
-    if (self.allowedProfiles(family).indexOf(id) < 0) {
+    // The application's own list, where it has one, is the list; the realm's
+    // is asked otherwise. `options.structural` asks only the four checks
+    // above: EST checks a label before it knows whose request it is.
+    const ownList = self.applicationProfileList(family, entry).length > 0;
+    if (options && options.structural) {
+      log.debug("Leaving CertEnrollment.checkProfile(). A profile.");
+      return { ok: true, profile: id };
+    }
+    if (!ownList && self.allowedProfiles(family).indexOf(id) < 0) {
       log.debug("Leaving CertEnrollment.checkProfile(). Not allowed here.");
       return self.refuse('STS-ENROLL-0003', 403, 'The "' + id + '" profile ' +
                          'is not in ' + family + '.allowedProfiles in this ' +
                          'realm.');
     }
-    if (self.allowedProfiles(family, entry).indexOf(id) < 0) {
+    if (ownList && self.allowedProfiles(family, entry).indexOf(id) < 0) {
       log.debug("Leaving CertEnrollment.checkProfile(). Not allowed for " +
                 "the application.");
       return self.refuse('STS-ENROLL-0095', 403, 'The "' + id + '" profile ' +
@@ -1310,7 +1328,8 @@ class CertEnrollment {
    *
    * @param family - the enrollment family
    * @param entry - optional `{ kind, id }`: an application's own
-   *   `<family>DefaultProfile` is used where both lists allow it
+   *   `<family>DefaultProfile` replaces the realm's, where the list in force
+   *   for the application allows it
    * @returns the profile id
    */
   defaultProfile(family, entry?) {
@@ -1400,17 +1419,20 @@ class CertEnrollment {
   //      and one declared for nothing is never refused. Roles are waived and
   //      the device deferred — neither is what this question is about.
   //   2. THE PROFILE: a request that named none (`profileDefaulted`) takes
-  //      the application's `<family>DefaultProfile` where the realm and the
-  //      application both allow it; and any profile must be in
-  //      `<family>AllowedProfiles` where that lists something. These NARROW
-  //      the realm's `<family>.allowedProfiles` and never widen it.
+  //      the application's `<family>DefaultProfile` where the list in force
+  //      for it allows it; and any profile must be in that list.
   //   3. EST'S AUTHENTICATION, where the application authenticated itself:
-  //      `estBasicAuthentication` or `estCertificateAuthentication` FALSE
-  //      refuses that method, and `estServerKeyGeneration` FALSE refuses
-  //      /serverkeygen. TRUE or unset leaves the realm to decide; the realm's
-  //      own refusal has already happened by the time this runs.
-  //   4. THE LIFETIME AND THE CAP, each the smaller of the realm's and the
-  //      application's.
+  //      `estBasicAuthentication` and `estCertificateAuthentication` decide
+  //      that method for it, and `estServerKeyGeneration` /serverkeygen for
+  //      its certificates (`estSwitch()`).
+  //   4. THE LIFETIME AND THE CAP: the application's value where it set one.
+  //
+  // **AN APPLICATION'S VALUE OVERRIDES THE REALM'S (rcbj, 2026-10-01)**, in
+  // both directions: it may widen as well as narrow, and an unset value
+  // leaves the realm's in force. What no override reaches: the five
+  // profiles never issued, a lifetime past the Issuing CA's own expiry, the
+  // declaration rule, and `<family>.enabled`. The first version of this
+  // (the same day) only narrowed, and rcbj asked for an override.
   //
   // Every refusal is this module's ordinary one, which each protocol already
   // turns into its own specification's error — an RFC 8555 problem document,
@@ -1485,21 +1507,17 @@ class CertEnrollment {
         'over ' + FAMILY_LABELS[family] + ' (' + family +
         'AllowedProfiles: ' + own.join(', ') + ').');
     }
-    // 3. EST's authentication, where the application authenticated itself.
+    // 3. EST's authentication, where the application authenticated itself:
+    // its own switch, where it set one, decides; the realm's otherwise.
     const principal = (asked && asked.principal) || {};
     const isSelf = principal.kind === 'application' &&
       String(principal.id) === id;
-    const off = function (attribute) {
-      log.debug("Entering off().");
-      log.debug("Leaving off().");
-      return String(fields[attribute] || '').trim().toUpperCase() === 'FALSE';
-    };
     if (family === 'est' && isSelf) {
       const byCertificate = !!principal.certificateSerial;
       const refusedBy = byCertificate
-        ? (off('estCertificateAuthentication')
+        ? (!self.estSwitch('certificateAuthentication', entry)
           ? 'certificate authentication (estCertificateAuthentication)' : '')
-        : (off('estBasicAuthentication')
+        : (!self.estSwitch('basicAuthentication', entry)
           ? 'its client id and secret (estBasicAuthentication)' : '');
       if (refusedBy) {
         log.debug("Leaving CertEnrollment.applicationRules(). EST " +
@@ -1509,24 +1527,51 @@ class CertEnrollment {
       }
     }
     if (family === 'est' && asked && asked.keySource === 'server' &&
-        off('estServerKeyGeneration')) {
+        !self.estSwitch('serverKeyGeneration', entry)) {
       log.debug("Leaving CertEnrollment.applicationRules(). Server key " +
                 "generation turned off for the application.");
       return self.refuse('STS-ENROLL-0096', 403, 'EST /serverkeygen is not ' +
         'offered to the application "' + id + '" (estServerKeyGeneration).');
     }
-    // 4. The lifetime and the cap: the smaller of the realm's and its own.
-    const smaller = function (realmValue, attribute) {
-      log.debug("Entering smaller().");
+    // 4. The lifetime and the cap: its own value, where it set one.
+    const ownOr = function (realmValue, attribute) {
+      log.debug("Entering ownOr().");
       const mine = Number(String(fields[attribute] || '').trim());
-      log.debug("Leaving smaller().");
-      return Number.isFinite(mine) && mine > 0 && mine < realmValue
-        ? mine : realmValue;
+      log.debug("Leaving ownOr().");
+      return Number.isFinite(mine) && mine > 0 ? mine : realmValue;
     };
     log.debug("Leaving CertEnrollment.applicationRules().");
     return { ok: true, profile: profile,
-             days: smaller(realmDays, family + 'CertificateLifetimeDays'),
-             cap: smaller(realmCap, 'enrollMaxCertificates') };
+             days: ownOr(realmDays, family + 'CertificateLifetimeDays'),
+             cap: ownOr(realmCap, 'enrollMaxCertificates') };
+  }
+
+  // ONE OF EST'S THREE SWITCHES, FOR AN ENTRY (rcbj, 2026-10-01): an
+  // application's own `est<Name>` where it set one, the realm's
+  // `est.<name>` otherwise. A person is the realm's.
+  /**
+   * Answers whether one of EST's switches is on for an entry: the
+   * application's own value where it set one, the realm's otherwise.
+   *
+   * @param name - `basicAuthentication`, `certificateAuthentication` or
+   *   `serverKeyGeneration`
+   * @param entry - `{ kind, id }`, or nothing for the realm's value
+   * @returns true when the switch is on
+   */
+  estSwitch(name, entry?) {
+    const { log, config, applications } = this.deps;
+    log.debug("Entering CertEnrollment.estSwitch(). name=" + name);
+    const realmValue = config.value('est.' + name) !== false;
+    if (!entry || entry.kind !== 'application') {
+      log.debug("Leaving CertEnrollment.estSwitch(). The realm's.");
+      return realmValue;
+    }
+    const view = applications.get(String(entry.id));
+    const attribute = 'est' + name.charAt(0).toUpperCase() + name.slice(1);
+    const raw = String(view && view.fields && view.fields[attribute] || '')
+      .trim().toUpperCase();
+    log.debug("Leaving CertEnrollment.estSwitch(). raw=" + raw);
+    return raw === 'TRUE' ? true : (raw === 'FALSE' ? false : realmValue);
   }
 
   // ---------------------------------------------------------------------------
@@ -2404,7 +2449,14 @@ class CertEnrollment {
       });
       return refusal;
     };
-    const profile = self.checkProfile(family, asked.profile);
+    // Asked of the TARGET, so an application's own list is the one in force
+    // for it (rcbj, 2026-10-01: its settings override the realm's).
+    // A request that named no profile asks for the default IN FORCE FOR THE
+    // TARGET — an application's own, where it set one — before the check, or
+    // a realm default outside the application's own list would be refused.
+    const askedProfile = asked.profileDefaulted
+      ? self.defaultProfile(family, asked.target) : asked.profile;
+    const profile = self.checkProfile(family, askedProfile, asked.target);
     if (!profile.ok) {
       log.debug("Leaving CertEnrollment.issue(). Profile refused.");
       return auditRefusal(profile);
@@ -2432,6 +2484,18 @@ class CertEnrollment {
       return auditRefusal(rules);
     }
     profile.profile = rules.profile;
+    // EST /serverkeygen for an entry that is NOT an application: the realm's
+    // switch, asked here because the protocol lets an administrator past its
+    // early check when the target may be an application whose own switch
+    // turns it on (an application's is asked in applicationRules()).
+    if (family === 'est' && asked.keySource === 'server' &&
+        resolved.entry.kind !== 'application' &&
+        !self.estSwitch('serverKeyGeneration')) {
+      log.debug("Leaving CertEnrollment.issue(). Server keys are off.");
+      return auditRefusal(self.refuse('STS-EST-0005', 501, 'Server-side ' +
+        'key generation is turned off for EST in this realm ' +
+        '(est.serverKeyGeneration).'));
+    }
     const names = self.namesFor(resolved, profile.profile, asked.requested);
     if (!names.ok) {
       log.debug("Leaving CertEnrollment.issue(). A name was refused.");
@@ -4796,6 +4860,7 @@ export = {
   authorizeTarget: slot.forward('authorizeTarget'),
   allowedProfiles: slot.forward('allowedProfiles'),
   applicationRules: slot.forward('applicationRules'),
+  estSwitch: slot.forward('estSwitch'),
   checkProfile: slot.forward('checkProfile'),
   defaultProfile: slot.forward('defaultProfile'),
   profileForIdentifiers: slot.forward('profileForIdentifiers'),

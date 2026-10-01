@@ -136,17 +136,22 @@ An application's own rules are set on its page, **Directory → Applications →
    refusal is `STS-ENROLL-0094`. In development nothing is refused, and an
    application with no families ticked is not refused in either mode.
 2. On the **Certificate enrollment** sub-tab, set any of the overrides
-   below and press **Save**. A field left empty takes the realm's value.
+   below and press **Save**. **A value set here overrides the realm's setting for this application**, in either direction; a field left empty takes the realm's value.
 
 The same attributes can be written with
 `POST /admin-api/applications/update-fields` or `/admin-api/applications/set`.
 
+The application's **Credentials** tab and its Certificate enrollment tab
+also list the certificates it was issued, each with a Revoke button, and
+generate its External Account Binding keys — the same actions as
+on this protocol's page. See [Applications](applications.md#certificate-enrollment-acme-est-scep).
+
 | Attribute | Overrides | What it does for this application |
 |---|---|---|
-| `acmeAllowedProfiles` | `acme.allowedProfiles` | The profiles it may be issued. It narrows the realm's list and never widens it. An order naming another profile is refused `invalidProfile`. |
-| `acmeDefaultProfile` | `acme.defaultProfile` | The profile of an order that names none. Used only when it is also allowed. |
-| `acmeCertificateLifetimeDays` | `acme.certificateLifetimeDays` | The certificate lifetime. The shorter of this and the realm's value is used. |
-| `enrollMaxCertificates` | `pki.enrollmentMaxCertificatesPerEntry` | How many certificates it may hold across ACME, EST and SCEP. The lower of the two is used. |
+| `acmeAllowedProfiles` | `acme.allowedProfiles` | The profiles it may be issued. Where it lists something, it replaces the realm's list for this application, wider or narrower. The CA, OCSP and KDC profiles are never issued. An order naming another profile is refused `invalidProfile`. |
+| `acmeDefaultProfile` | `acme.defaultProfile` | The profile of an order that names none. Used only when the list in force for it allows it. |
+| `acmeCertificateLifetimeDays` | `acme.certificateLifetimeDays` | The certificate lifetime, in place of the realm's (longer or shorter). No certificate outlives its Issuing CA. |
+| `enrollMaxCertificates` | `pki.enrollmentMaxCertificatesPerEntry` | How many certificates it may hold across ACME, EST and SCEP, in place of the realm's (higher or lower). |
 
 An application's account is made the same way as anybody's: an administrator
 creates an EAB key for the application on the ACME page and hands it to the

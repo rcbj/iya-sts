@@ -497,19 +497,44 @@ over a family it is declared for. An application declared for nothing is
 not refused, in either mode.
 
 The application's *Certificate enrollment* configuration tab overrides the
-realm's settings for that application alone:
+realm's settings for that application alone. A value set there replaces the
+realm's, in either direction; an empty field leaves the realm's in force:
 
 | Attribute | Overrides | What it does |
 |---|---|---|
-| `acmeAllowedProfiles`, `estAllowedProfiles`, `scepAllowedProfiles` | `<family>.allowedProfiles` | The profiles it may be issued. Narrows the realm's list; never widens it. |
+| `acmeAllowedProfiles`, `estAllowedProfiles`, `scepAllowedProfiles` | `<family>.allowedProfiles` | The profiles it may be issued, in place of the realm's list. The CA, OCSP and KDC profiles are never issued. |
 | `acmeDefaultProfile`, `estDefaultProfile`, `scepDefaultProfile` | `<family>.defaultProfile` | The profile used when a request names none. |
-| `acmeCertificateLifetimeDays`, `estCertificateLifetimeDays`, `scepCertificateLifetimeDays` | `<family>.certificateLifetimeDays` | Its certificates' lifetime. The shorter of the two is used. |
-| `enrollMaxCertificates` | `pki.enrollmentMaxCertificatesPerEntry` | How many certificates it may hold. The lower of the two is used. |
-| `estBasicAuthentication`, `estCertificateAuthentication` | `est.basicAuthentication`, `est.certificateAuthentication` | FALSE refuses that EST authentication method when the application authenticates itself. |
-| `estServerKeyGeneration` | `est.serverKeyGeneration` | FALSE refuses `/serverkeygen` for its certificates. |
+| `acmeCertificateLifetimeDays`, `estCertificateLifetimeDays`, `scepCertificateLifetimeDays` | `<family>.certificateLifetimeDays` | Its certificates' lifetime, longer or shorter than the realm's. No certificate outlives its Issuing CA. |
+| `enrollMaxCertificates` | `pki.enrollmentMaxCertificatesPerEntry` | How many certificates it may hold, higher or lower than the realm's. |
+| `estBasicAuthentication`, `estCertificateAuthentication` | `est.basicAuthentication`, `est.certificateAuthentication` | TRUE accepts and FALSE refuses that EST authentication method when the application authenticates itself, whatever the realm says. |
+| `estServerKeyGeneration` | `est.serverKeyGeneration` | TRUE allows and FALSE refuses `/serverkeygen` for its certificates, whatever the realm says. |
 
 A refusal is the protocol's own error: an ACME problem document, an EST
 HTTP status, a SCEP `failInfo`.
+
+**Its certificates, on its own page.** For an application declared for
+ACME, EST or SCEP, the **Credentials** tab and the **Certificate
+enrollment** configuration tab both show:
+
+* the rules in force for it: profiles, default profile, lifetime,
+  certificate cap and EST's switches, each marked as the application's own
+  or the realm's;
+* every certificate it was issued over the three protocols, with its
+  profile, serial, names, dates and status, a **PEM** download and a
+  **Revoke** button;
+* for ACME, its External Account Binding keys, with **Create an EAB key**
+  and **Delete**;
+* for EST, **Issue** a certificate with a server-generated key;
+* for SCEP, its challenge passwords, with **Create a challenge** and
+  **Delete**;
+* its registered host names, with **Add** and **Remove**.
+
+Each control posts to the protocol's own console action, so each has the
+same `/admin-api` operation as on the protocol's page. A one-time secret (an
+HMAC key, a challenge, a private key) is shown once on the page the action
+answers with, which links back to the application. `GET
+/admin-api/applications?application=<id>` returns the same facts as
+`certificateEnrollment`, with no secret.
 
 ### CORS: which pages may read an answer
 

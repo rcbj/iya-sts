@@ -880,7 +880,7 @@ Raised from: common/cert_enrollment.ts, common/enrollment_monitor.ts.
 | `STS-ENROLL-0092` | A renewal named a certificate that is not recorded as issued to the entry in this realm, so it could not be superseded and nothing was issued. | EST 400 / SCEP CertRep FAILURE badRequest |
 | `STS-ENROLL-0093` | A renewal was issued but the certificate it renews could not be revoked as superseded, so the renewal was revoked and the request refused. | EST 503 / SCEP CertRep FAILURE badRequest |
 | `STS-ENROLL-0094` | In product mode a certificate was refused to an application declared for some protocol families but not this enrollment protocol (ACME, EST or SCEP); the issuance policy's protocol-not-declared rule decided it. | each protocol's own refusal (an RFC 8555 problem document, an RFC 7030 HTTP 403, an RFC 8894 failInfo) |
-| `STS-ENROLL-0095` | The profile is allowed in the realm but not in the application's own <family>AllowedProfiles. | each protocol's own refusal (ACME invalidProfile, an RFC 7030 HTTP 403, an RFC 8894 failInfo) |
+| `STS-ENROLL-0095` | The profile is not in the application's own <family>AllowedProfiles, which replaces the realm's list for it. | each protocol's own refusal (ACME invalidProfile, an RFC 7030 HTTP 403, an RFC 8894 failInfo) |
 | `STS-ENROLL-0096` | EST refused an application an authentication method or /serverkeygen that its own estBasicAuthentication, estCertificateAuthentication or estServerKeyGeneration turns off. | RFC 7030 HTTP 403 |
 
 ## STS-ACME

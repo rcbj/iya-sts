@@ -6939,6 +6939,38 @@ declares both. The API still takes the two family ids.
 `tests/vendored/sts_admin_console.js`'s `theFieldGridIsPressed()` presses the
 grid in a browser.
 
+## AN APPLICATION'S PAGE CARRIES ITS ACME, EST AND SCEP CERTIFICATES (2026-10-01)
+
+rcbj asked for certificate generation and tracking on the application's own
+page. `applicationEnrollmentPanel(req, row, carryBack, where)` draws
+`adminViews.applicationEnrollmentState()` twice: under the **Credentials**
+tab (`#credentials-enroll`) and at the head of the **Certificate
+enrollment** configuration sub-tab (`#cfg-enroll`), for an application
+declared for ACME, EST or SCEP. It shows:
+
+* the rules in force, each marked as the application's own or the realm's;
+* the certificates on the entry, paged on `enrolledPage`, each with a PEM
+  download and a Revoke;
+* the EAB keys, SCEP challenges and host names, with their create, delete,
+  add and remove forms;
+* EST's server-key Issue.
+
+**Moving a form is not moving an action.** Every control posts to
+`/admin/acme`, `/admin/est` or `/admin/scep`, the protocol's own action,
+with `from=application`, `where` and the application. Each of those
+handlers asks the new export `enrollmentReturnTo(body, fallback)` where to
+redirect, and passes the answer as the back link of its one-time page.
+`enrollmentReturnTo()` rebuilds the application's page through
+`applicationReturnTo()`, whose anchor list now admits `#credentials-*`.
+So no API operation is new, and rule 7 holds through the existing mirrors.
+`GET /admin-api/applications?application=` carries the model as
+`certificateEnrollment`, which holds no secret. `tests/application_enrollment.js`
+section F holds the model and the return path.
+
+**What it does not do**: the pager links do not carry the tab's fragment,
+so a next page opens on the Overview tab. The observed-addresses list has
+the same limitation.
+
 ## AN APPLICATION'S PAGE HAS A SHARED SIGNALS SECTION (2026-10-01)
 
 `applicationSignalsSection()` draws `adminViews.applicationSignalsState()`

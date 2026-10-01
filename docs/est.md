@@ -118,25 +118,31 @@ An application's own rules are set on its page, **Directory → Applications →
    refusal is `STS-ENROLL-0094`. In development nothing is refused, and an
    application with no families ticked is not refused in either mode.
 2. On the **Certificate enrollment** sub-tab, set any of the overrides
-   below and press **Save**. A field left empty takes the realm's value.
+   below and press **Save**. **A value set here overrides the realm's setting for this application**, in either direction; a field left empty takes the realm's value.
 
 The same attributes can be written with
 `POST /admin-api/applications/update-fields` or `/admin-api/applications/set`.
 
+The application's **Credentials** tab and its Certificate enrollment tab
+also list the certificates it was issued, each with a Revoke button, and
+generate its certificates with a server-generated key — the same actions as
+on this protocol's page. See [Applications](applications.md#certificate-enrollment-acme-est-scep).
+
 | Attribute | Overrides | What it does for this application |
 |---|---|---|
-| `estAllowedProfiles` | `est.allowedProfiles` | The profiles it may be issued. It narrows the realm's list and never widens it. A request for another is refused (HTTP 403). |
-| `estDefaultProfile` | `est.defaultProfile` | The profile of an unlabelled request. Used only when it is also allowed. |
-| `estCertificateLifetimeDays` | `est.certificateLifetimeDays` | The certificate lifetime. The shorter of this and the realm's value is used. |
-| `enrollMaxCertificates` | `pki.enrollmentMaxCertificatesPerEntry` | How many certificates it may hold across ACME, EST and SCEP. The lower of the two is used. |
-| `estBasicAuthentication` | `est.basicAuthentication` | FALSE refuses the application's own `client_id` and secret (HTTP 403, `STS-ENROLL-0096`). |
-| `estCertificateAuthentication` | `est.certificateAuthentication` | FALSE refuses the application's own TLS client certificate. |
-| `estServerKeyGeneration` | `est.serverKeyGeneration` | FALSE refuses `/serverkeygen` for its certificates, whoever asks. |
+| `estAllowedProfiles` | `est.allowedProfiles` | The profiles it may be issued. Where it lists something, it replaces the realm's list for this application, wider or narrower. The CA, OCSP and KDC profiles are never issued. A request for another is refused (HTTP 403). |
+| `estDefaultProfile` | `est.defaultProfile` | The profile of an unlabelled request. Used only when the list in force for it allows it. |
+| `estCertificateLifetimeDays` | `est.certificateLifetimeDays` | The certificate lifetime, in place of the realm's (longer or shorter). No certificate outlives its Issuing CA. |
+| `enrollMaxCertificates` | `pki.enrollmentMaxCertificatesPerEntry` | How many certificates it may hold across ACME, EST and SCEP, in place of the realm's (higher or lower). |
+| `estBasicAuthentication` | `est.basicAuthentication` | TRUE accepts and FALSE refuses (HTTP 403, `STS-ENROLL-0096`) the application's own `client_id` and secret. |
+| `estCertificateAuthentication` | `est.certificateAuthentication` | TRUE accepts and FALSE refuses the application's own TLS client certificate. |
+| `estServerKeyGeneration` | `est.serverKeyGeneration` | TRUE allows and FALSE refuses `/serverkeygen` for its certificates, whoever asks. |
 
-The three switches only turn a method off for this application. They cannot
-turn on a method the realm has turned off. The two authentication switches
-apply when the application authenticates as itself; an administrator
-enrolling for the application is not affected by them.
+TRUE turns a method on for this application even where the realm has turned
+it off, and FALSE turns it off even where the realm has it on; unset leaves
+the realm's switch in force. The two authentication switches apply when the
+application authenticates as itself, and the server-key switch whoever asks
+for the application's certificate.
 
 ## Authenticating the caller
 
@@ -155,7 +161,8 @@ service already has; EST has none of its own:
 * No other Authorization scheme is accepted. A request with no credential
   gets `401` with `WWW-Authenticate: Basic realm="EST"`.
 * `est.basicAuthentication` and `est.certificateAuthentication` turn each
-  method off for the realm.
+  method off for the realm; an application's own `estBasicAuthentication`
+  and `estCertificateAuthentication` override them for that application.
 * `/simplereenroll` with no Basic credential needs the certificate being
   renewed.
 * A person may enroll only for themselves and an application only for

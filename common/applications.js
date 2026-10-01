@@ -3006,72 +3006,70 @@ const SCHEMA = {
             'declaration, and the SCIM gate is what decides whether a ' +
             'credential is demanded at all.' },
     { name: 'acmeAllowedProfiles', kind: 'multi', from: 'the console, or by hand',
-      what: 'THE ACME PROFILES THIS APPLICATION MAY BE ISSUED, narrowing ' +
-            'acme.allowedProfiles: a profile is issued over ACME only ' +
-            'when the realm allows it AND this lists it. Empty means every ' +
-            'profile the realm allows. It never widens the realm\'s list.' },
+      what: 'THE ACME PROFILES THIS APPLICATION MAY BE ISSUED. Where it ' +
+            'lists something it OVERRIDES acme.allowedProfiles for this ' +
+            'application, wider or narrower; empty leaves the realm\'s ' +
+            'list. The five CA, OCSP and KDC profiles are never issued.' },
     { name: 'acmeDefaultProfile', kind: 'single', from: 'the console, or by hand',
       what: 'THE PROFILE THIS APPLICATION IS ISSUED OVER ACME WHEN A ' +
-            'REQUEST NAMES NONE, in place of acme.defaultProfile. Used only ' +
-            'while both the realm and acmeAllowedProfiles allow it.' },
+            'REQUEST NAMES NONE, overriding acme.defaultProfile. Used ' +
+            'only while the list in force for it allows it.' },
     { name: 'acmeCertificateLifetimeDays', kind: 'single', from: 'by hand',
       overrides: 'acme.certificateLifetimeDays',
       what: 'How long a certificate this application is issued over ACME ' +
-            'is valid, in days. CAPPED at acme.certificateLifetimeDays: an ' +
-            'application can be given shorter-lived certificates than the ' +
-            'realm issues, never longer.' },
+            'is valid, in days, overriding acme.certificateLifetimeDays ' +
+            '(longer or shorter). No certificate outlives its Issuing CA.' },
     { name: 'estAllowedProfiles', kind: 'multi', from: 'the console, or by hand',
-      what: 'THE EST PROFILES THIS APPLICATION MAY BE ISSUED, narrowing ' +
-            'est.allowedProfiles: a profile is issued over EST only ' +
-            'when the realm allows it AND this lists it. Empty means every ' +
-            'profile the realm allows. It never widens the realm\'s list.' },
+      what: 'THE EST PROFILES THIS APPLICATION MAY BE ISSUED. Where it ' +
+            'lists something it OVERRIDES est.allowedProfiles for this ' +
+            'application, wider or narrower; empty leaves the realm\'s ' +
+            'list. The five CA, OCSP and KDC profiles are never issued.' },
     { name: 'estDefaultProfile', kind: 'single', from: 'the console, or by hand',
       what: 'THE PROFILE THIS APPLICATION IS ISSUED OVER EST WHEN A ' +
-            'REQUEST NAMES NONE, in place of est.defaultProfile. Used only ' +
-            'while both the realm and estAllowedProfiles allow it.' },
+            'REQUEST NAMES NONE, overriding est.defaultProfile. Used ' +
+            'only while the list in force for it allows it.' },
     { name: 'estCertificateLifetimeDays', kind: 'single', from: 'by hand',
       overrides: 'est.certificateLifetimeDays',
       what: 'How long a certificate this application is issued over EST ' +
-            'is valid, in days. CAPPED at est.certificateLifetimeDays: an ' +
-            'application can be given shorter-lived certificates than the ' +
-            'realm issues, never longer.' },
+            'is valid, in days, overriding est.certificateLifetimeDays ' +
+            '(longer or shorter). No certificate outlives its Issuing CA.' },
     { name: 'scepAllowedProfiles', kind: 'multi', from: 'the console, or by hand',
-      what: 'THE SCEP PROFILES THIS APPLICATION MAY BE ISSUED, narrowing ' +
-            'scep.allowedProfiles: a profile is issued over SCEP only ' +
-            'when the realm allows it AND this lists it. Empty means every ' +
-            'profile the realm allows. It never widens the realm\'s list.' },
+      what: 'THE SCEP PROFILES THIS APPLICATION MAY BE ISSUED. Where it ' +
+            'lists something it OVERRIDES scep.allowedProfiles for this ' +
+            'application, wider or narrower; empty leaves the realm\'s ' +
+            'list. The five CA, OCSP and KDC profiles are never issued.' },
     { name: 'scepDefaultProfile', kind: 'single', from: 'the console, or by hand',
       what: 'THE PROFILE THIS APPLICATION IS ISSUED OVER SCEP WHEN A ' +
-            'REQUEST NAMES NONE, in place of scep.defaultProfile. Used only ' +
-            'while both the realm and scepAllowedProfiles allow it.' },
+            'REQUEST NAMES NONE, overriding scep.defaultProfile. Used ' +
+            'only while the list in force for it allows it.' },
     { name: 'scepCertificateLifetimeDays', kind: 'single', from: 'by hand',
       overrides: 'scep.certificateLifetimeDays',
       what: 'How long a certificate this application is issued over SCEP ' +
-            'is valid, in days. CAPPED at scep.certificateLifetimeDays: an ' +
-            'application can be given shorter-lived certificates than the ' +
-            'realm issues, never longer.' },
+            'is valid, in days, overriding scep.certificateLifetimeDays ' +
+            '(longer or shorter). No certificate outlives its Issuing CA.' },
     { name: 'estBasicAuthentication', kind: 'single', from: 'by hand',
       overrides: 'est.basicAuthentication',
       what: 'Whether EST accepts this application\'s client id and secret ' +
-            '(HTTP Basic, RFC 7030 section 3.2.3). FALSE refuses it; TRUE ' +
-            'or unset leaves est.basicAuthentication to decide, which this ' +
-            'cannot turn on where the realm turned it off.' },
+            '(HTTP Basic, RFC 7030 section 3.2.3), overriding ' +
+            'est.basicAuthentication: TRUE accepts it and FALSE refuses it ' +
+            'whatever the realm says; unset leaves the realm to decide.' },
     { name: 'estCertificateAuthentication', kind: 'single', from: 'by hand',
       overrides: 'est.certificateAuthentication',
       what: 'Whether EST accepts a certificate this realm issued this ' +
             'application (TLS client authentication, RFC 7030 section ' +
-            '3.3.2). FALSE refuses it; TRUE or unset leaves ' +
-            'est.certificateAuthentication to decide.' },
+            '3.3.2), overriding est.certificateAuthentication: TRUE accepts ' +
+            'it and FALSE refuses it; unset leaves the realm to decide.' },
     { name: 'estServerKeyGeneration', kind: 'single', from: 'by hand',
       overrides: 'est.serverKeyGeneration',
       what: 'Whether EST /serverkeygen (RFC 7030 section 4.4) may generate ' +
-            'this application\'s key. FALSE refuses it; TRUE or unset leaves ' +
-            'est.serverKeyGeneration to decide.' },
+            'this application\'s key, overriding est.serverKeyGeneration: ' +
+            'TRUE allows it and FALSE refuses it; unset leaves the realm ' +
+            'to decide.' },
     { name: 'enrollMaxCertificates', kind: 'single', from: 'by hand',
       overrides: 'pki.enrollmentMaxCertificatesPerEntry',
       what: 'How many unexpired enrolled certificates (ACME, EST and SCEP ' +
-            'together) this application may hold. CAPPED at ' +
-            'pki.enrollmentMaxCertificatesPerEntry: lower only.' },
+            'together) this application may hold, overriding ' +
+            'pki.enrollmentMaxCertificatesPerEntry (higher or lower).' },
     // THE DID DOCUMENT'S CONTENTS (2026-10-01): what this service publishes
     // at <base>/applications/<identifier>/did.json for an application
     // declared for `did`. See the `did` row of PROTOCOLS.

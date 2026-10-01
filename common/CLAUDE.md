@@ -9174,21 +9174,35 @@ certificate is not affected. The rules, in order:
    application declared for nothing is refused nothing, as for every other
    kind (#380). Roles and the device rules are waived: the identity rule
    above has already decided who may ask.
-2. **The profile.** `<family>AllowedProfiles` narrows the realm's
-   `<family>.allowedProfiles` and never widens it (`allowedProfiles(family,
-   entry)` is the intersection). A profile outside it is `STS-ENROLL-0095`.
-   `<family>DefaultProfile` replaces the realm's default only for a request
-   that named no profile (`asked.profileDefaulted`: an unlabelled EST
-   request, a SCEP challenge made with none, an ACME order with no
-   `profile`) and only when it is allowed.
-3. **EST's authentication**, when the application authenticated itself:
-   `estBasicAuthentication` or `estCertificateAuthentication` set FALSE
-   refuses that method (`STS-ENROLL-0096`). `estServerKeyGeneration` FALSE
-   refuses `/serverkeygen` whoever asked. These can turn an EST method off
-   for one application; they cannot turn on what the realm turned off.
-4. **The lifetime and the cap** are the smaller of the realm's and the
-   application's (`<family>CertificateLifetimeDays`,
-   `enrollMaxCertificates`).
+2. **The profile.** `<family>AllowedProfiles`, where it lists something,
+   REPLACES the realm's `<family>.allowedProfiles` for the application —
+   wider or narrower; only a known profile counts, so the five never issued
+   stay refused. A profile outside it is `STS-ENROLL-0095`.
+   `<family>DefaultProfile` replaces the realm's default for a request that
+   named no profile (`asked.profileDefaulted`: an unlabelled EST request, a
+   SCEP challenge made with none, an ACME order with no `profile`), where
+   the list in force allows it; `issue()` resolves that default against the
+   TARGET before it checks the profile.
+3. **EST's switches**, `estSwitch(name, entry)`: an application's own
+   `estBasicAuthentication`, `estCertificateAuthentication` and
+   `estServerKeyGeneration` decide for it where set, TRUE or FALSE; the
+   realm's otherwise. A FALSE is `STS-ENROLL-0096`. Because a TRUE can turn
+   on what the realm turned off, EST's checks before the credential consult
+   the application the Basic name or the certificate NAMES (read, not
+   believed — the credential is verified next), `/serverkeygen` lets an
+   administrator past its early check, and `issue()` refuses a person
+   target while the realm's switch is off. The label is checked only
+   structurally before the credential (`checkProfile(..., { structural })`).
+4. **The lifetime and the cap** are the application's where it set them
+   (`<family>CertificateLifetimeDays`, `enrollMaxCertificates`), longer or
+   shorter, higher or lower; a certificate is still shortened to its Issuing
+   CA's expiry.
+
+**THE APPLICATION'S VALUE OVERRIDES THE REALM'S (rcbj, 2026-10-01).** The
+first version that day only narrowed (an intersection, the smaller value,
+FALSE-only switches); rcbj asked for an override. What no application value
+reaches: the CA, OCSP and KDC profiles, the Issuing CA's expiry, the
+declaration rule, and `<family>.enabled`.
 
 **Every refusal goes out in its protocol's own words**, which is what keeps
 the three specifications intact: ACME answers a problem document

@@ -6409,6 +6409,7 @@ class AdminViews {
     const softwareStatementState = this.applicationSoftwareStatementState(row);
     const rolesState = this.applicationRolesState(row.identifier);
     const signalsState = this.applicationSignalsState(req, row);
+    const enrollmentState = this.applicationEnrollmentState(req, row);
     log.debug("Leaving AdminViews.applicationDetailJson().");
     return {
       row: row, attributeRows: attributeRows, paged: paged, paging: paging,
@@ -6418,6 +6419,7 @@ class AdminViews {
       credentialsState: credentialsState,
       softwareStatementState: softwareStatementState,
       signalsState: signalsState,
+      enrollmentState: enrollmentState,
       json: (function () {
       return Object.assign({ found: true }, row, {
           attributesShown: paged.shown,
@@ -6437,6 +6439,11 @@ class AdminViews {
           // application owns and every per-receiver setting in force for
           // them. See applicationSignalsState().
           sharedSignals: signalsState.json,
+          // THE CERTIFICATE ENROLLMENT SECTION, AS DATA (2026-10-01): the
+          // ACME, EST and SCEP rules in force for it, the certificates it
+          // was issued (paged), its EAB keys and SCEP challenges (no secret)
+          // and its host names. See applicationEnrollmentState().
+          certificateEnrollment: enrollmentState.json,
           // THE SOFTWARE STATEMENTS SECTION, AS DATA (2026-09-13): the issuers
           // this application vouches for as a publisher, the statement this
           // realm issued it, and how it registered if a statement let it in. A
@@ -6688,6 +6695,124 @@ class AdminViews {
               owned.length + " stream(s).");
     return { installed: true, streams: owned, settings: settings,
              json: { installed: true, streams: owned, settings: settings } };
+  }
+
+  // AN APPLICATION'S CERTIFICATE ENROLLMENT, AS ONE MODEL (rcbj,
+  // 2026-10-01): what its Credentials tab and its Certificate enrollment
+  // configuration tab draw, and what `GET /admin-api/applications?application=`
+  // answers as `certificateEnrollment`. Drawn for an application declared for
+  // ACME, EST or SCEP. Everything is read from `common/cert_enrollment.ts`, so
+  // the rules shown are the rules applied: the profile list, default,
+  // lifetime and cap IN FORCE for it (its own override, else the realm's),
+  // EST's three switches through `estSwitch()`, the certificates on its entry
+  // newest first (PAGED on `enrolledPage`: revoked and expired ones stay on
+  // the entry and the list grows), its EAB keys and SCEP challenges (bounded
+  // per entry, and with no key material — the core's own listings carry
+  // none), and its registered host names. Generating and revoking are the
+  // three protocols' own console actions, posted from the application's page.
+  /**
+   * Answers an application's certificate enrollment: the rules in force for
+   * it, its certificates, EAB keys, SCEP challenges and host names.
+   *
+   * @param req - the request, for the paging of its certificates
+   * @param row - the application's view
+   * @returns `{ families, rules, certificates, paged, eabKeys, challenges,
+   *   hostNames, keyAlgorithms, json }`
+   */
+  applicationEnrollmentState(req, row) {
+    const { log, config } = this.deps;
+    log.debug("Entering AdminViews.applicationEnrollmentState(). " +
+              "identifier=" + (row && row.identifier));
+    const core = require('../common/cert_enrollment');
+    const id = String((row && row.identifier) || '');
+    const entry = { kind: 'application', id: id };
+    const fields = (row && row.fields) || {};
+    const declared = [].concat((row && row.allowedProtocols) || []);
+    const families = ['acme', 'est', 'scep'].filter(function (one) {
+      return declared.indexOf(one) >= 0;
+    });
+    const own = function (attribute) {
+      log.debug("Entering own().");
+      const value = Number(String(fields[attribute] || '').trim());
+      log.debug("Leaving own().");
+      return Number.isFinite(value) && value > 0 ? value : null;
+    };
+    const rules = families.map(function (family) {
+      const days = own(family + 'CertificateLifetimeDays');
+      const ownList = [].concat(fields[family + 'AllowedProfiles'] || [])
+        .map(String).filter(Boolean);
+      return {
+        family: family,
+        label: core.FAMILY_LABELS[family],
+        allowedProfiles: core.allowedProfiles(family, entry),
+        allowedProfilesSource: ownList.length ? 'application' : 'realm',
+        defaultProfile: core.defaultProfile(family, entry),
+        defaultProfileSource: String(fields[family + 'DefaultProfile'] || '')
+          .trim() ? 'application' : 'realm',
+        certificateLifetimeDays: days !== null ? days
+          : Number(config.value(family + '.certificateLifetimeDays')),
+        certificateLifetimeSource: days !== null ? 'application' : 'realm'
+      };
+    });
+    const capOwn = own('enrollMaxCertificates');
+    const cap = {
+      value: capOwn !== null ? capOwn
+        : Number(config.value('pki.enrollmentMaxCertificatesPerEntry')),
+      source: capOwn !== null ? 'application' : 'realm'
+    };
+    const switchOf = function (name, attribute) {
+      log.debug("Entering switchOf().");
+      const raw = String(fields[attribute] || '').trim().toUpperCase();
+      log.debug("Leaving switchOf().");
+      return { on: core.estSwitch(name, entry),
+               source: raw === 'TRUE' || raw === 'FALSE' ? 'application'
+                                                         : 'realm' };
+    };
+    const est = families.indexOf('est') >= 0 ? {
+      basicAuthentication: switchOf('basicAuthentication',
+                                    'estBasicAuthentication'),
+      certificateAuthentication: switchOf('certificateAuthentication',
+                                          'estCertificateAuthentication'),
+      serverKeyGeneration: switchOf('serverKeyGeneration',
+                                    'estServerKeyGeneration')
+    } : null;
+    let certificates = [];
+    let eabKeys = [];
+    let challenges = [];
+    let hostNames = [];
+    if (families.length && core.hasDirectory()) {
+      certificates = core.enrolledOf(entry).map(function (one) {
+        return Object.assign({}, one, { entry: undefined });
+      });
+      eabKeys = families.indexOf('acme') >= 0 ? core.eabsOf(entry) : [];
+      challenges = families.indexOf('scep') >= 0
+        ? core.scepChallengesOf(entry) : [];
+      hostNames = core.hostNamesOf(entry);
+    }
+    const paged = this.pagedRows((req && req.query) || {}, certificates,
+                                 { name: 'enrolled', noun: 'certificates' });
+    let keyAlgorithms = [];
+    try {
+      keyAlgorithms = require('../common/vendored/key_material').keyAlgIds();
+    } catch (e) {
+      log.debug("Caught in AdminViews.applicationEnrollmentState(): " +
+                ((e && e.message) || e));
+      keyAlgorithms = ['ec-p256'];
+    }
+    const json = {
+      families: families, rules: rules, certificateCap: cap,
+      est: est,
+      certificates: paged.shown, certificatesPaging: this.pagingJson(
+        paged.paging),
+      certificatesTotal: certificates.length,
+      eabKeys: eabKeys, scepChallenges: challenges, hostNames: hostNames
+    };
+    log.debug("Leaving AdminViews.applicationEnrollmentState(). " +
+              certificates.length + " certificate(s).");
+    return { families: families, rules: rules, cap: cap, est: est,
+             certificates: certificates, paged: paged, eabKeys: eabKeys,
+             challenges: challenges, hostNames: hostNames,
+             keyAlgorithms: keyAlgorithms, json: json };
   }
 
   private applicationCredentialsState(row) {
@@ -9047,6 +9172,7 @@ export = {
   federationListJson: slot.forward('federationListJson'),
   applicationPermissionsState: slot.forward('applicationPermissionsState'),
   applicationRolesState: slot.forward('applicationRolesState'),
+  applicationEnrollmentState: slot.forward('applicationEnrollmentState'),
   attributeClaimChoices: slot.forward('attributeClaimChoices'),
   attributeClaimPreview: slot.forward('attributeClaimPreview'),
   releaseWithholding: slot.forward('releaseWithholding'),

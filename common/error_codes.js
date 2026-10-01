@@ -3713,8 +3713,8 @@ const CODES = [
     spec: 'each protocol\'s own refusal (an RFC 8555 problem document, an ' +
       'RFC 7030 HTTP 403, an RFC 8894 failInfo)' },
   { code: 'STS-ENROLL-0095',
-    summary: 'The profile is allowed in the realm but not in the ' +
-      'application\'s own <family>AllowedProfiles.',
+    summary: 'The profile is not in the application\'s own ' +
+      '<family>AllowedProfiles, which replaces the realm\'s list for it.',
     spec: 'each protocol\'s own refusal (ACME invalidProfile, an RFC 7030 ' +
       'HTTP 403, an RFC 8894 failInfo)' },
   { code: 'STS-ENROLL-0096',
