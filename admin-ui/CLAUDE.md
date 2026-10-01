@@ -120,10 +120,12 @@ It also reads the SESSION store, which `../authn/authn.ts` owns.
    provider, SAML 1.1 identity provider, custom SAML attributes),
    **Verifiable Credentials** (credential
    claims, verifier request), **SPIFFE** (SPIFFE, registration entries,
-   agents), **XACML**, and — since 2026-09-13 — **Kerberos** (Kerberos
+   agents), **XACML**, — since 2026-09-13 — **Kerberos** (Kerberos
    settings, principals; the settings page was renamed from `Kerberos` so the
-   heading does not say its label twice) — with SCIM left ungrouped beside
-   them. **SAML USED TO BE THE
+   heading does not say its label twice), and — since 2026-10-01, rcbj's ask
+   — **SSF** (Shared Signals, CAEP, RISC: the pipe and the two vocabularies
+   spoken over it, which were three ungrouped rows) — with SCIM left
+   ungrouped beside them. **SAML USED TO BE THE
    EXCEPTION HERE and no longer is**: it held ONE page, and the argument for
    keeping the heading anyway was that it names a protocol family this service
    speaks in two versions and two profiles while the page under it configured

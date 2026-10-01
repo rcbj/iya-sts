@@ -1276,82 +1276,78 @@ const SECTIONS = [
                '/scim/v2/Users</code> and an <code>ldapadd</code> create the ' +
                'same entry and somebody provisioned over SCIM appears on ' +
                '<a href="/admin/users">Users</a>.' },
-      // UNGROUPED, beside SCIM, and for the smaller of that page's two
-      // reasons: a group of one would be a heading saying the label twice.
-      // What makes it worth its own page rather than a section of another is
-      // that it is the one family here that runs the OTHER WAY ROUND — this
-      // service delivering an event to a receiver that agreed in advance —
-      // so there is no family above it whose page it would be a corner of.
-      { path: '/admin/ssf', label: 'Shared Signals',
-        blurb: 'The <strong>Shared Signals Framework</strong> (OpenID SSF ' +
-               '1.0): the streams this transmitter has agreed, who each one ' +
-               'is about, what is queued for it and what a receiver refused. ' +
-               'It is the one protocol family here that TALKS BACK &mdash; ' +
-               'every other answers a request, and this one delivers a ' +
-               'Security Event Token nobody asked for, at the moment ' +
-               'something happens. <strong>SSF is the pipe and not the ' +
-               'vocabulary</strong>: it defines two events of its own, both ' +
-               'about the pipe, and the vocabularies are ' +
-               '<a href="/admin/caep">CAEP</a> (what happened to a SESSION) ' +
-               'and <a href="/admin/risc">RISC</a> (what happened to an ' +
-               'ACCOUNT). TWO things here generate an event on their own ' +
-               'now, and they watch different registers: CAEP, where a ' +
-               'session starting, being presented or ending sends a ' +
-               'Security Event Token with nobody having asked, and RISC, ' +
-               'where a change to the DIRECTORY does.' },
+      // SHARED SIGNALS AND ITS TWO VOCABULARIES ARE ONE GROUP (rcbj,
+      // 2026-10-01): Protocols -> SSF holds the Shared Signals page and the
+      // CAEP and RISC pages. They were three rows side by side, argued apart
+      // because SSF is the PIPE and CAEP and RISC are VOCABULARIES over it —
+      // which is still true, and is now said by the heading: a reader looking
+      // for either vocabulary finds it under the pipe it is spoken over. The
+      // paths did not move; NAV is derived, so nothing else changed.
+      { title: 'SSF',
+        what: 'The Shared Signals Framework and the two event vocabularies ' +
+              'spoken over it: CAEP, about sessions, and RISC, about ' +
+              'accounts. The streams, their receivers and every setting ' +
+              'that decides what is sent are here; what was sent is under ' +
+              'Monitoring.',
+        items: [
+          { path: '/admin/ssf', label: 'Shared Signals',
+            blurb: 'The <strong>Shared Signals Framework</strong> (OpenID ' +
+                   'SSF 1.0): the streams this transmitter has agreed, who ' +
+                   'each one is about, what is queued for it and what a ' +
+                   'receiver refused. It is the one protocol family here ' +
+                   'that TALKS BACK &mdash; every other answers a request, ' +
+                   'and this one delivers a Security Event Token nobody ' +
+                   'asked for, at the moment something happens. <strong>SSF ' +
+                   'is the pipe and not the vocabulary</strong>: it defines ' +
+                   'two events of its own, both about the pipe, and the ' +
+                   'vocabularies are <a href="/admin/caep">CAEP</a> (what ' +
+                   'happened to a SESSION) and <a ' +
+                   'href="/admin/risc">RISC</a> (what happened to an ' +
+                   'ACCOUNT). TWO things here generate an event on their own ' +
+                   'now, and they watch different registers: CAEP, where a ' +
+                   'session starting, being presented or ending sends a ' +
+                   'Security Event Token with nobody having asked, and RISC, ' +
+                   'where a change to the DIRECTORY does.' },
 
-      // BESIDE Shared Signals rather than a section of it, and the argument
-      // is the same one that made CAEP rows in `ssf_events.js` rather than a
-      // family of its own: SSF is the PIPE and CAEP is a VOCABULARY over it.
-      // They are two specifications answering two questions, and a reader
-      // looking for "what has this service said about that session" is not
-      // looking for "what streams exist", which is the whole of that page.
-      //
-      // Not a GROUP of two, because a heading saying "Shared Signals" over
-      // pages called "Shared Signals" and "CAEP" would say the label twice —
-      // which is the test this console already applied to the SSF page.
-      { path: '/admin/caep', label: 'CAEP',
-        blurb: 'The <strong>Continuous Access Evaluation Profile</strong> ' +
-               '(OpenID CAEP 1.0, final 2 September 2025): the enterprise ' +
-               'SESSION vocabulary spoken over ' +
-               '<a href="/admin/ssf">Shared Signals</a>. Eight event types ' +
-               '&mdash; session revoked, established and presented, token ' +
-               'claims change, credential change, assurance level change, ' +
-               'device compliance change, risk level change &mdash; each ' +
-               'with the members the specification gives it and the four it ' +
-               'gives them all. <strong>It is the one page here that ' +
-               'configures this service to act without being asked</strong>: ' +
-               'with <code>caep.autoEmit</code> on, a sign-in, a single ' +
-               'sign-on and a sign-out each send an event to whoever agreed ' +
-               'to be told. All eight fire on their own (device ' +
-               'compliance since #164), and this page also carries the form ' +
-               'that emits one by hand, on demand.' },
+          { path: '/admin/caep', label: 'CAEP',
+            blurb: 'The <strong>Continuous Access Evaluation ' +
+                   'Profile</strong> (OpenID CAEP 1.0, final 2 September ' +
+                   '2025): the enterprise SESSION vocabulary spoken over <a ' +
+                   'href="/admin/ssf">Shared Signals</a>. Eight event types ' +
+                   '&mdash; session revoked, established and presented, ' +
+                   'token claims change, credential change, assurance level ' +
+                   'change, device compliance change, risk level change ' +
+                   '&mdash; each with the members the specification gives it ' +
+                   'and the four it gives them all. <strong>It is the one ' +
+                   'page here that configures this service to act without ' +
+                   'being asked</strong>: with <code>caep.autoEmit</code> ' +
+                   'on, a sign-in, a single sign-on and a sign-out each send ' +
+                   'an event to whoever agreed to be told. All eight fire on ' +
+                   'their own (device compliance since #164), and this page ' +
+                   'also carries the form that emits one by hand, on demand.' },
 
-      // AND RISC BESIDE IT, for the reason CAEP is beside Shared Signals
-      // rather than inside it: they are two specifications answering two
-      // questions. CAEP is about a SESSION and RISC is about an ACCOUNT, and
-      // a reader looking for "what has been said about that person's account"
-      // is not looking for "what has been said about that session of theirs"
-      // — which is the whole of the other page.
-      { path: '/admin/risc', label: 'RISC',
-        blurb: 'The <strong>Risk Incident Sharing and Coordination</strong> ' +
-               'profile (OpenID RISC Profile Specification 1.0, published 29 ' +
-               'August 2025 and final on 2 September 2025): the ACCOUNT ' +
-               'vocabulary spoken over <a href="/admin/ssf">Shared ' +
-               'Signals</a>, and the second of the two. Fourteen event types ' +
-               '&mdash; account disabled, enabled and purged, credential ' +
-               'change required, credential compromise, identifier changed ' +
-               'and recycled, the four opt-out events, recovery activated ' +
-               'and recovery information changed, and one that RISC itself ' +
-               'deprecates in favour of a CAEP event. <strong>Eleven of them ' +
-               'carry no payload members at all</strong>, so the subject is ' +
-               'the entire message, which is what makes ' +
-               '<code>risc.subjectFormat</code> the most consequential ' +
-               'setting on the page. With <code>risc.autoEmit</code> on, a ' +
-               'person deleted from the directory, an account marked ' +
-               'inactive and a changed mail address each send an event ' +
-               '&mdash; a DIFFERENT observer from CAEP\'s, watching the ' +
-               'directory rather than the sessions.' },
+          { path: '/admin/risc', label: 'RISC',
+            blurb: 'The <strong>Risk Incident Sharing and ' +
+                   'Coordination</strong> profile (OpenID RISC Profile ' +
+                   'Specification 1.0, published 29 August 2025 and final on ' +
+                   '2 September 2025): the ACCOUNT vocabulary spoken over <a ' +
+                   'href="/admin/ssf">Shared Signals</a>, and the second of ' +
+                   'the two. Fourteen event types &mdash; account disabled, ' +
+                   'enabled and purged, credential change required, ' +
+                   'credential compromise, identifier changed and recycled, ' +
+                   'the four opt-out events, recovery activated and recovery ' +
+                   'information changed, and one that RISC itself deprecates ' +
+                   'in favour of a CAEP event. <strong>Eleven of them carry ' +
+                   'no payload members at all</strong>, so the subject is ' +
+                   'the entire message, which is what makes ' +
+                   '<code>risc.subjectFormat</code> the most consequential ' +
+                   'setting on the page. With <code>risc.autoEmit</code> on, ' +
+                   'a person deleted from the directory, an account marked ' +
+                   'inactive and a changed mail address each send an event ' +
+                   '&mdash; a DIFFERENT observer from CAEP\'s, watching the ' +
+                   'directory rather than the sessions.' },
+        ]
+      },
 
       // UNGROUPED, beside SCIM, and the placement needed the same argument the
       // delegation page needed. Federation spans FIVE protocol families, so
