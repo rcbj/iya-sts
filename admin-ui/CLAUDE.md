@@ -20,6 +20,36 @@ The others: `admin_scope.ts` (what a realm administrator may not reach, 8d),
 `database_admin.ts` (`/admin/database`), `encryption_admin.ts`
 (`/admin/encryption`) and `secrets_admin.ts` (`/admin/secrets`).
 
+## A DESIGN CONSTRAINT: NO PAGE MAKES A READER SCROLL FOR A SECTION (rcbj, 2026-10-02)
+
+> "The user shouldn't have to scroll through multiple pages of settings to
+> find what they are looking for. Use this tabular design on each page for the
+> various sections."
+
+**Every console page with more than one section draws them as TABS**, in the
+shape the application page (`applicationDetailPage()`, 2026-10-01) and Server
+configuration → Listeners (#423) have. The rules:
+
+* **One mechanism: `admin.tabbedPanels(cls, panels)`.** Panels are
+  `{ id, label, html }`, and a panel with nothing in it gets no tab. The tabs
+  are links to fragments, and the stylesheet shows the `:target` panel
+  (`:has(:target)`), or the first panel when none is targeted. There is no
+  script: the console stays `script-src 'none'`. Every panel is in the page,
+  so in-page search, printing, and a browser without `:has()` still see
+  everything.
+* **A settings group is a tab of its own.** Draw it with
+  `admin.configFormsFor(PAGE, [group])`, not the whole page's block at once,
+  so a Save comes back to the tab it was pressed on.
+* **A form's answer lands inside its own panel.** Use `withReturnAnchors()`,
+  or the anchor its handler names, so the page opens on the tab the button
+  was on.
+* **Tab order is reading order.** What the page is FOR comes first: the
+  table, the status, the register. Its settings follow, one group per tab,
+  then reference material.
+* **A new page is tabbed when it is written.** A page that grows a second
+  section gets tabs in the change that adds it. Converting the pages that
+  predate this rule is #428.
+
 **It IS protected now, and it holds nothing on disk.** It is also the one surface
 that can CHANGE what the protocol endpoints do, which is why it is the one that
 grew a gate.
