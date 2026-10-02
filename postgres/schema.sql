@@ -143,10 +143,12 @@ CREATE TABLE IF NOT EXISTS sts_ldap_entries (
   modified_at text,
   parent_key text GENERATED ALWAYS AS (CASE WHEN strpos(dn_key, ',') > 0 THEN substr(dn_key, strpos(dn_key, ',') + 1) ELSE '' END) STORED,
   rdn_value text GENERATED ALWAYS AS (substr(split_part(dn_key, ',', 1), strpos(split_part(dn_key, ',', 1), '=') + 1)) STORED,
-  name_keys jsonb GENERATED ALWAYS AS (lower(COALESCE(attrs->'uid', '[]'::jsonb)::text)::jsonb) STORED,
-  mail_keys jsonb GENERATED ALWAYS AS (lower(COALESCE(attrs->'mail', '[]'::jsonb)::text)::jsonb) STORED,
-  uuid_keys jsonb GENERATED ALWAYS AS (lower((COALESCE(attrs->'entryuuid', '[]'::jsonb) || COALESCE(attrs->'stsentryuuidalias', '[]'::jsonb))::text)::jsonb) STORED,
-  class_keys jsonb GENERATED ALWAYS AS (lower(COALESCE(attrs->'objectclass', '[]'::jsonb)::text)::jsonb) STORED,
+  name_keys jsonb NOT NULL DEFAULT '[]'::jsonb,
+  mail_keys jsonb NOT NULL DEFAULT '[]'::jsonb,
+  uuid_keys jsonb NOT NULL DEFAULT '[]'::jsonb,
+  class_keys jsonb NOT NULL DEFAULT '[]'::jsonb,
+  value_keys jsonb NOT NULL DEFAULT '[]'::jsonb,
+  attr_names jsonb NOT NULL DEFAULT '[]'::jsonb,
   PRIMARY KEY (realm, dn_key));
 
 CREATE INDEX IF NOT EXISTS sts_ldap_entries_realm ON sts_ldap_entries (realm);
@@ -165,22 +167,36 @@ CREATE INDEX IF NOT EXISTS sts_ldap_entries_realm ON sts_ldap_entries (realm);
 -- lower-cased, as a JSON array for `@>`. `persistence/directory_queries.js`
 -- builds every statement that reads them. Added separately as well, for
 -- `sts_realms.domain`'s reason.
+--
+-- SINCE #391 PHASE 6 (schema version 14) ONLY `parent_key` AND `rdn_value`
+-- ARE GENERATED: `attrs` holds the entry SEALED, as one blob, which the
+-- database cannot read. `name_keys`, `mail_keys`, `uuid_keys` and
+-- `class_keys` are written by the service beside it as KEYED DIGESTS of the
+-- same values (`persistence/directory_codec.js`), and so are `value_keys` —
+-- `name=value` of the attributes looked up by value (a login name, a DID, a
+-- SPIFFE ID, a certificate subject, a federation link) — and `attr_names`,
+-- the attribute NAMES in the clear. A database built before version 14 has
+-- them generated and is refused at start (STS-STORE-0074): recreate it.
 ALTER TABLE sts_ldap_entries ADD COLUMN IF NOT EXISTS parent_key text GENERATED ALWAYS AS (CASE WHEN strpos(dn_key, ',') > 0 THEN substr(dn_key, strpos(dn_key, ',') + 1) ELSE '' END) STORED;
 ALTER TABLE sts_ldap_entries ADD COLUMN IF NOT EXISTS rdn_value text GENERATED ALWAYS AS (substr(split_part(dn_key, ',', 1), strpos(split_part(dn_key, ',', 1), '=') + 1)) STORED;
-ALTER TABLE sts_ldap_entries ADD COLUMN IF NOT EXISTS name_keys jsonb GENERATED ALWAYS AS (lower(COALESCE(attrs->'uid', '[]'::jsonb)::text)::jsonb) STORED;
-ALTER TABLE sts_ldap_entries ADD COLUMN IF NOT EXISTS mail_keys jsonb GENERATED ALWAYS AS (lower(COALESCE(attrs->'mail', '[]'::jsonb)::text)::jsonb) STORED;
-ALTER TABLE sts_ldap_entries ADD COLUMN IF NOT EXISTS uuid_keys jsonb GENERATED ALWAYS AS (lower((COALESCE(attrs->'entryuuid', '[]'::jsonb) || COALESCE(attrs->'stsentryuuidalias', '[]'::jsonb))::text)::jsonb) STORED;
-ALTER TABLE sts_ldap_entries ADD COLUMN IF NOT EXISTS class_keys jsonb GENERATED ALWAYS AS (lower(COALESCE(attrs->'objectclass', '[]'::jsonb)::text)::jsonb) STORED;
+ALTER TABLE sts_ldap_entries ADD COLUMN IF NOT EXISTS name_keys jsonb NOT NULL DEFAULT '[]'::jsonb;
+ALTER TABLE sts_ldap_entries ADD COLUMN IF NOT EXISTS mail_keys jsonb NOT NULL DEFAULT '[]'::jsonb;
+ALTER TABLE sts_ldap_entries ADD COLUMN IF NOT EXISTS uuid_keys jsonb NOT NULL DEFAULT '[]'::jsonb;
+ALTER TABLE sts_ldap_entries ADD COLUMN IF NOT EXISTS class_keys jsonb NOT NULL DEFAULT '[]'::jsonb;
+ALTER TABLE sts_ldap_entries ADD COLUMN IF NOT EXISTS value_keys jsonb NOT NULL DEFAULT '[]'::jsonb;
+ALTER TABLE sts_ldap_entries ADD COLUMN IF NOT EXISTS attr_names jsonb NOT NULL DEFAULT '[]'::jsonb;
 
 -- The children of a container in key order, and the RDN value there (a login
--- name); the lower-cased `uid`, `mail` and entryUUID values; and every
--- attribute value as written (a DID, a SPIFFE ID, a federation link).
+-- name); the `uid`, `mail` and entryUUID digests; the digests of the values
+-- looked up as written (a DID, a SPIFFE ID, a federation link); and the
+-- attribute names, with the default operator class for `?`.
 CREATE INDEX IF NOT EXISTS sts_ldap_entries_parent ON sts_ldap_entries (realm, parent_key, dn_key);
 CREATE INDEX IF NOT EXISTS sts_ldap_entries_rdn ON sts_ldap_entries (realm, parent_key, rdn_value);
 CREATE INDEX IF NOT EXISTS sts_ldap_entries_names ON sts_ldap_entries USING gin (name_keys jsonb_path_ops);
 CREATE INDEX IF NOT EXISTS sts_ldap_entries_mails ON sts_ldap_entries USING gin (mail_keys jsonb_path_ops);
 CREATE INDEX IF NOT EXISTS sts_ldap_entries_uuids ON sts_ldap_entries USING gin (uuid_keys jsonb_path_ops);
-CREATE INDEX IF NOT EXISTS sts_ldap_entries_attrs ON sts_ldap_entries USING gin (attrs jsonb_path_ops);
+CREATE INDEX IF NOT EXISTS sts_ldap_entries_values ON sts_ldap_entries USING gin (value_keys jsonb_path_ops);
+CREATE INDEX IF NOT EXISTS sts_ldap_entries_attr_names ON sts_ldap_entries USING gin (attr_names);
 -- The object classes, with the default GIN operator class, for `?|`: a group
 -- placed under `ou=users` or `ou=devices` found without a walk.
 CREATE INDEX IF NOT EXISTS sts_ldap_entries_classes ON sts_ldap_entries USING gin (class_keys);

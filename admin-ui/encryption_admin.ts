@@ -240,6 +240,20 @@ const DATA_CLASSES = [
          'durable key-encryption key; no page and no API reply returns it.'
   },
   {
+    label: 'directory',
+    what: 'Every directory entry’s attributes, whole — people, groups, ' +
+          'applications, devices, federation relationships',
+    where: '`sts_ldap_entries.attrs`, one blob per entry, in a PostgreSQL ' +
+           'store; each blob names the entry it belongs to',
+    sealed: true,
+    why: 'rcbj’s decision on #391 (phase 6): a copy of the directory table ' +
+         'is not a list of people. The DN stays readable, and so do the ' +
+         'attribute NAMES; the values a lookup compares are kept as keyed ' +
+         'digests beside the blob. A value sealed on its own (a TOTP ' +
+         'secret, Kerberos keys) is sealed again inside it. A file (ldif) ' +
+         'store holds entries as the filesystem protects them.'
+  },
+  {
     label: 'minted-key',
     what: 'The NAME a minted row is filed under — often the credential ' +
           'itself: a session id, a SAML artifact, a token id',

@@ -1079,6 +1079,45 @@ the list merge, the session rank).
 * The capability `ops.change-log-retention` is provided by
   `persistence_replication.js`, not `persistence.js` as the row first named.
 
+## EVERY DIRECTORY ENTRY IS SEALED (#391 phase 6, 2026-10-01)
+
+rcbj's decision on #391: an entry's attributes are stored as ONE sealed blob
+under its realm's `directory` data key, in `sts_ldap_entries.attrs` — the cell
+tier's key for a cell's people, the service's for the global tier's entries —
+and the DN stays readable. `directory_codec.js` is the whole of it; the
+postgres driver writes and reads every entry through it.
+
+* **THE BLOB NAMES ITS DN** (`{ dn, a }`), and an open refuses a blob whose
+  DN is not its row's: a blob copied onto another entry's row does not open
+  as that entry.
+* **THE LOOKUPS ARE KEYED DIGESTS THE SERVICE WRITES** (schema version 14):
+  `name_keys`, `mail_keys`, `uuid_keys`, `class_keys` stopped being generated
+  from `attrs`, and `value_keys` (the `byAttribute()` attributes:
+  `VALUE_INDEXED`) and `attr_names` (the NAMES, in the clear) are new.
+  `parent_key` and `rdn_value` are still generated from the DN. A database
+  built before version 14 is refused at open (STS-STORE-0074): #391 recreates
+  rather than migrates, and the service's role may not alter the schema.
+* **A QUERY IS KEYED AND OPENED ON THE THREAD THAT HOLDS THE KEYS.** The
+  windowed directory's bridge thread builds a statement and shapes its rows
+  with no keystore, so `persistence.js` wraps the bridge: `keyArgs()` before
+  the question, `openAnswer()` after. The driver's own `directoryQuery()`
+  does the same.
+* **AN ENTRY THAT DOES NOT OPEN IS NEVER TAKEN FOR ONE THAT IS ABSENT.**
+  `readEntry()` and the flush's lock read THROW (STS-STORE-0072) rather than
+  answer null — the change applier would remove it, a merge would write over
+  it. The restore leaves it out and says how many.
+* **THE RE-ENCRYPTION JOB WALKS THE DIRECTORY.** A blob hides the values
+  sealed inside it (a TOTP secret, Kerberos keys) from LIKE, and a key counted
+  as unused is destroyed. `countSealed()`, `countAllSealed()` and
+  `resealSealed()` open every entry, a page at a time, and count or re-seal
+  the blob's key and every key inside it (STS-STORE-0073 if the walk fails).
+* **The keystore starts before the directory is restored** (see
+  `persistence.js`): a blob cannot be opened before the key-encryption key is
+  read.
+* `cell_convert.js` opens the source entries to plan them (a group's members
+  split between tiers) and seals what it writes for the tier it writes to.
+* A file (ldif) store is not sealed.
+
 ## A MINTED ROW'S NAME IS A DIGEST, AND THE NAME IS SEALED (#222, 2026-10-01)
 
 `sts_minted.key` held the name a store filed a record under, and that is

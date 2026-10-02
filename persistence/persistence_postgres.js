@@ -290,15 +290,21 @@ const LDAP_GENERATED = {
     '+ 1) ELSE \'\' END) STORED',
   rdn_value: 'rdn_value text GENERATED ALWAYS AS (substr(split_part(dn_key, ' +
     '\',\', 1), strpos(split_part(dn_key, \',\', 1), \'=\') + 1)) STORED',
-  name_keys: 'name_keys jsonb GENERATED ALWAYS AS (lower(COALESCE(' +
-    'attrs->\'uid\', \'[]\'::jsonb)::text)::jsonb) STORED',
-  mail_keys: 'mail_keys jsonb GENERATED ALWAYS AS (lower(COALESCE(' +
-    'attrs->\'mail\', \'[]\'::jsonb)::text)::jsonb) STORED',
-  uuid_keys: 'uuid_keys jsonb GENERATED ALWAYS AS (lower((COALESCE(' +
-    'attrs->\'entryuuid\', \'[]\'::jsonb) || COALESCE(' +
-    'attrs->\'stsentryuuidalias\', \'[]\'::jsonb))::text)::jsonb) STORED',
-  class_keys: 'class_keys jsonb GENERATED ALWAYS AS (lower(COALESCE(' +
-    'attrs->\'objectclass\', \'[]\'::jsonb)::text)::jsonb) STORED'
+  // ---------------------------------------------------------------------
+  // THE VALUE LOOKUPS ARE WRITTEN BY THE SERVICE SINCE #391 PHASE 6, not
+  // generated: `attrs` is a sealed blob the database cannot read, so each
+  // is a JSON array of KEYED DIGESTS `persistence/directory_codec.js`
+  // computes beside the blob (or `<kind>\n<value>` where nothing seals).
+  // `value_keys` is `name=value` of the attributes `byAttribute()` asks
+  // for; `attr_names` the attribute NAMES, in the clear, for "who holds
+  // one".
+  // ---------------------------------------------------------------------
+  name_keys: 'name_keys jsonb NOT NULL DEFAULT \'[]\'::jsonb',
+  mail_keys: 'mail_keys jsonb NOT NULL DEFAULT \'[]\'::jsonb',
+  uuid_keys: 'uuid_keys jsonb NOT NULL DEFAULT \'[]\'::jsonb',
+  class_keys: 'class_keys jsonb NOT NULL DEFAULT \'[]\'::jsonb',
+  value_keys: 'value_keys jsonb NOT NULL DEFAULT \'[]\'::jsonb',
+  attr_names: 'attr_names jsonb NOT NULL DEFAULT \'[]\'::jsonb'
 };
 
 // The schema, created if it is not there. `IF NOT EXISTS` throughout rather
@@ -363,6 +369,8 @@ const SCHEMA_OBJECTS = [
   '  ' + LDAP_GENERATED.mail_keys + ',' +
   '  ' + LDAP_GENERATED.uuid_keys + ',' +
   '  ' + LDAP_GENERATED.class_keys + ',' +
+  '  ' + LDAP_GENERATED.value_keys + ',' +
+  '  ' + LDAP_GENERATED.attr_names + ',' +
   '  PRIMARY KEY (realm, dn_key))' },
   // The one index worth having beyond the primary key: every enumerator in
   // this service walks one realm.
@@ -398,9 +406,16 @@ const SCHEMA_OBJECTS = [
   { name: 'sts_ldap_entries_uuids', afterColumns: true, statement:
   'CREATE INDEX IF NOT EXISTS sts_ldap_entries_uuids ON sts_ldap_entries ' +
   'USING gin (uuid_keys jsonb_path_ops)' },
-  { name: 'sts_ldap_entries_attrs', afterColumns: true, statement:
-  'CREATE INDEX IF NOT EXISTS sts_ldap_entries_attrs ON sts_ldap_entries ' +
-  'USING gin (attrs jsonb_path_ops)' },
+  // The attribute values `byAttribute()` asks for, as keyed digests (#391
+  // phase 6) — where the GIN over `attrs` was, which a sealed blob makes
+  // nothing to index.
+  { name: 'sts_ldap_entries_values', afterColumns: true, statement:
+  'CREATE INDEX IF NOT EXISTS sts_ldap_entries_values ON sts_ldap_entries ' +
+  'USING gin (value_keys jsonb_path_ops)' },
+  // The attribute NAMES, GIN with the default operator class for `?`.
+  { name: 'sts_ldap_entries_attr_names', afterColumns: true, statement:
+  'CREATE INDEX IF NOT EXISTS sts_ldap_entries_attr_names ON ' +
+  'sts_ldap_entries USING gin (attr_names)' },
   // The object classes, GIN with the DEFAULT operator class: `?|` (any of
   // the group classes) is what it is asked, and `jsonb_path_ops` answers
   // only containment.
@@ -1074,7 +1089,13 @@ const SCHEMA_COLUMNS = [
   LDAP_GENERATED.uuid_keys },
   { table: 'sts_ldap_entries', column: 'class_keys', statement:
   'ALTER TABLE sts_ldap_entries ADD COLUMN IF NOT EXISTS ' +
-  LDAP_GENERATED.class_keys }
+  LDAP_GENERATED.class_keys },
+  { table: 'sts_ldap_entries', column: 'value_keys', statement:
+  'ALTER TABLE sts_ldap_entries ADD COLUMN IF NOT EXISTS ' +
+  LDAP_GENERATED.value_keys },
+  { table: 'sts_ldap_entries', column: 'attr_names', statement:
+  'ALTER TABLE sts_ldap_entries ADD COLUMN IF NOT EXISTS ' +
+  LDAP_GENERATED.attr_names }
 ];
 
 // THE STATEMENTS ALONE, which is what this module exported before the pairing
@@ -1604,6 +1625,147 @@ function create(options) {
     });
   }
 
+
+  // ---------------------------------------------------------------------------
+  // THE DIRECTORY'S ENTRIES ARE SEALED (#391 phase 6): `directory_codec.js`
+  // turns attributes into the `attrs` blob and the six lookup columns, and
+  // back. `entryTier` is the data-key tier this driver's entries are sealed
+  // under — `service` for a cell's global database, `cell` otherwise (the
+  // service's own key where no cell key is held). The codec reaches the
+  // keystore lazily; a driver used where nothing durable seals writes the
+  // attributes as they are and the lookups in their keyless form.
+  // ---------------------------------------------------------------------------
+  const entryCodec = require('./directory_codec').codecFor(
+    options.entryTier === 'service' ? 'service' : 'cell');
+
+  // The thirteen values an entry is written with: the seven columns it
+  // always had, `attrs` now the sealed blob, then the six lookups.
+  function entryParams(realmId, dnKey, entry) {
+    log.debug("Entering entryParams().");
+    const attrs = (entry && entry.attributes) || {};
+    const index = entryCodec.index(attrs);
+    log.debug("Leaving entryParams().");
+    return [realmId, dnKey, entry.dn,
+            JSON.stringify(entryCodec.sealAttributes(realmId, dnKey, attrs)),
+            entry.origin || null, entry.createdAt || null,
+            entry.modifiedAt || null,
+            JSON.stringify(index.nameKeys), JSON.stringify(index.mailKeys),
+            JSON.stringify(index.uuidKeys), JSON.stringify(index.classKeys),
+            JSON.stringify(index.valueKeys), JSON.stringify(index.attrNames)];
+  }
+
+  // A stored row's entry, its attributes opened. THROWS where the blob does
+  // not open: an entry this process cannot read must not be taken for one
+  // that is absent — the applier would remove it, and a merge would write
+  // over it.
+  function entryFromRow(row) {
+    log.debug("Entering entryFromRow().");
+    const attrs = entryCodec.openAttributes(row.dn_key, row.attrs);
+    if (attrs === null) {
+      log.debug("Leaving entryFromRow(). Does not open.");
+      throw errorCodes.mark(new Error(errorCodes.tag('STS-STORE-0072') +
+        'the directory entry ' + row.dn_key + ' in the "' + row.realm +
+        '" realm is sealed and does not open in this process.'),
+        'STS-STORE-0072');
+    }
+    log.debug("Leaving entryFromRow().");
+    return {
+      dn: row.dn,
+      attributes: attrs,
+      origin: row.origin || undefined,
+      createdAt: row.created_at || null,
+      modifiedAt: row.modified_at || row.created_at || null
+    };
+  }
+
+  // ---------------------------------------------------------------------------
+  // WHAT A SEALED ENTRY HOLDS UNDER WHICH DATA KEY, which SQL can no longer
+  // see (#391 phase 6). An entry's blob is under the realm's `directory` key,
+  // and INSIDE it are the per-attribute values sealed under their own keys
+  // (a TOTP secret, Kerberos keys, a client secret) — a LIKE over the column
+  // finds only the outer one, and the re-encryption job would count the
+  // inner keys as unused and destroy them with the values still in the
+  // entries. So the directory is walked HERE, a page at a time, and each
+  // entry opened.
+  // ---------------------------------------------------------------------------
+  const WALK_PAGE = 500;
+
+  // Every entry, in key order: `visit(row, opened)`, where `opened` is the
+  // text holding the entry's attributes (the blob opened, or the plain
+  // JSON) and null for a blob that does not open. Resolves the row count.
+  function walkDirectory(visit) {
+    log.debug("Entering walkDirectory().");
+    const crypto = require('../common/crypto');
+    const keystore = require('../common/keystore');
+    let seen = 0;
+    const page = function (afterRealm, afterKey) {
+      return pool.query(
+        'SELECT realm, dn_key, dn, attrs FROM sts_ldap_entries ' +
+        'WHERE (realm, dn_key) > ($1, $2) ORDER BY realm, dn_key LIMIT $3',
+        [afterRealm, afterKey, WALK_PAGE]
+      ).then(function (r) {
+        const rows = r.rows || [];
+        let chain = Promise.resolve();
+        rows.forEach(function (row) {
+          chain = chain.then(function () {
+            const stored = row.attrs;
+            const opened = typeof stored === 'string' &&
+              crypto.isEncryptedWithKek(stored)
+              ? keystore.open(stored, 'directory')
+              : JSON.stringify(stored || {});
+            seen += 1;
+            return visit(row, opened === undefined ? null : opened);
+          });
+        });
+        return chain.then(function () {
+          if (rows.length < WALK_PAGE) {
+            return seen;
+          }
+          const last = rows[rows.length - 1];
+          return page(last.realm, last.dn_key);
+        });
+      });
+    };
+    log.debug("Leaving walkDirectory().");
+    return page('', '');
+  }
+
+  // The data keys an entry names: its blob's own, and every value inside it.
+  function deksOfEntry(row, opened) {
+    log.debug("Entering deksOfEntry().");
+    const crypto = require('../common/crypto');
+    const out = [];
+    if (typeof row.attrs === 'string' && crypto.isEncryptedWithKek(row.attrs)) {
+      out.push(crypto.dekIdOf(row.attrs));
+    }
+    (String(opened || '').match(SEALED_VALUE) || []).forEach(function (one) {
+      out.push(one.split('$')[3]);
+    });
+    log.debug("Leaving deksOfEntry().");
+    return out;
+  }
+
+  // Counts, by data key, what the directory holds; an entry that does not
+  // open counts for its blob's key (it is still sealed under it).
+  function countDirectory(wanted) {
+    log.debug("Entering countDirectory().");
+    const counts = {};
+    log.debug("Leaving countDirectory().");
+    return walkDirectory(function (row, opened) {
+      deksOfEntry(row, opened).forEach(function (id) {
+        if (!wanted || wanted.has(id)) {
+          counts[id] = (counts[id] || 0) + 1;
+        }
+      });
+    }).then(function () {
+      return counts;
+    }, function (e) {
+      log.error(errorCodes.tag('STS-STORE-0073') + 'persistence: the ' +
+                'directory could not be walked to count its data keys: ' +
+                ((e && e.message) || e));
+      throw e;
+    });
+  }
 
   // RISK ROWS (#62) in the shapes `risk/risk_store.ts` works in: camelCase,
   // times as numbers, an `inet` as its text.
@@ -2454,7 +2616,8 @@ function create(options) {
         }).then(function () {
           // The columns, after the tables they belong to exist.
           return client.query(
-            'SELECT table_name, column_name FROM information_schema.columns ' +
+            'SELECT table_name, column_name, is_generated FROM ' +
+            'information_schema.columns ' +
             'WHERE table_schema = current_schema() AND ' +
             '(table_name, column_name) IN (' +
             SCHEMA_COLUMNS.map(function (one, index) {
@@ -2463,6 +2626,26 @@ function create(options) {
             [].concat.apply([], SCHEMA_COLUMNS.map(function (one) {
               return [one.table, one.column];
             }))).then(function (result) {
+            // A DIRECTORY TABLE FROM BEFORE #391 PHASE 6 (schema version 14)
+            // has its value lookups GENERATED from plaintext attributes, and
+            // the service writes them now — beside a sealed blob the
+            // database cannot read. Such a table is refused rather than
+            // altered: this role may not change the schema, and #391's rule
+            // is that a store is recreated, not migrated.
+            const generated = (result.rows || []).some(function (r) {
+              return r.table_name === 'sts_ldap_entries' &&
+                r.column_name === 'name_keys' &&
+                String(r.is_generated || '').toUpperCase() === 'ALWAYS';
+            });
+            if (generated) {
+              throw errorCodes.mark(new Error(errorCodes.tag(
+                'STS-STORE-0074') + 'the store\'s sts_ldap_entries was ' +
+                'built before schema version 14: its lookup columns are ' +
+                'generated from plaintext attributes, and this build seals ' +
+                'every entry (#391). Recreate the database (and run ' +
+                'postgres/schema.sql as its owner); it is not migrated.'),
+                'STS-STORE-0074');
+            }
             const present = new Set(result.rows.map(function (row) {
               return row.table_name + '.' + row.column_name;
             }));
@@ -2736,7 +2919,7 @@ function create(options) {
       log.debug('Entering the postgres driver loadDirectory().');
       log.debug("Leaving loadDirectory().");
       return readPool.query(
-        'SELECT realm, dn, attrs, origin, created_at, modified_at ' +
+        'SELECT realm, dn_key, dn, attrs, origin, created_at, modified_at ' +
         'FROM sts_ldap_entries ORDER BY realm, dn_key'
       ).then(function (result) {
         if (!result.rows.length) {
@@ -2744,18 +2927,26 @@ function create(options) {
           return null;
         }
         const out = {};
+        let unreadable = 0;
         result.rows.forEach(function (row) {
+          let entry = null;
+          try {
+            entry = entryFromRow(row);
+          } catch (e) {
+            log.debug("Caught in loadDirectory(): " + ((e && e.message) || e));
+            unreadable += 1;
+            return;
+          }
           if (!out[row.realm]) {
             out[row.realm] = [];
           }
-          out[row.realm].push({
-            dn: row.dn,
-            attributes: row.attrs || {},
-            origin: row.origin || undefined,
-            createdAt: row.created_at || null,
-            modifiedAt: row.modified_at || row.created_at || null
-          });
+          out[row.realm].push(entry);
         });
+        if (unreadable) {
+          log.error(errorCodes.tag('STS-STORE-0072') + 'persistence: ' +
+                    unreadable + ' directory entry/entries are sealed and ' +
+                    'did not open in this process, and were not restored.');
+        }
         Object.keys(out).forEach(function (realmId) {
           log.info('persistence: read ' + out[realmId].length + ' entry/ies ' +
                    'for the realm "' + realmId + '" from postgres.');
@@ -2884,25 +3075,19 @@ function create(options) {
         const stored = new Map();
 
         const entryOf = function (row) {
-          return {
-            dn: row.dn,
-            attributes: row.attrs || {},
-            origin: row.origin || undefined,
-            createdAt: row.created_at || null,
-            modifiedAt: row.modified_at || row.created_at || null
-          };
+          return entryFromRow(row);
         };
         const params = function (row, entry) {
-          return [row.realm, row.key, entry.dn,
-                  JSON.stringify(entry.attributes || {}),
-                  entry.origin || null, entry.createdAt || null,
-                  entry.modifiedAt || null];
+          return entryParams(row.realm, row.key, entry);
         };
         const update = function (row, entry) {
           moved.push({ realm: row.realm, dn: row.key, op: 'put' });
           return client.query(
             'UPDATE sts_ldap_entries SET dn = $3, attrs = $4::jsonb, ' +
-            'origin = $5, created_at = $6, modified_at = $7 ' +
+            'origin = $5, created_at = $6, modified_at = $7, ' +
+            'name_keys = $8::jsonb, mail_keys = $9::jsonb, ' +
+            'uuid_keys = $10::jsonb, class_keys = $11::jsonb, ' +
+            'value_keys = $12::jsonb, attr_names = $13::jsonb ' +
             'WHERE realm = $1 AND dn_key = $2', params(row, entry));
         };
         // What the merge decided, turned into a statement and an outcome.
@@ -2925,8 +3110,11 @@ function create(options) {
           }
           return client.query(
             'INSERT INTO sts_ldap_entries ' +
-            '  (realm, dn_key, dn, attrs, origin, created_at, modified_at) ' +
-            'VALUES ($1, $2, $3, $4::jsonb, $5, $6, $7) ' +
+            '  (realm, dn_key, dn, attrs, origin, created_at, modified_at, ' +
+            '   name_keys, mail_keys, uuid_keys, class_keys, value_keys, ' +
+            '   attr_names) ' +
+            'VALUES ($1, $2, $3, $4::jsonb, $5, $6, $7, $8::jsonb, ' +
+            '$9::jsonb, $10::jsonb, $11::jsonb, $12::jsonb, $13::jsonb) ' +
             'ON CONFLICT (realm, dn_key) DO NOTHING',
             params(row, verdict.entry)
           ).then(function (r) {
@@ -3023,12 +3211,21 @@ function create(options) {
             moved.push({ realm: row.realm, dn: row.key, op: 'put' });
             return client.query(
               'INSERT INTO sts_ldap_entries ' +
-              '  (realm, dn_key, dn, attrs, origin, created_at, modified_at) ' +
-              'VALUES ($1, $2, $3, $4::jsonb, $5, $6, $7) ' +
+              '  (realm, dn_key, dn, attrs, origin, created_at, modified_at, ' +
+              '   name_keys, mail_keys, uuid_keys, class_keys, value_keys, ' +
+              '   attr_names) ' +
+              'VALUES ($1, $2, $3, $4::jsonb, $5, $6, $7, $8::jsonb, ' +
+              '$9::jsonb, $10::jsonb, $11::jsonb, $12::jsonb, $13::jsonb) ' +
               'ON CONFLICT (realm, dn_key) DO UPDATE SET ' +
               '  dn = EXCLUDED.dn, attrs = EXCLUDED.attrs, ' +
               '  origin = EXCLUDED.origin, created_at = EXCLUDED.created_at, ' +
-              '  modified_at = EXCLUDED.modified_at',
+              '  modified_at = EXCLUDED.modified_at, ' +
+              '  name_keys = EXCLUDED.name_keys, ' +
+              '  mail_keys = EXCLUDED.mail_keys, ' +
+              '  uuid_keys = EXCLUDED.uuid_keys, ' +
+              '  class_keys = EXCLUDED.class_keys, ' +
+              '  value_keys = EXCLUDED.value_keys, ' +
+              '  attr_names = EXCLUDED.attr_names',
               params(row, row.entry));
           });
         });
@@ -3910,9 +4107,10 @@ function create(options) {
         if (!row) {
           return null;
         }
-        return { realm: row.realm, key: row.dn_key, entry: {
-          dn: row.dn, attributes: row.attrs || {}, origin: row.origin,
-          createdAt: row.created_at, modifiedAt: row.modified_at } };
+        // Opened; a blob that does not open THROWS, so the applier does not
+        // take an unreadable entry for a deleted one (see entryFromRow()).
+        return { realm: row.realm, key: row.dn_key,
+                 entry: entryFromRow(row) };
       });
     },
 
@@ -3929,8 +4127,11 @@ function create(options) {
     directoryQuery: function (name, args) {
       log.debug("Entering directoryQuery(). " + name);
       let statement;
+      const codecModule = require('./directory_codec');
       try {
-        statement = directoryQueries.build(name, args);
+        // The values looked up, keyed; the answer, opened (#391 phase 6).
+        statement = directoryQueries.build(name,
+                                           codecModule.keyArgs(name, args));
       } catch (e) {
         log.debug("Caught in directoryQuery(): " + ((e && e.message) || e));
         log.debug("Leaving directoryQuery(). Unknown query.");
@@ -3939,7 +4140,8 @@ function create(options) {
       log.debug("Leaving directoryQuery().");
       return readPool.query(statement.text, statement.values)
         .then(function (r) {
-          return directoryQueries.answerOf(name, r.rows || []);
+          return codecModule.openAnswer(entryCodec, name,
+            directoryQueries.answerOf(name, r.rows || []));
         });
     },
 
@@ -3948,6 +4150,14 @@ function create(options) {
     // the thread is one more client of this store and never a second,
     // differently configured way into it. It holds the password when the
     // URL does; it is handed to a thread of this process and nowhere else.
+    // The codec this driver seals its entries with, for the bridge's
+    // answers, which arrive on this thread still sealed (#391 phase 6).
+    entryCodec: function () {
+      log.debug("Entering entryCodec().");
+      log.debug("Leaving entryCodec().");
+      return entryCodec;
+    },
+
     bridgeConnection: function () {
       log.debug("Entering bridgeConnection().");
       log.debug("Leaving bridgeConnection().");
@@ -5972,8 +6182,7 @@ function create(options) {
           '   AND material LIKE $1 ESCAPE \'\\\') + ' +
           '(SELECT count(*) FROM sts_minted WHERE body LIKE $1 ' +
           '   ESCAPE \'\\\') + ' +
-          '(SELECT count(*) FROM sts_ldap_entries WHERE attrs::text LIKE $1 ' +
-          '   ESCAPE \'\\\') + ' +
+
           '(SELECT count(*) FROM sts_cluster_secrets WHERE material LIKE $1 ' +
           '   ESCAPE \'\\\')' + EXTRA_SEALED.map(function (one) {
             return ' + (SELECT count(*) FROM ' + one.table + ' WHERE ' +
@@ -5983,11 +6192,15 @@ function create(options) {
           return { id: id, count: Number(((r.rows || [])[0] || {}).n) || 0 };
         });
       })).then(function (rows) {
-        const out = {};
-        rows.forEach(function (one) {
-          out[one.id] = one.count;
+        // AND THE DIRECTORY, walked: its entries are sealed blobs (#391
+        // phase 6), and what is inside one is not visible to LIKE.
+        return countDirectory(new Set(ids)).then(function (inDirectory) {
+          const out = {};
+          rows.forEach(function (one) {
+            out[one.id] = one.count + (Number(inDirectory[one.id]) || 0);
+          });
+          return out;
         });
-        return out;
       });
     },
 
@@ -6011,7 +6224,7 @@ function create(options) {
         'SELECT id, sum(n)::bigint AS n FROM (' +
         one('sts_keys', 'material', 'realm NOT LIKE \'dek:%\'') +
         ' UNION ALL ' + one('sts_minted', 'body') +
-        ' UNION ALL ' + one('sts_ldap_entries', 'attrs::text') +
+
         ' UNION ALL ' + one('sts_cluster_secrets', 'material') +
         EXTRA_SEALED.map(function (extra) {
           return ' UNION ALL ' + one(extra.table, textOf(extra));
@@ -6022,7 +6235,13 @@ function create(options) {
         (r.rows || []).forEach(function (row) {
           out[String(row.id)] = Number(row.n) || 0;
         });
-        return out;
+        // AND THE DIRECTORY, walked (#391 phase 6).
+        return countDirectory(null).then(function (inDirectory) {
+          Object.keys(inDirectory).forEach(function (id) {
+            out[id] = (out[id] || 0) + inDirectory[id];
+          });
+          return out;
+        });
       });
     },
 
@@ -6078,36 +6297,6 @@ function create(options) {
             });
           }, Promise.resolve());
         }).then(function () {
-          return pool.query('SELECT realm, dn_key, dn, attrs::text AS attrs ' +
-                            'FROM sts_ldap_entries WHERE attrs::text LIKE $1 ' +
-                            'ESCAPE \'\\\' LIMIT $2', [like, limit]);
-        }).then(function (r) {
-          return (r.rows || []).reduce(function (c, row) {
-            return c.then(function () {
-              const next = resealText(row.attrs, reseal);
-              if (!next) {
-                tally.skipped += 1;
-                return null;
-              }
-              return withTransaction(function (client) {
-                return client.query(
-                  'UPDATE sts_ldap_entries SET attrs = $3::jsonb ' +
-                  'WHERE realm = $1 AND dn_key = $2 AND attrs = $4::jsonb',
-                  [row.realm, row.dn_key, next, row.attrs]
-                ).then(function (u) {
-                  if (!u.rowCount) {
-                    return null;
-                  }
-                  tally.entries += 1;
-                  tally.changed.push({ realm: row.realm, key: row.dn });
-                  return recordChanges(client, [{ kind: 'directory',
-                                                  realm: row.realm,
-                                                  key: row.dn }]);
-                });
-              });
-            });
-          }, Promise.resolve());
-        }).then(function () {
           return pool.query('SELECT name, material FROM sts_cluster_secrets ' +
                             'WHERE material LIKE $1 ESCAPE \'\\\' LIMIT $2',
                             [like, limit]);
@@ -6136,6 +6325,65 @@ function create(options) {
           }, Promise.resolve());
         });
       }, Promise.resolve()).then(function () {
+        // THE DIRECTORY, walked once for every key (#391 phase 6): an entry
+        // holding anything under one of them — its blob, or a value inside
+        // it — is opened, every inner value re-sealed, and the blob sealed
+        // again under the current `directory` key; compare and swap, with a
+        // change-log row, as before.
+        const wanted = new Set(ids);
+        const crypto = require('../common/crypto');
+        let budget = limit;
+        return walkDirectory(function (row, opened) {
+          if (budget <= 0 || opened === null) {
+            if (opened === null) {
+              tally.skipped += 1;
+            }
+            return null;
+          }
+          const holds = deksOfEntry(row, opened).some(function (id) {
+            return wanted.has(id);
+          });
+          if (!holds) {
+            return null;
+          }
+          const inner = resealText(opened, reseal) || opened;
+          let attrs = null;
+          try {
+            const parsed = JSON.parse(inner);
+            attrs = typeof row.attrs === 'string' &&
+              crypto.isEncryptedWithKek(row.attrs) ? parsed.a : parsed;
+          } catch (e) {
+            log.debug("Caught in resealSealed(): " + ((e && e.message) || e));
+            tally.skipped += 1;
+            return null;
+          }
+          const next = JSON.stringify(entryCodec.sealAttributes(row.realm,
+                                                                row.dn_key,
+                                                                attrs || {}));
+          budget -= 1;
+          return withTransaction(function (client) {
+            return client.query(
+              'UPDATE sts_ldap_entries SET attrs = $3::jsonb ' +
+              'WHERE realm = $1 AND dn_key = $2 AND attrs = $4::jsonb',
+              [row.realm, row.dn_key, next, JSON.stringify(row.attrs)]
+            ).then(function (u) {
+              if (!u.rowCount) {
+                return null;
+              }
+              tally.entries += 1;
+              tally.changed.push({ realm: row.realm, key: row.dn });
+              return recordChanges(client, [{ kind: 'directory',
+                                              realm: row.realm,
+                                              key: row.dn }]);
+            });
+          });
+        }).catch(function (e) {
+          log.error(errorCodes.tag('STS-STORE-0073') + 'persistence: the ' +
+                    'directory could not be walked to re-seal it: ' +
+                    ((e && e.message) || e));
+          throw e;
+        });
+      }).then(function () {
         return tally;
       });
     },

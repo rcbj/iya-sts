@@ -1502,6 +1502,22 @@ const CODES = [
       'realm\'s overrides) is sealed and did not open; it is ignored and ' +
       'the setting has its configured value until it is set again (#222).',
     spec: '' },
+  { code: 'STS-STORE-0072',
+    summary: 'A directory entry is sealed and did not open in this process ' +
+      '(a data key it does not hold, or a blob that names another DN); it ' +
+      'is left out of what the store answered (#391).',
+    spec: '' },
+  { code: 'STS-STORE-0073',
+    summary: 'The directory could not be walked to count or re-seal what ' +
+      'its entries hold under a data key; nothing in it was counted or ' +
+      'changed, so no key is destroyed on that count (#391).',
+    spec: '' },
+  { code: 'STS-STORE-0074',
+    summary: 'The PostgreSQL store was built before schema version 14: its ' +
+      'directory lookup columns are generated from plaintext attributes, ' +
+      'and this build seals every entry. The start is refused; recreate the ' +
+      'database (#391).',
+    spec: 'none — fatal at start' },
   // ===== CLUSTER ===========================================================
   { code: 'STS-CLUSTER-0001',
     summary: 'A write transaction was refused by the fence: this node\'s ' +
@@ -2054,6 +2070,11 @@ const CODES = [
       'global-tier directory row or a person indexed in another cell. ' +
       'Nothing is changed for it.',
     spec: 'none — a warning in the log' },
+  { code: 'STS-CELL-0210',
+    summary: 'A cell conversion found a sealed directory entry it could not ' +
+      'open, so it could not decide the entry\'s tier; nothing was ' +
+      'converted (#391).',
+    spec: 'cell_convert — refused' },
   // ===== SCHED =============================================================
   { code: 'STS-SCHED-0001',
     summary: 'A scheduled job\'s run threw or rejected; the run is recorded ' +

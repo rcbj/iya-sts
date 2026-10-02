@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3939** of them, in **41** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3943** of them, in **41** subsystems.
 
 ## Where a code appears
 
@@ -53,9 +53,9 @@ is an ordinary outcome.
 * [PROXY protocol (`STS-PROXY`)](#sts-proxy) — 9
 * [Service core (`STS-CORE`)](#sts-core) — 76
 * [Worker pools (`STS-WORKER`)](#sts-worker) — 48
-* [Persistence and coordination (`STS-STORE`)](#sts-store) — 71
+* [Persistence and coordination (`STS-STORE`)](#sts-store) — 74
 * [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 28
-* [Cells and residency (`STS-CELL`)](#sts-cell) — 86
+* [Cells and residency (`STS-CELL`)](#sts-cell) — 87
 * [Scheduler (`STS-SCHED`)](#sts-sched) — 18
 * [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 95
 * [Certificate authority (`STS-PKI`)](#sts-pki) — 205
@@ -357,6 +357,9 @@ Raised from: persistence/.
 | `STS-STORE-0069` | The renewal of this process's origin claim started or answered more than half the claim's lifetime late; the line names the event loop's delay, so a lost origin says why. | none — logged |
 | `STS-STORE-0070` | The liveness connection (origin renewal, heartbeat, leases) dropped or could not be opened; the next statement reconnects, and one that cannot goes through the pool. | none — logged |
 | `STS-STORE-0071` | A secret setting saved in the store (sts_appconfig or a realm's overrides) is sealed and did not open; it is ignored and the setting has its configured value until it is set again (#222). | — |
+| `STS-STORE-0072` | A directory entry is sealed and did not open in this process (a data key it does not hold, or a blob that names another DN); it is left out of what the store answered (#391). | — |
+| `STS-STORE-0073` | The directory could not be walked to count or re-seal what its entries hold under a data key; nothing in it was counted or changed, so no key is destroyed on that count (#391). | — |
+| `STS-STORE-0074` | The PostgreSQL store was built before schema version 14: its directory lookup columns are generated from plaintext attributes, and this build seals every entry. The start is refused; recreate the database (#391). | none — fatal at start |
 
 ## STS-CLUSTER
 
@@ -489,6 +492,7 @@ Raised from: common/cells.ts, common/cell_*.ts, persistence/tiers.js, persistenc
 | `STS-CELL-0207` | The conversion could not hold the service key-encryption key, or it did not open the stored key sets: the routing index's digests are keyed under it and would route nobody. Nothing is changed. | none — an operator tool |
 | `STS-CELL-0208` | The conversion could not dial or read the cell or the global database the way the service does (a connection, a password provider or a statement failed). Nothing is changed. | none — an operator tool |
 | `STS-CELL-0209` | A conversion finished with something worth a look: the sts_risk_* counts moved while it ran (something else was writing the cell database), or an already-converted cell database holds a global-tier directory row or a person indexed in another cell. Nothing is changed for it. | none — a warning in the log |
+| `STS-CELL-0210` | A cell conversion found a sealed directory entry it could not open, so it could not decide the entry's tier; nothing was converted (#391). | cell_convert — refused |
 
 ## STS-SCHED
 

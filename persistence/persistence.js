@@ -2408,6 +2408,10 @@ function openStore(chosen, resolvedUrl, globalUrls) {
     if (globalUrls) {
       const globalDriver = require('./persistence_postgres').create({
         url: globalUrls.url, readUrl: globalUrls.readUrl, log: log,
+        // The global tier's entries (everything but people) are sealed under
+        // the service's data keys, a cell's people under its own (#391
+        // phase 6).
+        entryTier: 'service',
         verifyTls: verifiesDatabaseTls(),
         poolMax: require('./persistence_postgres').poolMax(workerCount())
       });
@@ -2631,7 +2635,21 @@ function openStore(chosen, resolvedUrl, globalUrls) {
           return Number(config.value('ldap.workerDirectoryTimeoutMs'));
         }
       });
-      directory.window.attach(bridge);
+      // THE BRIDGE'S THREAD HOLDS NO KEY (#391 phase 6): a value it looks up
+      // is keyed here before the question goes, and the entries it answers
+      // are opened here when they come back.
+      const codecModule = require('./directory_codec');
+      const codec = typeof driver.entryCodec === 'function'
+        ? driver.entryCodec() : codecModule.create('cell');
+      const asked = bridge;
+      directory.window.attach({
+        query: function (name, args) {
+          log.debug("Entering the keyed bridge query(). " + name);
+          log.debug("Leaving the keyed bridge query().");
+          return codecModule.openAnswer(codec, name,
+            asked.query(name, codecModule.keyArgs(name, args)));
+        }
+      });
       log.info('persistence: this worker reads the people and devices it ' +
                'does not hold from the store, through the directory bridge ' +
                '(ldap.workerDirectory=postgres-lru).');

@@ -24,7 +24,12 @@
 //      held (#222), and the plain digest where none is;
 //   F. the used-assertion history in a database: issuer, id, client and
 //      subject sealed, a replay still refused and its row opened, a look
-//      opened, and the text search done in memory.
+//      opened, and the text search done in memory;
+//   G. a directory entry (#391 phase 6): one blob under the realm's
+//      directory key, opening to its attributes with an inner sealed value
+//      still sealed, refused on another entry's row; keyed-digest lookup
+//      columns that a lookup keyed the same way finds; attribute names
+//      readable; a query's answer opened, an unopenable row left out.
 // ===========================================================================
 
 delete process.env.CONFIG_FILE;
@@ -254,6 +259,60 @@ function childMain() {
          JSON.stringify({ found: found.matched, missed: missed.matched }));
     used.clearStore();
 
+    // ------------------------------------------------------------------ G
+    // A DIRECTORY ENTRY, SEALED (#391 phase 6): the codec the postgres driver
+    // writes and reads every entry through.
+    const codecModule = require(ROOT + '/persistence/directory_codec');
+    const codec = codecModule.create('cell');
+    const dnKey = 'uid=alice,ou=users,dc=example,dc=com';
+    const attrs = { uid: ['Alice'], mail: ['Alice@Example.com'],
+                    objectClass: ['inetOrgPerson'],
+                    entryUUID: ['ABCD-1'], didSubject: ['did:key:z6Mk'],
+                    stsTotpCredential: [keystore.seal('{"secret":"S"}',
+                                                      'totp-secret')] };
+    const blob = codec.sealAttributes('acme', dnKey, attrs);
+    note(typeof blob === 'string' && SEALED.test(blob) &&
+         blob.indexOf('Alice') < 0 && blob.indexOf('alice') < 0 &&
+         crypto.dekIdOf(blob) !== crypto.dekIdOf(attrs.stsTotpCredential[0]),
+         'G1. an entry is ONE blob under the realm\'s directory key, with ' +
+         'nothing of it readable', String(blob).slice(0, 30));
+    const back = codec.openAttributes(dnKey, blob);
+    note(back && back.uid[0] === 'Alice' &&
+         back.stsTotpCredential[0] === attrs.stsTotpCredential[0],
+         'G2. it opens to the attributes, an inner sealed value still sealed');
+    note(codec.openAttributes('uid=mallory,ou=users,dc=example,dc=com',
+                              blob) === null,
+         'G3. a blob copied onto another entry\'s row does not open as it');
+    const index = codec.index(attrs);
+    const byName = codecModule.keyArgs('byName', ['acme', 'ou=users',
+                                                  '  ALICE ']);
+    const byMail = codecModule.keyArgs('byMail', ['acme',
+                                                  'alice@example.COM']);
+    const byDid = codecModule.keyArgs('byAttribute', ['acme', 'DIDSubject',
+                                                      'did:key:z6Mk']);
+    note(index.nameKeys.length === 1 &&
+         index.nameKeys[0] === byName[2].key &&
+         byName[2].rdn === 'alice' && index.nameKeys[0].indexOf('alice') < 0 &&
+         index.mailKeys[0] === byMail[1].key &&
+         index.valueKeys.indexOf(byDid[2].key) >= 0,
+         'G4. the lookup columns are keyed digests, and a lookup keyed the ' +
+         'same way finds them', JSON.stringify(index.nameKeys));
+    note(index.attrNames.indexOf('ststotpcredential') >= 0 &&
+         index.attrNames.indexOf('mail') >= 0,
+         'G5. the attribute NAMES stay readable, for "who holds one"');
+    const answered = codecModule.openAnswer(codec, 'byKeys', [
+      { realm: 'acme', key: dnKey, entry: { dn: dnKey, attributes: blob } },
+      { realm: 'acme', key: 'uid=bob,ou=users', entry: {
+        dn: 'uid=bob,ou=users', attributes: blob } }]);
+    note(answered.length === 1 && answered[0].entry.attributes.uid[0] ===
+         'Alice',
+         'G6. a query\'s answer is opened on this thread, and a row that ' +
+         'does not open as its entry is left out');
+    const names = codecModule.openAnswer(codec, 'namesUnder', [
+      { key: dnKey, dn: dnKey, origin: '', uid: '', attrs: blob }]);
+    note(names[0].uid === 'Alice' && names[0].attrs === undefined,
+         'G7. a name row\'s uid is read out of the blob');
+
     // ------------------------------------------------------------------ D
     keystore.reset();
     const plain = sealedSettings.sealMap({ 'scim.digestPassword': 'x' }, '');
@@ -262,6 +321,12 @@ function childMain() {
     note(claims.digestOf('login', 'alice') === unkeyed,
          'D2. and a claim key is the plain digest, as every process ' +
          'without a key computes it');
+    const plainCodec = codecModule.create('cell');
+    const plainAttrs = plainCodec.sealAttributes('acme', 'uid=x', { uid: ['X'] });
+    note(plainAttrs && plainAttrs.uid[0] === 'X' &&
+         plainCodec.index({ uid: ['X'] }).nameKeys[0] === 'name\nx',
+         'D3. and a directory entry is written as it is, its lookups in the ' +
+         'keyless form');
   })().catch(function (e) {
     note(false, 'the child ran to the end', e && e.stack);
   }).then(function () {

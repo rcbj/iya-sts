@@ -281,12 +281,10 @@ async function run(t) {
   const onEntries = encryption.dataClasses().filter(function (one) {
     return one.sealed && one.label && /\bentry\b/.test(one.where);
   }).map(function (one) { return one.label; }).sort();
+  // The whole-entry class `directory` (#391 phase 6) is one of them: its row
+  // says it lives on the entry, as a blob of all of it.
   const directory = require('../common/keystore').DIRECTORY_CLASSES
-    .filter(function (cls) {
-      // The whole-directory class (#391 P6) seals an entry, not a value on
-      // one, so it has no row of its own here.
-      return cls !== 'directory';
-    }).slice().sort();
+    .slice().sort();
   t.check(onEntries.length > 0 &&
           JSON.stringify(onEntries) === JSON.stringify(directory),
           'the classes this table places on a directory entry are exactly ' +
