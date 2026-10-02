@@ -135,12 +135,17 @@ RUN BUILD_NUMBER="${BUILD_NUMBER}" GIT_COMMIT="${GIT_COMMIT}" \
 # OCI metadata, read by ghcr.io and Docker Hub (2026-10-02): the service
 # image's five, for the image .github/workflows/build-container.yml publishes
 # as ghcr.io/rcbj/iya-sts-xacml-pep. `source` links the package to this
-# repository. A LABEL is metadata, not a layer.
+# repository. A LABEL is metadata, not a layer. The io.artifacthub.*
+# labels are what artifacthub.io reads; readme-url is required.
 LABEL org.opencontainers.image.source="https://github.com/rcbj/iya-sts" \
       org.opencontainers.image.title="iya-sts-xacml-pep" \
       org.opencontainers.image.description="IYA STS remote XACML policy enforcement point: pulls policy from the STS and decides locally (port 9090)" \
       org.opencontainers.image.licenses="BUSL-1.1" \
-      org.opencontainers.image.revision="${GIT_COMMIT}"
+      org.opencontainers.image.revision="${GIT_COMMIT}" \
+      io.artifacthub.package.readme-url="https://raw.githubusercontent.com/rcbj/iya-sts/main/README.md" \
+      io.artifacthub.package.logo-url="https://raw.githubusercontent.com/rcbj/iya-sts/main/docs/logo.png" \
+      io.artifacthub.package.license="BUSL-1.1" \
+      io.artifacthub.package.keywords="xacml,pep,authorization,policy,iya-sts"
 
 EXPOSE 9090
 # The HTTPS listener (2026-09-13). It binds only once a certificate and key

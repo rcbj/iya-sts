@@ -392,11 +392,17 @@ RUN BUILD_NUMBER="${BUILD_NUMBER}" GIT_COMMIT="${GIT_COMMIT}" \
 # the repository's Packages; `revision` is the commit the image was built
 # from, beside the build number version.json carries. The parent project's
 # api and client images carry the same five. A LABEL is metadata, not a layer.
+# The io.artifacthub.* labels are what artifacthub.io reads when it indexes
+# the published image; readme-url is the one it refuses the package without.
 LABEL org.opencontainers.image.source="https://github.com/rcbj/iya-sts" \
       org.opencontainers.image.title="iya-sts" \
       org.opencontainers.image.description="IYA STS: an identity service speaking OAuth 2.0 / OpenID Connect, SAML, WS-Trust, WS-Federation, Kerberos, LDAP, SCIM, SPIFFE and more (port 8081)" \
       org.opencontainers.image.licenses="BUSL-1.1" \
-      org.opencontainers.image.revision="${GIT_COMMIT}"
+      org.opencontainers.image.revision="${GIT_COMMIT}" \
+      io.artifacthub.package.readme-url="https://raw.githubusercontent.com/rcbj/iya-sts/main/README.md" \
+      io.artifacthub.package.logo-url="https://raw.githubusercontent.com/rcbj/iya-sts/main/docs/logo.png" \
+      io.artifacthub.package.license="BUSL-1.1" \
+      io.artifacthub.package.keywords="identity,sts,oauth2,oidc,saml,ws-trust,ws-federation,kerberos,ldap,scim,spiffe,xacml,gnap"
 # The service selects its configuration (log level) with CONFIG_FILE, the same
 # way api and client do. The compose files override this per stack.
 #

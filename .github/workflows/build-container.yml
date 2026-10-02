@@ -410,6 +410,43 @@ jobs:
             printf '%s' "${rows}"
           } >> "$GITHUB_STEP_SUMMARY"
 
+      # ARTIFACT HUB'S VERIFIED PUBLISHER BADGE (2026-10-02), the parent
+      # project's arrangement (its dockerimage.yml, d95d48f there). For a
+      # container-image repository Artifact Hub does not read git: it looks
+      # for its repository metadata in the IMAGE repository, under the tag
+      # `artifacthub.io`, and a repositoryID matching the one it assigned is
+      # the proof of ownership. ghcr.io only, where the Artifact Hub
+      # repositories point. An image whose
+      # .github/artifacthub/<name>/artifacthub-repo.yml has not been committed
+      # yet (the ID exists only once the repository is added in Artifact
+      # Hub's control panel) is skipped. Pushing again changes nothing, so
+      # every publishing build does it. The per-package metadata is the
+      # io.artifacthub.* LABELs in each Dockerfile, not this file.
+      - name: Install oras
+        if: ${{ steps.publish-plan.outputs.float != '' }}
+        uses: oras-project/setup-oras@v1
+
+      - name: Publish Artifact Hub repository metadata
+        if: ${{ steps.publish-plan.outputs.float != '' }}
+        run: |
+          set -euo pipefail
+          for name in iya-sts iya-sts-xacml-pep; do
+            dir=".github/artifacthub/${name}"
+            if [ ! -f "${dir}/artifacthub-repo.yml" ]; then
+              echo "No ${dir}/artifacthub-repo.yml yet: ${name} is skipped."
+              continue
+            fi
+            # oras takes the path as given into the layer's title, so push
+            # from the file's own directory and it is named
+            # artifacthub-repo.yml, as Artifact Hub expects.
+            (
+              cd "${dir}"
+              oras push "ghcr.io/rcbj/${name}:artifacthub.io" \
+                --config /dev/null:application/vnd.cncf.artifacthub.config.v1+yaml \
+                artifacthub-repo.yml:application/vnd.cncf.artifacthub.repository-metadata.layer.v1.yaml
+            )
+          done
+
       # if: always() — when a step above fails, the container's log is the only
       # place the reason exists (a MODULE_NOT_FOUND, a context file that was not
       # copied), and it is gone as soon as the runner is reclaimed.
