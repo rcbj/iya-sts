@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 "use strict";
 //
@@ -349,7 +349,7 @@ async function test() {
     domain: REALM + ".example.net", name: "CAEP 145 " + STAMP },
     "created the realm");
   await ok(realmApi + "/applications/create", { identifier: RECEIVER,
-    kind: "oauth2-client", name: RECEIVER, protocols: ["oauth2", "ssf"],
+    kind: "oauth2-client", name: RECEIVER, protocols: ["oauth2", "oidc", "ssf"],
     // The Shared Signals and SCIM scopes are issued only to a client that
     // declares them (#110), and in product a declared list is the whole of
     // what the client may be issued.

@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -161,8 +161,8 @@ const STATUS_FOR: Record<string, number> = {
 // ---------------------------------------------------------------------------
 // THE DEMONSTRATION RESOURCE SERVER'S NAMES — see `demoResource()`.
 // ---------------------------------------------------------------------------
-const DEMO_TYPE = 'urn:mock-sts:gnap:demo';
-const DEMO_REFERENCE = 'mock-sts-gnap-demo';
+const DEMO_TYPE = 'urn:iya-sts:gnap:demo';
+const DEMO_REFERENCE = 'iya-sts-gnap-demo';
 
 /**
  * GNAP's HTTP surface: the grant, continuation, token management, discovery,
@@ -450,7 +450,7 @@ class GnapRoutes {
   // THE DEMONSTRATION RESOURCE SERVER (RFC 9635 sections 7.2 and 9.1).
   //
   // A GET needs `read` and a POST needs `write` on the type
-  // `urn:mock-sts:gnap:demo` — or the registered reference its RS-first
+  // `urn:iya-sts:gnap:demo` — or the registered reference its RS-first
   // challenge hands out. With no token it answers 401 with the RS-FIRST
   // challenge of section 9.1: `WWW-Authenticate: GNAP
   // as_uri=…;access=…;referrer=…`, which is how a client that knows only a

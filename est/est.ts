@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -500,8 +500,13 @@ class Est {
     // client asking an unlabelled /cacerts is asking for the CA, not a profile.
     const enrolling = ['simpleenroll', 'simplereenroll', 'serverkeygen']
       .indexOf(ctx.op) >= 0;
+    // STRUCTURAL ONLY before the credential (rcbj, 2026-10-01): whether the
+    // label is a profile at all. Whether it is ALLOWED depends on whose
+    // request it is — an application's own list overrides the realm's — so
+    // `core.issue()` asks that once it knows the entry.
     if (ctx.labelled || (enrolling && ctx.op !== 'simplereenroll')) {
-      const profile = core.checkProfile(FAMILY, ctx.profile);
+      const profile = core.checkProfile(FAMILY, ctx.profile, null,
+                                        { structural: true });
       if (!profile.ok) {
         this.refuseWith(req, res, ctx, profile);
         log.debug("Leaving Est.refusedBeforeAuthentication(). Profile.");
@@ -632,6 +637,36 @@ class Est {
     return !!(view && view.identifier);
   }
 
+  // Is certificate authentication on for the certificate presented? The
+  // realm's switch, unless the certificate NAMES an application (read, not
+  // believed: it is verified next either way) whose own
+  // estCertificateAuthentication says otherwise (rcbj, 2026-10-01).
+  /**
+   * Answers whether EST accepts the presented client certificate's method:
+   * the named application's own switch where it set one, the realm's
+   * otherwise.
+   *
+   * @param req - the request
+   * @returns true when certificate authentication is on for it
+   */
+  certificateAuthenticationOn(req) {
+    const { log, core, mtls } = this.deps;
+    log.debug("Entering Est.certificateAuthenticationOn().");
+    const presented = mtls.peerCertificate(req);
+    let named = null;
+    try {
+      named = presented && presented.raw
+        ? core.entryNamedByCertificate(Buffer.from(presented.raw)) : null;
+    } catch (e) {
+      log.debug("Caught in Est.certificateAuthenticationOn(): " +
+                ((e && e.message) || e));
+      named = null;
+    }
+    const entry = named && named.kind === 'application' ? named : null;
+    log.debug("Leaving Est.certificateAuthenticationOn().");
+    return core.estSwitch('certificateAuthentication', entry);
+  }
+
   // { ok, principal } or a marked refusal the caller answers with.
   /**
    * Authenticates an enrollment: HTTP Basic, as a person first and then as an
@@ -652,7 +687,16 @@ class Est {
                            '(RFC 7030 section 3.2.3) and no other ' +
                            'Authorization scheme.');
       }
-      if (config.value('est.basicAuthentication') === false) {
+      // Off for the realm, unless the name is an application whose own
+      // estBasicAuthentication turns it on (rcbj, 2026-10-01: the
+      // application's setting overrides the realm's). Its secret is still
+      // checked below; the name only chooses which switch is asked.
+      const basicOn = config.value('est.basicAuthentication') !== false ||
+        (!core.resolveEntry('person', basic.username).ok &&
+         this.applicationNamed(basic.username) &&
+         core.estSwitch('basicAuthentication',
+                        { kind: 'application', id: basic.username }));
+      if (!basicOn) {
         log.debug("Leaving Est.authenticate(). Basic is off.");
         return core.refuse('STS-EST-0010', 401, 'HTTP Basic is turned off ' +
                            'for EST in this realm (est.basicAuthentication).');
@@ -683,7 +727,7 @@ class Est {
       return application;
     }
     if (mtls.peerCertificate(req)) {
-      if (config.value('est.certificateAuthentication') === false) {
+      if (!this.certificateAuthenticationOn(req)) {
         log.debug("Leaving Est.authenticate(). Certificates are off.");
         return core.refuse('STS-EST-0012', 401, 'TLS client certificate ' +
                            'authentication is turned off for EST in this ' +
@@ -984,6 +1028,9 @@ class Est {
       // The request's key attestation, read only by the device profile
       // (#164 phase 2, `core.issueForDevice()`).
       attestations: csr.attestations,
+      // The unlabelled path's profile is the realm default, which an
+      // application's own default replaces (2026-10-01).
+      profileDefaulted: !ctx.labelled,
       via: 'est:simpleenroll'
     });
     if (!issued.ok) {
@@ -1140,7 +1187,7 @@ class Est {
     const byCertificate = ctx.principal.certificateSerial
       ? { ok: true, principal: ctx.principal }
       : (mtls.peerCertificate(req) &&
-         config.value('est.certificateAuthentication') !== false
+         this.certificateAuthenticationOn(req)
           ? await core.authenticateCertificate(req, 'est-certificate')
           : null);
     if (byCertificate) {
@@ -1279,7 +1326,16 @@ class Est {
   async serverkeygen(req, res, ctx) {
     const { log, config, errorCodes, codec, keyMaterial, core } = this.deps;
     log.debug("Entering Est.serverkeygen().");
-    if (config.value('est.serverKeyGeneration') === false) {
+    // Off for the realm refuses here, before the template is read — unless
+    // the caller is an application whose own estServerKeyGeneration turns
+    // it on, or an administrator, who may be asking for such an
+    // application; `core.issue()` then asks the switch of the TARGET
+    // (rcbj, 2026-10-01: the application's setting overrides the realm's).
+    const asker = ctx.principal || {};
+    const mayStillBeOn = asker.kind === 'person' && asker.admin === true ||
+      (asker.kind === 'application' &&
+       core.estSwitch('serverKeyGeneration', asker));
+    if (config.value('est.serverKeyGeneration') === false && !mayStillBeOn) {
       errorCodes.mark(res, 'STS-EST-0005');
       this.estError(req, res, ctx, 501,
                     'Server-side key generation is turned off ' +
@@ -1332,6 +1388,7 @@ class Est {
     const issued = await core.issueWithServerKey({
       family: FAMILY, profile: ctx.profile, principal: ctx.principal,
       target: target.target, keyAlg: keyAlg, requested: csr.requested,
+      profileDefaulted: !ctx.labelled,
       via: 'est:serverkeygen'
     });
     if (!issued.ok) {

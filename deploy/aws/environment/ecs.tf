@@ -1,8 +1,8 @@
 # SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: BUSL-1.1
 #
 # ---------------------------------------------------------------------------
-# THREE mock-sts NODES ON FARGATE, ONE SERVICE PER AVAILABILITY ZONE.
+# THREE iya-sts NODES ON FARGATE, ONE SERVICE PER AVAILABILITY ZONE.
 #
 # WHY THREE SERVICES AND NOT ONE WITH A DESIRED COUNT OF THREE: a single
 # service spreads tasks across its subnets as best it can, and a replacement
@@ -21,7 +21,7 @@
 # EACH TASK HAS TWO CONTAINERS:
 #   schema-init  runs postgres/schema.sql as the RDS master user and exits;
 #                non-essential, so its exit does not stop the task.
-#   mock-sts     waits for schema-init to exit 0 (`dependsOn: SUCCESS`); a
+#   iya-sts     waits for schema-init to exit 0 (`dependsOn: SUCCESS`); a
 #                schema that fails to apply is a node that never starts,
 #                with the reason in the log.
 # ---------------------------------------------------------------------------
@@ -55,11 +55,10 @@ locals {
     STS_WORKERS_READ_YOUR_WRITE = tostring(var.workers_read_your_write)
     AWS_REGION                  = local.region
 
-    # The key-encryption key and the database password, from Secrets Manager
-    # through common/secrets.js — the path issue #51 exists to exercise.
-    STS_KEYS_KEK_PROVIDER          = "aws"
-    STS_KEYS_KEK_REF               = local.shared_secret_arns["kek"]
-    STS_KEYS_KEK_REGION            = local.region
+    # The database password, from Secrets Manager through common/secrets.js
+    # — the path issue #51 exists to exercise. The key-encryption key is
+    # `local.kek_environment` below: a key in KMS by default, the Secrets
+    # Manager secret with `kek_provider = "secret"` (kek.tf, #391).
     STS_DATABASE_PASSWORD_PROVIDER = "aws"
     STS_DATABASE_PASSWORD_REF      = aws_secretsmanager_secret.main["db-app-password"].arn
     STS_DATABASE_PASSWORD_REGION   = local.region
@@ -79,6 +78,17 @@ locals {
     PKI_DISTRIBUTION_LDAP_HOST = local.public_host
     PKI_DISTRIBUTION_LDAP_PORT = tostring(local.published_ports.ldap.listener)
 
+    # REVOCATION IS NOT CONSULTED ON THESE CLUSTERS (rcbj, #371). A
+    # certificate presented to a node, or registered and used, is not checked
+    # against a CRL or an OCSP responder — this service's own register
+    # included — and one whose issuer cannot be found through its caIssuers
+    # address is not refused. In the task definition, so it survives every
+    # restart and a rebuilt environment; an environment's `extra_environment`
+    # can still set either back. A value set on the console or through
+    # /admin-api is persisted in the cluster's database and outranks this.
+    STS_PKI_REVOCATION_CHECK                      = "off"
+    STS_PKI_REVOCATION_REQUIRE_DISTRIBUTION_POINT = "off"
+
     # The directory's ceiling, as the ENVIRONMENT's value rather than an
     # override, so resetting the override the bulk loads leave lands here
     # (variables.tf, reset-environment.js).
@@ -91,6 +101,9 @@ locals {
     # agreeing by coincidence with a default in another repository file.
     STS_RISK_UPLOAD_DIRECTORY = local.risk_upload_dir
     },
+    # THE KEY-ENCRYPTION KEY (kek.tf, #391): STS_KEYS_KEK_*, and while an
+    # environment migrates from a secret KEK, STS_PREVIOUS_KEK_* as well.
+    local.kek_environment,
     # THE PUBLIC CERTIFICATE, WHERE THERE IS ONE. `cert-init` has written both
     # files into the shared volume before this container is allowed to start, so
     # the node serves the ACM leaf on its own 8081 rather than the self-signed
@@ -155,17 +168,25 @@ locals {
       name      = "global-schema-init"
       image     = "${local.ecr_repository_url}:${local.schema_image_tag}"
       essential = false
-      environment = [
+      environment = concat([
         { name = "PGHOST", value = local.global.primary_address },
         { name = "PGPORT", value = tostring(local.global.db_port) },
         { name = "PGDATABASE", value = local.global.db_name },
         { name = "PGUSER", value = local.db_master_user },
         { name = "STS_DB_APP_USER", value = local.global.db_app_user },
-      ]
-      secrets = [
+        ], local.multi_cloud ? [
+        # THE PUBLICATION THE GCP CELLS SUBSCRIBE TO (#97), made by the same
+        # idempotent run: every table but sts_schema, which each database
+        # seeds for itself (deploy/aws/schema-init/apply.sh).
+        { name = "STS_DB_PUBLICATION", value = local.global.publication },
+        { name = "STS_DB_REPL_USER", value = local.global.repl_user },
+      ] : [])
+      secrets = concat([
         { name = "PGPASSWORD", valueFrom = local.global.master_secret_arn },
         { name = "STS_DB_APP_PASSWORD", valueFrom = lookup(local.global_secret_arns, "global-db-app-password", "") },
-      ]
+        ], local.multi_cloud ? [
+        { name = "STS_DB_REPL_PASSWORD", valueFrom = lookup(local.global_secret_arns, "global-db-repl-password", "") },
+      ] : [])
       logConfiguration = local.container_log[t]
     }
   }
@@ -233,7 +254,7 @@ resource "aws_ecs_task_definition" "node" {
     cpu_architecture        = "X86_64"
   }
 
-  # THE SHARED VOLUME cert-init WRITES AND mock-sts READS. Ephemeral and of
+  # THE SHARED VOLUME cert-init WRITES AND iya-sts READS. Ephemeral and of
   # the task's own — no host path, no EFS: the certificate is fetched from ACM
   # on every start, so there is nothing here worth surviving the task, and a
   # private key that outlived the task would be a private key on a disk
@@ -278,7 +299,7 @@ resource "aws_ecs_task_definition" "node" {
       environment = [
         # The VALIDATED certificate's ARN, so the export cannot run against
         # one that has not been issued yet.
-        { name = "STS_ACM_CERTIFICATE_ARN", value = aws_acm_certificate_validation.public[0].certificate_arn },
+        { name = "STS_ACM_CERTIFICATE_ARN", value = local.public_certificate_arn },
         { name = "STS_TLS_DIR", value = local.tls_dir },
         { name = "AWS_REGION", value = local.region },
       ]
@@ -292,7 +313,7 @@ resource "aws_ecs_task_definition" "node" {
     [
       local.schema_init_container[each.key],
       {
-        name      = "mock-sts"
+        name      = "iya-sts"
         image     = "${local.ecr_repository_url}:${var.image_tag}"
         essential = true
         # BOTH INIT CONTAINERS MUST HAVE SUCCEEDED. A node that could not get
@@ -408,7 +429,7 @@ resource "aws_ecs_service" "first" {
     for_each = local.published_ports
     content {
       target_group_arn = aws_lb_target_group.nodes[load_balancer.key].arn
-      container_name   = "mock-sts"
+      container_name   = "iya-sts"
       container_port   = load_balancer.value.container
     }
   }
@@ -497,7 +518,7 @@ resource "aws_ecs_service" "others" {
     for_each = local.published_ports
     content {
       target_group_arn = aws_lb_target_group.nodes[load_balancer.key].arn
-      container_name   = "mock-sts"
+      container_name   = "iya-sts"
       container_port   = load_balancer.value.container
     }
   }

@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -86,7 +86,8 @@ function fileStore(file) {
       (upserts || []).forEach(function (row) {
         db.minted[idOf(row.handle, row.realm, row.key)] = {
           handle: row.handle, realm: row.realm, key: row.key, body: row.body,
-          written_ms: Date.now() };
+          // The name, sealed, beside its digest (#222).
+          keySealed: row.keySealed || '', written_ms: Date.now() };
       });
       (deletes || []).forEach(function (row) {
         delete db.minted[idOf(row.handle, row.realm, row.key)];
@@ -106,13 +107,15 @@ function fileStore(file) {
       return Promise.resolve({ material: db.secrets[name] });
     },
     // What node B applies: every minted row as the change replication would
-    // hand it — base64url(handle) + '.' + base64url(key).
+    // hand it — base64url(handle) + '.' + the sealed name (#222), or
+    // base64url(key) for a row written without one.
     changes: function () {
       return Object.values(read().minted).map(function (row) {
         return { realm: row.realm,
                  key: Buffer.from(row.handle, 'utf8').toString('base64url') +
                       '.' +
-                      Buffer.from(row.key, 'utf8').toString('base64url') };
+                      (row.keySealed ||
+                       Buffer.from(row.key, 'utf8').toString('base64url')) };
       });
     },
     raw: function () {
@@ -165,10 +168,43 @@ async function node(role, storeFile, kekFile) {
   const store = fileStore(storeFile);
   const keystore = require('../common/keystore');
   keystore.reset();
+  // THE KEY ROWS ARE SHARED TOO (#391): a sealed row names the data
+  // encryption key it is under, and that key reaches the other node only
+  // through the key table, as it does through sts_keys in a cluster. A
+  // store that dropped its writes left B holding a DEK of its own that
+  // opened nothing A sealed.
+  const keyFile = storeFile + '.keys';
+  function keyRows() {
+    log.debug("Entering keyRows().");
+    let rows = {};
+    try {
+      rows = JSON.parse(fs.readFileSync(keyFile, 'utf8'));
+    } catch (e) {
+      log.debug("Caught in keyRows(): " + ((e && e.message) || e));
+      rows = {};
+    }
+    log.debug("Leaving keyRows().");
+    return rows;
+  }
   keystore.setStore({
-    loadKeys: function () { return Promise.resolve([]); },
-    saveKeys: function () { return Promise.resolve(); },
-    deleteKeys: function () { return Promise.resolve(); }
+    loadKeys: function () {
+      const rows = keyRows();
+      return Promise.resolve(Object.keys(rows).map(function (k) {
+        return { realm: k, material: rows[k] };
+      }));
+    },
+    saveKeys: function (key, material) {
+      const rows = keyRows();
+      rows[key] = material;
+      fs.writeFileSync(keyFile, JSON.stringify(rows));
+      return Promise.resolve();
+    },
+    deleteKeys: function (key) {
+      const rows = keyRows();
+      delete rows[key];
+      fs.writeFileSync(keyFile, JSON.stringify(rows));
+      return Promise.resolve();
+    }
   });
   await keystore.start();
   out.sealed = keystore.sealed() && !keystore.hasEphemeralKek();

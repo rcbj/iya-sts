@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 //
 // File: sts_admin_risk_upload.js
 //
@@ -136,9 +136,16 @@ async function upload(prefix, query, file, type) {
 
 // A version's row once it is no longer loading, read the way an operator
 // reads it: GET /admin-api/risk.
+//
+// THREE MINUTES, NOT ONE (2026-09-30). The bound is how long to wait for a
+// verdict, not a claim about speed: under CI's coverage run the service is
+// instrumented, and the gzip bomb was refused 80 s after its upload (CI run
+// 36762417779, STS-RISK-0032 at 19:45:00, the job gave up at 19:44:39).
+const SETTLE_MS = 180000;
+
 async function settled(prefix, realm, version) {
   log.debug("Entering settled(). " + version);
-  const deadline = Date.now() + 60000;
+  const deadline = Date.now() + SETTLE_MS;
   for (;;) {
     const r = await call("GET", base + prefix + "/admin-api/risk");
     assert.strictEqual(r.status, 200, "GET /admin-api/risk answered " +
@@ -160,7 +167,8 @@ async function settled(prefix, realm, version) {
     if (Date.now() > deadline) {
       log.debug("Leaving settled(). Timed out.");
       assert.fail("version " + version + " of " + DATASET + " was still " +
-                  (v ? v.state : "not recorded") + " after a minute");
+                  (v ? v.state : "not recorded") + " after " +
+                  (SETTLE_MS / 60000) + " minutes");
     }
     await new Promise(function (resolve) { setTimeout(resolve, 500); });
   }

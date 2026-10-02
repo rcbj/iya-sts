@@ -101,7 +101,8 @@ them there. `appRegistered` records *how* an application got here, not whether
 what it holds counts.
 
 That makes one `client_id` able to exercise both halves of RFC 6749 section
-2.1.1 without a restart: set `oauthTokenEndpointAuthMethod` to `none` and the
+2.1.1 without a restart: make `oauthTokenEndpointAuthMethod` hold `none` alone
+(it may hold several methods, but never `none` beside another) and the
 client becomes public — PKCE is required of it and its secret is no longer
 checked — and set it back and it is confidential again.
 
@@ -435,15 +436,145 @@ answers that question. Five families — LDAP, SCIM, SPIFFE, mutual TLS and
 OpenID4VCI — have no kind at all, because this service records no application
 identifier in them; those rows say *never recorded here* rather than *no*.
 
-**Declaring a family grants nothing, and with one exception refuses nothing.**
-An application declared for SAML 2.0 alone is still issued an access token at
-`/oauth2/token`, and one declared for nothing is treated exactly as it would
-otherwise be. The exception is SAML 2.0 in product mode: the per-service-provider
+**Declaring a family grants nothing, and in product mode it refuses the
+rest.** In product mode the issuance policy refuses an issuance through a
+family the application is not declared for: an application declared for SAML
+2.0 alone is refused an access token at `/oauth2/token`, and one declared for
+OAuth 2.0 alone is refused an ID Token (an access token is OAuth 2.0's, OpenID
+Connect's, OpenID4VCI's and mutual TLS's; an ID Token is OpenID Connect's
+alone). In development nothing is refused, and an application declared for
+nothing is refused nothing in either mode. The issuance policy's
+`decideProtocols` answer turns the rule off. Separately, SAML 2.0 in product
+mode: the per-service-provider
 paths `/saml2/metadata/{sp}`, `/saml2/sso/{sp}` and `/saml2/slo/{sp}` answer
 only for a registered service provider — an entry of that kind, or one declared
 for SAML 2.0 (#112) — see [SAML 2.0 Web Browser SSO](saml2-sso.md). What
 otherwise takes effect is the configuration underneath: redirect URIs, grant
 types, scopes and the secret.
+
+### A DID describing an application
+
+Tick **Decentralized Identifier (DID)** among an application's protocol
+families and this service advertises a W3C DID for it:
+
+* **The DID** is a `did:web` under the realm's address:
+  `did:web:<host>[:realm:<id>]:applications:<identifier>`. Characters a
+  `did:web` component cannot hold (such as `:` and `/` in a URN identifier) are
+  percent-encoded.
+* **The document** is served at
+  `<base>/applications/<identifier>/did.json` (`application/did+json`,
+  `no-store`). It is answered only once the application has a key; until then
+  it is a 404.
+* **Its contents** are three attributes, on the application's
+  *Decentralized Identifier (DID)* configuration tab:
+  * `didPublicKeyJwk`: the public keys, each a JsonWebKey2020 method named
+    `<did>#<kid>` under `authentication` and `assertionMethod`. A value with a
+    private member is refused.
+  * `didService`: `<type>|<https URL>`, each a `service` entry.
+  * `didAlsoKnownAs`: absolute URIs.
+* **Generate a key pair** on that tab (ES256, ES384 or EdDSA), or call
+  `POST /admin-api/applications/generate-did-key`. The public key is added to
+  the document. The private key is shown once, and kept by this service
+  sealed (like an application's RFC 7523 key pair) so it can sign the
+  application's Domain Linkage Credentials. Tick *replace* to make the new key
+  the only one.
+* **Domain linkage.** For each `LinkedDomains` service, *Download
+  did-configuration.json* (or `POST
+  /admin-api/applications/sign-domain-linkage` with the `origin`) signs a
+  DIF Domain Linkage Credential with a kept key. Host the file at
+  `https://<origin>/.well-known/did-configuration.json`: it proves the DID
+  and the origin are one party. It is good for
+  `oid4vci.domainLinkageLifetimeS` (a year by default). A key pasted in by
+  hand has no private half here and cannot sign one.
+
+The DID follows the address the service is reached on; pin
+`global.publicBaseUrl` so it does not change with the host name.
+
+### Certificate enrollment (ACME, EST, SCEP)
+
+ACME, EST and SCEP are three protocol families an application may be
+declared for. In product mode an application is issued a certificate only
+over a family it is declared for. An application declared for nothing is
+not refused, in either mode.
+
+The application's *Certificate enrollment* configuration tab overrides the
+realm's settings for that application alone. A value set there replaces the
+realm's, in either direction; an empty field leaves the realm's in force:
+
+| Attribute | Overrides | What it does |
+|---|---|---|
+| `acmeAllowedProfiles`, `estAllowedProfiles`, `scepAllowedProfiles` | `<family>.allowedProfiles` | The profiles it may be issued, in place of the realm's list. The CA, OCSP and KDC profiles are never issued. |
+| `acmeDefaultProfile`, `estDefaultProfile`, `scepDefaultProfile` | `<family>.defaultProfile` | The profile used when a request names none. |
+| `acmeCertificateLifetimeDays`, `estCertificateLifetimeDays`, `scepCertificateLifetimeDays` | `<family>.certificateLifetimeDays` | Its certificates' lifetime, longer or shorter than the realm's. No certificate outlives its Issuing CA. |
+| `enrollMaxCertificates` | `pki.enrollmentMaxCertificatesPerEntry` | How many certificates it may hold, higher or lower than the realm's. |
+| `estBasicAuthentication`, `estCertificateAuthentication` | `est.basicAuthentication`, `est.certificateAuthentication` | TRUE accepts and FALSE refuses that EST authentication method when the application authenticates itself, whatever the realm says. |
+| `estServerKeyGeneration` | `est.serverKeyGeneration` | TRUE allows and FALSE refuses `/serverkeygen` for its certificates, whatever the realm says. |
+
+A refusal is the protocol's own error: an ACME problem document, an EST
+HTTP status, a SCEP `failInfo`.
+
+**Its certificates, on its own page.** For an application declared for
+ACME, EST or SCEP, the **Credentials** tab and the **Certificate
+enrollment** configuration tab both show:
+
+* the rules in force for it: profiles, default profile, lifetime,
+  certificate cap and EST's switches, each marked as the application's own
+  or the realm's;
+* every certificate it was issued over the three protocols, with its
+  profile, serial, names, dates and status, a **PEM** download and a
+  **Revoke** button;
+* for ACME, its External Account Binding keys, with **Create an EAB key**
+  and **Delete**;
+* for EST, **Issue** a certificate with a server-generated key;
+* for SCEP, its challenge passwords, with **Create a challenge** and
+  **Delete**;
+* its registered host names, with **Add** and **Remove**.
+
+Each control posts to the protocol's own console action, so each has the
+same `/admin-api` operation as on the protocol's page. A one-time secret (an
+HMAC key, a challenge, a private key) is shown once on the page the action
+answers with, which links back to the application. `GET
+/admin-api/applications?application=<id>` returns the same facts as
+`certificateEnrollment`, with no secret.
+
+### Custom claims, SAML attributes and token lifetimes
+
+The realm's **Token lifetimes**, **Custom claims**, **UserInfo claims** and
+**Custom SAML attributes** pages (under Protocols) apply to every
+application. An application can override them on its own configuration tabs
+(**Directory → Applications → the application → Configuration**):
+
+| Tab | Section | What it overrides |
+|---|---|---|
+| OAuth 2.0 / OpenID Connect | **Token lifetimes** | Shows the access token, ID Token, refresh token and refresh-idle lifetimes in force for this client, whether each is its own or the realm's, and the realm page's warnings. The overrides are the `oauthAccessTokenTtlS`, `oauthIdTokenTtlS`, `oauthRefreshTokenTtlS` and `oauthRefreshIdleSeconds` fields on the same tab. The clock skew stays realm-wide. |
+| OAuth 2.0 / OpenID Connect | **Custom claims** | The access token, ID Token and UserInfo claims for this client. |
+| SAML | **Custom SAML attributes** | The SAML 2.0 attributes (with an optional NameFormat) and SAML 1.1 attributes (with a namespace) for this audience. |
+
+**An application's claims are added to the realm's, and win by name.** The
+realm's claims still go out. Where the application and the realm name the
+same claim, the application's value is issued. An application with no claims
+of its own gets exactly the realm's set. Each section lists the claims in
+force, marked as the application's own or the realm's, with **Remove** on the
+application's rows and a form to set one.
+
+A row is either a typed value, with the same `${…}` placeholders as the
+realm's page, or a directory attribute of the person (every value or the
+first, and a JSON type for the token sets). Rows follow the realm's rules: a
+name the protocol sets itself (`sub`, `iss`, `exp`…), an attribute that may
+not be released, or an unknown type is refused (`STS-REG-0206`). So is a set
+whose protocol the application is not declared for.
+
+Which application a claim applies to: for tokens and UserInfo, the client
+(`client_id`); for SAML, the audience (the service provider's entityID, or a
+WS-Federation or WS-Trust relying party). These are the same keys its other
+per-application settings use.
+
+The management API: `POST /admin-api/applications/set-custom-claim` (with
+`set` = `access_token`, `id_token`, `userinfo`, `saml2` or `saml11`, and
+`name`, plus `value`, or `attribute` with `multi` and `type`) and
+`POST /admin-api/applications/remove-custom-claim`. `GET
+/admin-api/applications?application=<id>` returns `customClaims` and
+`tokenLifetimes`.
 
 ### CORS: which pages may read an answer
 
@@ -542,7 +673,7 @@ The live source for every setting is its console page and
 | `/admin/applications` | The registry: list, filter, drill-down, and the edit actions. `GET /admin-api/applications`, `POST /admin-api/applications/{action}` |
 | `/admin/applications/new` | Create an application, with its families, identifiers, redirect URIs and an RFC 9728 import. `GET /admin-api/applications/new` |
 | `/admin/ldap/applications` | The entries as the directory holds them, and the published schema |
-| `/admin/delegation` | Delegated permissions defined and granted on application entries ([Admin console](admin-console.md#delegated-permissions)) |
+| `/admin/delegation-settings` | Delegated permissions defined and granted on application entries, and on each application's Permissions tab ([Admin console](admin-console.md#delegated-permissions)) |
 | `/admin/consent` | Global consent on application entries, and per-person consent |
 | `POST /oauth2/register` | RFC 7591 registration, which writes an entry |
 | `/portal/applications` | The applications a signed-in person may use |

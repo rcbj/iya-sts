@@ -1,6 +1,6 @@
 // @ts-check
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -77,10 +77,11 @@
 // and "done" would be a lie.
 //
 // **NOTHING IS RE-SEALED.** A row sealed in a single-cell store is sealed
-// under the service key; the global rows stay under it (every cell holds
-// it), and the cell rows too — `keystore.open()` tries the cell key and then
-// the service key, so they open where they are and are sealed under the cell
-// key when next written.
+// under the service scope's data encryption keys (#391), whose wrapped rows
+// are in `sts_keys` and so in the GLOBAL tier every cell reads; the cell rows
+// keep them too — `keystore.open()` finds the data encryption key a value
+// names whatever its scope, so they open where they are and are sealed under
+// the cell's own keys when next written.
 //
 // **THE CHANGE LOGS ARE NOT COPIED.** `sts_changes` is a list of pointers to
 // rows, read by processes that are running; nothing is running across a
@@ -136,12 +137,17 @@ const TABLES = {
     json: [], time: [] },
   sts_ldap_entries: {
     key: ['realm', 'dn_key'],
+    // The six lookup columns the service writes beside the sealed `attrs`
+    // since #391 phase 6 (they were generated).
     columns: ['realm', 'dn_key', 'dn', 'attrs', 'origin', 'created_at',
-              'modified_at'],
-    json: ['attrs'], time: [] },
+              'modified_at', 'name_keys', 'mail_keys', 'uuid_keys',
+              'class_keys', 'value_keys', 'attr_names'],
+    json: ['attrs', 'name_keys', 'mail_keys', 'uuid_keys', 'class_keys',
+           'value_keys', 'attr_names'], time: [] },
   sts_minted: {
     key: ['handle', 'realm', 'key'],
-    columns: ['handle', 'realm', 'key', 'body', 'written_at'],
+    // `key_sealed`: the row's name, sealed beside its digest key (#222).
+    columns: ['handle', 'realm', 'key', 'body', 'written_at', 'key_sealed'],
     json: [], time: ['written_at'] },
   sts_cluster_claims: {
     key: ['scope', 'realm', 'key'],
@@ -450,6 +456,49 @@ function sqlStore(options) {
 }
 
 // A failure, tagged, as the Error the command line reports.
+// ---------------------------------------------------------------------------
+// A DIRECTORY ENTRY IS SEALED (#391 phase 6), and a conversion READS one: it
+// decides an entry's tier from its object classes and splits a group's
+// members between the tiers. So the source entries are OPENED as they are
+// read (`openSourceEntries()`), planned in the clear, and SEALED for the
+// tier they are written to (`sealPlannedEntries()`) — the global tier's under
+// the service's data keys, a cell's under its own — with the lookup columns
+// computed beside them. The plan is sealed in place before anything is
+// written, so `verifyGlobal()` compares what was written with itself.
+// ---------------------------------------------------------------------------
+function openSourceEntries(rows) {
+  log.debug("Entering openSourceEntries().");
+  const codec = require('./directory_codec').create('cell');
+  const out = (rows || []).map(function (row) {
+    const attrs = codec.openAttributes(row.dn_key, row.attrs);
+    if (attrs === null) {
+      throw refusal('STS-CELL-0210', 'the directory entry ' + row.dn_key +
+                    ' in the "' + row.realm + '" realm is sealed and does ' +
+                    'not open here; nothing was converted.');
+    }
+    return Object.assign({}, row, { attrs: attrs });
+  });
+  log.debug("Leaving openSourceEntries(). " + out.length + ".");
+  return out;
+}
+
+function sealPlannedEntries(rows, tier) {
+  log.debug("Entering sealPlannedEntries(). " + tier);
+  const codec = require('./directory_codec').create(tier);
+  (rows || []).forEach(function (row) {
+    const attrs = row.attrs || {};
+    const index = codec.index(attrs);
+    row.attrs = codec.sealAttributes(row.realm, row.dn_key, attrs);
+    row.name_keys = index.nameKeys;
+    row.mail_keys = index.mailKeys;
+    row.uuid_keys = index.uuidKeys;
+    row.class_keys = index.classKeys;
+    row.value_keys = index.valueKeys;
+    row.attr_names = index.attrNames;
+  });
+  log.debug("Leaving sealPlannedEntries().");
+}
+
 function refusal(code, message) {
   log.debug("Entering refusal().");
   const err = /** @type {any} */ (new Error(errorCodes.tag(code) +
@@ -723,6 +772,8 @@ async function convert(options) {
     for (const table of WHOLE_TABLES.concat(['sts_ldap_entries'])) {
       source[table] = await cell.rows(table);
     }
+    // Opened to be planned (see openSourceEntries()).
+    source.sts_ldap_entries = openSourceEntries(source.sts_ldap_entries);
     source.sts_minted = await cell.rows('sts_minted', { handle: handles });
     source.sts_cluster_claims = await cell.rows('sts_cluster_claims',
       { scope: tiers.GLOBAL_RUN_SCOPE });
@@ -798,6 +849,10 @@ async function convert(options) {
     return { state: 'dry-run', summary: summary, plan: plan,
              routingAdded: 0 };
   }
+
+  // Sealed for the tier each is written to (see sealPlannedEntries()).
+  sealPlannedEntries(plan.global.sts_ldap_entries, 'service');
+  sealPlannedEntries(plan.cellUpdate.sts_ldap_entries, 'cell');
 
   // 4. COPY — one transaction on the global database.
   try {

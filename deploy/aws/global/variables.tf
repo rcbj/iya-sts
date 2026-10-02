@@ -1,10 +1,10 @@
 # SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: BUSL-1.1
 
 variable "name" {
   description = "The project prefix. Must match the foundation and environment stacks' `name`."
   type        = string
-  default     = "mock-sts"
+  default     = "iya-sts"
 }
 
 variable "environment" {
@@ -27,41 +27,62 @@ variable "cells" {
     region                 = string
     jurisdiction           = string
     vpc_cidr               = string
-    geolocation_countries  = optional(list(string), [])
     db_snapshot_identifier = optional(string, "") # the cell's; unread here
+    # A MULTI-CLOUD ENVIRONMENT'S GCP CELLS (#97): unread here but for
+    # `cloud`, which keeps them out of everything this stack does with an
+    # AWS cell — its state, its replica, its peering and its secret replicas.
+    # Their copies of the global tier subscribe to the publication below and
+    # are deploy/multicloud/gcp-global's.
+    cloud          = optional(string, "aws")
+    coordinates    = optional(object({ latitude = string, longitude = string }))
+    global_db_cidr = optional(string, "")
   }))
   validation {
     condition     = length(var.cells) >= 2
     error_message = "a multi-cell environment has at least two cells; one cell is a single-cell environment, which has no global/ stack."
   }
   validation {
-    # The cells this stack has a provider for (providers.tf), and each in
-    # the region its id names.
+    # EACH CELL IN THE REGION ITS ID NAMES, by foundation/locals.tf's rule
+    # (`cell_of_region`, #367 — keep the copies in step): the area, the
+    # direction's initials and the number, us-west-2 = usw2, ap-southeast-5 =
+    # apse5. It was a table of the four regions this stack had providers for.
     condition = alltrue([
-      for id, c in var.cells : lookup({
-        usw2  = "us-west-2"
-        cac1  = "ca-central-1"
-        euc1  = "eu-central-1"
-        apse1 = "ap-southeast-1"
-      }, id, "") == c.region
+      for id, c in var.cells : c.cloud != "aws" || (
+        can(regex("^[a-z]{2}-(north|south|east|west|central|northeast|northwest|southeast|southwest)-[1-9]$", c.region)) &&
+        id == join("", [
+          split("-", c.region)[0],
+          lookup({
+            north     = "n", south = "s", east = "e", west = "w", central = "c",
+            northeast = "ne", northwest = "nw", southeast = "se", southwest = "sw",
+          }, split("-", c.region)[1], "?"),
+          split("-", c.region)[2],
+      ]))
     ])
-    error_message = "each cell must be one of usw2 (us-west-2), cac1 (ca-central-1), euc1 (eu-central-1), apse1 (ap-southeast-1), in the region its id names."
+    error_message = "each AWS cell's id must be its region shortened by rule (us-west-2 is usw2, eu-central-1 euc1, ap-southeast-5 apse5), in a commercial region of the form area-direction-digit."
   }
+}
+
+variable "jurisdictions" {
+  description = "The environment's jurisdictions and the countries pinned to each (../environment/dns_cells.tf). In the cells file, which this stack also reads; unread here."
+  type = map(object({
+    geolocation_countries = optional(list(string), [])
+  }))
+  default = {}
 }
 
 variable "primary_cell" {
   description = "The cell whose VPC holds the global database's writer (issue #98, D3)."
   type        = string
   validation {
-    condition     = contains(keys(var.cells), var.primary_cell)
-    error_message = "primary_cell must be a key of cells."
+    condition     = try(var.cells[var.primary_cell].cloud, "") == "aws"
+    error_message = "primary_cell must be an AWS cell of cells: the global writer is RDS (#97 keeps it there)."
   }
 }
 
 variable "carryover_secret" {
   description = <<-EOT
     The name of a CARRY-OVER secret in the primary cell's region — e.g.
-    `mock-sts/carryover/testidp`, written by deploy/aws/convert-to-cells.sh —
+    `iya-sts/carryover/testidp`, written by deploy/aws/convert-to-cells.sh —
     whose values replace the generated ones for the secrets a converted
     single-region environment's database was written under (secrets.tf, *A
     converted environment's secrets*). EMPTY — the default, and every
@@ -119,4 +140,17 @@ variable "tags" {
   default = {
     ManagedBy = "terraform"
   }
+}
+
+variable "max_slot_wal_keep_size_mb" {
+  description = <<-EOT
+    A MULTI-CLOUD ENVIRONMENT ONLY (#97): the most WAL the writer keeps for a
+    logical replication slot that has fallen behind — a GCP cell's subscriber
+    that is down, or that was destroyed without dropping its subscription.
+    Past it the slot is invalidated and that subscriber must be re-synced
+    (its node's schema-init drops and re-creates the subscription), rather
+    than the writer's disk filling and every cell losing its global writes.
+  EOT
+  type        = number
+  default     = 10240
 }

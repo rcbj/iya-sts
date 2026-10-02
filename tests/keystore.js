@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -115,10 +115,40 @@ async function run(t) {
   t.log.info('=== the envelope ===');
   const kek = nodeCrypto.randomBytes(32).toString('base64');
   const secret = 'a private key, or something shaped like one';
-  const sealed = crypto.encryptWithKek(kek, secret);
+  // ENVELOPE ENCRYPTION (#391): a value is sealed under a data encryption
+  // key, and only the data encryption key under the key-encryption key.
+  const dek = crypto.generateDek();
+  const dekId = crypto.generateDekId();
+  const wrapped = crypto.wrapDek(kek, dek, 'sts dek v1|' + dekId + '|s|r|c');
+  const sealed = crypto.encryptWithDek(dekId, dek, secret);
 
-  t.equal(crypto.decryptWithKek(kek, sealed), secret,
-          'a record encrypted under a key-encryption key comes back');
+  t.equal(crypto.decryptWithDek(dek, sealed), secret,
+          'a record encrypted under a data encryption key comes back');
+  t.equal(crypto.dekIdOf(sealed), dekId,
+          'and its envelope names the data encryption key that sealed it');
+  t.check(crypto.unwrapDek(kek, wrapped, 'sts dek v1|' + dekId + '|s|r|c')
+            .equals(dek),
+          'the data encryption key unwraps under the key-encryption key');
+  let refusedOtherRealm = false;
+  try {
+    crypto.unwrapDek(kek, wrapped, 'sts dek v1|' + dekId + '|s|other|c');
+  } catch (e) {
+    log.debug("Caught in run(): " + ((e && e.message) || e));
+    refusedOtherRealm = true;
+  }
+  t.check(refusedOtherRealm,
+          'and does NOT unwrap as another realm\'s: the scope, realm and ' +
+          'class are the authenticated data of the wrap');
+  let refusedWrongKek = false;
+  try {
+    crypto.unwrapDek(nodeCrypto.randomBytes(32), wrapped,
+                     'sts dek v1|' + dekId + '|s|r|c');
+  } catch (e) {
+    log.debug("Caught in run(): " + ((e && e.message) || e));
+    refusedWrongKek = true;
+  }
+  t.check(refusedWrongKek,
+          'nor under the wrong key-encryption key');
   t.check(sealed.indexOf(secret) < 0,
           'AND THE PLAINTEXT IS NOT IN THE STORED FORM, which is the whole ' +
           'point and is worth asserting rather than assuming: a bug that ' +
@@ -132,14 +162,14 @@ async function run(t) {
 
   let refusedWrongKey = false;
   try {
-    crypto.decryptWithKek(nodeCrypto.randomBytes(32), sealed);
+    crypto.decryptWithDek(nodeCrypto.randomBytes(32), sealed);
   } catch (e) {
     log.debug("Caught in run(): " + ((e && e.message) || e));
     refusedWrongKey = true;
   }
   t.check(refusedWrongKey,
           'THE WRONG KEY-ENCRYPTION KEY IS REFUSED RATHER THAN YIELDING ' +
-          'DIFFERENT BYTES. This is why AES-256-GCM and not CBC: a signing ' +
+          'DIFFERENT BYTES (here the wrong data encryption key). This is why AES-256-GCM and not CBC: a signing ' +
           'key that decrypted to the wrong bytes would produce signatures ' +
           'nothing can verify, and the failure would surface at a relying ' +
           'party as "the signature is invalid" — as far from the cause as it ' +
@@ -147,7 +177,8 @@ async function run(t) {
 
   let refusedTampering = false;
   try {
-    crypto.decryptWithKek(kek, sealed.slice(0, sealed.length - 8) + 'AAAAAAAA');
+    crypto.decryptWithDek(dek, sealed.slice(0, sealed.length - 8) +
+                          'AAAAAAAA');
   } catch (e) {
     log.debug("Caught in run(): " + ((e && e.message) || e));
     refusedTampering = true;
@@ -236,8 +267,13 @@ async function run(t) {
     // The write is queued rather than awaited by the property read, so let it
     // land. This is the one place this file waits on anything.
     await new Promise(function (r) { setTimeout(r, 50); });
-    t.equal(store.rows.size, 1,
-            'and it was written to the store');
+    t.equal(Array.from(store.rows.keys()).filter(function (key) {
+      return key.indexOf('dek:') !== 0;
+    }).length, 1, 'and it was written to the store');
+    const dekRow = store.rows.get('dek:service:default') || '';
+    t.check(/"wrapped":"\$dekwrap\$1\$/.test(dekRow),
+            'BESIDE THE DATA ENCRYPTION KEY IT IS SEALED UNDER, which is ' +
+            'stored WRAPPED (#391)', dekRow.slice(0, 80));
     const stored = store.rows.get('default') || '';
     t.check(crypto.isEncryptedWithKek(stored),
             'ENCRYPTED. What is in the store is a ciphertext and not a key');
@@ -382,7 +418,10 @@ async function run(t) {
     t.log.info('=== rotation ===');
     const rotated = await keystore.rotate('default');
     t.equal(rotated.ok, true, 'rotating removes the stored material');
-    t.equal(store.rows.size, 0, 'and the store no longer holds it');
+    t.equal(Array.from(store.rows.keys()).filter(function (key) {
+      return key.indexOf('dek:') !== 0;
+    }).length, 0, 'and the store no longer holds it (its data encryption ' +
+                  'keys stay: other rows of the realm are sealed under them)');
 
     keystore.reset();
     keystore.setStore(store);

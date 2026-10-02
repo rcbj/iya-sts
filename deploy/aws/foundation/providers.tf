@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: BUSL-1.1
 
 provider "aws" {
   region = var.aws_region
@@ -15,43 +15,11 @@ data "aws_caller_identity" "current" {}
 data "aws_partition" "current" {}
 
 # ---------------------------------------------------------------------------
-# ONE PROVIDER PER REGION A CELL MAY BE IN (#98, 2026-09-28).
-#
-# Terraform cannot make a provider per element of a list, so the four regions
-# the design names are written out, and `regions.tf` gives each a module
-# instance that exists only when `permitted_regions` names that region. A
-# provider whose region is not permitted is configured and never used: it
-# holds no resource and reads no data source, so it makes no call the region
-# fence would refuse.
+# ONE PROVIDER, EVERY REGION (#367, 2026-09-30). Until then this file carried
+# a provider block per region a cell could be in — four, written out, because
+# Terraform cannot make a provider per list element. AWS provider 6 gives
+# every regional resource a `region` argument instead, so modules/region is
+# one module block with a `for_each` over `permitted_regions`
+# (regions.tf), each instance naming its region on every resource it makes,
+# through this provider. A region is opened by the list alone.
 # ---------------------------------------------------------------------------
-provider "aws" {
-  alias  = "usw2"
-  region = "us-west-2"
-  default_tags {
-    tags = merge(var.tags, { Project = local.project_tag })
-  }
-}
-
-provider "aws" {
-  alias  = "cac1"
-  region = "ca-central-1"
-  default_tags {
-    tags = merge(var.tags, { Project = local.project_tag })
-  }
-}
-
-provider "aws" {
-  alias  = "euc1"
-  region = "eu-central-1"
-  default_tags {
-    tags = merge(var.tags, { Project = local.project_tag })
-  }
-}
-
-provider "aws" {
-  alias  = "apse1"
-  region = "ap-southeast-1"
-  default_tags {
-    tags = merge(var.tags, { Project = local.project_tag })
-  }
-}

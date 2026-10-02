@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: BUSL-1.1
 #
-# Stand-alone compose file for the mock STS: `docker compose up --build`.
+# Stand-alone compose file for IYA STS: `docker compose up --build`.
 #
 # In the project this was extracted from the STS is one service among nine
 # (local-tests.yml), all on host networking so that Keycloak, the api, the client
@@ -866,10 +866,18 @@ services:
       # sealed its signing keys under, cannot change the database password and
       # cannot plant a key of its own. A vendored job asserts the refusal
       # rather than trusting the policy file to be right.
+      #
+      # **THE KEY-ENCRYPTION KEY IS A TRANSIT KEY SINCE #391**: `sts-kek` in
+      # the store's Transit engine, which wraps each data encryption key and
+      # never leaves the store — the service holds no key-encryption key at
+      # all. The seeder makes it and proves the identity can use it and not
+      # rotate or reconfigure it. `STS_KEYS_KEK_PROVIDER=vault` (with
+      # `STS_KEYS_KEK_REF=secret/data/sts`) is the key READ from KV, as before;
+      # the database password is read from KV either way.
       # ---------------------------------------------------------------------
-      - STS_KEYS_KEK_PROVIDER=${STS_KEYS_KEK_PROVIDER:-vault}
+      - STS_KEYS_KEK_PROVIDER=${STS_KEYS_KEK_PROVIDER:-vault-transit}
       - STS_KEYS_KEK_VAULT=${STS_KEYS_KEK_VAULT:-https://openbao:8200}
-      - STS_KEYS_KEK_REF=${STS_KEYS_KEK_REF:-secret/data/sts}
+      - STS_KEYS_KEK_REF=${STS_KEYS_KEK_REF:-sts-kek}
       - STS_KEYS_KEK_FIELD=${STS_KEYS_KEK_FIELD:-kek}
       - STS_KEYS_VAULT_CLIENT_CERT=${STS_KEYS_VAULT_CLIENT_CERT:-/run/secrets/bao/client.crt}
       - STS_KEYS_VAULT_CLIENT_KEY=${STS_KEYS_VAULT_CLIENT_KEY:-/run/secrets/bao/client.key}
@@ -893,6 +901,9 @@ services:
       - STS_EXTRA_IPS=${STS_EXTRA_IPS:-172.29.0.11/24 172.29.0.12/24 172.29.0.13/24}
       - STS_DATABASE_PASSWORD_PROVIDER=${STS_DATABASE_PASSWORD_PROVIDER:-vault}
       - STS_DATABASE_PASSWORD_FIELD=${STS_DATABASE_PASSWORD_FIELD:-databasePassword}
+      # ITS OWN LOCATION SINCE #391: it used to borrow the key-encryption
+      # key's, which is now a Transit key's name and no place to read from.
+      - STS_DATABASE_PASSWORD_REF=${STS_DATABASE_PASSWORD_REF:-secret/data/sts}
       # WHETHER THE KEYSTORE IS ON AT ALL, and it is BARE for the reason
       # ADMIN_API_CLIENT_SECRET above is: unset must mean *the default for this
       # mode* rather than the empty string. Product mode — this file's default

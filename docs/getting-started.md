@@ -147,11 +147,257 @@ break is kept, so **a line number in a stack trace from the image is the line
 number in the repository** — read the comments there. A column number can
 differ on a line that had a comment in the middle of it. The copyright and
 licence headers go with the other comments; `LICENSES/` and `REUSE.toml` are
-still in the image.
+still in the image. The build also writes characters such as `—` in string
+literals as `\u2014` escapes, which gives the same strings and halves the
+memory Node needs for each file's source; a line in the image can therefore
+read differently from the repository while meaning the same.
 
 The Workload API's Unix socket is inside the container. To reach it from the host
 or another container, mount its directory as a volume — publishing 8092 is the
 alternative and needs the client pointed at `tcp://host:8092` explicitly.
+
+## With PostgreSQL and OpenBao, from published images
+
+`docker compose up` in a checkout builds the image and starts the service the
+way a deployment runs it: **product mode**, its store in **PostgreSQL**, and
+its key-encryption key and database password in an **OpenBao** secret store.
+The same stack can be run from published images alone, with no checkout and
+nothing built:
+
+| Image | From |
+|---|---|
+| `iyasec/iya-sts` | Docker Hub; the same image is `ghcr.io/rcbj/iya-sts` |
+| `postgres:18` | Docker Hub (official) |
+| `openbao/openbao` | Docker Hub |
+
+The database's TLS and schema scripts and OpenBao's configuration and seeder
+are in the `iya-sts` image, so two one-shot containers of that image copy them
+into volumes before anything else starts.
+
+Put this in a directory of its own as `docker-compose.yml`:
+
+```yaml
+# IYA STS with its PostgreSQL store and an OpenBao secret store, from
+# published images only: no checkout and nothing built.
+#
+# The files the database and OpenBao need (postgres/ and openbao/ in the
+# repository) are inside the iya-sts image, so two one-shot containers of
+# that image copy them into named volumes before anything else starts.
+#
+# Set three secrets in a .env file beside this one first (see the page).
+name: iya-sts
+
+services:
+  # Copies the database's TLS, require-TLS and schema scripts into volumes.
+  postgres-init:
+    image: iyasec/iya-sts:${IYA_STS_TAG:-latest}
+    restart: "no"
+    volumes:
+      - db-initdb:/out/initdb
+      - db-share:/out/share
+    command:
+      - sh
+      - -c
+      - |
+        cp postgres/require-tls.sh /out/initdb/00-require-tls.sh
+        cp postgres/apply-schema.sh /out/initdb/10-apply-schema.sh
+        cp postgres/generate-tls.sh postgres/schema.sql /out/share/
+        chmod 755 /out/initdb/*.sh /out/share/generate-tls.sh
+        chmod 644 /out/share/schema.sql
+
+  postgres:
+    image: postgres:18
+    depends_on:
+      postgres-init:
+        condition: service_completed_successfully
+    environment:
+      POSTGRES_USER: sts
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: sts
+      STS_DB_APP_USER: sts_app
+      STS_DB_APP_PASSWORD: ${STS_DB_APP_PASSWORD:?set STS_DB_APP_PASSWORD in .env}
+    volumes:
+      - db-data:/var/lib/postgresql
+      - db-initdb:/docker-entrypoint-initdb.d:ro
+      - db-share:/usr/local/share/sts:ro
+    command:
+      - bash
+      - -c
+      - >-
+        /usr/local/share/sts/generate-tls.sh &&
+        exec docker-entrypoint.sh postgres
+        -c ssl=on
+        -c ssl_cert_file=/var/lib/postgresql/tls/server.crt
+        -c ssl_key_file=/var/lib/postgresql/tls/server.key
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sts -d sts"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # OpenBao's listener certificate and its configuration file.
+  openbao-tls:
+    image: iyasec/iya-sts:${IYA_STS_TAG:-latest}
+    restart: "no"
+    environment:
+      STS_BAO_TLS_DIR: /openbao/file/tls
+      STS_BAO_TLS_NAMES: openbao,localhost
+      STS_BAO_TLS_IPS: 127.0.0.1
+    volumes:
+      - bao-file:/openbao/file
+    command:
+      - sh
+      - -c
+      - |
+        node openbao/generate-tls.js
+        mkdir -p /openbao/file/config
+        cp openbao/bao.hcl /openbao/file/config/bao.hcl
+        chown -R 100:1000 /openbao/file
+
+  openbao:
+    image: openbao/openbao:latest
+    hostname: openbao
+    depends_on:
+      openbao-tls:
+        condition: service_completed_successfully
+    cap_add:
+      - IPC_LOCK
+    environment:
+      BAO_STATIC_SEAL_CURRENT_KEY_ID: sts
+      BAO_STATIC_SEAL_CURRENT_KEY: ${STS_BAO_SEAL_KEY:?set STS_BAO_SEAL_KEY in .env}
+    volumes:
+      - bao-file:/openbao/file
+    command: ["server", "-config=/openbao/file/config/bao.hcl"]
+
+  # Initialises OpenBao, writes the database password and the Transit
+  # key-encryption key, and issues iya-sts its read-only client certificate.
+  openbao-seed:
+    image: iyasec/iya-sts:${IYA_STS_TAG:-latest}
+    restart: "no"
+    depends_on:
+      openbao:
+        condition: service_started
+    environment:
+      STS_BAO_ADDR: https://openbao:8200
+      STS_BAO_CA_FILE: /openbao/file/tls/server.crt
+      STS_BAO_POLICY_FILE: /usr/src/sts/openbao/read-only.hcl
+      STS_BAO_CLIENT_CN: sts
+      STS_DB_APP_PASSWORD: ${STS_DB_APP_PASSWORD:?set STS_DB_APP_PASSWORD in .env}
+    volumes:
+      - bao-file:/openbao/file
+      - bao-client:/openbao/client
+    command: ["node", "openbao/seed.js"]
+
+  sts:
+    image: iyasec/iya-sts:${IYA_STS_TAG:-latest}
+    hostname: sts
+    depends_on:
+      postgres:
+        condition: service_healthy
+      openbao-seed:
+        condition: service_completed_successfully
+    ports:
+      - "${STS_PORT:-8081}:8081"   # every HTTP protocol, /admin, /portal, /admin-api
+      - "${PKI_PORT:-8082}:8082"   # plain HTTP /pki/: CRLs, OCSP, CA certificates
+    environment:
+      STS_MODE: product
+      STS_PERSISTENCE_MODE: postgres
+      STS_DATABASE_URL: postgres://sts_app@postgres:5432/sts?sslmode=require
+      STS_DATABASE_PASSWORD_PROVIDER: vault
+      STS_DATABASE_PASSWORD_REF: secret/data/sts
+      STS_DATABASE_PASSWORD_FIELD: databasePassword
+      STS_KEYS_KEK_PROVIDER: vault-transit
+      STS_KEYS_KEK_VAULT: https://openbao:8200
+      STS_KEYS_KEK_REF: sts-kek
+      STS_KEYS_VAULT_CLIENT_CERT: /run/secrets/bao/client.crt
+      STS_KEYS_VAULT_CLIENT_KEY: /run/secrets/bao/client.key
+      STS_KEYS_VAULT_CA_CERT: /run/secrets/bao/bao-ca.crt
+      PKI_DISTRIBUTION_PORT: "${PKI_PORT:-8082}"
+      # The first console password; empty, one is generated and logged once.
+      STS_ADMIN_BOOTSTRAP_PASSWORD: ${STS_ADMIN_BOOTSTRAP_PASSWORD:-}
+    volumes:
+      - bao-client:/run/secrets/bao:ro
+      - sts-data:/usr/src/sts/data
+      - sts-run:/run/sts
+    command:
+      - sh
+      - -c
+      - |
+        # The secret of the seeded `sts-management-api` client, which mints
+        # /admin-api tokens: generated on the first start, kept in a volume.
+        if [ ! -s /run/sts/admin-api-secret ]; then
+          head -c 24 /dev/urandom | base64 | tr -d '/+=' | head -c 24 \
+            > /run/sts/admin-api-secret
+          chmod 600 /run/sts/admin-api-secret
+        fi
+        export ADMIN_API_CLIENT_SECRET="$$(cat /run/sts/admin-api-secret)"
+        exec node server.js
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"require('https').get({host:'localhost',port:8081,path:'/healthcheck',rejectUnauthorized:false},r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))\""]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
+
+volumes:
+  db-data:
+  db-initdb:
+  db-share:
+  bao-file:
+  bao-client:
+  sts-data:
+  sts-run:
+```
+
+Beside it, a `.env` file with three secrets of your own. The seal key unseals
+OpenBao at every start: lose it and nothing sealed under it can be read again.
+
+```bash
+cat > .env <<EOF
+POSTGRES_PASSWORD=$(openssl rand -base64 24 | tr -d '/+=')
+STS_DB_APP_PASSWORD=$(openssl rand -base64 24 | tr -d '/+=')
+STS_BAO_SEAL_KEY=$(openssl rand -base64 32)
+EOF
+chmod 600 .env
+docker compose up -d --wait
+```
+
+`--wait` returns once `sts` is healthy, a minute or two on a first start.
+
+* **Signing in.** The console's first account is `admin`, with a password
+  generated on the first start and printed once in the log; it has to be
+  changed at the first sign-in. To choose it instead, put
+  `STS_ADMIN_BOOTSTRAP_PASSWORD=...` in `.env` before the first start.
+
+  ```bash
+  docker compose logs sts | grep -A6 'PRODUCT MODE BOOTSTRAP'
+  ```
+
+  Then open `https://localhost:8081/admin` and accept the certificate.
+* **`/admin-api`.** The seeded `sts-management-api` client's secret is
+  generated on the first start:
+
+  ```bash
+  SECRET=$(docker compose exec -T sts cat /run/sts/admin-api-secret)
+  curl -sk -u "sts-management-api:$SECRET" \
+    --data-urlencode grant_type=client_credentials \
+    --data-urlencode 'scope=admin:read admin:write' \
+    --data-urlencode resource=https://localhost:8081/admin-api \
+    https://localhost:8081/oauth2/token
+  ```
+* **Stopping it.** `docker compose down` keeps everything in the named
+  volumes, and the next `up` comes back with the same directory, signing keys
+  and sessions. `docker compose down -v` deletes it all.
+* **Which build.** `IYA_STS_TAG` picks the image tag: `latest` is the newest
+  build of `main`, and every build also has its `M.N.O`. `STS_PORT` and
+  `PKI_PORT` move the two published ports.
+
+What the checkout's own `docker-compose.yml` has and this does not: the optional
+remote XACML PEP (the `xacml` profile), and the extra addresses a realm's own
+SPIFFE listeners bind. Kerberos and LDAP are running but not published; add
+`88`, `389` or `636` to `ports` to reach them from the host.
+[Configuration](configuration.md) covers every setting the `environment` block
+can take.
 
 ## Confirming it works
 

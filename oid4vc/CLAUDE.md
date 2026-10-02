@@ -696,6 +696,65 @@ prefix itself) and `client.request_object_trust_anchor_pem` = the
 `/oid4vp/start?client_id_prefix=<prefix>`. In product mode, also set
 `oid4vp.x509DnsName` to the realm's host.
 
+## AN APPLICATION'S DID (rcbj, 2026-10-01)
+
+A DID describing an APPLICATION, where until then the only DIDs here were the
+realm's own `did:web` and the people's enrolled self-issued subjects. An
+application declared for the `did` family (its own checkbox, `applications.js`
+`PROTOCOLS`) has `did:web:<host>[:realm:<id>]:applications:<identifier>`, and
+`vc_did.ts` serves its document at `/applications/:application/did.json`.
+
+* **The DID is derived, never stored** (`applicationDid()`), for the realm
+  DID's reason: it names the address the request arrived on. The identifier is
+  one component, percent-encoded beyond ALPHA, DIGIT, `.`, `-`, `_`.
+* **The document is built from three attributes** (`applicationDidDocument()`):
+  `didPublicKeyJwk` (JsonWebKey2020 methods, `#<kid>` or the RFC 7638
+  thumbprint, under `authentication` and `assertionMethod`), `didService`
+  (`<type>|<url>`) and `didAlsoKnownAs`. `applications.didValueProblem()`
+  checks every write as a resolver would read it (`STS-REG-0204`), and
+  `didDuplicateProblem()` refuses a value already there:
+  * a key: imported by node's crypto (an EC point off its curve is refused),
+    a signing key only (no X25519 or X448), RSA of 2048 bits or more, an `alg`
+    that belongs to the key, no private member, and not the same key (by
+    thumbprint) twice;
+  * a service: a type the W3C DID Specification Registries define (`DID_SERVICE_TYPES`)
+    or an absolute URI, so a typo of a registered type is refused, with the
+    near one named; an https endpoint (http on localhost only), with no
+    credentials in it; a LinkedDomains endpoint an origin;
+  * an alsoKnownAs: an https URL, a URN or a DID.
+
+  The builder skips anything an older write left behind.
+  404 with `STS-VC-0114` for an unknown, undeclared or keyless application.
+* **`generate-did-key`** (`admin_actions.ts`, `POST /admin-api/applications/
+  generate-did-key`) makes the pair with `crypto.js`'s
+  `generateSigningJwkPair()` (ES256, ES384, EdDSA), adds the public JWK, and
+  returns the private key once. **It also KEEPS the private key, sealed**, in
+  `didPrivateKeys` (a JSON array of private JWKs, `SEALED_FIELDS`, withheld
+  from LDAP reads, not in the grid) — rcbj's choice on 2026-10-01, over
+  signing only at generation or pasting the key in, so the Domain Linkage
+  Credential below can be signed whenever it is asked for. The console
+  answers with a one-time page.
+* **The Domain Linkage Credential** (`applicationDomainLinkage()`, action
+  `sign-domain-linkage`): the DIF Well-Known DID Configuration resource for
+  one `LinkedDomains` origin, the JWT form self-issued by the DID with
+  `credentialSubject { id, origin }`, signed with a kept key the document
+  still publishes (matched by kid or thumbprint), for
+  `oid4vci.domainLinkageLifetimeS`. The console's *Download
+  did-configuration.json* hands it over as a file to host at
+  `https://<origin>/.well-known/did-configuration.json`; nothing is written.
+  `STS-VC-0115` for no document, an origin not listed, or no kept key — a key
+  pasted into `didPublicKeyJwk` by hand cannot sign. The
+  published keys and the Generate form are on the application's DID
+  configuration tab AND its Credentials tab (`applicationDidPanel()`, drawn
+  twice), so every credential an application has is in one place.
+* **Not built**: resolving an application's DID for anything (a client
+  assertion verified against its keys, a pre-registered verifier); controller
+  and keyAgreement members; other DID methods; fetching an origin's hosted
+  did-configuration.json to check it (that would be dialling an operator's
+  URL, the root `CLAUDE.md`'s row of URLs this service dials).
+
+`tests/application_did.js` holds it.
+
 ## THE 2026-09-12 HARD-CODED-VALUE SWEEP
 
 The literals became `config.js` rows whose `dflt` is the old value, read per

@@ -284,7 +284,21 @@ A request that was *refused* records nothing, so this is a list of identities
 that got somewhere, not of names that were tried. Applications are never listed
 here — they are on [Applications](applications.md).
 
-`?user=<name>` drills into one: the names they were seen under, every
+`?user=<name>` drills into one person's page, **drawn as tabs**:
+
+| Tab | What it holds |
+|---|---|
+| **Overview** | the tiles, the names they were seen under, and every authentication with the method that performed it |
+| **Sessions & tokens** | each sign-on session with the tokens issued on it, the tokens on no session, and the assertions, tickets and credentials |
+| **Attributes** | their attributes as typed fields, one sub-tab per group — Name, Contact, Organization, Address, Identity, Other — each with its own **Save**, and the address on Contact |
+| **Credentials** | sub-tabs for second factors, the password controls, signing key pairs and Kerberos |
+| **Federation links** | the partners' subjects that sign them in |
+| **Directory entry** | the LDAP object, every attribute, and *Change one attribute by name* |
+| **Sign out** | sign them out of everything, or revoke their tokens and nothing else |
+
+A control's answer comes back to the tab it was pressed on.
+
+The drill-down holds the names they were seen under, every
 authentication with the method that performed it, each sign-on session they
 hold **with the tokens issued on that session underneath it**, the tokens that
 belong to no session, and the assertions, tickets and credentials issued to
@@ -347,15 +361,35 @@ entry that is not there.
 
 #### Changing a person's attributes
 
-Under the entry, **Change their attributes** offers the three controls the
-[Applications](applications.md) page has: **Set** replaces every value of an
+The **Attributes** tab draws every attribute that may be changed as a typed
+field, the way an [application's](applications.md) configuration is drawn:
+one sub-tab per group, each a form with its own **Save**. A single-valued
+attribute is a text box (empty clears it); a multi-valued one is one box per
+value, with **+** to add a box and the bin to delete one. Every box shows an
+example of a valid value, and every field's name carries a tooltip saying
+what it is and what it takes. **Save** writes what changed on that tab and
+nothing else; what one attribute refuses does not undo another, and a refused
+save comes back with every box as you left it. It needs **Admin Write**.
+`POST /admin-api/users/update-fields` is the same save, with `fields` naming
+each attribute and its value or values.
+
+The address is set by its own form on the **Contact** sub-tab, because an
+address an administrator sets is marked verified and the former address is
+told.
+
+On the **Directory entry** tab, **Change one attribute by name** keeps the
+three single-attribute controls: **Set** replaces every value of an
 attribute with one (an empty value removes it), **Add to** appends a value to
-an attribute that holds several, and **Remove from** takes one value off. Each
-writes that one attribute of the entry in place, as an `ldapmodify` would, and
-needs **Admin Write**. `POST /admin-api/users/set-attribute`,
-`/add-attribute` and `/remove-attribute` are the same three, and
+an attribute that holds several, and **Remove from** takes one value off.
+`POST /admin-api/users/set-attribute`, `/add-attribute` and
+`/remove-attribute` are the same three, and
 `GET /admin-api/users?user=<name>` publishes the list under
-`attributeEditor`, with what each attribute holds.
+`attributeEditor`, with what each attribute holds, its group and an example.
+
+**Creating a person** (`/admin/users/new`) draws the same fields under the
+same group headings, in a simplified view (names and contact details) and an
+advanced view (every field). A value a create writes is held to the same
+rules as an edit.
 
 **What may be changed** is the person schema — `person`,
 `organizationalPerson`, `inetOrgPerson` and the Identity Assurance claims —
@@ -913,10 +947,12 @@ readable, and `?format=svg` is how it is opened in something that zooms.
 
 ### Delegated permissions
 
-**A third register on `/admin/delegation`, and the one you type.** The acts
-are what happened, and the Kerberos table is somebody else's configuration;
-this is configuration of this service's own, in the shape Microsoft Entra ID
-uses. The page draws all three under headings saying which is which.
+**A third register on `/admin/delegation`, and the one you type** — on
+Protocols → Delegation and each application's page; `/admin/delegation`
+draws it read-only. The acts are what happened, and the Kerberos table is
+somebody else's configuration; this is configuration of this service's own,
+in the shape Microsoft Entra ID uses. The page draws all three under headings
+saying which is which.
 
 * A **resource** application exposes an API: a base URI
   (`oauthPermissionBaseUri` — Entra's Application ID URI, `api://<guid>`;
@@ -933,16 +969,27 @@ All three are ordinary attributes on entries in `ou=applications`, so an
 rule, checked in one place so the console form, `POST /admin-api/permissions/…`
 and the generic attribute editor on `/admin/applications` cannot disagree.
 
-**Five actions, on two pages, posting to one handler.** *Expose an API*,
-*Define a permission* and each row's *Remove* are on `/admin/delegation`.
-**Granting is on the client application's own page** — its *Delegated
-permissions* section shows what it holds, what it exposes, and a form that
-grants it another — because there the client half is settled by the URL. A grant
-written to the resource instead of the client would still succeed and be wrong
-only at the token endpoint, later. The select offers neither the application's
-own permissions nor ones it already holds. *Revoke* is drawn in both places.
-Both forms post to `/admin/delegation` and both are
-`POST /admin-api/permissions/{action}`.
+**`/admin/delegation` shows this register and does not change it** (since
+2026-10-01). The controls are in two places, and every form posts to one
+handler, `POST /admin/delegation-settings`, which is
+`POST /admin-api/permissions/{action}` on the management API:
+
+* **Protocols → Delegation** (`/admin/delegation-settings`) is the register
+  for every application: *Expose an API*, *Define a permission*, each
+  permission's *Remove* and each grant's *Revoke* — and the
+  `delegation.maxRecords` setting.
+* **An application's own *Permissions* tab** (Directory → Applications)
+  configures both halves for that application only. As a **client** it shows
+  what it holds, with *Revoke*, and grants it another application's
+  permission. As a **resource** it sets its base URI, defines and removes its
+  own permissions, and lists which other applications hold them, with
+  *Revoke* and a grant of one of ITS permissions to another application,
+  which you find with a search box and pick from a paged list of matches.
+
+Granting is only on an application's page, because there one half of the pair
+is settled by the URL: a grant written to the resource instead of the client
+would still succeed and be wrong only at the token endpoint, later. No select
+offers an application its own permission, or one it already holds.
 
 The two tables of this register have a **search over the application name**:
 `?permq=` matches the application that EXPOSES a permission, and `?grantq=`
@@ -1514,7 +1561,7 @@ edited on `/admin/rbac`.
 |---|---|---|---|---|
 | `audit.maxEvents` | `AUDIT_MAX_EVENTS` | `5000` | yes | How many audit events are held; the dropped are counted and shown. |
 | `audit.protocolCalls` | `AUDIT_PROTOCOL_CALLS` | `true` | yes | Whether ordinary protocol endpoint calls get an audit row. |
-| `delegation.maxRecords` | `DELEGATION_MAX_RECORDS` | `2000` | yes | How many delegation acts `/admin/delegation` keeps, refusals included. |
+| `delegation.maxRecords` | `DELEGATION_MAX_RECORDS` | `2000` | yes | How many delegation acts `/admin/delegation` keeps, refusals included. Set on `/admin/delegation-settings`. |
 | `oauth2.delegatedPermissionsEnforced` | `STS_OAUTH2_DELEGATED_PERMISSIONS_ENFORCED` | `false` | yes | In development mode, refuse a permission the client was not granted. Product mode always refuses. |
 | `debugger.enabled` | `STS_DEBUGGER_ENABLED` | `auto` | no | `auto`, `on` or `off`; `auto` serves the debugger in development mode only. |
 | `debugger.port` | `STS_DEBUGGER_PORT` | `8444` | no | The debugger's listener. |

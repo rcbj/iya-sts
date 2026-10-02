@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -587,14 +587,19 @@ class EstConsole {
   async issueServerKey(asked, actor, via) {
     const { log, config, core, keyMaterial } = this.deps;
     log.debug("Entering EstConsole.issueServerKey().");
-    if (config.value('est.serverKeyGeneration') === false) {
+    // The TARGET's switch: an application's own estServerKeyGeneration,
+    // where it set one, overrides the realm's (rcbj, 2026-10-01).
+    if (!core.estSwitch('serverKeyGeneration',
+                        { kind: asked.kind, id: asked.identifier })) {
       log.debug("Leaving EstConsole.issueServerKey(). Off.");
       return this.refused('STS-EST-0005', 400,
                           'Server-side key generation is ' +
-                          'turned off for EST in this realm ' +
-                          '(est.serverKeyGeneration).');
+                          'turned off for EST for this entry ' +
+                          '(est.serverKeyGeneration, or the ' +
+                          'application\'s own estServerKeyGeneration).');
     }
-    const profile = asked.profile || core.defaultProfile(FAMILY);
+    const profile = asked.profile ||
+      core.defaultProfile(FAMILY, { kind: asked.kind, id: asked.identifier });
     const keyAlg = asked.keyAlg || 'ec-p256';
     const described = keyMaterial.keyAlg(keyAlg) || {};
     if (described.kind === 'pqc' && described.use === 'kem' &&

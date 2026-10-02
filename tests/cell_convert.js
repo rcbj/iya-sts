@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -634,7 +634,8 @@ async function statements(t) {
   t.check(text[2] === 'BEGIN' && text[text.length - 1] === 'COMMIT',
           'the writes are one transaction');
   t.check(text.some(function (s) {
-    return /INSERT INTO sts_minted .*\$5::timestamptz\) ON CONFLICT \(handle, realm, key\) DO UPDATE SET body = EXCLUDED\.body, written_at = EXCLUDED\.written_at/
+    // `key_sealed` (#222) is the sixth column, after the cast timestamp.
+    return /INSERT INTO sts_minted .*\$5::timestamptz, \$6\) ON CONFLICT \(handle, realm, key\) DO UPDATE SET body = EXCLUDED\.body, written_at = EXCLUDED\.written_at, key_sealed = EXCLUDED\.key_sealed/
       .test(s);
   }), 'a minted row is an upsert on its primary key, its time cast back');
   t.check(seen.some(function (s) {

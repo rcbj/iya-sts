@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -715,7 +715,7 @@ class SpiffeServer {
     const state = ca.state();
     log.debug('Leaving SpiffeServer.page().');
     return '<!doctype html><html><head><meta charset="utf-8"><title>SPIFFE — ' +
-      'mock STS</title><style>body{font-family:system-ui,sans-serif;' +
+      'IYA STS</title><style>body{font-family:system-ui,sans-serif;' +
       'margin:2rem;max-width:60rem;line-height:1.5}' +
       'table{border-collapse:collapse;margin:1rem ' +
       '0;width:100%}th,td{border:1px solid #ccc;padding:.4rem .6rem;' +

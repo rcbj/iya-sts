@@ -1,6 +1,6 @@
 // @ts-check
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -17,7 +17,7 @@
 // file that can carry a comment carries two lines near its top,
 //
 //     SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-//     SPDX-License-Identifier: MIT
+//     SPDX-License-Identifier: BUSL-1.1
 //
 // REUSE-IgnoreEnd
 //
@@ -180,7 +180,7 @@ function headerOf(rel) {
         l.indexOf(HOLDER) >= 0;
     }),
     licence: lines.some(function (l) {
-      return /SPDX-License-Identifier:\s*MIT\s*$/.test(l);
+      return /SPDX-License-Identifier:\s*BUSL-1\.1\s*$/.test(l);
     }),
     any: lines.some(function (l) {
       return l.indexOf('SPDX-') >= 0;
@@ -269,7 +269,7 @@ module.exports = {
     t.check(annotations.length >= 2 && annotations[0].paths[0] === '**',
       'REUSE.toml starts with the catch-all annotation for this project',
       JSON.stringify(annotations[0]));
-    const licences = new Set(['MIT']);
+    const licences = new Set(['BUSL-1.1']);
     annotations.forEach(function (a) {
       licences.add(a.licence);
     });

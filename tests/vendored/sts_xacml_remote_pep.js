@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 "use strict";
 //
@@ -380,7 +380,7 @@ var xacmlUser = null;
 async function mintTheCredential() {
   log.debug("Entering mintTheCredential().");
   xacmlUser = await credentials.mint({
-    subject: "CN=xacml-user-1,OU=xacml-users,O=mock-sts tests" });
+    subject: "CN=xacml-user-1,OU=xacml-users,O=iya-sts tests" });
   const posted = await credentials.trustAnchor(base, xacmlUser.anchorPem);
   assert.ok(posted.ok, "POST /tls/trust should accept the Root CA this file " +
     "just built; it answered " + posted.status + ". Without the anchor the " +
@@ -851,7 +851,7 @@ async function attachToThePep() {
 function containerSubject() {
   log.debug("Entering containerSubject().");
   log.debug("Leaving containerSubject().");
-  return "CN=" + PEP_NAME + ",OU=remote-peps,O=mock-sts tests";
+  return "CN=" + PEP_NAME + ",OU=remote-peps,O=iya-sts tests";
 }
 
 // The entry and the membership, in THIS RUN'S REALM — the directory is per
@@ -902,7 +902,7 @@ async function mintTheContainersCredential() {
   // one machine must not share it, and this one is removed with the
   // container. `mkdtemp` rather than a name built from the stamp, so the
   // collision cannot be constructed at all.
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mock-sts-pep-cert-"));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "iya-sts-pep-cert-"));
   // The leaf FOLLOWED BY THE INTERMEDIATE, which is what `certPem` already
   // is — the service holds only the root, so a container sending the leaf
   // alone presents a chain that cannot be built.

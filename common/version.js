@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // @ts-check
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -88,7 +88,7 @@
 // so after a parent sync its `package.json` says the parent's version and this
 // one's says `0.1.0`. The two numbers answer different questions — "which
 // release of the debugger is this submodule pinned into" against "which release
-// of the mock STS is this" — and this file has no business editing the parent
+// of IYA STS is this" — and this file has no business editing the parent
 // to settle it. `--check-manifests` here checks THIS tree only, and the sibling
 // checkout at `../id-proto-debugger/sts` is read-only forever.
 //
@@ -419,8 +419,9 @@ function load(dir) {
 // **THE TOKEN WAS `mock-sts` UNTIL 2026-09-12**, when the product name in
 // every identifier this service stores and emits became `sts`. That was the
 // rename this constant exists to make a one-line change, and it was. The
-// package is still called mock-sts (the repository became iya-sts on
-// 2026-09-15); this is the name on the wire, which is a different thing.
+// package is called iya-sts (the repository became iya-sts on 2026-09-15,
+// the package on 2026-10-01); this is the name on the wire, which is a
+// different thing.
 /**
  * The product token this service names itself by on the wire.
  */

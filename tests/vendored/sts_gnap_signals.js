@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 "use strict";
 //
@@ -72,13 +72,12 @@ const CAEP = "https://schemas.openid.net/secevent/caep/event-type/";
 const REVOKED = CAEP + "session-revoked";
 const CLAIMS = CAEP + "token-claims-change";
 const POLL = "urn:ietf:rfc:8936";
-// THE BASIC PRINCIPAL IS A REAL PERSON WITH A REAL PASSWORD (2026-09-18),
-// created in the realm below beside the other two. It was a name nobody
-// created with `any-password`, which only development mode accepts; product
-// mode verifies a Basic credential against the person's own userPassword.
-const PROBE = "gnap-signals-probe";
-const BASIC = "Basic " +
-              Buffer.from(PROBE + ":" + PASSWORD).toString("base64");
+// THE CONTROL STREAM IS OWNED BY AN APPLICATION (2026-10-01). It was a person
+// over Basic until #336 made a person's stream about that person alone, so a
+// person-owned control heard nothing about OWNER and stopped being a control.
+// A client's own client_credentials token owns a stream no scope narrows,
+// which is what "unscoped" means here.
+const CONTROL_SECRET = "gnap-signals-control-" + String(Date.now()).slice(-6);
 
 let jwks = null;
 
@@ -199,7 +198,6 @@ async function test() {
   await h.setting("gnap.continueWaitS", 0);
   await h.ensurePerson(OWNER);
   await h.ensurePerson(STRANGER);
-  await h.ensurePerson(PROBE);
   // Their subjects, which a SET's `user.sub` carries (2026-09-14).
   SUBJECTS[OWNER] = await h.subjectOf(OWNER);
   SUBJECTS[STRANGER] = await h.subjectOf(STRANGER);
@@ -222,6 +220,26 @@ async function test() {
               gnapFinishUri: h.FINISH,
               oauthAllowedScope: ["ssf:read", "ssf:write"] } },
     "registered a second web application");
+  const CONTROL_ID = "gnap-control-" + h.realm;
+  await h.ok(h.realmApi + "/applications/create", {
+    identifier: CONTROL_ID, kind: "oauth2-client", name: CONTROL_ID,
+    protocols: ["oauth2"],
+    fields: { oauthClientId: [CONTROL_ID],
+              oauthAllowedScope: ["ssf:read", "ssf:write"],
+              oauthClientSecret: CONTROL_SECRET,
+              oauthTokenEndpointAuthMethod: "client_secret_post" } },
+    "registered the application that owns the unscoped control stream");
+  const controlTokenAnswer = await (await fetch(h.realmBase + "/oauth2/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: "grant_type=client_credentials&client_id=" +
+          encodeURIComponent(CONTROL_ID) + "&client_secret=" +
+          encodeURIComponent(CONTROL_SECRET) + "&scope=" +
+          encodeURIComponent("ssf:read ssf:write") })).json();
+  assert.ok(controlTokenAnswer.access_token,
+            "a token for the control application: " +
+            JSON.stringify(controlTokenAnswer));
+  const CONTROL_AUTH = "Bearer " + controlTokenAnswer.access_token;
 
   // =========================================================================
   // 1. A GNAP ACCESS TOKEN OWNS A STREAM (ssf/ssf_auth.ts, the gnap scheme).
@@ -289,12 +307,14 @@ async function test() {
     return web.send("POST", h.realmBase + "/ssf/poll",
                     { token: ssfToken, json: body });
   };
-  // THE CONTROL: an unscoped stream owned by a Basic principal, which is not a
-  // GNAP application and so is covered by no GNAP scope.
+  // THE CONTROL: an unscoped stream owned by an application's own token,
+  // which is not a GNAP application (so no GNAP scope) and not a person (so
+  // not #336's person scope).
   r = await gnap.rawRequest("POST", h.realmBase + "/ssf/stream",
-    { Authorization: BASIC, "Content-Type": "application/json" },
+    { Authorization: CONTROL_AUTH, "Content-Type": "application/json" },
     Buffer.from(JSON.stringify(streamBody)));
-  check("an unscoped control stream is created with Basic", function () {
+  check("an unscoped control stream is created with an application's token",
+        function () {
     assert.strictEqual(r.status, 201, r.text);
   });
   const controlStream = r.json.stream_id;
@@ -303,7 +323,8 @@ async function test() {
     const buf = Buffer.from(JSON.stringify(body));
     log.debug("Leaving pollControl().");
     return gnap.rawRequest("POST", h.realmBase + "/ssf/poll",
-      { Authorization: BASIC, "Content-Type": "application/json" }, buf);
+      { Authorization: CONTROL_AUTH, "Content-Type": "application/json" },
+      buf);
   };
   await drain(pollWeb, webStream);
   await drain(pollControl, controlStream);

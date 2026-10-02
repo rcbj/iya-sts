@@ -1,9 +1,9 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 //
 // File: admin_api.js
 //
-// The mock STS's MANAGEMENT API at /admin-api — the /admin console's whole
+// IYA STS's MANAGEMENT API at /admin-api — the /admin console's whole
 // surface over JSON — and the OpenAPI document that describes it.
 //
 // The API is built so that most of it cannot go wrong on its own: every
@@ -1691,7 +1691,7 @@ async function test() {
 const program = new Command();
 program
   .name("admin_api")
-  .description("Verify the mock STS management API at /admin-api: its " +
+  .description("Verify IYA STS management API at /admin-api: its " +
       "OpenAPI document, its parity with the /admin console, and that its " +
       "revocation is the same one /oauth2/revoke performs.")
   // Accepted and ignored: the parent project's runner passes --url to every

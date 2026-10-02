@@ -781,6 +781,60 @@ written" would refuse addresses operators really did register. That half stays
 a review by hand and every surface says so. `tests/return_address_provenance.js`
 pins it, seventeen mutants caught.
 
+## `applicationFields()`: THE CATALOGUE THE CONSOLE'S FIELD GRID DRAWS (2026-09-30)
+
+One row per editable attribute the grid shows: `{ attribute, type (array |
+boolean | string), long, editable, sensitive, overrides, what, families,
+everyFamily, declaration, group }`. The type is the SCHEMA's — `multi` is a
+list — and `BOOLEAN_ATTRIBUTES` names the single-valued ones that hold TRUE or
+FALSE; `LONG_TEXT_ATTRIBUTES` the ones drawn as a textarea (a JSON document).
+A name in either table that is not a single-valued editable attribute is
+logged at load (`STS-ADMIN-0833`) and drawn as an ordinary field. Families come
+from the PROTOCOLS table (declaration attributes), a schema row's own
+`families`, or `FIELD_FAMILY_PREFIXES`; `FIELD_GROUPS` orders the sections.
+`gridExcludedAttributes()` is what the grid leaves to another control, and
+`oauthScope` is among them since 2026-10-01: it records what a client ASKED
+FOR, written by `seen()`, so the form offers nothing to type there.
+`tests/application_form_roles.js` holds it to the schema.
+
+**A CLOSED SET IS OFFERED, NOT TYPED (2026-10-01).** `ATTRIBUTE_CHOICES` lists
+every editable attribute whose values are a closed set. Each list is read from
+the constant the service checks it against: `client_auth.js`'s `METHODS`, the
+JWS and JWE tables, `GNAP_MTLS_TRUSTS`, the GNAP settings' own enums and
+`federation.MECHANISM_IDS`. `applicationFields()` hands each row its
+`choices`, and the grid draws a single value as radios and a list as
+checkboxes. Seven of them had no check at a console or API write until this
+change (`CHOICES_CHECKED_HERE`), so `choiceProblem()` refuses a value outside
+them at update and create (`STS-REG-0203`). The rest already have a validator
+that says more. `oauthGrantType` and `oauthResponseType` are not on the list,
+because they are an open record of what a client was seen doing.
+
+**A GENERATED SECRET SETS ITS METHOD.** `regenerateClientSecret()` (and so
+Regenerate and Rotate) writes `client_secret_basic`, RFC 7591's default, where
+the entry names no `oauthTokenEndpointAuthMethod` or names `none`. The create
+page's Generate Secret fills the same value into the form. A method somebody
+chose is left alone.
+
+## `ssfSettingFor()` AND THE `strictOverride` ROWS (2026-10-01)
+
+Twenty `ssf*` application attributes override a `caep.*`, `risc.*` or `ssf.*`
+setting for the Shared Signals streams that application owns
+(`ssf/CLAUDE.md`, *A receiver application's streams*, argues which and why).
+`ssfSettingFor(principal, key)` answers `{ value, source: 'application' |
+'setting', application }`, finding the owner by identifier or
+`ssfReceiverId` through the same cached lookup `ssfAllowedEventsFor()` uses,
+and parsing the stored text with `config.parseAs()` and `mode.inForce()`.
+`ssfOverrideRows()` lists them.
+
+**THEY ARE THE FIRST OVERRIDE ROWS REFUSED AT THE WRITE.** The older ones
+(`saml2SignAssertion` and the rest) warn when a stored value does not parse and
+let the setting decide; a row carrying `strictOverride: true` is refused at a
+create and an update instead (`strictOverrideProblem()`, `STS-REG-0202`), and a
+reason language must also be a BCP 47 tag. A value an `ldapmodify` wrote that
+does not parse is still read as the setting, with `STS-REG-0025` logged. They
+are `families: ['ssf']` and `'set'` in `EDITABLE`, so the field grid draws them
+in its Shared Signals group and `update-fields` writes them.
+
 ## `appHomePageUrl`: THE ONE URL ON AN APPLICATION ENTRY THAT IS FOR A PERSON
 
 Added 2026-09-10 for `/portal/applications`, which lists the applications a
@@ -1121,6 +1175,57 @@ because where its load-time effects run is the require order.
 if any deferred package is in the require cache — one top-level `require` of
 it anywhere in the stack would bring it back into every worker with nothing
 else failing.
+
+### `fault_boundary.ts`: NO STARTED PROCESS EXITS OVER AN UNEXPECTED ERROR (#355, 2026-09-29)
+
+**rcbj: a worker or leader process exiting "severely impacts availability of
+the cluster … It needs to recover gracefully."** Until #355 nothing listened
+for `uncaughtException` or `unhandledRejection`, so one bug in a timer
+callback, an unlistened `'error'` event, a promise chain with no `.catch()` or
+a failing `async` Express handler (Express 4 does not see a rejection) ended
+the front process — listeners, open connections, the scheduler's leadership —
+or a worker with its requests in flight.
+
+**Two boundaries, not a `try` in every function** (rcbj chose this over
+wrapping ~14.7k functions, which would log each fault once per stack frame):
+
+* `installProcessHandlers(role, log)` — logs under `STS-CORE-0141` (uncaught
+  exception) / `STS-CORE-0142` (unhandled rejection) WITH THE STACK, and the
+  process carries on. **Installed only once a process has STARTED**: the front
+  process in `server.js`'s `announce()`, a request worker once
+  `service_state.start()` is up (a worker thread's
+  `process` events are its own, #364). A
+  failure while starting stays fatal, as it always was: a process that could
+  not come up must not present itself as one that did.
+* `guardExpress(log)` — replaces express 4.22's `Layer.prototype.handle_request`
+  and `handle_error` with the same code plus an observer on the returned
+  promise: a rejection is logged (`STS-CORE-0143`) and handed to `next()` as a
+  PLAIN 500 (the final handler writes an error's stack into the page outside
+  `NODE_ENV=production`, which the image now sets for the thrown road too —
+  the `Dockerfile` says why it is not `global.mode`). **Nothing is routed
+  when the handler already answered or already called `next()`** — the chain
+  would run twice — it is only logged. One prototype, so it covers every
+  express app in the process, the debugger's included; a Layer of another
+  shape is `STS-CORE-0144` and no guard.
+
+**Throttled per distinct fault** (kind, name, message, first frame): logged at
+occurrences 1, 2, 3 and each power of ten with the count — never a line per
+request, and no timer (a summary would be a scheduler job). `figures()` has
+the totals.
+
+**The remote PEP has its own copy of the process half** (`xacml-pep/pep.js`,
+`STS-XPEP-0033`/`0034`): its image compiles no TypeScript.
+
+**Not from `app.js`**, which is in the parent project's Kerberos COPY closure
+(`kerberos/CLAUDE.md`): `server.js` and `request_worker.ts` call the guard. (The
+computation worker that also installed it went with its pool in #363.)
+
+**What it does not change**: every existing `catch`, its line and its code.
+The AST audit that went with it (every `catch`, `.catch()` and `.then(ok,
+fail)` that neither logs, rethrows nor reads its error) found ten: two here,
+now logged (`risk/risk_failures.ts`'s ASN fallback, `scep/scep.ts`'s turn
+guard), and eight in the vendored Kerberos codecs, which are the parent
+project's to change. `tests/fault_boundary.js` holds both halves, in children.
 
 ## `request_pool.js` and `request_worker.ts`: THE REQUEST WORKERS, THREADS OF THE FRONT PROCESS SINCE #364
 
@@ -3078,7 +3183,7 @@ with `Cannot find module` naming a file the operator never mentioned.
 
    A library that RETURNS a refusal to a caller that sends it (a verdict, an
    `{ ok: false }` action result) attaches the code under the same
-   `Symbol.for('mock-sts.errorCode')` that `mark()` uses, NON-ENUMERABLY, and
+   `Symbol.for('iya-sts.errorCode')` that `mark()` uses, NON-ENUMERABLY, and
    the caller marks `errorCodes.codeOf(result) || '<its own fallback>'`. The
    symbol is what makes that safe: several of those results are serialised
    whole to `/admin-api` clients, and an enumerable `errorCode` member would
@@ -3437,13 +3542,20 @@ with `Cannot find module` naming a file the operator never mentioned.
    which is the `EDITABLE` line above applied to a pair that would otherwise
    look like a duplicate to anybody tidying up.
 
-   **DECLARING A FAMILY GRANTS AND REFUSES NOTHING, and the sentence to change
-   if that ever stops being true is the one in `PROTOCOLS`'s header rather than
-   a page's.** No endpoint reads the attribute: an application declared for
-   `saml2` alone is still issued an access token, because a mock that refused a
-   protocol would remove a test case rather than add one. It is a record of
-   intent, exactly as being in this registry at all is — the same claim
-   `/admin/applications`'s caveat already makes about the whole entry.
+   **DECLARING A FAMILY GRANTS NOTHING, AND IN PRODUCT MODE IT REFUSES THE
+   REST (2026-10-01); the sentence to change if that stops being true is the
+   one in `PROTOCOLS`'s header rather than a page's.** The issuance gate
+   (`issuance_gate.js`'s `protocolFactsOf()`) reads the declaration off the
+   entry and the families the issuance satisfies (`FAMILIES_OF_KIND`, or the
+   caller's own `protocolFamilies` — the SAML and GNAP sites pass theirs), and
+   the issuance policy's `protocol-not-declared` rule refuses, in product
+   mode, an issuance whose families and the declaration share none
+   (`STS-XACML-0084`; `mode.issuesThroughUndeclaredProtocols()`). An access
+   token is OAuth 2.0's, OpenID Connect's, OpenID4VCI's and mutual TLS's; an
+   ID Token is OpenID Connect's alone. An application declared for nothing is
+   refused nothing in either mode; in development the declaration is a record
+   of intent. `xacml/CLAUDE.md` and `tests/protocol_declaration.js` carry the
+   rule.
 
    **EVERY PROTOCOL FAMILY NOW NAMES THE ATTRIBUTES ITS CONFIGURATION LANDS
    ON**, and that is what removed the KIND select from the create form rather
@@ -3704,12 +3816,26 @@ with `Cannot find module` naming a file the operator never mentioned.
      identifier and a change), so this bullet described a behaviour nothing had
      ever performed. `common/oidc_rp.ts`'s `ensureRedirectUri()` carries both.
 
-   **TWO ATTRIBUTES HOLD CREDENTIALS IN THE CLEAR** — `oauthClientSecret` and
-   `appRegistrationAccessToken` — which is the `/krb5/principals` decision about
-   the Kerberos passwords, made again and for the same reason. Now that RFC 9700
-   mode CHECKS that secret, anyone who can read the directory can authenticate as
-   that client; that is the honest state of a service that authenticates nobody.
-   They are never given to `audit.js`, whose no-credential rule is untouched.
+   **NO APPLICATION CREDENTIAL IS STORED IN THE CLEAR UNDER A DURABLE KEY SINCE
+   2026-10-01.** `appRegistrationAccessToken` is sealed in `setField()` and
+   opened by `registrationAccessTokenOf()` (the RFC 7592 endpoints, the view,
+   section 2's revocation, which clears rather than removes because the stored
+   value never equals the presented one), and `oauthClientSecret` is SEALED
+   wherever the process holds a DURABLE key-encryption key (`sealsClientSecrets()`: `keystore.persists()`, as for
+   the issued private keys, and a key that is not development's ephemeral one —
+   so a product-mode realm on a development container writes it as it is
+   rather than refusing every registration): each value — one record per
+   secret — is sealed WHOLE (`sealClientSecretText()`, label `client-secret`),
+   `parseClientSecretValue()` opens what it reads so every verifier and the
+   sweep meet one shape, and `view()` opens them for a reader that came through
+   this module. A value written before that date stays in the clear until the
+   secret is next written; nothing migrates it (no database here is
+   anything but deletable). A seal that fails is a refusal (`STS-REG-0213`),
+   one that will not open authenticates nothing (`STS-REG-0212`). Neither is
+   ever given to `audit.js`. A federation relationship's `fedClientSecret`
+   (`federation/CLAUDE.md`) and a person's `stsIdaVerification`
+   (`credentials.ts`, under the home cell's key) are sealed by the same
+   durable-key rule.
 
 
 ---
@@ -5772,11 +5898,18 @@ would produce signatures nothing can verify, and the failure would surface at a
 relying party as "the signature is invalid" — as far from the cause as it is
 possible to get.
 
-**A per-record subkey, derived with HKDF.** The KEK never encrypts anything
-directly: each record uses HKDF-SHA256(KEK, random salt, purpose), so the same
-KEK protects the whole store without any record's IV mattering to any other —
-and a single key encrypting many records under many IVs is one IV-reuse bug away
-from catastrophic in GCM.
+**ENVELOPE ENCRYPTION SINCE #391 (2026-10-01): THE KEK WRAPS DATA KEYS AND
+NOTHING ELSE.** A value is AES-256-GCM under a DATA ENCRYPTION KEY (32 random
+bytes), and only the DEK is encrypted under the KEK. The envelope is
+`$aesgcm$2$<dek id>$<iv>$<tag>$<ciphertext>`, its version and DEK id the
+additional authenticated data; a wrapped DEK is `$dekwrap$1$…` under
+HKDF-SHA256(KEK, info `sts dek wrapping v1`), with the DEK's id, scope, realm
+and class as its AAD, so a wrapped DEK moved onto another realm's row does not
+unwrap. `crypto.js` holds the primitives (`encryptWithDek()`,
+`decryptWithDek()`, `wrapDek()`, `unwrapDek()`, `deriveDek()`); `keystore.js`
+holds the registry. **Version 1 — a per-value HKDF subkey of the KEK, no DEK —
+is gone, and a store written before #391 is recreated, not migrated**
+(rcbj's decision; `STS-KEYS-0095` stops the start).
 
 **A KEK shorter than 32 bytes is refused rather than stretched.** Stretching
 would let a four-character password protect every signing key this service holds
@@ -5784,67 +5917,231 @@ while the log said AES-256, which is the kind of comfortable lie this repository
 refuses everywhere else. Hex is tried before base64, because a 64-character hex
 string is also valid base64 and reading it that way produces 48 different bytes.
 
-### ONE KEK FOR THE SERVICE, NOT ONE PER REALM — AND THE HKDF ABOVE IS NOT THAT (2026-09-12)
+### THE DATA ENCRYPTION KEYS: ONE PER REALM PER CLASS, HELD UNWRAPPED (#391)
 
-Asked directly, and written down here because the per-record subkey paragraph
-above reads like an answer to it and is not.
+rcbj's decisions on #391: **one DEK per realm per data class, never shared
+between realms**; the DEKs **unwrapped once and held in memory** (a minted
+flush seals thousands of values, so a KEK in a key management service is asked
+per DEK, never per value). The design is in `keystore.js`'s *DATA ENCRYPTION
+KEYS* block; what a caller needs:
 
-**There is a single key-encryption key per PROCESS.** `keystore.js` holds one
-module-level `kek`, filled by the only call to `secrets.readKek()` there is;
-that function takes no realm and reads one value from one provider. `seal()` and
-`open()` take `(plaintext, label)` and **no realm** — the `label` is accounting
-for `/admin/encryption`'s per-kind counters and reaches no key derivation, which
-that function's own header says in as many words. Every call site agrees:
-`'totp-secret'`, `'application-private-key'`, `'person-private-key'`,
-`'minted-rows'`. Labels, never realms.
+* **`seal(plaintext, label, tier, options)`**: the class is the LABEL (made
+  safe by `dekClass()`); the realm is `options.realm`, else the AMBIENT realm.
+  A writer of another realm's rows outside a request passes the realm —
+  `persistence_minted.js`'s flush does, per row. `open()` needs neither: the
+  envelope names its DEK.
+* **A SCOPE beside the realm**: `service`, or `cell.<cells.id>` for
+  `seal(…, 'cell')` where a cell key is held (#98) — wrapped under the cell's
+  own key. Another cell's DEK rows are held unopened and never written here.
+* **WHERE KEYS PERSIST A DEK IS RANDOM AND STORED**, wrapped, in a
+  `dek:<scope>:<realm>` row of `sts_keys` (plain JSON; the global tier). The
+  row is a UNION merged under the row's lock, so two processes making a DEK for
+  one class at once keep both, and all converge on one as current: the usable
+  DEK ACTIVATED most recently (`activateAt` at or before now), then the lowest
+  id (`chooseActive()`, cached per slot until the next activation).
+  **ORDER is what makes a DEK known before anything sealed under it is read**:
+  a new DEK's row is queued at once, and every writer of sealed rows waits for
+  `keystore.settleDeks()` first — this file's own key and PKI rows,
+  `persistence.js`'s flush, `persistence_minted.js`'s flush, and
+  `cluster_secrets.ts`. **A new direct writer of sealed values owes the same
+  wait.** A value under a DEK not held is refused (`STS-KEYS-0092`) and the
+  rows are read again in the background.
+* **WHERE NOTHING IS STORED A DEK IS DERIVED** from the KEK (`deriveDek()`),
+  and its id (`d.` + the base64url context) names what it was derived for, so a
+  sibling thread with the same ephemeral KEK derives it from the id alone.
+  "Stored or derived" is a PROCESS fact (`start()` read a KEK for a store), not
+  `persists()`, which follows the ambient realm's mode.
+* **What a realm IS at rest now**: no DEK is shared between realms, but every
+  DEK is wrapped under the one KEK, so whoever holds the KEK unwraps every
+  realm's. A realm is a separate key, not an independent boundary; a KEK per
+  realm is still not built, and the costs of one are below.
+* **`open()` still swallows a failure** rather than throwing: a value under a
+  DEK this process cannot hold is reported and dropped by its reader, and the
+  alternative is a service that will not start because of a session from last
+  week. **A DEK of this process's own scope that will not unwrap at START is
+  fatal** (`STS-KEYS-0091`), for the signing key's reason.
 
-**The HKDF `info` IS A CONSTANT** (`'sts key material v1'`), so the
-separation the paragraph above buys is **per record and not per tenant**: every
-sealed value has its own key and IV, and one master key opens all of them in
-every realm.
+`docs/encryption-at-rest.md` is the operator-facing half.
 
-**THE DISTINCTION TO KEEP STRAIGHT IS WHICH KEY IS THE SUBJECT.** Realm
-separation in this service is about *which keys exist* — signing keys per realm
-in `material`, a certificate-authority branch per realm since the Root was
-shared — not about *which key encrypts them*. A reader who knows the first can
-reasonably assume the second, and it is not true.
+### ROTATION, RE-SEALING, DESTRUCTION AND A ROTATED KEK (#391 P2)
 
-Three consequences, and the third is already visible in the code:
+rcbj's decision: a yearly scheduled rotation of every DEK, a re-encryption job,
+a rotation by hand on the console and the API, and a rotated KEK RE-WRAPS the
+DEKs. The mechanism is `keystore.js`'s *THE DEK LIFECYCLE* block; WHEN is
+`common/data_key_rotation.ts`'s three cluster jobs (`keys.data-key-rotate`
+daily, `keys.data-key-rotate-now` by hand, `keys.data-key-reencrypt` hourly),
+built at 23b-ii beside the signing rotation. What a maintainer needs:
 
-* whoever can read the KEK can open **every realm's** sealed data, so a realm is
-  not a cryptographic boundary at rest;
-* rotating the KEK rotates every realm at once;
-* **and that is why `open()` swallows a failure rather than throwing.** A value
-  written under a previous KEK is the ordinary outcome of a rotation, so the
-  restore counts them and drops them — the alternative is a service that will
-  not start because of a session from last week.
+* **A ROTATION PUBLISHES BEFORE IT SEALS.** `rotateDeks()` makes the successor
+  with `activateAt` `keys.dataKeyActivationLeadSeconds` (300) ahead, so every
+  process and node has read its row before a value names it. The DEK it
+  replaces is SUPERSEDED: it opens, nothing new is sealed under it.
+* **RE-SEALING NEEDS NO KNOWLEDGE OF THE VALUE**: a DEK records its scope,
+  realm and class, so `reseal(cipher)` opens under the old DEK and seals under
+  that slot's current one. The store does the walk (`countSealed()` and
+  `resealSealed()` in `persistence_postgres.js`, a compare-and-set UPDATE per
+  row with a change-log row, over `sts_keys`, `sts_minted`,
+  `sts_ldap_entries` and `sts_cluster_secrets`); `resealOwnRows()` rewrites
+  this file's own key and PKI rows. **The process running the pass applies the
+  directory rows it re-sealed to its own copy** (`persistence.js`'s hook,
+  through `applyDirectoryChange()`): the applier skips a process's own change
+  rows, and this process holds sealed attributes as ciphertext, so a copy left
+  naming the old DEK would be written back by its next flush — after the DEK
+  may be gone. A minted row is held in the clear and re-sealed at its next
+  flush; a cluster secret is held opened.
+* **A DEK IS DESTROYED ONLY ON A COUNT OF ZERO**, and only once superseded for
+  `keys.dataKeyRetireAfterDays` (7, at least 1). A store that cannot count
+  (`ldif`, `memory`) never says zero, so nothing is destroyed there. The
+  destruction is written to the row and WINS every merge (`unionDekRows()`,
+  `adoptDekRow()`), so no stale copy brings a key back.
+* **A ROTATED KEK**: `keys.previousKek*` (a sixth secret descriptor,
+  `secrets.PREVIOUS_KEK`, restart-only) is read at start beside the new key; a
+  service DEK that unwraps only under it is re-wrapped and its row written
+  (`rewrapRotated()`, `STS-KEYS-0096`). A start with only the new key over rows
+  wrapped under the old refuses (`STS-KEYS-0091`). **Cell keys are not covered**
+  — a rotated cell key has no previous-key descriptor yet.
+* **THE DIGEST KEY.** `keyedDigest()` (the cell routing index, a cell locator's
+  tag) was HKDF of the KEK, so a rotated KEK would have changed every digest.
+  Where DEKs are stored it is one random key of its own, class `keyed-digest`
+  in the service scope's default-realm row, FIRST WRITER WINS in the merge
+  (`ensureDigestKey()` at start, `pruneDigestKeys()` for the loser), and never
+  rotated, superseded or destroyed. Where DEKs are derived the KEK-derived key
+  is kept — nothing a digest names outlives the process there.
+* **The settings are per process** (`perProcess`): the jobs run once for the
+  service, and a realm cannot carry them.
 
-`docs/encryption-at-rest.md` is the operator-facing half, and
-`docs/trust-realms.md`'s *what a realm does not separate* names it beside the
-three socket families.
+### WHAT THE CONSOLE AND THE API SHOW AND DO (#391 P5)
 
-#### Making it per realm, if it is ever asked for — NEITHER IS IMPLEMENTED
+rcbj's P5 list: the KEK provider (never the key), every DEK's id, scope,
+class, state, age and value count, and the rotate acts on both surfaces (rule
+7). `admin-ui/encryption_admin.ts` draws it; `GET /admin-api/encryption`
+returns the same model; `POST /admin-api/encryption/:action` and the page's
+forms go through one `dataKeysAction()` with FOUR acts (`ACTIONS`):
+`rotate-data-keys`, `reencrypt-data-keys`, `count-data-keys`, `rotate-kek`.
 
-Written down so the costs are not re-derived. **Nothing below describes code
-that exists.**
+* **A VALUE COUNT IS A JOB, NEVER A PAGE VIEW.** `countSealed()` is a pattern
+  scan per key; `countAllSealed()` (postgres) is ONE pass per table that pulls
+  every DEK id out with `regexp_matches()` and groups — a count of VALUES, so
+  a row holding two counts two. `keys.data-key-count` runs it daily and by
+  hand and records each count ON THE KEY (`keystore.recordCounts()`: `values`
+  and `countedAt` on the record and its row, merged newest-count-wins in
+  `unionDekRows()` and `adoptDekRow()`), so every node draws the same figure.
+  A key nobody counted shows `—`, never 0. The re-encryption pass records the
+  superseded keys' counts it took anyway. Off where the store cannot count
+  (`countOffReason()`). Only this process's own scopes are recorded: another
+  cell's values are in a database this one did not count.
+* **THE KEK IS ROTATED FROM HERE ONLY WHERE IT IS IN A KMS.** Each KMS handle
+  has `rotate()` (Transit's `/keys/<k>/rotate`; Cloud KMS a new version made
+  primary; Key Vault `rotateKey`; AWS `RotateKeyOnDemand`, behind the same
+  key id, re-wrapping nothing); `keystore.rotateKek()` then runs
+  `rewrapRotated()`, which re-wraps every DEK `isStale()` names and writes the
+  rows LIVE — no restart; the other nodes adopt the newer wrap through the
+  row's merge, and their own new DEKs are wrapped by the KMS under its newest
+  version anyway. The job is `keys.kek-rotate-now` (manual only). A KEK READ
+  into the process is refused (`STS-KEYS-0104`, with the previousKek* way to
+  do it): its successor is bytes an operator supplies, and this service never
+  writes a KEK. A KMS that refuses (the deployments here grant use, not
+  rotation, and rotate on the KMS's own schedule) fails the run
+  (`STS-KEYS-0105`), audited `keys.kek-rotate`.
+* **`key.kmsKey`** is the KMS key's NAME (its handle's label). A KMS key has
+  no bytes this process could show, which is why it is safe to print.
 
-* **A per-realm subkey from the one master key.** Put the realm id into the
-  HKDF `info` beside the constant, thread the realm through `seal()` / `open()`,
-  and bump the envelope version (`$aesgcm$2$…`) so records written before the
-  change still open under v1. Cryptographic separation per realm from one
-  secret, no new provisioning, no extra secret-store round trips — and it is
-  SEPARATION rather than INDEPENDENCE: an operator holding the master key still
-  opens everything.
-* **A key-encryption key per realm, from the secret store.** Genuine
-  independence and a much larger change. `secrets.js` grows a keyed read;
-  `keystore.start()` can no longer read one value before the realm registry
-  exists, which inverts the ordering `start()` is built on; every call site
-  needs an ambient realm, **and `persistence_minted.js`'s flush does not have
-  one** — it runs on a timer rather than inside a request, which is the same
-  shape of problem the request pool's barrier hit from the other direction.
-  Creating a realm would also become a key-provisioning act, where today it is
-  one API call.
+#### A key-encryption key per realm — NOT IMPLEMENTED
 
+Written down so the cost is not re-derived. Genuine independence per realm
+needs `secrets.js` to grow a keyed read; `keystore.start()` could no longer read
+one value before the realm registry exists, and creating a realm would become a
+key-provisioning act, where today it is one API call. With DEKs per realm it is
+now a change to what WRAPS a realm's DEKs and nothing else.
+
+
+### A KEK IN A KEY MANAGEMENT SERVICE, AND AES-256-SIV FOR THE DIRECTORY (#391 P3, P4)
+
+**`keys.kekProvider` may name a KMS key rather than a secret: `vault-transit`
+(OpenBao or HashiCorp Vault's Transit engine, mount `keys.kekTransitMount`),
+`aws-kms`, `gcp-kms` (Cloud KMS) or `azure-keys` (a Key Vault or Managed HSM
+key).** rcbj's decision: **the KMS key wraps EACH DEK directly** — there
+is no root key unwrapped into memory, so the KEK's bytes never enter the
+process. `secrets.js` returns a HANDLE for such a provider rather than bytes
+(`{ remote, provider, keyRef, wrap(dek, aad), unwrap(text, aad), owns(text),
+isStale(text) }`), and only for `kek` and `previous-kek` (`KMS_CAPABLE`); any
+other secret naming one is refused `STS-KEYS-0101`. What follows from it:
+
+* **A wrapped DEK under a KMS is `$dekkms$1$<provider>$<b64url key>$<ct>`.**
+  The DEK's AAD (`dekAad()`: id, scope, realm, class) goes with it — Transit's
+  `associated_data`, which is why a Transit key must be an AEAD type
+  (`aes256-gcm96`, `aes128-gcm96`, `chacha20-poly1305`; anything else is
+  `STS-KEYS-0102` at start), and AWS's `EncryptionContext {'sts-dek': aad}`,
+  on a key DescribeKey shows enabled, `ENCRYPT_DECRYPT` and
+  `SYMMETRIC_DEFAULT`; Cloud KMS's `additionalAuthenticatedData` on an
+  `ENCRYPT_DECRYPT` / `GOOGLE_SYMMETRIC_ENCRYPTION` key; an Azure `oct-HSM`
+  key's A256GCM AAD. So a wrapped DEK moved to another realm's row is refused
+  by the KMS, as `$dekwrap$` is refused locally.
+* **AN AZURE RSA KEY IS THE ONE EXCEPTION, AND IT IS HELD HERE.** A standard
+  Key Vault has no symmetric key, and RSA-OAEP-256 takes no AAD, so the wrapped
+  plaintext is the DEK followed by SHA-256 of its AAD and the unwrap refuses a
+  digest that is not the row's (`STS-KEYS-0103`): the vault unwraps a moved
+  key, and this service refuses it. OAEP is not malleable, so that is a
+  binding. Under 3072 bits is refused (2048 is ~112-bit, below the AES-256 it
+  would protect), and RSA is not post-quantum — an `oct-HSM` key is the
+  recommendation wherever a Managed HSM is available.
+* **THE KEY'S REFERENCE IS IN EVERY WRAPPED DEK, AND A DIFFERENT ONE IS
+  REFUSED** (`owns()`): every node and every cell must name the key
+  identically — a multi-region AWS key by its `mrk-` id with `keys.kekRegion`
+  per node, never a regional ARN; Cloud KMS by the KEY, never a version (a
+  version is refused, `STS-KEYS-0102`); Azure as vault URL plus name.
+* **WRAPPING AND UNWRAPPING ARE ASYNCHRONOUS, AND `seal()` IS NOT.** A DEK made
+  under a remote KEK is held with `needsWrap` and wrapped by `wrapPending()`
+  before its row is written (`writeDekRow()` awaits it), and a DEK read from
+  the store is unwrapped in the background (`unwrapLater()`) — `dekFor()`
+  answers null until it is, which is the same refusal-and-reread a DEK not yet
+  held already got (`STS-KEYS-0092`). `start()`, the change-log adoption and
+  `refreshDekRows()` await the unwraps, so a started process holds every DEK
+  it read. A KMS failure is `STS-KEYS-0103`.
+* **A key version rotated in the KMS is a re-wrap**, the same as a rotated
+  KEK: `rewrapRotated()` asks `isStale()` and re-wraps at start. Transit's
+  version is in its `vault:vN:` ciphertext; Cloud KMS and Azure name versions
+  outside the ciphertext, so their wrapped text is `<version>:<ciphertext>`,
+  and stale is "not the primary / current version". AWS rotates its backing
+  key inside one key id and needs nothing.
+* **Moving a local KEK into a KMS, or back, is `keys.previousKek*`** — the
+  previous KEK may be either kind, so the P2 re-wrap is the migration.
+* **The keyed digests need bytes, not a handle**, so under a KMS they are made
+  under the stored digest key (P2), which is wrapped like a DEK.
+* **`tests/kms_kek.js` holds it against a fake Transit server and fake
+  AWS KMS, Cloud KMS and Key Vault clients** injected through
+  `secrets.setSdkLoader()`; no test runs against a real KMS yet.
+* **The four SDKs are optional peers** (`package.json`), like every cloud
+  SDK here: a deployment adds `@aws-sdk/client-kms`, `@google-cloud/kms` or
+  `@azure/keyvault-keys` (with `@azure/identity`) to `STS_CLOUD_SDKS`.
+
+**`keys.directoryCipher` (`aes-256-gcm`, the default, or `aes-256-siv`)
+chooses the cipher of NEW data keys of the classes stored on directory
+entries** (`keystore.DIRECTORY_CLASSES` — the `/admin/encryption` page's
+directory classes). It exists because rcbj asked for "AES-512", which does not
+exist: AES's key is 128, 192 or 256 bits. **AES-256-SIV (RFC 5297) is the
+honest reading of it** — a 512-bit key, two AES-256 keys, one for S2V
+(AES-CMAC, RFC 4493) and one for CTR — and it is nonce-misuse resistant, which
+GCM is not. Its strength is still 256-bit AES; say so wherever it is offered.
+
+* **node has no AES-SIV**, so `crypto.js` builds it from AES-256-ECB
+  (`aesBlock()`) and AES-256-CTR: `aesCmac()`, `sivS2v()`, `aesSivEncrypt()`,
+  `aesSivDecrypt()`. **Wycheproof's `aes_siv_cmac_test` 512-bit groups hold
+  it** (`tests/wycheproof.js`); the other key sizes are not a door here.
+* **The envelope is `$aessiv$2$<dek id>$<nonce>$<siv>$<ciphertext>`**, with a
+  random 16-byte nonce as the last AD component (so one value sealed twice is
+  two ciphertexts) and the envelope's AAD first. `encryptWithDek()` chooses by
+  the KEY's length (64 bytes is SIV); `decryptWithDek()` by the envelope, and
+  a GCM envelope under a 64-byte key is refused.
+* **A DEK's cipher is fixed when it is made** (`rec.alg`, the key length the
+  truth). Changing the setting makes every directory class due a rotation
+  (`rotationDue()` compares the newest key's cipher with `cipherFor()`), and the
+  P2 re-encryption moves the values — no migration path of its own.
+* **Every "is this sealed?" test is `crypto.isEncryptedWithKek()`** now; five
+  modules matched `$aesgcm$` themselves and would have stored a SIV value as
+  plaintext-looking text. A new one owes the same.
+* **A derived (development) DEK is always GCM**: nothing persists there, so
+  nothing would be gained.
 
 ### `storeReport()`: THE SAME MODULE ANSWERING A MONITORING QUESTION (2026-09-12)
 
@@ -8588,7 +8885,7 @@ project's own `--sync-manifests` carries `sts` in its manifest list and rewrites
 `sts/package.json` to the PARENT's M.N.0. That checkout is this repository, so
 after a parent sync the two say different things — which is correct: they answer
 *which release of the debugger is this submodule pinned into* and *which release
-of the mock STS is this*, and those are different questions. `--check-manifests`
+of IYA STS is this*, and those are different questions. `--check-manifests`
 here checks this tree only, and `../id-proto-debugger/sts` is read-only forever.
 
 ## 3w, CONTINUED: A CERTIFICATE UPLOADED IN PLACE OF AN ISSUED KEY PAIR (2026-09-13)
@@ -9046,6 +9343,59 @@ fourteen caught and one recorded as EQUIVALENT (the canonical-base64url check in
 survived the first version and both were the fixture: the non-canonical kid never
 got past the regex, and no certificate was presented that its entry did not hold.
 
+### An application's own ACME, EST and SCEP rules (2026-10-01)
+
+ACME, EST and SCEP are three protocol families an application may be
+declared for (`acme`, `est`, `scep` in `applications.js`'s `PROTOCOLS`), and
+an application's *Certificate enrollment* configuration tab carries its own
+rules. `applicationRules()` applies them in `issue()`, after
+`authorizeTarget()`, when the certificate is FOR an application. A person's
+certificate is not affected. The rules, in order:
+
+1. **The declaration.** The issuance gate is asked the tenth kind,
+   `issue-certificate`, with the request's one family. In product mode the
+   `protocol-not-declared` rule refuses an application declared for other
+   families (`STS-ENROLL-0094`). Development refuses nothing, and an
+   application declared for nothing is refused nothing, as for every other
+   kind (#380). Roles and the device rules are waived: the identity rule
+   above has already decided who may ask.
+2. **The profile.** `<family>AllowedProfiles`, where it lists something,
+   REPLACES the realm's `<family>.allowedProfiles` for the application —
+   wider or narrower; only a known profile counts, so the five never issued
+   stay refused. A profile outside it is `STS-ENROLL-0095`.
+   `<family>DefaultProfile` replaces the realm's default for a request that
+   named no profile (`asked.profileDefaulted`: an unlabelled EST request, a
+   SCEP challenge made with none, an ACME order with no `profile`), where
+   the list in force allows it; `issue()` resolves that default against the
+   TARGET before it checks the profile.
+3. **EST's switches**, `estSwitch(name, entry)`: an application's own
+   `estBasicAuthentication`, `estCertificateAuthentication` and
+   `estServerKeyGeneration` decide for it where set, TRUE or FALSE; the
+   realm's otherwise. A FALSE is `STS-ENROLL-0096`. Because a TRUE can turn
+   on what the realm turned off, EST's checks before the credential consult
+   the application the Basic name or the certificate NAMES (read, not
+   believed — the credential is verified next), `/serverkeygen` lets an
+   administrator past its early check, and `issue()` refuses a person
+   target while the realm's switch is off. The label is checked only
+   structurally before the credential (`checkProfile(..., { structural })`).
+4. **The lifetime and the cap** are the application's where it set them
+   (`<family>CertificateLifetimeDays`, `enrollMaxCertificates`), longer or
+   shorter, higher or lower; a certificate is still shortened to its Issuing
+   CA's expiry.
+
+**THE APPLICATION'S VALUE OVERRIDES THE REALM'S (rcbj, 2026-10-01).** The
+first version that day only narrowed (an intersection, the smaller value,
+FALSE-only switches); rcbj asked for an override. What no application value
+reaches: the CA, OCSP and KDC profiles, the Issuing CA's expiry, the
+declaration rule, and `<family>.enabled`.
+
+**Every refusal goes out in its protocol's own words**, which is what keeps
+the three specifications intact: ACME answers a problem document
+(`invalidProfile` for 0095, RFC 8555 section 6.7 and the profiles draft),
+EST an HTTP status (RFC 7030 section 4.2.3), SCEP a `failInfo` (RFC 8894
+section 3.3.2.2). Nothing new is put on the wire. `tests/application_enrollment.js`
+holds the four rules in process.
+
 ### The realm listings read in one walk and parse one family (#352, 2026-09-29)
 
 `certificatesInRealm()`, `eabsInRealm()`, `challengesInRealm()` and
@@ -9195,6 +9545,35 @@ What is this directory's is where it is decided and what an app password is.
 
 `tests/second_factor_doors.js` is the in-process half;
 `tests/vendored/sts_second_factor_doors.js` drives the five doors over the wire.
+
+### An application's own claim sets (2026-10-01)
+
+Each of `admin_stats.js`'s five claim sets may also be configured on an
+APPLICATION: one JSON array of rows per set on its entry
+(`APP_CLAIM_ATTRIBUTES`: `oauthClaimsAccessToken`, `oauthClaimsIdToken`,
+`oauthClaimsUserinfo`, `saml2CustomAttributes`, `saml11CustomAttributes`).
+`jwtClaims()` and `samlAttributes()` read `effectiveClaimSet(id, context)`
+instead of `claimSet(id)`. That is the realm's rows, with the application's
+**added and winning by name** (rcbj's choice), so an application with none
+issues exactly what the realm does.
+
+* **Which application:** `applicationForClaims()` finds it by `client_id`
+  for the three JSON sets and by `audience` for the two SAML sets, reading
+  by identifier, then `forClientId()`, then `forAppliesTo()`. Those are the
+  keys `applications.settingFor()` already answers per-application settings
+  for.
+* **One set of rules:** `checkClaimEntries()` was lifted out of
+  `setClaimSet()` so a realm row and an application row are refused for the
+  same reasons.
+* **Checked at the write and at issuance:** `applications.claimRowsProblem()`
+  holds every write (`STS-REG-0206`). A stored array that fails the rules at
+  issuance is dropped with a warning (`STS-REG-0205`) and the realm's set
+  goes out: a bad row costs the application's claims, never the issuance.
+* **Not done:** changing an application's rows does not send CAEP
+  `token-claims-change` the way a realm set change does
+  (`announceClaimsReshaped()`); the live-holder fan-out is realm-wide today.
+
+`tests/application_claims.js` holds it.
 
 ## 3ay. `identity_assurance.ts`: a person's identity verifications, and `verified_claims` (#127, 2026-09-23)
 

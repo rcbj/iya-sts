@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -534,7 +534,11 @@ class FederationDiagram {
       // table of relationships has never been able to show, because it is a
       // fact about two registers rather than about one entry.
       lines.push(self.trim(row.id, 24));
+      // A PARTNER'S SHARED SIGNALS ride the same arrow (#373): they come
+      // from the same partner, about the same people.
       lines.push(self.trim(row.protocolLabel, 20) +
+                 (row.signsIn !== false && row.signalsEnabled
+                    ? ' · signals' : '') +
                  (row.applicationCount
                     ? ' · ' + row.applicationCount + ' app' +
                       (row.applicationCount === 1 ? '' : 's')
@@ -604,6 +608,14 @@ class FederationDiagram {
         parts.push('Attributes released to it: ' + row.releases.join(', ') +
                    '.');
       }
+    } else if (row.signsIn === false) {
+      // A PARTNER THAT SIGNS NOBODY IN (#374): the arrow is its events.
+      parts.push('This service receives Shared Signals from "' +
+                 (row.peer || row.id) + '" through the federation ' +
+                 'relationship "' + row.id + '". It signs nobody in: its ' +
+                 'CAEP and RISC events are verified against the keys its SSF ' +
+                 'configuration names and acted on as the signal-response ' +
+                 'policy permits — by default, recorded.');
     } else {
       parts.push('This service consumes assertions from "' +
                  (row.peer || row.id) +
@@ -611,6 +623,12 @@ class FederationDiagram {
                  row.protocolLabel + '). An assertion is refused unless it ' +
                  'verifies against the certificate configured on this ' +
                  'relationship.');
+      if (row.signalsEnabled) {
+        parts.push('Its Shared Signals are received as well (#373): a ' +
+                   'verified event ends the sessions it started for the ' +
+                   'person, and an account-disabled blocks its sign-ins of ' +
+                   'them.');
+      }
       parts.push(row.applicationCount
         ? row.applicationCount + ' application(s) here are configured to ' +
           'authenticate through it.'

@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: BUSL-1.1
 
 output "service_url" {
   description = "The cluster's public address (443 on the NLB, allowed_cidrs only)."
@@ -13,7 +13,7 @@ output "public_hostname" {
 
 output "public_certificate_arn" {
   description = "The exportable ACM certificate every NODE presents on 8081, when public_hostname is set; the load balancer passes TLS through."
-  value       = local.public_name ? aws_acm_certificate.public[0].arn : ""
+  value       = local.public_certificate_arn
 }
 
 output "nlb_dns_name" {
@@ -65,7 +65,7 @@ output "container_log_group" {
 }
 
 output "task_role_arn" {
-  description = "What the mock-sts containers run as."
+  description = "What the iya-sts containers run as."
   value       = aws_iam_role.task.arn
 }
 
@@ -145,8 +145,18 @@ output "intercell_zone_id" {
 }
 
 output "intercell_url" {
-  description = "Where the other cells reach this cell's nodes: https://nodes.<cell>.<env>.mock-sts.internal:8446, never public; empty for a single-cell environment."
+  description = "Where the other cells reach this cell's nodes: https://nodes.<cell>.<env>.iya-sts.internal:8446, never public; empty for a single-cell environment."
   value       = local.multi ? "https://${local.intercell_hostname}:${local.intercell_port}" : ""
+}
+
+output "kek_provider" {
+  description = "Where the key-encryption key lives (kek.tf, #391): kms or secret."
+  value       = var.kek_provider
+}
+
+output "kek_ref" {
+  description = "The STS_KEYS_KEK_REF every node is given: the KMS key's ID (mrk-…), identical in every cell, or the `kek` secret's ARN."
+  value       = local.kek_environment.STS_KEYS_KEK_REF
 }
 
 output "cell_kek_secret_arn" {
@@ -166,7 +176,7 @@ output "db_snapshot_identifier" {
 
 output "conversion_task_definition" {
   description = "The conversion task's definition ARN, in a restored cell's `full` phase; empty otherwise."
-  value       = local.restored && local.full ? aws_ecs_task_definition.convert[0].arn : ""
+  value       = local.converted && local.full ? aws_ecs_task_definition.convert[0].arn : ""
 }
 
 output "conversion_network" {
@@ -176,4 +186,34 @@ output "conversion_network" {
     security_groups  = [aws_security_group.nodes.id]
     assign_public_ip = "ENABLED"
   }
+}
+
+# ---------------------------------------------------------------------------
+# WHAT deploy/multicloud/interconnect READS OF AN AWS CELL (#97): where its
+# VPN attaches and routes, where its inbound resolver sits, and what the
+# Route 53 tree aliases and checks.
+# ---------------------------------------------------------------------------
+output "private_subnet_ids" {
+  description = "The cell's private subnets (the databases; the inbound resolver endpoint of a multi-cloud cell)."
+  value       = aws_subnet.private[*].id
+}
+
+output "private_subnet_cidrs" {
+  description = "The private subnets' CIDRs, in order: the resolver endpoint's fixed addresses are .53 of the first two."
+  value       = aws_subnet.private[*].cidr_block
+}
+
+output "nlb_zone_id" {
+  description = "The load balancer's Route 53 zone, for an alias record to it."
+  value       = aws_lb.main.zone_id
+}
+
+output "route53_health_check_id" {
+  description = "This cell's HTTPS health check on its load balancer; empty without a public name or outside a cell."
+  value       = local.cells_dns ? aws_route53_health_check.cell[0].id : ""
+}
+
+output "cloud" {
+  description = "Which cloud this environment (or cell) is in, for a script reading several (#97)."
+  value       = "aws"
 }

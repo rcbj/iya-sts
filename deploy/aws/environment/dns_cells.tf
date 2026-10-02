@@ -1,32 +1,52 @@
 # SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: BUSL-1.1
 #
 # ---------------------------------------------------------------------------
 # THE PUBLIC NAME OF A MULTI-CELL ENVIRONMENT: A ROUTE 53 RECORD TREE
-# (#98, D7, 2026-09-28).
+# (#98, D7, 2026-09-28; pinned to JURISDICTIONS since #367, 2026-09-30).
 #
-#   test-idp.iyasec.io   GEOLOCATION  country CA  → cac1's load balancer
-#                                     (later: each EU/EEA country → euc1,
-#                                      SG → apse1)
-#                                     default (*)  → cells.test-idp.iyasec.io
-#   cells.test-idp.iyasec.io  LATENCY  one record per cell → that cell's load
-#                                      balancer, each behind a health check
+#   <name>                   GEOLOCATION  each pinned country → the latency
+#                                         set of ITS JURISDICTION's cells
+#                                         (globalidp: DE, FR, ... → eu;
+#                                          SG → sg; MY → my)
+#                                         default (*) → cells.<name>
+#   <jurisdiction>.cells.<name>  LATENCY  one record per cell of that
+#                                         jurisdiction → its load balancer
+#   cells.<name>             LATENCY      one record per cell → its load
+#                                         balancer
+#   each latency record behind the cell's health check
 #
-# Every cell writes its own records — the ones for the countries pinned to
-# it, and its latency record — and the PRIMARY cell writes the default, so no
-# cell reads another's state for DNS. A single-cell environment keeps the one
+# WHY A COUNTRY IS PINNED TO A JURISDICTION AND NOT TO A CELL. The law that
+# asks for the pin names a place, not a data centre: a German client must be
+# served in the EU, and globalidp has two EU cells (euc1, euw1). Pinned to
+# one of them, Germany would be sent to Frankfurt from anywhere and never
+# fail over to Ireland; pinned to the jurisdiction's own latency set it goes
+# to whichever EU cell is nearer and healthy — and to NO cell outside the
+# EU, whatever their health (below). A jurisdiction with one cell (sg, my,
+# testidpna's ca) has a set of one, which answers exactly as the old
+# per-cell pin did. The pins are `jurisdictions`, beside `cells` in the
+# cells file.
+#
+# Every cell writes its own two latency records, and the pinned countries of
+# a jurisdiction are written by ONE of its cells — the first by id — so no
+# cell reads another's state for DNS and no record is written twice; the
+# PRIMARY cell writes the default. A single-cell environment keeps the one
 # CNAME in dns.tf, exactly as it was.
 #
-# A PINNED COUNTRY HAS NO HEALTH CHECK, AND THAT IS THE POINT. Route 53 answers
-# an unhealthy geolocation record by falling back to the default — which is
-# the latency set, which would send a Canadian client to the United States
-# the moment cac1 was down. The law that requires the pin does not lapse when
-# the cell does, so the pin is answered whatever the cell's health (fail
-# closed, D6); the SERVICE, not DNS, is authoritative on residency anyway
-# (issue #98, section 6), and a client that lands in the wrong cell is relayed
-# or refused there.
+# A PINNED COUNTRY IS ANSWERED WHATEVER ITS CELLS' HEALTH, AND THAT IS THE
+# POINT. Its geolocation record does not evaluate its target's health: if it
+# did, a jurisdiction whose every cell was down would make the record
+# unhealthy, and Route 53 would fall back to the default — the latency set of
+# every cell — which would send an EU client to the United States. Inside the
+# jurisdiction's set the health checks DO count, so one EU cell fails over to
+# the other; and when every record of a set is unhealthy Route 53 answers
+# with all of them rather than none, so the client still lands in the
+# jurisdiction. The law that requires the pin does not lapse when the cells
+# do (fail closed, D6); the SERVICE, not DNS, is authoritative on residency
+# anyway (issue #98, section 6), and a client that lands in the wrong cell is
+# relayed or refused there.
 #
-# THE LATENCY RECORDS DO HAVE ONE, which is how the default fails over: an
+# THE LATENCY RECORDS DO HAVE ONE, which is how the sets fail over: an
 # HTTPS GET of /healthcheck on 443 of each cell's load balancer. The load
 # balancer admits `allowed_cidrs` only, so the Route 53 health checkers'
 # published ranges are admitted too — ON 443 ONLY, the one port the check
@@ -54,7 +74,19 @@ locals {
   # Server configuration → Cells. Deterministic, like the inter-cell names,
   # so no cell reads another's state to know its peers'.
   cell_console_host = local.cells_dns ? "${var.cell}.${var.public_hostname}" : ""
-  pinned_places     = local.cells_dns ? toset(local.this_cell.geolocation_countries) : toset([])
+
+  # THIS CELL'S JURISDICTION'S LATENCY SET (#367), and whether this cell is
+  # the one that writes the jurisdiction's pinned countries: the first of
+  # its cells by id, a choice every cell can make from the cells file alone.
+  jurisdiction      = local.multi ? local.this_cell.jurisdiction : ""
+  jurisdiction_name = "${local.jurisdiction}.cells.${var.public_hostname}"
+  jurisdiction_cells = local.multi ? sort([
+    for id, c in var.cells : id if c.jurisdiction == local.jurisdiction
+  ]) : []
+  writes_pins = local.cells_dns && try(local.jurisdiction_cells[0], "") == var.cell
+  pinned_places = local.writes_pins ? toset(
+    try(var.jurisdictions[local.jurisdiction].geolocation_countries, [])
+  ) : toset([])
 
   # Three is Route 53's minimum. Chosen for spread (two continents) and kept
   # this short because each region's checker ranges are security-group rules
@@ -90,8 +122,13 @@ resource "aws_route53_health_check" "cell" {
   tags              = { Name = "${local.prefix}-https" }
 }
 
+# IN A MULTI-CLOUD ENVIRONMENT (#97) THE TREE IS NOT THE CELLS' TO WRITE:
+# deploy/multicloud/interconnect writes it, over every cell of both clouds,
+# with geoproximity where this file has latency (Route 53's latency routing
+# knows only AWS regions). Each AWS cell still makes its health check, which
+# that stack reads, and its own console name.
 resource "aws_route53_record" "latency" {
-  count          = local.cells_dns ? 1 : 0
+  count          = local.cells_dns && !local.multi_cloud ? 1 : 0
   zone_id        = data.aws_route53_zone.public[0].zone_id
   name           = local.latency_name
   type           = "A"
@@ -110,26 +147,57 @@ resource "aws_route53_record" "latency" {
   health_check_id = aws_route53_health_check.cell[0].id
 }
 
-resource "aws_route53_record" "pinned" {
-  for_each       = local.pinned_places
+# THIS CELL IN ITS JURISDICTION'S SET (#367): what a pinned country's
+# record aliases. The same load balancer and the same health check as the
+# record above; only the set differs. Not in a multi-cloud environment (#97),
+# whose jurisdiction sets deploy/multicloud/interconnect writes over both
+# clouds' cells.
+resource "aws_route53_record" "jurisdiction_latency" {
+  count          = local.cells_dns && !local.multi_cloud ? 1 : 0
   zone_id        = data.aws_route53_zone.public[0].zone_id
-  name           = var.public_hostname
+  name           = local.jurisdiction_name
   type           = "A"
-  set_identifier = "${var.cell}-${each.value}"
+  set_identifier = var.cell
 
-  geolocation_routing_policy {
-    country = each.value
+  latency_routing_policy {
+    region = local.region
   }
 
   alias {
     name                   = aws_lb.main.dns_name
     zone_id                = aws_lb.main.zone_id
+    evaluate_target_health = true
+  }
+
+  health_check_id = aws_route53_health_check.cell[0].id
+}
+
+resource "aws_route53_record" "pinned" {
+  for_each       = local.multi_cloud ? toset([]) : local.pinned_places
+  zone_id        = data.aws_route53_zone.public[0].zone_id
+  name           = var.public_hostname
+  type           = "A"
+  set_identifier = "${local.jurisdiction}-${each.value}"
+
+  geolocation_routing_policy {
+    country = each.value
+  }
+
+  # To the jurisdiction's set, NEVER evaluating its health (the header: an
+  # unhealthy pin would fall through to the default, out of the jurisdiction).
+  alias {
+    name                   = local.jurisdiction_name
+    zone_id                = data.aws_route53_zone.public[0].zone_id
     evaluate_target_health = false
   }
+
+  # Route 53 refuses an alias to a name with no record yet; this cell's own
+  # record in the set is the one it can be sure of.
+  depends_on = [aws_route53_record.jurisdiction_latency]
 }
 
 resource "aws_route53_record" "default" {
-  count          = local.cells_dns && local.is_primary ? 1 : 0
+  count          = local.cells_dns && local.is_primary && !local.multi_cloud ? 1 : 0
   zone_id        = data.aws_route53_zone.public[0].zone_id
   name           = var.public_hostname
   type           = "A"

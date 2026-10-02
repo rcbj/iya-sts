@@ -217,6 +217,15 @@ username.
   other value is refused. An update may carry `aud`, or any other
   Transmitter-Supplied member (`iss`, `events_supported`, `events_delivered`,
   `min_verification_interval`, `inactivity_timeout`), only unchanged.
+* **A person's stream is about that person.** A stream created with a
+  person's own credential is theirs, and it carries only events about them.
+  That credential is an access token a client obtained for them (for example
+  by the authorization code grant), or their directory name and password over
+  Basic. Events about anybody else are not delivered to it, whatever its
+  subject list and `ssf.defaultSubjects` say, and an Add Subject naming
+  anybody else answers `403 access_denied`. A relying party that needs events
+  about everybody creates its stream with its own client credentials token.
+  `ssf.personStreamsSelfOnly` turns this off.
 * **`ssf.maxStreams` is per receiver.** Creating a stream past it answers 403.
 * **The console's and portal's own streams belong to no remote receiver** and
   are managed only on `/admin/ssf` and through `/admin-api`.
@@ -238,8 +247,20 @@ complex subject inside another is refused as well. The pre-RFC names
 
 A stream that names a **person** covers a complex subject naming one of that
 person's sessions. `ssf.defaultSubjects` controls what a stream with no
-subjects covers. With `ALL`, the default, it covers everybody. With `NONE` it
-covers nobody until a subject is added.
+subjects covers. With `ALL`, the default, it covers everybody, and naming a
+subject narrows it to the named subjects. Removing the last subject widens it
+back to everybody. With `NONE` it covers nobody until a subject is added.
+
+A stream a person owns covers only subjects that name that person, in any of
+these forms:
+
+* an `iss_sub` with their subject, including the `sub` a pairwise client is
+  told;
+* an `email`, `phone_number` or `account` subject for their account;
+* an `aliases` subject in which any alias names them;
+* a complex subject whose `user` member names them.
+
+A complex subject with no `user` member names nobody on such a stream.
 
 ### Push and poll delivery
 
@@ -400,40 +421,65 @@ names nothing `ssf.receiveAudiences` lists (`invalid_audience`). Left empty,
 the first means this realm's own transmitter issuer and the second means the
 endpoint's own URL, for example `https://host/ssf/receive`. The console's and
 portal's receivers make the same `typ` and `iss` checks against their own
-streams. To receive another transmitter's streams, see *Receiving from
-another identity service*, below.
+streams. To receive a federation partner's streams, see *Receiving from a
+federation partner*, below.
 
-### Receiving from another identity service
+### Receiving from a federation partner
 
-A realm can receive CAEP and RISC events from another identity service's
-transmitter, for people who sign in here through a federation relationship
-with it ([#153](https://github.com/rcbj/iya-sts/issues/153)).
+A realm can receive CAEP and RISC events from a federation partner's
+transmitter ([#153](https://github.com/rcbj/iya-sts/issues/153),
+[#373](https://github.com/rcbj/iya-sts/issues/373)). The partner is
+configured as a **federation relationship** on Protocols → Federation, and
+its Shared Signals are a section of that relationship. A partner that signs
+nobody in here — a device manager, an endpoint agent, an HR system — is an
+`ssf` relationship ([#374](https://github.com/rcbj/iya-sts/issues/374)).
 
-1. **Register it** on Protocols → SSF transmitters (`/admin/ssf/transmitters`)
-   or with `POST /admin-api/ssf/transmitters/add`. You give it an id, its
-   issuer, the federation relationship its subjects are mapped through,
-   `poll` or `push`, and how this realm authenticates to it: client
-   credentials at its token endpoint, or a bearer token. Its
-   `/.well-known/ssf-configuration` and `jwks_uri` are fetched and checked.
-2. **Create the stream** (`create-stream`). A poll stream is polled every
-   `ssf.foreignPollS` seconds. A push stream is given
-   `/ssf/transmitters/{id}/push` and an authorization header only the two
-   services know.
-3. **Link people.** A subject `{format: "iss_sub", iss, sub}` with the
-   relationship's issuer names the person whose federation link holds it. An
-   `email` subject is matched only where the relationship sets
+1. **Turn the signals on** on a relationship where this service is the
+   service provider: `fedSignalsEnabled` (an `ssf` relationship has it on
+   from the start). The partner's SSF issuer is `fedSignalsIssuer`, or the
+   relationship's `fedPeer` when that is empty. Set `fedSignalsIssuer` for a
+   SAML or WS-Federation partner, whose entityID is not its SSF issuer.
+2. **Say how this realm authenticates to the partner**: client credentials
+   (`fedSignalsTokenUrl`, `fedSignalsClientId`, `fedSignalsClientSecret`,
+   each falling back to the relationship's own `fedTokenUrl`, `fedClientId`
+   and `fedClientSecret`), or `fedSignalsBearer`. The two signals
+   credentials are sealed under the key-encryption key wherever keys
+   persist.
+3. **Create the stream**: *Create stream* on the relationship's page, or
+   `POST /admin-api/federation/signals-create-stream`. This fetches the
+   partner's `/.well-known/ssf-configuration` and `jwks_uri` first and
+   checks the document names the issuer. A poll stream
+   (`fedSignalsDelivery` `poll`) is polled every `ssf.foreignPollS` seconds.
+   A push stream is given `/federation/signals/{id}` and an authorization
+   header only the two services know. `fedSignalsEvents` is what the stream
+   asks for.
+4. **Link people.** For a partner people sign in through, the links its
+   sign-ins wrote are what its `iss_sub` subjects match: `iss` is the
+   partner (or its SSF issuer) and `sub` the identifier it signs them in
+   with — for SAML, the persistent NameID. For an `ssf` relationship, link
+   each person on their page, with the issuer and subject its `iss_sub`
+   events name them by, or the issuer `opaque` and the id of an opaque
+   subject. An `email` subject is matched only where the relationship sets
    `fedSignalEmailMatch`.
 
 A Security Event Token is acted on only if it verified: its signature against
-the transmitter's keys, `typ`, `iss`, the stream's `aud`, and a `jti` never
-seen before. Product mode refuses an unverified one. What it leads to is the
-`signal-response` XACML policy's decision:
+the keys the partner's SSF configuration names, `typ`, `iss`, the stream's
+`aud`, and a `jti` never seen before. Product mode refuses an unverified one.
+What it leads to is the `signal-response` XACML policy's decision. By
+default:
 
-| Events | Reaction here |
-|---|---|
-| `session-revoked`, `credential-change`, `sessions-revoked`, `credential-compromise`, `account-purged` | end the person's sessions |
-| `account-disabled` | disable the account |
-| `account-enabled` | enable it again, only if that transmitter disabled it |
+| Partner | Events | Reaction here |
+|---|---|---|
+| signs people in | `session-revoked`, `credential-change`, `sessions-revoked`, `credential-compromise`, `account-purged` | end the sessions **this relationship** started for the person — the one a complex subject's `session` names, else every one. A local sign-in and other partners' sessions are untouched |
+| signs people in | `account-disabled` | **block this partner's sign-ins** of the person, and end the sessions it started. The account stays enabled; other ways of signing in keep working |
+| signs people in | `account-enabled` | lift that block |
+| `ssf` only | anything about a person | recorded, nothing more. A global sign-out and an account lock exist for an operator's policy to permit |
+| either | `device-compliance-change` | set the device's compliance |
+
+An administrator can lift a block with *Unblock* on the relationship's page
+(`POST /admin-api/federation/signals-unblock`). Every arrival from every
+partner, and every block, is on Monitoring → Signals from partners
+(`/admin/ssf/transmitters`, `GET /admin-api/ssf/transmitters`).
 
 Development records what it would do and does nothing unless
 `ssf.actOnSignalsInDevelopment` is on.
@@ -520,7 +566,8 @@ types from what a stream may ask for.
 | `ssf.signingAlgorithm` | `STS_SSF_SIGNING_ALGORITHM` | `RS256` | yes | The JWS algorithm every SET is signed with, post-quantum ones included. |
 | `ssf.setCertificateHeader` | `STS_SSF_SET_CERTIFICATE_HEADER` | `x5u` | yes | Whether a SET names its signing key's certificate chain: `none`, `x5c`, `x5u` or `both`. |
 | `ssf.deliveryMethods` | `STS_SSF_DELIVERY_METHODS` | `urn:ietf:rfc:8935,urn:ietf:rfc:8936` | yes | Which delivery methods the service agrees to. `push` and `poll` are accepted as shorthand. |
-| `ssf.defaultSubjects` | `STS_SSF_DEFAULT_SUBJECTS` | `ALL` | yes | What a stream with no subjects covers: everybody (`ALL`) or nobody (`NONE`). |
+| `ssf.defaultSubjects` | `STS_SSF_DEFAULT_SUBJECTS` | `ALL` | yes | What a stream with no subjects covers: everybody (`ALL`) or nobody (`NONE`). With `ALL`, naming a subject narrows the stream to the named subjects, and removing the last one widens it back to everybody. |
+| `ssf.personStreamsSelfOnly` | `STS_SSF_PERSON_STREAMS_SELF_ONLY` | `true` | yes | A stream created with a person's own credential (an access token a client obtained for them, or their name and password over Basic) carries only events about that person, whatever its subject list and `ssf.defaultSubjects` say, and Add Subject naming anybody else is refused with 403. Off, such a stream is treated like a client's. |
 | `ssf.streamStatusOnCreate` | `STS_SSF_STREAM_STATUS_ON_CREATE` | `enabled` | yes | The status a new stream starts in. `paused` makes the receiver enable its own stream. |
 | `ssf.minVerificationInterval` | `STS_SSF_MIN_VERIFICATION_INTERVAL` | `60` | yes | The `min_verification_interval` the service publishes. A stream that asks for less is refused. |
 | `ssf.verificationRateLimit` | `STS_SSF_VERIFICATION_RATE_LIMIT` | `false` | yes | Answers 429 to a verification request that comes sooner than the published interval. |

@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: BUSL-1.1
 
 name: testidp destroy
 
@@ -32,6 +32,13 @@ name: testidp destroy
 # replicated secrets), then each cell — `confirm` must then be typed as
 # `testidpna`.
 #
+# `environment: globalidp` (#367, 2026-09-30) is the six-region test case,
+# six cells behind global-idp.iyasec.io (environment/envs/globalidp.*). It
+# has a name of its own, so it has a concurrency group of its own and may
+# exist beside either of the other two. Before its first deploy an
+# administrator enables ap-southeast-5 on the account and re-applies
+# foundation/ (deploy/aws/CLAUDE.md, *globalidp*).
+#
 # NOTE: a workflow_dispatch workflow can only be dispatched once the file is on
 # the default branch.
 # ---------------------------------------------------------------------------
@@ -40,11 +47,12 @@ on:
   workflow_dispatch:
     inputs:
       environment:
-        description: "testidp (one region) or testidpna (cells usw2 + cac1, #98)"
+        description: "testidp (one region), testidpna (cells usw2 + cac1, #98) or globalidp (six cells, global-idp.iyasec.io, #367)"
         type: choice
         options:
           - testidp
           - testidpna
+          - globalidp
         default: testidp
       confirm:
         description: "Type the environment's name again to confirm it and all its data are deleted"
@@ -55,20 +63,20 @@ permissions:
   contents: read
 
 concurrency:
-  group: aws-cluster-testidp
+  group: aws-cluster-${{ github.event.inputs.environment == 'globalidp' && 'globalidp' || 'testidp' }}
   cancel-in-progress: false
 
 env:
   AWS_REGION: us-west-2
   TF_ENV: ${{ github.event.inputs.environment }}
-  TF_IMAGE: mock-sts-terraform
+  TF_IMAGE: iya-sts-terraform
 
 jobs:
   destroy:
     if: ${{ github.event.inputs.confirm == github.event.inputs.environment }}
     runs-on: ubuntu-latest
     # Longer for cells (#98): the global stack's replicas, then each cell.
-    timeout-minutes: ${{ github.event.inputs.environment == 'testidpna' && 180 || 90 }}
+    timeout-minutes: ${{ github.event.inputs.environment == 'testidp' && 90 || 180 }}
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v5

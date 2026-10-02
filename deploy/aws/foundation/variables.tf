@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: BUSL-1.1
 
 variable "aws_region" {
   description = <<-EOT
@@ -21,26 +21,36 @@ variable "permitted_regions" {
     and a replica of the image repository (modules/region). A region is
     opened by adding it here and having an administrator re-apply.
 
-    ONLY THE FOUR REGIONS THE DESIGN NAMES ARE ACCEPTED — us-west-2 (usw2),
-    ca-central-1 (cac1), eu-central-1 (euc1), ap-southeast-1 (apse1) — because
-    Terraform cannot create a provider per list element: each has a provider
-    block and a module block written out in providers.tf and regions.tf. A
-    fifth region is those two blocks and a row in `locals.tf`'s
-    `cell_of_region`, then an entry here.
+    ANY COMMERCIAL REGION NAMED area-direction-digit (#367, 2026-09-30):
+    each gets its modules/region instance from the one `for_each`
+    (regions.tf) and its cell id by the rule in locals.tf. It was four
+    regions, each a provider block and a module block written out, until AWS
+    provider 6 let one provider reach every region.
+
+    AN OPT-IN REGION MUST BE ENABLED ON THE ACCOUNT FIRST — ap-southeast-5,
+    and every region launched since 2019 — which is an administrator's act in
+    the console (Account → AWS Regions) or `aws account enable-region`, and
+    takes minutes to hours. Until it is, the plan stops at regions.tf's
+    `aws_regions` check, naming the region, before anything is made.
   EOT
-  type = list(string)
-  # BOTH REGIONS SINCE 2026-09-29 (#311): the foundation was applied with
-  # ca-central-1 for testidpna's cac1 cell, and this is the value the account
-  # now holds. A default of us-west-2 alone would make the next foundation
-  # apply from any checkout DESTROY ca-central-1's cell key, global-key
-  # replica, log group and repository replica. Narrow it only on purpose.
-  default = ["us-west-2", "ca-central-1"]
+  type        = list(string)
+  # WHAT THE ACCOUNT IS TO HOLD. us-west-2 and ca-central-1 since 2026-09-29
+  # (#311, testidpna's cells); since 2026-09-30 (#367) also every region of
+  # `globalidp`, the six-region test case: us-east-2, eu-central-1,
+  # eu-west-1, ap-southeast-1 and ap-southeast-5. Narrowing the list DESTROYS
+  # the dropped regions' cell keys (thirty-day deletion), global-key replicas,
+  # log groups and repository replicas at the next apply — do it only once no
+  # environment has a cell there.
+  default = [
+    "us-west-2", "ca-central-1", "us-east-2",
+    "eu-central-1", "eu-west-1", "ap-southeast-1", "ap-southeast-5",
+  ]
   validation {
     condition = contains(var.permitted_regions, var.aws_region) && alltrue([
       for r in var.permitted_regions :
-      contains(["us-west-2", "ca-central-1", "eu-central-1", "ap-southeast-1"], r)
-    ])
-    error_message = "permitted_regions must include aws_region, and each entry must be one of us-west-2, ca-central-1, eu-central-1, ap-southeast-1 (the regions with a provider block)."
+      can(regex("^[a-z]{2}-(north|south|east|west|central|northeast|northwest|southeast|southwest)-[1-9]$", r))
+    ]) && length(distinct(var.permitted_regions)) == length(var.permitted_regions)
+    error_message = "permitted_regions must include aws_region, name each region once, and each must be a commercial region of the form area-direction-digit (us-west-2, ap-southeast-5): the cell id is made from that shape (locals.tf)."
   }
 }
 
@@ -51,7 +61,7 @@ variable "name" {
     deployer from what it created.
   EOT
   type        = string
-  default     = "mock-sts"
+  default     = "iya-sts"
 }
 
 variable "tags" {
@@ -59,7 +69,7 @@ variable "tags" {
   type        = map(string)
   default = {
     ManagedBy = "terraform"
-    Stack     = "mock-sts-foundation"
+    Stack     = "iya-sts-foundation"
   }
 }
 
@@ -99,13 +109,21 @@ variable "public_dns" {
     in those zones and nothing at all in any other.
 
     A MULTI-CELL ENVIRONMENT (#98) writes the SAME two names: the geolocation
-    records are `test-idp.iyasec.io` itself, and the latency set they fall
-    through to is `cells.test-idp.iyasec.io`, which the wildcard already
-    covers. What it adds is health checks, which have no name to scope by
+    records are the public name itself, and the latency sets they fall
+    through to — `cells.<name>`, one `<jurisdiction>.cells.<name>` per
+    jurisdiction (#367) — and each cell's own `<cell>.<name>` are under the
+    wildcard. What it adds is health checks, which have no name to scope by
     (iam_deployer.tf, `Route53HealthChecks`).
+
+    `global-idp.iyasec.io` is `globalidp`'s, the six-region test case
+    (#367, 2026-09-30): a name of its own, so it stands beside testidp or
+    testidpna rather than taking their name in turn.
   EOT
   type        = map(list(string))
   default = {
-    "iyasec.io" = ["test-idp.iyasec.io", "*.test-idp.iyasec.io"]
+    "iyasec.io" = [
+      "test-idp.iyasec.io", "*.test-idp.iyasec.io",
+      "global-idp.iyasec.io", "*.global-idp.iyasec.io",
+    ]
   }
 }

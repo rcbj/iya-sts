@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -546,7 +546,7 @@ class GnapGrants {
     const secret = this.field(app, 'gnapSymmetricKey');
     if (secret) {
       let bytes = Buffer.from(secret, 'base64url');
-      if (keystore.persists() && /^\$aesgcm\$/.test(secret)) {
+      if (keystore.persists() && stsCrypto.isEncryptedWithKek(secret)) {
         // Still ciphertext: the opened view could not open it. Refused rather
         // than used — a MAC keyed with ciphertext would verify nothing any
         // client could produce, and the log names the entry.
@@ -1127,6 +1127,8 @@ class GnapGrants {
       const username = grant.ro ? grant.ro.username : null;
       const allowed = gate.check({
         application: grant.client.identifier, kind: gate.ISSUANCE.ACCESS_TOKEN,
+        // GNAP's, not OAuth 2.0's, for the protocol-declaration rule.
+        protocolFamilies: ['gnap'],
             subject: username ? { kind: 'user', name: username, authenticated:
                                   true } : { kind: 'application', name:
                                              grant.client.identifier,
@@ -1333,6 +1335,7 @@ class GnapGrants {
       const kind = format === 'id_token' ? gate.ISSUANCE.ID_TOKEN :
                    gate.ISSUANCE.SAML_ASSERTION;
       return gate.check({ application: grant.client.identifier, kind: kind,
+                          protocolFamilies: ['gnap'],
                           subject: { kind: 'user', name: grant.ro.username,
                                      authenticated: true },
                           claims: null,

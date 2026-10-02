@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: BUSL-1.1
 #
 # ---------------------------------------------------------------------------
 # THE SUITE'S CALLBACK HALF, IN THE ENVIRONMENT'S VPC, FOR THE LENGTH OF ONE
@@ -53,7 +53,7 @@ locals {
   )
   ldap_host = try(local.env.public_hostname, "") != "" ? local.env.public_hostname : local.env.nlb_dns_name
 
-  pep_subject = "CN=remote-pep-1,OU=remote-peps,O=mock-sts"
+  pep_subject = "CN=remote-pep-1,OU=remote-peps,O=iya-sts"
   pep_name    = "remote-pep-1"
   pep_realm   = "pep-e2e"
 
@@ -164,7 +164,7 @@ resource "aws_route_table_association" "callbacks" {
 
 resource "aws_security_group" "callbacks" {
   name        = "${local.prefix}-callbacks"
-  description = "mock-sts ${var.environment}: the suite callback task, reachable from the nodes only"
+  description = "iya-sts ${var.environment}: the suite callback task, reachable from the nodes only"
   vpc_id      = data.aws_vpc.main.id
   tags        = { Name = "${local.prefix}-callbacks" }
 }
@@ -246,7 +246,7 @@ data "aws_iam_policy_document" "ecs_tasks_trust" {
 
 resource "aws_iam_role" "callbacks" {
   name                 = "${local.role_prefix}-callbacks"
-  description          = "mock-sts ${var.environment}: the suite callback task uploads its report"
+  description          = "iya-sts ${var.environment}: the suite callback task uploads its report"
   assume_role_policy   = data.aws_iam_policy_document.ecs_tasks_trust.json
   permissions_boundary = data.aws_iam_policy.workload_boundary.arn
 }

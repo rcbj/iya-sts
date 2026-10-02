@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: BUSL-1.1
 #
 # File: deploy/aws/convert-to-cells.sh
 #
@@ -21,9 +21,9 @@
 # what is already done:
 #
 #   --carry-secrets  reads the four values the restored database depends on
-#                    from `mock-sts/<from-env>/…` and writes them, as one JSON
+#                    from `iya-sts/<from-env>/…` and writes them, as one JSON
 #                    secret under the project key, to the carry-over secret
-#                    the conversion file names (`mock-sts/carryover/<from>`).
+#                    the conversion file names (`iya-sts/carryover/<from>`).
 #                    A value is never printed, never on a command line, and
 #                    only ever in a file of this process's own (umask 077,
 #                    removed on exit). Which four, and why each: global/
@@ -59,7 +59,7 @@
 # ---------------------------------------------------------------------------
 set -euo pipefail
 
-NAME="${MOCK_STS_NAME:-mock-sts}"
+NAME="${IYA_STS_NAME:-iya-sts}"
 HOME_REGION="${AWS_REGION:-us-west-2}"
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 ENVS="${REPO_ROOT}/deploy/aws/environment/envs"
@@ -166,7 +166,7 @@ carry_secrets() {
   [ -n "${CARRYOVER}" ] || die "the conversion file names no carryover_secret."
   if secret_exists "${CARRYOVER}";
   then
-    die "${CARRYOVER} exists already and is not overwritten. If it is stale, delete it (aws secretsmanager delete-secret --force-delete-without-recovery --secret-id ${CARRYOVER}) and run this again — while mock-sts/${FROM}/kek still exists."
+    die "${CARRYOVER} exists already and is not overwritten. If it is stale, delete it (aws secretsmanager delete-secret --force-delete-without-recovery --secret-id ${CARRYOVER}) and run this again — while iya-sts/${FROM}/kek still exists."
   fi
   for entry in "${CARRIED[@]}"; do
     key="${entry%%:*}"
@@ -189,7 +189,7 @@ carry_secrets() {
   jq -n "${args[@]}" '$ARGS.named' > "${WORK}/carryover.json"
   aws secretsmanager create-secret --region "${HOME_REGION}" \
     --name "${CARRYOVER}" --kms-key-id "alias/${NAME}" \
-    --description "mock-sts: ${FROM}'s secrets, carried into ${TO} (#98 conversion)" \
+    --description "iya-sts: ${FROM}'s secrets, carried into ${TO} (#98 conversion)" \
     --tags Key=Project,Value=STS Key=Environment,Value="${TO}" \
     --secret-string "file://${WORK}/carryover.json" >/dev/null || \
     die "could not create ${CARRYOVER}."

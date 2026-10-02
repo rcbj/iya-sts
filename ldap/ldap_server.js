@@ -1,6 +1,6 @@
 // @ts-check
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -3468,7 +3468,7 @@ function seed() {
     description: mode.verifiesCredentials()
       ? 'The STS directory. A simple bind is verified against the entry\'s ' +
         'userPassword.'
-      : 'The mock STS directory. Every bind succeeds; nothing here ' +
+      : 'IYA STS directory. Every bind succeeds; nothing here ' +
         'is a real account.'
   }, { origin: 'seed' });
   putEntry(usersDn(), {
@@ -6330,12 +6330,9 @@ function personAttributesFrom(given) {
   const out = {};
   const unknown = [];
   const source = (given && typeof given === 'object') ? given : {};
+  const refused = [];
   Object.keys(source).forEach(function (name) {
     const row = vcClaims.personField(name);
-    if (!row) {
-      unknown.push(String(name).slice(0, 64));
-      return;
-    }
     // valuesOf() is the store's own coercion, so a string, an array and a
     // number all land the way an LDAP add of the same thing would. Empty
     // strings are dropped rather than stored: a blank box on the form means
@@ -6344,11 +6341,30 @@ function personAttributesFrom(given) {
     const values = valuesOf(source[name]).map(function (one) {
       return String(one).trim();
     }).filter(function (one) { return one !== ''; });
-    if (!values.length) {
+    // THE PERSON EDITOR'S ATTRIBUTES AS WELL (2026-10-01): /admin/users/new
+    // draws the same typed fields as a person's Attributes tab, so a create
+    // takes every attribute that tab edits and holds it to the same rules —
+    // a country code's shape, a date, one value where the schema allows one.
+    const checked = personEditor.checkCreateValues(name, values);
+    if (!row && !checked) {
+      unknown.push(String(name).slice(0, 64));
       return;
     }
-    out[row.ldap] = values;
+    if (checked && checked.error) {
+      refused.push(checked.error);
+      return;
+    }
+    const kept = checked ? checked.values : values;
+    if (!kept.length) {
+      return;
+    }
+    out[checked ? checked.name : row.ldap] = kept;
   });
+  if (refused.length && !unknown.length) {
+    log.debug('Leaving personAttributesFrom(). ' + refused.length +
+              ' value(s) refused.');
+    return coded('STS-LDAP-0106', { ok: false, errors: refused });
+  }
   if (unknown.length) {
     log.debug('Leaving personAttributesFrom(). ' + unknown.length +
               ' unknown.');
@@ -8954,6 +8970,9 @@ const SECRET_ATTRIBUTES = [
   'userpassword', 'pwdhistory',
   'oauthclientsecret', 'appregistrationaccesstoken', 'fedclientsecret',
   'oauthassertionprivatekey', 'oauthsamlassertionprivatekey',
+  // An application DID's private keys (2026-10-01), sealed like the two
+  // above and withheld from every directory read like them.
+  'didprivatekeys',
   'stsassertionprivatekey', 'stssamlassertionprivatekey',
   'ststotpcredential', 'stsbackupcodes', 'stsactivationtoken',
   // A person's app passwords (#101): scrypt hashes, a verifier like
@@ -15287,7 +15306,7 @@ server.search('', function (req, res, next) {
           // exactly what it always held.
           namingcontexts: namingContexts(),
           supportedldapversion: ['3'],
-          vendorname: ['mock STS (ldapjs, unmodified, pinned as a submodule)'],
+          vendorname: ['IYA STS (ldapjs, unmodified, pinned as a submodule)'],
           // supportedControl, supportedExtension and supportedSASLMechanisms
           // are absent rather than empty, and the difference is the point: an
           // LDAP attribute always has at least one value (RFC 4511 section

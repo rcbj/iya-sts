@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: BUSL-1.1
 #
 # ---------------------------------------------------------------------------
 # ONE PERMITTED REGION'S LONG-LIVED PARTS (#98, 2026-09-28): its cell key,
@@ -7,9 +7,11 @@
 # log group and a replica of the image repository. ../../regions.tf argues
 # why each is here; this file argues the details.
 #
-# No provider block: the caller passes the one for this region. Every name
-# matches what the home region's resources are called, so an environment in
-# any region finds them by the same lookup.
+# No provider block, and no provider per region: every resource names
+# `var.region` itself (AWS provider 6's per-resource `region`, #367), so the
+# caller's one provider makes them all. Every name matches what the home
+# region's resources are called, so an environment in any region finds them
+# by the same lookup.
 # ---------------------------------------------------------------------------
 terraform {
   required_providers {
@@ -20,12 +22,12 @@ terraform {
 }
 
 variable "region" {
-  description = "The region this instance is for; the provider passed in must be for it."
+  description = "The region this instance is for; every resource here is made in it."
   type        = string
 }
 
 variable "cell" {
-  description = "The cell this region holds (usw2, cac1, euc1, apse1)."
+  description = "The cell this region holds: its id by the rule in ../../locals.tf (us-west-2 is usw2, ap-southeast-5 apse5)."
   type        = string
 }
 
@@ -37,6 +39,7 @@ variable "common" {
     account_id           = string
     partition            = string
     global_key_arn       = string
+    kek_key_arn          = string
     log_retention_days   = number
     ecr_lifecycle_policy = string
   })
@@ -51,7 +54,7 @@ locals {
 # THE CELL KEY: SINGLE-REGION, AND NEVER REPLICATED — ON PURPOSE.
 #
 # It seals what issue #98 calls a cell's RESIDENT and LOCAL tiers: the cell's
-# own key-encryption key (the secret `mock-sts/<env>/<cell>/cell-kek`), the
+# own key-encryption key (the secret `iya-sts/<env>/<cell>/cell-kek`), the
 # cell database's storage and backups, its secrets and each node's upload
 # volume. A multi-region key would be the easier thing to reach for and the
 # wrong one: its replicas can be made in any region by anyone allowed to, and
@@ -99,7 +102,8 @@ data "aws_iam_policy_document" "cell" {
 }
 
 resource "aws_kms_key" "cell" {
-  description             = "mock-sts cell ${var.cell} (issue #98): the cell KEK and resident data; single-region, never replicated"
+  region                  = var.region
+  description             = "iya-sts cell ${var.cell} (issue #98): the cell KEK and resident data; single-region, never replicated"
   multi_region            = false
   enable_key_rotation     = true
   deletion_window_in_days = 30
@@ -107,6 +111,7 @@ resource "aws_kms_key" "cell" {
 }
 
 resource "aws_kms_alias" "cell" {
+  region        = var.region
   name          = "alias/${var.common.name}-cell-${var.cell}"
   target_key_id = aws_kms_key.cell.key_id
 }
@@ -132,7 +137,8 @@ data "aws_iam_policy_document" "global" {
 
 resource "aws_kms_replica_key" "global" {
   count                   = local.home ? 0 : 1
-  description             = "mock-sts (issue #98): replica of the GLOBAL multi-region key"
+  region                  = var.region
+  description             = "iya-sts (issue #98): replica of the GLOBAL multi-region key"
   primary_key_arn         = var.common.global_key_arn
   deletion_window_in_days = 30
   policy                  = data.aws_iam_policy_document.global.json
@@ -140,8 +146,35 @@ resource "aws_kms_replica_key" "global" {
 
 resource "aws_kms_alias" "global" {
   count         = local.home ? 0 : 1
+  region        = var.region
   name          = "alias/${var.common.name}-global"
   target_key_id = aws_kms_replica_key.global[0].key_id
+}
+
+# ---------------------------------------------------------------------------
+# THE KEY-ENCRYPTION KEY, REPLICATED HERE (#391, 2026-10-01; not in the home
+# region, which holds the primary). ../../kms.tf argues the key. A node in
+# this region names the key by its ID — the same `mrk-…` here as in the home
+# region — with THIS region in STS_KEYS_KEK_REGION, so it wraps and unwraps
+# its DEKs against a key in its own region and keeps doing so when the home
+# region is down. Same key material, so a DEK wrapped by a node anywhere
+# unwraps here. Its alias is the primary's name, so an environment finds it
+# by the same lookup in every region.
+# ---------------------------------------------------------------------------
+resource "aws_kms_replica_key" "kek" {
+  count                   = local.home ? 0 : 1
+  region                  = var.region
+  description             = "iya-sts (issue #391): replica of the KEY-ENCRYPTION KEY"
+  primary_key_arn         = var.common.kek_key_arn
+  deletion_window_in_days = 30
+  policy                  = data.aws_iam_policy_document.global.json
+}
+
+resource "aws_kms_alias" "kek" {
+  count         = local.home ? 0 : 1
+  region        = var.region
+  name          = "alias/${var.common.name}-kek"
+  target_key_id = aws_kms_replica_key.kek[0].key_id
 }
 
 # ---------------------------------------------------------------------------
@@ -152,6 +185,7 @@ resource "aws_kms_alias" "global" {
 # way wherever it runs.
 # ---------------------------------------------------------------------------
 resource "aws_cloudwatch_log_group" "containers" {
+  region            = var.region
   count             = local.home ? 0 : 1
   name              = "/${var.common.name}/containers"
   retention_in_days = var.common.log_retention_days
@@ -170,6 +204,7 @@ resource "aws_cloudwatch_log_group" "containers" {
 # home repository's KMS encryption is kept for the one that is pushed to.
 # ---------------------------------------------------------------------------
 resource "aws_ecr_repository" "replica" {
+  region               = var.region
   count                = local.home ? 0 : 1
   name                 = var.common.name
   image_tag_mutability = "MUTABLE"
@@ -184,6 +219,7 @@ resource "aws_ecr_repository" "replica" {
 }
 
 resource "aws_ecr_lifecycle_policy" "replica" {
+  region     = var.region
   count      = local.home ? 0 : 1
   repository = aws_ecr_repository.replica[0].name
   policy     = var.common.ecr_lifecycle_policy
@@ -197,6 +233,11 @@ output "cell_key_arn" {
 output "global_replica_key_arn" {
   description = "The global key's replica here; empty in the home region, where the primary is."
   value       = local.home ? "" : aws_kms_replica_key.global[0].arn
+}
+
+output "kek_replica_key_arn" {
+  description = "The key-encryption key's replica here (#391); empty in the home region, where the primary is."
+  value       = local.home ? "" : aws_kms_replica_key.kek[0].arn
 }
 
 output "log_group_arn" {

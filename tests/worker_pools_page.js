@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -356,7 +356,8 @@ async function checkThePageDrawsTheWorkers(t, stubPath) {
                 'pools', JSON.stringify({ mainThread: json.mainThread,
                                           pid: json.pid }));
         const page = await draw({});
-        t.check(!!page && /<h3>Worker threads<\/h3>/.test(page.body) &&
+        // A heading carries an id since 2026-10-01 (withReturnAnchors()).
+        t.check(!!page && /<h3[^>]*>Worker threads<\/h3>/.test(page.body) &&
                 /<th>Thread<\/th>/.test(page.body) &&
                 /Each worker is a thread of that process/.test(page.body),
                 'the page lists them as worker threads, by thread', '');

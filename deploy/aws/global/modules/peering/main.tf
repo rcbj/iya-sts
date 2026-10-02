@@ -1,21 +1,21 @@
 # SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: BUSL-1.1
 #
 # ---------------------------------------------------------------------------
 # ONE INTER-REGION VPC PEERING BETWEEN TWO CELLS, AND ITS ROUTES (issue #98).
 # ../../peering.tf argues the mesh; this is one edge of it.
 #
 # REQUESTED from the first cell's region and ACCEPTED in the second's — two
-# providers, because a cross-region peering cannot be auto-accepted by the
-# side that asks for it. Each side then routes the other's CIDR over it, from
+# regions, each resource naming its own (AWS provider 6's per-resource
+# `region`, #367; it was a provider per side until then), because a
+# cross-region peering cannot be auto-accepted by the side that asks for it. Each side then routes the other's CIDR over it, from
 # both of its route tables: the public one the nodes use, and the private one
 # the databases use (so the global writer's replies find their way back).
 # ---------------------------------------------------------------------------
 terraform {
   required_providers {
     aws = {
-      source                = "hashicorp/aws"
-      configuration_aliases = [aws.requester, aws.accepter]
+      source = "hashicorp/aws"
     }
   }
 }
@@ -38,7 +38,7 @@ locals {
 }
 
 resource "aws_vpc_peering_connection" "this" {
-  provider = aws.requester
+  region = var.pair.requester.region
 
   vpc_id        = var.pair.requester.vpc_id
   peer_vpc_id   = var.pair.accepter.vpc_id
@@ -50,7 +50,7 @@ resource "aws_vpc_peering_connection" "this" {
 }
 
 resource "aws_vpc_peering_connection_accepter" "this" {
-  provider = aws.accepter
+  region = var.pair.accepter.region
 
   vpc_peering_connection_id = aws_vpc_peering_connection.this.id
   auto_accept               = true
@@ -59,7 +59,7 @@ resource "aws_vpc_peering_connection_accepter" "this" {
 }
 
 resource "aws_route" "requester" {
-  provider = aws.requester
+  region   = var.pair.requester.region
   for_each = var.pair.requester.route_table_ids
 
   route_table_id            = each.value
@@ -71,7 +71,7 @@ resource "aws_route" "requester" {
 }
 
 resource "aws_route" "accepter" {
-  provider = aws.accepter
+  region   = var.pair.accepter.region
   for_each = var.pair.accepter.route_table_ids
 
   route_table_id            = each.value

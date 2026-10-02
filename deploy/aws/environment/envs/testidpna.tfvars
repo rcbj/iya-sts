@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: BUSL-1.1
 #
 # ---------------------------------------------------------------------------
 # `testidpna`: `testidp` AS TWO CELLS — North America, issue #98's first
@@ -17,7 +17,7 @@
 #
 # THE ENVIRONMENT'S NAME IS `testidpna`, NOT `testidp-na`: an environment name
 # is 2-12 lower-case letters and digits (it is in every resource name, and a
-# cell's names carry the cell as well — `mock-sts-testidpna-cac1-8081`).
+# cell's names carry the cell as well — `iya-sts-testidpna-cac1-8081`).
 #
 # **IT CANNOT RUN BESIDE `testidp`.** Both answer to test-idp.iyasec.io, and a
 # CNAME (testidp's) cannot share a name with the geolocation records a cell
@@ -64,6 +64,6 @@ delete_automated_backups = true
 
 tags = {
   ManagedBy = "terraform"
-  Stack     = "mock-sts-environment"
+  Stack     = "iya-sts-environment"
   Lifecycle = "long-lived"
 }

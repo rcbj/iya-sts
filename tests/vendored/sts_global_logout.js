@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 //
 // ===========================================================================
 // ONE PERSON, EVERY PROTOCOL THAT SIGNS ONE IN, AND ONE GLOBAL SIGN-OUT.
@@ -659,7 +659,7 @@ async function makeCertificate(username) {
   leaf.validity.notBefore = new Date(Date.now() - 60000);
   leaf.validity.notAfter = new Date(Date.now() + 3600 * 1000);
   leaf.setSubject([{ name: "commonName", value: username },
-                   { name: "organizationName", value: "mock-sts global " +
+                   { name: "organizationName", value: "iya-sts global " +
                                                       "logout test" }]);
   leaf.setIssuer(caName);
   // THE CA'S OWN LIST (#174). A product-mode service refuses, under
@@ -1397,7 +1397,7 @@ async function test() {
 const program = new Command();
 program
   .name("sts_global_logout")
-  .description("Sign one person in through every protocol the mock STS " +
+  .description("Sign one person in through every protocol IYA STS " +
       "authenticates people with — OIDC and OAuth 2.0 authorization code, " +
       "SAML 2.0, SAML 1.1, WS-Federation, WS-Trust, Kerberos, an X.509 " +
       "client certificate and an LDAP bind, each in a cookie jar of its own " +

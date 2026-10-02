@@ -13,8 +13,27 @@ being things this stack wrote into files of its own.
 |---|---|
 | `bao.hcl` | The store's configuration: raft storage, a TLS listener, and `seal "static"` — a real auto-unseal, not dev mode. |
 | `generate-tls.js` | Mints the listener's certificate BEFORE the store starts, with this repository's own encoder. Runs in the image this repository builds. |
-| `seed.js` | One shot, idempotent: initialise, write the two secrets (**the key is written once, with KV v2 check-and-set, and never replaced** — everything sealed under it would be unreadable), build a CA inside the store, issue this service its client certificate, bind it to the policy — and then PROVE the policy by using it. A second stack against an initialised store proves its credential instead. |
-| `read-only.hcl` | What that identity may do: read two paths. Everything else is denied, because Vault denies by default. |
+| `seed.js` | One shot, idempotent: initialise, write the two secrets (**the key is written once, with KV v2 check-and-set, and never replaced** — everything sealed under it would be unreadable), make the Transit key `sts-kek` once (#391), build a CA inside the store, issue this service its client certificate, bind it to the policy — and then PROVE the policy by using it. A second stack against an initialised store proves its credential instead. |
+| `read-only.hcl` | What that identity may do: read two paths, and USE one Transit key (encrypt, decrypt, read its versions). Everything else is denied, because Vault denies by default. |
+
+**THE KEY-ENCRYPTION KEY IS THE TRANSIT KEY `sts-kek` IN `docker-compose.yml`
+SINCE #391** (`keys.kekProvider=vault-transit`): it wraps each data encryption
+key inside the store and never leaves it, so the service holds no
+key-encryption key at all. `aes256-gcm96` (only an AEAD key takes the
+associated data each wrap is bound by), made only when absent, and checked to
+be neither exportable nor deletable. The identity can use it and **cannot
+rotate or reconfigure it** — the seeder proves both refusals as the service,
+for the reason the KV key is read-only: a compromised service must not be able
+to change the key its data is sealed under. The console's *Rotate the
+key-encryption key* therefore answers STS-KEYS-0105 here; an operator rotates
+it with the root token (`bao write -f transit/keys/sts-kek/rotate`), and the
+next start re-wraps every data key under the new version. The KV `kek` is still
+written: it is `keys.kekProvider=vault`, which the test stack
+(`docker-compose-run-tests.yml`) still uses, and the PREVIOUS key a stack
+moving to Transit names in `keys.previousKek*`. The database password has its
+own `STS_DATABASE_PASSWORD_REF` now: it used to borrow the key's location, and
+a Transit key's name is no place to read from (`secrets.js` borrows nothing
+from a KMS key).
 
 ---
 

@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: BUSL-1.1
 
 locals {
   project_tag = "STS"
@@ -13,28 +13,53 @@ locals {
   # here and re-applying, and by nothing else.
   regions = var.permitted_regions
 
-  # THE CELL A REGION HOLDS. A cell's id names its region — it is the unit of
-  # data residency, and one cell per region is the design (issue #98, §2) —
-  # so the table is fixed, and a region absent from it has no provider below
-  # (providers.tf) and cannot be permitted (variables.tf).
+  # THE CELL A REGION HOLDS, BY RULE (#367, 2026-09-30). A cell's id names
+  # its region — it is the unit of data residency, and one cell per region is
+  # the design (issue #98, section 2) — and it is the region's name shortened:
+  # the area, the direction's initials and the number, so us-west-2 is usw2,
+  # eu-central-1 euc1, ap-southeast-5 apse5. It was a table of the four
+  # regions #98 named, which made a fifth region a code change; the rule makes
+  # it a list entry. A cell id is at most five characters (the names it goes
+  # into are limited to 32), which a one-digit region number keeps it within —
+  # variables.tf refuses any other shape.
+  #
+  # THE SAME RULE IS IN THREE VALIDATIONS — ../environment/cells.tf and
+  # ../global/variables.tf, `cells` — because a variable's validation can see
+  # no local. Keep the four in step.
+  region_direction = {
+    north     = "n", south = "s", east = "e", west = "w", central = "c",
+    northeast = "ne", northwest = "nw", southeast = "se", southwest = "sw",
+  }
   cell_of_region = {
-    "us-west-2"      = "usw2"
-    "ca-central-1"   = "cac1"
-    "eu-central-1"   = "euc1"
-    "ap-southeast-1" = "apse1"
+    for r in local.regions : r => join("", [
+      split("-", r)[0], local.region_direction[split("-", r)[1]], split("-", r)[2],
+    ])
   }
 
-  # THE SAME ARN PREFIX IN EVERY PERMITTED REGION, per service:
-  #   rarn.rds = ["arn:aws:rds:us-west-2:<account>", "arn:aws:rds:ca-central-1:<account>"]
-  # A statement that names a regional resource names it in each of them; with
-  # the default (one region) every list has one element and renders exactly as
-  # the single ARN did before.
+  # EVERY REGIONAL ARN PREFIX, per service, WITH THE REGION A WILDCARD
+  # (#367, 2026-09-30):
+  #   rarn.rds = ["arn:aws:rds:*:<account>"]
+  # The regions are held to `permitted_regions` by the REGION FENCE instead —
+  # the deployer's `region-fence` policy and the same Deny inside both
+  # boundaries (`region_fence_statement`, iam_deployer.tf) — which says it
+  # once for every statement. Until #367 each prefix was written out once
+  # per permitted region, so every regional statement grew with the list:
+  # at seven regions the deployer's data policy rendered 8,804 characters
+  # against IAM's 6,144 for a managed policy (5,621 at two), and no apply
+  # could have added a sixth cell. The permission is the same — an action
+  # the fence denies is denied whatever the ARN says — and a policy's size
+  # no longer depends on how many regions there are. Still a list of one, so
+  # the statements that iterate it are unchanged.
   rarn = {
     for svc in [
       "secretsmanager", "logs", "rds", "ecs", "ec2", "elasticloadbalancing",
-      "acm", "ecr", "servicediscovery",
-    ] : svc => [for r in local.regions : "arn:${local.partition}:${svc}:${r}:${local.account_id}"]
+      "acm", "ecr", "servicediscovery", "route53resolver",
+    ] : svc => ["arn:${local.partition}:${svc}:*:${local.account_id}"]
   }
+
+  # THE SERVICES THE REGION FENCE EXEMPTS: global ones, whose requests carry
+  # us-east-1 (Route 53) or no region a fence could compare.
+  fence_exempt = ["iam:*", "sts:*", "s3:*", "route53:*"]
 
   state_bucket   = "${var.name}-terraform-state-${local.account_id}"
   reports_bucket = "${var.name}-test-reports-${local.account_id}"

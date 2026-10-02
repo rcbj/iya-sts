@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: BUSL-1.1
 #
 # What each cell's `full` apply reads from this stack's state
 # (../environment/cells.tf, `local.global`). A rename here is a rename there.
@@ -41,12 +41,31 @@ output "master_secret_arn" {
 
 output "peering_connection_ids" {
   description = "Every inter-cell peering, by pair."
-  value = merge(
-    { for m in module.peering_usw2_cac1 : "usw2_cac1" => m.peering_connection_id },
-    { for m in module.peering_usw2_euc1 : "usw2_euc1" => m.peering_connection_id },
-    { for m in module.peering_usw2_apse1 : "usw2_apse1" => m.peering_connection_id },
-    { for m in module.peering_cac1_euc1 : "cac1_euc1" => m.peering_connection_id },
-    { for m in module.peering_cac1_apse1 : "cac1_apse1" => m.peering_connection_id },
-    { for m in module.peering_euc1_apse1 : "euc1_apse1" => m.peering_connection_id },
-  )
+  value       = { for k, m in module.peering : k => m.peering_connection_id }
+}
+
+# ---------------------------------------------------------------------------
+# WHAT A MULTI-CLOUD ENVIRONMENT'S GCP SIDE READS (#97): the publication and
+# its role, and where each global secret is in the primary region — the
+# values are copied from there into GCP Secret Manager
+# (deploy/multicloud/gcp-global).
+# ---------------------------------------------------------------------------
+output "publication" {
+  description = "The writer's publication the GCP cells subscribe to; empty unless multi-cloud."
+  value       = local.multi_cloud ? local.publication : ""
+}
+
+output "repl_user" {
+  description = "The role a GCP cell's subscription connects as; empty unless multi-cloud."
+  value       = local.multi_cloud ? local.repl_user : ""
+}
+
+output "writer_region" {
+  description = "The primary cell's region: where the writer and the global secrets are."
+  value       = local.primary_region
+}
+
+output "global_secret_names" {
+  description = "Each replicated global secret's name in the primary region."
+  value       = { for k, s in aws_secretsmanager_secret.global : k => s.name }
 }

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: BUSL-1.1
 #
 # File: .github/scripts/push-stack-images.sh
 #
@@ -26,7 +26,7 @@ set -euo pipefail
 IMAGE_REGISTRY="${IMAGE_REGISTRY:-ghcr.io/rcbj/iya-sts}"
 IMAGE_TAG="${IMAGE_TAG:?IMAGE_TAG must be set}"
 EXTRA_TAG="${1:-}"
-NAMES="sts xacml-pep mock-sts-tests sts-saml-shibboleth sts-saml-simplesamlphp
+NAMES="sts xacml-pep iya-sts-tests sts-saml-shibboleth sts-saml-simplesamlphp
        sts-saml-pysaml2 sts-saml-keycloak"
 
 pushImage()

@@ -1,6 +1,6 @@
 // @ts-check
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -666,7 +666,7 @@ function derivesKrbtgtFromPassword() {
 // Is an EXPIRED client secret refused? (2026-09-22, #49 P5.) Product refuses
 // it at the token endpoint wherever a secret is checked; development accepts
 // it and says so, because a test fixture registered with a short
-// oauth2.registeredSecretLifetimeS must not stop working half-way through a
+// oauth2.clientSecretLifetimeDays must not stop working half-way through a
 // run nobody meant to be about secrets.
 /**
  * Tells whether an expired client secret is refused at the token endpoint.
@@ -1212,6 +1212,27 @@ function authorizesDelegation() {
 function grantsUndeclaredScopes() {
   log.debug("Entering grantsUndeclaredScopes().");
   log.debug("Leaving grantsUndeclaredScopes().");
+  return !isProduct();
+}
+
+// Is something issued to an application through a protocol family it is not
+// declared for (2026-10-01)? Development says yes: a client is exercised by
+// whatever protocol a tester points at it, and `appAllowedProtocol` is a
+// description there. Product says no: the declaration is the administrator's
+// statement of which protocols the application speaks, and the issuance
+// policy's `protocol-not-declared` rule refuses the rest. An application
+// declared for nothing is not refused in either mode. `issuance_gate.js`
+// asks it, to decide whether the policy must be asked where the role
+// question is switched off.
+/**
+ * Tells whether an issuance through a protocol family the application is not
+ * declared for goes ahead.
+ *
+ * @returns true in development mode
+ */
+function issuesThroughUndeclaredProtocols() {
+  log.debug("Entering issuesThroughUndeclaredProtocols().");
+  log.debug("Leaving issuesThroughUndeclaredProtocols().");
   return !isProduct();
 }
 
@@ -2054,6 +2075,19 @@ const REQUIREMENTS = [
              'rules.',
     where: 'common/scope_policy.ts, oauth-oidc/oauth2.ts, ' +
            'gnap/gnap_grants.ts' },
+  { id: 'declared-protocols',
+    what: 'An application is issued nothing through a protocol it is not ' +
+          'declared for',
+    development: 'appAllowedProtocol is a description: a token, assertion ' +
+                 'or ticket is issued whichever protocol asked.',
+    product: 'The issuance policy\'s protocol-not-declared rule refuses an ' +
+             'issuance through a protocol family the application is not ' +
+             'declared for (STS-XACML-0084): an ID Token to an application ' +
+             'declared for OAuth 2.0 alone, a SAML assertion to one ' +
+             'declared for OpenID Connect. An application declared for ' +
+             'nothing is not refused.',
+    where: 'common/issuance_gate.js, xacml/xacml_role_pep.ts, ' +
+           'xacml/xacml_templates.ts' },
   { id: 'delegated-permissions',
     what: 'A delegated permission is issued only to a client granted it',
     development: 'An ungranted permission is honoured and recorded as ' +
@@ -2967,10 +3001,11 @@ const REQUIREMENTS = [
     development: 'ACCEPTED where a secret is checked, with an audit row ' +
                  'saying it had expired.',
     product: 'REFUSED at the token endpoint (invalid_client, ' +
-             'STS-OAUTH-0558) once oauthClientSecretExpiresAt — or the ' +
-             'registration\'s client_secret_expires_at — has passed. A ' +
-             'rotated secret\'s predecessor is accepted in both modes until ' +
-             'oauth2.clientSecretOverlapS has passed.',
+             'STS-OAUTH-0558), and as a client_secret_jwt key, once the ' +
+             'expiry on that secret\'s record on oauthClientSecret has ' +
+             'passed. An application may hold several secrets, each with ' +
+             'its own expiry; a rotation moves the live ones to expire after ' +
+             'oauth2.clientSecretOverlapS.',
     where: 'oauth-oidc/client_auth.js, common/applications.js' },
   // 2026-09-22 (#42). It was NOT_YET's `key-overlap` — "a rotation has NO
   // OVERLAP" — until key GENERATIONS gave every unit a next key published
@@ -3544,6 +3579,7 @@ module.exports = {
   exchangesUnverifiedTokens: exchangesUnverifiedTokens,
   authorizesDelegation: authorizesDelegation,
   grantsUndeclaredScopes: grantsUndeclaredScopes,
+  issuesThroughUndeclaredProtocols: issuesThroughUndeclaredProtocols,
   honoursUngrantedPermissions: honoursUngrantedPermissions,
   enrolsKeysOnFirstUse: enrolsKeysOnFirstUse,
   acceptsUnverifiedAttestation: acceptsUnverifiedAttestation,

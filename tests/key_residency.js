@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -151,7 +151,9 @@ async function run(t) {
     // certified at once and the authority written here too — correct, and
     // which files leave it built is only a matter of order (2026-09-28).
     const keyRows = Array.from(store.rows.keys()).filter(function (k) {
-      return String(k).indexOf('pki:') !== 0;
+      // ...nor its data-key rows (#391), which every sealed row needs.
+      return String(k).indexOf('pki:') !== 0 &&
+             String(k).indexOf('dek:') !== 0;
     });
     t.check(keyRows.length === 1, 'a key was generated and written',
             'rows written: ' + JSON.stringify(Array.from(store.rows.keys())));

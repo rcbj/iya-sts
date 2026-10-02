@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: BUSL-1.1
 #
 # ---------------------------------------------------------------------------
 # A TRUST REALM'S TWO SPIFFE PORTS, PUBLISHED ON THE ENVIRONMENT'S NLB
@@ -175,8 +175,8 @@ locals {
 resource "aws_lb_target_group" "spiffe" {
   for_each = local.spiffe_ports
 
-  # `mock-sts-<env>-sp-<port>`: at most 30 characters with a 12-character
-  # environment name, under ELB's 32, and inside the deployer's `mock-sts-*`
+  # `iya-sts-<env>-sp-<port>`: at most 30 characters with a 12-character
+  # environment name, under ELB's 32, and inside the deployer's `iya-sts-*`
   # scope. Named by PORT rather than realm because a realm id can be 31
   # characters and a port is unique in an environment anyway — the Realm tag
   # says whose it is.

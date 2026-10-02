@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 const path = require('path');
 
@@ -546,6 +546,12 @@ const JOBS = [
   // throwaway realm, so the emergency signs nobody else out. `local: true`:
   // this repository's own /admin and /admin-api.
   { file: 'sts_key_rotation.js',         browser: false, local: true },
+  // DATA ENCRYPTION KEY ROTATION (#391 P2): POST /admin-api/encryption's
+  // two acts followed to their runs' ends, or their 400 where the data keys
+  // are derived per run. It rotates one class of the default realm's keys,
+  // which changes nothing another job can see: a value sealed under either
+  // key opens. `local: true`: this repository's own /admin-api.
+  { file: 'sts_data_keys.js',            browser: false, local: true },
   { file: 'sts_signer_groups.js',        browser: false, local: true },
   // THE CONSOLE AND THE PORTAL RENEW THEIR TOKENS INSIDE THE SAME SESSION
   // (2026-09-12). Both surfaces are this repository's own, and section 5 waits
@@ -1011,10 +1017,11 @@ const JOBS = [
   // resumed tenant stream and a retried delivery, against the mock relying
   // party. `local: true`.
   { file: 'sts_provider_commands.js',    browser: false, local: true },
-  // SSF AS THE RECEIVER OF A FOREIGN TRANSMITTER (#153, 2026-09-26): one
-  // realm's transmitter as the "foreign" one, another realm receiving by
-  // poll and push, verifying and acting through a federation link.
-  // `local: true`.
+  // A FEDERATION PARTNER'S SHARED SIGNALS (#153, 2026-09-26; #373 and #374,
+  // 2026-10-01): one realm's transmitter as the partner, another realm
+  // receiving through federation relationships by poll and push, blocking
+  // the partner's sign-ins of a linked person, and a signals-only (`ssf`)
+  // relationship recording without acting. `local: true`.
   { file: 'sts_ssf_foreign_receiver.js', browser: false, local: true },
   // THE OPENID FOUNDATION'S CONFORMANCE SUITE (#176, 2026-09-24): FAPI 2.0
   // Security Profile and Message Signing, FAPI 1.0 Advanced and FAPI-CIBA,

@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -2278,7 +2278,8 @@ class AdminApi {
             loadScepApi, loadOidfedApi, loadOauth2MonitorApi,
             loadGrantManagementApi, loadClaimsProvidersApi,
             loadAttributeSourcesApi,
-            loadProviderCommandsApi, loadSsfTransmittersApi } = this.deps;
+            loadProviderCommandsApi, loadSsfTransmittersApi,
+            federation } = this.deps;
     const self = this;
     log.debug("Entering AdminApi.buildRoutes().");
     const closed = this.closedLists();
@@ -2296,7 +2297,7 @@ class AdminApi {
           log.debug("Entering the management API index.");
           const base = baseUrlOf(req);
           self.sendJson(res, 200, {
-            name: 'mock STS management API',
+            name: 'IYA STS management API',
             version: VERSION,
             // THE PROVENANCE OF THAT NUMBER, BROKEN OUT rather than left as a
             // string to be parsed. A test asserting "this stack is running the
@@ -2452,9 +2453,7 @@ class AdminApi {
                      'silently.\n\n`classes` LISTS WHAT IS DELIBERATELY NOT ' +
                      'SEALED BESIDE WHAT IS, each with the reason — ' +
                      'passwords are hashed rather than encrypted, which is ' +
-                     'stronger; client secrets are in the clear because a ' +
-                     'federation secret is SENT to somebody else\'s token ' +
-                     'endpoint; the post-quantum keys, the TLS certificate ' +
+                     'stronger; the post-quantum keys, the TLS certificate ' +
                      'and the SPIFFE authorities are not persisted at all, ' +
                      'so there is nothing at rest to ' +
                      'seal. A list of only the yeses would ' +
@@ -2478,8 +2477,10 @@ class AdminApi {
                      'page to have read it on. Two limits and one deployment ' +
                      'mistake: there is ONE key-encryption key for the ' +
                      'service and NOT one per trust realm (`perRealmKey: ' +
-                     'false`), so a realm is not a cryptographic boundary at ' +
-                     'rest and rotating the key rotates every realm; ' +
+                     'false`) — it wraps every realm\'s data encryption ' +
+                     'keys, one per realm per class — so a realm is not an ' +
+                     'independent boundary at rest and rotating the key ' +
+                     're-wraps every realm\'s data keys; ' +
                      'everything NOT in `classes` is plaintext in the store, ' +
                      'because the layer that covers a whole database belongs ' +
                      'under it rather than inside it (a column-level answer ' +
@@ -2491,13 +2492,32 @@ class AdminApi {
                      '`file` provider invites and why every other provider ' +
                      'exists.',
         mirrors: 'GET /admin/encryption',
+        // THE DATA ENCRYPTION KEYS (#391 P2) are one paged list of the reply,
+        // `dataKeys.keys`, moved by `dataKeysPage` — ids, realms, classes and
+        // states, never a key.
+        parameters: [
+          { name: 'dataKeysPage', in: 'query', required: false,
+            schema: { type: 'integer', minimum: 1 },
+            description: 'Which page of `dataKeys.keys` to return, clamped ' +
+                         'as every page is; `dataKeys.paging` says which ' +
+                         'page it is.' }
+        ].concat(this.pagingParameters().filter(function (one) {
+          return one.name === 'per';
+        })),
         responseDescription: 'The whole report.',
         responseSchema: { type: 'object',
           description: 'The encryption report: `mode`, `key` (present, ' +
-                       'durable or ephemeral, and which provider), ' +
+                       'durable or ephemeral, which provider, and ' +
+                       '`kmsKey`, the key\'s name in its key management ' +
+                       'service, never a key), ' +
                        '`algorithm` (read from common/crypto.js\'s own ' +
                        'table), `store`, `classes` (what is sealed and what ' +
-                       'is not, each with its counts), `accounting` (the ' +
+                       'is not, each with its counts), `dataKeys` (every ' +
+                       'data encryption key held — id, realm, class, scope, ' +
+                       'state, `ageDays`, and `values` with `countedAt`, ' +
+                       'the last count of what is sealed under it, never a ' +
+                       'key — paged, with the rotation ' +
+                       'settings and whether its jobs run), `accounting` (the ' +
                        'totals and the breakdown by label), `unclassified` ' +
                        '(labels counted that the page has no row for, ' +
                        'reported rather than dropped) and `boundaries` — the ' +
@@ -2506,9 +2526,109 @@ class AdminApi {
                        '(`perRealmKey: false`).' },
         handler: function (req, res) {
           log.debug("Entering the management API encryption report endpoint.");
-          self.sendJson(res, 200, encryptionAdmin.encryptionView());
+          self.sendJson(res, 200,
+                        encryptionAdmin.encryptionView(req.query || {}));
           log.debug("Leaving the management API encryption report endpoint.");
         } },
+
+      // THE DATA-KEY ACTS (#391 P2, P5): `/admin/encryption/data-keys`'s
+      // four forms, through the one function they post to. Each QUEUES a run of
+      // `common/data_key_rotation.ts`'s jobs and answers 202.
+      { method: 'POST', route: BASE + '/encryption/:action', tag: 'Service',
+        mirrors: 'POST /admin/encryption/data-keys',
+        handler: function (req, res) {
+          log.debug("Entering the management API data-key endpoint.");
+          const body = self.withAction(req, parseBody(req));
+          const result = encryptionAdmin.dataKeysAction(
+            req, body, 'the management API at /admin-api/encryption/' +
+            body.action);
+          if (!result.ok) {
+            errorCodes.mark(res, result.errorCode || 'STS-API-0014');
+            self.sendJson(res, result.status || 400,
+                          { ok: false, errors: result.errors });
+            log.debug("Leaving the management API data-key endpoint. " +
+                      "Refused.");
+            return;
+          }
+          self.sendJson(res, 202, { ok: true, accepted: true,
+            runId: result.runId, message: result.message,
+            run: BASE + '/scheduler?run=' + encodeURIComponent(result.runId) });
+          log.debug("Leaving the management API data-key endpoint. Queued " +
+                    result.runId + ".");
+        },
+        actions: [
+          { action: 'rotate-data-keys', operationId: 'rotateDataKeys',
+            summary: 'Rotate the data encryption keys now',
+            description: 'Queues a run of the scheduler job ' +
+                         '`keys.data-key-rotate-now` and answers **202** ' +
+                         'with its `runId`. Every stored data encryption ' +
+                         'key — or one realm\'s, or one class\'s — gets a ' +
+                         'successor, used ' +
+                         '`keys.dataKeyActivationLeadSeconds` after it is ' +
+                         'published; what the old key sealed is re-sealed by ' +
+                         '`keys.data-key-reencrypt`. 400 (STS-KEYS-0100) ' +
+                         'where data keys are derived per run and not ' +
+                         'stored, or where none serves the realm or class.',
+            requestBody: {
+              type: 'object',
+              properties: {
+                realm: { type: 'string', description: 'A realm id; ' +
+                         'omitted for every realm, `default` for the ' +
+                         'default realm.' },
+                cls: { type: 'string', description: 'A data class, e.g. ' +
+                       '`minted-rows`; omitted for every class.' }
+              },
+              additionalProperties: false
+            },
+            responseDescription: 'The queued run: `runId`, `message`, and ' +
+                                 '`run`, the address to follow it at.' },
+          { action: 'reencrypt-data-keys',
+            operationId: 'reencryptDataKeys',
+            summary: 'Run the data re-encryption pass now',
+            description: 'Queues a run of `keys.data-key-reencrypt` and ' +
+                         'answers **202**: what is still sealed under a ' +
+                         'superseded data encryption key is re-sealed under ' +
+                         'the current one, and a superseded key nothing is ' +
+                         'sealed under any longer, superseded for ' +
+                         '`keys.dataKeyRetireAfterDays`, is destroyed. 400 ' +
+                         '(STS-KEYS-0100) where data keys are not stored.',
+            requestBody: { type: 'object', properties: {},
+                           additionalProperties: false },
+            responseDescription: 'The queued run, as for ' +
+                                 '`rotate-data-keys`.' },
+          { action: 'count-data-keys', operationId: 'countDataKeys',
+            summary: 'Count what is sealed under every data key now',
+            description: 'Queues a run of `keys.data-key-count` and answers ' +
+                         '**202**: the values sealed under every data ' +
+                         'encryption key are counted in one pass of the ' +
+                         'store and kept on each key, where ' +
+                         '`GET /admin-api/encryption` reports them as ' +
+                         '`values` and `countedAt` (#391). 400 ' +
+                         '(STS-KEYS-0100) where data keys are not stored or ' +
+                         'the store cannot count (only PostgreSQL can).',
+            requestBody: { type: 'object', properties: {},
+                           additionalProperties: false },
+            responseDescription: 'The queued run, as for ' +
+                                 '`rotate-data-keys`.' },
+          { action: 'rotate-kek', operationId: 'rotateKek',
+            summary: 'Rotate the key-encryption key in its key management ' +
+                     'service',
+            description: 'Queues a run of `keys.kek-rotate-now` and answers ' +
+                         '**202**: the key management service makes a new ' +
+                         'version of the key-encryption key (Transit, Cloud ' +
+                         'KMS and Key Vault; AWS KMS rotates on demand ' +
+                         'behind the same key id) and every data encryption ' +
+                         'key is re-wrapped under it. The run fails ' +
+                         '(STS-KEYS-0105) where the identity this service ' +
+                         'runs as may use the key but not rotate it. 400 ' +
+                         '(STS-KEYS-0104) where the key is read into the ' +
+                         'process: its successor is configured with ' +
+                         '`keys.previousKek*` and a restart.',
+            requestBody: { type: 'object', properties: {},
+                           additionalProperties: false },
+            responseDescription: 'The queued run, as for ' +
+                                 '`rotate-data-keys`.' }
+        ] },
 
       // ---------------------------------------------------------------------
       // CELLS (#98). `cellsAdmin.cellsView()` — the function `/admin/cells`
@@ -5209,8 +5329,11 @@ class AdminApi {
         // that a generated password and an activation link can be answered in a
         // page body rather than in a 303's query string. Naming only the first
         // would leave the console suite unable to tell that page's Create
-        // button from a control that reaches nothing.
-        mirrors: 'POST /admin/users and POST /admin/users/new',
+        // button from a control that reaches nothing. A THIRD since
+        // 2026-10-01: a person's field grid posts to /admin/users/edit, which
+        // reaches `update-fields` here.
+        mirrors: 'POST /admin/users, POST /admin/users/new and POST ' +
+                 '/admin/users/edit',
         handler: function (req, res) {
           log.debug("Entering the management API users action endpoint.");
           const body = parseBody(req);
@@ -5867,6 +5990,48 @@ class AdminApi {
             },
             responseDescription: 'The attribute and every value it now ' +
                                  'holds.' },
+
+          // SEVERAL OF A PERSON'S ATTRIBUTES AT ONCE (2026-10-01): what the
+          // Save of a tab of the person's field grid on /admin/users does.
+          { action: 'update-fields', operationId: 'updateUserFields',
+            summary: 'Set several of somebody\'s attributes at once',
+            description: 'What the Save button of a tab of a person\'s ' +
+                         'Attributes on the console does. Each member of ' +
+                         '`fields` names an attribute `attributeEditor` in ' +
+                         'GET /admin-api/users?user= lists as editable, and ' +
+                         'gives what it should hold: a single-valued ' +
+                         'attribute is SET (an empty string or array clears ' +
+                         'it), and a multi-valued one has the values put in ' +
+                         'added and then the values taken out removed — ' +
+                         'exactly `set-attribute`, `add-attribute` and ' +
+                         '`remove-attribute`, applied per attribute, so ' +
+                         'every rule those hold still holds, and each ' +
+                         'change is audited and told to Shared Signals as ' +
+                         'one of those is. An attribute whose values did ' +
+                         'not change is not written.\n\nWhat one attribute ' +
+                         'refuses does not undo another: the reply names ' +
+                         'what was saved (`changed`) and every refusal, and ' +
+                         'answers 400 when there was any.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                user: { type: 'string',
+                        description:
+                          'The person, as /admin-api/users names them.' },
+                username: { type: 'string',
+                            description: 'Accepted for `user`.' },
+                fields: { type: 'object',
+                          description: 'Attribute name to a string or an ' +
+                                       'array of strings; empty clears it.' }
+              },
+              required: ['user', 'fields'],
+              examples: [{ user: 'alice',
+                           fields: { title: 'Principal Engineer',
+                                     mobile: ['+46 70 000 00 00'] } }],
+              additionalProperties: false
+            },
+            responseDescription: 'The attributes saved (`changed`).' },
 
           // -----------------------------------------------------------------
           // WHAT AN ADMINISTRATOR DOES TO SOMEBODY'S CREDENTIALS (2026-09-13),
@@ -9951,7 +10116,8 @@ class AdminApi {
         handler: function (req, res) {
           log.debug("Entering the management API federation action endpoint.");
           const body = parseBody(req);
-          adminActions.federationAction(self.withAction(req, body))
+          adminActions.federationAction(self.withAction(req, body),
+            { via: 'api', actor: 'admin-api', base: baseUrlOf(req) })
             .then(function (result) {
               if (!result.ok) {
                 errorCodes.mark(res, errorCodes.codeOf(result) ||
@@ -10007,10 +10173,12 @@ class AdminApi {
                                      'and this service consumes what it ' +
                                      'issues.' },
                 protocol: { type: 'string',
-                            enum: ['saml2', 'saml11', 'wsfed', 'oidc',
-                                   'oauth2'],
+                            enum: federation.PROTOCOL_IDS.slice(),
                             description:
-                              'The protocol the relationship runs in.' },
+                              'The protocol the relationship runs in. ' +
+                              '`ssf` (#374) is a partner that signs nobody ' +
+                              'in and only sends Shared Signals; it takes ' +
+                              'the service-provider role.' },
                 name: { type: 'string',
                         description:
                           'What to call the partner on a page. The ' +
@@ -10218,6 +10386,101 @@ class AdminApi {
             },
             responseDescription: 'The new key\'s kid, and the relationship ' +
                                  'as it now stands.' },
+
+          // A PARTNER'S SHARED SIGNALS (#373, #374): the relationship page's
+          // Shared Signals buttons, each handed to ssf/ssf_transmitters.ts.
+          ...[
+            ['signals-discover', 'discoverFederationSignals',
+             'Discover the partner\'s Shared Signals configuration',
+             'Fetches `/.well-known/ssf-configuration` under the SSF issuer ' +
+             '(`fedSignalsIssuer`, else `fedPeer`; SSF 1.0 section 7), which ' +
+             'must name that issuer, a `jwks_uri` and a ' +
+             '`configuration_endpoint`, and fetches the keys. Every address ' +
+             'dialled afterwards is one that document named. Audited.'],
+            ['signals-create-stream', 'createFederationSignalsStream',
+             'Create this realm\'s stream at the partner',
+             'SSF 1.0 section 8.1.1, discovering first where needed: a poll ' +
+             'stream, or — `fedSignalsDelivery` push — a push stream to ' +
+             '`/federation/signals/{id}` with an authorization header only ' +
+             'this realm and the partner know. Asks for `fedSignalsEvents`. ' +
+             'Audited.'],
+            ['signals-read-stream', 'readFederationSignalsStream',
+             'Read the stream\'s configuration from the partner',
+             'Refreshes what is held: audience, events, delivery.'],
+            ['signals-update-stream', 'updateFederationSignalsStream',
+             'Send fedSignalsEvents to the stream',
+             'A PATCH of `events_requested` to the relationship\'s ' +
+             '`fedSignalsEvents`. Audited.'],
+            ['signals-delete-stream', 'deleteFederationSignalsStream',
+             'Delete the stream at the partner', 'Audited.'],
+            ['signals-verify', 'verifyFederationSignalsStream',
+             'Ask the partner for a verification event',
+             'SSF 1.0 section 8.1.4.2: its state is checked when the event ' +
+             'arrives.'],
+            ['signals-poll-now', 'pollFederationSignals',
+             'Poll the partner now', 'RFC 8936, as the ssf.foreign-poll job ' +
+             'does.']
+          ].map(function (one: string[]) {
+            return { action: one[0], operationId: one[1], summary: one[2],
+                     description: one[3], requestBodyRequired: true,
+                     requestBody: { type: 'object',
+                       properties: { id: { type: 'string',
+                         description: 'The relationship.' } },
+                       required: ['id'], examples: [{ id: 'partner' }],
+                       additionalProperties: false },
+                     responseDescription: 'The relationship\'s Shared ' +
+                                          'Signals as they stand.' };
+          }),
+          { action: 'signals-set-status',
+            operationId: 'setFederationSignalsStatus',
+            summary: 'Enable, pause or disable the stream at the partner',
+            description: 'SSF 1.0 section 8.1.2. Audited.',
+            requestBodyRequired: true,
+            requestBody: { type: 'object', properties: {
+              id: { type: 'string', description: 'The relationship.' },
+              status: { type: 'string', enum: ['enabled', 'paused',
+                                               'disabled'] },
+              reason: { type: 'string', maxLength: 512 } },
+              required: ['id', 'status'],
+              examples: [{ id: 'partner', status: 'paused' }],
+              additionalProperties: false },
+            responseDescription: 'The relationship\'s Shared Signals as ' +
+                                 'they stand.' },
+          ...[['signals-add-subject', 'addFederationSignalsSubject',
+               'Add a subject to the stream at the partner',
+               'SSF 1.0 section 8.1.3.2. Audited.'],
+              ['signals-remove-subject', 'removeFederationSignalsSubject',
+               'Remove a subject from the stream at the partner',
+               'SSF 1.0 section 8.1.3.3. Audited.']
+          ].map(function (one: string[]) {
+            return { action: one[0], operationId: one[1], summary: one[2],
+                     description: one[3], requestBodyRequired: true,
+                     requestBody: { type: 'object', properties: {
+                       id: { type: 'string', description: 'The relationship.' },
+                       subject: { type: 'object', additionalProperties: true } },
+                       required: ['id', 'subject'],
+                       examples: [{ id: 'partner', subject: {
+                         format: 'iss_sub', iss: 'https://idp.example',
+                         sub: '248289761001' } }],
+                       additionalProperties: false },
+                     responseDescription: 'The relationship\'s Shared ' +
+                                          'Signals as they stand.' };
+          }),
+          { action: 'signals-unblock', operationId: 'unblockFederationSignals',
+            summary: 'Lift a partner\'s block on a person\'s sign-ins',
+            description: 'A verified `account-disabled` from a sign-in ' +
+                         'partner blocks its sign-ins of the person until its ' +
+                         '`account-enabled` (#373). This lifts the block by ' +
+                         'hand. Audited.',
+            requestBodyRequired: true,
+            requestBody: { type: 'object', properties: {
+              id: { type: 'string', description: 'The relationship.' },
+              user: { type: 'string', description: 'The person.' } },
+              required: ['id', 'user'],
+              examples: [{ id: 'partner', user: 'alice' }],
+              additionalProperties: false },
+            responseDescription: 'The relationship\'s Shared Signals as ' +
+                                 'they stand.' },
 
           { action: 'delete', operationId: 'deleteFederationRelationship',
             summary: 'Delete a relationship',
@@ -11025,12 +11288,11 @@ class AdminApi {
                      'reply pages its attribute list under `attributesPage` ' +
                      'rather than `page`, which is the convention for a ' +
                      'reply holding a list that is not the top-level ' +
-                     'one.\n\n**Two attributes hold credentials in the ' +
-                     'clear** — `oauthClientSecret` and ' +
-                     '`appRegistrationAccessToken` — for the reason GET ' +
-                     '/krb5/principals prints the Kerberos passwords. In RFC ' +
-                     '9700 mode that secret is CHECKED, so anyone who can ' +
-                     'reach this endpoint can authenticate as that client.',
+                     'one.\n\n**This reply carries credentials** — ' +
+                     '`oauthClientSecret` and `appRegistrationAccessToken`, ' +
+                     'opened. They are sealed at rest wherever the process ' +
+                     'holds a durable key-encryption key, but anyone who ' +
+                     'can read this reply can authenticate as that client.',
         mirrors: 'GET /admin/applications',
         parameters: [
           { name: 'application', in: 'query', required: false,
@@ -11137,7 +11399,8 @@ class AdminApi {
         // and /admin/applications/new's RFC 9728 import, whose load and create
         // post to that page so a refusal can redraw it. The console suite reads
         // this field to learn which console paths take a POST.
-        mirrors: 'POST /admin/applications and POST /admin/applications/new',
+        mirrors: 'POST /admin/applications, POST /admin/applications/new ' +
+                 'and POST /admin/applications/edit',
         handler: function (req, res) {
           log.debug("Entering the management API applications action " +
                     "endpoint.");
@@ -11363,9 +11626,11 @@ class AdminApi {
                            'The new value; empty clears the attribute.' }
               },
               required: ['application', 'attribute'],
+              // Not `oauthTokenEndpointAuthMethod` since 2026-10-01: it is
+              // a list now, written with `add` and `remove`.
               examples: [{ application: 'my-web-app',
-                           attribute: 'oauthTokenEndpointAuthMethod',
-                           value: 'none' }],
+                           attribute: 'oauthSubjectType',
+                           value: 'pairwise' }],
               additionalProperties: false
             },
             responseDescription: 'The application as it now stands, with ' +
@@ -11429,6 +11694,46 @@ class AdminApi {
               additionalProperties: false
             },
             responseDescription: 'The application as it now stands.' },
+
+          // THE FIELD GRID'S SAVE (2026-09-30): the application page's one
+          // form, and every attribute it carries at once.
+          { action: 'update-fields', operationId: 'updateApplicationFields',
+            summary: 'Set several attributes of an application at once',
+            description: 'What the Save button of an application\'s field ' +
+                         'grid on the console does. Each member of ' +
+                         '`fields` names an editable attribute and gives ' +
+                         'what it should hold: a single-valued attribute is ' +
+                         'SET (an empty string or array clears it), and a ' +
+                         'multi-valued one has the values not given ' +
+                         'removed and the values not yet held added — ' +
+                         'exactly `set`, `add` and `remove`, applied per ' +
+                         'attribute, so every rule those hold still holds. ' +
+                         'An attribute whose values did not change is not ' +
+                         'written. `protocols`, when given, replaces the ' +
+                         'declared protocol families, and is written first, ' +
+                         'so a family-scoped attribute may be set in the ' +
+                         'same call that declares its family.\n\nWhat ' +
+                         'one attribute refuses does not undo another: the ' +
+                         'reply names what was saved (`changed`) and every ' +
+                         'refusal, and answers 400 when there was any.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                application: { type: 'string' },
+                fields: { type: 'object' },
+                protocols: { type: 'array', items: { type: 'string' } }
+              },
+              required: ['application'],
+              examples: [{ application: 'my-web-app',
+                           fields: { oauthRedirectUri: [
+                             'https://app.example.com/callback'],
+                                     oauthRequirePushedAuthorizationRequests:
+                                       'TRUE' } }],
+              additionalProperties: false
+            },
+            responseDescription: 'The attributes saved (`changed`) and the ' +
+                                 'application as it now stands.' },
 
           // THE PROVENANCE PAIR (2026-09-12). The console's application page
           // draws a Confirm and a Discard button beside every return address a
@@ -11522,29 +11827,28 @@ class AdminApi {
             responseDescription: 'The application as it now stands, without ' +
                                  'the address or its mark.' },
 
-          // THE CREDENTIALS SECTION'S SECRET CONTROL (2026-09-13).
+          // THE CREDENTIALS SECTION'S SECRET CONTROLS (2026-09-13; several
+          // secrets since 2026-10-01).
           { action: 'regenerate-secret',
             operationId: 'regenerateApplicationClientSecret',
             summary: 'Mint a new client secret for an application, replacing ' +
-                     'the old one',
+                     'every one it holds',
             description: 'Mints `oauth2.registeredSecretBytes` random bytes, ' +
                          'base64url — the way `POST /oauth2/register` mints ' +
-                         'one — onto `oauthClientSecret`, and into the ' +
-                         'stored RFC 7591 registration document where there ' +
-                         'is one, with `client_secret_expires_at` recomputed ' +
-                         'from `oauth2.registeredSecretLifetimeS`.\n\n**THE ' +
-                         'OLD SECRET STOPS AUTHENTICATING AT ONCE**, ' +
-                         'wherever the token endpoint checks a secret (RFC ' +
-                         '9700 mode, product mode). **THIS REPLY IS THE ONE ' +
-                         'PLACE THE NEW VALUE IS HANDED OUT BY THIS ACT** — ' +
-                         'the audit row names the attribute and never the ' +
-                         'value — though `GET ' +
+                         'one — as the application\'s ONLY secret, a record ' +
+                         'on `oauthClientSecret` expiring after ' +
+                         '`oauth2.clientSecretLifetimeDays` days (never at ' +
+                         '0), ' +
+                         'and into the stored RFC 7591 registration document ' +
+                         'where there is one.\n\n**EVERY SECRET IT HELD ' +
+                         'STOPS AUTHENTICATING AT ONCE**, wherever the token ' +
+                         'endpoint checks a secret (RFC 9700 mode, product ' +
+                         'mode). **THIS REPLY IS THE ONE PLACE THE NEW VALUE ' +
+                         'IS HANDED OUT BY THIS ACT** — the audit row names ' +
+                         'the attribute and never the value — though `GET ' +
                          '/admin-api/applications?application=` reads the ' +
-                         'entry\'s secret back for an `admin:read` token, as ' +
-                         'it always has.\n\nThe console\'s and the portal\'s ' +
-                         'own seeded clients read their secret off the entry ' +
-                         'on every sign-in, so regenerating one is safe. ' +
-                         '`sts-management-api` is REFUSED while ' +
+                         'entry back for an `admin:read` token, as it always ' +
+                         'has.\n\n`sts-management-api` is REFUSED while ' +
                          '`adminApi.clientSecret` pins its secret: every ' +
                          'token for this API is minted with that setting, ' +
                          'and seeding never writes over an existing entry.',
@@ -11556,26 +11860,27 @@ class AdminApi {
               examples: [{ application: 'my-web-app' }],
               additionalProperties: false
             },
-            responseDescription: 'The new secret in `clientSecret`, whether ' +
-                                 'one was replaced, and the application as ' +
-                                 'it now stands.' },
+            responseDescription: 'The new secret in `clientSecret`, its ' +
+                                 '`secretId` and `expiresAt`, whether one ' +
+                                 'was replaced, and the application as it ' +
+                                 'now stands.' },
 
-          // ROTATION WITH AN OVERLAP (#49 P5, 2026-09-22).
+          // ROTATION WITH AN OVERLAP (#49 P5, 2026-09-22; add-and-shorten
+          // since 2026-10-01).
           { action: 'rotate-secret',
             operationId: 'rotateApplicationClientSecret',
-            summary: 'Mint a new client secret, keeping the old one working ' +
+            summary: 'Add a new client secret, keeping the others working ' +
                      'for an overlap',
-            description: 'Exactly `regenerate-secret`, except that the ' +
-                         'secret it replaces goes on authenticating at the ' +
-                         'token endpoint until ' +
+            description: 'Adds a new secret, as `add-secret` does with the ' +
+                         'default lifetime, and moves every UNEXPIRED secret ' +
+                         'the application holds to expire when ' +
                          '`oauth2.clientSecretOverlapS` has passed (a week ' +
-                         'by default) — kept on the entry as ' +
-                         '`oauthClientSecretPrevious` and ' +
-                         '`oauthClientSecretPreviousUntil`, and cleared by ' +
-                         'the scheduler job `oauth2.client-secret-expiry` ' +
-                         'after it — so the client can change over without ' +
-                         'an outage. With the overlap at 0 it is a ' +
-                         'regeneration.',
+                         'by default; an earlier expiry is kept), so the ' +
+                         'client can change over without an outage. The ' +
+                         'scheduler job `oauth2.client-secret-expiry` ' +
+                         'removes them after. With the overlap at 0 it is a ' +
+                         'regeneration. Refused past ' +
+                         '`oauth2.clientSecretsMax`.',
             requestBodyRequired: true,
             requestBody: {
               type: 'object',
@@ -11585,8 +11890,63 @@ class AdminApi {
               additionalProperties: false
             },
             responseDescription: 'The new secret in `clientSecret`, and ' +
-                                 '`overlapUntil`: when the old one stops ' +
+                                 '`overlapUntil`: when the old ones stop ' +
                                  'working (ms).' },
+
+          { action: 'add-secret',
+            operationId: 'addApplicationClientSecret',
+            summary: 'Add a client secret beside the ones an application ' +
+                     'holds',
+            description: 'Mints a secret as `regenerate-secret` does and ' +
+                         'ADDS it: every secret already held goes on ' +
+                         'authenticating until its own expiry. The new one ' +
+                         'is the newest, so it becomes the PRIMARY — the one ' +
+                         'this service signs HS256 ID Tokens and JARM with, ' +
+                         'keys symmetric encryption with, and returns as ' +
+                         'RFC 7591\'s `client_secret`. `lifetimeDays` is ' +
+                         'its lifetime in whole days, 0 to 730 (0 never ' +
+                         'expires; omitted or empty, ' +
+                         '`oauth2.clientSecretLifetimeDays`), and ' +
+                         '`description` one line saying what it is for. ' +
+                         'Refused past `oauth2.clientSecretsMax`.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                application: { type: 'string' },
+                lifetimeDays: { type: ['integer', 'string'] },
+                description: { type: 'string', maxLength: 200 }
+              },
+              required: ['application'],
+              examples: [{ application: 'my-web-app', lifetimeDays: 90,
+                           description: 'production deploy' }],
+              additionalProperties: false
+            },
+            responseDescription: 'The new secret in `clientSecret`, its ' +
+                                 '`secretId` and `expiresAt` (seconds, 0 ' +
+                                 'never), and the application as it now ' +
+                                 'stands.' },
+
+          { action: 'remove-secret',
+            operationId: 'removeApplicationClientSecret',
+            summary: 'Remove one client secret, by its id',
+            description: 'Removes the secret whose id is `secret` (the ids ' +
+                         'are in the application\'s `credentials.clientSecret' +
+                         '.secrets`); it stops authenticating at once. The ' +
+                         'secret `adminApi.clientSecret` pins on ' +
+                         '`sts-management-api` is refused.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: { application: { type: 'string' },
+                            secret: { type: 'string' } },
+              required: ['application', 'secret'],
+              examples: [{ application: 'my-web-app',
+                           secret: 'cs-0123456789ab' }],
+              additionalProperties: false
+            },
+            responseDescription: 'How many secrets are `left`, and the ' +
+                                 'application as it now stands.' },
 
           // /admin/applications/new's *Generate Secret* button (2026-09-18).
           { action: 'generate-secret',
@@ -11612,6 +11972,156 @@ class AdminApi {
               additionalProperties: false
             },
             responseDescription: 'The secret in `clientSecret`.' },
+
+          // THE DID TAB'S *Generate a key pair* (2026-10-01).
+          { action: 'generate-did-key',
+            operationId: 'generateApplicationDidKey',
+            summary: 'Generate a key pair for an application\'s DID, ' +
+                     'publishing the public half',
+            description: 'For an application declared for the `did` family: ' +
+                         'generates an ES256 (default), ES384 or EdDSA key ' +
+                         'pair, adds the public JWK to `didPublicKeyJwk` — ' +
+                         'with `replace`, after taking the keys already ' +
+                         'there off — and answers the private key, as a JWK ' +
+                         'and as PKCS#8 PEM. **THIS REPLY IS THE ONLY ' +
+                         'PLACE THE PRIVATE KEY IS SHOWN**: this service ' +
+                         'publishes the public half in the DID document it ' +
+                         'advertises at `<base>/applications/<identifier>/' +
+                         'did.json`, and keeps the private half SEALED in ' +
+                         '`didPrivateKeys` to sign the application\'s ' +
+                         'Domain Linkage Credentials (`sign-domain-' +
+                         'linkage`). The application\'s DID is ' +
+                         '`did:web:<host>[:realm:<id>]:applications:' +
+                         '<identifier>`. Refused (`STS-ADMIN-0837`) for an ' +
+                         'unknown application, one not declared for `did`, ' +
+                         'or another algorithm.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                application: { type: 'string' },
+                algorithm: { type: 'string',
+                             enum: ['ES256', 'ES384', 'EdDSA'] },
+                replace: { type: 'boolean' }
+              },
+              required: ['application'],
+              examples: [{ application: 'my-web-app', algorithm: 'ES256' }],
+              additionalProperties: false
+            },
+            responseDescription: 'The DID, the verification method and the ' +
+                                 'document\'s address; the public JWK; and ' +
+                                 'the private key in `privateJwk` and ' +
+                                 '`privateKeyPem`.' },
+
+          // THE DID TAB'S *Download did-configuration.json* (2026-10-01).
+          { action: 'sign-domain-linkage',
+            operationId: 'signApplicationDomainLinkage',
+            summary: 'Sign the DID Configuration resource for one of an ' +
+                     'application\'s LinkedDomains origins',
+            description: 'The DIF Well-Known DID Configuration: one Domain ' +
+                         'Linkage Credential (JWT form), self-issued by the ' +
+                         'application\'s DID with credentialSubject ' +
+                         '`{ id, origin }`, signed with a key its DID ' +
+                         'document publishes whose private half this ' +
+                         'service kept (one `generate-did-key` made). Host ' +
+                         '`didConfiguration` at ' +
+                         '`https://<origin>/.well-known/did-configuration.' +
+                         'json`. `origin` must be a `LinkedDomains` service ' +
+                         'in `didService`. Writes nothing. Refused ' +
+                         '(`STS-VC-0115`) for an application with no DID ' +
+                         'document, an origin it does not list, or no kept ' +
+                         'key.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                application: { type: 'string' },
+                origin: { type: 'string' }
+              },
+              required: ['application', 'origin'],
+              examples: [{ application: 'my-web-app',
+                           origin: 'https://app.example.com' }],
+              additionalProperties: false
+            },
+            responseDescription: 'The DID Configuration resource in ' +
+                                 '`didConfiguration`, the DID, the origin, ' +
+                                 'the signing key\'s kid, a file name and ' +
+                                 'where to host it (`hostAt`).' },
+
+          // AN APPLICATION'S OWN CUSTOM CLAIMS AND SAML ATTRIBUTES
+          // (2026-10-01): the Custom claims and Custom SAML attributes
+          // sections of its configuration tabs.
+          { action: 'set-custom-claim',
+            operationId: 'setApplicationCustomClaim',
+            summary: 'Set one of an application\'s own custom claims or ' +
+                     'SAML attributes',
+            description: 'Adds a row to one of the application\'s own claim ' +
+                         'sets — `access_token`, `id_token`, `userinfo`, ' +
+                         '`saml2` or `saml11` — or replaces its row of the ' +
+                         'same name. At issuance the application\'s rows are ' +
+                         'ADDED to the realm\'s set and win by name. A row is ' +
+                         'a typed value (`value`, with `${placeholders}`) or a ' +
+                         'directory attribute of the person (`attribute`, ' +
+                         'with `multi` and, for the three JSON sets, `type`); ' +
+                         'a SAML 2.0 row may carry `nameFormat`, a SAML 1.1 ' +
+                         'row `namespace`. Held to the realm\'s rules: a ' +
+                         'reserved name, an attribute that may not be ' +
+                         'released or an unknown type is refused ' +
+                         '(`STS-REG-0206`), as is an OAuth set on an ' +
+                         'application declared for no OAuth family.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                application: { type: 'string' },
+                set: { type: 'string',
+                       enum: ['access_token', 'id_token', 'userinfo', 'saml2',
+                              'saml11'] },
+                name: { type: 'string' },
+                value: { type: 'string' },
+                attribute: { type: 'string' },
+                multi: { type: 'boolean' },
+                type: { type: 'string',
+                        enum: ['string', 'number', 'boolean', 'json'] },
+                nameFormat: { type: 'string' },
+                namespace: { type: 'string' }
+              },
+              required: ['application', 'set', 'name'],
+              examples: [{ application: 'my-web-app', set: 'access_token',
+                           name: 'tenant', value: 'acme' },
+                         { application: 'my-web-app', set: 'id_token',
+                           name: 'department', attribute: 'departmentNumber',
+                           type: 'string' }],
+              additionalProperties: false
+            },
+            responseDescription: 'The application\'s rows for that set ' +
+                                 'after the change, in `claims`.' },
+          { action: 'remove-custom-claim',
+            operationId: 'removeApplicationCustomClaim',
+            summary: 'Take one of an application\'s own custom claims or ' +
+                     'SAML attributes off',
+            description: 'Removes the application\'s row of that name from ' +
+                         'one of its claim sets. The realm\'s row of the same ' +
+                         'name, if there is one, is issued again. Refused ' +
+                         '(`STS-REG-0206`) for a name the application does ' +
+                         'not hold.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                application: { type: 'string' },
+                set: { type: 'string',
+                       enum: ['access_token', 'id_token', 'userinfo', 'saml2',
+                              'saml11'] },
+                name: { type: 'string' }
+              },
+              required: ['application', 'set', 'name'],
+              examples: [{ application: 'my-web-app', set: 'access_token',
+                           name: 'tenant' }],
+              additionalProperties: false
+            },
+            responseDescription: 'The application\'s rows for that set ' +
+                                 'after the change, in `claims`.' },
 
           // THE CREDENTIALS SECTION'S MUTUAL TLS CONTROLS (RFC 8705,
           // 2026-09-13).
@@ -15098,12 +15608,22 @@ class AdminApi {
         // resource looks an application up in `issued` by identifier and a
         // reply holding one page would answer "not there" about page two.
         // `admin-ui/pki_admin.ts`'s `keyPairPaging()` argues it.
-        parameters: this.pagingParameters().filter(function (one) {
-          return one.name === 'per';
-        }).concat(this.detailPagingParameters([
+        // FIVE ROWS A PAGE, AND A CEILING (2026-09-30): `per` here may
+        // shorten every list and cannot lengthen one, so its schema says five
+        // rather than the console's MAX_ROWS. And each list has a search,
+        // applied before it is paged. The `as any` below is a WIDENING, not
+        // a library's wrong type: TypeScript takes the array's element type
+        // from this first row's integer schema, and the two search rows
+        // concatenated after it carry a string one.
+        parameters: [
+          { name: 'per', in: 'query', required: false,
+            schema: { type: 'integer', minimum: 1, maximum: 5 } as any,
+            description: 'Rows per page, SHARED by every paged list in the ' +
+                         'reply: five by default and at most five.' }
+        ].concat(this.detailPagingParameters([
           { name: 'issued',
-            description: 'The Applications table on /admin/pki, twenty-five ' +
-                         'rows by default. `issued` itself is the WHOLE list ' +
+            description: 'The Applications table on /admin/pki, five rows ' +
+                         'a page. `issued` itself is the WHOLE list ' +
                          'whatever page is asked for; `issuedPaging` says ' +
                          'which rows the page drew.' },
           { name: 'persons',
@@ -15112,12 +15632,42 @@ class AdminApi {
                          '`persons` and two rows on the page. `persons` is ' +
                          'the WHOLE list; `personsPaging` says which people ' +
                          'the page drew.' }
-        ])),
+        ]), [
+          { name: 'issuedq', in: 'query', required: false,
+            schema: { type: 'string', maxLength: 200 },
+            description: 'Narrows the Applications table before it is ' +
+                         'paged: a case-insensitive substring of the ' +
+                         'identifier, the profile, the key handle or a ' +
+                         'declared issuer. `issuedPaging.total` is then the ' +
+                         'count that matched, and `issuedSearch` echoes it.' },
+          { name: 'personsq', in: 'query', required: false,
+            schema: { type: 'string', maxLength: 200 },
+            description: 'Narrows the People table before it is paged: a ' +
+                         'case-insensitive substring of the username, either ' +
+                         'key handle or an issuer either profile asserts as. ' +
+                         '`personsPaging.total` is then the count that ' +
+                         'matched, and `personsSearch` echoes it.' }
+        ]),
         responseDescription: 'The hierarchy, the algorithm vocabularies, the ' +
-                             'two assertion profiles, and one row per ' +
+                             'two assertion profiles, one row per ' +
                              'application per profile for those holding an ' +
                              'issued key pair, with `issuedPaging` and ' +
-                             '`personsPaging` beside the two lists.',
+                             '`personsPaging` beside the two lists, and each ' +
+                             'authority\'s revocation lists as pages (#370): ' +
+                             '`issued` and `revokedNotIssued` on each ' +
+                             'authority are one page each, five rows at ' +
+                             'most, on the query parameters ' +
+                             '`ca-<scope segment>-<ca>-issuedPage` and ' +
+                             '`…-orphansPage`, each narrowed first by ' +
+                             '`ca-<scope segment>-<ca>-issuedq` and ' +
+                             '`…-orphansq` (a case-insensitive substring of ' +
+                             'the serial, the subject, the name or reason), ' +
+                             'with `issuedPaging`, `orphansPaging` (whose ' +
+                             '`total` is the count that matched), ' +
+                             '`issuedSearch`, `orphansSearch`, ' +
+                             '`issuedTotal`, `revokedTotal` and ' +
+                             '`revokedNotIssuedTotal` ' +
+                             'beside them.',
         handler: function (req, res) {
           log.debug("Entering the management API PKI endpoint.");
           self.sendJson(res, 200, pkiAdmin.pkiView(req));
@@ -17752,7 +18302,7 @@ class AdminApi {
         } },
 
       { method: 'POST', route: BASE + '/permissions/:action', tag: 'Delegation',
-        mirrors: 'POST /admin/delegation',
+        mirrors: 'POST /admin/delegation-settings',
         handler: function (req, res) {
           log.debug("Entering the management API permissions action endpoint.");
           const body = parseBody(req);
@@ -19518,7 +20068,8 @@ class AdminApi {
       // PROVIDER COMMANDS AND OUTBOUND DELIVERIES (#151): /admin/commands'
       // and /admin/deliveries' twins, in the same shape.
       ...loadProviderCommandsApi().ROUTES,
-      // FOREIGN SSF TRANSMITTERS (#153): /admin/ssf/transmitters' twin.
+      // FEDERATION PARTNERS' SHARED SIGNALS (#153, #373): the monitoring
+      // page's twin. The acts are federation's (`signals-*` below).
       ...loadSsfTransmittersApi().ROUTES
     ];
     log.debug("Leaving AdminApi.buildRoutes().");

@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -272,7 +272,7 @@ class ClaimsProviders {
   private open(stored: string, label: string): string {
     const { log, keystore } = this.deps;
     log.debug("Entering ClaimsProviders.open(). " + label);
-    if (!/^\$aesgcm\$/.test(String(stored || ''))) {
+    if (!stsCrypto.isEncryptedWithKek(String(stored || ''))) {
       log.debug("Leaving ClaimsProviders.open(). Not sealed.");
       return String(stored || '');
     }

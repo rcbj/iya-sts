@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 "use strict";
 //
@@ -480,7 +480,7 @@ async function test() {
   const SECRET_CLIENT = "fapi-secret-" + STAMP;
   const SECRET = "fapi-secret-" + nodeCrypto.randomBytes(12).toString("hex");
   await ok(realmApi + "/applications/create",
-           { identifier: SECRET_CLIENT, protocols: ["oauth2"],
+           { identifier: SECRET_CLIENT, protocols: ["oauth2", "oidc"],
              fields: { oauthClientId: SECRET_CLIENT,
                        oauthClientSecret: SECRET,
                        oauthTokenEndpointAuthMethod: "client_secret_basic" } },

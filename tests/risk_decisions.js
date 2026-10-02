@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -182,7 +182,7 @@ function childMain() {
     const ruleIds = (built.policy && built.policy.rules || [])
       .map(function (r) { return r.id.split(':rule:')[1]; });
     note(built.ok && ruleIds.join(',') === 'device-compromised,' +
-         'device-required,risk-high,risk-medium-key,' +
+         'device-required,protocol-not-declared,risk-high,risk-medium-key,' +
          'risk-medium-second-factor,risk-protected-key,' +
          'risk-protected-second-factor,' +
          'native-sso-not-enabled-refused,native-sso-not-enabled-dropped,' +
@@ -196,16 +196,17 @@ function childMain() {
          'risk-protected-alarm,holds-a-required-role' &&
          /ordered-deny-overrides$/.test(built.policy.combiningAlgId),
          'A1. the built-in issuance policy carries the two device rules ' +
-         '(#164), the three risk rules, the console\'s two step-ups and ' +
+         '(#164), the protocol-declaration rule, the three risk rules, the console\'s two step-ups and ' +
          'its alarm ahead of the role rule, under ordered-deny-overrides',
          ruleIds.join(',') + ' ' + (built.policy || {}).combiningAlgId);
     const rolesOnly = templates.build('role-issuance',
-      { decideRisk: 'no', decideDevices: 'no', decideScopes: 'no',
-        decideTransfers: 'no' },
+      { decideRisk: 'no', decideDevices: 'no', decideProtocols: 'no',
+        decideScopes: 'no', decideTransfers: 'no' },
       { name: 'role-issuance' });
     note(rolesOnly.ok && rolesOnly.policy.rules.length === 1 &&
          /deny-unless-permit$/.test(rolesOnly.policy.combiningAlgId),
-         'A2. decideRisk: no (and decideDevices, decideScopes and ' +
+         'A2. decideRisk: no (and decideDevices, decideProtocols, ' +
+         'decideScopes and ' +
          'decideTransfers: no, #164, #304 and #98) builds the ' +
          'roles-only document it was');
     const request = rolePep.buildRequest({
@@ -508,9 +509,9 @@ function childMain() {
     const plain = pdp.evaluate(unprotectedPolicy.policy, consoleRequest, {});
     note(unprotectedPolicy.ok && plain.decision === 'Deny' &&
          // The three risk rules, the role rule, #164's two device rules,
-         // the thirteen scope and detail rules of #304 and #305, and the
-         // six transfer rules of #98.
-         unprotectedPolicy.policy.rules.length === 25,
+         // the thirteen scope and detail rules of #304 and #305, the
+         // six transfer rules of #98, and the protocol-declaration rule.
+         unprotectedPolicy.policy.rules.length === 26,
          'I5. neverLockOut none puts the console under the three rules, ' +
          'and HIGH refuses it', plain.decision);
 

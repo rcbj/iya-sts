@@ -1,6 +1,6 @@
 // @ts-check
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -2144,7 +2144,7 @@ const SETTINGS = [
   { key: 'webauthn.rpName', group: 'WebAuthn',
     label: 'Relying party name', path: 'webauthn.rpName',
     env: 'STS_WEBAUTHN_RP_NAME', type: 'string',
-    dflt: 'Mock authorization server', runtime: true,
+    dflt: 'IYA STS', runtime: true,
     description: 'The `rp.name` handed to `navigator.credentials.create()`. ' +
                  'It is what a browser and a password manager show the ' +
                  'person while they decide whether to create a credential, ' +
@@ -2193,30 +2193,107 @@ const SETTINGS = [
 
   { key: 'webauthn.algorithms', group: 'WebAuthn',
     label: 'Algorithms offered', path: 'webauthn.algorithms',
-    env: 'STS_WEBAUTHN_ALGORITHMS', type: 'csv', dflt: 'ES256,RS256',
+    env: 'STS_WEBAUTHN_ALGORITHMS', type: 'csv',
+    // EVERY ALGORITHM THE VERIFIER CHECKS, REQUESTED BY DEFAULT (2026-10-01,
+    // rcbj): the post-quantum ML-DSA three first, so an authenticator that
+    // can make an ML-DSA credential does, then the classical ones strongest
+    // and most specific first. It was `ES256,RS256` until that day.
+    dflt: 'ML-DSA-44,ML-DSA-65,ML-DSA-87,ESP256,ES256,Ed25519,EdDSA,' +
+          'ESP384,ES384,ESP512,ES512,Ed448,ES256K,PS256,PS384,PS512,' +
+          'RS256,RS384,RS512',
     runtime: true,
     // Mirrors authn/webauthn_policy.ts's ALG_IDS, the verifier's COSE_ALGS
     // inverted.
-    csvValues: ['ES256', 'ES384', 'ES512', 'EdDSA', 'RS256', 'RS384',
-                'RS512', 'PS256', 'PS384', 'PS512', 'ML-DSA-44',
-                'ML-DSA-65', 'ML-DSA-87'],
+    csvValues: ['ML-DSA-44', 'ML-DSA-65', 'ML-DSA-87', 'ESP256', 'ES256',
+                'Ed25519', 'EdDSA', 'ESP384', 'ES384', 'ESP512', 'ES512',
+                'Ed448', 'ES256K', 'PS256', 'PS384', 'PS512', 'RS256',
+                'RS384', 'RS512', 'RS1'],
+    // AN ORDERED CHOICE (2026-10-01, rcbj: "explicitly choose, by
+    // checkboxes, which algorithms are requested and an order of
+    // preference"): the console draws a checkbox and an order number per
+    // value rather than a text box, and folds them back into this list.
+    // `csvValueNotes` is the sentence drawn beside each value.
+    ordered: true,
+    csvValueNotes: {
+      'ML-DSA-44': 'COSE -48 · post-quantum, RFC 9964 (NIST category 2)',
+      'ML-DSA-65': 'COSE -49 · post-quantum, RFC 9964 (NIST category 3)',
+      'ML-DSA-87': 'COSE -50 · post-quantum, RFC 9964 (NIST category 5)',
+      ESP256: 'COSE -9 · ECDSA P-256 with SHA-256, curve checked (RFC 9864)',
+      ES256: 'COSE -7 · ECDSA with SHA-256 — what nearly every ' +
+             'authenticator supports',
+      Ed25519: 'COSE -19 · EdDSA on Ed25519, curve checked (RFC 9864)',
+      EdDSA: 'COSE -8 · EdDSA, any curve the key carries',
+      ESP384: 'COSE -51 · ECDSA P-384 with SHA-384, curve checked (RFC 9864)',
+      ES384: 'COSE -35 · ECDSA with SHA-384',
+      ESP512: 'COSE -52 · ECDSA P-521 with SHA-512, curve checked (RFC 9864)',
+      ES512: 'COSE -36 · ECDSA with SHA-512',
+      Ed448: 'COSE -53 · EdDSA on Ed448 (RFC 9864)',
+      ES256K: 'COSE -47 · ECDSA secp256k1 with SHA-256 (RFC 8812)',
+      PS256: 'COSE -37 · RSASSA-PSS with SHA-256 (RFC 8230)',
+      PS384: 'COSE -38 · RSASSA-PSS with SHA-384 (RFC 8230)',
+      PS512: 'COSE -39 · RSASSA-PSS with SHA-512 (RFC 8230)',
+      RS256: 'COSE -257 · RSASSA-PKCS1-v1_5 with SHA-256 (Windows Hello, ' +
+             'older TPMs)',
+      RS384: 'COSE -258 · RSASSA-PKCS1-v1_5 with SHA-384',
+      RS512: 'COSE -259 · RSASSA-PKCS1-v1_5 with SHA-512',
+      RS1: 'COSE -65535 · SHA-1, INSECURE — requested only while ' +
+           'webauthn.insecureAlgorithms is on (development only)'
+    },
     description: '`pubKeyCredParams`, in preference order — the COSE ' +
                  'algorithms this service will accept a credential in. The ' +
                  'names are JOSE spellings and are mapped to COSE ' +
                  'identifiers by `authn/webauthn.js`\'s own table, which is ' +
-                 'the module that verifies the signature: `ES256` (-7), ' +
-                 '`ES384` (-35), `ES512` (-36), `EdDSA` (-8), `RS256` ' +
-                 '(-257), `RS384` (-258), `RS512` (-259), `PS256` (-37), ' +
-                 '`PS384` (-38), `PS512` (-39), and RFC 9964\'s `ML-DSA-44` ' +
-                 '(-48), `ML-DSA-65` (-49) and `ML-DSA-87` (-50). A ' +
-                 'credential whose algorithm is not on this list is refused ' +
-                 '(WebAuthn Level 3 section 7.1). A name outside ' +
-                 'that table is dropped with a warning rather than sent, ' +
-                 'because offering an algorithm this service cannot verify ' +
-                 'produces a credential that enrols and then never works. ' +
-                 '**ES256 and RS256 are the two every authenticator ' +
-                 'implements** and are the default; the rest are here to ' +
-                 'find out what a client does when the list is unusual.' },
+                 'the module that verifies the signature: RFC 9964\'s ' +
+                 'post-quantum `ML-DSA-44` (-48), `ML-DSA-65` (-49) and ' +
+                 '`ML-DSA-87` (-50); RFC 9864\'s fully specified `ESP256` ' +
+                 '(-9), `ESP384` (-51), `ESP512` (-52), `Ed25519` (-19) and ' +
+                 '`Ed448` (-53), whose curve is checked against the key; ' +
+                 '`ES256` (-7), `ES384` (-35), `ES512` (-36), `EdDSA` (-8); ' +
+                 'RFC 8812\'s `ES256K` (-47, secp256k1); and `PS256` (-37), ' +
+                 '`PS384` (-38), `PS512` (-39), `RS256` (-257), `RS384` ' +
+                 '(-258) and `RS512` (-259). A credential whose algorithm is ' +
+                 'not on this list is refused (WebAuthn Level 3 section ' +
+                 '7.1). A name outside that table is dropped with a warning ' +
+                 'rather than sent, because offering an algorithm this ' +
+                 'service cannot verify produces a credential that enrols ' +
+                 'and then never works. **The default requests every one, ' +
+                 'ML-DSA first**; an authenticator takes the first it ' +
+                 'supports, so the order is a preference. SHA-1\'s `RS1` ' +
+                 '(-65535) may be named but is offered and accepted only ' +
+                 'while `webauthn.insecureAlgorithms` is on (development ' +
+                 'only); `webauthn.pqcOnly` narrows the list to ML-DSA.' },
+
+  // THE TWO ALGORITHM FLAGS (2026-10-01, rcbj). Per realm, like every
+  // runtime row. `authn/webauthn_policy.ts` reads both.
+  { key: 'webauthn.insecureAlgorithms', group: 'WebAuthn',
+    label: 'Use insecure algorithms (development only)',
+    path: 'webauthn.insecureAlgorithms',
+    env: 'STS_WEBAUTHN_INSECURE_ALGORITHMS', type: 'bool', dflt: false,
+    runtime: true, onlyWhile: 'usesBrokenAlgorithms',
+    description: 'WARNING — DEVELOPMENT MODE ONLY. On requests and accepts ' +
+                 'the broken passkey algorithms — SHA-1\'s `RS1` (-65535) — ' +
+                 'as well: offered last in `pubKeyCredParams`, so only an ' +
+                 'authenticator that supports nothing better uses it, and ' +
+                 'its signatures verified at sign-in. Off, `RS1` is neither ' +
+                 'requested nor accepted, even where `webauthn.algorithms` ' +
+                 'names it, and a key enrolled with it is refused at sign-in ' +
+                 '(STS-AUTHN-0294). In product mode it cannot be set and is ' +
+                 'ignored: product never uses a broken algorithm.' },
+  { key: 'webauthn.pqcOnly', group: 'WebAuthn',
+    label: 'Request post-quantum algorithms only',
+    path: 'webauthn.pqcOnly',
+    env: 'STS_WEBAUTHN_PQC_ONLY', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'On requests ONLY the post-quantum passkey algorithms — RFC ' +
+                 '9964\'s `ML-DSA-44` (-48), `ML-DSA-65` (-49) and ' +
+                 '`ML-DSA-87` (-50) — whichever of them ' +
+                 '`webauthn.algorithms` names, and all three where it names ' +
+                 'none. A new passkey must then be ML-DSA: one made with ' +
+                 'another algorithm is refused at registration (WebAuthn ' +
+                 'section 7.1). It narrows what is REQUESTED: a classical ' +
+                 'key already enrolled goes on signing in. Most ' +
+                 'authenticators support no ML-DSA yet and cannot register ' +
+                 'while this is on.' },
 
   { key: 'webauthn.userVerification', group: 'WebAuthn',
     label: 'User verification', path: 'webauthn.userVerification',
@@ -2668,21 +2745,34 @@ const SETTINGS = [
   { key: 'keys.kekProvider', group: 'Key material',
     label: 'Key-encryption key provider',
     path: 'keys.kekProvider', env: 'STS_KEYS_KEK_PROVIDER', type: 'enum',
-    enumValues: ['file', 'aws', 'gcp', 'azure', 'vault'],
+    enumValues: ['file', 'aws', 'gcp', 'azure', 'vault', 'vault-transit',
+                 'aws-kms', 'gcp-kms', 'azure-keys'],
     dflt: 'file', runtime: false,
     restartReason: 'the key-encryption key is read once, at startup, before ' +
                    'the signing keys are decrypted',
-    description: 'Where the AES-256 key that protects the stored signing ' +
-                 'keys is READ FROM. This service never generates it and ' +
-                 'never writes it anywhere. `file` is the default because it ' +
-                 'needs nothing — Kubernetes and Docker both mount a secret ' +
-                 'as a file — and the other four are that same idea with a ' +
-                 'cloud provider\'s access control in front of it. Each of ' +
-                 'those lazily requires its official SDK, which is ' +
-                 'deliberately NOT a dependency of this service: it is a ' +
-                 'mock first, and four cloud SDKs nobody uses would be ' +
-                 'carried by every install. A missing one is reported with ' +
-                 'the package name to install.' },
+    description: 'Where the key-encryption key that wraps every data ' +
+                 'encryption key is. `file`, `aws`, `gcp`, `azure` and ' +
+                 '`vault` READ a 32-byte key into this process from a ' +
+                 'mounted file or a secret store; `file` is the default ' +
+                 'because it needs nothing. `vault-transit` (Vault or ' +
+                 'OpenBao Transit), `aws-kms`, `gcp-kms` (Cloud KMS) and ' +
+                 '`azure-keys` (a Key Vault or Managed HSM key; ' +
+                 'keys.kekVault is its vault) are key management ' +
+                 'services: the key NEVER leaves them, keys.kekRef names it, ' +
+                 'and the KMS wraps and unwraps each data key — one call per ' +
+                 'data key at start, none per value. Every provider but ' +
+                 '`file` lazily requires its official SDK, which is ' +
+                 'deliberately NOT a dependency of this service; a missing ' +
+                 'one is reported with the package name to install.' },
+
+  { key: 'keys.kekTransitMount', group: 'Key material',
+    label: 'Transit engine mount',
+    path: 'keys.kekTransitMount', env: 'STS_KEYS_KEK_TRANSIT_MOUNT',
+    type: 'string', dflt: 'transit', runtime: false, perProcess: true,
+    restartReason: 'the key-encryption key is reached once, at startup',
+    description: 'Where the Transit secrets engine is mounted, for ' +
+                 'keys.kekProvider (or keys.previousKekProvider) ' +
+                 '`vault-transit`. A plain path; anything else is refused.' },
 
   { key: 'keys.kekFile', group: 'Key material',
     label: 'Key-encryption key file',
@@ -2715,7 +2805,8 @@ const SETTINGS = [
     path: 'keys.kekVault', env: 'STS_KEYS_KEK_VAULT', type: 'string',
     dflt: '', runtime: false,
     restartReason: 'read once at startup',
-    description: 'The Azure Key Vault URL (https://<name>.vault.azure.net) ' +
+    description: 'The Azure Key Vault URL (https://<name>.vault.azure.net, ' +
+                 'or a Managed HSM\'s, for `azure` and `azure-keys`) ' +
                  'or the HashiCorp Vault endpoint. Empty lets the Vault SDK ' +
                  'fall back to VAULT_ADDR, which is what an agent sidecar ' +
                  'sets.' },
@@ -2851,7 +2942,7 @@ const SETTINGS = [
     path: 'keys.kekRegion', env: 'STS_KEYS_KEK_REGION', type: 'string',
     dflt: '', runtime: false,
     restartReason: 'read once at startup',
-    description: 'The AWS region for Secrets Manager. Empty uses the SDK\'s ' +
+    description: 'The AWS region for Secrets Manager and AWS KMS. Empty uses the SDK\'s ' +
                  'own resolution (AWS_REGION, the shared config file, the ' +
                  'instance metadata service), which is what an in-cluster ' +
                  'deployment relies on.' },
@@ -2907,6 +2998,126 @@ const SETTINGS = [
                  'own. Empty uses the SDK\'s own resolution (AWS_REGION ' +
                  'and the rest), NOT `keys.kekRegion`: the cell key has no ' +
                  'fallback of any kind.' },
+
+  // THE CELL KEY'S KEY VAULT (#96, 2026-09-30). The `azure` provider needs a
+  // vault URL beside the secret's name, and the cell key had no row for one:
+  // it borrows nothing from the service key (above), so a cell on Azure had
+  // no vault to read its key from and could not start. An Azure cell keeps
+  // its key in its own region's vault (deploy/azure/), which this names.
+  { key: 'keys.cellKekVault', group: 'Key material',
+    label: 'Key Vault URL of the cell key',
+    env: 'STS_CELL_KEK_VAULT', type: 'string', dflt: '',
+    runtime: false, perProcess: true,
+    restartReason: 'read once at startup',
+    description: 'The Azure Key Vault URL (https://<name>.vault.azure.net) ' +
+                 'or the HashiCorp Vault endpoint the cell key is read ' +
+                 'from — the cell\'s own. Empty uses NOTHING of ' +
+                 '`keys.kekVault`: the cell key has no fallback of any ' +
+                 'kind, so the `azure` provider refuses to read it without ' +
+                 'this.' },
+
+  // -------------------------------------------------------------------------
+  // THE DATA ENCRYPTION KEYS' LIFECYCLE AND A ROTATED KEY-ENCRYPTION KEY
+  // (#391 P2, 2026-10-01). Every value at rest is sealed under a data
+  // encryption key per realm per data class, wrapped under the
+  // key-encryption key; these say how often the data keys are replaced, how
+  // long a new one waits before values are sealed under it, how long a
+  // replaced one is kept, and where the PREVIOUS key-encryption key is read
+  // from while the data keys are re-wrapped after a rotation.
+  // -------------------------------------------------------------------------
+  { key: 'keys.dataKeyRotationDays', group: 'Key material',
+    label: 'Rotate every data encryption key after (days)',
+    env: 'STS_KEYS_DATA_KEY_ROTATION_DAYS', type: 'int', min: 0, max: 3650,
+    dflt: 365, runtime: true, perProcess: true,
+    description: 'How long a data encryption key seals new values before ' +
+                 'the keys.data-key-rotate job replaces it with a new one; ' +
+                 'the re-encryption job then re-seals what the old one ' +
+                 'sealed. 0 turns the scheduled rotation off (a rotation by ' +
+                 'hand still works). Data keys are rotated only where they ' +
+                 'are stored — where keys persist.' },
+
+  { key: 'keys.directoryCipher', group: 'Key material',
+    label: 'Cipher for data stored in the directory',
+    env: 'STS_KEYS_DIRECTORY_CIPHER', type: 'enum',
+    enumValues: ['aes-256-gcm', 'aes-256-siv'], dflt: 'aes-256-gcm',
+    runtime: true, perProcess: true,
+    description: 'The cipher of the data encryption keys that seal values ' +
+                 'stored on directory entries (private keys, client ' +
+                 'secrets, authenticator secrets, recovery codes and the ' +
+                 'rest). `aes-256-gcm`, the default, is AES-256 in GCM. ' +
+                 '`aes-256-siv` is AES-SIV (RFC 5297) with a 512-bit key — ' +
+                 'two AES-256 keys — which is misuse resistant: a repeated ' +
+                 'nonce leaks only that two values are equal. Both are ' +
+                 '256-bit AES; there is no AES-512. A data key keeps its ' +
+                 'cipher for life: a change here makes each directory class ' +
+                 'due a rotation, and the re-encryption job moves what the ' +
+                 'old key sealed.' },
+
+  { key: 'keys.dataKeyActivationLeadSeconds', group: 'Key material',
+    label: 'A new data encryption key is used after (seconds)',
+    env: 'STS_KEYS_DATA_KEY_ACTIVATION_LEAD_SECONDS', type: 'int', min: 0,
+    max: 86400, dflt: 300, runtime: true, perProcess: true,
+    description: 'How long a rotated data encryption key is published ' +
+                 'before values are sealed under it, so every process and ' +
+                 'every node holds it before anything sealed under it is ' +
+                 'read. Lower it only where the store\'s change log reaches ' +
+                 'every process faster.' },
+
+  { key: 'keys.dataKeyRetireAfterDays', group: 'Key material',
+    label: 'Keep a replaced data encryption key at least (days)',
+    env: 'STS_KEYS_DATA_KEY_RETIRE_AFTER_DAYS', type: 'int', min: 1,
+    max: 3650, dflt: 7, runtime: true, perProcess: true,
+    description: 'How long a replaced data encryption key is kept after its ' +
+                 'successor became current. It is destroyed only after this ' +
+                 'AND once nothing in the store is sealed under it; ' +
+                 'destruction cannot be undone.' },
+
+  { key: 'keys.previousKekProvider', group: 'Key material',
+    label: 'Where the previous key-encryption key is read from',
+    env: 'STS_PREVIOUS_KEK_PROVIDER', type: 'enum',
+    enumValues: ['none', 'file', 'aws', 'gcp', 'azure', 'vault',
+                 'vault-transit', 'aws-kms', 'gcp-kms', 'azure-keys'],
+    dflt: 'none', runtime: false, perProcess: true,
+    restartReason: 'the key is read once, before the store is restored',
+    description: 'To rotate the key-encryption key: point keys.kek* at the ' +
+                 'NEW key and this at the OLD one, and start. Every data ' +
+                 'encryption key still wrapped under the old key is ' +
+                 're-wrapped under the new one and written back; once every ' +
+                 'node has started that way, set this back to none. The ' +
+                 'store is not re-encrypted.' },
+
+  { key: 'keys.previousKekRef', group: 'Key material',
+    label: 'The previous key-encryption key\'s location',
+    env: 'STS_PREVIOUS_KEK_REF', type: 'string', dflt: '',
+    runtime: false, perProcess: true,
+    restartReason: 'read once at startup',
+    description: 'Where the previous key is, in the provider ' +
+                 'keys.previousKekProvider names: a path, an ARN, a resource ' +
+                 'or a Vault read path. It has no fallback.' },
+
+  { key: 'keys.previousKekField', group: 'Key material',
+    label: 'The field the previous key is in',
+    env: 'STS_PREVIOUS_KEK_FIELD', type: 'string', dflt: '',
+    runtime: false, perProcess: true,
+    restartReason: 'read once at startup',
+    description: 'The member of a JSON secret that holds the previous key. ' +
+                 'Empty takes the value whole.' },
+
+  { key: 'keys.previousKekRegion', group: 'Key material',
+    label: 'AWS region of the previous key',
+    env: 'STS_PREVIOUS_KEK_REGION', type: 'string', dflt: '',
+    runtime: false, perProcess: true,
+    restartReason: 'read once at startup',
+    description: 'The AWS region the previous key is read from. Empty uses ' +
+                 'the SDK\'s own resolution.' },
+
+  { key: 'keys.previousKekVault', group: 'Key material',
+    label: 'Key Vault URL of the previous key',
+    env: 'STS_PREVIOUS_KEK_VAULT', type: 'string', dflt: '',
+    runtime: false, perProcess: true,
+    restartReason: 'read once at startup',
+    description: 'The Azure Key Vault URL or the HashiCorp Vault endpoint ' +
+                 'the previous key is read from. It has no fallback.' },
 
   // -------------------------------------------------------------------------
   // THE MODE. What this service IS, rather than what any one surface requires.
@@ -4539,33 +4750,50 @@ const SETTINGS = [
     label: 'Keep a rotated client secret working for (seconds)',
     env: 'STS_OAUTH2_CLIENT_SECRET_OVERLAP_S', type: 'int', dflt: 604800,
     min: 0, max: 31536000, runtime: true,
-    description: 'How long the secret a ROTATION replaced (Rotate secret on ' +
-                 '/admin/applications, or rotate-secret on /admin-api) goes ' +
-                 'on authenticating at the token endpoint beside the new ' +
-                 'one, so a client can change over without an outage. A ' +
-                 'week by default; 0 makes a rotation a regeneration, which ' +
-                 'ends the old secret at once.' },
+    description: 'How long the secrets a ROTATION replaced (Rotate secret ' +
+                 'on /admin/applications, or rotate-secret on /admin-api) ' +
+                 'go on authenticating at the token endpoint beside the new ' +
+                 'one, so a client can change over without an outage: a ' +
+                 'rotation sets each live secret\'s expiry to now plus this, ' +
+                 'or leaves an earlier one. A week by default; 0 makes a ' +
+                 'rotation a regeneration, which removes the old secrets at ' +
+                 'once.' },
+  // SEVERAL CLIENT SECRETS PER APPLICATION (2026-10-01, rcbj).
+  { key: 'oauth2.clientSecretsMax', group: 'OAuth 2.0 / OIDC',
+    label: 'Client secrets an application may hold',
+    env: 'STS_OAUTH2_CLIENT_SECRETS_MAX', type: 'int', dflt: 5,
+    min: 1, max: 50, runtime: true,
+    description: 'How many client secrets one application may hold at ' +
+                 'once (each a record on oauthClientSecret with its own ' +
+                 'expiry). Adding or rotating in a secret past this is ' +
+                 'refused (STS-REG-0208); remove one first. Expired secrets ' +
+                 'count until the daily job oauth2.client-secret-expiry ' +
+                 'removes them.' },
   { key: 'oauth2.clientSecretExpiryWarningDays', group: 'OAuth 2.0 / OIDC',
     label: 'Warn about an expiring client secret this many days ahead',
     env: 'STS_OAUTH2_CLIENT_SECRET_EXPIRY_WARNING_DAYS', type: 'int',
     dflt: 14, min: 0, max: 365, runtime: true,
     description: 'The daily scheduler job oauth2.client-secret-expiry ' +
                  'writes an audit row and a warning for every application ' +
-                 'whose secret expires within this many days (its ' +
-                 'oauthClientSecretExpiresAt, or its registration\'s ' +
-                 'client_secret_expires_at), and /admin/applications marks ' +
-                 'it. 0 warns only once it has expired.' },
+                 'holding a secret that expires within this many days (the ' +
+                 'expiry on each oauthClientSecret record), and ' +
+                 '/admin/applications marks it. 0 warns only once it has ' +
+                 'expired.' },
 
-  { key: 'oauth2.registeredSecretLifetimeS', group: 'OAuth 2.0 / OIDC',
-    label: 'Dynamically registered secret lifetime (s)',
-    env: 'STS_OAUTH2_REGISTERED_SECRET_LIFETIME_S', type: 'int', dflt: 0,
-    min: 0, max: 31536000, runtime: true,
-    description: 'The `client_secret_expires_at` RFC 7591 section 3.2.1 ' +
+  { key: 'oauth2.clientSecretLifetimeDays', group: 'OAuth 2.0 / OIDC',
+    label: 'Client secret lifetime (days)',
+    env: 'STS_OAUTH2_CLIENT_SECRET_LIFETIME_DAYS', type: 'int', dflt: 0,
+    min: 0, max: 730, runtime: true,
+    description: 'The lifetime, in days, of every client secret this ' +
+                 'service mints or is given, and so the ' +
+                 '`client_secret_expires_at` RFC 7591 section 3.2.1 ' +
                  'publishes for a client registered at POST ' +
-                 '/oauth2/register, as seconds after registration. ZERO, the ' +
-                 'default, is that section\'s own "never", which is what ' +
-                 'this service always said. It is stamped when the client ' +
-                 'registers and is not moved by a later change.' },
+                 '/oauth2/register — the default for every secret ' +
+                 'mints or is given (a regeneration, a rotation, an added ' +
+                 'secret, a value typed on the console), unless the add ' +
+                 'form names another. ZERO, the default, is that section\'s ' +
+                 'own "never". It is stamped on each secret when it is ' +
+                 'made and is not moved by a later change.' },
 
   { key: 'oauth2.registeredClientIdPrefix', group: 'OAuth 2.0 / OIDC',
     label: 'Dynamically registered client_id prefix',
@@ -10623,6 +10851,9 @@ const SETTINGS = [
                                                       'password',
     env: 'SCIM_DIGEST_PASSWORD', type: 'string', dflt: 'password!',
     runtime: true,
+    // A SECRET, and saved when changed: sealed where it is written down
+    // (#222, `persistence/sealed_settings.js`).
+    secret: true,
     description: 'The password every username shares for HTTP Digest — the ' +
                  'same value KRB5_USER_PASSWORD defaults to, so that there ' +
                  'is one fact to remember rather than two. It cannot be ' +
@@ -11087,14 +11318,35 @@ const SETTINGS = [
     label: 'What an empty subject list means',
     env: 'STS_SSF_DEFAULT_SUBJECTS', type: 'enum',
     enumValues: ['ALL', 'NONE'], dflt: 'ALL', runtime: true,
-    description: 'Published as default_subjects and it decides the OPPOSITE ' +
-                 'of what it sounds like it decides: with ALL, a stream ' +
-                 'that names no subjects is about EVERYBODY and adding one ' +
-                 'narrows nothing; with NONE it is about nobody until a ' +
+    description: 'Published as default_subjects, and it decides what an ' +
+                 'EMPTY subject list means: with ALL, a stream that names ' +
+                 'no subjects is about EVERYBODY, naming one narrows it to ' +
+                 'the named subjects, and removing the last one widens it ' +
+                 'back to everybody; with NONE it is about nobody until a ' +
                  'subject is added. A receiver that guesses wrong gets ' +
                  'every event in the estate or gets none, and both look ' +
                  'like a broken transmitter — which is why SSF makes it ' +
-                 'discoverable rather than leaving it to be inferred.' },
+                 'discoverable rather than leaving it to be inferred. A ' +
+                 'stream a person owns is about that person whatever this ' +
+                 'says (ssf.personStreamsSelfOnly).' },
+
+  { key: 'ssf.personStreamsSelfOnly', group: 'SSF',
+    label: 'A person\'s own stream carries only their events',
+    env: 'STS_SSF_PERSON_STREAMS_SELF_ONLY', type: 'bool', dflt: true,
+    runtime: true,
+    description: 'A stream created with a PERSON\'S credential — an access ' +
+                 'token a client obtained for them, or their own name and ' +
+                 'password over Basic — is about that person alone: events ' +
+                 'about anybody else are not delivered to it, whatever its ' +
+                 'subject list and default_subjects say, and Add Subject ' +
+                 'refuses to name anybody else (403). SSF 1.0 section 10.1 ' +
+                 'requires that only authorized parties access the shared ' +
+                 'signals, and a person is one for their own. Off, a ' +
+                 'person\'s stream is treated like a client\'s and, under ' +
+                 'default_subjects ALL, is sent every event in the realm. ' +
+                 'A client\'s own stream (client credentials), a GNAP ' +
+                 'application\'s and this service\'s own receivers are not ' +
+                 'affected.' },
 
   { key: 'ssf.streamStatusOnCreate', group: 'SSF',
     label: 'Status a new stream is created in',
@@ -11548,46 +11800,43 @@ const SETTINGS = [
                  'ONLY: product mode refuses an unverified SET at every ' +
                  'receiver whatever this says (#117).' },
 
-  // FOREIGN TRANSMITTERS (#153): `ssf/ssf_transmitters.ts`, this realm as
-  // the receiver of another identity service's Shared Signals.
+  // A FEDERATION PARTNER'S SHARED SIGNALS (#153, #373): `ssf/ssf_transmitters.ts`,
+  // this realm as the receiver of its partners' Shared Signals. Each stream
+  // is configured on its relationship (`fedSignals*`); these bound them all.
   { key: 'ssf.foreignPollS', group: 'SSF',
-    label: 'Foreign transmitter poll interval (s)',
+    label: 'Partner signals poll interval (s)',
     env: 'STS_SSF_FOREIGN_POLL_S', type: 'int', dflt: 30,
     min: 1, max: 86400, runtime: true,
     description: 'How often the ssf.foreign-poll scheduler job polls every ' +
-                 'foreign transmitter this realm registered with a poll ' +
-                 'stream (RFC 8936) (#153).' },
+                 'federation relationship whose partner\'s Shared Signals ' +
+                 'stream is a poll stream (RFC 8936) (#153, #373).' },
   { key: 'ssf.foreignPollMaxEvents', group: 'SSF',
-    label: 'Events asked per foreign poll',
+    label: 'Events asked per partner poll',
     env: 'STS_SSF_FOREIGN_POLL_MAX_EVENTS', type: 'int', dflt: 50,
     min: 1, max: 1000, runtime: true,
-    description: 'The maxEvents this realm asks a foreign transmitter for in ' +
+    description: 'The maxEvents this realm asks a federation partner for in ' +
                  'one RFC 8936 poll.' },
   { key: 'ssf.foreignPollMaxRounds', group: 'SSF',
-    label: 'Foreign poll rounds',
+    label: 'Partner poll rounds',
     env: 'STS_SSF_FOREIGN_POLL_MAX_ROUNDS', type: 'int', dflt: 5,
     min: 1, max: 100, runtime: true,
-    description: 'How many polls one run makes while the transmitter says ' +
+    description: 'How many polls one run makes while the partner says ' +
                  'moreAvailable, before leaving the rest to the next run; ' +
                  'one more acknowledges what the last received.' },
-  { key: 'ssf.foreignMaxTransmitters', group: 'SSF',
-    label: 'Foreign transmitters per realm',
-    env: 'STS_SSF_FOREIGN_MAX_TRANSMITTERS', type: 'int', dflt: 20,
-    min: 1, max: 1000, runtime: true,
-    description: 'The most foreign transmitters one realm may register.' },
   { key: 'ssf.foreignInboxMax', group: 'SSF',
-    label: 'Foreign SETs kept',
+    label: 'Partner SETs kept',
     env: 'STS_SSF_FOREIGN_INBOX_MAX', type: 'int', dflt: 500,
     min: 10, max: 100000, runtime: true,
-    description: 'The most Security Event Tokens from foreign transmitters ' +
+    description: 'The most Security Event Tokens from federation partners ' +
                  'kept per realm, the oldest dropped first. What is kept is ' +
                  'also what a replayed jti is recognised by.' },
   { key: 'ssf.foreignTimeoutMs', group: 'SSF',
-    label: 'Foreign transmitter timeout (ms)',
+    label: 'Partner signals timeout (ms)',
     env: 'STS_SSF_FOREIGN_TIMEOUT_MS', type: 'int', dflt: 10000,
     min: 500, max: 120000, runtime: true,
-    description: 'How long one request to a foreign transmitter — discovery, ' +
-                 'its token endpoint, stream management, a poll — may take.' },
+    description: 'How long one request to a federation partner\'s Shared ' +
+                 'Signals — discovery, its token endpoint, stream ' +
+                 'management, a poll — may take.' },
 
   { key: 'ssf.actOnSignalsInDevelopment', group: 'SSF',
     label: 'The console and portal act on received signals in development',
@@ -11596,8 +11845,9 @@ const SETTINGS = [
     description: 'Product mode always does what the signal-response policy ' +
                  'permits with a verified event this service\'s own console ' +
                  'or portal receives — ends that surface\'s own sessions for ' +
-                 'the person it names (#62). Development records what it ' +
-                 'would have done and ends nothing, unless this is on. An ' +
+                 'the person it names (#62) — or a federation partner ' +
+                 'sends (#373, #374). Development records what it would ' +
+                 'have done and does nothing, unless this is on. An ' +
                  'unverified event is never acted on, whatever this says.' },
 
   { key: 'ssf.legacySubClaim', group: 'SSF',
@@ -15758,6 +16008,12 @@ const REPLACED_SETTINGS = [
     env: 'STS_XACML_PEP_NOTIFY_ALLOW_INSECURE',
     now: ['xacml.pepNotifyAllowHttp', 'xacml.pepNotifySkipTlsVerification',
           'xacml.pepNotifyCaFile'] },
+  { key: 'oauth2.registeredSecretLifetimeS',
+    env: 'STS_OAUTH2_REGISTERED_SECRET_LIFETIME_S',
+    now: ['oauth2.clientSecretLifetimeDays'],
+    why: ' It was removed on 2026-10-01 and replaced by ' +
+         'oauth2.clientSecretLifetimeDays: a client secret\'s lifetime is ' +
+         'measured in days.' },
   { key: 'oid4vp.federationAuthorityHints',
     env: 'OID4VP_FEDERATION_AUTHORITY_HINTS',
     now: ['oidfed.authorityHints'],
@@ -16982,6 +17238,10 @@ function describe(setting) {
     // only where the row declares one — the same absent-unless-meaningful
     // rule as `enumValues` beside it, so every open list describes as before.
     csvValues: setting.csvValues || undefined,
+    // A `csv` row whose ORDER is a preference (2026-10-01), and the sentence
+    // drawn beside each of its values — absent on every other row.
+    ordered: setting.ordered ? true : undefined,
+    csvValueNotes: setting.csvValueNotes || undefined,
     // The int bounds, where a row narrows them. `undefined` is dropped by
     // JSON.stringify, so a row that carries none of them describes exactly as
     // it did before they existed — which is what keeps the management API's
@@ -17242,13 +17502,14 @@ function refuseReplacedSettings() {
   REPLACED_SETTINGS.forEach(function (row) {
     if (dig(operatorConfig, row.key) !== undefined) {
       named.push('  ' + row.key + ' (in ' + (process.env.CONFIG_FILE ||
-                 'the appconfig file') + ') is now ' + row.now.join(', '));
+                 'the appconfig file') + ') is now ' + row.now.join(', ') +
+                 '.' + replacedBy(row.key));
     }
     if (process.env[row.env] !== undefined) {
       named.push('  ' + row.env + ' (in the environment) is now ' +
                  row.now.map(function (key) {
                    return byKey[key].env;
-                 }).join(', '));
+                 }).join(', ') + '.' + replacedBy(row.key));
     }
   });
   if (!named.length) {
@@ -17257,12 +17518,10 @@ function refuseReplacedSettings() {
   }
   process.stderr.write(
     '\n' + errorCodes.tag('STS-CORE-0105') + 'config: FATAL — ' +
-    named.length + ' setting(s) that were removed on 2026-09-23 (#171) are ' +
-    'still named:\n\n' + named.join('\n') + '\n\nEach allowed plain http ' +
-    'AND turned certificate verification off. They are three settings now — ' +
-    'plain http, certificate verification (off in development mode only) ' +
-    'and a CA file — and which of them was meant is for the operator to ' +
-    'say. Remove the old name and set the ones intended.\n\n');
+    named.length + ' setting(s) that were removed are still named:\n\n' +
+    named.join('\n') + '\n\nThere is no mapping from an old name to a ' +
+    'new one: what the old value meant is for the operator to say. Remove ' +
+    'the old name and set the ones intended.\n\n');
   log.debug("Leaving refuseReplacedSettings(). Refusing to start.");
   process.exit(1);
   log.debug("Leaving refuseReplacedSettings().");

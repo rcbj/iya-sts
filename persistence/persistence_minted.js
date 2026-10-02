@@ -1,6 +1,6 @@
 // @ts-check
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -254,6 +254,52 @@ function expiryOf(row, value, key, realmId) {
 // apart with a separator no key may contain — and a session id may contain
 // anything.
 const journal = new Map();
+
+// A copy of the journal, emptied (#357): what `restore()` keeps aside.
+function takePendingJournal() {
+  log.debug("Entering takePendingJournal().");
+  const copy = new Map();
+  journal.forEach(function (byRealm, handle) {
+    const realmsCopy = new Map();
+    byRealm.forEach(function (keys, realmId) {
+      realmsCopy.set(realmId, new Set(keys));
+    });
+    copy.set(handle, realmsCopy);
+  });
+  journal.clear();
+  log.debug("Leaving takePendingJournal(). " + copy.size + " handle(s).");
+  return copy;
+}
+
+// Puts what `takePendingJournal()` kept back into the journal; true when there
+// was anything to put back.
+function putBackJournal(pending) {
+  log.debug("Entering putBackJournal().");
+  let any = false;
+  (pending || new Map()).forEach(function (byRealm, handle) {
+    byRealm.forEach(function (keys, realmId) {
+      keys.forEach(function (key) {
+        let held = journal.get(handle);
+        if (!held) {
+          held = new Map();
+          journal.set(handle, held);
+        }
+        let set = held.get(realmId);
+        if (!set) {
+          set = new Set();
+          held.set(realmId, set);
+        }
+        set.add(key);
+        any = true;
+      });
+    });
+  });
+  if (any) {
+    generation += 1;
+  }
+  log.debug("Leaving putBackJournal(). " + any);
+  return any;
+}
 
 // ---------------------------------------------------------------------------
 // A REALM THAT IS GONE LEAVES NOTHING PENDING (2026-09-07).
@@ -800,25 +846,39 @@ function prefetch(changes) {
       return;
     }
     wanted.add(id);
+    // Asked for by the KEY COLUMN (#222) and remembered by the name, which is
+    // what applyChange() looks the answer up by.
     refs.push({ handle: parsed.handle, realm: change.realm,
-                key: parsed.storedName });
+                key: keyColumnOf(parsed.handle, change.realm,
+                                 parsed.storedName),
+                name: parsed.storedName });
   });
   if (!refs.length) {
     log.debug("Leaving prefetch().");
     return Promise.resolve(0);
   }
   log.debug("Leaving prefetch().");
-  return driver.readMintedMany(refs).then(function (rows) {
+  return driver.readMintedMany(refs.map(function (ref) {
+    return { handle: ref.handle, realm: ref.realm, key: ref.key };
+  })).then(function (rows) {
+    const byColumn = new Map();
+    refs.forEach(function (ref) {
+      byColumn.set(ref.handle + '\u0000' + ref.realm + '\u0000' + ref.key,
+                   ref.name);
+    });
     const map = new Map();
     (rows || []).forEach(function (row) {
-      map.set(row.handle + '\u0000' + row.realm + '\u0000' + row.key, row);
+      const name = byColumn.get(row.handle + '\u0000' + row.realm +
+                                '\u0000' + row.key);
+      map.set(row.handle + '\u0000' + row.realm + '\u0000' +
+              (name === undefined ? row.key : name), row);
     });
     // EVERY REF IS RECORDED, including the ones that came back with nothing:
     // "asked for and absent" is a real answer — it is what a DELETE looks like
     // — and without it the applier would fall back to a query per missing row,
     // which is the case a page of deletes is made entirely of.
     refs.forEach(function (ref) {
-      const id = ref.handle + '\u0000' + ref.realm + '\u0000' + ref.key;
+      const id = ref.handle + '\u0000' + ref.realm + '\u0000' + ref.name;
       if (!map.has(id)) {
         map.set(id, null);
       }
@@ -860,9 +920,10 @@ function splitChangeKey(key) {
   }
   try {
     log.debug("Leaving splitChangeKey().");
-    return {
+    const storedName = nameOfChangeHalf(text.slice(at + 1));
+    return storedName === null ? null : {
       handle: Buffer.from(text.slice(0, at), 'base64url').toString('utf8'),
-      storedName: Buffer.from(text.slice(at + 1), 'base64url').toString('utf8')
+      storedName: storedName
     };
   } catch (e) {
     log.debug("Caught in splitChangeKey(): " + ((e && e.message) || e));
@@ -911,7 +972,11 @@ function applyChange(change) {
   let storedName;
   try {
     handle = Buffer.from(text.slice(0, at), 'base64url').toString('utf8');
-    storedName = Buffer.from(text.slice(at + 1), 'base64url').toString('utf8');
+    // Sealed since #222, or base64url of the name.
+    storedName = nameOfChangeHalf(text.slice(at + 1));
+    if (storedName === null) {
+      throw new Error('the sealed name did not open');
+    }
   } catch (e) {
     log.debug("Caught in applyChange(): " + ((e && e.message) || e));
     log.error(errorCodes.tag('STS-STORE-0014') +
@@ -935,7 +1000,8 @@ function applyChange(change) {
     ? prefetched.get(handle + '\u0000' + change.realm + '\u0000' + storedName)
     : undefined;
   const reading = held === undefined
-    ? driver.readMinted(handle, change.realm, storedName)
+    ? driver.readMinted(handle, change.realm,
+                        keyColumnOf(handle, change.realm, storedName))
     : Promise.resolve(held);
   log.debug("Leaving applyChange().");
   return reading
@@ -1124,6 +1190,20 @@ function flush() {
     log.debug('Leaving flush(). Not persisting minted state.');
     return Promise.resolve({ written: false });
   }
+  if (!keystore.sealed() && typeof keystore.hasStarted === 'function' &&
+      !keystore.hasStarted()) {
+    // NOT YET IS NOT NEVER (#357). The store opens, and things are minted,
+    // before `keystore.start()` has read the key-encryption key — a network
+    // call to the secret store. This branch used to fall through to the one
+    // below, which CLEARS the journal: whatever was minted in that window was
+    // dropped, not deferred, and every process logged STS-STORE-0018 as it
+    // started. The journal is kept and nothing is committed; `restore()`,
+    // which runs once the keystore has started, keeps it too and asks for the
+    // flush that writes it.
+    flushAsked = false;
+    log.debug('Leaving flush(). The keystore has not started; deferred.');
+    return Promise.resolve({ written: false, deferred: true });
+  }
   if (!keystore.sealed()) {
     journal.clear();
     flushAsked = false;
@@ -1204,8 +1284,9 @@ function flush() {
         }
         const present = row.read(realmId, key);
         if (!present || !present.present) {
+          const gone = columnsFor(handle, realmId, storedKey(row, key));
           deletes.push({ handle: handle, realm: realmId,
-                         key: storedKey(row, key),
+                         key: gone.key, keySealed: gone.keySealed,
                          // The key as the STORE knows it, for the retry — see
                          // the catch below.
                          journalKey: key,
@@ -1217,8 +1298,10 @@ function flush() {
         }
         let body = null;
         try {
+          // Under THIS ROW'S realm's data encryption key (#391), not the
+          // ambient realm's: a flush writes every realm's rows.
           body = keystore.seal(JSON.stringify(present.value), 'minted-rows',
-                               tierOfHandle(handle));
+                               tierOfHandle(handle), { realm: realmId });
         } catch (e) {
           // A value with a cycle in it, or a BigInt. Counted and skipped:
           // failing the whole transaction because one store holds something
@@ -1233,8 +1316,10 @@ function flush() {
         }
         // Built first and merged into after: the merger writes the merged
         // record's expiry back onto it. `any`, because `merge` is filled in.
+        const columns = columnsFor(handle, realmId, storedKey(row, key));
         const upsert = /** @type {any} */ ({ handle: handle, realm: realmId,
-                       key: storedKey(row, key), journalKey: key, body: body,
+                       key: columns.key, keySealed: columns.keySealed,
+                       journalKey: key, body: body,
                        // WHEN THE RECORD IS DEAD (#333), or null: what the
                        // restore and the expiry purge read. See expiryOf().
                        expiresAt: expiryOf(row, present.value, key, realmId),
@@ -1269,7 +1354,13 @@ function flush() {
   }
 
   log.debug("Leaving flush().");
-  const saving = driver.saveMinted(upserts, deletes).then(function (result) {
+  // THE DATA-KEY ROWS LAND FIRST (#391): a row sealed under a data encryption
+  // key made during this flush must not reach another process before the key
+  // does.
+  const saving = Promise.resolve(typeof keystore.settleDeks === 'function'
+    ? keystore.settleDeks() : null).then(function () {
+    return driver.saveMinted(upserts, deletes);
+  }).then(function (result) {
     committedAt = Math.max(committedAt, takenAt);
     settleDecided(result);
     ensureTombstoneJob();
@@ -1478,6 +1569,91 @@ function tierOfHandle(handle) {
   return out;
 }
 
+// ---------------------------------------------------------------------------
+// A ROW'S NAME IS NOT IN THE CLEAR (#222, 2026-10-01).
+//
+// The name a store files a record under is often the credential itself: a
+// session id is the cookie, a SAML artifact is redeemed by presenting it. The
+// body was sealed and the name was not, so a dump of `sts_minted` — and of
+// `sts_changes`, which copied it — held every live session id. Now:
+//
+//   * `key` is a KEYED DIGEST of handle, realm and name (`keyedDigest`, the
+//     same key on every node), so a row is found from a name this process
+//     already holds and the column says nothing about it;
+//   * `key_sealed` is the name, SEALED under the row's realm and tier, for
+//     the one reader that has no name to start from: the restore;
+//   * a change-log row carries the sealed name (the driver's
+//     recordChanges()), because a reader told of a DELETE must drop the name
+//     from its own store, and no digest can tell it which.
+//
+// Where nothing seals (no key-encryption key) a row is written as before:
+// `key` the name and `key_sealed` ''. Every reader takes a row with an empty
+// `key_sealed` at its word, so the two shapes read alike.
+// ---------------------------------------------------------------------------
+const NAME_LABEL = 'minted-key';
+
+// The two columns a row is written with: `{ key, keySealed }`.
+function columnsFor(handle, realmId, storedName) {
+  log.debug("Entering columnsFor().");
+  const digest = keyColumnOf(handle, realmId, storedName);
+  if (digest === storedName) {
+    log.debug("Leaving columnsFor(). Unkeyed.");
+    return { key: storedName, keySealed: '' };
+  }
+  let sealed = '';
+  try {
+    sealed = String(keystore.seal(String(storedName), NAME_LABEL,
+                                  tierOfHandle(handle),
+                                  { realm: realmId }) || '');
+  } catch (e) {
+    log.debug("Caught in columnsFor(): " + ((e && e.message) || e));
+    sealed = '';
+  }
+  log.debug("Leaving columnsFor().");
+  return sealed ? { key: digest, keySealed: sealed }
+                : { key: storedName, keySealed: '' };
+}
+
+// The `key` column a name is filed under: its keyed digest, or the name where
+// no digest key is held.
+function keyColumnOf(handle, realmId, storedName) {
+  log.debug("Entering keyColumnOf().");
+  const digest = keystore.sealed() && typeof keystore.keyedDigest ===
+    'function'
+    ? keystore.keyedDigest(NAME_LABEL, String(handle) + '\n' +
+                           String(realmId) + '\n' + String(storedName))
+    : null;
+  log.debug("Leaving keyColumnOf().");
+  return digest || String(storedName);
+}
+
+// A row's name: `key_sealed` opened, or `key` where there is none. Null when
+// the sealed name does not open.
+function nameOfRow(row) {
+  log.debug("Entering nameOfRow().");
+  if (!row || !row.keySealed) {
+    log.debug("Leaving nameOfRow(). Unkeyed.");
+    return row ? row.key : null;
+  }
+  const opened = keystore.open(row.keySealed, NAME_LABEL);
+  log.debug("Leaving nameOfRow().");
+  return opened === undefined ? null : opened;
+}
+
+// The name half of a change-log key: sealed (it holds '$', which base64url
+// does not), or base64url of the name. Null when a sealed one does not open.
+function nameOfChangeHalf(text) {
+  log.debug("Entering nameOfChangeHalf().");
+  const half = String(text || '');
+  if (half.indexOf('$') >= 0) {
+    const opened = keystore.open(half, NAME_LABEL);
+    log.debug("Leaving nameOfChangeHalf(). Sealed.");
+    return opened === undefined ? null : opened;
+  }
+  log.debug("Leaving nameOfChangeHalf().");
+  return Buffer.from(half, 'base64url').toString('utf8');
+}
+
 function mergerFor(row, handle, key, mine, upsert, realmId) {
   log.debug("Entering mergerFor().");
   log.debug("Leaving mergerFor().");
@@ -1495,7 +1671,7 @@ function mergerFor(row, handle, key, mine, upsert, realmId) {
       // process's copy's: the other node may have extended it.
       upsert.expiresAt = expiryOf(row, merged, key, realmId);
       return keystore.seal(JSON.stringify(merged), 'minted-rows',
-                           tierOfHandle(handle));
+                           tierOfHandle(handle), { realm: realmId });
     } catch (e) {
       log.warn(errorCodes.tag('STS-STORE-0056') + 'persistence: the "' +
                handle + '" row under "' + key + '" could not be merged with ' +
@@ -1930,7 +2106,14 @@ function restore() {
   }
   const filter = restoreFilter(Date.now());
   log.debug("Leaving restore().");
+  // WHAT WAS MINTED BEFORE THE RESTORE (#357): journalled and not written —
+  // before the keystore started a flush had nothing to seal with, and one
+  // during the load is not guaranteed to have run. Taken aside the moment
+  // `restoring` is set (nothing is journalled after that), kept across the
+  // restore, which clears the journal of its own writes, and flushed after.
+  let pending = null;
   return driver.loadMinted(filter).then(function (rows) {
+    pending = takePendingJournal();
     restoring = true;
     let restored = 0;
     droppedUnreadable = 0;
@@ -1962,7 +2145,13 @@ function restore() {
         droppedUnreadable++;
         return;
       }
-      const split = splitKey(store, row.key);
+      // THE NAME, opened (#222): `key` is its digest where it was sealed.
+      const name = nameOfRow(row);
+      if (name === null) {
+        droppedUnreadable++;
+        return;
+      }
+      const split = splitKey(store, name);
       // -------------------------------------------------------------------
       // ANOTHER PROCESS'S CONTRIBUTION TO AN ACCUMULATOR IS NOT RESTORED INTO
       // MEMORY, IT IS CONTRIBUTED.
@@ -2010,6 +2199,9 @@ function restore() {
     // something writes — and those writes are already in the store.
     journal.clear();
     flushAsked = false;
+    if (putBackJournal(pending) && scheduler) {
+      flushAsked = scheduler() !== false;
+    }
 
     if (staleHandles.size) {
       log.info('persistence: ' + droppedUnknown + ' minted row(s) belong to ' +
@@ -2033,6 +2225,7 @@ function restore() {
     return { restored: restored };
   }).catch(function (err) {
     restoring = false;
+    putBackJournal(pending);
     log.debug('Leaving restore(). It failed.');
     return Promise.reject(new Error(errorCodes.tag('STS-STORE-0026') +
       'the minted state in the store could not be read: ' + err.message));
@@ -2152,6 +2345,10 @@ function reset() {
  * @namespace
  */
 module.exports = {
+  // The key column a name is filed under, and a stored row's name (#222):
+  // for the tests, which look rows up by the name they wrote.
+  keyColumnOf: keyColumnOf,
+  nameOfRow: nameOfRow,
   ensureTombstoneJob: ensureTombstoneJob,
   ensureExpiryPurgeJob: ensureExpiryPurgeJob,
   purgeExpired: purgeExpired,

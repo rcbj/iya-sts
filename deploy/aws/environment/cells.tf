@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: BUSL-1.1
 #
 # ---------------------------------------------------------------------------
 # A CELL: THIS STACK, APPLIED ONCE PER REGION OF A MULTI-REGION ENVIRONMENT
@@ -23,8 +23,8 @@
 # SET, what changes, and why:
 #   * the REGION is the cell's (`cells[cell].region`), not `aws_region`;
 #   * every globally unique name carries the cell: resources are
-#     `mock-sts-<env>-<cell>-…`, IAM roles `mock-sts-env-<env>-<cell>-…`,
-#     secrets `mock-sts/<env>/<cell>/…`; the state key is
+#     `iya-sts-<env>-<cell>-…`, IAM roles `iya-sts-env-<env>-<cell>-…`,
+#     secrets `iya-sts/<env>/<cell>/…`; the state key is
 #     `environment/<env>/<cell>.tfstate` (entrypoint.sh);
 #   * the VPC is the cell's own CIDR from the map, distinct in every cell, so
 #     the cells can be peered (the global/ stack does it);
@@ -57,33 +57,49 @@ variable "cell" {
   type        = string
   default     = ""
   validation {
-    condition     = var.cell == "" || contains(keys(var.cells), var.cell)
-    error_message = "cell must be empty (a single-cell environment) or a key of cells."
+    condition     = var.cell == "" || try(var.cells[var.cell].cloud, "") == "aws"
+    error_message = "cell must be empty (a single-cell environment) or an AWS cell of cells: a GCP cell is deploy/gcp/environment's."
   }
 }
 
 variable "cells" {
   description = <<-EOT
     Every cell of the environment, by id — from `envs/<env>.cells.tfvars.json`.
-    A cell's id names its region (usw2 = us-west-2, cac1 = ca-central-1,
-    euc1 = eu-central-1, apse1 = ap-southeast-1); `jurisdiction` is the legal
-    boundary it sits in (issue #98, section 2); `vpc_cidr` is its VPC, which
-    must not overlap another cell's; `geolocation_countries` are the ISO 3166
-    country codes whose clients Route 53 PINS to this cell because the law
-    requires it (dns_cells.tf) — empty for a cell that is reached only through
-    the latency set; `db_snapshot_identifier`, empty but for a cell CONVERTED
-    from a single-region environment, is the RDS snapshot the cell database
-    is restored from (conversion.tf) — in the cell's region and under the
-    cell's own key, and read once, when the database is created.
+    A cell's id names its region, by foundation/locals.tf's rule (#367): the
+    area, the direction's initials and the number — us-west-2 = usw2,
+    us-east-2 = use2, eu-west-1 = euw1, ap-southeast-5 = apse5.
+    `jurisdiction` is the legal boundary it sits in (issue #98, section 2),
+    and several cells may share one (globalidp's two `us` and two `eu`);
+    `vpc_cidr` is its VPC, which must not overlap another cell's;
+    `db_snapshot_identifier`, empty but for a cell CONVERTED from a
+    single-region environment, is the RDS snapshot the cell database is
+    restored from (conversion.tf) — in the cell's region and under the cell's
+    own key, and read once, when the database is created. The countries
+    Route 53 pins are a JURISDICTION's, not a cell's (`jurisdictions`,
+    below; they were a cell's `geolocation_countries` until #367).
   EOT
+  #
+  # A MULTI-CLOUD ENVIRONMENT (#97, 2026-09-30) lists its GCP cells here too,
+  # from deploy/multicloud/envs/<env>.cells.tfvars.json: `cloud` is `gcp`,
+  # `region` a GCP region, `coordinates` where Route 53's geoproximity places
+  # it, and `global_db_cidr` the private-services range its Cloud SQL copy of
+  # the global tier dials the writer from. This stack applies only the AWS
+  # cells; the GCP ones are PEERS — their CIDRs admitted on 8446 and by the
+  # global database, and their names in STS_CELL_PEERS.
   type = map(object({
     region                 = string
     jurisdiction           = string
     vpc_cidr               = string
-    geolocation_countries  = optional(list(string), [])
     db_snapshot_identifier = optional(string, "")
+    cloud                  = optional(string, "aws")
+    coordinates            = optional(object({ latitude = string, longitude = string }))
+    global_db_cidr         = optional(string, "")
   }))
   default = {}
+  validation {
+    condition     = alltrue([for c in values(var.cells) : contains(["aws", "gcp"], c.cloud)])
+    error_message = "a cell's cloud is aws or gcp."
+  }
   validation {
     condition     = length(distinct([for c in values(var.cells) : c.vpc_cidr])) == length(var.cells)
     error_message = "every cell's vpc_cidr must be distinct: the cells are peered, and peered VPCs may not overlap."
@@ -93,10 +109,64 @@ variable "cells" {
     error_message = "one cell per region: a cell is its region's unit of residency."
   }
   validation {
+    # EACH CELL IN THE REGION ITS ID NAMES — foundation/locals.tf's rule,
+    # `cell_of_region` (#367; keep the copies in step). The id is at most
+    # five characters, which the names it goes into (32 at most) need, and a
+    # one-digit region number guarantees.
+    # AN AWS CELL ONLY: a GCP cell (#97) is named for its own cloud's region
+    # (us-west1 is gusw1), and deploy/multicloud checks it.
     condition = alltrue([
-      for id, c in var.cells : can(regex("^[a-z][a-z0-9]{1,4}$", id)) && can(cidrnetmask(c.vpc_cidr))
+      for id, c in var.cells :
+      can(cidrnetmask(c.vpc_cidr)) && (c.cloud != "aws" || (
+        can(regex("^[a-z]{2}-(north|south|east|west|central|northeast|northwest|southeast|southwest)-[1-9]$", c.region)) &&
+        id == join("", [
+          split("-", c.region)[0],
+          lookup({
+            north     = "n", south = "s", east = "e", west = "w", central = "c",
+            northeast = "ne", northwest = "nw", southeast = "se", southwest = "sw",
+          }, split("-", c.region)[1], "?"),
+          split("-", c.region)[2],
+      ])))
     ])
-    error_message = "a cell id is 2-5 lower-case letters and digits (it goes into names limited to 32 characters), and vpc_cidr is a CIDR."
+    error_message = "each AWS cell's id must be its region shortened by rule (us-west-2 is usw2, eu-central-1 euc1, ap-southeast-5 apse5), in a commercial region of the form area-direction-digit, and vpc_cidr a CIDR."
+  }
+}
+
+variable "jurisdictions" {
+  description = <<-EOT
+    The environment's jurisdictions, by code, and the ISO 3166 countries whose
+    clients Route 53 PINS to each because the law requires it (dns_cells.tf,
+    #367) — globalidp's `eu` holds the EU and EEA countries, answered by
+    whichever of its two cells is nearer and never by a cell outside it. A
+    jurisdiction with no pinned country needs no entry. From the cells file.
+  EOT
+  type = map(object({
+    geolocation_countries = optional(list(string), [])
+  }))
+  default = {}
+  validation {
+    condition = alltrue([
+      for j, v in var.jurisdictions :
+      length(v.geolocation_countries) == 0 ||
+      contains([for c in values(var.cells) : c.jurisdiction], j)
+    ])
+    error_message = "a jurisdiction that pins countries must have a cell: Route 53 would have nowhere to send them."
+  }
+  validation {
+    condition = length(flatten([
+      for v in values(var.jurisdictions) : v.geolocation_countries
+      ])) == length(distinct(flatten([
+        for v in values(var.jurisdictions) : v.geolocation_countries
+    ])))
+    error_message = "a country is pinned to one jurisdiction at most: Route 53 holds one geolocation record per country."
+  }
+  validation {
+    condition = alltrue([
+      for v in values(var.jurisdictions) : alltrue([
+        for c in v.geolocation_countries : can(regex("^[A-Z]{2}$", c))
+      ])
+    ])
+    error_message = "a pinned country is an ISO 3166-1 alpha-2 code, upper case (DE, SG)."
   }
 }
 
@@ -153,9 +223,17 @@ locals {
   this_cell = local.multi ? var.cells[var.cell] : null
   # Every OTHER cell of the environment: the ones this cell's nodes talk to on
   # 8446, whose CIDRs it admits, and which the service is told about.
-  peers      = local.multi ? { for id, c in var.cells : id => c if id != var.cell } : {}
-  is_primary = local.multi && var.cell == var.primary_cell
-  full       = var.cell_phase == "full"
+  peers = local.multi ? { for id, c in var.cells : id => c if id != var.cell } : {}
+  # A MULTI-CLOUD ENVIRONMENT (#97): some cells are GCP's. They are peers
+  # like any other (STS_CELL_PEERS, 8446, the global database), and the
+  # public name's Route 53 tree is written by deploy/multicloud/interconnect
+  # instead of by each cell (dns_cells.tf), because a GCP cell cannot write it.
+  multi_cloud = local.multi && anytrue([for c in values(var.cells) : c.cloud != "aws"])
+  # The private-services ranges GCP's copies of the global tier subscribe
+  # from (#97): admitted by the global database's security group.
+  gcp_global_db_cidrs = compact([for c in values(var.cells) : c.global_db_cidr if c.cloud == "gcp"])
+  is_primary          = local.multi && var.cell == var.primary_cell
+  full                = var.cell_phase == "full"
 
   # A single-cell stack is always `full`. A cell in `base` runs no node, and
   # neither does a restored cell while its conversion is pending
@@ -214,6 +292,10 @@ locals {
     read_addresses    = data.terraform_remote_state.global[0].outputs.read_addresses
     secret_arns       = data.terraform_remote_state.global[0].outputs.secret_arns
     master_secret_arn = data.terraform_remote_state.global[0].outputs.master_secret_arn
+    # A multi-cloud environment's publication (#97); an AWS-only global
+    # stack has no such outputs, and nothing reads these there.
+    publication = try(data.terraform_remote_state.global[0].outputs.publication, "")
+    repl_user   = try(data.terraform_remote_state.global[0].outputs.repl_user, "")
     } : {
     primary_address   = ""
     db_port           = 5432
@@ -222,6 +304,8 @@ locals {
     read_addresses    = {}
     secret_arns       = {}
     master_secret_arn = ""
+    publication       = ""
+    repl_user         = ""
   }
   global_secret_arns = local.multi ? try(local.global.secret_arns[var.cell], {}) : {}
   global_read_host   = local.multi ? try(local.global.read_addresses[var.cell], "") : ""
@@ -252,8 +336,11 @@ locals {
   #                                        in this region (a replica)
   #   STS_CELL_KEK_*                       this cell's OWN key-encryption key,
   #                                        which is replicated nowhere
-  # STS_KEYS_KEK_* stay the global KEK (replicated here), STS_DATABASE_URL
-  # stays the CELL database, and STS_PUBLIC_BASE_URL stays the one public name.
+  # STS_KEYS_KEK_* stay the global KEK (kek.tf, #391: the multi-region KMS
+  # key's ID with THIS region by default, or global/'s secret replicated
+  # here), STS_DATABASE_URL stays the CELL database, and STS_PUBLIC_BASE_URL
+  # stays the one public name. The cell KEK cannot be a KMS key — the service
+  # refuses one for any secret but the KEK — so it stays a secret.
   cell_environment = local.multi ? merge({
     STS_CELL_ID           = var.cell
     STS_CELL_JURISDICTION = local.this_cell.jurisdiction

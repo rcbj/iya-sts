@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -638,8 +638,16 @@ const ACTIVATE_FORM = vz.object({
   // names it explicitly rather than being inferred from whether `code` is
   // present: a person who leaves the code box empty and presses Finish would
   // otherwise be treated as though they had started over.
-  step: vt.opt(vt.oneOf(['setup', 'totp'])),
+  // `key` (2026-10-01) is the security key's ceremony, the step that made
+  // `key_role` mean something: until then choosing a key enrolled nothing.
+  step: vt.opt(vt.oneOf(['setup', 'key', 'totp'])),
   code: vz.string().max(32).optional(),
+  // THE SECURITY KEY'S STEP (2026-10-01), `/portal/keys`' three fields and
+  // for its reasons — see ENROL_KEY_FORM below: where the key lives, the
+  // pending enrolment's id, and the browser's ceremony result as JSON.
+  kind: vt.opt(vt.oneOf(['any', 'platform', 'roaming'])),
+  enrolment_id: vt.opt(vt.base64url),
+  credential: vz.string().max(validation.CAP.TEXT).optional(),
   csrf_token: vt.opt(vt.token)
 });
 
@@ -1270,7 +1278,7 @@ class Portal {
     log.debug("Leaving Portal.page().");
     return '<!DOCTYPE html>\n<html lang="en"><head><meta charset="utf-8">' +
       '<meta name="viewport" content="width=device-width,initial-scale=1">' +
-      '<title>' + self.esc(title) + ' — mock STS</title><style>' + CSS +
+      '<title>' + self.esc(title) + ' — IYA STS</title><style>' + CSS +
       '</style></head><body><div class="wrap' + (wide ? ' wide' : '') + '">' +
       inner +
       // WHICH BUILD THIS IS, on every page of this application including the
@@ -1284,7 +1292,7 @@ class Portal {
       // person's own account, not a console: the number is enough to quote, and
       // the build instant and commit are for whoever they quote it to.
       '<p class="ver" title="' + self.esc(APP_BUILD_INFO) + '">' +
-      'mock-sts <code>' + self.esc(APP_VERSION.version) + '</code></p>' +
+      'iya-sts <code>' + self.esc(APP_VERSION.version) + '</code></p>' +
       '</div></body></html>\n';
   }
 
@@ -1449,7 +1457,7 @@ class Portal {
 
   private activationForm(base, username, token, message, error) {
     const self = this;
-    const { log, totp } = this.deps;
+    const { log, totp, webauthnPolicy } = this.deps;
     log.debug("Entering Portal.activationForm().");
     const csrfless = ''; // the form carries the token instead; see below
     log.debug("Leaving Portal.activationForm().");
@@ -1487,9 +1495,16 @@ class Portal {
       'class="chk"><input type="radio" name="key_role" value="primary"> Use ' +
       'a security key instead of a password</label><label class="chk"><input ' +
       'type="radio" name="key_role" value="mfa"> Use a security key as a ' +
-      'second factor, with the password above</label><p ' +
-      'class="note">Choosing a security key takes you to the enrolment ' +
-      'screen after this step.</p>' +
+      'second factor, with the password above</label>' +
+      // WHERE THE KEY LIVES, `/portal/keys`' choice and for its reason
+      // (`kindChoice()`): a passkey built into this device is what most
+      // people mean by one, and Chrome and Edge offer it only when asked.
+      (webauthnPolicy.settings().enabled
+        ? self.kindChoice(webauthnPolicy.authenticatorKinds())
+        : '') +
+      '<p class="note">Choosing a security key takes you to the enrolment ' +
+      'screen after this step, and your account is not set up until the key ' +
+      'is registered.</p>' +
       // ---------------------------------------------------------------
       // THE AUTHENTICATOR APP (2026-09-10). A CHECKBOX AND NOT A FOURTH
       // RADIO BUTTON, and that is the whole of what it says about itself:
@@ -1533,7 +1548,7 @@ class Portal {
   // The token rides in the form for the same reason it does on the page before
   // this one: nobody is signed in, so there is no session to carry state on.
   // ---------------------------------------------------------------------------
-  private activationTotpForm(username, token, enrolment, error) {
+  private activationTotpForm(username, token, enrolment, error, keyRole?) {
     const self = this;
     const { log } = this.deps;
     log.debug("Entering Portal.activationTotpForm().");
@@ -1542,8 +1557,8 @@ class Portal {
       '<div class="card">' +
       '<h1>Scan this with your authenticator app</h1>' +
       '<p class="sub">Almost done. ' +
-      '<strong>' + self.esc(username) + '</strong> has ' +
-      'a password now; this adds the second factor.</p>' +
+      '<strong>' + self.esc(username) + '</strong> can sign in now; this ' +
+      'adds the second factor.</p>' +
       (error ? '<div class="err">' + self.esc(error) + '</div>' : '') +
       (enrolment.qr
         ? '<p><img src="' + self.esc(enrolment.qr) + '" width="240" ' +
@@ -1565,6 +1580,11 @@ class Portal {
       '<input type="hidden" name="user" value="' + self.esc(username) + '">' +
       '<input type="hidden" name="token" value="' + self.esc(token) + '">' +
       '<input type="hidden" name="step" value="totp">' +
+      // What the first page chose for a security key, carried so the page
+      // that finishes says what was set up (a key registered on the step
+      // before this one is on the entry already).
+      '<input type="hidden" name="key_role" value="' +
+      self.esc(String(keyRole || 'none')) + '">' +
       '<label for="code">The ' + self.esc(String(enrolment.digits)) +
       '-digit code your app is showing now</label>' +
       '<input type="text" id="code" name="code" autocomplete="one-time-code" ' +
@@ -1576,6 +1596,93 @@ class Portal {
       'activation link is not used up until then either — so if you cannot ' +
       'finish now, open the link again and leave the authenticator box ' +
       'unticked.</p></div>');
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE SECURITY KEY'S STEP OF AN ACTIVATION (2026-10-01).
+  //
+  // **UNTIL THIS DAY THE `key_role` RADIO ENROLLED NOTHING.** Choosing *use a
+  // security key instead of a password* spent the link, said the account was
+  // ready, and sent the person to the sign-in screen to enrol the key on first
+  // use — which product mode refuses (`STS-AUTHN-0206`, rightly: there, anybody
+  // who knew a username could register their own key as that person's). So
+  // the only way through was to go back and set a password, which is the
+  // opposite of what was asked for.
+  //
+  // The key is registered HERE instead, on an unauthenticated page, and what
+  // authorises the ceremony is the ACTIVATION LINK — the same credential that
+  // authorises setting the password on the step before. It is `/portal/keys`'
+  // ceremony through `credentials.beginKeyEnrolment()` and
+  // `confirmKeyEnrolment()`, so the challenge, the exclusion list, the
+  // attestation and the claimed write are the ones a signed-in person meets.
+  //
+  // **THE LINK IS NOT SPENT WHILE THIS IS DRAWN**, the authenticator app's
+  // rule (`activationTotpForm()`): somebody whose key will not register still
+  // holds a usable link and can open it again.
+  //
+  // **A SCRIPTED PAGE, AND THE ARGUMENT IS `/portal/keys`' ONE**: a WebAuthn
+  // registration is `navigator.credentials.create()`, which no markup can
+  // make — so `script-src 'self'` naming `/authn/webauthn.js`, the same
+  // resource and not a copy, through `sendKeysPage()`; and a real submit
+  // button underneath that, with the script blocked, posts no credential and
+  // is answered with why.
+  // ---------------------------------------------------------------------------
+  private activationKeyForm(base, username, token, pending, wantsTotp,
+                            error) {
+    const self = this;
+    const { authn, log, webauthnPolicy } = this.deps;
+    log.debug("Entering Portal.activationKeyForm().");
+    // THE BASE IS THE ONE THE REQUEST ARRIVED ON, for `enrolBlock()`'s
+    // reason: a realm's base carries a path and the RP ID is its host.
+    const rpId = authn.rpIdOf(base);
+    const builtIn = pending.kind === 'platform';
+    const hidden = '<input type="hidden" name="user" value="' +
+      self.esc(username) + '"><input type="hidden" name="token" value="' +
+      self.esc(token) + '"><input type="hidden" name="key_role" value="' +
+      self.esc(pending.role) + '">' +
+      (wantsTotp ? '<input type="hidden" name="totp" value="1">' : '');
+    log.debug("Leaving Portal.activationKeyForm().");
+    return self.page('Register your security key',
+      '<div class="card">' +
+      '<h1>' + (builtIn ? 'Use this device\'s authenticator'
+                        : 'Register your security key') + '</h1>' +
+      '<p class="sub">Almost done. <strong>' + self.esc(username) +
+      '</strong> will sign in with this key ' +
+      (pending.role === 'primary'
+        ? 'and no password.' : 'as a second factor, after the password.') +
+      '</p>' +
+      (error ? '<div class="err">' + self.esc(error) + '</div>' : '') +
+      '<p class="note">' + (builtIn
+        ? 'Your browser is about to ask for the authenticator built into ' +
+          'this device — Touch ID, Face ID, Windows Hello or the screen ' +
+          'lock — and save a passkey on it.'
+        : 'Your browser is about to ask for a passkey or a security key.') +
+      ' Your account is not set up, and this activation link is not used ' +
+      'up, until the key is registered.</p>' +
+      '<div id="wa-data"' +
+      ' data-challenge="' + self.esc(pending.challenge) + '"' +
+      ' data-rpid="' + self.esc(rpId) + '"' +
+      ' data-user="' + self.esc(username) + '"' +
+      ' data-allow=""' +
+      ' data-exclude="' + self.esc((pending.exclude || []).join(',')) + '"' +
+      ' data-options="' +
+      self.esc(JSON.stringify(webauthnPolicy.creationOptions(rpId,
+        pending.kind))) +
+      '"' +
+      ' data-mode="create"></div>' +
+      '<button id="wa-go" type="button">Register this key</button>' +
+      '<form method="post" action="' + ACTIVATE + '" id="wa-form">' + hidden +
+      '<input type="hidden" name="step" value="key">' +
+      '<input type="hidden" name="enrolment_id" value="' +
+      self.esc(pending.id) + '">' +
+      '<input type="hidden" name="credential" id="wa-credential">' +
+      // THE REAL BUTTON, `enrolBlock()`'s: with the script blocked it posts
+      // a `key` step with no credential, answered by saying why.
+      '<button class="secondary">My browser did not ask &mdash; tell me ' +
+      'why</button></form>' +
+      '<p class="note">If you cannot register a key now, open your ' +
+      'activation link again and choose differently.</p></div>' +
+      '<script src="' + authn.WEBAUTHN_SCRIPT_PATH + '"></script>');
   }
 
   // ---------------------------------------------------------------------------
@@ -1676,11 +1783,88 @@ class Portal {
   }
 
   // ---------------------------------------------------------------------------
+  // WHAT AN ACTIVATION DOES ONCE ITS KEY IS SETTLED (2026-10-01): the
+  // authenticator app if it was asked for, then the finish. A function
+  // because two POSTs reach it — the setup with no key, and the `key` step
+  // once the ceremony registered one — and the authenticator comes after the
+  // key either way, so a person is never shown a QR code for an account whose
+  // way in is not set up yet.
+  // ---------------------------------------------------------------------------
+  private async activationAfterKey(res, req, base, username, token, keyRole,
+                                   wantsTotp, warning) {
+    const self = this;
+    const { audit, credentials, errorCodes, log, totp,
+            websecurity } = this.deps;
+    log.debug('Entering Portal.activationAfterKey().');
+    const hasPassword = credentials.mechanismsFor(username).password;
+    // ---------------------------------------------------------------------
+    // THE AUTHENTICATOR APP, IF IT WAS ASKED FOR (2026-09-10).
+    //
+    // **THIS RETURNS WITHOUT FINISHING**, which is the whole shape of the
+    // two-step enrolment: the password is set, the link is NOT spent, and the
+    // person is shown a secret they have to prove they hold.
+    // `finishActivation()` runs on the second POST.
+    //
+    // **THE SETTING IS CHECKED HERE AND NOT ONLY WHERE THE BOX IS DRAWN.**
+    // The form is markup and this is the door — `authn.js`'s rule about the
+    // anonymous button, and it applies to every optional control in this
+    // service.
+    //
+    // A REFUSAL DOES NOT LOSE THE ACTIVATION. If the enrolment cannot be
+    // started — the mechanism is off, or product mode will not enrol for
+    // somebody with no entry — the setup FINISHES with what was configured
+    // and says what did not happen. Refusing the whole activation over an
+    // optional second factor would strand somebody who has just set a
+    // perfectly good password.
+    if (wantsTotp && totp.offered()) {
+      const begun = credentials.beginTotpEnrolment(username, { base: base });
+      if (begun.ok) {
+        const enrolment = await self.pendingEnrolmentFor(username, base);
+        if (enrolment) {
+          audit.record({
+            category: 'authentication', action: 'portal.activate.mfa.started',
+            actor: username, outcome: 'success',
+            summary: username + ' started setting up an authenticator app ' +
+                     'while activating',
+            detail: { address: websecurity.addressOf(req) }
+          });
+          log.debug('Leaving Portal.activationAfterKey(). Showing the ' +
+                    'authenticator secret; the link is not spent yet.');
+          return self.send(res, 200,
+                           self.activationTotpForm(username, token,
+                                                   enrolment, warning,
+                                                   keyRole));
+        }
+      }
+      log.warn(errorCodes.tag('STS-PORTAL-0009') +
+               'portal: an authenticator app was asked for while ' +
+               'activating "' + username + '" and could not be started (' +
+               (begun.errors || []).join(' ') + '). The activation ' +
+               'finishes without it rather than being refused.');
+      log.debug('Leaving Portal.activationAfterKey(). No authenticator.');
+      return self.finishActivation(res, base, username, hasPassword, keyRole,
+                                   false, req,
+                                   (warning ? warning + ' ' : '') +
+                                   'The authenticator app could NOT be set ' +
+                                   'up: ' +
+                                   (begun.errors || ['it was refused.'])[0] +
+                                   ' Everything else is set up, and you ' +
+                                   'can add one from your account pages ' +
+                                   'after you sign in.');
+    }
+
+    log.debug('Leaving Portal.activationAfterKey(). Finishing.');
+    return self.finishActivation(res, base, username, hasPassword, keyRole,
+                                 false, req, warning);
+  }
+
+  // ---------------------------------------------------------------------------
   // THE ONE PLACE AN ACTIVATION FINISHES (2026-09-10).
   //
-  // **IT IS A FUNCTION BECAUSE THERE ARE THREE WAYS IN NOW** — a plain setup,
-  // an authenticator confirmed on a second POST, and an authenticator that
-  // could not be started — and every one of them has to spend the link, write
+  // **IT IS A FUNCTION BECAUSE THERE ARE SEVERAL WAYS IN NOW** — a plain
+  // setup, a security key registered on a second POST (2026-10-01), an
+  // authenticator confirmed on a later one, and either of those that could
+  // not be started — and every one of them has to spend the link, write
   // the audit row and draw the same page. Three copies of that is two chances
   // for one of them to leave a spent-looking link that still works.
   // ---------------------------------------------------------------------------
@@ -1708,7 +1892,7 @@ class Portal {
              '). The activation link is now spent.');
     // CAEP credential-change for what setup created (#145): the first
     // password and the authenticator app, each a credential the person now
-    // holds. A security key is enrolled later, by its own door.
+    // holds. A security key's is sent by the `key` step that registered it.
     if (password) {
       self.deps.accountSignals.credentialChanged({ username: username,
         credentialType: 'password', changeType: 'create',
@@ -1813,16 +1997,21 @@ class Portal {
           'why it can show them to you and why it can never show you your ' +
           'password.</p>'
         : '') +
-      (keyRole !== 'none'
-        ? '<p>You asked to use a security key' +
-          (keyRole === 'mfa' ? ' as a second factor' : ' instead of a ' +
-            'password') +
-          '. A key is enrolled DURING A SIGN-IN rather than from your ' +
-          'account pages: tick the security-key box at the sign-in screen ' +
-          'and the first use enrols it. There is no enrol button on your ' +
-          'Security keys page, because a WebAuthn ceremony belongs to a ' +
-          'sign-in — which is the same reason nothing here links to ' +
-          '/authn/webauthn.</p>'
+      // THE KEY IS REGISTERED BY NOW (2026-10-01) — the `key` step finishes
+      // only once it is on the entry — so this says how to USE it. It said
+      // the key would be enrolled at the sign-in screen on first use, which
+      // product mode refuses for a key instead of a password.
+      (keyRole === 'primary'
+        ? '<p><strong>Your security key is registered and is how you sign ' +
+          'in.</strong> At the sign-in screen, type your username, tick ' +
+          '<em>Sign in with the security key alone</em> and leave the ' +
+          'password empty. Add a second key on your Security keys page once ' +
+          'you are in, so that losing this one is not a locked account.</p>'
+        : '') +
+      (keyRole === 'mfa'
+        ? '<p><strong>Your security key is registered as a second ' +
+          'factor.</strong> You will be asked for it every time you sign in, ' +
+          'after your password.</p>'
         : '') +
       '<p><a href="' + self.esc(next) + '">Sign in</a></p></div>'));
   }
@@ -2677,13 +2866,20 @@ class Portal {
         : 'You have no security keys enrolled.') + '</p>' +
       (keys.length
         ? '<table class="grid"><tr><th>Key</th><th>Role</th>' +
-          '<th>Kind</th><th>Authenticator</th><th>Enrolled</th><th></th>' +
-          '</tr>' +
+          '<th>Kind</th><th>Algorithm</th><th>Authenticator</th>' +
+          '<th>Enrolled</th><th></th></tr>' +
           keys.map(function (one) {
+            // THE SIGNATURE ALGORITHM (2026-10-01): the one this key signs
+            // with, which is the one every sign-in with it is verified with.
+            const algorithm = credentials.keyAlgorithm(one);
             return '<tr><td>' +
               self.esc(one.label || 'security key') + '</td>' +
               '<td>' + self.esc(one.role) + '</td>' +
               '<td>' + self.esc(credentials.keyKind(one).text) + '</td>' +
+              '<td><code>' + self.esc(algorithm.text) + '</code>' +
+              (algorithm.postQuantum ? ' post-quantum' : '') +
+              (algorithm.insecure ? ' <strong>insecure</strong>' : '') +
+              '</td>' +
               '<td>' + self.attestationText(one.attestation) + '</td>' +
               '<td>' +
               self.esc(new Date(one.enrolledAt || 0).toISOString()
@@ -4951,8 +5147,142 @@ class Portal {
         // again. It is answered by the prompt being standing rather than a
         // one-off — the card stays in its warning state for as long as it is
         // true.
-        return self.finishActivation(res, base, username, true, keyRole, true,
+        // WHETHER A PASSWORD IS HELD IS READ OFF THE ENTRY, since a key
+        // instead of a password (2026-10-01) can reach this step with none.
+        return self.finishActivation(res, base, username,
+                                     credentials.mechanismsFor(username)
+                                       .password, keyRole, true,
                                      req, null, null);
+      }
+
+      // ---------------------------------------------------------------------
+      // THE SECURITY KEY'S CEREMONY, ANSWERED (2026-10-01).
+      //
+      // `/portal/keys`' `finish`, authorised by the link rather than by a
+      // session — see `activationKeyForm()`. Handled before the password
+      // guards for the authenticator step's reason: this POST carries no
+      // password, and the one chosen on the first POST is already set.
+      //
+      // **ANY FAILURE DRAWS A FRESH CEREMONY** rather than the form before
+      // it: a person who declined the prompt, touched an enrolled key or
+      // picked an authenticator this browser does not have is one step from
+      // done, and the link is still unspent. A fresh challenge each time,
+      // because one spent on a refused attestation is not worth keeping.
+      // ---------------------------------------------------------------------
+      if (step === 'key') {
+        const waitingKey = credentials.pendingKeyEnrolmentFor(username);
+        if (!waitingKey) {
+          log.debug('Leaving POST ' + ACTIVATE + '. The key enrolment had ' +
+                    'expired.');
+          errorCodes.mark(res, 'STS-PORTAL-0102');
+          return self.send(res, 400, self.activationForm(
+            base, username, token, null,
+            'That security key setup expired before it was finished. ' +
+            'Nothing was lost — choose again below.'));
+        }
+        const keyKind = waitingKey.kind || '';
+        let ceremony = null;
+        try {
+          ceremony = JSON.parse(String(body.credential || 'null'));
+        } catch (e) {
+          log.debug('Caught in POST ' + ACTIVATE + ': ' +
+                    ((e && e.message) || e));
+          // Not JSON: the real button under the script was pressed, or a
+          // hand-made POST. The sentence below answers both.
+          ceremony = null;
+        }
+        let refused = '';
+        let refusedCode = '';
+        let enrolled = null;
+        const rpRefusal = authn.rpIdProblem(base);
+        if (!ceremony) {
+          refused = 'Your browser did not run the ceremony, so there is ' +
+                    'nothing to register. This step needs JavaScript — a ' +
+                    'security key is created by the browser and no form can ' +
+                    'do it.';
+          refusedCode = 'STS-PORTAL-0102';
+        } else if (rpRefusal) {
+          refused = rpRefusal;
+          refusedCode = 'STS-PORTAL-0102';
+        } else {
+          let done = null;
+          try {
+            done = await credentials.confirmKeyEnrolment(username,
+              String(body.enrolment_id || ''), ceremony,
+              { origin: authn.expectedOriginFor(base, ceremony),
+                rpId: authn.rpIdOf(base) });
+          } catch (e) {
+            log.debug('Caught in POST ' + ACTIVATE + ': ' +
+                      ((e && e.message) || e));
+            done = { ok: false, reason: 'error',
+                     errors: ['The security key could not be registered.'] };
+          }
+          if (done.ok) {
+            enrolled = done;
+          } else {
+            refused = (done.errors ||
+                       ['The security key could not be registered.'])[0];
+            refusedCode = self.innerCode(done) || 'STS-PORTAL-0102';
+            if (done.reason === 'browser' && keyKind === 'platform') {
+              refused += ' This browser may have no authenticator built ' +
+                         'into this device. Open your activation link again ' +
+                         'and choose "A security key I carry" or "Let my ' +
+                         'browser choose".';
+            }
+          }
+        }
+        if (!enrolled) {
+          audit.record({
+            category: 'authentication', action: 'portal.activate.key.refused',
+            errorCode: refusedCode, actor: username, outcome: 'failure',
+            summary: 'a security key was not registered during activation',
+            detail: { reason: refused, address: websecurity.addressOf(req) }
+          });
+          credentials.abandonKeyEnrolment(username);
+          const again = credentials.beginKeyEnrolment(username, {
+            role: waitingKey.role, kind: keyKind, label: waitingKey.label });
+          const fresh = again.ok
+            ? credentials.pendingKeyEnrolmentFor(username) : null;
+          log.debug('Leaving POST ' + ACTIVATE + '. The key was not ' +
+                    'registered.');
+          if (!fresh) {
+            errorCodes.mark(res, refusedCode || 'STS-PORTAL-0102');
+            return self.send(res, 400, self.activationForm(
+              base, username, token, null, refused));
+          }
+          errorCodes.mark(res, refusedCode || 'STS-PORTAL-0102');
+          return self.sendKeysPage(res, 400, self.activationKeyForm(
+            base, username, token, fresh, wantsTotp, refused));
+        }
+        const heldKey = credentials.keysOf(username).filter(function (one) {
+          return one.credentialId === String(enrolled.credentialId || '');
+        })[0] || null;
+        self.deps.accountSignals.credentialChanged({ username: username,
+          credentialType: self.deps.accountSignals.keyCredentialType(heldKey),
+          fido2Aaguid: String((heldKey && heldKey.aaguid) || ''),
+          friendlyName: String((heldKey && heldKey.label) || ''),
+          changeType: 'create', initiatingEntity: 'user',
+          via: 'portal activation',
+          reasonAdmin: username + ' registered a security key when ' +
+                       'activating their account.',
+          reasonUser: 'You registered a security key for your new account.' });
+        audit.record({
+          category: 'authentication', action: 'portal.activate.key.enrolled',
+          actor: username, outcome: 'success',
+          summary: username + ' registered a security key as a ' +
+                   enrolled.role + ' credential while activating',
+          detail: { role: enrolled.role,
+                    // Its signature algorithm (2026-10-01).
+                    algorithm: credentials.keyAlgorithm(heldKey)
+                      .text,
+                    address: websecurity.addressOf(req) }
+        });
+        log.info('portal: ' + username + ' registered a "' + enrolled.role +
+                 '" security key while spending an activation link.');
+        log.debug('Leaving POST ' + ACTIVATE + '. The key is registered.');
+        return self.activationAfterKey(res, req, base, username, token,
+                                       String(enrolled.role || keyRole),
+                                       wantsTotp, null);
       }
 
       if (password && password !== confirm) {
@@ -4991,60 +5321,60 @@ class Portal {
       }
 
       // ---------------------------------------------------------------------
-      // THE AUTHENTICATOR APP, IF IT WAS ASKED FOR (2026-09-10).
+      // THE SECURITY KEY, IF ONE WAS CHOSEN (2026-10-01).
       //
-      // **THIS RETURNS WITHOUT FINISHING**, which is the whole shape of the
-      // two-step enrolment: the password is set, the link is NOT spent, and the
-      // person is shown a secret they have to prove they hold.
-      // `finishActivation()` runs on the second POST.
+      // **THIS RETURNS WITHOUT FINISHING**, the authenticator app's shape:
+      // the ceremony is drawn, the link is NOT spent, and the `key` step above
+      // finishes — or goes on to the authenticator app, which comes after it.
       //
-      // **THE SETTING IS CHECKED HERE AND NOT ONLY WHERE THE BOX IS DRAWN.**
-      // The form is markup and this is the door — `authn.js`'s rule about the
-      // anonymous button, and it applies to every optional control in this
-      // service.
-      //
-      // A REFUSAL DOES NOT LOSE THE ACTIVATION. If the enrolment cannot be
-      // started — the mechanism is off, or product mode will not enrol for
-      // somebody with no entry — the setup FINISHES with what was configured
-      // and says what did not happen. Refusing the whole activation over an
-      // optional second factor would strand somebody who has just set a
-      // perfectly good password.
-      if (wantsTotp && totp.offered()) {
-        const begun = credentials.beginTotpEnrolment(username, { base: base });
-        if (begun.ok) {
-          const enrolment = await self.pendingEnrolmentFor(username, base);
-          if (enrolment) {
-            audit.record({
-              category: 'authentication', action: 'portal.activate.mfa.started',
-              actor: username, outcome: 'success',
-              summary: username + ' started setting up an authenticator app ' +
-                       'while activating',
-              detail: { address: websecurity.addressOf(req) }
-            });
-            log.debug('Leaving POST ' + ACTIVATE + '. Showing the ' +
-                      'authenticator secret; the link is not spent yet.');
-            return self.send(res, 200,
-                             self.activationTotpForm(username, token,
-                                                     enrolment, null));
-          }
+      // A KEY THAT CANNOT BE STARTED is refused where it was the ONLY way in
+      // (a key instead of a password, and no password set) — finishing then
+      // would be the account nobody can sign in to that this step exists to
+      // stop. Beside a password it is the authenticator app's rule: the setup
+      // finishes and says what did not happen.
+      if (keyRole !== 'none') {
+        const begunKey = credentials.beginKeyEnrolment(username, {
+          role: keyRole, kind: String(body.kind || '') });
+        const pendingKey = begunKey.ok
+          ? credentials.pendingKeyEnrolmentFor(username) : null;
+        if (pendingKey) {
+          audit.record({
+            category: 'authentication', action: 'portal.activate.key.started',
+            actor: username, outcome: 'success',
+            summary: username + ' started registering a security key while ' +
+                     'activating',
+            detail: { role: pendingKey.role, kind: pendingKey.kind || 'any',
+                      address: websecurity.addressOf(req) }
+          });
+          log.debug('Leaving POST ' + ACTIVATE + '. Showing the security ' +
+                    'key ceremony; the link is not spent yet.');
+          return self.sendKeysPage(res, 200, self.activationKeyForm(
+            base, username, token, pendingKey, wantsTotp, null));
         }
-        log.warn(errorCodes.tag('STS-PORTAL-0009') +
-                 'portal: an authenticator app was asked for while ' +
-                 'activating "' + username + '" and could not be started (' +
-                 (begun.errors || []).join(' ') + '). The activation ' +
-                 'finishes without it rather than being refused.');
-        return self.finishActivation(res, base, username, !!password, keyRole,
-                                     false, req,
-                                     'The authenticator app could NOT be set ' +
-                                     'up: ' +
-                                     (begun.errors || ['it was refused.'])[0] +
-                                     ' Everything else is set up, and you ' +
-                                     'can add one from your account pages ' +
-                                     'after you sign in.');
+        const why = (begunKey.errors || ['it was refused.'])[0];
+        if (!password) {
+          log.debug('Leaving POST ' + ACTIVATE + '. No key could be started ' +
+                    'and there is no password.');
+          errorCodes.mark(res, 'STS-PORTAL-0101');
+          return self.send(res, 400, self.activationForm(
+            base, username, token, null,
+            'A security key cannot be set up here: ' + why + ' Set a ' +
+            'password instead.'));
+        }
+        log.warn(errorCodes.tag('STS-PORTAL-0100') +
+                 'portal: a security key was asked for while activating "' +
+                 username + '" and could not be started (' + why + '). The ' +
+                 'activation goes on without it rather than being refused.');
+        return self.activationAfterKey(res, req, base, username, token,
+                                       'none', wantsTotp,
+                                       'The security key could NOT be set ' +
+                                       'up: ' + why + ' Everything else is ' +
+                                       'set up, and you can add one on your ' +
+                                       'Security keys page after you sign in.');
       }
 
-      return self.finishActivation(res, base, username, !!password, keyRole,
-                                   false, req);
+      return self.activationAfterKey(res, req, base, username, token, keyRole,
+                                     wantsTotp, null);
     });
 
     // ASYNCHRONOUS SINCE 2026-09-14 (#46), for GET ACTIVATE's reason.
@@ -6525,6 +6855,9 @@ class Portal {
             summary: username + ' enrolled a security key as a ' + done.role +
                      ' credential',
             detail: { role: done.role, held: done.held,
+                      // Its signature algorithm (2026-10-01).
+                      algorithm: credentials.keyAlgorithm(enrolled)
+                        .text,
                       address: websecurity.addressOf(req) }
           });
           log.info('portal: ' + username + ' enrolled a "' + done.role +

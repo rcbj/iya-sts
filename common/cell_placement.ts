@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -120,6 +120,9 @@ const ROWS: Row[] = [
     why: 'the realm\'s DID document is the global tier\'s' },
   { prefix: '/did', strategy: 'local',
     why: 'the realm\'s DID documents are the global tier\'s' },
+  { prefix: '/applications', strategy: 'local',
+    why: 'an application\'s DID document is drawn from its entry, and ' +
+         'ou=applications is the global tier\'s' },
   { prefix: '/issuer', strategy: 'local',
     why: 'issuer metadata is the global tier\'s' },
   { prefix: '/bbs', strategy: 'local',

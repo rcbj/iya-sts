@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: BUSL-1.1
 
 locals {
   account_id = data.aws_caller_identity.current.account_id
@@ -8,8 +8,8 @@ locals {
   # `aws_region`, as it always was.
   region = local.multi ? local.this_cell.region : var.aws_region
 
-  # Every name starts `mock-sts-<environment>`; the deployer policy scopes
-  # ELB, ECS, RDS and IAM to `mock-sts-*`. Roles take `mock-sts-env-` so the
+  # Every name starts `iya-sts-<environment>`; the deployer policy scopes
+  # ELB, ECS, RDS and IAM to `iya-sts-*`. Roles take `iya-sts-env-` so the
   # policy can tell an environment's roles from the deployer's own.
   #
   # A CELL IS IN EVERY NAME THAT MUST BE UNIQUE (#98): IAM roles are global,
@@ -73,7 +73,7 @@ locals {
   tls_keyfile = "/var/run/sts-tls/key.pem"
 
   # WHERE AN UPLOADED RISK DATASET IS WRITTEN WHILE IT IS IMPORTED (#214): the
-  # task's EBS volume (ecs.tf), mounted in mock-sts and named to the service
+  # task's EBS volume (ecs.tf), mounted in iya-sts and named to the service
   # as `risk.uploadDirectory`. The same path the compose stacks mount their
   # volume at, `risk.uploadDirectory`'s default resolved against the package
   # root, so a reader of either finds the other. Spelt once for the reason the

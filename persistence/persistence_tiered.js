@@ -1,6 +1,6 @@
 // @ts-check
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -80,7 +80,10 @@ const BOTH_METHODS = ['open', 'close', 'loadDirectory', 'saveDirectory',
                       'readEntry', 'loadMinted', 'saveMinted', 'readMinted',
                       'readMintedMany', 'purgeMinted', 'purgeTombstones',
                       'changeRowsWritten', 'adoptOrigin', 'renewOrigin',
-                      'releaseOrigin', 'setOriginLost'];
+                      'releaseOrigin', 'setOriginLost',
+                      // What is sealed under a data encryption key (#391):
+                      // counted and re-sealed in both databases.
+                      'countSealed', 'countAllSealed', 'resealSealed'];
 
 // The login name of a person's entry: the `uid` RDN of its DN, which is how
 // this directory names a person, or its `uid` attribute.
@@ -745,6 +748,59 @@ function create(options) {
       });
   };
 
+  // WHAT IS SEALED UNDER A DATA ENCRYPTION KEY (#391 P2), in BOTH tiers:
+  // a person's rows are in the cell's database and the keys and realms in
+  // the global one, and a DEK may be destroyed only when neither holds a
+  // value under it.
+  driver.countSealed = function (dekIds) {
+    log.debug("Entering tiered countSealed().");
+    log.debug("Leaving tiered countSealed().");
+    return Promise.all([globalDriver.countSealed(dekIds),
+                        cellDriver.countSealed(dekIds)]).then(function (both) {
+      const out = {};
+      both.forEach(function (one) {
+        Object.keys(one || {}).forEach(function (id) {
+          out[id] = (out[id] || 0) + (Number(one[id]) || 0);
+        });
+      });
+      return out;
+    });
+  };
+  driver.countAllSealed = function () {
+    log.debug("Entering tiered countAllSealed().");
+    log.debug("Leaving tiered countAllSealed().");
+    return Promise.all([globalDriver.countAllSealed(),
+                        cellDriver.countAllSealed()]).then(function (both) {
+      const out = {};
+      both.forEach(function (one) {
+        Object.keys(one || {}).forEach(function (id) {
+          out[id] = (out[id] || 0) + (Number(one[id]) || 0);
+        });
+      });
+      return out;
+    });
+  };
+  driver.resealSealed = function (dekIds, reseal, options) {
+    log.debug("Entering tiered resealSealed().");
+    log.debug("Leaving tiered resealSealed().");
+    return globalDriver.resealSealed(dekIds, reseal, options)
+      .then(function (first) {
+        return cellDriver.resealSealed(dekIds, reseal, options)
+          .then(function (second) {
+            const out = { changed: [] };
+            [first, second].forEach(function (one) {
+              Object.keys(one || {}).forEach(function (k) {
+                if (k === 'changed') {
+                  out.changed = out.changed.concat(one.changed || []);
+                  return;
+                }
+                out[k] = (out[k] || 0) + (Number(one[k]) || 0);
+              });
+            });
+            return out;
+          });
+      });
+  };
   driver.changeRowsWritten = function () {
     log.debug("Entering tiered changeRowsWritten().");
     log.debug("Leaving tiered changeRowsWritten().");

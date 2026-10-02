@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: BUSL-1.1
 #
 # ===========================================================================
 # THE `cells` MODE'S LAYER (#98, 2026-09-28): TWO CELLS OF ONE SERVICE.
@@ -102,7 +102,7 @@ services:
   # and the script.
   sts-cell-link:
     container_name: ${STS_CELL_LINK_CONTAINER_NAME:-sts-docker-tests-cell-link}
-    image: ${STS_TESTS_IMAGE:-${IMAGE_REGISTRY:-ghcr.io/rcbj/iya-sts}/mock-sts-tests:${IMAGE_TAG:-latest}}
+    image: ${STS_TESTS_IMAGE:-${IMAGE_REGISTRY:-ghcr.io/rcbj/iya-sts}/iya-sts-tests:${IMAGE_TAG:-latest}}
     restart: "no"
     command: ["node", "tests/tools/cell_link.js"]
     environment:

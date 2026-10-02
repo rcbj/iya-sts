@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -525,9 +525,14 @@ class Scep {
       return self.acrossNodes(key, fn);
     };
     const run = before.then(guarded, guarded);
+    // The NEXT request's turn waits on this one whether it succeeded or
+    // not; the failure itself reaches this call's caller through `run`, and
+    // is only noted here (#355).
     const settled = run.then(function () {
       return undefined;
-    }, function () {
+    }, function (e) {
+      log.debug('Caught in Scep.serialized(): ' + ((e && e.message) || e) +
+                '. Returned to the caller; the next turn proceeds.');
       return undefined;
     });
     inflight.set(key, settled);

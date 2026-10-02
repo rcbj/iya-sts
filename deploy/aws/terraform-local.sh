@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: BUSL-1.1
 #
 # File: deploy/aws/terraform-local.sh
 #
@@ -29,6 +29,9 @@
 #     cell and the global stack, in order (entrypoint.sh, orchestrate_cells)
 #   deploy/aws/terraform-local.sh testidpna destroy                  # likewise
 #   TF_CELL=cac1 deploy/aws/terraform-local.sh testidpna output      # one cell
+#   IMAGE_TAG=<tag> deploy/aws/terraform-local.sh globalidp apply    # the
+#     six-region test case (#367); after the primary, each step's cells at
+#     once — TF_CELL_PARALLEL=<n> to take fewer at a time (6)
 #   TF_STACK=global deploy/aws/terraform-local.sh testidpna output   # global
 #   TF_CELL=cac1 TF_STACK=spiffe-realm REALM=default … testidpna apply
 #   TF_CONVERT=1 IMAGE_TAG=<tag> deploy/aws/terraform-local.sh testidpna apply
@@ -73,7 +76,7 @@
 # ---------------------------------------------------------------------------
 set -euo pipefail
 
-IMAGE_NAME="${IMAGE_NAME:-mock-sts-terraform}"
+IMAGE_NAME="${IMAGE_NAME:-iya-sts-terraform}"
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
 TF_ENV="${TF_ENV:-${1:-dev}}"
@@ -160,6 +163,11 @@ then
     awk -F, '{ for (i = 1; i <= NF; i++) if ($i != "") printf "%s\"%s\"", (n++ ? "," : ""), $i }')"
   echo "==> The load balancer will admit ${ALLOWED_CIDR}" >&2
   TF_VARS=(-e "TF_VAR_image_tag=${IMAGE_TAG}" -e "TF_VAR_allowed_cidrs=[${ALLOWED_JSON}]")
+  # A single-region RESTORE (environment/variables.tf): named on the one apply
+  # that restores, never in the env file.
+  for v in TF_VAR_db_snapshot_identifier TF_VAR_carryover_secret; do
+    [ -z "${!v:-}" ] || TF_VARS+=(-e "${v}=${!v}")
+  done
 fi
 
 if [ "${TF_STACK}" = "spiffe-realm" ];
@@ -206,7 +214,7 @@ echo "==> Building ${IMAGE_NAME}" >&2
 # and killing the client leaves the container running without this script's
 # credentials endpoint. `wait` returns early on a trapped signal, hence the
 # loop.
-CONTAINER_NAME="mock-sts-terraform-${TF_ENV}${TF_CELL:+-${TF_CELL}}${REALM:+-${REALM}}-$$"
+CONTAINER_NAME="iya-sts-terraform-${TF_ENV}${TF_CELL:+-${TF_CELL}}${REALM:+-${REALM}}-$$"
 relay() {
   echo "==> Interrupted: telling terraform to stop cleanly and release the lock" >&2
   "${DOCKER_CMD[@]}" kill --signal INT "${CONTAINER_NAME}" >/dev/null 2>&1 || true
@@ -223,6 +231,7 @@ trap relay INT TERM
   -e TF_CELL_PHASE="${TF_CELL_PHASE:-}" \
   -e TF_CONVERT="${TF_CONVERT:-}" \
   -e TF_CONVERT_TIMEOUT="${TF_CONVERT_TIMEOUT:-}" \
+  -e TF_CELL_PARALLEL="${TF_CELL_PARALLEL:-}" \
   -e TF_IMPORT_ADDRESS="${TF_IMPORT_ADDRESS:-}" \
   -e TF_IMPORT_ID="${TF_IMPORT_ID:-}" \
   "${TF_VARS[@]}" \

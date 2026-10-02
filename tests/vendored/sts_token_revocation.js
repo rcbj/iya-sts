@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 "use strict";
 //
@@ -200,7 +200,7 @@ function application(client, method) {
   }
   log.debug("Leaving application().");
   return { identifier: client.client_id, kind: "oauth2-client",
-           name: client.client_id, protocols: ["oauth2"], fields: fields };
+           name: client.client_id, protocols: ["oauth2", "oidc"], fields: fields };
 }
 
 async function setUp() {

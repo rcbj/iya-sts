@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -131,6 +131,8 @@ function fakeDriver(origin) {
       upserts.forEach(function (row) {
         rows.set(id(row.handle, row.realm, row.key),
                  { handle: row.handle, realm: row.realm, key: row.key,
+                   // The name, sealed, beside its digest (#222).
+                   keySealed: row.keySealed || '',
                    body: row.body, writtenAt: Date.now(),
                    expiresAt: row.expiresAt === undefined ? null
                      : row.expiresAt });
@@ -353,6 +355,22 @@ async function body(t, dir) {
           'service whose entire subject is credentials is the wrong thing to ' +
           'ship');
 
+  // THE NAME IS NOT IN THE CLEAR EITHER (#222): a session id is the cookie,
+  // and the key column held it. It is the name's keyed digest now, with the
+  // name sealed beside it.
+  let keyedRow = null;
+  driver.rows.forEach(function (row) {
+    if (minted.nameOfRow(row) === 'sid-3') {
+      keyedRow = row;
+    }
+  });
+  t.check(keyedRow && keyedRow.key !== 'sid-3' &&
+          keyedRow.key.indexOf('sid-3') < 0 &&
+          /^\$aes(gcm|siv)\$2\$/.test(keyedRow.keySealed) &&
+          keyedRow.keySealed.indexOf('sid-3') < 0,
+          'AND NOR IS ITS NAME: the key column is a keyed digest and the ' +
+          'session id is only in the sealed name beside it',
+          keyedRow ? String(keyedRow.key).slice(0, 20) : 'no row');
   sessions.clear();
   t.equal(sessions.size, 0, 'the live store is emptied, standing in for a ' +
                             'restart');
@@ -362,6 +380,44 @@ async function body(t, dir) {
   t.equal(sessions.get('sid-1'), undefined,
           'while a key that was DELETED before the flush does not come back ' +
           '— which is the half a write-only journal would get wrong');
+
+  // -------------------------------------------------------------------------
+  // 3b. MINTED BEFORE THE KEYSTORE STARTED IS DEFERRED, NOT DROPPED (#357).
+  //
+  // A product process opens its store, and mints, before `keystore.start()`
+  // has read the key-encryption key. The flush then had nothing to seal with
+  // and CLEARED the journal, and the restore after the start cleared it again:
+  // what was minted in that window was never written. Now the flush keeps it,
+  // the restore keeps it, and the next flush writes it.
+  // -------------------------------------------------------------------------
+  t.log.info('=== minted before the keystore started is deferred (#357) ===');
+  keystore.reset();
+  t.check(!keystore.hasStarted() && !keystore.sealed(),
+          'a keystore that has not started yet holds no key');
+  sessions.set('sid-357', { user: 'early' });
+  const early = await minted.flush();
+  const hasEarlyRow = function () {
+    let found = false;
+    driver.rows.forEach(function (row) {
+      if (minted.nameOfRow(row) === 'sid-357') {
+        found = true;
+      }
+    });
+    return found;
+  };
+  t.check(early.deferred === true && !hasEarlyRow(),
+          'a flush before the keystore starts is DEFERRED and writes nothing',
+          JSON.stringify(early));
+  await armKeystore(dir);
+  t.check(keystore.hasStarted(), 'the keystore has started');
+  await minted.restore();
+  await minted.flush();
+  t.check(hasEarlyRow(),
+          'and once the keystore has started and the store is restored, the ' +
+          'session minted before the start is written — not dropped, which ' +
+          'is what clearing the journal at the deferred flush used to do');
+  t.equal((sessions.get('sid-357') || {}).user, 'early',
+          'and it is still live in this process');
 
   // -------------------------------------------------------------------------
   // 4. A RESTORE MUST NOT JOURNAL WHAT IT JUST READ.
@@ -494,8 +550,11 @@ async function body(t, dir) {
   for (let i = 0; i < 4; i++) {
     await minted.flush();
   }
-  const expectedKey = Buffer.from('alice', 'utf8').toString('base64url') + '.' +
-                      Buffer.from('process-a', 'utf8').toString('base64url');
+  // The `own` store's two-part name, and the key column it is filed under —
+  // its keyed digest since #222.
+  const expectedKey = minted.keyColumnOf('test.retry', 'default',
+    Buffer.from('alice', 'utf8').toString('base64url') + '.' +
+    Buffer.from('process-a', 'utf8').toString('base64url'));
   t.equal(offered.length, 4,
           'the key is offered on every attempt, the three that failed and ' +
           'the one that did not', JSON.stringify(offered.map(function (k) {
@@ -554,7 +613,9 @@ async function body(t, dir) {
   await minted.flush();
   t.equal(refusedWrites, 0,
           'no write carried the NUL key, so the store never refused one');
-  t.check(strict.rows.has('test.nulkey\u0000default\u0000ordinary'),
+  t.check(strict.rows.has('test.nulkey\u0000default\u0000' +
+                          minted.keyColumnOf('test.nulkey', 'default',
+                                             'ordinary')),
           'and the row beside it was written');
   t.check(nulKeyed.get('\u0000issuer') &&
           nulKeyed.get('\u0000issuer').issuer === 'https://x.example',
@@ -578,8 +639,11 @@ async function body(t, dir) {
   await minted.flush();
   // What the STORE holds for the kept store — what a restore can put back.
   let sessionRows = 0;
+  // A row whose sealed NAME does not open is not one a restore can put back:
+  // section 3b armed a second keystore, and this fixture's key store keeps
+  // nothing, so rows written before it are under a key that is gone (#222).
   driver.rows.forEach(function (row) {
-    if (row.handle === 'test.sessions') {
+    if (row.handle === 'test.sessions' && minted.nameOfRow(row) !== null) {
       sessionRows++;
     }
   });
@@ -642,7 +706,8 @@ async function body(t, dir) {
   expiring.set('forever', { note: 'no expiry' });
   await minted.flush();
   const stored = function (key) {
-    return driver.rows.get(['test.expiring', 'default', key].join('\u0000'));
+    return driver.rows.get(['test.expiring', 'default',
+      minted.keyColumnOf('test.expiring', 'default', key)].join('\u0000'));
   };
   t.check(stored('dead') && stored('dead').expiresAt === now - 1000 &&
           stored('live').expiresAt === now + 60 * 60 * 1000 &&
@@ -690,7 +755,8 @@ async function body(t, dir) {
   });
   throwing.set('k', { a: 1 });
   await minted.flush();
-  t.equal(driver.rows.get(['test.expiring-throws', 'default', 'k']
+  t.equal(driver.rows.get(['test.expiring-throws', 'default',
+    minted.keyColumnOf('test.expiring-throws', 'default', 'k')]
                           .join('\u0000')).expiresAt, null,
           'a hook that throws writes the row as NOT expiring — kept, never ' +
           'lost');

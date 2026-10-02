@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -151,7 +151,7 @@ function childMain() {
     credentials.setPassword('pcp-alice', PASSWORD);
     credentials.setPassword('pcp-bare', PASSWORD);
     applications.createApplication({ identifier: 'pcp-public',
-      protocols: ['oauth2'],
+      protocols: ['oauth2', 'oidc'],
       fields: { oauthClientId: 'pcp-public', oauthClientSecret: '',
                 oauthRedirectUri: [REDIRECT],
                 oauthTokenEndpointAuthMethod: 'none',
@@ -160,7 +160,7 @@ function childMain() {
     applications.updateApplication('pcp-public', {
       attribute: 'oauthClientSecret', mode: 'set', value: '' });
     applications.createApplication({ identifier: 'pcp-confidential',
-      protocols: ['oauth2'],
+      protocols: ['oauth2', 'oidc'],
       fields: { oauthClientId: 'pcp-confidential', oauthClientSecret: SECRET,
                 oauthRedirectUri: [REDIRECT],
                 oauthTokenEndpointAuthMethod: 'client_secret_post',
@@ -457,7 +457,7 @@ function childMain() {
         fields: { oauthClientId: 'pcp-by-hand',
                   oauthRedirectUri: [REDIRECT] } });
       applications.createApplication({ identifier: 'pcp-by-hand-secret',
-        protocols: ['oauth2'],
+        protocols: ['oauth2', 'oidc'],
         fields: { oauthClientId: 'pcp-by-hand-secret',
                   oauthClientSecret: SECRET,
                   oauthRedirectUri: [REDIRECT] } });

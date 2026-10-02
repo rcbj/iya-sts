@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -337,9 +337,16 @@ const driver = {
   readMinted: function (handle, realm, key) { return Promise.resolve(rows.get(key) || null); },
   purgeMinted: function () { return Promise.resolve(0); }
 };
+// Filed as the driver files a row since #222: under the key column (the
+// name's keyed digest where a key is held) with the name sealed beside it.
 function put(key, value) {
-  rows.set(key, { handle: HANDLE, realm: '', key: key, writtenAt: Date.now(),
-                  body: keystore.seal(JSON.stringify(value), 'minted-rows') });
+  const column = minted.keyColumnOf(HANDLE, '', key);
+  rows.set(column, { handle: HANDLE, realm: '', key: column,
+                     keySealed: column === key ? ''
+                       : keystore.seal(key, 'minted-key', undefined,
+                                       { realm: '' }),
+                     writtenAt: Date.now(),
+                     body: keystore.seal(JSON.stringify(value), 'minted-rows') });
 }
 function change(key) { return { key: b64(HANDLE) + '.' + b64(key), realm: '' }; }
 function view(record) {
@@ -428,10 +435,10 @@ function view(record) {
   report.afterReplicatedSignOut = view(p.find(spnParts));
 
   // A removal of krbtgt arrives, and a removal of dana.
-  rows.delete(krbtgtKey);
+  rows.delete(minted.keyColumnOf(HANDLE, '', krbtgtKey));
   await minted.applyChange(change(krbtgtKey));
   report.krbtgtAfterRemoval = view(heldKrbtgt());
-  rows.delete('dana@' + p.REALM);
+  rows.delete(minted.keyColumnOf(HANDLE, '', 'dana@' + p.REALM));
   await minted.applyChange(change('dana@' + p.REALM));
   report.danaAfterRemoval = view(p.all().filter(function (one) { return one.name[0] === 'dana'; })[0]);
 

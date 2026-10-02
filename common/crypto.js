@@ -1,6 +1,6 @@
 // @ts-check
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 //
 // File: common/crypto.js
 //
@@ -7305,6 +7305,49 @@ function jwkThumbprintUri(jwk) {
 }
 
 // ---------------------------------------------------------------------------
+// A SIGNING KEY PAIR AS JWKs (2026-10-01), for an application's DID document:
+// the public half goes into the document and the private half is handed to
+// the caller once. Three algorithms, the ones a DID document's JsonWebKey2020
+// method is conventionally read with: ES256 (P-256, the default), ES384
+// (P-384) and EdDSA (Ed25519). The `kid` is the RFC 7638 thumbprint, which is
+// what names the method in the document.
+// ---------------------------------------------------------------------------
+/** The algorithms `generateSigningJwkPair()` takes. */
+const SIGNING_JWK_PAIR_ALGS = ['ES256', 'ES384', 'EdDSA'];
+
+/**
+ * Generates a signing key pair and returns both halves as JWKs, with the
+ * private half also as PKCS#8 PEM.
+ *
+ * @param alg - ES256, ES384 or EdDSA
+ * @returns `{ alg, kid, publicJwk, privateJwk, privateKeyPem }`
+ */
+function generateSigningJwkPair(alg) {
+  log.debug("Entering generateSigningJwkPair(). alg=" + alg);
+  const which = String(alg || 'ES256');
+  if (SIGNING_JWK_PAIR_ALGS.indexOf(which) < 0) {
+    log.debug("Leaving generateSigningJwkPair(). Unknown algorithm.");
+    throw new Error('the algorithm must be one of ' +
+                    SIGNING_JWK_PAIR_ALGS.join(', ') + ', not ' + which + '.');
+  }
+  const pair = which === 'EdDSA'
+    ? nodeCrypto.generateKeyPairSync('ed25519')
+    : nodeCrypto.generateKeyPairSync('ec', {
+      namedCurve: which === 'ES384' ? 'P-384' : 'P-256' });
+  const publicJwk = pair.publicKey.export({ format: 'jwk' });
+  const kid = jwkThumbprint(publicJwk);
+  const publicOut = Object.assign({ kid: kid, alg: which, use: 'sig' },
+                                  publicJwk);
+  const privateOut = Object.assign({ kid: kid, alg: which, use: 'sig' },
+                                   pair.privateKey.export({ format: 'jwk' }));
+  log.debug("Leaving generateSigningJwkPair(). kid=" + kid);
+  return { alg: which, kid: kid, publicJwk: publicOut,
+           privateJwk: privateOut,
+           privateKeyPem: String(pair.privateKey.export({ type: 'pkcs8',
+                                                          format: 'pem' })) };
+}
+
+// ---------------------------------------------------------------------------
 // A CERTIFICATE'S SHA-256 THUMBPRINT, over the DER, in whichever spelling the
 // specification that asked for it uses.
 //
@@ -7733,37 +7776,43 @@ function scryptParameters() {
 // use as a parameter) and it is what keeps the question "where does the master
 // key live" answerable in one place rather than in this one too.
 //
-// **A PER-RECORD SUBKEY, DERIVED WITH HKDF.** The KEK itself never encrypts
-// anything: each record is encrypted under HKDF-SHA256(KEK, salt, info), where
-// the salt is 16 random bytes stored with the record. Two reasons, and the
-// second is the operational one: a single key encrypting many records under
-// many IVs is one IV-reuse bug away from catastrophic in GCM, and a derived
-// subkey per record means the same KEK can protect the whole store without any
-// record's IV mattering to any other. The `info` string pins the PURPOSE, so a
-// ciphertext from this store cannot be decrypted by a future caller deriving
-// for something else.
+// **DATA KEYS, WRAPPED UNDER THE KEK (#391, 2026-10-01): ENVELOPE ENCRYPTION.**
+// The KEK never encrypts a value. Each value is encrypted under a DATA
+// ENCRYPTION KEY (DEK) — 32 random bytes, one per realm per data class — and
+// the DEK is stored WRAPPED under the KEK (`wrapDek()`). A process unwraps the
+// DEKs it needs once and holds them; a value names the DEK that sealed it, so
+// opening it is a lookup and one AES-256-GCM decryption. Rotating the KEK is
+// re-wrapping a handful of DEKs, not re-encrypting the store, and a KEK held
+// in a key management service is asked once per DEK, never once per value.
+// Until #391 each value was encrypted under HKDF-SHA256(KEK, a random salt):
+// no DEK, every value tied directly to the KEK, and that format (version 1)
+// is gone — a store written before #391 is recreated, not migrated.
 //
 // **THE STORED FORM IS SELF-DESCRIBING**, modelled on `hashSecret()` above and
-// for the same reason: `$aesgcm$1$salt$iv$tag$ciphertext`, all base64. A
-// version at the front so the scheme can change without a migration that has to
-// guess what it is reading, and every parameter beside the data rather than in
-// a constant somewhere that a later build might disagree about.
+// for the same reason: `$aesgcm$2$<dek id>$<iv>$<tag>$<ciphertext>`, the last
+// three base64. The DEK id is base64url and so never holds a `$`. The version
+// and the DEK id are the additional authenticated data, so a value moved
+// under another DEK's name, or rewritten as another version, does not open.
+// The LABEL a caller passes is accounting and is deliberately NOT in the AAD:
+// a row is opened under a different label than it was sealed under in places
+// (a re-homed entry), and the DEK already binds the realm and the class.
 //
-// **THE INFO STRING WAS `mock-sts key material v1` UNTIL 2026-09-12**, when
-// the product name in every identifier this service stores and emits became
-// `sts`. No migration was written, and that is a decision rather than an
-// oversight: development data does not persist between runs, so nothing
-// sealed under the old label ever has to be read back. **A PRODUCT deployment
-// holding records sealed under the old label would need RE-KEYING** — the info
-// is an HKDF input, so a record sealed under `mock-sts key material v1`
-// derives a different subkey and cannot be opened under this one; `open()`
-// would report it as undecryptable exactly as it reports a rotated KEK.
+// **A WRAPPED DEK IS `$dekwrap$1$<iv>$<tag>$<ciphertext>`**: AES-256-GCM under
+// a wrapping key derived ONCE from the KEK (HKDF-SHA256, no salt, info
+// `sts dek wrapping v1`), with the DEK's id, scope, realm and class as the
+// AAD — so a wrapped DEK copied onto another realm's row does not unwrap. The
+// wrapping key is derived rather than the KEK used directly so that a KEK
+// longer than 32 bytes is all used, and so that nothing else derived from the
+// KEK (`keystore.keyedDigest()`) can ever equal it.
 // ---------------------------------------------------------------------------
 
-const KEK_INFO = 'sts key material v1';
-const KEK_SALT_BYTES = 16;
+const DEK_ENVELOPE_VERSION = '2';
+const DEK_WRAP_INFO = 'sts dek wrapping v1';
+const DEK_DERIVE_INFO = 'sts derived dek v1|';
+const DEK_ID_INFO = 'sts derived dek id v1';
 const KEK_IV_BYTES = 12;      // NIST SP 800-38D's recommended GCM nonce length.
 const KEK_KEY_BYTES = 32;     // AES-256.
+const DEK_ID_PATTERN = /^[A-Za-z0-9_.-]{8,200}$/;
 
 // The KEK as bytes, however it arrived. A provider may hand back raw bytes, hex
 // or base64 — a human pasting a secret into a vault writes text — so the shape
@@ -7948,55 +7997,29 @@ function kekAccounting() {
 // on the page. `/admin/crypto-metadata`'s rule one layer along: an algorithm
 // this service performs must be in a table here, so that a page describing it
 // cannot go on looking complete while being wrong.
-/** The parameters of the key-encryption key's encryption, for the pages. */
+/** The parameters of the envelope encryption at rest, for the pages. */
 const KEK_PARAMETERS = {
-  envelope: '$aesgcm$1$salt$iv$tag$ciphertext, each field base64',
-  version: '1',
+  envelope: '$aesgcm$2$<dek id>$<iv>$<tag>$<ciphertext>, the last three ' +
+            'base64',
+  version: DEK_ENVELOPE_VERSION,
   cipher: 'aes-256-gcm',
   keyBits: KEK_KEY_BYTES * 8,
   ivBits: KEK_IV_BYTES * 8,
   tagBits: 128,
-  kdf: 'HKDF-SHA256',
-  kdfSaltBits: KEK_SALT_BYTES * 8,
-  kdfInfo: KEK_INFO,
-  perRecordSubkey: true
+  dataKeys: 'one data encryption key per realm per data class, random, ' +
+            'stored wrapped: 256-bit for AES-256-GCM, 512-bit for ' +
+            'AES-256-SIV (keys.directoryCipher, directory data only)',
+  dataCiphers: ['aes-256-gcm', 'aes-256-siv'],
+  dekWrap: '$dekwrap$1$<iv>$<tag>$<ciphertext>: AES-256-GCM under ' +
+           'HKDF-SHA256(KEK, info "' + DEK_WRAP_INFO + '"), the DEK\'s id, ' +
+           'scope, realm and class as additional authenticated data',
+  aad: 'the version and the DEK id',
+  perRecordSubkey: false
 };
 
 /**
- * Encrypts a value under the key-encryption key: AES-256-GCM under an
- * HKDF-SHA-256 subkey, as `$aesgcm$1$salt$iv$tag$body`, and counted.
- *
- * @param kek - the key-encryption key
- * @param plaintext - the value
- * @param label - what it is, for the accounting
- * @returns the stored form
- */
-function encryptWithKek(kek, plaintext, label) {
-  log.debug('Entering encryptWithKek().');
-  const master = kekBytes(kek);
-  const salt = nodeCrypto.randomBytes(KEK_SALT_BYTES);
-  const subkey = nodeCrypto.hkdfSync('sha256', master, salt,
-                                     Buffer.from(KEK_INFO, 'utf8'),
-                                     KEK_KEY_BYTES);
-  const iv = nodeCrypto.randomBytes(KEK_IV_BYTES);
-  const cipher = nodeCrypto.createCipheriv('aes-256-gcm', Buffer.from(subkey),
-                                           iv);
-  const body = Buffer.concat([cipher.update(Buffer.from(String(plaintext),
-                                                        'utf8')),
-                              cipher.final()]);
-  const tag = cipher.getAuthTag();
-  const out = '$aesgcm$1$' + salt.toString('base64') + '$' +
-              iv.toString('base64') + '$' + tag.toString('base64') + '$' +
-              body.toString('base64');
-  countKek(label, 'encryptions', Buffer.byteLength(String(plaintext), 'utf8'),
-           body.length);
-  log.debug('Leaving encryptWithKek(). ' + body.length + ' byte(s) of ' +
-      'ciphertext.');
-  return out;
-}
-
-/**
- * Says whether a stored value is one `encryptWithKek()` wrote.
+ * Says whether a stored value is a sealed value this service wrote (the
+ * `$aesgcm$` envelope).
  *
  * @param stored - the value
  * @returns true when it is
@@ -8004,70 +8027,477 @@ function encryptWithKek(kek, plaintext, label) {
 function isEncryptedWithKek(stored) {
   log.debug("Entering isEncryptedWithKek().");
   log.debug("Leaving isEncryptedWithKek().");
-  return /^\$aesgcm\$/.test(String(stored || ''));
+  return /^\$aes(gcm|siv)\$/.test(String(stored || ''));
 }
 
 /**
- * Decrypts a value `encryptWithKek()` wrote, and counts it.
+ * Returns the data encryption key a sealed value names, or null for anything
+ * that is not a version-2 envelope.
  *
- * @param kek - the key-encryption key
+ * @param stored - the sealed value
+ * @returns the DEK id, or null
+ */
+function dekIdOf(stored) {
+  log.debug("Entering dekIdOf().");
+  const parts = String(stored || '').split('$');
+  if (parts.length !== 7 || (parts[1] !== 'aesgcm' && parts[1] !== 'aessiv') ||
+      parts[2] !== DEK_ENVELOPE_VERSION || !DEK_ID_PATTERN.test(parts[3])) {
+    log.debug("Leaving dekIdOf(). Not a version-2 envelope.");
+    return null;
+  }
+  log.debug("Leaving dekIdOf().");
+  return parts[3];
+}
+
+// A DEK as bytes: exactly 32 (AES-256-GCM) or 64 (AES-256-SIV, two AES-256
+// keys), or refused, because a short key here would be a value sealed under
+// less than the AES-256 every page says it is.
+function dekBytes(key) {
+  log.debug("Entering dekBytes().");
+  if (!Buffer.isBuffer(key) ||
+      (key.length !== KEK_KEY_BYTES && key.length !== SIV_KEY_BYTES)) {
+    throw new Error('a data encryption key must be ' + KEK_KEY_BYTES +
+                    ' or ' + SIV_KEY_BYTES + ' bytes');
+  }
+  log.debug("Leaving dekBytes().");
+  return key;
+}
+
+// ---------------------------------------------------------------------------
+// AES-SIV (RFC 5297) WITH A 512-BIT KEY — `aes-256-siv`, the cipher
+// `keys.directoryCipher` may choose for the data keys of directory data
+// (#391). Node exposes no SIV cipher, so it is built here on node's AES: S2V
+// is AES-256-CMAC (RFC 4493) under the key's LEFT half, and the encryption is
+// AES-256-CTR under its RIGHT half, from the synthetic IV with the two bits
+// RFC 5297 section 2.6 clears. Held to Wycheproof's `aes_siv_cmac` vectors by
+// `tests/wycheproof.js`.
+//
+// SIV is DETERMINISTIC: one key, one plaintext and one associated data give
+// one ciphertext. So a sealed value carries a random 128-bit NONCE as an
+// associated-data component (section 3), and two equal values are two
+// different ciphertexts, as under GCM. What SIV adds is MISUSE RESISTANCE: a
+// repeated nonce leaks only that two values are equal, where a repeated GCM
+// nonce leaks their XOR and the authentication key.
+// ---------------------------------------------------------------------------
+const SIV_KEY_BYTES = 64;
+const SIV_NONCE_BYTES = 16;
+const BLOCK = 16;
+
+// AES-256 on one block (the CMAC subkeys).
+function aesBlock(key, block) {
+  log.debug("Entering aesBlock().");
+  const c = nodeCrypto.createCipheriv('aes-256-ecb', key, null);
+  c.setAutoPadding(false);
+  log.debug("Leaving aesBlock().");
+  return Buffer.concat([c.update(block), c.final()]);
+}
+
+// Doubling in GF(2^128) (RFC 5297 section 2.3; RFC 4493's subkey step).
+function sivDbl(block) {
+  log.debug("Entering sivDbl().");
+  const out = Buffer.alloc(BLOCK);
+  let carry = 0;
+  for (let i = BLOCK - 1; i >= 0; i--) {
+    out[i] = ((block[i] << 1) | carry) & 0xff;
+    carry = block[i] >> 7;
+  }
+  if (block[0] & 0x80) {
+    out[BLOCK - 1] ^= 0x87;
+  }
+  log.debug("Leaving sivDbl().");
+  return out;
+}
+
+function xorBlocks(a, b) {
+  log.debug("Entering xorBlocks().");
+  const out = Buffer.alloc(a.length);
+  for (let i = 0; i < a.length; i++) {
+    out[i] = a[i] ^ b[i];
+  }
+  log.debug("Leaving xorBlocks().");
+  return out;
+}
+
+// The 10* padding to a whole block.
+function sivPad(bytes) {
+  log.debug("Entering sivPad().");
+  const out = Buffer.alloc(BLOCK);
+  bytes.copy(out);
+  out[bytes.length] = 0x80;
+  log.debug("Leaving sivPad().");
+  return out;
+}
+
+// AES-256-CMAC (RFC 4493): the CBC-MAC of the message with its last block
+// masked by K1 when whole and padded and masked by K2 when not.
+function aesCmac(key, message) {
+  log.debug("Entering aesCmac().");
+  const k1 = sivDbl(aesBlock(key, Buffer.alloc(BLOCK)));
+  const k2 = sivDbl(k1);
+  const n = Math.max(1, Math.ceil(message.length / BLOCK));
+  const whole = message.length > 0 && message.length % BLOCK === 0;
+  const lastStart = (n - 1) * BLOCK;
+  const last = whole
+    ? xorBlocks(message.subarray(lastStart, lastStart + BLOCK), k1)
+    : xorBlocks(sivPad(message.subarray(lastStart)), k2);
+  const c = nodeCrypto.createCipheriv('aes-256-cbc', key, Buffer.alloc(BLOCK));
+  c.setAutoPadding(false);
+  const all = Buffer.concat([c.update(Buffer.concat(
+    [message.subarray(0, lastStart), last])), c.final()]);
+  log.debug("Leaving aesCmac().");
+  return all.subarray(all.length - BLOCK);
+}
+
+// S2V (RFC 5297 section 2.4): the associated data components, then the
+// plaintext, folded into one 128-bit synthetic IV.
+function sivS2v(key, components, plaintext) {
+  log.debug("Entering sivS2v().");
+  let d = aesCmac(key, Buffer.alloc(BLOCK));
+  components.forEach(function (one) {
+    d = xorBlocks(sivDbl(d), aesCmac(key, one));
+  });
+  let t;
+  if (plaintext.length >= BLOCK) {
+    t = Buffer.from(plaintext);
+    const at = t.length - BLOCK;
+    xorBlocks(t.subarray(at), d).copy(t, at);
+  } else {
+    t = xorBlocks(sivDbl(d), sivPad(plaintext));
+  }
+  log.debug("Leaving sivS2v().");
+  return aesCmac(key, t);
+}
+
+// CTR from the synthetic IV, its bits 63 and 31 cleared (section 2.6).
+function sivCtr(key, siv, bytes) {
+  log.debug("Entering sivCtr().");
+  const q = Buffer.from(siv);
+  q[8] &= 0x7f;
+  q[12] &= 0x7f;
+  const c = nodeCrypto.createCipheriv('aes-256-ctr', key, q);
+  log.debug("Leaving sivCtr().");
+  return Buffer.concat([c.update(bytes), c.final()]);
+}
+
+/**
+ * AES-SIV encryption (RFC 5297) under a 512-bit key.
+ *
+ * @param key - 64 bytes: the S2V key, then the CTR key
+ * @param plaintext - the bytes to encrypt
+ * @param components - the associated data components, in order
+ * @returns the 16-byte synthetic IV followed by the ciphertext
+ */
+function aesSivEncrypt(key, plaintext, components) {
+  log.debug("Entering aesSivEncrypt().");
+  if (!Buffer.isBuffer(key) || key.length !== SIV_KEY_BYTES) {
+    throw new Error('an AES-256-SIV key is ' + SIV_KEY_BYTES + ' bytes');
+  }
+  const p = Buffer.from(plaintext);
+  const siv = sivS2v(key.subarray(0, 32), components || [], p);
+  const out = Buffer.concat([siv, sivCtr(key.subarray(32), siv, p)]);
+  log.debug("Leaving aesSivEncrypt().");
+  return out;
+}
+
+/**
+ * AES-SIV decryption (RFC 5297) under a 512-bit key.
+ *
+ * @param key - 64 bytes
+ * @param sealed - the synthetic IV followed by the ciphertext
+ * @param components - the associated data components it was sealed with
+ * @returns the plaintext
+ * @throws Error when the synthetic IV does not verify
+ */
+function aesSivDecrypt(key, sealed, components) {
+  log.debug("Entering aesSivDecrypt().");
+  if (!Buffer.isBuffer(key) || key.length !== SIV_KEY_BYTES) {
+    throw new Error('an AES-256-SIV key is ' + SIV_KEY_BYTES + ' bytes');
+  }
+  const all = Buffer.from(sealed);
+  if (all.length < BLOCK) {
+    throw new Error('an AES-SIV ciphertext is at least 16 bytes');
+  }
+  const siv = all.subarray(0, BLOCK);
+  const plain = sivCtr(key.subarray(32), siv, all.subarray(BLOCK));
+  const check = sivS2v(key.subarray(0, 32), components || [], plain);
+  if (!nodeCrypto.timingSafeEqual(check, siv)) {
+    log.debug("Leaving aesSivDecrypt(). It does not verify.");
+    throw new Error('the AES-SIV synthetic IV does not verify');
+  }
+  log.debug("Leaving aesSivDecrypt().");
+  return plain;
+}
+
+function envelopeAad(dekId) {
+  log.debug("Entering envelopeAad().");
+  log.debug("Leaving envelopeAad().");
+  return Buffer.from('sts envelope v' + DEK_ENVELOPE_VERSION + '|' + dekId,
+                     'utf8');
+}
+
+/**
+ * Encrypts a value under a data encryption key: AES-256-GCM, as
+ * `$aesgcm$2$<dek id>$<iv>$<tag>$<ciphertext>`, and counted.
+ *
+ * @param dekId - the DEK's id, which the envelope names
+ * @param key - the DEK, 32 bytes
+ * @param plaintext - the value
+ * @param label - what it is, for the accounting
+ * @returns the stored form
+ */
+function encryptWithDek(dekId, key, plaintext, label) {
+  log.debug('Entering encryptWithDek().');
+  if (!DEK_ID_PATTERN.test(String(dekId || ''))) {
+    throw new Error('a data encryption key id must be base64url');
+  }
+  // A 64-BYTE DEK IS AN AES-256-SIV KEY (#391): the envelope is
+  // `$aessiv$2$<dek id>$<nonce>$<siv>$<ciphertext>`, the envelope AAD and the
+  // nonce its two associated data components.
+  if (dekBytes(key).length === SIV_KEY_BYTES) {
+    const nonce = nodeCrypto.randomBytes(SIV_NONCE_BYTES);
+    const plain = Buffer.from(String(plaintext), 'utf8');
+    const sealedBytes = aesSivEncrypt(key, plain,
+                                      [envelopeAad(dekId), nonce]);
+    countKek(label, 'encryptions', plain.length, sealedBytes.length);
+    log.debug('Leaving encryptWithDek(). AES-256-SIV.');
+    return '$aessiv$' + DEK_ENVELOPE_VERSION + '$' + dekId + '$' +
+           nonce.toString('base64') + '$' +
+           sealedBytes.subarray(0, BLOCK).toString('base64') + '$' +
+           sealedBytes.subarray(BLOCK).toString('base64');
+  }
+  const iv = nodeCrypto.randomBytes(KEK_IV_BYTES);
+  const cipher = nodeCrypto.createCipheriv('aes-256-gcm', dekBytes(key), iv);
+  cipher.setAAD(envelopeAad(dekId));
+  const body = Buffer.concat([cipher.update(Buffer.from(String(plaintext),
+                                                        'utf8')),
+                              cipher.final()]);
+  const tag = cipher.getAuthTag();
+  const out = '$aesgcm$' + DEK_ENVELOPE_VERSION + '$' + dekId + '$' +
+              iv.toString('base64') + '$' + tag.toString('base64') + '$' +
+              body.toString('base64');
+  countKek(label, 'encryptions', Buffer.byteLength(String(plaintext), 'utf8'),
+           body.length);
+  log.debug('Leaving encryptWithDek(). ' + body.length + ' byte(s) of ' +
+      'ciphertext.');
+  return out;
+}
+
+/**
+ * Decrypts a value `encryptWithDek()` wrote, and counts it.
+ *
+ * @param key - the DEK the value names (the caller looked it up by
+ * `dekIdOf()`)
  * @param stored - the stored form
  * @param label - what it is, for the accounting
  * @returns the plaintext
  * @throws Error for a value this service did not write, an unknown version,
  *   or the wrong key
  */
-function decryptWithKek(kek, stored, label) {
-  log.debug('Entering decryptWithKek().');
+function decryptWithDek(key, stored, label) {
+  log.debug('Entering decryptWithDek().');
   const parts = String(stored || '').split('$');
-  // `$aesgcm$1$salt$iv$tag$body` splits to ['', 'aesgcm', '1', s, i, t, b].
+  // `$aesgcm$2$id$iv$tag$body` splits to ['', 'aesgcm', '2', d, i, t, b].
   //
-  // **THE TWO REFUSALS BELOW COUNT AS FAILURES AND THE ONE AT THE BOTTOM DOES
-  // TOO, which is a deliberate flattening.** A caller cannot tell them apart
-  // and neither should the figure: what a reader of that number wants to know
-  // is *how often did this service fail to read something it had written*, and
-  // splitting it into wrong-shape, wrong-version and wrong-key would be three
-  // columns of which two are always zero.
-  if (parts.length !== 7 || parts[1] !== 'aesgcm') {
+  // **EVERY REFUSAL COUNTS AS A FAILURE**, a deliberate flattening: what a
+  // reader of that number wants to know is *how often did this service fail
+  // to read something it had written*.
+  if (parts.length !== 7 || (parts[1] !== 'aesgcm' &&
+                              parts[1] !== 'aessiv')) {
     countKek(label, 'failures', 0, 0);
     throw new Error('this is not a record encrypted by this service');
   }
-  if (parts[2] !== '1') {
+  if (parts[2] !== DEK_ENVELOPE_VERSION) {
     countKek(label, 'failures', 0, 0);
     throw new Error('the record names encryption version "' + parts[2] +
-                    '", which this build does not know how to read');
+                    '", which this build does not read (version 1 records ' +
+                    'were written before data encryption keys, #391)');
   }
-  const master = kekBytes(kek);
-  const salt = Buffer.from(parts[3], 'base64');
+  if (parts[1] === 'aessiv') {
+    let plain = null;
+    try {
+      if (dekBytes(key).length !== SIV_KEY_BYTES) {
+        throw new Error('an AES-256-SIV value needs a 64-byte key');
+      }
+      plain = aesSivDecrypt(key, Buffer.concat([
+        Buffer.from(parts[5], 'base64'), Buffer.from(parts[6], 'base64')]),
+        [envelopeAad(parts[3]), Buffer.from(parts[4], 'base64')]);
+    } catch (e) {
+      countKek(label, 'failures', 0, 0);
+      log.debug('Leaving decryptWithDek(). It would not open.');
+      throw e;
+    }
+    countKek(label, 'decryptions', plain.length, plain.length + BLOCK);
+    log.debug('Leaving decryptWithDek(). AES-256-SIV.');
+    return plain.toString('utf8');
+  }
   const iv = Buffer.from(parts[4], 'base64');
   const tag = Buffer.from(parts[5], 'base64');
   const body = Buffer.from(parts[6], 'base64');
-  const subkey = nodeCrypto.hkdfSync('sha256', master, salt,
-                                     Buffer.from(KEK_INFO, 'utf8'),
-                                     KEK_KEY_BYTES);
-  const decipher = nodeCrypto.createDecipheriv('aes-256-gcm',
-                                               Buffer.from(subkey), iv);
-  decipher.setAuthTag(tag);
-  // THROWS ON A BAD TAG, and that is the whole point of GCM here: the caller
-  // gets an error rather than the wrong key.
-  // **THE `final()` IS WRAPPED SO THAT A BAD TAG IS COUNTED AND STILL
-  // THROWS.** The throw is the whole point of GCM here and must not be
-  // softened into a return: `keystore.js` turns it into a fatal at startup,
-  // because a service that cannot read its own signing key must not come up
-  // generating a new one and silently invalidating every token it ever issued.
-  // Counting it costs nothing and is the figure an operator who has just
-  // rotated a key-encryption key actually wants.
+  if (key.length !== KEK_KEY_BYTES) {
+    countKek(label, 'failures', 0, 0);
+    throw new Error('an AES-256-GCM value needs a 32-byte key');
+  }
   let out = null;
   try {
+    const decipher = nodeCrypto.createDecipheriv('aes-256-gcm',
+                                                 dekBytes(key), iv);
+    decipher.setAAD(envelopeAad(parts[3]));
+    decipher.setAuthTag(tag);
+    // THROWS ON A BAD TAG, and that is the whole point of GCM here: the
+    // caller gets an error rather than the wrong bytes. Counted, and still
+    // thrown — `keystore.js` turns it into a fatal at startup.
     out = Buffer.concat([decipher.update(body), decipher.final()]);
   } catch (e) {
     countKek(label, 'failures', 0, 0);
-    log.debug('Leaving decryptWithKek(). It would not open.');
+    log.debug('Leaving decryptWithDek(). It would not open.');
     throw e;
   }
   countKek(label, 'decryptions', out.length, body.length);
-  log.debug('Leaving decryptWithKek(). ' + out.length + ' byte(s).');
+  log.debug('Leaving decryptWithDek(). ' + out.length + ' byte(s).');
   return out.toString('utf8');
+}
+
+// The key a DEK is wrapped under: derived once from the KEK, so the whole KEK
+// is used whatever its length and nothing else derived from it can equal it.
+function dekWrappingKey(kek) {
+  log.debug("Entering dekWrappingKey().");
+  log.debug("Leaving dekWrappingKey().");
+  return Buffer.from(nodeCrypto.hkdfSync('sha256', kekBytes(kek),
+                                         Buffer.alloc(0),
+                                         Buffer.from(DEK_WRAP_INFO, 'utf8'),
+                                         KEK_KEY_BYTES));
+}
+
+/**
+ * Generates a data encryption key: 32 random bytes for AES-256-GCM, or 64 for
+ * AES-256-SIV.
+ *
+ * @param alg - `aes-256-gcm` (the default) or `aes-256-siv`
+ * @returns the key
+ */
+function generateDek(alg) {
+  log.debug("Entering generateDek().");
+  log.debug("Leaving generateDek().");
+  return nodeCrypto.randomBytes(alg === 'aes-256-siv' ? SIV_KEY_BYTES
+                                                      : KEK_KEY_BYTES);
+}
+
+/**
+ * The cipher a data encryption key is for, from its length.
+ *
+ * @param key - the DEK
+ * @returns `aes-256-siv` for 64 bytes, else `aes-256-gcm`
+ */
+function dekAlgOf(key) {
+  log.debug("Entering dekAlgOf().");
+  log.debug("Leaving dekAlgOf().");
+  return Buffer.isBuffer(key) && key.length === SIV_KEY_BYTES
+    ? 'aes-256-siv' : 'aes-256-gcm';
+}
+
+/**
+ * Generates a data encryption key's id: 16 random bytes, base64url.
+ *
+ * @returns the id
+ */
+function generateDekId() {
+  log.debug("Entering generateDekId().");
+  log.debug("Leaving generateDekId().");
+  return nodeCrypto.randomBytes(16).toString('base64url');
+}
+
+/**
+ * Wraps a data encryption key under the key-encryption key, as
+ * `$dekwrap$1$<iv>$<tag>$<ciphertext>`, binding the AAD given.
+ *
+ * @param kek - the key-encryption key
+ * @param key - the DEK, 32 bytes
+ * @param aad - what the wrap is bound to: the DEK's id, scope, realm, class
+ * @returns the wrapped form
+ */
+function wrapDek(kek, key, aad) {
+  log.debug("Entering wrapDek().");
+  const iv = nodeCrypto.randomBytes(KEK_IV_BYTES);
+  const cipher = nodeCrypto.createCipheriv('aes-256-gcm',
+                                           dekWrappingKey(kek), iv);
+  cipher.setAAD(Buffer.from(String(aad), 'utf8'));
+  const body = Buffer.concat([cipher.update(dekBytes(key)), cipher.final()]);
+  const tag = cipher.getAuthTag();
+  countKek('data-keys', 'encryptions', key.length, body.length);
+  log.debug("Leaving wrapDek().");
+  return '$dekwrap$1$' + iv.toString('base64') + '$' +
+         tag.toString('base64') + '$' + body.toString('base64');
+}
+
+/**
+ * Unwraps a data encryption key `wrapDek()` wrote.
+ *
+ * @param kek - the key-encryption key
+ * @param wrapped - the wrapped form
+ * @param aad - what the wrap was bound to
+ * @returns the DEK, 32 bytes
+ * @throws Error for a value that is not a wrapped DEK, the wrong key, or AAD
+ *   that is not the one it was wrapped with
+ */
+function unwrapDek(kek, wrapped, aad) {
+  log.debug("Entering unwrapDek().");
+  const parts = String(wrapped || '').split('$');
+  if (parts.length !== 6 || parts[1] !== 'dekwrap' || parts[2] !== '1') {
+    countKek('data-keys', 'failures', 0, 0);
+    throw new Error('this is not a data encryption key wrapped by this ' +
+                    'service');
+  }
+  let out = null;
+  try {
+    const decipher = nodeCrypto.createDecipheriv(
+      'aes-256-gcm', dekWrappingKey(kek), Buffer.from(parts[3], 'base64'));
+    decipher.setAAD(Buffer.from(String(aad), 'utf8'));
+    decipher.setAuthTag(Buffer.from(parts[4], 'base64'));
+    out = Buffer.concat([decipher.update(Buffer.from(parts[5], 'base64')),
+                         decipher.final()]);
+  } catch (e) {
+    countKek('data-keys', 'failures', 0, 0);
+    log.debug("Leaving unwrapDek(). It would not unwrap.");
+    throw e;
+  }
+  countKek('data-keys', 'decryptions', out.length, out.length);
+  log.debug("Leaving unwrapDek().");
+  return dekBytes(out);
+}
+
+// ---------------------------------------------------------------------------
+// A DEK DERIVED RATHER THAN STORED — ONLY WHERE NOTHING IS STORED. A process
+// that persists no key material (development, where every process of the
+// request pool shares one ephemeral KEK) has nowhere to keep a wrapped DEK
+// that its sibling threads could read, so the DEK for a (scope, realm, class)
+// is derived from the KEK, and so is its id: every process holding that KEK
+// arrives at the same key under the same name, and nothing has to be shared.
+// It is never used where keys persist — there every DEK is random and wrapped.
+// ---------------------------------------------------------------------------
+/**
+ * Derives a data encryption key and its id from the key-encryption key, for a
+ * process that stores none.
+ *
+ * @param kek - the key-encryption key
+ * @param context - what the DEK is for: scope, realm and class
+ * @returns `{ id, key }`
+ */
+function deriveDek(kek, context) {
+  log.debug("Entering deriveDek().");
+  const info = DEK_DERIVE_INFO + String(context);
+  const key = Buffer.from(nodeCrypto.hkdfSync('sha256', kekBytes(kek),
+                                              Buffer.alloc(0),
+                                              Buffer.from(info, 'utf8'),
+                                              KEK_KEY_BYTES));
+  const idKey = Buffer.from(nodeCrypto.hkdfSync('sha256', kekBytes(kek),
+                                                Buffer.alloc(0),
+                                                Buffer.from(DEK_ID_INFO,
+                                                            'utf8'),
+                                                KEK_KEY_BYTES));
+  const id = 'x' + nodeCrypto.createHmac('sha256', idKey).update(info, 'utf8')
+    .digest('base64url').slice(0, 22);
+  log.debug("Leaving deriveDek().");
+  return { id: id, key: key };
 }
 
 // ---------------------------------------------------------------------------
@@ -9155,9 +9585,24 @@ function sessionStateHash(clientId, origin, browserState, salt) {
 // draft-ietf-cose-dilithium-11): kty AKP (7), `pub` at -1, and the three
 // algorithm identifiers -48, -49 and -50, verified by `pq_jose.js`, which
 // holds the one ML-DSA implementation this process uses for JOSE as well.
-// SHA-1 (RS1, -65535) is not in the table: product never uses a broken
-// algorithm (`mode.usesBrokenAlgorithms()`), and no current authenticator
-// needs it.
+// SHA-1 (RS1, -65535) is in the table MARKED `insecure` (2026-10-01, rcbj:
+// "a use insecure passkey algorithms flag that is disabled by default"):
+// `verifyCoseSignature()` refuses it unless its caller passes
+// `{ allowInsecure: true }`, which only `webauthn.insecureAlgorithms` — a
+// development-only setting, off by default — ever makes true. Product never
+// uses a broken algorithm (`mode.usesBrokenAlgorithms()`). This module stays
+// a leaf and reads no setting; the caller decides.
+//
+// **EVERY OTHER SIGNATURE ALGORITHM AN AUTHENTICATOR CAN USE (2026-10-01,
+// rcbj: "support and request every possible algorithm").** RFC 9864's FULLY
+// SPECIFIED ones — ESP256 (-9), ESP384 (-51), ESP512 (-52), Ed25519 (-19) and
+// Ed448 (-53) — and RFC 8812's ES256K (-47, secp256k1). A fully specified
+// algorithm names its curve, so `curve` (ECDSA, node's name) or `okp`
+// (EdDSA, node's key type) is CHECKED against the key: an ESP256 signature
+// under a P-384 key is a signature that does not verify, where ES256 and
+// EdDSA keep their RFC 9053 meaning of any curve the key carries. Not here,
+// besides RS1: HSS-LMS (-46), a stateful hash-based scheme no authenticator
+// implements, and the provisional brainpool and SLH-DSA registrations.
 //
 // It stays a LEAF: node's crypto, asn1js and `pq_jose.js`, all required
 // above.
@@ -9180,7 +9625,21 @@ const COSE_SIGNATURE_ALGS = {
            saltLength: 64 },
   '-48': { name: 'ML-DSA-44', family: 'pq', hash: null, kty: 'AKP' },
   '-49': { name: 'ML-DSA-65', family: 'pq', hash: null, kty: 'AKP' },
-  '-50': { name: 'ML-DSA-87', family: 'pq', hash: null, kty: 'AKP' }
+  '-50': { name: 'ML-DSA-87', family: 'pq', hash: null, kty: 'AKP' },
+  '-9': { name: 'ESP256', family: 'ecdsa', hash: 'sha256', kty: 'EC',
+          curve: 'prime256v1' },
+  '-51': { name: 'ESP384', family: 'ecdsa', hash: 'sha384', kty: 'EC',
+           curve: 'secp384r1' },
+  '-52': { name: 'ESP512', family: 'ecdsa', hash: 'sha512', kty: 'EC',
+           curve: 'secp521r1' },
+  '-47': { name: 'ES256K', family: 'ecdsa', hash: 'sha256', kty: 'EC',
+           curve: 'secp256k1' },
+  '-19': { name: 'Ed25519', family: 'eddsa', hash: null, kty: 'OKP',
+           okp: 'ed25519' },
+  '-53': { name: 'Ed448', family: 'eddsa', hash: null, kty: 'OKP',
+           okp: 'ed448' },
+  '-65535': { name: 'RS1', family: 'rsa-pkcs1', hash: 'sha1', kty: 'RSA',
+              insecure: true }
 };
 
 // The COSE entry for an identifier, or null.
@@ -9243,13 +9702,20 @@ function nodePublicKeyOf(key) {
  * @param key - the public key, or for ML-DSA an AKP JWK or the raw bytes
  * @param data - the bytes signed
  * @param signature - the signature
+ * @param opts - `allowInsecure`: accept an algorithm marked insecure (RS1);
+ *   refused otherwise
  * @returns true when it verifies
  */
-function verifyCoseSignature(coseAlg, key, data, signature) {
+function verifyCoseSignature(coseAlg, key, data, signature, opts) {
   log.debug("Entering verifyCoseSignature(). alg=" + coseAlg);
   const spec = coseSignatureAlg(coseAlg);
   if (!spec) {
     log.debug("Leaving verifyCoseSignature(). Unknown algorithm.");
+    return false;
+  }
+  if (spec.insecure && !(opts && opts.allowInsecure)) {
+    log.debug("Leaving verifyCoseSignature(). " + spec.name + " is insecure " +
+              "and its caller did not allow it.");
     return false;
   }
   const message = Buffer.from(data || []);
@@ -9290,6 +9756,16 @@ function verifyCoseSignature(coseAlg, key, data, signature) {
     const weak = rsaKeyProblem(publicKey, 2048);
     if (weak) {
       log.debug("Leaving verifyCoseSignature(). " + weak);
+      return false;
+    }
+    // A FULLY SPECIFIED algorithm's curve (RFC 9864), checked against the
+    // key rather than trusted from it.
+    const curve = String((/** @type {any} */ (
+      publicKey.asymmetricKeyDetails || {})).namedCurve || '');
+    if ((spec.curve && curve !== spec.curve) ||
+        (spec.okp && type !== spec.okp)) {
+      log.debug("Leaving verifyCoseSignature(). " + spec.name + " under a " +
+                (curve || type) + " key.");
       return false;
     }
     let ok = false;
@@ -10863,6 +11339,8 @@ module.exports = {
   jwkThumbprint: jwkThumbprint,
   JWK_THUMBPRINT_URI_PREFIX: JWK_THUMBPRINT_URI_PREFIX,
   jwkThumbprintUri: jwkThumbprintUri,
+  SIGNING_JWK_PAIR_ALGS: SIGNING_JWK_PAIR_ALGS,
+  generateSigningJwkPair: generateSigningJwkPair,
   certificateThumbprint: certificateThumbprint,
   certificateSpkiThumbprint: certificateSpkiThumbprint,
   constantTimeEquals: constantTimeEquals,
@@ -10876,11 +11354,25 @@ module.exports = {
   // The cost a NEW hash is written under, for the console and the tests.
   scryptParameters: scryptParameters,
   hashSecretAsync: hashSecretAsync,
-  encryptWithKek: encryptWithKek,
-  decryptWithKek: decryptWithKek,
+  // ENVELOPE ENCRYPTION AT REST (#391): data encryption keys wrapped under
+  // the key-encryption key, and values sealed under the DEKs.
+  encryptWithDek: encryptWithDek,
+  decryptWithDek: decryptWithDek,
+  dekIdOf: dekIdOf,
+  generateDek: generateDek,
+  generateDekId: generateDekId,
+  wrapDek: wrapDek,
+  unwrapDek: unwrapDek,
+  deriveDek: deriveDek,
   kekAccounting: kekAccounting,
   KEK_PARAMETERS: KEK_PARAMETERS,
   isEncryptedWithKek: isEncryptedWithKek,
+  // AES-256-SIV (#391), for the data keys of directory data and for
+  // `tests/wycheproof.js`.
+  aesSivEncrypt: aesSivEncrypt,
+  aesSivDecrypt: aesSivDecrypt,
+  aesCmac: aesCmac,
+  dekAlgOf: dekAlgOf,
   kekBytes: kekBytes,
   verifySecret: verifySecret,
   verifySecretAsync: verifySecretAsync,

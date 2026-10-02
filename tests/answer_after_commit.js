@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -265,6 +265,8 @@ async function keyRows(t, dir) {
     const failed = (answers || []).filter(function (one) {
       return one && one.error;
     });
+    // TWO rows fail since #391: the key row and the data-key row it is
+    // sealed under, which is written first.
     t.check(!!kid && failed.length === 1 && store.rows.size === 0,
             'F: A KEY ROW THAT FAILED FAILS THE COMMIT a response waits for ' +
             '— its outcome was dropped, and a realm was answered as created ' +
@@ -275,7 +277,7 @@ async function keyRows(t, dir) {
     store.fail = false;
     keystore.retryFailed();
     await keystore.settleAll();
-    t.check(store.rows.size === 1 && keystore.failing() === false,
+    t.check(store.rows.size === 2 && keystore.failing() === false,
             'F: the retry writes the row it failed with, and nothing is left ' +
             'waiting', JSON.stringify({ rows: store.rows.size,
                                         failing: keystore.failing() }));

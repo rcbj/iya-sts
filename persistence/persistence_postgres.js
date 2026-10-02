@@ -1,6 +1,6 @@
 // @ts-check
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -218,7 +218,8 @@ const CHANGE_ROWS_PER_STATEMENT = 5000;
 /**
  * The version of the schema this driver creates, recorded in `sts_schema`.
  */
-const SCHEMA_VERSION = 13;
+// 14 IS #222's: `sts_minted.key_sealed`, the name beside its digest.
+const SCHEMA_VERSION = 14;
 
 // THE DATABASE'S CLOCK, in the milliseconds every cluster table stores. See the
 // cluster block in SCHEMA_OBJECTS for why no process's own clock is used.
@@ -245,10 +246,20 @@ const JOIN_LOCK = 460046;
 // whose body is this marker, and an upsert of a key holding it does nothing
 // (`… DO UPDATE … WHERE sts_minted.body <> $tombstone`). Every reader here
 // treats a tombstone as absent. `$` is not in the sealed form's alphabet
-// (`$aesgcm$1$…` is the only shape `keystore.seal()` writes and a body is
+// (`$aesgcm$2$…` is the only shape `keystore.seal()` writes and a body is
 // always one), and this is not that shape, so no sealed row can be mistaken
 // for one. It expires with `persistence.mintedRetention` — `purgeTombstones()`.
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// FINDING A SEALED VALUE BY THE DATA ENCRYPTION KEY IT NAMES (#391 P2). The
+// LIKE pattern for a DEK id, escaped (`_` is LIKE's wildcard), and the text
+// of a row with every value sealed under a stale DEK re-sealed by `reseal()`
+// — which answers null for a value already under its current DEK. Null when
+// nothing in the text changed.
+// ---------------------------------------------------------------------------
+// Either envelope: AES-256-GCM (`$aesgcm$`) or AES-256-SIV (`$aessiv$`).
+const SEALED_VALUE = /\$aes(?:gcm|siv)\$2\$[A-Za-z0-9_.-]+\$[A-Za-z0-9+/=]*\$[A-Za-z0-9+/=]*\$[A-Za-z0-9+/=]*/g;
+
 const TOMBSTONE = '$tombstone$1';
 
 // How long a node row is kept after it expired, for `/admin/cluster` to show a
@@ -279,15 +290,21 @@ const LDAP_GENERATED = {
     '+ 1) ELSE \'\' END) STORED',
   rdn_value: 'rdn_value text GENERATED ALWAYS AS (substr(split_part(dn_key, ' +
     '\',\', 1), strpos(split_part(dn_key, \',\', 1), \'=\') + 1)) STORED',
-  name_keys: 'name_keys jsonb GENERATED ALWAYS AS (lower(COALESCE(' +
-    'attrs->\'uid\', \'[]\'::jsonb)::text)::jsonb) STORED',
-  mail_keys: 'mail_keys jsonb GENERATED ALWAYS AS (lower(COALESCE(' +
-    'attrs->\'mail\', \'[]\'::jsonb)::text)::jsonb) STORED',
-  uuid_keys: 'uuid_keys jsonb GENERATED ALWAYS AS (lower((COALESCE(' +
-    'attrs->\'entryuuid\', \'[]\'::jsonb) || COALESCE(' +
-    'attrs->\'stsentryuuidalias\', \'[]\'::jsonb))::text)::jsonb) STORED',
-  class_keys: 'class_keys jsonb GENERATED ALWAYS AS (lower(COALESCE(' +
-    'attrs->\'objectclass\', \'[]\'::jsonb)::text)::jsonb) STORED'
+  // ---------------------------------------------------------------------
+  // THE VALUE LOOKUPS ARE WRITTEN BY THE SERVICE SINCE #391 PHASE 6, not
+  // generated: `attrs` is a sealed blob the database cannot read, so each
+  // is a JSON array of KEYED DIGESTS `persistence/directory_codec.js`
+  // computes beside the blob (or `<kind>\n<value>` where nothing seals).
+  // `value_keys` is `name=value` of the attributes `byAttribute()` asks
+  // for; `attr_names` the attribute NAMES, in the clear, for "who holds
+  // one".
+  // ---------------------------------------------------------------------
+  name_keys: 'name_keys jsonb NOT NULL DEFAULT \'[]\'::jsonb',
+  mail_keys: 'mail_keys jsonb NOT NULL DEFAULT \'[]\'::jsonb',
+  uuid_keys: 'uuid_keys jsonb NOT NULL DEFAULT \'[]\'::jsonb',
+  class_keys: 'class_keys jsonb NOT NULL DEFAULT \'[]\'::jsonb',
+  value_keys: 'value_keys jsonb NOT NULL DEFAULT \'[]\'::jsonb',
+  attr_names: 'attr_names jsonb NOT NULL DEFAULT \'[]\'::jsonb'
 };
 
 // The schema, created if it is not there. `IF NOT EXISTS` throughout rather
@@ -352,6 +369,8 @@ const SCHEMA_OBJECTS = [
   '  ' + LDAP_GENERATED.mail_keys + ',' +
   '  ' + LDAP_GENERATED.uuid_keys + ',' +
   '  ' + LDAP_GENERATED.class_keys + ',' +
+  '  ' + LDAP_GENERATED.value_keys + ',' +
+  '  ' + LDAP_GENERATED.attr_names + ',' +
   '  PRIMARY KEY (realm, dn_key))' },
   // The one index worth having beyond the primary key: every enumerator in
   // this service walks one realm.
@@ -387,9 +406,16 @@ const SCHEMA_OBJECTS = [
   { name: 'sts_ldap_entries_uuids', afterColumns: true, statement:
   'CREATE INDEX IF NOT EXISTS sts_ldap_entries_uuids ON sts_ldap_entries ' +
   'USING gin (uuid_keys jsonb_path_ops)' },
-  { name: 'sts_ldap_entries_attrs', afterColumns: true, statement:
-  'CREATE INDEX IF NOT EXISTS sts_ldap_entries_attrs ON sts_ldap_entries ' +
-  'USING gin (attrs jsonb_path_ops)' },
+  // The attribute values `byAttribute()` asks for, as keyed digests (#391
+  // phase 6) — where the GIN over `attrs` was, which a sealed blob makes
+  // nothing to index.
+  { name: 'sts_ldap_entries_values', afterColumns: true, statement:
+  'CREATE INDEX IF NOT EXISTS sts_ldap_entries_values ON sts_ldap_entries ' +
+  'USING gin (value_keys jsonb_path_ops)' },
+  // The attribute NAMES, GIN with the default operator class for `?`.
+  { name: 'sts_ldap_entries_attr_names', afterColumns: true, statement:
+  'CREATE INDEX IF NOT EXISTS sts_ldap_entries_attr_names ON ' +
+  'sts_ldap_entries USING gin (attr_names)' },
   // The object classes, GIN with the DEFAULT operator class: `?|` (any of
   // the group classes) is what it is asked, and `jsonb_path_ops` answers
   // only containment.
@@ -417,7 +443,7 @@ const SCHEMA_OBJECTS = [
   // outside the service entirely; see common/secrets.js.
   //
   // `text` and not `bytea`, because the stored form is the self-describing
-  // ASCII `$aesgcm$1$salt$iv$tag$body` that crypto.js writes — the same
+  // ASCII `$aesgcm$2$dek$iv$tag$body` that crypto.js writes — the same
   // decision `userPassword` follows, and it means a row can be read and
   // reasoned about with psql without a decode step.
   { name: 'sts_keys', statement:
@@ -445,7 +471,7 @@ const SCHEMA_OBJECTS = [
   // and a query for one realm's rows cannot accidentally match them.
   //
   // `body` IS CIPHERTEXT, always, in the same self-describing
-  // `$aesgcm$1$salt$iv$tag$body` form `sts_keys` uses and under the SAME
+  // `$aesgcm$2$dek$iv$tag$body` form `sts_keys` uses and under the SAME
   // key-encryption key. A session id is a cookie value and an authorization
   // code is redeemable, so a dump of this table must not be a set of usable
   // credentials. What it costs is that nothing here is queryable by SQL, which
@@ -463,6 +489,7 @@ const SCHEMA_OBJECTS = [
   '  body       text        NOT NULL,' +
   '  written_at timestamptz NOT NULL DEFAULT now(),' +
   '  expires_at bigint,' +
+  '  key_sealed text        NOT NULL DEFAULT \'\',' +
   '  PRIMARY KEY (handle, realm, key))' },
   { name: 'sts_minted_handle', statement:
   'CREATE INDEX IF NOT EXISTS sts_minted_handle ON sts_minted (handle, ' +
@@ -1037,6 +1064,11 @@ const SCHEMA_COLUMNS = [
   // the whole of the migration.
   { table: 'sts_minted', column: 'expires_at', statement:
   'ALTER TABLE sts_minted ADD COLUMN IF NOT EXISTS expires_at bigint' },
+  // A minted row's name, sealed, beside its digest in `key` (#222, schema
+  // version 14). An existing row gets '' — its key is its name, as before.
+  { table: 'sts_minted', column: 'key_sealed', statement:
+  'ALTER TABLE sts_minted ADD COLUMN IF NOT EXISTS key_sealed text NOT ' +
+  'NULL DEFAULT \'\'' },
   // The directory's six generated lookup columns (#349, schema version 13).
   // Adding a STORED generated column rewrites the table once and fills every
   // existing row, which is the whole of the migration.
@@ -1057,7 +1089,13 @@ const SCHEMA_COLUMNS = [
   LDAP_GENERATED.uuid_keys },
   { table: 'sts_ldap_entries', column: 'class_keys', statement:
   'ALTER TABLE sts_ldap_entries ADD COLUMN IF NOT EXISTS ' +
-  LDAP_GENERATED.class_keys }
+  LDAP_GENERATED.class_keys },
+  { table: 'sts_ldap_entries', column: 'value_keys', statement:
+  'ALTER TABLE sts_ldap_entries ADD COLUMN IF NOT EXISTS ' +
+  LDAP_GENERATED.value_keys },
+  { table: 'sts_ldap_entries', column: 'attr_names', statement:
+  'ALTER TABLE sts_ldap_entries ADD COLUMN IF NOT EXISTS ' +
+  LDAP_GENERATED.attr_names }
 ];
 
 // THE STATEMENTS ALONE, which is what this module exported before the pairing
@@ -1474,6 +1512,325 @@ function dialOptions(url, verifyTls) {
 function create(options) {
   const url = options.url;
   const log = options.log;
+
+  // The two helpers of SEALED_VALUE (above, at module level), here for the
+  // driver's logger.
+  function sealedLike(dekId) {
+    log.debug("Entering sealedLike().");
+    log.debug("Leaving sealedLike().");
+    // `$aes___$`: LIKE's `_` matches either envelope's three letters.
+    return '%$aes___$2$' + String(dekId).replace(/[\\%_]/g, '\\$&') + '$%';
+  }
+
+  function resealText(text, reseal) {
+    log.debug("Entering resealText().");
+    let changed = false;
+    const out = String(text || '').replace(SEALED_VALUE, function (value) {
+      const next = reseal(value);
+      if (next) {
+        changed = true;
+        return next;
+      }
+      return value;
+    });
+    log.debug("Leaving resealText().");
+    return changed ? out : null;
+  }
+
+  // ---------------------------------------------------------------------------
+  // MORE COLUMNS THAT HOLD SEALED VALUES (#222), counted and re-sealed beside
+  // the four the re-encryption job always walked. A column that holds a
+  // sealed value and is NOT on one of these lists is a column whose data key
+  // the job counts as unused and destroys — with the value still in it. So a
+  // new one joins here in the same change that starts sealing into it.
+  //
+  //   `table`, the key columns that find one row, the sealed `column`, whether
+  //   it is `jsonb`, and the change-log row a re-seal records so that every
+  //   process reads the row again.
+  // ---------------------------------------------------------------------------
+  const EXTRA_SEALED = [
+    { table: 'sts_appconfig', keys: ['key'], column: 'value', jsonb: true,
+      change: { kind: 'appconfig' } },
+    { table: 'sts_realms', keys: ['id'], column: 'overrides', jsonb: true,
+      change: { kind: 'realms' } },
+    // THE USED-ASSERTION HISTORY's four text columns (`used_assertions.js`):
+    // read from the table at every use, so no change-log row is needed.
+    { table: 'sts_used_assertions', keys: ['realm', 'key'], column: 'issuer',
+      jsonb: false, change: null },
+    { table: 'sts_used_assertions', keys: ['realm', 'key'],
+      column: 'identifier', jsonb: false, change: null },
+    { table: 'sts_used_assertions', keys: ['realm', 'key'],
+      column: 'client_id', jsonb: false, change: null },
+    { table: 'sts_used_assertions', keys: ['realm', 'key'], column: 'subject',
+      jsonb: false, change: null },
+    // A MINTED ROW'S NAME, sealed beside its digest key, and the change-log
+    // rows that carry it (#222). Only the restore and a change's reader open
+    // them, so a re-seal records nothing; the change log is trimmed long
+    // before a key is destroyed, and is re-sealed here anyway so that no
+    // row ever names a destroyed key.
+    { table: 'sts_minted', keys: ['handle', 'realm', 'key'],
+      column: 'key_sealed', jsonb: false, change: null },
+    { table: 'sts_changes', keys: ['seq'], column: 'key', jsonb: false,
+      change: null }
+  ];
+
+  // The column as text, for LIKE and for the regular expression.
+  function textOf(one) {
+    log.debug("Entering textOf().");
+    log.debug("Leaving textOf().");
+    return one.jsonb ? one.column + '::text' : one.column;
+  }
+
+  // Re-seals the rows of one extra column holding values under a DEK, compare
+  // and swap per row; resolves how many rows changed.
+  function resealExtra(one, like, limit, reseal, tally) {
+    log.debug("Entering resealExtra(). " + one.table);
+    const keyList = one.keys.join(', ');
+    log.debug("Leaving resealExtra().");
+    return maintenanceQuery('the re-encryption pass',
+                      'SELECT ' + keyList + ', ' + textOf(one) + ' AS v ' +
+                      'FROM ' + one.table + ' WHERE ' + textOf(one) +
+                      ' LIKE $1 ESCAPE \'\\\' LIMIT $2', [like, limit]
+    ).then(function (r) {
+      return (r.rows || []).reduce(function (c, row) {
+        return c.then(function () {
+          const next = resealText(row.v, reseal);
+          if (!next) {
+            tally.skipped += 1;
+            return null;
+          }
+          const where = one.keys.map(function (k, i) {
+            return k + ' = $' + (i + 1);
+          }).join(' AND ');
+          const n = one.keys.length;
+          const cast = one.jsonb ? '::jsonb' : '';
+          return maintenanceTransaction('the re-encryption pass',
+                                        function (client) {
+            return client.query(
+              'UPDATE ' + one.table + ' SET ' + one.column + ' = $' +
+              (n + 1) + cast + ' WHERE ' + where + ' AND ' + one.column +
+              ' = $' + (n + 2) + cast,
+              one.keys.map(function (k) { return row[k]; })
+                .concat([next, row.v])
+            ).then(function (u) {
+              if (!u.rowCount) {
+                return null;
+              }
+              tally.other = (tally.other || 0) + 1;
+              return one.change
+                ? recordChanges(client, [Object.assign({}, one.change)])
+                : null;
+            });
+          });
+        });
+      }, Promise.resolve());
+    });
+  }
+
+
+  // ---------------------------------------------------------------------------
+  // THE DIRECTORY'S ENTRIES ARE SEALED (#391 phase 6): `directory_codec.js`
+  // turns attributes into the `attrs` blob and the six lookup columns, and
+  // back. `entryTier` is the data-key tier this driver's entries are sealed
+  // under — `service` for a cell's global database, `cell` otherwise (the
+  // service's own key where no cell key is held). The codec reaches the
+  // keystore lazily; a driver used where nothing durable seals writes the
+  // attributes as they are and the lookups in their keyless form.
+  // ---------------------------------------------------------------------------
+  const entryCodec = require('./directory_codec').codecFor(
+    options.entryTier === 'service' ? 'service' : 'cell');
+
+  // The thirteen values an entry is written with: the seven columns it
+  // always had, `attrs` now the sealed blob, then the six lookups.
+  function entryParams(realmId, dnKey, entry) {
+    log.debug("Entering entryParams().");
+    const attrs = (entry && entry.attributes) || {};
+    const index = entryCodec.index(attrs);
+    log.debug("Leaving entryParams().");
+    return [realmId, dnKey, entry.dn,
+            JSON.stringify(entryCodec.sealAttributes(realmId, dnKey, attrs)),
+            entry.origin || null, entry.createdAt || null,
+            entry.modifiedAt || null,
+            JSON.stringify(index.nameKeys), JSON.stringify(index.mailKeys),
+            JSON.stringify(index.uuidKeys), JSON.stringify(index.classKeys),
+            JSON.stringify(index.valueKeys), JSON.stringify(index.attrNames)];
+  }
+
+  // A stored row's entry, its attributes opened. THROWS where the blob does
+  // not open: an entry this process cannot read must not be taken for one
+  // that is absent — the applier would remove it, and a merge would write
+  // over it.
+  function entryFromRow(row) {
+    log.debug("Entering entryFromRow().");
+    const attrs = entryCodec.openAttributes(row.dn_key, row.attrs);
+    if (attrs === null) {
+      log.debug("Leaving entryFromRow(). Does not open.");
+      throw errorCodes.mark(new Error(errorCodes.tag('STS-STORE-0072') +
+        'the directory entry ' + row.dn_key + ' in the "' + row.realm +
+        '" realm is sealed and does not open in this process.'),
+        'STS-STORE-0072');
+    }
+    log.debug("Leaving entryFromRow().");
+    return {
+      dn: row.dn,
+      attributes: attrs,
+      origin: row.origin || undefined,
+      createdAt: row.created_at || null,
+      modifiedAt: row.modified_at || row.created_at || null
+    };
+  }
+
+  // ---------------------------------------------------------------------------
+  // WHAT A SEALED ENTRY HOLDS UNDER WHICH DATA KEY, which SQL can no longer
+  // see (#391 phase 6). An entry's blob is under the realm's `directory` key,
+  // and INSIDE it are the per-attribute values sealed under their own keys
+  // (a TOTP secret, Kerberos keys, a client secret) — a LIKE over the column
+  // finds only the outer one, and the re-encryption job would count the
+  // inner keys as unused and destroy them with the values still in the
+  // entries. So the directory is walked HERE, a page at a time, and each
+  // entry opened.
+  // ---------------------------------------------------------------------------
+  const WALK_PAGE = 500;
+
+  // Every entry, in key order: `visit(row, opened)`, where `opened` is the
+  // text holding the entry's attributes (the blob opened, or the plain
+  // JSON) and null for a blob that does not open. Resolves the row count.
+  // -------------------------------------------------------------------------
+  // THE MAINTENANCE PASSES WAIT FOR A CONNECTION RATHER THAN FAIL (2026-10-02).
+  // The pool's five-second wait is for a REQUEST, which is answered 503 rather
+  // than left hanging (POOL_FLOOR's note). The re-encryption pass and the
+  // data-key count are scheduler jobs walking every sealed row, and one query
+  // that met a full pool failed the whole pass: in single-node, with the bulk
+  // loads flushing thousands of entries through the front process beside it,
+  // `keys.data-key-reencrypt` ran 36 s and then failed on "timeout exceeded
+  // when trying to connect" (sts_data_keys, locally and in CI run
+  // 36967212793). A connect timeout is retried here, four times, one, two,
+  // three and four seconds apart; any other error is the caller's at once.
+  // Safe to repeat: every write these passes make is a compare-and-swap on
+  // the value it read. A bounded loop inside one operation, not a timer that
+  // re-arms (tests/no_periodic_timers.js).
+  // -------------------------------------------------------------------------
+  const MAINTENANCE_CONNECT_RETRIES = 4;
+
+  function connectTimedOut(e) {
+    log.debug("Entering connectTimedOut().");
+    log.debug("Leaving connectTimedOut().");
+    return /timeout exceeded when trying to connect/i.test(
+      String((e && e.message) || e));
+  }
+
+  async function maintenance(what, fn) {
+    log.debug("Entering maintenance(). " + what);
+    for (let attempt = 0; ; attempt++) {
+      try {
+        const out = await fn();
+        log.debug("Leaving maintenance().");
+        return out;
+      } catch (e) {
+        log.debug("Caught in maintenance(): " + ((e && e.message) || e));
+        if (!connectTimedOut(e) || attempt >= MAINTENANCE_CONNECT_RETRIES) {
+          log.debug("Leaving maintenance(). Failed.");
+          throw e;
+        }
+        log.info('persistence: ' + what + ' waited for a database ' +
+                 'connection and got none; trying again in ' +
+                 (attempt + 1) + ' s.');
+        await new Promise(function (resolve) {
+          setTimeout(resolve, 1000 * (attempt + 1));
+        });
+      }
+    }
+  }
+
+  function maintenanceQuery(what, sql, params) {
+    log.debug("Entering maintenanceQuery().");
+    log.debug("Leaving maintenanceQuery().");
+    return maintenance(what, function () {
+      return pool.query(sql, params);
+    });
+  }
+
+  function maintenanceTransaction(what, fn) {
+    log.debug("Entering maintenanceTransaction().");
+    log.debug("Leaving maintenanceTransaction().");
+    return maintenance(what, function () {
+      return withTransaction(fn);
+    });
+  }
+
+  function walkDirectory(visit) {
+    log.debug("Entering walkDirectory().");
+    const crypto = require('../common/crypto');
+    const keystore = require('../common/keystore');
+    let seen = 0;
+    const page = function (afterRealm, afterKey) {
+      return maintenanceQuery('the directory walk',
+        'SELECT realm, dn_key, dn, attrs FROM sts_ldap_entries ' +
+        'WHERE (realm, dn_key) > ($1, $2) ORDER BY realm, dn_key LIMIT $3',
+        [afterRealm, afterKey, WALK_PAGE]
+      ).then(function (r) {
+        const rows = r.rows || [];
+        let chain = Promise.resolve();
+        rows.forEach(function (row) {
+          chain = chain.then(function () {
+            const stored = row.attrs;
+            const opened = typeof stored === 'string' &&
+              crypto.isEncryptedWithKek(stored)
+              ? keystore.open(stored, 'directory')
+              : JSON.stringify(stored || {});
+            seen += 1;
+            return visit(row, opened === undefined ? null : opened);
+          });
+        });
+        return chain.then(function () {
+          if (rows.length < WALK_PAGE) {
+            return seen;
+          }
+          const last = rows[rows.length - 1];
+          return page(last.realm, last.dn_key);
+        });
+      });
+    };
+    log.debug("Leaving walkDirectory().");
+    return page('', '');
+  }
+
+  // The data keys an entry names: its blob's own, and every value inside it.
+  function deksOfEntry(row, opened) {
+    log.debug("Entering deksOfEntry().");
+    const crypto = require('../common/crypto');
+    const out = [];
+    if (typeof row.attrs === 'string' && crypto.isEncryptedWithKek(row.attrs)) {
+      out.push(crypto.dekIdOf(row.attrs));
+    }
+    (String(opened || '').match(SEALED_VALUE) || []).forEach(function (one) {
+      out.push(one.split('$')[3]);
+    });
+    log.debug("Leaving deksOfEntry().");
+    return out;
+  }
+
+  // Counts, by data key, what the directory holds; an entry that does not
+  // open counts for its blob's key (it is still sealed under it).
+  function countDirectory(wanted) {
+    log.debug("Entering countDirectory().");
+    const counts = {};
+    log.debug("Leaving countDirectory().");
+    return walkDirectory(function (row, opened) {
+      deksOfEntry(row, opened).forEach(function (id) {
+        if (!wanted || wanted.has(id)) {
+          counts[id] = (counts[id] || 0) + 1;
+        }
+      });
+    }).then(function () {
+      return counts;
+    }, function (e) {
+      log.error(errorCodes.tag('STS-STORE-0073') + 'persistence: the ' +
+                'directory could not be walked to count its data keys: ' +
+                ((e && e.message) || e));
+      throw e;
+    });
+  }
 
   // RISK ROWS (#62) in the shapes `risk/risk_store.ts` works in: camelCase,
   // times as numbers, an `inet` as its text.
@@ -2324,7 +2681,8 @@ function create(options) {
         }).then(function () {
           // The columns, after the tables they belong to exist.
           return client.query(
-            'SELECT table_name, column_name FROM information_schema.columns ' +
+            'SELECT table_name, column_name, is_generated FROM ' +
+            'information_schema.columns ' +
             'WHERE table_schema = current_schema() AND ' +
             '(table_name, column_name) IN (' +
             SCHEMA_COLUMNS.map(function (one, index) {
@@ -2333,6 +2691,26 @@ function create(options) {
             [].concat.apply([], SCHEMA_COLUMNS.map(function (one) {
               return [one.table, one.column];
             }))).then(function (result) {
+            // A DIRECTORY TABLE FROM BEFORE #391 PHASE 6 (schema version 14)
+            // has its value lookups GENERATED from plaintext attributes, and
+            // the service writes them now — beside a sealed blob the
+            // database cannot read. Such a table is refused rather than
+            // altered: this role may not change the schema, and #391's rule
+            // is that a store is recreated, not migrated.
+            const generated = (result.rows || []).some(function (r) {
+              return r.table_name === 'sts_ldap_entries' &&
+                r.column_name === 'name_keys' &&
+                String(r.is_generated || '').toUpperCase() === 'ALWAYS';
+            });
+            if (generated) {
+              throw errorCodes.mark(new Error(errorCodes.tag(
+                'STS-STORE-0074') + 'the store\'s sts_ldap_entries was ' +
+                'built before schema version 14: its lookup columns are ' +
+                'generated from plaintext attributes, and this build seals ' +
+                'every entry (#391). Recreate the database (and run ' +
+                'postgres/schema.sql as its owner); it is not migrated.'),
+                'STS-STORE-0074');
+            }
             const present = new Set(result.rows.map(function (row) {
               return row.table_name + '.' + row.column_name;
             }));
@@ -2606,7 +2984,7 @@ function create(options) {
       log.debug('Entering the postgres driver loadDirectory().');
       log.debug("Leaving loadDirectory().");
       return readPool.query(
-        'SELECT realm, dn, attrs, origin, created_at, modified_at ' +
+        'SELECT realm, dn_key, dn, attrs, origin, created_at, modified_at ' +
         'FROM sts_ldap_entries ORDER BY realm, dn_key'
       ).then(function (result) {
         if (!result.rows.length) {
@@ -2614,18 +2992,26 @@ function create(options) {
           return null;
         }
         const out = {};
+        let unreadable = 0;
         result.rows.forEach(function (row) {
+          let entry = null;
+          try {
+            entry = entryFromRow(row);
+          } catch (e) {
+            log.debug("Caught in loadDirectory(): " + ((e && e.message) || e));
+            unreadable += 1;
+            return;
+          }
           if (!out[row.realm]) {
             out[row.realm] = [];
           }
-          out[row.realm].push({
-            dn: row.dn,
-            attributes: row.attrs || {},
-            origin: row.origin || undefined,
-            createdAt: row.created_at || null,
-            modifiedAt: row.modified_at || row.created_at || null
-          });
+          out[row.realm].push(entry);
         });
+        if (unreadable) {
+          log.error(errorCodes.tag('STS-STORE-0072') + 'persistence: ' +
+                    unreadable + ' directory entry/entries are sealed and ' +
+                    'did not open in this process, and were not restored.');
+        }
         Object.keys(out).forEach(function (realmId) {
           log.info('persistence: read ' + out[realmId].length + ' entry/ies ' +
                    'for the realm "' + realmId + '" from postgres.');
@@ -2747,32 +3133,47 @@ function create(options) {
       const blind = change.upserts.filter(function (row) {
         return row.base === undefined;
       });
+      const mergingIds = new Set(merging.map(function (row) {
+        return idOf(row.realm, row.key);
+      }));
       log.debug("Leaving saveDirectory().");
-      return withTransaction(function (client) {
+      // **A MERGE THAT MEETS AN ENTRY UNDER A DATA KEY THIS PROCESS DOES NOT
+      // HOLD YET IS TRIED ONCE MORE, AFTER THE DATA-KEY ROWS ARE READ AGAIN
+      // (2026-10-02)** — the ordinary cause is a realm another worker thread
+      // created a moment ago, whose `directory` key this thread has not read.
+      // `keystore.writeAfterDeks()` does the same for its own rows.
+      const attempt = function (again) {
+        outcomes.length = 0;
+        return withTransaction(transactionBody).catch(function (e) {
+          if (!again || errorCodes.codeOf(e) !== 'STS-STORE-0072') {
+            throw e;
+          }
+          log.debug("Caught in saveDirectory(): " + ((e && e.message) || e));
+          return require('../common/keystore').refreshDekRows()
+            .then(function () {
+              return attempt(false);
+            });
+        });
+      };
+      const transactionBody = function (client) {
         let chain = Promise.resolve();
         const moved = [];
         const stored = new Map();
 
         const entryOf = function (row) {
-          return {
-            dn: row.dn,
-            attributes: row.attrs || {},
-            origin: row.origin || undefined,
-            createdAt: row.created_at || null,
-            modifiedAt: row.modified_at || row.created_at || null
-          };
+          return entryFromRow(row);
         };
         const params = function (row, entry) {
-          return [row.realm, row.key, entry.dn,
-                  JSON.stringify(entry.attributes || {}),
-                  entry.origin || null, entry.createdAt || null,
-                  entry.modifiedAt || null];
+          return entryParams(row.realm, row.key, entry);
         };
         const update = function (row, entry) {
           moved.push({ realm: row.realm, dn: row.key, op: 'put' });
           return client.query(
             'UPDATE sts_ldap_entries SET dn = $3, attrs = $4::jsonb, ' +
-            'origin = $5, created_at = $6, modified_at = $7 ' +
+            'origin = $5, created_at = $6, modified_at = $7, ' +
+            'name_keys = $8::jsonb, mail_keys = $9::jsonb, ' +
+            'uuid_keys = $10::jsonb, class_keys = $11::jsonb, ' +
+            'value_keys = $12::jsonb, attr_names = $13::jsonb ' +
             'WHERE realm = $1 AND dn_key = $2', params(row, entry));
         };
         // What the merge decided, turned into a statement and an outcome.
@@ -2795,8 +3196,11 @@ function create(options) {
           }
           return client.query(
             'INSERT INTO sts_ldap_entries ' +
-            '  (realm, dn_key, dn, attrs, origin, created_at, modified_at) ' +
-            'VALUES ($1, $2, $3, $4::jsonb, $5, $6, $7) ' +
+            '  (realm, dn_key, dn, attrs, origin, created_at, modified_at, ' +
+            '   name_keys, mail_keys, uuid_keys, class_keys, value_keys, ' +
+            '   attr_names) ' +
+            'VALUES ($1, $2, $3, $4::jsonb, $5, $6, $7, $8::jsonb, ' +
+            '$9::jsonb, $10::jsonb, $11::jsonb, $12::jsonb, $13::jsonb) ' +
             'ON CONFLICT (realm, dn_key) DO NOTHING',
             params(row, verdict.entry)
           ).then(function (r) {
@@ -2845,20 +3249,50 @@ function create(options) {
                chunk.map(function (row) { return String(row.key); })]
             ).then(function (r) {
               (r.rows || []).forEach(function (found) {
-                stored.set(idOf(found.realm, found.dn_key), entryOf(found));
+                const id = idOf(found.realm, found.dn_key);
+                // **ONLY A ROW BEING MERGED IS OPENED (2026-10-02).** A
+                // delete is locked for the order and never read, and the
+                // rows a removed realm leaves are deleted after its data
+                // keys went with it — so opening them threw STS-STORE-0072,
+                // rolled back the whole flush, and answered the removal 503
+                // (sts_scheduler and sts_xml_schema_validation, single-node).
+                if (mergingIds.has(id)) {
+                  stored.set(id, entryOf(found));
+                }
               });
             });
           });
         }
 
-        merging.forEach(function (row) {
-          chain = chain.then(function () {
-            return settle(row, stored.get(idOf(row.realm, row.key)) || null,
-                          true);
-          });
+        // **EVERY ROW WRITTEN IN ONE PRIMARY-KEY ORDER, MERGED AND BLIND
+        // TOGETHER (2026-09-30).** The locks above are in key order, but the
+        // writes that followed were every merged row and then every blind
+        // one, the blind ones in journal order. An INSERT of a row that does
+        // not exist yet locks nothing until it runs, so two nodes writing the
+        // same new entries — a new realm's `ou=crl` and its CRL entries,
+        // published by both nodes at once — took those locks in two different
+        // orders and PostgreSQL killed one with `deadlock detected`
+        // (STS-STORE-0002). Since #351 the request whose change was in that
+        // flush is answered 503 (STS-STORE-0066): CI run 36762417779's
+        // cluster job, sts_ldap_read_authorization. saveMinted() gave its
+        // table one order on 2026-09-12 for the same reason.
+        const writes = merging.map(function (row) {
+          return { row: row, merge: true };
+        }).concat(blind.map(function (row) {
+          return { row: row, merge: false };
+        })).sort(function (a, b) {
+          return byKey(a.row, b.row);
         });
 
-        blind.forEach(function (row) {
+        writes.forEach(function (one) {
+          const row = one.row;
+          if (one.merge) {
+            chain = chain.then(function () {
+              return settle(row, stored.get(idOf(row.realm, row.key)) || null,
+                            true);
+            });
+            return;
+          }
           chain = chain.then(function () {
             // **`row.key` AND NOT `row.entry.dn` (2026-09-07).** A change row
             // is a POINTER, and the receiver dereferences it with
@@ -2872,12 +3306,21 @@ function create(options) {
             moved.push({ realm: row.realm, dn: row.key, op: 'put' });
             return client.query(
               'INSERT INTO sts_ldap_entries ' +
-              '  (realm, dn_key, dn, attrs, origin, created_at, modified_at) ' +
-              'VALUES ($1, $2, $3, $4::jsonb, $5, $6, $7) ' +
+              '  (realm, dn_key, dn, attrs, origin, created_at, modified_at, ' +
+              '   name_keys, mail_keys, uuid_keys, class_keys, value_keys, ' +
+              '   attr_names) ' +
+              'VALUES ($1, $2, $3, $4::jsonb, $5, $6, $7, $8::jsonb, ' +
+              '$9::jsonb, $10::jsonb, $11::jsonb, $12::jsonb, $13::jsonb) ' +
               'ON CONFLICT (realm, dn_key) DO UPDATE SET ' +
               '  dn = EXCLUDED.dn, attrs = EXCLUDED.attrs, ' +
               '  origin = EXCLUDED.origin, created_at = EXCLUDED.created_at, ' +
-              '  modified_at = EXCLUDED.modified_at',
+              '  modified_at = EXCLUDED.modified_at, ' +
+              '  name_keys = EXCLUDED.name_keys, ' +
+              '  mail_keys = EXCLUDED.mail_keys, ' +
+              '  uuid_keys = EXCLUDED.uuid_keys, ' +
+              '  class_keys = EXCLUDED.class_keys, ' +
+              '  value_keys = EXCLUDED.value_keys, ' +
+              '  attr_names = EXCLUDED.attr_names',
               params(row, row.entry));
           });
         });
@@ -2955,7 +3398,8 @@ function create(options) {
             return { kind: 'directory', realm: row.realm, key: row.dn };
           }));
         });
-      }).then(function () {
+      };
+      return attempt(true).then(function () {
         log.debug('Leaving the postgres driver saveDirectory(). ' +
                   change.upserts.length + ' upsert(s), ' +
                   change.deletes.length + ' delete(s), ' + outcomes.length +
@@ -3194,7 +3638,8 @@ function create(options) {
       log.debug("Leaving loadMinted().");
       return readPool.query(
         'SELECT handle, realm, key, body, (extract(epoch from written_at) ' +
-        '* 1000)::bigint AS written_ms, expires_at FROM sts_minted ' +
+        '* 1000)::bigint AS written_ms, expires_at, key_sealed ' +
+        'FROM sts_minted ' +
         'WHERE body <> $1 AND realm = ANY($2::text[]) AND ' +
         '(expires_at IS NULL OR expires_at > $3)' +
         (aged ? ' AND NOT (expires_at IS NULL AND handle = ANY($4::text[]) ' +
@@ -3209,6 +3654,8 @@ function create(options) {
             handle: row.handle,
             realm: row.realm,
             key: row.key,
+            // The name, sealed (#222); '' for a row whose key is its name.
+            keySealed: row.key_sealed || '',
             body: row.body,
             // A NUMBER of milliseconds rather than a Date, because the one
             // reader compares it against `Date.now()` and a driver that
@@ -3287,14 +3734,17 @@ function create(options) {
             ? Math.floor(Number(row.expiresAt)) : null;
           return client.query(
             'INSERT INTO sts_minted (handle, realm, key, body, ' +
-            'written_at, expires_at) VALUES ($1, $2, $3, $4, now(), $5) ' +
+            'written_at, expires_at, key_sealed) VALUES ($1, $2, $3, $4, ' +
+            'now(), $5, $6) ' +
             'ON CONFLICT (handle, realm, key) DO UPDATE SET ' +
             'body = EXCLUDED.body, written_at = now(), ' +
-            'expires_at = EXCLUDED.expires_at' +
-            (guarded ? ' WHERE sts_minted.body <> $6' : ''),
+            'expires_at = EXCLUDED.expires_at, ' +
+            'key_sealed = EXCLUDED.key_sealed' +
+            (guarded ? ' WHERE sts_minted.body <> $7' : ''),
             guarded ? [row.handle, row.realm, row.key, body, expires,
-                       TOMBSTONE]
-                    : [row.handle, row.realm, row.key, body, expires]
+                       String(row.keySealed || ''), TOMBSTONE]
+                    : [row.handle, row.realm, row.key, body, expires,
+                       String(row.keySealed || '')]
           ).then(function (r) {
             if (guarded && !(r && r.rowCount)) {
               refused.push(row);
@@ -3340,10 +3790,12 @@ function create(options) {
               // said, so the expiry purge never takes it early.
               return client.query(
                 'INSERT INTO sts_minted (handle, realm, key, body, ' +
-                'written_at, expires_at) VALUES ($1, $2, $3, $4, now(), ' +
-                'NULL) ON CONFLICT (handle, realm, key) DO UPDATE SET ' +
-                'body = EXCLUDED.body, written_at = now(), expires_at = NULL',
-                [row.handle, row.realm, row.key, TOMBSTONE]
+                'written_at, expires_at, key_sealed) VALUES ($1, $2, $3, ' +
+                '$4, now(), NULL, $5) ON CONFLICT (handle, realm, key) DO ' +
+                'UPDATE SET body = EXCLUDED.body, written_at = now(), ' +
+                'expires_at = NULL, key_sealed = EXCLUDED.key_sealed',
+                [row.handle, row.realm, row.key, TOMBSTONE,
+                 String(row.keySealed || '')]
               );
             }
             return client.query(
@@ -3386,12 +3838,18 @@ function create(options) {
             // target — see latestBlockingChangeSeq(). A column would have had
             // to be added to `sts_changes` and indexed; a kind is already
             // there and already selected on.
+            // THE NAME, SEALED, where the row carries one (#222): the key
+            // column is a digest, and a reader needs the NAME — to drop it
+            // from its own store on a delete, which no digest can tell it. A
+            // sealed value is not base64url (it holds '$'), so a reader tells
+            // the two forms apart.
             return { kind: row.own ? 'minted-own' : 'minted', realm: row.realm,
                      key: Buffer.from(String(row.handle), 'utf8')
                                 .toString('base64url') +
                           '.' +
-                          Buffer.from(String(row.key), 'utf8')
-                                .toString('base64url') };
+                          (row.keySealed ? String(row.keySealed)
+                            : Buffer.from(String(row.key), 'utf8')
+                                .toString('base64url')) };
           }));
         });
       }).then(function () {
@@ -3745,9 +4203,10 @@ function create(options) {
         if (!row) {
           return null;
         }
-        return { realm: row.realm, key: row.dn_key, entry: {
-          dn: row.dn, attributes: row.attrs || {}, origin: row.origin,
-          createdAt: row.created_at, modifiedAt: row.modified_at } };
+        // Opened; a blob that does not open THROWS, so the applier does not
+        // take an unreadable entry for a deleted one (see entryFromRow()).
+        return { realm: row.realm, key: row.dn_key,
+                 entry: entryFromRow(row) };
       });
     },
 
@@ -3764,8 +4223,11 @@ function create(options) {
     directoryQuery: function (name, args) {
       log.debug("Entering directoryQuery(). " + name);
       let statement;
+      const codecModule = require('./directory_codec');
       try {
-        statement = directoryQueries.build(name, args);
+        // The values looked up, keyed; the answer, opened (#391 phase 6).
+        statement = directoryQueries.build(name,
+                                           codecModule.keyArgs(name, args));
       } catch (e) {
         log.debug("Caught in directoryQuery(): " + ((e && e.message) || e));
         log.debug("Leaving directoryQuery(). Unknown query.");
@@ -3774,7 +4236,8 @@ function create(options) {
       log.debug("Leaving directoryQuery().");
       return readPool.query(statement.text, statement.values)
         .then(function (r) {
-          return directoryQueries.answerOf(name, r.rows || []);
+          return codecModule.openAnswer(entryCodec, name,
+            directoryQueries.answerOf(name, r.rows || []));
         });
     },
 
@@ -3783,6 +4246,14 @@ function create(options) {
     // the thread is one more client of this store and never a second,
     // differently configured way into it. It holds the password when the
     // URL does; it is handed to a thread of this process and nowhere else.
+    // The codec this driver seals its entries with, for the bridge's
+    // answers, which arrive on this thread still sealed (#391 phase 6).
+    entryCodec: function () {
+      log.debug("Entering entryCodec().");
+      log.debug("Leaving entryCodec().");
+      return entryCodec;
+    },
+
     bridgeConnection: function () {
       log.debug("Entering bridgeConnection().");
       log.debug("Leaving bridgeConnection().");
@@ -4693,6 +5164,16 @@ function create(options) {
 
     // The replica's lag behind its writer, in milliseconds, or null where
     // this is not a replica or the question cannot be asked — `/admin/cells`.
+    //
+    // TWO KINDS OF REPLICA (#97). An RDS read replica is PHYSICAL and is in
+    // recovery, so its last replayed transaction's age is the lag. A GCP
+    // cell's copy of the global tier is a LOGICAL subscriber of the RDS
+    // writer (deploy/multicloud/CLAUDE.md) and is NOT in recovery — the one
+    // question alone answered 0 there, whatever the subscription's state. Its
+    // lag is the age of the last position the subscription reported, which
+    // `pg_stat_subscription` shows the application role. Both read the time
+    // of the last thing received, so an idle writer reads as a lag of up to
+    // its keepalive interval.
     replicaLagMs: function () {
       log.debug("Entering replicaLagMs().");
       if (readPool === pool) {
@@ -4703,7 +5184,12 @@ function create(options) {
       return readPool.query(
         'SELECT CASE WHEN pg_is_in_recovery() THEN ' +
         '(extract(epoch from (now() - pg_last_xact_replay_timestamp())) ' +
-        '* 1000)::bigint ELSE 0 END AS lag'
+        '* 1000)::bigint ' +
+        'WHEN EXISTS (SELECT 1 FROM pg_stat_subscription ' +
+        'WHERE relid IS NULL) THEN ' +
+        '(SELECT (extract(epoch from (now() - max(latest_end_time))) ' +
+        '* 1000)::bigint FROM pg_stat_subscription WHERE relid IS NULL) ' +
+        'ELSE 0 END AS lag'
       ).then(function (r) {
         const row = (r.rows || [])[0];
         return row && row.lag !== null ? Number(row.lag) : null;
@@ -5755,6 +6241,250 @@ function create(options) {
           }
           return second;
         });
+      });
+    },
+
+    // =====================================================================
+    // WHAT IS SEALED UNDER A DATA ENCRYPTION KEY (#391 P2): counted and
+    // re-sealed here, for the re-encryption job.
+    //
+    // A sealed value names its DEK (`$aesgcm$2$<dek id>$…`), so what is
+    // sealed under a superseded DEK is found by its text, in the four tables
+    // that hold sealed values: `sts_keys` (key-set and certificate-authority
+    // rows — the keystore re-seals those itself, they are only COUNTED here),
+    // `sts_minted`, the directory's attributes and `sts_cluster_secrets`.
+    //
+    // **RE-SEALING IS COMPARE-AND-SWAP, ROW BY ROW**: the new text is written
+    // only where the row still holds the text it was made from, so a writer
+    // that changed the row in between is never overwritten — the next run
+    // finds the row again if it is still stale. A re-sealed minted row and
+    // directory entry is logged in `sts_changes` like any write, so every
+    // process adopts the re-sealed value; a cluster secret is not (every
+    // process holds it opened, and the opened value did not change).
+    //
+    // The DEK id is base64url plus dots, and `_` is LIKE's wildcard, so the
+    // pattern escapes it. `risk.address` values are in the risk tables and
+    // are not counted: they are written and never read (see the risk store).
+    // =====================================================================
+    countSealed: function (dekIds) {
+      log.debug("Entering countSealed().");
+      const ids = (dekIds || []).map(String);
+      log.debug("Leaving countSealed().");
+      return Promise.all(ids.map(function (id) {
+        const like = sealedLike(id);
+        return maintenanceQuery('the data-key count',
+          'SELECT ' +
+          '(SELECT count(*) FROM sts_keys WHERE realm NOT LIKE \'dek:%\' ' +
+          '   AND material LIKE $1 ESCAPE \'\\\') + ' +
+          '(SELECT count(*) FROM sts_minted WHERE body LIKE $1 ' +
+          '   ESCAPE \'\\\') + ' +
+
+          '(SELECT count(*) FROM sts_cluster_secrets WHERE material LIKE $1 ' +
+          '   ESCAPE \'\\\')' + EXTRA_SEALED.map(function (one) {
+            return ' + (SELECT count(*) FROM ' + one.table + ' WHERE ' +
+                   textOf(one) + ' LIKE $1 ESCAPE \'\\\')';
+          }).join('') + ' AS n', [like]
+        ).then(function (r) {
+          return { id: id, count: Number(((r.rows || [])[0] || {}).n) || 0 };
+        });
+      })).then(function (rows) {
+        // AND THE DIRECTORY, walked: its entries are sealed blobs (#391
+        // phase 6), and what is inside one is not visible to LIKE.
+        return countDirectory(new Set(ids)).then(function (inDirectory) {
+          const out = {};
+          rows.forEach(function (one) {
+            out[one.id] = one.count + (Number(inDirectory[one.id]) || 0);
+          });
+          return out;
+        });
+      });
+    },
+
+    // EVERY DATA KEY'S COUNT AT ONCE (#391 P5), for the console's figure:
+    // one pass over each table, the DEK id pulled out of every sealed value by
+    // a regular expression and grouped, rather than `countSealed()`'s pass
+    // per key. A row holding two values under one key counts two: it is a
+    // count of VALUES, which is what re-encryption has to re-seal.
+    countAllSealed: function () {
+      log.debug("Entering countAllSealed().");
+      const pattern = '\\$aes(?:gcm|siv)\\$2\\$([A-Za-z0-9_.-]+)\\$';
+      const one = function (table, column, where) {
+        log.debug("Entering countAllSealed.one().");
+        log.debug("Leaving countAllSealed.one().");
+        return 'SELECT m[1] AS id, count(*) AS n FROM ' + table + ', ' +
+               'regexp_matches(' + column + ', $1, \'g\') AS m' +
+               (where ? ' WHERE ' + where : '') + ' GROUP BY 1';
+      };
+      log.debug("Leaving countAllSealed().");
+      return pool.query(
+        'SELECT id, sum(n)::bigint AS n FROM (' +
+        one('sts_keys', 'material', 'realm NOT LIKE \'dek:%\'') +
+        ' UNION ALL ' + one('sts_minted', 'body') +
+
+        ' UNION ALL ' + one('sts_cluster_secrets', 'material') +
+        EXTRA_SEALED.map(function (extra) {
+          return ' UNION ALL ' + one(extra.table, textOf(extra));
+        }).join('') +
+        ') t GROUP BY id', [pattern]
+      ).then(function (r) {
+        const out = {};
+        (r.rows || []).forEach(function (row) {
+          out[String(row.id)] = Number(row.n) || 0;
+        });
+        // AND THE DIRECTORY, walked (#391 phase 6).
+        return countDirectory(null).then(function (inDirectory) {
+          Object.keys(inDirectory).forEach(function (id) {
+            out[id] = (out[id] || 0) + inDirectory[id];
+          });
+          return out;
+        });
+      });
+    },
+
+    resealSealed: function (dekIds, reseal, options) {
+      log.debug("Entering resealSealed().");
+      const ids = (dekIds || []).map(String);
+      const limit = Math.max(1, Number(options && options.limit) || 500);
+      const ownHandle = (options && options.ownHandle) || function () {
+        return false;
+      };
+      // `changed` names the directory rows re-sealed, so the process that ran
+      // this can apply them to its own copy: the change log's applier skips
+      // a process's own rows, and this process holds the entries' sealed
+      // attributes as ciphertext — a copy left naming the old DEK would be
+      // written back by its next flush of that entry, after the DEK may be
+      // gone.
+      const tally = { minted: 0, entries: 0, secrets: 0, skipped: 0,
+                      changed: [] };
+      log.debug("Leaving resealSealed().");
+      return ids.reduce(function (chain, id) {
+        const like = sealedLike(id);
+        return chain.then(function () {
+          return maintenanceQuery('the re-encryption pass',
+                            'SELECT handle, realm, key, body FROM sts_minted ' +
+                            'WHERE body LIKE $1 ESCAPE \'\\\' LIMIT $2',
+                            [like, limit]);
+        }).then(function (r) {
+          return (r.rows || []).reduce(function (c, row) {
+            return c.then(function () {
+              const next = resealText(row.body, reseal);
+              if (!next) {
+                tally.skipped += 1;
+                return null;
+              }
+              return maintenanceTransaction('the re-encryption pass',
+                                            function (client) {
+                return client.query(
+                  'UPDATE sts_minted SET body = $4, written_at = now() ' +
+                  'WHERE handle = $1 AND realm = $2 AND key = $3 AND ' +
+                  'body = $5', [row.handle, row.realm, row.key, next, row.body]
+                ).then(function (u) {
+                  if (!u.rowCount) {
+                    return null;
+                  }
+                  tally.minted += 1;
+                  return recordChanges(client, [{
+                    kind: ownHandle(row.handle) ? 'minted-own' : 'minted',
+                    realm: row.realm,
+                    key: Buffer.from(String(row.handle), 'utf8')
+                           .toString('base64url') + '.' +
+                         Buffer.from(String(row.key), 'utf8')
+                           .toString('base64url') }]);
+                });
+              });
+            });
+          }, Promise.resolve());
+        }).then(function () {
+          return maintenanceQuery('the re-encryption pass',
+                            'SELECT name, material FROM sts_cluster_secrets ' +
+                            'WHERE material LIKE $1 ESCAPE \'\\\' LIMIT $2',
+                            [like, limit]);
+        }).then(function (r) {
+          return (r.rows || []).reduce(function (c, row) {
+            return c.then(function () {
+              const next = resealText(row.material, reseal);
+              if (!next) {
+                tally.skipped += 1;
+                return null;
+              }
+              return maintenanceQuery('the re-encryption pass',
+                'UPDATE sts_cluster_secrets SET material = $2 ' +
+                'WHERE name = $1 AND material = $3',
+                [row.name, next, row.material]
+              ).then(function (u) {
+                tally.secrets += u.rowCount ? 1 : 0;
+              });
+            });
+          }, Promise.resolve());
+        }).then(function () {
+          return EXTRA_SEALED.reduce(function (c, one) {
+            return c.then(function () {
+              return resealExtra(one, like, limit, reseal, tally);
+            });
+          }, Promise.resolve());
+        });
+      }, Promise.resolve()).then(function () {
+        // THE DIRECTORY, walked once for every key (#391 phase 6): an entry
+        // holding anything under one of them — its blob, or a value inside
+        // it — is opened, every inner value re-sealed, and the blob sealed
+        // again under the current `directory` key; compare and swap, with a
+        // change-log row, as before.
+        const wanted = new Set(ids);
+        const crypto = require('../common/crypto');
+        let budget = limit;
+        return walkDirectory(function (row, opened) {
+          if (budget <= 0 || opened === null) {
+            if (opened === null) {
+              tally.skipped += 1;
+            }
+            return null;
+          }
+          const holds = deksOfEntry(row, opened).some(function (id) {
+            return wanted.has(id);
+          });
+          if (!holds) {
+            return null;
+          }
+          const inner = resealText(opened, reseal) || opened;
+          let attrs = null;
+          try {
+            const parsed = JSON.parse(inner);
+            attrs = typeof row.attrs === 'string' &&
+              crypto.isEncryptedWithKek(row.attrs) ? parsed.a : parsed;
+          } catch (e) {
+            log.debug("Caught in resealSealed(): " + ((e && e.message) || e));
+            tally.skipped += 1;
+            return null;
+          }
+          const next = JSON.stringify(entryCodec.sealAttributes(row.realm,
+                                                                row.dn_key,
+                                                                attrs || {}));
+          budget -= 1;
+          return maintenanceTransaction('the re-encryption pass',
+                                        function (client) {
+            return client.query(
+              'UPDATE sts_ldap_entries SET attrs = $3::jsonb ' +
+              'WHERE realm = $1 AND dn_key = $2 AND attrs = $4::jsonb',
+              [row.realm, row.dn_key, next, JSON.stringify(row.attrs)]
+            ).then(function (u) {
+              if (!u.rowCount) {
+                return null;
+              }
+              tally.entries += 1;
+              tally.changed.push({ realm: row.realm, key: row.dn });
+              return recordChanges(client, [{ kind: 'directory',
+                                              realm: row.realm,
+                                              key: row.dn }]);
+            });
+          });
+        }).catch(function (e) {
+          log.error(errorCodes.tag('STS-STORE-0073') + 'persistence: the ' +
+                    'directory could not be walked to re-seal it: ' +
+                    ((e && e.message) || e));
+          throw e;
+        });
+      }).then(function () {
+        return tally;
       });
     },
 

@@ -708,6 +708,25 @@ so must `admin-ui/admin.ts`.
    verifying it would use the client's PUBLIC key as an HMAC secret, which is
    the classic JWT forgery and one anybody can perform.
 
+   **AN ENTRY MAY DECLARE SEVERAL METHODS (2026-10-01, rcbj)** —
+   `oauthTokenEndpointAuthMethod` is a list, a checkbox per method on the
+   application's page, and `none` is refused beside any other
+   (`applications.authMethodsProblem()`, `STS-REG-0207`) because it is what
+   makes a client public. `clientConfigOf()` carries them as
+   `token_endpoint_auth_methods`, its single `token_endpoint_auth_method`
+   being the first (all a "public or confidential" reader needs, and what RFC
+   7591's single-valued member reports). **`methodFor()` picks the one this
+   request PRESENTED** — the assertion type, a Basic header or a body secret,
+   the attestation headers, a client certificate — and `verify()` is still
+   told exactly one method; nothing tries methods in turn, which would spend a
+   single-use assertion on a method the client did not use. Where a client
+   declares both JWT methods the assertion's `alg` chooses between them, and
+   that does not reopen the forgery above: an HMAC `alg` selects
+   `client_secret_jwt`, verified with the client's SECRET, never with its
+   public key. `oauth2_bcp.js`'s two verification sites, the advertised-method
+   checks in `oauth2.ts`, `mtls.declaredRefusal()` and the attestation's
+   `requestRefusal()` all ask about the presented method.
+
    **THE UNVERIFIED `sub` SELECTS, IT DOES NOT ESTABLISH.** OIDC Core section 9
    lets a `private_key_jwt` request omit `client_id`, so `clientFrom()` reads
    the assertion's `sub` unverified — safe for exactly one purpose, choosing
@@ -3685,26 +3704,47 @@ all of it in process — including a control store that answers every claim "yes
 which two concurrent redemptions of one code are both issued, and which fails six of its
 assertions.
 
-## CLIENT SECRETS EXPIRE AND ROTATE WITH AN OVERLAP (2026-09-22, #49 P5, rcbj's answer)
+## CLIENT SECRETS: SEVERAL PER APPLICATION, EACH WITH ITS EXPIRY (2026-09-22, #49 P5; several since 2026-10-01)
 
-**Expiry is enforced**: `client_auth.verify()` refuses a secret past its
-expiry — `oauthClientSecretExpiresAt` (seconds; RFC 7591's
-`client_secret_expires_at`), or the registration document's own — with
-`invalid_client` and `STS-OAUTH-0558`, in product mode
-(`mode.refusesExpiredClientSecrets()`); development accepts it and logs
-`STS-OAUTH-0559`. **A rotation keeps the old secret working**:
-`rotate-secret` on `/admin/applications` and `/admin-api/applications` mints
-a new one as `regenerate-secret` does and keeps the old as
-`oauthClientSecretPrevious` until `oauthClientSecretPreviousUntil`
-(`oauth2.clientSecretOverlapS`, a week), which `verify()` accepts until then
-and no later — the time alone ends it, before any sweep. `regenerate-secret`
-still ends the old secret at once. **Administrators are told**: the daily
-scheduler job `oauth2.client-secret-expiry` writes
-`application.secret-expiring` and `application.secret-expired` audit rows
-and a warning (`STS-REG-0166`), clears rotated-out secrets past their
-overlap, and `/admin/applications` marks each such entry. `verify()` reads
-these off the client's entry itself (the registry required lazily), so no
-caller threads them through. `tests/client_secret_rotation.js`.
+**An application holds up to `oauth2.clientSecretsMax` (5) secrets**, each a
+RECORD on the multi-valued `oauthClientSecret` — `{id, secret, created,
+expires, description}`, Entra ID's shape — read by
+`applications.clientSecretRecordsOf()`, newest first; a bare value (an
+`ldapmodify`, an older entry) is a record with no expiry. The three
+attributes the single secret needed (`oauthClientSecretExpiresAt`,
+`oauthClientSecretPrevious`, `…PreviousUntil`) are gone, with no migration
+(rcbj's decision). `common/CLAUDE.md` and `applications.js`'s header at
+`digestSecretId()` argue the record.
+
+* **Verification accepts ANY unexpired secret**: `client_auth.verify()`
+  matches the presented secret against every record (`secretsOf()`, off the
+  client's own entry, the registry required lazily), `client_secret_jwt`
+  tries each, and `request_object.ts` and `oauth2.ts`'s `id_token_hint`
+  check try each as an HMAC key. The answer carries `secretId` and
+  `previousSecret` (a match that is not the newest).
+* **Expiry is per record**: a secret past its `expires` is refused with
+  `invalid_client` and `STS-OAUTH-0558` in product
+  (`mode.refusesExpiredClientSecrets()`); in development only the NEWEST
+  secret is accepted expired (logged `STS-OAUTH-0559`) — a superseded one
+  past its expiry is a rotation's overlap ending and is refused in both.
+* **The PRIMARY is the newest unexpired** (`primaryClientSecretOf()`), and
+  it is `clientConfigOf().client_secret` — what this service signs an HS256
+  ID Token, a JARM response and a Logout Token with, and what RFC 7591/7592
+  publish — so no outbound signer changed.
+* **Add, remove, rotate, regenerate**: `add-secret` (`lifetimeDays`, 0 to
+  730, default `oauth2.clientSecretLifetimeDays`; `description`),
+  `remove-secret` (by
+  id), `rotate-secret` (a new secret, and every live one's expiry moved to
+  the end of `oauth2.clientSecretOverlapS`), `regenerate-secret` (replaces
+  all), on the Credentials tab and `/admin-api/applications/{action}`.
+  Refusals: the cap `STS-REG-0208`, an unknown id `0209`, the pinned
+  `adminApi.clientSecret` `0210`, a bad lifetime or description `0211`.
+* **Administrators are told**: the daily `oauth2.client-secret-expiry` job
+  writes `application.secret-expiring` for an application holding a secret
+  that expires within `oauth2.clientSecretExpiryWarningDays`,
+  `application.secret-expired` (`STS-REG-0166`) for one whose every secret
+  has expired, and REMOVES expired secrets an application holds a live one
+  beside — never the last. `tests/client_secret_rotation.js`.
 
 
 ## 3bb. OPENID CONNECT NATIVE SSO, AND RFC 8693's TOKEN TYPES READ (2026-09-23, #130)

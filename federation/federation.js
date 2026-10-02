@@ -1,6 +1,6 @@
 // @ts-check
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -152,11 +152,11 @@
 // foreign service, which is a stronger statement than anything else in this
 // directory: `oauthClientSecret` is a secret this service minted for a mock
 // client and can mint again, and this one is not ours to regenerate. It is
-// held in the clear for the reason that attribute's header gives, it is marked
-// `sensitive` so no page prints it and no audit row carries it, and the honest
-// consequence is stated here rather than buried: anybody who can read this
-// directory can authenticate as this service at that partner. A deployment
-// that federates with something real should say so out loud.
+// marked `sensitive` so no page prints it and no audit row carries it, and
+// since 2026-10-01 it is SEALED on the entry wherever the process holds a
+// durable key-encryption key (sealClientSecret(), clientSecretOf()), so a
+// directory dump or a backup no longer authenticates anybody at the partner.
+// Without a durable key (a development process) it is in the clear.
 //
 // `fedSigningCertificate` is the opposite — the partner's PUBLIC key, worth
 // nothing to whoever reads it, and it is the single most important attribute
@@ -253,7 +253,10 @@ const PATHS = {
   frontchannelLogout: '/federation/frontchannel-logout',
   // An OpenID Connect relationship's encryption key as a JWKS (#168), what
   // the partner registers to encrypt its ID Token to.
-  jwks: '/federation/jwks'
+  jwks: '/federation/jwks',
+  // Where a partner PUSHES its Security Event Tokens (RFC 8935, #373), the
+  // relationship's id after it. ssf/ssf_transmitters.ts registers it.
+  signals: '/federation/signals'
 };
 
 /**
@@ -283,13 +286,15 @@ const ROLES = [
 const ROLE_IDS = ROLES.map(function (one) { return one.role; });
 
 // ---------------------------------------------------------------------------
-// THE FIVE PROTOCOLS. Closed on purpose, for the reason applications.js's KINDS
-// list is closed: a typo that silently became a sixth protocol is how a page
+// THE SIX PROTOCOLS. Closed on purpose, for the reason applications.js's KINDS
+// list is closed: a typo that silently became a seventh protocol is how a page
 // comes to offer `oidc` and `openid-connect` as two things.
 //
-// `consumes` and `asserts` say which ROLES a protocol can take here. All five
-// can do both, which is worth stating rather than leaving to be inferred — it
-// is the reason the form is one form with a role select rather than two forms.
+// The five sign-in protocols can take either ROLE, which is worth stating
+// rather than leaving to be inferred — it is the reason the form is one form
+// with a role select rather than two forms. The sixth, `ssf` (#374), is a
+// transmitter that signs nobody in, and takes the service-provider role only
+// (`signalsOnly`, refused at create otherwise).
 //
 // `needs` is what a relationship of this protocol in the SERVICE PROVIDER role
 // must carry before it can be enabled. It is read by `readyFor()` below and by
@@ -309,7 +314,7 @@ const ROLE_IDS = ROLES.map(function (one) { return one.role; });
 // check that quietly lapses.
 // ---------------------------------------------------------------------------
 /**
- * The five federation protocols, each with the fields a service-provider-side
+ * The six federation protocols, each with the fields a service-provider-side
  * relationship of it `needs` before it is ready.
  */
 const PROTOCOLS = [
@@ -349,7 +354,25 @@ const PROTOCOLS = [
           'whole of what goes wrong when people use OAuth 2.0 for ' +
           'authentication.',
     needs: ['fedSsoUrl', 'fedTokenUrl', 'fedClientId', 'fedPeer'],
-    spec: 'RFC 6749 section 4.1' }
+    spec: 'RFC 6749 section 4.1' },
+  // A PARTNER THAT SIGNS NOBODY IN HERE (#374): an MDM, an EDR, an HR feed
+  // — a Shared Signals transmitter and nothing else. It is a relationship
+  // rather than a register of its own so that enabling, keys, the token
+  // client, the audit and the console stay one model (#373). It takes the
+  // SERVICE-PROVIDER role only, because this service consumes from it, and
+  // `signsIn()` below is what keeps it off every sign-in path. Its people
+  // are named through links an administrator writes (`<id> <iss> <sub>`
+  // for an iss_sub subject, `<id> opaque <id>` for an opaque one), or by
+  // mail where fedSignalEmailMatch allows it.
+  { protocol: 'ssf', label: 'Shared Signals only', family: 'Shared Signals',
+    what: 'A transmitter that signs nobody in here — a device manager, an ' +
+          'endpoint agent, an HR system — sending CAEP and RISC events ' +
+          'about people and devices this realm knows. What its events lead ' +
+          'to is the signal-response policy\'s decision, and by default ' +
+          'that is recorded and nothing more, except a device\'s ' +
+          'compliance.',
+    needs: ['fedPeer'], signalsOnly: true,
+    spec: 'OpenID Shared Signals Framework 1.0' }
 ];
 
 /**
@@ -1146,6 +1169,62 @@ const SCHEMA = {
             'the one person with that mail address as well — an address ' +
             'is not an identifier (OpenID Connect Core section 5.7), so ' +
             'only for a partner whose addresses this realm trusts.' },
+    // THE PARTNER AS A SHARED SIGNALS TRANSMITTER (#373, #374): the stream's
+    // CONFIGURATION, on the relationship that says who the partner is. What
+    // the stream IS at the far end — its id, audience, push secret digest,
+    // verification — is minted, and lives in ssf/ssf_transmitters.ts's
+    // store keyed by fedId. ssf/CLAUDE.md, *A PARTNER'S SHARED SIGNALS*.
+    { name: 'fedSignalsEnabled', kind: 'single', role: 'service-provider',
+      from: 'this register',
+      what: 'RECEIVE THIS PARTNER\'S SHARED SIGNALS. OFF by default on a ' +
+            'sign-in relationship, and the whole point of an `ssf` one, ' +
+            'where it is written ON at creation. Off, no push is accepted ' +
+            'for this relationship and the poll job skips it; fedEnabled ' +
+            'must be on as well.' },
+    { name: 'fedSignalsIssuer', kind: 'single', role: 'service-provider',
+      from: 'this register',
+      what: 'THE PARTNER\'S SSF ISSUER, when it is not fedPeer. Empty — the ' +
+            'default — uses fedPeer, which is right for an OpenID Connect ' +
+            'partner whose transmitter shares its issuer. A SAML 2.0 or ' +
+            'WS-Federation partner\'s entityID is usually NOT its SSF ' +
+            'issuer URL, so set it there. The configuration document is ' +
+            'fetched from /.well-known/ssf-configuration under it (SSF 1.0 ' +
+            'section 7) and must name it, and every SET\'s iss must be it.' },
+    { name: 'fedSignalsDelivery', kind: 'single', role: 'service-provider',
+      from: 'this register', enum: ['poll', 'push'],
+      what: 'HOW THE PARTNER\'S EVENTS ARRIVE: poll (RFC 8936, the ' +
+            'ssf.foreign-poll job, the default) or push (RFC 8935, to ' +
+            '/federation/signals/{id} with an authorization header only ' +
+            'this realm and the partner know). Read when the stream is ' +
+            'created; delete and create it again to change it.' },
+    { name: 'fedSignalsEvents', kind: 'multi', role: 'service-provider',
+      from: 'this register',
+      what: 'THE EVENT TYPE URIS THE STREAM ASKS FOR (events_requested). ' +
+            'None asks for whatever the partner supports.' },
+    { name: 'fedSignalsTokenUrl', kind: 'single', role: 'service-provider',
+      from: 'this register',
+      what: 'WHERE THIS REALM GETS AN ACCESS TOKEN FOR THE PARTNER\'S ' +
+            'STREAM MANAGEMENT, by client credentials. Empty uses ' +
+            'fedTokenUrl — the same authorization server the sign-in ' +
+            'relationship already dials.' },
+    { name: 'fedSignalsClientId', kind: 'single', role: 'service-provider',
+      from: 'this register',
+      what: 'THIS SERVICE\'S client_id FOR THE PARTNER\'S STREAM ' +
+            'MANAGEMENT. Empty uses fedClientId.' },
+    { name: 'fedSignalsClientSecret', kind: 'single',
+      role: 'service-provider', sensitive: true, from: 'this register',
+      what: 'THE SECRET FOR fedSignalsClientId, SEALED under the ' +
+            'key-encryption key wherever keys persist and never shown. ' +
+            'Empty uses fedClientSecret, sealed the same way.' },
+    { name: 'fedSignalsScope', kind: 'single', role: 'service-provider',
+      from: 'this register',
+      what: 'The scope asked for with client credentials. Empty asks for ' +
+            '`ssf:read ssf:write`.' },
+    { name: 'fedSignalsBearer', kind: 'single', role: 'service-provider',
+      sensitive: true, from: 'this register',
+      what: 'A BEARER TOKEN THE PARTNER ISSUED, instead of client ' +
+            'credentials. Sealed like fedSignalsClientSecret, and used ' +
+            'whenever it is set.' },
     // --- A PARTNER'S SIGN-OUT (#167) ---------------------------------------
     // federation/federation_slo.ts is what reads these, in both directions:
     // the partner telling this service a session ended, and this service
@@ -1428,6 +1507,15 @@ const EDITABLE = {
   fedSubjectPattern: 'set',
   fedMayAssertAdministrators: 'set',
   fedSignalEmailMatch: 'set',
+  fedSignalsEnabled: 'set',
+  fedSignalsIssuer: 'set',
+  fedSignalsDelivery: 'set',
+  fedSignalsTokenUrl: 'set',
+  fedSignalsClientId: 'set',
+  fedSignalsClientSecret: 'set',
+  fedSignalsScope: 'set',
+  fedSignalsBearer: 'set',
+  fedSignalsEvents: 'multi',
   fedAllowUnsolicited: 'set',
   fedEncryptionKeyType: 'set',
   fedKeyManagementAlgorithm: 'set',
@@ -1461,6 +1549,43 @@ SCHEMA.attributes.forEach(function (row) {
 // Every attribute that applies to a relationship in this role, in schema order.
 // The console draws its form from this and the action validates against the
 // same call, which is what stops a form offering a field the action refuses.
+//
+// THE PROTOCOL NARROWS IT ONCE (#374): an `ssf` relationship signs nobody in,
+// so of the service-provider half it takes only the Shared Signals fields —
+// a token endpoint or a subject policy on it would be a setting that does
+// nothing, which this register refuses by name rather than writes.
+/**
+ * The service-provider-side fields an `ssf` relationship takes: the Shared
+ * Signals ones, and the mail match.
+ */
+const SIGNAL_FIELDS = ['fedSignalsEnabled', 'fedSignalsIssuer',
+  'fedSignalsDelivery', 'fedSignalsEvents', 'fedSignalsTokenUrl',
+  'fedSignalsClientId', 'fedSignalsClientSecret', 'fedSignalsScope',
+  'fedSignalsBearer', 'fedSignalEmailMatch'];
+
+/**
+ * Says whether a field applies to a relationship of this role and protocol.
+ *
+ * @param row - the schema row
+ * @param role - the relationship's role
+ * @param protocol - its protocol, or empty to ask about the role alone
+ * @returns whether it applies
+ */
+function fieldApplies(row, role, protocol) {
+  log.debug("Entering fieldApplies().");
+  if (row.role !== 'both' && row.role !== String(role || '')) {
+    log.debug("Leaving fieldApplies(). Another role.");
+    return false;
+  }
+  if (protocol === 'ssf' && row.role !== 'both' &&
+      SIGNAL_FIELDS.indexOf(row.name) < 0) {
+    log.debug("Leaving fieldApplies(). Not for a signals-only partner.");
+    return false;
+  }
+  log.debug("Leaving fieldApplies().");
+  return true;
+}
+
 /**
  * Returns the editable attributes that apply to a relationship in a role, in
  * schema order.
@@ -1468,14 +1593,15 @@ SCHEMA.attributes.forEach(function (row) {
  * @param role - the relationship's role
  * @param mode - `set` or `multi` to narrow to one kind of edit, or empty for
  *   both
+ * @param protocol - the relationship's protocol, which narrows an `ssf` one
+ *   to its Shared Signals fields; empty for the role alone
  * @returns the schema rows
  */
-function fieldsForRole(role, mode) {
+function fieldsForRole(role, mode, protocol) {
   log.debug('Entering fieldsForRole(). role=' + role + ', mode=' +
             (mode || 'any'));
-  const wanted = String(role || '');
   const rows = SCHEMA.attributes.filter(function (row) {
-    if (row.role !== 'both' && row.role !== wanted) return false;
+    if (!fieldApplies(row, role, protocol)) return false;
     if (mode) return row.editable === mode;
     return !!row.editable;
   });
@@ -1989,6 +2115,13 @@ function readinessOf(record) {
     needs.forEach(function (name) {
       if (!String(record[name] || '').trim()) missing.push(name);
     });
+    // A SIGNALS-ONLY PARTNER (#374) is ready when this realm can reach its
+    // stream; that is the whole of what it does.
+    if (record.fedProtocol === 'ssf') {
+      signalsReadinessOf(record).missing.forEach(function (one) {
+        if (missing.indexOf(one) < 0) missing.push(one);
+      });
+    }
     // The two OIDC shapes need different things and the difference is exactly
     // what fedResponseType selects, so it cannot be a static list on the
     // protocol row. `code` needs somewhere to redeem the code; `id_token`
@@ -2367,6 +2500,222 @@ function isUsable(record) {
   return isEnabled(record) && readinessOf(record).ready;
 }
 
+// ---------------------------------------------------------------------------
+// A PARTNER'S SHARED SIGNALS (#373, #374), read in one place so the receiver,
+// the console and the sign-in paths cannot disagree.
+//
+// `signsIn()` is the one question every sign-in path asks besides the role:
+// an `ssf` relationship is usable — enabled and ready — as a TRANSMITTER, and
+// must never be offered, consumed at an assertion consumer service, or named
+// by an application as where its people sign in.
+// ---------------------------------------------------------------------------
+/**
+ * Says whether a relationship signs people in: every service-provider-side
+ * one but an `ssf` relationship.
+ *
+ * @param record - the federation relationship
+ * @returns whether it does
+ */
+function signsIn(record) {
+  log.debug("Entering signsIn().");
+  log.debug("Leaving signsIn().");
+  return !!record && record.fedProtocol !== 'ssf';
+}
+
+/**
+ * Says whether this realm receives a relationship's Shared Signals: a
+ * service-provider-side relationship with `fedSignalsEnabled` on (always on
+ * for an `ssf` one).
+ *
+ * @param record - the federation relationship
+ * @returns whether it does
+ */
+function signalsEnabled(record) {
+  log.debug("Entering signalsEnabled().");
+  log.debug("Leaving signalsEnabled().");
+  return !!record && record.fedRole === 'service-provider' &&
+         (record.fedProtocol === 'ssf' ||
+          boolOf(record.fedSignalsEnabled, false));
+}
+
+/**
+ * Returns the partner's SSF issuer: `fedSignalsIssuer`, else `fedPeer`.
+ *
+ * @param record - the federation relationship
+ * @returns the issuer, or empty
+ */
+function signalsIssuerOf(record) {
+  log.debug("Entering signalsIssuerOf().");
+  log.debug("Leaving signalsIssuerOf().");
+  return String((record && (String(record.fedSignalsIssuer || '').trim() ||
+                            record.fedPeer)) || '').trim();
+}
+
+// What marks a sealed value on the entry. A value without it was written
+// where keys do not persist (development), or by an ldapmodify.
+const SEALED_PREFIX = 'sealed:';
+const SIGNALS_SEAL_LABEL = 'federation-signals-credential';
+
+/**
+ * Seals a Shared Signals credential for the entry where keys persist; returns
+ * it as given where they do not.
+ *
+ * @param value - the secret
+ * @returns `{ ok, value }`, `ok` false when it should be sealed and cannot be
+ */
+function sealSignalsSecret(value) {
+  log.debug("Entering sealSignalsSecret().");
+  // Lazily: the keystore is far heavier than this register, and is loaded
+  // long before anybody writes a credential.
+  const keystore = require('../common/keystore');
+  if (!keystore.persists()) {
+    log.debug("Leaving sealSignalsSecret(). Keys do not persist.");
+    return { ok: true, value: String(value) };
+  }
+  const closed = keystore.seal(String(value), SIGNALS_SEAL_LABEL);
+  log.debug("Leaving sealSignalsSecret(). " + (closed ? 'Sealed.' :
+                                                       'Not sealed.'));
+  return closed ? { ok: true, value: SEALED_PREFIX + closed }
+                : { ok: false, value: '' };
+}
+
+/**
+ * Opens a Shared Signals credential off the entry.
+ *
+ * @param stored - the attribute's value
+ * @returns the secret, or empty when there is none or it will not open
+ */
+function openSignalsSecret(stored) {
+  log.debug("Entering openSignalsSecret().");
+  const text = String(stored || '');
+  if (text.indexOf(SEALED_PREFIX) !== 0) {
+    log.debug("Leaving openSignalsSecret(). In clear.");
+    return text;
+  }
+  const keystore = require('../common/keystore');
+  const opened = keystore.open(text.slice(SEALED_PREFIX.length),
+                               SIGNALS_SEAL_LABEL);
+  log.debug("Leaving openSignalsSecret(). " + (opened ? 'Opened.' :
+                                                       'Will not open.'));
+  return opened ? String(opened) : '';
+}
+
+// THE RELATIONSHIP'S CLIENT SECRET IS SEALED TOO (2026-10-01, rcbj): this
+// service's own credential at the partner's token endpoint, so it must be
+// recoverable — sealed, not hashed — with the Shared Signals credentials'
+// `sealed:` prefix and a label of its own. Sealed only under a DURABLE
+// key-encryption key (keys persist, a key is held, and it is not
+// development's ephemeral one): `keystore.persists()` reads the ambient
+// realm's mode, so a product-mode realm on a development container would
+// otherwise refuse every secret or seal one under a key that dies with the
+// process. `applications.js`'s sealsClientSecrets() makes the same choice.
+const CLIENT_SECRET_SEAL_LABEL = 'federation-client-secret';
+
+/**
+ * Seals a relationship's client secret where the process holds a durable
+ * key-encryption key; returns it as given where it does not.
+ *
+ * @param value - the secret
+ * @returns `{ ok, value }`, `ok` false when it should be sealed and cannot be
+ */
+function sealClientSecret(value) {
+  log.debug("Entering sealClientSecret().");
+  const keystore = require('../common/keystore');
+  if (!keystore.persists() || !keystore.sealed() ||
+      keystore.hasEphemeralKek()) {
+    log.debug("Leaving sealClientSecret(). No durable key.");
+    return { ok: true, value: String(value) };
+  }
+  const closed = keystore.seal(String(value), CLIENT_SECRET_SEAL_LABEL);
+  log.debug("Leaving sealClientSecret(). " + (closed ? 'Sealed.' :
+                                                      'Not sealed.'));
+  return closed ? { ok: true, value: SEALED_PREFIX + closed }
+                : { ok: false, value: '' };
+}
+
+/**
+ * Returns a relationship's client secret, opened.
+ *
+ * @param record - the relationship
+ * @returns the secret, or empty when there is none or it will not open
+ */
+function clientSecretOf(record) {
+  log.debug("Entering clientSecretOf().");
+  const text = String((record && record.fedClientSecret) || '');
+  if (text.indexOf(SEALED_PREFIX) !== 0) {
+    log.debug("Leaving clientSecretOf(). In clear.");
+    return text;
+  }
+  const keystore = require('../common/keystore');
+  const opened = keystore.open(text.slice(SEALED_PREFIX.length),
+                               CLIENT_SECRET_SEAL_LABEL);
+  if (!opened) {
+    log.warn(errorCodes.tag('STS-FED-0157') + 'federation: the client ' +
+             'secret of relationship "' + String(record.fedId || '') +
+             '" is sealed and will not open under this process\'s ' +
+             'key-encryption key; set it again.');
+  }
+  log.debug("Leaving clientSecretOf(). " + (opened ? 'Opened.' :
+                                                     'Will not open.'));
+  return opened ? String(opened) : '';
+}
+
+/**
+ * Returns how this realm authenticates to the partner's stream management:
+ * a bearer token, or client credentials, the token endpoint, client and
+ * secret falling back to the sign-in relationship's own.
+ *
+ * @param record - the federation relationship
+ * @returns `{ method, bearer }` or `{ method, tokenEndpoint, clientId,
+ *   clientSecret, scope }`
+ */
+function signalsCredentialOf(record) {
+  log.debug("Entering signalsCredentialOf().");
+  const r = record || {};
+  const bearer = openSignalsSecret(r.fedSignalsBearer);
+  if (bearer) {
+    log.debug("Leaving signalsCredentialOf(). A bearer.");
+    return { method: 'bearer', bearer: bearer };
+  }
+  const own = String(r.fedSignalsClientId || '').trim();
+  log.debug("Leaving signalsCredentialOf(). Client credentials.");
+  return {
+    method: 'client_credentials',
+    tokenEndpoint: String(r.fedSignalsTokenUrl || '').trim() ||
+                   String(r.fedTokenUrl || '').trim(),
+    clientId: own || String(r.fedClientId || '').trim(),
+    // The secret goes with the client it belongs to: the signals client's
+    // own, or — only when no signals client is named — the sign-in one.
+    clientSecret: own ? openSignalsSecret(r.fedSignalsClientSecret)
+      : (openSignalsSecret(r.fedSignalsClientSecret) ||
+         clientSecretOf(r)),
+    scope: String(r.fedSignalsScope || '').trim() || 'ssf:read ssf:write'
+  };
+}
+
+/**
+ * Says what a relationship still needs before this realm can manage a stream
+ * at the partner: an issuer, and a bearer or a token endpoint and client.
+ *
+ * @param record - the federation relationship
+ * @returns `{ ready, missing }`
+ */
+function signalsReadinessOf(record) {
+  log.debug("Entering signalsReadinessOf().");
+  const missing = [];
+  if (!signalsIssuerOf(record)) {
+    missing.push('fedSignalsIssuer (or fedPeer)');
+  }
+  const c = signalsCredentialOf(record);
+  if (c.method !== 'bearer' && (!c.tokenEndpoint || !c.clientId)) {
+    missing.push('fedSignalsBearer, or fedSignalsTokenUrl and ' +
+                 'fedSignalsClientId (or the sign-in relationship\'s ' +
+                 'fedTokenUrl and fedClientId)');
+  }
+  log.debug("Leaving signalsReadinessOf(). " + missing.length);
+  return { ready: missing.length === 0, missing: missing };
+}
+
 // Every relationship in one role, usable or not. The callers want different
 // halves of that — the sign-in screen wants the usable ones and the console
 // wants all of them — so the filter is the caller's rather than being baked in
@@ -2427,7 +2776,8 @@ function optionOf(record) {
  */
 function signInOptions() {
   log.debug('Entering signInOptions().');
-  const rows = inRole('service-provider').filter(isUsable).map(optionOf);
+  const rows = inRole('service-provider').filter(signsIn).filter(isUsable)
+    .map(optionOf);
   log.debug('Leaving signInOptions(). ' + rows.length +
             ' partner(s) to offer.');
   return rows;
@@ -2488,6 +2838,13 @@ function usableServiceProvider(id, subject) {
                       '", which is identity-provider-side: this service ' +
                       'ASSERTS to that partner rather than consuming from ' +
                       'it, so there is nothing to sign in to there.' };
+  }
+  if (!signsIn(record)) {
+    log.debug('Leaving usableServiceProvider(). It signs nobody in.');
+    return { id: named, relationship: null,
+             problem: who + ' names the federation relationship "' + named +
+                      '", which is an ssf relationship: that partner only ' +
+                      'sends Shared Signals, and signs nobody in.' };
   }
   if (!isEnabled(record)) {
     log.debug('Leaving usableServiceProvider(). It is disabled.');
@@ -3089,8 +3446,16 @@ function create(spec) {
   }
   const protocol = String(info.fedProtocol || info.protocol || '').trim();
   if (PROTOCOL_IDS.indexOf(protocol) === -1) {
-    errors.push('Unknown protocol "' + protocol + '". The five are: ' +
+    errors.push('Unknown protocol "' + protocol + '". The ' +
+                PROTOCOL_IDS.length + ' are: ' +
                 PROTOCOL_IDS.join(', ') + '.');
+  }
+  // A TRANSMITTER THAT SIGNS NOBODY IN (#374) is consumed from, never
+  // asserted to: there is no identity-provider half of a Shared Signals
+  // receiver here.
+  if (protocol === 'ssf' && role === 'identity-provider') {
+    errors.push('An ssf relationship is one this service RECEIVES signals ' +
+                'from, so its role is service-provider.');
   }
   if (errors.length) {
     log.debug('Leaving create(). Refused: ' + errors.join(' '));
@@ -3134,6 +3499,13 @@ function create(spec) {
   // that `ldapsearch` shows what will actually happen instead of showing
   // nothing and leaving the behaviour in this file.
   if (role === 'service-provider') {
+    // A PARTNER'S SHARED SIGNALS (#373): off on a sign-in relationship until
+    // somebody configures them, and the whole of an `ssf` one (#374).
+    record.fedSignalsEnabled = boolText(protocol === 'ssf');
+    record.fedSignalsDelivery = 'poll';
+    record.fedSignalEmailMatch = boolText(false);
+  }
+  if (role === 'service-provider' && protocol !== 'ssf') {
     record.fedAutocreateUsers = boolText(true);
     record.fedUpdateUserAttributes = boolText(true);
     // WHICH PEOPLE THE PARTNER MAY ASSERT (#109): the most secure default a
@@ -3141,7 +3513,6 @@ function create(spec) {
     // two above are.
     record.fedSubjectPolicy = DEFAULT_SUBJECT_POLICY;
     record.fedMayAssertAdministrators = boolText(false);
-    record.fedSignalEmailMatch = boolText(false);
     record.fedSignRequest = boolText(false);
     // A PARTNER'S SIGN-OUT (#167): honoured, and signed — the most secure
     // default, and the one a partner that follows its specification meets.
@@ -3481,6 +3852,18 @@ function update(id, change) {
                       id + ' is ' + record.fedRole + '-side. Nothing was ' +
                                                      'changed.'] };
   }
+  // A SIGN-IN FIELD ON A PARTNER THAT SIGNS NOBODY IN (#374), refused by name
+  // for the reason the role check above is.
+  if (!fieldApplies(row, record.fedRole, record.fedProtocol)) {
+    log.debug('Leaving update(). Not a field of a signals-only partner.');
+    actionRefused('STS-FED-0068', id, '"' + field + '" does not apply to ' +
+                                      'an ssf relationship');
+    log.debug("Leaving update().");
+    return { ok: false,
+             errors: ['"' + field + '" configures signing people in, and ' +
+                      id + ' is an ssf relationship, which signs nobody ' +
+                      'in. Nothing was changed.'] };
+  }
   let value = String(info.value == null ? '' : info.value);
   // A DOMAIN IS COMPARED CASE-INSENSITIVELY, so it is stored lower-cased and
   // without the `@` somebody pasting an address would bring (#109).
@@ -3577,9 +3960,41 @@ function update(id, change) {
       row.name === 'fedUpdateUserAttributes' ||
       row.name === 'fedMayAssertAdministrators' ||
       row.name === 'fedSignalEmailMatch' ||
+      row.name === 'fedSignalsEnabled' ||
       row.name === 'fedSignRequest' || row.name === 'fedAllowUnsolicited' ||
       row.name === 'fedAllowUnencrypted') {
     record[field] = boolText(boolOf(record[field], false));
+  }
+  // THE TWO SHARED SIGNALS CREDENTIALS ARE SEALED (#373) wherever keys
+  // persist, as the transmitter register #153 replaced held them — and
+  // refused rather than written in clear where they should be sealed and
+  // cannot be. `fedClientSecret` is sealed since 2026-10-01, under a
+  // durable key only — see sealClientSecret().
+  if (row.name === 'fedClientSecret' && value !== '' &&
+      String(value).indexOf(SEALED_PREFIX) !== 0) {
+    const sealed = sealClientSecret(value);
+    if (!sealed.ok) {
+      log.debug('Leaving update(). The client secret could not be sealed.');
+      actionRefused('STS-FED-0157', id, field + ' could not be sealed');
+      log.debug("Leaving update().");
+      return { ok: false, errors: [field + ' could not be sealed under ' +
+               'the key-encryption key, and a credential at a partner is ' +
+               'never written in clear where keys persist.'] };
+    }
+    record[field] = sealed.value;
+  }
+  if ((row.name === 'fedSignalsClientSecret' ||
+       row.name === 'fedSignalsBearer') && value !== '') {
+    const sealed = sealSignalsSecret(value);
+    if (!sealed.ok) {
+      log.debug('Leaving update(). The credential could not be sealed.');
+      actionRefused('STS-FED-0154', id, field + ' could not be sealed');
+      log.debug("Leaving update().");
+      return { ok: false, errors: [field + ' could not be sealed under ' +
+               'the key-encryption key, and a credential at a partner is ' +
+               'never written in clear where keys persist.'] };
+    }
+    record[field] = sealed.value;
   }
   // A NEW KEY TYPE TAKES ITS OWN DEFAULT KEY MANAGEMENT (#168): the old
   // value may be one the new key cannot do, and a relationship whose
@@ -4151,6 +4566,7 @@ function recordFailure(id, why) {
  * @namespace
  */
 module.exports = {
+  clientSecretOf: clientSecretOf,
   PATHS: PATHS,
   ROLES: ROLES,
   ROLE_IDS: ROLE_IDS,
@@ -4188,6 +4604,13 @@ module.exports = {
   get: get,
   count: count,
   inRole: inRole,
+  // A partner's Shared Signals (#373, #374).
+  SIGNAL_FIELDS: SIGNAL_FIELDS,
+  signsIn: signsIn,
+  signalsEnabled: signalsEnabled,
+  signalsIssuerOf: signalsIssuerOf,
+  signalsCredentialOf: signalsCredentialOf,
+  signalsReadinessOf: signalsReadinessOf,
   containerDn: containerDn,
   maxRelationships: maxRelationships,
   fieldsForRole: fieldsForRole,

@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: BUSL-1.1
 #
 # ---------------------------------------------------------------------------
 # RDS POSTGRESQL 18: A PRIMARY AND ONE READ REPLICA, IN DIFFERENT AZS.
@@ -23,7 +23,7 @@
 # requires backups on its source, so the replica and the retention are
 # connected.
 #
-# THE REPLICA is asynchronous streaming replication, read-only. mock-sts writes
+# THE REPLICA is asynchronous streaming replication, read-only. iya-sts writes
 # and reads through the primary endpoint only — the replica is a copy and a
 # manually promotable standby, not an automatic failover target (that would be
 # Multi-AZ, which is a different product with no readable standby here).
@@ -35,14 +35,14 @@
 # ---------------------------------------------------------------------------
 resource "aws_db_subnet_group" "main" {
   name        = local.prefix
-  description = "mock-sts ${var.environment}: private subnets, three AZs"
+  description = "iya-sts ${var.environment}: private subnets, three AZs"
   subnet_ids  = aws_subnet.private[*].id
 }
 
 resource "aws_db_parameter_group" "main" {
   name        = "${local.prefix}-pg18"
   family      = "postgres18"
-  description = "mock-sts ${var.environment}: TLS required"
+  description = "iya-sts ${var.environment}: TLS required"
 
   # `apply_method` is spelt as RDS reports it back; left to default, every
   # plan shows these two as changed although the values are already in force.

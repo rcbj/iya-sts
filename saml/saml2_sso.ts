@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -3406,6 +3406,9 @@ class Saml2Sso {
     const roleAnswer = gate.check({
       application: spEntityId,
       kind: gate.ISSUANCE.SAML_ASSERTION,
+      // The family, for the protocol-declaration rule: a SAML assertion is
+      // either version's unless the caller says which.
+      protocolFamilies: ['saml2'],
       // WHETHER ANYBODY AUTHENTICATED, READ OFF THE SESSION (2026-09-05).
       //
       // This was the constant `true` until unauthenticated sessions existed,
@@ -3620,6 +3623,9 @@ class Saml2Sso {
     const roleAnswer = gate.check({
       application: spEntityId,
       kind: gate.ISSUANCE.SAML_ASSERTION,
+      // The family, for the protocol-declaration rule: a SAML assertion is
+      // either version's unless the caller says which.
+      protocolFamilies: ['saml2'],
       subject: { kind: 'user', name: String((session.user || {}).username ||
                                             ''),
                  authenticated: session.authenticated !== false },
@@ -3831,6 +3837,9 @@ class Saml2Sso {
     const roleAnswer = gate.check({
       application: spEntityId,
       kind: gate.ISSUANCE.SAML_ASSERTION,
+      // The family, for the protocol-declaration rule: a SAML assertion is
+      // either version's unless the caller says which.
+      protocolFamilies: ['saml2'],
       subject: { kind: 'user',
                  name: String((session.user || {}).username || ''),
                  authenticated: session.authenticated !== false },
@@ -5239,7 +5248,7 @@ class Saml2Sso {
           }).join('') +
         '</md:AttributeAuthorityDescriptor>' +
         // `saml.organizationName` and its two siblings since 2026-09-12 — the
-        // literal "mock-sts" / "Mock security token service" until then — and
+        // literal "iya-sts" / "Mock security token service" until then — and
         // omitted entirely when the name is emptied. See document_settings.ts.
         documentSettings.organizationElement(base) +
       '</md:EntityDescriptor>';

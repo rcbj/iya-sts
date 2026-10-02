@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -36,7 +36,7 @@
 // TWO MORE FILES IN logs/ ARE WRITTEN BY THE LAUNCHERS RATHER THAN BY THIS
 // FILE, and they are the account of everything a per-job log cannot hold:
 //
-//   logs/00-mock-sts-service.log   the service's own — written here in host
+//   logs/00-iya-sts-service.log   the service's own — written here in host
 //                                  mode (this file starts that service), and
 //                                  by the launcher when the service is a
 //                                  container, out of `docker compose logs sts`
@@ -598,7 +598,7 @@ async function refreshTrust(url, current) {
     // NOT fatal and named rather than swallowed: the service may be mid-restart
     // or simply gone, and the job about to run will say so far more usefully
     // than a runner that stopped here.
-    log.warn('could not re-read the mock STS\'s certificate from ' + url +
+    log.warn('could not re-read IYA STS\'s certificate from ' + url +
              trust.CERTIFICATE_PATH + ' (' + e.message + '); the next job ' +
              'runs with the anchor this run already had.');
     log.debug('Leaving refreshTrust(). Not fetched.');
@@ -1008,9 +1008,9 @@ function writeHtml(runDir, results, meta) {
   };
   let html = '<!doctype html><html lang="en"><head><meta charset="utf-8">' +
     '<meta name="viewport" content="width=device-width,initial-scale=1">' +
-    '<title>mock STS tests — ' + escapeHtml(meta.runId) + '</title>' +
+    '<title>IYA STS tests — ' + escapeHtml(meta.runId) + '</title>' +
     '<style>' + STYLE + '</style></head><body><div class="wrap">';
-  html += '<h1>mock STS test report</h1>';
+  html += '<h1>IYA STS test report</h1>';
   html += '<p class="sub">' + escapeHtml(meta.runId) + ' · ' +
     escapeHtml(meta.host) + ' · node ' + escapeHtml(meta.node) + ' · ' +
     (meta.wallMs / 1000).toFixed(1) + 's wall</p>';
@@ -1117,7 +1117,7 @@ function writeHtml(runDir, results, meta) {
 function writeXml(runDir, results, meta) {
   log.debug('Entering writeXml().');
   let xml = '<?xml version="1.0" encoding="UTF-8"?>\n<testsuites ' +
-    'name="mock-sts" time="' + (meta.wallMs / 1000).toFixed(3) + '">\n';
+    'name="iya-sts" time="' + (meta.wallMs / 1000).toFixed(3) + '">\n';
   results.forEach(function (j) {
     const cases = [];
     if (j.assertions.length) {
@@ -1798,7 +1798,7 @@ async function main() {
                                    Number(process.env.STS_TEST_SERVICE_WAIT_MS ||
                                           30000));
       instance = { url: opts.serviceUrl, external: true };
-      log.info('driving the mock STS at ' + opts.serviceUrl +
+      log.info('driving IYA STS at ' + opts.serviceUrl +
                ' (started elsewhere; this runner will not stop it)');
     } catch (e) {
       log.error(e.message);
@@ -1814,7 +1814,7 @@ async function main() {
     try {
       instance = await service.start({
         log: log,
-        logFile: path.join(logsDir, '00-mock-sts-service.log'),
+        logFile: path.join(logsDir, '00-iya-sts-service.log'),
         logLevel: process.env.STS_LOG_LEVEL || '',
         // The appconfig file that service reads, when the caller named one.
         // STS_LOG_LEVEL alone does NOT quieten a run: the eight vendored
@@ -1828,7 +1828,7 @@ async function main() {
         portBase: process.env.STS_TEST_PORT_BASE || ''
       });
     } catch (e) {
-      log.error('could not start a mock STS for the protocol jobs: ' +
+      log.error('could not start an IYA STS for the protocol jobs: ' +
                 e.message);
       protocolWhy = e.message;
       instance = null;
@@ -1858,7 +1858,7 @@ async function main() {
     try {
       trusted = await trust.trustTheService(instance.url, runDir, log);
     } catch (e) {
-      log.warn('could not fetch the mock STS\'s certificate from ' +
+      log.warn('could not fetch IYA STS\'s certificate from ' +
                instance.url + trust.CERTIFICATE_PATH + ' (' + e.message +
                '). The protocol jobs will run WITHOUT an anchor for it, so a ' +
                'failure naming DEPTH_ZERO_SELF_SIGNED_CERT or a browser ' +

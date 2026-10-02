@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -427,7 +427,9 @@ class FederationSlo {
     }
     const id = String(req.params.id || '');
     const record = federation.get(id);
-    if (!record || record.fedRole !== 'service-provider') {
+    // An ssf relationship (#374) signed nobody in, so it signs nobody out.
+    if (!record || record.fedRole !== 'service-provider' ||
+        !federation.signsIn(record)) {
       if (json) {
         errorCodes.mark(res, 'STS-FED-0002');
         this.refuseJson(res, null, 400, 'there is no service-provider-side ' +
@@ -1938,7 +1940,7 @@ class FederationSlo {
     log.debug("Entering FederationSlo.canTellPartner().");
     const record = held ? federation.get(held.relationship) : null;
     if (!record || record.fedRole !== 'service-provider' ||
-        !federation.isUsable(record)) {
+        !federation.signsIn(record) || !federation.isUsable(record)) {
       log.debug("Leaving FederationSlo.canTellPartner(). Not usable.");
       return { ok: false, record: record,
                why: 'the relationship it came through is gone, disabled or ' +

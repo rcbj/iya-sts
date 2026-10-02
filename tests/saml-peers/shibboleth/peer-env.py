@@ -1,6 +1,6 @@
 #!/usr/bin/python3
 # SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: BUSL-1.1
 #
 # The one page of the Shibboleth peer behind mod_shib (#189): what mod_shib
 # put in the environment for this session, as JSON, so the job can assert the

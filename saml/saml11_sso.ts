@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -1162,7 +1162,7 @@ class Saml11Sso {
       // asking for it is going to try to split on a backslash.
       log.debug("Leaving Saml11Sso.nameIdValueFor(). A Windows domain " +
                 "qualified name.");
-      return 'MOCKSTS\\' + username;
+      return 'IYASTS\\' + username;
     }
     if (format ===
         'urn:oasis:names:tc:SAML:1.1:nameid-format:X509SubjectName') {
@@ -1926,6 +1926,8 @@ class Saml11Sso {
     const roleAnswer = gate.check({
       application: rpId,
       kind: gate.ISSUANCE.SAML_ASSERTION,
+      // The family, for the protocol-declaration rule.
+      protocolFamilies: ['saml11'],
       // WHETHER ANYBODY AUTHENTICATED, READ OFF THE SESSION (2026-09-05).
       //
       // This was the constant `true` until unauthenticated sessions existed,

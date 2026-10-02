@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -105,6 +105,10 @@ import mode = require('./mode');
 // was.
 import realms = require('./realms');
 import keystore = require('./keystore');
+
+// The label a person's identity verifications are sealed under, which
+// /admin/encryption counts by.
+const IDA_SEAL_LABEL = 'identity-verifications';
 import totp = require('./totp');
 // THE THIRD SECOND FACTOR (2026-09-10), and it is on this list for the same
 // reason `totp` is: it owns what a recovery code IS and this file owns where
@@ -387,6 +391,36 @@ class Credentials {
     helpers.log.debug("Leaving Credentials.aaguidString().");
     return hex.slice(0, 8) + '-' + hex.slice(8, 12) + '-' +
       hex.slice(12, 16) + '-' + hex.slice(16, 20) + '-' + hex.slice(20);
+  }
+
+  // WHICH SIGNATURE ALGORITHM ONE STORED KEY USES (2026-10-01, rcbj:
+  // "record the algorithm that was actually used ... display it on the
+  // passkey list"). The key's own `algorithm` and `coseAlg`, written at
+  // enrolment since that day; for a key written before, the `alg` its stored
+  // JWK has carried since #105; and for one older still, what the verifier
+  // checks it with by key type (`coseAlgOfJwk()`), which is the algorithm
+  // that key has actually been verified with all along. `postQuantum` is
+  // RFC 9964's ML-DSA; `insecure` the verifier's broken list (RS1).
+  /**
+   * Says which COSE signature algorithm one stored key uses.
+   *
+   * @param key - the stored WebAuthn key
+   * @returns `{ name, coseAlg, text, postQuantum, insecure }`
+   */
+  static keyAlgorithm(key: any): { name: string; coseAlg: number;
+                                   text: string; postQuantum: boolean;
+                                   insecure: boolean } {
+    helpers.log.debug("Entering Credentials.keyAlgorithm().");
+    const k = key || {};
+    const coseAlg = Number(k.coseAlg) ||
+      webauthnVerifier.coseAlgOfJwk(k.publicKeyJwk || {});
+    const name = String(k.algorithm ||
+      webauthnVerifier.COSE_ALGS[String(coseAlg)] || ('COSE ' + coseAlg));
+    helpers.log.debug("Leaving Credentials.keyAlgorithm(). " + name);
+    return { name: name, coseAlg: coseAlg, text: name + ' (' + coseAlg + ')',
+             postQuantum: /^ML-DSA-/.test(name),
+             insecure: webauthnVerifier.INSECURE_COSE_ALGS
+               .indexOf(coseAlg) >= 0 };
   }
 
   // WHAT KIND OF AUTHENTICATOR ONE STORED KEY IS, IN A PERSON'S WORDS
@@ -2334,6 +2368,13 @@ class Credentials {
       // neither, and is reported as it always was.
       attachment: String(credential.attachment || ''),
       aaguid: Credentials.aaguidString(credential.aaguid),
+      // THE SIGNATURE ALGORITHM (2026-10-01), as the ceremony reported it —
+      // JOSE name and COSE identifier — so the key lists and the audit can
+      // say it without re-deriving it. `keyAlgorithm()` reads it, and
+      // derives it for a key written before.
+      algorithm: String(credential.algorithm ||
+                        (credential.publicKeyJwk || {}).alg || '') || null,
+      coseAlg: Number(credential.coseAlg) || null,
       // WHAT THE ATTESTATION STATEMENT PROVED (#105): the format, the
       // attestation type, whether it was verified and whether it chained to
       // an anchor (the realm's or the FIDO Metadata Service's), the model MDS
@@ -5422,6 +5463,19 @@ class Credentials {
     }
     const value = String(directory.readIdaVerifications(
       String(username || '')) || '');
+    // SEALED SINCE 2026-10-01 (see writeIdaVerifications()); a value written
+    // before then, or without a durable key, is the JSON as it is.
+    if (crypto.isEncryptedWithKek(value)) {
+      const opened = this.deps.keystore.open(value, IDA_SEAL_LABEL);
+      if (!opened) {
+        log.warn(this.deps.errorCodes.tag('STS-OAUTH-0788') + 'credentials: ' +
+                 'the identity verifications of ' + username + ' are sealed ' +
+                 'and will not open under this process\'s key-encryption ' +
+                 'key; read as none.');
+      }
+      log.debug('Leaving Credentials.readIdaVerifications(). Sealed.');
+      return opened ? String(opened) : '';
+    }
     log.debug('Leaving Credentials.readIdaVerifications().');
     return value;
   }
@@ -5441,8 +5495,29 @@ class Credentials {
       log.debug('Leaving Credentials.writeIdaVerifications(). No store.');
       return false;
     }
+    // SEALED (2026-10-01, rcbj): the evidence carries document numbers. A
+    // person's material, so under their home CELL's key where there is one,
+    // as the authenticator secret is; and only under a DURABLE key — keys
+    // persist, one is held, and it is not development's ephemeral one —
+    // for applications.js's sealsClientSecrets() reason: a product-mode
+    // realm on a development container would otherwise refuse every record
+    // or seal one under a key that dies with the process.
+    let stored = String(value || '');
+    const keystore = this.deps.keystore;
+    if (stored && keystore.persists() && keystore.sealed() &&
+        !keystore.hasEphemeralKek()) {
+      const sealed = keystore.seal(stored, IDA_SEAL_LABEL, 'cell');
+      if (!sealed) {
+        log.error(this.deps.errorCodes.tag('STS-OAUTH-0788') +
+                  'credentials: the identity verifications of ' + username +
+                  ' could not be sealed, so they were NOT written.');
+        log.debug('Leaving Credentials.writeIdaVerifications(). Not sealed.');
+        return false;
+      }
+      stored = sealed;
+    }
     const written = !!directory.writeIdaVerifications(String(username || ''),
-                                                      value);
+                                                      stored);
     log.debug('Leaving Credentials.writeIdaVerifications(). ' + written);
     return written;
   }
@@ -6595,6 +6670,7 @@ class Credentials {
         userVerified: !!(verdict.flags && verdict.flags.uv),
         aaguid: verdict.aaguid || null,
         algorithm: verdict.algorithm || null,
+        coseAlg: verdict.coseAlg || null,
         attestation: attested.attestation
       }, held.role).then((stored) => {
         return this.keyEnrolmentWritten(name, held, stored);
@@ -7949,6 +8025,7 @@ export = {
   WEBAUTHN_ATTRIBUTE: Credentials.WEBAUTHN_ATTRIBUTE,
   ROLES: Credentials.ROLES,
   keyKind: Credentials.keyKind,
+  keyAlgorithm: Credentials.keyAlgorithm,
   keysOf: slot.forward('keysOf'),
   addKey: slot.forward('addKey'),
   removeKey: slot.forward('removeKey'),

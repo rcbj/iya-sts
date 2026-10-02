@@ -961,8 +961,12 @@ argument — then writes `directory_merge.js`'s answer: an attribute one side
 changed takes that side; both changed, a list (`member`, `objectClass`, the
 security keys, or any attribute with more than one value on some side) is merged
 by value and anything else takes mine, a credential never becoming a union; two
-adds of one DN under different `entryUUID`s keep the FIRST committed
-(`STS-STORE-0052`); a change to an entry deleted elsewhere is dropped
+adds of one DN under different `entryUUID`s keep the FIRST committed as the
+entry — its `entryUUID` and its single values (`STS-STORE-0052` when mine adds
+nothing) — **plus, since 2026-10-02, what mine added: an attribute only mine
+holds and a list value theirs lacks** (`mergeCreations()`; two nodes seeding a
+realm's role group lost a grant's member otherwise); a change to an entry
+deleted elsewhere is dropped
 (`STS-STORE-0053`). A new row is `INSERT … ON CONFLICT DO NOTHING`, and losing
 that race locks the row and merges again. The driver answers `{ outcomes }` —
 what the store decided that this process does not hold — and
@@ -1078,6 +1082,81 @@ the list merge, the session rank).
   which `joinCluster()` sweeps.
 * The capability `ops.change-log-retention` is provided by
   `persistence_replication.js`, not `persistence.js` as the row first named.
+
+## EVERY DIRECTORY ENTRY IS SEALED (#391 phase 6, 2026-10-01)
+
+rcbj's decision on #391: an entry's attributes are stored as ONE sealed blob
+under its realm's `directory` data key, in `sts_ldap_entries.attrs` — the cell
+tier's key for a cell's people, the service's for the global tier's entries —
+and the DN stays readable. `directory_codec.js` is the whole of it; the
+postgres driver writes and reads every entry through it.
+
+* **THE BLOB NAMES ITS DN** (`{ dn, a }`), and an open refuses a blob whose
+  DN is not its row's: a blob copied onto another entry's row does not open
+  as that entry.
+* **THE LOOKUPS ARE KEYED DIGESTS THE SERVICE WRITES** (schema version 14):
+  `name_keys`, `mail_keys`, `uuid_keys`, `class_keys` stopped being generated
+  from `attrs`, and `value_keys` (the `byAttribute()` attributes:
+  `VALUE_INDEXED`) and `attr_names` (the NAMES, in the clear) are new.
+  `parent_key` and `rdn_value` are still generated from the DN. A database
+  built before version 14 is refused at open (STS-STORE-0074): #391 recreates
+  rather than migrates, and the service's role may not alter the schema.
+* **A QUERY IS KEYED AND OPENED ON THE THREAD THAT HOLDS THE KEYS.** The
+  windowed directory's bridge thread builds a statement and shapes its rows
+  with no keystore, so `persistence.js` wraps the bridge: `keyArgs()` before
+  the question, `openAnswer()` after. The driver's own `directoryQuery()`
+  does the same.
+* **AN ENTRY THAT DOES NOT OPEN IS NEVER TAKEN FOR ONE THAT IS ABSENT.**
+  `readEntry()` and the flush's lock read THROW (STS-STORE-0072) rather than
+  answer null — the change applier would remove it, a merge would write over
+  it. The restore leaves it out and says how many.
+* **THE RE-ENCRYPTION JOB WALKS THE DIRECTORY.** A blob hides the values
+  sealed inside it (a TOTP secret, Kerberos keys) from LIKE, and a key counted
+  as unused is destroyed. `countSealed()`, `countAllSealed()` and
+  `resealSealed()` open every entry, a page at a time, and count or re-seal
+  the blob's key and every key inside it (STS-STORE-0073 if the walk fails).
+* **The keystore starts before the directory is restored** (see
+  `persistence.js`): a blob cannot be opened before the key-encryption key is
+  read.
+* `cell_convert.js` opens the source entries to plan them (a group's members
+  split between tiers) and seals what it writes for the tier it writes to.
+* A file (ldif) store is not sealed.
+
+## A MINTED ROW'S NAME IS A DIGEST, AND THE NAME IS SEALED (#222, 2026-10-01)
+
+`sts_minted.key` held the name a store filed a record under, and that is
+often the credential: a session id (the cookie), a SAML artifact. It is now
+the name's KEYED DIGEST (`persistence_minted.js`'s `keyColumnOf()`, under the
+keystore's digest key, the same on every node), and `key_sealed` (schema
+version 14) holds the name sealed (label `minted-key`). Three readers, three
+answers:
+
+* **a reader that has the name** (a change's reader, read-your-write) asks for
+  the digest of it;
+* **the restore** has no name to start from, and opens `key_sealed`;
+* **a change-log row** carries the SEALED name (the driver's
+  `recordChanges()`), not the digest, because a reader told of a DELETE must
+  drop that name from its own store and a digest cannot say which.
+
+A row with an empty `key_sealed` (written with no key held, or by a test) is
+read with its `key` as its name. Both new places are on `EXTRA_SEALED`, so the
+re-encryption job re-seals them. `cell_convert.js` carries `key_sealed` with
+the row.
+
+## SECRET SETTINGS ARE SEALED AT THE DRIVER'S DOOR (#222, 2026-10-01)
+
+A runtime setting marked `secret: true` in `common/config.js` (today only
+`scim.digestPassword`) is sealed when `sts_appconfig` or a realm's
+`sts_realms.overrides` is written, and opened when it is read —
+`sealed_settings.js` wraps the four settings methods of whatever driver
+`openStore()` made (the tiered one in a cell, whose settings go to the global
+tier). **Not earlier**: the settings are saved as a delta against a shadow of
+plaintext values, and a fresh ciphertext per flush would make every flush a
+change. A value that does not open is dropped (STS-STORE-0071) and the setting
+falls back to its configured value. Both columns are on the postgres driver's
+`EXTRA_SEALED` list, so the re-encryption job counts and re-seals them — **a
+column that holds sealed values and is not on that list is one whose data key
+the job destroys with the values still in it**.
 
 ## A WINDOWED WORKER'S DIRECTORY (#349, 2026-09-29)
 
@@ -1436,8 +1515,10 @@ confuse, since the `kid` is derived from the key material.
 ### What goes in the store is CIPHERTEXT, and neither driver ever holds a key
 
 `common/keystore.js` encrypts with AES-256-GCM before anything reaches a driver,
-so `keys.json` and `sts_keys.material` hold `$aesgcm$1$salt$iv$tag$body` and
-nothing else. That is what makes it acceptable for private keys to live beside
+so `keys.json` and `sts_keys.material` hold `$aesgcm$2$<dek id>$iv$tag$body`
+and, beside them, the `dek:<scope>:<realm>` rows of DATA ENCRYPTION KEYS each
+wrapped under the key-encryption key (#391, `common/CLAUDE.md`) — nothing
+else. That is what makes it acceptable for private keys to live beside
 the directory in the same store — and it is asserted rather than assumed:
 `tests/keystore.js` checks that no `BEGIN` survives into the stored form.
 

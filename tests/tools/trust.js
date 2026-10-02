@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 //
 // tests/tools/trust.js — how a test run comes to trust the mock's certificate.
 //
@@ -255,7 +255,7 @@ async function trustTheService(url, dir, log) {
   fs.mkdirSync(dir, { recursive: true });
   const pemPath = path.join(dir, 'sts-certificate.pem');
   fs.writeFileSync(pemPath, pem);
-  log.info('trusting the mock STS\'s per-start certificate: ' + pemPath +
+  log.info('trusting IYA STS\'s per-start certificate: ' + pemPath +
            ' (SPKI pin ' + pin + ')');
   log.debug('Leaving trustTheService().');
   return {

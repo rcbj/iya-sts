@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: BUSL-1.1
 #
 # ---------------------------------------------------------------------------
 # THE GLOBAL TIER OF A MULTI-CELL ENVIRONMENT (issue #98, 2026-09-28).
@@ -34,7 +34,7 @@
 #
 # The state key is `environment/<env>/global.tfstate`, under the one prefix
 # the deployer may write state under:
-#   terraform init -backend-config="bucket=mock-sts-terraform-state-<account>" \
+#   terraform init -backend-config="bucket=iya-sts-terraform-state-<account>" \
 #                  -backend-config="key=environment/testidpna/global.tfstate"
 # ---------------------------------------------------------------------------
 terraform {

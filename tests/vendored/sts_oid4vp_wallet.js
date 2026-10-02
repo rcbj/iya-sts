@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 "use strict";
 //
@@ -133,6 +133,18 @@ const JWT_VC_CONFIG = process.env.OID4VCI_JWT_CONFIG_ID ||
 // one registry entry per run; `registry.provision()` reconciles it.
 const CLIENT_ID = "sts-oid4vp-wallet-job";
 const REDIRECT_URI = "https://wallet.sts-oid4vp-wallet-job.example.test/cb";
+
+// The RELYING PARTY a person signs in to with that wallet, which is a
+// different application from the wallet. OpenID4VCI is OAuth 2.0 and the
+// wallet needs only an access token, so it is declared for oauth2 and oid4vci
+// and asks for no `openid`; the sign-in sections read an ID Token's `amr`, so
+// they authorize as this client, declared for OpenID Connect. One client in
+// both roles would have to be declared for oidc to be issued the ID Token,
+// which no wallet needs (product mode refuses an ID Token to an application
+// not declared for oidc, 89de8cef).
+const RP_CLIENT_ID = "sts-oid4vp-wallet-job-rp";
+const RP_REDIRECT_URI =
+  "https://rp.sts-oid4vp-wallet-job.example.test/cb";
 
 // The person, unique per run, so nothing another job does to its own people
 // can reach this one and a leftover row names the file that made it.
@@ -420,21 +432,26 @@ function pkce() {
 // ---------------------------------------------------------------------------
 // THE WALLET'S OAUTH HALF: an authorization request, and a code redeemed.
 // ---------------------------------------------------------------------------
+// Always the RELYING PARTY's request: only the sign-in sections draw one.
 function authorizeUrl(scope, pair, state) {
   log.debug("Entering authorizeUrl().");
   log.debug("Leaving authorizeUrl().");
   return base + "/oauth2/authorize?" + new URLSearchParams({
-    response_type: "code", client_id: CLIENT_ID, redirect_uri: REDIRECT_URI,
+    response_type: "code", client_id: RP_CLIENT_ID,
+    redirect_uri: RP_REDIRECT_URI,
     scope: scope, state: state, nonce: "n-" + state,
     code_challenge: pair.challenge, code_challenge_method: "S256"
   }).toString();
 }
 
-async function redeem(code, verifier) {
+// `asRp` redeems a code the relying party was issued; otherwise the
+// wallet's.
+async function redeem(code, verifier, asRp) {
   log.debug("Entering redeem().");
   const r = await hop(null, "POST", base + "/oauth2/token", { form: {
-    grant_type: "authorization_code", code: code, redirect_uri: REDIRECT_URI,
-    code_verifier: verifier, client_id: CLIENT_ID } });
+    grant_type: "authorization_code", code: code,
+    redirect_uri: asRp ? RP_REDIRECT_URI : REDIRECT_URI,
+    code_verifier: verifier, client_id: asRp ? RP_CLIENT_ID : CLIENT_ID } });
   log.debug("Leaving redeem(). " + r.status);
   return r;
 }
@@ -620,8 +637,8 @@ async function finishAuthorization(who, location, pair) {
   const settled = await consentScreen.settleAuthorization({
     base: base, location: at, cookie: who.header() });
   at = settled.location || at;
-  const code = new URL(at || REDIRECT_URI).searchParams.get("code");
-  const tokens = code ? await redeem(code, pair.verifier) : null;
+  const code = new URL(at || RP_REDIRECT_URI).searchParams.get("code");
+  const tokens = code ? await redeem(code, pair.verifier, true) : null;
   const idToken = tokens && tokens.json && tokens.json.id_token;
   log.debug("Leaving finishAuthorization(). code=" + !!code);
   return { landed: at, code: code, tokens: tokens,
@@ -719,7 +736,11 @@ async function test() {
   const credentialScopes = [configs[SD_JWT_CONFIG].scope,
                             configs[JWT_VC_CONFIG].scope];
   // PUBLIC, like every wallet: no secret, PKCE, the authorization code grant
-  // and nothing else, and the credential scopes it will ask for. Registering
+  // and nothing else, and the credential scopes it will ask for — and NOT
+  // `openid`: OpenID4VCI is OAuth 2.0 and needs an access token, never an ID
+  // Token, so the wallet is declared for oauth2 and oid4vci alone (product
+  // mode refuses an ID Token to an application not declared for oidc,
+  // 89de8cef). Registering
   // the scopes is what a product-mode realm wants of a client that asks for
   // them; nothing about the realm is changed to let it.
   await registry.provision(base, {
@@ -731,9 +752,22 @@ async function test() {
               oauthConfidential: "FALSE",
               oauthRedirectUri: [REDIRECT_URI],
               oauthResponseType: ["code"],
-              oauthScope: ["openid"].concat(credentialScopes) },
+              oauthScope: credentialScopes },
     why: "the wallet sts_oid4vp_wallet.js collects credentials with and " +
          "signs its holder in through"
+  });
+  await registry.provision(base, {
+    identifier: RP_CLIENT_ID, name: "OpenID4VP wallet job relying party",
+    protocols: ["oauth2", "oidc"],
+    fields: { oauthClientId: RP_CLIENT_ID,
+              oauthGrantType: ["authorization_code"],
+              oauthTokenEndpointAuthMethod: "none",
+              oauthConfidential: "FALSE",
+              oauthRedirectUri: [RP_REDIRECT_URI],
+              oauthResponseType: ["code"],
+              oauthScope: ["openid"] },
+    why: "the relying party sts_oid4vp_wallet.js signs its holder in to " +
+         "with the wallet"
   });
   await registry.ensurePerson(base, HOLDER, HOLDER_PASSWORD);
 
@@ -743,12 +777,13 @@ async function test() {
   const granted = await registry.authorizationCode(base, {
     clientId: CLIENT_ID, redirectUri: REDIRECT_URI, username: HOLDER,
     password: HOLDER_PASSWORD,
-    scope: ["openid"].concat(credentialScopes).join(" ") });
+    scope: credentialScopes.join(" ") });
   const tokenSet = await redeem(granted.code, granted.verifier);
   const accessToken = tokenSet.json && tokenSet.json.access_token;
-  const passwordIdToken = tokenSet.json && tokenSet.json.id_token ?
-    payloadOf(tokenSet.json.id_token) : {};
-  const holderSub = String(passwordIdToken.sub || "");
+  // The holder's subject from the RFC 9068 access token, which carries the
+  // same `sub` an ID Token would; no ID Token is asked for.
+  const holderSub = String((accessToken ? payloadOf(accessToken) : {}).sub ||
+                           "");
   check("the holder signs in with their password and the code redeems for " +
         "an access token granted the credential scopes, naming their " +
         "urn:uuid subject", function () {
@@ -761,7 +796,7 @@ async function test() {
                       "scope " + one + " was not granted: " + granted_);
           });
           assert.ok(/^urn:uuid:/i.test(holderSub),
-                    "the ID Token's sub: " + holderSub);
+                    "the access token's sub: " + holderSub);
         });
 
   const sdKey = holderKey();

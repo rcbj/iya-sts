@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -112,6 +112,9 @@ const COMMON_NAME = process.env.STS_BAO_CLIENT_CN || 'sts';
 const POLICY_FILE = process.env.STS_BAO_POLICY_FILE ||
                     '/openbao/config/read-only.hcl';
 const POLICY_NAME = 'sts-read';
+// The Transit key that is the key-encryption key with
+// `keys.kekProvider=vault-transit` (#391). Its name is the policy's too.
+const TRANSIT_KEY = 'sts-kek';
 const WAIT_SECONDS = Number(process.env.STS_BAO_WAIT_SECONDS || 60);
 // An operator's token for a store this stack did not initialise — see the
 // header's section on several stacks. Never written anywhere by this script.
@@ -497,7 +500,7 @@ async function ensurePki(token) {
                held.body.data.certificate) || '';
   if (!caPem) {
     const made = await call('POST', '/v1/pki/root/generate/internal',
-                            { common_name: 'mock-sts secret store CA',
+                            { common_name: 'iya-sts secret store CA',
                               ttl: '87600h', key_type: 'rsa',
                               key_bits: 2048 }, token);
     if (made.status !== 200 || !made.body || !made.body.data) {
@@ -524,6 +527,46 @@ async function ensurePki(token) {
   }
   log.debug("Leaving ensurePki().");
   return caPem;
+}
+
+// ===========================================================================
+// THE TRANSIT KEY (#391): the key-encryption key that never leaves the store.
+//
+// Made ONCE, like the KV key: a Transit key is created only when absent, and
+// never replaced, because every data encryption key the service wrapped under
+// it is unreadable without it. `aes256-gcm96`, because the service binds each
+// wrapped data key to its realm and class as associated data, which only an
+// AEAD key takes; not exportable and not deletable, which are Transit's
+// defaults and are asserted rather than assumed. The KV `kek` stays beside it:
+// it is the key with `keys.kekProvider=vault`, and the PREVIOUS key a stack
+// moving to Transit names in `keys.previousKek*`.
+// ===========================================================================
+async function ensureTransitKey(token) {
+  log.debug("Entering ensureTransitKey().");
+  await ensureMount(token, 'transit', 'transit');
+  const route = '/v1/transit/keys/' + TRANSIT_KEY;
+  let held = await call('GET', route, undefined, token);
+  if (held.status === 404) {
+    const made = await call('POST', route, { type: 'aes256-gcm96' }, token);
+    if (made.status !== 204 && made.status !== 200) {
+      refuse(made, 'the Transit key "' + TRANSIT_KEY + '" could not be made');
+    }
+    say('made the Transit key ' + TRANSIT_KEY + ' (aes256-gcm96), the ' +
+        'key-encryption key for keys.kekProvider=vault-transit.');
+    held = await call('GET', route, undefined, token);
+  }
+  const d = (held.body && held.body.data) || {};
+  if (held.status !== 200 || d.type !== 'aes256-gcm96' || d.exportable ||
+      d.deletion_allowed) {
+    throw new Error('the Transit key "' + TRANSIT_KEY + '" is not an ' +
+                    'aes256-gcm96 key that can neither be exported nor ' +
+                    'deleted (' + held.status + ', ' + (d.type || '?') +
+                    (d.exportable ? ', exportable' : '') +
+                    (d.deletion_allowed ? ', deletable' : '') + '). It is ' +
+                    'not replaced here: data keys may already be wrapped ' +
+                    'under it.');
+  }
+  log.debug("Leaving ensureTransitKey().");
 }
 
 async function ensurePolicy(token) {
@@ -711,9 +754,35 @@ async function proveReadOnly() {
                     'secret/data/somebody-else (' + elsewhere.status + '). ' +
                     'The policy is meant to name two paths, not a prefix.');
   }
+  // THE TRANSIT KEY: used, and not changed (#391). A wrap and an unwrap with
+  // associated data must work; a rotation, a configuration change and a read
+  // of another key must be refused.
+  const ad = Buffer.from('sts seed proof', 'utf8').toString('base64');
+  const sealed = await call('POST', '/v1/transit/encrypt/' + TRANSIT_KEY,
+    { plaintext: nodeCrypto.randomBytes(32).toString('base64'),
+      associated_data: ad }, asService);
+  const ct = sealed.body && sealed.body.data && sealed.body.data.ciphertext;
+  const opened = ct ? await call('POST', '/v1/transit/decrypt/' + TRANSIT_KEY,
+    { ciphertext: ct, associated_data: ad }, asService) : null;
+  if (sealed.status !== 200 || !opened || opened.status !== 200) {
+    refuse(opened || sealed, 'the service\'s identity cannot wrap and ' +
+                             'unwrap with the Transit key ' + TRANSIT_KEY);
+  }
+  const rotated = await call('POST', '/v1/transit/keys/' + TRANSIT_KEY +
+                             '/rotate', {}, asService);
+  const configured = await call('POST', '/v1/transit/keys/' + TRANSIT_KEY +
+                                '/config', { exportable: true }, asService);
+  if (rotated.status !== 403 || configured.status !== 403) {
+    throw new Error('the service\'s identity was allowed to rotate (' +
+                    rotated.status + ') or reconfigure (' +
+                    configured.status + ') the Transit key its data keys ' +
+                    'are wrapped under, where 403 was expected for both. ' +
+                    POLICY_FILE + ' grants its use and nothing else.');
+  }
   say('proved it with the certificate itself: policies [' + policies + '], ' +
-      'the two secrets readable, a write to them refused 403, and no other ' +
-      'path reachable.');
+      'the two secrets readable, a write to them refused 403, no other ' +
+      'path reachable, and the Transit key ' + TRANSIT_KEY + ' usable but ' +
+      'neither rotatable nor reconfigurable.');
   log.debug("Leaving proveReadOnly().");
 }
 
@@ -767,6 +836,7 @@ async function main() {
   }
   await ensureMount(token, 'secret', 'kv', { options: { version: '2' } });
   await ensureSecrets(token);
+  await ensureTransitKey(token);
   const caPem = await ensurePki(token);
   await ensurePolicy(token);
   await ensureCertAuth(token, caPem);

@@ -120,10 +120,12 @@ It also reads the SESSION store, which `../authn/authn.ts` owns.
    provider, SAML 1.1 identity provider, custom SAML attributes),
    **Verifiable Credentials** (credential
    claims, verifier request), **SPIFFE** (SPIFFE, registration entries,
-   agents), **XACML**, and — since 2026-09-13 — **Kerberos** (Kerberos
+   agents), **XACML**, — since 2026-09-13 — **Kerberos** (Kerberos
    settings, principals; the settings page was renamed from `Kerberos` so the
-   heading does not say its label twice) — with SCIM left ungrouped beside
-   them. **SAML USED TO BE THE
+   heading does not say its label twice), and — since 2026-10-01, rcbj's ask
+   — **SSF** (Shared Signals, CAEP, RISC: the pipe and the two vocabularies
+   spoken over it, which were three ungrouped rows) — with SCIM left
+   ungrouped beside them. **SAML USED TO BE THE
    EXCEPTION HERE and no longer is**: it held ONE page, and the argument for
    keeping the heading anyway was that it names a protocol family this service
    speaks in two versions and two profiles while the page under it configured
@@ -137,9 +139,10 @@ It also reads the SESSION store, which `../authn/authn.ts` owns.
    untouched by grouping and must stay that way; `NAV` is still **derived**, now
    through `sectionPages()`, which flattens a group's pages into the section
    holding it, so `upTo()`, the trail and `consoleJson().pages` cannot tell a
-   grouped page from an ungrouped one; and **nesting stops at one level** — a
-   group holds pages, never another group, enforced only by `sectionPages()` not
-   recursing. The markup is an `<li>` holding a heading and a `<ul>`, INSIDE the
+   grouped page from an ungrouped one; and **a group may hold a group** since
+   2026-10-01 (it read *nesting stops at one level* until then) — the one case
+   is Cert issuance › SPIFFE, below, and `groupPages()` is the walk that
+   flattens every depth. The markup is an `<li>` holding a heading and a `<ul>`, INSIDE the
    section's list rather than a second list beside it: a group is three of that
    list's items said together, and a sibling list would tell a screen reader the
    section ended where the group began.
@@ -1048,14 +1051,18 @@ deduped rather than one field per family because three families name
 `oauthClientId` and two name `samlEntityId`: two boxes writing one attribute
 would be a form that silently kept whichever was filled in second.
 
-**THE DECLARATION GRANTS NOTHING AND THE PAGE SAYS SO THREE TIMES.** Nothing in
-this service reads `appAllowedProtocol`: an application declared for SAML 2.0
-alone is still issued an access token at `/oauth2/token`. That is the same
-sentence `APPLICATIONS_CAVEAT` already makes about the entry as a whole, and it
-is repeated here because a page of checkboxes headed *protocol families it is
-declared for* is the single most likely thing in this console to be read as a
-permission. The argument for it not being one is `applications.js`'s: a mock
-that refused a protocol would remove a test case rather than add one.
+**THE DECLARATION GRANTS NOTHING, AND IN PRODUCT MODE IT REFUSES THE REST
+(2026-10-01).** The issuance policy's `protocol-not-declared` rule refuses, in
+product mode, an issuance through a family the application is not declared for
+(`STS-XACML-0084`); in development the declaration refuses nothing, and an
+application declared for nothing is refused nothing in either mode.
+`common/CLAUDE.md` (beside `PROTOCOLS`) argues it. **And the application's own
+page shows only what its declaration covers**: the field grid draws a field
+only for a declared family (or one every family shares), a family's
+configuration tab goes when it is unticked, and the Credentials, Software
+statements and Permissions tabs need an OAuth family, Shared Signals `ssf`, and
+SP metadata `saml2`. Values already stored on an undeclared family's attributes
+stay on the entry and in the Directory entry tab.
 
 Three things about it are decisions rather than mechanics:
 
@@ -1927,10 +1934,28 @@ is this file's:
 ### THE TWO KEY-PAIR TABLES ARE PAGED (2026-09-13)
 
 *Applications* and *People* drew every row they had. They page now, separately,
-on `issuedPage` and `personsPage` with one shared `per` (twenty-five by default,
-not the console's fifty, because this page carries eight sections), with one
-*Rows per table* control under the Applications heading. `keyPairPaging()` in
+on `issuedPage` and `personsPage` with one shared `per`. `keyPairPaging()` in
 `pki_admin.ts` is the one slice both the page and the JSON use.
+
+**FIVE ROWS A PAGE, AS A CEILING (rcbj, 2026-09-30)** — it was twenty-five.
+`PKI_MAX_PER_PAGE` is every paged list's default AND its maximum, through
+`pagingOf()`'s `maxPer`: `?per=` can shorten a list and cannot lengthen one,
+and `GET /admin-api/pki` declares `per` with a maximum of five. **So the page
+has no *Rows per table* control any more** — every size it offered was above
+five and would have been clamped back, a select whose choices all do nothing.
+
+**EVERY PAGED LIST HAS A SEARCH BOX (2026-09-30)**, the console's
+`sectionSearchForm()` (exported for this page): `issuedq` and `personsq` here,
+`ca-<…>-issuedq` and `…-orphansq` per authority below. A search narrows its
+list BEFORE it is paged (`searchRows()`, a case-insensitive substring over
+fields the row already holds, so it parses no certificate), so the paging's
+`total` is the count that MATCHED; the reply echoes the term as
+`issuedSearch` / `personsSearch` (and on each authority `issuedSearch` /
+`orphansSearch`), the tiles and `issuedTotal` still count the whole lists, and
+`issued` / `persons` stay whole. Every box carries the other lists' pages and
+searches and drops its own page, so a new search starts at page 1.
+`keyPairListView()` carries a search only trimmed, non-empty and at most 200
+characters.
 
 * **THE NAMES ARE THE JSON MEMBERS'** — `issued` and `persons` with `Page` on
   the end, answered by `issuedPaging` and `personsPaging` — which is
@@ -1943,10 +1968,43 @@ not the console's fifty, because this page carries eight sections), with one
   count them, and `sts_jwt_bearer_grant.js` looks its client up in `issued` by
   identifier.
 * **EVERY TAKE-OFF BUTTON CARRIES BOTH TABLES' STATE AS `back`**, and
-  `pkiReturnTo()` rebuilds it — the three names, positive integers only — into a
-  303 to the same pages at `#pki-applications` or `#pki-people`. A control that
-  carries no `back` (Build, the pane, the revocation pane) still gets the bare
-  page.
+  `pkiReturnTo()` rebuilds it — the page names as positive integers, the
+  searches as above — into a 303 to the same pages at `#pki-applications` or
+  `#pki-people`. A control that
+  carries no `back` (Build, the pane) still gets the bare page.
+
+### EACH AUTHORITY'S LISTS IN THE REVOCATION PANE ARE PAGED (#370, 2026-09-30)
+
+What each authority SIGNED — a row per certificate, each with a Revoke form —
+and the revoked serials with no certificate left grow with every issue and
+every rotation, and the pane drew them whole. Each is now a list paged on a
+parameter of its own, `ca-<scope segment>-<ca>-issuedPage` and
+`…-orphansPage` (`listNameOf()`; `REVOCATION_LIST_PARAM` is the only shape
+`keyPairListView()` carries), sharing the page's `per`, five at most, each
+with a search of its own (above).
+
+* **PAGE BEFORE PER-ROW WORK** (#352's rule). `revocationModel()` reads each
+  authority's issued list and revocation list once, sorts nothing new, slices,
+  and only then gives the page's rows their revocation state and describes
+  the page's orphans. "Is this serial issued here" is one set per authority —
+  it was `issuedHere()` per revoked serial, a rebuild of the issued list each
+  time, quadratic in the two lists.
+* **`GET /admin-api/pki` IS PAGED THE SAME WAY**, unlike the key-pair tables
+  above: each authority carries `issued` and `revokedNotIssued` as pages, with
+  `issuedPaging` / `orphansPaging` and `issuedTotal`, `revokedTotal` and
+  `revokedNotIssuedTotal`, and `revoked` is the page's revocations described.
+  A caller revoking a certificate names its serial and does not need the list;
+  the jobs that pick one pick the first, which is on page 1.
+* **EVERY REVOKE AND RELEASE FORM CARRIES `back` AND `list`**, and
+  `pkiReturnTo()` sends the reader to that page of that list — `list` only
+  when `REVOCATION_LIST_PARAM` accepts it, since it ends up in a `Location`
+  header. **It lands on the list's search box, `#find-<…>-issuedq`** (since
+  2026-09-30): it was `#list-<param>`, the pager's anchor, which `pageNavPair()`
+  draws only when a list runs to a second page — so a Revoke in a one-page
+  list returned to an anchor that did not exist, at the top of the page.
+
+`tests/pki_revocation_paging.js` counts it against 5,000 issued certificates
+and 1,200 revocations.
 
 `tests/pki_key_pair_paging.js` pins all of it.
 
@@ -3856,7 +3914,7 @@ would cost an afternoon:
   issuer.** `wstrust.issuer` was never the name of this service — it is what ONE
   of sixteen families puts in an `<Issuer>` element — and in the corner of a
   console the other fifteen never mention it read as this service's identity.
-  It is `Mock STS · <realm name>` now, which is true of the whole page and is
+  It is `IYA STS · <realm name>` now, which is true of the whole page and is
   the fact a reader most needs before they act, since `/admin/config` writes the
   realm it is read in. It is deliberately NOT the switcher said twice: the
   switcher appears only when a realm has been DEFINED, which is exactly the
@@ -3864,7 +3922,7 @@ would cost an afternoon:
 
   **AND ON 2026-08-25 THE ISSUER CAME OFF THE SHELL ENTIRELY**, which is the
   same argument read once more rather than a reversal of it. It had moved from
-  the corner into the line under the heading — `Mock STS admin console — issuer
+  the corner into the line under the heading — `IYA STS admin console — issuer
   <code>…</code>`, drawn on every page of the console — where it was still a
   name that ONE of sixteen protocol families uses, sitting at the top of the
   seventy-odd pages the other fifteen never mention it on. **Nothing is lost**,
@@ -4029,6 +4087,54 @@ underneath: **Kerberos is the one family here that polices delegation IN THE
 ACT**, on every request, whatever anything is set to. The permissions above are
 policy this service was configured with and refuse only when
 `oauth2.delegatedPermissionsEnforced` is set.
+
+## …AND ON 2026-10-01 THE CONTROLS LEFT IT FOR PROTOCOLS → DELEGATION
+
+rcbj's change: **every control that changed configuration moved off Monitoring
+→ Delegation** to a new page, **Protocols → Delegation**
+(`/admin/delegation-settings`), and the application's own **Permissions** tab
+took this one application's part of them. The reason is the console's filing
+rule (a page is filed by the QUESTION it answers): Monitoring is what happened,
+and a page under it that also configured was the one exception. The section
+above still argues why the register EXISTS; this says where it is drawn.
+
+* **`/admin/delegation` draws the register READ-ONLY**, beside the acts it is
+  read against: `permissionsSection(…, editable = false)` swaps every row
+  button for a *change it* link (the `readOnly` row option the picture pages
+  already pass) and drops Expose an API and Define a permission. It has no
+  POST, no settings form and no `settings` in its JSON. "There is NO FORM" in
+  the section further up is true of the whole page again.
+* **`/admin/delegation-settings` is the same `permissionsSection()`,
+  `editable`**, for every application, plus the `Delegation` settings group
+  (`delegation.maxRecords`, `SETTING_HOMES`). It owns `POST
+  /admin/delegation-settings`, the five actions' one handler (it was `POST
+  /admin/delegation`); `POST /admin-api/permissions/:action` mirrors it, which
+  is what satisfies rule 7's page parity for the new page. It is exempt from
+  `admin-core/protocol_endpoints.ts` with its reason: it configures registers
+  other families' endpoints read and has none of its own. Its `LIST_PARAMS`
+  are the register's two searches and two pagings, the names they have on the
+  Monitoring page.
+* **An application's Permissions tab configures BOTH halves for itself.** The
+  client half was already there (what it holds, with Revoke; a form granting
+  it another application's permission). The resource half is new: *What it
+  exposes* with Remove, *Expose an API* and *Define a permission* with
+  `resource` a HIDDEN field set to this entry — so no form there reaches
+  another application's permissions — and *Grants — the delegation
+  relationships*, the grants of ITS permissions, with Revoke and a grant
+  whose permission select offers only its own. **The client is found with a
+  `chooserPane()` search, not a `<select>`**, because the registry may hold
+  thousands: `granttoq` / `granttofrom` are the pane's search and offset, a
+  result links back with `grantto` naming the pick, and only then is the
+  form drawn, carrying it as a hidden `client` — honoured only while it names
+  another application in the registry. That page therefore draws TWO
+  `grant-permission` forms; the resource half's is the one carrying `page`
+  (the console test finds it that way). Every form carries `page`, which
+  `permissionsReturnTo()` spends — only when the registry knows the name — to
+  bring the reader back to the page they were on, since a grant made from the
+  resource names a different `client`.
+* **Who may act for whom (Kerberos, WS-Trust, token exchange) did not move**:
+  it was read-only on the Monitoring page already, every value being an
+  attribute edited on the application's or the person's page.
 
 ## EVERY LIST ON `/admin/delegation` IS PAGED AT TEN, AND THAT IS A NUMBER ABOUT THE PAGE
 
@@ -4644,6 +4750,16 @@ They are a group with the same heading, so the two sections agree.
 oversight**: it has no monitoring page, and a group of three under a heading
 that names four families is drift a reader cannot see. The day SPIFFE gets one
 it goes here, and the comment above the group says so.
+
+**SPIFFE GOT ITS HEADING BACK, INSIDE THE GROUP (2026-10-01, rcbj's ask).**
+Merged into Cert issuance, its four pages — `SPIFFE`, `Registration entries`,
+`Agents`, `Brokers` — sat flat beside ACME, EST and SCEP, where `Agents` and
+`Brokers` read as more enrollment protocols. They are a **SPIFFE** group
+nested in Cert issuance now, the first group inside a group: `groupPages()`
+flattens any depth for `NAV`, and `navItem()`, `visibleSections()` and
+`consoleGuide()` recurse. The sidebar CSS colours only the heading of the
+group the page is in (`.navgrp.open>.navsub`), so an open Cert issuance does
+not highlight the SPIFFE heading under it.
 
 Nothing else moved: the paths, the modules that draw the pages and every
 `SETTING_HOMES` row are untouched — this is the `SECTIONS` table's shape and
@@ -6160,6 +6276,19 @@ Four decisions belong to this file:
   headed *Endpoints*, and it describes operations by path under `/scim/v2`
   rather than the realm's addresses.
 
+**A COPY BUTTON BESIDE EVERY ENDPOINT (2026-10-01).** `copyButton(value)`
+draws `<button type="button" class="copybtn" hidden data-copy="…">`, and
+GNAP's own table uses it too. `respond()` sees a page carrying one, serves it
+`script-src 'self'` through `app.contentSecurityPolicy()` (so `frame-ancestors`
+and `base-uri` stay) and appends `<script src="/admin/copy.js" defer>`; a page
+with none is untouched. The script is the parent project's `copyField()`:
+`navigator.clipboard.writeText()`, falling back to a selected hidden textarea
+and `execCommand('copy')` outside a secure context. The buttons are `hidden`
+until it runs, so with script blocked the page is what it was and the URL is
+still selectable text. The argument for the script is the root `CLAUDE.md`'s
+row; `tests/protocol_endpoints.js` section D2 and `sts_admin_console.js`'s page
+walk hold it.
+
 `protocolEndpointDrift()` is exported for `tests/protocol_endpoints.js`, which
 fails on a Protocols page with neither a row nor an exemption and on a row
 naming a page not under Protocols. **A new page under Protocols therefore owes
@@ -6787,3 +6916,308 @@ processes and their memory. Totals are over the nodes not gone.
 `tests/node_snapshots.js` holds it in process; the two `local: true` jobs hold
 it over HTTP, and in the `cluster` mode wait for both nodes to be live.
 
+
+## AN APPLICATION'S CONFIGURATION IS ONE FIELD GRID, ON BOTH PAGES (2026-09-30)
+
+rcbj asked for `/admin/applications/new` and an application's own page to show
+the same set of per-protocol fields, typed: a boolean as true/false radio
+buttons, a string as a text box, a list of strings as boxes with a **+** to add
+one and a trash can beside each. `applications.applicationFields()`
+(`common/CLAUDE.md`) is the catalogue; `fieldGrid()` in `admin.ts` draws it, in
+the groups `FIELD_GROUPS` names, each field carrying the `.pf-<family>` classes
+the existing `:has()` rules hide by.
+
+* **NO SCRIPT, AGAIN.** **+** and the trash can are submit buttons with
+  `formaction` and `formnovalidate`, posting `grow=<attribute>` or
+  `drop=<attribute>.<n>`: the server redraws the form with one box more or
+  one fewer, everything else as typed. A round trip per press, which every
+  control here already pays.
+* **A BOX PRESENT FOR A LIST MUST HOLD A VALUE**, and no boxes is the empty
+  list. It is refused on the server (`STS-ADMIN-0834`) rather than with
+  `required`, because a list hidden by its family's CSS rule would block the
+  submit with nothing visible to fix.
+* **`present` AND `protocolsPresent`** are hidden fields naming what the form
+  drew, so a save can CLEAR a field (all boxes gone, a string emptied) and
+  untick a family — an absent value cannot otherwise be told from an
+  undrawn one.
+* **THE CREATE FORM HAS A SIMPLE AND AN ADVANCED VIEW**: simple draws the
+  declaration fields, the setting overrides and the SAML key fields (what the
+  page drew before), advanced every field. A hidden `view` and a *switch*
+  button carry it across round trips.
+* **THE APPLICATION PAGE'S SAVE POSTS `update-fields` TO
+  `/admin/applications/edit`** (Admin Write only), which answers a redraw on a
+  refusal and a 303 to `#fields` on success. A save that changed some
+  attributes and was refused others is `STS-ADMIN-0836` and the page lists
+  both. The old set/add/remove forms are kept, folded, under *Change one
+  attribute by name*, for anything the grid does not draw.
+* **WHAT THE GRID DOES NOT DRAW**: a SENSITIVE field (a secret, a private key)
+  is left to the Credentials section, for #352's rule that a page does not
+  unseal; the name and families are the form's own; managed key-pair
+  attributes are the Credentials section's.
+
+**A CLOSED SET IS RADIOS OR CHECKBOXES (2026-10-01).** A field carrying
+`choices` (`common/CLAUDE.md`, `applicationFields()`) is drawn in one of two
+ways. A single value is a radio per value plus one for "not set", which is the
+boolean's shape; the setting overrides' enums, which were a `<select>`, are
+drawn the same way. A list is a checkbox per value. An unticked box posts
+nothing, so a list from a closed set can never hold an empty box, and the
+form's `present` list clears the attribute when every box is unticked. A
+stored value that is not one of the choices is still drawn, marked, so a
+save does not drop it without a word.
+
+**EVERY TEXT FIELD SHOWS AN EXAMPLE, AND EVERY CONTROL A TOOLTIP (rcbj,
+2026-10-01).** `applications.fieldExample()` (`FIELD_EXAMPLES`) is an example
+of a valid value for every field a person types into. `fieldGridCell()` draws
+it as the box's `placeholder` (grey, gone on typing), with a setting
+override's default beside it, and puts the field's sentence as a `title` on
+the control itself as well as on its name. `tests/application_form_roles.js`
+section 8 fails when a text field has no example. The create form's identifier
+and name, the view switch, every tab's Save, the Shared Signals Pause and
+Enable buttons and the DID form carry tooltips of their own.
+
+**THE DID TAB CARRIES MORE THAN FIELDS (2026-10-01)**: on an application
+declared for `did`, the *Decentralized Identifier (DID)* sub-tab opens with
+`applicationDidPanel()` — the DID, its document's address and whether it is
+advertised, and a *Generate a key pair* form (Admin Write) that posts
+`generate-did-key` and is answered by `answerGeneratedDidKey()`, a one-time
+`no-store` page carrying the private key, `answerIssuedTlsClientCertificate()`'s
+arrangement. The same panel, with the published keys listed, is on the
+Credentials tab too (`#credentials-did`), and the Generate form returns to
+whichever tab it was pressed on (`from`). The panel also lists each
+`LinkedDomains` origin with a *Download did-configuration.json* button
+(Admin Write), which posts `sign-domain-linkage` and is answered with the
+FILE (`Content-Disposition: attachment`), and marks which published keys have
+a private half kept here. `oid4vc/CLAUDE.md` argues the DID.
+
+**OPENID4VCI AND OPENID4VP ARE ONE CHECKBOX, *Verifiable Credentials*
+(rcbj, 2026-10-01)**, on the create form and the Protocol families tab, and
+one field group (`vc`, the *Verifiable Credentials* sub-tab). They stay two
+families in the data, because the issuance policy reads them apart:
+`applications.FAMILY_CHOICES` is the list of checkboxes, the box posts `vc`,
+and `applications.familiesOfChoices()` expands it to both where a console form
+is read. The box is ticked when either family is declared, and saving it
+declares both. The API still takes the two family ids.
+
+`tests/application_form_roles.js` holds the catalogue, and
+`tests/vendored/sts_admin_console.js`'s `theFieldGridIsPressed()` presses the
+grid in a browser.
+
+## AN APPLICATION'S PAGE CARRIES ITS ACME, EST AND SCEP CERTIFICATES (2026-10-01)
+
+rcbj asked for certificate generation and tracking on the application's own
+page. `applicationEnrollmentPanel(req, row, carryBack, where)` draws
+`adminViews.applicationEnrollmentState()` twice: under the **Credentials**
+tab (`#credentials-enroll`) and at the head of the **Certificate
+enrollment** configuration sub-tab (`#cfg-enroll`), for an application
+declared for ACME, EST or SCEP. It shows:
+
+* the rules in force, each marked as the application's own or the realm's;
+* the certificates on the entry, paged on `enrolledPage`, each with a PEM
+  download and a Revoke;
+* the EAB keys, SCEP challenges and host names, with their create, delete,
+  add and remove forms;
+* EST's server-key Issue.
+
+**Moving a form is not moving an action.** Every control posts to
+`/admin/acme`, `/admin/est` or `/admin/scep`, the protocol's own action,
+with `from=application`, `where` and the application. Each of those
+handlers asks the new export `enrollmentReturnTo(body, fallback)` where to
+redirect, and passes the answer as the back link of its one-time page.
+`enrollmentReturnTo()` rebuilds the application's page through
+`applicationReturnTo()`, whose anchor list now admits `#credentials-*`.
+So no API operation is new, and rule 7 holds through the existing mirrors.
+`GET /admin-api/applications?application=` carries the model as
+`certificateEnrollment`, which holds no secret. `tests/application_enrollment.js`
+section F holds the model and the return path.
+
+**Each copy pages on a name of its own** (`enrolledPage` on Credentials,
+`enrolledConfigPage` on the sub-tab). A pager's links carry `#list-<param>`,
+the id of the pager above its list, and that fragment is what opens the tab
+holding it. With one name both copies had one id, and a next page from the
+Credentials tab landed on the Configuration copy. **A list drawn twice on
+one page needs two paging names**, for this reason and for `pagingOf()`'s.
+
+## AN APPLICATION'S OWN TOKEN LIFETIMES, CUSTOM CLAIMS AND SAML ATTRIBUTES (2026-10-01)
+
+rcbj asked for the realm's Token lifetimes, Custom claims, UserInfo claims
+and Custom SAML attributes pages to have per-application overrides, drawn as
+sections on the application's configuration tabs:
+
+* **The OAuth 2.0 / OpenID Connect sub-tab** opens with
+  `applicationTokenLifetimesSection()`, a read-only table, and
+  `applicationClaimsSection(..., ['access_token', 'id_token', 'userinfo'])`.
+  The table shows the four lifetimes in force for the client, each one's
+  source, and `tokenLifetimeWarnings({ access, refresh, skew })` over the
+  application's values. `tokenLifetimeWarnings()` takes values since this
+  date; the realm page passes none. The four overrides were already
+  fields on the tab, and clock skew stays realm-wide (rcbj's choice).
+* **The SAML sub-tab** opens with `applicationClaimsSection(..., ['saml2',
+  'saml11'])`.
+
+Each section draws `adminViews.applicationClaimsState()`: the rows in force,
+marked `realm` or `application`, with a replaced realm row marked as such.
+Its forms post `set-custom-claim` and `remove-custom-claim` to
+`/admin/applications`, both new arms of `applicationsAction()` mirrored at
+`/admin-api/applications/<action>` (rule 7), and come back to
+`#cfg-oauth-claims` or `#cfg-saml-attributes`, **on a refusal too**: the
+refusal is about one row and the reader is still on that application. The
+model is `common/CLAUDE.md`'s *An application's own claim sets*. The GET
+carries `customClaims` and `tokenLifetimes`.
+
+## AN APPLICATION'S PAGE HAS A SHARED SIGNALS SECTION (2026-10-01)
+
+`applicationSignalsSection()` draws `adminViews.applicationSignalsState()`
+under the Credentials section of any application declared for Shared Signals
+or owning a stream. It has two tables:
+* the streams it created at `/ssf/stream`, with the members their receiver set
+  (read-only, since SSF 1.0 section 8.1.1 makes them the receiver's) and a
+  Pause or Enable button for Admin Write;
+* every per-application override with its value in force and whether the
+  application or the setting gives it, so the defaults a new stream starts
+  from are on the page.
+
+The overrides themselves are edited in the field grid's Shared Signals group.
+**The buttons are a form moved, not an action**: they post `status` to
+`/admin/ssf` with `from=application`, and that handler returns through
+`applicationReturnTo()` to `#signals`. So `changeStatus()` still announces the
+change to the receiver first, and `POST /admin-api/ssf/status` is still the
+one mirror. `ssf/CLAUDE.md` argues which settings are exposed.
+
+## A PRESSED BUTTON COMES BACK TO WHERE IT WAS (2026-10-01)
+
+rcbj: every button on the application page did what it should and then
+sent the reader to the top of the page, and the same was true across the
+console. Every form here answers with a new page, either a 303 or a redraw,
+and with no script there is no scroll position to restore. **What there is,
+is the fragment.**
+
+* **`withReturnAnchors()`, run by `withCsrf()` on every finished page**, gives
+  each h2 to h4 an id (`sec-<slug>`, deduplicated; an existing id is kept). It
+  then appends the id of the nearest heading above each form to that form's
+  root-relative `action` and to each `formaction` inside it. A redraw lands
+  there because the fragment is in the URL that was posted to. A 303 lands
+  there because a Location with no fragment inherits the request's (RFC 9110
+  section 10.2.2).
+* **What it leaves alone, and why**:
+  * a form or redirect that already names a fragment, so
+    `applicationReturnTo(..., '#signals')` and the tokens page keep theirs;
+  * an absolute or empty action, which leaves the page or resolves against
+    a URL this function cannot see;
+  * any form above the first section heading (the sidebar, the account
+    menu), which is the top of the page already.
+* **The field grid goes one level finer**: each cell is `id="fgc-<attribute>"`,
+  and its `+` and bin buttons name it, so a list grows or shrinks under the
+  pointer.
+* **THE MESSAGE STAYS ON SCREEN.** `messagesOf()` and the two field-grid
+  refusal blocks are drawn through `flash()`, a strip that is
+  `position: sticky` at the top of the window, because a notice drawn at the
+  top of the card would be off screen once the page lands mid-way.
+  `scroll-margin-top` on anchored headings and cells keeps them below it.
+
+**What it cannot do**: a section whose heading text changes with the action
+(a count in it) gets a new id and the page opens at its top, as before. A
+link is not a form, so a pager link still opens a page at its top.
+
+## AN APPLICATION'S PAGE IS TABS (2026-10-01)
+
+rcbj: one tab across the top per section, so a reader is not scrolling past a
+dozen sections, a proper Save on every tab that edits values, and the
+configuration grid split by protocol.
+
+* **`tabbedPanels()` DRAWS THEM, WITH NO SCRIPT.** A tab is a link to its
+  panel's fragment. The stylesheet shows a panel when it is `:target` or holds
+  the target (`:has(:target)`), shows the first panel when nothing is
+  targeted, and marks the tab being read by its id
+  (`APPLICATION_TAB_IDS`). Every panel stays in the page, so a browser without
+  `:has()` shows them all, which is the page as it was. A panel with nothing
+  in it gets no tab.
+* **A control comes back to its own tab for free.** The answer to a form lands
+  at a fragment inside the form's own panel: the `#sec-…` heading
+  `withReturnAnchors()` adds, or the anchor its handler names (`#credentials`,
+  `#signals`, `#cfg-<group>`). The panel holding that fragment is the one
+  shown.
+* **The tabs are**: Overview, Configuration, Credentials, Browser origins,
+  Shared Signals, Software statements, Return addresses, Permissions, Roles,
+  SP metadata, Directory entry (with the one-attribute forms) and Remove.
+  The identifier and the tiles stay above them.
+* **CONFIGURATION IS SUB-TABS, EACH ITS OWN FORM AND SAVE.** The first
+  sub-tab, Protocol families, is the declared families. Its form carries
+  `protocolsPresent` and nothing else. Then there is one sub-tab per
+  `FIELD_GROUPS` group that has a field to show. A field is shown when it
+  belongs to every family, to a declared family, or already holds a value.
+  That is decided on the server, because the family checkboxes are in another
+  form and the create page's `:has()` rules cannot reach across forms. Each
+  group's `present` names only its own fields, so a Save writes that group
+  and nothing else. It returns to `#cfg-<group>` (the posted `group`), and a
+  refused save redraws with the post laid over the entry for that group only.
+* **The console test opens a tab as a person does.** `fillAndPress()` and the
+  grid section's `press()` set the fragment of a hidden button's panel before
+  clicking it, and `go()` loads a URL without its fragment and sets the
+  fragment afterwards, because a fragment is not fetched.
+
+## A PERSON'S PAGE IS TABS, AND THEIR ATTRIBUTES A TYPED FIELD GRID (2026-10-01)
+
+rcbj asked for `/admin/users?user=` to be organised the way an application's
+page now is. He chose:
+* seven tabs;
+* a typed grid with one sub-tab per group, each with its own Save;
+* the same grid on `/admin/users/new`.
+
+**The tabs.** `tabbedPanels('usertabs', …)` draws them, ids
+`USER_TAB_IDS`, with no script:
+* **Overview**: the tiles, the names seen and the authentications.
+* **Sessions & tokens**.
+* **Attributes**: `personFieldsSection()`.
+* **Credentials**: four sub-tabs, `ucred-factors`, `ucred-password`,
+  `ucred-keys` and `ucred-kerberos`, each one of the four sections that were
+  stacked.
+* **Federation links**.
+* **Directory entry**: the LDAP object, and `userAttributesSection()`
+  retitled *Change one attribute by name*.
+* **Sign out**: both buttons.
+
+`subTabbedPanels()` is `tabbedPanels()` one level down, and
+`USER_SUB_TAB_IDS` are in the stylesheet's tab-highlight list.
+
+**A control comes back to its tab.**
+* `usersPost()` asks `userActionAnchor()` for the section its control is in:
+  `#second-factors`, `#credential-controls`, `#attributes`, `#mail` or
+  `#federation-links`.
+* `userReturnTo()` admits those and `#ufg-<group>`.
+* The anchor is inside its tab, so the tab is shown again.
+
+**The grid.** The groups are `ldap/person_editor.ts`'s `FIELD_GROUPS`, and the
+same file holds an example per attribute (`FIELD_EXAMPLES`) and which fields
+the simplified create view offers. So the two pages cannot group or describe
+an attribute differently.
+* Each group is a form posting `update-fields` to `/admin/users/edit`, with
+  its own `present`. A refused save, "+" and the bin redraw the page there,
+  `/admin/applications/edit`'s arrangement.
+* `admin-core/admin_actions.ts`'s `updatePersonFields()` applies each
+  attribute through the editor's `update()`, so every rule and audit row of a
+  one-attribute edit holds.
+  * A list is added to before it is taken from, so `cn` is never empty in
+    between.
+  * Refusals are `STS-ADMIN-0834`, `0838` and `0839`.
+* `fieldGridCell()` takes `row.forText` for the label beside the name, since
+  a person's field belongs to no protocol family.
+* The address is not a field. The `set-mail` form heads the Contact sub-tab
+  (`#mail`).
+
+**Rule 7.** `POST /admin-api/users/update-fields` mirrors the grid's Save,
+and the users resource's `mirrors` names `POST /admin/users/edit`.
+`GET /admin-api/users/new` publishes `fieldGroups` and `gridFields`.
+
+**`/admin/users/new`.**
+* It draws `newUserFieldRows()` under the same group headings, with a
+  simplified view and an advanced one (`switchview`, as
+  `/admin/applications/new` does).
+* On the first draw a list gets one empty box, so the names a person is
+  created with have boxes; a create reads an empty box as no value.
+* A create takes every attribute the editor edits, through
+  `ldap_server.js`'s `personAttributesFrom()`, held to the editor's rules by
+  `checkCreateValues()` (`STS-LDAP-0106`).
+
+`tests/person_fields.js` holds all of it in process. The browser job opens a
+hidden form's tab by the id of the panel it is in, which works for a sub-tab
+too.

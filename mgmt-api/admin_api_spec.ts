@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -703,7 +703,7 @@ class AdminApiSpec {
     return {
       openapi: '3.1.0',
       info: {
-        title: 'mock STS management API',
+        title: 'IYA STS management API',
         version: opts.version || '0.0.0',
         description: this.describe(authRequired),
         license: { name: 'MIT' }
@@ -773,6 +773,17 @@ const CONFIG_SETTING = openObject(
                  description: 'Present on a `csv` setting whose entries ' +
                               'must each be one of these; absent on an ' +
                               'open list.' },
+    // 2026-10-01: a closed list whose ORDER is a preference
+    // (`webauthn.algorithms`), and a sentence per value.
+    ordered: { type: 'boolean',
+               description: 'Present, true, on a `csv` setting whose order ' +
+                            'is a preference — the first value is the most ' +
+                            'preferred. Absent on every other setting.' },
+    csvValueNotes: { type: 'object',
+                     additionalProperties: { type: 'string' },
+                     description: 'Present beside `csvValues` where the ' +
+                                  'setting describes each value: the value ' +
+                                  'mapped to one sentence.' },
     // Present on an `int` setting whose row narrows it, and absent everywhere
     // else — the same way `enumValues` is present on an enum and nowhere else.
     // They are DOCUMENTED rather than left implicit because a client rendering
@@ -2400,11 +2411,12 @@ const SCHEMAS = {
                      'labels in `protocols`, because a federation partner is ' +
                      'recorded under the protocol its relationship speaks ' +
                      'and by label is indistinguishable from an ordinary ' +
-                     'client. **DECLARING GRANTS AND REFUSES NOTHING**: no ' +
-                     'endpoint reads this attribute, and an application ' +
-                     'declared for one family may still use every other, ' +
-                     'because a mock that refused a protocol would remove a ' +
-                     'test case rather than add one.',
+                     'client. **DECLARING GRANTS NOTHING**, and in product ' +
+                     'mode the issuance policy refuses an issuance through ' +
+                     'a family the application is not declared for ' +
+                     '(STS-XACML-0084); in development, or for an ' +
+                     'application declared for nothing, nothing is ' +
+                     'refused.',
         items: openObject('One protocol family.', {})
       },
       declarations: {
@@ -5641,7 +5653,7 @@ const SCHEMAS = {
 };
 
 const DESCRIPTION_OPENING =
-  'The management API of the mock STS: everything the /admin console ' +
+  'The management API of IYA STS: everything the /admin console ' +
   'shows and everything it can change, over JSON, with no browser.';
 
 // ---------------------------------------------------------------------------

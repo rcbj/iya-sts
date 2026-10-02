@@ -260,11 +260,17 @@ product mode). The key set is cached for `oauth2.clientJwksCacheS` and fetched
 again for an unknown `kid` at most every `oauth2.clientJwksRefetchS`. The mutual TLS methods are
 described in [OAuth security](oauth-security.md#mutual-tls-rfc-8705).
 
-**Client secrets expire and rotate.** A secret past `oauthClientSecretExpiresAt`
-(or the registration's `client_secret_expires_at`) is refused in product mode.
-**Rotate secret** keeps the old secret working for `oauth2.clientSecretOverlapS`
-beside the new one, and **Regenerate secret** ends it at once. A daily scheduler
-job warns about secrets that are close to expiry.
+**An application may hold several client secrets, each with its own expiry.**
+The Credentials tab lists them with an Expires column; **Add a secret** mints
+one (with an optional lifetime in days and a description), **Remove** takes one away at
+once, and up to `oauth2.clientSecretsMax` (5 by default) are held. Any
+unexpired secret authenticates at the token endpoint; the newest unexpired one
+is what this service signs and encrypts with where a client secret is the key
+(HS256 ID Tokens, JARM). A secret past its expiry is refused in product mode.
+**Rotate secret** adds a new one and keeps the old ones working for
+`oauth2.clientSecretOverlapS`; **Regenerate secret** replaces them all at once.
+A daily scheduler job warns about secrets close to expiry and removes expired
+ones an application holds a live secret beside.
 
 #### Mutual TLS clients (RFC 8705)
 
@@ -1049,6 +1055,8 @@ issued changes. The page shares one store with **Custom SAML attributes**
 (`/admin/saml-attributes`), which holds the SAML 2.0 and SAML 1.1 sets. The API
 is `/admin-api/claims`.
 
+**Per application.** A client can have claims of its own. They are added to these and win by name, on its OAuth 2.0 / OpenID Connect configuration tab: see [Applications](applications.md#custom-claims-saml-attributes-and-token-lifetimes).
+
 ### UserInfo claims — `/admin/userinfo-claims`
 
 **Protocols → OAuth2 / OIDC → UserInfo claims** configures the same kind of
@@ -1080,6 +1088,8 @@ lifetimes, and RFC 9700 mode's refresh idle timeout and revoke-on-logout.
 `/admin-api/token-lifetimes` and `POST /admin-api/token-lifetimes/set` are the
 same controls.
 
+
+**Per application.** The four lifetimes can be overridden per client. Its OAuth 2.0 / OpenID Connect tab shows the values in force with these warnings: see [Applications](applications.md#custom-claims-saml-attributes-and-token-lifetimes).
 ### Refresh tokens
 
 Every refresh token is a **nested JWT**: signed, then encrypted as a JWE to this
@@ -1920,7 +1930,7 @@ on [OAuth security](oauth-security.md#configuration).
 | `oauth2.registeredClientIdPrefix` | `STS_OAUTH2_REGISTERED_CLIENT_ID_PREFIX` | `sts-client-` | yes | What a dynamically registered `client_id` starts with. |
 | `oauth2.registeredClientIdBytes` | `STS_OAUTH2_REGISTERED_CLIENT_ID_BYTES` | `8` | yes | How many random bytes follow that prefix. |
 | `oauth2.registeredSecretBytes` | `STS_OAUTH2_REGISTERED_SECRET_BYTES` | `48` | yes | How many random bytes make a registered client's secret and registration access token. 48 by default so a `client_secret_jwt` secret is long enough for HS512 (RFC 7518 section 3.2, enforced in product). **Below 24, even HS256 is refused in product.** |
-| `oauth2.registeredSecretLifetimeS` | `STS_OAUTH2_REGISTERED_SECRET_LIFETIME_S` | `0` | yes | The `client_secret_expires_at` published for a registered client, as seconds after registration; 0 is never. |
+| `oauth2.clientSecretLifetimeDays` | `STS_OAUTH2_CLIENT_SECRET_LIFETIME_DAYS` | `0` | yes | The lifetime, in days (0 to 730), of every new client secret, and the `client_secret_expires_at` published for a registered client; 0 is never. |
 | `oauth2.clientSecretOverlapS` | `STS_OAUTH2_CLIENT_SECRET_OVERLAP_S` | `604800` | yes | How long a rotated-out client secret keeps working beside the new one; 0 ends it at once. |
 | `oauth2.clientSecretExpiryWarningDays` | `STS_OAUTH2_CLIENT_SECRET_EXPIRY_WARNING_DAYS` | `14` | yes | How many days before a client secret expires the daily job warns and the console marks it. |
 

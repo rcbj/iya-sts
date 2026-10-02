@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -94,24 +94,35 @@ function builders(t) {
     n.text) && /rdn_value = \$4/.test(n.text) && /realm = \$1/.test(n.text),
           'A1. byName reads parent_key, name_keys and rdn_value, in the realm',
           n.text);
+  // A RAW value (no codec on this thread) is put in the keyless lookup form
+  // `<kind>\n<value>` the codec writes where nothing seals (#391 phase 6).
   t.equal(JSON.stringify(n.values),
-          JSON.stringify(['acme', users, '["alice"]', 'alice']),
-          'A2. the name is trimmed and lower-cased, as a JSON array for @>');
+          JSON.stringify(['acme', users, JSON.stringify(['name\nalice']),
+                          'alice']),
+          'A2. the name is trimmed and lower-cased, in its lookup form, as a ' +
+          'JSON array for @>');
+  const k = queries.byName('acme', users, { key: 'DIGEST', rdn: 'alice' });
+  t.equal(JSON.stringify(k.values),
+          JSON.stringify(['acme', users, '["DIGEST"]', 'alice']),
+          'A2b. a value the codec keyed is looked up as it came, and the RDN ' +
+          '(the DN\'s, readable) as given');
   t.check(/ORDER BY dn_key/.test(n.text),
           'A3. first by key wins, as a restored process\'s index did');
   const u = queries.byUuid('', 'ABCD-1');
   t.check(/uuid_keys @> \$2::jsonb/.test(u.text) &&
-          u.values[1] === '["abcd-1"]',
+          u.values[1] === JSON.stringify(['uuid\nabcd-1']),
           'A4. byUuid compares lower-cased against uuid_keys', u.values[1]);
   const m = queries.byMail('default', 'Bob@Example.COM', 5);
   t.check(/mail_keys @> \$2::jsonb/.test(m.text) &&
-          m.values[1] === '["bob@example.com"]' && m.values[2] === 5,
+          m.values[1] === JSON.stringify(['mail\nbob@example.com']) &&
+          m.values[2] === 5,
           'A5. byMail lower-cases and carries its limit',
           JSON.stringify(m.values));
   const a = queries.byAttribute('default', 'DIDSubject', 'did:key:Z6', 3);
-  t.equal(a.values[1], '{"didsubject":["did:key:Z6"]}',
-          'A6. byAttribute keeps the value as written and lower-cases only ' +
-          'the attribute name, as the store holds it');
+  t.check(/value_keys @> \$2::jsonb/.test(a.text) &&
+          a.values[1] === JSON.stringify(['attr:didsubject\ndid:key:Z6']),
+          'A6. byAttribute asks value_keys, keeping the value as written and ' +
+          'lower-casing only the attribute name', JSON.stringify(a.values));
   const p = queries.page('default', 'ou=100%_off,dc=x', 'uid=a', 50000);
   t.check(!/LIKE/i.test(p.text) && /right\(dn_key, \$5\)/.test(p.text) &&
           p.values[4] === 'ou=100%_off,dc=x'.length + 1,
@@ -139,14 +150,16 @@ function builders(t) {
           'container, per realm', JSON.stringify(r.values));
   const cls = queries.classesUnder('r', users, ['groupOfNames', 'posixGroup']);
   t.check(/class_keys \?\| \$3::text\[\]/.test(cls.text) &&
-          JSON.stringify(cls.values[2]) === '["groupofnames","posixgroup"]',
+          JSON.stringify(cls.values[2]) ===
+            JSON.stringify(['class\ngroupofnames', 'class\nposixgroup']),
           'A12b. classesUnder asks class_keys for any of the classes, ' +
           'lower-cased', cls.text);
   const names = queries.namesUnder('r', users, 'uid=a', 10);
-  t.check(/SELECT dn_key, dn, origin, attrs->'uid'->>0 AS uid/.test(
-    names.text) && !/attrs,/.test(names.text),
-          'A12c. namesUnder reads the key, the DN, the origin and the first ' +
-          'uid, and never the entry', names.text);
+  // The entry is a sealed blob since #391 phase 6: its `uid` is read out of
+  // it by the codec on the thread that holds the keys.
+  t.check(/SELECT dn_key, dn, origin, attrs FROM/.test(names.text),
+          'A12c. namesUnder reads the key, the DN, the origin and the blob ' +
+          'the first uid is read out of', names.text);
   t.equal(JSON.stringify(queries.answerOf('namesUnder',
     [{ dn_key: 'k', dn: 'D', origin: null, uid: null }])),
           '[{"key":"k","dn":"D","origin":"","uid":""}]',
@@ -214,9 +227,9 @@ async function driverDoor(t) {
 
 async function schema(t) {
   log.debug("Entering schema().");
-  t.log.info('=== C. schema version 13 ===');
-  t.equal(postgres.SCHEMA_VERSION, 13,
-          'C1. the driver writes schema version 13 (12 is #333\'s)');
+  t.log.info('=== C. schema version 14 ===');
+  t.equal(postgres.SCHEMA_VERSION, 14,
+          'C1. the driver writes schema version 14 (#222, #391 phase 6)');
   const table = postgres.SCHEMA_OBJECTS.filter(function (o) {
     return o.name === 'sts_ldap_entries';
   })[0];
@@ -224,25 +237,34 @@ async function schema(t) {
     return c.table === 'sts_ldap_entries';
   });
   const names = ['parent_key', 'rdn_value', 'name_keys', 'mail_keys',
-                 'uuid_keys', 'class_keys'];
+                 'uuid_keys', 'class_keys', 'value_keys', 'attr_names'];
   t.equal(columns.map(function (c) { return c.column; }).join(','),
-          names.join(','), 'C2. SCHEMA_COLUMNS adds the six lookup columns');
+          names.join(','), 'C2. SCHEMA_COLUMNS adds the eight lookup columns');
   columns.forEach(function (c) {
     const definition = c.statement.replace(
       'ALTER TABLE sts_ldap_entries ADD COLUMN IF NOT EXISTS ', '');
+    // Only the two read from the DN are generated since #391 phase 6; the
+    // value lookups are written by the service beside the sealed blob.
+    const generated = c.column === 'parent_key' || c.column === 'rdn_value';
     t.check(table.statement.indexOf(definition) >= 0 &&
-            /GENERATED ALWAYS AS .* STORED$/.test(definition),
-            'C3. ' + c.column + ' is one GENERATED … STORED definition, in ' +
-            'the CREATE TABLE and the ALTER alike');
+            (generated ? /GENERATED ALWAYS AS .* STORED$/.test(definition)
+                       : /^\w+ jsonb NOT NULL DEFAULT '\[\]'::jsonb$/
+                         .test(definition)),
+            'C3. ' + c.column + ' is one ' + (generated
+              ? 'GENERATED … STORED' : 'written jsonb') + ' definition, in ' +
+            'the CREATE TABLE and the ALTER alike', definition);
   });
+  const INDEXES = /^sts_ldap_entries_(parent|rdn|names|mails|uuids|values|attr_names|classes)$/;
   const indexes = postgres.SCHEMA_OBJECTS.filter(function (o) {
-    return /^sts_ldap_entries_(parent|rdn|names|mails|uuids|attrs|classes)$/
-      .test(o.name);
+    return INDEXES.test(o.name);
   });
-  t.check(indexes.length === 7 && indexes.every(function (o) {
+  t.check(indexes.length === 8 && indexes.every(function (o) {
     return o.afterColumns === true;
-  }), 'C4. the seven lookup indexes wait for the column step',
+  }), 'C4. the eight lookup indexes wait for the column step',
           indexes.map(function (o) { return o.name; }).join(', '));
+  t.check(!postgres.SCHEMA_OBJECTS.some(function (o) {
+    return o.name === 'sts_ldap_entries_attrs';
+  }), 'C4b. and nothing indexes `attrs`, a sealed blob');
 
   // AN OLD TABLE: every object present except the six indexes, and the
   // information schema listing none of the five columns.
@@ -251,9 +273,7 @@ async function schema(t) {
     if (/to_regclass/.test(sql)) {
       const row = {};
       params.forEach(function (name, i) {
-        row['o' + i] =
-          /^sts_ldap_entries_(parent|rdn|names|mails|uuids|attrs|classes)$/
-            .test(name) ? null : name;
+        row['o' + i] = INDEXES.test(name) ? null : name;
       });
       return [row];
     }
@@ -280,14 +300,14 @@ async function schema(t) {
   const firstIndex = ddl.findIndex(function (sql) {
     return /^CREATE INDEX/.test(sql);
   });
-  t.check(ddl.length === 13 && lastAlter === 5 && firstIndex === 6,
-          'C5. against an old table open() adds the six columns, THEN ' +
-          'builds the seven indexes', ddl.map(function (sql) {
+  t.check(ddl.length === 16 && lastAlter === 7 && firstIndex === 8,
+          'C5. against an old table open() adds the eight columns, THEN ' +
+          'builds the eight indexes', ddl.map(function (sql) {
             return sql.slice(0, 60);
           }).join(' | '));
   t.check(statements.some(function (s) {
-    return /INSERT INTO sts_schema/.test(s.sql) && s.params[0] === 13;
-  }), 'C6. and records version 13');
+    return /INSERT INTO sts_schema/.test(s.sql) && s.params[0] === 14;
+  }), 'C6. and records version 14');
   log.debug("Leaving schema().");
 }
 

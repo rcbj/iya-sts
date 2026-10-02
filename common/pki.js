@@ -1,6 +1,6 @@
 // @ts-check
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -1267,9 +1267,34 @@ async function buildRoot(opts) {
 // as the holder lives. The fence every write already carries (the node's
 // membership, checked in the transaction) is what stops a deposed node.
 //
-// Where the store does not arbitrate — development, `ldif`, one process —
+// Where the row is not merged (`coordinatesPkiBuilds()`, below) — development,
 // this is `build()` and nothing else.
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// **AND BETWEEN THE PROCESSES OF ONE CONTAINER, WHEREVER THE ROW IS MERGED
+// (2026-10-02).** This asked `keystore.arbitrates()`, which is false with
+// `cluster.mode=off` — and a single-node deployment is several writers all
+// the same: the front process and each request worker thread hold their own
+// copy of this module and of the hierarchy. Two of them asked for a new
+// realm's branch at once, each built one, the row's merge kept the first to
+// commit (STS-KEYS-0057) — and the loser had already issued the user portal's
+// RFC 7523 key pair from its discarded Issuing CA, so the portal's sign-in in
+// that realm was refused ("does NOT pass through the realm's own
+// Intermediate CA"): sts_webauthn_attestation in single-node, locally and in
+// CI run 36967212793. The claim is taken wherever the keystore merges the row
+// (`mergesPkiRows()`), which is every process of a container on a merging
+// store as well as every node of a cluster; the claims table is the store's,
+// so it is one table for every thread.
+// ---------------------------------------------------------------------------
+function coordinatesPkiBuilds() {
+  log.debug("Entering coordinatesPkiBuilds().");
+  const merges = typeof keystore.mergesPkiRows === 'function'
+    ? keystore.mergesPkiRows()
+    : (typeof keystore.arbitrates === 'function' && keystore.arbitrates());
+  log.debug("Leaving coordinatesPkiBuilds(). " + merges);
+  return !!merges;
+}
+
 const CLUSTER_BUILD_CLAIM_MS = 120000;
 const CLUSTER_BUILD_WAIT_MS = 180000;
 const CLUSTER_BUILD_POLL_MS = 250;
@@ -1312,7 +1337,7 @@ function lostTier(outcome, tiers) {
  */
 async function oneBuildInTheCluster(scopeId, tier, existing, build, options) {
   log.debug("Entering oneBuildInTheCluster(). scope=" + scopeId);
-  if (typeof keystore.arbitrates !== 'function' || !keystore.arbitrates()) {
+  if (!coordinatesPkiBuilds()) {
     log.debug("Leaving oneBuildInTheCluster(). Nothing to coordinate.");
     return build();
   }
@@ -1690,6 +1715,59 @@ async function repairBranch(scopeId, opts) {
   });
 }
 
+// ---------------------------------------------------------------------------
+// A BRANCH FINISHED FOR A REALM THAT IS GONE IS NOT SAVED (2026-09-30).
+//
+// A branch build takes several awaits, and a realm can be removed during
+// them: the removal runs the keystore's purge (`pkiHeld.delete()`, the stored
+// `pki:` row deleted) and the directory's, and then the build SAVED the
+// branch it had just finished — putting back a certificate authority for a
+// realm that no longer exists. `/pki/revocation` went on listing its
+// authorities, their CRLs named a directory entry under a tree that was gone
+// (LDAP noSuchObject), and a realm re-created under the id would have
+// inherited the dead realm's CA, which the purge exists to prevent. CI's
+// coverage run found it: sts_scheduler removed `sched-gone-*` 0.65 s before a
+// build started by that realm's own signing-key generation finished, and
+// sts_pki_distribution_points then followed the dead CRL's ldap address.
+//
+// WHAT IS ASKED IS WHETHER THE REALM WAS REMOVED SINCE THE BUILD STARTED, NOT
+// WHETHER THE REGISTRY HOLDS IT: `pki.start({ realmIds })` and the in-process
+// tests build branches for realm ids no `realms.create()` ever made, and those
+// must still be saved. So each removal is counted per id (`removalCount()`,
+// filled by `realms.onRemove()`), a build reads the count when it starts, and
+// the save is refused only when the count moved.
+// ---------------------------------------------------------------------------
+const removalsByRealm = new Map();
+realms.onRemove(function (removedId) {
+  const key = String(removedId || '');
+  removalsByRealm.set(key, (removalsByRealm.get(key) || 0) + 1);
+});
+
+function removalCount(id) {
+  log.debug('Entering removalCount(). scope=' + id);
+  log.debug('Leaving removalCount().');
+  return removalsByRealm.get(String(id || '')) || 0;
+}
+
+function realmRemovedDuringBuild(id, kind, since) {
+  log.debug('Entering realmRemovedDuringBuild(). scope=' + id);
+  const realmId = String(id || '');
+  const removals = removalCount(realmId);
+  // Removed since the build started, or removed before it and not defined
+  // again — a build started for a realm that is already gone.
+  const gone = removals !== since ||
+               (removals > 0 && !realms.get(realmId));
+  if (kind !== 'realm' || realmId === '' || !gone) {
+    log.debug('Leaving realmRemovedDuringBuild(). The realm stands.');
+    return false;
+  }
+  log.warn(errorCodes.tag('STS-PKI-0218') + 'pki: the "' + realmId +
+           '" realm was removed while its certificate authority branch was ' +
+           'being built; the branch is discarded rather than saved.');
+  log.debug('Leaving realmRemovedDuringBuild(). Removed.');
+  return true;
+}
+
 async function buildScopeNow(scopeId, opts) {
   log.debug('Entering buildScope(). scope=' + scopeId);
   const id = String(scopeId);
@@ -1703,6 +1781,7 @@ async function buildScopeNow(scopeId, opts) {
     log.debug('Leaving buildScope(). ' + chosen.errors.join(' '));
     return chosen;
   }
+  const removalsAtStart = removalCount(id);
   const rooted = await ensureRoot(options);
   if (!rooted.ok) {
     log.debug('Leaving buildScope(). No Root.');
@@ -1838,6 +1917,12 @@ async function buildScopeNow(scopeId, opts) {
   // by `rawChainFor()` — the Root lives in the service row and one copy of a
   // private key is the whole of `pki.js`'s placement argument.
   delete row.tiers;
+  if (realmRemovedDuringBuild(id, kind, removalsAtStart)) {
+    log.debug('Leaving buildScope(). The realm was removed meanwhile.');
+    return { ok: false, code: 'STS-PKI-0218',
+             why: 'the "' + id + '" realm was removed while its certificate ' +
+                  'authority branch was being built; nothing was kept.' };
+  }
   saveRow(id, row);
   log.info('pki: ' + label + ' has a certificate authority branch: an ' +
            'Intermediate CA signed by the service Root, and ' + wanted.length +
@@ -7617,9 +7702,18 @@ function knownScopes() {
     return [];
   }
   log.debug("Leaving knownScopes().");
+  // **ONLY A REALM THAT STILL EXISTS (2026-10-02).** A node can still hold a
+  // removed realm's row for a moment after another node removed it, and the
+  // revocation index read this: in the cluster mode it listed a removed
+  // realm's nine authorities, whose certificates the CA endpoint answered 404
+  // (sts_pki_distribution_points, CI run 36967212793). The default realm ('')
+  // and the process branch are always kept.
   return (keystore.pkiAll() || []).map(function (one) {
     return String(one && one.realm !== undefined ? one.realm : '');
-  }).filter(function (id) { return id !== SERVICE_SCOPE; });
+  }).filter(function (id) {
+    return id !== SERVICE_SCOPE &&
+      (id === '' || id === PROCESS_SCOPE || !!realms.get(id));
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -10824,6 +10918,7 @@ async function topUpScopeNow(scopeId, missing) {
   log.debug('Entering topUpScopeNow(). scope=' + scopeId + ' missing=' +
             missing.map(function (uc) { return uc.id; }).join(','));
   const id = String(scopeId);
+  const removalsAtStart = removalCount(id);
   const row = rawRowFor(id);
   const kind = scopeKindOf(id);
   const organisation = row.organisation || DEFAULT_ORGANISATION;
@@ -10867,6 +10962,10 @@ async function topUpScopeNow(scopeId, missing) {
   // must not be overwritten by the copy read before the first await.
   const fresh = rawRowFor(id);
   fresh.issuing = Object.assign({}, fresh.issuing || {}, made);
+  if (realmRemovedDuringBuild(id, kind, removalsAtStart)) {
+    log.debug('Leaving topUpScopeNow(). The realm was removed meanwhile.');
+    return { ok: false, code: 'STS-PKI-0218' };
+  }
   saveRow(id, fresh);
   log.info('pki: the "' + (id || 'default') + '" branch was built before ' +
            Object.keys(made).length + ' use case(s) existed, so ' +
@@ -12876,7 +12975,7 @@ module.exports = {
   refreshScope: function (scopeId) {
     log.debug("Entering refreshScope().");
     log.debug("Leaving refreshScope().");
-    return typeof keystore.arbitrates === 'function' && keystore.arbitrates()
+    return coordinatesPkiBuilds()
       ? keystore.refreshPki(String(scopeId))
       : Promise.resolve(null);
   },

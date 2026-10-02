@@ -1,6 +1,6 @@
 // @ts-check
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -294,7 +294,8 @@ const GLOBAL_MINTED = {
   'spiffe.authorities': 'the SPIFFE trust domain authorities',
   'spiffe.federatedBundles': 'the SPIFFE federated bundles',
   'spiffe.sigstoreTuf': 'the Sigstore TUF trust root',
-  'ssf.foreignTransmitters': 'the registered foreign SSF transmitters',
+  'ssf.relationshipStreams': 'the Shared Signals stream each federation ' +
+    'relationship holds at its partner',
   'vc_claims.state': 'the credential claim selections of a realm',
   'vc_verifier_config.state': 'the OpenID4VP verifier configuration',
   // One list per realm, published by every cell: a credential issued in one
@@ -336,8 +337,8 @@ const CELL_MINTED = [
   'claim_attributes.selections', 'consent_screen.pending',
   'credentials.pendingBackupCodes', 'credentials.pendingKeys',
   'credentials.pendingTotp', 'delegation.acts', 'devices.challenges',
-  'devices.events', 'dpop.issuedNonces', 'federation.unmapped',
-  'federation_sp.contexts',
+  'devices.events', 'dpop.issuedNonces', 'federation.signalBlocks',
+  'federation.unmapped', 'federation_sp.contexts',
   'gnap.approvers', 'gnap.continuations', 'gnap.grants', 'gnap.instances',
   'gnap.interactions', 'gnap.manageHandles', 'gnap.manageValues',
   'gnap.movedGrants', 'gnap_monitor.counters', 'gnap.tokens',
@@ -360,7 +361,7 @@ const CELL_MINTED = [
   'scim.digestNonces', 'scim.hobaChallenges', 'scim.hobaSeen',
   'security.rateLimitBuckets', 'spiffe.joinTokens',
   'spiffe.recordedConnections', 'spnego.pending',
-  'ssf_dead_letter_report.sweeps', 'ssf.foreignInbox', 'ssf.foreignLocks',
+  'ssf_dead_letter_report.sweeps', 'ssf.relationshipInbox', 'ssf.relationshipLocks',
   'ssf_receivers.inbox', 'ssf_streams.deadLetters', 'ssf_streams.queued',
   'ssf_streams.received', 'ssf_streams.streams', 'tls.listenerAnnounced',
   'tls.sessionTicketKey', 'vc_api.issued', 'vc_issued.credentials',

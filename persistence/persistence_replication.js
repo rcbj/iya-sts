@@ -1,6 +1,6 @@
 // @ts-check
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -913,14 +913,30 @@ function createReplication(label) {
                       '. The rest of the page is unaffected.');
             log.debug("Leaving failed().");
           }
-          let out = null;
-          try {
-            out = applier(row);
-          } catch (err) {
-            failed(err);
-            return null;
+          // AN ENTRY UNDER A DATA KEY THIS THREAD HAS NOT READ YET is tried
+          // once more after the data-key rows are read again (2026-10-02):
+          // the ordinary cause is a realm another worker thread made a moment
+          // ago, and skipping the row left this thread's directory without
+          // it for good — 196 entries of two new realms in the single-node
+          // mode of the run on 91341350, its role groups among them.
+          function once() {
+            log.debug("Entering once().");
+            log.debug("Leaving once().");
+            try {
+              return Promise.resolve(applier(row));
+            } catch (err) {
+              return Promise.reject(err);
+            }
           }
-          return Promise.resolve(out).catch(failed);
+          return once().catch(function (err) {
+            if (errorCodes.codeOf(err) !== 'STS-STORE-0072') {
+              throw err;
+            }
+            log.debug("Caught in applyRows(): " + ((err && err.message) ||
+                                                    err));
+            return require('../common/keystore').refreshDekRows()
+              .then(once);
+          }).catch(failed);
         });
       });
     });

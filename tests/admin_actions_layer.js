@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -438,6 +438,11 @@ function checkNothingRequiresItEarly(t) {
                    // after the console, so the require is a cache hit and
                    // moves no route.
                    'admin-ui/caches_admin.ts',
+                   // The encryption page (#391 P2), for `adminViews`' paging
+                   // and the gate state only — the data keys, and who asks to
+                   // rotate them. Required at 18b, after the console, and only
+                   // lazily, so the require is a cache hit and moves no route.
+                   'admin-ui/encryption_admin.ts',
                    // The credential status page (#38's follow-ups), for
                    // `adminViews`' paging only — the list of issued
                    // credentials. Required at 18h, after the console, so the
@@ -492,10 +497,6 @@ function checkNothingRequiresItEarly(t) {
                    // acted — required LAZILY in the request; the page is
                    // 18o, after the console.
                    'oauth-oidc/provider_commands_admin.ts',
-                   // The foreign SSF transmitters page (#153, 2026-09-26),
-                   // for the gate state only — who acted — required LAZILY
-                   // in the request; the page is 18p, after the console.
-                   'ssf/ssf_transmitters_admin.ts',
                    // The Cells page (#98, 2026-09-28), for the gate state
                    // only — who moved a person's home — required LAZILY in
                    // the request; the page is 18k-ii, after the console.

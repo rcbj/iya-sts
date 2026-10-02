@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -578,7 +578,8 @@ class DeviceEnrolment {
         expectedOrigin: String(s.origin || ''),
         expectedRpId: String(s.rpId || ''),
         requireUserVerification: webauthnPolicy.requireUserVerification(),
-        previousSignCount: key.signCount });
+        previousSignCount: key.signCount,
+        allowInsecure: webauthnPolicy.insecureAlgorithmsAllowed() });
     } catch (e) {
       log.debug("Caught in DeviceEnrolment.finishLink(): " +
                 ((e && e.message) || e));

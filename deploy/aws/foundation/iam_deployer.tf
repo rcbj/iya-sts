@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: BUSL-1.1
 #
 # ---------------------------------------------------------------------------
 # THE PROJECT'S DEPLOYER: ONE USER, ONE ROLE, ONE BOUNDARY (issue #51).
@@ -13,7 +13,7 @@
 # How "minimum" is enforced, in three layers:
 #
 #   * NAMES — ELB, ECS, RDS, IAM, Secrets Manager, S3 and ECR resources are
-#     scoped to ARNs starting `mock-sts`. Nothing already in the account
+#     scoped to ARNs starting `iya-sts`. Nothing already in the account
 #     carries that prefix.
 #   * TAGS — EC2 resources have no predictable ARN (vpc-0abc…), so creation
 #     requires `aws:RequestTag/Project = STS` and every change or deletion
@@ -22,7 +22,7 @@
 #   * A PERMISSIONS BOUNDARY — the deployer must create roles (the ECS task and
 #     execution roles). A role creator with no boundary can create a role more
 #     powerful than itself and pass it to a task; so every role it creates must
-#     carry `mock-sts-workload-boundary`, which permits only what a mock-sts
+#     carry `iya-sts-workload-boundary`, which permits only what an iya-sts
 #     container can ever need, and the deployer cannot remove it.
 #
 # The actions were chosen from what the AWS provider calls for these resources
@@ -56,7 +56,7 @@ resource "aws_iam_user_policy" "deployer" {
 # `/`, no login profile, no groups, and ONE inline policy named
 # `assume-<role>` allowing sts:AssumeRole on ONE role, which trusts it by name.
 # It is a second principal of the deployer role rather than a replacement for
-# mock-sts-deployer, so a person's key and the workflow's key can be rotated or
+# iya-sts-deployer, so a person's key and the workflow's key can be rotated or
 # revoked apart: the workflow's secrets hold this user's key and nothing else.
 # ---------------------------------------------------------------------------
 resource "aws_iam_user" "ci" {
@@ -91,7 +91,7 @@ data "aws_iam_policy_document" "deployer_trust" {
 
 resource "aws_iam_role" "deployer" {
   name                 = "${var.name}-deployer"
-  description          = "Creates and destroys mock-sts test environments (issue #51)"
+  description          = "Creates and destroys iya-sts test environments (issue #51)"
   assume_role_policy   = data.aws_iam_policy_document.deployer_trust.json
   max_session_duration = var.deployer_session_seconds
 }
@@ -99,7 +99,8 @@ resource "aws_iam_role" "deployer" {
 # ---------------------------------------------------------------------------
 # THE BOUNDARY EVERY ROLE THE DEPLOYER CREATES MUST CARRY.
 #
-# The union of what the ECS task role (mock-sts reading its two secrets, and
+# The union of what the ECS task role (iya-sts reading its secrets and,
+# since #391, wrapping its data encryption keys with the KEK in KMS, and
 # cert-init exporting the public certificate), the ECS execution role (pulling
 # the images, writing logs, injecting the environment's secrets) and the suite
 # runner's role (uploading its report) can do. A role's effective permissions
@@ -110,8 +111,19 @@ data "aws_iam_policy_document" "workload_boundary" {
   # IN EVERY PERMITTED REGION (#98): a cell's task reads its own secrets and
   # the global ones replicated to its region, decrypts them with its cell key
   # or its replica of the global key, pulls from its region's repository and
-  # logs to its region's group. With one permitted region each list is the one
-  # ARN it always was.
+  # logs to its region's group. The ARNs name any region and the fence below
+  # holds them to the permitted ones (locals.tf, `rarn`, #367).
+  statement {
+    sid         = "OnlyPermittedRegionsForRegionalServices"
+    effect      = "Deny"
+    not_actions = local.fence_exempt
+    resources   = ["*"]
+    condition {
+      test     = "StringNotEquals"
+      variable = "aws:RequestedRegion"
+      values   = local.regions
+    }
+  }
   statement {
     sid       = "ReadProjectSecrets"
     actions   = ["secretsmanager:GetSecretValue", "secretsmanager:DescribeSecret"]
@@ -126,6 +138,22 @@ data "aws_iam_policy_document" "workload_boundary" {
       variable = "kms:ViaService"
       values   = [for r in local.regions : "secretsmanager.${r}.amazonaws.com"]
     }
+  }
+  # THE KEY-ENCRYPTION KEY, CALLED DIRECTLY (#391, kms.tf). With an
+  # environment's `kek_provider = "kms"` the container wraps and unwraps its
+  # data encryption keys in KMS itself — no `kms:ViaService`, because no AWS
+  # service stands between — and reports the key's rotation on
+  # /admin/secrets. These four actions and this one key, in every permitted
+  # region; never `kms:ReEncrypt*`, `GenerateDataKey*` or a grant, which the
+  # service does not call. The environment's task role names the regional
+  # ARNs (environment/iam.tf); the effective permission is the intersection.
+  statement {
+    sid = "WrapAndUnwrapWithTheKeyEncryptionKey"
+    actions = [
+      "kms:DescribeKey", "kms:Encrypt", "kms:Decrypt",
+      "kms:GetKeyRotationStatus",
+    ]
+    resources = [local.kek_key_arn_any_region]
   }
   statement {
     sid       = "PullTheProjectImage"
@@ -154,7 +182,7 @@ data "aws_iam_policy_document" "workload_boundary" {
   # the load balancer no longer terminates TLS and a node cannot present a
   # certificate whose key it does not hold. EXPORT ONLY — not
   # `RequestCertificate`, not `DeleteCertificate`, not `ImportCertificate`:
-  # this ceiling is what a mock-sts CONTAINER may ever do, and a container
+  # this ceiling is what an iya-sts CONTAINER may ever do, and a container
   # that could issue or remove a certificate for a public name is a different
   # thing entirely.
   #
@@ -189,7 +217,7 @@ data "aws_iam_policy_document" "workload_boundary" {
 
 resource "aws_iam_policy" "workload_boundary" {
   name        = "${var.name}-workload-boundary"
-  description = "The most any role a mock-sts environment creates may do"
+  description = "The most any role an iya-sts environment creates may do"
   policy      = data.aws_iam_policy_document.workload_boundary.json
 }
 
@@ -201,12 +229,24 @@ resource "aws_iam_policy" "workload_boundary" {
 # (environment/iam.tf). What that takes — EC2 volume calls and the project key
 # through EC2 — is kept OUT of the workload boundary above, so no container
 # role can ever be given it, and in a ceiling of its own that the deployer may
-# attach only to a role named `mock-sts-env-<environment>-ecs-infra` and pass
+# attach only to a role named `iya-sts-env-<environment>-ecs-infra` and pass
 # only to `ecs.amazonaws.com` (below). The environment's own policy narrows it
 # further, to volumes of that environment's cluster; the effective permission
 # is the intersection.
 # ---------------------------------------------------------------------------
 data "aws_iam_policy_document" "ecs_infrastructure_boundary" {
+  # The region fence, as in the workload boundary above (#367).
+  statement {
+    sid         = "OnlyPermittedRegionsForRegionalServices"
+    effect      = "Deny"
+    not_actions = local.fence_exempt
+    resources   = ["*"]
+    condition {
+      test     = "StringNotEquals"
+      variable = "aws:RequestedRegion"
+      values   = local.regions
+    }
+  }
   statement {
     sid       = "CreateAndTagOnlyEcsManagedVolumes"
     actions   = ["ec2:CreateVolume", "ec2:CreateTags"]
@@ -246,7 +286,7 @@ data "aws_iam_policy_document" "ecs_infrastructure_boundary" {
   statement {
     sid       = "AttachDetachAtTheFargateHost"
     actions   = ["ec2:AttachVolume", "ec2:DetachVolume"]
-    resources = [for r in local.regions : "arn:${local.partition}:ec2:${r}:*:instance/*"]
+    resources = ["arn:${local.partition}:ec2:*:*:instance/*"]
   }
   # A single-cell environment's volumes are sealed under the project key, a
   # cell's under its CELL key (#98) — resident data, never the global key.
@@ -667,6 +707,16 @@ data "aws_iam_policy_document" "deploy_data" {
       "kms:GenerateDataKey*",
     ]
     resources = local.all_project_key_arns
+  }
+
+  # THE KEY-ENCRYPTION KEY (#391): DESCRIBED, NEVER USED. The environment
+  # finds it by its alias (`data.aws_kms_key.kek`) to hand the nodes its ID
+  # and name its ARNs in the task role; the deployer wraps nothing with it,
+  # and only the nodes' task role may (the workload boundary).
+  statement {
+    sid       = "DescribeTheKeyEncryptionKey"
+    actions   = ["kms:DescribeKey"]
+    resources = [local.kek_key_arn_any_region]
   }
 
   statement {
@@ -1092,6 +1142,140 @@ data "aws_iam_policy_document" "deploy_cells" {
   }
 }
 
+# ---------------------------------------------------------------------------
+# DEPLOY POLICY 5 OF 5: WHAT ONLY A MULTI-CLOUD ENVIRONMENT DOES (#97,
+# 2026-09-30) — deploy/multicloud/interconnect joins each AWS cell to its GCP
+# partner. A policy of its own for the reason policy 4 is one: the size of a
+# managed policy, and so that what an AWS-only environment can do is still
+# read in the first four.
+#
+#   * the HA VPN's AWS half: a virtual private gateway on the cell's VPC, two
+#     customer gateways (the GCP HA VPN gateway's two interfaces), two
+#     Site-to-Site connections, and route propagation into the cell's route
+#     tables — created only tagged, changed and deleted only tagged;
+#   * a Route 53 Resolver INBOUND endpoint per AWS cell, so GCP's Cloud DNS
+#     can forward the AWS cells' inter-cell names to it over the VPN;
+#   * the records of the private zones that name the GCP cells inside the AWS
+#     VPCs — only names under `.iya-sts.internal`, which no public zone holds.
+# ---------------------------------------------------------------------------
+data "aws_iam_policy_document" "deploy_multicloud" {
+  statement {
+    sid = "Ec2VpnCreateOnlyTagged"
+    actions = [
+      "ec2:CreateVpnGateway", "ec2:CreateCustomerGateway",
+      "ec2:CreateVpnConnection",
+    ]
+    resources = ["*"]
+    condition {
+      test     = "StringEquals"
+      variable = "aws:RequestTag/Project"
+      values   = [local.project_tag]
+    }
+  }
+
+  statement {
+    sid = "Ec2VpnChangeOnlyTagged"
+    actions = [
+      "ec2:AttachVpnGateway", "ec2:DetachVpnGateway", "ec2:DeleteVpnGateway",
+      "ec2:DeleteCustomerGateway", "ec2:DeleteVpnConnection",
+      "ec2:ModifyVpnConnectionOptions", "ec2:ModifyVpnTunnelOptions",
+      "ec2:EnableVgwRoutePropagation", "ec2:DisableVgwRoutePropagation",
+    ]
+    resources = ["*"]
+    condition {
+      test     = "StringEquals"
+      variable = "aws:ResourceTag/Project"
+      values   = [local.project_tag]
+    }
+  }
+
+  statement {
+    sid       = "Route53ResolverCreateOnlyTagged"
+    actions   = ["route53resolver:CreateResolverEndpoint", "route53resolver:TagResource"]
+    resources = [for p in local.rarn.route53resolver : "${p}:resolver-endpoint/*"]
+    condition {
+      test     = "StringEquals"
+      variable = "aws:RequestTag/Project"
+      values   = [local.project_tag]
+    }
+  }
+
+  statement {
+    sid = "Route53ResolverChangeOnlyTagged"
+    actions = [
+      "route53resolver:DeleteResolverEndpoint",
+      "route53resolver:UpdateResolverEndpoint",
+      "route53resolver:AssociateResolverEndpointIpAddress",
+      "route53resolver:DisassociateResolverEndpointIpAddress",
+      "route53resolver:UntagResource",
+    ]
+    resources = [for p in local.rarn.route53resolver : "${p}:resolver-endpoint/*"]
+    condition {
+      test     = "StringEquals"
+      variable = "aws:ResourceTag/Project"
+      values   = [local.project_tag]
+    }
+  }
+
+  statement {
+    sid       = "Route53ResolverRead"
+    actions   = ["route53resolver:Get*", "route53resolver:List*"]
+    resources = ["*"]
+  }
+
+  # THE ENDPOINT'S INTERFACES are made with the CALLER's rights, in a
+  # project subnet behind a project security group. Resolver does not tag
+  # them, so their deletion cannot be scoped by tag: an interface still
+  # attached cannot be deleted, which bounds what this can reach. If the
+  # first apply answers AccessDenied on another ec2 action, it is named here.
+  statement {
+    sid       = "Ec2ResolverInterfacesInProjectSubnets"
+    actions   = ["ec2:CreateNetworkInterface"]
+    resources = [for p in local.rarn.ec2 : "${p}:subnet/*"]
+    condition {
+      test     = "StringEquals"
+      variable = "aws:ResourceTag/Project"
+      values   = [local.project_tag]
+    }
+  }
+
+  statement {
+    sid       = "Ec2ResolverInterfaces"
+    actions   = ["ec2:CreateNetworkInterface", "ec2:DeleteNetworkInterface"]
+    resources = [for p in local.rarn.ec2 : "${p}:network-interface/*"]
+  }
+
+  statement {
+    sid       = "Ec2ResolverInterfacesBehindProjectGroups"
+    actions   = ["ec2:CreateNetworkInterface"]
+    resources = [for p in local.rarn.ec2 : "${p}:security-group/*"]
+    condition {
+      test     = "StringEquals"
+      variable = "aws:ResourceTag/Project"
+      values   = [local.project_tag]
+    }
+  }
+
+  # THE GCP CELLS' INTER-CELL NAMES, in private zones this deployer makes
+  # (policy 4, Route53PrivateZonesForCloudMap): only `.iya-sts.internal`
+  # names, which the public zones cannot hold.
+  statement {
+    sid       = "Route53PrivateInterCellRecords"
+    actions   = ["route53:ChangeResourceRecordSets"]
+    resources = ["arn:${local.partition}:route53:::hostedzone/*"]
+    condition {
+      test     = "ForAllValues:StringLike"
+      variable = "route53:ChangeResourceRecordSetsNormalizedRecordNames"
+      values   = ["*.iya-sts.internal"]
+    }
+  }
+}
+
+resource "aws_iam_policy" "deploy_multicloud" {
+  name   = "${var.name}-deploy-multicloud"
+  policy = data.aws_iam_policy_document.deploy_multicloud.json
+}
+
 resource "aws_iam_policy" "deploy_network" {
   name   = "${var.name}-deploy-network"
   policy = data.aws_iam_policy_document.deploy_network.json
@@ -1124,6 +1308,9 @@ resource "aws_iam_role_policy_attachment" "deployer" {
     data    = aws_iam_policy.deploy_data.arn
     compute = aws_iam_policy.deploy_compute.arn
     cells   = aws_iam_policy.deploy_cells.arn
+    # #97: the HA VPN, the inbound resolver and the private inter-cell
+    # records of a multi-cloud environment.
+    multicloud = aws_iam_policy.deploy_multicloud.arn
   }
   role       = aws_iam_role.deployer.name
   policy_arn = each.value
@@ -1131,14 +1318,16 @@ resource "aws_iam_role_policy_attachment" "deployer" {
 
 # EVERYTHING THE DEPLOYER DOES IS CONFINED TO THE PERMITTED REGIONS. It was
 # one region, `OnlyUsWest2ForRegionalServices`, until #98 (2026-09-28); the
-# list is `permitted_regions`, and with its default the fence is the one it
-# was under a new name.
+# list is `permitted_regions`. SINCE #367 (2026-09-30) THIS IS THE ONLY
+# PLACE THE DEPLOYER'S REGIONS ARE NAMED: its statements' ARNs carry a `*`
+# region (locals.tf, `rarn`), so that adding a region grows no policy, and
+# the two boundaries carry this same Deny for the roles the deployer makes.
 data "aws_iam_policy_document" "region_fence" {
   # Route53 is global, and its requests carry us-east-1.
   statement {
     sid         = "OnlyPermittedRegionsForRegionalServices"
     effect      = "Deny"
-    not_actions = ["iam:*", "sts:*", "s3:*", "route53:*"]
+    not_actions = local.fence_exempt
     resources   = ["*"]
     condition {
       test     = "StringNotEquals"

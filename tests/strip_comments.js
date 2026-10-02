@@ -1,6 +1,6 @@
 // @ts-check
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -20,10 +20,17 @@
 //     carrying the line break automatic semicolon insertion reads, `a/**/b`,
 //     the hashbang, the `'use strict'` directive — each RUN before and after
 //     and compared, with the line count held; and
+//   * on the ESCAPING of characters above U+00FF in string and regex
+//     literals (#369): strings, an identity escape, character classes, a
+//     code point outside the BMP with and without the `u` flag, an escape
+//     already there, a line continuation left as it was, and a template
+//     literal and `String.raw` left alone — each RUN before and after and
+//     compared, the regular expressions against probe strings; and
 //   * on every file the image build would strip, from this image's own tree
-//     (read, never written): each one strips, keeps its line count, and
-//     proves its token stream — so a new file the build could not strip
-//     fails here, in `npm test`, before it fails an image build.
+//     (read, never written): each one strips and escapes, keeps its line
+//     count, and proves its token stream — so a new file the build could not
+//     strip fails here, in `npm test`, before it fails an image build — and
+//     only the files named in STILL_TWO_BYTE stay two-byte.
 // ---------------------------------------------------------------------------
 
 const path = require('path');
@@ -90,6 +97,40 @@ function runScript(src) {
   }
 }
 
+// THE ESCAPING CASES (#369). Each is run before and after
+// `escapeLiterals()`, and what `escaped` must be and whether the result may
+// still be two-byte are stated.
+const ESCAPES = [
+  { name: 'an em-dash in a double- and a single-quoted string',
+    escaped: 2, oneByte: true,
+    src: 'var a = "x — y"; var b = \'– z\'; a + b\n' },
+  { name: 'an identity escape of a wide character (\\—)',
+    escaped: 1, oneByte: true, src: 'var a = "\\— z"; a\n' },
+  { name: 'a code point outside the BMP in two strings',
+    escaped: 2, oneByte: true, src: '"\u{1F600}".length + "😀"\n' },
+  { name: 'regular expressions: a class, the u flag, no u flag, an ' +
+          'identity escape',
+    // Four patterns and the three probe strings holding a wide character.
+    escaped: 7, oneByte: true,
+    src: 'var p = ["—–—", "😀😀", "x😀", "\\uD83D", "a"];' +
+         ' [/[—–]+/g, /😀+/u, /😀/, /\\—/].map(function (r) {' +
+         ' return p.map(function (s) { return String(s.match(r)); }); })\n' },
+  { name: 'an escape already written is left as it is',
+    escaped: 0, oneByte: true, src: 'var a = "\\u2014 already"; a\n' },
+  { name: 'a template literal and String.raw are not touched',
+    escaped: 0, oneByte: false,
+    src: 'var x = 1; `— ${x}` + String.raw`\\— ${x}`\n' },
+  { name: 'a line continuation (a backslash before U+2028) is left as it was',
+    escaped: 0, oneByte: false, src: 'var a = "a\\\u2028b"; a\n' }
+];
+
+// The files the image may leave two-byte, each with its reason: a
+// character above U+00FF in a template literal, which is not escaped.
+const STILL_TWO_BYTE = {
+  'env/generate_defaults.js': 'a template literal (a build tool the ' +
+                              'service does not load)'
+};
+
 /**
  * The number of lines in a text.
  *
@@ -140,20 +181,38 @@ module.exports = {
     t.check(refused !== '', 'a file that does not parse is refused, not ' +
       'passed through', refused);
 
+    t.log.info('=== characters above U+00FF in literals are escaped (#369) ' +
+               '===');
+    ESCAPES.forEach(function (c) {
+      const out = stripper.escapeLiterals(c.src);
+      t.equal(out.escaped, c.escaped, c.name + ': ' + c.escaped +
+              ' literal(s) rewritten');
+      t.equal(runScript(out.text), runScript(c.src),
+              c.name + ': the same result before and after');
+      t.equal(!stripper.isTwoByte(out.text), c.oneByte,
+              c.name + ': ' + (c.oneByte ? 'one-byte afterwards'
+                                         : 'left two-byte, as it must be'));
+    });
+
     // Every file the image build will strip, as this tree holds it.
     const files = stripper.filesUnder(ROOT);
     const failed = [];
     const moved = [];
+    const twoByte = [];
     let before = 0;
     let after = 0;
     files.forEach(function (rel) {
       const text = fs.readFileSync(path.join(ROOT, rel), 'utf8');
       before = before + text.length;
       try {
-        const out = stripper.strip(text);
+        const stripped = stripper.strip(text);
+        const out = stripper.escapeLiterals(stripped.text);
         after = after + out.text.length;
         if (lineCount(out.text) !== lineCount(text)) {
           moved.push(rel);
+        }
+        if (stripper.isTwoByte(out.text) && !STILL_TWO_BYTE[rel]) {
+          twoByte.push(rel);
         }
       } catch (e) {
         log.debug("Caught in run(): " + ((e && e.message) || e));
@@ -171,6 +230,8 @@ module.exports = {
     t.equal(failed.join('\n'), '', 'every file the image build strips ' +
       'strips, with its token stream proved unchanged');
     t.equal(moved.join(', '), '', 'no stripped file gained or lost a line');
+    t.equal(twoByte.join(', '), '', 'every stripped file is one-byte but ' +
+      'those STILL_TWO_BYTE names with a reason (#369)');
     t.check(after < before, 'the stripped tree is smaller',
       before + ' -> ' + after + ' characters');
   }

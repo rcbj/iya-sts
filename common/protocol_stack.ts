@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -1572,6 +1572,12 @@ class ProtocolStack {
     // signingKeyRotated() it calls (lazily, so the order is for a reader).
     this.build('common/signing_rotation', require('./signing_rotation'),
                'SigningRotation');
+    // 23b-ii-a. DATA ENCRYPTION KEY ROTATION (#391 P2): a library that
+    // registers its three scheduler jobs when built and no route, beside the
+    // signing rotation whose shape it follows. Everything it reaches — the
+    // keystore, the scheduler, the audit log — it reaches lazily.
+    this.build('common/data_key_rotation', require('./data_key_rotation'),
+               'DataKeyRotation');
     // 23b-iii. THE KRBTGT KEY'S ROTATION (#169, 2026-09-23): a library that
     // registers its two scheduler jobs when built and no route. After
     // `ldap/ldap_server` (21), whose directory slot the register it drives

@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -101,7 +101,14 @@ const SSF_DELIVERY = ['/.well-known/ssf-configuration', '/ssf/stream',
 // Protocols page that is in neither table.
 const EXEMPT = {
   '/admin/gnap': 'draws its own list from gnap/gnap_console.ts, and was the ' +
-                 'model for this table'
+                 'model for this table',
+  // Under Protocols since 2026-10-01 because it CONFIGURES, not because it
+  // is a protocol: a delegated permission is asked for at the OAuth 2.0
+  // endpoints, which /admin/oauth2 lists, and the acts it keeps are made at
+  // the Kerberos, WS-Trust and token endpoints their own pages list.
+  '/admin/delegation-settings': 'configures registers other families\' ' +
+                                'endpoints read, and has no endpoint of ' +
+                                'its own to list'
 };
 
 // One entry of THE TABLE: a route, a route per named server, or a socket.
@@ -307,8 +314,6 @@ class ProtocolEndpoints {
         '/.well-known/hoba/register'
       ].map(route),
       '/admin/ssf': ['/ssf'].concat(SSF_DELIVERY).map(route),
-      // Foreign transmitters (#153): the push endpoint this realm gives one.
-      '/admin/ssf/transmitters': ['/ssf/transmitters/:id/push'].map(route),
       '/admin/caep': SSF_DELIVERY.map(route),
       '/admin/risc': SSF_DELIVERY.map(route),
       '/admin/federation': ['/federation', '/federation/login/:id',
@@ -317,6 +322,8 @@ class ProtocolEndpoints {
                             '/federation/slo/:id',
                             '/federation/backchannel-logout/:id',
                             '/federation/frontchannel-logout/:id',
+                            // A partner's Shared Signals push (#373).
+                            '/federation/signals/:id',
                             '/authn/select-idp'].map(route),
       '/admin/totp': ['/authn/totp', '/portal/mfa'].map(route),
       '/admin/backup-codes': ['/authn/backup-code', '/portal/mfa'].map(route),

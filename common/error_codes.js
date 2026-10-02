@@ -1,6 +1,6 @@
 // @ts-check
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -924,6 +924,32 @@ const CODES = [
       'when it was first needed, so the call that needed it fails. The ' +
       'image is missing or has a broken copy of the package.',
     spec: 'none — logged; the call fails as it would have at start' },
+  { code: 'STS-CORE-0141',
+    summary: 'An uncaught exception reached a started process — the front ' +
+      'process, a request worker or a computation worker — and was ' +
+      'contained there rather than ending it (#355, ' +
+      'common/fault_boundary.ts). The line carries the stack. Logged at ' +
+      'the first three occurrences of each distinct fault and then at each ' +
+      'power of ten, with the count.',
+    spec: 'none — logged; the process carries on' },
+  { code: 'STS-CORE-0142',
+    summary: 'A promise rejection nobody handled reached a started process ' +
+      'and was contained there rather than ending it (#355). The line ' +
+      'carries the stack, throttled as STS-CORE-0141 is.',
+    spec: 'none — logged; the process carries on' },
+  { code: 'STS-CORE-0143',
+    summary: 'An Express handler returned a promise that rejected (an ' +
+      '`async` handler that failed, #355). The request is answered with a ' +
+      'plain 500 through Express\'s final handler, as a thrown error is, ' +
+      'unless the handler had already answered or called next(); the ' +
+      'line carries the stack, throttled as STS-CORE-0141 is.',
+    spec: 'HTTP 500 Internal Server Error, with no detail' },
+  { code: 'STS-CORE-0144',
+    summary: 'The Express guard (#355) could not be installed, because ' +
+      'express/lib/router/layer is missing or not the shape it knows: a ' +
+      'rejected async handler reaches the process handlers ' +
+      '(STS-CORE-0142) instead of being answered with a 500.',
+    spec: 'none — logged at start' },
   { code: 'STS-WORKER-0001',
     summary: 'The IPC channel to a post-quantum worker process failed, so a ' +
       'job sent to it may not arrive or its answer may not come back.' +
@@ -1471,6 +1497,27 @@ const CODES = [
       'dropped or could not be opened; the next statement reconnects, and ' +
       'one that cannot goes through the pool.',
     spec: 'none — logged' },
+  { code: 'STS-STORE-0071',
+    summary: 'A secret setting saved in the store (sts_appconfig or a ' +
+      'realm\'s overrides) is sealed and did not open; it is ignored and ' +
+      'the setting has its configured value until it is set again (#222).',
+    spec: '' },
+  { code: 'STS-STORE-0072',
+    summary: 'A directory entry is sealed and did not open in this process ' +
+      '(a data key it does not hold, or a blob that names another DN); it ' +
+      'is left out of what the store answered (#391).',
+    spec: '' },
+  { code: 'STS-STORE-0073',
+    summary: 'The directory could not be walked to count or re-seal what ' +
+      'its entries hold under a data key; nothing in it was counted or ' +
+      'changed, so no key is destroyed on that count (#391).',
+    spec: '' },
+  { code: 'STS-STORE-0074',
+    summary: 'The PostgreSQL store was built before schema version 14: its ' +
+      'directory lookup columns are generated from plaintext attributes, ' +
+      'and this build seals every entry. The start is refused; recreate the ' +
+      'database (#391).',
+    spec: 'none — fatal at start' },
   // ===== CLUSTER ===========================================================
   { code: 'STS-CLUSTER-0001',
     summary: 'A write transaction was refused by the fence: this node\'s ' +
@@ -2023,6 +2070,11 @@ const CODES = [
       'global-tier directory row or a person indexed in another cell. ' +
       'Nothing is changed for it.',
     spec: 'none — a warning in the log' },
+  { code: 'STS-CELL-0210',
+    summary: 'A cell conversion found a sealed directory entry it could not ' +
+      'open, so it could not decide the entry\'s tier; nothing was ' +
+      'converted (#391).',
+    spec: 'cell_convert — refused' },
   // ===== SCHED =============================================================
   { code: 'STS-SCHED-0001',
     summary: 'A scheduled job\'s run threw or rejected; the run is recorded ' +
@@ -2466,6 +2518,90 @@ const CODES = [
       'service does not agree over; refused before any key operation ' +
       '(#193 — it was reported as a key encrypted to another certificate).',
     spec: 'the caller\'s refusal' },
+  { code: 'STS-KEYS-0091',
+    summary: 'A stored data encryption key could not be unwrapped under the ' +
+      'key-encryption key — almost always the wrong key-encryption key. At ' +
+      'startup the service does not start (#391).',
+    spec: '' },
+  { code: 'STS-KEYS-0092',
+    summary: 'A sealed value names a data encryption key this process does ' +
+      'not hold, so it does not open; the stored data-key rows are read ' +
+      'again in the background. Said once per key (#391).',
+    spec: '' },
+  { code: 'STS-KEYS-0093',
+    summary: 'A data-key row could not be written to the store; what was ' +
+      'sealed under its new keys will not open after a restart until it is ' +
+      '(#391).',
+    spec: '' },
+  { code: 'STS-KEYS-0094',
+    summary: 'A stored data-key row could not be read, so the data ' +
+      'encryption keys in it are not held (#391). It is not overwritten.',
+    spec: '' },
+  { code: 'STS-KEYS-0095',
+    summary: 'A stored key row is not a version-2 envelope: the store was ' +
+      'written before data encryption keys (#391) and this build does not ' +
+      'read it. The service does not start; recreate the store.',
+    spec: '' },
+  { code: 'STS-KEYS-0096',
+    summary: 'Data encryption keys wrapped under the PREVIOUS key-encryption ' +
+      'key (keys.previousKek*) were re-wrapped under the current one at ' +
+      'start. Once every node runs with the current key, the previous one ' +
+      'may be removed (#391).',
+    spec: '' },
+  { code: 'STS-KEYS-0097',
+    summary: 'A key-set or certificate-authority row under a superseded data ' +
+      'encryption key could not be re-sealed; it stays under the old key, ' +
+      'which is then not destroyed (#391).',
+    spec: '' },
+  { code: 'STS-KEYS-0098',
+    summary: 'keys.previousKekProvider names a provider and its location is ' +
+      'empty, so the previous key-encryption key could not be read. The ' +
+      'service does not start (#391).',
+    spec: '' },
+  { code: 'STS-KEYS-0099',
+    summary: 'A pass of the data-key re-encryption job failed: what is sealed ' +
+      'under superseded data encryption keys could not be counted or ' +
+      're-sealed. Nothing is destroyed; the next pass tries again (#391).',
+    spec: '' },
+  { code: 'STS-KEYS-0100',
+    summary: 'A data-key rotation was asked for where data encryption keys ' +
+      'are derived per run and not stored, or for a realm or class no ' +
+      'stored key serves (#391).',
+    spec: 'the console\'s and the API\'s refusal, 400' },
+  { code: 'STS-KEYS-0101',
+    summary: 'A secret other than the key-encryption key names a key ' +
+      'management service (vault-transit, aws-kms, gcp-kms, azure-keys) as ' +
+      'its provider; a KMS ' +
+      'wraps keys and holds nothing to read. The read is refused (#391).',
+    spec: '' },
+  { code: 'STS-KEYS-0102',
+    summary: 'The key management service\'s key is not one data keys can be ' +
+      'wrapped under: a Transit key that is not AEAD (associated data is ' +
+      'required), an AWS KMS key that is not an enabled symmetric ' +
+      'ENCRYPT_DECRYPT key, or a Transit mount that is not a plain path. ' +
+      'The service does not start (#391).',
+    spec: '' },
+  { code: 'STS-KEYS-0103',
+    summary: 'A key management service did not wrap or unwrap a data ' +
+      'encryption key: it refused, answered nothing, or the wrapped key is ' +
+      'under another KMS key. A new data key is not written; one that does ' +
+      'not unwrap at start stops the start (#391).',
+    spec: '' },
+  { code: 'STS-KEYS-0104',
+    summary: 'A rotation of the key-encryption key was asked for where it ' +
+      'is not in a key management service (it is read into the process, or ' +
+      'data keys are derived per run): its successor has to be configured ' +
+      'with keys.previousKek* and the nodes restarted (#391).',
+    spec: 'the console\'s and the API\'s refusal, 400' },
+  { code: 'STS-KEYS-0105',
+    summary: 'The key management service refused to rotate the ' +
+      'key-encryption key (commonly: the identity this service runs as may ' +
+      'use the key but not rotate it). Nothing was re-wrapped (#391).',
+    spec: '' },
+  { code: 'STS-KEYS-0106',
+    summary: 'Counting the values sealed under each data encryption key ' +
+      'failed; the counts shown are the previous ones (#391).',
+    spec: '' },
   { code: 'STS-PKI-0001',
     summary: 'A certificate-authority use case prefers a key algorithm this ' +
       'service cannot use, so its Issuing CA was built with the ' +
@@ -3508,6 +3644,11 @@ const CODES = [
       'supplied with it has a keyUsage without keyEncipherment, and an xml ' +
       'pin is also the key partners encrypt to (#263).',
     spec: 'console / /admin-api refusal (HTTP 400)' },
+  { code: 'STS-PKI-0218',
+    summary: 'A certificate authority branch finished building for a realm ' +
+      'that had been removed while it was built, and was discarded rather ' +
+      'than saved.',
+    spec: 'none (logged; the realm is gone)' },
   { code: 'STS-ENROLL-0001',
     summary: 'A certificate request named a profile that is not one of the nine issued over an enrollment protocol.',
     spec: 'the protocol\'s refusal: ACME malformed / badCSR, EST HTTP 400, SCEP failInfo badRequest' },
@@ -3674,6 +3815,23 @@ const CODES = [
       'request refused.',
     spec: 'EST 503 / SCEP CertRep FAILURE badRequest' },
   // ===== ACME ==============================================================
+  { code: 'STS-ENROLL-0094',
+    summary: 'In product mode a certificate was refused to an application ' +
+      'declared for some protocol families but not this enrollment ' +
+      'protocol (ACME, EST or SCEP); the issuance policy\'s ' +
+      'protocol-not-declared rule decided it.',
+    spec: 'each protocol\'s own refusal (an RFC 8555 problem document, an ' +
+      'RFC 7030 HTTP 403, an RFC 8894 failInfo)' },
+  { code: 'STS-ENROLL-0095',
+    summary: 'The profile is not in the application\'s own ' +
+      '<family>AllowedProfiles, which replaces the realm\'s list for it.',
+    spec: 'each protocol\'s own refusal (ACME invalidProfile, an RFC 7030 ' +
+      'HTTP 403, an RFC 8894 failInfo)' },
+  { code: 'STS-ENROLL-0096',
+    summary: 'EST refused an application an authentication method or ' +
+      '/serverkeygen that its own estBasicAuthentication, ' +
+      'estCertificateAuthentication or estServerKeyGeneration turns off.',
+    spec: 'RFC 7030 HTTP 403' },
   { code: 'STS-ACME-0001',
     summary: 'ACME is turned off in this realm (acme.enabled is false).',
     spec: 'HTTP 503, ACME serverInternal problem' },
@@ -5274,6 +5432,11 @@ const CODES = [
       'list\'s counts and second-factor filter asked each person\'s ' +
       'credentials one at a time instead — slower, and the same answer.',
     spec: 'none — logged' },
+  { code: 'STS-AUTHN-0294',
+    summary: 'A passkey assertion was refused because the key\'s algorithm ' +
+      'is insecure (SHA-1\'s RS1) and webauthn.insecureAlgorithms is off in ' +
+      'this realm, or the service is in product mode.',
+    spec: 'none — the sign-in screen is drawn again' },
   { code: 'STS-OAUTH-0001',
     summary: 'A JWT client assertion could not be read as a JWT (its header ' +
       'is not base64url JSON).',
@@ -7232,8 +7395,8 @@ const CODES = [
   // ===== SAML ==============================================================
   { code: 'STS-OAUTH-0558',
     summary: 'A client authenticated with a client_secret past its ' +
-      'expiry (oauthClientSecretExpiresAt, or the registration\'s ' +
-      'client_secret_expires_at), in product mode.',
+      'expiry (the expiry on that secret\'s record on oauthClientSecret), ' +
+      'in product mode.',
     spec: 'invalid_client (RFC 6749 section 5.2)' },
   { code: 'STS-OAUTH-0559',
     summary: 'A client authenticated with an expired client_secret and was ' +
@@ -8319,6 +8482,13 @@ const CODES = [
       '(#345): that token, if it is still unexpired, is accepted again by ' +
       'a check that asks only this register.',
     spec: 'none — logged, at most once a minute per process' },
+  { code: 'STS-OAUTH-0788',
+    summary: 'A person\'s identity verifications could not be sealed under a ' +
+      'durable key-encryption key, so they were not written; or the sealed ' +
+      'value on the entry will not open under this process\'s key and is ' +
+      'read as none.',
+    spec: 'none (a refusal of the console or API write; verified_claims is ' +
+      'omitted on a read)' },
   { code: 'STS-SAML-0001',
     summary: 'A SAML 2.0 sign-in resumed with a held-request id that is ' +
       'unknown or has expired (saml2.requestTtlMin), so there is no ' +
@@ -9608,6 +9778,27 @@ const CODES = [
       'relationship maps it onto an attribute no partner may write (a ' +
       'mapping written before #94, or by an ldapmodify) (#94).',
     spec: 'none (logged; the sign-in proceeds without it)' },
+  { code: 'STS-FED-0154',
+    summary: 'A federation relationship\'s Shared Signals credential ' +
+      '(fedSignalsClientSecret or fedSignalsBearer) could not be sealed ' +
+      'under the key-encryption key where keys persist, so it was not ' +
+      'written (#373).',
+    spec: 'HTTP 400 (console and API)' },
+  { code: 'STS-FED-0155',
+    summary: 'A federated sign-in was started through an ssf relationship, ' +
+      'which only sends Shared Signals and signs nobody in (#374).',
+    spec: 'HTTP 400 page' },
+  { code: 'STS-FED-0156',
+    summary: 'A federated sign-in was refused because the partner\'s own ' +
+      'Shared Signals (a verified account-disabled) blocked its sign-ins of ' +
+      'this person; its account-enabled, or an administrator, lifts it ' +
+      '(#373).',
+    spec: 'HTTP 403 page' },
+  { code: 'STS-FED-0157',
+    summary: 'A federation relationship\'s client secret (fedClientSecret) ' +
+      'could not be sealed under a durable key-encryption key, so it was ' +
+      'not written.',
+    spec: 'HTTP 400 (console and API)' },
   // ===== OIDFED ============================================================
   { code: 'STS-OIDFED-0001',
     summary: 'A metadata_policy is not the three levels of JSON objects ' +
@@ -10989,7 +11180,8 @@ const CODES = [
       'or was an add to an attribute that holds one value.',
     spec: 'HTTP 400 (API) or a 303 with error=' },
   { code: 'STS-LDAP-0106',
-    summary: 'A person\'s attribute edit (#228) carried a value that is too ' +
+    summary: 'A person\'s attribute edit (#228), or a create from the field ' +
+      'grid, carried a value that is too ' +
       'long, holds a control character, does not have its ' +
       'attribute\'s shape (a country code, a date, a language range, ' +
       'an http(s) URL, a DN), or was empty for an add or a remove.',
@@ -12794,6 +12986,17 @@ const CODES = [
       'can be signed (#230).',
     spec: 'HTTP 500 text/plain at /oid4vp/start; 409 JSON at ' +
       '/oid4vp/verifier-certificate' },
+  { code: 'STS-VC-0114',
+    summary: 'An application DID document was asked for and none is ' +
+      'advertised: no such application in this realm, one not declared for ' +
+      'the did family, or one with no key in didPublicKeyJwk.',
+    spec: 'HTTP 404 JSON at /applications/{application}/did.json' },
+  { code: 'STS-VC-0115',
+    summary: 'An application Domain Linkage Credential could not be signed: ' +
+      'the application has no DID document, the origin is not one of its ' +
+      'LinkedDomains services, or none of its published keys has a private ' +
+      'half this service kept.',
+    spec: 'none (a console or management API refusal, HTTP 400)' },
   { code: 'STS-SSF-0001',
     summary: 'A Shared Signals endpoint was called while the family is ' +
       'turned off (ssf.enabled).',
@@ -13270,53 +13473,57 @@ const CODES = [
       'nothing kept; the rotation itself stands.',
     spec: 'none — logged; nothing is sent to a receiver' },
   { code: 'STS-SSF-0113',
-    summary: 'A foreign SSF transmitter act was refused: an ' +
-      'unknown action, a bad or taken id, the realm\'s limit, no federation ' +
-      'relationship, an unsupported delivery, no credential, or no stream ' +
-      'yet (#153).',
+    summary: 'A Shared Signals act on a federation relationship was ' +
+      'refused: an unknown signals-* action, no such service-provider-side ' +
+      'relationship, no issuer or credential configured, an unsupported ' +
+      'delivery, a stream already held, a bad status or subject, or no ' +
+      'stream yet (#153, #373).',
     spec: 'console / /admin-api refusal (HTTP 400)' },
   { code: 'STS-SSF-0114',
-    summary: 'A foreign transmitter could not be registered: its ' +
+    summary: 'A federation partner\'s Shared Signals configuration could ' +
+      'not be discovered: the SSF issuer is not a URL, its ' +
       '/.well-known/ssf-configuration could not be read or does not name ' +
       'the issuer, a jwks_uri and a configuration_endpoint, or its jwks_uri ' +
-      'could not be read (#153).',
+      'could not be read (#153, #373).',
     spec: 'console / /admin-api refusal (HTTP 400)' },
   { code: 'STS-SSF-0115',
-    summary: 'A foreign transmitter refused a stream act — create, ' +
+    summary: 'A federation partner refused a stream act — create, ' +
       'read, update, delete, status, a subject or verification — or could ' +
-      'not be reached (#153).',
+      'not be reached (#153, #373).',
     spec: 'console / /admin-api refusal (HTTP 400)' },
   { code: 'STS-SSF-0116',
-    summary: 'Polling a foreign transmitter (RFC 8936) failed ' +
-      '(#153).',
+    summary: 'Polling a federation partner\'s Shared Signals stream ' +
+      '(RFC 8936) failed (#153, #373).',
     spec: 'none (logged; the job tries again)' },
   { code: 'STS-SSF-0117',
-    summary: 'A push to /ssf/transmitters/{id}/push named no push ' +
-      'stream here, or its Authorization header is not the one this realm ' +
-      'gave the transmitter (#153).',
+    summary: 'A push to /federation/signals/{id} named no relationship ' +
+      'receiving by push here (none, disabled, its signals off, or no push ' +
+      'stream), or its Authorization header is not the one this realm gave ' +
+      'the partner (#153, #373).',
     spec: 'HTTP 404 or 401 {err}' },
   { code: 'STS-SSF-0118',
-    summary: 'A Security Event Token from a foreign transmitter ' +
+    summary: 'A Security Event Token from a federation partner ' +
       'was malformed: not a compact JWS, typ not secevent+jwt, or no jti or ' +
-      'events (#153).',
+      'events (#153, #373).',
     spec: 'HTTP 400 {err: invalid_request}, or a poll setErrs entry' },
   { code: 'STS-SSF-0119',
-    summary: 'A foreign SET\'s iss is not the transmitter\'s issuer ' +
-      '(#153).',
+    summary: 'A federation partner\'s SET names an iss that is not the ' +
+      'SSF issuer its configuration was discovered for (#153, #373).',
     spec: 'HTTP 400 {err: invalid_issuer}, or a poll setErrs entry' },
   { code: 'STS-SSF-0120',
-    summary: 'A foreign SET\'s aud does not name this realm\'s ' +
-      'stream audience (#153).',
+    summary: 'A federation partner\'s SET\'s aud does not name this ' +
+      'realm\'s stream audience (#153, #373).',
     spec: 'HTTP 400 {err: invalid_audience}, or a poll setErrs entry' },
   { code: 'STS-SSF-0121',
-    summary: 'A foreign SET\'s signature does not verify against ' +
-      'the transmitter\'s keys, and it was refused (product mode, or ' +
-      'ssf.receiveRequireSignature) (#153).',
+    summary: 'A federation partner\'s SET\'s signature does not verify ' +
+      'against the keys its SSF configuration names, and it was refused ' +
+      '(product mode, or ssf.receiveRequireSignature) (#153, #373).',
     spec: 'HTTP 400 {err: invalid_key}, or a poll setErrs entry' },
   { code: 'STS-SSF-0122',
-    summary: 'Acting on a verified event from a foreign ' +
-      'transmitter — ending a person\'s sessions, disabling or enabling ' +
-      'their account — failed; the SET is recorded (#153).',
+    summary: 'Acting on a verified event from a federation partner — ' +
+      'ending sessions, blocking or unblocking its sign-ins of a person, ' +
+      'disabling or enabling their account — failed; the SET is recorded ' +
+      '(#153, #373).',
     spec: 'none (logged)' },
   { code: 'STS-SSF-0123',
     summary: 'A key event of this service\'s own (federation-key-rotated, ' +
@@ -13329,6 +13536,16 @@ const CODES = [
       'never dropped to make room: RISC 1.0 section 2.8 makes the choice ' +
       'theirs. The register stays over its cap until the cap is raised.',
     spec: 'none — logged; the opt-outs are kept' },
+  { code: 'STS-SSF-0131',
+    summary: 'An Add Subject request on a stream a person owns named ' +
+      'somebody other than that person, and ssf.personStreamsSelfOnly is ' +
+      'on. A person\'s stream carries events only about them.',
+    spec: 'HTTP 403 access_denied' },
+  { code: 'STS-SSF-0132',
+    summary: 'A Shared Signals act on a federation relationship whose ' +
+      'signals are off (fedSignalsEnabled), or an unblock of a person the ' +
+      'relationship has not blocked (#373).',
+    spec: 'console / /admin-api refusal (HTTP 400)' },
   // ===== RISK ==============================================================
   { code: 'STS-RISK-0001',
     summary: 'A dataset import was refused before anything was loaded: the ' +
@@ -15627,6 +15844,13 @@ const CODES = [
       'ADMIN_WRITE) to one member type; it holds people and applications ' +
       'both (#93).',
     spec: 'none (a console or management API refusal, HTTP 400)' },
+  { code: 'STS-XACML-0084',
+    summary: 'In product mode the issuance policy refused an issuance to an ' +
+      'application through a protocol family it is not declared for ' +
+      '(appAllowedProtocol): an ID Token to an application declared for ' +
+      'OAuth 2.0 alone, a SAML assertion to one declared for OpenID Connect.',
+    spec: 'each protocol\'s own refusal (access_denied, a SAML Responder ' +
+      'status, KDC_ERR_POLICY, a WS-Trust fault)' },
   // ===== XPEP ==============================================================
   { code: 'STS-XPEP-0001',
     summary: 'The error-code registry could not be loaded from ./error_codes ' +
@@ -15787,6 +16011,18 @@ const CODES = [
       'not yet valid, so clients that check will refuse the handshake.',
     spec: '' },
   // ===== ADMIN =============================================================
+  { code: 'STS-XPEP-0033',
+    summary: 'The remote XACML PEP met an uncaught exception after it had ' +
+      'started, and contained it rather than exiting (#355): it carries on ' +
+      'enforcing the policy it last pulled. The line carries the stack; a ' +
+      'distinct fault is logged at occurrences 1, 2, 3 and each power of ' +
+      'ten.',
+    spec: 'none — logged; the PEP carries on' },
+  { code: 'STS-XPEP-0034',
+    summary: 'The remote XACML PEP met a promise rejection nobody handled ' +
+      'after it had started, and contained it rather than exiting (#355), ' +
+      'throttled as STS-XPEP-0033 is.',
+    spec: 'none — logged; the PEP carries on' },
   { code: 'STS-ADMIN-0001',
     summary: 'The admin console could not start a sign-in: its OIDC client ' +
       'entry (sts-admin-console) is missing, or declares a client secret ' +
@@ -16672,6 +16908,46 @@ const CODES = [
     summary: 'add-attribute-claim named no directory attribute for the ' +
       'claim to carry (#94).',
     spec: 'HTTP 400 (console and API)' },
+  { code: 'STS-ADMIN-0833',
+    summary: 'common/applications.js names an attribute as a boolean or a ' +
+      'document field of the console\'s field grid and the schema has no ' +
+      'single-valued editable attribute of that name; the grid draws it as ' +
+      'an ordinary field.',
+    spec: 'none (startup log)' },
+  { code: 'STS-ADMIN-0834',
+    summary: 'A create or update-fields from the field grid carried a box ' +
+      'for a value of a multi-valued attribute with nothing in it; every ' +
+      'box present for a list must hold a value, and an empty list is no ' +
+      'boxes.',
+    spec: 'HTTP 400 (console and API)' },
+  { code: 'STS-ADMIN-0835',
+    summary: 'update-fields named no attribute to change: neither `fields` ' +
+      'nor `protocols` was given.',
+    spec: 'HTTP 400 (console and API)' },
+  { code: 'STS-ADMIN-0836',
+    summary: 'update-fields changed some attributes of an application and ' +
+      'was refused one or more others; the reply names each refusal.',
+    spec: 'HTTP 400 (console and API)' },
+  { code: 'STS-ADMIN-0837',
+    summary: 'generate-did-key was refused: no such application, one not ' +
+      'declared for the did family, an algorithm other than ES256, ES384 ' +
+      'or EdDSA, or the public key could not be written.',
+    spec: 'none (a console or management API refusal, HTTP 400)' },
+  { code: 'STS-ADMIN-0838',
+    summary: 'A person\'s update-fields named no attribute to change: ' +
+      '`fields` was absent or empty and the form named no field.',
+    spec: 'HTTP 400 (console and API)' },
+  { code: 'STS-ADMIN-0839',
+    summary: 'A person\'s update-fields was refused one or more ' +
+      'attributes, possibly after saving others; the reply names what was ' +
+      'saved and each refusal.',
+    spec: 'HTTP 400 (console and API)' },
+  { code: 'STS-ADMIN-0840',
+    summary: 'A settings save ticked none of an ordered choice\'s values ' +
+      '(webauthn.algorithms on /admin/webauthn): an empty list is refused ' +
+      'rather than saved, because the setting would fall back to a default ' +
+      'nobody chose.',
+    spec: 'none (a console refusal, drawn on the page)' },
   { code: 'STS-API-0001',
     summary: 'A management API request carried no Bearer access token while ' +
       'adminApi.authRequired is on.',
@@ -17354,6 +17630,23 @@ const CODES = [
     summary: 'Adopting a live admin console session on /portal threw; the ' +
       'portal signs in the ordinary way.',
     spec: 'none (the portal runs its own sign-in)' },
+  { code: 'STS-PORTAL-0100',
+    summary: 'A security key was chosen during an activation beside a ' +
+      'password and its enrolment could not be started; the activation ' +
+      'went on without it.',
+    spec: '' },
+  { code: 'STS-PORTAL-0101',
+    summary: 'A security key was chosen during an activation instead of a ' +
+      'password and its enrolment could not be started (the mechanism or ' +
+      'role is off, or the authentication policy refuses it), so the ' +
+      'activation was refused rather than finished with no way in.',
+    spec: 'HTTP 400 page' },
+  { code: 'STS-PORTAL-0102',
+    summary: 'An activation\'s security key step did not register a key — ' +
+      'the enrolment had expired, the browser ran no ceremony, the RP ID ' +
+      'did not fit, or the registration did not verify — and the step was ' +
+      'drawn again.',
+    spec: 'HTTP 400 page' },
   { code: 'STS-LOGOUT-0001',
     summary: 'A sign-out named somebody other than the caller while naming ' +
       'another person is closed (logout.anyUser off, or product ' +
@@ -17826,9 +18119,9 @@ const CODES = [
       'never fetched).',
     spec: 'invalid_client_metadata (HTTP 400)' },
   { code: 'STS-REG-0166',
-    summary: 'An application\'s client secret has expired, or expires within ' +
-      'oauth2.clientSecretExpiryWarningDays — found by the daily scheduler ' +
-      'job oauth2.client-secret-expiry.',
+    summary: 'Every client secret an application holds has expired, or one ' +
+      'expires within oauth2.clientSecretExpiryWarningDays — found by the ' +
+      'daily scheduler job oauth2.client-secret-expiry.',
     spec: 'none — an audit row and a warning; rotate the secret on ' +
       '/admin/applications' },
   { code: 'STS-REG-0167',
@@ -18005,6 +18298,68 @@ const CODES = [
     summary: 'A JWT or UserInfo attribute claim named a type that is not ' +
       'string, number, boolean or json (#94).',
     spec: 'HTTP 400 (console and API)' },
+  { code: 'STS-REG-0202',
+    summary: 'A per-receiver Shared Signals override on an application ' +
+      'entry was given a value its setting does not take, or a reason ' +
+      'language that is not a BCP 47 tag.',
+    spec: 'HTTP 400 (console and API)' },
+  { code: 'STS-REG-0203',
+    summary: 'An application attribute whose values are a closed set (the ' +
+      'token endpoint authentication method, a CIBA delivery mode or ' +
+      'signing algorithm, a GNAP key proof, algorithm, start mode or token ' +
+      'format) was given a value outside it.',
+    spec: 'HTTP 400 (console and API)' },
+  { code: 'STS-REG-0204',
+    summary: 'A DID document value was refused: a didPublicKeyJwk that is ' +
+      'not a public EC, OKP, RSA or AKP JWK (a private member is refused), ' +
+      'a didService that is not <type>|<http(s) URL>, or a didAlsoKnownAs ' +
+      'that is not an absolute URI.',
+    spec: 'none (a console or management API refusal, HTTP 400)' },
+  { code: 'STS-REG-0205',
+    summary: 'An application carries its own claim or SAML attribute rows ' +
+      '(oauthClaims*, saml2CustomAttributes, saml11CustomAttributes) that ' +
+      'are not a JSON array or that the claim-set rules refuse; they are ' +
+      'ignored at issuance and the realm\'s set is issued.',
+    spec: 'none (logged at issuance; nothing is refused)' },
+  { code: 'STS-REG-0206',
+    summary: 'An application\'s own custom claim or SAML attribute was ' +
+      'refused: an unknown claim set, a row the claim-set rules refuse ' +
+      '(a reserved name, an attribute that may not be released, a type ' +
+      'that is not one), a name to remove that it does not hold, or an ' +
+      'application not declared for the set\'s protocol.',
+    spec: 'none (a console or management API refusal, HTTP 400)' },
+  { code: 'STS-REG-0207',
+    summary: 'An application\'s token endpoint authentication methods ' +
+      '(oauthTokenEndpointAuthMethod) were refused: "none" declares a ' +
+      'public client and cannot be held beside any other method.',
+    spec: 'none (a console or management API refusal, HTTP 400)' },
+  { code: 'STS-REG-0208',
+    summary: 'A client secret was not added or rotated in: the application ' +
+      'already holds oauth2.clientSecretsMax secrets. Remove one first.',
+    spec: 'none (a console or management API refusal, HTTP 400)' },
+  { code: 'STS-REG-0209',
+    summary: 'A client secret was not removed: no secret on the ' +
+      'application has the id named.',
+    spec: 'none (a console or management API refusal, HTTP 400)' },
+  { code: 'STS-REG-0210',
+    summary: 'The client secret pinned by adminApi.clientSecret on ' +
+      'sts-management-api was not removed: every /admin-api token is ' +
+      'minted with it.',
+    spec: 'none (a console or management API refusal, HTTP 400)' },
+  { code: 'STS-REG-0211',
+    summary: 'A client secret was not added: its lifetime or description ' +
+      'is not one this service accepts.',
+    spec: 'none (a console or management API refusal, HTTP 400)' },
+  { code: 'STS-REG-0212',
+    summary: 'A sealed client secret will not open under this process\'s ' +
+      'key-encryption key — it was written under a different one — so it ' +
+      'authenticates nothing until it is replaced.',
+    spec: 'none (logged; the token endpoint answers invalid_client)' },
+  { code: 'STS-REG-0213',
+    summary: 'A client secret could not be sealed, so it was not written: ' +
+      'storing it in the clear where keys persist would put a working ' +
+      'client credential in every directory dump.',
+    spec: 'none (a console or management API refusal, HTTP 400)' },
   { code: 'STS-DBG-0001',
     summary: 'The debugger permission was asked for by somebody who may ' +
       'not hold it — not a person, not signed in, not in the ' +
@@ -18231,7 +18586,7 @@ function describe(code) {
 // UNREGISTERED code is still recorded — dropping it would hide the one row
 // that says the table is incomplete — and is warned about.
 // ---------------------------------------------------------------------------
-const MARK = Symbol.for('mock-sts.errorCode');
+const MARK = Symbol.for('iya-sts.errorCode');
 
 /**
  * Records on a response which condition it is about to report, for the call log

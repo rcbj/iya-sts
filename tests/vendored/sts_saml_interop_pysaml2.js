@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 //
 // ===========================================================================
 // PYSAML2 AS A SCRIPTED SAML 2.0 SERVICE PROVIDER, NEGATIVE CASES INCLUDED

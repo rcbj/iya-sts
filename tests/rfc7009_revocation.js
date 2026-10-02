@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -152,7 +152,8 @@ function childMain() {
     const SECRET_A = 'r79-client-a-secret-0123456789abcdef';
     const SECRET_B = 'r79-client-b-secret-0123456789abcdef';
     const confidential = function (id, secret) {
-      applications.createApplication({ identifier: id, protocols: ['oauth2'],
+      applications.createApplication({ identifier: id,
+        protocols: ['oauth2', 'oidc'],
         fields: { oauthClientId: id, oauthClientSecret: secret,
                   oauthTokenEndpointAuthMethod: 'client_secret_post',
                   oauthAllowedScope: ['openid', 'offline_access'],
@@ -162,7 +163,7 @@ function childMain() {
     confidential('r79-a', SECRET_A);
     confidential('r79-b', SECRET_B);
     applications.createApplication({ identifier: 'r79-pub',
-      protocols: ['oauth2'],
+      protocols: ['oauth2', 'oidc'],
       fields: { oauthClientId: 'r79-pub',
                 oauthTokenEndpointAuthMethod: 'none',
                 oauthAllowedScope: ['openid', 'offline_access'],

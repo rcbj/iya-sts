@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -230,10 +230,10 @@ function fakeDatabase() {
     if (/^INSERT INTO sts_minted/.test(text)) {
       const k = eid(p[0], eid(p[1], p[2]));
       const had = db.minted.get(k);
-      // The guard's tombstone is the sixth parameter since #333 added
-      // `expires_at` as the fifth.
-      if (had && /WHERE sts_minted.body <> \$6/.test(text) &&
-          had.body === p[5]) {
+      // The guard's tombstone is the seventh parameter since #222 added
+      // `key_sealed` as the sixth (#333 added `expires_at` as the fifth).
+      if (had && /WHERE sts_minted.body <> \$7/.test(text) &&
+          had.body === p[6]) {
         return Promise.resolve({ rows: [], rowCount: 0 });
       }
       db.minted.set(k, { handle: p[0], realm: p[1], key: p[2], body: p[3],
@@ -351,6 +351,24 @@ function sectionA(t) {
           'theirs theirs',
           'TWO ADDS OF ONE DN ARE TWO ENTRIES: the one committed first is ' +
           'kept whole, password hash included, and this copy is replaced');
+
+  // TWO NODES SEEDED ONE ROLE GROUP, AND A GRANT WAS MADE ON THE SECOND
+  // (2026-10-02): the member it added must survive the first's commit —
+  // sts_realm_administrators in the cluster mode lost it, and the person it
+  // was granted to was refused by both nodes.
+  const groupDn = 'cn=admin-write,ou=groups,dc=example,dc=com';
+  const seeded = merge.mergeEntry(null,
+    entry(groupDn, { cn: ['admin-write'], entryuuid: ['g-mine'],
+                     objectclass: ['top', 'groupOfNames'],
+                     member: ['uid=admin', 'uid=granted'] }),
+    entry(groupDn, { cn: ['admin-write'], entryuuid: ['g-theirs'],
+                     objectclass: ['top', 'groupOfNames'],
+                     member: ['uid=admin'] }));
+  t.equal(seeded.outcome + ' ' + seeded.entry.attributes.entryuuid[0] + ' ' +
+          JSON.stringify(seeded.entry.attributes.member),
+          'merged g-theirs ["uid=admin","uid=granted"]',
+          'TWO CREATIONS OF ONE GROUP KEEP THE FIRST\'S IDENTITY AND EVERY ' +
+          'MEMBER: a member this copy added is not lost to the other\'s commit');
 
   t.equal(merge.mergeEntry(person, entry(person.dn, { uid: ['d'],
             entryuuid: ['p-1'], cn: ['changed'] }), null).outcome, 'deleted',
@@ -739,6 +757,12 @@ async function sectionE(t, db, dir) {
   const realms = require('../common/realms');
   const keystore = require('../common/keystore');
   const minted = require('../persistence/persistence_minted');
+  // A row's place in the stand-in: its key column is the keyed digest of its
+  // name since #222.
+  const at = function (handle, name) {
+    return handle + '\ndefault\n' +
+           minted.keyColumnOf(handle, 'default', name);
+  };
   config.setOverride('global.mode', 'product');
   config.setOverride('persistence.minted', true);
   const store = realms.map({ persist: 'test.lww.sessions', tombstone: true,
@@ -750,15 +774,17 @@ async function sectionE(t, db, dir) {
   store.set('ended', Object.assign({}, signedIn, { id: 'ended' }));
   await minted.flush();
   // NODE A signs the session out: its delete reaches the table first.
-  db.minted.set('test.lww.sessions\ndefault\nended',
+  db.minted.set(at('test.lww.sessions', 'ended'),
                 { handle: 'test.lww.sessions', realm: 'default',
-                  key: 'ended', body: TOMBSTONE, written_ms: Date.now() });
+                  key: minted.keyColumnOf('test.lww.sessions', 'default',
+                                          'ended'),
+                  body: TOMBSTONE, written_ms: Date.now() });
   // …and this node, a moment behind, touches its copy.
   const behind = store.get('ended');
   behind.lastSeenAt = Date.now();
   store.set('ended', behind);
   const result = await minted.flush();
-  t.equal(db.minted.get('test.lww.sessions\ndefault\nended').body, TOMBSTONE,
+  t.equal(db.minted.get(at('test.lww.sessions', 'ended')).body, TOMBSTONE,
           'A SESSION ANOTHER NODE ENDED IS NOT WRITTEN BACK BY A NODE ' +
           'HOLDING AN OLDER COPY — the tombstone refused the upsert in SQL',
           JSON.stringify(result));
@@ -771,12 +797,14 @@ async function sectionE(t, db, dir) {
   const codes = realms.map({ persist: 'test.lww.codes', tombstone: true });
   codes.set('code-1', { client: 'app1' });
   await minted.flush();
-  db.minted.set('test.lww.codes\ndefault\ncode-1',
-                { handle: 'test.lww.codes', realm: 'default', key: 'code-1',
+  db.minted.set(at('test.lww.codes', 'code-1'),
+                { handle: 'test.lww.codes', realm: 'default',
+                  key: minted.keyColumnOf('test.lww.codes', 'default',
+                                          'code-1'),
                   body: TOMBSTONE, written_ms: Date.now() });
   codes.set('code-1', { client: 'app1', touched: true });
   await minted.flush();
-  t.equal(db.minted.get('test.lww.codes\ndefault\ncode-1').body, TOMBSTONE,
+  t.equal(db.minted.get(at('test.lww.codes', 'code-1')).body, TOMBSTONE,
           'A CODE ANOTHER NODE SPENT IS NOT WRITTEN BACK EITHER — the ' +
           'guarded upsert did nothing');
   t.check(!codes.has('code-1'), 'and it is dropped here');
@@ -785,14 +813,14 @@ async function sectionE(t, db, dir) {
   await minted.flush();
   // NODE B writes its copy of the same session with a different client.
   const theirs = Object.assign({}, b, { id: 'merged' });
-  db.minted.get('test.lww.sessions\ndefault\nmerged').body =
+  db.minted.get(at('test.lww.sessions', 'merged')).body =
     keystore.seal(JSON.stringify(theirs), 'minted-rows');
   const mine = store.get('merged');
   mine.lastSeenAt = Date.now();
   store.set('merged', mine);
   await minted.flush();
   const stored = JSON.parse(keystore.open(
-    db.minted.get('test.lww.sessions\ndefault\nmerged').body, 'minted-rows'));
+    db.minted.get(at('test.lww.sessions', 'merged')).body, 'minted-rows'));
   t.equal(Object.keys(stored.oidcClients).sort().join(','), 'app1,app2',
           'TWO NODES\' COPIES OF ONE SESSION MERGE IN THE STORE: both ' +
           'relying parties are on the stored row');
@@ -802,7 +830,7 @@ async function sectionE(t, db, dir) {
 
   store.delete('merged');
   await minted.flush();
-  t.equal(db.minted.get('test.lww.sessions\ndefault\nmerged').body, TOMBSTONE,
+  t.equal(db.minted.get(at('test.lww.sessions', 'merged')).body, TOMBSTONE,
           'a delete of a tombstoned store leaves a tombstone, not an absence');
   const rows = await driver.loadMinted({ realms: ['', 'default'],
                                          nowMs: Date.now() });

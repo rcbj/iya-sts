@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -2550,8 +2550,9 @@ class Devices {
   // COMPLIANCE (decision 2, phase 3). The doors that call this: the console
   // and `/admin-api` (`admin`), the MDM feed under `device:compliance`
   // (`mdm`), development's test control (`test-control`); a received CAEP
-  // event (`caep`) from a registered foreign transmitter
-  // (`ssf/ssf_transmitters.ts`, #153). The register records the change and
+  // event (`caep`) from a federation partner's Shared Signals, as the
+  // signal-response policy permits (`ssf/ssf_transmitters.ts`, #373, #374 —
+  // an MDM being an `ssf` relationship). The register records the change and
   // its previous value, and a change counts in Monitoring → Devices by its
   // source.
   //

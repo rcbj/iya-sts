@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -14,9 +14,11 @@
 //   A. SECTION 7.1's OTHER CHECKS: the credential's alg against what was
 //      offered (STS-AUTHN-0228), a credential id over 1023 bytes (0229), BS
 //      without BE (0230).
-//   B. THE NEW ALGORITHMS: PS256 and ML-DSA-44 register and then ASSERT —
-//      the stored JWK carries its algorithm, so the assertion is checked with
-//      PSS and ML-DSA rather than PKCS#1 and SHA-256.
+//   B. EVERY ALGORITHM (all nineteen since 2026-10-01: ML-DSA-44/65/87,
+//      RFC 9864's fully specified five, ES256K and the classical ten)
+//      registers and then ASSERTS — the stored JWK carries its algorithm, so
+//      the assertion is checked with the right hash, padding and curve —
+//      and a fully specified algorithm under the wrong curve is refused.
 //   C. EACH OF THE EIGHT FORMATS, valid and then wrong in one way at a time,
 //      under verify-if-present with the kit's roots as configured anchors.
 //   D. THE POLICY: development's by-mode verifies nothing, product's
@@ -112,6 +114,7 @@ function clear(keys) {
 }
 
 const TOUCHED = ['global.mode', 'webauthn.attestationPolicy',
+                 'webauthn.insecureAlgorithms',
                  'webauthn.attestationTrustAnchors',
                  'webauthn.attestationAllowedAaguids',
                  'webauthn.attestationMinCertificationLevel',
@@ -202,9 +205,12 @@ async function run(t) {
   t.check(r.verdict.ok, 'A5. and BS with BE is accepted');
 
   // =========================================================================
-  t.log.info('=== B. PS256 and ML-DSA-44 register and assert ===');
+  t.log.info('=== B. EVERY algorithm registers and asserts ===');
   // =========================================================================
-  for (const alg of [-37, -48, -8]) {
+  // Every COSE algorithm the verifier checks (2026-10-01): the ML-DSA three,
+  // RFC 9864's fully specified five, ES256K, and the classical ten.
+  for (const alg of [-48, -49, -50, -9, -7, -19, -8, -51, -35, -52, -36,
+                     -53, -47, -37, -38, -39, -257, -258, -259]) {
     c = await kit.ceremony({ alg: alg });
     r = await register(c, kit.packedSelf(c), [alg]);
     const jwk = r.verdict.publicKeyJwk || {};
@@ -239,6 +245,67 @@ async function run(t) {
       JSON.stringify({ reg: r.verdict.failed, alg: jwk.alg,
                        asserted: asserted.failed }));
   }
+
+  // A FULLY SPECIFIED ALGORITHM'S CURVE IS CHECKED (RFC 9864): an ESP256
+  // signature under a P-384 key, and an Ed25519 one under an Ed448 key, do
+  // not verify, where ES256 and EdDSA keep RFC 9053's any-curve meaning.
+  const p384 = nodeCrypto.generateKeyPairSync('ec',
+    { namedCurve: 'secp384r1' });
+  const ed448 = nodeCrypto.generateKeyPairSync('ed448');
+  const msg = Buffer.from('fully specified');
+  const p384Sig = nodeCrypto.sign('sha256', msg, p384.privateKey);
+  const ed448Sig = nodeCrypto.sign(null, msg, ed448.privateKey);
+  const stsCrypto = require('../common/crypto');
+  t.check(!stsCrypto.verifyCoseSignature(-9, p384.publicKey, msg, p384Sig) &&
+          stsCrypto.verifyCoseSignature(-7, p384.publicKey, msg, p384Sig) &&
+          !stsCrypto.verifyCoseSignature(-19, ed448.publicKey, msg,
+                                         ed448Sig) &&
+          stsCrypto.verifyCoseSignature(-53, ed448.publicKey, msg, ed448Sig) &&
+          stsCrypto.verifyCoseSignature(-8, ed448.publicKey, msg, ed448Sig),
+    'B2. ESP256 under a P-384 key and Ed25519 under an Ed448 key are ' +
+    'refused; ES256, Ed448 and EdDSA accept their keys');
+
+  // RS1 (SHA-1) IS INSECURE (2026-10-01): an assertion by an RS1 key is
+  // refused by name ('algorithm is allowed', STS-AUTHN-0294) unless the
+  // caller allows it, and its self attestation verifies only while
+  // webauthn.insecureAlgorithms is on.
+  c = await kit.ceremony({ alg: -65535 });
+  set('webauthn.attestationPolicy', 'verify-if-present');
+  r = await register(c, kit.packedSelf(c), [-65535]);
+  const rs1Refused = !!(r.result && !r.result.ok);
+  set('webauthn.insecureAlgorithms', true);
+  r = await register(c, kit.packedSelf(c), [-65535]);
+  const rs1Accepted = !!(r.result && r.result.ok);
+  clear(['webauthn.insecureAlgorithms', 'webauthn.attestationPolicy']);
+  const rs1Jwk = r.verdict.publicKeyJwk || {};
+  const rs1Auth = Buffer.concat([
+    nodeCrypto.createHash('sha256').update('localhost').digest(),
+    Buffer.from([0x05]), Buffer.from([0, 0, 0, 1])]);
+  const rs1Cdj = Buffer.from(JSON.stringify({
+    type: 'webauthn.get', challenge: 'abc',
+    origin: 'https://localhost:8081' }));
+  const rs1Sig = c.credential.sign(Buffer.concat([rs1Auth,
+    nodeCrypto.createHash('sha256').update(rs1Cdj).digest()]));
+  const rs1Assert = function (allowInsecure) {
+    return webauthn.verifyAssertion({
+      authenticatorData: rs1Auth.toString('base64url'),
+      clientDataJSON: rs1Cdj.toString('base64url'),
+      signature: rs1Sig.toString('base64url'), publicKeyJwk: rs1Jwk,
+      expectedChallenge: 'abc', expectedOrigin: 'https://localhost:8081',
+      expectedRpId: 'localhost', previousSignCount: 0,
+      allowInsecure: allowInsecure });
+  };
+  const rs1Off = rs1Assert(false);
+  const rs1On = rs1Assert(true);
+  t.check(rs1Jwk.alg === 'RS1' && rs1Refused && rs1Accepted &&
+          !rs1Off.ok && rs1Off.failed.indexOf('algorithm is allowed') >= 0 &&
+          policy.failureCodeFor(rs1Off) === 'STS-AUTHN-0294' &&
+          rs1On.ok && rs1On.algorithm === 'RS1' && rs1On.coseAlg === -65535,
+    'B3. RS1: its self attestation and its assertion refused while ' +
+    'insecure algorithms are off (STS-AUTHN-0294) and accepted with them ' +
+    'on, the assertion reporting RS1 (-65535)',
+    JSON.stringify({ refused: rs1Refused, accepted: rs1Accepted,
+                     off: rs1Off.failed, on: rs1On.failed }));
 
   // =========================================================================
   t.log.info('=== C. each format, valid and wrong in one way ===');

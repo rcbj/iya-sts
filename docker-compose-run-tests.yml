@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: BUSL-1.1
 #
 # docker-compose-run-tests.yml — THE WHOLE SUITE, IN CONTAINERS.
 #
@@ -30,7 +30,7 @@
 #                                 runs its `tests` service alone.
 #
 # There was a third use until 2026-09-16: ./local-run-tests.sh brought
-# docker-compose.yml up on a free port as project mock-sts-tests and drove it
+# docker-compose.yml up on a free port as project iya-sts-tests and drove it
 # from host processes. That launcher is gone.
 #
 # They never collide, and that is by construction rather than by luck:
@@ -1023,8 +1023,8 @@ services:
         ipv4_address: ${SAML_KEYCLOAK_ADDRESS:-172.30.0.46}
 
   tests:
-    container_name: ${STS_TESTS_CONTAINER_NAME:-mock-sts-test-runner}
-    image: ${STS_TESTS_IMAGE:-${IMAGE_REGISTRY:-ghcr.io/rcbj/iya-sts}/mock-sts-tests:${IMAGE_TAG:-latest}}
+    container_name: ${STS_TESTS_CONTAINER_NAME:-iya-sts-test-runner}
+    image: ${STS_TESTS_IMAGE:-${IMAGE_REGISTRY:-ghcr.io/rcbj/iya-sts}/iya-sts-tests:${IMAGE_TAG:-latest}}
     build:
       # The same context as the service, with the root .dockerignore deciding
       # what is in it — see tests/Dockerfile's header for why the two images

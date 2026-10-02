@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: BUSL-1.1
 
 output "deployer_user_name" {
   description = "Create its access key by hand: aws iam create-access-key --user-name <this>"
@@ -66,12 +66,25 @@ output "global_kms_key_arn" {
   value       = aws_kms_key.global.arn
 }
 
+output "kek_kms_key_id" {
+  description = "The key-encryption key's multi-region key ID (mrk-…, alias/<name>-kek, #391): the one STS_KEYS_KEK_REF every node of every cell is given."
+  value       = aws_kms_key.kek.key_id
+}
+
+output "kek_kms_key_arn" {
+  description = "The key-encryption key's primary, in the home region (#391)."
+  value       = aws_kms_key.kek.arn
+}
+
+output "kek_kms_key_arns" {
+  description = "The key-encryption key in every permitted region, by region: the primary in the home region, a replica elsewhere (#391)."
+  value = merge(
+    { (var.aws_region) = aws_kms_key.kek.arn },
+    { for r, m in module.region : r => m.kek_replica_key_arn if m.kek_replica_key_arn != "" },
+  )
+}
+
 output "cell_kms_key_arns" {
   description = "Each permitted region's single-region CELL key (alias/<name>-cell-<cell>), by region (#98)."
-  value = merge(
-    { for m in module.region_usw2 : "us-west-2" => m.cell_key_arn },
-    { for m in module.region_cac1 : "ca-central-1" => m.cell_key_arn },
-    { for m in module.region_euc1 : "eu-central-1" => m.cell_key_arn },
-    { for m in module.region_apse1 : "ap-southeast-1" => m.cell_key_arn },
-  )
+  value       = { for r, m in module.region : r => m.cell_key_arn }
 }

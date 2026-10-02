@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 //
 // File: env/defaults.js
 //
@@ -208,55 +208,68 @@ var config = {
 
   // --- WebAuthn --------------------------------------------------------
   webauthn: {
-    enabled: true,                            // Offer security keys (WebAuthn)
-    rpName: "Mock authorization server",      // Relying party name
-    rpId: "",                                 // RP ID override
-    allowedOrigins: "",                       // Allowed origins
-    algorithms: "ES256,RS256",                // Algorithms offered
-    userVerification: "preferred",            // User verification
-    attestation: "direct",                    // Attestation conveyance
-    attestationPolicy: "by-mode",             // Attestation policy
-    attestationTrustAnchors: "",              // Attestation trust anchors (PEM)
-    attestationAllowedAaguids: "",            // Allowed authenticator models (AAGUIDs)
-    attestationMinCertificationLevel: "none", // Least FIDO certification level
-    attestationRequireFips: false,            // Require a FIPS 140 certified model
-    attestationAllowSafetynet: false,         // Trust android-safetynet attestation
-    attestationAndroidSoftwareKeys: false,    // Accept Android keys not enforced in the TEE
-    timeoutMs: 60000,                         // Ceremony timeout (ms)
-    authenticatorAttachment: "any",           // Authenticator attachment (CTAP)
-    residentKey: "discouraged",               // Discoverable credential (CTAP resident key)
-    credProps: true,                          // Ask for the credProps extension
-    primaryAllowed: true,                     // Allow a key as a PRIMARY credential
-    mfaAllowed: true,                         // Allow a key as a SECOND factor
-    maxKeysPerPerson: 10                      // Keys per person
+    enabled: true,                                                                                                                                     // Offer security keys (WebAuthn)
+    rpName: "IYA STS",                                                                                                                                 // Relying party name
+    rpId: "",                                                                                                                                          // RP ID override
+    allowedOrigins: "",                                                                                                                                // Allowed origins
+    algorithms: "ML-DSA-44,ML-DSA-65,ML-DSA-87,ESP256,ES256,Ed25519,EdDSA,ESP384,ES384,ESP512,ES512,Ed448,ES256K,PS256,PS384,PS512,RS256,RS384,RS512", // Algorithms offered
+    insecureAlgorithms: false,                                                                                                                         // Use insecure algorithms (development only)
+    pqcOnly: false,                                                                                                                                    // Request post-quantum algorithms only
+    userVerification: "preferred",                                                                                                                     // User verification
+    attestation: "direct",                                                                                                                             // Attestation conveyance
+    attestationPolicy: "by-mode",                                                                                                                      // Attestation policy
+    attestationTrustAnchors: "",                                                                                                                       // Attestation trust anchors (PEM)
+    attestationAllowedAaguids: "",                                                                                                                     // Allowed authenticator models (AAGUIDs)
+    attestationMinCertificationLevel: "none",                                                                                                          // Least FIDO certification level
+    attestationRequireFips: false,                                                                                                                     // Require a FIPS 140 certified model
+    attestationAllowSafetynet: false,                                                                                                                  // Trust android-safetynet attestation
+    attestationAndroidSoftwareKeys: false,                                                                                                             // Accept Android keys not enforced in the TEE
+    timeoutMs: 60000,                                                                                                                                  // Ceremony timeout (ms)
+    authenticatorAttachment: "any",                                                                                                                    // Authenticator attachment (CTAP)
+    residentKey: "discouraged",                                                                                                                        // Discoverable credential (CTAP resident key)
+    credProps: true,                                                                                                                                   // Ask for the credProps extension
+    primaryAllowed: true,                                                                                                                              // Allow a key as a PRIMARY credential
+    mfaAllowed: true,                                                                                                                                  // Allow a key as a SECOND factor
+    maxKeysPerPerson: 10                                                                                                                               // Keys per person
   },
 
   // --- Key material ----------------------------------------------------
   keys: {
-    source: "auto",                  // Where signing keys come from; restart to apply
-    plaintextRetention: "timed",     // How long a decrypted private key is kept
-    plaintextTtlS: 300,              // Decrypted key idle timeout (seconds)
-    signerModel: "per-algorithm",    // Signer model
-    encryptionKemAlgs: "",           // Post-quantum / hybrid decryption keys
-    offerKemEncryption: false,       // Offer post-quantum / hybrid encryption to clients
-    kidFormat: "internal",           // Signed token kid format
-    kekProvider: "file",             // Key-encryption key provider; restart to apply
-    kekFile: "/run/secrets/sts-kek", // Key-encryption key file; restart to apply
-    kekRef: "",                      // Key-encryption key reference; restart to apply
-    kekVault: "",                    // Vault or Key Vault URL; restart to apply
-    vaultClientCert: "",             // Client certificate for the secret store; restart to apply
-    vaultClientKey: "",              // Client key for the secret store; restart to apply
-    vaultCaCert: "",                 // Trust anchor for the secret store; restart to apply
-    vaultCertRole: "",               // Certificate auth role; restart to apply
-    vaultCertAuthMount: "cert",      // Certificate auth mount path; restart to apply
-    kekField: "value",               // Vault secret field; restart to apply
-    kekToken: "",                    // Vault token; restart to apply
-    storeProbeTimeoutMs: 5000,       // Secret store probe timeout (ms)
-    kekRegion: "",                   // AWS region; restart to apply
-    cellKekProvider: "none",         // Where the cell key-encryption key is read from; restart to apply
-    cellKekRef: "",                  // The cell key-encryption key's location; restart to apply
-    cellKekField: "",                // The field the cell key is in; restart to apply
-    cellKekRegion: ""                // AWS region of the cell key; restart to apply
+    source: "auto",                    // Where signing keys come from; restart to apply
+    plaintextRetention: "timed",       // How long a decrypted private key is kept
+    plaintextTtlS: 300,                // Decrypted key idle timeout (seconds)
+    signerModel: "per-algorithm",      // Signer model
+    encryptionKemAlgs: "",             // Post-quantum / hybrid decryption keys
+    offerKemEncryption: false,         // Offer post-quantum / hybrid encryption to clients
+    kidFormat: "internal",             // Signed token kid format
+    kekProvider: "file",               // Key-encryption key provider; restart to apply
+    kekTransitMount: "transit",        // Transit engine mount; restart to apply
+    kekFile: "/run/secrets/sts-kek",   // Key-encryption key file; restart to apply
+    kekRef: "",                        // Key-encryption key reference; restart to apply
+    kekVault: "",                      // Vault or Key Vault URL; restart to apply
+    vaultClientCert: "",               // Client certificate for the secret store; restart to apply
+    vaultClientKey: "",                // Client key for the secret store; restart to apply
+    vaultCaCert: "",                   // Trust anchor for the secret store; restart to apply
+    vaultCertRole: "",                 // Certificate auth role; restart to apply
+    vaultCertAuthMount: "cert",        // Certificate auth mount path; restart to apply
+    kekField: "value",                 // Vault secret field; restart to apply
+    kekToken: "",                      // Vault token; restart to apply
+    storeProbeTimeoutMs: 5000,         // Secret store probe timeout (ms)
+    kekRegion: "",                     // AWS region; restart to apply
+    cellKekProvider: "none",           // Where the cell key-encryption key is read from; restart to apply
+    cellKekRef: "",                    // The cell key-encryption key's location; restart to apply
+    cellKekField: "",                  // The field the cell key is in; restart to apply
+    cellKekRegion: "",                 // AWS region of the cell key; restart to apply
+    cellKekVault: "",                  // Key Vault URL of the cell key; restart to apply
+    dataKeyRotationDays: 365,          // Rotate every data encryption key after (days)
+    directoryCipher: "aes-256-gcm",    // Cipher for data stored in the directory
+    dataKeyActivationLeadSeconds: 300, // A new data encryption key is used after (seconds)
+    dataKeyRetireAfterDays: 7,         // Keep a replaced data encryption key at least (days)
+    previousKekProvider: "none",       // Where the previous key-encryption key is read from; restart to apply
+    previousKekRef: "",                // The previous key-encryption key's location; restart to apply
+    previousKekField: "",              // The field the previous key is in; restart to apply
+    previousKekRegion: "",             // AWS region of the previous key; restart to apply
+    previousKekVault: ""               // Key Vault URL of the previous key; restart to apply
   },
 
   // --- Global ----------------------------------------------------------
@@ -335,8 +348,9 @@ var config = {
     softwareStatementRequired: false,            // Require a software statement on every registration
     softwareStatementLifetimeS: 31536000,        // Issued software statement lifetime (s)
     clientSecretOverlapS: 604800,                // Keep a rotated client secret working for (seconds)
+    clientSecretsMax: 5,                         // Client secrets an application may hold
     clientSecretExpiryWarningDays: 14,           // Warn about an expiring client secret this many days ahead
-    registeredSecretLifetimeS: 0,                // Dynamically registered secret lifetime (s)
+    clientSecretLifetimeDays: 0,                 // Client secret lifetime (days)
     registeredClientIdPrefix: "sts-client-",     // Dynamically registered client_id prefix
     registeredClientIdBytes: 8,                  // Dynamically registered client_id random bytes
     registeredSecretBytes: 48,                   // Dynamically registered secret random bytes
@@ -892,6 +906,7 @@ var config = {
     setCertificateHeader: "x5u",                                                                                                                          // SET certificate header
     deliveryMethods: "urn:ietf:rfc:8935,urn:ietf:rfc:8936",                                                                                               // Delivery methods offered
     defaultSubjects: "ALL",                                                                                                                               // What an empty subject list means
+    personStreamsSelfOnly: true,                                                                                                                          // A person's own stream carries only their events
     streamStatusOnCreate: "enabled",                                                                                                                      // Status a new stream is created in
     minVerificationInterval: 60,                                                                                                                          // Minimum verification interval (s)
     verificationRateLimit: false,                                                                                                                         // Enforce the verification interval
@@ -930,12 +945,11 @@ var config = {
     receiveAudiences: "",                                                                                                                                 // Audiences POST /ssf/receive answers to
     receiveIssuers: "",                                                                                                                                   // Issuers POST /ssf/receive accepts
     receiveRequireSignature: false,                                                                                                                       // Refuse a SET whose signature does not verify
-    foreignPollS: 30,                                                                                                                                     // Foreign transmitter poll interval (s)
-    foreignPollMaxEvents: 50,                                                                                                                             // Events asked per foreign poll
-    foreignPollMaxRounds: 5,                                                                                                                              // Foreign poll rounds
-    foreignMaxTransmitters: 20,                                                                                                                           // Foreign transmitters per realm
-    foreignInboxMax: 500,                                                                                                                                 // Foreign SETs kept
-    foreignTimeoutMs: 10000,                                                                                                                              // Foreign transmitter timeout (ms)
+    foreignPollS: 30,                                                                                                                                     // Partner signals poll interval (s)
+    foreignPollMaxEvents: 50,                                                                                                                             // Events asked per partner poll
+    foreignPollMaxRounds: 5,                                                                                                                              // Partner poll rounds
+    foreignInboxMax: 500,                                                                                                                                 // Partner SETs kept
+    foreignTimeoutMs: 10000,                                                                                                                              // Partner signals timeout (ms)
     actOnSignalsInDevelopment: false,                                                                                                                     // The console and portal act on received signals in development
     legacySubClaim: false,                                                                                                                                // Also emit the deprecated `sub` claim (development only)
     breakSetSignature: false                                                                                                                              // Sign every SET badly (development only)

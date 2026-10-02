@@ -1,15 +1,22 @@
 # SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: BUSL-1.1
 #
 # ---------------------------------------------------------------------------
 # THE GLOBAL SECRETS: MADE ONCE, IN THE PRIMARY CELL'S REGION, AND REPLICATED
 # INTO EVERY OTHER CELL'S (issue #98, 2026-09-28).
 #
 #   kek                      the key-encryption key EVERY cell shares — what
-#                            STS_KEYS_KEK_* name in every cell, the single-cell
+#                            STS_KEYS_KEK_* name in every cell with
+#                            `kek_provider = "secret"`, the single-cell
 #                            environment's `kek` become global (D8: one set of
 #                            signing keys per realm, held in the global tier,
-#                            sealed under this)
+#                            sealed under this). Since #391 the default KEK is
+#                            foundation's multi-region KMS key instead, and
+#                            this is read only as the PREVIOUS key while an
+#                            environment migrates to it; it is still made, for
+#                            that migration, the carry-over below and a
+#                            multi-cloud environment's GCP cells, which read
+#                            it (../environment/kek.tf)
 #   global-db-app-password   the global database's `sts_app` password
 #                            (STS_GLOBAL_DATABASE_PASSWORD_*); the role is
 #                            made on the writer by the primary cell's
@@ -83,6 +90,13 @@ resource "random_password" "krb5_service" {
   special = false
 }
 
+# The replication role's (#97). Made in every global stack so that turning a
+# GCP cell on or off does not replace it; stored only in a multi-cloud one.
+resource "random_password" "db_repl" {
+  length  = 40
+  special = false
+}
+
 data "aws_kms_key" "global" {
   key_id = "alias/${var.name}-global"
 }
@@ -96,7 +110,7 @@ data "aws_kms_key" "global" {
 # environment's secrets, and those secrets are DELETED with it
 # (`recovery_window_in_days = 0`). So before it is destroyed,
 # deploy/aws/convert-to-cells.sh copies the four whose values the restored
-# rows depend on into one JSON secret, `mock-sts/carryover/<old env>`, and
+# rows depend on into one JSON secret, `iya-sts/carryover/<old env>`, and
 # `carryover_secret` names it here. Each, and the code that makes it matter:
 #
 #   kek                       EVERY SEALED ROW — the signing keys and their
@@ -184,20 +198,25 @@ resource "terraform_data" "carryover" {
 locals {
   carried = terraform_data.carryover.output
 
-  replicated_secrets = {
+  replicated_secrets = merge({
     kek                      = lookup(local.carried, "kek", random_bytes.kek.base64)
     global-db-app-password   = random_password.db_app.result
     admin-api-client-secret  = lookup(local.carried, "admin-api-client-secret", random_password.admin_api_client_secret.result)
     bootstrap-admin-password = lookup(local.carried, "bootstrap-admin-password", random_password.bootstrap_admin.result)
     krb5-krbtgt-password     = random_password.krb5_krbtgt.result
     krb5-service-password    = lookup(local.carried, "krb5-service-password", random_password.krb5_service.result)
-  }
+    }, local.multi_cloud ? {
+    # THE REPLICATION ROLE'S PASSWORD (#97): what a GCP cell's subscription
+    # connects to the writer with. Copied into GCP Secret Manager by
+    # deploy/multicloud/gcp-global, like every other global value.
+    global-db-repl-password = random_password.db_repl.result
+  } : {})
 }
 
 resource "aws_secretsmanager_secret" "global" {
   for_each                = local.replicated_secrets
   name                    = "${local.secret_path}/${each.key}"
-  description             = "mock-sts ${var.environment}: ${each.key} (global tier, replicated to every cell region)"
+  description             = "iya-sts ${var.environment}: ${each.key} (global tier, replicated to every cell region)"
   kms_key_id              = data.aws_kms_key.global.arn
   recovery_window_in_days = 0
 
@@ -228,7 +247,7 @@ resource "aws_secretsmanager_secret_version" "global" {
 
 resource "aws_secretsmanager_secret" "db_master" {
   name                    = "${local.secret_path}/global-db-master-password"
-  description             = "mock-sts ${var.environment}: the global database's master user (primary region only)"
+  description             = "iya-sts ${var.environment}: the global database's master user (primary region only)"
   kms_key_id              = data.aws_kms_key.global.arn
   recovery_window_in_days = 0
 }
@@ -242,7 +261,7 @@ locals {
   # Each global secret's ARN IN EACH CELL'S REGION: a replica's ARN is the
   # primary's with the region changed.
   secret_arns = {
-    for id, c in var.cells : id => {
+    for id, c in local.aws_cells : id => {
       for k, s in aws_secretsmanager_secret.global :
       k => replace(s.arn, ":${local.primary_region}:", ":${c.region}:")
     }

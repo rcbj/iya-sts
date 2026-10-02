@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: BUSL-1.1
 #
 # ---------------------------------------------------------------------------
 # A CELL CONVERTED FROM A SINGLE-REGION ENVIRONMENT (#98, 2026-09-28).
@@ -14,7 +14,7 @@
 #      (rds.tf). RDS restores a snapshot under THE SNAPSHOT'S OWN KMS KEY —
 #      RestoreDBInstanceFromDBSnapshot has no key parameter — so the snapshot
 #      named here must already be a COPY re-encrypted under the cell's key
-#      (`alias/mock-sts-cell-<cell>`, CopyDBSnapshot with KmsKeyId), which
+#      (`alias/iya-sts-cell-<cell>`, CopyDBSnapshot with KmsKeyId), which
 #      deploy/aws/convert-to-cells.sh makes. A snapshot under the project key
 #      would restore under the project key, `kms_key_id` would disagree with
 #      the instance on every later plan, and the provider would REPLACE the
@@ -48,8 +48,12 @@
 # does any single-cell environment.
 # ---------------------------------------------------------------------------
 locals {
-  db_snapshot_identifier = local.multi ? local.this_cell.db_snapshot_identifier : ""
+  # A single-cell environment restores from `var.db_snapshot_identifier`
+  # (variables.tf) — the same restore, and no conversion: its rows are
+  # already in the single-cell layout, so `converted` is a cell's alone.
+  db_snapshot_identifier = local.multi ? local.this_cell.db_snapshot_identifier : var.db_snapshot_identifier
   restored               = local.db_snapshot_identifier != ""
+  converted              = local.restored && local.multi
 
   convert_environment = {
     for k, v in local.node_environment : k => v
@@ -59,7 +63,7 @@ locals {
 
 resource "aws_ecs_task_definition" "convert" {
   # `full` only: the task needs the global tier's addresses and secrets.
-  count = local.restored && local.full ? 1 : 0
+  count = local.converted && local.full ? 1 : 0
 
   family                   = "${local.prefix}-convert"
   requires_compatibilities = ["FARGATE"]

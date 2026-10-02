@@ -11,7 +11,7 @@
 An **identity provider and security token service** that speaks the protocol
 families below from one process, with a certificate authority of its own.
 
-It started as the mock STS inside the [OAuth2/OIDC Debugger](https://idptools.com)
+It started as IYA STS inside the [OAuth2/OIDC Debugger](https://idptools.com)
 project's test suite, and it runs in one of two modes, per trust realm
 (`global.mode`):
 
@@ -85,6 +85,26 @@ docker run --rm -p 8081:8081 iya-sts        # add -e VAR=value for any setting
 ```
 
 `docker compose up` starts the service with its PostgreSQL store.
+
+### The published image
+
+Every build of `main` that passes its smoke test is published, so the
+service can be run without building anything:
+
+| Image | Tags |
+|---|---|
+| `ghcr.io/rcbj/iya-sts` | `latest` (the newest build) and one `M.N.O` per build |
+| `docker.io/iyasec/iya-sts` | the same |
+| `ghcr.io/rcbj/iya-sts-xacml-pep`, `docker.io/iyasec/iya-sts-xacml-pep` | the remote XACML PEP ([`xacml-pep/`](xacml-pep/)), the same tags |
+
+```bash
+docker run --rm -p 8081:8081 ghcr.io/rcbj/iya-sts:latest
+```
+
+`M.N.O` is the version the image reports (see *Versioning*), and the image's
+`org.opencontainers.image.revision` label names the commit it was built from.
+The published image is the same as one built here, in development mode by
+default; [`docs/configuration.md`](docs/configuration.md) covers product mode.
 
 **The main port is HTTPS**, on a self-signed certificate generated at each
 start. Fetch it once and trust it from then on:
@@ -168,9 +188,15 @@ new test goes.
 
 ## Licence
 
-MIT — see [LICENSE.md](LICENSE.md), which also carries the notices for the
-third-party code this repository includes and names the four paths that are
-under another licence. Every file declares its copyright and licence in SPDX
+The [Business Source License 1.1](LICENSE.md) since 2026-09-30: you may
+copy, modify and make non-production use of iya-sts freely, and **production
+use requires a commercial license, granted as part of a paid support
+subscription** from Iya CyberSecurity Solutions, LLC. Each version becomes MIT
+four years after it is published, and everything published before
+2026-09-30 stays MIT. [LICENSE.md](LICENSE.md) also carries the notices for
+the third-party code this repository includes and names the paths that are
+under another licence, among them the parent project's copies, which stay
+MIT. Every file declares its copyright and licence in SPDX
 form, and the repository passes `reuse lint`
 ([REUSE](https://reuse.software/)). The only third-party dataset distributed is
 Natural Earth's public-domain country outlines.

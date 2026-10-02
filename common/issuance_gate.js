@@ -1,6 +1,6 @@
 // @ts-check
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -93,7 +93,12 @@ const ISSUANCE = {
   SAML_ASSERTION: 'issue-saml-assertion',
   WSFED_TOKEN: 'issue-wsfed-token',
   WSTRUST_TOKEN: 'issue-wstrust-token',
-  KERBEROS_TICKET: 'issue-kerberos-ticket'
+  KERBEROS_TICKET: 'issue-kerberos-ticket',
+  // A CERTIFICATE ENROLLED over ACME, EST or SCEP (2026-10-01), asked by
+  // `common/cert_enrollment.ts` for an application subject, roles waived and
+  // the device deferred: it is the protocol-declaration rule (#380) that
+  // decides it, the family the caller names.
+  CERTIFICATE: 'issue-certificate'
 };
 
 /**
@@ -115,7 +120,27 @@ const PROTOCOL_OF_KIND = {
   'issue-saml-assertion': 'SAML',
   'issue-wsfed-token': 'WS-Federation',
   'issue-wstrust-token': 'WS-Trust',
-  'issue-kerberos-ticket': 'Kerberos'
+  'issue-kerberos-ticket': 'Kerberos',
+  'issue-certificate': 'Certificate enrollment'
+};
+
+// THE PROTOCOL FAMILIES AN ISSUANCE SATISFIES (2026-10-01), as the ids of
+// `applications.PROTOCOLS`, where the caller named none (`protocolFamilies`).
+// An application declared for any one of them may be issued it. An access
+// token, a refresh token and a code are OAuth 2.0's, and so OpenID Connect's,
+// OpenID4VCI's and mutual TLS's, all of which are spoken over the same token
+// endpoint; an ID Token is OpenID Connect's alone; a SAML assertion is either
+// version's unless the caller says which. A session has no family.
+const FAMILIES_OF_KIND = {
+  'issue-access-token': ['oauth2', 'oidc', 'oid4vci', 'mtls'],
+  'issue-refresh-token': ['oauth2', 'oidc', 'oid4vci', 'mtls'],
+  'issue-authorization-code': ['oauth2', 'oidc', 'oid4vci', 'mtls'],
+  'issue-id-token': ['oidc'],
+  'issue-saml-assertion': ['saml2', 'saml11'],
+  'issue-wsfed-token': ['wsfed'],
+  'issue-wstrust-token': ['wstrust'],
+  'issue-kerberos-ticket': ['krb5'],
+  'issue-certificate': ['acme', 'est', 'scep']
 };
 
 let decider = null;
@@ -296,7 +321,16 @@ function check(request) {
   const deviceMatters = deviceRequirement.indexOf('compliant') >= 0 ||
     (!!device && device.status === 'compromised' &&
      deviceRequirement.indexOf('not-compromised') >= 0);
-  if (!enforceRoles && !risk && !deviceMatters) {
+  // THE PROTOCOL DECLARATION (2026-10-01) rides along whenever the
+  // application named is declared for something, and makes the policy asked
+  // past the role shortcut in product, where its rule can refuse.
+  const protocol = protocolFactsOf(asked);
+  // `mode.js` is required LAZILY: it is a leaf, but this file is in the
+  // parent project's Kerberos COPY closure and a top-level require here would
+  // add a file to it (kerberos/CLAUDE.md).
+  const mode = protocol ? require('./mode') : null;
+  const protocolMatters = !!mode && !mode.issuesThroughUndeclaredProtocols();
+  if (!enforceRoles && !risk && !deviceMatters && !protocolMatters) {
     log.debug('Leaving check(). Enforcement is switched off.');
     return allow('roles.enforceIssuance is off, so the decision was not ' +
                  'asked for.');
@@ -311,6 +345,9 @@ function check(request) {
     risk: risk,
     device: device,
     deviceRequirement: deviceRequirement,
+    protocolFamilies: protocol ? protocol.families : [],
+    declaredProtocols: protocol ? protocol.declared : [],
+    mode: mode ? mode.current() : '',
     rolesWaived: asked.rolesWaived === true || !enforceRoles ||
                  !asked.application
   });
@@ -337,6 +374,50 @@ function check(request) {
   log.debug('Leaving check(). ' + (result.allowed ? 'Allowed.' : 'REFUSED: ' +
             result.why));
   return result;
+}
+
+// ---------------------------------------------------------------------------
+// THE PROTOCOL FACTS OF AN ISSUANCE (2026-10-01): the families it satisfies
+// and the families the named application is declared for, or null when there
+// is nothing to compare — no application, no family (a session), or an
+// application declared for nothing, which no rule refuses. Required LAZILY,
+// for `disabledSubject()`'s reason: this file is a leaf. A Kerberos service
+// is named without its realm by the KDC, so its entry is also looked up with
+// `@<krb5.realm>`. Never throws: a registry that cannot be read declares
+// nothing.
+// ---------------------------------------------------------------------------
+function protocolFactsOf(asked) {
+  log.debug('Entering protocolFactsOf().');
+  const families = (Array.isArray(asked.protocolFamilies)
+    ? asked.protocolFamilies : FAMILIES_OF_KIND[String(asked.kind)] || [])
+    .map(function (one) { return String(one).trim().toLowerCase(); })
+    .filter(function (one) { return !!one; });
+  if (!asked.application || !families.length) {
+    log.debug('Leaving protocolFactsOf(). Nothing to compare.');
+    return null;
+  }
+  let declared = [];
+  try {
+    const applications = require('./applications');
+    const names = [String(asked.application)];
+    if (asked.kind === ISSUANCE.KERBEROS_TICKET &&
+        names[0].indexOf('@') < 0 && config.value('krb5.realm')) {
+      names.push(names[0] + '@' + String(config.value('krb5.realm')));
+    }
+    for (let i = 0; i < names.length && !declared.length; i += 1) {
+      declared = applications.declaredFamiliesFor(names[i]);
+    }
+  } catch (e) {
+    log.debug('Caught in protocolFactsOf(): ' + ((e && e.message) || e));
+    declared = [];
+  }
+  if (!declared.length) {
+    log.debug('Leaving protocolFactsOf(). Declared for nothing.');
+    return null;
+  }
+  log.debug('Leaving protocolFactsOf(). ' + families.join(',') + ' against ' +
+            declared.join(','));
+  return { families: families, declared: declared };
 }
 
 // Whether a subject name is a disabled account. Never throws: a reader that
@@ -802,6 +883,7 @@ module.exports = {
   check: check,
   checkScopes: checkScopes,
   PROTOCOL_OF_KIND: PROTOCOL_OF_KIND,
+  FAMILIES_OF_KIND: FAMILIES_OF_KIND,
   deviceFactsOf: deviceFactsOf,
   deviceRequirementOf: deviceRequirementOf,
   DELEGATE: DELEGATE,

@@ -1,12 +1,18 @@
 # SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: BUSL-1.1
 #
 # ---------------------------------------------------------------------------
 # FOUR SECRETS, GENERATED HERE AND ENCRYPTED WITH THE PROJECT KEY — AND A
 # FIFTH IN PRODUCT MODE.
 #
 #   kek                      32 random bytes, base64 — the key-encryption key
-#                            `common/secrets.js` reads (STS_KEYS_KEK_PROVIDER=aws)
+#                            `common/secrets.js` reads with `kek_provider =
+#                            "secret"` (STS_KEYS_KEK_PROVIDER=aws). With the
+#                            default "kms" the KEK is foundation's KMS key and
+#                            this is read only as the PREVIOUS key while an
+#                            environment migrates; it is made in both modes
+#                            because the migration and the carry-over of a
+#                            converted environment depend on it (kek.tf)
 #   db-app-password          the least-privilege `sts_app` role's password,
 #                            read by the service (STS_DATABASE_PASSWORD_PROVIDER=aws)
 #                            and set on the role by the schema-init container
@@ -42,7 +48,7 @@
 # node starts and can be read whenever it is wanted:
 #
 #   aws secretsmanager get-secret-value --region us-west-2 \
-#     --secret-id mock-sts/testidp/bootstrap-admin-password \
+#     --secret-id iya-sts/testidp/bootstrap-admin-password \
 #     --query SecretString --output text
 #
 # The service does not print a supplied password anywhere.
@@ -126,7 +132,9 @@ resource "random_password" "krb5_service" {
 # In a cell, what must be THE SAME IN EVERY CELL is not made here but by the
 # global/ stack, once, and replicated into every cell region under the global
 # multi-region key: the key-encryption key every cell shares (`kek`, which is
-# what STS_KEYS_KEK_* keep naming), the seeded management client's secret, and
+# what STS_KEYS_KEK_* name with `kek_provider = "secret"`, and the previous
+# KEK while migrating to the KMS key, kek.tf), the seeded management client's
+# secret, and
 # in product mode the bootstrap administrator's and the KDC's passwords — a
 # value generated here per cell would be a different value in each, and the
 # one the cluster seeded first would win in the global tier while the others
@@ -144,6 +152,51 @@ resource "random_password" "krb5_service" {
 # (they are resources without a `count`, and giving them one would move them
 # in every single-cell state); nothing stores or reads them there.
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# A SINGLE-CELL ENVIRONMENT RESTORED FROM A SNAPSHOT CARRIES ITS SECRETS IN
+# (2026-09-30), exactly as global/secrets.tf does for a converted cell and for
+# the same four values — that file argues each, and the two not carried
+# (krb5-krbtgt-password, the database passwords). Read ONCE into
+# `terraform_data.carryover` and kept (`ignore_changes`), so a later apply
+# that names no carry-over, or runs after the secret was deleted, keeps the
+# KEK the rows are sealed under; and REFUSED on an environment whose secrets
+# were already generated without it, whose rows are sealed under those.
+# ---------------------------------------------------------------------------
+data "aws_secretsmanager_secret_version" "carryover" {
+  count     = !local.multi && var.carryover_secret != "" ? 1 : 0
+  secret_id = var.carryover_secret
+}
+
+locals {
+  carried_keys = [
+    "kek", "admin-api-client-secret", "bootstrap-admin-password",
+    "krb5-service-password",
+  ]
+  carried_now = !local.multi && var.carryover_secret != "" ? {
+    for k, v in jsondecode(data.aws_secretsmanager_secret_version.carryover[0].secret_string) :
+    k => tostring(v) if contains(local.carried_keys, k)
+  } : {}
+}
+
+resource "terraform_data" "carryover" {
+  input = local.carried_now
+
+  lifecycle {
+    ignore_changes = [input]
+    precondition {
+      condition = local.multi || var.carryover_secret == "" || alltrue([
+        for k in ["kek", "admin-api-client-secret"] :
+        contains(nonsensitive(keys(local.carried_now)), k)
+      ])
+      error_message = "carryover_secret names a secret without `kek` and `admin-api-client-secret`."
+    }
+  }
+}
+
+locals {
+  carried = terraform_data.carryover.output
+}
+
 resource "random_bytes" "cell_kek" {
   count  = local.multi ? 1 : 0
   length = 32
@@ -162,14 +215,14 @@ locals {
     db-master-password = random_password.db_master.result
     cell-kek           = random_bytes.cell_kek[0].base64
     } : merge({
-      kek                     = random_bytes.kek.base64
+      kek                     = lookup(local.carried, "kek", random_bytes.kek.base64)
       db-app-password         = random_password.db_app.result
       db-master-password      = random_password.db_master.result
-      admin-api-client-secret = random_password.admin_api_client_secret.result
+      admin-api-client-secret = lookup(local.carried, "admin-api-client-secret", random_password.admin_api_client_secret.result)
       }, local.bootstrap_secret ? {
-      bootstrap-admin-password = random_password.bootstrap_admin[0].result
+      bootstrap-admin-password = lookup(local.carried, "bootstrap-admin-password", random_password.bootstrap_admin[0].result)
       krb5-krbtgt-password     = random_password.krb5_krbtgt[0].result
-      krb5-service-password    = random_password.krb5_service[0].result
+      krb5-service-password    = lookup(local.carried, "krb5-service-password", random_password.krb5_service[0].result)
   } : {})
 
   # THE SECRETS EVERY CELL SHARES, by name: this stack's own in a single-cell
@@ -187,7 +240,7 @@ locals {
 resource "aws_secretsmanager_secret" "main" {
   for_each                = local.secrets
   name                    = "${local.secret_path}/${each.key}"
-  description             = "mock-sts ${var.environment}: ${each.key}"
+  description             = "iya-sts ${var.environment}: ${each.key}"
   kms_key_id              = local.kms_key_arn
   recovery_window_in_days = 0
 }
@@ -196,4 +249,13 @@ resource "aws_secretsmanager_secret_version" "main" {
   for_each      = local.secrets
   secret_id     = aws_secretsmanager_secret.main[each.key].id
   secret_string = each.value
+
+  lifecycle {
+    # A carry-over named on an environment that already generated its KEK
+    # would replace the key every row is sealed under (the header above).
+    precondition {
+      condition     = local.multi || var.carryover_secret == "" || length(nonsensitive(keys(local.carried))) > 0
+      error_message = "carryover_secret is set, but this environment's secrets were already generated without it; carrying values in now would replace the KEK its rows are sealed under. Destroy the environment first, or apply without TF_VAR_carryover_secret."
+    }
+  }
 }

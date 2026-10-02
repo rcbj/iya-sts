@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -1312,17 +1312,21 @@ class SigningRotation {
         return self.retireDue(ctx.realm, ctx);
       }
     });
-    // CLIENT SECRETS (#49 P5, rcbj's answer): the daily warning of secrets
-    // expiring within oauth2.clientSecretExpiryWarningDays and of those that
-    // have, and the clearing of every rotated-out secret whose overlap has
-    // passed. The act is `applications.sweepClientSecrets()`'s; this is when.
+    // CLIENT SECRETS (#49 P5, rcbj's answer; per secret since 2026-10-01):
+    // the daily warning of secrets expiring within
+    // oauth2.clientSecretExpiryWarningDays and of applications whose every
+    // secret has expired, and the removal of expired secrets an application
+    // holds an unexpired one beside. The act is
+    // `applications.sweepClientSecrets()`'s; this is when.
     s.register({
       id: SECRET_EXPIRY_JOB,
       title: 'Client secret expiry',
-      describe: 'Warns, with an audit row, about every client secret that ' +
-                'expires within oauth2.clientSecretExpiryWarningDays or has ' +
-                'expired, and clears the secret a rotation replaced once ' +
-                'oauth2.clientSecretOverlapS has passed.',
+      describe: 'Checks every client secret of every application: an ' +
+                'audit row for an application holding one that expires ' +
+                'within oauth2.clientSecretExpiryWarningDays, and for one ' +
+                'whose every secret has expired; and removes the expired ' +
+                'secrets an application holds an unexpired one beside — ' +
+                'never its last, which stays and is refused in product.',
       owner: 'common/signing_rotation.ts',
       kind: 'cluster', scope: 'realm',
       everyMs: function (): number {

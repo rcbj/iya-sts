@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -102,7 +102,7 @@ const ERRATA = {
 // THE FILES NO DOOR APPLIES TO, and why. Matched in order.
 // ---------------------------------------------------------------------------
 const NOT_APPLICABLE = [
-  [/^(aegis|ascon|morus|xchacha20|aead_aes_siv|aes_siv|aes_gcm_siv|aes_eax|aes_ccm|aes_gmac|aes_xts|aes_cmac|aes_kwp|c2sp_chunked)/,
+  [/^(aegis|ascon|morus|xchacha20|aead_aes_siv|aes_gcm_siv|aes_eax|aes_ccm|aes_gmac|aes_xts|aes_cmac|aes_kwp|c2sp_chunked)/,
    'crypto.js offers no such cipher or mode: its AEADs are AES-GCM, ' +
    'RFC 7518 AES-CBC-HMAC and (HPKE, #82) ChaCha20-Poly1305, its key ' +
    'wraps RFC 3394 AES-KW'],
@@ -146,7 +146,7 @@ const NOT_APPLICABLE = [
    'or SHA-512/t OAEP digest'],
   [/^rsa_three_primes_oaep_.*sha224/, 'no door names a SHA-224 OAEP digest'],
   [/^(hkdf|pbkdf2|pbes2)_/, 'no door takes a caller\'s salt, info or ' +
-   'iterations: encryptWithKek() derives with HKDF over fixed labels, ' +
+   'iterations: wrapDek() and deriveDek() use HKDF over fixed labels, ' +
    'pbes2Key() prefixes the salt with the JWE alg (RFC 7518 4.8.1.1), and ' +
    'Wycheproof\'s PBES2 is PKCS#5 with AES-CBC, not JWE\'s PBES2+AESKW'],
   [/^mldsa_\d+_sign_noseed_/, 'crypto.js holds an ML-DSA private key only ' +
@@ -715,6 +715,28 @@ const APPLICATIONS = [
       });
     } },
   // ----- AEAD ------------------------------------------------------------
+  // AES-SIV (RFC 5297) with a 512-bit key (#391): `keys.directoryCipher`'s
+  // `aes-256-siv`, the cipher of directory data's keys when chosen. Each
+  // vector is one associated data component, as Wycheproof writes them; a
+  // valid one must encrypt to its ciphertext AND open, an invalid one must
+  // not open.
+  { door: 'AES-256-SIV (directory data keys)', files: /^aes_siv_cmac_test/,
+    group: function (g) {
+      return Number(g.keySize) === 512 ? { siv: true }
+        : 'crypto.js does AES-SIV with a 512-bit key (two AES-256 keys) ' +
+          'only';
+    },
+    run: function (c, t) {
+      return refusesOnThrow(function () {
+        const key = hex(t.key);
+        const ad = [hex(t.aad)];
+        const opened = crypto.aesSivDecrypt(key, hex(t.ct), ad);
+        if (!opened.equals(hex(t.msg))) {
+          return false;
+        }
+        return crypto.aesSivEncrypt(key, hex(t.msg), ad).equals(hex(t.ct));
+      });
+    } },
   { door: 'JWE A*GCM content', files: /^aes_gcm_test/,
     group: function (g) {
       const enc = { 128: 'A128GCM', 192: 'A192GCM', 256: 'A256GCM' }[

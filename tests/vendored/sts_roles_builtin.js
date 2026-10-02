@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 //
 // ===========================================================================
 // THE SIX COMPUTED BUILT-IN ROLES, ONE SECTION EACH, IN A THROWAWAY TRUST
@@ -610,7 +610,8 @@ async function buildTheWorld() {
   await act("applications", "set",
             { application: CONFIDENTIAL, attribute: "oauthClientSecret",
               value: CLIENT_SECRET }, "gave it a secret");
-  await act("applications", "set",
+  // `add`: the methods are a LIST since 2026-10-01.
+  await act("applications", "add",
             { application: CONFIDENTIAL,
               attribute: "oauthTokenEndpointAuthMethod",
               value: "client_secret_basic" }, "made it confidential");
@@ -622,7 +623,8 @@ async function buildTheWorld() {
   await act("applications", "create",
             { identifier: PUBLIC_CLIENT, kind: "oauth2-client",
               name: "a public client" }, "created the public client");
-  await act("applications", "set",
+  // `add`: the methods are a LIST since 2026-10-01.
+  await act("applications", "add",
             { application: PUBLIC_CLIENT,
               attribute: "oauthTokenEndpointAuthMethod",
               value: "none" }, "made it public");
@@ -1251,7 +1253,7 @@ async function test() {
 const program = new Command();
 program
   .name("sts_roles_builtin")
-  .description("Drive the six BUILT-IN roles of the mock STS, in a throwaway " +
+  .description("Drive the six BUILT-IN roles of IYA STS, in a throwaway " +
       "trust realm: EVERYBODY admitting both a signed-in and an " +
       "unauthenticated session, the two user roles splitting on whether " +
       "anybody authenticated, ALL_APPLICATIONS refusing a person, and the " +

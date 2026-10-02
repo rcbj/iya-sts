@@ -199,7 +199,7 @@ draws it with a description of every field.
 | Group | Attributes |
 |---|---|
 | Identity and observation | `appIdentifier`, `cn`, `appName`, `description`, `appHomePageUrl`, `appKind`, `appProtocol`, `appAllowedProtocol`, `appAuthorizationServer`, `appCorsOrigin`, `appRegistered`, `appRegisteredBy`, `appFirstSeen`, `appLastSeen`, `appAuthentications`, `appSessions`, `appUsers`, `appLastSession`, `appLastUser`, `appRedirectUriObserved`, `appReturnAddressObserved`, `appRegistrationJson`, `appRegistrationAccessToken` |
-| OAuth client | `oauthClientId`, `oauthConfidential`, `oauthClientSecret` (**withheld**), `oauthClientSecretPrevious`, `oauthClientSecretPreviousUntil`, `oauthClientSecretExpiresAt`, `oauthTokenEndpointAuthMethod`, `oauthTokenEndpointAuthSigningAlg`, `oauthJwks`, `oauthJwksUri`, `oauthRedirectUri`, `oauthGrantType`, `oauthResponseType`, `oauthScope`, `oauthAllowedScope`, `oauthAudience`, `oauthSubjectType`, `oauthSectorIdentifierUri` |
+| OAuth client | `oauthClientId`, `oauthConfidential`, `oauthClientSecret` (**withheld**; one JSON record per secret, each with its own expiry, sealed at rest where keys persist), `oauthTokenEndpointAuthMethod`, `oauthTokenEndpointAuthSigningAlg`, `oauthJwks`, `oauthJwksUri`, `oauthRedirectUri`, `oauthGrantType`, `oauthResponseType`, `oauthScope`, `oauthAllowedScope`, `oauthAudience`, `oauthSubjectType`, `oauthSectorIdentifierUri` |
 | Logout | `oauthPostLogoutRedirectUri`, `oauthFrontchannelLogoutUri`, `oauthFrontchannelLogoutSessionRequired`, `oauthBackchannelLogoutUri`, `oauthBackchannelLogoutSessionRequired`, `oauthRevokeRefreshOnLogout` |
 | Requests and responses | `oauthRequestUri`, `oauthRequestObjectSigningAlg`, `oauthRequestObjectEncryptionAlg`, `oauthRequestObjectEncryptionEnc`, `oauthRequireSignedRequestObject`, `oauthRequirePushedAuthorizationRequests`, `oauthIntrospectionSignedResponseAlg`, `oauthIntrospectionEncryptedResponseAlg`, `oauthIntrospectionEncryptedResponseEnc`, `oauthAuthorizationDetailsType`, `oauthAuthorizationDetailsTypes`, `oauthStepUpAcrValues`, `oauthStepUpMaxAge` |
 | Resource server and consent | `oauthPermissionBaseUri`, `oauthPermission`, `oauthDelegatedPermission`, `oauthResourceMetadata`, `oauthResourceMetadataUrl`, `oauthGlobalConsent`, `oauthGlobalConsentWithdrawn` |
@@ -432,7 +432,10 @@ mail-verification tokens, each recovery code and each app password.
 key-encryption key, in product; clear in development): the TOTP secret,
 `stsKrb5Keys`, `krb5ServiceKeys`, every RFC 7523 and RFC 7522 private key, the
 EAB keys, enrolled private keys and `fedEncryptionKey` private keys.
-`oauthClientSecret` is withheld but stored in the clear.
+`oauthClientSecret`, `appRegistrationAccessToken`, `fedClientSecret` and
+`stsIdaVerification` are sealed too, but only where the key-encryption key is
+durable (not development's ephemeral one, and not a product-mode realm inside
+a development process).
 [Encryption at rest](encryption-at-rest.md) has the rest.
 
 `pwdHistory` and `pwdChangedTime` are maintained by the service and refused on

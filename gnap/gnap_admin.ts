@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -179,8 +179,11 @@ class GnapAdmin {
       }
       const json = consoleModel.gnapView(req);
       const endpointRows = Object.keys(json.endpoints).map(function (name) {
+        // A Copy button beside each, as on every Protocols page's
+        // Endpoints section (2026-10-01): admin.copyButton().
         return '<tr><th>' + esc(name) + '</th><td><code>' +
-               esc(json.endpoints[name]) + '</code></td></tr>';
+               esc(json.endpoints[name]) + '</code>' +
+               admin.copyButton(json.endpoints[name]) + '</td></tr>';
       }).join('');
       const capabilityRows = json.authorizationServers.length
         ? json.authorizationServers.map(function (profile) {

@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -91,6 +91,7 @@ function childMain() {
         upserts.forEach(function (row) {
           rows.set(row.handle + '\u0000' + row.realm + '\u0000' + row.key,
                    { handle: row.handle, realm: row.realm, key: row.key,
+                     keySealed: row.keySealed || '',
                      body: row.body, writtenAt: Date.now() });
         });
         deletes.forEach(function (row) {

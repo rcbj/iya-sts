@@ -285,7 +285,7 @@ through it:
 | a registered device removed or marked compromised | **`admin`** or **`user`** | *an administrator removing device …*, *the owner removing device …*, *an administrator marking device … compromised* |
 | an **emergency key rotation** — every session of the realm | **`admin`** when an administrator requested it, **`system`** otherwise | *an emergency key rotation* |
 | **risk scoring** ending or disabling a person | **`policy`** | *the person's risk going to …*, *risk scoring disabling the account (…)* |
-| a received SET's signal-response rule | **`policy`** | *a … Security Event Token from the foreign transmitter …*, or *the admin console receiving …* |
+| a received SET's signal-response rule | **`policy`** | *a … Security Event Token from the partner of the federation relationship …*, or *the admin console receiving …* |
 | the console's or portal's own session, ended with the sign-on session it came from | the parent's | *the end of the sign-on session it was derived from (…)* |
 | the relying-party session a surface could not renew | **`system`** | *a token renewal that did not complete* |
 | **the session lifetime running out** | **`policy`** | its own sentence: *The session lifetime ran out. Nobody signed out …* |

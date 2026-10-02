@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -352,13 +352,13 @@ async function start(opts) {
   child.on('exit', function (code, signal) {
     exited = { code: code, signal: signal };
   });
-  log.info('starting a throwaway mock STS on ' + url + ' (ports ' + base +
+  log.info('starting a throwaway IYA STS on ' + url + ' (ports ' + base +
            '-' + (base + PORT_VARS.length - 1) + ', pid ' + child.pid + ')');
   const deadline = Date.now() + (opts.readyTimeoutMs || 60000);
   while (Date.now() < deadline) {
     if (exited) {
       log.debug('Leaving start(). The child exited.');
-      throw new Error('the mock STS exited before it answered (code ' +
+      throw new Error('IYA STS exited before it answered (code ' +
                       exited.code + ', signal ' + exited.signal + '); see ' +
                       opts.logFile);
     }
@@ -373,7 +373,7 @@ async function start(opts) {
     const answered = (await probe(url + '/')) > 0;
     /* eslint-enable no-await-in-loop */
     if (answered) {
-      log.info('the throwaway mock STS is answering on ' + url);
+      log.info('the throwaway IYA STS is answering on ' + url);
       log.debug('Leaving start(). Up.');
       // THE PORTS, BY THE NAME THE SERVICE READS THEM UNDER, and not just the
       // base (2026-09-06). A caller that needed the directory's socket was
@@ -399,7 +399,7 @@ async function start(opts) {
     log.debug("Caught in start(): " + ((e && e.message) || e));
   }
   log.debug('Leaving start(). Timed out.');
-  throw new Error('the mock STS did not answer on ' + url + ' in time; see ' +
+  throw new Error('IYA STS did not answer on ' + url + ' in time; see ' +
                   opts.logFile);
 }
 
@@ -434,7 +434,7 @@ async function stop(instance, log) {
     new Promise(function (r) { setTimeout(function () { r(false); }, 10000); })
   ]);
   if (graceful) {
-    log.info('the throwaway mock STS (pid ' + instance.pid + ') has stopped');
+    log.info('the throwaway IYA STS (pid ' + instance.pid + ') has stopped');
     log.debug('Leaving stop(). Graceful.');
     return true;
   }

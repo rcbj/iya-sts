@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: BUSL-1.1
 #
 # THE THIRD-PARTY IMAGES THE TEST STACK USES, AND WHERE THEIR COPIES LIVE
 # (2026-09-27, the parent project's b71e078 arrangement).

@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -267,25 +267,31 @@ function run(t) {
           'the corpora image\'s FROMs are in the list (its build uses ' +
           'mirror-contexts.sh)', corpora.join(', '));
 
-  // 6. build-container.yml covers the root Dockerfile.
+  // 6. build-container.yml covers the root Dockerfile, and since 2026-10-02
+  // the XACML PEP's too: it builds and publishes both, each step with a
+  // build-contexts block of its own, so every block is read.
   const workflow = read('.github/workflows/build-container.yml');
   const wf = {};
-  (/build-contexts:\s*\|\n((?:\s+\S.*\n)+)/.exec(workflow) || ['', ''])[1]
-    .split('\n').forEach(function (line) {
+  const blocks = /build-contexts:\s*\|\n((?:\s+\S.*\n)+)/g;
+  let block;
+  while ((block = blocks.exec(workflow)) !== null) {
+    block[1].split('\n').forEach(function (line) {
       const m = /^\s*([^=\s]+)=docker-image:\/\/(\S+)\s*$/.exec(line);
       if (m) {
         wf[m[1]] = m[2];
       }
     });
-  const rootFroms = externalRefs(read('Dockerfile'));
+  }
+  const rootFroms = externalRefs(read('Dockerfile'))
+    .concat(externalRefs(read('xacml-pep/Dockerfile')));
   const uncovered = rootFroms.filter(function (ref) {
     const target = wf[contextKey(ref)];
     return !target || target.indexOf(MIRROR) !== 0 ||
            !paths.has(target.slice(MIRROR.length));
   });
   t.check(rootFroms.length > 0 && uncovered.length === 0,
-          'build-container.yml redirects every FROM of the service ' +
-          'Dockerfile to a listed mirror path',
+          'build-container.yml redirects every FROM of the service and ' +
+          'XACML PEP Dockerfiles to a listed mirror path',
           JSON.stringify(wf) + ' uncovered: ' + uncovered.join(', '));
 
   // 7. what is pushed is what run-tests.sh names.

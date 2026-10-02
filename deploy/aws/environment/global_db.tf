@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: BUSL-1.1
 #
 # ---------------------------------------------------------------------------
 # WHERE THE GLOBAL DATABASE SITS IN THIS CELL (#98, 2026-09-28).
@@ -27,14 +27,14 @@
 resource "aws_db_subnet_group" "global" {
   count       = local.multi ? 1 : 0
   name        = "${local.prefix}-global"
-  description = "mock-sts ${var.environment} ${var.cell}: the global database, in the private subnets of this cell"
+  description = "iya-sts ${var.environment} ${var.cell}: the global database, in the private subnets of this cell"
   subnet_ids  = aws_subnet.private[*].id
 }
 
 resource "aws_security_group" "global_database" {
   count       = local.multi ? 1 : 0
   name        = "${local.prefix}-global-db"
-  description = "mock-sts ${var.environment} ${var.cell}: the global database, reachable from the VPC of every cell"
+  description = "iya-sts ${var.environment} ${var.cell}: the global database, reachable from the VPC of every cell"
   vpc_id      = aws_vpc.main.id
   tags        = { Name = "${local.prefix}-global-db" }
 }
@@ -43,6 +43,20 @@ resource "aws_vpc_security_group_ingress_rule" "global_database_from_cells" {
   for_each          = local.multi ? toset(local.all_cell_cidrs) : toset([])
   security_group_id = aws_security_group.global_database[0].id
   description       = "PostgreSQL from the VPC of a cell"
+  cidr_ipv4         = each.value
+  ip_protocol       = "tcp"
+  from_port         = local.db_port
+  to_port           = local.db_port
+}
+
+# THE GCP CELLS' COPIES OF THE GLOBAL TIER (#97): each GCP cell's Cloud SQL
+# subscribes to this writer's publication over the HA VPN, from the
+# private-services range its instance was given — not from the cell's VPC
+# CIDR, which the rule above admits for the GCP nodes' own writes.
+resource "aws_vpc_security_group_ingress_rule" "global_database_from_gcp_subscribers" {
+  for_each          = local.multi ? toset(local.gcp_global_db_cidrs) : toset([])
+  security_group_id = aws_security_group.global_database[0].id
+  description       = "PostgreSQL logical replication, from a GCP cell's copy of the global tier (#97)"
   cidr_ipv4         = each.value
   ip_protocol       = "tcp"
   from_port         = local.db_port

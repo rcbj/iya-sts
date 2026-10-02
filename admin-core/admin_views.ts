@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -492,6 +492,9 @@ interface AdminViewsDeps {
   authorizationServers: typeof authorizationServers;
   federation: typeof federation;
   fedEncryption: typeof fedEncryption;
+  // A federation partner's Shared Signals (#373), lazily: the receiver
+  // registers a scheduler job when built.
+  loadSignals: () => any;
   fedLinks: typeof fedLinks;
   signals: typeof signals;
   spiffeRegistry: typeof spiffeRegistry;
@@ -593,6 +596,9 @@ class AdminViews {
       authorizationServers: authorizationServers,
       federation: federation,
       fedEncryption: fedEncryption,
+      loadSignals: function () {
+        return require('../ssf/ssf_transmitters');
+      },
       fedLinks: fedLinks,
       signals: signals,
       spiffeRegistry: spiffeRegistry,
@@ -2774,8 +2780,8 @@ class AdminViews {
    *
    * @param query - the query
    * @param total - how many rows the list has
-   * @param options - the list's name, when a page has several, and its default
-   *   rows per page
+   * @param options - the list's name, when a page has several, its default
+   *   rows per page and, optionally, its most rows per page
    * @returns the paging
    */
   pagingOf(query, total, options?) {
@@ -2786,9 +2792,14 @@ class AdminViews {
     log.debug("Entering AdminViews.pagingOf(). total=" + total + ", param=" +
               param);
     const askedPer = parseInt(String(query.per || ''), 10);
+    // `options.maxPer` is a list's own ceiling under MAX_ROWS, for a page
+    // whose owner has said how long a section may be (Protocols → PKI's five,
+    // 2026-09-30): a hand-typed `?per=` can shorten such a list and never
+    // lengthen it.
+    const ceiling = Math.min(MAX_ROWS, opts.maxPer || MAX_ROWS);
     const perPage = (isFinite(askedPer) && askedPer > 0)
-      ? Math.min(askedPer, MAX_ROWS)
-      : (opts.defaultPer || DEFAULT_PER_PAGE);
+      ? Math.min(askedPer, ceiling)
+      : Math.min(opts.defaultPer || DEFAULT_PER_PAGE, ceiling);
     // At least one page even when nothing matched, so "page 1 of 1" is what an
     // empty list says rather than "page 1 of 0".
     const pages = Math.max(1, Math.ceil(total / perPage));
@@ -3299,6 +3310,15 @@ class AdminViews {
         live: page.live,
         matched: page.matched,
         shown: page.rows.length,
+        // A TEXT SEARCH READS THE NEWEST ROWS ONLY (#222): the columns it
+        // reads are sealed in a database, so it is done in memory over a
+        // bounded window, and says so when the window did not hold them all.
+        searchNote: page.searched !== undefined && !page.searchedAll
+          ? 'The text search read the newest ' + page.searched + ' rows ' +
+            'matching the other filters, not all of them: in a database ' +
+            'the searched columns are sealed and are searched here, in ' +
+            'memory. Narrow it with the format, use or state filter.'
+          : '',
         filter: page.filter,
         formats: usedAssertions.FORMATS,
         uses: usedAssertions.USES,
@@ -5176,6 +5196,19 @@ class AdminViews {
         return { attribute: row.ldap, label: row.label, schema: row.schema,
                  claim: row.claim.slice(0), invented: !!row.from };
       }),
+      // THE FIELD GRID THE FORM DRAWS (2026-10-01): every attribute a
+      // person's Attributes tab edits, which a create takes too and holds to
+      // the same rules, with the group it is drawn under, whether it is a
+      // list, an example of a valid value and whether the simplified view
+      // offers it. `fields` above is the credential catalogue, unchanged.
+      fieldGroups: personEditor.FIELD_GROUPS.map(function (group) {
+        return { id: group.id, label: group.label, what: group.what };
+      }),
+      gridFields: personEditor.editableAttributes().map(function (row) {
+        return { attribute: row.name, label: row.label, group: row.group,
+                 multi: row.multi, example: row.example,
+                 simple: row.simple, takes: row.note || 'text' };
+      }),
       credentials: CREDENTIAL_CHOICES.map(function (one) {
         return { id: one.id, label: one.label };
       }),
@@ -6397,6 +6430,10 @@ class AdminViews {
     const credentialsState = this.applicationCredentialsState(row);
     const softwareStatementState = this.applicationSoftwareStatementState(row);
     const rolesState = this.applicationRolesState(row.identifier);
+    const signalsState = this.applicationSignalsState(req, row);
+    const enrollmentState = this.applicationEnrollmentState(req, row);
+    const claimsState = this.applicationClaimsState(row);
+    const lifetimesState = this.applicationTokenLifetimesState(row);
     log.debug("Leaving AdminViews.applicationDetailJson().");
     return {
       row: row, attributeRows: attributeRows, paged: paged, paging: paging,
@@ -6405,6 +6442,10 @@ class AdminViews {
       rolesState: rolesState,
       credentialsState: credentialsState,
       softwareStatementState: softwareStatementState,
+      signalsState: signalsState,
+      enrollmentState: enrollmentState,
+      claimsState: claimsState,
+      lifetimesState: lifetimesState,
       json: (function () {
       return Object.assign({ found: true }, row, {
           attributesShown: paged.shown,
@@ -6420,6 +6461,21 @@ class AdminViews {
           // the party registered itself. No secret and no private key: see
           // applicationCredentialsState().
           credentials: credentialsState.json,
+          // THE SHARED SIGNALS SECTION, AS DATA (2026-10-01): the streams this
+          // application owns and every per-receiver setting in force for
+          // them. See applicationSignalsState().
+          sharedSignals: signalsState.json,
+          // THE CERTIFICATE ENROLLMENT SECTION, AS DATA (2026-10-01): the
+          // ACME, EST and SCEP rules in force for it, the certificates it
+          // was issued (paged), its EAB keys and SCEP challenges (no secret)
+          // and its host names. See applicationEnrollmentState().
+          certificateEnrollment: enrollmentState.json,
+          // AN APPLICATION'S OWN CUSTOM CLAIMS AND SAML ATTRIBUTES, AND THE
+          // TOKEN LIFETIMES IN FORCE FOR IT (2026-10-01): its configuration
+          // tabs' sections, as data. See applicationClaimsState() and
+          // applicationTokenLifetimesState().
+          customClaims: claimsState.json,
+          tokenLifetimes: lifetimesState.json,
           // THE SOFTWARE STATEMENTS SECTION, AS DATA (2026-09-13): the issuers
           // this application vouches for as a publisher, the statement this
           // realm issued it, and how it registered if a statement let it in. A
@@ -6446,9 +6502,14 @@ class AdminViews {
             offerable: permissionState.offerable.map(function (one) {
               return one.id;
             }),
+            // The grants of its OWN permissions to other applications
+            // (2026-10-01), the Permissions tab's third table.
+            grantedOut: permissionState.grantedOut,
             paging: { held: self.pagingJson(permissionState.heldPage.paging),
                       exposes:
-                        self.pagingJson(permissionState.exposedPage.paging) }
+                        self.pagingJson(permissionState.exposedPage.paging),
+                      grantedOut: self.pagingJson(
+                        permissionState.grantedOutPage.paging) }
           }
       });
       }())
@@ -6606,8 +6667,299 @@ class AdminViews {
     }
   }
 
+  // ---------------------------------------------------------------------------
+  // THE SHARED SIGNALS STREAMS AN APPLICATION OWNS (2026-10-01), and the
+  // per-receiver settings in force for them. A stream is this application's
+  // when the principal that created it resolves to this entry — its
+  // identifier, or one of its ssfReceiverId values — which is the same match
+  // `ssf_streams.ts` narrows events and applies settings by, so the page and
+  // the transmitter cannot disagree about whose a stream is. This service's
+  // own two streams are nobody's. The stream's members are shown as the
+  // receiver set them (SSF 1.0 section 8.1.1); only its status is an
+  // administrator's to change, through the existing `status` action.
+  // ---------------------------------------------------------------------------
+  /**
+   * Builds the Shared Signals state of one application's page.
+   *
+   * @param req - the request
+   * @param row - the application's view
+   * @returns `{ installed, streams, settings, json }`
+   */
+  applicationSignalsState(req, row) {
+    const { log, applications } = this.deps;
+    log.debug("Entering AdminViews.applicationSignalsState(). identifier=" +
+              row.identifier);
+    const settings = applications.ssfOverrideRows().map(function (one) {
+      const answer = applications.ssfSettingFor(row.identifier, one.setting);
+      return { setting: one.setting, attribute: one.attribute,
+               value: answer.value, source: answer.source };
+    });
+    if (!signalsReporter) {
+      log.debug("Leaving AdminViews.applicationSignalsState(). Not loaded.");
+      return { installed: false, streams: [], settings: settings,
+               json: { installed: false, streams: [], settings: settings } };
+    }
+    let detail = [];
+    try {
+      detail = signalsReporter.report(req).streamDetail || [];
+    } catch (e) {
+      log.debug("Caught in AdminViews.applicationSignalsState(): " +
+                ((e && e.message) || e));
+      // A report that could not be built shows no streams rather than
+      // costing the application's page.
+      detail = [];
+    }
+    const owned = detail.filter(function (stream) {
+      if (stream.internal || !stream.createdBy) {
+        return false;
+      }
+      const owner = applications.ssfAllowedEventsFor(stream.createdBy);
+      return !!owner && owner.identifier === row.identifier;
+    }).map(function (stream) {
+      return { stream_id: stream.stream_id, status: stream.status,
+               statusReason: stream.statusReason, aud: stream.aud,
+               delivery: stream.delivery,
+               events_requested: stream.events_requested || [],
+               events_delivered: stream.events_delivered || [],
+               format: stream.format || '',
+               description: stream.description || '',
+               createdBy: stream.createdBy, createdAt: stream.createdAt,
+               updatedAt: stream.updatedAt,
+               lastPushAt: stream.lastPushAt || '',
+               lastPushError: stream.lastPushError || '' };
+    });
+    log.debug("Leaving AdminViews.applicationSignalsState(). " +
+              owned.length + " stream(s).");
+    return { installed: true, streams: owned, settings: settings,
+             json: { installed: true, streams: owned, settings: settings } };
+  }
+
+  // AN APPLICATION'S CERTIFICATE ENROLLMENT, AS ONE MODEL (rcbj,
+  // 2026-10-01): what its Credentials tab and its Certificate enrollment
+  // configuration tab draw, and what `GET /admin-api/applications?application=`
+  // answers as `certificateEnrollment`. Drawn for an application declared for
+  // ACME, EST or SCEP. Everything is read from `common/cert_enrollment.ts`, so
+  // the rules shown are the rules applied: the profile list, default,
+  // lifetime and cap IN FORCE for it (its own override, else the realm's),
+  // EST's three switches through `estSwitch()`, the certificates on its entry
+  // newest first (PAGED on `enrolledPage`: revoked and expired ones stay on
+  // the entry and the list grows), its EAB keys and SCEP challenges (bounded
+  // per entry, and with no key material — the core's own listings carry
+  // none), and its registered host names. Generating and revoking are the
+  // three protocols' own console actions, posted from the application's page.
+  /**
+   * Answers an application's certificate enrollment: the rules in force for
+   * it, its certificates, EAB keys, SCEP challenges and host names.
+   *
+   * @param req - the request, for the paging of its certificates
+   * @param row - the application's view
+   * @param listName - the paging name of its certificate list, `enrolled`
+   *   unless the caller draws the list a second time on one page
+   * @returns `{ families, rules, certificates, paged, eabKeys, challenges,
+   *   hostNames, keyAlgorithms, json }`
+   */
+  applicationEnrollmentState(req, row, listName?) {
+    const { log, config } = this.deps;
+    log.debug("Entering AdminViews.applicationEnrollmentState(). " +
+              "identifier=" + (row && row.identifier));
+    const core = require('../common/cert_enrollment');
+    const id = String((row && row.identifier) || '');
+    const entry = { kind: 'application', id: id };
+    const fields = (row && row.fields) || {};
+    const declared = [].concat((row && row.allowedProtocols) || []);
+    const families = ['acme', 'est', 'scep'].filter(function (one) {
+      return declared.indexOf(one) >= 0;
+    });
+    const own = function (attribute) {
+      log.debug("Entering own().");
+      const value = Number(String(fields[attribute] || '').trim());
+      log.debug("Leaving own().");
+      return Number.isFinite(value) && value > 0 ? value : null;
+    };
+    const rules = families.map(function (family) {
+      const days = own(family + 'CertificateLifetimeDays');
+      const ownList = [].concat(fields[family + 'AllowedProfiles'] || [])
+        .map(String).filter(Boolean);
+      return {
+        family: family,
+        label: core.FAMILY_LABELS[family],
+        allowedProfiles: core.allowedProfiles(family, entry),
+        allowedProfilesSource: ownList.length ? 'application' : 'realm',
+        defaultProfile: core.defaultProfile(family, entry),
+        defaultProfileSource: String(fields[family + 'DefaultProfile'] || '')
+          .trim() ? 'application' : 'realm',
+        certificateLifetimeDays: days !== null ? days
+          : Number(config.value(family + '.certificateLifetimeDays')),
+        certificateLifetimeSource: days !== null ? 'application' : 'realm'
+      };
+    });
+    const capOwn = own('enrollMaxCertificates');
+    const cap = {
+      value: capOwn !== null ? capOwn
+        : Number(config.value('pki.enrollmentMaxCertificatesPerEntry')),
+      source: capOwn !== null ? 'application' : 'realm'
+    };
+    const switchOf = function (name, attribute) {
+      log.debug("Entering switchOf().");
+      const raw = String(fields[attribute] || '').trim().toUpperCase();
+      log.debug("Leaving switchOf().");
+      return { on: core.estSwitch(name, entry),
+               source: raw === 'TRUE' || raw === 'FALSE' ? 'application'
+                                                         : 'realm' };
+    };
+    const est = families.indexOf('est') >= 0 ? {
+      basicAuthentication: switchOf('basicAuthentication',
+                                    'estBasicAuthentication'),
+      certificateAuthentication: switchOf('certificateAuthentication',
+                                          'estCertificateAuthentication'),
+      serverKeyGeneration: switchOf('serverKeyGeneration',
+                                    'estServerKeyGeneration')
+    } : null;
+    let certificates = [];
+    let eabKeys = [];
+    let challenges = [];
+    let hostNames = [];
+    if (families.length && core.hasDirectory()) {
+      certificates = core.enrolledOf(entry).map(function (one) {
+        return Object.assign({}, one, { entry: undefined });
+      });
+      eabKeys = families.indexOf('acme') >= 0 ? core.eabsOf(entry) : [];
+      challenges = families.indexOf('scep') >= 0
+        ? core.scepChallengesOf(entry) : [];
+      hostNames = core.hostNamesOf(entry);
+    }
+    // The list's paging name is also its pager's id (`list-<name>Page`), so
+    // a page that draws the list twice names each copy apart — or both
+    // pagers' links land on whichever copy comes first in the document.
+    const paged = this.pagedRows((req && req.query) || {}, certificates,
+                                 { name: listName || 'enrolled',
+                                   noun: 'certificates' });
+    let keyAlgorithms = [];
+    try {
+      keyAlgorithms = require('../common/vendored/key_material').keyAlgIds();
+    } catch (e) {
+      log.debug("Caught in AdminViews.applicationEnrollmentState(): " +
+                ((e && e.message) || e));
+      keyAlgorithms = ['ec-p256'];
+    }
+    const json = {
+      families: families, rules: rules, certificateCap: cap,
+      est: est,
+      certificates: paged.shown, certificatesPaging: this.pagingJson(
+        paged.paging),
+      certificatesTotal: certificates.length,
+      eabKeys: eabKeys, scepChallenges: challenges, hostNames: hostNames
+    };
+    log.debug("Leaving AdminViews.applicationEnrollmentState(). " +
+              certificates.length + " certificate(s).");
+    return { families: families, rules: rules, cap: cap, est: est,
+             certificates: certificates, paged: paged, eabKeys: eabKeys,
+             challenges: challenges, hostNames: hostNames,
+             keyAlgorithms: keyAlgorithms, json: json };
+  }
+
+  // AN APPLICATION'S OWN CLAIM SETS, BESIDE THE REALM'S (rcbj, 2026-10-01):
+  // what its OAuth / OpenID Connect tab's Custom claims section and its SAML
+  // tab's Custom SAML attributes section draw. Per set, for the families the
+  // application is declared for: the realm's rows, its own rows, and the
+  // rows IN FORCE for it (`stats.effectiveClaimSet()`: the realm's, with its
+  // own added and winning by name), each marked with where it came from.
+  /**
+   * Answers an application's own claim sets beside the realm's.
+   *
+   * @param row - the application's view
+   * @returns `{ sets, json }`, one member per set it is declared for
+   */
+  applicationClaimsState(row) {
+    const { log, stats } = this.deps;
+    log.debug("Entering AdminViews.applicationClaimsState(). identifier=" +
+              (row && row.identifier));
+    const declared = [].concat((row && row.allowedProtocols) || []);
+    const families = {
+      access_token: ['oauth2', 'oidc', 'oid4vci'],
+      id_token: ['oidc', 'oauth2'],
+      userinfo: ['oidc', 'oauth2'],
+      saml2: ['saml2'],
+      saml11: ['saml11']
+    };
+    const labels = {
+      access_token: 'Access token', id_token: 'ID Token',
+      userinfo: 'UserInfo response', saml2: 'SAML 2.0 attributes',
+      saml11: 'SAML 1.1 attributes'
+    };
+    const sets = Object.keys(families).filter(function (id) {
+      return families[id].some(function (one) {
+        return declared.indexOf(one) >= 0;
+      });
+    }).map(function (id) {
+      const realmRows = stats.claimSet(id);
+      const own = stats.applicationClaimSet(id, row);
+      const ownNames = own.map(function (one) { return one.name; });
+      const effective = realmRows.filter(function (one) {
+        return ownNames.indexOf(one.name) < 0;
+      }).map(function (one) {
+        return Object.assign({ source: 'realm' }, one);
+      }).concat(own.map(function (one) {
+        const replaced = realmRows.some(function (r) {
+          return r.name === one.name;
+        });
+        return Object.assign({ source: 'application', replacesRealm: replaced },
+                             one);
+      }));
+      return { id: id, label: labels[id],
+               attribute: stats.APP_CLAIM_ATTRIBUTES[id],
+               realm: realmRows, own: own, effective: effective };
+    });
+    log.debug("Leaving AdminViews.applicationClaimsState(). " + sets.length +
+              " set(s).");
+    return { sets: sets, json: sets };
+  }
+
+  // THE TOKEN LIFETIMES IN FORCE FOR AN APPLICATION (2026-10-01): its OAuth
+  // tab's Token lifetimes section. The four settings it may override, each
+  // with the value in force (`applications.settingFor()`, which is what the
+  // token endpoint reads), the realm's value, and where the value came from;
+  // and the realm's clock skew, which stays realm-wide.
+  /**
+   * Answers the token lifetimes in force for an application.
+   *
+   * @param row - the application's view
+   * @returns `{ rows, skew, json }`
+   */
+  applicationTokenLifetimesState(row) {
+    const { log, applications, config } = this.deps;
+    log.debug("Entering AdminViews.applicationTokenLifetimesState().");
+    const id = String((row && row.identifier) || '');
+    const fields = (row && row.fields) || {};
+    const keys = [
+      { key: 'oauth2.accessTokenTtlS', attribute: 'oauthAccessTokenTtlS',
+        label: 'Access token' },
+      { key: 'oauth2.idTokenTtlS', attribute: 'oauthIdTokenTtlS',
+        label: 'ID Token' },
+      { key: 'oauth2.refreshTokenTtlS', attribute: 'oauthRefreshTokenTtlS',
+        label: 'Refresh token' },
+      { key: 'oauth2.refreshIdleSeconds',
+        attribute: 'oauthRefreshIdleSeconds',
+        label: 'Refresh chain idle limit (RFC 9700 mode)' }
+    ];
+    const rows = keys.map(function (one) {
+      const own = String([].concat(fields[one.attribute] || [])[0] || '')
+        .trim();
+      return {
+        setting: one.key, attribute: one.attribute, label: one.label,
+        value: Number(applications.settingFor(id, one.key, config)),
+        realmValue: Number(config.value(one.key)),
+        source: own ? 'application' : 'realm'
+      };
+    });
+    const skew = Number(config.value('oauth2.clockSkewS'));
+    log.debug("Leaving AdminViews.applicationTokenLifetimesState().");
+    return { rows: rows, skew: skew,
+             json: { lifetimes: rows, clockSkewS: skew } };
+  }
+
   private applicationCredentialsState(row) {
-    const { log, applications, pki } = this.deps;
+    const { log, applications, pki, config } = this.deps;
     const self = this;
     log.debug("Entering AdminViews.applicationCredentialsState(). identifier=" +
               (row && row.identifier));
@@ -6668,19 +7020,30 @@ class AdminViews {
     const declared = [].concat(row.allowedProtocols || []);
     const oauthDeclared = declared.indexOf('oauth2') >= 0 ||
                           declared.indexOf('oidc') >= 0;
-    const secret = one('oauthClientSecret');
+    // SEVERAL SECRETS (2026-10-01): each record with its expiry, newest
+    // first, the primary marked. The VALUES go to the page (it shows each
+    // behind a fold, as it showed the one) and never into the reply's JSON.
+    const summaries = applications.clientSecretSummariesOf(row.fields || {});
+    const secretValues: Record<string, string> = {};
+    applications.clientSecretRecordsOf(row.fields || {}).forEach(
+      function (rec) { secretValues[rec.id] = rec.secret; });
     const state: Record<string, any> = {
       oauthDeclared: oauthDeclared,
       clientSecret: {
-        held: !!secret,
-        value: secret,
-        authMethod: one('oauthTokenEndpointAuthMethod'),
+        held: summaries.length > 0,
+        secrets: summaries,
+        values: secretValues,
+        max: Number(config.value('oauth2.clientSecretsMax')) || 1,
+        defaultLifetimeDays:
+          Number(config.value('oauth2.clientSecretLifetimeDays')) || 0,
+        overlapS: Number(config.value('oauth2.clientSecretOverlapS')) || 0,
+        // Every declared method (2026-10-01), as one line.
+        authMethod: one('oauthTokenEndpointAuthMethod').split('\n')
+          .filter(function (m) { return m !== ''; }).join(', '),
         registered: !!row.registered,
         registrationAccessTokenHeld: !!one('appRegistrationAccessToken'),
         registrationAccessToken: one('appRegistrationAccessToken'),
-        // ROTATION AND EXPIRY (#49 P5): until when a rotated-out secret still
-        // works (ms), and when the current one expires (seconds, 0 never).
-        previousUntil: Number(one('oauthClientSecretPreviousUntil')) || 0,
+        // When the PRIMARY expires (seconds, 0 never).
         expiresAt: applications.secretExpiryOf(row.fields || {})
       },
       purposes: purposes,
@@ -6699,8 +7062,10 @@ class AdminViews {
                       registered: state.clientSecret.registered,
                       registrationAccessTokenHeld:
                         state.clientSecret.registrationAccessTokenHeld,
-                      previousUntil: state.clientSecret.previousUntil,
-                      expiresAt: state.clientSecret.expiresAt },
+                      expiresAt: state.clientSecret.expiresAt,
+                      // Every secret's id and expiry, never its value.
+                      secrets: state.clientSecret.secrets,
+                      max: state.clientSecret.max },
       keyPairs: purposes.map(function (p) {
         return { purpose: p.id, label: p.label, held: p.held, source: p.source,
                  privateKeyHeld: p.privateKeyHeld, certificate: p.certificate,
@@ -6756,12 +7121,18 @@ class AdminViews {
       return { member: member, attribute: described.attribute,
                label: described.label, value: one(described.attribute) };
     });
-    const method = one('oauthTokenEndpointAuthMethod');
+    // Several since 2026-10-01: a certificate method among them is what the
+    // page reports.
+    const methods = String(one('oauthTokenEndpointAuthMethod') || '')
+      .split('\n').filter(function (m) { return m !== ''; });
+    const certificate = methods.filter(function (m) {
+      return mtls.CERTIFICATE_METHODS.indexOf(m) >= 0;
+    })[0] || '';
     log.debug("Leaving AdminViews.applicationMtlsState(). " + held.length +
               " held.");
     return {
-      authMethod: method,
-      certificateMethod: mtls.CERTIFICATE_METHODS.indexOf(method) >= 0,
+      authMethod: certificate || methods.join(', '),
+      certificateMethod: !!certificate,
       implicitName: tlsClientCertificates.APPLICATION_URN + identifier,
       certificates: held,
       active: held.filter(function (cert) {
@@ -7028,7 +7399,7 @@ class AdminViews {
    * @returns the state
    */
   applicationPermissionsState(query, identifier) {
-    const { log, appPermissions } = this.deps;
+    const { log, appPermissions, applications } = this.deps;
     log.debug("Entering AdminViews.applicationPermissionsState(). identifier=" +
               identifier);
     const register = appPermissions.register();
@@ -7040,11 +7411,24 @@ class AdminViews {
     const held = register.grants.filter(function (one) {
       return one.client === identifier;
     });
-    // AND WHAT IT EXPOSES, which is the other half of the same question and is
-    // read-only on that page: `Expose an API` and `Define a permission` stay on
-    // /admin/delegation, where the resource half of this feature is configured.
+    // AND WHAT IT EXPOSES, the other half of the same question — configured
+    // on that page since 2026-10-01 (rcbj): its base URI, its permissions,
+    // and which OTHER applications hold them, each for this application only.
     const exposes = register.permissions.filter(function (one) {
       return one.resource === identifier;
+    });
+    // THE GRANTS OF ITS OWN PERMISSIONS: the relationships in which it is the
+    // RESOURCE, one row per (client, permission) as on the register.
+    const grantedOut = register.grants.filter(function (one) {
+      return one.resource === identifier;
+    });
+    // WHO THEY MAY STILL GO TO: every other application in the registry. Not
+    // itself — app_permissions.js refuses that grant however it arrives, for
+    // the reason the `offerable` exclusions below give.
+    const clients = applications.list().filter(function (row) {
+      return row.identifier !== identifier;
+    }).map(function (row) {
+      return { identifier: row.identifier, name: row.name || row.identifier };
     });
     const heldIds = held.map(function (one) { return one.permissionId; });
     log.debug("Leaving AdminViews.applicationPermissionsState(). " +
@@ -7054,6 +7438,8 @@ class AdminViews {
       register: register,
       held: held,
       exposes: exposes,
+      grantedOut: grantedOut,
+      clients: clients,
       // WHAT MAY STILL BE GRANTED. See the section's header for why each of the
       // three exclusions is an exclusion rather than an option that refuses.
       offerable: register.permissions.filter(function (one) {
@@ -7078,6 +7464,9 @@ class AdminViews {
         { name: 'held', noun: 'permissions', defaultPer: DELEGATION_PER_PAGE }),
       exposedPage: this.pagedRows(query, exposes,
         { name: 'exposed', noun: 'permissions',
+          defaultPer: DELEGATION_PER_PAGE }),
+      grantedOutPage: this.pagedRows(query, grantedOut,
+        { name: 'grantedOut', noun: 'grants',
           defaultPer: DELEGATION_PER_PAGE })
     };
   }
@@ -7211,8 +7600,16 @@ class AdminViews {
     const jwks = row.protocol === 'oidc' && row.role === 'service-provider'
       ? base + federation.PATHS.jwks + '/' + encodeURIComponent(row.id)
       : null;
-    const setFields = federation.fieldsForRole(row.role, 'set')
+    // THE PARTNER'S SHARED SIGNALS (#373, #374) are drawn in a section of
+    // their own, so their fields leave the general lists below; and an `ssf`
+    // relationship's fields are its signals alone (fieldsForRole() narrows
+    // by protocol).
+    const signalFields = federation.SIGNAL_FIELDS;
+    const setFields = federation.fieldsForRole(row.role, 'set', row.protocol)
                                 .filter(function (field) {
+      if (signalFields.indexOf(field.name) >= 0) {
+        return false;
+      }
       // The four booleans get their own two-button control below, because a
       // text box a person types TRUE into is a text box a person types "true",
       // "yes" and "1" into — and one of those is how a relationship stays
@@ -7230,7 +7627,37 @@ class AdminViews {
          ['fedEncryptionKeyType', 'fedKeyManagementAlgorithm',
           'fedContentEncryptionAlgorithm'].indexOf(field.name) === -1);
     });
-    const multiFields = federation.fieldsForRole(row.role, 'multi');
+    const multiFields = federation.fieldsForRole(row.role, 'multi',
+                                                 row.protocol)
+      .filter(function (field) {
+        return signalFields.indexOf(field.name) < 0;
+      });
+    // The signals section's own fields — settings, the two switches, and the
+    // event list — and what the receiver holds for this relationship.
+    const signalSetFields = row.role === 'service-provider'
+      ? federation.fieldsForRole(row.role, 'set', row.protocol)
+          .filter(function (field) {
+            return signalFields.indexOf(field.name) >= 0 &&
+                   ['fedSignalsEnabled', 'fedSignalEmailMatch']
+                     .indexOf(field.name) < 0;
+          })
+      : [];
+    let signals = null;
+    let arrivals = [];
+    let outbound = null;
+    try {
+      const receiver = this.deps.loadSignals();
+      if (row.role === 'service-provider') {
+        signals = receiver.view(record);
+        arrivals = receiver.arrivals(record.fedId, 10);
+      } else {
+        outbound = receiver.outboundFor(record);
+      }
+    } catch (e) {
+      log.debug("Caught in AdminViews.federationDetailJson(): " +
+                ((e && e.message) || e));
+      signals = null;
+    }
     // THE PEOPLE THIS PARTNER'S SUBJECTS ARE LINKED TO (#109), paged — a
     // relationship with ten thousand linked people is an ordinary one, and a
     // page drawing all of them is not. Service-provider side only: an
@@ -7263,7 +7690,8 @@ class AdminViews {
       encryption: encryption,
       signOut: row.role === 'service-provider' ? signOut : {},
       setFields: setFields, multiFields: multiFields, linkPage: linkPage,
-      unmapped: unmapped,
+      unmapped: unmapped, signalSetFields: signalSetFields,
+      signals: signals, arrivals: arrivals, outbound: outbound,
       json: (function () {
       return Object.assign({ found: true }, row, {
           endpoints: Object.assign({
@@ -7291,8 +7719,14 @@ class AdminViews {
             });
             return out;
           })(),
-          editable: federation.fieldsForRole(row.role),
+          editable: federation.fieldsForRole(row.role, '', row.protocol),
           unmappedAttributes: unmapped,
+          // A partner's Shared Signals (#373): the stream's state and the
+          // latest arrivals; for an identity-provider-side relationship,
+          // what this service sends that partner instead.
+          signals: signals,
+          signalArrivals: arrivals,
+          outboundSignals: outbound,
           encryption: encryption,
           // Who this partner's subjects are linked to (#109): the page, and
           // the paging a caller walks it with.
@@ -7354,6 +7788,10 @@ class AdminViews {
       ready: readiness.ready,
       missing: readiness.missing,
       usable: federation.isEnabled(record) && readiness.ready,
+      // Whether it signs anybody in, and whether its partner's Shared
+      // Signals are received (#373, #374).
+      signsIn: federation.signsIn(record),
+      signalsEnabled: federation.signalsEnabled(record),
       releases: (record.fedRelease || []).slice(0),
       mappings: (record.fedAttributeMap || []).slice(0),
       authentications: parseInt(record.fedAuthentications, 10) || 0,
@@ -8288,6 +8726,9 @@ class AdminViews {
                  // a door that verified nothing; the AAGUID is then only the
                  // authenticator's claim, which is why it is beside it.
                  aaguid: one.aaguid || null,
+                 // ITS SIGNATURE ALGORITHM (2026-10-01): name, COSE id,
+                 // and whether it is post-quantum or insecure.
+                 algorithm: credentials.keyAlgorithm(one),
                  attestation: one.attestation || null };
       }),
       primaryKeys: mech.primaryKeys,
@@ -8914,6 +9355,9 @@ export = {
   federationListJson: slot.forward('federationListJson'),
   applicationPermissionsState: slot.forward('applicationPermissionsState'),
   applicationRolesState: slot.forward('applicationRolesState'),
+  applicationEnrollmentState: slot.forward('applicationEnrollmentState'),
+  applicationClaimsState: slot.forward('applicationClaimsState'),
+  applicationTokenLifetimesState: slot.forward('applicationTokenLifetimesState'),
   attributeClaimChoices: slot.forward('attributeClaimChoices'),
   attributeClaimPreview: slot.forward('attributeClaimPreview'),
   releaseWithholding: slot.forward('releaseWithholding'),

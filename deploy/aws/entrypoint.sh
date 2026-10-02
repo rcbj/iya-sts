@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: BUSL-1.1
 #
 # File: deploy/aws/entrypoint.sh
 #
@@ -11,18 +11,18 @@
 #
 # AWS credentials come from OUTSIDE the container, as environment variables.
 # When they are the key of one of the deployer role's two IAM USERS —
-# `mock-sts-deployer` (a person's) or `git_user6` (the workflow's), neither of
-# which may do anything else — the entrypoint assumes the `mock-sts-deployer`
+# `iya-sts-deployer` (a person's) or `git_user6` (the workflow's), neither of
+# which may do anything else — the entrypoint assumes the `iya-sts-deployer`
 # ROLE first, so a caller needs the user's key and nothing else (the two
 # repository secrets).
 # Any other identity (an administrator, or role credentials already assumed) is
-# used as it is. MOCK_STS_DEPLOYER_ROLE_ARN forces a role.
+# used as it is. IYA_STS_DEPLOYER_ROLE_ARN forces a role.
 #
 # Config (env vars):
 #   TF_STACK     environment | global | foundation | spiffe-realm
 #                | suite-callbacks                               (environment)
 #   TF_ENV       the environment's name, 2-12 [a-z0-9]           (dev)
-#   TF_CELL      a MULTI-CELL environment's cell, e.g. `cac1`: one cell's
+#   TF_CELL      a MULTI-CELL environment's cell, e.g. `euw1`: one cell's
 #                environment, spiffe-realm or suite-callbacks stack. Unset
 #                for an `environment` apply/destroy/plan/output, which then
 #                does every cell and the global stack IN ORDER (below)
@@ -31,6 +31,8 @@
 #                file, a restored cell's database converted before its nodes
 #                start (#98, `convert_cell` below)
 #   TF_CONVERT_TIMEOUT  seconds to wait for a conversion task       (7200)
+#   TF_CELL_PARALLEL    how many cells a multi-cell apply or destroy runs
+#                at once, after the primary (#367)                      (6)
 #   TF_REALM     spiffe-realm only: the realm id, or `default`
 #   TF_ACTION    init | validate | plan | apply | destroy | output
 #                | output-json | ecr-password                                  (plan)
@@ -73,6 +75,10 @@ set -euo pipefail
 : "${TF_ACTION:=plan}"
 : "${AWS_REGION:=us-west-2}"
 export AWS_REGION AWS_DEFAULT_REGION="${AWS_REGION}"
+# One provider cache for every step this run makes, children included (the
+# per-step data directories, below the orchestration, #367).
+export TF_PLUGIN_CACHE_DIR="${TF_PLUGIN_CACHE_DIR:-/tmp/tf-plugin-cache}"
+mkdir -p "${TF_PLUGIN_CACHE_DIR}"
 
 say() { echo "==> [${TF_STACK}${TF_STACK:+/}${TF_ENV}${TF_CELL:+/${TF_CELL}}] $*" >&2; }
 die() { echo "ERROR: $*" >&2; exit 1; }
@@ -91,22 +97,22 @@ identity="$(aws sts get-caller-identity --output json 2>/dev/null)" || \
 account="$(jq -r .Account <<<"${identity}")"
 arn="$(jq -r .Arn <<<"${identity}")"
 
-role_arn="${MOCK_STS_DEPLOYER_ROLE_ARN:-}"
+role_arn="${IYA_STS_DEPLOYER_ROLE_ARN:-}"
 # The deployer role's two users (foundation/iam_deployer.tf): a person's, and
-# the workflow's (git_user6). MOCK_STS_DEPLOYER_USERS names others.
-deployer_users="${MOCK_STS_DEPLOYER_USERS:-mock-sts/mock-sts-deployer git_user6}"
+# the workflow's (git_user6). IYA_STS_DEPLOYER_USERS names others.
+deployer_users="${IYA_STS_DEPLOYER_USERS:-iya-sts/iya-sts-deployer git_user6}"
 for user in ${deployer_users}; do
   if [ -z "${role_arn}" ] && [[ "${arn}" == *":user/${user}" ]];
   then
-    role_arn="arn:aws:iam::${account}:role/mock-sts-deployer"
+    role_arn="arn:aws:iam::${account}:role/iya-sts-deployer"
   fi
 done
 if [ -n "${role_arn}" ];
 then
   say "assuming ${role_arn}"
   creds="$(aws sts assume-role --role-arn "${role_arn}" \
-    --role-session-name "mock-sts-${TF_ENV}-${TF_ACTION}-$(date -u +%s)" \
-    --duration-seconds "${MOCK_STS_ROLE_SECONDS:-14400}" \
+    --role-session-name "iya-sts-${TF_ENV}-${TF_ACTION}-$(date -u +%s)" \
+    --duration-seconds "${IYA_STS_ROLE_SECONDS:-14400}" \
     --query Credentials --output json)" || die "could not assume ${role_arn}."
   export AWS_ACCESS_KEY_ID="$(jq -r .AccessKeyId <<<"${creds}")"
   export AWS_SECRET_ACCESS_KEY="$(jq -r .SecretAccessKey <<<"${creds}")"
@@ -191,7 +197,7 @@ cell_snapshot() {
 }
 
 # --- The stack and its state ------------------------------------------------
-bucket="mock-sts-terraform-state-${account}"
+bucket="iya-sts-terraform-state-${account}"
 case "${TF_STACK}" in
   environment)
     TF_DIR=/workspace/deploy/aws/environment
@@ -237,6 +243,16 @@ case "${TF_STACK}" in
     STATE_KEY="environment/${TF_ENV}/spiffe-realm/${TF_REALM}.tfstate"
     export TF_VAR_environment="${TF_ENV}" TF_VAR_realm="${TF_REALM}"
     ;;
+  certificate)
+    # THE PUBLIC CERTIFICATE (deploy/aws/certificate/, rcbj 2026-10-01): one
+    # state per environment, and per cell (below), that NO environment
+    # destroy touches — an exportable certificate is billed per issuance. It
+    # is applied before every environment apply (`apply_certificate_stack`)
+    # and refused a destroy unless STS_DESTROY_CERTIFICATE=yes.
+    TF_DIR=/workspace/deploy/aws/certificate
+    STATE_KEY="environment/${TF_ENV}/certificate.tfstate"
+    export TF_VAR_environment="${TF_ENV}"
+    ;;
   suite-callbacks)
     # The suite's callback task for one run (deploy/aws/suite-callbacks/),
     # created and destroyed by run-suite.sh around each run.
@@ -244,7 +260,7 @@ case "${TF_STACK}" in
     STATE_KEY="environment/${TF_ENV}/suite-callbacks.tfstate"
     export TF_VAR_environment="${TF_ENV}"
     ;;
-  *) die "unknown TF_STACK='${TF_STACK}' (environment | global | foundation | spiffe-realm | suite-callbacks)." ;;
+  *) die "unknown TF_STACK='${TF_STACK}' (environment | global | foundation | certificate | spiffe-realm | suite-callbacks)." ;;
 esac
 
 # A STACK BUILT ON ONE CELL (#98) is that cell's: its state is under the
@@ -252,7 +268,7 @@ esac
 if [ -n "${MULTI_CELL}" ];
 then
   case "${TF_STACK}" in
-    spiffe-realm|suite-callbacks)
+    spiffe-realm|suite-callbacks|certificate)
       [ -n "${TF_CELL:-}" ] || \
         die "${TF_ENV} is multi-cell (${CELLS[*]}): TF_STACK=${TF_STACK} needs TF_CELL, the cell whose load balancer it is for."
       STATE_KEY="environment/${TF_ENV}/${TF_CELL}/${STATE_KEY#"environment/${TF_ENV}/"}"
@@ -368,15 +384,27 @@ destroy_dependent_stacks() {
         # child's own assume step sees an assumed-role ARN, not a user's,
         # and leaves them alone. The forced-role variable is cleared so it
         # cannot try to chain a second assume from them.
-        MOCK_STS_DEPLOYER_ROLE_ARN= TF_STACK=spiffe-realm TF_CELL="${cell}" \
-          TF_REALM="${realm}" TF_ACTION=destroy "$0" || \
+        # TF_DATA_DIR CLEARED (#372): this process exported its own, and a
+        # child that inherited it would `init` its backend into it — so the
+        # environment's destroy below would read the child's state and
+        # destroy nothing, reporting success. Empty, the child derives one
+        # of its own.
+        IYA_STS_DEPLOYER_ROLE_ARN= TF_DATA_DIR= TF_STACK=spiffe-realm \
+          TF_CELL="${cell}" TF_REALM="${realm}" TF_ACTION=destroy "$0" || \
           die "the spiffe-realm stack for '${realm}' would not destroy, so '${TF_ENV}' was left alone. Fix that stack and run this again."
         ;;
       "${prefix}suite-callbacks.tfstate")
         say "dependent stack first: suite-callbacks"
-        MOCK_STS_DEPLOYER_ROLE_ARN= TF_STACK=suite-callbacks TF_CELL="${cell}" \
-          TF_ACTION=destroy "$0" || \
+        # TF_DATA_DIR cleared for the same reason (#372).
+        IYA_STS_DEPLOYER_ROLE_ARN= TF_DATA_DIR= TF_STACK=suite-callbacks \
+          TF_CELL="${cell}" TF_ACTION=destroy "$0" || \
           die "the suite-callbacks stack would not destroy, so '${TF_ENV}' was left alone. Fix that stack and run this again."
+        ;;
+      "${prefix}certificate.tfstate")
+        # THE PUBLIC CERTIFICATE (deploy/aws/certificate/): never a dependent
+        # to destroy. It outlives the environment so the next apply reuses it
+        # rather than paying for another issuance (rcbj, 2026-10-01).
+        say "kept: the public certificate's stack (${key})"
         ;;
       "${prefix}"*/*|"${prefix}global.tfstate")
         # A multi-cell environment's cell prefixes, its cells' own states and
@@ -399,7 +427,10 @@ destroy_dependent_stacks() {
 # once per step — each step an ordinary single-stack run with its own state,
 # lock, retry and output — and stops at the first step that fails.
 #
-#   APPLY    1. every cell with NO STATE YET, primary first, phase `base`:
+#   APPLY    0. every cell's region checked (preflight_regions): enabled on
+#               the account, permitted to the deployer, and offering the
+#               database the cells ask for — before anything is made
+#            1. every cell with NO STATE YET, primary first, phase `base`:
 #               its VPC, load balancer, cell database, and the subnet group,
 #               security group and namespace the global stack needs — with no
 #               node running, since the global database does not exist yet
@@ -412,6 +443,20 @@ destroy_dependent_stacks() {
 #            A cell that already has state skips step 1: `base` scales its
 #            nodes to zero, which on a running cell is an outage.
 #
+#            AFTER THE PRIMARY, THE CELLS OF A STEP RUN AT ONCE (#367,
+#            2026-09-30), TF_CELL_PARALLEL at a time: each is its own state,
+#            lock and region, and none reads another's. One after another,
+#            six cells' base phases — a cell database and its replica each,
+#            most of twenty minutes — and their full phases did not fit in
+#            the deployer's four-hour session. The primary still goes first
+#            and alone in each step: its image is the one ECR replicates
+#            from, its first init fills the provider cache the others read,
+#            and its nodes make the global schema the others start against.
+#            A cell of a step that fails lets the others FINISH (stopping an
+#            RDS create half way helps nothing) and then stops the apply,
+#            naming it. A cell whose conversion is pending (below) is applied
+#            on its own, after the parallel ones.
+#
 #   DESTROY  1. every cell's DEPENDENT stacks (spiffe-realm, suite-callbacks),
 #               while the cells they sit on still exist — the lesson of
 #               2026-09-20 (destroy_dependent_stacks)
@@ -420,8 +465,8 @@ destroy_dependent_stacks() {
 #               (RDS will not delete a writer with replicas), the secrets and
 #               their replicas. Everything it put INTO a cell's VPC goes here,
 #               or that VPC would not delete
-#            3. every cell, phase `base` — its destroy must not read a global
-#               state that is gone.
+#            3. every cell, phase `base`, TF_CELL_PARALLEL at once — its
+#               destroy must not read a global state that is gone.
 #
 #   PLAN     every cell, `full`, and `global` (a plan of a cell that has no
 #            global stack yet fails reading its state, which is the order
@@ -437,16 +482,240 @@ state_exists() {
 # it (and through it terraform) the way `tf` relays one below. The role is
 # already assumed; the forced-role variable is cleared so the child does not
 # try to chain a second assume from it.
+#
+# THE CHILD IS SENT TERM, NOT INT (#367): a background command starts with
+# SIGINT ignored, so the INT this relayed until 2026-09-30 never reached the
+# step — measured when cells_in_parallel was written — and an interrupted
+# multi-cell apply ran its current step to the end. `tf` in the child turns
+# TERM into terraform's interrupt.
+#
+# TF_DATA_DIR IS CLEARED TOO (#372), so a step never inherits a data
+# directory this process exported and `init`s its backend into it; a step
+# that names one in its arguments still gets it, since those come after.
 step() {
-  env MOCK_STS_DEPLOYER_ROLE_ARN= "$@" "$0" &
+  env IYA_STS_DEPLOYER_ROLE_ARN= TF_DATA_DIR= "$@" "$0" &
   local pid=$! rc=0
-  trap 'kill -INT "${pid}" 2>/dev/null || true' INT TERM
+  trap 'kill -TERM "${pid}" 2>/dev/null || true' INT TERM
   while :; do
     wait "${pid}" && rc=0 || rc=$?
     kill -0 "${pid}" 2>/dev/null || break
   done
   trap - INT TERM
   return "${rc}"
+}
+
+# ---------------------------------------------------------------------------
+# SEVERAL CELLS AT ONCE (#367). Each is this script again with TF_CELL, as
+# `step` runs one, in the background, its lines prefixed with the cell so
+# that six interleaved applies can be read apart. An interrupt reaches every
+# one (and through each, its terraform, as `tf` relays it). The cells that
+# failed are left in PARALLEL_FAILED; the function fails if any did.
+#
+#   cells_in_parallel apply base euw1 apse1 ...
+#   cells_in_parallel destroy base usw2 use2 ...
+# ---------------------------------------------------------------------------
+PARALLEL_FAILED=()
+cells_in_parallel() {
+  local action="$1" phase="$2"
+  shift 2
+  local max="${TF_CELL_PARALLEL:-6}" c
+  local -A cell_of=()
+  PARALLEL_FAILED=()
+  [ "$#" -gt 0 ] || return 0
+  [[ "${max}" =~ ^[1-9][0-9]*$ ]] || die "TF_CELL_PARALLEL='${max}' is not a positive number."
+  # TERM, NOT INT: bash starts a background command with SIGINT IGNORED
+  # (there is no job control in a script), and a signal ignored on entry
+  # cannot be trapped — measured, 2026-09-30. The child's `tf` answers TERM
+  # by interrupting its terraform, which is what an INT here means.
+  # AN INTERRUPT STOPS EVERY RUNNING CELL AND STARTS NO OTHER: the ones not
+  # yet begun are named as failed, so the apply stops with all of them
+  # listed and none left half made by a step nobody watched.
+  local interrupted=""
+  trap 'interrupted=1; for p in "${!cell_of[@]}"; do kill -TERM "${p}" 2>/dev/null || true; done' INT TERM
+  for c in "$@"; do
+    while [ "${#cell_of[@]}" -ge "${max}" ]; do
+      reap_cells
+    done
+    if [ -n "${interrupted}" ];
+    then
+      say "cell ${c}: not started (interrupted)"
+      PARALLEL_FAILED+=("${c}")
+      continue
+    fi
+    say "cell ${c}: ${action} ${phase} (with up to ${max} at once)"
+    # The prefixing sed ignores INT and TERM, which reach a whole process
+    # group from a terminal (and from `timeout`): it ends when its cell's
+    # output does, so the cell's last words — its terraform stopping — are
+    # still printed rather than killing the cell with SIGPIPE.
+    env IYA_STS_DEPLOYER_ROLE_ARN= TF_STACK=environment TF_CELL="${c}" \
+      TF_CELL_PHASE="${phase}" TF_ACTION="${action}" "$0" \
+      > >(trap '' INT TERM; exec sed -u "s/^/[${c}] /" >&2) 2>&1 &
+    cell_of[$!]="${c}"
+  done
+  while [ "${#cell_of[@]}" -gt 0 ]; do
+    reap_cells
+  done
+  trap - INT TERM
+  [ "${#PARALLEL_FAILED[@]}" -eq 0 ]
+}
+
+# Every child of cells_in_parallel that has ENDED, once each: `wait <pid>`
+# only on a pid `kill -0` finds gone, which returns its status and forgets
+# it. Reads and changes the caller's `cell_of` (bash's scoping is dynamic).
+# NOT `wait -n`: an interrupt can make it reap a child without naming it,
+# and every later `wait -n` on that pid then fails at once — the first
+# version of this looped on exactly that. A trap runs between two polls.
+reap_cells() {
+  local p rc
+  sleep 2
+  for p in "${!cell_of[@]}"; do
+    kill -0 "${p}" 2>/dev/null && continue
+    wait "${p}" && rc=0 || rc=$?
+    if [ "${rc}" -eq 0 ];
+    then
+      say "cell ${cell_of[${p}]}: ${action} ${phase} complete"
+    else
+      say "cell ${cell_of[${p}]}: ${action} ${phase} FAILED (exit ${rc})"
+      PARALLEL_FAILED+=("${cell_of[${p}]}")
+    fi
+    unset "cell_of[${p}]"
+  done
+}
+
+# THE PROVIDER, DOWNLOADED ONCE BEFORE SEVERAL INITS READ IT. Every step has
+# a data directory of its own (TF_DATA_DIR, below) and they share a plugin
+# cache, which Terraform does not promise is safe to FILL from several
+# processes at once — reading it is. An init with no backend fills it for
+# both stacks a cell apply uses, touching no state and calling no AWS API.
+warm_plugin_cache() {
+  local d
+  for d in environment global; do
+    ( cd "/workspace/deploy/aws/${d}" && \
+      TF_DATA_DIR="/tmp/tf-data/warm-${d}" terraform init -input=false \
+        -no-color -backend=false >/dev/null ) || \
+      die "could not fetch the providers for ${d}/ (terraform init -backend=false)."
+  done
+}
+
+# A variable of the environment stack as this apply will see it: the
+# environment's tfvars file, else TF_VAR_<name>, else the default in
+# variables.tf. For the preflight's advice only — terraform itself reads the
+# real thing — so a value it cannot find is '' and its check is skipped.
+env_var_value() {
+  local name="$1" v="" tfvars="/workspace/deploy/aws/environment/envs/${TF_ENV}.tfvars"
+  if [ -f "${tfvars}" ];
+  then
+    v="$(sed -n -E "s/^${name}[[:space:]]*=[[:space:]]*\"([^\"]*)\".*/\\1/p" "${tfvars}" | head -1)"
+  fi
+  if [ -z "${v}" ];
+  then
+    local envname="TF_VAR_${name}"
+    v="${!envname:-}"
+  fi
+  if [ -z "${v}" ];
+  then
+    v="$(awk -v n="${name}" '
+      $0 ~ "^variable \"" n "\"" { inside = 1 }
+      inside && /^[[:space:]]*default[[:space:]]*=/ {
+        if (match($0, /"[^"]*"/)) { print substr($0, RSTART + 1, RLENGTH - 2) }
+        exit
+      }
+      inside && /^}/ { exit }' /workspace/deploy/aws/environment/variables.tf)"
+  fi
+  echo "${v}"
+}
+
+# ---------------------------------------------------------------------------
+# EVERY CELL'S REGION, CHECKED BEFORE ANYTHING IS MADE (#367, 2026-09-30).
+# A region that fails any of these fails a cell's apply part way through —
+# with the cells before it built and billing — so each is asked first:
+#
+#   ENABLED    an opt-in region (ap-southeast-5, and every one launched since
+#              2019) refuses every call until an administrator enables it;
+#   PERMITTED  the deployer's region fence covers foundation/'s
+#              `permitted_regions` only, and a call it refuses there is the
+#              sign that foundation/ was not re-applied with the region;
+#   OFFERED    RDS offers PostgreSQL at the cells' version on their instance
+#              class there — a newer region may lag either.
+#
+# What it cannot ask cheaply — Fargate, Cloud Map, an exportable ACM
+# certificate, the region as a Route 53 latency region — shows up as the
+# cell's own apply failing, which stops the apply before the global stack.
+# ---------------------------------------------------------------------------
+preflight_regions() {
+  local c region status offered problems=()
+  local class version
+  class="$(env_var_value db_instance_class)"
+  version="$(env_var_value db_engine_version)"
+  for c in "${CELLS[@]}"; do
+    region="$(jq -r --arg c "${c}" '.cells[$c].region' "${CELLS_FILE}")"
+    status="$(aws ec2 describe-regions --region "${AWS_REGION}" --all-regions \
+      --region-names "${region}" --query 'Regions[0].OptInStatus' \
+      --output text 2>/dev/null || echo unknown)"
+    case "${status}" in
+      opt-in-not-required|opted-in) ;;
+      not-opted-in)
+        problems+=("${c} (${region}): an opt-in region this account has not enabled — an administrator enables it (Account -> AWS Regions, or aws account enable-region --region-name ${region}) and waits for ENABLED")
+        continue
+        ;;
+      *)
+        say "WARNING: could not ask whether ${region} is enabled (${status}); going on"
+        ;;
+    esac
+    if ! offered="$(aws rds describe-orderable-db-instance-options \
+      --region "${region}" --engine postgres ${version:+--engine-version "${version}"} \
+      ${class:+--db-instance-class "${class}"} \
+      --query 'length(OrderableDBInstanceOptions)' --output text 2>&1)";
+    then
+      if grep -q -E 'AccessDenied|UnauthorizedOperation|explicit deny' <<<"${offered}";
+      then
+        problems+=("${c} (${region}): the deployer may not act there — foundation/ has not been re-applied with ${region} in permitted_regions")
+      else
+        say "WARNING: could not ask RDS in ${region} what it offers; going on"
+      fi
+      continue
+    fi
+    if [ -n "${class}" ] && [ -n "${version}" ] && [ "${offered}" = "0" ];
+    then
+      problems+=("${c} (${region}): RDS offers no PostgreSQL ${version} on ${class} there — choose another class or version for this environment")
+    fi
+    say "cell ${c}: ${region} is ready"
+  done
+  if [ "${#problems[@]}" -gt 0 ];
+  then
+    printf '  %s\n' "${problems[@]}" >&2
+    die "${#problems[@]} cell region(s) not ready (above); nothing was applied."
+  fi
+}
+
+# The phase-full prelude of one cell: its conversion, when it is pending
+# (the held apply, the conversion task, the marker set DONE), or a word about
+# a snapshot that restored nothing. Serial, and before the cell's `full`.
+convert_if_pending() {
+  local c="$1"
+  case "$(conversion_state "${c}")" in
+    pending)
+      [ -n "$(cell_snapshot "${c}")" ] || \
+        die "cell ${c}'s database was restored from a snapshot and has NOT been converted yet (s3://${bucket}/$(conversion_marker_key "${c}") says pending), and this apply has no conversion to run: re-run it with TF_CONVERT=1. Its nodes were not started."
+      say "cell ${c}: full, nodes HELD at 0 until its conversion has run"
+      step TF_STACK=environment TF_CELL="${c}" TF_CELL_PHASE=full TF_CELL_HOLD=1 TF_ACTION=apply || \
+        die "cell ${c} did not apply its held phase; its conversion did not run and the cells after it (in: ${CELLS[*]}) were not applied."
+      convert_cell "${c}"
+      write_conversion_marker "${c}" "done"
+      ;;
+    "done")
+      say "cell ${c}: converted already (s3://${bucket}/$(conversion_marker_key "${c}")); not converting again"
+      ;;
+    *)
+      if [ -n "$(cell_snapshot "${c}")" ];
+      then
+        say "NOTE: cell ${c} names a snapshot, but it existed before this"
+        say "      apply and was not restored from it, so there is nothing"
+        say "      to convert. The snapshot is ignored (rds.tf,"
+        say "      ignore_changes)."
+      fi
+      ;;
+  esac
 }
 
 # ---------------------------------------------------------------------------
@@ -528,7 +797,7 @@ convert_cell() {
       assignPublicIp: .assign_public_ip } }' <<<"${out}")"
 
   task="$(aws ecs list-tasks --region "${region}" --cluster "${cluster}" \
-    --started-by mock-sts-cell-convert --desired-status RUNNING \
+    --started-by iya-sts-cell-convert --desired-status RUNNING \
     --query 'taskArns[0]' --output text 2>/dev/null || true)"
   if [ -n "${task}" ] && [ "${task}" != "None" ];
   then
@@ -537,7 +806,7 @@ convert_cell() {
     say "cell ${c}: running the conversion (${td##*/})"
     task="$(aws ecs run-task --region "${region}" --cluster "${cluster}" \
       --task-definition "${td}" --launch-type FARGATE --count 1 \
-      --started-by mock-sts-cell-convert \
+      --started-by iya-sts-cell-convert \
       --network-configuration "${network}" \
       --query 'tasks[0].taskArn' --output text)" || \
       die "cell ${c}: the conversion task could not be started; its nodes stay at 0."
@@ -565,7 +834,7 @@ convert_cell() {
       --tasks "${task}" --output json \
       | jq -r '.tasks[0] | "stopped: \(.stoppedReason // "?"); " +
           ([.containers[] | "\(.name) exit \(.exitCode // "none")\(if .reason then " (" + .reason + ")" else "" end)"] | join(", "))')"
-    die "cell ${c}: THE CONVERSION FAILED (${reason}). The tool leaves its sources in place; the cell's nodes stay at 0 and it is still pending. Its log: group /mock-sts/containers in ${region}, streams ${TF_ENV}-${c}-convert/*/${task##*/}. Fix the cause and apply again with TF_CONVERT=1."
+    die "cell ${c}: THE CONVERSION FAILED (${reason}). The tool leaves its sources in place; the cell's nodes stay at 0 and it is still pending. Its log: group /iya-sts/containers in ${region}, streams ${TF_ENV}-${c}-convert/*/${task##*/}. Fix the cause and apply again with TF_CONVERT=1."
   fi
   say "cell ${c}: converted (${task##*/})"
 }
@@ -575,6 +844,8 @@ orchestrate_cells() {
   say "multi-cell environment: cells ${CELLS[*]} (primary ${PRIMARY_CELL})"
   case "${TF_ACTION}" in
     apply)
+      preflight_regions
+      local new=() rest=() serial=()
       for c in "${CELLS[@]}"; do
         if state_exists "environment/${TF_ENV}/${c}.tfstate";
         then
@@ -587,41 +858,50 @@ orchestrate_cells() {
           then
             write_conversion_marker "${c}" pending
           fi
-          say "cell ${c}: base phase (no nodes yet)"
-          step TF_STACK=environment TF_CELL="${c}" TF_CELL_PHASE=base TF_ACTION=apply || \
-            die "cell ${c} did not apply its base phase; nothing after it was applied."
+          new+=("${c}")
         fi
       done
+      # The primary alone first (the header says why), then the rest at once.
+      if [ "${#new[@]}" -gt 0 ] && [ "${new[0]}" = "${PRIMARY_CELL}" ];
+      then
+        say "cell ${PRIMARY_CELL}: base phase (no nodes yet)"
+        step TF_STACK=environment TF_CELL="${PRIMARY_CELL}" TF_CELL_PHASE=base TF_ACTION=apply || \
+          die "cell ${PRIMARY_CELL} did not apply its base phase; nothing after it was applied."
+        new=("${new[@]:1}")
+      fi
+      if [ "${#new[@]}" -gt 0 ];
+      then
+        warm_plugin_cache
+        cells_in_parallel apply base "${new[@]}" || \
+          die "cell(s) ${PARALLEL_FAILED[*]} did not apply their base phase (each one's lines are prefixed with its id, above); the global stack and every cell's nodes were left alone. Apply again: a cell that did finish has state now and skips its base."
+      fi
       say "global"
       step TF_STACK=global TF_ACTION=apply || \
         die "the global stack did not apply; no cell's nodes were started or changed."
-      for c in "${CELLS[@]}"; do
-        case "$(conversion_state "${c}")" in
-          pending)
-            [ -n "$(cell_snapshot "${c}")" ] || \
-              die "cell ${c}'s database was restored from a snapshot and has NOT been converted yet (s3://${bucket}/$(conversion_marker_key "${c}") says pending), and this apply has no conversion to run: re-run it with TF_CONVERT=1. Its nodes were not started."
-            say "cell ${c}: full, nodes HELD at 0 until its conversion has run"
-            step TF_STACK=environment TF_CELL="${c}" TF_CELL_PHASE=full TF_CELL_HOLD=1 TF_ACTION=apply || \
-              die "cell ${c} did not apply its held phase; its conversion did not run and the cells after it (in: ${CELLS[*]}) were not applied."
-            convert_cell "${c}"
-            write_conversion_marker "${c}" "done"
-            ;;
-          "done")
-            say "cell ${c}: converted already (s3://${bucket}/$(conversion_marker_key "${c}")); not converting again"
-            ;;
-          *)
-            if [ -n "$(cell_snapshot "${c}")" ];
-            then
-              say "NOTE: cell ${c} names a snapshot, but it existed before this"
-              say "      apply and was not restored from it, so there is nothing"
-              say "      to convert. The snapshot is ignored (rds.tf,"
-              say "      ignore_changes)."
-            fi
-            ;;
-        esac
+      convert_if_pending "${PRIMARY_CELL}"
+      say "cell ${PRIMARY_CELL}: full"
+      step TF_STACK=environment TF_CELL="${PRIMARY_CELL}" TF_CELL_PHASE=full TF_ACTION=apply || \
+        die "cell ${PRIMARY_CELL} did not apply; the cells after it (in: ${CELLS[*]}) were not applied."
+      for c in "${CELLS[@]:1}"; do
+        if [ "$(conversion_state "${c}")" = "pending" ];
+        then
+          serial+=("${c}")
+        else
+          convert_if_pending "${c}"
+          rest+=("${c}")
+        fi
+      done
+      if [ "${#rest[@]}" -gt 0 ];
+      then
+        warm_plugin_cache
+        cells_in_parallel apply full "${rest[@]}" || \
+          die "cell(s) ${PARALLEL_FAILED[*]} did not apply (each one's lines are prefixed with its id, above)${serial[*]:+; the cells still to convert (${serial[*]}) were not applied}. Apply again."
+      fi
+      for c in "${serial[@]}"; do
+        convert_if_pending "${c}"
         say "cell ${c}: full"
         step TF_STACK=environment TF_CELL="${c}" TF_CELL_PHASE=full TF_ACTION=apply || \
-          die "cell ${c} did not apply; the cells after it (in: ${CELLS[*]}) were not applied."
+          die "cell ${c} did not apply; the cells after it (in: ${serial[*]}) were not applied."
       done
       ;;
     destroy)
@@ -635,15 +915,20 @@ orchestrate_cells() {
         step TF_STACK=global TF_ACTION=destroy || \
           die "the global stack would not destroy, so no cell was touched. Fix it and run this again."
       fi
+      warm_plugin_cache
+      local destroyed=0
+      cells_in_parallel destroy base "${CELLS[@]}" || destroyed=1
       for c in "${CELLS[@]}"; do
-        say "cell ${c}"
-        step TF_STACK=environment TF_CELL="${c}" TF_CELL_PHASE=base TF_ACTION=destroy || \
-          die "cell ${c} would not destroy. Re-run the destroy; the ones before it are gone."
         # Its conversion marker goes with it: a cell made again under the
         # same name is a new database, restored or empty.
-        aws s3api delete-object --bucket "${bucket}" \
-          --key "$(conversion_marker_key "${c}")" >/dev/null 2>&1 || true
+        if [[ " ${PARALLEL_FAILED[*]} " != *" ${c} "* ]];
+        then
+          aws s3api delete-object --bucket "${bucket}" \
+            --key "$(conversion_marker_key "${c}")" >/dev/null 2>&1 || true
+        fi
       done
+      [ "${destroyed}" -eq 0 ] || \
+        die "cell(s) ${PARALLEL_FAILED[*]} would not destroy — they may still be running and billing. Re-run the destroy; the others are gone."
       ;;
     plan|output)
       for c in "${CELLS[@]}"; do
@@ -676,13 +961,17 @@ say "${TF_DIR}"
 # `dev` and `ci` have none and take the variables' defaults, which are the test
 # arrangement; a deployment (`testidp`) names what differs.
 VAR_FILE_ARGS=()
-if [ "${TF_STACK}" = "environment" ] && [ -f "envs/${TF_ENV}.tfvars" ];
+# The certificate stack reads the SAME files (public_hostname,
+# public_zone_name, the cells' regions), from the environment's directory.
+ENV_DIR=/workspace/deploy/aws/environment
+if { [ "${TF_STACK}" = "environment" ] || [ "${TF_STACK}" = "certificate" ]; } && [ -f "${ENV_DIR}/envs/${TF_ENV}.tfvars" ];
 then
   say "variables: envs/${TF_ENV}.tfvars"
-  VAR_FILE_ARGS=(-var-file="envs/${TF_ENV}.tfvars")
+  VAR_FILE_ARGS=(-var-file="${ENV_DIR}/envs/${TF_ENV}.tfvars")
 fi
-# A cell and the global stack both read the environment's cells file (#98).
-if [ -n "${MULTI_CELL}" ] && { [ "${TF_STACK}" = "global" ] || [ "${TF_STACK}" = "environment" ]; };
+# A cell, the global stack and a cell's certificate read the environment's
+# cells file (#98).
+if [ -n "${MULTI_CELL}" ] && { [ "${TF_STACK}" = "global" ] || [ "${TF_STACK}" = "environment" ] || [ "${TF_STACK}" = "certificate" ]; };
 then
   say "cells: envs/${TF_ENV}.cells.tfvars.json"
   VAR_FILE_ARGS+=(-var-file="${CELLS_FILE}")
@@ -710,11 +999,20 @@ tf() {
   return "${rc}"
 }
 
+# A DATA DIRECTORY PER STACK AND CELL (#367): cells_in_parallel runs several
+# cells' steps in ONE container at once, and a shared .terraform would have
+# one step's init re-point the backend under another's apply. The providers
+# come from one shared cache, filled before any parallel step
+# (warm_plugin_cache). The lock file stays beside the configuration.
+export TF_DATA_DIR="${TF_DATA_DIR:-/tmp/tf-data/${TF_STACK}${TF_CELL:+-${TF_CELL}}${TF_REALM:+-${TF_REALM}}}"
+mkdir -p "${TF_DATA_DIR}"
+
 say "terraform init"
 if [ "${TF_STACK}" != "foundation" ];
 then
   # -reconfigure: a multi-cell apply runs every cell's step in ONE container,
-  # over one .terraform directory, and each step names its own state key —
+  # over one .terraform directory until #367 gave each its own — and each
+  # step names its own state key —
   # without it the second cell's init stopped at "Backend configuration
   # changed" (testidpna, 2026-09-30). The state is always in S3, so there is
   # nothing to migrate; the key is simply the one this step is for.
@@ -725,12 +1023,113 @@ else
     -backend-config="bucket=${bucket}" >&2
 fi
 
+# ---------------------------------------------------------------------------
+# THE PUBLIC CERTIFICATE IS KEPT AND REUSED (rcbj, 2026-10-01). An exportable
+# ACM certificate is billed per issuance, and requesting a new one on every
+# build was the largest line item of September's AWS bill. So it is
+# deploy/aws/certificate/'s, a stack applied before every environment apply
+# and never destroyed with the environment; certificate/main.tf argues it.
+# ---------------------------------------------------------------------------
+
+# Before an environment apply: apply its certificate stack, which changes
+# nothing when the certificate is already there. A child of this script, as
+# `step` runs one, so the certificate's state and lock are its own.
+apply_certificate_stack() {
+  say "the public certificate first (deploy/aws/certificate)"
+  step TF_STACK=certificate TF_CELL="${TF_CELL:-}" TF_ACTION=apply || \
+    die "the certificate stack did not apply, so ${TF_ENV}${TF_CELL:+ cell ${TF_CELL}} was left alone. Fix it and apply again."
+}
+
+# The first apply of a certificate stack ADOPTS an existing certificate rather
+# than requesting another: an issued, EXPORTABLE ACM certificate for the
+# name, in this stack's region — the one an environment made before the
+# certificate moved, or one a previous certificate stack held. The newest
+# wins; a cell's must name its console name too, or a new one is requested
+# (a SAN cannot be added to an existing certificate). Sets TF_VAR_adopt_\
+# certificate_arn, which certificate/main.tf's import block reads.
+adopt_existing_certificate() {
+  if terraform state list 2>/dev/null | grep -q '^aws_acm_certificate\.public\[0\]$';
+  then
+    return 0
+  fi
+  local facts host region console arns arn best="" best_at="" described
+  facts="$(echo 'jsonencode({ host = var.public_hostname, region = var.cell != "" ? var.cells[var.cell].region : var.aws_region, console = var.cell != "" && var.public_hostname != "" ? "${var.cell}.${var.public_hostname}" : "" })' | \
+    terraform console -no-color "${VAR_FILE_ARGS[@]}" 2>/dev/null | tail -n 1)" || facts=""
+  facts="$(printf '%s' "${facts}" | jq -r 'fromjson? // .' 2>/dev/null)" || facts=""
+  host="$(printf '%s' "${facts}" | jq -r '.host // empty' 2>/dev/null)"
+  region="$(printf '%s' "${facts}" | jq -r '.region // empty' 2>/dev/null)"
+  console="$(printf '%s' "${facts}" | jq -r '.console // empty' 2>/dev/null)"
+  if [ -z "${host}" ];
+  then
+    return 0
+  fi
+  arns="$(aws acm list-certificates --region "${region}" \
+    --certificate-statuses ISSUED --includes keyTypes=EC_prime256v1 \
+    --query "CertificateSummaryList[?DomainName=='${host}'].CertificateArn" \
+    --output text 2>/dev/null)" || arns=""
+  [ "${arns}" = "None" ] && arns=""
+  for arn in ${arns}; do
+    described="$(aws acm describe-certificate --region "${region}" \
+      --certificate-arn "${arn}" --output json 2>/dev/null)" || continue
+    printf '%s' "${described}" | jq -e '.Certificate.Options.Export == "ENABLED"' >/dev/null || continue
+    if [ -n "${console}" ];
+    then
+      printf '%s' "${described}" | \
+        jq -e --arg c "${console}" '.Certificate.SubjectAlternativeNames | index($c)' >/dev/null || continue
+    fi
+    local at
+    at="$(printf '%s' "${described}" | jq -r '.Certificate.IssuedAt // .Certificate.CreatedAt // ""')"
+    if [ -z "${best}" ] || [[ "${at}" > "${best_at}" ]];
+    then
+      best="${arn}"
+      best_at="${at}"
+    fi
+  done
+  if [ -n "${best}" ];
+  then
+    say "adopting the existing certificate for ${host}: ${best}"
+    export TF_VAR_adopt_certificate_arn="${best}"
+  else
+    say "no existing exportable certificate for ${host}${console:+ (and ${console})} in ${region}: one will be requested"
+  fi
+}
+
+# An environment that recorded the certificate before it moved: take it (and
+# its validation) out of the environment's state before a destroy, so the
+# destroy cannot delete it whatever Terraform makes of the `removed` blocks.
+forget_environment_certificate() {
+  local address
+  for address in $(terraform state list 2>/dev/null | \
+    grep -E '^(aws_acm_certificate\.public|aws_acm_certificate_validation\.public|aws_route53_record\.certificate_validation)(\[|$)'); do
+    say "kept: ${address} (forgotten by this state; the certificate stack adopts it)"
+    terraform state rm -no-color "${address}" >&2 || \
+      die "could not take ${address} out of ${TF_ENV}'s state, so the destroy was not started: it would have deleted the certificate."
+  done
+}
+
+if [ "${TF_STACK}" = "environment" ] && [ "${TF_ACTION}" = "apply" ];
+then
+  apply_certificate_stack
+fi
+if [ "${TF_STACK}" = "certificate" ] && [ "${TF_ACTION}" = "apply" ];
+then
+  adopt_existing_certificate
+fi
+
 case "${TF_ACTION}" in
   init)     say "init only." ;;
   validate) terraform validate -no-color ;;
   plan)     tf plan -input=false -no-color "${VAR_FILE_ARGS[@]}" ;;
   apply)    tf apply -input=false -no-color -auto-approve "${VAR_FILE_ARGS[@]}" ;;
   destroy)
+    if [ "${TF_STACK}" = "certificate" ] && [ "${STS_DESTROY_CERTIFICATE:-}" != "yes" ];
+    then
+      die "the public certificate is kept across builds (an exportable certificate is billed per issuance), so this destroy was refused. Set STS_DESTROY_CERTIFICATE=yes to delete it anyway."
+    fi
+    if [ "${TF_STACK}" = "environment" ];
+    then
+      forget_environment_certificate
+    fi
     if [ "${TF_STACK}" = "environment" ];
     then
       if [ -n "${MULTI_CELL}" ];
@@ -758,7 +1157,7 @@ case "${TF_ACTION}" in
   # non-destructive repair. TF_IMPORT_ADDRESS is the resource address,
   # TF_IMPORT_ID the provider's identifier (an RDS instance's is its name).
   #   TF_IMPORT_ADDRESS=aws_db_instance.primary \
-  #   TF_IMPORT_ID=mock-sts-testidp-primary IMAGE_TAG=<tag> \
+  #   TF_IMPORT_ID=iya-sts-testidp-primary IMAGE_TAG=<tag> \
   #   deploy/aws/terraform-local.sh testidp import
   import)
     [ -n "${TF_IMPORT_ADDRESS:-}" ] && [ -n "${TF_IMPORT_ID:-}" ] || \

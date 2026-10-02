@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -9387,16 +9387,33 @@ class OAuth2Server {
         // default, #139).
         verified = helpers.verifyOwnCompactJws(hint, { algorithms: [alg] });
       } else if (/^HS(256|384|512)$/.test(alg)) {
-        const registered = applications.registrationOf(clientId) || {};
-        if (!registered.client_secret) {
+        // EVERY SECRET THE CLIENT HOLDS (2026-10-01): this service signed
+        // the hint with whichever was the primary then, and a rotation since
+        // may have put another in front of it.
+        const clientConfig: Json = applications.clientConfigOf(clientId) ||
+          {};
+        const held: Json[] = clientConfig.client_secrets || [];
+        if (!held.length) {
           log.debug("Leaving OAuth2Server.verifyIdTokenHint(). No secret.");
           return { ok: false, why: 'the id_token_hint is signed with ' + alg +
                    ' and client "' + clientId + '" has no client_secret to ' +
                    'verify it with.' };
         }
-        verified = stsCrypto.verifyCompactJws(hint,
-          Buffer.from(String(registered.client_secret), 'utf8'),
-          { algorithms: [alg] });
+        let lastError: Json = null;
+        for (const one of held) {
+          try {
+            verified = stsCrypto.verifyCompactJws(hint,
+              Buffer.from(String(one.secret), 'utf8'), { algorithms: [alg] });
+            break;
+          } catch (e) {
+            log.debug("Caught in OAuth2Server.verifyIdTokenHint(): " +
+                      ((e && e.message) || e));
+            lastError = e;
+          }
+        }
+        if (!verified) {
+          throw lastError;
+        }
       } else {
         const keys: Json[] = await allSigningKeysAsync();
         const entry = keys.filter(function (one: Json) {
@@ -11743,12 +11760,30 @@ class OAuth2Server {
   private secretPresented(presented: Json, registered: Json): Json {
     const { log } = this.deps;
     log.debug("Entering OAuth2Server.secretPresented().");
-    const method = String((registered &&
-                           registered.token_endpoint_auth_method) ||
-                          '');
+    // Any of the declared methods (2026-10-01): an assertion from a client
+    // that may use client_secret_jwt may be one signed with its secret.
+    const methods = [].concat((registered &&
+      (registered.token_endpoint_auth_methods ||
+       [registered.token_endpoint_auth_method])) || []).map(String);
     log.debug("Leaving OAuth2Server.secretPresented().");
     return !!(presented.basic || presented.bodySecret ||
-              (presented.assertion && method === 'client_secret_jwt'));
+              (presented.assertion &&
+               methods.indexOf('client_secret_jwt') >= 0));
+  }
+
+  // WHICH OF THE CLIENT'S DECLARED METHODS THIS REQUEST PRESENTED
+  // (2026-10-01): an entry may declare several, and the advertised-methods
+  // check is about the one in use, which `client_auth.methodFor()` reads off
+  // the wire. A client declaring one method gets that method, as before.
+  private presentedMethodOf(req: Req, client: Json, registered: Json): string {
+    const { log, clientAuth } = this.deps;
+    log.debug("Entering OAuth2Server.presentedMethodOf().");
+    const method = clientAuth.methodFor(registered || {}, {
+      request: req, clientSecret: client && client.client_secret,
+      assertion: client && client.assertion,
+      assertionType: client && client.assertionType });
+    log.debug("Leaving OAuth2Server.presentedMethodOf(). " + method);
+    return String(method || '');
   }
 
   // **COUNTED IN THE CLUSTER'S SHARED WINDOW SINCE 2026-09-14 (#46)**, and
@@ -12059,8 +12094,8 @@ class OAuth2Server {
     // server's capabilities rather than about the credential.
     const advertisedAuth = self.capabilityFor(
       req, 'token_endpoint_auth_methods_supported');
-    const declaredMethod = (applications.clientConfigOf(client.client_id) || {})
-      .token_endpoint_auth_method;
+    const declaredMethod = self.presentedMethodOf(req, client,
+      applications.clientConfigOf(client.client_id) || {});
     if (declaredMethod && advertisedAuth &&
         advertisedAuth.indexOf(String(declaredMethod)) < 0) {
       log.debug("Leaving the token endpoint. " + self.profileOf(req) +
@@ -15654,7 +15689,7 @@ class OAuth2Server {
     // -------------------
     const advertisedAuth = self.capabilityFor(
       req, 'token_endpoint_auth_methods_supported');
-    const declaredMethod = String(registered.token_endpoint_auth_method || '');
+    const declaredMethod = self.presentedMethodOf(req, client, registered);
     if (declaredMethod && advertisedAuth &&
         advertisedAuth.indexOf(declaredMethod) < 0) {
       log.debug("Leaving OAuth2Server.parRequest(). " + self.profileOf(req) +
@@ -16272,8 +16307,7 @@ class OAuth2Server {
     // is about the server's capabilities rather than about the credential. A
     // removed member means the check does not run.
     const advertisedAuth = self.capabilityFor(req, opts.capability);
-    const declaredMethod = String(registered.token_endpoint_auth_method ||
-                                  '');
+    const declaredMethod = self.presentedMethodOf(req, client, registered);
     if (declaredMethod && advertisedAuth &&
         advertisedAuth.indexOf(declaredMethod) < 0) {
       log.debug("Leaving OAuth2Server.authenticateEndpointCaller(). " +
@@ -17508,10 +17542,10 @@ class OAuth2Server {
   private registeredSecretExpiry(issuedAt: Json): Json {
     const { log, config } = this.deps;
     log.debug("Entering OAuth2Server.registeredSecretExpiry().");
-    const seconds = Number(config.value('oauth2.registeredSecretLifetimeS'));
+    const days = Number(config.value('oauth2.clientSecretLifetimeDays'));
     log.debug("Leaving OAuth2Server.registeredSecretExpiry().");
-    return isFinite(seconds) && seconds > 0 ?
-      issuedAt + Math.floor(seconds) : 0;
+    return isFinite(days) && days > 0 ?
+      issuedAt + Math.floor(days) * 86400 : 0;
   }
 
   private clientRecord(base: Json, metadata: Json, clientId: Json,
@@ -17524,7 +17558,7 @@ class OAuth2Server {
       client_id: clientId,
       client_id_issued_at: issuedAt,
       client_secret: secret,
-      // `oauth2.registeredSecretLifetimeS`; 0 = never, the default.
+      // `oauth2.clientSecretLifetimeDays`; 0 = never, the default.
       client_secret_expires_at: self.registeredSecretExpiry(issuedAt),
       registration_access_token: token,
       registration_client_uri: base + '/oauth2/register/' + clientId

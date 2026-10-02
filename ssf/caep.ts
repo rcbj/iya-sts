@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -260,6 +260,16 @@ const register = realms.map({ persist: 'caep.register' });
  * `ssf/ssf.ts` delivers it. A row outlives its session, capped by
  * `caep.maxSessionsTracked`.
  */
+
+// WHAT THE COMMON CLAIMS WERE BUILT FROM (2026-10-01), kept on the payload
+// under a symbol so it rides along in this process and never in a SET: the
+// event's timestamp and its two reasons whether or not the service-wide
+// settings put them in. A stream whose owning application overrides
+// caep.includeReasons, caep.reasonLanguage or caep.omitEventTimestamp
+// has its SET's copy rebuilt from it (`ssf.ts`'s commonClaimsForStream()).
+// Typed `any`: a symbol may not index the `Record<string, any>` payloads.
+const COMMON_SOURCE: any = Symbol.for('sts.ssf.commonSource');
+
 class CaepRegister {
   /**
    * The acts this service can observe, each mapped to the short name of the
@@ -813,10 +823,16 @@ class CaepRegister {
     log.debug("Entering CaepRegister.commonClaims().");
     const asked = options || {};
     const out: Record<string, any> = {};
+    const timestamp = typeof asked.eventTimestamp === 'number'
+      ? asked.eventTimestamp : nowSec();
     if (!config.value('caep.omitEventTimestamp')) {
-      out.event_timestamp = typeof asked.eventTimestamp === 'number'
-        ? asked.eventTimestamp : nowSec();
+      out.event_timestamp = timestamp;
     }
+    Object.defineProperty(out, COMMON_SOURCE, {
+      value: { family: 'caep', eventTimestamp: timestamp,
+               reasonAdmin: asked.reasonAdmin ? String(asked.reasonAdmin) : '',
+               reasonUser: asked.reasonUser ? String(asked.reasonUser) : '' },
+      enumerable: false });
     if (['admin', 'user', 'policy', 'system']
         .indexOf(asked.initiatingEntity) >= 0) {
       out.initiating_entity = asked.initiatingEntity;
@@ -861,8 +877,10 @@ class CaepRegister {
       log.debug("Leaving CaepRegister.buildPayload(). Unknown type.");
       return {};
     }
-    const payload = Object.assign({}, row.generate(values || {}),
-                                  this.commonClaims(options));
+    const common = this.commonClaims(options);
+    const payload = Object.assign({}, row.generate(values || {}), common);
+    Object.defineProperty(payload, COMMON_SOURCE,
+                          { value: common[COMMON_SOURCE], enumerable: false });
     log.debug("Leaving CaepRegister.buildPayload(). " +
               Object.keys(payload).length + ' member(s).');
     return payload;

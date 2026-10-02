@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 "use strict";
 //
@@ -453,7 +453,7 @@ async function test() {
            "the WS-Trust intermediary's application entry");
   for (const client of [MID, MID2]) {
     await ok(realmApi + "/applications/create",
-             { identifier: client, protocols: ["oauth2"],
+             { identifier: client, protocols: ["oauth2", "oidc"],
                fields: { oauthClientId: [client], oauthClientSecret: SECRET,
                          oauthTokenEndpointAuthMethod: "client_secret_post",
                          oauthGrantType: ["client_credentials", EXCHANGE],
