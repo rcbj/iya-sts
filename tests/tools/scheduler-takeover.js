@@ -116,9 +116,13 @@ async function patiently(url, options, body) {
   throw last;
 }
 
-async function report(base) {
+// `job`, where given, narrows the runs to that job's: the newest 500 runs of
+// every job are a few minutes of history on a busy cluster, so a record from
+// earlier than that is not in an unfiltered answer at all.
+async function report(base, job) {
   log.debug('Entering report().');
-  const r = await patiently(base + '/admin-api/scheduler?per=500');
+  const r = await patiently(base + '/admin-api/scheduler?per=500' +
+                            (job ? '&job=' + encodeURIComponent(job) : ''));
   if (r.status !== 200 || !r.json) {
     log.debug('Leaving report(). Refused.');
     throw new Error('GET /admin-api/scheduler answered ' + r.status + ' ' +
@@ -242,8 +246,11 @@ async function after(base, stopped) {
     return j.id === one.jobId;
   })[0];
   const timeoutMs = Number(job && job.timeoutMs) || 600000;
+  // THE TAKEOVER IS LOOKED FOR AMONG THAT JOB'S RUNS ALONE (2026-10-01): the
+  // unfiltered newest 500 scroll past it within minutes, and this wait then
+  // ran to its whole bound with the takeover already recorded.
   await until('the dead node\'s run to be taken over', async function () {
-    const r = await report(base);
+    const r = await report(base, one.jobId);
     return (r.runs || []).some(function (x) {
       return x.abandonedOf === one.runId;
     });
