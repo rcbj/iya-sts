@@ -84,7 +84,8 @@ function childMain() {
         });
       });
       req.on('error', function (e) {
-        resolve({ status: 0, body: '', json: null, error: e.code || e.message });
+        resolve({ status: 0, body: '', json: null,
+                  error: e.code || e.message });
       });
     });
   }
