@@ -1587,7 +1587,8 @@ function create(options) {
     log.debug("Entering resealExtra(). " + one.table);
     const keyList = one.keys.join(', ');
     log.debug("Leaving resealExtra().");
-    return pool.query('SELECT ' + keyList + ', ' + textOf(one) + ' AS v ' +
+    return maintenanceQuery('the re-encryption pass',
+                      'SELECT ' + keyList + ', ' + textOf(one) + ' AS v ' +
                       'FROM ' + one.table + ' WHERE ' + textOf(one) +
                       ' LIKE $1 ESCAPE \'\\\' LIMIT $2', [like, limit]
     ).then(function (r) {
@@ -1603,7 +1604,8 @@ function create(options) {
           }).join(' AND ');
           const n = one.keys.length;
           const cast = one.jsonb ? '::jsonb' : '';
-          return withTransaction(function (client) {
+          return maintenanceTransaction('the re-encryption pass',
+                                        function (client) {
             return client.query(
               'UPDATE ' + one.table + ' SET ' + one.column + ' = $' +
               (n + 1) + cast + ' WHERE ' + where + ' AND ' + one.column +
@@ -1693,13 +1695,76 @@ function create(options) {
   // Every entry, in key order: `visit(row, opened)`, where `opened` is the
   // text holding the entry's attributes (the blob opened, or the plain
   // JSON) and null for a blob that does not open. Resolves the row count.
+  // -------------------------------------------------------------------------
+  // THE MAINTENANCE PASSES WAIT FOR A CONNECTION RATHER THAN FAIL (2026-10-02).
+  // The pool's five-second wait is for a REQUEST, which is answered 503 rather
+  // than left hanging (POOL_FLOOR's note). The re-encryption pass and the
+  // data-key count are scheduler jobs walking every sealed row, and one query
+  // that met a full pool failed the whole pass: in single-node, with the bulk
+  // loads flushing thousands of entries through the front process beside it,
+  // `keys.data-key-reencrypt` ran 36 s and then failed on "timeout exceeded
+  // when trying to connect" (sts_data_keys, locally and in CI run
+  // 36967212793). A connect timeout is retried here, four times, one, two,
+  // three and four seconds apart; any other error is the caller's at once.
+  // Safe to repeat: every write these passes make is a compare-and-swap on
+  // the value it read. A bounded loop inside one operation, not a timer that
+  // re-arms (tests/no_periodic_timers.js).
+  // -------------------------------------------------------------------------
+  const MAINTENANCE_CONNECT_RETRIES = 4;
+
+  function connectTimedOut(e) {
+    log.debug("Entering connectTimedOut().");
+    log.debug("Leaving connectTimedOut().");
+    return /timeout exceeded when trying to connect/i.test(
+      String((e && e.message) || e));
+  }
+
+  async function maintenance(what, fn) {
+    log.debug("Entering maintenance(). " + what);
+    for (let attempt = 0; ; attempt++) {
+      try {
+        const out = await fn();
+        log.debug("Leaving maintenance().");
+        return out;
+      } catch (e) {
+        log.debug("Caught in maintenance(): " + ((e && e.message) || e));
+        if (!connectTimedOut(e) || attempt >= MAINTENANCE_CONNECT_RETRIES) {
+          log.debug("Leaving maintenance(). Failed.");
+          throw e;
+        }
+        log.info('persistence: ' + what + ' waited for a database ' +
+                 'connection and got none; trying again in ' +
+                 (attempt + 1) + ' s.');
+        await new Promise(function (resolve) {
+          setTimeout(resolve, 1000 * (attempt + 1));
+        });
+      }
+    }
+  }
+
+  function maintenanceQuery(what, sql, params) {
+    log.debug("Entering maintenanceQuery().");
+    log.debug("Leaving maintenanceQuery().");
+    return maintenance(what, function () {
+      return pool.query(sql, params);
+    });
+  }
+
+  function maintenanceTransaction(what, fn) {
+    log.debug("Entering maintenanceTransaction().");
+    log.debug("Leaving maintenanceTransaction().");
+    return maintenance(what, function () {
+      return withTransaction(fn);
+    });
+  }
+
   function walkDirectory(visit) {
     log.debug("Entering walkDirectory().");
     const crypto = require('../common/crypto');
     const keystore = require('../common/keystore');
     let seen = 0;
     const page = function (afterRealm, afterKey) {
-      return pool.query(
+      return maintenanceQuery('the directory walk',
         'SELECT realm, dn_key, dn, attrs FROM sts_ldap_entries ' +
         'WHERE (realm, dn_key) > ($1, $2) ORDER BY realm, dn_key LIMIT $3',
         [afterRealm, afterKey, WALK_PAGE]
@@ -6207,7 +6272,7 @@ function create(options) {
       log.debug("Leaving countSealed().");
       return Promise.all(ids.map(function (id) {
         const like = sealedLike(id);
-        return pool.query(
+        return maintenanceQuery('the data-key count',
           'SELECT ' +
           '(SELECT count(*) FROM sts_keys WHERE realm NOT LIKE \'dek:%\' ' +
           '   AND material LIKE $1 ESCAPE \'\\\') + ' +
@@ -6295,7 +6360,8 @@ function create(options) {
       return ids.reduce(function (chain, id) {
         const like = sealedLike(id);
         return chain.then(function () {
-          return pool.query('SELECT handle, realm, key, body FROM sts_minted ' +
+          return maintenanceQuery('the re-encryption pass',
+                            'SELECT handle, realm, key, body FROM sts_minted ' +
                             'WHERE body LIKE $1 ESCAPE \'\\\' LIMIT $2',
                             [like, limit]);
         }).then(function (r) {
@@ -6306,7 +6372,8 @@ function create(options) {
                 tally.skipped += 1;
                 return null;
               }
-              return withTransaction(function (client) {
+              return maintenanceTransaction('the re-encryption pass',
+                                            function (client) {
                 return client.query(
                   'UPDATE sts_minted SET body = $4, written_at = now() ' +
                   'WHERE handle = $1 AND realm = $2 AND key = $3 AND ' +
@@ -6328,7 +6395,8 @@ function create(options) {
             });
           }, Promise.resolve());
         }).then(function () {
-          return pool.query('SELECT name, material FROM sts_cluster_secrets ' +
+          return maintenanceQuery('the re-encryption pass',
+                            'SELECT name, material FROM sts_cluster_secrets ' +
                             'WHERE material LIKE $1 ESCAPE \'\\\' LIMIT $2',
                             [like, limit]);
         }).then(function (r) {
@@ -6339,7 +6407,7 @@ function create(options) {
                 tally.skipped += 1;
                 return null;
               }
-              return pool.query(
+              return maintenanceQuery('the re-encryption pass',
                 'UPDATE sts_cluster_secrets SET material = $2 ' +
                 'WHERE name = $1 AND material = $3',
                 [row.name, next, row.material]
@@ -6392,7 +6460,8 @@ function create(options) {
                                                                 row.dn_key,
                                                                 attrs || {}));
           budget -= 1;
-          return withTransaction(function (client) {
+          return maintenanceTransaction('the re-encryption pass',
+                                        function (client) {
             return client.query(
               'UPDATE sts_ldap_entries SET attrs = $3::jsonb ' +
               'WHERE realm = $1 AND dn_key = $2 AND attrs = $4::jsonb',
