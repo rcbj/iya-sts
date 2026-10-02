@@ -1711,6 +1711,27 @@ function create(options) {
   // re-arms (tests/no_periodic_timers.js).
   // -------------------------------------------------------------------------
   const MAINTENANCE_CONNECT_RETRIES = 4;
+  // How many of one maintenance pass's queries may be in flight at once.
+  const MAINTENANCE_CONCURRENCY = 2;
+
+  // `items` through `fn`, at most `width` at a time, the answers in order.
+  async function inTurns(items, width, fn) {
+    log.debug("Entering inTurns(). " + items.length);
+    const out = new Array(items.length);
+    let next = 0;
+    const lanes = [];
+    for (let lane = 0; lane < Math.max(1, width); lane++) {
+      lanes.push((async function () {
+        while (next < items.length) {
+          const at = next++;
+          out[at] = await fn(items[at], at);
+        }
+      })());
+    }
+    await Promise.all(lanes);
+    log.debug("Leaving inTurns().");
+    return out;
+  }
 
   function connectTimedOut(e) {
     log.debug("Entering connectTimedOut().");
@@ -2567,9 +2588,59 @@ function create(options) {
     };
   }
 
-  function withTransaction(fn) {
+  // ---------------------------------------------------------------------------
+  // A DEADLOCK IS RETRIED HERE, NOT ANSWERED (2026-10-02). PostgreSQL ends one
+  // of two transactions that wait on each other with SQLSTATE 40P01, rolls
+  // it back WHOLE, and expects the client to run it again; a serialization
+  // failure (40001) is the same contract. Until this, the error went to the
+  // caller: a flush was retried later while the request whose change was in it
+  // was answered 503 (#351) — in CI run 36986913696's cluster job that was the
+  // console's back-channel token request, during two nodes' builds of one new
+  // realm's certificate authorities, and `sts_node_health` failed on it. The
+  // transaction is run again from the start, on a fresh client, up to
+  // DEADLOCK_RETRIES times with a short random pause so the two do not meet
+  // again in step; every statement in it is built by `fn` from what it was
+  // handed, so the repeat writes what the first attempt would have.
+  // ---------------------------------------------------------------------------
+  const DEADLOCK_RETRIES = 3;
+
+  function retryableConflict(err) {
+    log.debug("Entering retryableConflict().");
+    const code = err && err.code;
+    log.debug("Leaving retryableConflict().");
+    return !(err && err.fenced) && (code === '40P01' || code === '40001');
+  }
+
+  async function withTransaction(fn) {
     log.debug('Entering withTransaction().');
-    log.debug("Leaving withTransaction().");
+    for (let attempt = 0; ; attempt++) {
+      try {
+        const out = await transactionOnce(fn);
+        log.debug("Leaving withTransaction().");
+        return out;
+      } catch (err) {
+        log.debug("Caught in withTransaction(): " +
+                  ((err && err.message) || err));
+        if (!retryableConflict(err) || attempt >= DEADLOCK_RETRIES) {
+          log.debug("Leaving withTransaction(). Failed.");
+          throw err;
+        }
+        log.info('persistence: a transaction met ' +
+                 (err.code === '40P01' ? 'a deadlock' :
+                  'a serialization failure') + ' and was rolled back by ' +
+                 'the database; running it again (attempt ' + (attempt + 2) +
+                 ' of ' + (DEADLOCK_RETRIES + 1) + ').');
+        await new Promise(function (resolve) {
+          setTimeout(resolve, 10 + Math.floor(Math.random() * 40) *
+                              (attempt + 1));
+        });
+      }
+    }
+  }
+
+  function transactionOnce(fn) {
+    log.debug('Entering transactionOnce().');
+    log.debug("Leaving transactionOnce().");
     return pool.connect().then(function (client) {
       const unguard = guardClient(client, 'a transaction');
       // THE CHANGE ROWS THIS TRANSACTION RECORDS, held until COMMIT returns —
@@ -2589,7 +2660,7 @@ function create(options) {
           uncommittedRows.delete(client);
           unguard();
           client.release();
-          log.debug('Leaving withTransaction(). Committed.');
+          log.debug('Leaving transactionOnce(). Committed.');
           return result;
         });
       }).catch(function (err) {
@@ -2607,7 +2678,7 @@ function create(options) {
         }).then(function () {
           unguard();
           client.release(err);
-          log.debug('Leaving withTransaction(). Rolled back.');
+          log.debug('Leaving transactionOnce(). Rolled back.');
           if (err && err.fenced && typeof onFenced === 'function') {
             onFenced(err);
           } else if (err && err.fenced && err.reason === 'origin' &&
@@ -6266,11 +6337,18 @@ function create(options) {
     // pattern escapes it. `risk.address` values are in the risk tables and
     // are not counted: they are written and never read (see the risk store).
     // =====================================================================
+    // TWO AT A TIME, NOT ALL AT ONCE (2026-10-02). This was a Promise.all
+    // over every data key — one per realm and class, hundreds on a suite
+    // stack — so a count was hundreds of simultaneous full-table scans,
+    // which took every connection in the pool by itself: in single-node, CI
+    // runs 36986913696 and 36997679067, the re-encryption pass beside it waited
+    // out all its retries for a connection and failed (sts_data_keys). Two
+    // queries in flight leave the pool to the requests and the other passes.
     countSealed: function (dekIds) {
       log.debug("Entering countSealed().");
       const ids = (dekIds || []).map(String);
       log.debug("Leaving countSealed().");
-      return Promise.all(ids.map(function (id) {
+      return inTurns(ids, MAINTENANCE_CONCURRENCY, function (id) {
         const like = sealedLike(id);
         return maintenanceQuery('the data-key count',
           'SELECT ' +
@@ -6287,7 +6365,7 @@ function create(options) {
         ).then(function (r) {
           return { id: id, count: Number(((r.rows || [])[0] || {}).n) || 0 };
         });
-      })).then(function (rows) {
+      }).then(function (rows) {
         // AND THE DIRECTORY, walked: its entries are sealed blobs (#391
         // phase 6), and what is inside one is not visible to LIKE.
         return countDirectory(new Set(ids)).then(function (inDirectory) {

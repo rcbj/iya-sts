@@ -44,7 +44,18 @@ function fakePg(statements, plan) {
       return Promise.reject(new Error(plan.message));
     }
     const rows = /count\(\*\)/.test(String(sql)) ? [{ n: 7 }] : [];
-    return Promise.resolve({ rows: rows, rowCount: rows.length });
+    if (!plan.delayMs || !/count\(\*\)/.test(String(sql))) {
+      return Promise.resolve({ rows: rows, rowCount: rows.length });
+    }
+    // In flight for a moment, so how many run at once can be seen.
+    plan.inFlight = (plan.inFlight || 0) + 1;
+    plan.peak = Math.max(plan.peak || 0, plan.inFlight);
+    return new Promise(function (resolve) {
+      setTimeout(function () {
+        plan.inFlight -= 1;
+        resolve({ rows: rows, rowCount: rows.length });
+      }, plan.delayMs);
+    });
   }
   function FakeClient() {}
   FakeClient.prototype.query = reply;
@@ -138,6 +149,24 @@ async function run(t) {
           'C1. the count fails with the connect timeout',
           gaveUp.error ? gaveUp.error.message : gaveUp.out);
   t.equal(counts(c), 5, 'C2. after the first try and four retries');
+
+  // A count over many keys was hundreds of queries at once, which took every
+  // connection in the pool and starved the re-encryption pass beside it
+  // (sts_data_keys in single-node, CI runs 36986913696 and 36997679067).
+  t.log.info('=== D. a count over many keys runs two queries at a time ===');
+  const d = [];
+  const plan = { failures: 0, message: '', delayMs: 15 };
+  const ids = [];
+  for (let i = 0; i < 40; i++) {
+    ids.push('dek-' + i);
+  }
+  const many = await driverWith(d, plan).countSealed(ids);
+  t.check(Object.keys(many).length === 40 && ids.every(function (id) {
+    return many[id] === 7;
+  }), 'D1. every key is counted', JSON.stringify(many).slice(0, 200));
+  t.check(plan.peak >= 1 && plan.peak <= 2,
+          'D2. no more than two of its queries were in flight at once',
+          'peak ' + plan.peak);
   log.debug("Leaving run().");
 }
 
