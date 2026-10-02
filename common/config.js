@@ -10851,6 +10851,9 @@ const SETTINGS = [
                                                       'password',
     env: 'SCIM_DIGEST_PASSWORD', type: 'string', dflt: 'password!',
     runtime: true,
+    // A SECRET, and saved when changed: sealed where it is written down
+    // (#222, `persistence/sealed_settings.js`).
+    secret: true,
     description: 'The password every username shares for HTTP Digest — the ' +
                  'same value KRB5_USER_PASSWORD defaults to, so that there ' +
                  'is one fact to remember rather than two. It cannot be ' +

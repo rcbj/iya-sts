@@ -240,6 +240,61 @@ const DATA_CLASSES = [
          'durable key-encryption key; no page and no API reply returns it.'
   },
   {
+    label: 'directory',
+    what: 'Every directory entry’s attributes, whole — people, groups, ' +
+          'applications, devices, federation relationships',
+    where: '`sts_ldap_entries.attrs`, one blob per entry, in a PostgreSQL ' +
+           'store; each blob names the entry it belongs to',
+    sealed: true,
+    why: 'rcbj’s decision on #391 (phase 6): a copy of the directory table ' +
+         'is not a list of people. The DN stays readable, and so do the ' +
+         'attribute NAMES; the values a lookup compares are kept as keyed ' +
+         'digests beside the blob. A value sealed on its own (a TOTP ' +
+         'secret, Kerberos keys) is sealed again inside it. A file (ldif) ' +
+         'store holds entries as the filesystem protects them.'
+  },
+  {
+    label: 'minted-key',
+    what: 'The NAME a minted row is filed under — often the credential ' +
+          'itself: a session id, a SAML artifact, a token id',
+    where: '`sts_minted.key_sealed`, beside a keyed digest in `key`; and ' +
+           'the change-log rows (`sts_changes.key`) that tell other ' +
+           'processes about it',
+    sealed: true,
+    why: 'A session id is the cookie and an artifact is redeemed by ' +
+         'presenting it, so a name in the clear was a usable credential in ' +
+         'a dump. Since #222 the row is found by the name\'s keyed digest ' +
+         'and the name is sealed, opened only by a restore or a change\'s ' +
+         'reader.'
+  },
+  {
+    label: 'used-assertion',
+    what: 'The used-assertion history’s issuer, assertion id, client and ' +
+          'subject — who presented which RFC 7523 or RFC 7522 document ' +
+          'about whom',
+    where: 'the `issuer`, `identifier`, `client_id` and `subject` columns ' +
+           'of `sts_used_assertions`, in a database store',
+    sealed: true,
+    why: 'They name people and relationships in a table every node shares. ' +
+         'Sealed since #222; the row is still found by its digest key, and ' +
+         'the console’s text search is done in memory over the newest ' +
+         'rows. A file (ldif) store holds them as the filesystem protects ' +
+         'them: it reads them back before the keystore has started.'
+  },
+  {
+    label: 'setting-secret',
+    what: 'A secret setting changed while the service runs — today ' +
+          '`scim.digestPassword`, the HTTP Digest password every SCIM ' +
+          'username shares',
+    where: 'the saved settings: `sts_appconfig` for the service, ' +
+           '`sts_realms.overrides` for a realm',
+    sealed: true,
+    why: 'A setting marked secret is a credential, and the saved settings ' +
+         'are otherwise plain JSON. Sealed where it is written down since ' +
+         '#222 (`persistence/sealed_settings.js`); the running ' +
+         'configuration, the console and the API see it as before.'
+  },
+  {
     label: 'identity-verifications',
     what: 'A person’s identity verifications — `stsIdaVerification` ' +
           '(OpenID Connect for Identity Assurance), whose evidence carries ' +

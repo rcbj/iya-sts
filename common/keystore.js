@@ -269,6 +269,9 @@ let store = null;
  */
 function setStore(hooks) {
   log.debug('Entering setStore().');
+  // A NEW STORE IS A NEW START: the once-only start (#222) is for one store,
+  // and a caller that hands over another expects `start()` to read it.
+  startPromise = null;
   const needed = ['loadKeys', 'saveKeys'];
   const missing = needed.filter(function (name) {
     return !hooks || typeof hooks[name] !== 'function';
@@ -1165,11 +1168,38 @@ function hasStarted() {
   return started;
 }
 
-async function start() {
+// ONCE PER PROCESS (#222): `persistence.start()` starts the keystore the
+// moment the store is open — before it restores anything sealed: secret
+// settings, realm overrides, the directory — and `service_state` asks again
+// after, as it always did. The second call is answered with the first's
+// promise. `reset()` forgets it, for the tests that restart.
+let startPromise = null;
+
+/**
+ * Starts the keystore, once: reads the key-encryption key and the stored
+ * keys. A second call answers the first call's promise.
+ *
+ * @returns a promise of what the start found
+ */
+function start() {
   log.debug('Entering start().');
+  if (!startPromise) {
+    startPromise = startOnce().catch(function (e) {
+      // A failed start is fatal to the process; forgetting it lets a test
+      // that expects the refusal start again.
+      startPromise = null;
+      throw e;
+    });
+  }
+  log.debug('Leaving start().');
+  return startPromise;
+}
+
+async function startOnce() {
+  log.debug('Entering startOnce().');
   if (!persists()) {
     started = true;
-    log.debug('Leaving start(). Keys are generated per start.');
+    log.debug('Leaving startOnce(). Keys are generated per start.');
     return { persisting: false,
              why: mode.isProduct()
                ? 'keys.source is "generated", so this product-mode service ' +
@@ -1316,7 +1346,7 @@ async function start() {
            'something signs with it and dropped again (' +
            retentionSentence() + ').');
   started = true;
-  log.debug('Leaving start(). ' + loaded + ' realm(s).');
+  log.debug('Leaving startOnce(). ' + loaded + ' realm(s).');
   return { persisting: true, loaded: loaded, pki: pkiLoaded,
            dataKeys: deks.size, provider: secrets.describe().provider };
 }
@@ -5620,6 +5650,7 @@ function refreshPki(scopeId) {
 function reset() {
   log.debug("Entering reset().");
   started = false;
+  startPromise = null;
   shared.clear();
   pkiHeld.clear();
   // What the store arbitration holds (#46): a test doing what a restart does

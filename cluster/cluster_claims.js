@@ -88,12 +88,22 @@ function store() {
  *
  * @param scope - the kind of value
  * @param value - the value itself
- * @returns the SHA-256 digest, base64url
+ * @returns the keyed digest (HMAC-SHA256 under the keystore's digest key),
+ *   or the SHA-256 digest where no key is held; base64url
  */
 function digestOf(scope, value) {
   log.debug("Entering digestOf().");
-  const out = nodeCrypto.createHash('sha256')
-    .update(String(scope) + '\n' + String(value)).digest('base64url');
+  // KEYED SINCE #222: what is digested here is often guessable — a username,
+  // an address, a short code — and an unkeyed SHA-256 of it in the store is
+  // recovered by hashing the guesses. Under the keystore's digest key (the
+  // same key on every node and process) it is not. Where there is no key —
+  // development with no request pool, or a moment before the keystore has
+  // started — it is the plain digest, which is what every process without a
+  // key computes alike.
+  const text = String(scope) + '\n' + String(value);
+  const keyed = require('../common/keystore').keyedDigest('cluster-claim', text);
+  const out = keyed || nodeCrypto.createHash('sha256').update(text)
+    .digest('base64url');
   log.debug("Leaving digestOf().");
   return out;
 }

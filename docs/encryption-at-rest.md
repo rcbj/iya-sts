@@ -186,9 +186,12 @@ path is the same, but there is nothing to rotate, count or re-encrypt, and
   the service's memory can read them. A key management service keeps the
   KEK out of the process, but not the data keys it unwraps.
 * **Not everything is sealed.** `/admin/encryption` lists what is and what is
-  not. The directory's names and other attributes not on that list are
-  stored in the clear. For those, use storage-level encryption (*The rest of
-  the store*, below).
+  not. On PostgreSQL every directory entry's attributes are sealed as one
+  blob. The entry's DN and its attribute names stay readable, and so do
+  timestamps, counters and the risk history. The values the directory looks
+  up (login names, mail addresses, entry UUIDs, object classes) are stored as
+  keyed digests: equal values can be matched, but not read. For everything
+  else, use storage-level encryption (*The rest of the store*, below).
 
 A store written before #391 (each value under a subkey of the KEK, with no
 data keys) is not read by this build; recreate it. The service refuses to

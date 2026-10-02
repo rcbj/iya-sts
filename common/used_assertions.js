@@ -663,7 +663,7 @@ function peek(opts) {
   return Promise.resolve().then(function () {
     return store.driver.findUsedAssertion(realmId, key, now);
   }).then(function (found) {
-    return found ? { used: true, existing: publicRow(found) }
+    return found ? { used: true, existing: publicRow(openedRowOf(found)) }
       : { used: false };
   }, function (e) {
     log.warn(errorCodes.tag('STS-STORE-0046') +
@@ -720,12 +720,73 @@ function claimInMemory(row, cap, now) {
   });
 }
 
+// ---------------------------------------------------------------------------
+// THE FOUR TEXT COLUMNS ARE SEALED IN A DATABASE (#222, 2026-10-01).
+//
+// A row names who issued a document, its id, the client that presented it and
+// the subject it was about: an identifier of a person and of a relationship,
+// in a table every node shares. In a DATABASE store they are written sealed
+// (label `used-assertion`, under the realm's data key) and opened when read
+// back; the key the table is looked up by is already a digest (`keyOf()`).
+// rcbj's decision: the console's text search is done HERE, in memory, over
+// the newest SEARCH_WINDOW rows, because SQL cannot search a sealed column.
+//
+// A SNAPSHOT store (ldif) is not sealed: it reads its rows back when the store
+// opens, before the keystore has started, and a sealed row could not be opened
+// then. A file store's protection is the filesystem's.
+// ---------------------------------------------------------------------------
+const SEALED_FIELDS = ['issuer', 'identifier', 'clientId', 'subject'];
+const SEALED_LABEL = 'used-assertion';
+// How many of the newest rows a text search reads and opens.
+const SEARCH_WINDOW = 5000;
+
+function sealedRowOf(row) {
+  log.debug("Entering sealedRowOf().");
+  const keystore = require('./keystore');
+  if (!keystore.persists() || !keystore.sealed()) {
+    log.debug("Leaving sealedRowOf(). Nothing durable seals.");
+    return row;
+  }
+  const out = Object.assign({}, row);
+  SEALED_FIELDS.forEach(function (field) {
+    const value = String(out[field] || '');
+    if (value) {
+      out[field] = keystore.seal(value, SEALED_LABEL, undefined,
+                                 { realm: row.realm });
+    }
+  });
+  log.debug("Leaving sealedRowOf().");
+  return out;
+}
+
+function openedRowOf(row) {
+  log.debug("Entering openedRowOf().");
+  if (!row) {
+    log.debug("Leaving openedRowOf(). No row.");
+    return row;
+  }
+  const crypto = require('./crypto');
+  const keystore = require('./keystore');
+  const out = Object.assign({}, row);
+  SEALED_FIELDS.forEach(function (field) {
+    const value = out[field];
+    if (typeof value === 'string' && crypto.isEncryptedWithKek(value)) {
+      const opened = keystore.open(value, SEALED_LABEL);
+      out[field] = opened === null || opened === undefined
+        ? '(unreadable)' : opened;
+    }
+  });
+  log.debug("Leaving openedRowOf().");
+  return out;
+}
+
 function claimInDatabase(row, cap, now) {
   log.debug("Entering claimInDatabase().");
   ensurePurgeJob();
   log.debug("Leaving claimInDatabase().");
   return Promise.resolve().then(function () {
-    return store.driver.claimUsedAssertion(row, { cap: cap, now: now });
+    return store.driver.claimUsedAssertion(sealedRowOf(row),
+                                           { cap: cap, now: now });
   }).then(function (answer) {
     const a = answer || {};
     if (typeof a.live === 'number') {
@@ -737,7 +798,8 @@ function claimInDatabase(row, cap, now) {
     }
     if (a.existing) {
       historyCount.hit();
-      return { ok: false, reason: 'replay', existing: publicRow(a.existing) };
+      return { ok: false, reason: 'replay',
+               existing: publicRow(openedRowOf(a.existing)) };
     }
     historyCount.miss();
     return { ok: false, reason: 'full', live: a.live, cap: cap };
@@ -955,18 +1017,35 @@ function list(opts) {
   const offset = Math.max(0, Math.floor(Number(o.offset) || 0));
   if (store.kind === 'database') {
     log.debug("Leaving list(). Asking the database.");
+    // A TEXT SEARCH IS DONE HERE (#222): the four columns it reads are
+    // sealed, so the newest SEARCH_WINDOW rows matching the other filters are
+    // read, opened and searched in memory, and the page is cut from those.
+    const searching = !!filter.q;
     return Promise.resolve().then(function () {
       return store.driver.listUsedAssertions(realmId, {
-        now: now, q: filter.q, format: filter.format, use: filter.use,
-        state: filter.state, limit: limit, offset: offset
+        now: now, q: '', format: filter.format, use: filter.use,
+        state: filter.state, limit: searching ? SEARCH_WINDOW : limit,
+        offset: searching ? 0 : offset
       });
     }).then(function (answer) {
       const a = answer || {};
       if (typeof a.live === 'number') {
         lastKnownLive.set(realmId, a.live);
       }
-      return { rows: (a.rows || []).map(publicRow), matched: a.total || 0,
-               live: a.live || 0, filter: filter };
+      const opened = (a.rows || []).map(openedRowOf);
+      if (!searching) {
+        return { rows: opened.map(publicRow), matched: a.total || 0,
+                 live: a.live || 0, filter: filter };
+      }
+      const needle = filter.q.toLowerCase();
+      const hits = opened.filter(function (row) {
+        return (row.issuer + ' ' + row.identifier + ' ' + row.clientId +
+                ' ' + row.subject).toLowerCase().indexOf(needle) >= 0;
+      });
+      return { rows: hits.slice(offset, offset + limit).map(publicRow),
+               matched: hits.length, live: a.live || 0, filter: filter,
+               searched: opened.length,
+               searchedAll: (a.total || 0) <= opened.length };
     });
   }
   const live = sweep(realmId, now);
