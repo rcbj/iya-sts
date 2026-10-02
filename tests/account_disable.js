@@ -44,6 +44,32 @@
 //
 // In a child process on an ephemeral loopback port, with a relying party of
 // its own for the Logout Tokens.
+//
+// **AND THEN AGAIN IN PRODUCT (#413, 2026-10-02).** Every door above was
+// driven in development only, where nothing else is checked — so a refusal
+// that development reached by some other road would have read as this
+// feature. The second child STARTS in product (`STS_MODE=product`, with a
+// krbtgt password and a key-encryption key of its own, so its KDC is a
+// product KDC deriving each person's keys from their password), gives both
+// people a REAL password, and drives the same doors with it, so each refusal
+// is the disable and not a wrong password or a principal nobody made. Four
+// things differ there, each by design:
+//
+//   * THE PASSWORD GRANT DOES NOT EXIST IN PRODUCT: product implies RFC 9700
+//     mode, which refuses it for everybody (`unsupported_grant_type`,
+//     STS-OAUTH-0131, section 2.4) before any account is looked at. A3 and E1
+//     assert that refusal instead; the call it would have made,
+//     `credentials.verify()`, is C2, and the refresh grant (E2) is reached.
+//   * G is development's only: its token comes from the password grant.
+//   * I, SCIM's `active`, is development's only: a SCIM caller in product is
+//     a provisioning client with a credential of its own, and the mapping it
+//     drives is the same code in either mode.
+//   * B4, the back-channel Logout Token, is development's only: product
+//     sends one over https alone and refuses to register the http address
+//     this file's relying party listens on.
+//
+// The authorization requests carry PKCE in both modes (RFC 9700 requires it
+// in product, and development ignores what it does not need).
 // ===========================================================================
 
 delete process.env.CONFIG_FILE;
@@ -62,6 +88,7 @@ function childMain() {
   /* eslint-disable no-console */
   const ROOT = process.env.AD_ROOT;
   const OUT = process.env.AD_OUT;
+  const PRODUCT = process.env.AD_MODE === 'product';
   const http = require('http');
   const crypto = require('crypto');
   const findings = [];
@@ -140,6 +167,22 @@ function childMain() {
   };
 
   (async function () {
+    if (PRODUCT) {
+      // A PRODUCT PROCESS FROM THE START (`STS_MODE=product`), and not a
+      // development one switched over: the KDC decides at start whether it
+      // is a product KDC — whose people have keys derived from their
+      // passwords and whose unknown principals are not created — and the
+      // keys are sealed, so the keystore is started first, as
+      // `tests/kerberos_person_keys.js`'s product child starts it.
+      const keystore = require(ROOT + '/common/keystore');
+      keystore.reset();
+      keystore.setStore({
+        loadKeys: function () { return Promise.resolve([]); },
+        saveKeys: function () { return Promise.resolve(); },
+        deleteKeys: function () { return Promise.resolve(); }
+      });
+      await keystore.start();
+    }
     require(ROOT + '/common/protocol_stack');
     const app = require(ROOT + '/common/app');
     const applications = require(ROOT + '/common/applications');
@@ -183,8 +226,11 @@ function childMain() {
     const SECRET = 'account-disable-secret-0123456789abcdef';
     const REDIRECT = 'https://rp.disable.example/cb';
     const CLIENT = 'ad-client';
-    applications.createApplication({ identifier: CLIENT,
-      protocols: ['oauth2'],
+    const madeClient = applications.createApplication({ identifier: CLIENT,
+      // saml2 too: F asks the gate about a SAML assertion for this
+      // application, and product refuses one for an application that never
+      // declared the protocol — which would read as the disable.
+      protocols: ['oauth2', 'oidc', 'saml2'],
       fields: { oauthClientId: CLIENT, oauthClientSecret: SECRET,
                 oauthRedirectUri: [REDIRECT],
                 oauthGrantType: ['authorization_code', 'refresh_token',
@@ -193,21 +239,62 @@ function childMain() {
                 // only to a client that declares it (#110).
                 oauthAllowedScope: ['openid', 'admin:read'],
                 oauthTokenEndpointAuthMethod: 'client_secret_basic',
-                oauthBackchannelLogoutUri: rpBase + '/bc' } });
+                // Development only: product sends a Logout Token over https
+                // alone and refuses to register an http address (see the
+                // header).
+                oauthBackchannelLogoutUri: PRODUCT ? [] : rpBase + '/bc' } });
+    note(madeClient && madeClient.ok !== false,
+         'precondition: the application ' + CLIENT + ' is registered',
+         JSON.stringify(madeClient && (madeClient.errors || madeClient.ok)));
     const ALICE = 'ad-alice';
+    const OTHER = 'ad-somebody-else';
     ldap.createUser(ALICE, { invent: false });
+    // A REAL PASSWORD, which development ignores and product verifies — so in
+    // product every refusal below is the disable and not a wrong password.
+    const PASSWORD = 'Ad-' + crypto.randomBytes(6).toString('hex') +
+                     '-Correct.Horse.Battery.Staple.42';
+    const passwordSet = credentials.setPassword(ALICE, PASSWORD);
+    // A PRIMARY SECURITY KEY, so the passwordless path reaches the account:
+    // product refuses a passwordless sign-in for somebody who holds none
+    // before it asks anything else (STS-AUTHN-0206), which would read as
+    // the disable at C5.
+    const keyAdded = credentials.addKey(ALICE, {
+      credentialId: 'ad-key-' + crypto.randomBytes(6).toString('hex'),
+      label: 'ad key', publicKeyJwk: { kty: 'EC', crv: 'P-256', x: 'AA',
+                                       y: 'AA' },
+      signCount: 0 }, 'primary');
+    note(keyAdded && keyAdded.ok !== false,
+         'precondition: ' + ALICE + ' holds a primary security key',
+         JSON.stringify(keyAdded));
+    note(passwordSet && passwordSet.ok !== false,
+         'precondition: ' + ALICE + ' has a password',
+         JSON.stringify(passwordSet));
+    // The other person D2 and F2 ask about, made the same way: in product a
+    // principal nobody provisioned does not exist, so a control about them
+    // needs them to.
+    ldap.createUser(OTHER, { invent: false });
+    credentials.setPassword(OTHER, PASSWORD);
+    if (PRODUCT) {
+      // A product KDC derives a person's keys from the password when it is
+      // set, off the request path; the AS-REQ controls need them there.
+      await require(ROOT + '/kerberos/krb5_person_keys').idle();
+    }
 
     const signIn = async function (b, username) {
+      const verifier = crypto.randomBytes(32).toString('base64url');
+      const challenge = crypto.createHash('sha256').update(verifier)
+        .digest('base64url');
       let r = await b.go('GET', '/oauth2/authorize?' + new URLSearchParams({
         client_id: CLIENT, response_type: 'code', redirect_uri: REDIRECT,
-        scope: 'openid', state: 's',
+        scope: 'openid', state: 's', code_challenge: challenge,
+        code_challenge_method: 'S256',
         nonce: 'n' + crypto.randomBytes(3).toString('hex') }).toString());
       if (r.status === 302 &&
           /\/authn\/login/.test(String(r.headers.location || ''))) {
         const page = await b.go('GET', r.headers.location);
         const form = hiddenFields(page.text);
         form.username = username;
-        form.password = 'anything';
+        form.password = PASSWORD;
         form.action = 'login';
         const screen = String(r.headers.location).split('?')[0]
           .replace(/^https?:\/\/[^/]+/, '');
@@ -228,7 +315,8 @@ function childMain() {
         headers: { authorization: 'Basic ' +
           Buffer.from(CLIENT + ':' + SECRET).toString('base64') },
         form: { grant_type: 'authorization_code', code: code,
-                redirect_uri: REDIRECT, scope: 'openid' } });
+                redirect_uri: REDIRECT, scope: 'openid',
+                code_verifier: verifier } });
       return { screen: r, token: token };
     };
     const passwordGrant = function (username, extra) {
@@ -236,7 +324,7 @@ function childMain() {
         headers: { authorization: 'Basic ' +
           Buffer.from(CLIENT + ':' + SECRET).toString('base64') },
         form: Object.assign({ grant_type: 'password', username: username,
-                              password: 'anything' }, extra || {}) });
+                              password: PASSWORD }, extra || {}) });
     };
     const asReq = function (realm, username) {
       return msgs.encKdcReq({
@@ -281,12 +369,53 @@ function childMain() {
                                 shape.protocol, shape.detail || {});
     };
     const codeOfLastRow = function (action) {
+      // `audit.list()` answers newest FIRST.
       const rows = audit.list().filter(function (row) {
         return row.action === action;
       });
-      return rows.length ? rows[rows.length - 1].errorCode : '';
+      return rows.length ? rows[0].errorCode : '';
     };
 
+    // A PASSWORDLESS SIGN-IN, up to the point where the ceremony would be
+    // drawn. PKCE because product requires it.
+    const passwordlessAttempt = async function () {
+      const b = browser(port);
+      const start = await b.go('GET', '/oauth2/authorize?' +
+        new URLSearchParams({ client_id: CLIENT, response_type: 'code',
+                              redirect_uri: REDIRECT, scope: 'openid',
+                              state: 's', nonce: 'n1',
+                              code_challenge: crypto.createHash('sha256')
+                                .update(crypto.randomBytes(32))
+                                .digest('base64url'),
+                              code_challenge_method: 'S256' }).toString());
+      const page = await b.go('GET', String(start.headers.location || ''));
+      const form = hiddenFields(page.text);
+      form.username = ALICE;
+      form.password = '';
+      form.webauthn_only = '1';
+      form.action = 'login';
+      return b.go('POST', '/authn/login', { form: form });
+    };
+    // A page's text for a finding, without its stylesheet.
+    const pageText = function (r) {
+      return String(r.text).replace(/<style[\s\S]*?<\/style>/, '')
+        .slice(0, 400);
+    };
+
+    // Each other door's shape, as it hands it to `authn.startSession()`.
+    const shapes = [
+      ['federation', { amr: ['pwd'], acr: '1', protocol: 'Federation',
+                       detail: { federation: { id: 'rel-1' } } }],
+      ['SPNEGO', { amr: ['krb'], acr: '1', protocol: 'Kerberos v5',
+                   detail: { presented: ALICE + '@EXAMPLE.COM' } }],
+      ['a TLS client certificate', { amr: ['x509'], acr: '1',
+                                     protocol: 'TLS', detail: {} }],
+      ['the OID4VP wallet door', { amr: ['pop'], acr: '1',
+                                   protocol: 'OpenID4VP',
+                                   detail: { key: '' } }],
+      ['WS-Trust', { amr: ['pwd'], acr: '1', protocol: 'WS-Trust',
+                     detail: {} }]
+    ];
     // --- A. before: everything works -----------------------------------------
     const alice = browser(port);
     let r = await signIn(alice, ALICE);
@@ -295,18 +424,45 @@ function childMain() {
     note(r.token && r.token.status === 200 && !!idToken.sid,
          'A1. (a control: ' + ALICE + ' signs in and holds a session, an ID ' +
          'Token and a refresh token)',
-         (r.token && r.token.status) + ' ' + !!refreshToken);
+         (r.token ? r.token.status + ' ' + r.token.text.slice(0, 200)
+                  : r.screen.status + ' ' +
+                    String(r.screen.headers.location || '') + ' ' +
+                    r.screen.text.slice(0, 200)) + ' ' + !!refreshToken);
     const beforeKdc = await askKdc(ALICE);
     note(beforeKdc.error === 25 || beforeKdc.asRep,
          'A2. (a control: the KDC answers their AS-REQ with ' +
          'KDC_ERR_PREAUTH_REQUIRED (25), not a refusal)',
          JSON.stringify(beforeKdc));
     const beforeGrant = await passwordGrant(ALICE);
-    note(beforeGrant.status === 200,
-         'A3. (a control: the password grant issues tokens for them)',
-         beforeGrant.status);
+    if (PRODUCT) {
+      note(beforeGrant.status === 400 &&
+           beforeGrant.json.error === 'unsupported_grant_type',
+           'A3. (product has no password grant: RFC 9700 section 2.4 refuses ' +
+           'it for everybody, before any account is looked at)',
+           beforeGrant.status + ' ' + beforeGrant.text.slice(0, 160));
+    } else {
+      note(beforeGrant.status === 200,
+           'A3. (a control: the password grant issues tokens for them)',
+           beforeGrant.status);
+    }
     note(gateAnswer(ALICE).allowed,
-         'A4. (a control: the issuance gate allows an assertion for them)');
+         'A4. (a control: the issuance gate allows an assertion for them)',
+         JSON.stringify(gateAnswer(ALICE)));
+    const passwordlessBefore = await passwordlessAttempt();
+    note(passwordlessBefore.status === 200 &&
+         /wa-credential/.test(passwordlessBefore.text),
+         'A5. (a control: a passwordless sign-in draws the security-key ' +
+         'ceremony for them)', passwordlessBefore.status + ' ' +
+         pageText(passwordlessBefore));
+    // The control C3 needs: before the disable each shape IS a session, so a
+    // null afterwards is the disable and not a shape the mode refuses.
+    const startedShapes = shapes.filter(function (pair) {
+      return startedFor(ALICE, pair[1]) !== null;
+    }).map(function (pair) { return pair[0]; });
+    note(startedShapes.length === shapes.length,
+         'A6. (a control: authn.startSession() makes a session for them ' +
+         'with each other door\'s shape: ' + startedShapes.join(', ') + ')',
+         JSON.stringify(startedShapes));
 
     // --- B. the disable ------------------------------------------------------
     const before = backchannel.mark();
@@ -324,17 +480,20 @@ function childMain() {
     note(!authn.sessionById(idToken.sid),
          'B3. every session they held is ENDED at once');
     let rows = [];
-    for (let i = 0; i < 60 && !rows.length; i++) {
+    for (let i = 0; i < 60 && !rows.length && !PRODUCT; i++) {
       rows = backchannel.deliveriesFor([idToken.sid], before);
       if (!rows.length || rows[0].state === 'pending') {
         rows = rows.length && rows[0].state !== 'pending' ? rows : [];
         await sleep(50);
       }
     }
-    note(posted.length === 1 && rows.length === 1 && rows[0].state === 'sent',
-         'B4. the relying parties on those sessions are sent their ' +
-         'back-channel Logout Tokens', JSON.stringify(rows) + ' posts=' +
-         posted.length);
+    if (!PRODUCT) {
+      note(posted.length === 1 && rows.length === 1 &&
+           rows[0].state === 'sent',
+           'B4. the relying parties on those sessions are sent their ' +
+           'back-channel Logout Tokens', JSON.stringify(rows) + ' posts=' +
+           posted.length);
+    }
     note(acted.ended && acted.ended.terminated > 0 &&
          /disabled/.test(String(acted.message)),
          'B5. and the reply says what was ended', String(acted.message)
@@ -357,25 +516,12 @@ function childMain() {
     note(loginPage.status === 200 || loginPage.status === 400,
          'C1b. (the screen is still drawn for everybody else)',
          loginPage.status);
-    const verified = credentials.verify(ALICE, 'anything',
+    const verified = credentials.verify(ALICE, PASSWORD,
                                         { via: 'an LDAP simple bind' });
     note(!verified.ok && verified.reason === 'account-disabled',
          'C2. credentials.verify() — the one call an LDAP bind, the password ' +
          'grant, a WS-Trust UsernameToken, SCIM and SSF Basic and EST all ' +
          'make — refuses them in BOTH modes', JSON.stringify(verified));
-    const shapes = [
-      ['federation', { amr: ['pwd'], acr: '1', protocol: 'Federation',
-                       detail: { federation: { id: 'rel-1' } } }],
-      ['SPNEGO', { amr: ['krb'], acr: '1', protocol: 'Kerberos v5',
-                   detail: { presented: ALICE + '@EXAMPLE.COM' } }],
-      ['a TLS client certificate', { amr: ['x509'], acr: '1',
-                                     protocol: 'TLS', detail: {} }],
-      ['the OID4VP wallet door', { amr: ['pop'], acr: '1',
-                                   protocol: 'OpenID4VP',
-                                   detail: { key: '' } }],
-      ['WS-Trust', { amr: ['pwd'], acr: '1', protocol: 'WS-Trust',
-                     detail: {} }]
-    ];
     const refusedShapes = shapes.filter(function (pair) {
       return startedFor(ALICE, pair[1]) === null;
     }).map(function (pair) { return pair[0]; });
@@ -385,26 +531,13 @@ function childMain() {
          JSON.stringify(refusedShapes));
     note(codeOfLastRow('session.refuse') === 'STS-AUTHN-0201',
          'C4. with STS-AUTHN-0201 on the audit row');
-    const passwordless = await (async function () {
-      const b = browser(port);
-      const start = await b.go('GET', '/oauth2/authorize?' +
-        new URLSearchParams({ client_id: CLIENT, response_type: 'code',
-                              redirect_uri: REDIRECT, scope: 'openid',
-                              state: 's', nonce: 'n1' }).toString());
-      const page = await b.go('GET', String(start.headers.location || ''));
-      const form = hiddenFields(page.text);
-      form.username = ALICE;
-      form.password = '';
-      form.webauthn_only = '1';
-      form.action = 'login';
-      return b.go('POST', '/authn/login', { form: form });
-    })();
+    const passwordless = await passwordlessAttempt();
     note(passwordless.status === 200 &&
          /Authentication failed/.test(passwordless.text) &&
          !/wa-credential/.test(passwordless.text),
          'C5. a PASSWORDLESS security-key sign-in is refused BEFORE the ' +
          'ceremony — no key is enrolled for a disabled account',
-         passwordless.status + ' ' + passwordless.text.slice(0, 140));
+         passwordless.status + ' ' + pageText(passwordless));
 
     // --- D. the KDC ----------------------------------------------------------
     const afterKdc = await askKdc(ALICE);
@@ -412,17 +545,19 @@ function childMain() {
          'D1. an AS-REQ for them is refused KDC_ERR_CLIENT_REVOKED (18) — in ' +
          'development mode too, where the principal would otherwise be ' +
          'created on the spot', JSON.stringify(afterKdc));
-    const otherKdc = await askKdc('ad-somebody-else');
+    const otherKdc = await askKdc(OTHER);
     note(otherKdc.error === 25 || otherKdc.asRep,
          'D2. (and every other principal is unaffected)',
          JSON.stringify(otherKdc));
 
     // --- E. the token endpoint -----------------------------------------------
     const afterGrant = await passwordGrant(ALICE);
-    note(afterGrant.status === 400 &&
-         afterGrant.json.error === 'invalid_grant',
-         'E1. the password grant is invalid_grant', afterGrant.status + ' ' +
-         afterGrant.text.slice(0, 160));
+    note(afterGrant.status === 400 && afterGrant.json.error ===
+         (PRODUCT ? 'unsupported_grant_type' : 'invalid_grant'),
+         PRODUCT ? 'E1. the password grant is still refused, as for ' +
+                   'everybody (product has none: see A3)'
+                 : 'E1. the password grant is invalid_grant',
+         afterGrant.status + ' ' + afterGrant.text.slice(0, 160));
     const refreshed = await browser(port).go('POST', '/oauth2/token', {
       headers: { authorization: 'Basic ' +
         Buffer.from(CLIENT + ':' + SECRET).toString('base64') },
@@ -439,28 +574,32 @@ function childMain() {
          'F1. the issuance gate refuses anything on their behalf — which is ' +
          'what the SAML profiles, WS-Federation, WS-Trust, GNAP and the ' +
          'KDC\'s TGS ask before they issue', JSON.stringify(gated));
-    note(gateAnswer('ad-somebody-else').allowed,
+    note(gateAnswer(OTHER).allowed,
          'F2. (and allows it for everybody else)');
 
     // --- G. the management API -------------------------------------------------
-    const apiUser = 'ad-api-user';
-    ldap.createUser(apiUser, { invent: false });
-    const apiToken = await passwordGrant(apiUser,
-      { scope: 'admin:read', resource: base + '/admin-api' });
-    const apiCall = function (token) {
-      return browser(port).go('GET', '/admin-api/logout', {
-        headers: { authorization: 'Bearer ' + token } });
-    };
-    const apiBefore = await apiCall(String(apiToken.json.access_token || ''));
-    credentials.setAccountDisabled(apiUser, true);
-    const apiAfter = await apiCall(String(apiToken.json.access_token || ''));
-    credentials.setAccountDisabled(apiUser, false);
-    note(apiBefore.status === 200 && apiAfter.status === 401 &&
-         apiAfter.json.error === 'invalid_token',
-         'G1. the management API refuses a token issued to a person whose ' +
-         'account is disabled — it used to work until the token expired',
-         apiBefore.status + ' then ' + apiAfter.status + ' ' +
-         apiAfter.text.slice(0, 160));
+    // Development only: its token comes from the password grant, which
+    // product does not have (see the header).
+    if (!PRODUCT) {
+      const apiUser = 'ad-api-user';
+      ldap.createUser(apiUser, { invent: false });
+      const apiToken = await passwordGrant(apiUser,
+        { scope: 'admin:read', resource: base + '/admin-api' });
+      const apiCall = function (token) {
+        return browser(port).go('GET', '/admin-api/logout', {
+          headers: { authorization: 'Bearer ' + token } });
+      };
+      const apiBefore = await apiCall(String(apiToken.json.access_token || ''));
+      credentials.setAccountDisabled(apiUser, true);
+      const apiAfter = await apiCall(String(apiToken.json.access_token || ''));
+      credentials.setAccountDisabled(apiUser, false);
+      note(apiBefore.status === 200 && apiAfter.status === 401 &&
+           apiAfter.json.error === 'invalid_token',
+           'G1. the management API refuses a token issued to a person whose ' +
+           'account is disabled — it used to work until the token expired',
+           apiBefore.status + ' then ' + apiAfter.status + ' ' +
+           apiAfter.text.slice(0, 160));
+    }
 
     // --- H. enabling ----------------------------------------------------------
     const enabled = adminActions.usersAction({ action: 'enable',
@@ -486,93 +625,96 @@ function childMain() {
          JSON.stringify(nobody.errors || []));
 
     // --- I. SCIM ---------------------------------------------------------------
-    const scimHeaders = { authorization: 'Basic ' +
-      Buffer.from('ad-scim-caller:anything').toString('base64') };
-    ldap.createUser('ad-scim-caller', { invent: false });
-    const scimBrowser = browser(port);
-    const created = await scimBrowser.go('POST', '/scim/v2/Users', {
-      headers: scimHeaders,
-      json: { schemas: ['urn:ietf:params:scim:schemas:core:2.0:User'],
-              userName: 'ad-scim-user' } });
-    note(created.status === 201 && created.json.active === true,
-         'I1. a SCIM User is created ACTIVE — `active` is always said, and ' +
-         'an unlocked entry is true', created.status + ' ' +
-         JSON.stringify(created.json.active));
-    const scimSession = browser(port);
-    await signIn(scimSession, 'ad-scim-user');
-    const deactivated = await scimBrowser.go('PUT',
-      '/scim/v2/Users/' + created.json.id, {
+    // Development only: see the header.
+    if (!PRODUCT) {
+      const scimHeaders = { authorization: 'Basic ' +
+        Buffer.from('ad-scim-caller:anything').toString('base64') };
+      ldap.createUser('ad-scim-caller', { invent: false });
+      const scimBrowser = browser(port);
+      const created = await scimBrowser.go('POST', '/scim/v2/Users', {
         headers: scimHeaders,
         json: { schemas: ['urn:ietf:params:scim:schemas:core:2.0:User'],
-                userName: 'ad-scim-user', active: false } });
-    await sleep(300);
-    note(deactivated.status === 200 && deactivated.json.active === false &&
-         credentials.accountDisabled('ad-scim-user'),
-         'I2. `active: false` DISABLES the account — the non-goal this ' +
-         'reversed', deactivated.status + ' ' +
-         JSON.stringify(deactivated.json.active));
-    note(authn.sessionsOf('ad-scim-user').length === 0,
-         'I3. and the directory hands the change to account_state, so their ' +
-         'sessions end too — whichever door wrote the lock',
-         authn.sessionsOf('ad-scim-user').length);
-    const reactivated = await scimBrowser.go('PUT',
-      '/scim/v2/Users/' + created.json.id, {
-        headers: scimHeaders,
-        json: { schemas: ['urn:ietf:params:scim:schemas:core:2.0:User'],
-                userName: 'ad-scim-user', active: true } });
-    note(reactivated.status === 200 && reactivated.json.active === true &&
-         !credentials.accountDisabled('ad-scim-user'),
-         'I4. and `active: true` enables them', reactivated.status);
-    // PATCH is how most provisioning clients deactivate (Entra ID, Okta):
-    // a replace of the one member, never the whole resource. scim.ts has no
-    // PATCH code of its own — scimmy reads the resource out, applies the
-    // operation and writes it back in — so this asks that the round trip
-    // carries the lock, rather than trusting that it must.
-    const scimPatch = function (value) {
-      return scimBrowser.go('PATCH', '/scim/v2/Users/' + created.json.id, {
-        headers: scimHeaders,
-        json: { schemas: ['urn:ietf:params:scim:api:messages:2.0:PatchOp'],
-                Operations: [{ op: 'replace', path: 'active',
-                               value: value }] } });
-    };
-    await signIn(scimSession, 'ad-scim-user');
-    const patchedOff = await scimPatch(false);
-    await sleep(300);
-    note(patchedOff.status === 200 && patchedOff.json.active === false &&
-         credentials.accountDisabled('ad-scim-user'),
-         'I6. a PATCH replacing `active` with false DISABLES the account, as ' +
-         'the PUT does', patchedOff.status + ' ' +
-         JSON.stringify(patchedOff.json && patchedOff.json.active));
-    note(authn.sessionsOf('ad-scim-user').length === 0,
-         'I7. and ends their sessions, as the PUT does',
-         authn.sessionsOf('ad-scim-user').length);
-    const patchedOn = await scimPatch(true);
-    note(patchedOn.status === 200 && patchedOn.json.active === true &&
-         !credentials.accountDisabled('ad-scim-user'),
-         'I8. and a PATCH replacing it with true enables them',
-         patchedOn.status + ' ' +
-         JSON.stringify(patchedOn.json && patchedOn.json.active));
-    // Entra ID sends the boolean as the STRING "False" (Microsoft documents
-    // it as a known deviation). Whatever scimmy makes of it, it must not be
-    // a 2xx that leaves the account enabled: that is the original bug.
-    const patchedString = await scimPatch('False');
-    await sleep(300);
-    const stringDisabled = credentials.accountDisabled('ad-scim-user');
-    note(patchedString.status >= 400 || stringDisabled,
-         'I9. a PATCH with the string "False" either disables the account or ' +
-         'is refused — never answered 2xx with the account left enabled',
-         patchedString.status + ' disabled=' + stringDisabled);
-    if (stringDisabled) {
-      credentials.setAccountDisabled('ad-scim-user', false);
+                userName: 'ad-scim-user' } });
+      note(created.status === 201 && created.json.active === true,
+           'I1. a SCIM User is created ACTIVE — `active` is always said, and ' +
+           'an unlocked entry is true', created.status + ' ' +
+           JSON.stringify(created.json.active));
+      const scimSession = browser(port);
+      await signIn(scimSession, 'ad-scim-user');
+      const deactivated = await scimBrowser.go('PUT',
+        '/scim/v2/Users/' + created.json.id, {
+          headers: scimHeaders,
+          json: { schemas: ['urn:ietf:params:scim:schemas:core:2.0:User'],
+                  userName: 'ad-scim-user', active: false } });
+      await sleep(300);
+      note(deactivated.status === 200 && deactivated.json.active === false &&
+           credentials.accountDisabled('ad-scim-user'),
+           'I2. `active: false` DISABLES the account — the non-goal this ' +
+           'reversed', deactivated.status + ' ' +
+           JSON.stringify(deactivated.json.active));
+      note(authn.sessionsOf('ad-scim-user').length === 0,
+           'I3. and the directory hands the change to account_state, so ' +
+           'their sessions end too — whichever door wrote the lock',
+           authn.sessionsOf('ad-scim-user').length);
+      const reactivated = await scimBrowser.go('PUT',
+        '/scim/v2/Users/' + created.json.id, {
+          headers: scimHeaders,
+          json: { schemas: ['urn:ietf:params:scim:schemas:core:2.0:User'],
+                  userName: 'ad-scim-user', active: true } });
+      note(reactivated.status === 200 && reactivated.json.active === true &&
+           !credentials.accountDisabled('ad-scim-user'),
+           'I4. and `active: true` enables them', reactivated.status);
+      // PATCH is how most provisioning clients deactivate (Entra ID, Okta):
+      // a replace of the one member, never the whole resource. scim.ts has no
+      // PATCH code of its own — scimmy reads the resource out, applies the
+      // operation and writes it back in — so this asks that the round trip
+      // carries the lock, rather than trusting that it must.
+      const scimPatch = function (value) {
+        return scimBrowser.go('PATCH', '/scim/v2/Users/' + created.json.id, {
+          headers: scimHeaders,
+          json: { schemas: ['urn:ietf:params:scim:api:messages:2.0:PatchOp'],
+                  Operations: [{ op: 'replace', path: 'active',
+                                 value: value }] } });
+      };
+      await signIn(scimSession, 'ad-scim-user');
+      const patchedOff = await scimPatch(false);
+      await sleep(300);
+      note(patchedOff.status === 200 && patchedOff.json.active === false &&
+           credentials.accountDisabled('ad-scim-user'),
+           'I6. a PATCH replacing `active` with false DISABLES the account, ' +
+           'as the PUT does', patchedOff.status + ' ' +
+           JSON.stringify(patchedOff.json && patchedOff.json.active));
+      note(authn.sessionsOf('ad-scim-user').length === 0,
+           'I7. and ends their sessions, as the PUT does',
+           authn.sessionsOf('ad-scim-user').length);
+      const patchedOn = await scimPatch(true);
+      note(patchedOn.status === 200 && patchedOn.json.active === true &&
+           !credentials.accountDisabled('ad-scim-user'),
+           'I8. and a PATCH replacing it with true enables them',
+           patchedOn.status + ' ' +
+           JSON.stringify(patchedOn.json && patchedOn.json.active));
+      // Entra ID sends the boolean as the STRING "False" (Microsoft documents
+      // it as a known deviation). Whatever scimmy makes of it, it must not be
+      // a 2xx that leaves the account enabled: that is the original bug.
+      const patchedString = await scimPatch('False');
+      await sleep(300);
+      const stringDisabled = credentials.accountDisabled('ad-scim-user');
+      note(patchedString.status >= 400 || stringDisabled,
+           'I9. a PATCH with the string "False" either disables the account ' +
+           'or is refused — never answered 2xx with the account left enabled',
+           patchedString.status + ' disabled=' + stringDisabled);
+      if (stringDisabled) {
+        credentials.setAccountDisabled('ad-scim-user', false);
+      }
+      const unsaid = scimMap.fromScimUser(
+        { userName: 'x' }, { pwdAccountLockedTime: ['000001010000Z'] });
+      note((unsaid.attributes.pwdAccountLockedTime || [])[0] ===
+           '000001010000Z',
+           'I5. a resource that does not SAY `active` leaves the lock alone ' +
+           '— a PUT from a client that never sends the member must not ' +
+           'enable an account an administrator disabled',
+           JSON.stringify(unsaid.attributes.pwdAccountLockedTime));
     }
-    const unsaid = scimMap.fromScimUser(
-      { userName: 'x' }, { pwdAccountLockedTime: ['000001010000Z'] });
-    note((unsaid.attributes.pwdAccountLockedTime || [])[0] ===
-         '000001010000Z',
-         'I5. a resource that does not SAY `active` leaves the lock alone — ' +
-         'a PUT from a client that never sends the member must not enable ' +
-         'an account an administrator disabled',
-         JSON.stringify(unsaid.attributes.pwdAccountLockedTime));
 
     // --- J. what the console and the API show ----------------------------------
     credentials.setAccountDisabled(ALICE, true);
@@ -594,11 +736,32 @@ function childMain() {
   });
 }
 
-function inAChild(t) {
-  log.debug("Entering inAChild().");
-  const out = path.join(os.tmpdir(), 'account-disable-' + process.pid + '-' +
-                        require('crypto').randomBytes(8).toString('hex') +
-                        '.json');
+// What a product child starts with: the mode, a krbtgt password that is not
+// the published one, and persisted keys sealed under a key-encryption key
+// made here for the run — `tests/kerberos_person_keys.js`'s arrangement. A
+// development child gets nothing.
+function productEnvironment(mode, dir) {
+  log.debug("Entering productEnvironment(). " + mode);
+  if (mode !== 'product') {
+    log.debug("Leaving productEnvironment(). Development.");
+    return {};
+  }
+  const kekFile = path.join(dir, 'kek');
+  fs.writeFileSync(kekFile,
+                   require('crypto').randomBytes(32).toString('base64'),
+                   { encoding: 'utf8', mode: 0o600 });
+  log.debug("Leaving productEnvironment().");
+  return { STS_MODE: 'product',
+           KRB5_KRBTGT_PASSWORD: 'ad-' +
+             require('crypto').randomBytes(12).toString('hex'),
+           STS_KEYS_SOURCE: 'persisted', STS_KEYS_KEK_PROVIDER: 'file',
+           STS_KEYS_KEK_FILE: kekFile };
+}
+
+function inAChild(t, mode) {
+  log.debug("Entering inAChild(). " + mode);
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'account-disable-'));
+  const out = path.join(dir, 'report.json');
   const clean = {};
   Object.keys(process.env).forEach(function (key) {
     if (!/^(STS_|OID4VC|OID4VP|OAUTH2_|LDAP_|KRB5_|CONFIG_FILE$)/.test(key)) {
@@ -607,8 +770,9 @@ function inAChild(t) {
   });
   const result = childProcess.spawnSync(process.execPath,
     ['-e', '(' + childMain.toString() + ')()'], {
-      env: Object.assign(clean,
-                         { LOG_LEVEL: 'fatal', AD_ROOT: ROOT, AD_OUT: out }),
+      env: Object.assign(clean, productEnvironment(mode, dir),
+                         { LOG_LEVEL: 'fatal', AD_ROOT: ROOT, AD_OUT: out,
+                           AD_MODE: mode }),
       encoding: 'utf8', timeout: 300000, cwd: ROOT
     });
   let findings = null;
@@ -621,27 +785,28 @@ function inAChild(t) {
     findings = null;
   }
   try {
-    fs.unlinkSync(out);
+    fs.rmSync(dir, { recursive: true, force: true });
   } catch (e) {
     // Never written, which the read above has already reported.
     log.debug("Caught in inAChild(): " + ((e && e.message) || e));
   }
-  if (!t.check(Array.isArray(findings), 'the child process reported its ' +
-                                        'findings',
+  if (!t.check(Array.isArray(findings), '[' + mode + '] the child process ' +
+                                        'reported its findings',
                'exit ' + result.status + ' ' +
                String(result.stderr || '').slice(-1200))) {
     log.debug("Leaving inAChild().");
     return;
   }
   findings.forEach(function (one) {
-    t.check(one.ok, one.what, one.detail);
+    t.check(one.ok, '[' + mode + '] ' + one.what, one.detail);
   });
   log.debug("Leaving inAChild().");
 }
 
 async function run(t) {
   log.debug("Entering run().");
-  inAChild(t);
+  inAChild(t, 'development');
+  inAChild(t, 'product');
   log.debug("Leaving run().");
 }
 
@@ -652,6 +817,7 @@ module.exports = {
             'startSession with each other door\'s shape, credentials.verify, ' +
             'the KDC, the token endpoint, the issuance gate and the ' +
             'management API — its sessions ended and its relying parties ' +
-            'told, SCIM active mapped onto it, and the enable',
+            'told, SCIM active mapped onto it, and the enable; and the doors ' +
+            'again in product (#413)',
   run: run
 };
