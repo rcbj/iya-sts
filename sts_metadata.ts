@@ -6830,6 +6830,17 @@ const ENDPOINTS: EndpointEntry[] = [
           'and never writes one — and a decrypt-this button would be the one ' +
           'door onto material no door is supposed to have. Add ?format=json, ' +
           'or GET /admin-api/encryption.' },
+  { path: '/admin/encryption/data-keys', group: 'Admin',
+    name: 'The data encryption keys\' four acts', specs: [],
+    what: 'NON-SPEC console form, POST ONLY, Admin Write (#391 P2, P5). ' +
+          'Its four actions — rotate-data-keys, reencrypt-data-keys, ' +
+          'count-data-keys and rotate-kek — each QUEUE a run of ' +
+          'common/data_key_rotation.ts\'s scheduler jobs rather than doing ' +
+          'the work in the request, and redirect back to /admin/encryption. ' +
+          'A service page: a realm\'s own administrator never reaches it. ' +
+          'Rotating the key-encryption key is refused where the key lives in ' +
+          'a key management service that does not let this service rotate ' +
+          'it. Mirrored by POST /admin-api/encryption/{action}.' },
   { path: '/admin/used-assertions', group: 'Admin', name: 'Used assertions',
     specs: ['rfc7521', 'rfc7522', 'rfc7523'],
     what: 'Every RFC 7523 JWT and RFC 7522 SAML assertion this realm has ' +
@@ -7723,6 +7734,14 @@ const ENDPOINTS: EndpointEntry[] = [
           'CIPHERTEXT AND NO PLAINTEXT IS IN THE REPLY and no operation ' +
           'anywhere opens a sealed value on request. Mirrors GET ' +
           '/admin/encryption.' },
+  { path: '/admin-api/encryption/:action', group: 'Management API',
+    name: 'The data encryption keys\' four acts', specs: [],
+    what: 'NON-SPEC, POST, admin:write (#391 P2, P5). rotate-data-keys, ' +
+          'reencrypt-data-keys, count-data-keys and rotate-kek, through the ' +
+          'one function POST /admin/encryption/data-keys calls: each QUEUES ' +
+          'a run of the data-key jobs and answers 202 with its runId and ' +
+          'the /admin-api/scheduler address to follow it, or 400 with the ' +
+          'refusal. Mirrors POST /admin/encryption/data-keys.' },
   { path: '/admin-api/crypto', group: 'Management API', name: 'Cryptography',
     specs: [],
     what: 'NON-SPEC. Everything /admin/crypto-metadata reports, as JSON: ' +

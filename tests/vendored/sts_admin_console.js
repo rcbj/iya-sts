@@ -2007,7 +2007,8 @@ async function theNewUserPageDescribesAPerson(driver) {
   await open(driver, realm("/admin/users/new"));
   const third = await formIndexPosting(driver, "create");
   await fillAndPress(driver, third,
-      { username: withPassword, credential: "generate" }, { noTyping: true });
+      { username: withPassword, credential: "generate" }, { noTyping: true,
+        buttonText: "Create the user" });
   const shown = await driver.executeScript(
     "const e = document.querySelector('.secret'); return e ? e.textContent : '';");
   check("a generated password is shown once, in the page", function () {
@@ -2040,7 +2041,8 @@ async function theNewUserPageDescribesAPerson(driver) {
   await open(driver, realm("/admin/users/new"));
   const fourth = await formIndexPosting(driver, "create");
   await fillAndPress(driver, fourth,
-      { username: toActivate, credential: "activation" }, { noTyping: true });
+      { username: toActivate, credential: "activation" }, { noTyping: true,
+        buttonText: "Create the user" });
   const link = await driver.executeScript(
     "const e = document.querySelector('.secret'); return e ? e.textContent : '';");
   check("an activation link is shown once", function () {

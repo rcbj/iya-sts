@@ -354,6 +354,28 @@ async function registryAvailable(base) {
 }
 
 // ---------------------------------------------------------------------------
+// WHETHER THIS SERVICE KNOWS AN ATTRIBUTE, asked of the same `editable` table
+// reconcile() writes by, so an sts that predates it is recognised rather than
+// refused. A job adds an attribute that arrived after the pinned sts/ gitlink
+// only where this says yes, which is how one file runs against both:
+// `oauthAllowedScope` arrived with iya-sts #110 (a scope is issued only to a
+// client that declares it — protected scopes in every mode, every scope in
+// product), the delegation policy's `appTrustedToImpersonate` and
+// `appAllowedToDelegateTo` with #108. No registry at all is a no.
+// ---------------------------------------------------------------------------
+async function registryEditable(base, name) {
+  log.debug("Entering registryEditable(). base=" + base + " name=" + name);
+  if (!base || !(await registryAvailable(base))) {
+    log.debug("Leaving registryEditable(). No registry.");
+    return false;
+  }
+  var modes = await editableModes(base);
+  var found = Object.prototype.hasOwnProperty.call(modes, name);
+  log.debug("Leaving registryEditable(). " + found);
+  return found;
+}
+
+// ---------------------------------------------------------------------------
 // ONE APPLICATION'S ENTRY, read through the management API's single-application
 // view — the same question the console's own drill-down asks. The reply is FLAT
 // and carries `fields`, which is the declared attributes only; `attributes`
@@ -570,6 +592,23 @@ async function reconcile(base, identifier, protocols, fields) {
 // job is about to USE is on the entry, because that is the whole claim
 // pre-registration makes.
 // ---------------------------------------------------------------------------
+// WHAT AN ENTRY HOLDS, AS THE STRINGS A JOB PROVISIONED. A client secret is
+// a RECORD since rcbj/iya-sts@2dc251b4 — `{id, secret, created, expires}`,
+// several per application — where it was the bare string, so a record is
+// read as its `secret`. A plain string, which an sts before that change
+// returns, is read as itself, so one file runs against both.
+function heldValues(value) {
+  log.debug("Entering heldValues().");
+  var list = value === undefined || value === null ? [] :
+    (Array.isArray(value) ? value : [value]);
+  log.debug("Leaving heldValues().");
+  return list.map(function (one) {
+    return one && typeof one === "object" &&
+           Object.prototype.hasOwnProperty.call(one, "secret") ?
+      one.secret : one;
+  });
+}
+
 function assertMatches(entry, identifier, protocols, fields) {
   log.debug("Entering assertMatches(). identifier=" + identifier);
   assert.strictEqual(entry.identifier, identifier,
@@ -591,7 +630,7 @@ function assertMatches(entry, identifier, protocols, fields) {
   var held = entry.fields || {};
   Object.keys(fields).forEach(function (name) {
     var want = valuesOf(fields[name]);
-    var got = valuesOf(held[name]);
+    var got = valuesOf(heldValues(held[name]));
     want.forEach(function (one) {
       assert.ok(got.indexOf(one) >= 0,
         "\"" + identifier + "\" should carry " + name + "=" + one +
@@ -1242,6 +1281,7 @@ module.exports = {
   stsBaseFromEnv: stsBaseFromEnv,
   stsBaseFor: stsBaseFor,
   registryAvailable: registryAvailable,
+  registryEditable: registryEditable,
   provision: provision,
   provisionAll: provisionAll,
   entryOf: entryOf,
