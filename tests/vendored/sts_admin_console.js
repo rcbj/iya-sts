@@ -4953,7 +4953,7 @@ async function thePersonCredentialsSectionIsPressed(driver) {
   });
 
   // --- Upload (the certificate this realm just issued to this person) -------
-  await open(driver, pageUrl);
+  await open(driver, pageUrl + "#credentials");
   const upload = await formFor("upload-certificate", "saml");
   await fillAndPress(driver, upload, { certificate: certificatePem },
                      { noTyping: true });
@@ -4974,7 +4974,7 @@ async function thePersonCredentialsSectionIsPressed(driver) {
   });
 
   // --- Take off -------------------------------------------------------------
-  const redrawn = await open(driver, pageUrl);
+  const redrawn = await open(driver, pageUrl + "#credentials");
   check("the redrawn section names where the SAML key pair came from",
         function () {
     assert.ok(redrawn.text.indexOf("uploaded-realm-ca") >= 0,
