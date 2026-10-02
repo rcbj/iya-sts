@@ -352,6 +352,24 @@ function sectionA(t) {
           'TWO ADDS OF ONE DN ARE TWO ENTRIES: the one committed first is ' +
           'kept whole, password hash included, and this copy is replaced');
 
+  // TWO NODES SEEDED ONE ROLE GROUP, AND A GRANT WAS MADE ON THE SECOND
+  // (2026-10-02): the member it added must survive the first's commit —
+  // sts_realm_administrators in the cluster mode lost it, and the person it
+  // was granted to was refused by both nodes.
+  const groupDn = 'cn=admin-write,ou=groups,dc=example,dc=com';
+  const seeded = merge.mergeEntry(null,
+    entry(groupDn, { cn: ['admin-write'], entryuuid: ['g-mine'],
+                     objectclass: ['top', 'groupOfNames'],
+                     member: ['uid=admin', 'uid=granted'] }),
+    entry(groupDn, { cn: ['admin-write'], entryuuid: ['g-theirs'],
+                     objectclass: ['top', 'groupOfNames'],
+                     member: ['uid=admin'] }));
+  t.equal(seeded.outcome + ' ' + seeded.entry.attributes.entryuuid[0] + ' ' +
+          JSON.stringify(seeded.entry.attributes.member),
+          'merged g-theirs ["uid=admin","uid=granted"]',
+          'TWO CREATIONS OF ONE GROUP KEEP THE FIRST\'S IDENTITY AND EVERY ' +
+          'MEMBER: a member this copy added is not lost to the other\'s commit');
+
   t.equal(merge.mergeEntry(person, entry(person.dn, { uid: ['d'],
             entryuuid: ['p-1'], cn: ['changed'] }), null).outcome, 'deleted',
           'a change to an entry another node deleted since is dropped: the ' +
