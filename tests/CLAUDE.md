@@ -66,8 +66,10 @@ needs the same three sentences**, not a reference to this one.
 `sts_directory_bulk_load_*.js` jobs each create 5000 people, 50 groups and 5000
 memberships in the DEFAULT realm and delete none of it — **1000 people, 10
 groups and 1000 memberships under `./run-tests.sh` since 2026-09-27**, in every
-mode (`STS_TEST_BULK_*`, `tools/modes.sh`), and the library's sizes under the
-coverage run, which reads no mode. Their three sentences
+mode (`STS_TEST_BULK_*`, `tools/modes.sh`), and **50 people in 5 groups of
+10 under the coverage run since 2026-10-02** (`run-coverage.sh`, rcbj:
+coverage asks whether a line ran, and the 5000 it used to create took the
+`/admin-api` door past twelve instrumented minutes). Their three sentences
 are their own and are in `sts_directory_bulk_load_scim.js`'s header rather than
 here: the MEASUREMENT is of a directory that already holds thousands of
 entries, which a fresh realm is by definition not; the ENTRIES are the

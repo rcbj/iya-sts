@@ -325,6 +325,22 @@ case " ${ARGS[*]-} ${STS_COVERAGE_EXTRA_ARGS-} " in
   *) ARGS+=("--timeout-scale=${STS_COVERAGE_JOB_TIMEOUT_SCALE:-3}") ;;
 esac
 
+# ---------------------------------------------------------------------------
+# THE BULK LOADS AT FIFTY PEOPLE (2026-10-02, rcbj). Coverage asks whether a
+# line ran, and the fiftieth create runs the same lines as the five
+# thousandth. This run used the library's sizes (5000 people, 50 groups,
+# 5000 memberships per door, tests/vendored/bulk_load.js) because it reads
+# nothing of tests/tools/modes.sh, and instrumented on CI's two cores the
+# /admin-api door took over twelve minutes and lost a connection
+# (sts_directory_bulk_load_api, run 36967212793). Five groups of ten, because
+# bulk_load.js puts each person in exactly one group. The STS_COVERAGE_BULK_*
+# variables still choose other sizes.
+# ---------------------------------------------------------------------------
+BULK_USERS="${STS_COVERAGE_BULK_USERS:-50}"
+BULK_GROUPS="${STS_COVERAGE_BULK_GROUPS:-5}"
+BULK_MEMBERS_PER_GROUP="${STS_COVERAGE_BULK_MEMBERS_PER_GROUP:-10}"
+export BULK_USERS BULK_GROUPS BULK_MEMBERS_PER_GROUP
+
 # The check is against "off" and not against an empty string, because the
 # default is "on" now: an unset PROTOCOL is no longer how somebody says they
 # want half a report.
@@ -504,6 +520,10 @@ else
     # sts_credential_signals' EAB key was refused "could not be sealed". The
     # `memory` mode sets this for the same service (tests/tools/modes.sh).
     -e STS_KEYS_SOURCE=generated
+    # The bulk loads' sizes, set above; the compose file's own are 5000.
+    -e "BULK_USERS=${BULK_USERS}"
+    -e "BULK_GROUPS=${BULK_GROUPS}"
+    -e "BULK_MEMBERS_PER_GROUP=${BULK_MEMBERS_PER_GROUP}"
     -e "STS_TEST_CONFIG_FILE=${STS_TEST_CONFIG_FILE}"
     -e "LOG_LEVEL=${LOG_LEVEL:-info}"
   )
