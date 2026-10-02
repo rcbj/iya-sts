@@ -428,7 +428,11 @@ refusal of an application's certificate — is the same in both modes. See
 | `tls.selfSignedKeyBits` | `STS_TLS_SELF_SIGNED_KEY_BITS` | `2048` | no | The RSA key size of the listener certificate made at startup. |
 | `tls.selfSignedValidityYears` | `STS_TLS_SELF_SIGNED_YEARS` | `2` | no | How long that certificate is valid. |
 | `tls.selfSignedOrganization` | `STS_TLS_SELF_SIGNED_ORGANIZATION` | `sts` | no | The O= of its subject. |
-| `tls.sessionTicketRotationS` | `STS_TLS_SESSION_TICKET_ROTATION_S` | `3600` | yes | In an active-active cluster, how often the session-ticket key every node's LDAPS listener shares is replaced (the old key is deleted); `0` shares nothing. Outside active-active nothing is shared. |
+| `tls.sessionTicketRotationS` | `STS_TLS_SESSION_TICKET_ROTATION_S` | `3600` | yes | In an active-active cluster, how often the session-ticket key every node's LDAPS listener and main port share is replaced (the old key is deleted); `0` shares nothing. Outside active-active nothing is shared. |
+| `tls.mainPortSharedTickets` | `STS_TLS_MAIN_PORT_SHARED_TICKETS` | `true` | no | The main port seals its session tickets under the cluster's shared key, so a session resumes on any node. `false` keeps a key per node. |
+| `tls.mainSessionTimeoutS` | `STS_TLS_MAIN_SESSION_TIMEOUT_S` | `60` | no | How long a TLS session on the main port may be resumed. |
+| `tls.resumedChainWaitMs` | `STS_TLS_RESUMED_CHAIN_WAIT_MS` | `2000` | yes | How long a request on a session resumed from another node waits for that session's client-certificate chain to replicate; `0` never waits. |
+| `global.httpKeepAliveTimeoutS` | `STS_HTTP_KEEP_ALIVE_TIMEOUT_S` | `60` | no | How long the main port keeps an idle HTTP/1.1 connection for the next request; pipelined requests are answered in order. |
 | `global.trustProxy` | `STS_TRUST_PROXY` | `false` | yes | Believe `X-Forwarded-Proto` and `X-Forwarded-Host` from a TLS-terminating proxy. |
 | `global.trustedProxies` | `STS_TRUSTED_PROXIES` | *(empty)* | yes | The addresses or CIDRs forwarded headers — and PROXY protocol headers — are believed from. |
 | `global.proxyProtocol` | `STS_PROXY_PROTOCOL` | `off` | no | `v2` expects a PROXY protocol v2 header on every TCP listener, read before TLS. |
@@ -489,10 +493,25 @@ is changed: on `/admin/tls` (or `/admin/config` for `global.*`), through
   else each listener keeps OpenSSL's own keys, which never leave the process.
   Each node still presents its own listener key, so a client that checks a
   second node's handshake against the first node's key fails; resumption
-  does not care. The main port and the debugger's listener keep a key per
-  node, because they ask for a client certificate and a resumed session
-  carries only the leaf: the node that resumes it must be the one that saw
-  the whole chain, to check it for revocation.
+  does not care. **The main port shares the key too since #406
+  (2026-10-02)** (`tls.mainPortSharedTickets`). It asks for a client
+  certificate, and a resumed session carries only the leaf, so the chain the
+  full handshake verified is replicated to every node (`tls.presentedChains`)
+  and a request on a session resumed elsewhere waits up to
+  `tls.resumedChainWaitMs` for it before its revocation check. The debugger's
+  listener still keeps a key per node.
+* **The main port keeps connections and sessions for 60 seconds (#406).**
+  A browser holding a client certificate under one of the CAs the main port
+  names is asked by Firefox whether to send it on every FULL handshake; a
+  resumed session carries no CertificateRequest. With node's five-second
+  keep-alive and a ticket key per node, a person clicking through the
+  console or the portal behind a balancer was asked on nearly every click.
+  `global.httpKeepAliveTimeoutS` keeps an idle HTTP/1.1 connection 60
+  seconds (pipelined requests are answered in order), `tls.mainSessionTimeoutS`
+  lets a session resume for 60 seconds, and the shared key lets it resume on
+  any node. Keep a load balancer's idle timeout above the keep-alive (an AWS
+  NLB's is 350 seconds). HTTP/2 is not offered: express cannot run on node's
+  own HTTP/2 server (#407).
 * **The serial is random.** A constant serial made Firefox refuse the port after
   a restart with an error no "accept the risk" could get past.
 

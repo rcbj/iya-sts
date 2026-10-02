@@ -1440,3 +1440,28 @@ handler runs (`common/cell_placement.ts`, row `/tls/sign-in`, `browser: true`).
 One side effect to know: the home cell's `fromSocket()` sees a shim whose
 prototype is the inter-cell socket, so it REMEMBERS the forwarded chain against
 the leaf as it does for a real handshake — harmless, and keyed by the leaf.
+
+## The main port's connections and sessions are pooled (#406, 2026-10-02)
+
+**The main port shares the cluster's session-ticket key** (`tls.mainPortSharedTickets`,
+on by default), keeps an idle HTTP/1.1 connection `global.httpKeepAliveTimeoutS`
+(60, against node's own 5) and lets a TLS session resume for
+`tls.mainSessionTimeoutS` (60). What forced it: the main port asks every full
+handshake for a client certificate, and a browser holding one under a CA it
+names asks its user whether to send it on every FULL handshake. Behind a
+balancer, with a key per node and five-second connections, that was nearly
+every click on the console and the portal (test-idp, 2026-10-01). A resumed
+session carries no CertificateRequest.
+
+**The key was per node for one reason, and that reason was moved rather than
+ignored.** A resumed session hands the server the leaf alone, and
+`common/revocation_status.js` walked it with the chain only the process that
+saw the full handshake remembered; product mode's hard-fail refuses a leaf
+whose issuer it cannot find. The remembered chains are a replicated shared
+store now (`tls.presentedChains`), and `common/app.js` mounts a bounded wait
+above the request pool for a session that resumed before its chain's row
+arrived (`tls.resumedChainWaitMs`, `STS-TLS-0038` when it runs out).
+
+**HTTP/2 is not offered** — express cannot run on node's own `http2` server,
+and rcbj wants that out of the box rather than written here: #407.
+

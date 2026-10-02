@@ -12464,6 +12464,14 @@ const CODES = [
       '48 bytes node takes, so the listeners keep their own keys until the ' +
       'tls.ticket-key-rotate job replaces it.',
     spec: 'resumption falls back to a full handshake' },
+  { code: 'STS-TLS-0038',
+    summary: 'A TLS session resumed on this node with a verified client ' +
+      'certificate whose chain, replicated from the node that made the ' +
+      'session, did not arrive within tls.resumedChainWaitMs; the request ' +
+      'goes on with the leaf alone, and a revocation check that needs the ' +
+      'chain answers as for a chain it cannot build.',
+    spec: 'the request is answered; under hard-fail a certificate whose ' +
+      'issuer this node does not hold is refused' },
   // ===== VC ================================================================
   { code: 'STS-VC-0001',
     summary: 'An oid4vci encryption setting names no content encryption ' +

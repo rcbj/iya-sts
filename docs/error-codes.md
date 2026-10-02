@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3943** of them, in **41** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3944** of them, in **41** subsystems.
 
 ## Where a code appears
 
@@ -75,7 +75,7 @@ is an ordinary outcome.
 * [Attribute sources (`STS-ATTR`)](#sts-attr) — 15
 * [SCIM 2.0 (`STS-SCIM`)](#sts-scim) — 77
 * [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 144
-* [TLS and client certificates (`STS-TLS`)](#sts-tls) — 37
+* [TLS and client certificates (`STS-TLS`)](#sts-tls) — 38
 * [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 112
 * [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 118
 * [Risk scoring (`STS-RISK`)](#sts-risk) — 44
@@ -2989,6 +2989,7 @@ Raised from: tls/.
 | `STS-TLS-0035` | A connection was closed because its client certificate (or one in its chain) has an EC key on a curve outside the NIST set (P-256, P-384, P-521 and the other NIST-named curves); such certificates are refused before any certificate object is built (#212). | the connection is closed after the handshake |
 | `STS-TLS-0036` | The shared session-ticket key of an active-active cluster could not be applied to a TLS listener; that listener keeps its own keys, so a ticket it issues resumes only on this node. | resumption falls back to a full handshake |
 | `STS-TLS-0037` | The shared session-ticket key held in the store is not the 48 bytes node takes, so the listeners keep their own keys until the tls.ticket-key-rotate job replaces it. | resumption falls back to a full handshake |
+| `STS-TLS-0038` | A TLS session resumed on this node with a verified client certificate whose chain, replicated from the node that made the session, did not arrive within tls.resumedChainWaitMs; the request goes on with the leaf alone, and a revocation check that needs the chain answers as for a chain it cannot build. | the request is answered; under hard-fail a certificate whose issuer this node does not hold is refused |
 
 ## STS-VC
 

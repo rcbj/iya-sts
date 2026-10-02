@@ -55,6 +55,14 @@ locals {
     STS_WORKERS_READ_YOUR_WRITE = tostring(var.workers_read_your_write)
     AWS_REGION                  = local.region
 
+    # THE MAIN PORT'S POOLING (#406): a 60-second keep-alive and session, and
+    # the session-ticket key shared by every node behind the NLB, so a browser
+    # holding a client certificate is not asked about it on every click.
+    STS_HTTP_KEEP_ALIVE_TIMEOUT_S    = tostring(var.http_keep_alive_timeout_s)
+    STS_TLS_MAIN_SESSION_TIMEOUT_S   = tostring(var.tls_main_session_timeout_s)
+    STS_TLS_MAIN_PORT_SHARED_TICKETS = tostring(var.tls_main_port_shared_tickets)
+    STS_TLS_RESUMED_CHAIN_WAIT_MS    = tostring(var.tls_resumed_chain_wait_ms)
+
     # The database password, from Secrets Manager through common/secrets.js
     # — the path issue #51 exists to exercise. The key-encryption key is
     # `local.kek_environment` below: a key in KMS by default, the Secrets

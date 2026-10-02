@@ -918,6 +918,23 @@ const SETTINGS = [
   // the balancer, and no forwarded header can exist below TLS.
   // `common/proxy_protocol.ts` argues the three kinds of peer and where the
   // address is put.
+  // HTTP KEEP-ALIVE ON THE MAIN PORT (#406, 2026-10-02): node's own default
+  // is 5 seconds, so a person reading a page lost the connection and the next
+  // click made a new one — a full TLS handshake, and a client-certificate
+  // prompt in a browser holding a matching certificate.
+  { key: 'global.httpKeepAliveTimeoutS', group: 'Global',
+    label: 'HTTP keep-alive on the main port (s)',
+    env: 'STS_HTTP_KEEP_ALIVE_TIMEOUT_S', type: 'int', dflt: 60,
+    min: 1, max: 3600, runtime: false, perProcess: true,
+    restartReason: 'it is set on the main listener when it binds',
+    description: 'How long, in seconds, the main port keeps an idle ' +
+                 'HTTP/1.1 connection open for the client\'s next request. ' +
+                 'Requests a client pipelines on one connection are ' +
+                 'answered in order. The header timeout is kept a second ' +
+                 'above it, so a load balancer reusing the connection never ' +
+                 'meets one this service is closing. Behind a balancer, ' +
+                 'keep the balancer\'s own idle timeout above this value.' },
+
   { key: 'global.proxyProtocol', group: 'Global',
     label: 'PROXY protocol on the TCP listeners',
     env: 'STS_PROXY_PROTOCOL', type: 'enum', enumValues: ['off', 'v2'],
@@ -8932,11 +8949,11 @@ const SETTINGS = [
     env: 'STS_TLS_SESSION_TICKET_ROTATION_S', type: 'int', dflt: 3600,
     min: 0, max: 604800, runtime: true, perProcess: true,
     description: 'In an active-active cluster, every node\'s LDAPS ' +
-                 'listener seals session tickets under one shared key, so a ' +
-                 'ticket one node issued resumes on another (the main port ' +
-                 'and the debugger\'s keep a key per node: they ask for a ' +
-                 'client certificate, and only the node that saw its chain ' +
-                 'can resume the session). This is how often, in seconds, ' +
+                 'listener and main port (unless tls.mainPortSharedTickets ' +
+                 'is off) seal session tickets under one shared key, so a ' +
+                 'ticket one node issued resumes on another (the ' +
+                 'debugger\'s listener keeps a key per node). This is how ' +
+                 'often, in seconds, ' +
                  'the tls.ticket-key-rotate job replaces it; the key it ' +
                  'replaces ' +
                  'is deleted, so a resumed session\'s secrets can be ' +
@@ -8947,6 +8964,54 @@ const SETTINGS = [
                  'active-active mode nothing is shared: one node answering ' +
                  'resumes on OpenSSL\'s own per-listener keys, which never ' +
                  'leave the process.' },
+
+  // THE MAIN PORT'S CONNECTIONS, POOLED (#406, 2026-10-02). The main port
+  // asks every full handshake for a client certificate, and a browser holding
+  // one that matches asks its user each time: with node's 5-second keep-alive
+  // and a ticket key per node, that was nearly every page click behind a
+  // balancer. A resumed session carries no CertificateRequest, so these keep
+  // a connection, and then a session, alive and resumable on any node.
+  { key: 'tls.mainPortSharedTickets', group: 'TLS',
+    label: 'Main port shares the cluster session-ticket key',
+    env: 'STS_TLS_MAIN_PORT_SHARED_TICKETS', type: 'bool', dflt: true,
+    runtime: false, perProcess: true,
+    restartReason: 'the main listener is tracked when it binds',
+    description: 'Whether the main port seals its TLS session tickets under ' +
+                 'the key every node shares in an active-active cluster ' +
+                 '(tls.sessionTicketRotationS), so a session one node made ' +
+                 'resumes on whichever node the balancer picks next and the ' +
+                 'browser is not asked for a client certificate again. The ' +
+                 'verified client-certificate chain a resumed session needs ' +
+                 'for its revocation check is replicated with it ' +
+                 '(tls.resumedChainWaitMs). Off keeps a key per node. ' +
+                 'Outside active-active mode nothing is shared either way.' },
+
+  { key: 'tls.mainSessionTimeoutS', group: 'TLS',
+    label: 'Main port TLS session lifetime (s)',
+    env: 'STS_TLS_MAIN_SESSION_TIMEOUT_S', type: 'int', dflt: 60,
+    min: 1, max: 86400, runtime: false, perProcess: true,
+    restartReason: 'it is part of the listener\'s TLS context, built when ' +
+                   'the listener binds',
+    description: 'How long, in seconds, a TLS session on the main port may ' +
+                 'be resumed (the session ticket\'s lifetime). A resumed ' +
+                 'session skips the full handshake, and with it the ' +
+                 'client-certificate request a browser holding a matching ' +
+                 'certificate asks its user about. A longer value means ' +
+                 'fewer full handshakes and a ticket whose secrets matter ' +
+                 'for longer; the shared key\'s rotation still bounds it.' },
+
+  { key: 'tls.resumedChainWaitMs', group: 'TLS',
+    label: 'Wait for a resumed session\'s certificate chain (ms)',
+    env: 'STS_TLS_RESUMED_CHAIN_WAIT_MS', type: 'int', dflt: 2000,
+    min: 0, max: 30000, runtime: true, perProcess: true,
+    description: 'A resumed TLS session hands this service the client ' +
+                 'certificate alone; the chain its full handshake verified ' +
+                 'is replicated from the node that saw it. When a session ' +
+                 'resumes here before that chain has arrived, a request ' +
+                 'waits up to this many milliseconds for it, pulling the ' +
+                 'store meanwhile; after that it goes on without it, and a ' +
+                 'revocation check that needs the chain answers as it would ' +
+                 'for a chain it cannot build. 0 never waits.' },
 
   { key: 'tls.trustAnchorsFile', group: 'TLS',
     label: 'Client certificate trust anchors file',
