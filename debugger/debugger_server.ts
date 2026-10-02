@@ -1009,6 +1009,9 @@ class DebuggerServer {
       // listener asks for a client certificate, and a session resumed on
       // another node has no remembered chain there — server.js says why.
     }
+    // ITS OWN CONNECTION POOLING (#429): listenerDebugger.keepAliveTimeoutS
+    // and the rest, inheriting http.*, over https or http alike.
+    tlsServer.registerHttpListener(server, 'debugger');
     // Before TLS, like the main port's — see common/proxy_protocol.ts.
     proxyProtocol.install(server, {
       label: 'the protocol debugger (' + port + ')', channel: 'http' });

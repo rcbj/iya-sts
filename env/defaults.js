@@ -57,7 +57,6 @@ var config = {
     domain: "example.com",         // Domain; restart to apply
     trustProxy: false,             // Trust forwarded headers
     trustedProxies: "",            // Trusted proxy addresses
-    httpKeepAliveTimeoutS: 60,     // HTTP keep-alive on the main port (s); restart to apply
     proxyProtocol: "off",          // PROXY protocol on the TCP listeners; restart to apply
     proxyProtocolTimeoutMs: 30000, // PROXY protocol header timeout (ms)
     publicBaseUrl: "",             // Public base URL
@@ -81,7 +80,21 @@ var config = {
     groups: "",                               // The realm listener: tLS key-exchange groups; restart to apply
     signatureAlgorithms: "",                  // The realm listener: tLS signature algorithms; restart to apply
     trustAnchorsFile: "",                     // The realm listener: client certificate trust anchors file; restart to apply
-    trustIssuedClientCertificates: "inherit"  // The realm listener: trust TLS client certificates issued on the user portal; restart to apply
+    trustIssuedClientCertificates: "inherit", // The realm listener: trust TLS client certificates issued on the user portal; restart to apply
+    sessionTimeoutS: -1,                      // The realm listener: tLS session lifetime (s); restart to apply
+    sessionCacheSize: -1,                     // The realm listener: tLS session cache size (sessions); restart to apply
+    keepAliveTimeoutS: -1,                    // The realm listener: idle connection kept for (s); restart to apply
+    headersTimeoutS: -1,                      // The realm listener: request header timeout (s); restart to apply
+    maxRequestsPerSocket: -1,                 // The realm listener: requests per connection; restart to apply
+    maxConnections: -1                        // The realm listener: open connections at most; restart to apply
+  },
+
+  // --- HTTP connections ------------------------------------------------
+  http: {
+    keepAliveTimeoutS: 60,   // Idle connection kept for (s)
+    headersTimeoutS: 0,      // Request header timeout (s)
+    maxRequestsPerSocket: 0, // Requests per connection
+    maxConnections: 0        // Open connections at most
   },
 
   // --- Admin console ---------------------------------------------------
@@ -739,7 +752,8 @@ var config = {
     mainPortRequireClientCertificate: false,                                                                                                                                                                                                                                                                   // Main port: require a client certificate
     sessionTicketRotationS: 3600,                                                                                                                                                                                                                                                                              // Shared session-ticket key rotation (s)
     mainPortSharedTickets: true,                                                                                                                                                                                                                                                                               // Main port shares the cluster session-ticket key; restart to apply
-    mainSessionTimeoutS: 60,                                                                                                                                                                                                                                                                                   // Main port TLS session lifetime (s); restart to apply
+    sessionTimeoutS: 60,                                                                                                                                                                                                                                                                                       // TLS session lifetime (s)
+    sessionCacheSize: 0,                                                                                                                                                                                                                                                                                       // TLS session cache size (sessions)
     resumedChainWaitMs: 2000,                                                                                                                                                                                                                                                                                  // Wait for a resumed session's certificate chain (ms)
     trustAnchorsFile: "",                                                                                                                                                                                                                                                                                      // Client certificate trust anchors file; restart to apply
     selfSignedKeyBits: 2048,                                                                                                                                                                                                                                                                                   // Self-signed certificate RSA key size; restart to apply
@@ -1384,7 +1398,13 @@ var config = {
     groups: "",                               // Main port: tLS key-exchange groups; restart to apply
     signatureAlgorithms: "",                  // Main port: tLS signature algorithms; restart to apply
     trustAnchorsFile: "",                     // Main port: client certificate trust anchors file; restart to apply
-    trustIssuedClientCertificates: "inherit"  // Main port: trust TLS client certificates issued on the user portal; restart to apply
+    trustIssuedClientCertificates: "inherit", // Main port: trust TLS client certificates issued on the user portal; restart to apply
+    sessionTimeoutS: -1,                      // Main port: tLS session lifetime (s)
+    sessionCacheSize: -1,                     // Main port: tLS session cache size (sessions)
+    keepAliveTimeoutS: -1,                    // Main port: idle connection kept for (s)
+    headersTimeoutS: -1,                      // Main port: request header timeout (s)
+    maxRequestsPerSocket: -1,                 // Main port: requests per connection
+    maxConnections: -1                        // Main port: open connections at most
   },
 
   // --- Listener: LDAPS -------------------------------------------------
@@ -1397,7 +1417,9 @@ var config = {
     groups: "",                               // LDAPS: tLS key-exchange groups; restart to apply
     signatureAlgorithms: "",                  // LDAPS: tLS signature algorithms; restart to apply
     trustAnchorsFile: "",                     // LDAPS: client certificate trust anchors file; restart to apply
-    trustIssuedClientCertificates: "inherit"  // LDAPS: trust TLS client certificates issued on the user portal; restart to apply
+    trustIssuedClientCertificates: "inherit", // LDAPS: trust TLS client certificates issued on the user portal; restart to apply
+    sessionTimeoutS: -1,                      // LDAPS: tLS session lifetime (s)
+    sessionCacheSize: -1                      // LDAPS: tLS session cache size (sessions)
   },
 
   // --- Listener: Protocol debugger -------------------------------------
@@ -1410,7 +1432,13 @@ var config = {
     groups: "",                               // Protocol debugger: tLS key-exchange groups; restart to apply
     signatureAlgorithms: "",                  // Protocol debugger: tLS signature algorithms; restart to apply
     trustAnchorsFile: "",                     // Protocol debugger: client certificate trust anchors file; restart to apply
-    trustIssuedClientCertificates: "inherit"  // Protocol debugger: trust TLS client certificates issued on the user portal; restart to apply
+    trustIssuedClientCertificates: "inherit", // Protocol debugger: trust TLS client certificates issued on the user portal; restart to apply
+    sessionTimeoutS: -1,                      // Protocol debugger: tLS session lifetime (s)
+    sessionCacheSize: -1,                     // Protocol debugger: tLS session cache size (sessions)
+    keepAliveTimeoutS: -1,                    // Protocol debugger: idle connection kept for (s)
+    headersTimeoutS: -1,                      // Protocol debugger: request header timeout (s)
+    maxRequestsPerSocket: -1,                 // Protocol debugger: requests per connection
+    maxConnections: -1                        // Protocol debugger: open connections at most
   },
 
   // --- Listener: SPIRE Server API --------------------------------------
@@ -1421,7 +1449,8 @@ var config = {
     tls13CipherSuites: "",   // SPIRE Server API: tLS 1.3 cipher suites
     pqcOnly: "inherit",      // SPIRE Server API: post-quantum safe only
     groups: "",              // SPIRE Server API: tLS key-exchange groups; restart to apply
-    signatureAlgorithms: ""  // SPIRE Server API: tLS signature algorithms; restart to apply
+    signatureAlgorithms: "", // SPIRE Server API: tLS signature algorithms; restart to apply
+    sessionTimeoutS: -1      // SPIRE Server API: tLS session lifetime (s)
   },
 
   // --- Listener: SPIFFE Broker API -------------------------------------
@@ -1432,7 +1461,8 @@ var config = {
     tls13CipherSuites: "",   // SPIFFE Broker API: tLS 1.3 cipher suites
     pqcOnly: "inherit",      // SPIFFE Broker API: post-quantum safe only
     groups: "",              // SPIFFE Broker API: tLS key-exchange groups; restart to apply
-    signatureAlgorithms: ""  // SPIFFE Broker API: tLS signature algorithms; restart to apply
+    signatureAlgorithms: "", // SPIFFE Broker API: tLS signature algorithms; restart to apply
+    sessionTimeoutS: -1      // SPIFFE Broker API: tLS session lifetime (s)
   },
 
   // --- Listener: Channel between cells ---------------------------------
@@ -1440,7 +1470,17 @@ var config = {
     tls13CipherSuites: "",   // Channel between cells: tLS 1.3 cipher suites
     pqcOnly: "inherit",      // Channel between cells: post-quantum safe only
     groups: "",              // Channel between cells: tLS key-exchange groups; restart to apply
-    signatureAlgorithms: ""  // Channel between cells: tLS signature algorithms; restart to apply
+    signatureAlgorithms: "", // Channel between cells: tLS signature algorithms; restart to apply
+    sessionTimeoutS: -1,     // Channel between cells: tLS session lifetime (s)
+    sessionCacheSize: -1     // Channel between cells: tLS session cache size (sessions)
+  },
+
+  // --- Listener: Revocation (plain HTTP) -------------------------------
+  listenerRevocation: {
+    keepAliveTimeoutS: -1,    // Revocation (plain HTTP): idle connection kept for (s)
+    headersTimeoutS: -1,      // Revocation (plain HTTP): request header timeout (s)
+    maxRequestsPerSocket: -1, // Revocation (plain HTTP): requests per connection
+    maxConnections: -1        // Revocation (plain HTTP): open connections at most
   },
 };
 

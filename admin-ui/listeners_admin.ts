@@ -61,6 +61,7 @@ const PAGE = '/admin/listeners';
 // not TLS; `clientAuth`, where the protocol fixes it, says how.
 const LISTENERS = [
   { id: 'main', name: 'Main port', setting: 'global.port', kind: 'main',
+    http: 'main',
     group: 'Listener: Main port',
     tlsWhen: 'global.https',
     what: 'Every HTTP protocol, the console and the portal.' },
@@ -70,7 +71,7 @@ const LISTENERS = [
     group: 'Listener: LDAPS',
     what: 'The embedded directory over TLS.' },
   { id: 'debugger', name: 'Protocol debugger', setting: 'debugger.port',
-    kind: 'debugger', tlsWhen: 'global.https',
+    kind: 'debugger', tlsWhen: 'global.https', http: 'debugger',
     group: 'Listener: Protocol debugger',
     what: 'The embedded protocol debugger, where one is embedded.' },
   { id: 'kdc', name: 'Kerberos KDC', setting: 'krb5.kdcPort', kind: null,
@@ -79,7 +80,8 @@ const LISTENERS = [
     setting: 'krb5.servicePort', kind: null,
     what: 'The SPNEGO-protected test service.' },
   { id: 'revocation', name: 'Revocation (plain HTTP)',
-    setting: 'pki.httpPort', kind: null,
+    setting: 'pki.httpPort', kind: null, http: 'revocation',
+    group: 'Listener: Revocation (plain HTTP)',
     what: 'CRLs and OCSP over plain HTTP, as RFC 5280 section 8 asks.' },
   { id: 'spiffe-workload', name: 'SPIFFE Workload API (TCP)',
     setting: 'spiffe.workloadPort', kind: null,
@@ -176,6 +178,8 @@ class ListenersAdmin {
       pqcOnly: !!policy.pqcOnly,
       groups: options.ecdhCurve || '(node default)',
       signatureAlgorithms: options.sigalgs || '(OpenSSL default)',
+      sessionTimeoutS: policy.sessionTimeoutS,
+      sessionCacheSize: policy.sessionCacheSize,
       truststore: policy.kind === 'spiffeServer' ||
                   policy.kind === 'spiffeBroker' || policy.kind === 'cell'
         ? '(the protocol\'s own trust bundle)'
@@ -215,7 +219,8 @@ class ListenersAdmin {
         state: state ? state.state : 'not bound on this node',
         why: state ? state.why : '',
         certificate: state ? state.certificate : null,
-        policy: self.described(tlsServer().policyFor('realm', realmId))
+        policy: self.described(tlsServer().policyFor('realm', realmId)),
+        http: tlsServer().httpPolicyFor('realm', realmId)
       };
     }
     const https = config.value('global.https') === true;
@@ -240,7 +245,9 @@ class ListenersAdmin {
       }
       return { id: row.id, name: row.name, setting: row.setting,
                port: port, tls: isTls, what: row.what, group: row.group || null,
-               policy: described };
+               policy: described,
+               // HTTP connection pooling (#429), for an HTTP listener.
+               http: row.http ? tlsServer().httpPolicyFor(row.http) : null };
     });
     const live = (function (): Json[] {
       try {
@@ -350,12 +357,12 @@ class ListenersAdmin {
     const settings = function (groups: string[]): string {
       return admin.configFormsFor(PAGE, groups);
     };
-    const inForce = function (policy: Json): string {
-      if (!policy) {
+    const inForce = function (policy: Json, pooling?: Json): string {
+      if (!policy && !pooling) {
         return '';
       }
-      return '<h2>In force on this listener</h2><table class="grid"><tbody>' +
-        [['Protocol', policy.tls12 ? 'TLS 1.2 and 1.3 (floor ' +
+      const tlsRows: string[][] = !policy ? [] : [
+        ['Protocol', policy.tls12 ? 'TLS 1.2 and 1.3 (floor ' +
                                      policy.minVersion + ')' : 'TLS 1.3 only'],
          ['TLS 1.3 suites', policy.tls13Suites.map(function (one: Json) {
            return one.name + (one.postQuantum ? ' (post-quantum safe)' : '');
@@ -366,13 +373,26 @@ class ListenersAdmin {
          ['Groups', policy.groups],
          ['Signature algorithms', policy.signatureAlgorithms],
          ['Client certificate', String(policy.clientAuth || '—')],
-         ['Client truststore', policy.truststore]].map(function (row) {
+         ['Client truststore', policy.truststore],
+         ['TLS session lifetime', policy.sessionTimeoutS + ' s'],
+         ['TLS session cache', policy.sessionCacheSize
+           ? policy.sessionCacheSize + ' session ID(s)'
+           : 'none (tickets only)']];
+      const httpRows: string[][] = !pooling ? [] : [
+        ['Idle connection kept', pooling.keepAliveTimeoutS + ' s'],
+        ['Request header timeout', pooling.headersTimeoutS + ' s'],
+        ['Requests per connection', pooling.maxRequestsPerSocket
+          ? String(pooling.maxRequestsPerSocket) : 'no limit'],
+        ['Open connections at most', pooling.maxConnections
+          ? String(pooling.maxConnections) : 'no limit']];
+      return '<h2>In force on this listener</h2><table class="grid"><tbody>' +
+        tlsRows.concat(httpRows).map(function (row) {
           return '<tr><th>' + admin.esc(row[0]) + '</th><td><code>' +
             admin.esc(String(row[1])) + '</code></td></tr>';
         }).join('') + '</tbody></table>' +
         admin.note('Each value is this listener\'s own where its row below ' +
                    'sets one, and the service-wide default otherwise ' +
-                   '(<em>inherit</em>, or an empty box).');
+                   '(<em>inherit</em>, an empty box, or -1 for a number).');
     };
     const panels: Json[] = [
       { id: 'tab-listeners', label: json.ownListener ? 'This realm\'s listener'
@@ -381,18 +401,23 @@ class ListenersAdmin {
     ];
     if (json.ownListener) {
       panels.push({ id: 'tab-realm-listener', label: 'Its settings',
-                    html: inForce(json.ownListener.policy) +
+                    html: inForce(json.ownListener.policy,
+                                  json.ownListener.http) +
                           settings(['Realm listener']) });
     } else {
       panels.push({ id: 'tab-defaults', label: 'Service-wide defaults',
                     html: admin.note('What every TLS listener inherits unless ' +
                                      'its own tab says otherwise.') +
-                          settings(['Listeners', 'TLS']) });
+                          settings(['Listeners', 'HTTP connections',
+                                    'TLS']) });
+      // Every listener with settings of its own: the TLS ones, and the
+      // plain-HTTP revocation listener for its connection pooling (#429).
       json.listeners.filter(function (row: Json): boolean {
-        return !!row.group && row.tls;
+        return !!row.group && (row.tls || !!row.http);
       }).forEach(function (row: Json): void {
         panels.push({ id: 'tab-' + row.id, label: row.name,
-                      html: inForce(row.policy) + settings([row.group]) });
+                      html: inForce(row.policy, row.http) +
+                            settings([row.group]) });
       });
       if (json.realm !== 'default') {
         panels.push({ id: 'tab-realm-listener', label: 'Realm listener',

@@ -254,7 +254,14 @@ function checkMarker(t) {
     'listener.groups',
     'listener.signatureAlgorithms',
     'listener.trustAnchorsFile',
-    'listener.trustIssuedClientCertificates'
+    'listener.trustIssuedClientCertificates',
+    // #429: its TLS session cache and HTTP connection pooling.
+    'listener.sessionTimeoutS',
+    'listener.sessionCacheSize',
+    'listener.keepAliveTimeoutS',
+    'listener.headersTimeoutS',
+    'listener.maxRequestsPerSocket',
+    'listener.maxConnections'
   ];
   const marked = config.SETTINGS.filter(function (s) {
     return s.realmRuntime;

@@ -46559,6 +46559,10 @@ const SETTING_HOMES = [
   { group: 'Listener: SPIRE Server API', pages: ['/admin/listeners'] },
   { group: 'Listener: SPIFFE Broker API', pages: ['/admin/listeners'] },
   { group: 'Listener: Channel between cells', pages: ['/admin/listeners'] },
+  { group: 'Listener: Revocation (plain HTTP)', pages: ['/admin/listeners'] },
+  // HTTP connection pooling's service-wide defaults (#429), on the
+  // Service-wide defaults tab beside the TLS ones.
+  { group: 'HTTP connections', pages: ['/admin/listeners'] },
   { group: 'TLS', pages: ['/admin/listeners'] },
   // A trust realm's own listener (#99): realm-only settings, edited on the
   // Listeners page read inside a realm (#423); the default realm refuses

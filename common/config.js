@@ -1053,22 +1053,52 @@ const SETTINGS = [
   // the balancer, and no forwarded header can exist below TLS.
   // `common/proxy_protocol.ts` argues the three kinds of peer and where the
   // address is put.
-  // HTTP KEEP-ALIVE ON THE MAIN PORT (#406, 2026-10-02): node's own default
-  // is 5 seconds, so a person reading a page lost the connection and the next
-  // click made a new one — a full TLS handshake, and a client-certificate
-  // prompt in a browser holding a matching certificate.
-  { key: 'global.httpKeepAliveTimeoutS', group: 'Global',
-    label: 'HTTP keep-alive on the main port (s)',
+  // HTTP CONNECTION POOLING (#406's keep-alive, made per listener and
+  // editable by #429, 2026-10-02: rcbj, "expose HTTP Connection Pooling
+  // settings on each HTTP/HTTPS listener tab"). The service-wide values every
+  // HTTP listener inherits — the main port, the protocol debugger's, a realm's
+  // own and the plain-HTTP revocation listener — each of which has its own
+  // `listener<Id>.<name>` row (and a realm's, `listener.<name>`). RUNTIME:
+  // they are properties of the server, which node reads at each new
+  // connection, so `tls/tls_server.js` re-applies them when one changes.
+  { key: 'http.keepAliveTimeoutS', group: 'HTTP connections',
+    label: 'Idle connection kept for (s)',
     env: 'STS_HTTP_KEEP_ALIVE_TIMEOUT_S', type: 'int', dflt: 60,
-    min: 1, max: 3600, runtime: false, perProcess: true,
-    restartReason: 'it is set on the main listener when it binds',
-    description: 'How long, in seconds, the main port keeps an idle ' +
-                 'HTTP/1.1 connection open for the client\'s next request. ' +
-                 'Requests a client pipelines on one connection are ' +
-                 'answered in order. The header timeout is kept a second ' +
-                 'above it, so a load balancer reusing the connection never ' +
-                 'meets one this service is closing. Behind a balancer, ' +
-                 'keep the balancer\'s own idle timeout above this value.' },
+    min: 1, max: 3600, runtime: true, perProcess: true,
+    description: 'How long, in seconds, an HTTP listener keeps an idle ' +
+                 'HTTP/1.1 connection open for the client\'s next request ' +
+                 '(node\'s own default is 5). A connection kept is a TLS ' +
+                 'handshake — and a client-certificate prompt — not repeated. ' +
+                 'Requests a client pipelines on one connection are answered ' +
+                 'in order. Behind a balancer, keep its idle timeout above ' +
+                 'this.' },
+  { key: 'http.headersTimeoutS', group: 'HTTP connections',
+    label: 'Request header timeout (s)',
+    env: 'STS_HTTP_HEADERS_TIMEOUT_S', type: 'int', dflt: 0,
+    min: 0, max: 3600, runtime: true, perProcess: true,
+    description: 'How long, in seconds, a client may take to send a ' +
+                 'request\'s headers before the connection is closed. 0, the ' +
+                 'default, is a second above the keep-alive timeout, so a ' +
+                 'client (or a balancer) reusing a connection at the last ' +
+                 'moment never meets one this end is closing; a value at or ' +
+                 'below the keep-alive timeout is raised to that.' },
+  { key: 'http.maxRequestsPerSocket', group: 'HTTP connections',
+    label: 'Requests per connection',
+    env: 'STS_HTTP_MAX_REQUESTS_PER_SOCKET', type: 'int', dflt: 0,
+    min: 0, max: 1000000, runtime: true, perProcess: true,
+    description: 'How many requests one keep-alive connection may carry ' +
+                 'before it is closed after its last answer. 0, the ' +
+                 'default, is no limit (node\'s own). A limit spreads ' +
+                 'long-lived clients across the nodes behind a balancer, at ' +
+                 'the cost of a new connection — and a handshake — each ' +
+                 'time it is reached.' },
+  { key: 'http.maxConnections', group: 'HTTP connections',
+    label: 'Open connections at most',
+    env: 'STS_HTTP_MAX_CONNECTIONS', type: 'int', dflt: 0,
+    min: 0, max: 1000000, runtime: true, perProcess: true,
+    description: 'How many connections an HTTP listener holds open at once; ' +
+                 'one more is closed as it arrives. 0, the default, is no ' +
+                 'limit (node\'s own).' },
 
   { key: 'global.proxyProtocol', group: 'Global',
     label: 'PROXY protocol on the TCP listeners',
@@ -9296,19 +9326,38 @@ const SETTINGS = [
                  '(tls.resumedChainWaitMs). Off keeps a key per node. ' +
                  'Outside active-active mode nothing is shared either way.' },
 
-  { key: 'tls.mainSessionTimeoutS', group: 'TLS',
-    label: 'Main port TLS session lifetime (s)',
-    env: 'STS_TLS_MAIN_SESSION_TIMEOUT_S', type: 'int', dflt: 60,
-    min: 1, max: 86400, runtime: false, perProcess: true,
-    restartReason: 'it is part of the listener\'s TLS context, built when ' +
-                   'the listener binds',
-    description: 'How long, in seconds, a TLS session on the main port may ' +
-                 'be resumed (the session ticket\'s lifetime). A resumed ' +
-                 'session skips the full handshake, and with it the ' +
-                 'client-certificate request a browser holding a matching ' +
-                 'certificate asks its user about. A longer value means ' +
-                 'fewer full handshakes and a ticket whose secrets matter ' +
-                 'for longer; the shared key\'s rotation still bounds it.' },
+  // THE TLS SESSION CACHE (#429, 2026-10-02: rcbj, "expose the size and
+  // timeout of the TLS Session Cache as a parameter on each TLS listener
+  // tab as editable fields"). The service-wide values every TLS listener
+  // inherits; each has its own `listener<Id>.<name>` row. It replaced
+  // `tls.mainSessionTimeoutS` (#406), which was the main port's alone.
+  { key: 'tls.sessionTimeoutS', group: 'Listeners',
+    label: 'TLS session lifetime (s)',
+    env: 'STS_TLS_SESSION_TIMEOUT_S', type: 'int', dflt: 60,
+    min: 1, max: 86400, runtime: true, perProcess: true,
+    description: 'How long, in seconds, a TLS session may be resumed: the ' +
+                 'lifetime of a session ticket (TLS 1.3 and 1.2) and of an ' +
+                 'entry in the session cache. A resumed session skips the ' +
+                 'full handshake, and with it the client-certificate request ' +
+                 'a browser holding a matching certificate asks its user ' +
+                 'about. A longer value means fewer full handshakes and ' +
+                 'session secrets that matter for longer; the shared ticket ' +
+                 'key\'s rotation (tls.sessionTicketRotationS) still bounds ' +
+                 'it. Applied at the next handshake.' },
+  { key: 'tls.sessionCacheSize', group: 'Listeners',
+    label: 'TLS session cache size (sessions)',
+    env: 'STS_TLS_SESSION_CACHE_SIZE', type: 'int', dflt: 0,
+    min: 0, max: 1000000, runtime: true, perProcess: true,
+    description: 'How many TLS sessions a listener keeps in memory to ' +
+                 'resume by SESSION ID — a TLS 1.2 client resuming without ' +
+                 'a ticket; past it the oldest is forgotten. 0, the default, ' +
+                 'keeps none: node keeps no session cache of its own and ' +
+                 'resumes by tickets, which TLS 1.3 always uses and which ' +
+                 'need no server memory. The cache is per process, so ' +
+                 'behind a balancer a session ID resumes only on the node ' +
+                 'that made it (a ticket resumes anywhere, under the shared ' +
+                 'key). Not on the SPIFFE gRPC listeners, whose server ' +
+                 'grpc-js owns.' },
 
   { key: 'tls.resumedChainWaitMs', group: 'TLS',
     label: 'Wait for a resumed session\'s certificate chain (ms)',
@@ -16364,7 +16413,9 @@ const TLS_LISTENERS = [
   { id: 'debugger', label: 'Protocol debugger' },
   { id: 'spiffeServer', label: 'SPIRE Server API' },
   { id: 'spiffeBroker', label: 'SPIFFE Broker API' },
-  { id: 'cell', label: 'Channel between cells' }
+  { id: 'cell', label: 'Channel between cells' },
+  // Plain HTTP: no TLS row is generated for it, only its connection pooling.
+  { id: 'revocation', label: 'Revocation (plain HTTP)' }
 ];
 
 // name → the service-wide row, and the listeners (and the realm's own) that
@@ -16392,7 +16443,23 @@ const PER_LISTENER_SETTINGS = [
     listeners: ['main', 'ldaps', 'debugger'] },
   { name: 'trustIssuedClientCertificates',
     base: 'tls.trustIssuedClientCertificates', realm: true,
-    listeners: ['main', 'ldaps', 'debugger'] }
+    listeners: ['main', 'ldaps', 'debugger'] },
+  // The TLS session cache: the lifetime on every TLS listener, the size
+  // where this service holds the server object to attach the cache to.
+  { name: 'sessionTimeoutS', base: 'tls.sessionTimeoutS', realm: true,
+    listeners: ['main', 'ldaps', 'debugger', 'spiffeServer', 'spiffeBroker',
+                'cell'] },
+  { name: 'sessionCacheSize', base: 'tls.sessionCacheSize', realm: true,
+    listeners: ['main', 'ldaps', 'debugger', 'cell'] },
+  // HTTP connection pooling, on every HTTP listener.
+  { name: 'keepAliveTimeoutS', base: 'http.keepAliveTimeoutS', realm: true,
+    listeners: ['main', 'debugger', 'revocation'] },
+  { name: 'headersTimeoutS', base: 'http.headersTimeoutS', realm: true,
+    listeners: ['main', 'debugger', 'revocation'] },
+  { name: 'maxRequestsPerSocket', base: 'http.maxRequestsPerSocket',
+    realm: true, listeners: ['main', 'debugger', 'revocation'] },
+  { name: 'maxConnections', base: 'http.maxConnections', realm: true,
+    listeners: ['main', 'debugger', 'revocation'] }
 ];
 
 // One generated row. `owner` is a TLS_LISTENERS entry, or null for a realm's
@@ -16426,6 +16493,13 @@ function perListenerRow(spec, owner) {
     row.type = 'enum';
     row.enumValues = ['inherit'].concat(base.enumValues);
     row.dflt = 'inherit';
+  } else if (base.type === 'int') {
+    // A number has no empty value, so INHERIT is -1, below every real
+    // value of these rows (whose least is 0).
+    row.type = 'int';
+    row.dflt = -1;
+    row.min = -1;
+    row.max = base.max;
   } else {
     row.type = base.type;
     row.dflt = '';
@@ -16457,7 +16531,8 @@ function perListenerRow(spec, owner) {
                                     : 'the realm\'s own listener') +
     ' alone: ' + base.key + '. ' +
     (row.type === 'enum' ? 'inherit, the default, follows ' + base.key
-                         : 'Empty, the default, follows ' + base.key) +
+      : row.type === 'int' ? '-1, the default, follows ' + base.key
+                           : 'Empty, the default, follows ' + base.key) +
     '; anything else decides for this listener only. ' +
     String(base.description || '');
   return row;
@@ -16507,6 +16582,19 @@ SETTINGS.forEach(function (setting) {
  * anywhere stops the service starting.
  */
 const REPLACED_SETTINGS = [
+  // #429 (2026-10-02): the main port's two pooling rows became service-wide
+  // defaults every listener inherits, and editable. The keep-alive kept its
+  // environment variable, so only the old KEY is refused for it.
+  { key: 'tls.mainSessionTimeoutS', env: 'STS_TLS_MAIN_SESSION_TIMEOUT_S',
+    now: ['tls.sessionTimeoutS', 'listenerMain.sessionTimeoutS'],
+    why: ' It was removed on 2026-10-02 (#429): the TLS session lifetime is ' +
+         'tls.sessionTimeoutS (STS_TLS_SESSION_TIMEOUT_S) for every TLS ' +
+         'listener, and listenerMain.sessionTimeoutS for the main port alone.' },
+  { key: 'global.httpKeepAliveTimeoutS',
+    now: ['http.keepAliveTimeoutS', 'listenerMain.keepAliveTimeoutS'],
+    why: ' It was removed on 2026-10-02 (#429): the keep-alive is ' +
+         'http.keepAliveTimeoutS for every HTTP listener, and ' +
+         'listenerMain.keepAliveTimeoutS for the main port alone.' },
   { key: 'gnap.pushAllowInsecure', env: 'STS_GNAP_PUSH_ALLOW_INSECURE',
     now: ['gnap.pushAllowHttp', 'gnap.pushSkipTlsVerification',
           'gnap.pushCaFile'] },

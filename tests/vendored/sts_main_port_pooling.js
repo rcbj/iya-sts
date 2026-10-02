@@ -15,10 +15,10 @@
 // balancer was asked on nearly every click. Four things fixed it, and this job
 // asserts each where it can be seen — on the wire:
 //
-//   1. an idle HTTP/1.1 connection is kept `global.httpKeepAliveTimeoutS`
+//   1. an idle HTTP/1.1 connection is kept `http.keepAliveTimeoutS`
 //      (the `Keep-Alive: timeout=` header node answers with);
 //   2. requests PIPELINED on one connection are answered, in order;
-//   3. a TLS session may be resumed for `tls.mainSessionTimeoutS` (the
+//   3. a TLS session may be resumed for `tls.sessionTimeoutS` (the
 //      timeout of the session OpenSSL's own client records);
 //   4. a session made with a client certificate RESUMES on the next
 //      connection — on whichever node the balancer picks, in the `cluster`
@@ -263,7 +263,10 @@ function pipelined(requests, options) {
 async function keepAlive() {
   log.debug("Entering keepAlive().");
   log.info("== 1. An idle HTTP/1.1 connection is kept");
-  const want = Number(await settingValue("global.httpKeepAliveTimeoutS"));
+  // The main port's own value where it sets one (#429), else the service's.
+  const own = Number(await settingValue("listenerMain.keepAliveTimeoutS"));
+  const want = own >= 0 ? own
+    : Number(await settingValue("http.keepAliveTimeoutS"));
   const answer = await get("/.well-known/openid-configuration");
   check("the main port answers a kept-alive request with Keep-Alive: " +
         "timeout=" + want, function () {
@@ -271,7 +274,7 @@ async function keepAlive() {
     const header = String(answer.headers["keep-alive"] || "");
     const seen = Number((header.match(/timeout=(\d+)/) || [])[1]);
     assert.strictEqual(seen, want,
-      "Keep-Alive was \"" + header + "\"; global.httpKeepAliveTimeoutS is " +
+      "Keep-Alive was \"" + header + "\"; http.keepAliveTimeoutS is " +
       want + " (node's own default, which this replaced, is 5)");
   });
   log.debug("Leaving keepAlive().");
@@ -313,8 +316,10 @@ async function pipelining() {
 // ---------------------------------------------------------------------------
 async function sessionLifetime() {
   log.debug("Entering sessionLifetime().");
-  log.info("== 3. A TLS session may be resumed for tls.mainSessionTimeoutS");
-  const want = Number(await settingValue("tls.mainSessionTimeoutS"));
+  log.info("== 3. A TLS session may be resumed for tls.sessionTimeoutS");
+  const ownS = Number(await settingValue("listenerMain.sessionTimeoutS"));
+  const want = ownS >= 0 ? ownS
+    : Number(await settingValue("tls.sessionTimeoutS"));
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sts-pooling-"));
   const sess = path.join(dir, "session.pem");
   try {

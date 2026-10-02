@@ -599,7 +599,16 @@ function leafKey(raw) {
 
 function presentedChainLifetimeMs() {
   log.debug("Entering presentedChainLifetimeMs().");
-  const s = Number(config.value('tls.mainSessionTimeoutS'));
+  // The LONGEST session any listener may resume (#429: the lifetime is per
+  // listener now, `tls.sessionTimeoutS` and each `listener<Id>.
+  // sessionTimeoutS`; a realm listener's is under the hour's floor below).
+  const s = config.SETTINGS.filter(function (row) {
+    return row.key === 'tls.sessionTimeoutS' ||
+           /^listener[A-Z][A-Za-z]*\.sessionTimeoutS$/.test(row.key);
+  }).reduce(function (most, row) {
+    const n = Number(config.value(row.key));
+    return Number.isFinite(n) && n > most ? n : most;
+  }, 0);
   const ms = Number.isFinite(s) && s > 0 ? (s + 60) * 1000 : 0;
   log.debug("Leaving presentedChainLifetimeMs().");
   return Math.max(ms, PRESENTED_CHAIN_FLOOR_MS);

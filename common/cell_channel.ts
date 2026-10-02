@@ -407,6 +407,8 @@ class CellChannel {
             self.handle(app, req, res);
           });
           self.server = server;
+          // Its TLS session cache (#429), bounded by its own policy.
+          require('../tls/tls_server').attachSessionCache(server, 'cell');
           // A change to the listeners' policy re-keys this one too (#423).
           self.unregisterPolicy = require('../tls/tls_server')
             .registerPolicyApplier('the channel between cells (' + port + ')',

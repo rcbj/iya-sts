@@ -59,7 +59,7 @@ locals {
     # the session-ticket key shared by every node behind the NLB, so a browser
     # holding a client certificate is not asked about it on every click.
     STS_HTTP_KEEP_ALIVE_TIMEOUT_S    = tostring(var.http_keep_alive_timeout_s)
-    STS_TLS_MAIN_SESSION_TIMEOUT_S   = tostring(var.tls_main_session_timeout_s)
+    STS_TLS_SESSION_TIMEOUT_S        = tostring(var.tls_session_timeout_s)
     STS_TLS_MAIN_PORT_SHARED_TICKETS = tostring(var.tls_main_port_shared_tickets)
     STS_TLS_RESUMED_CHAIN_WAIT_MS    = tostring(var.tls_resumed_chain_wait_ms)
 

@@ -385,18 +385,19 @@ variable "pki_listener_port" {
 # `extra_environment`; the defaults are the service's own.
 variable "http_keep_alive_timeout_s" {
   description = <<-EOT
-    STS_HTTP_KEEP_ALIVE_TIMEOUT_S (global.httpKeepAliveTimeoutS): how long the
-    main port keeps an idle HTTP/1.1 connection. Keep it under the NLB's TCP
+    STS_HTTP_KEEP_ALIVE_TIMEOUT_S (http.keepAliveTimeoutS): how long every
+    HTTP listener keeps an idle HTTP/1.1 connection, unless a listener sets
+    its own on Server configuration -> Listeners. Keep it under the NLB's TCP
     idle timeout (350 s).
   EOT
   type        = number
   default     = 60
 }
 
-variable "tls_main_session_timeout_s" {
+variable "tls_session_timeout_s" {
   description = <<-EOT
-    STS_TLS_MAIN_SESSION_TIMEOUT_S (tls.mainSessionTimeoutS): how long a TLS
-    session on the main port may be resumed.
+    STS_TLS_SESSION_TIMEOUT_S (tls.sessionTimeoutS): how long a TLS session
+    may be resumed on every TLS listener, unless a listener sets its own.
   EOT
   type        = number
   default     = 60

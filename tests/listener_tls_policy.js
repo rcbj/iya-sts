@@ -98,6 +98,15 @@ function childMain() {
     if (o.cert) {
       args.push('-cert', o.cert, '-key', o.key);
     }
+    if (o.sessOut) {
+      args.push('-sess_out', o.sessOut);
+    }
+    if (o.sessIn) {
+      args.push('-sess_in', o.sessIn);
+    }
+    if (o.noTicket) {
+      args.push('-no_ticket');
+    }
     return new Promise(function (resolve) {
       const proc = spawn('openssl', args);
       let text = '';
@@ -108,6 +117,7 @@ function childMain() {
         clearTimeout(timer);
         resolve({ text: text,
                   accepted: /HTTP\/1\.1 200/.test(text),
+                  reused: /^Reused,/m.test(text),
                   certificateRequest: /, CertificateRequest/.test(text) });
       });
       proc.stdin.write('GET / HTTP/1.0\r\nHost: localhost\r\n\r\n');
@@ -532,6 +542,243 @@ function childMain() {
          tail(r) + ' | ' + tail(r4));
     config.clearOverride('tls.mainPortRequireClientCertificate');
     config.clearOverride('debugger.requireClientCertificate');
+    await settle();
+
+    // --- L. the TLS session cache, per listener (#429) ---------------------
+    // The lifetime OpenSSL's client records for a session it was handed,
+    // and whether a TLS 1.2 session ID (no ticket) resumes.
+    const sessFile = function (name) { return file('sess-' + name + '.pem'); };
+    const lifetime = async function (port, name) {
+      const out = sessFile(name);
+      await probe(port, { version: '1.3', sessOut: out });
+      const text = ossl(['sess_id', '-in', out, '-noout', '-text']).stdout ||
+                   '';
+      // The server's ticket lifetime hint; the "Timeout" beside it is the
+      // CLIENT's own cache lifetime (7200), whatever the server said.
+      return Number((text.match(/lifetime hint:\s*(\d+)/) || [])[1]);
+    };
+    const resumesById = async function (port, name, between) {
+      const out = sessFile(name);
+      const first = await probe(port, { version: '1.2', noTicket: true,
+                                        sessOut: out });
+      if (between) {
+        await between();
+      }
+      const again = await probe(port, { version: '1.2', noTicket: true,
+                                        sessIn: out });
+      return { first: first, again: again };
+    };
+    config.setOverride('tls.disableTls12', false);
+    await settle();
+    let a = await lifetime(mainPort, 'l1m');
+    let b = await lifetime(dbgPort, 'l1d');
+    note(a === 60 && b === 60, 'L1. default: a session on either listener ' +
+         'may be resumed for tls.sessionTimeoutS, 60 seconds',
+         a + ' / ' + b);
+    w = config.setOverride('listenerMain.sessionTimeoutS', '123');
+    await settle();
+    a = await lifetime(mainPort, 'l2m');
+    b = await lifetime(dbgPort, 'l2d');
+    note(w.ok && a === 123 && b === 60, 'L2. listenerMain.sessionTimeoutS ' +
+         '123: the main port\'s sessions carry 123 at the next handshake, ' +
+         'the debugger\'s still 60', a + ' / ' + b);
+    w = config.setOverride('tls.sessionTimeoutS', '77');
+    await settle();
+    a = await lifetime(mainPort, 'l3m');
+    b = await lifetime(dbgPort, 'l3d');
+    note(w.ok && a === 123 && b === 77, 'L3. tls.sessionTimeoutS 77: the ' +
+         'debugger, inheriting, follows it; the main port keeps its own',
+         a + ' / ' + b);
+    config.setOverride('listenerMain.sessionTimeoutS', '-1');
+    await settle();
+    a = await lifetime(mainPort, 'l4m');
+    note(a === 77, 'L4. -1: the main port inherits the service\'s 77 again',
+         String(a));
+    config.clearOverride('tls.sessionTimeoutS');
+    let res = await resumesById(mainPort, 'l5');
+    note(res.first.accepted && res.again.accepted && !res.again.reused,
+         'L5. tls.sessionCacheSize 0 (the default): a TLS 1.2 session ID is ' +
+         'not resumed — the full handshake again',
+         tail(res.again));
+    w = config.setOverride('listenerMain.sessionCacheSize', '10');
+    await settle();
+    res = await resumesById(mainPort, 'l6');
+    let other = await resumesById(dbgPort, 'l6d');
+    note(w.ok && res.again.accepted && res.again.reused &&
+         other.again.accepted && !other.again.reused, 'L6. listenerMain.sessionCacheSize 10: the ' +
+         'main port resumes a session ID, the debugger (inheriting 0) does ' +
+         'not', tail(res.again) + ' | ' + tail(other.again));
+    w = config.setOverride('listenerMain.sessionCacheSize', '1');
+    await settle();
+    const firstOut = sessFile('l7a');
+    await probe(mainPort, { version: '1.2', noTicket: true,
+                            sessOut: firstOut });
+    await probe(mainPort, { version: '1.2', noTicket: true,
+                            sessOut: sessFile('l7b') });
+    // The newer first: a full handshake for the older would make a third
+    // session and drop the newer in its turn.
+    r4 = await probe(mainPort, { version: '1.2', noTicket: true,
+                                 sessIn: sessFile('l7b') });
+    r = await probe(mainPort, { version: '1.2', noTicket: true,
+                                sessIn: firstOut });
+    note(w.ok && !r.reused && r4.reused, 'L7. a cache of one: the older ' +
+         'session is dropped for the newer, which still resumes',
+         tail(r) + ' | ' + tail(r4));
+    config.setOverride('listenerMain.sessionCacheSize', '10');
+    config.setOverride('listenerMain.sessionTimeoutS', '1');
+    await settle();
+    res = await resumesById(mainPort, 'l8', function () {
+      return new Promise(function (ok) { setTimeout(ok, 2200); });
+    });
+    // The cache's own age check (attachSessionCache()) is belt and braces:
+    // OpenSSL refuses a session past the timeout it was made under, so a
+    // mutant dropping that check is EQUIVALENT here and is not counted.
+    note(res.first.accepted && !res.again.reused, 'L8. a session ID older ' +
+         'than the listener\'s sessionTimeoutS is not resumed',
+         tail(res.again));
+    config.setOverride('listenerMain.sessionTimeoutS', '-1');
+    config.setOverride('listenerMain.sessionCacheSize', '-1');
+    config.clearOverride('tls.disableTls12');
+    await settle();
+    const rowOf = function (key) {
+      return config.SETTINGS.filter(function (one) {
+        return one.key === key;
+      })[0];
+    };
+    const sessRow = rowOf('listenerMain.sessionCacheSize');
+    note(sessRow && sessRow.dflt === -1 && sessRow.type === 'int' &&
+         !!rowOf('listenerSpiffeServer.sessionTimeoutS') &&
+         !rowOf('listenerSpiffeServer.sessionCacheSize') &&
+         !rowOf('listenerRevocation.sessionTimeoutS'),
+         'L9. the rows: the cache size per listener inheriting at -1; the ' +
+         'SPIFFE listener has a timeout and no cache size, the plain-HTTP ' +
+         'revocation listener neither', JSON.stringify(sessRow));
+
+    // --- M. HTTP connection pooling, per listener (#429) -------------------
+    tlsServer.registerHttpListener(main, 'main');
+    tlsServer.registerHttpListener(dbg, 'debugger');
+    // The Keep-Alive header node answers a kept-alive request with, and the
+    // response's own Connection header; `agent` keeps one socket.
+    const ask = function (port, agent) {
+      return new Promise(function (resolve, reject) {
+        const req = https.request({ host: '127.0.0.1', port: port, path: '/',
+                                    rejectUnauthorized: false,
+                                    agent: agent || new https.Agent({
+                                      keepAlive: true }) },
+          function (res) {
+            res.resume();
+            res.on('end', function () {
+              resolve({ status: res.statusCode,
+                        keepAlive: String(res.headers['keep-alive'] || ''),
+                        connection: String(res.headers.connection || '') });
+            });
+          });
+        req.on('error', function (e) {
+          reject(new Error('port ' + port + ': ' + ((e && e.message) || e)));
+        });
+        req.end();
+      });
+    };
+    const timeoutOf = function (answer) {
+      return Number((answer.keepAlive.match(/timeout=(\d+)/) || [])[1]);
+    };
+    let x = await ask(mainPort);
+    let y = await ask(dbgPort);
+    note(timeoutOf(x) === 60 && timeoutOf(y) === 60 &&
+         main.headersTimeout === 61000 && main.maxRequestsPerSocket === 0 &&
+         main.maxConnections === Infinity,
+         'M1. default: both listeners answer Keep-Alive: timeout=60, the ' +
+         'header timeout a second above it, no request or connection limit',
+         x.keepAlive + ' / ' + y.keepAlive + ' ' + main.headersTimeout + ' ' +
+         main.maxRequestsPerSocket + ' ' + main.maxConnections);
+    w = config.setOverride('listenerMain.keepAliveTimeoutS', '30');
+    await settle();
+    x = await ask(mainPort);
+    y = await ask(dbgPort);
+    note(w.ok && timeoutOf(x) === 30 && timeoutOf(y) === 60 &&
+         main.headersTimeout === 31000, 'M2. listenerMain.keepAliveTimeoutS ' +
+         '30: the main port answers timeout=30 at once and the debugger ' +
+         'still 60', x.keepAlive + ' / ' + y.keepAlive);
+    w = config.setOverride('http.keepAliveTimeoutS', '45');
+    await settle();
+    x = await ask(mainPort);
+    y = await ask(dbgPort);
+    note(w.ok && timeoutOf(x) === 30 && timeoutOf(y) === 45, 'M3. ' +
+         'http.keepAliveTimeoutS 45: the debugger, inheriting, follows it',
+         x.keepAlive + ' / ' + y.keepAlive);
+    config.setOverride('listenerMain.keepAliveTimeoutS', '-1');
+    await settle();
+    x = await ask(mainPort);
+    note(timeoutOf(x) === 45, 'M4. -1: the main port inherits 45 again',
+         x.keepAlive);
+    w = config.setOverride('listenerDebugger.headersTimeoutS', '100');
+    await settle();
+    const h1 = dbg.headersTimeout;
+    config.setOverride('listenerDebugger.headersTimeoutS', '10');
+    await settle();
+    const h2 = dbg.headersTimeout;
+    note(w.ok && h1 === 100000 && h2 === 46000 &&
+         main.headersTimeout === 46000, 'M5. the debugger\'s own header ' +
+         'timeout: 100 is taken, 10 (below its keep-alive) is raised to ' +
+         'the keep-alive plus one', h1 + ' / ' + h2);
+    config.setOverride('listenerDebugger.headersTimeoutS', '-1');
+    config.clearOverride('http.keepAliveTimeoutS');
+    w = config.setOverride('listenerMain.maxRequestsPerSocket', '2');
+    await settle();
+    const one = new https.Agent({ keepAlive: true, maxSockets: 1 });
+    x = await ask(mainPort, one);
+    y = await ask(mainPort, one);
+    one.destroy();
+    note(w.ok && main.maxRequestsPerSocket === 2 &&
+         !/close/i.test(x.connection) && /close/i.test(y.connection),
+         'M6. listenerMain.maxRequestsPerSocket 2: the second request on a ' +
+         'connection is answered Connection: close',
+         x.connection + ' / ' + y.connection);
+    config.setOverride('listenerMain.maxRequestsPerSocket', '-1');
+    w = config.setOverride('listenerMain.maxConnections', '1');
+    await settle();
+    const held = require('tls').connect({ host: '127.0.0.1', port: mainPort,
+                                          rejectUnauthorized: false });
+    await new Promise(function (ok) {
+      held.once('secureConnect', ok);
+      held.once('error', ok);
+    });
+    r = await probe(mainPort, { version: '1.3' });
+    r4 = await probe(dbgPort, { version: '1.3' });
+    held.destroy();
+    await settle();
+    note(w.ok && main.maxConnections === 1 && !r.accepted && r4.accepted,
+         'M7. listenerMain.maxConnections 1: with one connection held a ' +
+         'second is dropped on the main port, and the debugger is unaffected',
+         tail(r) + ' | ' + tail(r4));
+    config.setOverride('listenerMain.maxConnections', '0');
+    await settle();
+    r = await probe(mainPort, { version: '1.3' });
+    note(main.maxConnections === Infinity && r.accepted, 'M8. 0: no limit ' +
+         '(Infinity on the server, where node\'s 0 refuses everything)',
+         String(main.maxConnections));
+    config.setOverride('listenerMain.maxConnections', '-1');
+    // F left the realm's listener requiring a certificate.
+    realms.clearOverride(realmId, 'listener.requireClientCertificate');
+    w = realms.setOverride(realmId, 'listener.keepAliveTimeoutS', '20');
+    tlsServer.registerHttpListener(realmServer, 'realm', realmId);
+    x = await ask(realmPort);
+    note(w && w.ok !== false && timeoutOf(x) === 20 &&
+         realmServer.keepAliveTimeout === 20000, 'M9. a realm\'s own ' +
+         'listener.keepAliveTimeoutS 20 holds its listener', x.keepAlive);
+    realms.setOverride(realmId, 'listener.keepAliveTimeoutS', '-1');
+    await settle();
+    x = await ask(realmPort);
+    note(timeoutOf(x) === 60, 'M10. -1 on the realm: it follows the ' +
+         'service again, re-applied on the realm change', x.keepAlive);
+    const poolRow = rowOf('listenerRevocation.maxConnections');
+    note(poolRow && poolRow.dflt === -1 &&
+         !rowOf('listenerLdaps.keepAliveTimeoutS') &&
+         !rowOf('listenerSpiffeServer.keepAliveTimeoutS') &&
+         !!rowOf('listenerDebugger.keepAliveTimeoutS'),
+         'M11. the rows: pooling on the HTTP listeners (the revocation ' +
+         'listener included) and not on LDAPS or SPIFFE',
+         JSON.stringify(poolRow));
     dbg.close();
 
     main.close();
@@ -616,13 +863,28 @@ async function run(t) {
           'service, naming STS-TLS-0045',
           'exit ' + unreadable.status + ' ' +
           String(unreadable.stdout + unreadable.stderr).slice(-400));
+  // --- I3. a replaced setting still named stops the service (#429) ---------
+  const replaced = childProcess.spawnSync(process.execPath, ['-e',
+    'require(' + JSON.stringify(path.join(ROOT, 'common/config')) + ')'], {
+    env: Object.assign(cleanEnv(), {
+      STS_TLS_MAIN_SESSION_TIMEOUT_S: '90',
+      LOG_LEVEL: 'fatal', STS_LOG_LEVEL: 'fatal' }),
+    encoding: 'utf8', timeout: 120000, cwd: ROOT
+  });
+  const said = String(replaced.stdout) + replaced.stderr;
+  t.check(replaced.status !== 0 && /STS-CORE-0105/.test(said) &&
+          /tls\.sessionTimeoutS/.test(said) && /#429/.test(said),
+          'I3. STS_TLS_MAIN_SESSION_TIMEOUT_S stops the service, naming ' +
+          'tls.sessionTimeoutS (STS-CORE-0105)',
+          'exit ' + replaced.status + ' ' + said.slice(-400));
   log.debug("Leaving run().");
 }
 
 module.exports = {
   name: 'listener_tls_policy',
   describe: 'TLS 1.2 off, the TLS 1.3 suites chosen, post-quantum only and ' +
-            'client authentication, per listener and per realm listener, ' +
-            'over real handshakes (#423)',
+            'client authentication, the TLS session cache and HTTP ' +
+            'connection pooling, per listener and per realm listener, over ' +
+            'real handshakes (#423, #429)',
   run: run
 };

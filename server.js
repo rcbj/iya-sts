@@ -1028,22 +1028,6 @@ serviceState.start().then(function (both) {
 // Built rather than started above, because the two shapes differ only in this
 // one expression and writing the whole announcement twice is how the two
 // versions of it come to say different things.
-// The main port's TLS session lifetime and HTTP keep-alive, from their
-// settings (#406); a value the row's bounds refuse falls back to its default.
-function mainSessionTimeoutS() {
-  log.debug("Entering mainSessionTimeoutS().");
-  const n = Number(config.value('tls.mainSessionTimeoutS'));
-  log.debug("Leaving mainSessionTimeoutS().");
-  return Number.isFinite(n) && n >= 1 ? Math.floor(n) : 60;
-}
-
-function keepAliveTimeoutMs() {
-  log.debug("Entering keepAliveTimeoutMs().");
-  const n = Number(config.value('global.httpKeepAliveTimeoutS'));
-  log.debug("Leaving keepAliveTimeoutMs().");
-  return (Number.isFinite(n) && n >= 1 ? Math.floor(n) : 60) * 1000;
-}
-
 // A TRUST REALM'S OWN LISTENER (#99, 2026-10-02): an unbound HTTPS server
 // wired exactly as the main port below is — the client-certificate request
 // and the truststore, the TLS policy, the connection observer, the JA4
@@ -1062,16 +1046,15 @@ function realmListener(label, certificate, certificateOf, realmId) {
     key: certificate.key,
     // Its own truststore (#429): the realm's listener.trustAnchorsFile and
     // listener.trustIssuedClientCertificates, else the service's.
-    ca: tlsServer.clientTruststoreOptions(policy).ca,
-    // The main port's session lifetime and keep-alive (#406), so a realm's
-    // own listener pools connections and sessions as that port does.
-    sessionTimeout: mainSessionTimeoutS()
+    ca: tlsServer.clientTruststoreOptions(policy).ca
+  // Its TLS session lifetime is in the policy (#429), its session cache
+  // attached when it registers below.
   }, tlsServer.clientAuthOptions(policy.clientAuth),
   tlsServer.protocolOptions(policy)), app);
-  const keepAliveMs = keepAliveTimeoutMs();
-  server.keepAliveTimeout = keepAliveMs;
-  server.headersTimeout = Math.max(server.headersTimeout || 0,
-                                   keepAliveMs + 1000);
+  // ITS OWN CONNECTION POOLING (#429): the realm's listener.keepAliveTimeoutS
+  // and the rest, inheriting the service's http.* rows; re-applied when
+  // they change.
+  tlsServer.registerHttpListener(server, 'realm', realmId);
   tlsServer.trustClientCertificatesOn(server, label, certificateOf,
                                       { kind: 'realm', realm: realmId });
   tlsServer.observeConnectionsOn(server, label);
@@ -1123,13 +1106,11 @@ if (useHttps) {
     // tls.mainPortDisableOptionalClientCertificate asks for none, and
     // tls.mainPortRequireClientCertificate requires one that verifies. The
     // pair is applied again, with the truststore, whenever either moves.
-    ...tlsServer.clientAuthOptions(tlsServer.policyFor('main').clientAuth),
-    // HOW LONG A SESSION MAY BE RESUMED (#406, 2026-10-02): a resumed session
-    // carries no CertificateRequest, so a browser holding a matching
-    // certificate does not ask its user again. node keeps this on the server
-    // and passes it to every context `setSecureContext()` builds after a
-    // truststore change.
-    sessionTimeout: mainSessionTimeoutS()
+    ...tlsServer.clientAuthOptions(tlsServer.policyFor('main').clientAuth)
+    // HOW LONG A SESSION MAY BE RESUMED (#406; per listener and editable
+    // since #429): in the policy below, as `sessionTimeout`. A resumed
+    // session carries no CertificateRequest, so a browser holding a matching
+    // certificate does not ask its user again.
   // `tls.minVersion` and `tls.ciphers` (2026-09-12), from the module that
   // states them for every TLS listener — at creation as well as on every
   // truststore change, so the first handshake is held to the same floor as the
@@ -1143,11 +1124,10 @@ if (useHttps) {
   // matching certificate. Requests a client pipelines on one connection are
   // answered in order, which node does on its own. The header timeout is kept
   // above the keep-alive, so a client (or a balancer) reusing a connection at
-  // the last moment never meets one this end is already closing.
-  const keepAliveMs = keepAliveTimeoutMs();
-  mainServer.keepAliveTimeout = keepAliveMs;
-  mainServer.headersTimeout = Math.max(mainServer.headersTimeout || 0,
-                                       keepAliveMs + 1000);
+  // the last moment never meets one this end is already closing. Per
+  // listener and editable since #429: listenerMain.keepAliveTimeoutS and the
+  // rest, inheriting http.*, re-applied by tls_server.js when they change.
+  tlsServer.registerHttpListener(mainServer, 'main');
   // REGISTERED SO THAT A LATER `POST /tls/trust` REACHES THIS LISTENER TOO.
   // `tls_server.js` owns the anchors and applies them to every listener it
   // knows about; this is how the one it did not create becomes one of them. It

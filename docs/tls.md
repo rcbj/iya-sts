@@ -510,9 +510,13 @@ refusal of an application's certificate — is the same in both modes. See
 | `tls.selfSignedOrganization` | `STS_TLS_SELF_SIGNED_ORGANIZATION` | `sts` | no | The O= of its subject. |
 | `tls.sessionTicketRotationS` | `STS_TLS_SESSION_TICKET_ROTATION_S` | `3600` | yes | In an active-active cluster, how often the session-ticket key every node's LDAPS listener and main port share is replaced (the old key is deleted); `0` shares nothing. Outside active-active nothing is shared. |
 | `tls.mainPortSharedTickets` | `STS_TLS_MAIN_PORT_SHARED_TICKETS` | `true` | no | The main port seals its session tickets under the cluster's shared key, so a session resumes on any node. `false` keeps a key per node. |
-| `tls.mainSessionTimeoutS` | `STS_TLS_MAIN_SESSION_TIMEOUT_S` | `60` | no | How long a TLS session on the main port may be resumed. |
+| `tls.sessionTimeoutS` | `STS_TLS_SESSION_TIMEOUT_S` | `60` | yes | How long a TLS session may be resumed, on every TLS listener that does not set its own (`listener<Id>.sessionTimeoutS`; `-1` inherits). It was `tls.mainSessionTimeoutS`, the main port's alone, until #429. |
+| `tls.sessionCacheSize` | `STS_TLS_SESSION_CACHE_SIZE` | `0` | yes | How many TLS 1.2 session IDs a listener keeps for resumption; `0` keeps none and resumes by ticket only. Per listener as `listener<Id>.sessionCacheSize`. Not on the SPIFFE listeners: grpc-js offers no session-ID cache. |
 | `tls.resumedChainWaitMs` | `STS_TLS_RESUMED_CHAIN_WAIT_MS` | `2000` | yes | How long a request on a session resumed from another node waits for that session's client-certificate chain to replicate; `0` never waits. |
-| `global.httpKeepAliveTimeoutS` | `STS_HTTP_KEEP_ALIVE_TIMEOUT_S` | `60` | no | How long the main port keeps an idle HTTP/1.1 connection for the next request; pipelined requests are answered in order. |
+| `http.keepAliveTimeoutS` | `STS_HTTP_KEEP_ALIVE_TIMEOUT_S` | `60` | yes | How long an HTTP listener keeps an idle HTTP/1.1 connection for the next request; pipelined requests are answered in order. It was `global.httpKeepAliveTimeoutS`, the main port's alone, until #429. |
+| `http.headersTimeoutS` | `STS_HTTP_HEADERS_TIMEOUT_S` | `0` | yes | How long a request's headers may take to arrive; `0` is the keep-alive timeout plus one second, and a value at or below the keep-alive is raised to that. |
+| `http.maxRequestsPerSocket` | `STS_HTTP_MAX_REQUESTS_PER_SOCKET` | `0` | yes | How many requests one connection may carry before it is closed; `0` is no limit. |
+| `http.maxConnections` | `STS_HTTP_MAX_CONNECTIONS` | `0` | yes | How many connections an HTTP listener holds at once; `0` is no limit. |
 | `global.trustProxy` | `STS_TRUST_PROXY` | `false` | yes | Believe `X-Forwarded-Proto` and `X-Forwarded-Host` from a TLS-terminating proxy. |
 | `global.trustedProxies` | `STS_TRUSTED_PROXIES` | *(empty)* | yes | The addresses or CIDRs forwarded headers — and PROXY protocol headers — are believed from. |
 | `global.proxyProtocol` | `STS_PROXY_PROTOCOL` | `off` | no | `v2` expects a PROXY protocol v2 header on every TCP listener, read before TLS. |
@@ -586,8 +590,8 @@ is changed: on `/admin/tls` (or `/admin/config` for `global.*`), through
   resumed session carries no CertificateRequest. With node's five-second
   keep-alive and a ticket key per node, a person clicking through the
   console or the portal behind a balancer was asked on nearly every click.
-  `global.httpKeepAliveTimeoutS` keeps an idle HTTP/1.1 connection 60
-  seconds (pipelined requests are answered in order), `tls.mainSessionTimeoutS`
+  `http.keepAliveTimeoutS` keeps an idle HTTP/1.1 connection 60
+  seconds (pipelined requests are answered in order), `tls.sessionTimeoutS`
   lets a session resume for 60 seconds, and the shared key lets it resume on
   any node. Keep a load balancer's idle timeout above the keep-alive (an AWS
   NLB's is 350 seconds). HTTP/2 is not offered: express cannot run on node's

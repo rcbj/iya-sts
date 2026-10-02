@@ -422,7 +422,7 @@ function clientAuthFrom(disableOptional, require) {
 // the service-wide row.
 // ---------------------------------------------------------------------------
 const LISTENER_KINDS = ['main', 'ldaps', 'debugger', 'spiffeServer',
-                        'spiffeBroker', 'cell'];
+                        'spiffeBroker', 'cell', 'revocation'];
 
 // A listener's own value for one setting, or undefined to inherit.
 function ownValue(kind, realmId, name) {
@@ -445,7 +445,8 @@ function ownValue(kind, realmId, name) {
     raw = undefined;
   }
   log.debug("Leaving ownValue().");
-  if (raw === undefined || raw === null || raw === 'inherit' ||
+  // -1 is an integer row's inherit (it has no empty value).
+  if (raw === undefined || raw === null || raw === 'inherit' || raw === -1 ||
       (typeof raw === 'string' && raw.trim() === '') ||
       (Array.isArray(raw) && !raw.length)) {
     return undefined;
@@ -515,6 +516,12 @@ function policyFor(kind, realmId) {
     trustAnchorsFile: ownAnchors === undefined ? '' : String(ownAnchors),
     trustIssued: pick('trustIssuedClientCertificates',
                       'tls.trustIssuedClientCertificates') !== false,
+    // THE TLS SESSION CACHE (#429): how long a session resumes, and how many
+    // session IDs this listener keeps (`attachSessionCache()`).
+    sessionTimeoutS: Math.max(1, Number(pick('sessionTimeoutS',
+                                             'tls.sessionTimeoutS')) || 60),
+    sessionCacheSize: Math.max(0, Number(pick('sessionCacheSize',
+                                              'tls.sessionCacheSize')) || 0),
     clientAuth: clientAuth
   };
   log.debug("Leaving policyFor().");
@@ -580,6 +587,11 @@ function protocolOptions(policy) {
   // choosing, so OpenSSL refuses every one with a no_renegotiation warning.
   // TLS 1.3 has no renegotiation to refuse.
   options.secureOptions = crypto.constants.SSL_OP_NO_RENEGOTIATION;
+  // How long a session may be resumed (#429): a ticket's lifetime and the
+  // session cache's. In the context, so every re-application carries it.
+  if (p.sessionTimeoutS) {
+    options.sessionTimeout = p.sessionTimeoutS;
+  }
   log.debug("Leaving protocolOptions().");
   return options;
 }
@@ -3050,6 +3062,9 @@ function trustClientCertificatesOn(server, label, certificateOf, which) {
                          kind: String((which && which.kind) || 'main'),
                          realm: (which && which.realm) || null,
                          applied: '' });
+  // Its TLS session cache (#429), bounded by its own policy.
+  attachSessionCache(server, String((which && which.kind) || 'main'),
+                     (which && which.realm) || null);
   // Every listener that registers here ASKS for a client certificate (the
   // main port, the debugger), so every one is guarded (#212).
   refuseNonNistCurveCertificatesOn(server, String(label || 'a listener'));
@@ -3082,6 +3097,12 @@ function forgetListener(server) {
   });
   if (at >= 0) {
     externalServers.splice(at, 1);
+  }
+  // Its connection pooling is no longer re-applied either (#429).
+  for (let i = httpListeners.length - 1; i >= 0; i -= 1) {
+    if (httpListeners[i].server === server) {
+      httpListeners.splice(i, 1);
+    }
   }
   log.debug('Leaving forgetListener(). ' + (at >= 0));
   return at >= 0;
@@ -3202,6 +3223,13 @@ function reapplyPolicy() {
                 ((e && e.message) || e) + '); it keeps the one it had.');
     }
   });
+  httpListeners.forEach(function (entry) {
+    if (JSON.stringify(httpPolicyFor(entry.kind, entry.realm)) !==
+        entry.applied) {
+      applyHttpPolicy(entry);
+      moved += 1;
+    }
+  });
   if (moved) {
     log.info('tls: the listeners\' TLS policy changed and was re-applied ' +
              '(TLS 1.2 ' + (policyFor().disableTls12 ? 'off' : 'on') +
@@ -3220,6 +3248,157 @@ if (typeof config.onOverridesChanged === 'function') {
 realms.onChange(function () {
   reapplyPolicy();
 });
+
+// ---------------------------------------------------------------------------
+// THE TLS SESSION CACHE, PER LISTENER (#429, 2026-10-02).
+//
+// node keeps no server-side session cache of its own: it resumes by TICKETS
+// (TLS 1.3 always, TLS 1.2 when the client has one), which hold the session
+// themselves and need no server memory. A TLS 1.2 client resuming by session
+// ID finds nothing to resume unless the server answers node's `newSession` /
+// `resumeSession` events — its documented external cache. This is that cache:
+// a Map per listener, bounded by the listener's sessionCacheSize (the oldest
+// forgotten past it) and its sessionTimeoutS, both read at each event so a
+// change takes effect at once. Size 0 keeps nothing, which is the default:
+// every resumption is a ticket's.
+// ---------------------------------------------------------------------------
+/**
+ * Attaches a session-ID cache to a TLS server, bounded by the listener's
+ * policy.
+ *
+ * @param server - the TLS server
+ * @param kind - the listener's kind, as for `policyFor()`
+ * @param realmId - for a realm's own listener, its id
+ * @returns the cache, for its report
+ */
+function attachSessionCache(server, kind, realmId) {
+  log.debug('Entering attachSessionCache(). ' + kind);
+  if (!server || typeof server.on !== 'function') {
+    log.debug('Leaving attachSessionCache(). Not a server.');
+    return null;
+  }
+  const cache = new Map();
+  const bounds = function () {
+    const policy = policyFor(kind, realmId);
+    return { size: policy.sessionCacheSize,
+             ttlMs: policy.sessionTimeoutS * 1000 };
+  };
+  server.on('newSession', function (id, data, done) {
+    const b = bounds();
+    if (b.size > 0) {
+      const key = Buffer.from(id).toString('hex');
+      cache.delete(key);
+      cache.set(key, { data: data, at: Date.now() });
+      while (cache.size > b.size) {
+        cache.delete(cache.keys().next().value);
+      }
+    } else {
+      cache.clear();
+    }
+    done();
+  });
+  server.on('resumeSession', function (id, done) {
+    const b = bounds();
+    const key = Buffer.from(id).toString('hex');
+    const held = b.size > 0 ? cache.get(key) : null;
+    if (held && Date.now() - held.at <= b.ttlMs) {
+      done(null, held.data);
+      return;
+    }
+    cache.delete(key);
+    done(null, null);
+  });
+  sessionCaches.push({ kind: kind, realm: realmId || null, cache: cache });
+  log.debug('Leaving attachSessionCache().');
+  return cache;
+}
+
+/** @type {Array<any>} */
+const sessionCaches = [];
+
+// ---------------------------------------------------------------------------
+// HTTP CONNECTION POOLING, PER LISTENER (#429, 2026-10-02; #406's keep-alive
+// on the main port made per listener and editable). The keep-alive and
+// header timeouts, the requests one connection may carry and the connections
+// held at once are properties of the http(s) server, read by node at each
+// new connection or request, so a change is applied to the server object
+// where it stands. An HTTP listener registers here; `reapplyPolicy()` re-applies.
+// ---------------------------------------------------------------------------
+/** @type {Array<any>} */
+const httpListeners = [];
+
+/**
+ * The connection-pooling values one HTTP listener is held to: its own where
+ * set, the service's otherwise.
+ *
+ * @param kind - `main`, `debugger`, `revocation` or `realm`
+ * @param realmId - for `realm`, the realm
+ * @returns `{ keepAliveTimeoutS, headersTimeoutS, maxRequestsPerSocket,
+ *   maxConnections }`, the header timeout resolved
+ */
+function httpPolicyFor(kind, realmId) {
+  log.debug('Entering httpPolicyFor(). ' + kind);
+  const pick = function (name, base) {
+    const own = kind ? ownValue(kind, realmId, name) : undefined;
+    return Number(own !== undefined ? own : config.value(base));
+  };
+  const keepAlive = Math.max(1, pick('keepAliveTimeoutS',
+                                     'http.keepAliveTimeoutS') || 60);
+  const asked = Math.max(0, pick('headersTimeoutS', 'http.headersTimeoutS') ||
+                            0);
+  log.debug('Leaving httpPolicyFor().');
+  return {
+    keepAliveTimeoutS: keepAlive,
+    // Kept ABOVE the keep-alive, so a connection reused at the last moment
+    // never meets one this end is closing.
+    headersTimeoutS: asked > keepAlive ? asked : keepAlive + 1,
+    maxRequestsPerSocket: Math.max(0, pick('maxRequestsPerSocket',
+                                           'http.maxRequestsPerSocket') || 0),
+    maxConnections: Math.max(0, pick('maxConnections',
+                                     'http.maxConnections') || 0)
+  };
+}
+
+// The pooling values onto the server object.
+function applyHttpPolicy(entry) {
+  log.debug('Entering applyHttpPolicy(). ' + entry.kind);
+  const p = httpPolicyFor(entry.kind, entry.realm);
+  entry.server.keepAliveTimeout = p.keepAliveTimeoutS * 1000;
+  entry.server.headersTimeout = p.headersTimeoutS * 1000;
+  entry.server.maxRequestsPerSocket = p.maxRequestsPerSocket;
+  // 0 is "no limit" here and Infinity there: node refuses EVERY connection
+  // at a maxConnections of 0.
+  entry.server.maxConnections = p.maxConnections > 0 ? p.maxConnections
+                                                     : Infinity;
+  entry.applied = JSON.stringify(p);
+  log.debug('Leaving applyHttpPolicy().');
+}
+
+/**
+ * Registers an http(s) server whose connection pooling follows its
+ * listener's settings, now and whenever they change.
+ *
+ * @param server - the http or https server
+ * @param kind - `main`, `debugger`, `revocation` or `realm`
+ * @param realmId - for `realm`, the realm
+ * @returns a function that unregisters it
+ */
+function registerHttpListener(server, kind, realmId) {
+  log.debug('Entering registerHttpListener(). ' + kind);
+  const entry = { server: server, kind: String(kind), realm: realmId || null,
+                  applied: '' };
+  httpListeners.push(entry);
+  applyHttpPolicy(entry);
+  log.debug('Leaving registerHttpListener().');
+  return function unregister() {
+    log.debug('Entering unregister(). ' + kind);
+    const at = httpListeners.indexOf(entry);
+    if (at >= 0) {
+      httpListeners.splice(at, 1);
+    }
+    log.debug('Leaving unregister().');
+  };
+}
 
 /**
  * What every listener this module knows is held to, for the Listeners page:
@@ -5568,6 +5747,9 @@ module.exports = {
   policyFor: policyFor,
   // A listener's own value for one setting, or undefined where it inherits
   // (#429): for a module that has a default of its own (SPIFFE's sigalgs).
+  attachSessionCache: attachSessionCache,
+  registerHttpListener: registerHttpListener,
+  httpPolicyFor: httpPolicyFor,
   listenerOwnValue: function (kind, name) {
     return ownValue(kind, null, name);
   },

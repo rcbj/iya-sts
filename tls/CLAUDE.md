@@ -1284,6 +1284,47 @@ to on.
   - `tls_protocol_policy.js` builds its listener with it;
   - `sts_fapi2.js` asserts whatever `/admin-api/listeners` says.
 
+### Per-listener session cache and connection pooling (#429, 2026-10-02)
+
+rcbj: "expose the size and timeout of the TLS Session Cache as a parameter
+on each TLS listener tab as editable fields. Also, expose HTTP Connection
+Pooling settings on each HTTP/HTTPS listener tab."
+
+* **The session cache is two settings, both runtime.**
+  - `tls.sessionTimeoutS` (60) is how long a session resumes, by ticket or
+    by ID. It replaced `tls.mainSessionTimeoutS`, which was the main port's
+    alone; `policyFor()` carries it and `protocolOptions()` hands it to
+    OpenSSL as `sessionTimeout`, so a change reaches the next handshake
+    through the secure context `reapplyPolicy()` rebuilds.
+  - `tls.sessionCacheSize` (0) is how many TLS 1.2 session IDs a listener
+    keeps. **Node has no server-side session cache of its own**: it resumes
+    by ticket, and by ID only through the `newSession`/`resumeSession`
+    events. `attachSessionCache()` installs those on every listener that
+    registers with `trustClientCertificatesOn()`, and on the cell channel,
+    as a Map bounded by the size and the timeout READ AT EACH EVENT, so a
+    change needs no re-application. 0 keeps nothing, which is what the
+    service did before.
+  - **Not on the SPIFFE listeners**, which have only the timeout: grpc-js
+    offers no session-ID events.
+* **Connection pooling is four settings, all runtime, on the HTTP
+  listeners only** (main, the debugger, the plain-HTTP revocation listener,
+  and a realm's own): `http.keepAliveTimeoutS` (60; it replaced
+  `global.httpKeepAliveTimeoutS`), `http.headersTimeoutS` (0 = keep-alive
+  plus one second, and never at or below the keep-alive),
+  `http.maxRequestsPerSocket` and `http.maxConnections` (0 = no limit, and
+  `Infinity` on the server: node refuses every connection at 0). They are
+  properties of node's server object, read at each connection or request,
+  so `registerHttpListener()` sets them and `reapplyPolicy()` sets them
+  again when what `httpPolicyFor()` answers has changed.
+* **The per-listener integer rows inherit with `-1`**, beside phase 1's
+  `inherit` and `''`. The rows are `listener<Id>.<name>` and a realm's
+  `listener.<name>`, generated from `PER_LISTENER_SETTINGS` like the rest,
+  and the Listeners page draws each listener's on its tab.
+* **The two replaced settings are refused at start** (`REPLACED_SETTINGS`),
+  naming their successors; `STS_TLS_MAIN_SESSION_TIMEOUT_S` is the one with
+  an environment variable, and `deploy/aws/` passes
+  `STS_TLS_SESSION_TIMEOUT_S` instead.
+
 ## THE LISTENERS' POLICY (#423, 2026-10-02)
 
 rcbj asked for:
@@ -1570,9 +1611,12 @@ the leaf as it does for a real handshake — harmless, and keyed by the leaf.
 ## The main port's connections and sessions are pooled (#406, 2026-10-02)
 
 **The main port shares the cluster's session-ticket key** (`tls.mainPortSharedTickets`,
-on by default), keeps an idle HTTP/1.1 connection `global.httpKeepAliveTimeoutS`
+on by default), keeps an idle HTTP/1.1 connection `http.keepAliveTimeoutS`
 (60, against node's own 5) and lets a TLS session resume for
-`tls.mainSessionTimeoutS` (60). What forced it: the main port asks every full
+`tls.sessionTimeoutS` (60). Both were the main port's own settings
+(`global.httpKeepAliveTimeoutS`, `tls.mainSessionTimeoutS`) until #429 made
+them service-wide defaults every listener inherits — see *Per-listener
+session cache and connection pooling*, below. What forced it: the main port asks every full
 handshake for a client certificate, and a browser holding one under a CA it
 names asks its user whether to send it on every FULL handshake. Behind a
 balancer, with a key per node and five-second connections, that was nearly

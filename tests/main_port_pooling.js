@@ -166,8 +166,10 @@ async function run(t) {
 
   // --- A. the settings ------------------------------------------------------
   const rows = {
-    'global.httpKeepAliveTimeoutS': [60, 'STS_HTTP_KEEP_ALIVE_TIMEOUT_S'],
-    'tls.mainSessionTimeoutS': [60, 'STS_TLS_MAIN_SESSION_TIMEOUT_S'],
+    // Service-wide defaults every listener inherits since #429; each
+    // listener has its own listener<Id>.<name> row.
+    'http.keepAliveTimeoutS': [60, 'STS_HTTP_KEEP_ALIVE_TIMEOUT_S'],
+    'tls.sessionTimeoutS': [60, 'STS_TLS_SESSION_TIMEOUT_S'],
     'tls.mainPortSharedTickets': [true, 'STS_TLS_MAIN_PORT_SHARED_TICKETS'],
     'tls.resumedChainWaitMs': [2000, 'STS_TLS_RESUMED_CHAIN_WAIT_MS']
   };
@@ -278,13 +280,14 @@ async function run(t) {
   const root = path.join(__dirname, '..');
   const server = fs.readFileSync(path.join(root, 'server.js'), 'utf8');
   const app = fs.readFileSync(path.join(root, 'common', 'app.js'), 'utf8');
-  t.check(/sessionTimeout:\s*mainSessionTimeoutS\(\)/.test(server),
-    'the main listener is created with tls.mainSessionTimeoutS', '');
-  t.check(/mainServer\.keepAliveTimeout\s*=\s*keepAliveMs/.test(server) &&
-          /mainServer\.headersTimeout\s*=\s*Math\.max\([\s\S]{0,80}keepAliveMs \+ 1000\)/
-            .test(server),
-    'its keep-alive is global.httpKeepAliveTimeoutS and its header timeout ' +
-    'is above it', '');
+  // Since #429 the session lifetime rides in the main port's policy
+  // (protocolOptions(policyFor('main'))) and its pooling is registered.
+  t.check(/protocolOptions\(tlsServer\.policyFor\('main'\)\)/.test(server),
+    'the main listener is created from its own policy, which carries its ' +
+    'TLS session lifetime', '');
+  t.check(/registerHttpListener\(mainServer, 'main'\)/.test(server),
+    'its connection pooling is registered, so its keep-alive and header ' +
+    'timeout follow its settings', '');
   t.check(/config\.value\('tls\.mainPortSharedTickets'\)\s*!==\s*false\)\s*\{\s*require\('\.\/tls\/session_tickets'\)\.track\(mainServer/
             .test(server),
     'it joins the shared session-ticket key unless ' +
