@@ -608,7 +608,9 @@ class Mail {
   linkBase(): string {
     const { log, config, realms, mode } = this.deps;
     log.debug("Entering Mail.linkBase().");
-    const pinned = String(config.value('global.publicBaseUrl') || '').trim()
+    // A realm with a listener of its own (#99) mails links on its own base.
+    const pinned = String(config.value('listener.publicBaseUrl') ||
+                          config.value('global.publicBaseUrl') || '').trim()
       .replace(/\/+$/, '');
     if (pinned) {
       log.debug("Leaving Mail.linkBase(). Pinned.");
@@ -1993,7 +1995,8 @@ class Mail {
       available: this.available(),
       from: cfg.from,
       linkBase: this.linkBase(),
-      linkBasePinned: !!String(this.setting('global.publicBaseUrl') || ''),
+      linkBasePinned: !!String(this.setting('listener.publicBaseUrl') ||
+                               this.setting('global.publicBaseUrl') || ''),
       relay: cfg.transport === 'smtp'
         ? { host: cfg.smtpHost, port: cfg.smtpPort, tls: cfg.smtpTls,
             auth: cfg.smtpAuth, dkim: cfg.dkimDomain

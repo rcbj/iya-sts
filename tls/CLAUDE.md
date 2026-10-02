@@ -1440,3 +1440,19 @@ handler runs (`common/cell_placement.ts`, row `/tls/sign-in`, `browser: true`).
 One side effect to know: the home cell's `fromSocket()` sees a shim whose
 prototype is the inter-cell socket, so it REMEMBERS the forwarded chain against
 the leaf as it does for a real handshake — harmless, and keyed by the leaf.
+
+## A trust realm's own front-end listener (#99, 2026-10-02)
+
+`tls/realm_listeners.js` binds an HTTPS listener per realm that sets
+`listener.port`, in the front process, built by `server.js`'s
+`realmListener()` with the main port's wiring and the realm's own certificate
+(an operator's files, or a `realm-tls` leaf from the realm's CA, one slot per
+node so one node's issuance never supersedes another's). It is reconciled on
+every realm change; bind failures are recorded, never fatal. Two things it
+needed from this directory: `trustClientCertificatesOn()` takes the listener's
+own certificate (`certificateOf`), because `applyAnchors()` used to push the
+MAIN port's certificate to every registered listener on each truststore
+change; and `forgetListener()`, for a listener closed at runtime.
+`common/app.js`'s `enterRealm` refuses any other realm's path on it
+(STS-TLS-0041); `docs/trust-realms.md` is the operator's half.
+

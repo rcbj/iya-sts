@@ -586,7 +586,9 @@ class EntityCollection {
   jobOff(): string {
     const { log, config } = this.deps;
     log.debug("Entering EntityCollection.jobOff().");
-    const pinned = String(config.value('global.publicBaseUrl') || '').trim();
+    // A realm with its own base (#99) has an Entity Identifier without one.
+    const pinned = String(config.value('listener.publicBaseUrl') ||
+                          config.value('global.publicBaseUrl') || '').trim();
     log.debug("Leaving EntityCollection.jobOff().");
     return pinned ? ''
       : 'needs global.publicBaseUrl: a job has no request to take the ' +

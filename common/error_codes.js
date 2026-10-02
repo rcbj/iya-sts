@@ -950,6 +950,24 @@ const CODES = [
       'rejected async handler reaches the process handlers ' +
       '(STS-CORE-0142) instead of being answered with a 500.',
     spec: 'none — logged at start' },
+  { code: 'STS-CORE-0145',
+    summary: 'A listener.* setting was given to the default realm, which ' +
+      'has no listener of its own: it is served on the main port under ' +
+      'global.publicBaseUrl (#99).',
+    spec: 'the write is refused; nothing is changed' },
+  { code: 'STS-CORE-0146',
+    summary: 'A realm\'s listener.publicBaseUrl is not an https origin ' +
+      'with no path, query or user, or listener.port was set without it.',
+    spec: 'the write is refused; nothing is changed' },
+  { code: 'STS-CORE-0147',
+    summary: 'A realm\'s listener.port is already another realm\'s or one ' +
+      'of this process\'s own listeners\' (every node binds every realm ' +
+      'port, so each must be its own).',
+    spec: 'the write is refused; nothing is changed' },
+  { code: 'STS-CORE-0148',
+    summary: 'A realm listener (listener.port) was asked for while this ' +
+      'service runs as several cells, which #99 does not support yet.',
+    spec: 'the write is refused; nothing is changed' },
   { code: 'STS-WORKER-0001',
     summary: 'The IPC channel to a post-quantum worker process failed, so a ' +
       'job sent to it may not arrive or its answer may not come back.' +
@@ -12464,6 +12482,25 @@ const CODES = [
       '48 bytes node takes, so the listeners keep their own keys until the ' +
       'tls.ticket-key-rotate job replaces it.',
     spec: 'resumption falls back to a full handshake' },
+  { code: 'STS-TLS-0039',
+    summary: 'A trust realm\'s own listener (listener.port, #99) could not ' +
+      'be bound on this node — the port in use, or not permitted — or ' +
+      'failed after binding. The realm is still served on the main port ' +
+      'under its prefix.',
+    spec: 'the listener is absent on this node and shown as failed on the ' +
+      'realm\'s page and GET /admin-api/realms' },
+  { code: 'STS-TLS-0040',
+    summary: 'A trust realm\'s own listener has no certificate to present: ' +
+      'its listener.certificateFile or privateKeyFile could not be read or ' +
+      'do not match, it has no DNS name to issue one for, or the realm\'s ' +
+      'certificate authority did not issue one.',
+    spec: 'the listener is not bound (or keeps the certificate it has, on a ' +
+      'renewal)' },
+  { code: 'STS-TLS-0041',
+    summary: 'A request on a trust realm\'s own listener asked for a path ' +
+      'outside that realm\'s prefix — another realm\'s, or the default ' +
+      'realm\'s; a realm\'s listener serves that realm alone.',
+    spec: '404' },
   // ===== VC ================================================================
   { code: 'STS-VC-0001',
     summary: 'An oid4vci encryption setting names no content encryption ' +

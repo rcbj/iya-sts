@@ -472,3 +472,30 @@ variable "risk_upload_volume_iops" {
     error_message = "risk_upload_volume_iops is 3000 to 16000 (gp3's range)."
   }
 }
+
+# A TRUST REALM'S OWN LOAD BALANCER (#99): realm_listeners.tf.
+variable "realm_listeners" {
+  description = <<-EOT
+    The trust realms that have a front-end listener of their own, each behind
+    a network load balancer of its own (realm_listeners.tf, #99): the realm
+    id, the container port the service binds for it (the realm's
+    listener.port; not one of the published ports), the public host name, and
+    the Route 53 zone to write that name in ("" to write none). The realm's
+    own settings are set through /admin-api; the realm_listener_settings
+    output prints the calls.
+  EOT
+  type = list(object({
+    realm    = string
+    port     = number
+    hostname = string
+    zone     = string
+  }))
+  default = []
+}
+
+variable "realm_path_segment" {
+  description = "realms.pathSegment: the path segment realms are found under, for a realm listener's health check."
+  type        = string
+  default     = "realm"
+}
+

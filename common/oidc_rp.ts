@@ -828,6 +828,27 @@ class OidcRelyingParty {
     return out;
   }
 
+  // A REALM'S OWN LISTENER (#99, 2026-10-02). A realm with
+  // `listener.publicBaseUrl` builds its console's and portal's callbacks on
+  // that base, which an ADMINISTRATOR configured — not a Host header a request
+  // carried — so it is registered on the surface's client in every mode, as a
+  // configured cell's console address is. Only the exact callback under the
+  // realm's own prefix, on the base the ambient realm configured.
+  private isRealmListenerCallback(surface: Surface, uri: string): boolean {
+    const { log, config } = this.deps;
+    log.debug("Entering OidcRelyingParty.isRealmListenerCallback().");
+    const base = String(config.value('listener.publicBaseUrl') || '').trim()
+      .replace(/\/+$/, '');
+    if (!base) {
+      log.debug("Leaving OidcRelyingParty.isRealmListenerCallback(). No.");
+      return false;
+    }
+    const out = String(uri || '') ===
+      base + realms.currentPrefix() + surface.callbackPath;
+    log.debug("Leaving OidcRelyingParty.isRealmListenerCallback(). " + out);
+    return out;
+  }
+
   /**
    * Returns the origin this process dials itself on for the back channel: the
    * loopback address and this service's port.
@@ -988,7 +1009,8 @@ class OidcRelyingParty {
     // from `cells.consoleUrl` / `cells.peers`, never from a Host header, so
     // it is REGISTERED on the entry in either mode — as an operator's value,
     // not an observed one — the first time the console signs in there.
-    if (this.isConfiguredCellCallback(surface, uri)) {
+    if (this.isConfiguredCellCallback(surface, uri) ||
+        this.isRealmListenerCallback(surface, uri)) {
       const added = applications.updateApplication(surface.clientId, {
         attribute: 'oauthRedirectUri', mode: 'add', value: uri,
         actor: 'the ' + surface.label + ' (a configured cell console ' +

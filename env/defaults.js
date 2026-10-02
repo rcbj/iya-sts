@@ -63,6 +63,15 @@ var config = {
     corsOrigins: ""                // Origins treated as this service's own
   },
 
+  // --- Realm listener --------------------------------------------------
+  listener: {
+    port: 0,             // The realm's own HTTPS port; restart to apply
+    publicBaseUrl: "",   // The realm's public base URL; restart to apply
+    hostnames: "",       // DNS names on the realm listener's certificate; restart to apply
+    certificateFile: "", // The realm listener's certificate file; restart to apply
+    privateKeyFile: ""   // The realm listener's private key file; restart to apply
+  },
+
   // --- Admin console ---------------------------------------------------
   admin: {
     bootstrapUsername: "admin", // Bootstrap administrator account; restart to apply
