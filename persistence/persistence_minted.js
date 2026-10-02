@@ -2345,6 +2345,10 @@ function reset() {
  * @namespace
  */
 module.exports = {
+  // The key column a name is filed under, and a stored row's name (#222):
+  // for the tests, which look rows up by the name they wrote.
+  keyColumnOf: keyColumnOf,
+  nameOfRow: nameOfRow,
   ensureTombstoneJob: ensureTombstoneJob,
   ensureExpiryPurgeJob: ensureExpiryPurgeJob,
   purgeExpired: purgeExpired,

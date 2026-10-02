@@ -240,6 +240,20 @@ const DATA_CLASSES = [
          'durable key-encryption key; no page and no API reply returns it.'
   },
   {
+    label: 'minted-key',
+    what: 'The NAME a minted row is filed under — often the credential ' +
+          'itself: a session id, a SAML artifact, a token id',
+    where: '`sts_minted.key_sealed`, beside a keyed digest in `key`; and ' +
+           'the change-log rows (`sts_changes.key`) that tell other ' +
+           'processes about it',
+    sealed: true,
+    why: 'A session id is the cookie and an artifact is redeemed by ' +
+         'presenting it, so a name in the clear was a usable credential in ' +
+         'a dump. Since #222 the row is found by the name\'s keyed digest ' +
+         'and the name is sealed, opened only by a restore or a change\'s ' +
+         'reader.'
+  },
+  {
     label: 'used-assertion',
     what: 'The used-assertion history’s issuer, assertion id, client and ' +
           'subject — who presented which RFC 7523 or RFC 7522 document ' +

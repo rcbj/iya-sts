@@ -86,7 +86,8 @@ function fileStore(file) {
       (upserts || []).forEach(function (row) {
         db.minted[idOf(row.handle, row.realm, row.key)] = {
           handle: row.handle, realm: row.realm, key: row.key, body: row.body,
-          written_ms: Date.now() };
+          // The name, sealed, beside its digest (#222).
+          keySealed: row.keySealed || '', written_ms: Date.now() };
       });
       (deletes || []).forEach(function (row) {
         delete db.minted[idOf(row.handle, row.realm, row.key)];
@@ -106,13 +107,15 @@ function fileStore(file) {
       return Promise.resolve({ material: db.secrets[name] });
     },
     // What node B applies: every minted row as the change replication would
-    // hand it — base64url(handle) + '.' + base64url(key).
+    // hand it — base64url(handle) + '.' + the sealed name (#222), or
+    // base64url(key) for a row written without one.
     changes: function () {
       return Object.values(read().minted).map(function (row) {
         return { realm: row.realm,
                  key: Buffer.from(row.handle, 'utf8').toString('base64url') +
                       '.' +
-                      Buffer.from(row.key, 'utf8').toString('base64url') };
+                      (row.keySealed ||
+                       Buffer.from(row.key, 'utf8').toString('base64url')) };
       });
     },
     raw: function () {

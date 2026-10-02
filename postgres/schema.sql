@@ -721,7 +721,7 @@ CREATE TABLE IF NOT EXISTS sts_schema (
 -- WHAT VERSION OF THE ABOVE THIS IS. The driver writes the same row on open()
 -- and `tests/postgres_schema.js` checks that this number is its SCHEMA_VERSION,
 -- so the two cannot disagree about which schema is on disk.
-INSERT INTO sts_schema (version) VALUES (13) ON CONFLICT (version) DO NOTHING;
+INSERT INTO sts_schema (version) VALUES (14) ON CONFLICT (version) DO NOTHING;
 
 -- ---------------------------------------------------------------------------
 -- THE APPLICATION ROLE: READ AND WRITE THE ROWS, AND NOTHING ELSE.

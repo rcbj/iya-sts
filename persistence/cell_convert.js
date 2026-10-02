@@ -142,7 +142,8 @@ const TABLES = {
     json: ['attrs'], time: [] },
   sts_minted: {
     key: ['handle', 'realm', 'key'],
-    columns: ['handle', 'realm', 'key', 'body', 'written_at'],
+    // `key_sealed`: the row's name, sealed beside its digest key (#222).
+    columns: ['handle', 'realm', 'key', 'body', 'written_at', 'key_sealed'],
     json: [], time: ['written_at'] },
   sts_cluster_claims: {
     key: ['scope', 'realm', 'key'],

@@ -1079,6 +1079,27 @@ the list merge, the session rank).
 * The capability `ops.change-log-retention` is provided by
   `persistence_replication.js`, not `persistence.js` as the row first named.
 
+## A MINTED ROW'S NAME IS A DIGEST, AND THE NAME IS SEALED (#222, 2026-10-01)
+
+`sts_minted.key` held the name a store filed a record under, and that is
+often the credential: a session id (the cookie), a SAML artifact. It is now
+the name's KEYED DIGEST (`persistence_minted.js`'s `keyColumnOf()`, under the
+keystore's digest key, the same on every node), and `key_sealed` (schema
+version 14) holds the name sealed (label `minted-key`). Three readers, three
+answers:
+
+* **a reader that has the name** (a change's reader, read-your-write) asks for
+  the digest of it;
+* **the restore** has no name to start from, and opens `key_sealed`;
+* **a change-log row** carries the SEALED name (the driver's
+  `recordChanges()`), not the digest, because a reader told of a DELETE must
+  drop that name from its own store and a digest cannot say which.
+
+A row with an empty `key_sealed` (written with no key held, or by a test) is
+read with its `key` as its name. Both new places are on `EXTRA_SEALED`, so the
+re-encryption job re-seals them. `cell_convert.js` carries `key_sealed` with
+the row.
+
 ## SECRET SETTINGS ARE SEALED AT THE DRIVER'S DOOR (#222, 2026-10-01)
 
 A runtime setting marked `secret: true` in `common/config.js` (today only
