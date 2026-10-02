@@ -4901,7 +4901,10 @@ async function thePersonCredentialsSectionIsPressed(driver) {
     return index;
   };
 
-  const drawn = await open(driver, pageUrl);
+  // THE KEY PAIRS ARE A SUB-TAB SINCE THE PERSON'S PAGE BECAME TABS
+  // (2026-10-01), drawn only while the fragment targets them, so the page is
+  // opened where an action returns to: #credentials.
+  const drawn = await open(driver, pageUrl + "#credentials");
   check("the person's page draws a Credentials section for both profiles",
         function () {
     assert.ok(/assertion key pairs/.test(drawn.text) &&

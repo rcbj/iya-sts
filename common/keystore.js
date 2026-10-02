@@ -5737,6 +5737,7 @@ module.exports = {
   // data-key rows first; the console reads what is held.
   settleDeks: settleDeks,
   reloadDekRows: reloadDekRows,
+  refreshDekRows: refreshDekRows,
   dataKeys: dataKeys,
   // THE DEK LIFECYCLE (#391 P2), for `common/data_key_rotation.ts`.
   rotateDeks: rotateDeks,

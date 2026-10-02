@@ -3068,8 +3068,29 @@ function create(options) {
       const blind = change.upserts.filter(function (row) {
         return row.base === undefined;
       });
+      const mergingIds = new Set(merging.map(function (row) {
+        return idOf(row.realm, row.key);
+      }));
       log.debug("Leaving saveDirectory().");
-      return withTransaction(function (client) {
+      // **A MERGE THAT MEETS AN ENTRY UNDER A DATA KEY THIS PROCESS DOES NOT
+      // HOLD YET IS TRIED ONCE MORE, AFTER THE DATA-KEY ROWS ARE READ AGAIN
+      // (2026-10-02)** — the ordinary cause is a realm another worker thread
+      // created a moment ago, whose `directory` key this thread has not read.
+      // `keystore.writeAfterDeks()` does the same for its own rows.
+      const attempt = function (again) {
+        outcomes.length = 0;
+        return withTransaction(transactionBody).catch(function (e) {
+          if (!again || errorCodes.codeOf(e) !== 'STS-STORE-0072') {
+            throw e;
+          }
+          log.debug("Caught in saveDirectory(): " + ((e && e.message) || e));
+          return require('../common/keystore').refreshDekRows()
+            .then(function () {
+              return attempt(false);
+            });
+        });
+      };
+      const transactionBody = function (client) {
         let chain = Promise.resolve();
         const moved = [];
         const stored = new Map();
@@ -3163,7 +3184,16 @@ function create(options) {
                chunk.map(function (row) { return String(row.key); })]
             ).then(function (r) {
               (r.rows || []).forEach(function (found) {
-                stored.set(idOf(found.realm, found.dn_key), entryOf(found));
+                const id = idOf(found.realm, found.dn_key);
+                // **ONLY A ROW BEING MERGED IS OPENED (2026-10-02).** A
+                // delete is locked for the order and never read, and the
+                // rows a removed realm leaves are deleted after its data
+                // keys went with it — so opening them threw STS-STORE-0072,
+                // rolled back the whole flush, and answered the removal 503
+                // (sts_scheduler and sts_xml_schema_validation, single-node).
+                if (mergingIds.has(id)) {
+                  stored.set(id, entryOf(found));
+                }
               });
             });
           });
@@ -3303,7 +3333,8 @@ function create(options) {
             return { kind: 'directory', realm: row.realm, key: row.dn };
           }));
         });
-      }).then(function () {
+      };
+      return attempt(true).then(function () {
         log.debug('Leaving the postgres driver saveDirectory(). ' +
                   change.upserts.length + ' upsert(s), ' +
                   change.deletes.length + ' delete(s), ' + outcomes.length +
