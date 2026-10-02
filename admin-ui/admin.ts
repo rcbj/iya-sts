@@ -46533,6 +46533,10 @@ const SETTING_HOMES = [
   { group: 'WS-Trust', pages: ['/admin/wstrust'] },
   { group: 'WS-Federation', pages: ['/admin/wsfed'] },
   { group: 'TLS', pages: ['/admin/tls'] },
+  // A trust realm's own listener (#99): realm-only settings, so the TLS page
+  // read inside a realm is where they are edited; the default realm refuses
+  // them (STS-CORE-0145).
+  { group: 'Realm listener', pages: ['/admin/tls'] },
   { group: 'OID4VCI', pages: ['/admin/oid4vci'] },
   { group: 'OID4VP', pages: ['/admin/oid4vp'] },
   { group: 'Kerberos', pages: ['/admin/kerberos'] },

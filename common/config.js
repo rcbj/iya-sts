@@ -769,6 +769,80 @@ const SETTINGS = [
                  'and what it makes of one a client presents, are the tls.* ' +
                  'settings, which the console draws on its own TLS page.' },
 
+  // A TRUST REALM'S OWN FRONT-END LISTENER (#99, 2026-10-02). A realm may be
+  // reached at a host of its own — `https://acme.example.com/realm/acme/...`,
+  // the path prefix still saying which realm — on a port of its own on every
+  // node, so that each realm can sit behind a load balancer of its own. The
+  // load balancer and the DNS records are the deployment's (Terraform here);
+  // the service binds the port and builds every URL of the realm on its base.
+  // `realmOnly`: these are read from the REALM'S OWN overrides and never from
+  // the process's environment or appconfig, because a value set for the
+  // process would otherwise be every realm's. common/realms.js's
+  // `listenerOverrideProblem()` holds the rules a set of them must meet.
+  { key: 'listener.port', group: 'Realm listener',
+    label: 'The realm\'s own HTTPS port',
+    type: 'int', dflt: 0, min: 0, max: 65535, runtime: false,
+    realmRuntime: true, realmOnly: true,
+    restartReason: 'it is a property of one trust realm and is set on that ' +
+                   'realm, where the listener is bound and closed at once',
+    description: 'A port on every node on which this realm is served by a ' +
+                 'listener of its own, so that it can sit behind a load ' +
+                 'balancer of its own. Requests on it are still told apart ' +
+                 'by the /realm/<id> path prefix, and only this realm\'s ' +
+                 'paths are answered there. 0, the default, means none: the ' +
+                 'realm is served on the main port only. Needs ' +
+                 'listener.publicBaseUrl. It may not be a port another realm ' +
+                 'or any of this service\'s own listeners uses.' },
+
+  { key: 'listener.publicBaseUrl', group: 'Realm listener',
+    label: 'The realm\'s public base URL',
+    type: 'string', dflt: '', runtime: false,
+    realmRuntime: true, realmOnly: true,
+    restartReason: 'it is a property of one trust realm and is set on that ' +
+                   'realm',
+    description: 'The scheme, host and port this realm is reached at — ' +
+                 'https://acme.example.com, with no path — which is what the ' +
+                 'realm\'s load balancer answers under. When set, every ' +
+                 'issuer, metadata URL, redirect and link the realm builds is ' +
+                 'on this base, with the /realm/<id> prefix after it, ' +
+                 'whichever listener a request arrived on. CHANGING IT ' +
+                 'CHANGES THE REALM\'S ISSUER: every client\'s discovery ' +
+                 'and every token it holds name the old one.' },
+
+  { key: 'listener.hostnames', group: 'Realm listener',
+    label: 'DNS names on the realm listener\'s certificate',
+    type: 'csv', dflt: '', runtime: false,
+    realmRuntime: true, realmOnly: true,
+    restartReason: 'it is a property of one trust realm and is set on that ' +
+                   'realm',
+    description: 'The DNS names the certificate on the realm\'s own ' +
+                 'listener carries, comma-separated. Empty means the host of ' +
+                 'listener.publicBaseUrl. Ignored when ' +
+                 'listener.certificateFile names a certificate.' },
+
+  { key: 'listener.certificateFile', group: 'Realm listener',
+    label: 'The realm listener\'s certificate file',
+    type: 'string', dflt: '', runtime: false,
+    realmRuntime: true, realmOnly: true,
+    restartReason: 'it is a property of one trust realm and is set on that ' +
+                   'realm',
+    description: 'A PEM file of the certificate, and the chain after it, ' +
+                 'the realm\'s listener presents — one from a public CA, ' +
+                 'which a browser trusts. Empty, the default, means a ' +
+                 'certificate this realm\'s own certificate authority issues ' +
+                 'for listener.hostnames and renews, which only a client ' +
+                 'trusting this service\'s Root accepts. Needs ' +
+                 'listener.privateKeyFile.' },
+
+  { key: 'listener.privateKeyFile', group: 'Realm listener',
+    label: 'The realm listener\'s private key file',
+    type: 'string', dflt: '', runtime: false,
+    realmRuntime: true, realmOnly: true,
+    restartReason: 'it is a property of one trust realm and is set on that ' +
+                   'realm',
+    description: 'A PEM file of the private key of ' +
+                 'listener.certificateFile. Both or neither.' },
+
   // ---------------------------------------------------------------------
   // The scheme the port above answers on, and it is DERIVED (`derived: true`,
   // so the shipped env/*.js files do not carry it): its default is whatever
@@ -16533,6 +16607,12 @@ function resolve(key) {
     log.debug("Leaving resolve().");
     return { raw: fromRealm, source: 'realm' };
   }
+  // A `realmOnly` row (#99) is the realm's own or its default: a value the
+  // process was given would otherwise be every realm's.
+  if (setting.realmOnly) {
+    log.debug("Leaving resolve(). Realm-only.");
+    return { raw: defaultOf(setting), source: 'default' };
+  }
   if (Object.prototype.hasOwnProperty.call(overrides, key)) {
     log.debug("Leaving resolve().");
     return { raw: overrides[key], source: 'override' };
@@ -17759,6 +17839,9 @@ module.exports = {
   REPLACED_SETTINGS: REPLACED_SETTINGS,
   setOverride: setOverride,
   clearOverride: clearOverride,
+  // What a setting is for the PROCESS, the realm layer set aside (#99: a
+  // realm listener's port is checked against the process's own listeners).
+  processValue: processValue,
   clearAllOverrides: clearAllOverrides,
   setOverrideStore: setOverrideStore,
   persistableOverrides: persistableOverrides,

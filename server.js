@@ -1028,6 +1028,31 @@ serviceState.start().then(function (both) {
 // Built rather than started above, because the two shapes differ only in this
 // one expression and writing the whole announcement twice is how the two
 // versions of it come to say different things.
+// A TRUST REALM'S OWN LISTENER (#99, 2026-10-02): an unbound HTTPS server
+// wired exactly as the main port below is — the client-certificate request
+// and the truststore, the TLS policy, the connection observer, the JA4
+// fingerprint and the PROXY protocol — but presenting the realm's own
+// certificate (`certificateOf` hands it to the truststore's re-application, so
+// a truststore change never swaps it for the main port's). Bound, rebound and
+// closed by `tls/realm_listeners.js` as the realm registry changes.
+// `common/app.js`'s `enterRealm` answers only that realm's paths on it.
+function realmListener(label, certificate, certificateOf) {
+  log.debug("Entering realmListener(). " + label);
+  const server = https.createServer(Object.assign({
+    cert: certificate.cert,
+    key: certificate.key,
+    ca: tlsServer.clientTruststoreOptions().ca,
+    requestCert: true,
+    rejectUnauthorized: false
+  }, tlsServer.protocolOptions()), app);
+  tlsServer.trustClientCertificatesOn(server, label, certificateOf);
+  tlsServer.observeConnectionsOn(server, label);
+  clientHello.install(server, { label: label });
+  proxyProtocol.install(server, { label: label, channel: 'http' });
+  log.debug("Leaving realmListener().");
+  return server;
+}
+
 function bind() {
 log.debug("Entering bind().");
 if (useHttps) {
@@ -1119,6 +1144,10 @@ if (useHttps) {
   proxyProtocol.install(mainServer, { label: 'the main port (' + PORT + ')',
                                       channel: 'http' });
   mainServer.listen(PORT, HOST, announce);
+  // AND EVERY REALM THAT ASKS FOR A LISTENER OF ITS OWN (#99), bound beside
+  // the main port and kept in step with the realm registry from here on. A
+  // realm port that cannot bind is recorded, never fatal.
+  require('./tls/realm_listeners').start({ build: realmListener });
 } else {
   // `http.createServer(app)` rather than `app.listen()`, which is the same
   // thing with the server object hidden — and the PROXY protocol has to be

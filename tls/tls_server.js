@@ -2576,10 +2576,13 @@ function refuseNonNistCurveCertificatesOn(server, label) {
  *
  * @param server - the TLS listener
  * @param label - its name, for the log
+ * @param certificateOf - optional; for a listener that presents a certificate
+ *   of its own rather than this module's (a realm's listener, #99), answers
+ *   `{ key, cert }` each time the truststore is applied
  * @returns true when it was registered; false (logged) when `server` is not a
  * TLS server
  */
-function trustClientCertificatesOn(server, label) {
+function trustClientCertificatesOn(server, label, certificateOf) {
   log.debug('Entering trustClientCertificatesOn(). label=' + label);
   if (!server || typeof server.setSecureContext !== 'function') {
     // Refused rather than thrown: the caller is `server.js` at startup, and a
@@ -2596,7 +2599,9 @@ function trustClientCertificatesOn(server, label) {
     return false;
   }
   externalServers.push({ server: server,
-                         label: String(label || 'a listener') });
+                         label: String(label || 'a listener'),
+                         certificateOf: typeof certificateOf === 'function'
+                           ? certificateOf : null });
   // Every listener that registers here ASKS for a client certificate (the
   // main port, the debugger), so every one is guarded (#212).
   refuseNonNistCurveCertificatesOn(server, String(label || 'a listener'));
@@ -2615,6 +2620,25 @@ function trustClientCertificatesOn(server, label) {
 }
 
 
+/**
+ * Stops applying the truststore to a listener that has closed — a realm's
+ * listener taken away or rebound (#99) — so the list does not keep it.
+ *
+ * @param server - the listener given to `trustClientCertificatesOn()`
+ * @returns true when it was registered
+ */
+function forgetListener(server) {
+  log.debug('Entering forgetListener().');
+  const at = externalServers.findIndex(function (one) {
+    return one.server === server;
+  });
+  if (at >= 0) {
+    externalServers.splice(at, 1);
+  }
+  log.debug('Leaving forgetListener(). ' + (at >= 0));
+  return at >= 0;
+}
+
 // Apply the current anchors to every listener whose truststore this module
 // owns. Existing connections keep the context they were made under — node says
 // so and it is the behaviour worth having, since a connection judged under one
@@ -2624,10 +2648,20 @@ function applyAnchors() {
   // EVERY listener is an external one since 2026-09-16: this module creates
   // none of its own any more, so the list that was "our two, plus theirs" is
   // now just theirs — the main HTTPS port and the debugger's.
-  externalServers.map(function (one) { return one.server; })
-    .forEach(function (server) {
+  // A REALM'S LISTENER PRESENTS A CERTIFICATE OF ITS OWN (#99): it said so
+  // when it registered, and its own key and chain replace this module's in the
+  // context it is given, so a truststore change never swaps its certificate
+  // for the main port's.
+  externalServers.forEach(function (one) {
+    const server = one.server;
     try {
-      server.setSecureContext(secureContextOptions());
+      const options = secureContextOptions();
+      const own = one.certificateOf ? one.certificateOf() : null;
+      if (own && own.key && own.cert) {
+        options.key = own.key;
+        options.cert = own.cert;
+      }
+      server.setSecureContext(options);
     } catch (e) {
       // Reported rather than thrown: the caller is a route, and a truststore
       // that could not be applied must not take the service down with it. The
@@ -4948,6 +4982,10 @@ module.exports = {
   // /tls/trust reaches it too — see the block above
   // trustClientCertificatesOn().
   trustClientCertificatesOn: trustClientCertificatesOn,
+  forgetListener: forgetListener,
+  // Applies the truststore again to every registered listener — and so each
+  // listener's own certificate, after a realm listener's is renewed (#99).
+  reapplyTruststore: applyAnchors,
   // #212: the guard, for a TLS listener that does not register above.
   refuseNonNistCurveCertificatesOn: refuseNonNistCurveCertificatesOn,
   nonNistCurvePeerCertificate: nonNistCurvePeerCertificate,

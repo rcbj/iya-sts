@@ -157,6 +157,21 @@ function enterRealm(req, res, next) {
   log.debug("Entering enterRealm().");
   const pathname = String(req.url || '').split('?')[0];
   const match = realms.matchPath(pathname);
+  // A REALM'S OWN LISTENER ANSWERS THAT REALM AND NOTHING ELSE (#99,
+  // 2026-10-02). `tls/realm_listeners.js` marks every socket it accepts with
+  // its realm; a path that is not under that realm's prefix — another
+  // realm's, or the default realm's unprefixed one — is not served there,
+  // so a realm's host and load balancer front that realm alone. The main port
+  // carries no mark and serves every realm as it always has.
+  const own = req.socket && req.socket.stsRealmListener;
+  if (own && !(match && match.realm && match.realm.id === own)) {
+    require('./error_codes').mark(res, 'STS-TLS-0041');
+    res.status(404).type('text/plain')
+      .send('Not found: this listener serves realm "' + own + '" only, ' +
+            'under ' + realms.prefixOf(realms.get(own) || undefined) + '.');
+    log.debug("Leaving enterRealm(). Off this realm's listener.");
+    return;
+  }
 
   // Not in a realm — including a path that opens with the realm SEGMENT and an
   // id nobody defined. That case deliberately falls through to Express's own

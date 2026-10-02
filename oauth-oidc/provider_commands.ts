@@ -433,7 +433,9 @@ class ProviderCommands {
       log.debug("Leaving ProviderCommands.issuer(). From the request.");
       return iss;
     }
-    const pinned = String(config.value('global.publicBaseUrl') || '').trim()
+    // The realm's own base first (#99), as helpers.pinnedBaseUrl() reads it.
+    const pinned = String(config.value('listener.publicBaseUrl') ||
+                          config.value('global.publicBaseUrl') || '').trim()
       .replace(/\/+$/, '');
     if (config.value('oauth2.issuer') || pinned) {
       log.debug("Leaving ProviderCommands.issuer(). Pinned.");
