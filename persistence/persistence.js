@@ -2655,6 +2655,19 @@ function openStore(chosen, resolvedUrl, globalUrls) {
     // load would build their instance first.
     require('../risk/risk_store').setDriver(driver, activeMode);
   }).then(function () {
+    // ---------------------------------------------------------------------
+    // THE KEYSTORE STARTS HERE, BEFORE ANYTHING SEALED IS READ BACK (#222).
+    //
+    // `service_state` started it after this whole chain, and this chain
+    // restores the saved settings, the realms' overrides and the directory —
+    // which hold sealed values since #222 (a secret setting, an entry's
+    // attributes). Read before the key-encryption key, they could not be
+    // opened. The store is open and handed to the keystore above, which is
+    // all `keystore.start()` needs; `service_state`'s own call is answered
+    // with this one's promise.
+    // ---------------------------------------------------------------------
+    return keystore.start();
+  }).then(function () {
     return persistsAppconfig() ? driver.loadOverrides() : null;
   }).then(function (saved) {
     // WHAT THE SETTINGS TABLE HOLDS, which is what a flush diffs against. The
