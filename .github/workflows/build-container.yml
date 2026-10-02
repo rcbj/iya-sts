@@ -13,7 +13,11 @@
 # the parent project's arrangement for its api and client (its
 # .github/workflows/dockerimage.yml, issue #154 there):
 #
-#   ghcr.io/rcbj/iya-sts        docker.io/iyasec/iya-sts
+#   ghcr.io/rcbj/iya-sts              docker.io/iyasec/iya-sts
+#   ghcr.io/rcbj/iya-sts-xacml-pep    docker.io/iyasec/iya-sts-xacml-pep
+#
+# The second is the remote XACML PEP (xacml-pep/), built here with the same
+# build number and checked for liveness before anything is published.
 #
 # See *Publish the image* below.
 #
@@ -123,6 +127,25 @@ jobs:
             node:24.16.0-bookworm-slim=docker-image://ghcr.io/rcbj/iya-sts/mirror/node:24.16.0-bookworm-slim
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      # THE REMOTE XACML PEP (2026-10-02), with the same build number and
+      # commit, so the two images published from one run carry one version.
+      # Its one FROM comes from the mirror, as the service's do.
+      - name: Build the XACML PEP image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: xacml-pep/Dockerfile
+          tags: rcbj/xacml-pep:ci
+          load: true
+          push: false
+          build-args: |
+            BUILD_NUMBER=${{ github.run_number }}
+            GIT_COMMIT=${{ github.sha }}
+          build-contexts: |
+            node:22-alpine=docker-image://ghcr.io/rcbj/iya-sts/mirror/node:22-alpine
+          cache-from: type=gha,scope=xacml-pep
+          cache-to: type=gha,mode=max,scope=xacml-pep
 
       # Publishing to the host rather than reusing the compose file: this needs
       # one container and a port, and compose would add a second thing that can
@@ -257,6 +280,27 @@ jobs:
             exit 1
           }
 
+      # The PEP's liveness only: it starts, binds 9090 and answers
+      # /healthcheck. Registering with a PDP needs a client certificate a
+      # realm issued, which the test stacks arrange and this job does not; a
+      # PEP that cannot reach its PDP keeps retrying and stays live, which
+      # is the behaviour xacml-pep/CLAUDE.md argues.
+      - name: Check the XACML PEP image starts
+        run: |
+          docker run -d --name pep-ci -p 9090:9090 \
+            -e PEP_PDP_URL=https://localhost:8081 rcbj/xacml-pep:ci
+          for i in $(seq 1 30); do
+            if curl -fsS http://localhost:9090/healthcheck; then
+              echo
+              echo "The PEP answered /healthcheck after ${i} attempt(s)."
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "The PEP never answered /healthcheck." >&2
+          docker logs pep-ci >&2 || true
+          exit 1
+
       # ---------------------------------------------------------------------
       # PUBLISH THE IMAGE (2026-10-02), only after every check above passed,
       # so nothing published failed to start, register its routes or report
@@ -300,13 +344,18 @@ jobs:
           esac
           VERSION="$(docker run --rm --entrypoint cat rcbj/sts:ci \
                      version.json | jq -r .version)"
-          test -n "${VERSION}" && test "${VERSION}" != null
+          PEP_VERSION="$(docker run --rm --entrypoint cat \
+                         rcbj/xacml-pep:ci version.json | jq -r .version)"
+          for v in "${VERSION}" "${PEP_VERSION}"; do
+            test -n "${v}" && test "${v}" != null
+          done
           echo "float=${FLOAT}" >> "$GITHUB_OUTPUT"
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "pep_version=${PEP_VERSION}" >> "$GITHUB_OUTPUT"
           if [ -z "${FLOAT}" ]; then
             echo "Not main or develop: nothing is published."
           else
-            echo "Publishing ${VERSION} and ${FLOAT}."
+            echo "Publishing ${VERSION} (PEP ${PEP_VERSION}) and ${FLOAT}."
           fi
 
       - name: Log in to Docker Hub
@@ -324,28 +373,35 @@ jobs:
           echo "${DOCKERHUB_TOKEN}" |
             docker login docker.io -u "${DOCKERHUB_USERNAME}" --password-stdin
 
-      - name: Publish the image
+      - name: Publish the images
         if: ${{ steps.publish-plan.outputs.float != '' }}
         env:
           VERSION: ${{ steps.publish-plan.outputs.version }}
+          PEP_VERSION: ${{ steps.publish-plan.outputs.pep_version }}
           FLOAT: ${{ steps.publish-plan.outputs.float }}
         run: |
           set -euo pipefail
-          src=rcbj/sts:ci
           rows=""
-          for dst in ghcr.io/rcbj/iya-sts docker.io/iyasec/iya-sts; do
-            for tag in "${VERSION}" "${FLOAT}"; do
-              docker tag "${src}" "${dst}:${tag}"
-              docker push "${dst}:${tag}"
+          # source image, published name, its version
+          while read -r src name version; do
+            for registry in ghcr.io/rcbj docker.io/iyasec; do
+              dst="${registry}/${name}"
+              for tag in "${version}" "${FLOAT}"; do
+                docker tag "${src}" "${dst}:${tag}"
+                docker push "${dst}:${tag}"
+              done
+              # One RepoDigests entry per registry; Docker records docker.io
+              # repositories without the host.
+              repo="${dst#docker.io/}"
+              digest="$(docker image inspect --format \
+                  '{{range .RepoDigests}}{{println .}}{{end}}' "${src}" |
+                  grep -m1 "^${repo}@" || true)"
+              rows="${rows}| \`${dst}:${version}\` | \`${digest#*@}\` |"$'\n'
             done
-            # One RepoDigests entry per registry; Docker records docker.io
-            # repositories without the host.
-            repo="${dst#docker.io/}"
-            digest="$(docker image inspect --format \
-                '{{range .RepoDigests}}{{println .}}{{end}}' "${src}" |
-                grep -m1 "^${repo}@" || true)"
-            rows="${rows}| \`${dst}:${VERSION}\` | \`${digest#*@}\` |"$'\n'
-          done
+          done <<EOF
+          rcbj/sts:ci iya-sts ${VERSION}
+          rcbj/xacml-pep:ci iya-sts-xacml-pep ${PEP_VERSION}
+          EOF
           {
             echo "### Published images (also \`${FLOAT}\`)"
             echo ""
@@ -361,6 +417,6 @@ jobs:
         if: always()
         run: docker logs sts-ci || true
 
-      - name: Stop the container
+      - name: Stop the containers
         if: always()
-        run: docker rm -f sts-ci || true
+        run: docker rm -f sts-ci pep-ci || true

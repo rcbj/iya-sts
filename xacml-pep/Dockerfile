@@ -132,6 +132,15 @@ ARG BUILD_NUMBER=
 ARG GIT_COMMIT=
 RUN BUILD_NUMBER="${BUILD_NUMBER}" GIT_COMMIT="${GIT_COMMIT}" \
     node version.js --stamp . && cat version.json
+# OCI metadata, read by ghcr.io and Docker Hub (2026-10-02): the service
+# image's five, for the image .github/workflows/build-container.yml publishes
+# as ghcr.io/rcbj/iya-sts-xacml-pep. `source` links the package to this
+# repository. A LABEL is metadata, not a layer.
+LABEL org.opencontainers.image.source="https://github.com/rcbj/iya-sts" \
+      org.opencontainers.image.title="iya-sts-xacml-pep" \
+      org.opencontainers.image.description="IYA STS remote XACML policy enforcement point: pulls policy from the STS and decides locally (port 9090)" \
+      org.opencontainers.image.licenses="BUSL-1.1" \
+      org.opencontainers.image.revision="${GIT_COMMIT}"
 
 EXPOSE 9090
 # The HTTPS listener (2026-09-13). It binds only once a certificate and key
