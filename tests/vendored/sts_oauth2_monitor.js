@@ -611,7 +611,7 @@ async function theConsoleWithdraws(held) {
 // ---------------------------------------------------------------------------
 // 5. THE API'S REFUSALS.
 // ---------------------------------------------------------------------------
-async function theApiRefuses(held) {
+async function theApiRefuses() {
   log.debug("Entering theApiRefuses().");
   log.info("=== 5. refusals ===");
   const unknown = await postApi("/oauth2/monitor/delete-pushed-request",
@@ -652,11 +652,19 @@ async function theApiRefuses(held) {
   // ANONYMITY. The run's preload attaches an admin token to every
   // /admin-api call carrying no Authorization header, so a request meant to
   // hold NOTHING says `Authorization: none` (tests/CLAUDE.md).
+  // A request pushed NOW, not one of section 0's: a request_uri lives
+  // oauth2.parRequestUriLifetimeS (60 s by default), and in the cluster mode
+  // the console sign-in alone took 16 s, so held.a[2] had expired by here and
+  // the "still held" check failed for a reason that was not anonymity (CI run
+  // 36967212793). The check below finds this request by its request_uri.
+  const fresh = await push(CLIENT_A);
+  assert.strictEqual(fresh.status, 201, fresh.raw);
+  const target = fresh.body.request_uri;
   const index = await getApi("");
   const none = { Authorization: "none" };
   const anonRead = await getApi("/oauth2/monitor", none);
   const anonWrite = await postApi("/oauth2/monitor/delete-pushed-request",
-                                  { request_uri: held.a[2] }, none);
+                                  { request_uri: target }, none);
   if (index.body && index.body.protected === true) {
     check("with nothing presented, the read is refused 401", function () {
       assert.strictEqual(anonRead.status, 401, anonRead.raw.slice(0, 200));
@@ -666,10 +674,12 @@ async function theApiRefuses(held) {
     });
     const still = (await parSection("client_id=" +
                                     encodeURIComponent(CLIENT_A)))
-      .pushedRequests;
+      .pushedRequests.items.filter(function (one) {
+        return one.request_uri === target;
+      });
     check("the request an anonymous caller tried to withdraw is still held",
           function () {
-            assert.strictEqual(still.total, 1);
+            assert.strictEqual(still.length, 1, JSON.stringify(still));
           });
   } else {
     // A stack started with adminApi.authRequired off. That is a supported
@@ -691,7 +701,7 @@ async function test() {
   await pagingAndFilters(held);
   await theApiWithdraws(held);
   await theConsoleWithdraws(held);
-  await theApiRefuses(held);
+  await theApiRefuses();
   assert.ok(checks >= FLOOR,
     "only " + checks + " checks ran, against a floor of " + FLOOR + ". A " +
     "section that stops being called takes its assertions with it.");

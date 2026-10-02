@@ -182,7 +182,7 @@
 // ---------------------------------------------------------------------------
 const assert = require("assert");
 const { Command, Option } = require("commander");
-const { Builder, By, until } = require("selenium-webdriver");
+const { Builder, By } = require("selenium-webdriver");
 const chrome = require("selenium-webdriver/chrome");
 const NetworkInspector = require("selenium-webdriver/bidi/networkInspector.js");
 const browserFlags = require("./browser_flags.js");
@@ -652,6 +652,33 @@ async function rawSourceOf(driver, url) {
   return String(text);
 }
 
+// THE PAGE AN ELEMENT WAS ON HAS BEEN REPLACED (2026-10-02). Not
+// `until.stalenessOf()`: that counts only a StaleElementReferenceError as
+// stale, and a probe that lands while Chrome is tearing the old document down
+// is answered "Node with given id does not belong to the document" instead.
+// That escaped press() in the field grid section twice (a local memory-mode
+// run and CI's coverage run, both 2026-10-02) on a page that had in fact been
+// replaced. sts_xacml_editor.js met the same thing on 2026-09-23; both errors
+// mean the same thing here.
+async function pageReplaced(driver, element, ms) {
+  log.debug("Entering pageReplaced().");
+  await driver.wait(async function () {
+    try {
+      await element.isEnabled();
+      return false;
+    } catch (e) {
+      log.debug("Caught in pageReplaced(): " + ((e && e.message) || e));
+      if ((e && e.name === "StaleElementReferenceError") ||
+          /does not belong to the document|No node with given id/
+            .test(String(e && e.message))) {
+        return true;
+      }
+      throw e;
+    }
+  }, ms, "the page was never replaced");
+  log.debug("Leaving pageReplaced().");
+}
+
 // ---------------------------------------------------------------------------
 // FILLING IN A FORM AND PRESSING ITS BUTTON, the way a person does.
 //
@@ -801,7 +828,7 @@ async function fillAndPress(driver, formIndex, values, options) {
     });
   await button.click();
   if (leaving) {
-    await driver.wait(until.stalenessOf(leaving), 20000).catch(function (e) {
+    await pageReplaced(driver, leaving, 20000).catch(function (e) {
       log.debug("Caught waiting for the page to be replaced (a download " +
                 "replaces none): " + ((e && e.message) || e));
       return null;
@@ -4605,7 +4632,7 @@ async function theFieldGridIsPressed(driver) {
     const from = mark();
     const leaving = await driver.findElement(By.css("html"));
     await button.click();
-    await driver.wait(until.stalenessOf(leaving), 20000);
+    await pageReplaced(driver, leaving, 20000);
     await settleAfterSubmit(driver, from, "POST");
     log.debug("Leaving press().");
   };
