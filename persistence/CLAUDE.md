@@ -961,8 +961,12 @@ argument — then writes `directory_merge.js`'s answer: an attribute one side
 changed takes that side; both changed, a list (`member`, `objectClass`, the
 security keys, or any attribute with more than one value on some side) is merged
 by value and anything else takes mine, a credential never becoming a union; two
-adds of one DN under different `entryUUID`s keep the FIRST committed
-(`STS-STORE-0052`); a change to an entry deleted elsewhere is dropped
+adds of one DN under different `entryUUID`s keep the FIRST committed as the
+entry — its `entryUUID` and its single values (`STS-STORE-0052` when mine adds
+nothing) — **plus, since 2026-10-02, what mine added: an attribute only mine
+holds and a list value theirs lacks** (`mergeCreations()`; two nodes seeding a
+realm's role group lost a grant's member otherwise); a change to an entry
+deleted elsewhere is dropped
 (`STS-STORE-0053`). A new row is `INSERT … ON CONFLICT DO NOTHING`, and losing
 that race locks the row and merges again. The driver answers `{ outcomes }` —
 what the store decided that this process does not hold — and
