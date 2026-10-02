@@ -7149,6 +7149,15 @@ const ENDPOINTS: EndpointEntry[] = [
           'the inter-cell channel, the Cells settings, and — with ?people= — ' +
           'another cell\'s residents where its release policy permits. Add ' +
           '?format=json.' },
+  { path: '/admin/listeners', group: 'Admin', name: 'Listeners',
+    specs: [],
+    what: 'NON-SPEC (#423). Every socket this service answers on and the ' +
+          'TLS policy each is held to — TLS 1.2 on or off, the TLS 1.3 ' +
+          'cipher suites in order, post-quantum only, the groups — and ' +
+          'whether it asks for a client certificate, requires one, or ' +
+          'neither; in a realm with a listener of its own, that listener. ' +
+          'The Listeners, TLS and Realm listener settings are drawn here. ' +
+          'Add ?format=json.' },
   { path: '/admin/mode', group: 'Admin', name: 'Mode',
     specs: [],
     what: 'NON-SPEC (#181). What global.mode changes and what is in force ' +

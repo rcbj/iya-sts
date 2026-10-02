@@ -241,7 +241,13 @@ function checkMarker(t) {
     'listener.publicBaseUrl',
     'listener.hostnames',
     'listener.certificateFile',
-    'listener.privateKeyFile'
+    'listener.privateKeyFile',
+    // #423: that listener's TLS policy and client authentication.
+    'listener.disableTls12',
+    'listener.tls13CipherSuites',
+    'listener.pqcOnly',
+    'listener.disableOptionalClientCertificate',
+    'listener.requireClientCertificate'
   ];
   const marked = config.SETTINGS.filter(function (s) {
     return s.realmRuntime;

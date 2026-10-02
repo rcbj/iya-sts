@@ -252,7 +252,7 @@ async function open(realm, desired) {
   }, function () {
     return entry.certificate ? { key: entry.certificate.key,
                                  cert: entry.certificate.cert } : null;
-  });
+  }, realm.id);
   server.on('secureConnection', function (socket) {
     socket.stsRealmListener = realm.id;
   });
@@ -345,7 +345,7 @@ function reconcile() {
  * Starts the realm listeners, from `server.js`'s `listen()` in the front
  * process, and keeps them in step with the realm registry.
  *
- * @param build - `{ build(label, certificate, certificateOf) }`: makes an
+ * @param build - `{ build(label, certificate, certificateOf, realmId) }`: makes an
  *   unbound HTTPS server wired exactly as the main port is
  * @returns a promise settled when the first reconcile is done
  */

@@ -2786,6 +2786,16 @@ const SECTIONS = [
       // CELLS (#98, 2026-09-28), beside Cluster: one service deployed as
       // several cells in several jurisdictions. Drawn by
       // `admin-ui/cells_admin.ts`.
+      // LISTENERS (#423, 2026-10-02), beside Cells: every socket, its TLS
+      // policy and client authentication, a realm's own listener, and their
+      // settings. Drawn by `admin-ui/listeners_admin.ts`.
+      { path: '/admin/listeners', label: 'Listeners',
+        blurb: 'Every socket this service answers on and what each is held ' +
+               'to: TLS 1.2 on or off, the TLS 1.3 cipher suites in order, ' +
+               'post-quantum only, the key-exchange groups, and whether it ' +
+               'asks for a client certificate, requires one, or neither. In ' +
+               'a realm with a listener of its own, that listener and its ' +
+               'settings; otherwise the default listeners it is served on.' },
       { path: '/admin/cells', label: 'Cells',
         blurb: 'One service deployed as several cells, each a copy of the ' +
                'whole stack in one legal jurisdiction: which cell this is, ' +
@@ -46532,11 +46542,16 @@ const SETTING_HOMES = [
   { group: 'OAuth 2.0 / OIDC per-client', pages: ['/admin/token-lifetimes'] },
   { group: 'WS-Trust', pages: ['/admin/wstrust'] },
   { group: 'WS-Federation', pages: ['/admin/wsfed'] },
-  { group: 'TLS', pages: ['/admin/tls'] },
-  // A trust realm's own listener (#99): realm-only settings, so the TLS page
-  // read inside a realm is where they are edited; the default realm refuses
+  // THE LISTENERS PAGE (#423, rcbj: "Put all the listener configuration,
+  // including TLS on its own page under Server Settings->Listeners"): the
+  // TLS group moved here from /admin/tls, which keeps the truststore and the
+  // certificate, and so did the realm listener's rows (#99).
+  { group: 'Listeners', pages: ['/admin/listeners'] },
+  { group: 'TLS', pages: ['/admin/listeners'] },
+  // A trust realm's own listener (#99): realm-only settings, edited on the
+  // Listeners page read inside a realm (#423); the default realm refuses
   // them (STS-CORE-0145).
-  { group: 'Realm listener', pages: ['/admin/tls'] },
+  { group: 'Realm listener', pages: ['/admin/listeners'] },
   { group: 'OID4VCI', pages: ['/admin/oid4vci'] },
   { group: 'OID4VP', pages: ['/admin/oid4vp'] },
   { group: 'Kerberos', pages: ['/admin/kerberos'] },
@@ -49021,7 +49036,14 @@ const PROTOCOL_SETTINGS_PAGES = [
           'the one every other protocol answers on; what this page ' +
           'configures is the certificate that port and LDAPS 636 present, ' +
           'and what this service makes of a certificate a CLIENT presents.',
-    also: ['<strong>A verified client certificate IS a login since ' +
+    also: ['<strong>What each listener does at the handshake is on <a ' +
+           'href="/admin/listeners">Listeners</a> since #423</strong>: TLS ' +
+           '1.2 on or off, the TLS 1.3 cipher suites, post-quantum only, ' +
+           'and whether a listener asks for a client certificate, requires ' +
+           'one, or neither — a required one is verified against the ' +
+           'truststore on this page. The TLS settings that were drawn here ' +
+           'are drawn there.',
+           '<strong>A verified client certificate IS a login since ' +
            '2026-09-05, and it is now <a href="/tls/sign-in">GET ' +
            '/tls/sign-in</a> on the main port.</strong> Presenting a ' +
            'certificate is the CLIENT\'s decision here — this port asks for ' +

@@ -1036,16 +1036,19 @@ serviceState.start().then(function (both) {
 // a truststore change never swaps it for the main port's). Bound, rebound and
 // closed by `tls/realm_listeners.js` as the realm registry changes.
 // `common/app.js`'s `enterRealm` answers only that realm's paths on it.
-function realmListener(label, certificate, certificateOf) {
+function realmListener(label, certificate, certificateOf, realmId) {
   log.debug("Entering realmListener(). " + label);
+  // The realm's own policy (#423): its listener.* rows, inheriting the
+  // process's TLS settings unless set, and its own client authentication.
+  const policy = tlsServer.policyFor('realm', realmId);
   const server = https.createServer(Object.assign({
     cert: certificate.cert,
     key: certificate.key,
-    ca: tlsServer.clientTruststoreOptions().ca,
-    requestCert: true,
-    rejectUnauthorized: false
-  }, tlsServer.protocolOptions()), app);
-  tlsServer.trustClientCertificatesOn(server, label, certificateOf);
+    ca: tlsServer.clientTruststoreOptions().ca
+  }, tlsServer.clientAuthOptions(policy.clientAuth),
+  tlsServer.protocolOptions(policy)), app);
+  tlsServer.trustClientCertificatesOn(server, label, certificateOf,
+                                      { kind: 'realm', realm: realmId });
   tlsServer.observeConnectionsOn(server, label);
   clientHello.install(server, { label: label });
   proxyProtocol.install(server, { label: label, channel: 'http' });
@@ -1088,20 +1091,26 @@ if (useHttps) {
     // completed this handshake, not that a CA vouched for it. Requiring
     // verification would also make the feature unreachable, since the
     // truststore at /tls/trust starts empty by design.
-    requestCert: true,
-    rejectUnauthorized: false
+    //
+    // THE OPERATOR'S TO CHANGE SINCE #423, the default unchanged:
+    // tls.mainPortDisableOptionalClientCertificate asks for none, and
+    // tls.mainPortRequireClientCertificate requires one that verifies. The
+    // pair is applied again, with the truststore, whenever either moves.
+    ...tlsServer.clientAuthOptions(tlsServer.policyFor('main').clientAuth)
   // `tls.minVersion` and `tls.ciphers` (2026-09-12), from the module that
   // states them for every TLS listener — at creation as well as on every
   // truststore change, so the first handshake is held to the same floor as the
-  // hundredth.
-  }, tlsServer.protocolOptions()), app);
+  // hundredth. And the listeners' policy since #423: TLS 1.2 off or on, the
+  // TLS 1.3 suites chosen, post-quantum only.
+  }, tlsServer.protocolOptions(tlsServer.policyFor('main'))), app);
   // REGISTERED SO THAT A LATER `POST /tls/trust` REACHES THIS LISTENER TOO.
   // `tls_server.js` owns the anchors and applies them to every listener it
   // knows about; this is how the one it did not create becomes one of them. It
   // is a registration rather than a require in the other direction because
   // this file requires that module, not the other way round.
   tlsServer.trustClientCertificatesOn(mainServer,
-                                      'the main port (' + PORT + ')');
+                                      'the main port (' + PORT + ')',
+                                      undefined, { kind: 'main' });
   // NOT ONE SESSION-TICKET KEY WITH THE OTHER NODES, although LDAPS has one
   // (tls/session_tickets.ts). This port asks for a client certificate, and a
   // resumed session hands the server the LEAF alone:

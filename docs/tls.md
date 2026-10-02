@@ -56,7 +56,64 @@ port, LDAPS and the debugger's listener alike, and each binds `global.host`. A
 cipher list that matches nothing stops the service at startup, naming the
 setting.
 
-**The cipher list is BCP 195 by default.** TLS 1.3's three suites come
+### The listeners: TLS 1.2, the TLS 1.3 suites, post-quantum only, client certificates
+
+**Server configuration → Listeners** (`/admin/listeners`,
+`GET /admin-api/listeners`, #423) lists every socket this service answers on and
+what each one is held to. Its settings are **runtime**: a change reaches every
+listener at its next handshake, with no restart and no rebind.
+
+| Setting | Default | What it does |
+|---|---|---|
+| `tls.disableTls12` | off | Every TLS listener negotiates TLS 1.3 only, whatever `tls.minVersion` says. |
+| `tls.tls13CipherSuites` | `TLS_AES_256_GCM_SHA384, TLS_AES_128_GCM_SHA256, TLS_CHACHA20_POLY1305_SHA256` | The TLS 1.3 suites, ticked and numbered on the page; the server's order wins. Any of RFC 8446's five, CCM included. At least one is required. |
+| `tls.pqcOnly` | off | TLS 1.3 only, the 256-bit suites only, and the ML-KEM groups only (see below). |
+| `tls.mainPortDisableOptionalClientCertificate` / `tls.mainPortRequireClientCertificate` | off / off | The main port: send no CertificateRequest / require a certificate that chains to the client truststore. |
+| `ldap.ldapsDisableOptionalClientCertificate` / `ldap.ldapsRequireClientCertificate` | **on** / off | LDAPS: the same pair. LDAPS asks for nothing by default, as it always did. |
+| `debugger.disableOptionalClientCertificate` / `debugger.requireClientCertificate` | off / off | The protocol debugger's listener. |
+
+"Require" wins over "do not ask". A required certificate is verified against the
+client truststore (Protocols → TLS / mutual TLS → the truststore, and the
+certificates this service issues), so a handshake without one is refused.
+
+> **Warning.** Requiring a client certificate on the main port refuses every
+> browser without one, discovery, the JWKS and every public document, and a
+> load balancer's or container's HTTPS health check. Turning off "ask" on the
+> main port stops RFC 8705 certificate-bound tokens and client authentication,
+> `GET /tls/sign-in`, EST with a certificate and the remote XACML PEP there.
+
+**What "post-quantum safe" means for a TLS 1.3 suite.** A suite names only the
+record protection, the AEAD and its hash. Grover's algorithm halves a symmetric
+key, so `TLS_AES_256_GCM_SHA384` and `TLS_CHACHA20_POLY1305_SHA256` (256-bit
+keys) keep 128 bits against a quantum adversary and are marked post-quantum safe;
+the AES-128 suites keep 64 and are not. CNSA 2.0 allows AES-256 alone. What stops
+a session recorded today being decrypted later is the key EXCHANGE, so
+`tls.pqcOnly` also keeps only the ML-KEM groups of `tls.groups` (X25519MLKEM768,
+SecP256r1MLKEM768, SecP384r1MLKEM1024, MLKEM512/768/1024) and turns TLS 1.2 off,
+which has no ML-KEM group. It does not restrict the signature algorithms: a
+handshake cannot be forged after the fact. A choice that leaves nothing
+post-quantum is refused (`STS-TLS-0043`), and one reaching the service from the
+environment stops it (`STS-TLS-0042`).
+
+> **Warning.** `TLS_AES_128_CCM_8_SHA256` has an 8-byte tag and RFC 8446 says it
+> is not for general use; choose it only for a client that offers nothing else.
+
+**The SPIFFE gRPC listeners and the channel between cells** take the TLS 1.2,
+suite and post-quantum settings too, and have no client-certificate toggles:
+their protocols decide. The SPIRE Server API must reach an agent with no SVID
+yet, and the Broker API and the cell channel always require a certificate. The
+cell channel is TLS 1.3 always.
+
+**A realm with a listener of its own** (`listener.port`) has the same settings for
+that listener, on the Listeners page read inside the realm:
+- `listener.disableTls12` and `listener.pqcOnly` (`inherit`, `on`, `off`);
+- `listener.tls13CipherSuites` (empty inherits);
+- `listener.disableOptionalClientCertificate` and `listener.requireClientCertificate`.
+
+A realm without one is shown the default listeners it is served on.
+
+**The TLS 1.2 cipher list is BCP 195 by default** (`tls.ciphers`, the TLS 1.2
+list alone since #423). TLS 1.3's suites come
 first, and TLS 1.2 is limited to the four ECDHE AES-GCM suites RFC 9325
 section 4.2 recommends. The server's order wins, so a client that speaks TLS
 1.3 gets it. This is what the FAPI 2.0 Security Profile requires of a server
@@ -420,7 +477,8 @@ refusal of an application's certificate — is the same in both modes. See
 | `tls.certificateFile` | `STS_TLS_CERT_FILE` | *(empty)* | no | Serve a certificate (or chain) somebody else issued; set with `tls.keyFile`. |
 | `tls.keyFile` | `STS_TLS_KEY_FILE` | *(empty)* | no | The unencrypted PKCS#8 or PKCS#1 key for `tls.certificateFile`. |
 | `tls.minVersion` | `STS_TLS_MIN_VERSION` | `TLSv1.2` | no | The lowest TLS version the main port and LDAPS negotiate. |
-| `tls.ciphers` | `STS_TLS_CIPHERS` | BCP 195: the TLS 1.3 suites, then `ECDHE-{ECDSA,RSA}-AES{128,256}-GCM-SHA{256,384}` | no | An OpenSSL cipher list for those sockets, in the server's order; empty means node's own list (see the warning above). One matching nothing stops startup. |
+| `tls.ciphers` | `STS_TLS_CIPHERS` | BCP 195: `ECDHE-{ECDSA,RSA}-AES{128,256}-GCM-SHA{256,384}` | no | The TLS 1.2 cipher list for those sockets, in the server's order; empty means node's own TLS 1.2 list (see the warning above). A TLS 1.3 name is refused (`tls.tls13CipherSuites`). One matching nothing stops startup. |
+| `tls.disableTls12`, `tls.tls13CipherSuites`, `tls.pqcOnly` and the client-certificate pairs | see *The listeners* above | | **yes** | Server configuration → Listeners. |
 | `tls.groups` | `STS_TLS_GROUPS` | `X25519MLKEM768:SecP256r1MLKEM768:SecP384r1MLKEM1024 / X25519:P-256 / X448:P-384:P-521` | no | The key-exchange groups, post-quantum hybrids first (see below); empty means node's `auto`. |
 | `tls.signatureAlgorithms` | `STS_TLS_SIGALGS` | OpenSSL's list without DSA and SHA-224, brainpool omitted by policy | no | The signature schemes signed with, accepted, and asked for in a CertificateRequest; empty means OpenSSL's. |
 | `tls.trustAnchorsFile` | `STS_TLS_TRUST_ANCHORS_FILE` | *(empty)* | no | A PEM file of CA certificates client certificates are verified against, loaded at startup; unreadable or empty is fatal. |

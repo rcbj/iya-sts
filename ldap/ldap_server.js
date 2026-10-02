@@ -12117,7 +12117,18 @@ function tlsProtocolOptions() {
   log.debug("Entering tlsProtocolOptions().");
   log.debug("Leaving tlsProtocolOptions().");
   return typeof tlsServer.protocolOptions === 'function'
-    ? tlsServer.protocolOptions() : {};
+    ? tlsServer.protocolOptions(ldapsPolicy()) : {};
+}
+
+// LDAPS's own policy (#423): the listeners' TLS settings, and its own client
+// authentication pair — ldap.ldapsDisableOptionalClientCertificate (ON by
+// default, which is what LDAPS always did: no CertificateRequest) and
+// ldap.ldapsRequireClientCertificate.
+function ldapsPolicy() {
+  log.debug("Entering ldapsPolicy().");
+  log.debug("Leaving ldapsPolicy().");
+  return typeof tlsServer.policyFor === 'function'
+    ? tlsServer.policyFor('ldaps') : undefined;
 }
 
 // Where both sockets bind: `global.host`, which every other listener here
@@ -12159,7 +12170,8 @@ function rekeyLdaps(why) {
       cert: (current.chainPem && current.chainPem.length)
         ? [current.certPem].concat(current.chainPem).join('')
         : current.certPem,
-      key: current.privateKeyPem
+      key: current.privateKeyPem,
+      ca: tlsServer.clientTruststoreOptions().ca
     }, tlsProtocolOptions()));
   } catch (e) {
     // The listener still has the context it had, so this is a certificate
@@ -12195,13 +12207,30 @@ if (serverCertificate && serverCertificate.certPem &&
   // hands this whole object to `tls.createServer()`, so LDAPS takes the same
   // protocol floor and cipher list as the main port rather than
   // node's defaults behind their back.
+  //
+  // WHETHER IT ASKS FOR ONE IS THE OPERATOR'S SINCE #423, with today's
+  // answer — it does not — the default: ldapsPolicy()'s client
+  // authentication, and the truststore it verifies one against. Registered
+  // with tls_server.js so that a truststore change, and a change to either
+  // toggle or the TLS policy, reaches this listener at the next handshake.
   secureServer = ldap.createServer(Object.assign({
     log: log,
     routeAnonymousBinds: true,
     encodeErrorMessage: true,
     certificate: serverCertificate.certPem,
-    key: serverCertificate.privateKeyPem
-  }, tlsProtocolOptions()));
+    key: serverCertificate.privateKeyPem,
+    ca: tlsServer.clientTruststoreOptions().ca
+  }, tlsProtocolOptions(),
+  tlsServer.clientAuthOptions(ldapsPolicy().clientAuth)));
+  tlsServer.trustClientCertificatesOn(secureServer.server,
+    'LDAPS (' + LDAPS_PORT + ')', function () {
+      return { key: serverCertificate.privateKeyPem,
+               cert: (serverCertificate.chainPem &&
+                      serverCertificate.chainPem.length)
+                 ? [serverCertificate.certPem]
+                   .concat(serverCertificate.chainPem).join('')
+                 : serverCertificate.certPem };
+    }, { kind: 'ldaps' });
   // A ticket another node issued resumes here too, in an active-active
   // cluster (tls/session_tickets.ts); outside one this changes nothing.
   sessionTickets.track(secureServer.server, 'LDAPS (' + LDAPS_PORT + ')');

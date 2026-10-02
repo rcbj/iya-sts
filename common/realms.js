@@ -1864,6 +1864,28 @@ function listenerOverrideProblem(id, after) {
                  'every realm\'s port, so each must be its own.' };
     }
   }
+  // THE LISTENER'S OWN POST-QUANTUM ONLY (#423) needs a 256-bit TLS 1.3 suite
+  // in the list it will use — its own, or the process's it inherits — or the
+  // listener would refuse every client. tls/tls_server.js holds the same rule
+  // for the process's settings.
+  if (String(o['listener.pqcOnly'] || '') === 'on') {
+    const own = String(o['listener.tls13CipherSuites'] || '').trim();
+    const suites = (own || String(config.processValue(
+      'tls.tls13CipherSuites') || '')).split(',').map(function (one) {
+      return one.trim();
+    });
+    if (suites.indexOf('TLS_AES_256_GCM_SHA384') < 0 &&
+        suites.indexOf('TLS_CHACHA20_POLY1305_SHA256') < 0) {
+      log.debug("Leaving listenerOverrideProblem(). No post-quantum suite.");
+      return { code: 'STS-TLS-0043',
+               message: 'listener.pqcOnly on realm "' + id + '" needs a ' +
+                 '256-bit TLS 1.3 suite (TLS_AES_256_GCM_SHA384 or ' +
+                 'TLS_CHACHA20_POLY1305_SHA256) in ' +
+                 (own ? 'listener.tls13CipherSuites'
+                      : 'tls.tls13CipherSuites, which it inherits') +
+                 ', and there is none.' };
+    }
+  }
   let multiCell = false;
   try {
     multiCell = !!require('./cells').isMulti();
