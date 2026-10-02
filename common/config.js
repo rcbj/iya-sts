@@ -9147,7 +9147,8 @@ const SETTINGS = [
   // CLIENT AUTHENTICATION, TWO TOGGLES PER LISTENER. "Require" wins over
   // "disable optional": a listener that requires a certificate asks for one
   // by definition. Read by `tls_server.js`'s `clientAuthOf()`.
-  { key: 'tls.mainPortDisableOptionalClientCertificate', group: 'Listeners',
+  { key: 'tls.mainPortDisableOptionalClientCertificate',
+    group: 'Listener client certificates',
     label: 'Main port: do not ask for a client certificate',
     env: 'STS_TLS_MAIN_DISABLE_OPTIONAL_CLIENT_CERT', type: 'bool',
     dflt: false, runtime: true, perProcess: true,
@@ -9159,7 +9160,8 @@ const SETTINGS = [
                  'with a certificate and the remote XACML PEP need — on, ' +
                  'all of those stop working here, and a browser holding a ' +
                  'client certificate is no longer offered a choice of one.' },
-  { key: 'tls.mainPortRequireClientCertificate', group: 'Listeners',
+  { key: 'tls.mainPortRequireClientCertificate',
+    group: 'Listener client certificates',
     label: 'Main port: require a client certificate',
     env: 'STS_TLS_MAIN_REQUIRE_CLIENT_CERT', type: 'bool',
     dflt: false, runtime: true, perProcess: true,
@@ -9171,7 +9173,8 @@ const SETTINGS = [
                  'on, a browser without a certificate, discovery, JWKS and ' +
                  'every public document on this port are refused, and so is ' +
                  'a load balancer\'s or container\'s HTTPS health check.' },
-  { key: 'ldap.ldapsDisableOptionalClientCertificate', group: 'Listeners',
+  { key: 'ldap.ldapsDisableOptionalClientCertificate',
+    group: 'Listener client certificates',
     label: 'LDAPS: do not ask for a client certificate',
     env: 'STS_LDAPS_DISABLE_OPTIONAL_CLIENT_CERT', type: 'bool',
     dflt: true, runtime: true, perProcess: true,
@@ -9183,7 +9186,8 @@ const SETTINGS = [
                  'certificate presented is verified against the client ' +
                  'truststore but does not bind anybody (there is no SASL ' +
                  'EXTERNAL here).' },
-  { key: 'ldap.ldapsRequireClientCertificate', group: 'Listeners',
+  { key: 'ldap.ldapsRequireClientCertificate',
+    group: 'Listener client certificates',
     label: 'LDAPS: require a client certificate',
     env: 'STS_LDAPS_REQUIRE_CLIENT_CERT', type: 'bool',
     dflt: false, runtime: true, perProcess: true,
@@ -9192,7 +9196,8 @@ const SETTINGS = [
                  'client truststore — a second gate in front of the bind, ' +
                  'which still decides who the connection is. Wins over the ' +
                  'toggle above. Off by default.' },
-  { key: 'debugger.disableOptionalClientCertificate', group: 'Listeners',
+  { key: 'debugger.disableOptionalClientCertificate',
+    group: 'Listener client certificates',
     label: 'Debugger: do not ask for a client certificate',
     env: 'STS_DEBUGGER_DISABLE_OPTIONAL_CLIENT_CERT', type: 'bool',
     dflt: false, runtime: true, perProcess: true,
@@ -9200,7 +9205,8 @@ const SETTINGS = [
                  'CertificateRequest. Off by default: it asks and requires ' +
                  'none, as the main port does, so a certificate-bound ' +
                  'access token can be presented there.' },
-  { key: 'debugger.requireClientCertificate', group: 'Listeners',
+  { key: 'debugger.requireClientCertificate',
+    group: 'Listener client certificates',
     label: 'Debugger: require a client certificate',
     env: 'STS_DEBUGGER_REQUIRE_CLIENT_CERT', type: 'bool',
     dflt: false, runtime: true, perProcess: true,

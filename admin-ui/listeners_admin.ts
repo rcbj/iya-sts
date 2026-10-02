@@ -329,8 +329,30 @@ class ListenersAdmin {
       admin.tile(json.process.pqcOnly ? 'on' : 'off', 'post-quantum only') +
       admin.tile(String(json.live.length), 'TLS listeners live here') +
       '</div>';
+    // TABS, AS AN APPLICATION'S PAGE HAS THEM (rcbj, 2026-10-02: "a tabular
+    // view like we did on Directory->Applications->Application. Each section
+    // should be its own tab"): `admin.tabbedPanels()`, a link per panel and
+    // the stylesheet showing the targeted one, no script. Each settings group
+    // is a tab of its own, so a Save lands back on its tab. A panel with
+    // nothing in it gets no tab — the Realm listener group is drawn only in
+    // a realm other than the default one, which alone may carry it.
+    const settings = function (group: string): string {
+      return admin.configFormsFor(PAGE, [group]);
+    };
     log.debug("Leaving ListenersAdmin.html().");
-    return tiles + body + admin.configFormsFor(PAGE);
+    return tiles + admin.tabbedPanels('listeners', [
+      { id: 'tab-listeners', label: json.ownListener ? 'This realm\'s listener'
+                                                     : 'Listeners',
+        html: body },
+      { id: 'tab-tls-policy', label: 'TLS versions & suites',
+        html: settings('Listeners') },
+      { id: 'tab-client-certificates', label: 'Client certificates',
+        html: settings('Listener client certificates') },
+      { id: 'tab-certificate', label: 'Certificate & protocol',
+        html: settings('TLS') },
+      { id: 'tab-realm-listener', label: 'Realm listener',
+        html: json.realm === 'default' ? '' : settings('Realm listener') }
+    ]);
   }
 
   /**

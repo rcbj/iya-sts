@@ -27522,14 +27522,18 @@ class AdminConsole {
    * group the page owns.
    *
    * @param path - the page's path
+   * @param only - optional; the names of the groups to draw, for a page that
+   *   puts each of its groups on a tab of its own (/admin/listeners, #423)
    * @returns the block as HTML, or an empty string when the page owns no
-   *   settings group
+   *   settings group (or none of `only`)
    */
-  configFormsFor(path) {
+  configFormsFor(path, only?) {
     const { log, persistence } = this.deps;
     const self = this;
     log.debug("Entering AdminConsole.configFormsFor(). path=" + path);
-    const groups = this.settingsGroupsFor(path);
+    const groups = this.settingsGroupsFor(path).filter(function (group) {
+      return !Array.isArray(only) || only.indexOf(group.group) >= 0;
+    });
     if (!groups.length) {
       log.debug("Leaving AdminConsole.configFormsFor(). No settings live on " +
                 path + ".");
@@ -46547,6 +46551,7 @@ const SETTING_HOMES = [
   // TLS group moved here from /admin/tls, which keeps the truststore and the
   // certificate, and so did the realm listener's rows (#99).
   { group: 'Listeners', pages: ['/admin/listeners'] },
+  { group: 'Listener client certificates', pages: ['/admin/listeners'] },
   { group: 'TLS', pages: ['/admin/listeners'] },
   // A trust realm's own listener (#99): realm-only settings, edited on the
   // Listeners page read inside a realm (#423); the default realm refuses
@@ -49196,6 +49201,9 @@ const consoleExports = {
   // settings renderer and a second redirect-or-JSON rule, and two of either is
   // how a console starts behaving differently on different pages.
   configFormsFor: slot.forward('configFormsFor'),
+  // The tab panels an application's page is drawn in, for a page drawn
+  // elsewhere that wants the same tabs (/admin/listeners, #423).
+  tabbedPanels: slot.forward('tabbedPanels'),
   setXacmlPages: slot.forward('setXacmlPages'),
   xacmlActionNames: slot.forward('xacmlActionNames'),
   // The JSON counterpart of the block above, so that a page drawn
