@@ -2631,7 +2631,9 @@ function create(options) {
                  'the database; running it again (attempt ' + (attempt + 2) +
                  ' of ' + (DEADLOCK_RETRIES + 1) + ').');
         await new Promise(function (resolve) {
-          setTimeout(resolve, 10 + Math.floor(Math.random() * 40) *
+          // node's generator, as every random value here is (tests/
+          // random_values.js); a jitter needs no more, and asks no less.
+          setTimeout(resolve, 10 + nodeCrypto.randomInt(0, 40) *
                               (attempt + 1));
         });
       }
