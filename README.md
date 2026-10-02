@@ -86,6 +86,25 @@ docker run --rm -p 8081:8081 iya-sts        # add -e VAR=value for any setting
 
 `docker compose up` starts the service with its PostgreSQL store.
 
+### The published image
+
+Every build of `main` and `develop` that passes its smoke test is published,
+so the service can be run without building anything:
+
+| Image | Tags |
+|---|---|
+| `ghcr.io/rcbj/iya-sts` | `latest` (newest `main` build), `develop`, and one `M.N.O` per build |
+| `docker.io/iyasec/iya-sts` | the same |
+
+```bash
+docker run --rm -p 8081:8081 ghcr.io/rcbj/iya-sts:latest
+```
+
+`M.N.O` is the version the image reports (see *Versioning*), and the image's
+`org.opencontainers.image.revision` label names the commit it was built from.
+The published image is the same as one built here, in development mode by
+default; [`docs/configuration.md`](docs/configuration.md) covers product mode.
+
 **The main port is HTTPS**, on a self-signed certificate generated at each
 start. Fetch it once and trust it from then on:
 

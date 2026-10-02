@@ -386,6 +386,17 @@ ARG BUILD_NUMBER=
 ARG GIT_COMMIT=
 RUN BUILD_NUMBER="${BUILD_NUMBER}" GIT_COMMIT="${GIT_COMMIT}" \
     node common/version.js --stamp . && cat version.json
+# OCI metadata, read by ghcr.io and Docker Hub (2026-10-02). `source` is what
+# LINKS the published package (ghcr.io/rcbj/iya-sts, pushed by
+# .github/workflows/build-container.yml) to this repository, so it lists under
+# the repository's Packages; `revision` is the commit the image was built
+# from, beside the build number version.json carries. The parent project's
+# api and client images carry the same five. A LABEL is metadata, not a layer.
+LABEL org.opencontainers.image.source="https://github.com/rcbj/iya-sts" \
+      org.opencontainers.image.title="iya-sts" \
+      org.opencontainers.image.description="IYA STS: an identity service speaking OAuth 2.0 / OpenID Connect, SAML, WS-Trust, WS-Federation, Kerberos, LDAP, SCIM, SPIFFE and more (port 8081)" \
+      org.opencontainers.image.licenses="BUSL-1.1" \
+      org.opencontainers.image.revision="${GIT_COMMIT}"
 # The service selects its configuration (log level) with CONFIG_FILE, the same
 # way api and client do. The compose files override this per stack.
 #
