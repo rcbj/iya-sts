@@ -965,10 +965,6 @@ const CODES = [
       'port, so each must be its own).',
     spec: 'the write is refused; nothing is changed' },
   { code: 'STS-CORE-0148',
-    summary: 'A realm\'s listener.certificateFile was set without ' +
-      'listener.privateKeyFile, or the other way round.',
-    spec: 'the write is refused; nothing is changed' },
-  { code: 'STS-CORE-0149',
     summary: 'A realm listener (listener.port) was asked for while this ' +
       'service runs as several cells, which #99 does not support yet.',
     spec: 'the write is refused; nothing is changed' },

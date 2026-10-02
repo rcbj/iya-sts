@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3951** of them, in **41** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3950** of them, in **41** subsystems.
 
 ## Where a code appears
 
@@ -51,7 +51,7 @@ is an ordinary outcome.
 
 * [HTTP front door (`STS-HTTP`)](#sts-http) — 18
 * [PROXY protocol (`STS-PROXY`)](#sts-proxy) — 9
-* [Service core (`STS-CORE`)](#sts-core) — 81
+* [Service core (`STS-CORE`)](#sts-core) — 80
 * [Worker pools (`STS-WORKER`)](#sts-worker) — 48
 * [Persistence and coordination (`STS-STORE`)](#sts-store) — 74
 * [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 28
@@ -223,8 +223,7 @@ Raised from: server.js, common/protocol_stack.ts, common/config.js, common/confi
 | `STS-CORE-0145` | A listener.* setting was given to the default realm, which has no listener of its own: it is served on the main port under global.publicBaseUrl (#99). | the write is refused; nothing is changed |
 | `STS-CORE-0146` | A realm's listener.publicBaseUrl is not an https origin with no path, query or user, or listener.port was set without it. | the write is refused; nothing is changed |
 | `STS-CORE-0147` | A realm's listener.port is already another realm's or one of this process's own listeners' (every node binds every realm port, so each must be its own). | the write is refused; nothing is changed |
-| `STS-CORE-0148` | A realm's listener.certificateFile was set without listener.privateKeyFile, or the other way round. | the write is refused; nothing is changed |
-| `STS-CORE-0149` | A realm listener (listener.port) was asked for while this service runs as several cells, which #99 does not support yet. | the write is refused; nothing is changed |
+| `STS-CORE-0148` | A realm listener (listener.port) was asked for while this service runs as several cells, which #99 does not support yet. | the write is refused; nothing is changed |
 
 ## STS-WORKER
 

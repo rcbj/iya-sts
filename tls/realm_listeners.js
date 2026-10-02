@@ -125,6 +125,12 @@ function nodeSlot() {
 // whole, or one this realm's CA issues for this node.
 async function certificateFor(realm, desired) {
   log.debug("Entering certificateFor(). " + realm.id);
+  if (!!desired.certificateFile !== !!desired.privateKeyFile) {
+    log.debug("Leaving certificateFor(). Half a certificate.");
+    return errorCodes.mark({ ok: false,
+      why: 'listener.certificateFile and listener.privateKeyFile are both ' +
+           'or neither: one is set and the other is not' }, 'STS-TLS-0040');
+  }
   if (desired.certificateFile) {
     let cert = '';
     let key = '';

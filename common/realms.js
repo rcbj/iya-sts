@@ -1767,7 +1767,8 @@ function kerberosOverrideProblem(id, after, before) {
 //   * the default realm has no listener of its own — it IS the main port;
 //   * a port needs a public base, an https origin with no path;
 //   * a port is no other realm's and none of this process's own listeners';
-//   * an operator's certificate comes with its key, both or neither;
+//   (an operator's certificate and its key are set one at a time, so the
+//   pair is held at bind time by tls/realm_listeners.js, STS-TLS-0040);
 //   * not while this service runs as several cells: a cell's public name and
 //     a realm's would both claim the browser (#98), and that is a follow-up.
 // ---------------------------------------------------------------------------
@@ -1863,16 +1864,6 @@ function listenerOverrideProblem(id, after) {
                  'every realm\'s port, so each must be its own.' };
     }
   }
-  const cert = String(o['listener.certificateFile'] || '').trim();
-  const key = String(o['listener.privateKeyFile'] || '').trim();
-  if (!!cert !== !!key) {
-    log.debug("Leaving listenerOverrideProblem(). Half a certificate.");
-    return { code: 'STS-CORE-0148',
-             message: 'listener.certificateFile and listener.privateKeyFile ' +
-               'on realm "' + id + '" are both or neither: a certificate ' +
-               'without its key cannot be presented, and a key without its ' +
-               'certificate is nothing to present.' };
-  }
   let multiCell = false;
   try {
     multiCell = !!require('./cells').isMulti();
@@ -1881,7 +1872,7 @@ function listenerOverrideProblem(id, after) {
   }
   if (port && multiCell) {
     log.debug("Leaving listenerOverrideProblem(). Several cells.");
-    return { code: 'STS-CORE-0149',
+    return { code: 'STS-CORE-0148',
              message: 'A realm listener (listener.port on realm "' + id +
                '") is not supported while this service runs as several ' +
                'cells: a cell\'s public name and the realm\'s would both ' +

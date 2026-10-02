@@ -16608,10 +16608,15 @@ function resolve(key) {
     return { raw: fromRealm, source: 'realm' };
   }
   // A `realmOnly` row (#99) is the realm's own or its default: a value the
-  // process was given would otherwise be every realm's.
+  // process was given — an override, the environment, the operator's
+  // appconfig — would otherwise be every realm's. The generated defaults file
+  // is still its base layer, which is what the startup check asks for.
   if (setting.realmOnly) {
+    const fromDefaults = dig(defaults, setting.path || setting.key);
     log.debug("Leaving resolve(). Realm-only.");
-    return { raw: defaultOf(setting), source: 'default' };
+    return fromDefaults !== undefined
+      ? { raw: fromDefaults, source: 'defaults' }
+      : { raw: defaultOf(setting), source: 'default' };
   }
   if (Object.prototype.hasOwnProperty.call(overrides, key)) {
     log.debug("Leaving resolve().");
