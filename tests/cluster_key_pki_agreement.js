@@ -510,6 +510,45 @@ async function buildSection(t) {
           'and one process Intermediate, not one per node',
           [interA && interA.serialHex, interB && interB.serialHex]);
 
+  // 9b. ONE CONTAINER'S PROCESSES TOO (2026-10-02). With cluster.mode=off
+  // the row is still merged (section 0), and two processes ensuring a new
+  // realm's branch at once each built one: the merge kept the first, and the
+  // second had already issued from its own (sts_webauthn_attestation, the
+  // user portal's key pair). They take the build claim now, as nodes do.
+  t.log.info('=== 9b. two processes of one container build ONE branch ===');
+  process.env.STS_CLUSTER_MODE = 'off';
+  try {
+    const procA = freshNode(['keystore', 'pki']);
+    const procB = freshNode(['keystore', 'pki']);
+    [procA, procB].forEach(function (node) {
+      node.keystore.setStore(store);
+    });
+    await procA.keystore.start();
+    await procB.keystore.start();
+    t.check(!procA.keystore.arbitrates() && procA.keystore.mergesPkiRows(),
+            'precondition: one container — the store does not arbitrate key ' +
+            'sets and does merge a certificate authority row');
+    await procA.pki.ensureRoot({ keyAlg: 'ec-p256' });
+    await procB.pki.ensureRoot({ keyAlg: 'ec-p256' });
+    const solo = await Promise.all([
+      procA.pki.ensureScope('solo-realm', { keyAlg: 'ec-p256' }),
+      procB.pki.ensureScope('solo-realm', { keyAlg: 'ec-p256' })
+    ]);
+    t.check(solo[0].ok && solo[1].ok, 'both processes answer ok', solo);
+    t.check(!!solo[0].existing !== !!solo[1].existing,
+            'EXACTLY ONE PROCESS BUILT the realm\'s branch; the other waited ' +
+            'on the build claim and took it from the store',
+            solo.map(function (one) { return !!one.existing; }));
+    const soloA = procA.pki.rawRowFor('solo-realm').intermediate;
+    const soloB = procB.pki.rawRowFor('solo-realm').intermediate;
+    t.check(soloA && soloB && soloA.serialHex === soloB.serialHex,
+            'and both hold the SAME Intermediate, so nothing either issues ' +
+            'is under an authority the other threw away',
+            [soloA && soloA.serialHex, soloB && soloB.serialHex]);
+  } finally {
+    process.env.STS_CLUSTER_MODE = 'active-active';
+  }
+
   t.log.info('=== 10. a node that starts later reads, and builds nothing ===');
   const nodeC = freshNode(['keystore', 'pki']);
   nodeC.keystore.setStore(store);

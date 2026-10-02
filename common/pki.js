@@ -1267,9 +1267,34 @@ async function buildRoot(opts) {
 // as the holder lives. The fence every write already carries (the node's
 // membership, checked in the transaction) is what stops a deposed node.
 //
-// Where the store does not arbitrate — development, `ldif`, one process —
+// Where the row is not merged (`coordinatesPkiBuilds()`, below) — development,
 // this is `build()` and nothing else.
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// **AND BETWEEN THE PROCESSES OF ONE CONTAINER, WHEREVER THE ROW IS MERGED
+// (2026-10-02).** This asked `keystore.arbitrates()`, which is false with
+// `cluster.mode=off` — and a single-node deployment is several writers all
+// the same: the front process and each request worker thread hold their own
+// copy of this module and of the hierarchy. Two of them asked for a new
+// realm's branch at once, each built one, the row's merge kept the first to
+// commit (STS-KEYS-0057) — and the loser had already issued the user portal's
+// RFC 7523 key pair from its discarded Issuing CA, so the portal's sign-in in
+// that realm was refused ("does NOT pass through the realm's own
+// Intermediate CA"): sts_webauthn_attestation in single-node, locally and in
+// CI run 36967212793. The claim is taken wherever the keystore merges the row
+// (`mergesPkiRows()`), which is every process of a container on a merging
+// store as well as every node of a cluster; the claims table is the store's,
+// so it is one table for every thread.
+// ---------------------------------------------------------------------------
+function coordinatesPkiBuilds() {
+  log.debug("Entering coordinatesPkiBuilds().");
+  const merges = typeof keystore.mergesPkiRows === 'function'
+    ? keystore.mergesPkiRows()
+    : (typeof keystore.arbitrates === 'function' && keystore.arbitrates());
+  log.debug("Leaving coordinatesPkiBuilds(). " + merges);
+  return !!merges;
+}
+
 const CLUSTER_BUILD_CLAIM_MS = 120000;
 const CLUSTER_BUILD_WAIT_MS = 180000;
 const CLUSTER_BUILD_POLL_MS = 250;
@@ -1312,7 +1337,7 @@ function lostTier(outcome, tiers) {
  */
 async function oneBuildInTheCluster(scopeId, tier, existing, build, options) {
   log.debug("Entering oneBuildInTheCluster(). scope=" + scopeId);
-  if (typeof keystore.arbitrates !== 'function' || !keystore.arbitrates()) {
+  if (!coordinatesPkiBuilds()) {
     log.debug("Leaving oneBuildInTheCluster(). Nothing to coordinate.");
     return build();
   }
@@ -12941,7 +12966,7 @@ module.exports = {
   refreshScope: function (scopeId) {
     log.debug("Entering refreshScope().");
     log.debug("Leaving refreshScope().");
-    return typeof keystore.arbitrates === 'function' && keystore.arbitrates()
+    return coordinatesPkiBuilds()
       ? keystore.refreshPki(String(scopeId))
       : Promise.resolve(null);
   },
