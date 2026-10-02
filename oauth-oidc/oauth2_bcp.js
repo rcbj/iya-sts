@@ -3858,6 +3858,33 @@ function noteTokenBinding(opts) {
  * @returns `{ ok: true }`, or `{ ok: false, errorCode, error, requirement,
  *   description }` with `revoke`
  */
+// ---------------------------------------------------------------------------
+// WHETHER AN AUTHORIZATION CODE MAY OUTLIVE A FAILED PRESENTATION (#424).
+//
+// rcbj, 2026-10-02: "The caller can only submit a request with that
+// authorization code once. Then, they have to start the flow / grant over
+// again." So by default a code is SPENT at its first presentation, whatever
+// that request's outcome. `oauth2.codeReplayIdempotent` (off by default)
+// brings back the old leniency — a refused request leaves the code redeemable
+// and an identical repeat is answered with the same tokens — and, like the
+// relaxation below, never in this mode (and so never in OAuth 2.1, FAPI or
+// product mode, which imply it).
+// ---------------------------------------------------------------------------
+/**
+ * Tells whether authorization code redemption is relaxed: a refused Token
+ * Request leaves the code redeemable, and an identical repeat is answered
+ * with the same tokens.
+ *
+ * @returns true only outside this mode with oauth2.codeReplayIdempotent on
+ */
+function codeRedemptionRelaxed() {
+  log.debug("Entering codeRedemptionRelaxed().");
+  const relaxed = !enabled() &&
+    config.value('oauth2.codeReplayIdempotent') === true;
+  log.debug("Leaving codeRedemptionRelaxed(). " + relaxed);
+  return relaxed;
+}
+
 function checkCodeReplay(opts) {
   log.debug("Entering checkCodeReplay().");
   // RFC 6749 section 4.1.2's MUST, in every mode since #187: the relaxation
@@ -4365,6 +4392,7 @@ module.exports = {
   rememberTransactionValues: rememberTransactionValues,
   checkTokenRequest: checkTokenRequest,
   checkCodeReplay: checkCodeReplay,
+  codeRedemptionRelaxed: codeRedemptionRelaxed,
   noteRedeemed: noteRedeemed,
   applyToMetadata: applyToMetadata,
   state: state

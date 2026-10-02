@@ -11179,6 +11179,11 @@ class OAuth2Server {
     const self = this;
     log.debug("Entering OAuth2Server.rememberRedemption().");
     self.forgetStaleRedemptions();
+    // Presented again while this redemption was being answered (#424): what
+    // it issues is revoked as it is recorded — two holders, and this server
+    // cannot tell which is the client (RFC 6749 section 10.5).
+    const prior = redeemedCodes.get(code);
+    const presentedAgain = !!(prior && prior.presentedAgainAt);
     // The bound (oauth2.redeemedCodeCacheSize). What this remembers is a
     // courtesy — the same request answered with the same tokens — and not the
     // refusal, which the code's own removal at redemption already makes, so
@@ -11201,6 +11206,17 @@ class OAuth2Server {
       fingerprint: fingerprint,
       response: issued
     });
+    if (presentedAgain) {
+      self.issuedJtis(issued).forEach(function (jti) {
+        self.deps.stats.revoke(jti, 'RFC 9700 section 4.5: an authorization ' +
+                               'code was presented twice',
+                               { initiatingEntity: 'policy',
+                                 replay: 'authorization-code-replay' });
+      });
+      log.warn('oauth2: an authorization code was presented again while its ' +
+               'first presentation was being answered; the tokens that ' +
+               'presentation issued are revoked (RFC 6749 section 10.5).');
+    }
     log.debug("Leaving OAuth2Server.rememberRedemption(). The tokens for " +
               "this code are replayable until " +
               new Date(record.expires).toISOString() + ".");
@@ -11224,6 +11240,108 @@ class OAuth2Server {
     }
     log.debug("Leaving OAuth2Server.describeUptime().");
     return Math.round(seconds / 3600) + ' hour(s)';
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE FIRST PRESENTATION SPENDS THE CODE (#424, 2026-10-02).
+  //
+  // rcbj: "The caller can only submit a request with that authorization code
+  // once. Then, they have to start the flow / grant over again." So a Token
+  // Request with grant_type=authorization_code takes its code out of the live
+  // map, and claims it across the cluster for good, BEFORE anything about the
+  // request is checked — the body's shape, client authentication (rcbj's
+  // answer: a request failing client authentication burns it too), every
+  // grant check, the issuance gate. A record is left in `redeemedCodes`
+  // saying it was presented, which the successful redemption replaces with
+  // the tokens it issued; a second presentation finds one or the other and is
+  // refused — revoking what the first bought, where it bought anything.
+  //
+  // Not where redemption is relaxed (`bcp.codeRedemptionRelaxed()`:
+  // `oauth2.codeReplayIdempotent`, outside RFC 9700 mode): there the code is
+  // spent only when tokens are issued, as before.
+  // ---------------------------------------------------------------------------
+  /**
+   * Spends the authorization code a Token Request carries, before anything
+   * about the request is checked.
+   *
+   * @param raw - the request body as parsed, before validation
+   * @returns `{ code, record, claim }` — the record null where no live code
+   *   was held — or null where nothing is spent here
+   */
+  private async spendPresentedCode(raw: Json): Promise<Json> {
+    const { log, bcp, clusterClaims } = this.deps;
+    const self = this;
+    log.debug("Entering OAuth2Server.spendPresentedCode().");
+    const code = typeof raw.code === 'string' ? raw.code : '';
+    if (String(raw.grant_type || '') !== 'authorization_code' || !code ||
+        bcp.codeRedemptionRelaxed()) {
+      log.debug("Leaving OAuth2Server.spendPresentedCode(). Nothing spent.");
+      return null;
+    }
+    const record = authzCodes.get(code) || null;
+    if (!record) {
+      log.debug("Leaving OAuth2Server.spendPresentedCode(). No live code.");
+      return { code: code, record: null, claim: null };
+    }
+    // The record of the presentation goes in WITH the removal, in the same
+    // tick, before the claim is awaited: a second request arriving while the
+    // claim is asked must find it, or it would see neither the code nor the
+    // presentation, and what the first goes on to issue would not be revoked.
+    authzCodes.delete(code);
+    if (!redeemedCodes.has(code)) {
+      self.forgetStaleRedemptions();
+      cacheRegistry.makeRoom(redeemedCodes,
+                             Number(self.deps.config.value(
+                               'oauth2.redeemedCodeCacheSize')),
+                             { counter: redeemedCodesCount });
+      redeemedCodes.set(code, {
+        when: Date.now(), expires: record.expires,
+        forget: record.expires + (record.ttlMs || AUTH_CODE_TTL_MS),
+        ttlMs: record.ttlMs || AUTH_CODE_TTL_MS,
+        client_id: record.client_id || '', fingerprint: null, response: null
+      });
+    }
+    const claim = await clusterClaims.claim({
+      scope: 'oauth.code', value: code, ttlMs: self.codeClaimTtlMs(record)
+    });
+    log.debug("Leaving OAuth2Server.spendPresentedCode(). Spent; claim " +
+              (claim.ok ? 'held' : 'refused (' + claim.reason + ')') + ".");
+    return { code: code, record: record, claim: claim };
+  }
+
+  // The jtis of a token set this service issued, to revoke it: `jwt.decode`
+  // rather than `jwt.verify`, because these are this service's own tokens read
+  // back out of its own store and the signature was made two lines after
+  // they were minted.
+  private issuedJtis(response: Json): string[] {
+    const { log, jwt, errorCodes, refreshTokenCrypto } = this.deps;
+    log.debug("Entering OAuth2Server.issuedJtis().");
+    log.debug("Leaving OAuth2Server.issuedJtis().");
+    const done = { response: response };
+    return ['access_token', 'refresh_token', 'id_token'].map(
+          function (name) {
+        const token = done.response && done.response[name];
+        if (!token) {
+          return '';
+        }
+        try {
+          // The refresh token in the set is ENCRYPTED; `claimsOfIssued()` opens
+          // it and reads a JWS unchanged.
+          const claims = refreshTokenCrypto.isEncrypted(token)
+            ? refreshTokenCrypto.claimsOfIssued(token)
+            : jwt.decode(token);
+          return (claims && claims.jti) || '';
+        } catch (e) {
+          // Not decodable, which cannot happen for a token this service minted
+          // — but a jti that cannot be read is a token that cannot be revoked,
+          // and silently revoking nothing would be worse than saying so.
+          log.error(errorCodes.tag('STS-OAUTH-0190') + 'could not read the ' +
+                                                       'jti of ' +
+                                                       'the ' + name + ' ' +
+              'issued for this code: ' + e.message);
+          return '';
+        }
+      });
   }
 
   // A code the live map does not hold. Either it was redeemed here — in which
@@ -11258,7 +11376,33 @@ class OAuth2Server {
         'different authorization server.');
     }
     const ago = Math.max(0, Math.round((Date.now() - done.when) / 1000));
-    const differs = self.redemptionDifference(done.fingerprint, fingerprint);
+    // PRESENTED, AND NOTHING ISSUED FOR IT (#424): the first presentation was
+    // refused — or is still being answered. A code is presented once, so this
+    // one is refused too, and the flow starts over.
+    if (!done.response) {
+      // A SECOND PRESENTATION WHILE THE FIRST IS STILL BEING ANSWERED: noted
+      // on the record, so that a first presentation which goes on to redeem
+      // the code revokes what it issued (RFC 6749 section 10.5), as a replay
+      // after a redemption does. See `rememberRedemption()`.
+      done.presentedAgainAt = Date.now();
+      redeemedCodes.set(code, done);
+      log.debug("Leaving OAuth2Server.replayOrRefuseRedemption(). The code " +
+                "was presented once already and redeemed nothing.");
+      errorCodes.mark(res, 'STS-OAUTH-0789');
+      return self.oauthError(res, 400, 'invalid_grant',
+        'This authorization code was already presented ' + ago + ' second(s) ' +
+        'ago' + (done.client_id ? ' for client "' + done.client_id + '"' : '') +
+        ', and that Token Request did not redeem it. An authorization code ' +
+        'may be presented once, whatever that request\'s outcome (RFC 6749 ' +
+        'section 4.1.2): start a new authorization request.');
+    }
+    // WHERE REDEMPTION IS NOT RELAXED (#424, the default) a second
+    // presentation of a redeemed code is refused and what it bought revoked,
+    // whatever the request looks like: the two sentences below are the
+    // relaxed redemption's, which tell a repeat from a different request.
+    const relaxed = bcp.codeRedemptionRelaxed();
+    const differs = relaxed
+      ? self.redemptionDifference(done.fingerprint, fingerprint) : '';
     if (differs) {
       log.debug("Leaving OAuth2Server.replayOrRefuseRedemption(). The " +
                 differs +
@@ -11273,7 +11417,7 @@ class OAuth2Server {
         'in ' + differs + ', so it is refused (RFC 6749 section 4.1.2: an ' +
         'authorization code is single use).');
     }
-    if (done.expires < Date.now()) {
+    if (relaxed && done.expires < Date.now()) {
       log.debug("Leaving OAuth2Server.replayOrRefuseRedemption(). The code " +
                 "was redeemed and " +
                 "its own lifetime has since run out.");
@@ -11302,30 +11446,7 @@ class OAuth2Server {
     // minted.
     const replay = bcp.checkCodeReplay({
       clientId: done.client_id, secondsAgo: ago,
-      issuedJtis: ['access_token', 'refresh_token', 'id_token'].map(
-          function (name) {
-        const token = done.response && done.response[name];
-        if (!token) {
-          return '';
-        }
-        try {
-          // The refresh token in the set is ENCRYPTED; `claimsOfIssued()` opens
-          // it and reads a JWS unchanged.
-          const claims = refreshTokenCrypto.isEncrypted(token)
-            ? refreshTokenCrypto.claimsOfIssued(token)
-            : jwt.decode(token);
-          return (claims && claims.jti) || '';
-        } catch (e) {
-          // Not decodable, which cannot happen for a token this service minted
-          // — but a jti that cannot be read is a token that cannot be revoked,
-          // and silently revoking nothing would be worse than saying so.
-          log.error(errorCodes.tag('STS-OAUTH-0190') + 'could not read the ' +
-                                                       'jti of ' +
-                                                       'the ' + name + ' ' +
-              'issued for this code: ' + e.message);
-          return '';
-        }
-      })
+      issuedJtis: self.issuedJtis(done.response)
     });
     if (!replay.ok) {
       (replay.revoke || []).forEach(function (jti) {
@@ -11406,13 +11527,19 @@ class OAuth2Server {
                 'code could not be spent because the claim store could not ' +
                 'be asked (' + (answer.why || 'no reason given') + '); the ' +
                 'Token Request is refused and the code is left unspent.');
-      errorCodes.mark(res, 'STS-OAUTH-0513');
       log.debug("Leaving OAuth2Server.refuseConcurrentRedemption(). The " +
                 "store failed.");
+      // Where the code was spent at its presentation (#424, the default) it
+      // is gone from this node whatever the store said, so the client is
+      // told to start over rather than to retry.
+      errorCodes.mark(res, 'STS-OAUTH-0513');
       return self.oauthError(res, 500, 'server_error',
         'This authorization server could not record that the authorization ' +
-        'code is being redeemed, so it has not redeemed it. The code has not ' +
-        'been spent; retry the Token Request.');
+        'code is being redeemed, so it has not redeemed it. ' +
+        (this.deps.bcp.codeRedemptionRelaxed()
+          ? 'The code has not been spent; retry the Token Request.'
+          : 'An authorization code may be presented once, so start a new ' +
+            'authorization request.'));
     }
     log.warn('oauth2: an authorization code is being redeemed by another ' +
              'request at the same moment' +
@@ -11868,6 +11995,11 @@ class OAuth2Server {
     const self = this;
     log.debug("Entering the token endpoint.");
     const base = self.asBaseOf(req);
+    // AN AUTHORIZATION CODE IS SPENT AT ITS FIRST PRESENTATION (#424), before
+    // anything about the request is checked — its shape, the client's
+    // authentication, every grant check — so a request refused for any reason
+    // has used the code up. See `spendPresentedCode()`.
+    const spentCode = await self.spendPresentedCode(parseBody(req) || {});
     // `checkParsed()` and not `check(req, 'body', ...)`: this service parses
     // every body as raw text, so the parsed object is what a handler holds. See
     // that function's header.
@@ -12926,7 +13058,17 @@ class OAuth2Server {
     if (grant === 'authorization_code') {
       const code = String(body.code || '');
       const fingerprint = self.redemptionFingerprint(client, body, dpopJkt);
-      const record = authzCodes.get(code);
+      // Already taken out of the live map where the code was spent at its
+      // presentation (#424); looked up here only where redemption is relaxed.
+      const record = spentCode && spentCode.code === code ? spentCode.record
+                                                          : authzCodes.get(code);
+      if (spentCode && spentCode.code === code && spentCode.claim &&
+          !spentCode.claim.ok) {
+        log.debug("Leaving OAuth2Server.tokenGrant(). The code's claim was " +
+                  "refused at its presentation.");
+        return self.refuseConcurrentRedemption(res, code, fingerprint, respond,
+                                               spentCode.claim);
+      }
       if (!record) {
         // Not necessarily an error: this is also where a second, identical
         // Token Request for a code already redeemed is answered with the tokens
@@ -12943,9 +13085,14 @@ class OAuth2Server {
         return self.oauthError(res, 400, 'invalid_grant',
           'The authorization code has expired.');
       }
-      // NOTHING below consumes the code: every check refuses and leaves it
-      // redeemable, so a client that gets one of them can fix what the message
-      // names and try the same code again. Burning it here is what used to turn
+      // BY DEFAULT THE CODE IS ALREADY SPENT (#424) — rcbj: "It doesn't matter
+      // why the request to the Token Endpoint failed. The caller can only
+      // submit a request with that authorization code once." What follows
+      // was written for the RELAXED redemption, which is now
+      // `oauth2.codeReplayIdempotent`'s (off by default, never in RFC 9700
+      // mode): there NOTHING below consumes the code: every check refuses and
+      // leaves it redeemable, so a client that gets one of them can fix what
+      // the message names and try the same code again. Burning it here is what used to turn
       // "your code_verifier does not match" into "already-used authorization
       // code" on the very next attempt — the wrong answer at exactly the moment
       // somebody was acting on the right one. The code is consumed at the
@@ -13145,18 +13292,25 @@ class OAuth2Server {
       // above `refuseConcurrentRedemption()` (#46). The in-memory lookup at the
       // top of this branch stays as the fast refusal; this is the one that
       // holds when two requests found the record at once, on one node or two.
-      const codeClaim = await clusterClaims.claim({
-        scope: 'oauth.code', value: code, ttlMs: self.codeClaimTtlMs(record)
-      });
-      if (!codeClaim.ok) {
-        log.debug("Leaving OAuth2Server.tokenGrant(). The code's claim was " +
-                  "refused.");
-        return self.refuseConcurrentRedemption(res, code, fingerprint, respond,
-                                          codeClaim);
+      // Where the code was spent at its presentation (#424, the default), its
+      // claim is already held and is never given back.
+      if (!(spentCode && spentCode.code === code)) {
+        const codeClaim = await clusterClaims.claim({
+          scope: 'oauth.code', value: code, ttlMs: self.codeClaimTtlMs(record)
+        });
+        if (!codeClaim.ok) {
+          log.debug("Leaving OAuth2Server.tokenGrant(). The code's claim was " +
+                    "refused.");
+          return self.refuseConcurrentRedemption(res, code, fingerprint,
+                                                 respond, codeClaim);
+        }
+        // Kept when the response is 2xx; given back otherwise, because under
+        // the relaxed redemption a code whose tokens were never issued has
+        // not been used.
+        clusterClaims.releaseUnlessSucceeded(res, codeClaim.handle);
+      } else {
+        authzCodes.delete(code);
       }
-      // Kept when the response is 2xx; given back otherwise, because a code
-      // whose tokens were never issued has not been used.
-      clusterClaims.releaseUnlessSucceeded(res, codeClaim.handle);
       const issued = await issue({
         jkt: dpopJkt,
         // The DPoP key a bound ID Token names (Key Binding section 4).

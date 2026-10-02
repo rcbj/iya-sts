@@ -4983,9 +4983,16 @@ const SETTINGS = [
   { key: 'oauth2.authorizationCodeTtlS', group: 'OAuth 2.0 / OIDC',
     label: 'Authorization code lifetime (s)',
     env: 'STS_OAUTH2_AUTHORIZATION_CODE_TTL_S', type: 'int', dflt: 300,
-    min: 30, max: 3600, runtime: true,
-    description: 'How long an authorization code may wait to be redeemed. ' +
-                 'RFC 6749 section 4.1.2 recommends at most ten minutes. It ' +
+    // AT MOST FIVE MINUTES (#424, rcbj: "an authorization code ... only be
+    // valid for five minutes"). It may be shorter; FAPI 2.0 caps it at 60.
+    min: 30, max: 300, runtime: true,
+    description: 'How long an authorization code may wait to be redeemed: ' +
+                 'at most five minutes (the default), and shorter if set. ' +
+                 'RFC 6749 section 4.1.2 recommends at most ten minutes; ' +
+                 'this service allows half that. FAPI 2.0 holds it to 60 ' +
+                 'seconds. A code is also presented ONCE: its first Token ' +
+                 'Request spends it, whatever that request\'s outcome ' +
+                 '(oauth2.codeReplayIdempotent relaxes that). It ' +
                  'is ALSO what RFC 9700 mode\'s transaction memory is ' +
                  'measured from — a PKCE challenge or nonce is remembered ' +
                  'for twice this — so the two cannot drift apart. A code ' +
@@ -5007,16 +5014,20 @@ const SETTINGS = [
     label: 'Answer a repeated code redemption with the same tokens',
     env: 'STS_OAUTH2_CODE_REPLAY_IDEMPOTENT', type: 'bool', dflt: false,
     runtime: true,
-    description: '**WEAKER THAN THE SPECIFICATION — leave it off.** With it ' +
-                 'on, an IDENTICAL repeat of a Token Request for a code ' +
-                 'already redeemed is answered with the tokens it already ' +
-                 'got, for the rest of the code\'s own lifetime. RFC 6749 ' +
-                 'section 4.1.2 says a code used twice MUST be refused, and ' +
-                 'off (the default) it is — and everything the first ' +
-                 'redemption bought is revoked (section 10.5). RFC 9700, ' +
-                 'OAuth 2.1 and FAPI mode ignore it. It exists for the ' +
-                 'parent project\'s development-mode job that still ' +
-                 'asserts the old courtesy (#187).' },
+    description: '**WEAKER THAN THE SPECIFICATION — leave it off.** Off ' +
+                 '(the default), an authorization code is presented ONCE: ' +
+                 'its first Token Request spends it whatever that ' +
+                 'request\'s outcome — a wrong code_verifier, a failed ' +
+                 'client authentication, anything — and a second ' +
+                 'presentation is refused, revoking whatever the first ' +
+                 'bought (RFC 6749 sections 4.1.2 and 10.5; #424). On, a ' +
+                 'refused request leaves the code redeemable so the client ' +
+                 'may fix it and try again, and an IDENTICAL repeat of a ' +
+                 'redemption is answered with the tokens it already got, for ' +
+                 'the rest of the code\'s lifetime. RFC 9700, OAuth 2.1, ' +
+                 'FAPI and product mode ignore it. It exists for the parent ' +
+                 'project\'s development-mode job that still asserts the ' +
+                 'old courtesy (#187).' },
 
   { key: 'oauth2.maxPendingTransactions', group: 'OAuth 2.0 / OIDC',
     label: 'RFC 9700: remembered transactions (per realm)',

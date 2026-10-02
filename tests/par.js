@@ -1060,13 +1060,22 @@ function childMain() {
     note(r.status === 400,
          '3j2. the code it bought is refused without a proof from that key',
          r.status + ' ' + r.text.slice(0, 160));
+    // A CODE IS PRESENTED ONCE, WHATEVER THE OUTCOME (#424): the refusal
+    // above spent it, so the redemption with the proof is asked of a second
+    // code bought the same way.
+    r = await push('par-a', {}, {
+      headers: { dpop: proof('POST', BASE + '/oauth2/par') } });
+    run = await flow('par-a', r.json.request_uri);
+    params = codeOf(run.final);
+    const boundCode2 = params && params.get('code');
     r = await request(port, 'POST', '/oauth2/token', {
       headers: { authorization: basicFor('par-a'),
                  dpop: proof('POST', BASE + '/oauth2/token') },
-      form: { grant_type: 'authorization_code', code: boundCode,
+      form: { grant_type: 'authorization_code', code: boundCode2,
               redirect_uri: REDIRECT, code_verifier: VERIFIER } });
     note(r.status === 200 && /dpop/i.test(r.json.token_type || ''),
-         '3j3. and redeemed with one', r.status + ' ' + r.text.slice(0, 160));
+         '3j3. and a code bought the same way is redeemed with one',
+         r.status + ' ' + r.text.slice(0, 160));
     r = await push('par-a', { dpop_jkt: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA' },
                    { headers: { dpop: proof('POST', BASE + '/oauth2/par') } });
     note(refused(r, 400, 'invalid_dpop_proof', /same key/),
