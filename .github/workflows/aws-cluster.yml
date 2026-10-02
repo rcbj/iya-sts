@@ -149,9 +149,7 @@ jobs:
           docker build -t "${repo}:${TAG}" \
             --build-arg STS_CLOUD_SDKS="@aws-sdk/client-secrets-manager @aws-sdk/client-kms" \
             --build-arg STS_DATABASE_CA_URL=https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem \
-            --build-arg GIT_COMMIT="$(git rev-parse HEAD)" \
-            --build-arg BUILD_NUMBER="$(node common/version.js --json |
-                                       jq -r .build)" .
+            --build-arg GIT_COMMIT="$(git rev-parse HEAD)" .
           docker build -t "${repo}:schema-${TAG}" -f deploy/aws/schema-init/Dockerfile .
           for image in "${TAG}" "schema-${TAG}"; do
             docker push "${repo}:${image}"

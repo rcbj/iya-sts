@@ -98,27 +98,16 @@ jobs:
       # image in its own cache and `docker run rcbj/sts` would pull from Docker
       # Hub instead — a stale published image passing for the one just built.
       #
-      # THE TWO BUILD ARGUMENTS STAMP THE IMAGE'S VERSION (M.N.O). The build
-      # number is fixed here rather than at startup — see CLAUDE.md,
-      # *Versioning* — and it is the build number common/version.js gives
-      # (the UTC build instant), as the parent project's Docker Image CI does
-      # with its client/version.js; it was the workflow's run number until
-      # 2026-10-02. It is computed ONCE, in the step before this one, so the
-      # two images built here carry the same version.
+      # THE IMAGE NUMBERS ITSELF (M.N.O). The Dockerfile's
+      # `node common/version.js --stamp` fixes the build number while the
+      # image is built — the UTC build instant, the number every console page
+      # shows at its foot — so no BUILD_NUMBER is passed (it was the workflow's
+      # run number until 2026-10-02), and the publish step below reads the
+      # version back out of the image. The XACML PEP image is stamped by its
+      # own build, a moment later, so its number is its own.
       # GIT_COMMIT has to be passed because `.dockerignore` excludes
       # `.git`, so the build context carries no history for `git rev-parse` to
-      # read. Neither is required — omit them and the version is the build
-      # instant with no commit — which is what keeps a plain `docker build`
-      # working unchanged.
-      - name: Compute the version
-        id: build-number
-        run: |
-          set -euo pipefail
-          v="$(node common/version.js --json)"
-          build="$(jq -r .build <<<"${v}")"
-          echo "build=${build}" >> "$GITHUB_OUTPUT"
-          echo "Version $(jq -r .version <<<"${v}"), build number ${build}."
-
+      # read.
       - name: Build image
         uses: docker/build-push-action@v6
         with:
@@ -127,7 +116,6 @@ jobs:
           load: true
           push: false
           build-args: |
-            BUILD_NUMBER=${{ steps.build-number.outputs.build }}
             GIT_COMMIT=${{ github.sha }}
           # Every FROM from the ghcr.io mirror, as docker-compose-run-tests.yml's
           # x-mirror-contexts does (`ubuntu`, not `ubuntu:latest`: BuildKit
@@ -151,7 +139,6 @@ jobs:
           load: true
           push: false
           build-args: |
-            BUILD_NUMBER=${{ steps.build-number.outputs.build }}
             GIT_COMMIT=${{ github.sha }}
           build-contexts: |
             node:22-alpine=docker-image://ghcr.io/rcbj/iya-sts/mirror/node:22-alpine
@@ -279,9 +266,11 @@ jobs:
           body=$(curl -fsSk -H "Authorization: Bearer ${STS_ADMIN_API_TOKEN}" \
             https://localhost:8081/admin-api)
           echo "${body}" | head -8
-          echo "${body}" | grep -q '"build": "${{ steps.build-number.outputs.build }}"' || {
-            echo "The image did not report BUILD_NUMBER=${{ steps.build-number.outputs.build }}." >&2
-            echo "The Dockerfile's --stamp step did not reach the image." >&2
+          stamped="$(docker run --rm --entrypoint cat rcbj/sts:ci \
+                     version.json | jq -r .build)"
+          echo "${body}" | grep -q "\"build\": \"${stamped}\"" || {
+            echo "The service did not report the build number its image" >&2
+            echo "was stamped with (${stamped})." >&2
             exit 1
           }
           echo "${body}" | grep -q '"stamped": true' || {
