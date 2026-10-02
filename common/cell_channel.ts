@@ -145,6 +145,7 @@ class CellChannel {
   private leaf: Leaf | null = null;
   private minting: Promise<Leaf> | null = null;
   private server: any = null;
+  private unregisterPolicy: (() => void) | null = null;
   private listening = false;
   private listenError = '';
   private boundPort = 0;
@@ -289,15 +290,25 @@ class CellChannel {
     return Buffer.from(b64, 'base64');
   }
 
+  // THE LISTENERS' POLICY (#423): the TLS 1.3 suites chosen, the groups (only
+  // the ML-KEM ones under tls.pqcOnly) and the signature algorithms, as every
+  // listener takes them — always TLS 1.3, whatever tls.disableTls12 says,
+  // because this channel never spoke anything else. Its client
+  // authentication is the protocol's (a cell's certificate, always
+  // required), so it has no toggle. Required lazily: `tls/tls_server.js` is a
+  // JavaScript route module, and a require from here would move its routes.
   private serverContextOptions(leaf: Leaf): tls.SecureContextOptions {
     log.debug("Entering CellChannel.serverContextOptions().");
+    const tlsServer = require('../tls/tls_server');
+    const policy = Object.assign({},
+      tlsServer.protocolOptions(tlsServer.policyFor('cell')),
+      { minVersion: 'TLSv1.3' });
     log.debug("Leaving CellChannel.serverContextOptions().");
-    return {
+    return Object.assign(policy, {
       key: leaf.keyPem,
       cert: [leaf.certPem].concat(leaf.chainPem).join('\n'),
-      ca: [this.rootPem()],
-      minVersion: 'TLSv1.3'
-    };
+      ca: [this.rootPem()]
+    });
   }
 
   // -------------------------------------------------------------------------
@@ -396,6 +407,15 @@ class CellChannel {
             self.handle(app, req, res);
           });
           self.server = server;
+          // A change to the listeners' policy re-keys this one too (#423).
+          self.unregisterPolicy = require('../tls/tls_server')
+            .registerPolicyApplier('the channel between cells (' + port + ')',
+              'cell', function () {
+                if (self.server && self.leaf) {
+                  self.server.setSecureContext(
+                    self.serverContextOptions(self.leaf));
+                }
+              });
           server.once('error', function (err: any) {
             self.listenError = err.message;
             log.error(errorCodes.tag('STS-CELL-0033') + 'cells: the ' +
@@ -424,6 +444,10 @@ class CellChannel {
     log.debug("Entering CellChannel.close().");
     const closing = this.server;
     this.server = null;
+    if (this.unregisterPolicy) {
+      this.unregisterPolicy();
+      this.unregisterPolicy = null;
+    }
     this.listening = false;
     log.debug("Leaving CellChannel.close().");
     return new Promise<void>(function (resolve) {

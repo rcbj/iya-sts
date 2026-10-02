@@ -1843,6 +1843,12 @@ class SpiffeServer {
     // The attested socket's accepting listener is this module's, not
     // grpc-js's, and is closed here.
     this.deps.rpc.closeAttested(entry.workloadServer);
+    // Their credentials stop being re-keyed by the listeners' policy (#423).
+    [entry.apiCredentials, entry.brokerCredentials].forEach(function (one) {
+      if (one && typeof one.stsUnregisterPolicy === 'function') {
+        one.stsUnregisterPolicy();
+      }
+    });
     [entry.workloadServer, entry.apiServer,
      entry.brokerServer].forEach(function (server) {
       if (!server) return;

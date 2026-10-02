@@ -220,6 +220,7 @@ import cachesAdmin = require('../admin-ui/caches_admin');
 import vcStatusAdmin = require('../admin-ui/vc_status_admin');
 // Server configuration → Mode (#181): its one view, rule 7.
 import modeAdmin = require('../admin-ui/mode_admin');
+import listenersAdmin = require('../admin-ui/listeners_admin');
 import workerPoolsAdmin = require('../admin-ui/worker_pools_admin');
 // Monitoring → Node Health (#329): its one view, rule 7.
 import nodeHealthAdmin = require('../admin-ui/node_health_admin');
@@ -2815,6 +2816,40 @@ class AdminApi {
           log.debug("Entering the management API mode endpoint.");
           self.sendJson(res, 200, modeAdmin.modeView());
           log.debug("Leaving the management API mode endpoint.");
+        } },
+
+      // ---------------------------------------------------------------------
+      // THE LISTENERS (#423). `listenersAdmin.listenersView()`, the function
+      // `/admin/listeners` answers. It changes nothing: the Listeners, TLS
+      // and Realm listener settings are set through config/set (the
+      // process's) and realms/set (a realm's own listener).
+      // ---------------------------------------------------------------------
+      { method: 'GET', path: BASE + '/listeners', tag: 'Service',
+        operationId: 'getListeners',
+        summary: 'Every listener, its TLS policy and its client ' +
+                 'authentication',
+        description: 'For the realm the call is in: `realm`, `servedOn` ' +
+                     '(`own` where the realm has a listener of its own, ' +
+                     '`default` where it is served on the default ' +
+                     'listeners), `ownListener` (its `port`, ' +
+                     '`publicBaseUrl`, `state`, `why`, `certificate` and ' +
+                     '`policy`) or `listeners` (each default listener\'s ' +
+                     '`id`, `name`, `setting`, `port`, `tls`, `what` and ' +
+                     '`policy`), the process\'s `process` policy and the ' +
+                     'TLS listeners `live` on this node. A `policy` is ' +
+                     '`minVersion`, `tls12`, `tls13Suites` (each `name` and ' +
+                     '`postQuantum`, in order), `tls12Ciphers`, `pqcOnly`, ' +
+                     '`groups` and `clientAuth` (`none`, `optional`, ' +
+                     '`required`, or the protocol\'s rule).',
+        mirrors: 'GET /admin/listeners',
+        responseDescription: 'The listeners view.',
+        responseSchema: { type: 'object',
+          description: '`realm`, `servedOn`, `ownListener`, `listeners`, ' +
+                       '`process` and `live`.' },
+        handler: function (req, res) {
+          log.debug("Entering the management API listeners endpoint.");
+          self.sendJson(res, 200, listenersAdmin.listenersView());
+          log.debug("Leaving the management API listeners endpoint.");
         } },
 
       // ---------------------------------------------------------------------

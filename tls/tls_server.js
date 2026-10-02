@@ -289,29 +289,226 @@ function truststoreOpenToAnybody() {
 // `setSecureContext()` on a truststore change — a listener that silently keeps
 // its old context while the page says the new one is in force.
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// THE LISTENERS' POLICY (#423, 2026-10-02, rcbj's request): TLS 1.2 off or
+// on, the TLS 1.3 cipher suites chosen one by one, post-quantum safe only, and
+// whether a listener asks for a client certificate, requires one, or neither.
+//
+// A POLICY is what one listener is held to: `{ disableTls12, pqcOnly,
+// tls13Suites, clientAuth }`. `policyFor(kind, realmId)` builds it from the
+// settings — the process's `tls.*` and per-listener toggles, and for a realm's
+// own listener (#99) the realm's `listener.*` rows, which inherit the
+// process's unless set. `protocolOptions(policy)` turns it into node's
+// options; with no argument it is the PROCESS's policy, which is what every
+// caller that predates this passes.
+//
+// WHAT "POST-QUANTUM SAFE" MEANS HERE, because a TLS 1.3 cipher suite names
+// only the record protection — the AEAD and its hash — and the key exchange
+// is the GROUP. Grover's algorithm halves a symmetric key, so the 256-bit
+// suites keep 128 bits against a quantum adversary and the 128-bit ones 64;
+// and what stops a session recorded today being decrypted later is an ML-KEM
+// key exchange, which TLS 1.2 has none of in OpenSSL. So pqcOnly is all
+// three: TLS 1.3, the 256-bit suites, the ML-KEM groups. It does not touch the
+// signature algorithms: authentication cannot be broken retroactively.
+//
+// THESE ARE RUNTIME SETTINGS, AND A LISTENER BAKES ITS POLICY IN. The floor,
+// the suites and the groups are in its secure context; whether it asks for a
+// certificate is a property of the server (node reads `server.requestCert`
+// and `server.rejectUnauthorized` at every connection). So a change is
+// re-applied here — `reapplyPolicy()`, called whenever an override or a realm
+// row changes — to every listener registered with this module, and handed to
+// the appliers other modules registered for listeners this module cannot
+// re-key itself (SPIFFE's gRPC servers, the channel between cells). Only a
+// listener whose policy CHANGED is touched.
+// ---------------------------------------------------------------------------
+
 /**
- * Returns the TLS protocol options every listener this process owns uses:
- * `tls.minVersion`, `tls.ciphers` (BCP 195's list by default), `tls.groups` and
- * `tls.signatureAlgorithms`, with the server's cipher order honoured.
+ * The five TLS 1.3 cipher suites RFC 8446 defines, with what this service
+ * says about each.
+ */
+const TLS13_SUITES = {
+  TLS_AES_256_GCM_SHA384: { keyBits: 256, postQuantum: true },
+  TLS_CHACHA20_POLY1305_SHA256: { keyBits: 256, postQuantum: true },
+  TLS_AES_128_GCM_SHA256: { keyBits: 128, postQuantum: false },
+  TLS_AES_128_CCM_SHA256: { keyBits: 128, postQuantum: false },
+  TLS_AES_128_CCM_8_SHA256: { keyBits: 128, postQuantum: false }
+};
+
+// The key-exchange groups OpenSSL 3.5 implements with ML-KEM in them: the
+// three hybrids and the three pure sets. Compared without case, as OpenSSL
+// reads a groups list.
+const PQ_GROUPS = ['X25519MLKEM768', 'SecP256r1MLKEM768', 'SecP384r1MLKEM1024',
+                   'MLKEM512', 'MLKEM768', 'MLKEM1024'];
+const PQ_DEFAULT_GROUPS =
+  'X25519MLKEM768:SecP256r1MLKEM768:SecP384r1MLKEM1024';
+
+// The settings each kind of listener reads its client authentication from.
+// A kind with no row here — SPIFFE's gRPC servers, the channel between cells
+// — has it fixed by its protocol (spiffe/CLAUDE.md, common/CLAUDE.md).
+const CLIENT_AUTH_SETTINGS = {
+  main: ['tls.mainPortDisableOptionalClientCertificate',
+         'tls.mainPortRequireClientCertificate'],
+  ldaps: ['ldap.ldapsDisableOptionalClientCertificate',
+          'ldap.ldapsRequireClientCertificate'],
+  debugger: ['debugger.disableOptionalClientCertificate',
+             'debugger.requireClientCertificate'],
+  realm: ['listener.disableOptionalClientCertificate',
+          'listener.requireClientCertificate']
+};
+
+// A list setting as an array of trimmed, non-empty entries.
+function listOf(raw) {
+  log.debug("Entering listOf().");
+  const out = (Array.isArray(raw) ? raw : String(raw || '').split(','))
+    .map(function (one) { return String(one).trim(); })
+    .filter(function (one) { return one.length > 0; });
+  log.debug("Leaving listOf(). " + out.length);
+  return out;
+}
+
+/**
+ * The 256-bit TLS 1.3 suites of a list, in its order.
  *
+ * @param suites - suite names
+ * @returns those post-quantum safe
+ */
+function postQuantumSuites(suites) {
+  log.debug("Entering postQuantumSuites().");
+  const out = suites.filter(function (name) {
+    return !!(TLS13_SUITES[name] && TLS13_SUITES[name].postQuantum);
+  });
+  log.debug("Leaving postQuantumSuites(). " + out.length);
+  return out;
+}
+
+/**
+ * An OpenSSL groups list with only its ML-KEM groups kept, tuples and order
+ * as written; empty where it held none.
+ *
+ * @param groups - the groups list (`tls.groups`)
+ * @returns the post-quantum part
+ */
+function postQuantumGroups(groups) {
+  log.debug("Entering postQuantumGroups().");
+  const wanted = PQ_GROUPS.map(function (one) { return one.toLowerCase(); });
+  const out = String(groups || '').split('/').map(function (tuple) {
+    return tuple.split(':').map(function (one) { return one.trim(); })
+      .filter(function (one) {
+        return wanted.indexOf(one.replace(/^\*/, '').toLowerCase()) >= 0;
+      }).join(':');
+  }).filter(function (tuple) { return tuple.length > 0; }).join(' / ');
+  log.debug("Leaving postQuantumGroups(). " + out);
+  return out;
+}
+
+// What a client-authentication pair of toggles means. Require wins.
+function clientAuthFrom(disableOptional, require) {
+  log.debug("Entering clientAuthFrom().");
+  const mode = require ? 'required' : disableOptional ? 'none' : 'optional';
+  log.debug("Leaving clientAuthFrom(). " + mode);
+  return mode;
+}
+
+/**
+ * The policy one listener is held to.
+ *
+ * @param kind - `main`, `ldaps`, `debugger`, `realm`, `spiffe` or `cell`;
+ *   omitted, the process's policy with no client authentication of its own
+ * @param realmId - for `realm`, the realm whose own listener it is
+ * @returns `{ kind, disableTls12, pqcOnly, tls13Suites, clientAuth }`;
+ *   `clientAuth` is null for a kind whose protocol decides it
+ */
+function policyFor(kind, realmId) {
+  log.debug("Entering policyFor(). " + kind + " " + (realmId || ''));
+  let disableTls12 = config.value('tls.disableTls12') === true;
+  let pqcOnly = config.value('tls.pqcOnly') === true;
+  let suites = listOf(config.value('tls.tls13CipherSuites'));
+  let clientAuth = null;
+  const pair = CLIENT_AUTH_SETTINGS[String(kind || '')];
+  if (kind === 'realm') {
+    const realm = realms.get(String(realmId || ''));
+    const own = realm ? realms.run(realm, function () {
+      return { tls12: String(config.value('listener.disableTls12')),
+               pqc: String(config.value('listener.pqcOnly')),
+               suites: listOf(config.value('listener.tls13CipherSuites')),
+               off: config.value(pair[0]) === true,
+               req: config.value(pair[1]) === true };
+    }) : null;
+    if (own) {
+      disableTls12 = own.tls12 === 'on' ? true
+        : own.tls12 === 'off' ? false : disableTls12;
+      pqcOnly = own.pqc === 'on' ? true : own.pqc === 'off' ? false : pqcOnly;
+      suites = own.suites.length ? own.suites : suites;
+      clientAuth = clientAuthFrom(own.off, own.req);
+    } else {
+      clientAuth = 'optional';
+    }
+  } else if (pair) {
+    clientAuth = clientAuthFrom(config.value(pair[0]) === true,
+                                config.value(pair[1]) === true);
+  }
+  // A suite list that holds nothing usable falls back to the default rather
+  // than a listener with no TLS 1.3 at all; the write rule refuses such a
+  // list before it is stored, so this is a store edited by hand.
+  suites = suites.filter(function (name) { return !!TLS13_SUITES[name]; });
+  if (!suites.length) {
+    suites = ['TLS_AES_256_GCM_SHA384', 'TLS_AES_128_GCM_SHA256',
+              'TLS_CHACHA20_POLY1305_SHA256'];
+  }
+  if (pqcOnly) {
+    const kept = postQuantumSuites(suites);
+    suites = kept.length ? kept : ['TLS_AES_256_GCM_SHA384'];
+  }
+  const policy = { kind: String(kind || 'process'), realm: realmId || null,
+                   disableTls12: disableTls12 || pqcOnly, pqcOnly: pqcOnly,
+                   tls13Suites: suites, clientAuth: clientAuth };
+  log.debug("Leaving policyFor().");
+  return policy;
+}
+
+// The TLS 1.2 suites of `tls.ciphers`: the setting as written, or node's
+// default list without its TLS 1.3 names where it is empty.
+function tls12Ciphers() {
+  log.debug("Entering tls12Ciphers().");
+  const raw = String(config.value('tls.ciphers') || '').trim();
+  const out = (raw || tls.DEFAULT_CIPHERS).split(':')
+    .map(function (one) { return one.trim(); })
+    .filter(function (one) { return one.length > 0 && !/^TLS_/.test(one); });
+  log.debug("Leaving tls12Ciphers(). " + out.length);
+  return out;
+}
+
+/**
+ * Returns the TLS protocol options a listener uses: the floor (TLS 1.3 when
+ * TLS 1.2 is disabled), the TLS 1.3 suites the policy names followed by
+ * `tls.ciphers`' TLS 1.2 suites, the groups (only the ML-KEM ones under
+ * pqcOnly), `tls.signatureAlgorithms`, the server's cipher order honoured,
+ * and no renegotiation.
+ *
+ * @param policy - from `policyFor()`; omitted, the process's
  * @returns the options, for a TLS server or secure context
  */
-function protocolOptions() {
+function protocolOptions(policy) {
   log.debug("Entering protocolOptions().");
+  const p = policy || policyFor();
+  const floor = String(config.value('tls.minVersion') || 'TLSv1.2');
   // `any`: the setting is a string, and the TLS types want a version literal.
   /** @type {any} */
-  const options = { minVersion: String(config.value('tls.minVersion') ||
-                                       'TLSv1.2'),
+  const options = { minVersion: p.disableTls12 ? 'TLSv1.3' : floor,
                     honorCipherOrder: true };
-  const ciphers = String(config.value('tls.ciphers') || '').trim();
-  if (ciphers) {
-    options.ciphers = ciphers;
-  }
+  // ONE STRING, AS NODE TAKES IT: names beginning TLS_ are the TLS 1.3 suites
+  // (SSL_CTX_set_ciphersuites), the rest the TLS 1.2 list. A string with no
+  // TLS_ name in it would turn TLS 1.3 OFF, which is why the suites are
+  // always first and never empty (policyFor()).
+  options.ciphers = p.tls13Suites
+    .concat(p.disableTls12 ? [] : tls12Ciphers()).join(':');
   // THE GROUPS AND THE SIGNATURE ALGORITHMS (#212, 2026-09-26) — see their
   // rows in common/config.js. Empty leaves node's own: 'auto' for the
   // groups, and OpenSSL's list for the signature algorithms.
   const groups = String(config.value('tls.groups') || '').trim();
-  if (groups) {
+  if (p.pqcOnly) {
+    options.ecdhCurve = postQuantumGroups(groups) || PQ_DEFAULT_GROUPS;
+  } else if (groups) {
     options.ecdhCurve = groups;
   }
   const sigalgs = String(config.value('tls.signatureAlgorithms') || '').trim();
@@ -331,15 +528,90 @@ function protocolOptions() {
   return options;
 }
 
+/**
+ * Node's `requestCert` and `rejectUnauthorized` for a client-authentication
+ * mode.
+ *
+ * @param mode - `none`, `optional` or `required`
+ * @returns the two options
+ */
+function clientAuthOptions(mode) {
+  log.debug("Entering clientAuthOptions(). " + mode);
+  log.debug("Leaving clientAuthOptions().");
+  return { requestCert: mode !== 'none',
+           rejectUnauthorized: mode === 'required' };
+}
+
+// THE RULES BETWEEN THESE SETTINGS, asked at every write (config.js's
+// `addWriteRule()`): a TLS 1.3 suite list may not be empty, `tls.ciphers` may
+// not carry a TLS 1.3 name (that is tls.tls13CipherSuites' now), and
+// post-quantum only may not be on while the suites or the groups hold nothing
+// post-quantum — each of those would leave every listener refusing every
+// client, which is worse than refusing the write.
+function policyWriteRule(key, parsed) {
+  log.debug("Entering policyWriteRule(). " + key);
+  const refuse = function (problem) {
+    log.debug("Leaving policyWriteRule(). Refused.");
+    return { problem: problem, code: 'STS-TLS-0043' };
+  };
+  if (key === 'tls.tls13CipherSuites' && !listOf(parsed).length) {
+    return refuse('"tls.tls13CipherSuites" needs at least one suite: with ' +
+                  'none, no listener completes a TLS 1.3 handshake.');
+  }
+  if (key === 'tls.ciphers' && /(^|:)\s*TLS_/.test(String(parsed || ''))) {
+    return refuse('"tls.ciphers" is the TLS 1.2 list; the TLS 1.3 suites ' +
+                  'are chosen in tls.tls13CipherSuites.');
+  }
+  const pqc = key === 'tls.pqcOnly' ? parsed === true
+    : config.value('tls.pqcOnly') === true;
+  if (pqc && ['tls.pqcOnly', 'tls.tls13CipherSuites',
+              'tls.groups'].indexOf(key) >= 0) {
+    const suites = key === 'tls.tls13CipherSuites' ? listOf(parsed)
+      : listOf(config.value('tls.tls13CipherSuites'));
+    if (!postQuantumSuites(suites).length) {
+      return refuse('post-quantum only (tls.pqcOnly) needs a 256-bit TLS 1.3 ' +
+                    'suite in tls.tls13CipherSuites — TLS_AES_256_GCM_SHA384 ' +
+                    'or TLS_CHACHA20_POLY1305_SHA256 — and the list holds ' +
+                    'none.');
+    }
+    const groups = key === 'tls.groups' ? String(parsed || '')
+      : String(config.value('tls.groups') || '');
+    if (groups.trim() && !postQuantumGroups(groups)) {
+      return refuse('post-quantum only (tls.pqcOnly) needs an ML-KEM group ' +
+                    'in tls.groups (X25519MLKEM768, SecP256r1MLKEM768, ' +
+                    'SecP384r1MLKEM1024, MLKEM512/768/1024), and the list ' +
+                    'holds none.');
+    }
+  }
+  log.debug("Leaving policyWriteRule().");
+  return null;
+}
+
+if (typeof config.addWriteRule === 'function') {
+  config.addWriteRule(policyWriteRule);
+}
+
 (function checkProtocolOptions() {
   log.debug("Entering checkProtocolOptions().");
+  // A TLS 1.3 NAME IN tls.ciphers, OR A POLICY THAT HOLDS NOTHING, IS A
+  // VALUE THAT REACHED HERE FROM THE ENVIRONMENT OR A FILE, where no write
+  // rule asked: the same rules, at startup, where they stop the service.
+  for (const key of ['tls.ciphers', 'tls.tls13CipherSuites', 'tls.pqcOnly']) {
+    const ruled = policyWriteRule(key, config.value(key));
+    if (ruled) {
+      log.fatal(errorCodes.tag('STS-TLS-0042') + 'tls: NOT STARTING. ' +
+                ruled.problem);
+      process.exit(1);
+    }
+  }
   try {
     tls.createSecureContext(protocolOptions());
   } catch (e) {
     log.fatal(errorCodes.tag('STS-TLS-0001') + 'tls: NOT STARTING. ' +
-              'tls.minVersion / tls.ciphers / tls.groups / ' +
-              'tls.signatureAlgorithms (STS_TLS_MIN_VERSION / ' +
-              'STS_TLS_CIPHERS / STS_TLS_GROUPS / STS_TLS_SIGALGS) cannot ' +
+              'tls.minVersion / tls.ciphers / tls.tls13CipherSuites / ' +
+              'tls.groups / tls.signatureAlgorithms (STS_TLS_MIN_VERSION / ' +
+              'STS_TLS_CIPHERS / STS_TLS_TLS13_CIPHER_SUITES / ' +
+              'STS_TLS_GROUPS / STS_TLS_SIGALGS) cannot ' +
               'build a TLS context: ' + e.message + '. An OpenSSL cipher ' +
               'list names suites such as ECDHE-RSA-AES256-GCM-SHA384, a ' +
               'groups list names groups such as X25519MLKEM768:P-256, a ' +
@@ -1676,9 +1948,10 @@ function inCertificateRealm(identity, fn) {
  * this service presents with their chains and keys, and the client truststore
  * (an explicit empty list when there are no anchors).
  *
+ * @param policy - the listener's, from `policyFor()`; omitted, the process's
  * @returns the options
  */
-function secureContextOptions() {
+function secureContextOptions(policy) {
   log.debug('Entering secureContextOptions(). anchors=' + anchors.length);
   log.debug('Leaving secureContextOptions().');
   // ARRAYS, always — node takes parallel key/cert arrays and OpenSSL picks
@@ -1704,8 +1977,9 @@ function secureContextOptions() {
     // change, which re-applies this whole object, cannot quietly reset a
     // listener to node's defaults. All of it since #212: the groups and
     // signature algorithms were added to protocolOptions() alone, and a
-    // listener would have lost them at its first re-application.
-    ...protocolOptions()
+    // listener would have lost them at its first re-application. The
+    // listener's OWN policy since #423, so a realm's listener keeps its own.
+    ...protocolOptions(policy)
   };
 }
 
@@ -2338,7 +2612,14 @@ function adoptServerCertificate(bundle) {
 // certificate which DOES chain to an anchor is now known to. Making it
 // `rejectUnauthorized: true` would refuse every caller that presents no
 // certificate at all, which is almost all of them.
+//
+// **AND SINCE #423 IT IS THE OPERATOR'S TO CHANGE, ITS DEFAULT UNCHANGED.**
+// `tls.mainPortDisableOptionalClientCertificate` and
+// `tls.mainPortRequireClientCertificate` (and each other listener's pair) are
+// what rcbj asked for; each says in its description what turning it on
+// costs. `applyAnchors()` applies them with the truststore.
 // ---------------------------------------------------------------------------
+/** @type {Array<any>} */
 const externalServers = [];
 
 // ---------------------------------------------------------------------------
@@ -2576,10 +2857,15 @@ function refuseNonNistCurveCertificatesOn(server, label) {
  *
  * @param server - the TLS listener
  * @param label - its name, for the log
+ * @param certificateOf - optional; for a listener that presents a certificate
+ *   of its own rather than this module's (a realm's listener, #99), answers
+ *   `{ key, cert }` each time the truststore is applied
+ * @param which - optional `{ kind, realm }` naming the listener's policy
+ *   (`policyFor()`, #423); omitted, the main port's
  * @returns true when it was registered; false (logged) when `server` is not a
  * TLS server
  */
-function trustClientCertificatesOn(server, label) {
+function trustClientCertificatesOn(server, label, certificateOf, which) {
   log.debug('Entering trustClientCertificatesOn(). label=' + label);
   if (!server || typeof server.setSecureContext !== 'function') {
     // Refused rather than thrown: the caller is `server.js` at startup, and a
@@ -2596,7 +2882,12 @@ function trustClientCertificatesOn(server, label) {
     return false;
   }
   externalServers.push({ server: server,
-                         label: String(label || 'a listener') });
+                         label: String(label || 'a listener'),
+                         certificateOf: typeof certificateOf === 'function'
+                           ? certificateOf : null,
+                         kind: String((which && which.kind) || 'main'),
+                         realm: (which && which.realm) || null,
+                         applied: '' });
   // Every listener that registers here ASKS for a client certificate (the
   // main port, the debugger), so every one is guarded (#212).
   refuseNonNistCurveCertificatesOn(server, String(label || 'a listener'));
@@ -2615,6 +2906,25 @@ function trustClientCertificatesOn(server, label) {
 }
 
 
+/**
+ * Stops applying the truststore to a listener that has closed — a realm's
+ * listener taken away or rebound (#99) — so the list does not keep it.
+ *
+ * @param server - the listener given to `trustClientCertificatesOn()`
+ * @returns true when it was registered
+ */
+function forgetListener(server) {
+  log.debug('Entering forgetListener().');
+  const at = externalServers.findIndex(function (one) {
+    return one.server === server;
+  });
+  if (at >= 0) {
+    externalServers.splice(at, 1);
+  }
+  log.debug('Leaving forgetListener(). ' + (at >= 0));
+  return at >= 0;
+}
+
 // Apply the current anchors to every listener whose truststore this module
 // owns. Existing connections keep the context they were made under — node says
 // so and it is the behaviour worth having, since a connection judged under one
@@ -2624,10 +2934,27 @@ function applyAnchors() {
   // EVERY listener is an external one since 2026-09-16: this module creates
   // none of its own any more, so the list that was "our two, plus theirs" is
   // now just theirs — the main HTTPS port and the debugger's.
-  externalServers.map(function (one) { return one.server; })
-    .forEach(function (server) {
+  // A REALM'S LISTENER PRESENTS A CERTIFICATE OF ITS OWN (#99): it said so
+  // when it registered, and its own key and chain replace this module's in the
+  // context it is given, so a truststore change never swaps its certificate
+  // for the main port's.
+  externalServers.forEach(function (one) {
+    const server = one.server;
     try {
-      server.setSecureContext(secureContextOptions());
+      const policy = policyFor(one.kind, one.realm);
+      const options = secureContextOptions(policy);
+      const own = one.certificateOf ? one.certificateOf() : null;
+      if (own && own.key && own.cert) {
+        options.key = own.key;
+        options.cert = own.cert;
+      }
+      server.setSecureContext(options);
+      // WHETHER IT ASKS FOR A CERTIFICATE (#423) is the server's, not the
+      // context's: node reads these two at every connection.
+      if (policy.clientAuth) {
+        Object.assign(server, clientAuthOptions(policy.clientAuth));
+      }
+      one.applied = JSON.stringify(policy);
     } catch (e) {
       // Reported rather than thrown: the caller is a route, and a truststore
       // that could not be applied must not take the service down with it. The
@@ -2640,6 +2967,115 @@ function applyAnchors() {
     }
   });
   log.debug('Leaving applyAnchors().');
+}
+
+// ---------------------------------------------------------------------------
+// RE-APPLYING THE POLICY WHEN A SETTING MOVES (#423).
+//
+// The listeners registered above are re-keyed by `applyAnchors()`, which now
+// carries each one's policy; a listener this module cannot re-key itself —
+// SPIFFE's gRPC servers re-key through grpc-js's credentials, the channel
+// between cells through its own context — registers an APPLIER, handed the
+// policy whenever it changes. `reapplyPolicy()` compares each listener's
+// policy with the one it last applied and touches only those that moved, so
+// a setting nobody's listener reads costs one comparison.
+// ---------------------------------------------------------------------------
+/** @type {Array<any>} */
+const policyAppliers = [];
+
+/**
+ * Registers a listener this module does not re-key: `apply(policy)` is
+ * called now and whenever its policy changes.
+ *
+ * @param label - its name, for the log and the Listeners page
+ * @param kind - as for `policyFor()`
+ * @param apply - re-keys the listener with a policy
+ * @param realm - for a realm's own listener, its id
+ * @returns a function that unregisters it
+ */
+function registerPolicyApplier(label, kind, apply, realm) {
+  log.debug('Entering registerPolicyApplier(). ' + label);
+  const entry = { label: String(label), kind: String(kind),
+                  realm: realm || null, apply: apply, applied: '' };
+  policyAppliers.push(entry);
+  log.debug('Leaving registerPolicyApplier().');
+  return function unregister() {
+    log.debug('Entering unregister(). ' + label);
+    const at = policyAppliers.indexOf(entry);
+    if (at >= 0) {
+      policyAppliers.splice(at, 1);
+    }
+    log.debug('Leaving unregister().');
+  };
+}
+
+/**
+ * Re-applies every listener's policy that changed since it was last applied.
+ *
+ * @returns how many listeners were re-keyed
+ */
+function reapplyPolicy() {
+  log.debug('Entering reapplyPolicy().');
+  let moved = 0;
+  const stale = externalServers.some(function (one) {
+    return JSON.stringify(policyFor(one.kind, one.realm)) !== one.applied;
+  });
+  if (stale) {
+    applyAnchors();
+    moved += 1;
+  }
+  policyAppliers.forEach(function (one) {
+    const policy = policyFor(one.kind, one.realm);
+    const signature = JSON.stringify(policy);
+    if (signature === one.applied) {
+      return;
+    }
+    try {
+      one.apply(policy);
+      one.applied = signature;
+      moved += 1;
+    } catch (e) {
+      log.error(errorCodes.tag('STS-TLS-0044') + 'tls: the listener ' +
+                'policy could not be applied to ' + one.label + ' (' +
+                ((e && e.message) || e) + '); it keeps the one it had.');
+    }
+  });
+  if (moved) {
+    log.info('tls: the listeners\' TLS policy changed and was re-applied ' +
+             '(TLS 1.2 ' + (policyFor().disableTls12 ? 'off' : 'on') +
+             ', TLS 1.3 suites ' + policyFor().tls13Suites.join(':') +
+             (policyFor().pqcOnly ? ', post-quantum only' : '') + ').');
+  }
+  log.debug('Leaving reapplyPolicy(). ' + moved);
+  return moved;
+}
+
+if (typeof config.onOverridesChanged === 'function') {
+  config.onOverridesChanged(function () {
+    reapplyPolicy();
+  });
+}
+realms.onChange(function () {
+  reapplyPolicy();
+});
+
+/**
+ * What every listener this module knows is held to, for the Listeners page:
+ * each one's label, kind, realm and policy as last applied.
+ *
+ * @returns the rows
+ */
+function listenerPolicies() {
+  log.debug('Entering listenerPolicies().');
+  const rows = externalServers.map(function (one) {
+    return { label: one.label, kind: one.kind, realm: one.realm,
+             policy: policyFor(one.kind, one.realm) };
+  }).concat(policyAppliers.map(function (one) {
+    return { label: one.label, kind: one.kind, realm: one.realm,
+             policy: policyFor(one.kind, one.realm) };
+  }));
+  log.debug('Leaving listenerPolicies(). ' + rows.length);
+  return rows;
 }
 
 // `options.source` is `runtime` unless a caller says otherwise — the file
@@ -4948,6 +5384,10 @@ module.exports = {
   // /tls/trust reaches it too — see the block above
   // trustClientCertificatesOn().
   trustClientCertificatesOn: trustClientCertificatesOn,
+  forgetListener: forgetListener,
+  // Applies the truststore again to every registered listener — and so each
+  // listener's own certificate, after a realm listener's is renewed (#99).
+  reapplyTruststore: applyAnchors,
   // #212: the guard, for a TLS listener that does not register above.
   refuseNonNistCurveCertificatesOn: refuseNonNistCurveCertificatesOn,
   nonNistCurvePeerCertificate: nonNistCurvePeerCertificate,
@@ -4963,6 +5403,14 @@ module.exports = {
   // `tls.signatureAlgorithms` for a TLS listener this module does not
   // create — LDAPS, which ldapjs builds, and the main port at creation.
   protocolOptions: protocolOptions,
+  policyFor: policyFor,
+  clientAuthOptions: clientAuthOptions,
+  registerPolicyApplier: registerPolicyApplier,
+  reapplyPolicy: reapplyPolicy,
+  listenerPolicies: listenerPolicies,
+  postQuantumGroups: postQuantumGroups,
+  TLS13_SUITES: TLS13_SUITES,
+  PQ_GROUPS: PQ_GROUPS,
   /**
    * Reports what `tls.trustAnchorsFile` loaded.
    *

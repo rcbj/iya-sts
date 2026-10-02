@@ -2291,10 +2291,29 @@ class AdminViews {
    * @returns the realm
    */
   realmJson(req, realm) {
-    const { log, stsKeysFor, realms } = this.deps;
+    const { log, stsKeysFor, realms, config } = this.deps;
     log.debug("Entering AdminViews.realmJson().");
     const prefix = realms.prefixOf(realm);
-    const base = this.realmRootUrl(req) + prefix;
+    // A REALM WITH A LISTENER OF ITS OWN (#99) is reached on its own base,
+    // whichever listener this page was read on.
+    const own = realms.run(realm, function () {
+      return {
+        port: Number(config.value('listener.port')) || 0,
+        publicBaseUrl: String(config.value('listener.publicBaseUrl') || '')
+          .trim().replace(/\/+$/, ''),
+        hostnames: [].concat(config.value('listener.hostnames') || []),
+        certificateFile: String(config.value('listener.certificateFile') ||
+                                '')
+      };
+    });
+    const base = (own.publicBaseUrl || this.realmRootUrl(req)) + prefix;
+    let bound: any[] = [];
+    try {
+      bound = require('../tls/realm_listeners').status(realm.id);
+    } catch (e) {
+      log.debug("Caught in AdminViews.realmJson(): " +
+                ((e && e.message) || e));
+    }
     log.debug("Leaving AdminViews.realmJson().");
     return {
       id: realm.id,
@@ -2312,6 +2331,18 @@ class AdminViews {
       retiring: realms.retiringState(realm),
       pathPrefix: prefix,
       baseUrl: base,
+      // ITS OWN LISTENER (#99): what the realm configured, and what THIS
+      // process holds — the listener is the front process's, so a page drawn
+      // by a request worker reports the configuration and no socket.
+      listener: {
+        configured: own.port > 0,
+        port: own.port,
+        publicBaseUrl: own.publicBaseUrl,
+        hostnames: own.hostnames,
+        certificateSource: own.port > 0
+          ? (own.certificateFile ? 'file' : 'issued') : '',
+        here: bound[0] || null
+      },
       // The kid of the realm's signing key. It is the one fact on this page
       // that PROVES the realms are separate rather than asserting it — two
       // realms showing one kid would be two names for one authorization server.

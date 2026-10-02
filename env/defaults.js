@@ -64,6 +64,20 @@ var config = {
     corsOrigins: ""                // Origins treated as this service's own
   },
 
+  // --- Realm listener --------------------------------------------------
+  listener: {
+    port: 0,                                 // The realm's own HTTPS port; restart to apply
+    publicBaseUrl: "",                       // The realm's public base URL; restart to apply
+    hostnames: "",                           // DNS names on the realm listener's certificate; restart to apply
+    certificateFile: "",                     // The realm listener's certificate file; restart to apply
+    privateKeyFile: "",                      // The realm listener's private key file; restart to apply
+    disableTls12: "inherit",                 // The realm listener: disable TLS 1.2; restart to apply
+    tls13CipherSuites: "",                   // The realm listener's TLS 1.3 cipher suites; restart to apply
+    pqcOnly: "inherit",                      // The realm listener: post-quantum safe only; restart to apply
+    disableOptionalClientCertificate: false, // The realm listener: do not ask for a client certificate; restart to apply
+    requireClientCertificate: false          // The realm listener: require a client certificate; restart to apply
+  },
+
   // --- Admin console ---------------------------------------------------
   admin: {
     bootstrapUsername: "admin", // Bootstrap administrator account; restart to apply
@@ -581,16 +595,18 @@ var config = {
 
   // --- Protocol debugger -----------------------------------------------
   debugger: {
-    enabled: "auto",                       // Embed the protocol debugger; restart to apply
-    port: 8444,                            // Debugger listener port; restart to apply
-    publicBaseUrl: "",                     // Debugger public base URL; restart to apply
-    uiDirectory: "debugger/embedded/ui",   // Built debugger UI; restart to apply
-    apiDirectory: "debugger/embedded/api", // Built debugger api; restart to apply
-    allowedDestinations: "",               // Extra destinations the api may dial in product mode; restart to apply
-    startTimeoutS: 30,                     // Seconds the api process has to start
-    restartLimit: 5,                       // Failed starts before the api is given up on
-    proxyTimeoutS: 120,                    // Seconds an /api call may take
-    maxRequestBytes: 5242880               // Largest /api request body
+    enabled: "auto",                         // Embed the protocol debugger; restart to apply
+    port: 8444,                              // Debugger listener port; restart to apply
+    publicBaseUrl: "",                       // Debugger public base URL; restart to apply
+    uiDirectory: "debugger/embedded/ui",     // Built debugger UI; restart to apply
+    apiDirectory: "debugger/embedded/api",   // Built debugger api; restart to apply
+    allowedDestinations: "",                 // Extra destinations the api may dial in product mode; restart to apply
+    startTimeoutS: 30,                       // Seconds the api process has to start
+    restartLimit: 5,                         // Failed starts before the api is given up on
+    proxyTimeoutS: 120,                      // Seconds an /api call may take
+    maxRequestBytes: 5242880,                // Largest /api request body
+    disableOptionalClientCertificate: false, // Debugger: do not ask for a client certificate
+    requireClientCertificate: false          // Debugger: require a client certificate
   },
 
   // --- Applications ----------------------------------------------------
@@ -707,9 +723,14 @@ var config = {
     certificateFile: "",                                                                                                                                                                                                                                                                                       // Server certificate file; restart to apply
     keyFile: "",                                                                                                                                                                                                                                                                                               // Server private key file; restart to apply
     minVersion: "TLSv1.2",                                                                                                                                                                                                                                                                                     // Minimum TLS version; restart to apply
-    ciphers: "TLS_AES_256_GCM_SHA384:TLS_AES_128_GCM_SHA256:TLS_CHACHA20_POLY1305_SHA256:ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384",                                                                                                 // TLS cipher list; restart to apply
+    ciphers: "ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384",                                                                                                                                                                            // TLS 1.2 cipher list; restart to apply
     groups: "X25519MLKEM768:SecP256r1MLKEM768:SecP384r1MLKEM1024 / X25519:P-256 / X448:P-384:P-521",                                                                                                                                                                                                           // TLS key-exchange groups; restart to apply
     signatureAlgorithms: "mldsa65:mldsa87:mldsa44:ecdsa_secp256r1_sha256:ecdsa_secp384r1_sha384:ecdsa_secp521r1_sha512:ed25519:ed448:rsa_pss_pss_sha256:rsa_pss_pss_sha384:rsa_pss_pss_sha512:rsa_pss_rsae_sha256:rsa_pss_rsae_sha384:rsa_pss_rsae_sha512:rsa_pkcs1_sha256:rsa_pkcs1_sha384:rsa_pkcs1_sha512", // TLS signature algorithms; restart to apply
+    disableTls12: false,                                                                                                                                                                                                                                                                                       // Disable TLS 1.2
+    tls13CipherSuites: "TLS_AES_256_GCM_SHA384,TLS_AES_128_GCM_SHA256,TLS_CHACHA20_POLY1305_SHA256",                                                                                                                                                                                                           // TLS 1.3 cipher suites
+    pqcOnly: false,                                                                                                                                                                                                                                                                                            // Post-quantum safe only
+    mainPortDisableOptionalClientCertificate: false,                                                                                                                                                                                                                                                           // Main port: do not ask for a client certificate
+    mainPortRequireClientCertificate: false,                                                                                                                                                                                                                                                                   // Main port: require a client certificate
     sessionTicketRotationS: 3600,                                                                                                                                                                                                                                                                              // Shared session-ticket key rotation (s)
     mainPortSharedTickets: true,                                                                                                                                                                                                                                                                               // Main port shares the cluster session-ticket key; restart to apply
     mainSessionTimeoutS: 60,                                                                                                                                                                                                                                                                                   // Main port TLS session lifetime (s); restart to apply
@@ -718,6 +739,24 @@ var config = {
     selfSignedKeyBits: 2048,                                                                                                                                                                                                                                                                                   // Self-signed certificate RSA key size; restart to apply
     selfSignedValidityYears: 2,                                                                                                                                                                                                                                                                                // Self-signed certificate validity (years); restart to apply
     selfSignedOrganization: "sts"                                                                                                                                                                                                                                                                              // Self-signed certificate organization; restart to apply
+  },
+
+  // --- Listener client certificates ------------------------------------
+  ldap: {
+    ldapsDisableOptionalClientCertificate: true,                                                                                                // LDAPS: do not ask for a client certificate
+    ldapsRequireClientCertificate: false,                                                                                                       // LDAPS: require a client certificate
+    port: 389,                                                                                                                                  // LDAP port; restart to apply
+    tlsPort: 636,                                                                                                                               // LDAPS port; restart to apply
+    autocreateUsers: true,                                                                                                                      // Auto-create users
+    maxEntries: 2000,                                                                                                                           // Maximum entries
+    workerDirectory: "memory",                                                                                                                  // Directory in request workers; restart to apply
+    workerCacheEntries: 10000,                                                                                                                  // Directory window size (entries)
+    workerDirectoryTimeoutMs: 2000,                                                                                                             // Worker directory read timeout (ms)
+    sizeLimit: 500,                                                                                                                             // Search size limit
+    plainListener: true,                                                                                                                        // Plain LDAP listener; restart to apply
+    selfWritableAttributes: "telephoneNumber,mobile,homePhone,displayName,preferredLanguage,postalAddress,street,l,st,postalCode,userPassword", // Attributes a person may change on their own entry
+    directoryReadableAttributes: "",                                                                                                            // Attributes a person may read of other people
+    groupMembersReadable: false                                                                                                                 // Members may read their group's member list
   },
 
   // --- OID4VCI ---------------------------------------------------------
@@ -858,22 +897,6 @@ var config = {
     krbtgtRotationIntervalDays: 180,                               // Rotate the krbtgt key every (days)
     spnegoLoginButton: true,                                       // Offer Kerberos at the sign-in screen
     s2kparams: "omit"                                              // Send s2kparams
-  },
-
-  // --- LDAP ------------------------------------------------------------
-  ldap: {
-    port: 389,                                                                                                                                  // LDAP port; restart to apply
-    tlsPort: 636,                                                                                                                               // LDAPS port; restart to apply
-    autocreateUsers: true,                                                                                                                      // Auto-create users
-    maxEntries: 2000,                                                                                                                           // Maximum entries
-    workerDirectory: "memory",                                                                                                                  // Directory in request workers; restart to apply
-    workerCacheEntries: 10000,                                                                                                                  // Directory window size (entries)
-    workerDirectoryTimeoutMs: 2000,                                                                                                             // Worker directory read timeout (ms)
-    sizeLimit: 500,                                                                                                                             // Search size limit
-    plainListener: true,                                                                                                                        // Plain LDAP listener; restart to apply
-    selfWritableAttributes: "telephoneNumber,mobile,homePhone,displayName,preferredLanguage,postalAddress,street,l,st,postalCode,userPassword", // Attributes a person may change on their own entry
-    directoryReadableAttributes: "",                                                                                                            // Attributes a person may read of other people
-    groupMembersReadable: false                                                                                                                 // Members may read their group's member list
   },
 
   // --- SCIM ------------------------------------------------------------

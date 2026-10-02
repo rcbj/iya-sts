@@ -1044,6 +1044,41 @@ function keepAliveTimeoutMs() {
   return (Number.isFinite(n) && n >= 1 ? Math.floor(n) : 60) * 1000;
 }
 
+// A TRUST REALM'S OWN LISTENER (#99, 2026-10-02): an unbound HTTPS server
+// wired exactly as the main port below is — the client-certificate request
+// and the truststore, the TLS policy, the connection observer, the JA4
+// fingerprint and the PROXY protocol — but presenting the realm's own
+// certificate (`certificateOf` hands it to the truststore's re-application, so
+// a truststore change never swaps it for the main port's). Bound, rebound and
+// closed by `tls/realm_listeners.js` as the realm registry changes.
+// `common/app.js`'s `enterRealm` answers only that realm's paths on it.
+function realmListener(label, certificate, certificateOf, realmId) {
+  log.debug("Entering realmListener(). " + label);
+  // The realm's own policy (#423): its listener.* rows, inheriting the
+  // process's TLS settings unless set, and its own client authentication.
+  const policy = tlsServer.policyFor('realm', realmId);
+  const server = https.createServer(Object.assign({
+    cert: certificate.cert,
+    key: certificate.key,
+    ca: tlsServer.clientTruststoreOptions().ca,
+    // The main port's session lifetime and keep-alive (#406), so a realm's
+    // own listener pools connections and sessions as that port does.
+    sessionTimeout: mainSessionTimeoutS()
+  }, tlsServer.clientAuthOptions(policy.clientAuth),
+  tlsServer.protocolOptions(policy)), app);
+  const keepAliveMs = keepAliveTimeoutMs();
+  server.keepAliveTimeout = keepAliveMs;
+  server.headersTimeout = Math.max(server.headersTimeout || 0,
+                                   keepAliveMs + 1000);
+  tlsServer.trustClientCertificatesOn(server, label, certificateOf,
+                                      { kind: 'realm', realm: realmId });
+  tlsServer.observeConnectionsOn(server, label);
+  clientHello.install(server, { label: label });
+  proxyProtocol.install(server, { label: label, channel: 'http' });
+  log.debug("Leaving realmListener().");
+  return server;
+}
+
 function bind() {
 log.debug("Entering bind().");
 if (useHttps) {
@@ -1079,8 +1114,12 @@ if (useHttps) {
     // completed this handshake, not that a CA vouched for it. Requiring
     // verification would also make the feature unreachable, since the
     // truststore at /tls/trust starts empty by design.
-    requestCert: true,
-    rejectUnauthorized: false,
+    //
+    // THE OPERATOR'S TO CHANGE SINCE #423, the default unchanged:
+    // tls.mainPortDisableOptionalClientCertificate asks for none, and
+    // tls.mainPortRequireClientCertificate requires one that verifies. The
+    // pair is applied again, with the truststore, whenever either moves.
+    ...tlsServer.clientAuthOptions(tlsServer.policyFor('main').clientAuth),
     // HOW LONG A SESSION MAY BE RESUMED (#406, 2026-10-02): a resumed session
     // carries no CertificateRequest, so a browser holding a matching
     // certificate does not ask its user again. node keeps this on the server
@@ -1090,8 +1129,9 @@ if (useHttps) {
   // `tls.minVersion` and `tls.ciphers` (2026-09-12), from the module that
   // states them for every TLS listener — at creation as well as on every
   // truststore change, so the first handshake is held to the same floor as the
-  // hundredth.
-  }, tlsServer.protocolOptions()), app);
+  // hundredth. And the listeners' policy since #423: TLS 1.2 off or on, the
+  // TLS 1.3 suites chosen, post-quantum only.
+  }, tlsServer.protocolOptions(tlsServer.policyFor('main'))), app);
   // HTTP CONNECTION POOLING ON THE MAIN PORT (#406, 2026-10-02). node keeps an
   // idle HTTP/1.1 connection five seconds by default, so a person reading a
   // page lost it and the next click made a new connection — a full TLS
@@ -1110,7 +1150,8 @@ if (useHttps) {
   // is a registration rather than a require in the other direction because
   // this file requires that module, not the other way round.
   tlsServer.trustClientCertificatesOn(mainServer,
-                                      'the main port (' + PORT + ')');
+                                      'the main port (' + PORT + ')',
+                                      undefined, { kind: 'main' });
   // ONE SESSION-TICKET KEY WITH THE OTHER NODES SINCE #406 (2026-10-02), as
   // LDAPS has had (tls/session_tickets.ts). Until then this port kept a key
   // per node: it asks for a client certificate, a resumed session hands the
@@ -1159,6 +1200,10 @@ if (useHttps) {
   proxyProtocol.install(mainServer, { label: 'the main port (' + PORT + ')',
                                       channel: 'http' });
   mainServer.listen(PORT, HOST, announce);
+  // AND EVERY REALM THAT ASKS FOR A LISTENER OF ITS OWN (#99), bound beside
+  // the main port and kept in step with the realm registry from here on. A
+  // realm port that cannot bind is recorded, never fatal.
+  require('./tls/realm_listeners').start({ build: realmListener });
 } else {
   // `http.createServer(app)` rather than `app.listen()`, which is the same
   // thing with the server object hidden — and the PROXY protocol has to be

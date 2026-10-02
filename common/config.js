@@ -769,6 +769,141 @@ const SETTINGS = [
                  'and what it makes of one a client presents, are the tls.* ' +
                  'settings, which the console draws on its own TLS page.' },
 
+  // A TRUST REALM'S OWN FRONT-END LISTENER (#99, 2026-10-02). A realm may be
+  // reached at a host of its own — `https://acme.example.com/realm/acme/...`,
+  // the path prefix still saying which realm — on a port of its own on every
+  // node, so that each realm can sit behind a load balancer of its own. The
+  // load balancer and the DNS records are the deployment's (Terraform here);
+  // the service binds the port and builds every URL of the realm on its base.
+  // `realmOnly`: these are read from the REALM'S OWN overrides and never from
+  // the process's environment or appconfig, because a value set for the
+  // process would otherwise be every realm's. common/realms.js's
+  // `listenerOverrideProblem()` holds the rules a set of them must meet.
+  { key: 'listener.port', group: 'Realm listener',
+    label: 'The realm\'s own HTTPS port',
+    type: 'int', dflt: 0, min: 0, max: 65535, runtime: false,
+    realmRuntime: true, realmOnly: true,
+    restartReason: 'it is a property of one trust realm and is set on that ' +
+                   'realm, where the listener is bound and closed at once',
+    description: 'A port on every node on which this realm is served by a ' +
+                 'listener of its own, so that it can sit behind a load ' +
+                 'balancer of its own. Requests on it are still told apart ' +
+                 'by the /realm/<id> path prefix, and only this realm\'s ' +
+                 'paths are answered there. 0, the default, means none: the ' +
+                 'realm is served on the main port only. Needs ' +
+                 'listener.publicBaseUrl. It may not be a port another realm ' +
+                 'or any of this service\'s own listeners uses.' },
+
+  { key: 'listener.publicBaseUrl', group: 'Realm listener',
+    label: 'The realm\'s public base URL',
+    type: 'string', dflt: '', runtime: false,
+    realmRuntime: true, realmOnly: true,
+    restartReason: 'it is a property of one trust realm and is set on that ' +
+                   'realm',
+    description: 'The scheme, host and port this realm is reached at — ' +
+                 'https://acme.example.com, with no path — which is what the ' +
+                 'realm\'s load balancer answers under. When set, every ' +
+                 'issuer, metadata URL, redirect and link the realm builds is ' +
+                 'on this base, with the /realm/<id> prefix after it, ' +
+                 'whichever listener a request arrived on. CHANGING IT ' +
+                 'CHANGES THE REALM\'S ISSUER: every client\'s discovery ' +
+                 'and every token it holds name the old one.' },
+
+  { key: 'listener.hostnames', group: 'Realm listener',
+    label: 'DNS names on the realm listener\'s certificate',
+    type: 'csv', dflt: '', runtime: false,
+    realmRuntime: true, realmOnly: true,
+    restartReason: 'it is a property of one trust realm and is set on that ' +
+                   'realm',
+    description: 'The DNS names the certificate on the realm\'s own ' +
+                 'listener carries, comma-separated. Empty means the host of ' +
+                 'listener.publicBaseUrl. Ignored when ' +
+                 'listener.certificateFile names a certificate.' },
+
+  { key: 'listener.certificateFile', group: 'Realm listener',
+    label: 'The realm listener\'s certificate file',
+    type: 'string', dflt: '', runtime: false,
+    realmRuntime: true, realmOnly: true,
+    restartReason: 'it is a property of one trust realm and is set on that ' +
+                   'realm',
+    description: 'A PEM file of the certificate, and the chain after it, ' +
+                 'the realm\'s listener presents — one from a public CA, ' +
+                 'which a browser trusts. Empty, the default, means a ' +
+                 'certificate this realm\'s own certificate authority issues ' +
+                 'for listener.hostnames and renews, which only a client ' +
+                 'trusting this service\'s Root accepts. Needs ' +
+                 'listener.privateKeyFile.' },
+
+  { key: 'listener.privateKeyFile', group: 'Realm listener',
+    label: 'The realm listener\'s private key file',
+    type: 'string', dflt: '', runtime: false,
+    realmRuntime: true, realmOnly: true,
+    restartReason: 'it is a property of one trust realm and is set on that ' +
+                   'realm',
+    description: 'A PEM file of the private key of ' +
+                 'listener.certificateFile. Both or neither.' },
+
+  // THE REALM LISTENER'S TLS POLICY AND CLIENT AUTHENTICATION (#423): what
+  // the Listeners rows above are for the process's listeners, for this
+  // realm's own. The policy rows INHERIT the process's unless set; the
+  // client-authentication pair is the listener's own, as the main port's is.
+  // Applied in place at the next handshake — the listener is not rebound.
+  { key: 'listener.disableTls12', group: 'Realm listener',
+    label: 'The realm listener: disable TLS 1.2',
+    type: 'enum', enumValues: ['inherit', 'on', 'off'], dflt: 'inherit',
+    runtime: false, realmRuntime: true, realmOnly: true,
+    restartReason: 'it is a property of one trust realm and is set on that ' +
+                   'realm',
+    description: 'Whether the realm\'s own listener negotiates TLS 1.3 ' +
+                 'only. inherit, the default, follows tls.disableTls12; on ' +
+                 'and off decide for this listener alone. Applied at the ' +
+                 'next handshake.' },
+  { key: 'listener.tls13CipherSuites', group: 'Realm listener',
+    label: 'The realm listener\'s TLS 1.3 cipher suites',
+    type: 'csv', dflt: '',
+    csvValues: ['TLS_AES_256_GCM_SHA384', 'TLS_CHACHA20_POLY1305_SHA256',
+                'TLS_AES_128_GCM_SHA256', 'TLS_AES_128_CCM_SHA256',
+                'TLS_AES_128_CCM_8_SHA256'],
+    ordered: true,
+    runtime: false, realmRuntime: true, realmOnly: true,
+    restartReason: 'it is a property of one trust realm and is set on that ' +
+                   'realm',
+    description: 'The TLS 1.3 cipher suites the realm\'s own listener ' +
+                 'accepts, in order of preference. Empty, the default, ' +
+                 'follows tls.tls13CipherSuites; reset it to go back. ' +
+                 'Applied at the next handshake.' },
+  { key: 'listener.pqcOnly', group: 'Realm listener',
+    label: 'The realm listener: post-quantum safe only',
+    type: 'enum', enumValues: ['inherit', 'on', 'off'], dflt: 'inherit',
+    runtime: false, realmRuntime: true, realmOnly: true,
+    restartReason: 'it is a property of one trust realm and is set on that ' +
+                   'realm',
+    description: 'Whether the realm\'s own listener accepts only TLS 1.3, ' +
+                 'the 256-bit suites and the ML-KEM groups — tls.pqcOnly, ' +
+                 'for this listener. inherit, the default, follows ' +
+                 'tls.pqcOnly. Applied at the next handshake.' },
+  { key: 'listener.disableOptionalClientCertificate',
+    group: 'Realm listener',
+    label: 'The realm listener: do not ask for a client certificate',
+    type: 'bool', dflt: false,
+    runtime: false, realmRuntime: true, realmOnly: true,
+    restartReason: 'it is a property of one trust realm and is set on that ' +
+                   'realm',
+    description: 'The realm\'s own listener sends no CertificateRequest. ' +
+                 'Off by default: it asks and requires none, as the main ' +
+                 'port does, so certificate-bound tokens and GET ' +
+                 '/tls/sign-in work there.' },
+  { key: 'listener.requireClientCertificate', group: 'Realm listener',
+    label: 'The realm listener: require a client certificate',
+    type: 'bool', dflt: false,
+    runtime: false, realmRuntime: true, realmOnly: true,
+    restartReason: 'it is a property of one trust realm and is set on that ' +
+                   'realm',
+    description: 'The realm\'s own listener refuses, at the handshake, every ' +
+                 'connection without a client certificate chaining to the ' +
+                 'client truststore. Wins over the toggle above. Off by ' +
+                 'default.' },
+
   // ---------------------------------------------------------------------
   // The scheme the port above answers on, and it is DERIVED (`derived: true`,
   // so the shipped env/*.js files do not carry it): its default is whatever
@@ -8848,24 +8983,24 @@ const SETTINGS = [
   // every listener rather than a FAPI switch, because a cipher suite is a
   // property of the SOCKET and a profile is a property of a realm. A weaker
   // list stays settable; docs/tls.md says what that costs.
-  { key: 'tls.ciphers', group: 'TLS', label: 'TLS cipher list',
+  { key: 'tls.ciphers', group: 'TLS', label: 'TLS 1.2 cipher list',
     env: 'STS_TLS_CIPHERS', type: 'string',
-    dflt: 'TLS_AES_256_GCM_SHA384:TLS_AES_128_GCM_SHA256:' +
-          'TLS_CHACHA20_POLY1305_SHA256:ECDHE-ECDSA-AES128-GCM-SHA256:' +
+    dflt: 'ECDHE-ECDSA-AES128-GCM-SHA256:' +
           'ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:' +
           'ECDHE-RSA-AES256-GCM-SHA384',
     runtime: false,
     restartReason: 'the TLS contexts are built when the listeners are created',
-    description: 'An OpenSSL cipher list for the TLS 1.3 suites (TLS_ ' +
-                 'prefixed names) and the TLS 1.2 ones on the main port, ' +
-                 'LDAPS and the debugger\'s listener. The default is BCP ' +
-                 '195 (RFC 9325 section 4.2): the TLS 1.3 suites first, then ' +
-                 'only the four ECDHE AES-GCM suites for TLS 1.2 — what FAPI ' +
-                 '2.0 section 5.2.2 requires — and the server\'s order wins. ' +
-                 'Empty means node\'s own default list, which allows more ' +
-                 'than BCP 195 recommends. A list matching NO cipher stops ' +
-                 'the service at startup naming this setting, rather than ' +
-                 'leaving listeners that complete no handshake.' },
+    description: 'An OpenSSL cipher list for the TLS 1.2 suites on the main ' +
+                 'port, LDAPS and the debugger\'s listener (the TLS 1.3 ' +
+                 'suites are tls.tls13CipherSuites since #423, and a TLS_ ' +
+                 'name here is refused). The default is BCP 195 (RFC 9325 ' +
+                 'section 4.2): only the four ECDHE AES-GCM suites — what ' +
+                 'FAPI 2.0 section 5.2.2 requires — behind the TLS 1.3 ' +
+                 'suites, and the server\'s order wins. Empty means node\'s ' +
+                 'own default TLS 1.2 list, which allows more than BCP 195 ' +
+                 'recommends. Unused while tls.disableTls12 or tls.pqcOnly ' +
+                 'is on. A list matching NO cipher stops the service at ' +
+                 'startup naming this setting.' },
 
   // THE KEY-EXCHANGE GROUPS, POST-QUANTUM FIRST (#212, 2026-09-26). tlsfuzzer
   // found node's 'auto' — OpenSSL 3.5's own list — offering X25519MLKEM768
@@ -8938,6 +9073,164 @@ const SETTINGS = [
                  'other than the NIST ones is then still closed after the ' +
                  'handshake (STS-TLS-0035). A list that builds no TLS ' +
                  'context stops the service at startup.' },
+
+  // ---------------------------------------------------------------------
+  // THE LISTENERS' TLS POLICY AND CLIENT AUTHENTICATION (#423, 2026-10-02,
+  // rcbj: "For all TLS listeners, add a 'Disable TLS v1.2' flag ... choose
+  // exactly which TLS v1.3 cipher suites can be used ... a toggle to only
+  // allow PQC cipher suites ... Each TLS listener should have a toggle to
+  // disable optional client authentication ... another toggle to require
+  // client authentication at the TLS level").
+  //
+  // RUNTIME, unlike tls.minVersion and tls.ciphers beside them: an
+  // administrator chooses these on Server configuration -> Listeners, and
+  // `tls/tls_server.js` re-applies them to every listener it knows the moment
+  // one changes (`config.onOverridesChanged()`), at the next handshake. Per
+  // process, because a listener belongs to no realm; a realm's own listener
+  // has the `listener.*` rows below. tls/CLAUDE.md, "THE LISTENERS' POLICY".
+  // ---------------------------------------------------------------------
+  { key: 'tls.disableTls12', group: 'Listeners',
+    label: 'Disable TLS 1.2',
+    env: 'STS_TLS_DISABLE_TLS12', type: 'bool', dflt: false,
+    runtime: true, perProcess: true,
+    description: 'Every TLS listener — the main port, LDAPS, the protocol ' +
+                 'debugger\'s, the SPIFFE gRPC listeners and the channel ' +
+                 'between cells — negotiates TLS 1.3 only, whatever ' +
+                 'tls.minVersion says. Off by default, because a client ' +
+                 'that cannot speak TLS 1.3 is still common; on is what a ' +
+                 'deployment whose clients are all current usually wants. ' +
+                 'A realm\'s own listener follows this unless its ' +
+                 'listener.disableTls12 says otherwise. Applied at the next ' +
+                 'handshake.' },
+
+  { key: 'tls.tls13CipherSuites', group: 'Listeners',
+    label: 'TLS 1.3 cipher suites',
+    env: 'STS_TLS_TLS13_CIPHER_SUITES', type: 'csv',
+    dflt: 'TLS_AES_256_GCM_SHA384,TLS_AES_128_GCM_SHA256,' +
+          'TLS_CHACHA20_POLY1305_SHA256',
+    runtime: true, perProcess: true,
+    // RFC 8446's five, in the order a list is drawn. A TLS 1.3 suite is the
+    // record protection alone — the AEAD and the hash — so what makes a
+    // suite safe against a quantum adversary is its KEY LENGTH (Grover's
+    // algorithm halves it): the two 256-bit suites keep 128 bits, the
+    // 128-bit ones 64. What stops a recorded session being decrypted later
+    // is the key exchange, which tls.pqcOnly restricts too.
+    csvValues: ['TLS_AES_256_GCM_SHA384', 'TLS_CHACHA20_POLY1305_SHA256',
+                'TLS_AES_128_GCM_SHA256', 'TLS_AES_128_CCM_SHA256',
+                'TLS_AES_128_CCM_8_SHA256'],
+    ordered: true,
+    csvValueNotes: {
+      TLS_AES_256_GCM_SHA384: 'AES-256-GCM · post-quantum safe (a 256-bit ' +
+        'key keeps 128 bits against Grover) · the only one CNSA 2.0 allows',
+      TLS_CHACHA20_POLY1305_SHA256: 'ChaCha20-Poly1305 · post-quantum safe ' +
+        '(256-bit key) · fast without AES hardware',
+      TLS_AES_128_GCM_SHA256: 'AES-128-GCM · NOT post-quantum safe (64 bits ' +
+        'against Grover) · the one suite every TLS 1.3 client must offer',
+      TLS_AES_128_CCM_SHA256: 'AES-128-CCM · NOT post-quantum safe · for ' +
+        'constrained devices; off in OpenSSL by default',
+      TLS_AES_128_CCM_8_SHA256: 'AES-128-CCM with an 8-byte tag · NOT ' +
+        'post-quantum safe and a short tag — RFC 8446 says not for general ' +
+        'use; only for a client that offers nothing else'
+    },
+    description: 'The TLS 1.3 cipher suites every TLS listener accepts, in ' +
+                 'order of preference (the server\'s order wins). Tick and ' +
+                 'number them on Server configuration -> Listeners. The ' +
+                 'default is OpenSSL\'s three: AES-256-GCM, AES-128-GCM and ' +
+                 'ChaCha20-Poly1305. AES-256-GCM and ChaCha20-Poly1305 are ' +
+                 'the post-quantum safe ones (256-bit keys); tls.pqcOnly ' +
+                 'keeps only those. At least one is required: a listener ' +
+                 'with none would complete no TLS 1.3 handshake. The TLS 1.2 ' +
+                 'suites are tls.ciphers. Applied at the next handshake.' },
+
+  { key: 'tls.pqcOnly', group: 'Listeners',
+    label: 'Post-quantum safe only',
+    env: 'STS_TLS_PQC_ONLY', type: 'bool', dflt: false,
+    runtime: true, perProcess: true,
+    description: 'Every TLS listener accepts only what a quantum adversary ' +
+                 'recording the session today could not decrypt later: TLS ' +
+                 '1.3 alone (no TLS 1.2 key exchange is post-quantum), only ' +
+                 'the 256-bit TLS 1.3 cipher suites chosen in ' +
+                 'tls.tls13CipherSuites, and only the ML-KEM key-exchange ' +
+                 'groups in tls.groups (the three hybrids — ' +
+                 'X25519MLKEM768, SecP256r1MLKEM768, SecP384r1MLKEM1024 — ' +
+                 'and pure MLKEM512/768/1024). A client that offers none of ' +
+                 'them is refused at the handshake. It does not restrict ' +
+                 'the signature algorithms: a handshake recorded today ' +
+                 'cannot be forged later, and few clients accept an ML-DSA ' +
+                 'certificate yet. Turning it on while the chosen suites or ' +
+                 'groups hold nothing post-quantum is refused. Off by ' +
+                 'default.' },
+
+  // CLIENT AUTHENTICATION, TWO TOGGLES PER LISTENER. "Require" wins over
+  // "disable optional": a listener that requires a certificate asks for one
+  // by definition. Read by `tls_server.js`'s `clientAuthOf()`.
+  { key: 'tls.mainPortDisableOptionalClientCertificate',
+    group: 'Listener client certificates',
+    label: 'Main port: do not ask for a client certificate',
+    env: 'STS_TLS_MAIN_DISABLE_OPTIONAL_CLIENT_CERT', type: 'bool',
+    dflt: false, runtime: true, perProcess: true,
+    description: 'The main HTTPS port sends no CertificateRequest, so no ' +
+                 'client certificate is ever presented there. Off by ' +
+                 'default: the port asks every connection for one and ' +
+                 'requires none, which is what RFC 8705 certificate-bound ' +
+                 'tokens and client authentication, GET /tls/sign-in, EST ' +
+                 'with a certificate and the remote XACML PEP need — on, ' +
+                 'all of those stop working here, and a browser holding a ' +
+                 'client certificate is no longer offered a choice of one.' },
+  { key: 'tls.mainPortRequireClientCertificate',
+    group: 'Listener client certificates',
+    label: 'Main port: require a client certificate',
+    env: 'STS_TLS_MAIN_REQUIRE_CLIENT_CERT', type: 'bool',
+    dflt: false, runtime: true, perProcess: true,
+    description: 'The main HTTPS port refuses, at the handshake, every ' +
+                 'connection that does not present a client certificate ' +
+                 'chaining to the client truststore (/admin/tls/trust, and ' +
+                 'the certificates this service issues to people and ' +
+                 'applications). Wins over the toggle above. Off by default: ' +
+                 'on, a browser without a certificate, discovery, JWKS and ' +
+                 'every public document on this port are refused, and so is ' +
+                 'a load balancer\'s or container\'s HTTPS health check.' },
+  { key: 'ldap.ldapsDisableOptionalClientCertificate',
+    group: 'Listener client certificates',
+    label: 'LDAPS: do not ask for a client certificate',
+    env: 'STS_LDAPS_DISABLE_OPTIONAL_CLIENT_CERT', type: 'bool',
+    dflt: true, runtime: true, perProcess: true,
+    description: 'LDAPS sends no CertificateRequest. ON by default, which is ' +
+                 'what LDAPS always did: a bind is how a directory client ' +
+                 'says who it is, and a certificate prompt in front of every ' +
+                 'client holding one is a surprise. Off asks every ' +
+                 'connection for a certificate and requires none; a ' +
+                 'certificate presented is verified against the client ' +
+                 'truststore but does not bind anybody (there is no SASL ' +
+                 'EXTERNAL here).' },
+  { key: 'ldap.ldapsRequireClientCertificate',
+    group: 'Listener client certificates',
+    label: 'LDAPS: require a client certificate',
+    env: 'STS_LDAPS_REQUIRE_CLIENT_CERT', type: 'bool',
+    dflt: false, runtime: true, perProcess: true,
+    description: 'LDAPS refuses, at the handshake, every connection that ' +
+                 'does not present a client certificate chaining to the ' +
+                 'client truststore — a second gate in front of the bind, ' +
+                 'which still decides who the connection is. Wins over the ' +
+                 'toggle above. Off by default.' },
+  { key: 'debugger.disableOptionalClientCertificate',
+    group: 'Listener client certificates',
+    label: 'Debugger: do not ask for a client certificate',
+    env: 'STS_DEBUGGER_DISABLE_OPTIONAL_CLIENT_CERT', type: 'bool',
+    dflt: false, runtime: true, perProcess: true,
+    description: 'The embedded protocol debugger\'s HTTPS listener sends no ' +
+                 'CertificateRequest. Off by default: it asks and requires ' +
+                 'none, as the main port does, so a certificate-bound ' +
+                 'access token can be presented there.' },
+  { key: 'debugger.requireClientCertificate',
+    group: 'Listener client certificates',
+    label: 'Debugger: require a client certificate',
+    env: 'STS_DEBUGGER_REQUIRE_CLIENT_CERT', type: 'bool',
+    dflt: false, runtime: true, perProcess: true,
+    description: 'The protocol debugger\'s listener refuses, at the ' +
+                 'handshake, every connection without a client certificate ' +
+                 'chaining to the client truststore. Wins over the toggle ' +
+                 'above. Off by default.' },
 
   // ONE SESSION-TICKET KEY FOR AN ACTIVE-ACTIVE CLUSTER (2026-09-27): a
   // ticket one node issued is sealed under a key the other node never saw,
@@ -16599,6 +16892,17 @@ function resolve(key) {
     log.debug("Leaving resolve().");
     return { raw: fromRealm, source: 'realm' };
   }
+  // A `realmOnly` row (#99) is the realm's own or its default: a value the
+  // process was given — an override, the environment, the operator's
+  // appconfig — would otherwise be every realm's. The generated defaults file
+  // is still its base layer, which is what the startup check asks for.
+  if (setting.realmOnly) {
+    const fromDefaults = dig(defaults, setting.path || setting.key);
+    log.debug("Leaving resolve(). Realm-only.");
+    return fromDefaults !== undefined
+      ? { raw: fromDefaults, source: 'defaults' }
+      : { raw: defaultOf(setting), source: 'default' };
+  }
   if (Object.prototype.hasOwnProperty.call(overrides, key)) {
     log.debug("Leaving resolve().");
     return { raw: overrides[key], source: 'override' };
@@ -16885,8 +17189,63 @@ function checkOverride(key, raw, forRealm) {
       (setting.env || 'its environment variable') + ' and restart.';
   }
   const problem = TYPES[setting.type].check(raw, setting);
+  if (problem) {
+    log.debug("Leaving checkOverride().");
+    return '"' + key + '" ' + problem + '.';
+  }
+  const ruled = writeRuleProblem(key, TYPES[setting.type].parse(raw, setting));
   log.debug("Leaving checkOverride().");
-  return problem ? '"' + key + '" ' + problem + '.' : null;
+  return ruled ? ruled.problem : null;
+}
+
+// ---------------------------------------------------------------------------
+// A RULE BETWEEN SETTINGS, OWNED BY THE MODULE THAT READS THEM (#423).
+//
+// A row's type checks one value. Some values are wrong only beside another
+// setting's — `tls.pqcOnly` turned on while `tls.tls13CipherSuites` holds no
+// post-quantum suite would leave every listener completing no TLS 1.3
+// handshake — and the module that knows why owns the rule, so it is handed
+// in rather than written here. A rule answers `{ problem, code }` for a write
+// it refuses and null otherwise; it is asked by `checkOverride()` (so every
+// door, the console's, the API's and a restored value's) after the type
+// check has passed, with the parsed value.
+// ---------------------------------------------------------------------------
+/** @type {Array<Function>} */
+const writeRules = [];
+
+/**
+ * Adds a rule every override is checked against.
+ *
+ * @param fn - `(key, parsed)` answering `{ problem, code }` or null
+ */
+function addWriteRule(fn) {
+  log.debug("Entering addWriteRule().");
+  if (typeof fn === 'function') {
+    writeRules.push(fn);
+  }
+  log.debug("Leaving addWriteRule(). " + writeRules.length);
+}
+
+// The first rule's refusal, or null. A rule that throws refuses nothing.
+function writeRuleProblem(key, parsed) {
+  log.debug("Entering writeRuleProblem(). key=" + key);
+  for (const rule of writeRules) {
+    let answer = null;
+    try {
+      answer = rule(key, parsed);
+    } catch (e) {
+      log.warn(errorCodes.tag('STS-CORE-0149') + 'config: a rule between ' +
+               'settings failed on ' + key + ' (' +
+               ((e && e.message) || e) + '); the write is not refused by ' +
+               'it.');
+    }
+    if (answer && answer.problem) {
+      log.debug("Leaving writeRuleProblem(). Refused.");
+      return answer;
+    }
+  }
+  log.debug("Leaving writeRuleProblem().");
+  return null;
 }
 
 // WHICH CONDITION checkOverride() REFUSED FOR, as an error code, or '' where it
@@ -16914,8 +17273,13 @@ function checkOverrideCode(key, raw, forRealm) {
     log.debug("Leaving checkOverrideCode().");
     return 'STS-CORE-0005';
   }
+  if (TYPES[setting.type].check(raw, setting)) {
+    log.debug("Leaving checkOverrideCode().");
+    return 'STS-CORE-0006';
+  }
+  const ruled = writeRuleProblem(key, TYPES[setting.type].parse(raw, setting));
   log.debug("Leaving checkOverrideCode().");
-  return TYPES[setting.type].check(raw, setting) ? 'STS-CORE-0006' : '';
+  return ruled ? ruled.code : '';
 }
 
 // ---------------------------------------------------------------------------
@@ -16989,6 +17353,52 @@ function announceClaimShape(key, before) {
  * @returns `{ ok: true, errors: [], key, realm }`, or `{ ok: false, errors }`
  *   carrying its code
  */
+// ---------------------------------------------------------------------------
+// WHO IS TOLD THAT AN OVERRIDE MOVED (#423, 2026-10-02).
+//
+// Most runtime settings are read where they are used, so a change needs
+// nobody told. A TLS listener cannot read its policy at every handshake: the
+// floor, the cipher suites and the groups are baked into its secure context,
+// and whether it asks for a client certificate is a property of the server.
+// So `tls/tls_server.js` asks to be told, and re-applies. The four doors an
+// override changes through — set, clear, clear-all and the replicated or
+// restored apply — each call this once, after the change is in force. A
+// listener that throws is logged and costs nobody else their call; it never
+// reaches the write it follows. A realm row's change is `realms.onChange()`'s.
+// ---------------------------------------------------------------------------
+/** @type {Array<Function>} */
+const overrideObservers = [];
+
+/**
+ * Asks to be called after any override is set, cleared or applied.
+ *
+ * @param fn - called with the keys that changed
+ */
+function onOverridesChanged(fn) {
+  log.debug("Entering onOverridesChanged().");
+  if (typeof fn === 'function') {
+    overrideObservers.push(fn);
+  }
+  log.debug("Leaving onOverridesChanged(). " + overrideObservers.length);
+}
+
+// Tells every observer; a throw is logged and goes no further. (Not
+// `overridesChanged()`, which is the store's notification, above.)
+function tellOverrideObservers(keys) {
+  log.debug("Entering tellOverrideObservers(). " + keys.length);
+  overrideObservers.forEach(function (fn) {
+    try {
+      fn(keys);
+    } catch (e) {
+      log.warn(errorCodes.tag('STS-CORE-0149') + 'config: a listener ' +
+               'for changed settings failed (' +
+               ((e && e.message) || e) + '); the change itself is in ' +
+               'force.');
+    }
+  });
+  log.debug("Leaving tellOverrideObservers().");
+}
+
 function setOverride(key, raw) {
   log.debug("Entering setOverride(). key=" + key);
   // WHICH REALM THIS WRITE LANDS IN IS DECIDED FIRST, BECAUSE THE CHECK
@@ -17055,6 +17465,7 @@ function setOverride(key, raw) {
   // value back reads the new one. See setOverrideStore() above.
   overridesChanged(realm ? realm.id : null);
   announceClaimShape(key, shape);
+  tellOverrideObservers([key]);
   log.debug("Leaving setOverride().");
   return { ok: true, errors: [], key: key, realm: realm ? realm.id : null };
 }
@@ -17110,6 +17521,7 @@ function clearOverride(key) {
   // start. A reset that does not survive a restart is worse than no reset.
   overridesChanged(realm ? realm.id : null);
   announceClaimShape(key, shape);
+  tellOverrideObservers([key]);
   log.debug("Leaving clearOverride().");
   return { ok: true, errors: [], key: key, realm: realm ? realm.id : null };
 }
@@ -17151,6 +17563,7 @@ function clearAllOverrides() {
   // being brought into line, and "nothing was cleared here" is not evidence
   // that nothing is written down over there.
   overridesChanged(realm ? realm.id : null);
+  tellOverrideObservers(keys);
   log.debug("Leaving clearAllOverrides(). " + keys.length + " cleared.");
   return { ok: true, errors: [], cleared: keys,
            realm: realm ? realm.id : null };
@@ -17270,6 +17683,9 @@ function applyPersistedOverrides(saved) {
   // every registered logger, and doing that per key would be n times the work
   // for the same answer.
   applyLogLevel();
+  tellOverrideObservers(applied.map(function (one) {
+    return typeof one === 'string' ? one : String((one && one.key) || '');
+  }));
   log.debug("Leaving applyPersistedOverrides(). " + applied.length +
             " applied.");
   return applied;
@@ -17825,6 +18241,9 @@ module.exports = {
   REPLACED_SETTINGS: REPLACED_SETTINGS,
   setOverride: setOverride,
   clearOverride: clearOverride,
+  // What a setting is for the PROCESS, the realm layer set aside (#99: a
+  // realm listener's port is checked against the process's own listeners).
+  processValue: processValue,
   clearAllOverrides: clearAllOverrides,
   setOverrideStore: setOverrideStore,
   persistableOverrides: persistableOverrides,
@@ -17833,5 +18252,7 @@ module.exports = {
   groups: groups,
   snapshot: snapshot,
   auditAppconfig: auditAppconfig,
-  isPerProcess: isPerProcess
+  isPerProcess: isPerProcess,
+  onOverridesChanged: onOverridesChanged,
+  addWriteRule: addWriteRule
 };

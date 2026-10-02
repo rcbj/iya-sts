@@ -985,10 +985,13 @@ class DebuggerServer {
       // and a listener that never asks makes a certificate-bound token
       // impossible to present here rather than merely unusual — which would
       // have been an exemption dressed up as a refusal.
+      //
+      // Its own pair since #423 (debugger.disableOptionalClientCertificate,
+      // debugger.requireClientCertificate), and the listeners' TLS policy.
       ? https.createServer(Object.assign({},
-                                         tlsServer.clientTruststoreOptions(),
-                                         { requestCert: true,
-                                           rejectUnauthorized: false }), app)
+          tlsServer.clientTruststoreOptions(tlsServer.policyFor('debugger')),
+          tlsServer.clientAuthOptions(
+            tlsServer.policyFor('debugger').clientAuth)), app)
       // `clientTruststoreOptions()` carries `tls_server.js`'s
       // protocolOptions() — the floor, the ciphers, the groups and the
       // signature algorithms — so this listener is held to the main port's
@@ -1000,7 +1003,8 @@ class DebuggerServer {
       // port's is. It also keeps the anchors this listener verifies a client
       // certificate against current, now that it asks for one (#34).
       tlsServer.trustClientCertificatesOn(server, 'the protocol debugger (' +
-                                                  port + ')');
+                                                  port + ')', undefined,
+                                          { kind: 'debugger' });
       // NO shared session-ticket key (tls/session_tickets.ts): this
       // listener asks for a client certificate, and a session resumed on
       // another node has no remembered chain there — server.js says why.

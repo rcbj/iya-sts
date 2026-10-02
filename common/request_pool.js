@@ -1791,7 +1791,8 @@ const NEVER_DISPATCHED = ['/tls', '/admin/tls/trust', '/admin-api/tls/trust',
                           '/admin/spiffe/brokers',
                           '/admin-api/spiffe/brokers',
                           '/admin/worker-pools', '/admin-api/worker-pools',
-                          '/admin/node-health', '/admin-api/node-health'];
+                          '/admin/node-health', '/admin-api/node-health',
+                          '/admin/listeners', '/admin-api/listeners'];
 
 /**
  * Tells whether a request is handled in a request worker rather than here.

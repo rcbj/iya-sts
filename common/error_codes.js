@@ -950,6 +950,30 @@ const CODES = [
       'rejected async handler reaches the process handlers ' +
       '(STS-CORE-0142) instead of being answered with a 500.',
     spec: 'none — logged at start' },
+  { code: 'STS-CORE-0145',
+    summary: 'A listener.* setting was given to the default realm, which ' +
+      'has no listener of its own: it is served on the main port under ' +
+      'global.publicBaseUrl (#99).',
+    spec: 'the write is refused; nothing is changed' },
+  { code: 'STS-CORE-0146',
+    summary: 'A realm\'s listener.publicBaseUrl is not an https origin ' +
+      'with no path, query or user, or listener.port was set without it.',
+    spec: 'the write is refused; nothing is changed' },
+  { code: 'STS-CORE-0147',
+    summary: 'A realm\'s listener.port is already another realm\'s or one ' +
+      'of this process\'s own listeners\' (every node binds every realm ' +
+      'port, so each must be its own).',
+    spec: 'the write is refused; nothing is changed' },
+  { code: 'STS-CORE-0148',
+    summary: 'A realm listener (listener.port) was asked for while this ' +
+      'service runs as several cells, which #99 does not support yet.',
+    spec: 'the write is refused; nothing is changed' },
+  { code: 'STS-CORE-0149',
+    summary: 'A module told of changed settings (config.onOverridesChanged()) ' +
+      'or asked to judge a write between settings (config.addWriteRule()) ' +
+      'threw. The change is in force; what that module does with it, or the ' +
+      'rule it holds, did not run this time.',
+    spec: 'logged; the write is not refused by the failed rule' },
   { code: 'STS-WORKER-0001',
     summary: 'The IPC channel to a post-quantum worker process failed, so a ' +
       'job sent to it may not arrive or its answer may not come back.' +
@@ -12472,6 +12496,46 @@ const CODES = [
       'chain answers as for a chain it cannot build.',
     spec: 'the request is answered; under hard-fail a certificate whose ' +
       'issuer this node does not hold is refused' },
+  { code: 'STS-TLS-0039',
+    summary: 'A trust realm\'s own listener (listener.port, #99) could not ' +
+      'be bound on this node — the port in use, or not permitted — or ' +
+      'failed after binding. The realm is still served on the main port ' +
+      'under its prefix.',
+    spec: 'the listener is absent on this node and shown as failed on the ' +
+      'realm\'s page and GET /admin-api/realms' },
+  { code: 'STS-TLS-0040',
+    summary: 'A trust realm\'s own listener has no certificate to present: ' +
+      'its listener.certificateFile or privateKeyFile could not be read or ' +
+      'do not match, it has no DNS name to issue one for, or the realm\'s ' +
+      'certificate authority did not issue one.',
+    spec: 'the listener is not bound (or keeps the certificate it has, on a ' +
+      'renewal)' },
+  { code: 'STS-TLS-0041',
+    summary: 'A request on a trust realm\'s own listener asked for a path ' +
+      'outside that realm\'s prefix — another realm\'s, or the default ' +
+      'realm\'s; a realm\'s listener serves that realm alone.',
+    spec: '404' },
+  { code: 'STS-TLS-0042',
+    summary: 'The listeners\' TLS settings this process started with leave a ' +
+      'listener refusing every client, or are in the old shape: an empty ' +
+      'tls.tls13CipherSuites, a TLS 1.3 suite in tls.ciphers (which is the ' +
+      'TLS 1.2 list since #423), or tls.pqcOnly with no post-quantum suite or ' +
+      'group to use. Set in the environment or an appconfig file, where no ' +
+      'write could refuse it.',
+    spec: 'the service does not start' },
+  { code: 'STS-TLS-0043',
+    summary: 'A write to the listeners\' TLS settings was refused because it ' +
+      'would leave a listener refusing every client: no TLS 1.3 suite, a TLS ' +
+      '1.3 suite in tls.ciphers, or post-quantum only (tls.pqcOnly, or a ' +
+      'realm listener\'s listener.pqcOnly) with no 256-bit suite or ML-KEM ' +
+      'group to use.',
+    spec: '400; nothing is written' },
+  { code: 'STS-TLS-0044',
+    summary: 'The listeners\' TLS policy changed and could not be applied to ' +
+      'one listener registered as re-keyed by its own module (a SPIFFE gRPC ' +
+      'listener, the channel between cells); it keeps the policy it had.',
+    spec: 'logged; Server configuration -> Listeners shows the policy in ' +
+      'force' },
   // ===== VC ================================================================
   { code: 'STS-VC-0001',
     summary: 'An oid4vci encryption setting names no content encryption ' +

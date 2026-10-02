@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3944** of them, in **41** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3955** of them, in **41** subsystems.
 
 ## Where a code appears
 
@@ -51,7 +51,7 @@ is an ordinary outcome.
 
 * [HTTP front door (`STS-HTTP`)](#sts-http) — 18
 * [PROXY protocol (`STS-PROXY`)](#sts-proxy) — 9
-* [Service core (`STS-CORE`)](#sts-core) — 76
+* [Service core (`STS-CORE`)](#sts-core) — 81
 * [Worker pools (`STS-WORKER`)](#sts-worker) — 48
 * [Persistence and coordination (`STS-STORE`)](#sts-store) — 74
 * [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 28
@@ -75,7 +75,7 @@ is an ordinary outcome.
 * [Attribute sources (`STS-ATTR`)](#sts-attr) — 15
 * [SCIM 2.0 (`STS-SCIM`)](#sts-scim) — 77
 * [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 144
-* [TLS and client certificates (`STS-TLS`)](#sts-tls) — 38
+* [TLS and client certificates (`STS-TLS`)](#sts-tls) — 44
 * [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 112
 * [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 118
 * [Risk scoring (`STS-RISK`)](#sts-risk) — 44
@@ -220,6 +220,11 @@ Raised from: server.js, common/protocol_stack.ts, common/config.js, common/confi
 | `STS-CORE-0142` | A promise rejection nobody handled reached a started process and was contained there rather than ending it (#355). The line carries the stack, throttled as STS-CORE-0141 is. | none — logged; the process carries on |
 | `STS-CORE-0143` | An Express handler returned a promise that rejected (an `async` handler that failed, #355). The request is answered with a plain 500 through Express's final handler, as a thrown error is, unless the handler had already answered or called next(); the line carries the stack, throttled as STS-CORE-0141 is. | HTTP 500 Internal Server Error, with no detail |
 | `STS-CORE-0144` | The Express guard (#355) could not be installed, because express/lib/router/layer is missing or not the shape it knows: a rejected async handler reaches the process handlers (STS-CORE-0142) instead of being answered with a 500. | none — logged at start |
+| `STS-CORE-0145` | A listener.* setting was given to the default realm, which has no listener of its own: it is served on the main port under global.publicBaseUrl (#99). | the write is refused; nothing is changed |
+| `STS-CORE-0146` | A realm's listener.publicBaseUrl is not an https origin with no path, query or user, or listener.port was set without it. | the write is refused; nothing is changed |
+| `STS-CORE-0147` | A realm's listener.port is already another realm's or one of this process's own listeners' (every node binds every realm port, so each must be its own). | the write is refused; nothing is changed |
+| `STS-CORE-0148` | A realm listener (listener.port) was asked for while this service runs as several cells, which #99 does not support yet. | the write is refused; nothing is changed |
+| `STS-CORE-0149` | A module told of changed settings (config.onOverridesChanged()) or asked to judge a write between settings (config.addWriteRule()) threw. The change is in force; what that module does with it, or the rule it holds, did not run this time. | logged; the write is not refused by the failed rule |
 
 ## STS-WORKER
 
@@ -2990,6 +2995,12 @@ Raised from: tls/.
 | `STS-TLS-0036` | The shared session-ticket key of an active-active cluster could not be applied to a TLS listener; that listener keeps its own keys, so a ticket it issues resumes only on this node. | resumption falls back to a full handshake |
 | `STS-TLS-0037` | The shared session-ticket key held in the store is not the 48 bytes node takes, so the listeners keep their own keys until the tls.ticket-key-rotate job replaces it. | resumption falls back to a full handshake |
 | `STS-TLS-0038` | A TLS session resumed on this node with a verified client certificate whose chain, replicated from the node that made the session, did not arrive within tls.resumedChainWaitMs; the request goes on with the leaf alone, and a revocation check that needs the chain answers as for a chain it cannot build. | the request is answered; under hard-fail a certificate whose issuer this node does not hold is refused |
+| `STS-TLS-0039` | A trust realm's own listener (listener.port, #99) could not be bound on this node — the port in use, or not permitted — or failed after binding. The realm is still served on the main port under its prefix. | the listener is absent on this node and shown as failed on the realm's page and GET /admin-api/realms |
+| `STS-TLS-0040` | A trust realm's own listener has no certificate to present: its listener.certificateFile or privateKeyFile could not be read or do not match, it has no DNS name to issue one for, or the realm's certificate authority did not issue one. | the listener is not bound (or keeps the certificate it has, on a renewal) |
+| `STS-TLS-0041` | A request on a trust realm's own listener asked for a path outside that realm's prefix — another realm's, or the default realm's; a realm's listener serves that realm alone. | 404 |
+| `STS-TLS-0042` | The listeners' TLS settings this process started with leave a listener refusing every client, or are in the old shape: an empty tls.tls13CipherSuites, a TLS 1.3 suite in tls.ciphers (which is the TLS 1.2 list since #423), or tls.pqcOnly with no post-quantum suite or group to use. Set in the environment or an appconfig file, where no write could refuse it. | the service does not start |
+| `STS-TLS-0043` | A write to the listeners' TLS settings was refused because it would leave a listener refusing every client: no TLS 1.3 suite, a TLS 1.3 suite in tls.ciphers, or post-quantum only (tls.pqcOnly, or a realm listener's listener.pqcOnly) with no 256-bit suite or ML-KEM group to use. | 400; nothing is written |
+| `STS-TLS-0044` | The listeners' TLS policy changed and could not be applied to one listener registered as re-keyed by its own module (a SPIFFE gRPC listener, the channel between cells); it keeps the policy it had. | logged; Server configuration -> Listeners shows the policy in force |
 
 ## STS-VC
 

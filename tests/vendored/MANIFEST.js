@@ -250,6 +250,7 @@ const JOBS = [
   // every job after it. Its header argues why it is local and why it is first.
   { file: 'sts_cluster_alternation.js',  browser: false, local: true },
   { file: 'sts_main_port_pooling.js',    browser: false, local: true },
+  { file: 'sts_realm_listener.js',       browser: false, local: true },
   { file: 'admin_api.js',                browser: false, local: true,
     exclusive: true },
   { file: 'ldp_vc_issuance.js',          browser: false },

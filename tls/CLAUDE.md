@@ -1218,6 +1218,66 @@ refusal) and the fatal cipher list. **Its real-handshake assertion that
 builds from the same `protocolOptions()`. Mutation-tested against the product
 refusal removed.
 
+## THE LISTENERS' POLICY (#423, 2026-10-02)
+
+rcbj asked for:
+- a "Disable TLS v1.2" flag on every TLS listener, including a realm's own;
+- the TLS 1.3 cipher suites chosen one by one, with the post-quantum safe ones
+  among them;
+- a post-quantum-only toggle;
+- per listener, a toggle that stops it asking for a client certificate and one
+  that requires one.
+
+The settings are drawn, all on Server configuration → Listeners
+(`admin-ui/listeners_admin.ts`), along with the TLS and Realm listener groups
+that moved there from this page. `docs/tls.md` has the table.
+
+* **A POLICY PER LISTENER, FROM ONE FUNCTION.** `policyFor(kind, realmId)`
+  answers `{ disableTls12, pqcOnly, tls13Suites, clientAuth }`:
+  - the kinds are `main`, `ldaps`, `debugger`, `realm`, `spiffe` and `cell`;
+  - `protocolOptions(policy)` turns a policy into node's options;
+  - `clientAuthOptions(mode)` turns it into `requestCert` / `rejectUnauthorized`;
+  - with no argument, `protocolOptions()` is the process's policy, which is
+    what every caller that predates #423 still passes.
+
+  A realm's listener reads its `listener.*` rows inside the realm and inherits
+  the process's unless set. `spiffe` and `cell` get no client authentication:
+  their protocols fix it.
+* **RUNTIME, AND RE-APPLIED IN PLACE.** The floor, the suites and the groups are
+  baked into a secure context, and node reads `server.requestCert` /
+  `server.rejectUnauthorized` at each connection. So:
+  - `config.onOverridesChanged()` and `realms.onChange()` call `reapplyPolicy()`;
+  - it compares each registered listener's policy with the one it last applied
+    and re-keys only those that moved;
+  - registered listeners (`trustClientCertificatesOn(server, label,
+    certificateOf, { kind, realm })`) are re-keyed through `applyAnchors()`,
+    which now carries each one's policy and sets the two server properties;
+  - SPIFFE's gRPC credentials and the cell channel register an applier
+    (`registerPolicyApplier()`).
+
+  No listener is rebound, so no connection is dropped. **LDAPS is registered
+  now**, which it never was: it may ask for a certificate, and a required one
+  needs the truststore.
+* **`tls.ciphers` IS THE TLS 1.2 LIST ALONE.** A `TLS_` name there stops the
+  service (`STS-TLS-0042`), and a write of one is refused (`STS-TLS-0043`).
+  `protocolOptions()` always puts the TLS 1.3 suites first and never passes an
+  empty set, because a node cipher string with no `TLS_` name turns TLS 1.3 off.
+* **POST-QUANTUM SAFE MEANS THE KEY EXCHANGE TOO.** A TLS 1.3 suite is only the
+  record protection. The 256-bit suites survive Grover's algorithm with 128
+  bits; the 128-bit ones do not. A recorded session is protected from a later
+  quantum adversary only by an ML-KEM group. So `pqcOnly` means:
+  - the 256-bit suites;
+  - the ML-KEM groups of `tls.groups`, or the three hybrids where it lists none;
+  - TLS 1.3 only.
+
+  It does not restrict the signature algorithms. The rules between these
+  settings are `config.addWriteRule()` rules owned here (`policyWriteRule()`).
+  A realm listener's is in `realms.js`'s `listenerOverrideProblem()`.
+* **TESTS.** `tests/listener_tls_policy.js` drives real `openssl s_client`
+  handshakes against listeners built as `server.js` builds them, and against the
+  real LDAPS socket. The settings are changed through `config.setOverride()` and
+  `realms.setOverride()`.
+
 ## WHAT tlsfuzzer FOUND (2026-09-26, #212)
 
 tlsfuzzer runs against all three listeners that present this module's
@@ -1464,4 +1524,19 @@ arrived (`tls.resumedChainWaitMs`, `STS-TLS-0038` when it runs out).
 
 **HTTP/2 is not offered** — express cannot run on node's own `http2` server,
 and rcbj wants that out of the box rather than written here: #407.
+
+## A trust realm's own front-end listener (#99, 2026-10-02)
+
+`tls/realm_listeners.js` binds an HTTPS listener per realm that sets
+`listener.port`, in the front process, built by `server.js`'s
+`realmListener()` with the main port's wiring and the realm's own certificate
+(an operator's files, or a `realm-tls` leaf from the realm's CA, one slot per
+node so one node's issuance never supersedes another's). It is reconciled on
+every realm change; bind failures are recorded, never fatal. Two things it
+needed from this directory: `trustClientCertificatesOn()` takes the listener's
+own certificate (`certificateOf`), because `applyAnchors()` used to push the
+MAIN port's certificate to every registered listener on each truststore
+change; and `forgetListener()`, for a listener closed at runtime.
+`common/app.js`'s `enterRealm` refuses any other realm's path on it
+(STS-TLS-0041); `docs/trust-realms.md` is the operator's half.
 
