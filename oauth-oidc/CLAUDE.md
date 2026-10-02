@@ -3941,6 +3941,41 @@ the device flow (there is none here), `grant_management_action_required`,
 sharing a grant between client ids, and FAPI-CIBA's two OPTIONAL
 `login_hint_token` type members.
 
+## AN AUTHORIZATION CODE IS PRESENTED ONCE, WHATEVER THE OUTCOME (2026-10-02, #424)
+
+rcbj: *"I want an OAuth2 / OIDC authorization code to only be valid for five
+minutes and to only be allowed to be presented once. It doesn't matter why the
+request to the Token Endpoint failed."*
+
+* **Spent at its first presentation.** `spendPresentedCode()` runs before
+  anything about a Token Request is checked: the body's validation, client
+  authentication (rcbj: a failed one burns the code too), every grant check.
+  It takes the code out of `authzCodes`, records the presentation in
+  `redeemedCodes` in the same tick, and claims the code across the cluster for
+  good. The code is therefore spent once on every node.
+* **A second presentation is refused `invalid_grant`, whatever it looks like.**
+  - If the first redeemed nothing: `STS-OAUTH-0789`, "start a new
+    authorization request".
+  - If it redeemed something: `STS-OAUTH-0143`, and what it bought is revoked
+    (RFC 6749 section 10.5).
+  - If it arrives while the first is still being answered: the presentation is
+    noted on the record, and `rememberRedemption()` revokes what the first
+    goes on to issue.
+* **This reverses a deliberate leniency.** A refused request used to leave its
+  code redeemable, so a client could fix a wrong `code_verifier` and retry.
+  That, and the identical-repeat replay, are now
+  `bcp.codeRedemptionRelaxed()`: `oauth2.codeReplayIdempotent` (off by
+  default), ignored in RFC 9700 mode and therefore in OAuth 2.1, FAPI and
+  product. The test stacks still turn it on, for the parent project's
+  `oauth2_sts_endpoints.js`, which asserts the leniency.
+* **At most five minutes.** `oauth2.authorizationCodeTtlS` has `max: 300` (the
+  default, as before); FAPI 2.0 still caps it at 60.
+* **Tests.** `tests/authorization_code_once.js` covers each kind of failed first
+  presentation, the replay, the differing replay, a concurrent pair, expiry,
+  the cap and the relaxed control. `oauth_cluster_once.js` and `par.js` were
+  adjusted: the first's control now runs relaxed, the second redeems a fresh
+  code.
+
 ## 3bg. WHAT THE OPENID CONFORMANCE SUITE FOUND (2026-09-24, #176)
 
 The OpenID Foundation's suite runs as a job (`tests/vendored/sts_fapi_conformance.js`,

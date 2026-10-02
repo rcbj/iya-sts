@@ -8489,6 +8489,13 @@ const CODES = [
       'read as none.',
     spec: 'none (a refusal of the console or API write; verified_claims is ' +
       'omitted on a read)' },
+  { code: 'STS-OAUTH-0789',
+    summary: 'An authorization code was presented at the token endpoint a ' +
+      'second time, and its first presentation redeemed nothing (it was ' +
+      'refused, or is still being answered). A code is presented once ' +
+      'whatever the outcome (#424) unless oauth2.codeReplayIdempotent ' +
+      'relaxes it outside RFC 9700 mode.',
+    spec: '400 invalid_grant (RFC 6749 section 4.1.2); the flow starts over' },
   { code: 'STS-SAML-0001',
     summary: 'A SAML 2.0 sign-in resumed with a held-request id that is ' +
       'unknown or has expired (saml2.requestTtlMin), so there is no ' +

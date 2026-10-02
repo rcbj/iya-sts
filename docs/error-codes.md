@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3943** of them, in **41** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3944** of them, in **41** subsystems.
 
 ## Where a code appears
 
@@ -64,7 +64,7 @@ is an ordinary outcome.
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 26
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 47
 * [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 254
-* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 668
+* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 669
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 97
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 21
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 16
@@ -2015,6 +2015,7 @@ Raised from: oauth-oidc/, common/person_assertions.js.
 | `STS-OAUTH-0786` | A CAEP session-revoked (or, for a replay, risk-level-change) about a revoked OAuth grant could not be delivered; the revocation stands (#239). | none (a log line) |
 | `STS-OAUTH-0787` | A realm's register of revoked token ids reached oauth2.maxRevokedJtis and none of its entries had expired, so the revocation whose token expires soonest was forgotten to make room (#345): that token, if it is still unexpired, is accepted again by a check that asks only this register. | none — logged, at most once a minute per process |
 | `STS-OAUTH-0788` | A person's identity verifications could not be sealed under a durable key-encryption key, so they were not written; or the sealed value on the entry will not open under this process's key and is read as none. | none (a refusal of the console or API write; verified_claims is omitted on a read) |
+| `STS-OAUTH-0789` | An authorization code was presented at the token endpoint a second time, and its first presentation redeemed nothing (it was refused, or is still being answered). A code is presented once whatever the outcome (#424) unless oauth2.codeReplayIdempotent relaxes it outside RFC 9700 mode. | 400 invalid_grant (RFC 6749 section 4.1.2); the flow starts over |
 
 ## STS-SAML
 
