@@ -77,6 +77,11 @@ function child() {
       readMinted: function () { return Promise.resolve(null); },
       purgeMinted: function () { return Promise.resolve(0); }
     };
+    // STARTED, AS EVERY PROCESS'S KEYSTORE IS before it serves (#357): a
+    // flush before the start DEFERS rather than reporting a missing key, and
+    // this file is about a process that has started and holds none.
+    await keystore.start();
+    note(keystore.hasStarted(), 'precondition: the keystore has started');
     note(!keystore.sealed(), 'precondition: this process holds no ' +
          'key-encryption key');
     minted.reset();
