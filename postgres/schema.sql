@@ -250,6 +250,14 @@ CREATE TABLE IF NOT EXISTS sts_keys (
 -- `written_at` IS WHAT RETENTION READS — `persistence.mintedRetention`, seven
 -- days by default — for a short-lived store's row that has NO expiry. A row
 -- older than that is neither restored nor kept.
+--
+-- `key` IS A KEYED DIGEST OF THE RECORD'S NAME and `key_sealed` THE NAME,
+-- SEALED (#222, schema version 14). The name is often the credential itself —
+-- a session id, a SAML artifact — and was stored in the clear; now the row is
+-- found by the digest, which the service computes from a name it already
+-- holds, and the name is opened only by the restore. A row written without
+-- one (a test, a store with no key) has `key_sealed` '' and its `key` is the
+-- name, as before.
 -- ---------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS sts_minted (
   handle     text        NOT NULL,
@@ -258,11 +266,13 @@ CREATE TABLE IF NOT EXISTS sts_minted (
   body       text        NOT NULL,
   written_at timestamptz NOT NULL DEFAULT now(),
   expires_at bigint,
+  key_sealed text        NOT NULL DEFAULT '',
   PRIMARY KEY (handle, realm, key));
 
 -- Added separately as well, for `sts_realms.domain`'s reason: a table built by
 -- an older version of this file has no such column. Existing rows get NULL.
 ALTER TABLE sts_minted ADD COLUMN IF NOT EXISTS expires_at bigint;
+ALTER TABLE sts_minted ADD COLUMN IF NOT EXISTS key_sealed text NOT NULL DEFAULT '';
 
 CREATE INDEX IF NOT EXISTS sts_minted_handle ON sts_minted (handle, realm);
 CREATE INDEX IF NOT EXISTS sts_minted_written ON sts_minted (written_at);

@@ -218,7 +218,8 @@ const CHANGE_ROWS_PER_STATEMENT = 5000;
 /**
  * The version of the schema this driver creates, recorded in `sts_schema`.
  */
-const SCHEMA_VERSION = 13;
+// 14 IS #222's: `sts_minted.key_sealed`, the name beside its digest.
+const SCHEMA_VERSION = 14;
 
 // THE DATABASE'S CLOCK, in the milliseconds every cluster table stores. See the
 // cluster block in SCHEMA_OBJECTS for why no process's own clock is used.
@@ -473,6 +474,7 @@ const SCHEMA_OBJECTS = [
   '  body       text        NOT NULL,' +
   '  written_at timestamptz NOT NULL DEFAULT now(),' +
   '  expires_at bigint,' +
+  '  key_sealed text        NOT NULL DEFAULT \'\',' +
   '  PRIMARY KEY (handle, realm, key))' },
   { name: 'sts_minted_handle', statement:
   'CREATE INDEX IF NOT EXISTS sts_minted_handle ON sts_minted (handle, ' +
@@ -1047,6 +1049,11 @@ const SCHEMA_COLUMNS = [
   // the whole of the migration.
   { table: 'sts_minted', column: 'expires_at', statement:
   'ALTER TABLE sts_minted ADD COLUMN IF NOT EXISTS expires_at bigint' },
+  // A minted row's name, sealed, beside its digest in `key` (#222, schema
+  // version 14). An existing row gets '' — its key is its name, as before.
+  { table: 'sts_minted', column: 'key_sealed', statement:
+  'ALTER TABLE sts_minted ADD COLUMN IF NOT EXISTS key_sealed text NOT ' +
+  'NULL DEFAULT \'\'' },
   // The directory's six generated lookup columns (#349, schema version 13).
   // Adding a STORED generated column rewrites the table once and fills every
   // existing row, which is the whole of the migration.
@@ -1534,7 +1541,16 @@ function create(options) {
     { table: 'sts_used_assertions', keys: ['realm', 'key'],
       column: 'client_id', jsonb: false, change: null },
     { table: 'sts_used_assertions', keys: ['realm', 'key'], column: 'subject',
-      jsonb: false, change: null }
+      jsonb: false, change: null },
+    // A MINTED ROW'S NAME, sealed beside its digest key, and the change-log
+    // rows that carry it (#222). Only the restore and a change's reader open
+    // them, so a re-seal records nothing; the change log is trimmed long
+    // before a key is destroyed, and is re-sealed here anyway so that no
+    // row ever names a destroyed key.
+    { table: 'sts_minted', keys: ['handle', 'realm', 'key'],
+      column: 'key_sealed', jsonb: false, change: null },
+    { table: 'sts_changes', keys: ['seq'], column: 'key', jsonb: false,
+      change: null }
   ];
 
   // The column as text, for LIKE and for the regular expression.
@@ -3329,7 +3345,8 @@ function create(options) {
       log.debug("Leaving loadMinted().");
       return readPool.query(
         'SELECT handle, realm, key, body, (extract(epoch from written_at) ' +
-        '* 1000)::bigint AS written_ms, expires_at FROM sts_minted ' +
+        '* 1000)::bigint AS written_ms, expires_at, key_sealed ' +
+        'FROM sts_minted ' +
         'WHERE body <> $1 AND realm = ANY($2::text[]) AND ' +
         '(expires_at IS NULL OR expires_at > $3)' +
         (aged ? ' AND NOT (expires_at IS NULL AND handle = ANY($4::text[]) ' +
@@ -3344,6 +3361,8 @@ function create(options) {
             handle: row.handle,
             realm: row.realm,
             key: row.key,
+            // The name, sealed (#222); '' for a row whose key is its name.
+            keySealed: row.key_sealed || '',
             body: row.body,
             // A NUMBER of milliseconds rather than a Date, because the one
             // reader compares it against `Date.now()` and a driver that
@@ -3422,14 +3441,17 @@ function create(options) {
             ? Math.floor(Number(row.expiresAt)) : null;
           return client.query(
             'INSERT INTO sts_minted (handle, realm, key, body, ' +
-            'written_at, expires_at) VALUES ($1, $2, $3, $4, now(), $5) ' +
+            'written_at, expires_at, key_sealed) VALUES ($1, $2, $3, $4, ' +
+            'now(), $5, $6) ' +
             'ON CONFLICT (handle, realm, key) DO UPDATE SET ' +
             'body = EXCLUDED.body, written_at = now(), ' +
-            'expires_at = EXCLUDED.expires_at' +
-            (guarded ? ' WHERE sts_minted.body <> $6' : ''),
+            'expires_at = EXCLUDED.expires_at, ' +
+            'key_sealed = EXCLUDED.key_sealed' +
+            (guarded ? ' WHERE sts_minted.body <> $7' : ''),
             guarded ? [row.handle, row.realm, row.key, body, expires,
-                       TOMBSTONE]
-                    : [row.handle, row.realm, row.key, body, expires]
+                       String(row.keySealed || ''), TOMBSTONE]
+                    : [row.handle, row.realm, row.key, body, expires,
+                       String(row.keySealed || '')]
           ).then(function (r) {
             if (guarded && !(r && r.rowCount)) {
               refused.push(row);
@@ -3475,10 +3497,12 @@ function create(options) {
               // said, so the expiry purge never takes it early.
               return client.query(
                 'INSERT INTO sts_minted (handle, realm, key, body, ' +
-                'written_at, expires_at) VALUES ($1, $2, $3, $4, now(), ' +
-                'NULL) ON CONFLICT (handle, realm, key) DO UPDATE SET ' +
-                'body = EXCLUDED.body, written_at = now(), expires_at = NULL',
-                [row.handle, row.realm, row.key, TOMBSTONE]
+                'written_at, expires_at, key_sealed) VALUES ($1, $2, $3, ' +
+                '$4, now(), NULL, $5) ON CONFLICT (handle, realm, key) DO ' +
+                'UPDATE SET body = EXCLUDED.body, written_at = now(), ' +
+                'expires_at = NULL, key_sealed = EXCLUDED.key_sealed',
+                [row.handle, row.realm, row.key, TOMBSTONE,
+                 String(row.keySealed || '')]
               );
             }
             return client.query(
@@ -3521,12 +3545,18 @@ function create(options) {
             // target — see latestBlockingChangeSeq(). A column would have had
             // to be added to `sts_changes` and indexed; a kind is already
             // there and already selected on.
+            // THE NAME, SEALED, where the row carries one (#222): the key
+            // column is a digest, and a reader needs the NAME — to drop it
+            // from its own store on a delete, which no digest can tell it. A
+            // sealed value is not base64url (it holds '$'), so a reader tells
+            // the two forms apart.
             return { kind: row.own ? 'minted-own' : 'minted', realm: row.realm,
                      key: Buffer.from(String(row.handle), 'utf8')
                                 .toString('base64url') +
                           '.' +
-                          Buffer.from(String(row.key), 'utf8')
-                                .toString('base64url') };
+                          (row.keySealed ? String(row.keySealed)
+                            : Buffer.from(String(row.key), 'utf8')
+                                .toString('base64url')) };
           }));
         });
       }).then(function () {
