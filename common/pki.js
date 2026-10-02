@@ -7702,9 +7702,18 @@ function knownScopes() {
     return [];
   }
   log.debug("Leaving knownScopes().");
+  // **ONLY A REALM THAT STILL EXISTS (2026-10-02).** A node can still hold a
+  // removed realm's row for a moment after another node removed it, and the
+  // revocation index read this: in the cluster mode it listed a removed
+  // realm's nine authorities, whose certificates the CA endpoint answered 404
+  // (sts_pki_distribution_points, CI run 36967212793). The default realm ('')
+  // and the process branch are always kept.
   return (keystore.pkiAll() || []).map(function (one) {
     return String(one && one.realm !== undefined ? one.realm : '');
-  }).filter(function (id) { return id !== SERVICE_SCOPE; });
+  }).filter(function (id) {
+    return id !== SERVICE_SCOPE &&
+      (id === '' || id === PROCESS_SCOPE || !!realms.get(id));
+  });
 }
 
 // ---------------------------------------------------------------------------
