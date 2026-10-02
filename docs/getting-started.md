@@ -382,8 +382,8 @@ docker compose up -d --wait
   volumes, and the next `up` comes back with the same directory, signing keys
   and sessions. `docker compose down -v` deletes it all.
 * **Which build.** `IYA_STS_TAG` picks the image tag: `latest` is the newest
-  build of `main`, `develop` the newest of `develop`, and every build also has
-  its `M.N.O`. `STS_PORT` and `PKI_PORT` move the two published ports.
+  build of `main`, and every build also has its `M.N.O`. `STS_PORT` and
+  `PKI_PORT` move the two published ports.
 
 What the checkout's own `docker-compose.yml` has and this does not: the optional
 remote XACML PEP (the `xacml` profile), and the extra addresses a realm's own

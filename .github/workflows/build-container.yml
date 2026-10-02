@@ -8,16 +8,17 @@
 # images come from the private image mirror (.github/image-mirror.txt) since
 # 2026-09-27, so it logs in to ghcr.io before building.
 #
-# AND IT PUBLISHES THE IMAGE IT HAS JUST SMOKE-TESTED (2026-10-02), as a
-# PUBLIC image, to two registries with the same tags from the same build —
+# AND FROM main, AND ONLY FROM main, IT PUBLISHES THE IMAGES IT HAS JUST
+# SMOKE-TESTED (2026-10-02), as PUBLIC images, to two registries with the same tags from the same build —
 # the parent project's arrangement for its api and client (its
 # .github/workflows/dockerimage.yml, issue #154 there):
 #
 #   ghcr.io/rcbj/iya-sts              docker.io/iyasec/iya-sts
 #   ghcr.io/rcbj/iya-sts-xacml-pep    docker.io/iyasec/iya-sts-xacml-pep
 #
-# The second is the remote XACML PEP (xacml-pep/), built here with the same
-# build number and checked for liveness before anything is published.
+# The second is the remote XACML PEP (xacml-pep/), checked for liveness
+# before anything is published. A develop build is built and checked and
+# publishes nothing (rcbj, 2026-10-02): what goes out is what reached main.
 #
 # See *Publish the image* below.
 #
@@ -308,9 +309,10 @@ jobs:
       #
       # Tagged M.N.O, the version the image itself reports (read out of its
       # version.json, so the tag and the stamp cannot disagree), and a
-      # floating tag per branch: `latest` from main, which is what a release
-      # is, and `develop` from develop. A run started by hand from another
-      # branch publishes nothing. The image's
+      # floating `latest`. From main ONLY (rcbj, 2026-10-02): develop
+      # published a `develop` tag for a day, and too much went out that was
+      # not ready. A develop build, and a run started by hand from any branch
+      # but main, publishes nothing. The image's
       # org.opencontainers.image.revision label names the commit.
       #
       # NOT ghcr.io/rcbj/iya-sts/<name>. That namespace is the test stack's
@@ -338,9 +340,8 @@ jobs:
         run: |
           set -euo pipefail
           case "${{ github.ref_name }}" in
-            main)    FLOAT=latest ;;
-            develop) FLOAT=develop ;;
-            *)       FLOAT="" ;;
+            main) FLOAT=latest ;;
+            *)    FLOAT="" ;;
           esac
           VERSION="$(docker run --rm --entrypoint cat rcbj/sts:ci \
                      version.json | jq -r .version)"
@@ -353,7 +354,7 @@ jobs:
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
           echo "pep_version=${PEP_VERSION}" >> "$GITHUB_OUTPUT"
           if [ -z "${FLOAT}" ]; then
-            echo "Not main or develop: nothing is published."
+            echo "Not main: nothing is published."
           else
             echo "Publishing ${VERSION} (PEP ${PEP_VERSION}) and ${FLOAT}."
           fi

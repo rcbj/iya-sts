@@ -88,12 +88,12 @@ docker run --rm -p 8081:8081 iya-sts        # add -e VAR=value for any setting
 
 ### The published image
 
-Every build of `main` and `develop` that passes its smoke test is published,
-so the service can be run without building anything:
+Every build of `main` that passes its smoke test is published, so the
+service can be run without building anything:
 
 | Image | Tags |
 |---|---|
-| `ghcr.io/rcbj/iya-sts` | `latest` (newest `main` build), `develop`, and one `M.N.O` per build |
+| `ghcr.io/rcbj/iya-sts` | `latest` (the newest build) and one `M.N.O` per build |
 | `docker.io/iyasec/iya-sts` | the same |
 | `ghcr.io/rcbj/iya-sts-xacml-pep`, `docker.io/iyasec/iya-sts-xacml-pep` | the remote XACML PEP ([`xacml-pep/`](xacml-pep/)), the same tags |
 
