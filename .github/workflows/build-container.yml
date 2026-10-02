@@ -100,21 +100,24 @@ jobs:
       #
       # THE TWO BUILD ARGUMENTS STAMP THE IMAGE'S VERSION (M.N.O). The build
       # number is fixed here rather than at startup — see CLAUDE.md,
-      # *Versioning* — and it is the UTC build instant, YYYYMMDDHHMMSS, the
-      # form common/version.js uses everywhere else (it was the workflow's
-      # run number until 2026-10-02). It is fixed ONCE, in the step before
-      # this one, so the two images built here carry the same version.
+      # *Versioning* — and it is the build number common/version.js gives
+      # (the UTC build instant), as the parent project's Docker Image CI does
+      # with its client/version.js; it was the workflow's run number until
+      # 2026-10-02. It is computed ONCE, in the step before this one, so the
+      # two images built here carry the same version.
       # GIT_COMMIT has to be passed because `.dockerignore` excludes
       # `.git`, so the build context carries no history for `git rev-parse` to
       # read. Neither is required — omit them and the version is the build
       # instant with no commit — which is what keeps a plain `docker build`
       # working unchanged.
-      - name: Fix the build number
+      - name: Compute the version
         id: build-number
         run: |
-          build="$(date -u +%Y%m%d%H%M%S)"
+          set -euo pipefail
+          v="$(node common/version.js --json)"
+          build="$(jq -r .build <<<"${v}")"
           echo "build=${build}" >> "$GITHUB_OUTPUT"
-          echo "Build number ${build}."
+          echo "Version $(jq -r .version <<<"${v}"), build number ${build}."
 
       - name: Build image
         uses: docker/build-push-action@v6
