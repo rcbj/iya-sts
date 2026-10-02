@@ -153,6 +153,12 @@ into the LDAP directory, entry for entry, with **no store of its own**.
    is `POST /tls/trust`'s bootstrapping argument: the ServiceProviderConfig is
    where a client READS which schemes exist, so demanding a credential to fetch
    it means a client must already know the answer to the question it is asking.
+   **And it is what the specification asks**: RFC 7643 section 5 says a service
+   provider SHOULD make `authenticationSchemes` readable without prior
+   authentication, so off is the conforming default (rcbj, 2026-10-02) and
+   `tests/scim_auth_discovery.js` asserts the default itself — the row, the
+   value with no override, every shipped appconfig file. On departs from that
+   SHOULD, which the setting's description says.
 
    **A CREDENTIAL THAT WAS PRESENTED AND FAILED IS ALWAYS A REFUSAL**, and was
    one even while `scim.authRequired` could turn the requirement off. A client

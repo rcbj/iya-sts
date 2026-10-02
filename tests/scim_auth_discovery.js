@@ -10,8 +10,12 @@
 // /ResourceTypes and /Schemas — answer without a credential by default: the
 // ServiceProviderConfig is where a client READS which authentication schemes
 // exist (`authenticationSchemes`, RFC 7643 section 5), so requiring one to
-// fetch it asks a client for the answer to its own question. The setting
-// turns that round, and section 4 permits either. Turned on, a client learns
+// fetch it asks a client for the answer to its own question — and RFC 7643
+// section 5 says a service provider SHOULD make `authenticationSchemes`
+// readable without prior authentication. So OFF is the conforming answer and
+// the DEFAULT (rcbj, 2026-10-02: "the default should be compliant with spec,
+// so the setting should be off by default and the tests should confirm
+// this"); section 4 permits the other, which the setting turns on. Turned on, a client learns
 // the schemes from the refusal instead: the 401 carries a WWW-Authenticate
 // challenge per scheme offered (RFC 7644 section 2's SHALL). Nothing in
 // `tests/` mentioned the setting (#113 item 12).
@@ -19,7 +23,10 @@
 // In a CHILD PROCESS with the whole stack, the default realm, a directory
 // person to present over Basic:
 //
-//   A. OFF (the default), in development and in product: each discovery
+//   0. THE DEFAULT IS OFF: the row's default, the value read with no
+//      override anywhere, and every shipped appconfig file in env/;
+//   A. OFF, AS DEFAULTED (no override), in development and in product: each
+//      discovery
 //      endpoint answers a request with NO credential, the
 //      ServiceProviderConfig's `authenticationSchemes` names exactly the
 //      schemes the realm accepts, and no challenge is sent; while /Users, the
@@ -149,14 +156,34 @@ function childMain() {
       }).length;
     };
 
+    // --- 0. the default is off ------------------------------------------
+    const row = config.SETTINGS.filter(function (s) {
+      return s.key === 'scim.authDiscovery';
+    })[0];
+    note(row && row.dflt === false, '0a. the row\'s default is off ' +
+         '(RFC 7643 section 5\'s SHOULD)', JSON.stringify(row && row.dflt));
+    note(config.value('scim.authDiscovery') === false &&
+         config.sourceOf('scim.authDiscovery') !== 'override',
+         '0b. with no override, the value read is off',
+         config.value('scim.authDiscovery') + ' from ' +
+         config.sourceOf('scim.authDiscovery'));
+    const fsx = require('fs');
+    fsx.readdirSync(ROOT_DIR + '/env').filter(function (name) {
+      return /\.js$/.test(name) && name !== 'generate_defaults.js';
+    }).forEach(function (name) {
+      const file = require(ROOT_DIR + '/env/' + name);
+      const value = file && file.scim ? file.scim.authDiscovery : undefined;
+      note(value !== true, '0c. env/' + name + ' does not turn it on',
+           JSON.stringify(value));
+    });
+
     for (const mode of ['development', 'product']) {
       const label = mode.toUpperCase();
       if (mode === 'product') {
         config.setOverride('global.mode', 'product');
       }
       try {
-        // --- A. off --------------------------------------------------------
-        config.setOverride('scim.authDiscovery', false);
+        // --- A. off, as defaulted: NO override is set ----------------------
         const control = await get(port, '/scim/v2/Users');
         note(control.status === 401 && control.challenge.length > 0,
              'A0. ' + label + ', off: /Users still refuses a request with no ' +
