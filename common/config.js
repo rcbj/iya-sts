@@ -11042,13 +11042,14 @@ const SETTINGS = [
     env: 'SCIM_AUTH_DISCOVERY', type: 'bool', dflt: false, runtime: true,
     description: 'Whether /ServiceProviderConfig, /ResourceTypes and ' +
                  '/Schemas need a credential as well. OFF by default, which ' +
-                 'is the bootstrapping argument /tls/trust already makes: ' +
-                 'the ServiceProviderConfig is where a client READS which ' +
-                 'authentication schemes exist, so requiring a credential to ' +
-                 'fetch it means a client must already know the answer to ' +
-                 'the question it is asking. RFC 7644 section 4 says nothing ' +
-                 'either way, so both are conforming and both are worth ' +
-                 'being able to try.' },
+                 'is what the specification asks: RFC 7643 section 5 says a ' +
+                 'service provider SHOULD make authenticationSchemes ' +
+                 'readable without prior authentication, because the ' +
+                 'ServiceProviderConfig is where a client READS which ' +
+                 'schemes exist. WARNING: on departs from that SHOULD — a ' +
+                 'client must then already know the answer to the question ' +
+                 'it is asking, learning the schemes only from the 401\'s ' +
+                 'challenges. RFC 7644 section 4 permits either.' },
 
   { key: 'scim.inventOnCreate', group: 'SCIM',
     label: 'Fill a provisioned person in (development mode)',
