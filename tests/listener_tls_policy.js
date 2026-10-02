@@ -38,7 +38,13 @@
 //      ldap.ldapsDisableOptionalClientCertificate is off — re-applied to the
 //      socket ldap.listen() bound;
 //   H. an applier (SPIFFE's and the cells' kind) is handed each new policy;
-//   I. a TLS 1.3 name in tls.ciphers stops the service (STS-TLS-0042).
+//   I. a TLS 1.3 name in tls.ciphers stops the service (STS-TLS-0042), and a
+//      listener's own unreadable anchors file (STS-TLS-0045);
+//   J. EVERY SETTING PER LISTENER (#429): one listener's own TLS 1.2 switch,
+//      TLS 1.3 suites and post-quantum toggle decide for it alone, inherit
+//      returns it to the service's, its write rule, its restart-only rows;
+//   K. a listener's own client truststore (its anchors file).
+// And TLS 1.3 by default (#429): A1 asserts TLS 1.2 refused untouched.
 // ===========================================================================
 
 const fs = require('fs');
@@ -118,14 +124,6 @@ function childMain() {
   };
 
   (async function () {
-    // The whole stack first: the composition root installs each module's
-    // instance, and a module required before it would have built its own.
-    require(ROOT_DIR + '/common/protocol_stack');
-    const config = require(ROOT_DIR + '/common/config');
-    const realms = require(ROOT_DIR + '/common/realms');
-    const stsCrypto = require(ROOT_DIR + '/common/crypto');
-    const tlsServer = require(ROOT_DIR + '/tls/tls_server');
-
     // A certificate authority and two client certificates, made here by
     // OpenSSL: one the truststore will hold the CA of, one self-signed.
     const dir = fsx.mkdtempSync(pathx.join(osx.tmpdir(), 'lt-'));
@@ -149,11 +147,48 @@ function childMain() {
     ossl(['req', '-x509', '-newkey', 'ec', '-pkeyopt',
           'ec_paramgen_curve:P-256', '-nodes', '-keyout', 'stranger.key',
           '-out', 'stranger.crt', '-days', '2', '-subj', '/CN=lt stranger']);
+    // A SECOND authority, held only in the debugger listener's OWN anchors
+    // file (#429, listenerDebugger.trustAnchorsFile — restart-only, so it is
+    // in the environment before the stack loads).
+    ossl(['req', '-x509', '-newkey', 'ec', '-pkeyopt',
+          'ec_paramgen_curve:P-256', '-nodes', '-keyout', 'ca2.key', '-out',
+          'ca2.crt', '-days', '2', '-subj', '/CN=lt debugger-only ca',
+          '-addext', 'basicConstraints=critical,CA:TRUE',
+          '-addext', 'keyUsage=critical,keyCertSign,cRLSign']);
+    ossl(['req', '-newkey', 'ec', '-pkeyopt', 'ec_paramgen_curve:P-256',
+          '-nodes', '-keyout', 'client2.key', '-out', 'client2.csr', '-subj',
+          '/CN=lt client2']);
+    ossl(['x509', '-req', '-in', 'client2.csr', '-CA', 'ca2.crt', '-CAkey',
+          'ca2.key', '-CAcreateserial', '-out', 'client2.crt', '-days', '2',
+          '-extfile', 'ext.cnf']);
+    // AND A THIRD, in the SERVICE-WIDE anchors file (tls.trustAnchorsFile):
+    // a listener's own file REPLACES the service's file anchors for it.
+    ossl(['req', '-x509', '-newkey', 'ec', '-pkeyopt',
+          'ec_paramgen_curve:P-256', '-nodes', '-keyout', 'ca3.key', '-out',
+          'ca3.crt', '-days', '2', '-subj', '/CN=lt service-file ca',
+          '-addext', 'basicConstraints=critical,CA:TRUE',
+          '-addext', 'keyUsage=critical,keyCertSign,cRLSign']);
+    ossl(['req', '-newkey', 'ec', '-pkeyopt', 'ec_paramgen_curve:P-256',
+          '-nodes', '-keyout', 'client3.key', '-out', 'client3.csr', '-subj',
+          '/CN=lt client3']);
+    ossl(['x509', '-req', '-in', 'client3.csr', '-CA', 'ca3.crt', '-CAkey',
+          'ca3.key', '-CAcreateserial', '-out', 'client3.crt', '-days', '2',
+          '-extfile', 'ext.cnf']);
     const file = function (name) { return pathx.join(dir, name); };
+    process.env.STS_LISTENER_DEBUGGER_TRUST_ANCHORS_FILE = file('ca2.crt');
+    process.env.STS_TLS_TRUST_ANCHORS_FILE = file('ca3.crt');
     note(fsx.existsSync(file('client.crt')) &&
          fsx.existsSync(file('stranger.crt')),
          'precondition: OpenSSL made the test CA and client certificates',
          fsx.readdirSync(dir).join(','));
+    // The whole stack next: the composition root installs each module's
+    // instance, and a module required before it would have built its own.
+    require(ROOT_DIR + '/common/protocol_stack');
+    const config = require(ROOT_DIR + '/common/config');
+    const realms = require(ROOT_DIR + '/common/realms');
+    const stsCrypto = require(ROOT_DIR + '/common/crypto');
+    const tlsServer = require(ROOT_DIR + '/tls/tls_server');
+
     const added = tlsServer.addAnchors(fsx.readFileSync(file('ca.crt'),
                                                         'utf8'),
                                        { source: 'runtime' });
@@ -167,7 +202,7 @@ function childMain() {
       const policy = tlsServer.policyFor(kind, realmId);
       const server = https.createServer(Object.assign({
         key: own.key, cert: own.cert,
-        ca: tlsServer.clientTruststoreOptions().ca
+        ca: tlsServer.clientTruststoreOptions(policy).ca
       }, tlsServer.clientAuthOptions(policy.clientAuth),
       tlsServer.protocolOptions(policy)), function (req, res) {
         res.end('ok');
@@ -182,7 +217,19 @@ function childMain() {
     const main = await listen('main');
     const mainPort = main.address().port;
     let r = await probe(mainPort, { version: '1.2' });
-    note(r.accepted, 'A1. default: TLS 1.2 is accepted', tail(r));
+    const row12 = config.SETTINGS.filter(function (one) {
+      return one.key === 'tls.disableTls12';
+    })[0];
+    note(!r.accepted && config.value('tls.disableTls12') === true &&
+         row12 && row12.dflt === true,
+         'A1. default: TLS 1.2 is REFUSED — every listener is TLS 1.3 by ' +
+         'default (#429)', tail(r));
+    // TLS 1.2 on, service-wide, for the sections that need it.
+    config.setOverride('tls.disableTls12', false);
+    await settle();
+    r = await probe(mainPort, { version: '1.2' });
+    note(r.accepted, 'A1b. tls.disableTls12 off: TLS 1.2 is accepted',
+         tail(r));
     r = await probe(mainPort, { version: '1.3' });
     note(r.accepted && r.certificateRequest, 'A2. default: TLS 1.3 is ' +
          'accepted, a CertificateRequest is sent and a client with no ' +
@@ -214,10 +261,10 @@ function childMain() {
     note(floor.minVersion === 'TLSv1.3', 'B2b. tls.disableTls12 on: the ' +
          'listener\'s floor is TLSv1.3, not only its cipher list',
          floor.minVersion);
-    config.clearOverride('tls.disableTls12');
+    config.setOverride('tls.disableTls12', false);
     await settle();
     r = await probe(mainPort, { version: '1.2' });
-    note(r.accepted, 'B3. tls.disableTls12 reset: TLS 1.2 is accepted ' +
+    note(r.accepted, 'B3. tls.disableTls12 off again: TLS 1.2 is accepted ' +
          'again', tail(r));
 
     // --- C. tls.tls13CipherSuites -----------------------------------------
@@ -388,11 +435,11 @@ function childMain() {
     // --- H. an applier is handed each new policy --------------------------
     const handed = [];
     const unregister = tlsServer.registerPolicyApplier('test applier',
-      'spiffe', function (policy) { handed.push(policy); });
+      'spiffeServer', function (policy) { handed.push(policy); });
     tlsServer.reapplyPolicy();
     config.setOverride('tls.tls13CipherSuites', 'TLS_AES_256_GCM_SHA384');
     const after = handed[handed.length - 1] || {};
-    note(handed.length >= 1 && after.kind === 'spiffe' &&
+    note(handed.length >= 1 && after.kind === 'spiffeServer' &&
          JSON.stringify(after.tls13Suites) === '["TLS_AES_256_GCM_SHA384"]' &&
          after.clientAuth === null,
          'H1. a registered applier (the SPIFFE and cell kind) is handed the ' +
@@ -407,6 +454,85 @@ function childMain() {
     config.clearOverride('tls.tls13CipherSuites');
     note(handed.length === count, 'H3. an unregistered applier is handed ' +
          'nothing', String(handed.length - count));
+
+    // --- J. every setting per listener (#429) ------------------------------
+    // The service-wide default is back (TLS 1.3 only). A second listener of
+    // another kind beside the main port shows a value deciding for ONE.
+    const dbg = await listen('debugger');
+    const dbgPort = dbg.address().port;
+    w = config.setOverride('listenerMain.disableTls12', 'off');
+    await settle();
+    r = await probe(mainPort, { version: '1.2' });
+    let r4 = await probe(dbgPort, { version: '1.2' });
+    note(w.ok && r.accepted && !r4.accepted, 'J1. listenerMain.disableTls12 ' +
+         'off: the main port accepts TLS 1.2 while the debugger listener, ' +
+         'inheriting TLS 1.3 only, refuses it', tail(r) + ' | ' + tail(r4));
+    config.setOverride('listenerMain.disableTls12', 'inherit');
+    await settle();
+    r = await probe(mainPort, { version: '1.2' });
+    note(!r.accepted, 'J2. inherit: the main port follows the service ' +
+         'again and refuses TLS 1.2', tail(r));
+    w = config.setOverride('listenerDebugger.tls13CipherSuites',
+                           'TLS_CHACHA20_POLY1305_SHA256');
+    await settle();
+    r = await probe(dbgPort, { version: '1.3',
+                               suites: 'TLS_AES_256_GCM_SHA384' });
+    r4 = await probe(mainPort, { version: '1.3',
+                                 suites: 'TLS_AES_256_GCM_SHA384' });
+    note(w.ok && !r.accepted && r4.accepted, 'J3. the debugger\'s own TLS ' +
+         '1.3 suites: AES-256-GCM refused there and accepted on the main ' +
+         'port', tail(r) + ' | ' + tail(r4));
+    config.setOverride('listenerDebugger.tls13CipherSuites', '');
+    w = config.setOverride('listenerMain.pqcOnly', 'on');
+    await settle();
+    r = await probe(mainPort, { version: '1.3', groups: 'X25519:P-256' });
+    r4 = await probe(dbgPort, { version: '1.3', groups: 'X25519:P-256' });
+    note(w.ok && !r.accepted && r4.accepted, 'J4. listenerMain.pqcOnly on: ' +
+         'a classical group refused on the main port alone', tail(r) +
+         ' | ' + tail(r4));
+    note(config.checkOverrideCode('listenerMain.tls13CipherSuites',
+                                  'TLS_AES_128_GCM_SHA256') === 'STS-TLS-0043',
+         'J5. while the main port is post-quantum only, its own suite list ' +
+         'with no 256-bit suite is refused (STS-TLS-0043)',
+         config.checkOverrideCode('listenerMain.tls13CipherSuites',
+                                  'TLS_AES_128_GCM_SHA256'));
+    config.setOverride('listenerMain.pqcOnly', 'inherit');
+    w = config.setOverride('listenerMain.minVersion', 'TLSv1.3');
+    note(!w.ok, 'J6. a listener\'s minVersion is restart-only, as the ' +
+         'service\'s tls.minVersion is', JSON.stringify(w));
+    w = config.setOverride('listenerMain.trustAnchorsFile', '/x');
+    note(!w.ok, 'J7. a listener\'s own anchors file is restart-only, as the ' +
+         'service\'s is', JSON.stringify(w));
+
+    // --- K. a listener's own client truststore ------------------------------
+    // listenerDebugger.trustAnchorsFile holds an authority the service does
+    // not trust; both listeners require a client certificate.
+    config.setOverride('tls.mainPortRequireClientCertificate', true);
+    config.setOverride('debugger.requireClientCertificate', true);
+    await settle();
+    r = await probe(dbgPort, { version: '1.3', cert: file('client2.crt'),
+                               key: file('client2.key') });
+    r4 = await probe(mainPort, { version: '1.3', cert: file('client2.crt'),
+                                 key: file('client2.key') });
+    note(r.accepted && !r4.accepted, 'K1. a certificate from the debugger\'s ' +
+         'own anchors file is admitted there and refused on the main port',
+         tail(r) + ' | ' + tail(r4));
+    r = await probe(dbgPort, { version: '1.3', cert: file('client.crt'),
+                               key: file('client.key') });
+    note(r.accepted, 'K2. and a runtime anchor (/tls/trust) still reaches ' +
+         'the debugger: its own file replaces the service\'s FILE anchors, ' +
+         'not the runtime ones', tail(r));
+    r = await probe(mainPort, { version: '1.3', cert: file('client3.crt'),
+                                key: file('client3.key') });
+    r4 = await probe(dbgPort, { version: '1.3', cert: file('client3.crt'),
+                                key: file('client3.key') });
+    note(r.accepted && !r4.accepted, 'K3. a certificate from the SERVICE\'s ' +
+         'anchors file is admitted on the main port and refused on the ' +
+         'debugger, whose own file replaces the service\'s for it',
+         tail(r) + ' | ' + tail(r4));
+    config.clearOverride('tls.mainPortRequireClientCertificate');
+    config.clearOverride('debugger.requireClientCertificate');
+    dbg.close();
 
     main.close();
     realmServer.close();
@@ -476,6 +602,20 @@ async function run(t) {
           'STS-TLS-0042',
           'exit ' + refused.status + ' ' +
           String(refused.stdout + refused.stderr).slice(-400));
+  // --- I2. a listener's own anchors file that cannot be read --------------
+  const unreadable = childProcess.spawnSync(process.execPath, ['-e',
+    'require(' + JSON.stringify(path.join(ROOT, 'tls/tls_server')) + ')'], {
+    env: Object.assign(cleanEnv(), {
+      STS_LISTENER_LDAPS_TRUST_ANCHORS_FILE: '/nonexistent/anchors.pem',
+      LOG_LEVEL: 'fatal', STS_LOG_LEVEL: 'fatal' }),
+    encoding: 'utf8', timeout: 120000, cwd: ROOT
+  });
+  t.check(unreadable.status === 1 &&
+          /STS-TLS-0045/.test(String(unreadable.stdout) + unreadable.stderr),
+          'I2. a listener\'s own anchors file that cannot be read stops the ' +
+          'service, naming STS-TLS-0045',
+          'exit ' + unreadable.status + ' ' +
+          String(unreadable.stdout + unreadable.stderr).slice(-400));
   log.debug("Leaving run().");
 }
 

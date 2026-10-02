@@ -9102,14 +9102,20 @@ const SETTINGS = [
   // ---------------------------------------------------------------------
   { key: 'tls.disableTls12', group: 'Listeners',
     label: 'Disable TLS 1.2',
-    env: 'STS_TLS_DISABLE_TLS12', type: 'bool', dflt: false,
+    // ON BY DEFAULT SINCE #429 (rcbj, 2026-10-02: "I want TLS v1.3 to be the
+    // default for all TLS listeners"). A listener turns TLS 1.2 back on with
+    // its own listener<Id>.disableTls12, or the service with this row.
+    env: 'STS_TLS_DISABLE_TLS12', type: 'bool', dflt: true,
     runtime: true, perProcess: true,
     description: 'Every TLS listener — the main port, LDAPS, the protocol ' +
                  'debugger\'s, the SPIFFE gRPC listeners and the channel ' +
                  'between cells — negotiates TLS 1.3 only, whatever ' +
-                 'tls.minVersion says. Off by default, because a client ' +
-                 'that cannot speak TLS 1.3 is still common; on is what a ' +
-                 'deployment whose clients are all current usually wants. ' +
+                 'tls.minVersion says. ON by default (#429): every listener ' +
+                 'is TLS 1.3 unless TLS 1.2 is turned back on, here for ' +
+                 'every listener or on one listener\'s own row. WARNING: ' +
+                 'off lets a client negotiate TLS 1.2, which FAPI 2.0 and ' +
+                 'BCP 195 still allow but which has no post-quantum key ' +
+                 'exchange. ' +
                  'A realm\'s own listener follows this unless its ' +
                  'listener.disableTls12 says otherwise. Applied at the next ' +
                  'handshake.' },
@@ -9176,7 +9182,7 @@ const SETTINGS = [
   // "disable optional": a listener that requires a certificate asks for one
   // by definition. Read by `tls_server.js`'s `clientAuthOf()`.
   { key: 'tls.mainPortDisableOptionalClientCertificate',
-    group: 'Listener client certificates',
+    group: 'Listener: Main port',
     label: 'Main port: do not ask for a client certificate',
     env: 'STS_TLS_MAIN_DISABLE_OPTIONAL_CLIENT_CERT', type: 'bool',
     dflt: false, runtime: true, perProcess: true,
@@ -9189,7 +9195,7 @@ const SETTINGS = [
                  'all of those stop working here, and a browser holding a ' +
                  'client certificate is no longer offered a choice of one.' },
   { key: 'tls.mainPortRequireClientCertificate',
-    group: 'Listener client certificates',
+    group: 'Listener: Main port',
     label: 'Main port: require a client certificate',
     env: 'STS_TLS_MAIN_REQUIRE_CLIENT_CERT', type: 'bool',
     dflt: false, runtime: true, perProcess: true,
@@ -9202,7 +9208,7 @@ const SETTINGS = [
                  'every public document on this port are refused, and so is ' +
                  'a load balancer\'s or container\'s HTTPS health check.' },
   { key: 'ldap.ldapsDisableOptionalClientCertificate',
-    group: 'Listener client certificates',
+    group: 'Listener: LDAPS',
     label: 'LDAPS: do not ask for a client certificate',
     env: 'STS_LDAPS_DISABLE_OPTIONAL_CLIENT_CERT', type: 'bool',
     dflt: true, runtime: true, perProcess: true,
@@ -9215,7 +9221,7 @@ const SETTINGS = [
                  'truststore but does not bind anybody (there is no SASL ' +
                  'EXTERNAL here).' },
   { key: 'ldap.ldapsRequireClientCertificate',
-    group: 'Listener client certificates',
+    group: 'Listener: LDAPS',
     label: 'LDAPS: require a client certificate',
     env: 'STS_LDAPS_REQUIRE_CLIENT_CERT', type: 'bool',
     dflt: false, runtime: true, perProcess: true,
@@ -9225,7 +9231,7 @@ const SETTINGS = [
                  'which still decides who the connection is. Wins over the ' +
                  'toggle above. Off by default.' },
   { key: 'debugger.disableOptionalClientCertificate',
-    group: 'Listener client certificates',
+    group: 'Listener: Protocol debugger',
     label: 'Debugger: do not ask for a client certificate',
     env: 'STS_DEBUGGER_DISABLE_OPTIONAL_CLIENT_CERT', type: 'bool',
     dflt: false, runtime: true, perProcess: true,
@@ -9234,7 +9240,7 @@ const SETTINGS = [
                  'none, as the main port does, so a certificate-bound ' +
                  'access token can be presented there.' },
   { key: 'debugger.requireClientCertificate',
-    group: 'Listener client certificates',
+    group: 'Listener: Protocol debugger',
     label: 'Debugger: require a client certificate',
     env: 'STS_DEBUGGER_REQUIRE_CLIENT_CERT', type: 'bool',
     dflt: false, runtime: true, perProcess: true,
@@ -16330,6 +16336,144 @@ const SETTINGS = [
                  'has an address.' }
 ];
 
+// ---------------------------------------------------------------------------
+// EVERY TLS SETTING PER LISTENER (#429, 2026-10-02, rcbj: "I want all of the
+// settings available on each tab ... on the Server Configuration->Listeners
+// page to be per listener").
+//
+// A row per (listener, setting), `listener<Id>.<name>`, GENERATED from the
+// two tables below rather than written out a hundred times: the same type and
+// bounds as the service-wide row it overrides, plus a way to say INHERIT —
+// `inherit` in an enum (a bool row becomes inherit/on/off), and the empty
+// string in a string or list row. An inherited value is the service-wide
+// row's, read at the moment it is asked (`tls_server.js`'s `policyFor()`), so
+// changing that row moves every listener that has not been told otherwise.
+// Per process, and restart-only exactly where the service-wide row is.
+//
+// What a listener does NOT get, and why: the cell channel is TLS 1.3 always,
+// so no floor, TLS 1.2 switch or TLS 1.2 cipher list; the SPIFFE listeners and
+// the cell channel verify clients against their own trust bundles (SPIFFE's,
+// the cells' Root), so no client truststore. A realm's own listener has its
+// rows as `listener.*` (realmOnly), above and below. The one TLS setting no
+// listener has is `tls.sessionTicketRotationS`: the rotation of the cluster's
+// shared ticket key is a scheduled job, not a property of a listener.
+// ---------------------------------------------------------------------------
+const TLS_LISTENERS = [
+  { id: 'main', label: 'Main port' },
+  { id: 'ldaps', label: 'LDAPS' },
+  { id: 'debugger', label: 'Protocol debugger' },
+  { id: 'spiffeServer', label: 'SPIRE Server API' },
+  { id: 'spiffeBroker', label: 'SPIFFE Broker API' },
+  { id: 'cell', label: 'Channel between cells' }
+];
+
+// name → the service-wide row, and the listeners (and the realm's own) that
+// carry it.
+const PER_LISTENER_SETTINGS = [
+  { name: 'minVersion', base: 'tls.minVersion', realm: true,
+    listeners: ['main', 'ldaps', 'debugger', 'spiffeServer', 'spiffeBroker'] },
+  { name: 'disableTls12', base: 'tls.disableTls12', realm: false,
+    listeners: ['main', 'ldaps', 'debugger', 'spiffeServer', 'spiffeBroker'] },
+  { name: 'ciphers', base: 'tls.ciphers', realm: true,
+    listeners: ['main', 'ldaps', 'debugger', 'spiffeServer', 'spiffeBroker'] },
+  { name: 'tls13CipherSuites', base: 'tls.tls13CipherSuites', realm: false,
+    listeners: ['main', 'ldaps', 'debugger', 'spiffeServer', 'spiffeBroker',
+                'cell'] },
+  { name: 'pqcOnly', base: 'tls.pqcOnly', realm: false,
+    listeners: ['main', 'ldaps', 'debugger', 'spiffeServer', 'spiffeBroker',
+                'cell'] },
+  { name: 'groups', base: 'tls.groups', realm: true,
+    listeners: ['main', 'ldaps', 'debugger', 'spiffeServer', 'spiffeBroker',
+                'cell'] },
+  { name: 'signatureAlgorithms', base: 'tls.signatureAlgorithms', realm: true,
+    listeners: ['main', 'ldaps', 'debugger', 'spiffeServer', 'spiffeBroker',
+                'cell'] },
+  { name: 'trustAnchorsFile', base: 'tls.trustAnchorsFile', realm: true,
+    listeners: ['main', 'ldaps', 'debugger'] },
+  { name: 'trustIssuedClientCertificates',
+    base: 'tls.trustIssuedClientCertificates', realm: true,
+    listeners: ['main', 'ldaps', 'debugger'] }
+];
+
+// One generated row. `owner` is a TLS_LISTENERS entry, or null for a realm's
+// own listener.
+function perListenerRow(spec, owner) {
+  const base = SETTINGS.filter(function (row) {
+    return row.key === spec.base;
+  })[0];
+  if (!base) {
+    throw new Error('config.js: per-listener row names no setting ' +
+                    spec.base);
+  }
+  // `listener<Id>.<name>`: two segments, as every key here has (the
+  // appconfig files nest one level), so `listenerMain.minVersion`.
+  const key = owner ? 'listener' + owner.id.charAt(0).toUpperCase() +
+                        owner.id.slice(1) + '.' + spec.name
+                    : 'listener.' + spec.name;
+  const label = (owner ? owner.label : 'The realm listener') + ': ' +
+    String(base.label || spec.name).replace(/^./, function (c) {
+      return c.toLowerCase();
+    });
+  /** @type {any} */
+  const row = { key: key, group: owner ? 'Listener: ' + owner.label
+                                       : 'Realm listener',
+                label: label, runtime: base.runtime };
+  if (base.type === 'bool') {
+    row.type = 'enum';
+    row.enumValues = ['inherit', 'on', 'off'];
+    row.dflt = 'inherit';
+  } else if (base.type === 'enum') {
+    row.type = 'enum';
+    row.enumValues = ['inherit'].concat(base.enumValues);
+    row.dflt = 'inherit';
+  } else {
+    row.type = base.type;
+    row.dflt = '';
+    ['csvValues', 'ordered', 'csvValueNotes'].forEach(function (name) {
+      if (base[name] !== undefined) {
+        row[name] = base[name];
+      }
+    });
+  }
+  if (owner) {
+    row.perProcess = true;
+    row.env = 'STS_LISTENER_' +
+      owner.id.replace(/[A-Z]/g, function (c) { return '_' + c; })
+        .toUpperCase() + '_' +
+      spec.name.replace(/[A-Z]/g, function (c) { return '_' + c; })
+        .toUpperCase();
+    if (!base.runtime) {
+      row.restartReason = base.restartReason ||
+        'the TLS contexts are built when the listeners are created';
+    }
+  } else {
+    row.runtime = false;
+    row.realmRuntime = true;
+    row.realmOnly = true;
+    row.restartReason = 'it is a property of one trust realm and is set on ' +
+                        'that realm';
+  }
+  row.description = 'For ' + (owner ? 'the ' + owner.label + ' listener'
+                                    : 'the realm\'s own listener') +
+    ' alone: ' + base.key + '. ' +
+    (row.type === 'enum' ? 'inherit, the default, follows ' + base.key
+                         : 'Empty, the default, follows ' + base.key) +
+    '; anything else decides for this listener only. ' +
+    String(base.description || '');
+  return row;
+}
+
+PER_LISTENER_SETTINGS.forEach(function (spec) {
+  TLS_LISTENERS.forEach(function (owner) {
+    if (spec.listeners.indexOf(owner.id) >= 0) {
+      SETTINGS.push(perListenerRow(spec, owner));
+    }
+  });
+  if (spec.realm) {
+    SETTINGS.push(perListenerRow(spec, null));
+  }
+});
+
 // Indexed once. A linear scan per read would be invisible on a mock and the
 // index is one line, but `byKey` is also what makes an unknown key an error at
 // the point it is asked for rather than an undefined that travels.
@@ -18265,5 +18409,7 @@ module.exports = {
   auditAppconfig: auditAppconfig,
   isPerProcess: isPerProcess,
   onOverridesChanged: onOverridesChanged,
+  TLS_LISTENERS: TLS_LISTENERS,
+  PER_LISTENER_SETTINGS: PER_LISTENER_SETTINGS,
   addWriteRule: addWriteRule
 };

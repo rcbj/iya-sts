@@ -599,11 +599,25 @@ async function test() {
       assert.strictEqual(preferred.protocol, "TLSv1.3",
                          JSON.stringify(preferred));
     });
+    // TLS 1.3 ONLY BY DEFAULT SINCE #429. FAPI 2.0 section 5.2.2 allows
+    // TLS 1.2 with BCP 195's suites and requires no more than TLS 1.2, so
+    // either answer conforms; what is asserted is that the main port does
+    // what this service says it does — read from /admin-api/listeners.
+    const listeners = await send(base + "/admin-api/listeners", {});
+    const twelveOn = !!(listeners.body && listeners.body.process &&
+                        listeners.body.process.tls12);
     const gcm = await handshake({ maxVersion: "TLSv1.2",
       ciphers: "ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES128-GCM-SHA256" });
-    check("TLS 1.2 is accepted with an ECDHE AES-GCM suite (BCP 195)",
-          function () {
-      assert.ok(gcm.ok && gcm.protocol === "TLSv1.2", JSON.stringify(gcm));
+    check(twelveOn
+      ? "TLS 1.2 is on here, and accepted with an ECDHE AES-GCM suite " +
+        "(BCP 195)"
+      : "TLS 1.2 is refused: the main port is TLS 1.3 only, the default " +
+        "(#429)", function () {
+      if (twelveOn) {
+        assert.ok(gcm.ok && gcm.protocol === "TLSv1.2", JSON.stringify(gcm));
+      } else {
+        assert.strictEqual(gcm.ok, false, JSON.stringify(gcm));
+      }
     });
     const cbc = await handshake({ maxVersion: "TLSv1.2",
       ciphers: "ECDHE-RSA-AES128-SHA:ECDHE-ECDSA-AES128-SHA:AES128-SHA" });

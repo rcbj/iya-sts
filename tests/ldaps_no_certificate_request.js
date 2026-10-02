@@ -110,6 +110,10 @@ function child(mode) {
     'require(' + JSON.stringify(__filename) + ').inChild()'], {
     env: Object.assign(clean, { LOG_LEVEL: 'fatal', STS_LOG_LEVEL: 'fatal',
                                 STS_MODE: mode, STS_HOST: '127.0.0.1',
+                                // TLS 1.2 on, so both versions are asked:
+                                // every listener is TLS 1.3 only by default
+                                // since #429.
+                                STS_TLS_DISABLE_TLS12: 'false',
                                 LDAP_PORT: '0', LDAPS_PORT: '0',
                                 LNCR_OUT: out }),
     encoding: 'utf8', timeout: 120000, cwd: ROOT

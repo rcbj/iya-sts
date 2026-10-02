@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3956** of them, in **41** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3957** of them, in **41** subsystems.
 
 ## Where a code appears
 
@@ -75,7 +75,7 @@ is an ordinary outcome.
 * [Attribute sources (`STS-ATTR`)](#sts-attr) — 15
 * [SCIM 2.0 (`STS-SCIM`)](#sts-scim) — 77
 * [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 144
-* [TLS and client certificates (`STS-TLS`)](#sts-tls) — 44
+* [TLS and client certificates (`STS-TLS`)](#sts-tls) — 45
 * [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 112
 * [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 118
 * [Risk scoring (`STS-RISK`)](#sts-risk) — 44
@@ -3002,6 +3002,7 @@ Raised from: tls/.
 | `STS-TLS-0042` | The listeners' TLS settings this process started with leave a listener refusing every client, or are in the old shape: an empty tls.tls13CipherSuites, a TLS 1.3 suite in tls.ciphers (which is the TLS 1.2 list since #423), or tls.pqcOnly with no post-quantum suite or group to use. Set in the environment or an appconfig file, where no write could refuse it. | the service does not start |
 | `STS-TLS-0043` | A write to the listeners' TLS settings was refused because it would leave a listener refusing every client: no TLS 1.3 suite, a TLS 1.3 suite in tls.ciphers, or post-quantum only (tls.pqcOnly, or a realm listener's listener.pqcOnly) with no 256-bit suite or ML-KEM group to use. | 400; nothing is written |
 | `STS-TLS-0044` | The listeners' TLS policy changed and could not be applied to one listener registered as re-keyed by its own module (a SPIFFE gRPC listener, the channel between cells); it keeps the policy it had. | logged; Server configuration -> Listeners shows the policy in force |
+| `STS-TLS-0045` | A TLS listener's own trustAnchorsFile (listener<Id>.trustAnchorsFile, #429) could not be read or holds no certificate, so that listener's client truststore would be empty while configured to be filled. | the service does not start |
 
 ## STS-VC
 

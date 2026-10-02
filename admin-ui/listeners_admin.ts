@@ -61,14 +61,17 @@ const PAGE = '/admin/listeners';
 // not TLS; `clientAuth`, where the protocol fixes it, says how.
 const LISTENERS = [
   { id: 'main', name: 'Main port', setting: 'global.port', kind: 'main',
+    group: 'Listener: Main port',
     tlsWhen: 'global.https',
     what: 'Every HTTP protocol, the console and the portal.' },
   { id: 'ldap', name: 'LDAP', setting: 'ldap.port', kind: null,
     what: 'The embedded directory, in the clear.' },
   { id: 'ldaps', name: 'LDAPS', setting: 'ldap.tlsPort', kind: 'ldaps',
+    group: 'Listener: LDAPS',
     what: 'The embedded directory over TLS.' },
   { id: 'debugger', name: 'Protocol debugger', setting: 'debugger.port',
     kind: 'debugger', tlsWhen: 'global.https',
+    group: 'Listener: Protocol debugger',
     what: 'The embedded protocol debugger, where one is embedded.' },
   { id: 'kdc', name: 'Kerberos KDC', setting: 'krb5.kdcPort', kind: null,
     what: 'TCP and UDP 88; Kerberos messages, not TLS.' },
@@ -84,16 +87,16 @@ const LISTENERS = [
           'network, which product serves only where it is declared ' +
           'authenticated.' },
   { id: 'spiffe-server', name: 'SPIRE Server API', setting: 'spiffe.serverPort',
-    kind: 'spiffe',
+    kind: 'spiffeServer', group: 'Listener: SPIRE Server API',
     clientAuth: 'asked for, not required: an agent with no SVID yet must ' +
                 'reach AttestAgent (the protocol\'s)',
     what: 'Mutual TLS under each realm\'s trust domain.' },
   { id: 'spiffe-broker', name: 'SPIFFE Broker API', setting: 'spiffe.brokerPort',
-    kind: 'spiffe',
+    kind: 'spiffeBroker', group: 'Listener: SPIFFE Broker API',
     clientAuth: 'required: a broker\'s X509-SVID (the protocol\'s)',
     what: 'Mutual TLS for the brokers in spiffe.brokers.' },
   { id: 'cell', name: 'Channel between cells', setting: 'cells.port',
-    kind: 'cell',
+    kind: 'cell', group: 'Listener: Channel between cells',
     clientAuth: 'required: another cell\'s certificate (the protocol\'s)',
     what: 'Mutual TLS between the cells of one service; TLS 1.3 always.' }
 ];
@@ -172,6 +175,13 @@ class ListenersAdmin {
       tls12Ciphers: tls12,
       pqcOnly: !!policy.pqcOnly,
       groups: options.ecdhCurve || '(node default)',
+      signatureAlgorithms: options.sigalgs || '(OpenSSL default)',
+      truststore: policy.kind === 'spiffeServer' ||
+                  policy.kind === 'spiffeBroker' || policy.kind === 'cell'
+        ? '(the protocol\'s own trust bundle)'
+        : (policy.trustAnchorsFile ? 'its own file ' + policy.trustAnchorsFile
+                                   : 'the service\'s anchors') +
+          (policy.trustIssued ? ' and the service Root' : ''),
       clientAuth: policy.clientAuth
     };
   }
@@ -229,7 +239,7 @@ class ListenersAdmin {
         described.tls12Ciphers = [];
       }
       return { id: row.id, name: row.name, setting: row.setting,
-               port: port, tls: isTls, what: row.what,
+               port: port, tls: isTls, what: row.what, group: row.group || null,
                policy: described };
     });
     const live = (function (): Json[] {
@@ -329,30 +339,68 @@ class ListenersAdmin {
       admin.tile(json.process.pqcOnly ? 'on' : 'off', 'post-quantum only') +
       admin.tile(String(json.live.length), 'TLS listeners live here') +
       '</div>';
-    // TABS, AS AN APPLICATION'S PAGE HAS THEM (rcbj, 2026-10-02: "a tabular
-    // view like we did on Directory->Applications->Application. Each section
-    // should be its own tab"): `admin.tabbedPanels()`, a link per panel and
-    // the stylesheet showing the targeted one, no script. Each settings group
-    // is a tab of its own, so a Save lands back on its tab. A panel with
-    // nothing in it gets no tab — the Realm listener group is drawn only in
-    // a realm other than the default one, which alone may carry it.
-    const settings = function (group: string): string {
-      return admin.configFormsFor(PAGE, [group]);
+    // TABS, AS AN APPLICATION'S PAGE HAS THEM (rcbj, 2026-10-02), AND ONE
+    // PER LISTENER SINCE #429 ("all of the settings ... to be per
+    // listener"): the overview; the service-wide defaults every listener
+    // inherits; then each TLS listener, its policy in force first and its own
+    // rows after. `admin.tabbedPanels()`, no script; a Save lands back on its
+    // tab. In a realm with a listener of its own, that listener and its
+    // Realm listener rows; in a realm without one, the default listeners,
+    // whose rows the realm cannot carry and the form draws read-only.
+    const settings = function (groups: string[]): string {
+      return admin.configFormsFor(PAGE, groups);
     };
-    log.debug("Leaving ListenersAdmin.html().");
-    return tiles + admin.tabbedPanels('listeners', [
+    const inForce = function (policy: Json): string {
+      if (!policy) {
+        return '';
+      }
+      return '<h2>In force on this listener</h2><table class="grid"><tbody>' +
+        [['Protocol', policy.tls12 ? 'TLS 1.2 and 1.3 (floor ' +
+                                     policy.minVersion + ')' : 'TLS 1.3 only'],
+         ['TLS 1.3 suites', policy.tls13Suites.map(function (one: Json) {
+           return one.name + (one.postQuantum ? ' (post-quantum safe)' : '');
+         }).join(', ')],
+         ['TLS 1.2 ciphers', policy.tls12 ? policy.tls12Ciphers.join(', ')
+                                           : '—'],
+         ['Post-quantum only', policy.pqcOnly ? 'yes' : 'no'],
+         ['Groups', policy.groups],
+         ['Signature algorithms', policy.signatureAlgorithms],
+         ['Client certificate', String(policy.clientAuth || '—')],
+         ['Client truststore', policy.truststore]].map(function (row) {
+          return '<tr><th>' + admin.esc(row[0]) + '</th><td><code>' +
+            admin.esc(String(row[1])) + '</code></td></tr>';
+        }).join('') + '</tbody></table>' +
+        admin.note('Each value is this listener\'s own where its row below ' +
+                   'sets one, and the service-wide default otherwise ' +
+                   '(<em>inherit</em>, or an empty box).');
+    };
+    const panels: Json[] = [
       { id: 'tab-listeners', label: json.ownListener ? 'This realm\'s listener'
                                                      : 'Listeners',
-        html: body },
-      { id: 'tab-tls-policy', label: 'TLS versions & suites',
-        html: settings('Listeners') },
-      { id: 'tab-client-certificates', label: 'Client certificates',
-        html: settings('Listener client certificates') },
-      { id: 'tab-certificate', label: 'Certificate & protocol',
-        html: settings('TLS') },
-      { id: 'tab-realm-listener', label: 'Realm listener',
-        html: json.realm === 'default' ? '' : settings('Realm listener') }
-    ]);
+        html: body }
+    ];
+    if (json.ownListener) {
+      panels.push({ id: 'tab-realm-listener', label: 'Its settings',
+                    html: inForce(json.ownListener.policy) +
+                          settings(['Realm listener']) });
+    } else {
+      panels.push({ id: 'tab-defaults', label: 'Service-wide defaults',
+                    html: admin.note('What every TLS listener inherits unless ' +
+                                     'its own tab says otherwise.') +
+                          settings(['Listeners', 'TLS']) });
+      json.listeners.filter(function (row: Json): boolean {
+        return !!row.group && row.tls;
+      }).forEach(function (row: Json): void {
+        panels.push({ id: 'tab-' + row.id, label: row.name,
+                      html: inForce(row.policy) + settings([row.group]) });
+      });
+      if (json.realm !== 'default') {
+        panels.push({ id: 'tab-realm-listener', label: 'Realm listener',
+                      html: settings(['Realm listener']) });
+      }
+    }
+    log.debug("Leaving ListenersAdmin.html().");
+    return tiles + admin.tabbedPanels('listeners', panels);
   }
 
   /**

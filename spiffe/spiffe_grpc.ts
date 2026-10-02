@@ -2412,13 +2412,20 @@ class SpiffeGrpc {
    * listener: the floor, the suites, the groups and no renegotiation, with
    * SPIFFE's own signature list.
    *
+   * @param kind - `spiffeServer` or `spiffeBroker` (#429)
    * @returns the options
    */
-  static policyContextOptions(): any {
+  static policyContextOptions(kind?: string): any {
     helpers.log.debug('Entering SpiffeGrpc.policyContextOptions().');
     const tlsServer = require('../tls/tls_server');
-    const options = tlsServer.protocolOptions(tlsServer.policyFor('spiffe'));
-    options.sigalgs = SpiffeGrpc.POLICY_SIGALGS;
+    const policy = tlsServer.policyFor(kind || 'spiffeServer');
+    const options = tlsServer.protocolOptions(policy);
+    // SPIFFE's own signature list, unless the listener names one of its own
+    // (#429, listenerSpiffe*.signatureAlgorithms).
+    const own = tlsServer.listenerOwnValue(kind || 'spiffeServer',
+                                           'signatureAlgorithms');
+    options.sigalgs = own !== undefined ? String(own)
+                                        : SpiffeGrpc.POLICY_SIGALGS;
     helpers.log.debug('Leaving SpiffeGrpc.policyContextOptions().');
     return options;
   }
@@ -2506,19 +2513,22 @@ class SpiffeGrpc {
       // setting moves. Client authentication is the protocol's here (the
       // SPIRE Server API must accept an agent with no SVID yet, the Broker
       // API requires one), so it has no toggle.
+      // Each gRPC surface is a listener of its own since #429.
+      const kind = /Broker/.test(surface) ? 'spiffeBroker' : 'spiffeServer';
       Object.assign(credentials._getConstructorOptions(),
-                    SpiffeGrpc.policyContextOptions());
+                    SpiffeGrpc.policyContextOptions(kind));
       // `any`: grpc-js declares updateSecureContextOptions() protected, and
       // refreshServerApiCredentials() below already calls it from outside.
       const held: any = credentials;
       held.stsUnregisterPolicy = require('../tls/tls_server')
         .registerPolicyApplier('SPIFFE ' + surface + ' (' +
-                               ca.trustDomain() + ')', 'spiffe',
+                               ca.trustDomain() + ')', kind,
           function () {
             held.updateSecureContextOptions(Object.assign({},
               held._getSecureContextOptions(),
-              SpiffeGrpc.policyContextOptions()));
+              SpiffeGrpc.policyContextOptions(kind)));
           });
+      held.stsPolicyKind = kind;
     } catch (e) {
       log.error(errorCodes.tag('STS-SPIFFE-0012') +
                 'spiffe: the ' + surface + ' ' +
@@ -2579,7 +2589,7 @@ class SpiffeGrpc {
       key: [Buffer.from(svid.privateKeyPem, 'utf8')]
     // The listeners' policy (#423) goes with every new context: a context
     // without it is node's defaults until the next setting change.
-    }, SpiffeGrpc.policyContextOptions()));
+    }, SpiffeGrpc.policyContextOptions(credentials.stsPolicyKind)));
     log.info('spiffe: the SPIRE Server API TCP listener took a new ' +
              'certificate as ' + identity + ' (serial ' + svid.serialHex +
              ') under the replaced Root.');

@@ -1218,6 +1218,72 @@ refusal) and the fatal cipher list. **Its real-handshake assertion that
 builds from the same `protocolOptions()`. Mutation-tested against the product
 refusal removed.
 
+## EVERY SETTING PER LISTENER, AND TLS 1.3 BY DEFAULT (#429, 2026-10-02)
+
+rcbj asked for two things. First: "all of the settings available on each tab
+(besides Listeners) on the Server Configuration->Listeners page to be per
+listener". He chose every TLS listener, each with its own certificate and
+truststore, each inheriting the service-wide value unless set. Second: "TLS
+v1.3 to be the default for all TLS listeners". `tls.disableTls12` now defaults
+to on.
+
+* **The rows are generated.** In `common/config.js`, `PER_LISTENER_SETTINGS` and
+  `TLS_LISTENERS` produce `listener<Id>.<name>`.
+  - Each row has the service row's type, plus a way to say inherit: `inherit`
+    in an enum (a bool becomes inherit/on/off), or an empty string.
+  - Each is per process, and restart-only exactly where its service row is.
+  - Keys have two segments because the appconfig files nest one level.
+  - A realm's own listener has the same set as `listener.<name>`.
+* **One resolver: `policyFor(kind, realm)`.**
+  - `ownValue()` answers a listener's own value, or undefined to inherit.
+  - `pick()` falls back to the service-wide row.
+  - The policy carries everything `protocolOptions()` and
+    `secureContextOptions()` need: floor, TLS 1.2 list, groups, signature
+    algorithms, suites, post-quantum only, client authentication, and the
+    truststore's own file and service-Root switch.
+  - `spiffe` was split into `spiffeServer` and `spiffeBroker`.
+* **The truststore is per listener.** `secureContextOptions(policy)` builds `ca`
+  from the shared runtime anchors, then the listener's OWN anchors file (which
+  replaces the service's file anchors for it), then the service Root where its
+  switch says so.
+* **Startup checks every listener.**
+  - The service-wide checks come first, so an inherited bad value is named by
+    its service-wide setting.
+  - Then each listener's own policy must build a context, including its TLS
+    1.2 list while TLS 1.2 is off; a broken list would otherwise wait for
+    whoever turns TLS 1.2 on.
+  - Each listener's own anchors file must read (`STS-TLS-0045`).
+* **Certificates are NOT per listener.** rcbj stopped #429's phase 2 (a
+  certificate per listener) on 2026-10-02, before any of it was written. The
+  main port, LDAPS and the debugger share one certificate, as they always
+  have, and the certificate rows (hostnames, IPs, algorithms, files) stay
+  service-wide.
+* **A REALM'S LISTENERS SHARE ONE CERTIFICATE (rcbj, 2026-10-02: "Each
+  listener in a realm should use the same certificate").**
+  - The default realm's main port, LDAPS and debugger present the one service
+    certificate.
+  - A realm with a listener of its own (#99) presents that realm's
+    certificate, `listener.certificateFile` or one its CA issues.
+  - The only listeners that present something else are those whose protocol
+    requires it: SPIFFE's gRPC listeners present an X509-SVID of the realm's
+    trust domain, and the cell channel presents a cell certificate.
+  - A change that would give one realm two different listener certificates is
+    against this rule.
+  - **A NEW SERVER CERTIFICATE IS MADE ONLY WHEN A REALM DEFINES ITS OWN PORT**
+    (rcbj, 2026-10-02). The realm's `listener.port`, #99 (`tls/realm_listeners.js`),
+    gets a `realm-tls` leaf from the realm's CA unless `listener.certificateFile`
+    names one. No other setting or listener mints a server certificate. The
+    service certificate is made once, at startup, and only re-issued over its
+    own key when the Root is rebuilt. SPIFFE's SVIDs and the cell channel's
+    leaf are their protocols' credentials, not server certificates in this
+    sense.
+* **Tests that need TLS 1.2 turn it on:**
+  - `sts_tlsfuzzer.js` turns it on service-wide for its run (it is `exclusive`);
+  - `tlsfuzzer_debugger.js` and `ldaps_no_certificate_request.js` set it in
+    their environment;
+  - `tls_protocol_policy.js` builds its listener with it;
+  - `sts_fapi2.js` asserts whatever `/admin-api/listeners` says.
+
 ## THE LISTENERS' POLICY (#423, 2026-10-02)
 
 rcbj asked for:

@@ -973,8 +973,11 @@ const JOBS = [
   // tests/tlsfuzzer/sts_adapter.py; every failure fixed or a documented
   // exception in tlsfuzzer_kit.js. `local: true`: this repository's TLS
   // listeners and their policy (tls/tls_server.js).
+  // EXCLUSIVE SINCE #429: it turns TLS 1.2 on service-wide for its run
+  // (every listener is TLS 1.3 only by default), which no other job may
+  // see half-way through.
   { file: 'sts_tlsfuzzer.js',            browser: false, local: true,
-    timeoutMs: 2700000 },
+    timeoutMs: 2700000, exclusive: true },
   // THE W3C VERIFIABLE CREDENTIALS AND DID TEST SUITES (#194-#199,
   // 2026-09-26): each Working Group suite, pinned and installed in the tests
   // image by tests/vc-suites/fetch-suites.sh, run against the VC-API test

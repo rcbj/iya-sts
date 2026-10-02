@@ -66,16 +66,22 @@ var config = {
 
   // --- Realm listener --------------------------------------------------
   listener: {
-    port: 0,                                 // The realm's own HTTPS port; restart to apply
-    publicBaseUrl: "",                       // The realm's public base URL; restart to apply
-    hostnames: "",                           // DNS names on the realm listener's certificate; restart to apply
-    certificateFile: "",                     // The realm listener's certificate file; restart to apply
-    privateKeyFile: "",                      // The realm listener's private key file; restart to apply
-    disableTls12: "inherit",                 // The realm listener: disable TLS 1.2; restart to apply
-    tls13CipherSuites: "",                   // The realm listener's TLS 1.3 cipher suites; restart to apply
-    pqcOnly: "inherit",                      // The realm listener: post-quantum safe only; restart to apply
-    disableOptionalClientCertificate: false, // The realm listener: do not ask for a client certificate; restart to apply
-    requireClientCertificate: false          // The realm listener: require a client certificate; restart to apply
+    port: 0,                                  // The realm's own HTTPS port; restart to apply
+    publicBaseUrl: "",                        // The realm's public base URL; restart to apply
+    hostnames: "",                            // DNS names on the realm listener's certificate; restart to apply
+    certificateFile: "",                      // The realm listener's certificate file; restart to apply
+    privateKeyFile: "",                       // The realm listener's private key file; restart to apply
+    disableTls12: "inherit",                  // The realm listener: disable TLS 1.2; restart to apply
+    tls13CipherSuites: "",                    // The realm listener's TLS 1.3 cipher suites; restart to apply
+    pqcOnly: "inherit",                       // The realm listener: post-quantum safe only; restart to apply
+    disableOptionalClientCertificate: false,  // The realm listener: do not ask for a client certificate; restart to apply
+    requireClientCertificate: false,          // The realm listener: require a client certificate; restart to apply
+    minVersion: "inherit",                    // The realm listener: minimum TLS version; restart to apply
+    ciphers: "",                              // The realm listener: tLS 1.2 cipher list; restart to apply
+    groups: "",                               // The realm listener: tLS key-exchange groups; restart to apply
+    signatureAlgorithms: "",                  // The realm listener: tLS signature algorithms; restart to apply
+    trustAnchorsFile: "",                     // The realm listener: client certificate trust anchors file; restart to apply
+    trustIssuedClientCertificates: "inherit"  // The realm listener: trust TLS client certificates issued on the user portal; restart to apply
   },
 
   // --- Admin console ---------------------------------------------------
@@ -726,7 +732,7 @@ var config = {
     ciphers: "ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384",                                                                                                                                                                            // TLS 1.2 cipher list; restart to apply
     groups: "X25519MLKEM768:SecP256r1MLKEM768:SecP384r1MLKEM1024 / X25519:P-256 / X448:P-384:P-521",                                                                                                                                                                                                           // TLS key-exchange groups; restart to apply
     signatureAlgorithms: "mldsa65:mldsa87:mldsa44:ecdsa_secp256r1_sha256:ecdsa_secp384r1_sha384:ecdsa_secp521r1_sha512:ed25519:ed448:rsa_pss_pss_sha256:rsa_pss_pss_sha384:rsa_pss_pss_sha512:rsa_pss_rsae_sha256:rsa_pss_rsae_sha384:rsa_pss_rsae_sha512:rsa_pkcs1_sha256:rsa_pkcs1_sha384:rsa_pkcs1_sha512", // TLS signature algorithms; restart to apply
-    disableTls12: false,                                                                                                                                                                                                                                                                                       // Disable TLS 1.2
+    disableTls12: true,                                                                                                                                                                                                                                                                                        // Disable TLS 1.2
     tls13CipherSuites: "TLS_AES_256_GCM_SHA384,TLS_AES_128_GCM_SHA256,TLS_CHACHA20_POLY1305_SHA256",                                                                                                                                                                                                           // TLS 1.3 cipher suites
     pqcOnly: false,                                                                                                                                                                                                                                                                                            // Post-quantum safe only
     mainPortDisableOptionalClientCertificate: false,                                                                                                                                                                                                                                                           // Main port: do not ask for a client certificate
@@ -741,7 +747,7 @@ var config = {
     selfSignedOrganization: "sts"                                                                                                                                                                                                                                                                              // Self-signed certificate organization; restart to apply
   },
 
-  // --- Listener client certificates ------------------------------------
+  // --- Listener: LDAPS -------------------------------------------------
   ldap: {
     ldapsDisableOptionalClientCertificate: true,                                                                                                // LDAPS: do not ask for a client certificate
     ldapsRequireClientCertificate: false,                                                                                                       // LDAPS: require a client certificate
@@ -1366,6 +1372,75 @@ var config = {
     verificationTtlMinutes: 1440,        // Address verification link lifetime (minutes)
     securityNotices: true,               // Security notices
     notifyAdministrators: true           // Tell administrators of system acts
+  },
+
+  // --- Listener: Main port ---------------------------------------------
+  listenerMain: {
+    minVersion: "inherit",                    // Main port: minimum TLS version; restart to apply
+    disableTls12: "inherit",                  // Main port: disable TLS 1.2
+    ciphers: "",                              // Main port: tLS 1.2 cipher list; restart to apply
+    tls13CipherSuites: "",                    // Main port: tLS 1.3 cipher suites
+    pqcOnly: "inherit",                       // Main port: post-quantum safe only
+    groups: "",                               // Main port: tLS key-exchange groups; restart to apply
+    signatureAlgorithms: "",                  // Main port: tLS signature algorithms; restart to apply
+    trustAnchorsFile: "",                     // Main port: client certificate trust anchors file; restart to apply
+    trustIssuedClientCertificates: "inherit"  // Main port: trust TLS client certificates issued on the user portal; restart to apply
+  },
+
+  // --- Listener: LDAPS -------------------------------------------------
+  listenerLdaps: {
+    minVersion: "inherit",                    // LDAPS: minimum TLS version; restart to apply
+    disableTls12: "inherit",                  // LDAPS: disable TLS 1.2
+    ciphers: "",                              // LDAPS: tLS 1.2 cipher list; restart to apply
+    tls13CipherSuites: "",                    // LDAPS: tLS 1.3 cipher suites
+    pqcOnly: "inherit",                       // LDAPS: post-quantum safe only
+    groups: "",                               // LDAPS: tLS key-exchange groups; restart to apply
+    signatureAlgorithms: "",                  // LDAPS: tLS signature algorithms; restart to apply
+    trustAnchorsFile: "",                     // LDAPS: client certificate trust anchors file; restart to apply
+    trustIssuedClientCertificates: "inherit"  // LDAPS: trust TLS client certificates issued on the user portal; restart to apply
+  },
+
+  // --- Listener: Protocol debugger -------------------------------------
+  listenerDebugger: {
+    minVersion: "inherit",                    // Protocol debugger: minimum TLS version; restart to apply
+    disableTls12: "inherit",                  // Protocol debugger: disable TLS 1.2
+    ciphers: "",                              // Protocol debugger: tLS 1.2 cipher list; restart to apply
+    tls13CipherSuites: "",                    // Protocol debugger: tLS 1.3 cipher suites
+    pqcOnly: "inherit",                       // Protocol debugger: post-quantum safe only
+    groups: "",                               // Protocol debugger: tLS key-exchange groups; restart to apply
+    signatureAlgorithms: "",                  // Protocol debugger: tLS signature algorithms; restart to apply
+    trustAnchorsFile: "",                     // Protocol debugger: client certificate trust anchors file; restart to apply
+    trustIssuedClientCertificates: "inherit"  // Protocol debugger: trust TLS client certificates issued on the user portal; restart to apply
+  },
+
+  // --- Listener: SPIRE Server API --------------------------------------
+  listenerSpiffeServer: {
+    minVersion: "inherit",   // SPIRE Server API: minimum TLS version; restart to apply
+    disableTls12: "inherit", // SPIRE Server API: disable TLS 1.2
+    ciphers: "",             // SPIRE Server API: tLS 1.2 cipher list; restart to apply
+    tls13CipherSuites: "",   // SPIRE Server API: tLS 1.3 cipher suites
+    pqcOnly: "inherit",      // SPIRE Server API: post-quantum safe only
+    groups: "",              // SPIRE Server API: tLS key-exchange groups; restart to apply
+    signatureAlgorithms: ""  // SPIRE Server API: tLS signature algorithms; restart to apply
+  },
+
+  // --- Listener: SPIFFE Broker API -------------------------------------
+  listenerSpiffeBroker: {
+    minVersion: "inherit",   // SPIFFE Broker API: minimum TLS version; restart to apply
+    disableTls12: "inherit", // SPIFFE Broker API: disable TLS 1.2
+    ciphers: "",             // SPIFFE Broker API: tLS 1.2 cipher list; restart to apply
+    tls13CipherSuites: "",   // SPIFFE Broker API: tLS 1.3 cipher suites
+    pqcOnly: "inherit",      // SPIFFE Broker API: post-quantum safe only
+    groups: "",              // SPIFFE Broker API: tLS key-exchange groups; restart to apply
+    signatureAlgorithms: ""  // SPIFFE Broker API: tLS signature algorithms; restart to apply
+  },
+
+  // --- Listener: Channel between cells ---------------------------------
+  listenerCell: {
+    tls13CipherSuites: "",   // Channel between cells: tLS 1.3 cipher suites
+    pqcOnly: "inherit",      // Channel between cells: post-quantum safe only
+    groups: "",              // Channel between cells: tLS key-exchange groups; restart to apply
+    signatureAlgorithms: ""  // Channel between cells: tLS signature algorithms; restart to apply
   },
 };
 

@@ -12543,6 +12543,12 @@ const CODES = [
       'listener, the channel between cells); it keeps the policy it had.',
     spec: 'logged; Server configuration -> Listeners shows the policy in ' +
       'force' },
+  { code: 'STS-TLS-0045',
+    summary: 'A TLS listener\'s own trustAnchorsFile (listener<Id>.' +
+      'trustAnchorsFile, #429) could not be read or holds no certificate, ' +
+      'so that listener\'s client truststore would be empty while ' +
+      'configured to be filled.',
+    spec: 'the service does not start' },
   // ===== VC ================================================================
   { code: 'STS-VC-0001',
     summary: 'An oid4vci encryption setting names no content encryption ' +

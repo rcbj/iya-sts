@@ -1060,7 +1060,9 @@ function realmListener(label, certificate, certificateOf, realmId) {
   const server = https.createServer(Object.assign({
     cert: certificate.cert,
     key: certificate.key,
-    ca: tlsServer.clientTruststoreOptions().ca,
+    // Its own truststore (#429): the realm's listener.trustAnchorsFile and
+    // listener.trustIssuedClientCertificates, else the service's.
+    ca: tlsServer.clientTruststoreOptions(policy).ca,
     // The main port's session lifetime and keep-alive (#406), so a realm's
     // own listener pools connections and sessions as that port does.
     sessionTimeout: mainSessionTimeoutS()
@@ -1101,7 +1103,9 @@ if (useHttps) {
     // the remote XACML PEP arrived, because that caller's DN has to resolve to
     // a directory entry, a group and a role, and none of that may rest on a
     // certificate nobody issued.
-    ca: tlsServer.clientTruststoreOptions().ca,
+    // The main port's own truststore since #429: listenerMain.trustAnchorsFile
+    // and listenerMain.trustIssuedClientCertificates, else the service's.
+    ca: tlsServer.clientTruststoreOptions(tlsServer.policyFor('main')).ca,
     // RFC 8705 — certificate-bound access tokens. The token endpoint is on this
     // listener, so a certificate has to be ASKED FOR here or there is never one
     // to bind to. Asked for, never required — and since the 9443 listener was

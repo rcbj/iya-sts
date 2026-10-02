@@ -247,7 +247,14 @@ function checkMarker(t) {
     'listener.tls13CipherSuites',
     'listener.pqcOnly',
     'listener.disableOptionalClientCertificate',
-    'listener.requireClientCertificate'
+    'listener.requireClientCertificate',
+    // #429: the rest of the listener's TLS settings, generated.
+    'listener.minVersion',
+    'listener.ciphers',
+    'listener.groups',
+    'listener.signatureAlgorithms',
+    'listener.trustAnchorsFile',
+    'listener.trustIssuedClientCertificates'
   ];
   const marked = config.SETTINGS.filter(function (s) {
     return s.realmRuntime;

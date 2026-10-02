@@ -65,7 +65,7 @@ listener at its next handshake, with no restart and no rebind.
 
 | Setting | Default | What it does |
 |---|---|---|
-| `tls.disableTls12` | off | Every TLS listener negotiates TLS 1.3 only, whatever `tls.minVersion` says. |
+| `tls.disableTls12` | **on** (since #429) | Every TLS listener negotiates TLS 1.3 only, whatever `tls.minVersion` says. Off lets a client negotiate TLS 1.2 (see the warning below). |
 | `tls.tls13CipherSuites` | `TLS_AES_256_GCM_SHA384, TLS_AES_128_GCM_SHA256, TLS_CHACHA20_POLY1305_SHA256` | The TLS 1.3 suites, ticked and numbered on the page; the server's order wins. Any of RFC 8446's five, CCM included. At least one is required. |
 | `tls.pqcOnly` | off | TLS 1.3 only, the 256-bit suites only, and the ML-KEM groups only (see below). |
 | `tls.mainPortDisableOptionalClientCertificate` / `tls.mainPortRequireClientCertificate` | off / off | The main port: send no CertificateRequest / require a certificate that chains to the client truststore. |
@@ -103,6 +103,28 @@ suite and post-quantum settings too, and have no client-certificate toggles:
 their protocols decide. The SPIRE Server API must reach an agent with no SVID
 yet, and the Broker API and the cell channel always require a certificate. The
 cell channel is TLS 1.3 always.
+
+**EVERY SETTING IS PER LISTENER (#429).** Each TLS listener has its own row for
+every setting above and its TLS settings below, named `listener<Id>.<setting>`.
+For example, `listenerLdaps.disableTls12` or `listenerMain.tls13CipherSuites`.
+
+- **Listeners:** `Main`, `Ldaps`, `Debugger`, `SpiffeServer`, `SpiffeBroker`,
+  `Cell`.
+- **Inheritance:** each row inherits the service-wide value until it is set.
+  `inherit` in a list of choices, or an empty box, means inherit.
+- **Truststore:** a listener's own `trustAnchorsFile` replaces the service's
+  file anchors for that listener alone. The runtime anchors from `/tls/trust`
+  are shared by every listener.
+- **Where they are edited:** Server configuration → Listeners has a tab per
+  listener. Each tab shows what is in force there first, then its own rows.
+  The *Service-wide defaults* tab holds what every listener inherits.
+- **What some listeners lack:** the cell channel is TLS 1.3 always, so it has
+  no TLS 1.2 rows. The SPIFFE listeners and the cell channel verify clients
+  against their protocol's trust bundle, so they have no truststore rows.
+
+> **Warning.** Turning TLS 1.2 on, service-wide or for one listener, lets a
+> client negotiate it. FAPI 2.0 and BCP 195 still allow TLS 1.2 with the AES-GCM
+> suites, but TLS 1.2 has no post-quantum key exchange.
 
 **A realm with a listener of its own** (`listener.port`) has the same settings for
 that listener, on the Listeners page read inside the realm:

@@ -219,6 +219,8 @@ const TLS_IPS = config.value('tls.ips');
 // generous for any private PKI and stops a caller handing over a body that
 // costs more to parse than the handshakes it will be used for.
 const MAX_ANCHORS = 32;
+// The anchors of each listener's own trustAnchorsFile (#429), by path.
+const listenerFileCache = new Map();
 
 // ---------------------------------------------------------------------------
 // THE MODE, UNDER A NAME THAT IS NOT `mode` (2026-09-12). This module already
@@ -409,40 +411,77 @@ function clientAuthFrom(disableOptional, require) {
   return mode;
 }
 
+// ---------------------------------------------------------------------------
+// EVERY SETTING PER LISTENER, INHERITING THE SERVICE'S (#429, 2026-10-02).
+//
+// A listener's own row is `listener<Id>.<name>` (generated in common/config.js
+// from `PER_LISTENER_SETTINGS`), and a realm's own listener's is
+// `listener.<name>` read inside the realm. `own()` answers that row's value,
+// or undefined where the row says inherit — `inherit` in an enum, the empty
+// string otherwise — or the listener has no such row; `pick()` falls back to
+// the service-wide row.
+// ---------------------------------------------------------------------------
+const LISTENER_KINDS = ['main', 'ldaps', 'debugger', 'spiffeServer',
+                        'spiffeBroker', 'cell'];
+
+// A listener's own value for one setting, or undefined to inherit.
+function ownValue(kind, realmId, name) {
+  log.debug("Entering ownValue(). " + kind + " " + name);
+  let raw;
+  try {
+    if (kind === 'realm') {
+      const realm = realms.get(String(realmId || ''));
+      raw = realm ? realms.run(realm, function () {
+        return config.value('listener.' + name);
+      }) : undefined;
+    } else if (LISTENER_KINDS.indexOf(String(kind)) >= 0) {
+      raw = config.value('listener' + String(kind).charAt(0).toUpperCase() +
+                         String(kind).slice(1) + '.' + name);
+    }
+  } catch (e) {
+    // No such row for this listener — the table leaves it out on purpose
+    // (tls13 only on the cell channel, no truststore on SPIFFE's).
+    log.debug("Caught in ownValue(): " + ((e && e.message) || e));
+    raw = undefined;
+  }
+  log.debug("Leaving ownValue().");
+  if (raw === undefined || raw === null || raw === 'inherit' ||
+      (typeof raw === 'string' && raw.trim() === '') ||
+      (Array.isArray(raw) && !raw.length)) {
+    return undefined;
+  }
+  return raw === 'on' ? true : raw === 'off' ? false : raw;
+}
+
 /**
- * The policy one listener is held to.
+ * The policy one listener is held to: each of its own settings where it has
+ * one, the service-wide setting where it inherits.
  *
- * @param kind - `main`, `ldaps`, `debugger`, `realm`, `spiffe` or `cell`;
- *   omitted, the process's policy with no client authentication of its own
+ * @param kind - `main`, `ldaps`, `debugger`, `spiffeServer`, `spiffeBroker`,
+ *   `cell` or `realm`; omitted, the service-wide policy
  * @param realmId - for `realm`, the realm whose own listener it is
- * @returns `{ kind, disableTls12, pqcOnly, tls13Suites, clientAuth }`;
+ * @returns `{ kind, realm, minVersion, disableTls12, pqcOnly, tls13Suites,
+ *   ciphers12, groups, sigalgs, trustAnchorsFile, trustIssued, clientAuth }`;
  *   `clientAuth` is null for a kind whose protocol decides it
  */
 function policyFor(kind, realmId) {
   log.debug("Entering policyFor(). " + kind + " " + (realmId || ''));
-  let disableTls12 = config.value('tls.disableTls12') === true;
-  let pqcOnly = config.value('tls.pqcOnly') === true;
-  let suites = listOf(config.value('tls.tls13CipherSuites'));
+  const pick = function (name, base) {
+    const own = kind ? ownValue(kind, realmId, name) : undefined;
+    return own !== undefined ? own : config.value(base);
+  };
+  // `spiffe` was one kind for both gRPC surfaces until #429.
+  const k = kind === 'spiffe' ? 'spiffeServer' : kind;
+  const pqcOnly = pick('pqcOnly', 'tls.pqcOnly') === true;
+  let suites = listOf(pick('tls13CipherSuites', 'tls.tls13CipherSuites'));
   let clientAuth = null;
-  const pair = CLIENT_AUTH_SETTINGS[String(kind || '')];
-  if (kind === 'realm') {
+  const pair = CLIENT_AUTH_SETTINGS[String(k || '')];
+  if (k === 'realm') {
     const realm = realms.get(String(realmId || ''));
-    const own = realm ? realms.run(realm, function () {
-      return { tls12: String(config.value('listener.disableTls12')),
-               pqc: String(config.value('listener.pqcOnly')),
-               suites: listOf(config.value('listener.tls13CipherSuites')),
-               off: config.value(pair[0]) === true,
-               req: config.value(pair[1]) === true };
-    }) : null;
-    if (own) {
-      disableTls12 = own.tls12 === 'on' ? true
-        : own.tls12 === 'off' ? false : disableTls12;
-      pqcOnly = own.pqc === 'on' ? true : own.pqc === 'off' ? false : pqcOnly;
-      suites = own.suites.length ? own.suites : suites;
-      clientAuth = clientAuthFrom(own.off, own.req);
-    } else {
-      clientAuth = 'optional';
-    }
+    clientAuth = realm ? realms.run(realm, function () {
+      return clientAuthFrom(config.value(pair[0]) === true,
+                            config.value(pair[1]) === true);
+    }) : 'optional';
   } else if (pair) {
     clientAuth = clientAuthFrom(config.value(pair[0]) === true,
                                 config.value(pair[1]) === true);
@@ -459,18 +498,35 @@ function policyFor(kind, realmId) {
     const kept = postQuantumSuites(suites);
     suites = kept.length ? kept : ['TLS_AES_256_GCM_SHA384'];
   }
-  const policy = { kind: String(kind || 'process'), realm: realmId || null,
-                   disableTls12: disableTls12 || pqcOnly, pqcOnly: pqcOnly,
-                   tls13Suites: suites, clientAuth: clientAuth };
+  const disableTls12 = pick('disableTls12', 'tls.disableTls12') === true ||
+    pqcOnly || k === 'cell';
+  const ownAnchors = kind ? ownValue(k, realmId, 'trustAnchorsFile')
+                          : undefined;
+  const policy = {
+    kind: String(k || 'process'), realm: realmId || null,
+    minVersion: String(pick('minVersion', 'tls.minVersion') || 'TLSv1.2'),
+    disableTls12: disableTls12, pqcOnly: pqcOnly, tls13Suites: suites,
+    ciphers12: String(pick('ciphers', 'tls.ciphers') || '').trim(),
+    groups: String(pick('groups', 'tls.groups') || '').trim(),
+    sigalgs: String(pick('signatureAlgorithms', 'tls.signatureAlgorithms') ||
+                    '').trim(),
+    // The listener's OWN anchors file, which replaces the service's file
+    // anchors for it; '' where it inherits them.
+    trustAnchorsFile: ownAnchors === undefined ? '' : String(ownAnchors),
+    trustIssued: pick('trustIssuedClientCertificates',
+                      'tls.trustIssuedClientCertificates') !== false,
+    clientAuth: clientAuth
+  };
   log.debug("Leaving policyFor().");
   return policy;
 }
 
 // The TLS 1.2 suites of `tls.ciphers`: the setting as written, or node's
 // default list without its TLS 1.3 names where it is empty.
-function tls12Ciphers() {
+function tls12Ciphers(listed) {
   log.debug("Entering tls12Ciphers().");
-  const raw = String(config.value('tls.ciphers') || '').trim();
+  const raw = String(listed === undefined ? config.value('tls.ciphers') || ''
+                                          : listed).trim();
   const out = (raw || tls.DEFAULT_CIPHERS).split(':')
     .map(function (one) { return one.trim(); })
     .filter(function (one) { return one.length > 0 && !/^TLS_/.test(one); });
@@ -491,7 +547,7 @@ function tls12Ciphers() {
 function protocolOptions(policy) {
   log.debug("Entering protocolOptions().");
   const p = policy || policyFor();
-  const floor = String(config.value('tls.minVersion') || 'TLSv1.2');
+  const floor = String(p.minVersion || 'TLSv1.2');
   // `any`: the setting is a string, and the TLS types want a version literal.
   /** @type {any} */
   const options = { minVersion: p.disableTls12 ? 'TLSv1.3' : floor,
@@ -501,17 +557,17 @@ function protocolOptions(policy) {
   // TLS_ name in it would turn TLS 1.3 OFF, which is why the suites are
   // always first and never empty (policyFor()).
   options.ciphers = p.tls13Suites
-    .concat(p.disableTls12 ? [] : tls12Ciphers()).join(':');
+    .concat(p.disableTls12 ? [] : tls12Ciphers(p.ciphers12)).join(':');
   // THE GROUPS AND THE SIGNATURE ALGORITHMS (#212, 2026-09-26) — see their
   // rows in common/config.js. Empty leaves node's own: 'auto' for the
   // groups, and OpenSSL's list for the signature algorithms.
-  const groups = String(config.value('tls.groups') || '').trim();
+  const groups = String(p.groups || '').trim();
   if (p.pqcOnly) {
     options.ecdhCurve = postQuantumGroups(groups) || PQ_DEFAULT_GROUPS;
   } else if (groups) {
     options.ecdhCurve = groups;
   }
-  const sigalgs = String(config.value('tls.signatureAlgorithms') || '').trim();
+  const sigalgs = String(p.sigalgs || '').trim();
   if (sigalgs) {
     options.sigalgs = sigalgs;
   }
@@ -554,6 +610,41 @@ function policyWriteRule(key, parsed) {
     log.debug("Leaving policyWriteRule(). Refused.");
     return { problem: problem, code: 'STS-TLS-0043' };
   };
+  // ONE LISTENER'S OWN ROW (#429): the same rule, read for that listener —
+  // its own value where it has one (the one being written included), the
+  // service's where it inherits.
+  const one = /^listener([A-Z][A-Za-z]*)\.(pqcOnly|tls13CipherSuites|groups)$/
+    .exec(String(key));
+  if (one) {
+    const kind = one[1].charAt(0).toLowerCase() + one[1].slice(1);
+    const written = String(parsed === undefined || parsed === null ? ''
+                                                                   : parsed);
+    const inherits = written === '' || written === 'inherit';
+    const valueOf = function (name, base) {
+      if (name === one[2] && !inherits) {
+        return written === 'on' ? true : written === 'off' ? false : parsed;
+      }
+      const own = name === one[2] ? undefined : ownValue(kind, null, name);
+      return own !== undefined ? own : config.value(base);
+    };
+    if (valueOf('pqcOnly', 'tls.pqcOnly') === true) {
+      if (!postQuantumSuites(listOf(valueOf('tls13CipherSuites',
+                                            'tls.tls13CipherSuites'))).length) {
+        return refuse('post-quantum only on the ' + kind + ' listener needs ' +
+                      'a 256-bit TLS 1.3 suite in its suites (its own, or ' +
+                      'tls.tls13CipherSuites, which it inherits) — ' +
+                      'TLS_AES_256_GCM_SHA384 or TLS_CHACHA20_POLY1305_SHA256.');
+      }
+      const groups = String(valueOf('groups', 'tls.groups') || '');
+      if (groups.trim() && !postQuantumGroups(groups)) {
+        return refuse('post-quantum only on the ' + kind + ' listener needs ' +
+                      'an ML-KEM group in its groups (its own, or ' +
+                      'tls.groups, which it inherits).');
+      }
+    }
+    log.debug("Leaving policyWriteRule(). A listener's row, accepted.");
+    return null;
+  }
   if (key === 'tls.tls13CipherSuites' && !listOf(parsed).length) {
     return refuse('"tls.tls13CipherSuites" needs at least one suite: with ' +
                   'none, no listener completes a TLS 1.3 handshake.');
@@ -606,6 +697,8 @@ if (typeof config.addWriteRule === 'function') {
   }
   try {
     tls.createSecureContext(protocolOptions());
+    tls.createSecureContext(protocolOptions(Object.assign({}, policyFor(),
+      { disableTls12: false, pqcOnly: false })));
   } catch (e) {
     log.fatal(errorCodes.tag('STS-TLS-0001') + 'tls: NOT STARTING. ' +
               'tls.minVersion / tls.ciphers / tls.tls13CipherSuites / ' +
@@ -618,6 +711,37 @@ if (typeof config.addWriteRule === 'function') {
               'signature list schemes such as rsa_pss_rsae_sha256, and an ' +
               'empty one means node\'s default.');
     process.exit(1);
+  }
+  // THEN EVERY LISTENER'S OWN POLICY BUILDS — after the service-wide one,
+  // so an inherited bad value is named by its service-wide setting —, AND EVERY OWN ANCHORS FILE READS
+  // (#429): a listener whose rows build no context would refuse every
+  // client, found only at its first handshake.
+  for (const kind of LISTENER_KINDS) {
+    const policy = policyFor(kind);
+    try {
+      tls.createSecureContext(protocolOptions(policy));
+      // ITS TLS 1.2 LIST TOO, WHEN TLS 1.2 IS OFF: the context above does not
+      // carry it then, and a list matching nothing would otherwise be found
+      // only by whoever turns TLS 1.2 back on (#429 made off the default).
+      tls.createSecureContext(protocolOptions(Object.assign({}, policy,
+        { disableTls12: false, pqcOnly: false })));
+    } catch (e) {
+      log.fatal(errorCodes.tag('STS-TLS-0001') + 'tls: NOT STARTING. The ' +
+                kind + ' listener\'s own TLS settings (listener' +
+                kind.charAt(0).toUpperCase() + kind.slice(1) + '.*) cannot ' +
+                'build a TLS context: ' + e.message + '.');
+      process.exit(1);
+    }
+    if (policy.trustAnchorsFile &&
+        !listenerFileAnchors(policy.trustAnchorsFile).length) {
+      log.fatal(errorCodes.tag('STS-TLS-0045') + 'tls: NOT STARTING. The ' +
+                kind + ' listener\'s own trustAnchorsFile is "' +
+                policy.trustAnchorsFile + '" and it could not be read or ' +
+                'holds no -----BEGIN CERTIFICATE----- block, so that ' +
+                'listener\'s client truststore would be empty while ' +
+                'configured to be filled.');
+      process.exit(1);
+    }
   }
   log.debug("Leaving checkProtocolOptions().");
 })();
@@ -1877,11 +2001,11 @@ function describePem(pem) {
 // secure context is built, which can be before the certificate authority has
 // started, and a truststore must never be the thing that fails to build.
 // ---------------------------------------------------------------------------
-function issuedClientCertificateAnchor() {
+function issuedClientCertificateAnchor(trust) {
   log.debug("Entering issuedClientCertificateAnchor().");
   let pem = '';
   try {
-    pem = require('../common/tls_client_certificates').trustAnchorPem();
+    pem = require('../common/tls_client_certificates').trustAnchorPem(trust);
   } catch (e) {
     log.debug("Caught in issuedClientCertificateAnchor(): " +
               ((e && e.message) || e));
@@ -1951,6 +2075,35 @@ function inCertificateRealm(identity, fn) {
  * @param policy - the listener's, from `policyFor()`; omitted, the process's
  * @returns the options
  */
+// A listener's own anchors file (#429), read once and kept: the row is
+// restart-only. One that cannot be read, or holds no certificate, STOPS THE
+// SERVICE at startup (`checkProtocolOptions()`, STS-TLS-0045), as the
+// service's own file does; here it answers nothing. (The cache is declared
+// beside MAX_ANCHORS: that startup check runs as this module loads.)
+
+/**
+ * The certificates in a listener's own anchors file.
+ *
+ * @param file - the path
+ * @returns the PEM blocks, or an empty list where it could not be read
+ */
+function listenerFileAnchors(file) {
+  log.debug("Entering listenerFileAnchors(). " + file);
+  if (!listenerFileCache.has(file)) {
+    let found = [];
+    try {
+      found = splitPemCertificates(fs.readFileSync(file, 'utf8'))
+        .slice(0, MAX_ANCHORS);
+    } catch (e) {
+      log.debug("Caught in listenerFileAnchors(): " + ((e && e.message) || e));
+      found = [];
+    }
+    listenerFileCache.set(file, found);
+  }
+  log.debug("Leaving listenerFileAnchors().");
+  return listenerFileCache.get(file);
+}
+
 function secureContextOptions(policy) {
   log.debug('Entering secureContextOptions(). anchors=' + anchors.length);
   log.debug('Leaving secureContextOptions().');
@@ -1970,8 +2123,17 @@ function secureContextOptions(policy) {
         ? [one.certPem].concat(one.chainPem).join('')
         : one.certPem;
     }),
-    ca: anchors.map(function (anchor) { return anchor.pem; })
-      .concat(issuedClientCertificateAnchor()),
+    // THE LISTENER'S OWN TRUSTSTORE (#429): the runtime anchors every
+    // listener shares (/tls/trust), the anchors of its OWN file where it
+    // names one — replacing the service's file anchors for it — and the
+    // service Root where its trustIssuedClientCertificates says so.
+    ca: anchors.filter(function (anchor) {
+      return !(policy && policy.trustAnchorsFile) || anchor.source !== 'file';
+    }).map(function (anchor) { return anchor.pem; })
+      .concat(policy && policy.trustAnchorsFile
+        ? listenerFileAnchors(policy.trustAnchorsFile) : [])
+      .concat(issuedClientCertificateAnchor(policy ? policy.trustIssued
+                                                   : undefined)),
     // The protocol floor, the cipher list, the groups and the signature
     // algorithms — see protocolOptions(). In here so that a truststore
     // change, which re-applies this whole object, cannot quietly reset a
@@ -5404,6 +5566,11 @@ module.exports = {
   // create — LDAPS, which ldapjs builds, and the main port at creation.
   protocolOptions: protocolOptions,
   policyFor: policyFor,
+  // A listener's own value for one setting, or undefined where it inherits
+  // (#429): for a module that has a default of its own (SPIFFE's sigalgs).
+  listenerOwnValue: function (kind, name) {
+    return ownValue(kind, null, name);
+  },
   clientAuthOptions: clientAuthOptions,
   registerPolicyApplier: registerPolicyApplier,
   reapplyPolicy: reapplyPolicy,

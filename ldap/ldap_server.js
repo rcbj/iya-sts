@@ -12171,7 +12171,7 @@ function rekeyLdaps(why) {
         ? [current.certPem].concat(current.chainPem).join('')
         : current.certPem,
       key: current.privateKeyPem,
-      ca: tlsServer.clientTruststoreOptions().ca
+      ca: tlsServer.clientTruststoreOptions(ldapsPolicy()).ca
     }, tlsProtocolOptions()));
   } catch (e) {
     // The listener still has the context it had, so this is a certificate
@@ -12219,7 +12219,7 @@ if (serverCertificate && serverCertificate.certPem &&
     encodeErrorMessage: true,
     certificate: serverCertificate.certPem,
     key: serverCertificate.privateKeyPem,
-    ca: tlsServer.clientTruststoreOptions().ca
+    ca: tlsServer.clientTruststoreOptions(ldapsPolicy()).ca
   }, tlsProtocolOptions(),
   tlsServer.clientAuthOptions(ldapsPolicy().clientAuth)));
   tlsServer.trustClientCertificatesOn(secureServer.server,

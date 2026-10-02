@@ -46551,7 +46551,14 @@ const SETTING_HOMES = [
   // TLS group moved here from /admin/tls, which keeps the truststore and the
   // certificate, and so did the realm listener's rows (#99).
   { group: 'Listeners', pages: ['/admin/listeners'] },
-  { group: 'Listener client certificates', pages: ['/admin/listeners'] },
+  // ONE GROUP PER TLS LISTENER (#429): its own rows, generated in
+  // common/config.js, and its client-certificate pair.
+  { group: 'Listener: Main port', pages: ['/admin/listeners'] },
+  { group: 'Listener: LDAPS', pages: ['/admin/listeners'] },
+  { group: 'Listener: Protocol debugger', pages: ['/admin/listeners'] },
+  { group: 'Listener: SPIRE Server API', pages: ['/admin/listeners'] },
+  { group: 'Listener: SPIFFE Broker API', pages: ['/admin/listeners'] },
+  { group: 'Listener: Channel between cells', pages: ['/admin/listeners'] },
   { group: 'TLS', pages: ['/admin/listeners'] },
   // A trust realm's own listener (#99): realm-only settings, edited on the
   // Listeners page read inside a realm (#423); the default realm refuses
