@@ -1028,6 +1028,22 @@ serviceState.start().then(function (both) {
 // Built rather than started above, because the two shapes differ only in this
 // one expression and writing the whole announcement twice is how the two
 // versions of it come to say different things.
+// The main port's TLS session lifetime and HTTP keep-alive, from their
+// settings (#406); a value the row's bounds refuse falls back to its default.
+function mainSessionTimeoutS() {
+  log.debug("Entering mainSessionTimeoutS().");
+  const n = Number(config.value('tls.mainSessionTimeoutS'));
+  log.debug("Leaving mainSessionTimeoutS().");
+  return Number.isFinite(n) && n >= 1 ? Math.floor(n) : 60;
+}
+
+function keepAliveTimeoutMs() {
+  log.debug("Entering keepAliveTimeoutMs().");
+  const n = Number(config.value('global.httpKeepAliveTimeoutS'));
+  log.debug("Leaving keepAliveTimeoutMs().");
+  return (Number.isFinite(n) && n >= 1 ? Math.floor(n) : 60) * 1000;
+}
+
 function bind() {
 log.debug("Entering bind().");
 if (useHttps) {
@@ -1064,12 +1080,30 @@ if (useHttps) {
     // verification would also make the feature unreachable, since the
     // truststore at /tls/trust starts empty by design.
     requestCert: true,
-    rejectUnauthorized: false
+    rejectUnauthorized: false,
+    // HOW LONG A SESSION MAY BE RESUMED (#406, 2026-10-02): a resumed session
+    // carries no CertificateRequest, so a browser holding a matching
+    // certificate does not ask its user again. node keeps this on the server
+    // and passes it to every context `setSecureContext()` builds after a
+    // truststore change.
+    sessionTimeout: mainSessionTimeoutS()
   // `tls.minVersion` and `tls.ciphers` (2026-09-12), from the module that
   // states them for every TLS listener — at creation as well as on every
   // truststore change, so the first handshake is held to the same floor as the
   // hundredth.
   }, tlsServer.protocolOptions()), app);
+  // HTTP CONNECTION POOLING ON THE MAIN PORT (#406, 2026-10-02). node keeps an
+  // idle HTTP/1.1 connection five seconds by default, so a person reading a
+  // page lost it and the next click made a new connection — a full TLS
+  // handshake, and a client-certificate prompt in a browser holding a
+  // matching certificate. Requests a client pipelines on one connection are
+  // answered in order, which node does on its own. The header timeout is kept
+  // above the keep-alive, so a client (or a balancer) reusing a connection at
+  // the last moment never meets one this end is already closing.
+  const keepAliveMs = keepAliveTimeoutMs();
+  mainServer.keepAliveTimeout = keepAliveMs;
+  mainServer.headersTimeout = Math.max(mainServer.headersTimeout || 0,
+                                       keepAliveMs + 1000);
   // REGISTERED SO THAT A LATER `POST /tls/trust` REACHES THIS LISTENER TOO.
   // `tls_server.js` owns the anchors and applies them to every listener it
   // knows about; this is how the one it did not create becomes one of them. It
@@ -1077,15 +1111,21 @@ if (useHttps) {
   // this file requires that module, not the other way round.
   tlsServer.trustClientCertificatesOn(mainServer,
                                       'the main port (' + PORT + ')');
-  // NOT ONE SESSION-TICKET KEY WITH THE OTHER NODES, although LDAPS has one
-  // (tls/session_tickets.ts). This port asks for a client certificate, and a
-  // resumed session hands the server the LEAF alone:
-  // common/revocation_status.js walks it with the chain this PROCESS
-  // remembered from the full handshake. A ticket resumed on another node
-  // finds no chain there, and product mode's hard-fail refuses a certificate
-  // that verified (the remote PEP, every XACML caller, in the cluster mode).
-  // With a key per node the other node cannot open the ticket, so the client
-  // makes a full handshake and presents its chain.
+  // ONE SESSION-TICKET KEY WITH THE OTHER NODES SINCE #406 (2026-10-02), as
+  // LDAPS has had (tls/session_tickets.ts). Until then this port kept a key
+  // per node: it asks for a client certificate, a resumed session hands the
+  // server the LEAF alone, and common/revocation_status.js walked it with the
+  // chain only THIS process remembered — so a ticket resumed on another node
+  // found no chain, and product mode's hard-fail refused a certificate that
+  // verified. The price was a full handshake on nearly every new connection
+  // behind a balancer, and a browser holding a matching certificate asking its
+  // user each time. The remembered chains are replicated now, with a bounded
+  // wait for one still on its way (`common/app.js`), so the key is shared;
+  // `tls.mainPortSharedTickets` puts the key per node back.
+  if (config.value('tls.mainPortSharedTickets') !== false) {
+    require('./tls/session_tickets').track(mainServer,
+                                           'the main port (' + PORT + ')');
+  }
   // AND SO THAT A CLIENT CERTIFICATE PRESENTED HERE IS WRITTEN DOWN
   // (2026-09-16). The sighting hung on the 8443 and 9443 listeners'
   // `secureConnection` until they were deleted, so the main port — where every

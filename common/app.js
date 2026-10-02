@@ -410,6 +410,28 @@ realms.reserve(function () {
 // ---------------------------------------------------------------------------
 app.use(require('./cell_placement').middleware());
 
+// ---------------------------------------------------------------------------
+// AND BETWEEN THE TWO, THE CHAIN OF A SESSION RESUMED FROM ANOTHER NODE
+// (#406, 2026-10-02). The main port shares the cluster's session-ticket key,
+// so a TLS session made on one node resumes on another — and a resumed
+// session hands over the client certificate without its chain, which is
+// replicated from the node that saw it. This waits for it, bounded by
+// `tls.resumedChainWaitMs`, before the request is answered here or handed to
+// a worker (whose copy of the chain the pool builds from this process's).
+// `common/revocation_status.js` argues it; it calls next() at once for every
+// connection that is not a resumed one holding a verified certificate, which
+// is every browser that declined to send one. Required at the first request,
+// so this file's own load order does not change.
+// ---------------------------------------------------------------------------
+let resumedChainWait = null;
+// A HOT PATH: every request passes it, so no Entering/Leaving pair.
+app.use(function awaitResumedChainLazily(req, res, next) {
+  if (!resumedChainWait) {
+    resumedChainWait = require('./revocation_status').resumedChainMiddleware();
+  }
+  resumedChainWait(req, res, next);
+});
+
 app.use(requestPool.middleware({ enterRealm: enterRealm }));
 
 // ---------------------------------------------------------------------------

@@ -364,6 +364,7 @@ const CELL_MINTED = [
   'ssf_dead_letter_report.sweeps', 'ssf.relationshipInbox', 'ssf.relationshipLocks',
   'ssf_receivers.inbox', 'ssf_streams.deadLetters', 'ssf_streams.queued',
   'ssf_streams.received', 'ssf_streams.streams', 'tls.listenerAnnounced',
+  'tls.presentedChains',
   'tls.sessionTicketKey', 'vc_api.issued', 'vc_issued.credentials',
   'vc_issuer.lastCredentialRequest', 'vc_issuer.notificationIds',
   'vc_issuer.vciNonces', 'vc_offers.credentialOffers',

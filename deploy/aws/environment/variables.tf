@@ -380,6 +380,48 @@ variable "pki_listener_port" {
   default     = 80
 }
 
+# THE MAIN PORT'S CONNECTION AND SESSION POOLING (#406). Each is the setting
+# of the same name, so an environment changes it here rather than through
+# `extra_environment`; the defaults are the service's own.
+variable "http_keep_alive_timeout_s" {
+  description = <<-EOT
+    STS_HTTP_KEEP_ALIVE_TIMEOUT_S (global.httpKeepAliveTimeoutS): how long the
+    main port keeps an idle HTTP/1.1 connection. Keep it under the NLB's TCP
+    idle timeout (350 s).
+  EOT
+  type        = number
+  default     = 60
+}
+
+variable "tls_main_session_timeout_s" {
+  description = <<-EOT
+    STS_TLS_MAIN_SESSION_TIMEOUT_S (tls.mainSessionTimeoutS): how long a TLS
+    session on the main port may be resumed.
+  EOT
+  type        = number
+  default     = 60
+}
+
+variable "tls_main_port_shared_tickets" {
+  description = <<-EOT
+    STS_TLS_MAIN_PORT_SHARED_TICKETS (tls.mainPortSharedTickets): the main port
+    seals its session tickets under the key every node shares, so a session
+    resumes on whichever node the NLB picks.
+  EOT
+  type        = bool
+  default     = true
+}
+
+variable "tls_resumed_chain_wait_ms" {
+  description = <<-EOT
+    STS_TLS_RESUMED_CHAIN_WAIT_MS (tls.resumedChainWaitMs): how long a request
+    on a session resumed from another node waits for its client-certificate
+    chain to replicate.
+  EOT
+  type        = number
+  default     = 2000
+}
+
 variable "workers_request_count" {
   description = <<-EOT
     STS_WORKERS_REQUEST_COUNT on every node: request workers running the whole
