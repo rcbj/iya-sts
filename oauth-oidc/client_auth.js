@@ -1185,13 +1185,13 @@ async function verify(opts) {
     if (!info.presentedSecret) {
       log.debug("Leaving verify(). No secret was presented.");
       log.debug("Leaving verify().");
+      // EVERY METHOD THE ENTRY DECLARES (2026-10-02): with several declared,
+      // `method` is only methodFor()'s fallback, the first — and a refusal
+      // naming that one alone told a client allowed client_secret_post that
+      // it must use client_secret_basic.
       return { ok: false, errorCode: 'STS-OAUTH-0019', description: 'no ' +
-          'client_secret was presented. Send it by ' +
-                                       (method === 'client_secret_post'
-                                         ? 'client_secret_post (a ' +
-                                           'client_secret form parameter).'
-                                         : 'client_secret_basic (an ' +
-                                           'Authorization: Basic header).') };
+          'client_secret was presented. ' +
+          presentationSentence(info.declaredMethods, method) };
     }
     // EVERY SECRET THE CLIENT HOLDS (2026-10-01), each with its expiry, read
     // off the client's own entry here rather than threaded through every
@@ -1435,6 +1435,80 @@ async function verify(opts) {
                         ' it can are: ' + METHODS.join(', ') + '.' };
 }
 
+// EVERY METHOD A CLIENT'S ENTRY DECLARES, in its order: the list
+// clientConfigOf() carries, or the one method an older shape names. One
+// reading for methodFor() and for the refusals that have to name them all.
+/**
+ * Lists the token endpoint authentication methods a client's entry declares.
+ *
+ * @param registered - the client's configuration (clientConfigOf())
+ * @returns the declared methods, in order; empty when none
+ */
+function declaredMethodsOf(registered) {
+  log.debug("Entering declaredMethodsOf().");
+  const client = registered || {};
+  const declared = [].concat(client.token_endpoint_auth_methods &&
+                             client.token_endpoint_auth_methods.length
+    ? client.token_endpoint_auth_methods
+    : (client.token_endpoint_auth_method
+      ? [client.token_endpoint_auth_method] : []))
+    .map(function (one) {
+      return String(one || '').trim();
+    })
+    .filter(Boolean);
+  log.debug("Leaving declaredMethodsOf(). " + declared.length + ".");
+  return declared;
+}
+
+// HOW EACH METHOD IS PRESENTED, for a refusal that has to tell a client what
+// to send. Every method METHODS lists has a line; one this table does not
+// know is named bare rather than described wrongly.
+const PRESENTATION = {
+  client_secret_basic: 'client_secret_basic (an Authorization: Basic header)',
+  client_secret_post: 'client_secret_post (a client_secret form parameter)',
+  client_secret_jwt: 'client_secret_jwt (a client_assertion signed with ' +
+                     'the client secret)',
+  private_key_jwt: 'private_key_jwt (a client_assertion signed with a ' +
+                   'registered key)',
+  saml2_bearer: 'saml2_bearer (a SAML 2.0 client_assertion)',
+  tls_client_auth: 'tls_client_auth (a client certificate)',
+  self_signed_tls_client_auth: 'self_signed_tls_client_auth (a registered ' +
+                               'self-signed client certificate)',
+  attest_jwt_client_auth: 'attest_jwt_client_auth (OAuth-Client-Attestation ' +
+                          'and OAuth-Client-Attestation-PoP headers)',
+  attest_jwt_client_auth_dpop: 'attest_jwt_client_auth_dpop ' +
+                               '(OAuth-Client-Attestation and a DPoP proof)'
+};
+
+/**
+ * The sentence telling a client which credential to send: every method its
+ * entry declares, or the one being verified where the caller named none.
+ *
+ * @param declared - the declared methods (declaredMethodsOf()), or nothing
+ * @param method - the method being verified
+ * @returns the sentence
+ */
+function presentationSentence(declared, method) {
+  log.debug("Entering presentationSentence().");
+  const methods = Array.isArray(declared) && declared.length
+    ? declared.slice()
+    : [String(method || '')].filter(Boolean);
+  const described = methods.map(function (one) {
+    return PRESENTATION[one] || one;
+  });
+  let sentence;
+  if (described.length <= 1) {
+    sentence = 'Send it by ' + (described[0] || 'the declared method') + '.';
+  } else {
+    sentence = 'This client\'s entry declares ' + described.length +
+      ' methods; authenticate with one of them: ' +
+      described.slice(0, -1).join(', ') + ' or ' +
+      described[described.length - 1] + '.';
+  }
+  log.debug("Leaving presentationSentence().");
+  return sentence;
+}
+
 // ---------------------------------------------------------------------------
 // WHICH OF A CLIENT'S DECLARED METHODS THIS REQUEST PRESENTED (2026-10-01).
 //
@@ -1471,13 +1545,7 @@ async function verify(opts) {
  */
 function methodFor(registered, presented) {
   log.debug("Entering methodFor().");
-  const client = registered || {};
-  const declared = [].concat(client.token_endpoint_auth_methods &&
-                             client.token_endpoint_auth_methods.length
-    ? client.token_endpoint_auth_methods
-    : (client.token_endpoint_auth_method
-      ? [client.token_endpoint_auth_method] : []))
-    .map(String);
+  const declared = declaredMethodsOf(registered);
   if (declared.length < 2) {
     log.debug("Leaving methodFor(). One method, or none.");
     return declared[0] || '';
@@ -1550,6 +1618,7 @@ module.exports = {
   isAsymmetric: isAsymmetric,
   subjectRfc4514: subjectRfc4514,
   methodFor: methodFor,
+  declaredMethodsOf: declaredMethodsOf,
   verify: verify,
   // For the pages that report how many assertions are being remembered. The
   // history is one per realm now, shared with both grant profiles, so this is

@@ -2655,6 +2655,9 @@ async function observeClientAuthentication(opts) {
     // audience (#229).
     issuer: opts.issuer || '',
     presentedSecret: opts.clientSecret,
+    // Every method the entry declares, for a refusal that has to say what
+    // to send (2026-10-02).
+    declaredMethods: clientAuth.declaredMethodsOf(registered),
     assertion: opts.assertion,
     assertionType: opts.assertionType,
     clientSecret: registered.client_secret,
@@ -2691,6 +2694,25 @@ async function observeClientAuthentication(opts) {
             method + ".");
   return { authenticated: true, method: method, alg: checked.alg || '',
            why: 'it authenticated with ' + method + '.' };
+}
+
+// WHAT THE ENTRY DECLARES, as a refusal says it (2026-10-02): every method
+// where it declares several, so the sentence does not name the first alone.
+/**
+ * Names the token endpoint authentication method(s) a client declares.
+ *
+ * @param registered - the client's configuration
+ * @param method - the method being verified, used where none is declared
+ * @returns `token_endpoint_auth_method=x`, or
+ *   `token_endpoint_auth_methods x, y`
+ */
+function declaredText(registered, method) {
+  log.debug("Entering declaredText().");
+  const declared = clientAuth.declaredMethodsOf(registered);
+  log.debug("Leaving declaredText().");
+  return declared.length > 1
+    ? 'token_endpoint_auth_methods ' + declared.join(', ')
+    : 'token_endpoint_auth_method=' + (declared[0] || method);
 }
 
 /**
@@ -2757,6 +2779,9 @@ async function checkClientAuthentication(opts) {
     // audience (#229).
     issuer: opts.issuer || '',
     presentedSecret: opts.clientSecret,
+    // Every method the entry declares, for a refusal that has to say what
+    // to send (2026-10-02).
+    declaredMethods: clientAuth.declaredMethodsOf(registered),
     assertion: opts.assertion,
     assertionType: opts.assertionType,
     clientSecret: registered.client_secret,
@@ -2791,7 +2816,7 @@ async function checkClientAuthentication(opts) {
              requirement: 'client-authentication',
              description: 'RFC 9700 section 2.5: this client\'s entry in the ' +
                           'application registry declares ' +
-                          'token_endpoint_auth_method=' + method + ', ' +
+                          declaredText(registered, method) + ', ' +
                           'so it must authenticate — ' +
                           'and ' + checked.description };
   }
