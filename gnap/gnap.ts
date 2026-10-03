@@ -163,7 +163,8 @@ const SPEND_BODY = vz.object({
   amount: vz.string().max(40).optional(),
   currency: vz.string().max(8).optional(),
   receiver: vz.string().max(512).optional(),
-  simulateFailure: vz.boolean().optional()
+  // A JSON true arrives as the scalar "true" (`validation.js` flattens).
+  simulateFailure: vt.opt(vt.oneOf(['true', 'false']))
 });
 const HANDLE_PARAMS = vz.object({ handle: vt.base64url });
 
@@ -707,7 +708,7 @@ class GnapRoutes {
           return;
         }
       }
-      if (op.simulateFailure === true) {
+      if (op.simulateFailure === 'true') {
         const refunded = spent
           ? await self.deps.loadSpend().refund(spent.spent) : false;
         errorCodes.mark(res, 'STS-GNAP-0876');
