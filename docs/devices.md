@@ -325,6 +325,11 @@ or `POST /admin-api/devices/set-status` with `"status":"compromised"`):
 * revokes its Native SSO `device_secret`;
 * revokes every certificate this service's EST or SCEP Issuing CA issued it,
   with reason **keyCompromise**, so its CRL and OCSP responder say so;
+* ends every GNAP grant whose client key is one of the device's keys, and
+  revokes every OAuth access or refresh token DPoP-bound to one of its JWK
+  keys ([#432](https://github.com/rcbj/iya-sts/issues/432)). A token bound by
+  mutual TLS is not matched — the token register keeps no certificate
+  binding — and a WebAuthn key binds no token;
 * raises its risk level to `HIGH`;
 * sends RISC `credential-compromise` and `sessions-revoked` for a person's
   device (below).

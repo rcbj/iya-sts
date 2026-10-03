@@ -3938,6 +3938,15 @@ a job — which is #176's, where it lives.
   was an older draft). `request_context` is kept on the row and shown on
   `/portal/ciba`.
 
+**A SIGN-OUT OF EVERYTHING REVOKES THE PERSON'S GRANTS TOO (#432,
+2026-10-03).** The register outlived the tokens in it: a global sign-out, an
+account disable and a partner's `signal-revoke-grants` revoked every token and
+left the grant CURRENT, a `grant_id` a client could still name to merge onto.
+`logout/logout.ts` now has an `oauth-grant` family that calls `revoke()` — the
+client's DELETE, performed for the person — filed by the grant's `sub`.
+`revoke()` takes the door's CAEP initiating entity where it states one
+(`policy` for a signal), and keeps `user` / `admin` otherwise.
+
 `tests/grant_management.js` and `tests/vendored/sts_grant_management.js`,
 `sts_fapi_ciba.js` (local) hold it. **Not built**: Grant Management through
 the device flow (there is none here), `grant_management_action_required`,
