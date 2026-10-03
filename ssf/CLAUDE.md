@@ -529,7 +529,10 @@ and an unpermitted event end nothing; and a disabled policy ends nothing.
 **A FEDERATION PARTNER's events are acted on since #153** (see *A PARTNER'S
 SHARED SIGNALS*, below; on the relationship since #373), under the same
 rule: nothing acts unless the SET verified, and what it does is the same
-policy's decision.
+policy's decision. **Since #432 that includes `signal-revoke-grants`** — a
+partner's word about a person revokes their GNAP and OAuth grants and tokens,
+behind `ssf.signalsRevokeGrants` — and only from a partner: this surface's
+own receivers hear this service's own events.
 
 ---
 
@@ -2254,6 +2257,26 @@ of this directory needs:
     policy and the development observe gate**, which #153's code skipped.
   * a global sign-out from a sign-in partner exists as
     `partnerGlobalSignOutEvents`, empty by default.
+  * **ITS WORD REACHES WHAT THE PERSON DELEGATED (#432, 2026-10-03; rcbj's
+    decision 1).** A sign-in partner's `session-revoked`, `account-disabled`,
+    `account-purged` and `credential-compromise` permit
+    `signal-revoke-grants`: `logout.revokeGrantsOf()` ends every GNAP grant
+    the person approved and every OAuth grant, token and unredeemed code held
+    for them — for a `session-revoked`, only what was issued on the sessions
+    that relationship started (worked out BEFORE `signal-end-partner-sessions`
+    ends them, since the sessions are gone afterwards and what was issued on
+    them is still recorded against their ids). It ends no session: that is
+    the reactions above. A signals-only partner's
+    (`signalsOnlyRevokeGrantEvents`) is empty, #374's rule. **`ssf.signalsRevokeGrants`**
+    (on by default; rcbj: "provide a flag to disable this behavior") turns it
+    off, and the row then says `skipped`. #117's rules hold unchanged — a
+    verified SET only, the realm it arrived in, development observes — and
+    the row records what was revoked (`revoked`, and per family). It
+    REVERSES `gnap/CLAUDE.md`'s "signals do not revoke grants", which was
+    written when the only signals here were this service's own; this
+    service's own receivers still get no such reaction, for that reason —
+    acting on its own `session-revoked` about a grant it had just revoked
+    would be a loop.
 * **Subjects.** A sign-in partner's `iss_sub` (its `iss` being `fedPeer` or
   the SSF issuer) is the ONE person whose `federationLink` is
   `<id> <fedPeer> <sub>` — the identifier the partner signs them in with,

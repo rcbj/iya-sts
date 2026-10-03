@@ -475,6 +475,14 @@ default:
 | signs people in | `account-enabled` | lift that block |
 | `ssf` only | anything about a person | recorded, nothing more. A global sign-out and an account lock exist for an operator's policy to permit |
 | either | `device-compliance-change` | set the device's compliance |
+| signs people in | `session-revoked`, `account-disabled`, `account-purged`, `credential-compromise` | **revoke the person's grants and tokens** (#432): every GNAP grant they approved, and every OAuth grant (Grant Management), access and refresh token and unredeemed authorization code held for them. A `session-revoked` reaches only what was issued on the sessions this relationship started. Sessions are left to the rows above. Turned off with `ssf.signalsRevokeGrants` |
+
+`ssf.signalsRevokeGrants` is **on** by default. Turning it off records the
+reaction as *skipped* and revokes nothing — so an account the partner reports
+compromised keeps every grant and token it gave clients here until somebody
+revokes them by hand; turn it off only where the partner's signals are not
+trusted that far, and prefer narrowing `partnerRevokeGrantEvents` in the
+`signal-response` policy instead.
 
 An administrator can lift a block with *Unblock* on the relationship's page
 (`POST /admin-api/federation/signals-unblock`). Every arrival from every

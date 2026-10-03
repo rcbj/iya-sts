@@ -2893,8 +2893,8 @@ class Devices {
                 'of device ' + device.id + ' were trusted with could not all ' +
                 'be ended: ' + ((e && e.message) || e));
     }
-    log.debug("Leaving Devices.endGrantsBoundTo(). " + out.gnap + " grant(s), " +
-              out.tokens + " token(s).");
+    log.debug("Leaving Devices.endGrantsBoundTo(). " + out.gnap +
+              " grant(s), " + out.tokens + " token(s).");
     return out;
   }
 
