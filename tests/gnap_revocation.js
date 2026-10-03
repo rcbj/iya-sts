@@ -80,6 +80,7 @@ function childMain() {
     const store = require(ROOT + '/gnap/gnap_store');
     const revocation = require(ROOT + '/gnap/gnap_revocation');
     const rsModule = require(ROOT + '/gnap/gnap_rs');
+    const mtlsModule = require(ROOT + '/oauth-oidc/mtls');
 
     const STAMP = crypto.randomBytes(3).toString('hex');
     const ANN = 'gr-ann-' + STAMP;
@@ -368,17 +369,48 @@ function childMain() {
     const recorded = stats.issuedList().filter(function (row) {
       return row.jti === mtlsBound;
     })[0] || {};
+    // A CERTIFICATE THE REGISTER NEVER HELD, OVER THE DEVICE'S KEY (another
+    // CA's, or a re-issue): its x5t#S256 matches nothing the device holds,
+    // and the key under it — recorded at issuance — is the device's.
+    const deviceSpki = stsCrypto.certificateSpkiThumbprint(cert.certPem);
+    const unheldX5t = 'u' + x5t.slice(1);
+    const reissued = mintOauth(CAT, 'Bearer', null,
+      { cnf: { 'x5t#S256': unheldX5t } }, { certSpki: deviceSpki });
+    const hReissued = grantFor(CAT, null,
+      { proof: 'mtls', 'cert#S256': unheldX5t }, otherApp);
+    hReissued.grant.client.certSpki = deviceSpki;
+    store.saveGrant(hReissued.grant, 'test: proved with a re-issued cert');
+    const notBound = mintOauth(CAT, 'Bearer', null, {},
+                               { certSpki: deviceSpki });
+    const notBoundRow = stats.issuedList().filter(function (row) {
+      return row.jti === notBound;
+    })[0] || {};
+    const presented = mtlsModule.presentedKeyThumbprint({ socket: {
+      getPeerCertificate: function () {
+        return { raw: new crypto.X509Certificate(cert.certPem).raw };
+      } } });
     const compromised = device.ok
       ? devices.setStatus(device.device.id, 'compromised', 'a test',
                           'a test') : { ok: false };
-    note(recorded.x5t === x5t,
+    note(recorded.x5t === x5t && notBoundRow.x5tSpki === '' &&
+         presented === deviceSpki,
          'H0. the token register records a token\'s mutual-TLS binding ' +
-         '(x5t#S256) beside DPoP\'s jkt', JSON.stringify(recorded));
+         '(x5t#S256) beside DPoP\'s jkt, and the key under it only for a ' +
+         'certificate-bound token; the issuer reads that key off the ' +
+         'presented certificate', JSON.stringify([recorded, notBoundRow,
+                                                  presented, deviceSpki]));
+    note(stats.isRevoked(reissued) && finalized(hReissued),
+         'H2. a token and a mutual-TLS GNAP grant bound to a certificate the ' +
+         'register never held, over the device\'s key, are ended too — ' +
+         'found by the key, not the certificate',
+         JSON.stringify(stats.issuedList().filter(function (row) {
+           return row.jti === reissued;
+         })));
     note(device.ok && added.ok && addedCert.ok && compromised.ok &&
          finalized(h1) && finalized(hMtls) && live(unrelated) &&
          live(unrelatedMtls) && stats.isRevoked(bound) &&
          stats.isRevoked(mtlsBound) && !stats.isRevoked(otherMtls) &&
-         compromised.gnapGrantsEnded === 2,
+         compromised.gnapGrantsEnded === 3,
          'H1. a device marked compromised ends the GNAP grants whose client ' +
          'key is the device\'s — by its JWK, and by mutual TLS with its ' +
          'certificate — revokes the OAuth tokens DPoP-bound to its key and ' +

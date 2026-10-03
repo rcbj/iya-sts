@@ -614,10 +614,18 @@ class GnapRevocation {
               (thumbprints || []).length);
     const held = (thumbprints || []).filter(Boolean).map(String);
     const ended = held.length ? this.endWhere((grant) => {
-      return !!grant.client && this.deviceThumbprintsOf(grant.client.key)
-        .some(function (one) {
-          return held.indexOf(one) >= 0;
-        });
+      if (!grant.client) {
+        return false;
+      }
+      // The key by value, and — for a client that proved by mutual TLS —
+      // the key under the certificate it presented (`client.certSpki`), so a
+      // certificate the device register never held, over the device's key,
+      // is found too.
+      const own = this.deviceThumbprintsOf(grant.client.key)
+        .concat(grant.client.certSpki ? [String(grant.client.certSpki)] : []);
+      return own.some(function (one) {
+        return held.indexOf(one) >= 0;
+      });
     }, how) : 0;
     log.debug("Leaving GnapRevocation.endForDeviceKeys(). " + ended);
     return ended;

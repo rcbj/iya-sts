@@ -3790,7 +3790,14 @@ class OAuth2Server {
              // refresh token. `oauth-oidc/oauth_grant_signals.ts` reads both.
              grantId: String((opts && (opts.grant_id || opts.grant_family ||
                                        opts.set_id)) || ''),
-             grantRefresh: !!(opts && opts.grant_family) };
+             grantRefresh: !!(opts && opts.grant_family),
+             // THE KEY UNDER A BOUND CERTIFICATE (#432 follow-up): the
+             // SubjectPublicKeyInfo SHA-256 of the client certificate on the
+             // Token Request, which the register keeps beside `x5t` when the
+             // token is certificate-bound — so a compromised device's KEY
+             // finds a token bound to any certificate over it.
+             certSpki: opts && opts.request
+               ? this.deps.mtls.presentedKeyThumbprint(opts.request) : '' };
   }
 
   /**

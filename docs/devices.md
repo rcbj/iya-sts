@@ -329,7 +329,10 @@ or `POST /admin-api/devices/set-status` with `"status":"compromised"`):
   including a client proving by mutual TLS with one of the device's
   certificates — and revokes every OAuth access or refresh token bound to the
   device: DPoP-bound to one of its JWK keys, or bound by mutual TLS (RFC 8705
-  `x5t#S256`) to a certificate one of its `x509` keys holds
+  `x5t#S256`) to a certificate over one of its keys — the certificate the
+  device's `x509` key holds, or any other certificate over the same key (one
+  another CA issued, or a re-issue this register never saw), because the key
+  under a bound certificate is recorded when the token is issued
   ([#432](https://github.com/rcbj/iya-sts/issues/432)). A WebAuthn key binds
   no token;
 * raises its risk level to `HIGH`;

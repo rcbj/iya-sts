@@ -9858,11 +9858,16 @@ What this directory owns:
   (`gnap/gnap_revocation.ts`, found in `require.cache` for `loadedAuthn()`'s
   reason) and revokes the OAuth tokens DPoP-bound (`jkt`) to its JWK keys
   and the ones bound by mutual TLS (`x5t#S256`) to a certificate one of its
-  `x509` keys holds, whose observer reports the grant each ends (#239). The
-  mutual-TLS half was a stated gap until `admin_stats.js` recorded the
-  certificate binding beside `jkt` (rcbj: close gaps, don't document them); a
-  GNAP client proving by mutual TLS with the device's certificate is matched
-  by that certificate's x5t#S256 as well as its key.
+  `x509` keys holds — or to ANY certificate over one of its keys — whose
+  observer reports the grant each ends (#239). The mutual-TLS half was a
+  stated gap until `admin_stats.js` recorded the certificate binding beside
+  `jkt` (rcbj: close gaps, don't document them), and then a narrower one —
+  a certificate over the device's key that the register never held — until
+  it also recorded the KEY under the bound certificate (`x5tSpki`, its
+  SubjectPublicKeyInfo SHA-256, from `mtls.presentedKeyThumbprint()` via
+  `oauth2.ts`'s `issuanceContext()`). A GNAP client proving by mutual TLS is
+  matched the same two ways: the certificate's x5t#S256, and the key under
+  the certificate it proved with (`client.certSpki`, recorded on the grant).
   `crypto.publicKeySpkiThumbprint()` is the key-side twin of
   `certificateSpkiThumbprint()` that makes a GNAP key comparable with an
   `x509` device key.

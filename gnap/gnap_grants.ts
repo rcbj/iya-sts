@@ -1830,6 +1830,12 @@ class GnapGrants {
                 key: caller.descriptor.value,
                 keyIdentity: caller.descriptor.identity,
                 proof: caller.descriptor.proof.method,
+                // THE KEY UNDER A MUTUAL-TLS CLIENT'S CERTIFICATE (#432
+                // follow-up): a `cert#S256` key names only a certificate, so
+                // the key it was proved with is recorded here, for a
+                // compromised device's key to find it.
+                certSpki: caller.descriptor.proof.method === 'mtls'
+                  ? this.deps.mtls.presentedKeyThumbprint(req) : '',
                 display: caller.display, classId: caller.classId,
                 classIdDeclared: caller.classIdDeclared },
       request: { tokens: asked.tokens, multiple: asked.multiple,
@@ -3097,6 +3103,9 @@ class GnapGrants {
         }
         grant.client.key = newDescriptor.value;
         grant.client.keyIdentity = newDescriptor.identity;
+        grant.client.certSpki = newDescriptor.proof &&
+          newDescriptor.proof.method === 'mtls'
+          ? this.deps.mtls.presentedKeyThumbprint(req) : '';
       }
       store.saveGrant(grant,
                       newDescriptor ? 'token key rotated' : 'token rotated');

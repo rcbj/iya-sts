@@ -2858,8 +2858,14 @@ class Devices {
   //   * an OAuth access or refresh token DPoP-bound (RFC 9449) to one of the
   //     JWK thumbprints — the `jkt` the token register keeps;
   //   * an OAuth token bound by mutual TLS (RFC 8705) to one of the device's
-  //     certificates — the `x5t#S256` the register keeps since this
-  //     follow-up, compared with each certificate's own thumbprint.
+  //     certificates — the `x5t#S256` the register keeps, compared with each
+  //     certificate's own thumbprint — or to ANY certificate over one of its
+  //     keys: the register also keeps the bound certificate's
+  //     SubjectPublicKeyInfo SHA-256 (`x5tSpki`), compared with the keys', so
+  //     a certificate another CA issued, or a re-issue the register never
+  //     held, is found by the key. A mutual-TLS GNAP client is matched the
+  //     same way, by the key under the certificate it proved with
+  //     (`client.certSpki`).
   //
   // Both kinds of token are revoked in the one revocation set, whose observer
   // reports the grant each ends (#239). A WebAuthn key binds no token. The
@@ -2895,20 +2901,45 @@ class Devices {
                   ((e && e.message) || e));
       }
     });
+    // The SubjectPublicKeyInfo SHA-256 of every key the device holds — an
+    // `x509` key's own thumbprint, and a `jwk` key's computed here — which a
+    // certificate-bound token's `x5tSpki` and a mutual-TLS GNAP client's
+    // `certSpki` are compared with: a certificate over the device's KEY that
+    // the register never held (another CA's, a re-issue) is found by it.
+    const spkiThumbprints: string[] = [];
+    device.keys.forEach((key) => {
+      if (key.kind === 'x509' && key.thumbprint) {
+        spkiThumbprints.push(String(key.thumbprint));
+      } else if (key.kind === 'jwk' && key.material && key.material.jwk) {
+        try {
+          spkiThumbprints.push(this.deps.stsCrypto.publicKeySpkiThumbprint(
+            nodeCrypto.createPublicKey({ key: key.material.jwk,
+                                         format: 'jwk' })));
+        } catch (e) {
+          // A JWK node cannot import is matched by its RFC 7638 thumbprint
+          // alone.
+          log.debug("Caught in Devices.endGrantsBoundTo(): " +
+                    ((e && e.message) || e));
+        }
+      }
+    });
     const out = { gnap: 0, tokens: 0 };
     try {
       const gnap = findGnapRevocation();
       if (gnap && (thumbprints.length || certThumbprints.length)) {
         out.gnap = gnap.endForDeviceKeys(
-          thumbprints.concat(certThumbprints), {
+          thumbprints.concat(certThumbprints, spkiThumbprints), {
           why: 'its client key belongs to device ' + device.id + ', marked ' +
                'compromised', actor: actor, via: 'the device register',
           initiatingEntity: entity });
       }
-      if (jwkThumbprints.length || certThumbprints.length) {
+      if (jwkThumbprints.length || certThumbprints.length ||
+          spkiThumbprints.length) {
         out.tokens = loadStats().revokeWhere(function (record: Json) {
           return (!!record.jkt && jwkThumbprints.indexOf(record.jkt) >= 0) ||
-                 (!!record.x5t && certThumbprints.indexOf(record.x5t) >= 0);
+                 (!!record.x5t && certThumbprints.indexOf(record.x5t) >= 0) ||
+                 (!!record.x5tSpki &&
+                  spkiThumbprints.indexOf(record.x5tSpki) >= 0);
         }, why, { initiatingEntity: entity });
       }
     } catch (e) {

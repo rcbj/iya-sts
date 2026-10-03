@@ -211,7 +211,7 @@ its tokens rather than skipping it as finished. What reaches it:
 | An application entry deleted | `applications.deleteApplication()` → `endForClient()` | found in `require.cache`, never required |
 | Its `gnapKey`, `gnapKeyIdentity` or `gnapKeyReference` removed or replaced | `updateApplication()` → `endForClientKeyChange()` | only grants whose key the entry no longer names; a REFERENCE the entry still names keeps its grants (every proof is checked against what it resolves to now) |
 | A key ROTATED | nothing | section 6.1.1 moves the token and the GRANT to the new key and never writes the entry, so the grant keeps the identities it was rotated from (`client.keyLineage`) and the checks accept any of them — `sts_gnap_core.js` section 9 was refused at use until it did; a mutual-TLS rotation at the authority writes `gnapKeyIdentity` through `seen()`, not the operator's door |
-| A device marked compromised (#164) | `devices.ts` → `endForDeviceKeys()` | a grant whose client key's JWK, certificate (x5t#S256, for mutual TLS) or SPKI thumbprint is one of the device's keys; and the OAuth tokens bound to them by DPoP (`jkt`) or mutual TLS (`x5t#S256`) |
+| A device marked compromised (#164) | `devices.ts` → `endForDeviceKeys()` | a grant whose client key's JWK, certificate (x5t#S256, for mutual TLS) or SPKI thumbprint is one of the device's keys — or, for a mutual-TLS client, whose `client.certSpki` (the key under the certificate it proved with, recorded at grant creation and at a key rotation) is; and the OAuth tokens bound to them by DPoP (`jkt`) or mutual TLS (`x5t#S256`, or the bound certificate's key, `x5tSpki`) |
 | A partner's verified signal | `signal-revoke-grants` | *Shared Signals*, above |
 
 Three things a reader would otherwise rediscover:

@@ -451,6 +451,13 @@ function recordJwt(payload, signed, context) {
     // compromised can revoke the tokens bound to a certificate it holds
     // (`common/devices.ts`, endGrantsBoundTo()).
     x5t: (payload.cnf && payload.cnf['x5t#S256']) || '',
+    // AND THE KEY UNDER THAT CERTIFICATE: its SubjectPublicKeyInfo SHA-256,
+    // stated by the issuer out of band (no claim carries it), and kept only
+    // for a token that IS certificate-bound. `x5t` names the certificate,
+    // which changes when the key is re-certified or certified elsewhere; this
+    // names the key a device holds.
+    x5tSpki: payload.cnf && payload.cnf['x5t#S256']
+      ? String(issuedUnder.certSpki || '') : '',
     iat: payload.iat || 0,
     nbf: payload.nbf || 0,
     exp: payload.exp || 0,
