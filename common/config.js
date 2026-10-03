@@ -1535,14 +1535,36 @@ const SETTINGS = [
     description: 'Write what a resource owner approved into the consent ' +
                  'register on their own entry (as gnap:<digest> values), so ' +
                  'the same rights are not asked for again.' },
-  { key: 'gnap.allowCrossUser', group: 'GNAP', label: 'Allow a different ' +
-                                                      'person to approve',
-    path: 'gnap.allowCrossUser', env: 'STS_GNAP_ALLOW_CROSS_USER', type: 'bool',
-    dflt: false,
-    runtime: true,
-    description: 'Section 2.4: when the request named a user and somebody ' +
-                 'else signs in, the AS SHOULD answer unknown_user. On lets ' +
-                 'whoever signs in approve.' },
+  // #432 PHASE 6: approval by an absent resource owner, which RETIRED
+  // `gnap.allowCrossUser` (whoever signed in could approve a grant naming
+  // somebody else) with no switch of that meaning left.
+  { key: 'gnap.ownerApproval', group: 'GNAP',
+    label: 'Approval by an absent resource owner',
+    path: 'gnap.ownerApproval', env: 'STS_GNAP_OWNER_APPROVAL', type: 'bool',
+    dflt: false, runtime: true,
+    description: 'RFC 9635 sections 1.4 and 2.4: when a request names a ' +
+                 'person who is not the one at the approval page, or offers ' +
+                 'no interaction at all, the grant waits for that person on ' +
+                 '/portal/ciba (with a mail notice) while the client polls. ' +
+                 'OFF by default: a new way in is something a realm turns ' +
+                 'on. Off, a request naming somebody else is answered ' +
+                 'unknown_user and one offering no interaction is refused.' },
+  { key: 'gnap.ownerApprovalLifetimeS', group: 'GNAP',
+    label: 'Time an absent owner has to answer',
+    path: 'gnap.ownerApprovalLifetimeS',
+    env: 'STS_GNAP_OWNER_APPROVAL_LIFETIME_S', type: 'int', dflt: 600,
+    min: 60, max: 86400, runtime: true,
+    description: 'Seconds a grant waits on its resource owner\'s portal ' +
+                 'before it is finalized as rejected. The client\'s wait ' +
+                 'between polls is stretched so gnap.maxPolls covers it.' },
+  { key: 'gnap.ownerApprovalMaxPending', group: 'GNAP',
+    label: 'Requests one person may have waiting',
+    path: 'gnap.ownerApprovalMaxPending',
+    env: 'STS_GNAP_OWNER_APPROVAL_MAX_PENDING', type: 'int', dflt: 5,
+    min: 1, max: 100, runtime: true,
+    description: 'The most grants that may wait for one person on their ' +
+                 'portal at once; more are refused request_denied, so a ' +
+                 'client cannot fill somebody\'s page.' },
   { key: 'gnap.userCodeLength', group: 'GNAP', label: 'User code length',
     path: 'gnap.userCodeLength', env: 'STS_GNAP_USER_CODE_LENGTH', type: 'int',
     dflt: 8, min: 6,

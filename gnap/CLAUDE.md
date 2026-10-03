@@ -52,7 +52,9 @@ Route-free libraries, each require-able from an in-process test:
 | `gnap_delegation.ts` | who may act for whom (#432 phase 1): impersonation by assertion and RFC 9767 derivation asked of #186's delegation policy, recorded in the delegation register; the subset rule and its one extension point; the actor chain and its cap — see *Delegation* below |
 | `gnap_rights.ts` | each access right against the access-type catalogue and the issuance policy (#432 phases 3 and 4): well-formedness, the `issue-gnap-right` facts and verdicts, narrowing, "derivable from", the introspection view — see *Each right a policy question* below |
 | `gnap_ownership.ts` | who owns the resource a right's `identifier` names (#432 phase 5): a registered resource set's `resource_owners`, or the resource server's `gnapOwnerLookupUri`, fetched under the outbound policy and cached briefly; the `issue-gnap-right` owner facts — see *Ownership and limits* below |
+| `gnap_limits_form.ts` | a right's limits as a form a person can lower, drawn and read back the same way by the approval page and by `/portal/ciba`'s absent-owner approvals (#432 phase 5) |
 | `gnap_spend.ts` | the demonstration resource server's running totals of a right's limits (#432 phase 5): checked, spent atomically across the cluster, reset per interval, refunded; the `gnap.spend-purge` job |
+| `gnap_approval.ts` | who approves and how strongly signed in (#432 phase 6): the acr an approval needs and what the sign-in screen must demand, and approval by an absent resource owner on `/portal/ciba` — see *Phase 6* below |
 | `gnap_grants.ts` | the engine: identifying a caller, creating, continuing, modifying and revoking grants, issuing, rotating and deriving tokens |
 | `gnap_rs.ts` | introspection, registration, and judging a presented token |
 | `gnap_console.ts` | the view and action layer both admin doors render (no route, no `res`, no markup) |
@@ -269,10 +271,10 @@ access token for X" without ever seeing a right. Both halves are replaced;
   through `claim_attributes.requestedClaimsFor()`) are added as top-level
   members. A name the response already carries — `status` among them — is
   refused when the type is declared and never overwritten.
-* **ENFORCED IN PHASE 6 OF #432 (same ticket, next lane)**: `interaction`,
-  `consentActions` and `acr`. They are declared, shown and sent to the
-  policy as facts; nothing acts on them yet. Everything else declared is
-  enforced.
+* **`interaction`, `consentActions` AND `acr` ARE RULES TOO (phase 6)**, whose
+  verdicts say who must be asked and what the approving session must meet;
+  *Phase 6* below. Everything the catalogue declares is now enforced for
+  GNAP.
 
 ## Ownership and limits (#432 phase 5, 2026-10-03)
 
@@ -315,10 +317,15 @@ argues the mechanism; what a reader needs here:
   realm's own policy can allow a delegate or ask more. Matching is the
   person's own DN or DIRECT membership of the owner group (what the console
   rosters read).
-* **WHERE IT IS ASKED.** The approval page, before it draws and again
-  before it records an allow: `grants.approverRefusal()` puts only the
-  disputed rights to the policy as this person's interaction, and a refusal
-  is the page's (STS-GNAP-0862) — the grant stays pending for its owner.
+* **WHERE IT IS ASKED.** The approval page, AFTER phase 6's step-up and
+  before anything else — a remembered approval included — and again before
+  it records an allow: `grants.approverRefusal()` puts only the disputed
+  rights to the policy as this person's interaction, and a refusal is the
+  page's (STS-GNAP-0862) — the grant stays pending for its owner. An
+  absent owner answering on `/portal/ciba` (phase 6, `gnap_approval.ts`'s
+  `answer()`) is asked the same question, after the step-up and before the
+  answer is claimed, and lowers limits there with the same controls
+  (`gnap_limits_form.ts`).
   A client that skips interaction with a verified assertion, a derivation
   and every release meet the same rule at the issue stage, where the right
   is DROPPED (audited). At creation, before anybody is known, nothing is
@@ -726,6 +733,107 @@ continuation to use later) on every continuation, a poll, an interaction referen
 modification alike, separately from `gnap.maxPolls` (`too_many_attempts`,
 `STS-GNAP-0136`). Phase 7 added only its in-process test.
 
+## Phase 6 of #432: who must be asked, how strongly, and approval by an absent owner (2026-10-03)
+
+`gnapSkipInteraction` was all or nothing, the catalogue's `interaction`,
+`consentActions` and `acr` were facts nothing read, and a request naming
+somebody other than the person at the page was refused unless
+`gnap.allowCrossUser` let WHOEVER signed in approve it. `gnap_approval.ts`'s
+header argues the design; what a reader needs here:
+
+* **THE CATALOGUE'S DECLARATIONS ARE POLICY, AND THE ENGINE HONOURS THE
+  VERDICT.** Four built-in Permits of the `issue-gnap-right` question
+  (`xacml_templates.ts`: `gnap-type-interaction-never`, `-always`,
+  `gnap-type-consent-action`, `gnap-type-acr`) carry two new members of the
+  gnap-right obligation, `INTERACTION` (none, skippable, always) and
+  `REQUIRED_ACR`. The reader keeps the most demanding interaction and every
+  acr, so a realm's own rule TIGHTENS — `always` for a client class, an acr
+  for an action — by adding an obligation, never by editing a built-in one;
+  an interaction word nobody knows reads as `always`. `gnap_rights.ts`'s
+  `judge()` aggregates the kept rights into the grant's `requirement`
+  (`interaction`, `acr`, `always`, and `byRight` keyed as the page numbers
+  its checkboxes). No verdict stating an interaction is `skippable`: the
+  rule before #432, so a realm whose policy says nothing about it behaves as
+  it did.
+* **THE CLIENT FLAG MEANS "MAY SKIP WHERE EVERY RIGHT ALLOWS IT"**
+  (`gnap_grants.ts`'s `skipVerdict()`): `always` — by the type or a consent
+  action, and a right naming NO actions names every action, consent ones
+  included — needs the page whoever asks (`STS-GNAP-0892` when a trusted
+  client then offers no interaction); `skippable` is skipped by a trusted
+  client; `none` (every right of a `never` type) is issued to ANY client,
+  but only as itself — a request naming a person or asking who they are is
+  about that person, which only the person or a trusted client's delegation
+  decision (phase 1) authorizes.
+* **A REMEMBERED APPROVAL IS NOT INTERACTION FOR `always`**, and neither is
+  `gnap.consentRequired` off: `rememberedFor()` answers no and the person
+  sees the page again. The choice was weighed: a remembered approval is a
+  person's earlier yes to the same rights, which is exactly what "always"
+  declares insufficient — a type that could be remembered past would be
+  `default` with a different name. The type's declaration is the more
+  specific decision, so it wins over the realm setting too.
+* **THE ISSUE STAGE HOLDS THE ENGINE TO IT** as defence in depth: an `always`
+  right approved by skipping or remembering is dropped from its token
+  (`STS-GNAP-0890`), and one whose acr the approving session does not meet
+  (`STS-GNAP-0891`). Neither should be reachable through the engine's own
+  paths; a new path that reaches one is caught and audited rather than
+  issued.
+* **STEP-UP BEFORE THE PAGE (rule 3an).** `gnap_interact.ts`'s
+  `beforeApproval()` holds the sign-on session to EVERY acr the requested
+  rights need — not RFC 9470's preference list, because a page approving
+  two rights approves both — sends a short session to the sign-in screen
+  once with `step_up.ts`'s demand (the sign-in service then offers what the
+  realm's authentication policy, rule 3bd, allows), and refuses
+  `request_denied` (`STS-GNAP-0899`, recorded as the decision, the finish
+  enacted) when it comes back short. The return marker
+  (`step_up_honoured=1`) is forgeable for `jar_prompt_honoured`'s reason and
+  with its bound: forging it only gets the refusal sooner. The form's POST
+  is held to the TICKED rights' acr and sent back to the page if short.
+  `grant.ro.acr` records the session's acr; the issue stage asks again.
+* **NO SESSION, NO ACR.** A skip with an acr required is impossible
+  (`STS-GNAP-0893` without interaction; with it, the page steps up). An
+  assertion's own `acr` is not taken as the session: it is a statement
+  about a sign-in elsewhere, presented by the client that wants the token.
+  A DERIVATION is held to the session the ORIGINAL grant was approved on
+  (`STS-GNAP-0896`; `grant.ro.acr` is carried over), and a right beyond the
+  original — the catalogue's `derivableFrom` — of a type needing its owner
+  is refused (`STS-GNAP-0895`): nobody ever saw it.
+* **APPROVAL BY AN ABSENT OWNER (RFC 9635 sections 1.4, 2.4), behind
+  `gnap.ownerApproval`, OFF by default** (CIBA's rule: a new way in is
+  something a realm turns on). A request offering no interaction whose
+  `user` names a person, or one whose page is reached by somebody else
+  (`forwardToOwner()`, before the page is drawn), WAITS for that person
+  (`grant.ownerApproval`) on `/portal/ciba`, with a mail notice
+  (`mail_uses.ts`'s `accessRequested()`, a declinable notification); the
+  client polls, the wait stretched so `gnap.maxPolls` covers
+  `gnap.ownerApprovalLifetimeS`, `too_fast` as everywhere. The owner
+  approves with the page's checkboxes and the page's step-up (through the
+  portal's own sign-in with the acr values), once across the cluster
+  (`owner-decision` claim, `0717`); the grant records `approval: 'owner'`, a
+  new value of the policy's approval fact. Unanswered in time it is
+  finalized `rejected` (`STS-GNAP-0894` at the next poll; the expiry job
+  likewise). Bounded per person (`gnap.ownerApprovalMaxPending`,
+  `STS-GNAP-0897`); a name the directory does not hold is `unknown_user`
+  (`STS-GNAP-0901`), because a `sub_ids` email or account names a login
+  without asking whether anybody has it. No remembered approval answers a
+  waiting grant: nobody is present, and answering from the register would
+  be issuing about a person with nobody asked.
+* **`gnap.allowCrossUser` IS GONE**, with no shim. With owner approval off a
+  different person's approval is `unknown_user` (section 2.4's SHOULD).
+* **CELLS (#98).** `gnap_cells.ts` already relays a request naming a person
+  to their home cell, so a waiting grant is made where their portal is. The
+  one exception — an instance identifier held elsewhere (*Cells*, exception
+  3) — is REFUSED (`STS-GNAP-0898`) rather than queued where the owner's
+  portal could never list it. A grant forwarded from the page was made in
+  the cell the person at the page is pinned to; if the named owner is homed
+  elsewhere, the same check refuses it, recorded as the decision.
+* **AND RFC 9396 HOLDS THE SAME acr**, because the catalogue is one: the
+  OAuth authorization endpoint requires every detail type's acr beside
+  `acr_values`, steps up once and refuses `unmet_authentication_requirements`
+  (`STS-OAUTH-0936`), and the token funnel refuses a detail whose acr the
+  grant's authentication does not meet (`STS-OAUTH-0937`) —
+  `oauth-oidc/CLAUDE.md` 3am. `interaction` and `consentActions` need
+  nothing there: the consent screen asks for every detail every time.
+
 ## Error codes
 
 `STS-GNAP-NNNN`, registered in `common/error_codes.js`:
@@ -748,6 +856,7 @@ modification alike, separately from `gnap.maxPolls` (`too_many_attempts`,
 | 0790–0809 | #432 phase 7: the grant lifetime (0790, 0791), the per-person revoke (0792), subject information with no authorization (0793) |
 | 0810–0817 | #432 phases 3 and 4: an uncatalogued type in product (0810), a type refusing bearer (0811), a right not meeting its catalogue entry (0812) or its limits (0813, 0814), a verdict nobody knows (0815), no verdict at all (0816), narrowed to nothing (0817) |
 | 0860–0877 | #432 phase 5: unreadable limits (0860); the owner policy (0861 a non-owner, 0863 an unanswered lookup); the approval page refusing a non-owner (0862), a raised limit (0866) or a lowered one its schema refuses (0867); a registration's owners (0864, 0865); a derivation raising a limit (0868); a lookup failing (0869); the demonstration resource server's spend (0870 over a limit, 0871 outside the window or interval, 0872 the receiver, 0873 the currency, 0874 an unreadable body, 0875 the store, 0876 a failed operation refunded, 0877 a refund that could not be made) |
+| 0890–0901 | #432 phase 6: a right dropped at issue for an approval without the page (0890) or short of its acr (0891); a trusted client that must interact (0892) or has no session for an acr (0893); an absent owner's time run out (0894); a derivation beyond the original needing its owner (0895) or short of the original's acr (0896); the owner's queue full (0897), the owner homed in another cell (0898), an unmet step-up (0899), the notice not queued (0900), an unknown owner (0901) |
 
 `tests/error_codes.js` carries `gnapError(res` and `interactionError(res` as
 failure patterns.
@@ -769,6 +878,8 @@ failure patterns.
 | `tests/gnap_limits_ownership.js` | #432 phase 5 in process: the limits vocabulary and "lower", ownership from a resource set and by a stubbed lookup, the owner rules at both stages, `limitsRaised()`, the demonstration resource server's totals and the shared store's statement |
 | `tests/vendored/sts_gnap_limits.js` | the same over HTTP: a group owner registered on a resource set, a stranger refused on the approval page, a member approving, limits and `grant_id` at introspection, a limit lowered on the page and read off the token by the job, the demonstration resource server spending to the limit, refunding and refusing |
 | `tests/gnap_person_grants.js` | #432 phase 7 in process: per-client opaque identifiers and references, subject released once on an authorization, the grant lifetime and the expiry job, finalization reasons, `too_fast`, self-declared display, one person's grants and who may revoke them |
+| `tests/gnap_interaction.js` | #432 phase 6 in process: the interaction and acr verdicts, who may skip through `createGrant()`, a remembered approval and `gnap.consentRequired` off not standing in for `always`, the issue stage's two drops, the step-up and its refusal, the absent owner's queue, answer, cap, timeout, forward and unknown name, `gnap.allowCrossUser` gone |
+| `tests/vendored/sts_gnap_interaction.js` | the same over HTTP: `never` without interaction, the trusted client against `always` and a consent action, a remembered `always` drawing the page again, an `mfa` type's step-up and refusal, and an absent owner approving and denying on `/portal/ciba` while the client polls |
 | `tests/access_token_status.js` | #432 p2b in process: the access-token list, both JWT formats' claim, the bit after `revokeTokens()` and after the register forgets, the biscuit list, discovery, and `rsCovers()` |
 | `tests/gnap_cells.js` | #98 in process, the cell map, channel and routing index stubbed: stamped handles, each door's placement, a grant moved and forwarded, a pinned browser pulling a grant, single-cell mode unchanged |
 | `tests/gnap_revocation.js` | #432 in process with the whole stack: the sign-out families, a grant ending with its session, `/admin/sessions`, `revokeGrantsOf()` narrowed and whole (and never a global sign-out for a person holding nothing), a global sign-out, the check at use and the disable, the entry's key replaced and deleted, a compromised device. The partner's signal is `tests/ssf_transmitters.js` K |

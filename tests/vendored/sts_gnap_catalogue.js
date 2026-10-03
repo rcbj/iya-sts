@@ -34,6 +34,12 @@
 //   7. A NARROWED RIGHT: a realm's own issuance policy (imported as ALFA)
 //      takes `refund` off the payment type; the approval page says what was
 //      narrowed and the token carries the rest.
+//   8. A TYPE'S acr HOLDS FOR RFC 9396 TOO (#432 phase 6): an authorization
+//      code flow for a type needing acr 1 granted on a password session,
+//      the ID Token's acr the one met; a type needing mfa sending the same
+//      session to sign in again, and refused
+//      unmet_authentication_requirements on the way back; client
+//      credentials refused a type needing any acr.
 //
 // The in-process half, with each built-in rule in both modes, is
 // `tests/gnap_catalogue.js`. Everything runs in a THROWAWAY TRUST REALM that
@@ -70,10 +76,11 @@ if (appconfigProblem) {
 var stsUrl = process.env.WSTRUST_STS_URL || "https://localhost:8081/sts";
 var base = String(process.env.OID4VCI_ISSUER_URL ||
                   stsUrl.replace(/\/sts\/?$/, "")).replace(/\/+$/, "");
+const PASSWORD = "gnap-cat-Passw0rd!-" + String(Date.now()).slice(-6);
 const h = flowLib.harness({
   base: base,
   realm: usernameFor("gnapcat").replace(/[^a-z0-9-]/g, "").slice(0, 30),
-  password: "gnap-cat-Passw0rd!-" + String(Date.now()).slice(-6),
+  password: PASSWORD,
   log: log
 });
 const check = h.check;
@@ -445,6 +452,132 @@ async function test() {
     assert.deepStrictEqual(access[0].actions, ["status"], r.text);
   });
   await h.setting("xacml.issuancePolicy", "role-issuance");
+
+  // =========================================================================
+  // 8. A TYPE'S acr AT THE OAUTH AUTHORIZATION ENDPOINT (#432 phase 6).
+  // =========================================================================
+  log.info("=== 8. a type's acr for RFC 9396 ===");
+  const ONE = "cat-acr-one";
+  const STRONG = "cat-acr-mfa";
+  await h.ok(h.realmApi + "/applications/set-access-type", {
+    application: RS2, type: ONE, acr: "1" }, "declared the acr-1 type");
+  await h.ok(h.realmApi + "/applications/set-access-type", {
+    application: RS2, type: STRONG, acr: "mfa" }, "declared the mfa type");
+  const RP = id("cat-rp");
+  const RP_REDIRECT = "https://rp.cat.test/cb";
+  const rpSecret = "cat-rp-" + nodeCrypto.randomBytes(18).toString("base64url");
+  await h.ok(h.realmApi + "/applications/create", {
+    identifier: RP, kind: "oauth2-client", protocols: ["oauth2"],
+    fields: { oauthClientId: [RP], oauthClientSecret: rpSecret,
+              oauthRedirectUri: [RP_REDIRECT],
+              oauthTokenEndpointAuthMethod: "client_secret_post",
+              oauthGrantType: ["authorization_code", "client_credentials"] } },
+             "registered the relying party");
+  const rp = h.browser();
+  const authorizeUrl = function (details, extra) {
+    log.debug("Entering authorizeUrl().");
+    log.debug("Leaving authorizeUrl().");
+    return h.realmBase + "/oauth2/authorize?" + new URLSearchParams(
+      Object.assign({ response_type: "code", client_id: RP,
+                      redirect_uri: RP_REDIRECT, scope: "openid",
+                      state: "s-" + nodeCrypto.randomBytes(4).toString("hex"),
+                      code_challenge: "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSs" +
+                                      "tw-cM",
+                      code_challenge_method: "S256",
+                      authorization_details: JSON.stringify(details) },
+                    extra || {})).toString();
+  };
+  // Sign-in and consent until the relying party's redirect URI, or the first
+  // page that is neither.
+  const follow = async function (first) {
+    log.debug("Entering follow().");
+    let res = first;
+    for (let hop = 0; hop < 14; hop++) {
+      if (res.status === 302 || res.status === 303) {
+        if (res.location.indexOf(RP_REDIRECT) === 0) {
+          break;
+        }
+        res = await rp.go("GET", res.location);
+        continue;
+      }
+      const authnId = (res.text.match(/name="authn_id" value="([^"]+)"/) ||
+                       [])[1];
+      if (res.status === 200 && authnId) {
+        res = await rp.go("POST", "/realm/" + h.realm + "/authn/login",
+                          { authn_id: authnId, username: OWNER,
+                            password: PASSWORD, action: "login",
+                            csrf_token: h.csrfOf(res.text) });
+        continue;
+      }
+      const consentAction = (res.text.match(
+        /<form method="post" action="([^"]*oauth2\/consent[^"]*)"/) || [])[1];
+      if (res.status === 200 && consentAction) {
+        const form = {};
+        (res.text.match(/<input type="hidden"[^>]*>/g) || [])
+          .forEach(function (tag) {
+            const name = /name="([^"]+)"/.exec(tag);
+            const value = /value="([^"]*)"/.exec(tag);
+            if (name) {
+              form[name[1]] = value ? value[1].replace(/&amp;/g, "&") : "";
+            }
+          });
+        form.action = "allow";
+        res = await rp.go("POST", consentAction.replace(/&amp;/g, "&"), form);
+        continue;
+      }
+      break;
+    }
+    log.debug("Leaving follow().");
+    return res;
+  };
+  r = await follow(await rp.go("GET", authorizeUrl([{ type: ONE }])));
+  const issuedCode = new URL(r.location || "https://x/").searchParams
+    .get("code");
+  check("8a. a type needing acr 1 is authorized on a password session",
+        function () {
+    assert.ok(issuedCode, r.status + " " + r.location + " " +
+              String(r.text).slice(0, 300));
+  });
+  r = await fetch(h.realmBase + "/oauth2/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ grant_type: "authorization_code",
+      code: String(issuedCode || ""), redirect_uri: RP_REDIRECT,
+      client_id: RP, client_secret: rpSecret,
+      code_verifier: "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk" })
+      .toString() });
+  const issuedText = await r.text();
+  check("8b. the ID Token carries the acr the session met", function () {
+    assert.strictEqual(r.status, 200, issuedText);
+    assert.strictEqual(claimsOf(JSON.parse(issuedText).id_token).acr, "1",
+                       issuedText);
+  });
+  r = await rp.go("GET", authorizeUrl([{ type: ONE }, { type: STRONG }]));
+  check("8c. a second type needing mfa sends the same session to sign in " +
+        "again: every type's acr is required", function () {
+    assert.ok((r.status === 302 || r.status === 303) &&
+              /\/authn\/login/.test(r.location), r.status + " " + r.location);
+  });
+  r = await rp.go("GET", authorizeUrl([{ type: STRONG }],
+                                      { acr_values: "1",
+                                        step_up_honoured: "1" }));
+  check("8d. back still short of it: unmet_authentication_requirements, " +
+        "with acr_values met", function () {
+    assert.ok(/error=unmet_authentication_requirements/.test(r.location),
+              r.status + " " + r.location);
+  });
+  r = await fetch(h.realmBase + "/oauth2/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ grant_type: "client_credentials",
+      client_id: RP, client_secret: rpSecret,
+      authorization_details: JSON.stringify([{ type: ONE }]) }).toString() });
+  const ccText = await r.text();
+  check("8e. client credentials meet no type's acr", function () {
+    assert.strictEqual(r.status, 400, ccText);
+    assert.strictEqual(JSON.parse(ccText).error,
+                       "invalid_authorization_details", ccText);
+  });
 
   log.info(h.checks + " check(s) passed.");
   log.info("Test completed successfully.");

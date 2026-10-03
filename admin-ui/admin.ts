@@ -19811,9 +19811,10 @@ class AdminConsole {
           'where it is granted as asked'
         : 'in this realm, which is in product mode') +
       ' (the issuance policy\'s <code>gnap-type-not-catalogued</code> ' +
-      'rule). Interaction, the actions that force consent and the ' +
-      'authentication level are recorded now and enforced by phase 6 of ' +
-      '#432.') +
+      'rule). For GNAP, interaction (always, default, never) and the ' +
+      'actions that force consent decide whether the resource owner must ' +
+      'see the approval page, and the authentication level is what their ' +
+      'session must meet before it is drawn (#432 phase 6).') +
       '<table><tr><th>Type</th><th>What it declares</th><th></th></tr>' +
       (rows || '<tr><td colspan="3"><span class="state-none">None.</span>' +
        '</td></tr>') + '</table>' +

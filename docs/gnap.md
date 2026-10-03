@@ -201,7 +201,7 @@ kinds: `gnap-client` or `gnap-resource-server`. The attributes:
 | `gnapInteractionStartModes` | narrows the start modes this client may use |
 | `gnapAllowedAccess` | the access types and references a client may request (read by the issuance policy's `gnap-right-not-listed` rule), or a resource server may register |
 | `oauthAuthorizationDetailsType` | the access types a resource server owns — the [catalogue](#access-types-and-the-issuance-policy) shared with RFC 9396 |
-| `gnapBearerTokens`, `gnapSkipInteraction` | per-client permissions. `gnapSkipInteraction` lets a client skip the approval page; it does **not** let it act for a person — see [acting for somebody else](#acting-for-somebody-else) |
+| `gnapBearerTokens`, `gnapSkipInteraction` | per-client permissions. `gnapSkipInteraction` lets a client skip the approval page **where every requested right's access type allows it** (see [who must be asked](#who-must-be-asked-and-how-strongly-signed-in)); it does **not** let it act for a person — see [acting for somebody else](#acting-for-somebody-else) |
 | `gnapAccessTokenFormat`, `gnapAccessTokenLifetimeS` | per-application overrides |
 | `gnapResourceServerUri` | the locations a resource server answers for |
 | `gnapOwnerLookupUri` | where a resource server answers who owns a resource: an https template with `{identifier}` as one path segment — see [who owns a resource](#who-owns-a-resource) |
@@ -347,7 +347,9 @@ definition per type:
 | `maxLifetimeS` | a token carrying it lives no longer |
 | `derivableFrom` | a derived token (RFC 9767 section 4) may add a right of this type when the original carries one of these |
 | `introspectionClaims` | the person's claims the owning resource server is told at `/gnap/introspect` |
-| `interaction`, `consentActions`, `acr` | recorded now; enforced by phase 6 of #432 |
+| `interaction` | `never`: issued with nobody asked, to any client acting as itself; `default`: a `gnapSkipInteraction` client may skip the page; `always`: the resource owner sees the page every time — no skip, no remembered approval |
+| `consentActions` | a right naming one of these actions (or no actions, which is every action) needs the resource owner on the page, as `always` does |
+| `acr` | the authentication level the approving session must meet; the approval page sends the person to sign in again with it first |
 
 **A right of a catalogued type that names no location is for its owning
 resource server**: the token is audienced to it and minted in its format.
@@ -362,7 +364,7 @@ Every access right is put to the issuance policy as its own XACML question,
 action-id `issue-gnap-right`, with the right, the token it is for (label,
 bearer flag, format, resource servers), the client and its registered class,
 who approved it and how (`pending`, `interaction`, `remembered`, `skipped`,
-`derived`), the session's `acr` and `amr`, its risk and registered device, and
+`derived`, or `owner` — the resource owner on their portal), the session's `acr` and `amr`, its risk and registered device, and
 what the catalogue declares for its type. It is asked twice: when the grant is
 requested, modified or derived (a refusal answers the client) and when tokens
 are issued (a refusal leaves the right out of its token).
@@ -389,8 +391,9 @@ the person was asked. [XACML](xacml.md) describes the obligation.
 
 An access right may name one resource with `identifier` (RFC 9635 section
 8): an account, an album, a mailbox. **Only the resource's owner may approve
-access to it.** A person who signs in on the approval page and does not own
-it is told so and cannot approve; the request waits for its owner.
+access to it.** A person who signs in on the approval page — or answers a request
+waiting on their `/portal/ciba` — and does not own it is told so and cannot
+approve; the request waits for its owner.
 
 The resource server says who owns what, in one of two ways:
 
@@ -456,7 +459,8 @@ changed here. A request whose limits use these members wrongly is refused
 `invalid_request` (`STS-GNAP-0860`); an RFC 9396 authorization detail of the
 same type is refused the same way (`STS-OAUTH-0916`).
 
-**The person may lower a limit on the approval page, never raise it**: a
+**The person may lower a limit on the approval page — or on `/portal/ciba`,
+when they approve a request that waited for them there — never raise it**: a
 smaller amount or count, fewer receivers, a narrower window, or an interval
 with the same start and a period no shorter and no more repetitions (a
 shorter period resets the budget more often, so it is more). Removing a
@@ -505,6 +509,56 @@ service** every other protocol here uses, and gets the same directory entry
 however they signed in. An approval is remembered in the consent register, so
 the same application asking the same person for the same rights is not asked
 again (`gnap.rememberApprovals`).
+
+### Who must be asked, and how strongly signed in
+
+The access type's `interaction`, `consentActions` and `acr` are rules of the
+issuance policy, and the grant engine does what they say:
+
+| The rights asked for | What happens |
+|---|---|
+| every right of a type declaring `interaction: never` | issued with nobody asked, to any client — acting as itself. A request that names a person or asks who they are still goes to that person |
+| `default` types (and references, and uncatalogued types in development) | a client with `gnapSkipInteraction` skips the approval page; any other goes to it |
+| any right of a type declaring `interaction: always`, or naming an action the type lists in `consentActions` (or naming no actions, which is every action) | the resource owner sees the approval page, every time. A client trusted to skip is sent there too, and is refused `invalid_interaction` if it offers no way to reach the person. **A remembered approval does not count**, and neither does `gnap.consentRequired` off |
+| any right of a type declaring an `acr` | the person's sign-in must meet every such level before the page is drawn; a session that does not is sent to sign in again — with a second factor or a security key, as the level needs and the realm's authentication policy allows — and refused `request_denied` if it comes back short. Nothing needing an `acr` is issued without such a session: not by skipping, and not by deriving from a token whose approval did not meet it |
+
+The same `acr` holds for OAuth: an authorization request whose
+`authorization_details` carry such a type asks the person to sign in again
+with it (every type's level, beside any `acr_values`) and is refused
+`unmet_authentication_requirements` if they come back short, and no token
+endpoint grant — client credentials included — issues the detail without an
+authentication that meets it.
+
+A realm's own issuance policy may make any of these stricter — `always` for
+a class of client, an `acr` for one action — because the most demanding
+answer wins. What the person achieved is recorded on the grant (`acr`), and
+each right is checked against it again when tokens are issued.
+
+### When the person asked is not the person here
+
+A request's `user` may name somebody who is not at the approval page — or a
+client may offer no interaction at all. Where the realm turns on
+**`gnap.ownerApproval`** (off by default), the grant then **waits for the
+person it names** (RFC 9635 sections 1.4 and 2.4):
+
+* it is listed on their portal under **Sign-in requests** (`/portal/ciba`),
+  with the application, each right (untick what you do not want to allow),
+  who was using the application when it asked, the sign-in level it needs
+  and when it runs out; they are told by mail as well (a notification they
+  may turn off — the request waits on the portal either way);
+* the client keeps polling its continuation; the `wait` it is told is long
+  enough that `gnap.maxPolls` polls cover `gnap.ownerApprovalLifetimeS`, and
+  polling sooner is `too_fast`;
+* approved, the client's next poll collects the tokens; denied, it is told
+  `user_denied`; not answered in time, it is told so and the grant is
+  finalized as **rejected**;
+* a person has at most `gnap.ownerApprovalMaxPending` such requests waiting,
+  and a name nobody here holds is `unknown_user`.
+
+Where it is off, a different person's approval is answered `unknown_user`, and
+a request offering no interaction that needs a person is refused.
+**`gnap.allowCrossUser`, which let whoever signed in approve a grant naming
+somebody else, no longer exists.**
 
 ### What a person sees: `/portal/gnap`
 
@@ -707,7 +761,9 @@ it then publishes is what its grant endpoint enforces.
 | `gnap.continueAfterApproval` | `STS_GNAP_CONTINUE_AFTER_APPROVAL` | `true` | yes | Whether an approved grant's response carries `continue`, so the client can modify or revoke it later. |
 | `gnap.consentRequired` | `STS_GNAP_CONSENT_REQUIRED` | `true` | yes | Off approves every interactive grant as soon as the resource owner has signed in, with no approval page. |
 | `gnap.rememberApprovals` | `STS_GNAP_REMEMBER_APPROVALS` | `true` | yes | Records what a resource owner approved in the consent register on their entry, so the same rights are not asked for again. |
-| `gnap.allowCrossUser` | `STS_GNAP_ALLOW_CROSS_USER` | `false` | yes | On lets whoever signs in approve a grant that named a different user, instead of `unknown_user` (section 2.4). |
+| `gnap.ownerApproval` | `STS_GNAP_OWNER_APPROVAL` | `false` | yes | Sections 1.4 and 2.4: a request naming a person who is not at the approval page, or offering no interaction, waits for that person on `/portal/ciba` (with a mail notice) while the client polls. Off: `unknown_user`, or refused. Replaced `gnap.allowCrossUser` (#432). |
+| `gnap.ownerApprovalLifetimeS` | `STS_GNAP_OWNER_APPROVAL_LIFETIME_S` | `600` | yes | Seconds an absent owner has to answer before the grant is finalized as rejected. |
+| `gnap.ownerApprovalMaxPending` | `STS_GNAP_OWNER_APPROVAL_MAX_PENDING` | `5` | yes | The most grants that may wait for one person at once. |
 | `gnap.userCodeLength` | `STS_GNAP_USER_CODE_LENGTH` | `8` | yes | The length of a user code; section 3.3.3 recommends six to eight characters. |
 | `gnap.unknownAccessReferences` | `STS_GNAP_UNKNOWN_ACCESS_REFERENCES` | `accept` | yes | An access reference naming no registered resource set and not in `gnapAllowedAccess`: carried onto the token (`accept`) or `request_denied` (`refuse`). |
 | `gnap.introspection` | `STS_GNAP_INTROSPECTION` | `true` | yes | RFC 9767 section 3.3 token introspection. |

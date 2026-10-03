@@ -31,6 +31,9 @@
 //      credential marked compromised, recovery started, the address changed
 //      (to the OLD address). When the SERVICE did it (risk scoring), the
 //      realm's Admin Write roster is told as well.
+//   5. **AN ACCESS REQUEST WAITING FOR ITS OWNER** (#432 phase 6), a
+//      notification a person may decline: a GNAP grant a client asked for
+//      while they were not there, waiting on /portal/ciba.
 //
 // A LIBRARY (rule 3). Its requires of the credential store and the account
 // signals are LAZY, at the moment of use: `ssf/account_signals.ts` calls
@@ -729,6 +732,53 @@ class MailUses {
     return out;
   }
 
+  // -------------------------------------------------------------------------
+  // 5. AN ACCESS REQUEST WAITING FOR ITS RESOURCE OWNER (#432 phase 6): a
+  // GNAP grant a client asked for on this person's behalf while they were
+  // not there (RFC 9635 section 1.4), waiting on `/portal/ciba`. Never
+  // throws: the request is already queued, and a message that cannot be
+  // sent leaves it waiting there all the same.
+  // -------------------------------------------------------------------------
+  /**
+   * Tells a person that an application's request waits for their approval
+   * on the portal.
+   *
+   * @param username - the resource owner
+   * @param facts - `client` (the registered identifier), `rights` (a
+   *   sentence), `expiresMinutes`, `dedupKey`
+   * @returns what `send()` answered, or `{ ok: false, skipped }`
+   */
+  accessRequested(username: string, facts: Json): Json {
+    const { log, mail, errorCodes, realms } = this.deps;
+    log.debug("Entering MailUses.accessRequested(). " + username);
+    const f = facts || {};
+    let out: Json = { ok: false, skipped: 'no transport' };
+    try {
+      if (!username || !mail.available()) {
+        log.debug("Leaving MailUses.accessRequested(). Nobody, or no " +
+                  "transport.");
+        return out;
+      }
+      out = mail.send({
+        username: username, template: 'access-request',
+        values: { username: username, client: String(f.client || ''),
+                  rights: String(f.rights || 'access'),
+                  expiresMinutes: String(f.expiresMinutes || '') },
+        links: { link: '/portal/ciba' },
+        dedupKey: String(f.dedupKey || ('access-request:' + username)),
+        via: 'a GNAP access request', actor: String(f.client || '')
+      });
+    } catch (e) {
+      log.debug("Caught in MailUses.accessRequested(): " +
+                ((e && e.message) || e));
+      log.warn(errorCodes.tag('STS-MAIL-0180') + 'mail: the access request ' +
+               'notice for ' + username + ' in the "' + realms.currentId() +
+               '" realm could not be queued: ' + ((e && e.message) || e));
+    }
+    log.debug("Leaving MailUses.accessRequested().");
+    return out;
+  }
+
   // An account was disabled (`common/account_state.ts`), by `by`.
   /**
    * Sends the account-disabled notice.
@@ -833,5 +883,6 @@ export = {
   fromAccountSignal: slot.forward('fromAccountSignal'),
   accountDisabled: slot.forward('accountDisabled'),
   sessionsEnded: slot.forward('sessionsEnded'),
-  addressChanged: slot.forward('addressChanged')
+  addressChanged: slot.forward('addressChanged'),
+  accessRequested: slot.forward('accessRequested')
 };

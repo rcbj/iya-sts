@@ -1444,6 +1444,35 @@ tokens are issued on that session, so its end revokes their refresh token. It
 is also CAEP's `session-presented`, via `OpenID Connect CIBA`. A denial
 honours nothing and sends nothing.
 
+**AND GNAP GRANTS WAITING FOR THEIR OWNER (#432 phase 6, 2026-10-03).** A
+GNAP request naming this person while somebody else was at the approval page,
+or offering no interaction (RFC 9635 sections 1.4 and 2.4, with
+`gnap.ownerApproval` on), is listed in an *Access requests* section below the
+CIBA requests. The page was chosen over a second approvals page because it IS
+the page where a person answers what a client asked while they were
+elsewhere; what is reused is its mechanism — the session is the identity, a
+form names a request (`gnap-approve` / `gnap-deny` with the request's own id,
+never a person), one answer, the step-up through the portal's sign-in with
+the acr values the rights need (`?gnapstepup=<id>`) — and NOT CIBA's store:
+the request is a GNAP grant held and continued by `gnap/`, and
+`gnap/gnap_approval.ts` lists and answers it, reached LAZILY (the portal is
+built at 8a, GNAP at 23d). Each right has the approval page's checkbox; the
+repeated `right` field is read off the raw body (`helpers.bodyValues()`), as
+the approval page reads it. A request not waiting for this person is
+`STS-PORTAL-0243`, an approval short of the rights' acr `STS-PORTAL-0244`.
+The person asking (whoever was at the page) is named on the card: an owner
+judging a request for their access needs to know who wants it.
+
+**AND THE OWNER CHECK AND THE LIMITS, AS ON THE APPROVAL PAGE (#432 phase
+5).** Each right's limits are drawn under it with the approval page's own
+controls (`gnap/gnap_limits_form.ts`, a static utility imported directly
+because it loads nothing of GNAP's engine), and the form's schema reads the
+post with them stripped off; `gnap_approval.answer()` is handed the request
+and a reader of the raw body, asks `grants.approverRefusal()` after the
+step-up (`STS-GNAP-0862`: a person named on a request is not thereby the
+owner of what it names) and reads the lowered limits back (`0866` raised,
+`0867` failing the type's schema), all before the answer is claimed.
+
 ## `/portal/claim-sources`: CONNECTED CLAIM SOURCES (#147, 2026-09-24)
 
 The setup phase of OpenID Connect Claims Aggregation, the person's own. Every

@@ -62,9 +62,19 @@
 // string (which has no dimensions), the narrowing is a refusal
 // (STS-GNAP-0817). A narrowed right is checked against the catalogue again.
 //
-// **ENFORCED BY PHASE 6 OF #432 (same ticket, next lane)**: the catalogue's
-// `interaction`, `consentActions` and `acr`. They are sent to the policy as
-// facts already, and shown on the console; nothing here acts on them.
+// **WHO MUST BE ASKED, AND HOW STRONGLY (#432 phase 6).** The catalogue's
+// `interaction`, `consentActions` and `acr` are rules of the built-in
+// policy (`xacml_templates.ts`), whose verdicts carry `interaction` (none,
+// skippable, always) and `acr`. `judge()` aggregates them over the rights it
+// keeps into the grant's `requirement` — the most demanding interaction,
+// every acr — which `gnap_grants.ts` acts on before anybody is asked: a
+// trusted client skips only where every right is skippable, a `never` right
+// needs nobody, the approval page steps the person up. At the ISSUE stage the
+// verdicts are held against what actually happened, as defence in depth: a
+// right whose verdict says `always` is dropped from a token approved by
+// skipping or by a remembered approval (STS-GNAP-0890), and one whose acr
+// the approving session did not meet is dropped (STS-GNAP-0891). Nothing
+// here decides; it holds the engine to what the policy said.
 //
 // A LIBRARY (rule 3): no route and no store. It requires the catalogue
 // reader, the store's reference lookup, the scope policy and the gate, none
@@ -81,6 +91,9 @@ import gate = require('../common/issuance_gate');
 import scopePolicy = require('../common/scope_policy');
 import InstanceSlot = require('../common/instance_slot');
 import catalogue = require('../oauth-oidc/authorization_details');
+// RFC 9470's ordered acr levels (#432 phase 6): whether a session meets a
+// right's acr. A library that requires nothing of `gnap/`.
+import stepUp = require('../oauth-oidc/step_up');
 import store = require('./gnap_store');
 // #432 phase 5: who owns an identifier, and what a limit means.
 import ownership = require('./gnap_ownership');
@@ -100,6 +113,7 @@ interface GnapRightsDeps {
   catalogue: Json;
   store: Json;
   ownership: Json;
+  stepUp: Json;
 }
 
 // THE DEMONSTRATION RESOURCE SERVER'S TYPE (`gnap.ts`'s `/gnap/rs/resource`),
@@ -150,6 +164,10 @@ const ANSWERS: Record<string, { gnapError: string; status: number }> = {
   'STS-GNAP-0860': { gnapError: 'invalid_request', status: 400 }
 };
 
+// Who must be asked, least to most demanding (#432 phase 6). No verdict
+// stating one is `skippable`, the rule before #432.
+const INTERACTIONS = ['none', 'skippable', 'always'];
+
 // conformance()'s kinds, as this protocol's codes.
 const CONFORMANCE_CODES: Record<string, string> = {
   definition: 'STS-GNAP-0812',
@@ -189,7 +207,8 @@ class GnapRights {
     return { log: helpers.log, config: config, errorCodes: errorCodes,
              mode: mode, audit: audit, applications: applications,
              gate: gate, scopePolicy: scopePolicy, catalogue: catalogue,
-             store: store, ownership: ownership };
+             store: store, ownership: ownership,
+             stepUp: stepUp };
   }
 
   // The values of one attribute of an application entry, as strings.
@@ -697,6 +716,10 @@ class GnapRights {
     const dropped: Json[] = [];
     let n = 0;
     const out: Json[] = [];
+    // #432 phase 6: what the kept rights need, aggregated. `none` until a
+    // right says more, so a request of `never` rights alone needs nobody.
+    const requirement: Json = { interaction: 'none', acr: [], always: [],
+                                byRight: {} };
     for (let t = 0; t < asked.length; t++) {
       const token = asked[t].token;
       const kept: Json[] = [];
@@ -742,11 +765,52 @@ class GnapRights {
                       why: why } });
           continue;
         }
+        const asking = INTERACTIONS.indexOf(verdict.interaction) >= 0
+          ? verdict.interaction : 'skippable';
+        const acrs: string[] = Array.isArray(verdict.acr) ? verdict.acr
+                                                          : [];
+        if (stage === GnapRights.STAGES.ISSUE) {
+          const unmet = self.unmetAtIssue(asking, acrs, ctx);
+          if (unmet) {
+            dropped.push({ token: token.label || String(t + 1),
+                           right: right, code: unmet.code });
+            audit.failure(unmet.code, {
+              protocol: 'GNAP', channel: 'http',
+              target: String((ctx.app && ctx.app.identifier) || ''),
+              summary: 'A GNAP access right was left out of its token: ' +
+                       unmet.why,
+              detail: { right: typeof right === 'string' ? right
+                                                         : right.type,
+                        approval: String(ctx.approval || ''),
+                        acr: acrs.join(' ') } });
+            continue;
+          }
+        }
+        if (INTERACTIONS.indexOf(asking) >
+            INTERACTIONS.indexOf(requirement.interaction)) {
+          requirement.interaction = asking;
+        }
+        if (asking === 'always') {
+          requirement.always.push(typeof right === 'string' ? right
+                                                            : right.type);
+        }
+        acrs.forEach(function (one: string): void {
+          if (requirement.acr.indexOf(one) < 0) {
+            requirement.acr.push(one);
+          }
+        });
         if (typeof verdict.maxLifetimeS === 'number' &&
             (cap === null || verdict.maxLifetimeS < cap)) {
           cap = verdict.maxLifetimeS;
         }
         kept.push(result);
+        // Per right, as the approval page numbers its checkboxes
+        // (`t<token>r<right>`), so the step-up can be held to what the
+        // person left ticked (`gnap_approval.ts`).
+        if (acrs.length) {
+          requirement.byRight['t' + t + 'r' + (kept.length - 1)] =
+            acrs.slice();
+        }
       }
       const next = Object.assign({}, token, { access: kept });
       if (cap !== null) {
@@ -756,8 +820,63 @@ class GnapRights {
     }
     log.debug("Leaving GnapRights.judge(). " + narrowedList.length +
               " narrowed, " + dropped.length + " dropped.");
+    if (!rights.length) {
+      // Nothing asked of anybody: the rule before #432 for an empty request.
+      requirement.interaction = 'skippable';
+    }
     return { ok: true, tokens: out, narrowed: narrowedList,
-             dropped: dropped };
+             dropped: dropped, requirement: requirement };
+  }
+
+  // -------------------------------------------------------------------------
+  // THE ISSUE STAGE'S CHECK OF ONE RIGHT AGAINST HOW IT WAS APPROVED (#432
+  // phase 6): `always` approved without the page drawn (skipped, or a
+  // remembered approval), or an acr the approving session does not meet.
+  // Null when it stands. A derived right was approved on the original's page
+  // and inherits its interaction; its acr is held to the original's session.
+  // -------------------------------------------------------------------------
+  private unmetAtIssue(asking: string, acrs: string[], ctx: Json): Json {
+    const { log } = this.deps;
+    log.debug("Entering GnapRights.unmetAtIssue().");
+    const approval = String(ctx.approval || '');
+    if (asking === 'always' &&
+        (approval === 'skipped' || approval === 'remembered')) {
+      log.debug("Leaving GnapRights.unmetAtIssue(). Not asked.");
+      return { code: 'STS-GNAP-0890',
+               why: 'its type requires its resource owner to approve it ' +
+                    'on the page, and this approval was ' + approval };
+    }
+    const session = ctx.session || {};
+    const missing = this.unmetAcr(acrs, session);
+    if (missing.length) {
+      log.debug("Leaving GnapRights.unmetAtIssue(). acr.");
+      return { code: 'STS-GNAP-0891',
+               why: 'its type requires authentication level ' +
+                    missing.join(' ') + ', which the approving session (' +
+                    String(session.acr || 'none') + ') does not meet' };
+    }
+    log.debug("Leaving GnapRights.unmetAtIssue(). Stands.");
+    return null;
+  }
+
+  /**
+   * Returns the required acr values a session does not meet (RFC 9470's
+   * ordered levels, `step_up.ts`): every value is required, so one unmet is
+   * enough to refuse.
+   *
+   * @param acrs - the values every right requires
+   * @param session - the session's `acr` and `amr` (or a sign-on session)
+   * @returns the values not met
+   */
+  unmetAcr(acrs: string[], session: Json): string[] {
+    const { log, stepUp } = this.deps;
+    log.debug("Entering GnapRights.unmetAcr().");
+    const facts = session || {};
+    const out = (acrs || []).filter(function (one: string): boolean {
+      return !!one && !stepUp.meets(one, facts);
+    });
+    log.debug("Leaving GnapRights.unmetAcr(). " + out.length);
+    return out;
   }
 
   // -------------------------------------------------------------------------
@@ -877,5 +996,6 @@ export = {
   limitsRaised: slot.forward('limitsRaised'),
   ownersOf: slot.forward('ownersOf'),
   derivable: slot.forward('derivable'),
+  unmetAcr: slot.forward('unmetAcr'),
   introspection: slot.forward('introspection')
 };

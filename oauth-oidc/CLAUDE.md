@@ -1852,6 +1852,32 @@ so must `admin-ui/admin.ts`.
      Grant Management `grant_id` is returned only where that profile is
      asked for), so a resource server counting RAR limits keys them itself —
      the demonstration resource server is GNAP's.
+   * `derivableFrom` is GNAP's (RFC 9767); `interaction` and
+     `consentActions` are GNAP's too (#432 phase 6, `gnap/CLAUDE.md`) and
+     are not read here: the consent screen asks for every detail every time
+     and has no unattended path, so `always` and the consent actions hold by
+     construction and `never` has nothing to relax.
+   * **A TYPE'S `acr` HOLDS ON BOTH SIDES (#432 phase 6)**, because the
+     catalogue is one: a right GNAP refuses on a short sign-in must not be
+     had through `authorization_details` instead. `requiredAcrsOf()` names
+     every level the request's types declare, and EVERY one is required —
+     not `acr_values`' "any of", since a grant of two types is a grant of
+     both. The authorization endpoint passes them to `step_up.ts`'s
+     `assessSession()` as `required` beside the request's own requirement:
+     a session short of one is sent to sign in once with
+     `screenDemandWith()`'s demand (the return carries `step_up_honoured`,
+     as for `acr_values`), and short again is refused
+     `unmet_authentication_requirements` (`STS-OAUTH-0936`) — this covers
+     PAR and JAR too, whose parameters arrive here resolved. The token's
+     `acr` is the most preferred requested value that also expresses every
+     required level, else the session's own, so what a resource server reads
+     is a level its type accepts. **And `tokenSet()` asks again**, the funnel
+     every grant mints through: a detail type whose acr the grant's
+     authentication (`acr`, `amr` off the code, the refresh token, a CIBA or
+     device approval) does not meet is `invalid_authorization_details`
+     (`STS-OAUTH-0937`), and a grant with no person behind it — client
+     credentials — meets no level, so such a type is never issued that
+     way.
 
    **AN UNKNOWN TYPE STAYS REFUSED IN EVERY MODE HERE**, unlike GNAP's
    development mode (`mode.grantsUncataloguedAccess()`): RFC 9396 section 5

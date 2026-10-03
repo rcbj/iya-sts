@@ -40,6 +40,11 @@
 // the answer carries: refuse over narrow over keep, the drops unioned, the
 // shortest lifetime. A verdict this reader does not know is read as REFUSE
 // (STS-GNAP-0815): a right is not issued on a word nobody can interpret.
+// SINCE #432 PHASE 6 the answer also says who must be asked (`interaction`,
+// the most demanding stated, '' where none is) and the acr values the
+// approving session must meet (`acr`, every one stated) — the obligation's
+// two members `xacml_templates.ts` argues; an interaction word nobody knows
+// is read as `always`.
 //
 // **NO VERDICT AT ALL IS A DEFECT, AND IT REFUSES** (STS-XACML-0168, the right
 // refused STS-GNAP-0816) — the exchange question's answer, for its reason:
@@ -147,8 +152,12 @@ class GnapRightVerdicts {
     const out: Json = { verdict: 'keep', code: '',
                         drop: { actions: [], locations: [], datatypes: [],
                                 privileges: [] },
-                        maxLifetimeS: null };
+                        maxLifetimeS: null, interaction: '', acr: [] };
     const rank: Record<string, number> = { keep: 0, narrow: 1, refuse: 2 };
+    // #432 phase 6: the most demanding interaction any obligation states,
+    // and every acr any requires.
+    const asking: Record<string, number> = { none: 0, skippable: 1,
+                                             always: 2 };
     const DROPS: Record<string, string> = {};
     DROPS[GR.DROP_ACTION] = 'actions';
     DROPS[GR.DROP_LOCATION] = 'locations';
@@ -167,6 +176,18 @@ class GnapRightVerdicts {
           const into = out.drop[DROPS[a.attributeId]];
           if (into.indexOf(value) < 0) {
             into.push(value);
+          }
+        } else if (a.attributeId === GR.INTERACTION) {
+          // A word this reader does not know asks for the person: never
+          // fewer interactions on a value nobody can read.
+          const wanted = asking[value] === undefined ? 'always' : value;
+          if (!out.interaction ||
+              asking[wanted] > asking[out.interaction]) {
+            out.interaction = wanted;
+          }
+        } else if (a.attributeId === GR.REQUIRED_ACR) {
+          if (value && out.acr.indexOf(value) < 0) {
+            out.acr.push(value);
           }
         } else if (a.attributeId === GR.MAX_LIFETIME) {
           const seconds = Number(value);
@@ -271,7 +292,8 @@ class GnapRightVerdicts {
         return { id: id, verdict: 'refuse', code: 'STS-GNAP-0816',
                  drop: { actions: [], locations: [], datatypes: [],
                          privileges: [] },
-                 maxLifetimeS: null, decidedBy: 'none' };
+                 maxLifetimeS: null, interaction: '', acr: [],
+                 decidedBy: 'none' };
       }
       return Object.assign({ id: id, decidedBy: decidedBy }, found);
     });

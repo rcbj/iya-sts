@@ -317,6 +317,20 @@ const GNAP_RIGHT_ATTRIBUTE = {
   DROP_DATATYPE: 'urn:sts:xacml:gnap-right-drop-datatype',
   DROP_PRIVILEGE: 'urn:sts:xacml:gnap-right-drop-privilege',
   MAX_LIFETIME: 'urn:sts:xacml:gnap-right-max-lifetime',
+  // #432 PHASE 6: whether the right may be issued without its resource
+  // owner, and the authentication level an approval of it needs.
+  //   INTERACTION   none (may be issued with nobody asked — the type is
+  //                 `never`), skippable (a client trusted to skip the page,
+  //                 `gnapSkipInteraction`, may; a remembered approval
+  //                 counts) or always (the person sees the page, every time)
+  //   REQUIRED_ACR  an acr value (RFC 9470's levels, `step_up.ts`) the
+  //                 session approving the right must meet; several
+  //                 assignments for several, every one required
+  // No INTERACTION stated is `skippable`, the rule before #432. The reader
+  // merges the most demanding: always over skippable over none.
+  INTERACTION: 'urn:sts:xacml:gnap-right-interaction',
+  REQUIRED_ACR: 'urn:sts:xacml:gnap-right-acr',
+  INTERACTIONS: ['none', 'skippable', 'always'],
   VERDICTS: ['keep', 'narrow', 'refuse']
 };
 
@@ -933,7 +947,10 @@ const TEMPLATES: TemplateRow[] = [
               'product mode — a type the access-type catalogue does not ' +
               'declare are REFUSED; a type declaring bearer: false refuses ' +
               'a bearer token; a type declaring maxLifetimeS caps the ' +
-              'token; everything else is kept. No leaves the rules out — ' +
+              'token; a type\'s interaction (never, always) and ' +
+              'consentActions say whether its resource owner must be ' +
+              'asked, and its acr what their session must meet (#432 ' +
+              'phase 6); everything else is kept. No leaves the rules out — ' +
               'and the grant engine then asks the BUILT-IN policy instead, ' +
               'so the rules are never switched off by rebuilding this ' +
               'document.' },
@@ -1721,6 +1738,22 @@ const TEMPLATES: TemplateRow[] = [
                  obligations: rightVerdict(model.EFFECT.DENY, 'refuse', code),
                  advice: [] };
       };
+      // A Permit that keeps the right and states who must be asked (#432
+      // phase 6).
+      const gnapInteraction = function (id: string, description: string,
+                                        condition: any, value: string): any {
+        log.debug("Entering gnapInteraction().");
+        log.debug("Leaving gnapInteraction().");
+        return { id: options.idBase + ':rule:' + id,
+                 effect: model.EFFECT.PERMIT,
+                 description: description, target: gnapTarget,
+                 condition: condition,
+                 obligations: rightVerdict(model.EFFECT.PERMIT, 'keep', '', [
+                   { attributeId: GR.INTERACTION, category: null,
+                     issuer: null,
+                     expression: B.value(TYPE.STRING, value) }]),
+                 advice: [] };
+      };
       const GA = model.CATEGORY.ACTION;
       const GS = model.CATEGORY.ACCESS_SUBJECT;
       const GE = model.CATEGORY.ENVIRONMENT;
@@ -1787,6 +1820,58 @@ const TEMPLATES: TemplateRow[] = [
           and([fact(R, GV.GNAP_OWNER_KNOWN, true),
                fact(R, GV.GNAP_OWNER_MATCHES, false)]),
           'STS-GNAP-0861'),
+        // -----------------------------------------------------------------
+        // #432 PHASE 6: WHO MUST BE ASKED, AND HOW STRONGLY SIGNED IN. The
+        // catalogue's `interaction`, `consentActions` and `acr`, until then
+        // facts nothing read, as Permits whose obligations the engine
+        // honours (`gnap_rights.ts` aggregates them, `gnap_grants.ts` acts
+        // on them). A realm tightens any of them with a rule of its own —
+        // `always` for a client class, an acr for an action — and the
+        // reader keeps the most demanding answer.
+        // -----------------------------------------------------------------
+        gnapInteraction('gnap-type-interaction-never', 'A right of a type ' +
+          'the catalogue declares interaction: never — a machine-to-machine ' +
+          'API nobody approves — may be issued with nobody asked.',
+          stringIs(R, GV.GNAP_TYPE_INTERACTION, 'never'), 'none'),
+        gnapInteraction('gnap-type-interaction-always', 'A right of a type ' +
+          'the catalogue declares interaction: always: its resource owner ' +
+          'sees the approval page every time — no client skips it and no ' +
+          'remembered approval stands in for it.',
+          stringIs(R, GV.GNAP_TYPE_INTERACTION, 'always'), 'always'),
+        gnapInteraction('gnap-type-consent-action', 'A right naming an ' +
+          'action the catalogue lists in consentActions — or naming no ' +
+          'actions, which is every action — needs its resource owner, as ' +
+          'interaction: always does.',
+          and([B.apply(F1 + 'integer-greater-than', [
+                 B.apply(F1 + 'string-bag-size', [
+                   B.designator(R, GV.GNAP_TYPE_CONSENT_ACTION,
+                                TYPE.STRING)]),
+                 B.value(TYPE.INTEGER, '0')]),
+               B.apply(F1 + 'or', [
+                 B.apply(F1 + 'string-at-least-one-member-of', [
+                   B.designator(R, GV.GNAP_RIGHT_ACTION, TYPE.STRING),
+                   B.designator(R, GV.GNAP_TYPE_CONSENT_ACTION,
+                                TYPE.STRING)]),
+                 B.apply(F1 + 'integer-equal', [
+                   B.apply(F1 + 'string-bag-size', [
+                     B.designator(R, GV.GNAP_RIGHT_ACTION, TYPE.STRING)]),
+                   B.value(TYPE.INTEGER, '0')])])]),
+          'always'),
+        { id: options.idBase + ':rule:gnap-type-acr',
+          effect: model.EFFECT.PERMIT,
+          description: 'A right of a type the catalogue declares an acr ' +
+                       'for: the session that approves it must meet that ' +
+                       'level (RFC 9470), and nothing is issued without ' +
+                       'one.',
+          target: gnapTarget,
+          condition: B.apply(F1 + 'integer-greater-than', [
+            B.apply(F1 + 'string-bag-size', [
+              B.designator(R, GV.GNAP_TYPE_ACR, TYPE.STRING)]),
+            B.value(TYPE.INTEGER, '0')]),
+          obligations: rightVerdict(model.EFFECT.PERMIT, 'keep', '', [
+            { attributeId: GR.REQUIRED_ACR, category: null, issuer: null,
+              expression: B.designator(R, GV.GNAP_TYPE_ACR, TYPE.STRING) }]),
+          advice: [] },
         { id: options.idBase + ':rule:gnap-type-lifetime',
           effect: model.EFFECT.PERMIT,
           description: 'A right of a type the catalogue declares a ' +

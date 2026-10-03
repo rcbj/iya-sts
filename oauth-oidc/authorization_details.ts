@@ -578,6 +578,37 @@ class AuthorizationDetails {
     return hit ? String(hit.type) : '';
   }
 
+  // -------------------------------------------------------------------------
+  // THE AUTHENTICATION LEVELS A SET OF DETAILS NEEDS (#432 phase 6): every
+  // `acr` the catalogue declares for a type among them, each REQUIRED — a
+  // grant carrying two types is a grant of both, so it must meet both, which
+  // is not `acr_values`' "any of". GNAP's approval holds a session to the
+  // same declarations (`gnap/gnap_approval.ts`); the authorization endpoint
+  // and the token endpoint's funnel ask this.
+  // -------------------------------------------------------------------------
+  /**
+   * Returns every acr the catalogue declares for a type among some details.
+   *
+   * @param details - RFC 9396 details
+   * @returns the distinct values, each required
+   */
+  requiredAcrsOf(details: Json[]): string[] {
+    const { log } = this.deps;
+    log.debug("Entering AuthorizationDetails.requiredAcrsOf().");
+    const declared = this.declaredTypes();
+    const out: string[] = [];
+    (details || []).forEach(function (one: Json): void {
+      const definition = one && declared[one.type];
+      const acr = definition && definition.acr ? String(definition.acr) : '';
+      if (acr && out.indexOf(acr) < 0) {
+        out.push(acr);
+      }
+    });
+    log.debug("Leaving AuthorizationDetails.requiredAcrsOf(). " +
+              out.join(' '));
+    return out;
+  }
+
   // Whether a right of `type` may be DERIVED from a token carrying the types
   // `originalTypes` (RFC 9767 section 4; rcbj's decision 3 on #432): the
   // catalogue entry of `type` names one of them in `derivableFrom`.
@@ -1366,6 +1397,7 @@ export = {
   typeOf: slot.forward('typeOf'),
   maxLifetimeFor: slot.forward('maxLifetimeFor'),
   bearerRefusedBy: slot.forward('bearerRefusedBy'),
+  requiredAcrsOf: slot.forward('requiredAcrsOf'),
   derivableFrom: slot.forward('derivableFrom'),
   ownedBy: slot.forward('ownedBy'),
   introspectionView: slot.forward('introspectionView'),

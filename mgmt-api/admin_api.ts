@@ -12235,8 +12235,11 @@ class AdminApi {
                          'types it may be derived from (RFC 9767 section 4); ' +
                          '`introspectionClaims` the person\'s claims the ' +
                          'application is told at introspection. ' +
-                         '`interaction`, `consentActions` and `acr` are ' +
-                         'enforced by phase 6 of #432. A definition that ' +
+                         '`interaction` (always, default, never), ' +
+                         '`consentActions` and `acr` decide, for GNAP, ' +
+                         'whether the resource owner must be asked and how ' +
+                         'strongly signed in (#432 phase 6). A definition ' +
+                         'that ' +
                          'does not read is refused (`STS-REG-0294`) and the ' +
                          'one declared stays.',
             requestBodyRequired: true,

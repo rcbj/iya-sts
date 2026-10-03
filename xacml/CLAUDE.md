@@ -1367,6 +1367,19 @@ A verdict this reader does not know refuses
 engine broke. `tests/gnap_catalogue.js` holds each rule through the policy
 and a realm's narrowing override.
 
+**WHO MUST BE ASKED, AND HOW STRONGLY (#432 phase 6).** Two more members of
+the same obligation, `urn:sts:xacml:gnap-right-interaction` (none, skippable,
+always) and `urn:sts:xacml:gnap-right-acr`, carried by four more built-in
+Permits — `gnap-type-interaction-never`, `-always`, `gnap-type-consent-action`
+(a right naming a listed consent action, or naming no actions, which is
+every action) and `gnap-type-acr`. They are Permits that keep the right and
+STATE A REQUIREMENT, merged like the lifetime: the most demanding
+interaction, every acr. So a realm tightens by adding a Permit with the
+obligation, and an interaction word the reader does not know reads as
+`always`. The grant engine does what they say (`gnap/CLAUDE.md`, *Phase 6*);
+the approval fact gained the value `owner`, the resource owner approving on
+their portal.
+
 **AND SINCE #98 (D4, D11) WHERE A PERSON'S DATA MAY GO.** When the service is
 deployed as cells, three questions go to the same policy from
 `common/cell_transfer.ts` through `issuance_gate.checkTransfer()`:
