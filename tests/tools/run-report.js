@@ -1515,7 +1515,12 @@ async function refreshAdminApiToken(instance, jobTimeoutMs) {
 // on a machine running other sessions' stacks, so it has 25. A raise only
 // ever lengthens: the larger of this and --timeout wins, exactly as for a
 // protocol job.
+// exchange_policy_exhaustive (#186) walks 2,488,320 combinations of the
+// exchange policy's facts against its oracle — about six minutes alone,
+// killed at 300 s in the 2026-10-03 full run, and 17 minutes beside two other
+// suite runs; it has 30.
 const UNIT_WATCHDOG_MS = {
+  exchange_policy_exhaustive: 1800000,
   x509_limbo: 1500000,
   nist_pkits: 600000,
   acvp_pqc: 600000,

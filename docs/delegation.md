@@ -199,8 +199,9 @@ mode — are listed in [XACML](xacml.html).
 ### OAuth 2.0 token exchange (RFC 8693)
 
 * `grant_type=urn:ietf:params:oauth:grant-type:token-exchange`, with a
-  `subject_token` and optionally an `actor_token`. In product mode both must
-  be tokens this realm signed and has not revoked.
+  `subject_token` and optionally an `actor_token`. In product mode each must
+  be a token this realm signed and has not revoked, or an assertion from an
+  issuer the realm declared ([below](#assertions-as-the-subject-or-the-actor)).
 * `exchange_semantics=delegation|impersonation` is this service's extension
   for asking. Any other value, or the parameter sent twice, is
   `invalid_request` in every mode.
@@ -226,6 +227,69 @@ access token for two resources is ambiguous.
 
 See [OAuth 2.0 and OpenID Connect](oauth-oidc.html) and
 [Configuring OAuth 2.0 grants](configure-oauth2-grants.html).
+
+#### Assertions as the subject or the actor
+
+RFC 8693 section 3 names three assertion token types, and each is accepted as
+the `subject_token` or the `actor_token` when a realm has **declared its
+issuer**:
+
+| `subject_token_type` / `actor_token_type` | What it is | Declared on the issuer's application entry |
+|---|---|---|
+| `urn:ietf:params:oauth:token-type:jwt` | an RFC 7523 JWT assertion | `oauthAssertionIssuer`, with a key as for the [JWT bearer grant](jwt-assertions.md) |
+| `urn:ietf:params:oauth:token-type:saml2` | an RFC 7522 SAML 2.0 assertion | `oauthSamlAssertionIssuer`, with a certificate as for the [SAML bearer grant](saml-assertions.md) |
+| `urn:ietf:params:oauth:token-type:saml1` | a SAML 1.1 assertion | the same as SAML 2.0 |
+
+A `jwt` token this realm signed is still read as its own token. Anything else
+of those types is verified **exactly as the assertion grant verifies it**:
+
+* the issuer declared, or a person holding a key pair of their own — who may
+  assert only about themselves;
+* the signature against a key or certificate registered for that issuer. For
+  SAML, a certificate that merely chains to the realm's CA is not enough;
+* the certificate's chain and revocation;
+* the expiry and the lifetime ceiling;
+* **one use, ever**, in the same history as the grant. An assertion spent at
+  the `jwt-bearer` or `saml2-bearer` grant is refused at the exchange, and the
+  reverse. It is spent only when tokens are issued.
+
+The grant's on/off switches (`oauth2.jwtBearerGrant`,
+`oauth2.saml2BearerGrant`) do not apply: an exchange is not the grant.
+
+**The subject is the person the assertion names**, provisioned as the grant
+provisions one. An assertion naming nobody the directory holds is refused
+(`STS-OAUTH-0798`). As the `actor_token`, the person it names is the actor and
+`act.sub` is their subject. SAML 1.1 is read from its own elements: the
+`AssertionID`, the `Issuer` attribute, the `NameIdentifier` in each statement,
+the `urn:oasis:names:tc:SAML:1.0:cm:bearer` confirmation method, and the
+`<AudienceRestrictionCondition>`. A SAML assertion whose version is not the
+one its declared type says is refused (`STS-OAUTH-0797`).
+
+**The audience** is `oauth2.tokenExchangeAudience`:
+
+* `authorization-server` (the default) — the grant's rule. The assertion is
+  addressed to this token endpoint or issuer, and a SAML `Recipient` is the
+  token endpoint. S, the application the subject's token was issued for, is
+  then the exchanging client: an assertion addressed to this server was issued
+  for whoever presents it.
+* `any-declared-relying-party` — also an application registered in the realm.
+  This is **token forwarding**: a relying party that was handed an assertion
+  trades it here. S is that relying party, a SAML `Recipient` may be an
+  assertion consumer service registered on the exchanging client
+  (`samlAssertionConsumerService`), and the act on `/admin/delegation` says the
+  input was FORWARDED.
+
+> **Warning.** Under `any-declared-relying-party`, every relying party an
+> assertion was issued to can exchange it for a token from this service. Turn
+> it on only where that is the design.
+
+An audience the rule does not accept is `invalid_request` (`STS-OAUTH-0796`).
+**Who may then exchange the assertion is the policy above**, unchanged: S, the
+actor, R and the subject's protections, as for any subject token.
+
+In **development** mode an undeclared or unverifiable `jwt` token is still read
+without verifying, as it always was. A SAML token that does not verify is
+refused in both modes: there is no unverified reading of XML to fall back on.
 
 ### WS-Trust OnBehalfOf and ActAs
 

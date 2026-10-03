@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4071** of them, in **41** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4074** of them, in **41** subsystems.
 
 ## Where a code appears
 
@@ -64,7 +64,7 @@ is an ordinary outcome.
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 26
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 47
 * [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 255
-* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 689
+* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 692
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 97
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 25
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 16
@@ -2030,6 +2030,9 @@ Raised from: oauth-oidc/, common/person_assertions.js.
 | `STS-OAUTH-0793` | A token exchange named an audience or resource no application in the realm registers (#186). | 400 invalid_target (RFC 8693 section 2.2.2) |
 | `STS-OAUTH-0794` | A delegation or impersonation token exchange named no audience or resource; only a self exchange defaults to the subject token's own audience (#186). | 400 invalid_target (RFC 8693 section 2.2.2) |
 | `STS-OAUTH-0795` | A token exchange's exchange_semantics parameter was neither delegation nor impersonation, or was repeated (#186). | 400 invalid_request (RFC 6749 section 5.2) |
+| `STS-OAUTH-0796` | An RFC 7523 / RFC 7522 / SAML 1.1 assertion presented to a token exchange was addressed to an audience oauth2.tokenExchangeAudience does not accept: not this authorization server, nor (under any-declared-relying-party) an application registered here (#114). | 400 invalid_request (RFC 8693 section 2.2.2) |
+| `STS-OAUTH-0797` | A SAML assertion presented to a token exchange is not the version its declared token type says: saml2 for SAML 2.0, saml1 for SAML 1.1 (#114). | 400 invalid_request (RFC 8693 sections 2.2.2 and 3) |
+| `STS-OAUTH-0798` | An assertion presented to a token exchange verified, and the person it names has no directory entry, so there is nobody to issue a token about or to name as the actor (#114). | 400 invalid_request (RFC 8693 section 2.2.2) |
 | `STS-OAUTH-0816` | No index in the realm's access-token status list could be allocated because the claim store could not be asked, so the OAuth or GNAP JWT access token was not minted (#432). | server_error at the endpoint that was minting the token |
 | `STS-OAUTH-0817` | The realm's access-token status list had no free index in thirty-two random attempts (it holds 1,048,576), so the access token was not minted rather than share a live token's index (draft-ietf-oauth-status-list section 13.3; #432). | server_error at the endpoint that was minting the token |
 | `STS-OAUTH-0818` | The access-token status list could not be built or signed (#432). | HTTP 500 |

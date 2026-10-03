@@ -79,6 +79,9 @@ const ENVELOPED = "http://www.w3.org/2000/09/xmldsig#enveloped-signature";
 const SHA256 = "http://www.w3.org/2001/04/xmlenc#sha256";
 const RSA_SHA256 = "http://www.w3.org/2001/04/xmldsig-more#rsa-sha256";
 const BEARER = "urn:oasis:names:tc:SAML:2.0:cm:bearer";
+// SAML 1.1 (#114): its namespace and bearer confirmation method.
+const SAML11_NS = "urn:oasis:names:tc:SAML:1.0:assertion";
+const BEARER_11 = "urn:oasis:names:tc:SAML:1.0:cm:bearer";
 
 function esc(text) {
   log.debug("Entering esc().");
@@ -228,6 +231,50 @@ function buildAssertion(o) {
 }
 
 // ---------------------------------------------------------------------------
+// A SAML 1.1 ASSERTION (#114), canonical by the same construction. Its
+// AssertionID, Issuer and IssueInstant are ATTRIBUTES; the audience is an
+// <AudienceRestrictionCondition>; the subject is inside an
+// <AuthenticationStatement>, confirmed by a <ConfirmationMethod> with no
+// Recipient. `sign(built, key, cert, { at: "end" })` puts the signature last,
+// where saml-core-1.1's schema has it.
+//   issuer, subject, audience (or audiences), notBefore / notOnOrAfter,
+//   method — a confirmation method other than SAML 1.1 bearer
+// ---------------------------------------------------------------------------
+function buildAssertion11(o) {
+  log.debug("Entering buildAssertion11().");
+  const options = o || {};
+  const assertionId = options.id || id();
+  const audiences = options.audiences ||
+    (options.audience ? [options.audience] : []);
+  const conditions = el("saml:Conditions", {
+    NotBefore: options.notBefore === null ? "" :
+      (options.notBefore || iso(-60000)),
+    NotOnOrAfter: options.notOnOrAfter === null ? "" :
+      (options.notOnOrAfter || iso(120000))
+  }, audiences.length ? el("saml:AudienceRestrictionCondition", {},
+    audiences.map(function (one) {
+      return el("saml:Audience", {}, esc(one));
+    }).join("")) : "");
+  const subject = el("saml:Subject", {},
+    el("saml:NameIdentifier", { Format: options.nameIdFormat ||
+      "urn:oasis:names:tc:SAML:1.1:nameid-format:unspecified" },
+       esc(options.subject)) +
+    el("saml:SubjectConfirmation", {},
+       el("saml:ConfirmationMethod", {}, options.method || BEARER_11)));
+  const statement = el("saml:AuthenticationStatement", {
+    AuthenticationInstant: iso(0),
+    AuthenticationMethod: "urn:oasis:names:tc:SAML:1.0:am:password"
+  }, subject);
+  const xml = "<saml:Assertion xmlns:saml=\"" + SAML11_NS + "\"" +
+    attrs({ AssertionID: assertionId, IssueInstant: options.issueInstant ||
+              iso(0),
+            Issuer: options.issuer, MajorVersion: "1", MinorVersion: "1" }) +
+    ">" + conditions + statement + "</saml:Assertion>";
+  log.debug("Leaving buildAssertion11().");
+  return { id: assertionId, xml: xml };
+}
+
+// ---------------------------------------------------------------------------
 // SIGN IT. Digest the assertion as it stands, build a canonical
 // <ds:SignedInfo> over that digest, sign THOSE octets, and splice the
 // <ds:Signature> in after the <saml:Issuer> — which is where the SAML 2.0
@@ -266,8 +313,11 @@ function sign(built, privateKeyPem, certPem, opts) {
     : "";
   const signature = "<ds:Signature xmlns:ds=\"" + DS_NS + "\">" + signedInfo +
     el("ds:SignatureValue", {}, value) + keyInfo + "</ds:Signature>";
+  // After the <saml:Issuer> (SAML 2.0), or last (SAML 1.1, `at: "end"`).
   const marker = "</saml:Issuer>";
-  const at = built.xml.indexOf(marker) + marker.length;
+  const at = options.at === "end"
+    ? built.xml.lastIndexOf("</saml:Assertion>")
+    : built.xml.indexOf(marker) + marker.length;
   log.debug("Leaving sign().");
   return built.xml.slice(0, at) + signature + built.xml.slice(at);
 }
@@ -289,4 +339,5 @@ function b64(text) {
 }
 
 module.exports = { buildAssertion: buildAssertion, sign: sign, b64u: b64u,
-                   b64: b64, iso: iso, id: id, BEARER: BEARER };
+                   b64: b64, iso: iso, id: id, BEARER: BEARER,
+                   buildAssertion11: buildAssertion11, BEARER_11: BEARER_11 };

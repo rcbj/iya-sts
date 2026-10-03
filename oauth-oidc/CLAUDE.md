@@ -4411,6 +4411,52 @@ rcbj's answers were every recommendation:
 Tests: `tests/provider_commands.js` and
 `tests/vendored/sts_provider_commands.js`.
 
+## 3by. ASSERTIONS FROM DECLARED ISSUERS AS RFC 8693 SUBJECT AND ACTOR TOKENS (2026-10-03, #114)
+
+`exchange_assertions.ts` is a library (rule 3) over `assertion_grant.js` (3x)
+and `saml_assertion_grant.js` (3z); its header is the design. What a
+maintainer changing anything near it needs to know:
+
+* **ONE VERIFIER PER FORMAT, NOT A THIRD.** A `jwt` subject or actor token
+  this realm did not sign, and every `saml2` / `saml1` one, goes through the
+  grant's own `verify()` with `use: 'token-exchange'`. That option changes
+  exactly what the exchange decides differently: the grant's on/off switch is
+  skipped (an exchange is not the grant), the audience is
+  `options.audienceCheck` (`oauth2.tokenExchangeAudience`, `STS-OAUTH-0796`),
+  SAML's version is the declared type's (`samlVersion`, `0797`) and a SAML
+  `Recipient` may also be one of `options.recipients`. Everything else — the
+  declaration, the signature, the chain and revocation, the person-as-issuer
+  rule, the lifetime ceiling — is the grant's, unchanged.
+* **ONE HISTORY (rcbj).** The spend is the grant's `usedAssertions.claim()`,
+  keyed as the grant keys it, `use: 'token-exchange'` only labelling the row.
+  So an assertion spent at either door is refused at the other, and it is
+  spent only when tokens are issued (`request`). SAML 1.1 is its own format,
+  `saml11`, keyed by `AssertionID`.
+* **SAML 1.1 IS READ INTO SAML 2.0's SHAPE** (`readSaml11()`), so `verify()`
+  decides on one set of facts: the subject the same in every statement or
+  none, the 1.1 bearer method, `AudienceRestrictionCondition` and
+  `DoNotCacheCondition` as known conditions, no confirmation data (so the
+  expiry is the `<Conditions>`'). It is reachable ONLY through the exchange:
+  the grant still refuses a non-2.0 `Version` by name, as RFC 7522 says.
+* **STRICT BY DEFAULT (rcbj).** `authorization-server` is the grant's
+  audience rule, and S — the application the subject's token was issued for,
+  which #186's policy needs — is then the exchanging client.
+  `any-declared-relying-party` is TOKEN FORWARDING: S is the relying party the
+  audience names, the subject's `aud` is that audience (so a self exchange is
+  issued for it), and `consumedInput()` writes FORWARDED on the act. The
+  setting's description carries the warning.
+* **WHO MAY EXCHANGE IS #186's POLICY, NOTHING ELSE (rcbj).** No rule here
+  ties an issuer to a client.
+* **THE SUBJECT IS A PERSON WITH AN ENTRY.** `assertionSubject()` records the
+  authentication as the grant does and asks `provisionedPerson()`; nobody is
+  `STS-OAUTH-0798`. As the actor, the person is the actor and `act.sub` theirs.
+* **DEVELOPMENT** keeps its unverified read of a `jwt` token that does not
+  verify; a SAML token that does not verify is refused in both modes, as
+  there is nothing to read unverified.
+
+Tests: `tests/token_exchange_assertions.js` (in process, both modes) and
+`tests/vendored/sts_token_exchange_assertions.js` (over HTTP).
+
 ## 3bp. WHAT THE REST OF THE CONFORMANCE SUITE FOUND (2026-09-24, #187)
 
 #176's four FAPI plans were one job; #187 runs every other plan of the suite

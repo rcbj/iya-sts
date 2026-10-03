@@ -8561,6 +8561,23 @@ const CODES = [
     summary: 'A token exchange\'s exchange_semantics parameter was neither ' +
       'delegation nor impersonation, or was repeated (#186).',
     spec: '400 invalid_request (RFC 6749 section 5.2)' },
+  { code: 'STS-OAUTH-0796',
+    summary: 'An RFC 7523 / RFC 7522 / SAML 1.1 assertion presented to a ' +
+      'token exchange was addressed to an audience ' +
+      'oauth2.tokenExchangeAudience does not accept: not this authorization ' +
+      'server, nor (under any-declared-relying-party) an application ' +
+      'registered here (#114).',
+    spec: '400 invalid_request (RFC 8693 section 2.2.2)' },
+  { code: 'STS-OAUTH-0797',
+    summary: 'A SAML assertion presented to a token exchange is not the ' +
+      'version its declared token type says: saml2 for SAML 2.0, saml1 for ' +
+      'SAML 1.1 (#114).',
+    spec: '400 invalid_request (RFC 8693 sections 2.2.2 and 3)' },
+  { code: 'STS-OAUTH-0798',
+    summary: 'An assertion presented to a token exchange verified, and the ' +
+      'person it names has no directory entry, so there is nobody to issue ' +
+      'a token about or to name as the actor (#114).',
+    spec: '400 invalid_request (RFC 8693 section 2.2.2)' },
   { code: 'STS-OAUTH-0816',
     summary: 'No index in the realm\'s access-token status list could be ' +
       'allocated because the claim store could not be asked, so the OAuth ' +

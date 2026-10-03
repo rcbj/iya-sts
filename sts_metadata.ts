@@ -8813,6 +8813,13 @@ const ENDPOINTS: EndpointEntry[] = [
     specs: ['openapi'],
     what: 'NON-SPEC (#98 D11). A page of another cell\'s residents, ' +
           'answered by that cell only where its release policy permits.' },
+  { path: '/admin-api/listeners', group: 'Management API',
+    name: 'Listeners',
+    specs: ['openapi'],
+    what: 'NON-SPEC (#423). GET /admin/listeners over JSON: every listener ' +
+          'of the realm the call is in, or the realm\'s own, with its TLS ' +
+          'policy and client authentication, the process\'s policy and the ' +
+          'TLS listeners live on this node. It changes nothing.' },
   { path: '/admin-api/mode', group: 'Management API', name: 'Mode',
     specs: ['openapi'],
     what: 'NON-SPEC (#181). GET /admin/mode over JSON: the realm\'s mode, ' +

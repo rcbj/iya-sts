@@ -317,6 +317,13 @@ const JOBS = [
   // nested act and the policy resource. `local: true`: the policy is ours.
   // Its realm is left standing.
   { file: 'sts_delegation_policy.js',    browser: false, local: true },
+  // ASSERTIONS AS RFC 8693 SUBJECT AND ACTOR TOKENS (#114, 2026-10-03): an
+  // RFC 7523 JWT, an RFC 7522 SAML 2.0 and a SAML 1.1 assertion from issuers
+  // declared through /admin-api, exchanged; the replay history shared with
+  // the jwt-bearer grant; oauth2.tokenExchangeAudience's two rules and the
+  // SAML Recipient under forwarding. `local: true`: the feature is ours. Its
+  // realm is left standing.
+  { file: 'sts_token_exchange_assertions.js', browser: false, local: true },
   { file: 'sts_dpop.js',                 browser: false },
   // GNAP (2026-09-12). `local: true` on the second of tests/CLAUDE.md's
   // reasons: GNAP exists in this repository and nowhere else, so there is no
@@ -385,8 +392,9 @@ const JOBS = [
     timeoutMs: 900000 },
   { file: 'sts_acme_lego.js',            browser: false, local: true,
     timeoutMs: 900000 },
+  // `exclusive` since #429: it turns TLS 1.2 on service-wide for its run.
   { file: 'sts_est_libest.js',           browser: false, local: true,
-    timeoutMs: 600000 },
+    timeoutMs: 600000, exclusive: true },
   { file: 'sts_scep_sscep.js',           browser: false, local: true,
     timeoutMs: 600000 },
   { file: 'sts_scep_micromdm.js',        browser: false, local: true,

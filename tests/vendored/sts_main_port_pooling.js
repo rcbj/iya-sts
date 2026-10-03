@@ -36,6 +36,7 @@
 const assert = require("assert");
 const https = require("https");
 const tls = require("tls");
+const net = require("net");
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
@@ -222,14 +223,19 @@ function pipelined(requests, options) {
   return new Promise(function (resolve, reject) {
     const chunks = [];
     let issued = null;
+    // Read at the handshake: by `close` the socket's handle is gone and
+    // isSessionReused() answers null, which read as a full handshake on
+    // every connection.
+    let reused = null;
     const socket = tls.connect({
-      host: HOST, port: PORT, servername: tls.isIP(HOST) ? undefined : HOST,
+      host: HOST, port: PORT, servername: net.isIP(HOST) ? undefined : HOST,
       cert: opts.certPem, key: opts.keyPem, session: opts.session,
       // What is asserted is the session and the client certificate; the
       // server's certificate is not verified here, as in
       // `sts_global_logout.js`.
       rejectUnauthorized: false
     }, function () {
+      reused = socket.isSessionReused();
       const text = requests.map(function (one, i) {
         const last = i === requests.length - 1;
         return "GET " + one.path + " HTTP/1.1\r\nHost: " + url.host + "\r\n" +
@@ -248,7 +254,7 @@ function pipelined(requests, options) {
     });
     socket.on("error", reject);
     socket.on("close", function () {
-      resolve({ reused: socket.isSessionReused(), session: issued,
+      resolve({ reused: reused, session: issued,
                 responses: parseResponses(Buffer.concat(chunks)) });
     });
     socket.setTimeout(30000, function () {

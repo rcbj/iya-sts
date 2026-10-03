@@ -340,163 +340,164 @@ var config = {
 
   // --- OAuth 2.0 / OIDC ------------------------------------------------
   oauth2: {
-    issuer: "",                                  // Issuer identifier
-    rfc9700: false,                              // RFC 9700 mode; restart to apply
-    oauth21: false,                              // OAuth 2.1 mode; restart to apply
-    fapi: "off",                                 // FAPI profile; restart to apply
-    fapiRequireMtls: false,                      // FAPI Advanced: require mutual TLS
-    accessTokenSigningAlg: "default",            // Access token signing algorithm
-    jarmResponseLifetimeS: 600,                  // JARM response lifetime (s)
-    consentRequired: true,                       // Ask for consent
-    refreshRequiresConsent: true,                // Refresh requires recorded consent
-    delegatedPermissionsEnforced: false,         // Enforce delegated permissions
-    tokenExchangeRefreshToken: "when-requested", // Refresh token from a token exchange
-    breakIdTokenNonce: false,                    // Break the ID Token nonce (development only)
-    refreshIdleSeconds: 86400,                   // Refresh token idle timeout (s)
-    revokeRefreshOnLogout: true,                 // Revoke refresh tokens on sign-out
-    eddsaCurve: "Ed25519",                       // EdDSA curve
-    jwtBearerGrant: true,                        // JWT bearer authorization grant (RFC 7523 section 2.1)
-    jwtBearerRequireRegisteredIssuer: true,      // Require a registered assertion issuer
-    jwtBearerMaxLifetimeS: 300,                  // Longest assertion lifetime accepted (s)
-    saml2BearerGrant: true,                      // SAML 2.0 bearer authorization grant (RFC 7522 section 2.1)
-    saml2BearerRequireRegisteredIssuer: true,    // Require a registered SAML assertion issuer
-    saml2BearerMaxLifetimeS: 300,                // Longest SAML assertion lifetime accepted (s)
-    clientAssertionSkewS: 60,                    // Client assertion clock skew (s)
-    clientAttestationTrustAnchors: "",           // Trusted client attesters: certificate anchors (PEM)
-    clientAttestationTrustedKeys: "",            // Trusted client attesters: keys (JWKS)
-    clientAttestationChallengeRequired: true,    // Require a server challenge in a client attestation PoP
-    clientAttestationChallengeTtlS: 300,         // Client attestation challenge lifetime (s)
-    clientAttestationChallengeCacheSize: 10000,  // Client attestation challenges held per realm
-    clientAttestationMaxAgeS: 86400,             // Oldest client attestation accepted (s)
-    clientAttestationPopMaxAgeS: 300,            // Oldest client attestation PoP accepted (s)
-    fapiAllowClientAttestation: false,           // FAPI 2.0: accept client attestation (HAIP)
-    assertionReplayCacheSize: 1000,              // Assertion replay cache size (per realm)
-    dpopNonceRequired: false,                    // Require a DPoP server nonce
-    dpopIatSkewS: 300,                           // DPoP proof iat window (s)
-    dpopNonceTtlS: 300,                          // DPoP server nonce lifetime (s)
-    dpopReplayCacheSize: 10000,                  // DPoP proof replay history size (per realm)
-    dpopNonceCacheSize: 10000,                   // DPoP server nonces held (per realm)
-    refreshTokenRotation: false,                 // Rotate refresh tokens
-    refreshTokenRequireDpop: false,              // Require DPoP on refresh tokens
-    refreshTokenRequireMtls: false,              // Require mutual TLS on refresh tokens
-    accessTokenRequireDpop: false,               // Require DPoP for every access token
-    accessTokenRequireMtls: false,               // Require mutual TLS for every access token
-    openRegistration: false,                     // Open dynamic client registration (product mode)
-    softwareStatementRequireTrustedIssuer: true, // Refuse a software statement from an undeclared issuer
-    softwareStatementOpensRegistration: true,    // A trusted software statement opens a closed registration endpoint
-    softwareStatementRequired: false,            // Require a software statement on every registration
-    softwareStatementLifetimeS: 31536000,        // Issued software statement lifetime (s)
-    clientSecretOverlapS: 604800,                // Keep a rotated client secret working for (seconds)
-    clientSecretsMax: 5,                         // Client secrets an application may hold
-    clientSecretExpiryWarningDays: 14,           // Warn about an expiring client secret this many days ahead
-    clientSecretLifetimeDays: 0,                 // Client secret lifetime (days)
-    registeredClientIdPrefix: "sts-client-",     // Dynamically registered client_id prefix
-    registeredClientIdBytes: 8,                  // Dynamically registered client_id random bytes
-    registeredSecretBytes: 48,                   // Dynamically registered secret random bytes
-    authorizationCodeTtlS: 300,                  // Authorization code lifetime (s)
-    redeemedCodeCacheSize: 10000,                // Redeemed authorization codes remembered (per realm)
-    codeReplayIdempotent: false,                 // Answer a repeated code redemption with the same tokens
-    maxPendingTransactions: 500,                 // RFC 9700: remembered transactions (per realm)
-    maxRefreshTokenFamilies: 2000,               // RFC 9700: remembered refresh tokens (per realm)
-    signedMetadataAlgorithm: "RS256",            // Algorithm signed_metadata is signed with
-    accessTokenCertificateHeader: "x5u",         // Access token certificate header
-    idTokenCertificateHeader: "x5u",             // ID Token certificate header
-    refreshTokenCertificateHeader: "x5u",        // Refresh token certificate header
-    userinfoCertificateHeader: "x5u",            // Signed UserInfo certificate header
-    introspectionCertificateHeader: "x5u",       // JWT introspection response certificate header
-    signedMetadataCertificateHeader: "x5u",      // signed_metadata certificate header
-    signedMetadataCacheS: 60,                    // signed_metadata cache (s)
-    maxSignedMetadataEntries: 64,                // signed_metadata cache entries
-    basicAuthRealm: "sts",                       // Token endpoint Basic realm
-    maxAuthorizationServerProfiles: 200,         // Named authorization servers (per realm)
-    deviceAuthorization: false,                  // Device authorization grant (RFC 8628)
-    deviceCodeLifetimeS: 600,                    // Device code lifetime (seconds)
-    deviceCodeIntervalS: 5,                      // Device code polling interval (seconds)
-    ciba: false,                                 // CIBA (backchannel authentication)
-    cibaDefaultExpiryS: 120,                     // CIBA request lifetime (s)
-    cibaMaxExpiryS: 600,                         // CIBA request longest lifetime (s)
-    cibaIntervalS: 5,                            // CIBA poll interval (s)
-    cibaMaxPendingPerPerson: 5,                  // CIBA requests waiting per person
-    cibaNotifyTimeoutMs: 5000,                   // CIBA notification timeout (ms)
-    cibaNotifyAttempts: 5,                       // CIBA notification attempts
-    cibaNotifyBackoffMs: 2000,                   // CIBA notification backoff (ms)
-    providerCommands: false,                     // OpenID Provider Commands
-    commandAutomatic: true,                      // Automatic provider commands
-    commandTokenTtlS: 120,                       // Command Token lifetime (s)
-    commandAttempts: 5,                          // Command attempts
-    commandTimeoutMs: 10000,                     // Command timeout (ms)
-    commandBackoffMs: 2000,                      // Command backoff (ms)
-    commandLeaseMs: 60000,                       // Command attempt lease (ms)
-    commandRetentionS: 86400,                    // Command retention (s)
-    commandMaxRows: 5000,                        // Command rows kept
-    commandConcurrency: 8,                       // Commands in flight
-    commandSummaryS: 60,                         // Command summary interval (s)
-    commandSweepS: 15,                           // Command sweep interval (s)
-    commandCallbackTtlS: 86400,                  // Command callback token lifetime (s)
-    commandStreamIdleMs: 30000,                  // Tenant command stream idle timeout (ms)
-    commandStreamResumes: 3,                     // Tenant command stream resumptions
-    commandStreamMaxEvents: 1000000,             // Tenant command stream event cap
-    commandMetadataMaxGroups: 200,               // Groups in a metadata command
-    cibaNotifyRetentionS: 3600,                  // CIBA notification retention (s)
-    cibaNotifyMaxRows: 2000,                     // CIBA notification rows kept
-    cibaNotifyConcurrency: 8,                    // CIBA notifications in flight
-    cibaNotifySummaryS: 60,                      // CIBA notification summary interval (s)
-    cibaSweepS: 30,                              // CIBA sweep interval (s)
-    maxRequestedClaims: 64,                      // Claims one claims request may name
-    idaTrustFrameworks: "urn:sts:local",         // Identity Assurance trust frameworks
-    idaAutomaticVerifications: true,             // Sign-ins record an identity verification
-    accessTokenTtlS: 3600,                       // Access token lifetime (s)
-    idTokenTtlS: 3600,                           // ID Token lifetime (s)
-    refreshTokenTtlS: 86400,                     // Refresh token lifetime (s)
-    expiredTokenRetentionS: 86400,               // Keep an expired token on /admin/tokens for (seconds)
-    accessTokenStatusListTtlS: 60,               // Access-token status list time to live (s)
-    accessTokenStatusListLifetimeS: 3600,        // Access-token status list lifetime (s)
-    maxRevokedJtis: 100000,                      // Most revoked token ids kept per realm
-    clockSkewS: 30,                              // Token clock skew (s)
-    redirectUris: "",                            // Registered redirect URIs
-    loopbackPortWildcard: true,                  // Loopback port wildcard
-    refreshTokenEncryptionAlg: "RSA-OAEP-256",   // Refresh token encryption: key management (alg)
-    refreshTokenEncryptionEnc: "A256GCM",        // Refresh token encryption: content (enc)
-    refreshTokenEncryptionKeyBits: 2048,         // Refresh token encryption: RSA key size (bits)
-    refreshTokenEncryptionCurve: "P-256",        // Refresh token encryption: EC curve
-    requireSignedRequestObject: false,           // Require a signed request object (RFC 9101)
-    authorizationDetailsMaxEntries: 20,          // Most authorization_details entries in one request (RFC 9396)
-    requestUriTimeoutMs: 5000,                   // request_uri fetch timeout (ms)
-    requestUriMaxBytes: 65536,                   // request_uri largest response (bytes)
-    requireRequestObjectType: false,             // Require typ oauth-authz-req+jwt on a request object
-    requireRequestObjectIssuerAudience: false,   // Require iss and aud in a request object
-    requestObjectJtiOnce: true,                  // A request object's jti is accepted once
-    requestObjectJtiRetentionS: 3600,            // How long a request object's jti is kept without exp (s)
-    clientJwksCacheS: 300,                       // Client jwks_uri cache (s)
-    clientJwksRefetchS: 30,                      // Client jwks_uri refetch interval (s)
-    requestUriFragmentCheck: true,               // Check a request_uri's SHA-256 fragment against its content
-    requestUriCacheS: 0,                         // request_uri content cache (s)
-    requestObjectEncryptionKeyBits: 2048,        // Request object encryption: RSA key size (bits)
-    requestObjectEncryptionCurve: "P-256",       // Request object encryption: EC curve
-    pushedAuthorizationRequests: true,           // Pushed authorization requests (RFC 9126)
-    requirePushedAuthorizationRequests: false,   // Require pushed authorization requests
-    parRequestUriLifetimeS: 60,                  // Pushed request_uri lifetime (seconds)
-    parMaxRequests: 10000,                       // Pushed requests held at once
-    parMaxBodyBytes: 65536,                      // Largest pushed authorization request (bytes)
-    parRequestsPerMinute: 600,                   // Pushed requests per client per window
-    parAllowUnregisteredRedirectUris: false,     // Pushed requests may name an unregistered redirect_uri
-    stepUpAcrValues: "",                         // Step-up: acr values this service's resource server requires
-    stepUpMaxAgeS: -1,                           // Step-up: oldest authentication this service's resource server accepts (s)
-    sessionManagement: false,                    // OpenID Connect Session Management
-    frontchannelLogout: true,                    // OpenID Connect Front-Channel Logout
-    frontchannelLogoutWaitS: 3,                  // Front-channel logout: seconds before returning
-    backchannelLogout: true,                     // OpenID Connect Back-Channel Logout
-    backchannelLogoutOnExpiry: true,             // Back-channel logout on session expiry
-    backchannelLogoutTokenTtlS: 120,             // Back-channel Logout Token lifetime (seconds)
-    backchannelLogoutAttempts: 3,                // Back-channel logout delivery attempts
-    backchannelLogoutTimeoutMs: 5000,            // Back-channel logout request timeout (ms)
-    backchannelLogoutBackoffMs: 1000,            // Back-channel logout retry backoff (ms)
-    backchannelLogoutLeaseMs: 60000,             // Back-channel logout attempt lease (ms)
-    backchannelLogoutSweepS: 10,                 // Back-channel logout sweep interval (seconds)
-    backchannelLogoutRetentionS: 86400,          // Back-channel logout delivery retention (seconds)
-    backchannelLogoutMaxRows: 2000,              // Back-channel logout deliveries kept per realm
-    backchannelLogoutConcurrency: 8,             // Back-channel logout sweep concurrency
-    backchannelLogoutSummaryS: 60                // Back-channel logout summary interval (seconds)
+    issuer: "",                                    // Issuer identifier
+    rfc9700: false,                                // RFC 9700 mode; restart to apply
+    oauth21: false,                                // OAuth 2.1 mode; restart to apply
+    fapi: "off",                                   // FAPI profile; restart to apply
+    fapiRequireMtls: false,                        // FAPI Advanced: require mutual TLS
+    accessTokenSigningAlg: "default",              // Access token signing algorithm
+    jarmResponseLifetimeS: 600,                    // JARM response lifetime (s)
+    consentRequired: true,                         // Ask for consent
+    refreshRequiresConsent: true,                  // Refresh requires recorded consent
+    delegatedPermissionsEnforced: false,           // Enforce delegated permissions
+    tokenExchangeAudience: "authorization-server", // Audience of an assertion exchanged
+    tokenExchangeRefreshToken: "when-requested",   // Refresh token from a token exchange
+    breakIdTokenNonce: false,                      // Break the ID Token nonce (development only)
+    refreshIdleSeconds: 86400,                     // Refresh token idle timeout (s)
+    revokeRefreshOnLogout: true,                   // Revoke refresh tokens on sign-out
+    eddsaCurve: "Ed25519",                         // EdDSA curve
+    jwtBearerGrant: true,                          // JWT bearer authorization grant (RFC 7523 section 2.1)
+    jwtBearerRequireRegisteredIssuer: true,        // Require a registered assertion issuer
+    jwtBearerMaxLifetimeS: 300,                    // Longest assertion lifetime accepted (s)
+    saml2BearerGrant: true,                        // SAML 2.0 bearer authorization grant (RFC 7522 section 2.1)
+    saml2BearerRequireRegisteredIssuer: true,      // Require a registered SAML assertion issuer
+    saml2BearerMaxLifetimeS: 300,                  // Longest SAML assertion lifetime accepted (s)
+    clientAssertionSkewS: 60,                      // Client assertion clock skew (s)
+    clientAttestationTrustAnchors: "",             // Trusted client attesters: certificate anchors (PEM)
+    clientAttestationTrustedKeys: "",              // Trusted client attesters: keys (JWKS)
+    clientAttestationChallengeRequired: true,      // Require a server challenge in a client attestation PoP
+    clientAttestationChallengeTtlS: 300,           // Client attestation challenge lifetime (s)
+    clientAttestationChallengeCacheSize: 10000,    // Client attestation challenges held per realm
+    clientAttestationMaxAgeS: 86400,               // Oldest client attestation accepted (s)
+    clientAttestationPopMaxAgeS: 300,              // Oldest client attestation PoP accepted (s)
+    fapiAllowClientAttestation: false,             // FAPI 2.0: accept client attestation (HAIP)
+    assertionReplayCacheSize: 1000,                // Assertion replay cache size (per realm)
+    dpopNonceRequired: false,                      // Require a DPoP server nonce
+    dpopIatSkewS: 300,                             // DPoP proof iat window (s)
+    dpopNonceTtlS: 300,                            // DPoP server nonce lifetime (s)
+    dpopReplayCacheSize: 10000,                    // DPoP proof replay history size (per realm)
+    dpopNonceCacheSize: 10000,                     // DPoP server nonces held (per realm)
+    refreshTokenRotation: false,                   // Rotate refresh tokens
+    refreshTokenRequireDpop: false,                // Require DPoP on refresh tokens
+    refreshTokenRequireMtls: false,                // Require mutual TLS on refresh tokens
+    accessTokenRequireDpop: false,                 // Require DPoP for every access token
+    accessTokenRequireMtls: false,                 // Require mutual TLS for every access token
+    openRegistration: false,                       // Open dynamic client registration (product mode)
+    softwareStatementRequireTrustedIssuer: true,   // Refuse a software statement from an undeclared issuer
+    softwareStatementOpensRegistration: true,      // A trusted software statement opens a closed registration endpoint
+    softwareStatementRequired: false,              // Require a software statement on every registration
+    softwareStatementLifetimeS: 31536000,          // Issued software statement lifetime (s)
+    clientSecretOverlapS: 604800,                  // Keep a rotated client secret working for (seconds)
+    clientSecretsMax: 5,                           // Client secrets an application may hold
+    clientSecretExpiryWarningDays: 14,             // Warn about an expiring client secret this many days ahead
+    clientSecretLifetimeDays: 0,                   // Client secret lifetime (days)
+    registeredClientIdPrefix: "sts-client-",       // Dynamically registered client_id prefix
+    registeredClientIdBytes: 8,                    // Dynamically registered client_id random bytes
+    registeredSecretBytes: 48,                     // Dynamically registered secret random bytes
+    authorizationCodeTtlS: 300,                    // Authorization code lifetime (s)
+    redeemedCodeCacheSize: 10000,                  // Redeemed authorization codes remembered (per realm)
+    codeReplayIdempotent: false,                   // Answer a repeated code redemption with the same tokens
+    maxPendingTransactions: 500,                   // RFC 9700: remembered transactions (per realm)
+    maxRefreshTokenFamilies: 2000,                 // RFC 9700: remembered refresh tokens (per realm)
+    signedMetadataAlgorithm: "RS256",              // Algorithm signed_metadata is signed with
+    accessTokenCertificateHeader: "x5u",           // Access token certificate header
+    idTokenCertificateHeader: "x5u",               // ID Token certificate header
+    refreshTokenCertificateHeader: "x5u",          // Refresh token certificate header
+    userinfoCertificateHeader: "x5u",              // Signed UserInfo certificate header
+    introspectionCertificateHeader: "x5u",         // JWT introspection response certificate header
+    signedMetadataCertificateHeader: "x5u",        // signed_metadata certificate header
+    signedMetadataCacheS: 60,                      // signed_metadata cache (s)
+    maxSignedMetadataEntries: 64,                  // signed_metadata cache entries
+    basicAuthRealm: "sts",                         // Token endpoint Basic realm
+    maxAuthorizationServerProfiles: 200,           // Named authorization servers (per realm)
+    deviceAuthorization: false,                    // Device authorization grant (RFC 8628)
+    deviceCodeLifetimeS: 600,                      // Device code lifetime (seconds)
+    deviceCodeIntervalS: 5,                        // Device code polling interval (seconds)
+    ciba: false,                                   // CIBA (backchannel authentication)
+    cibaDefaultExpiryS: 120,                       // CIBA request lifetime (s)
+    cibaMaxExpiryS: 600,                           // CIBA request longest lifetime (s)
+    cibaIntervalS: 5,                              // CIBA poll interval (s)
+    cibaMaxPendingPerPerson: 5,                    // CIBA requests waiting per person
+    cibaNotifyTimeoutMs: 5000,                     // CIBA notification timeout (ms)
+    cibaNotifyAttempts: 5,                         // CIBA notification attempts
+    cibaNotifyBackoffMs: 2000,                     // CIBA notification backoff (ms)
+    providerCommands: false,                       // OpenID Provider Commands
+    commandAutomatic: true,                        // Automatic provider commands
+    commandTokenTtlS: 120,                         // Command Token lifetime (s)
+    commandAttempts: 5,                            // Command attempts
+    commandTimeoutMs: 10000,                       // Command timeout (ms)
+    commandBackoffMs: 2000,                        // Command backoff (ms)
+    commandLeaseMs: 60000,                         // Command attempt lease (ms)
+    commandRetentionS: 86400,                      // Command retention (s)
+    commandMaxRows: 5000,                          // Command rows kept
+    commandConcurrency: 8,                         // Commands in flight
+    commandSummaryS: 60,                           // Command summary interval (s)
+    commandSweepS: 15,                             // Command sweep interval (s)
+    commandCallbackTtlS: 86400,                    // Command callback token lifetime (s)
+    commandStreamIdleMs: 30000,                    // Tenant command stream idle timeout (ms)
+    commandStreamResumes: 3,                       // Tenant command stream resumptions
+    commandStreamMaxEvents: 1000000,               // Tenant command stream event cap
+    commandMetadataMaxGroups: 200,                 // Groups in a metadata command
+    cibaNotifyRetentionS: 3600,                    // CIBA notification retention (s)
+    cibaNotifyMaxRows: 2000,                       // CIBA notification rows kept
+    cibaNotifyConcurrency: 8,                      // CIBA notifications in flight
+    cibaNotifySummaryS: 60,                        // CIBA notification summary interval (s)
+    cibaSweepS: 30,                                // CIBA sweep interval (s)
+    maxRequestedClaims: 64,                        // Claims one claims request may name
+    idaTrustFrameworks: "urn:sts:local",           // Identity Assurance trust frameworks
+    idaAutomaticVerifications: true,               // Sign-ins record an identity verification
+    accessTokenTtlS: 3600,                         // Access token lifetime (s)
+    idTokenTtlS: 3600,                             // ID Token lifetime (s)
+    refreshTokenTtlS: 86400,                       // Refresh token lifetime (s)
+    expiredTokenRetentionS: 86400,                 // Keep an expired token on /admin/tokens for (seconds)
+    accessTokenStatusListTtlS: 60,                 // Access-token status list time to live (s)
+    accessTokenStatusListLifetimeS: 3600,          // Access-token status list lifetime (s)
+    maxRevokedJtis: 100000,                        // Most revoked token ids kept per realm
+    clockSkewS: 30,                                // Token clock skew (s)
+    redirectUris: "",                              // Registered redirect URIs
+    loopbackPortWildcard: true,                    // Loopback port wildcard
+    refreshTokenEncryptionAlg: "RSA-OAEP-256",     // Refresh token encryption: key management (alg)
+    refreshTokenEncryptionEnc: "A256GCM",          // Refresh token encryption: content (enc)
+    refreshTokenEncryptionKeyBits: 2048,           // Refresh token encryption: RSA key size (bits)
+    refreshTokenEncryptionCurve: "P-256",          // Refresh token encryption: EC curve
+    requireSignedRequestObject: false,             // Require a signed request object (RFC 9101)
+    authorizationDetailsMaxEntries: 20,            // Most authorization_details entries in one request (RFC 9396)
+    requestUriTimeoutMs: 5000,                     // request_uri fetch timeout (ms)
+    requestUriMaxBytes: 65536,                     // request_uri largest response (bytes)
+    requireRequestObjectType: false,               // Require typ oauth-authz-req+jwt on a request object
+    requireRequestObjectIssuerAudience: false,     // Require iss and aud in a request object
+    requestObjectJtiOnce: true,                    // A request object's jti is accepted once
+    requestObjectJtiRetentionS: 3600,              // How long a request object's jti is kept without exp (s)
+    clientJwksCacheS: 300,                         // Client jwks_uri cache (s)
+    clientJwksRefetchS: 30,                        // Client jwks_uri refetch interval (s)
+    requestUriFragmentCheck: true,                 // Check a request_uri's SHA-256 fragment against its content
+    requestUriCacheS: 0,                           // request_uri content cache (s)
+    requestObjectEncryptionKeyBits: 2048,          // Request object encryption: RSA key size (bits)
+    requestObjectEncryptionCurve: "P-256",         // Request object encryption: EC curve
+    pushedAuthorizationRequests: true,             // Pushed authorization requests (RFC 9126)
+    requirePushedAuthorizationRequests: false,     // Require pushed authorization requests
+    parRequestUriLifetimeS: 60,                    // Pushed request_uri lifetime (seconds)
+    parMaxRequests: 10000,                         // Pushed requests held at once
+    parMaxBodyBytes: 65536,                        // Largest pushed authorization request (bytes)
+    parRequestsPerMinute: 600,                     // Pushed requests per client per window
+    parAllowUnregisteredRedirectUris: false,       // Pushed requests may name an unregistered redirect_uri
+    stepUpAcrValues: "",                           // Step-up: acr values this service's resource server requires
+    stepUpMaxAgeS: -1,                             // Step-up: oldest authentication this service's resource server accepts (s)
+    sessionManagement: false,                      // OpenID Connect Session Management
+    frontchannelLogout: true,                      // OpenID Connect Front-Channel Logout
+    frontchannelLogoutWaitS: 3,                    // Front-channel logout: seconds before returning
+    backchannelLogout: true,                       // OpenID Connect Back-Channel Logout
+    backchannelLogoutOnExpiry: true,               // Back-channel logout on session expiry
+    backchannelLogoutTokenTtlS: 120,               // Back-channel Logout Token lifetime (seconds)
+    backchannelLogoutAttempts: 3,                  // Back-channel logout delivery attempts
+    backchannelLogoutTimeoutMs: 5000,              // Back-channel logout request timeout (ms)
+    backchannelLogoutBackoffMs: 1000,              // Back-channel logout retry backoff (ms)
+    backchannelLogoutLeaseMs: 60000,               // Back-channel logout attempt lease (ms)
+    backchannelLogoutSweepS: 10,                   // Back-channel logout sweep interval (seconds)
+    backchannelLogoutRetentionS: 86400,            // Back-channel logout delivery retention (seconds)
+    backchannelLogoutMaxRows: 2000,                // Back-channel logout deliveries kept per realm
+    backchannelLogoutConcurrency: 8,               // Back-channel logout sweep concurrency
+    backchannelLogoutSummaryS: 60                  // Back-channel logout summary interval (seconds)
   },
 
   // --- Devices ---------------------------------------------------------

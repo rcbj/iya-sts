@@ -149,6 +149,10 @@ config.registerLogger(log);
 const FORMATS = {
   jwt: 'RFC 7523 JWT',
   saml: 'RFC 7522 SAML 2.0 assertion',
+  // #114: a SAML 1.1 assertion exchanged under RFC 8693, keyed by its
+  // AssertionID — a namespace of its own beside SAML 2.0's ID, for the
+  // reason `saml` and a <LogoutRequest> are kept apart.
+  saml11: 'SAML 1.1 assertion',
   // A SAML protocol MESSAGE rather than an assertion (#167): a federation
   // partner's <LogoutRequest>, keyed by its `ID`. Its own format because an
   // assertion's ID and a request's ID are two namespaces a partner has no
@@ -192,7 +196,11 @@ const USES = {
   // instance is its issuer — and the challenge it carried, spent with it.
   'client-attestation-pop': 'client attestation proof of possession ' +
                             '(OAuth 2.0 Attestation-Based Client ' +
-                            'Authentication)'
+                            'Authentication)',
+  // #114: an RFC 7523 / RFC 7522 / SAML 1.1 assertion presented as an RFC
+  // 8693 subject_token or actor_token. The SAME history as the grant (rcbj,
+  // #114): an assertion is spent once, whichever door spends it.
+  'token-exchange': 'token exchange subject or actor (RFC 8693)'
 };
 
 // What a row is, spelt once. Every store hands rows back in this shape.
@@ -1103,6 +1111,10 @@ function usedAs(existing) {
   if (existing.use === 'client-attestation-pop') {
     log.debug("Leaving usedAs(). A client attestation PoP.");
     return ' — as a client attestation proof of possession' + inFlight;
+  }
+  if (existing.use === 'token-exchange') {
+    log.debug("Leaving usedAs(). A token exchange.");
+    return ' — in an RFC 8693 token exchange' + inFlight;
   }
   return ' — ' + (existing.format === 'saml' ? 'under RFC 7522 section ' +
     (existing.use === 'authorization-grant' ? '2.1' : '2.2')
