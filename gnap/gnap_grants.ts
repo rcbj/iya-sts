@@ -1225,7 +1225,12 @@ class GnapGrants {
         key: asked.bearer ? null : grant.client.key,
         proof: asked.bearer ? null :
                keyDescriptor.proof, revoked: false, createdAt: iat,
-        rsIdentifiers: rsIds, username: username
+        rsIdentifiers: rsIds, username: username,
+        // #432: the JWT formats' index in the realm's access-token status
+        // list, and a biscuit's revocation identifiers — what the token's
+        // value says, kept because the store keeps only its digest.
+        statusIdx: minted.statusIdx === undefined ? null : minted.statusIdx,
+        revocationIds: minted.revocationIds || null
       }), minted.value);
       const response: Record<string, any> = { value: minted.value, access:
                                               asked.access, expires_in:
@@ -2662,7 +2667,10 @@ class GnapGrants {
       key: newDescriptor ? newDescriptor.value : record.key, proof:
           newDescriptor ? newDescriptor.proof : record.proof, rotatedFrom:
           record.jti, revoked: false, createdAt: iat, manageHandle: null,
-          manageHash: null }), minted.value);
+          manageHash: null,
+          // The NEW value's (#432), never the rotated one's copied above.
+          statusIdx: minted.statusIdx === undefined ? null : minted.statusIdx,
+          revocationIds: minted.revocationIds || null }), minted.value);
     // Section 6.1: "the AS MUST invalidate the current access token value".
     record.revoked = true;
     record.revokedAt = iat;

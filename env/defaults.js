@@ -444,6 +444,8 @@ var config = {
     idTokenTtlS: 3600,                           // ID Token lifetime (s)
     refreshTokenTtlS: 86400,                     // Refresh token lifetime (s)
     expiredTokenRetentionS: 86400,               // Keep an expired token on /admin/tokens for (seconds)
+    accessTokenStatusListTtlS: 60,               // Access-token status list time to live (s)
+    accessTokenStatusListLifetimeS: 3600,        // Access-token status list lifetime (s)
     maxRevokedJtis: 100000,                      // Most revoked token ids kept per realm
     clockSkewS: 30,                              // Token clock skew (s)
     redirectUris: "",                            // Registered redirect URIs
@@ -1110,10 +1112,10 @@ var config = {
 
   // --- Delegation ------------------------------------------------------
   delegation: {
-    maxRecords: 2000,                  // Maximum delegation acts held
-    defaultSemantics: "delegation",    // Default semantics of an act
-    protectedGroups: "",               // Groups never acted for
-    actorRole: "DELEGATION_ACTOR"  // Role a person needs to act for somebody
+    maxRecords: 2000,               // Maximum delegation acts held
+    defaultSemantics: "delegation", // Default semantics of an act
+    protectedGroups: "",            // Groups never acted for
+    actorRole: "DELEGATION_ACTOR"   // Role a person needs to act for somebody
   },
 
   // --- Logout ----------------------------------------------------------

@@ -48,6 +48,8 @@ be continued, be modified onto different access, and be revoked.
 | `/gnap/resource` | POST | resource set registration (RFC 9767 section 3.4) |
 | `/gnap/keys` | GET | the public keys that verify the self-contained token formats |
 | `/gnap/zcap/controller` | GET | the controller document a zcap token's root capability names |
+| `/gnap/biscuit/revocations` | GET | the revocation identifiers of revoked biscuit tokens (this service's own; see [revocation](#seeing-a-revocation-without-introspection)) |
+| `/status-lists/access-tokens` | GET | the realm's access-token status list, shared with OAuth (see [revocation](#seeing-a-revocation-without-introspection)) |
 | `/gnap/rs/resource` | GET · POST | a demonstration resource server |
 
 In a trust realm every path is under `/realm/{id}`.
@@ -93,6 +95,47 @@ that accepts only some formats, then the resource server's
 `gnapAccessTokenFormat`, then the client's, then `gnap.accessTokenFormat`.
 
 **Resource servers can always introspect**, whatever the format.
+
+### Seeing a revocation without introspection
+
+A resource server that verifies a token itself, rather than introspecting it,
+still needs to learn that the token was revoked (RFC 9767 section 6.3). Each
+format gets the mechanism it has, and none is invented for a format that has
+none:
+
+| Format | How a self-checking resource server sees a revocation |
+|---|---|
+| `jwt-signed`, `jwt-encrypted` | The JWT carries `status: { "status_list": { "idx", "uri" } }` ([Token Status List](https://datatracker.ietf.org/doc/draft-ietf-oauth-status-list/), section 6.1). Fetch the list at `uri`, verify its signature against `/oauth2/jwks`, and read bit `idx`: `1` means revoked. |
+| `biscuit` | `GET /gnap/biscuit/revocations` returns `{ "revocation_ids": [...], "ttl": ... }`. Refuse a biscuit if any of its blocks' revocation identifiers is on the list. |
+| `macaroon`, `zcap` | **No standard mechanism.** Introspect, or keep token lifetimes short (`gnap.accessTokenLifetimeS`) and rely on rotation. |
+
+**The access-token status list is the realm's one list.** GNAP's JWTs share it
+with OAuth's [RFC 9068 access tokens](oauth-oidc.md#jwt-access-tokens-rfc-9068).
+It holds one bit per token over 1,048,576 indexes. Each index is allocated at
+random when the token is minted and freed when the token expires. The bit is
+computed from the revocation itself, so it is set however the token is revoked:
+at its management URI, by rotation, by revoking its grant, on `/admin/tokens`
+or `/admin/gnap`, or by a global sign-out.
+
+The list is served as `application/statuslist+jwt`, or as
+`application/statuslist+cwt` when `Accept` asks for it. It is signed with the
+realm's RS256 key, and carries a `ttl` and an `exp` taken from
+`oauth2.accessTokenStatusListTtlS` (60 seconds) and
+`oauth2.accessTokenStatusListLifetimeS`. The `ttl` is how long a revocation
+can take to reach a resource server that caches the list.
+
+**Where a resource server finds the lists:**
+
+* The RS-facing discovery document (`/.well-known/gnap-as-rs`) has two extra
+  members, `status_list_aggregation_endpoint` and `biscuit_revocation_endpoint`.
+* `/gnap/keys` has the same two, under `jwt` and `biscuit`.
+
+Neither member is in RFC 9767's registry, so both are this service's own. The
+biscuit list is also this service's own. A revoked biscuit stays on it until
+the token's own `exp`. After that, every verifier refuses the token anyway.
+
+**Revocation by push:** see [Shared Signals](#shared-signals). A resource server
+can own a stream and be told when a token audienced to it is revoked.
 
 ### zcap proof suites
 
@@ -243,6 +286,17 @@ with a sentence saying what was wrong.
   `urn:ietf:rfc:9635` for it.
 * A stream a GNAP web application owns is **scoped**: it hears only about
   people who approved a grant to that application.
+* A **registered resource server** can own a stream the same way: its
+  application entry is a `gnap-resource-server`, and it asks for `ssf:read` /
+  `ssf:write` as a client with its own key. Its stream hears **only**
+  `session-revoked` for `gnap-token:<jti>` and `gnap-grant:<id>`, and only for
+  tokens audienced to it. A token is audienced to it if its access resolved to
+  that server, or its `aud` names the server's identifier or one of its
+  `gnapResourceServerUri`s. A grant counts when any of its tokens was. It is
+  told about tokens no person approved too: their `session-revoked` names the
+  session alone. An entry that is both a web application and a resource server
+  hears what either rule allows. `gnap.scopedSignals` off, or
+  `gnapScopedSignals` `FALSE` on the entry, removes the scope.
 
 See [CAEP events](caep-events.md).
 
@@ -312,7 +366,7 @@ it then publishes is what its grant endpoint enforces.
 | `gnap.accessTokenCertificateHeader` | `STS_GNAP_ACCESS_TOKEN_CERTIFICATE_HEADER` | `x5u` | yes | Whether a `jwt-signed` or `jwt-encrypted` token's JWS names its signing certificate chain (`x5u`, `x5c`, `both`, `none`); see [PKI](pki.md#a-signed-token-names-its-certificate-chain). |
 | `gnap.demoResourceServer` | `STS_GNAP_DEMO_RESOURCE_SERVER` | `true` | yes | Runs `/gnap/rs/resource`, which judges a token in any of the five formats and answers the RS-first challenge. |
 | `gnap.caepEvents` | `STS_GNAP_CAEP_EVENTS` | `true` | yes | Sends CAEP `session-revoked` on a revoked grant or token and `token-claims-change` on a modified grant. |
-| `gnap.scopedSignals` | `STS_GNAP_SCOPED_SIGNALS` | `true` | yes | Scopes a GNAP web application's Shared Signals stream to people who approved a grant to it; `gnapScopedSignals` FALSE opts one out. |
+| `gnap.scopedSignals` | `STS_GNAP_SCOPED_SIGNALS` | `true` | yes | Scopes a GNAP web application's Shared Signals stream to people who approved a grant to it; `gnapScopedSignals` FALSE opts one out. A stream owned by a GNAP resource server hears only `session-revoked` for the GNAP tokens and grants audienced to it (#432). |
 
 Every setting is on `/admin/gnap` and in [*Every setting*](configuration.md#every-setting). See
 [Configuration](configuration.md) for how a value resolves and where it is

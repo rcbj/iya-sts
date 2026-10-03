@@ -1104,7 +1104,20 @@ Rotation with replay detection belongs to [OAuth security](oauth-security.md).
 Every access token is a [RFC 9068](https://www.rfc-editor.org/rfc/rfc9068) JWT
 access token, **in every mode**: header `typ: at+jwt`, the seven required claims,
 `preferred_username` for a person, and `auth_time`, `amr` and `acr` where an
-authentication is behind the grant. Every resource server here (UserInfo, the
+authentication is behind the grant. Every access token also carries a
+`status` claim, `{ "status_list": { "idx", "uri" } }`
+([Token Status List](https://datatracker.ietf.org/doc/draft-ietf-oauth-status-list/)
+section 6.1). It names the token's index in the realm's **access-token status
+list** at `/status-lists/access-tokens`. A resource server that checks tokens
+on its own fetches that list, verifies its signature against `/oauth2/jwks`,
+and reads the bit: `1` means the token was revoked, by `/oauth2/revoke`,
+`/admin/tokens`, a sign-out, or anything else that revokes. The authorization
+server metadata names the list's aggregation as
+`status_list_aggregation_endpoint` (section 9.1). The list is the realm's
+only one, and GNAP's JWT access tokens are on it too. The list is in JWT form,
+or in CWT form when `Accept` asks for `application/statuslist+cwt`. It has one
+bit per token, and `oauth2.accessTokenStatusListTtlS` (60 s) is how long a
+resource server may cache it. Every resource server here (UserInfo, the
 OpenID4VCI endpoints, SCIM, Shared Signals, `/admin-api` and the embedded
 debugger) applies section 4: the type, an issuer this service publishes **at
 the request's address**, and itself in `aud`, compared as the whole URL. A token
@@ -1872,6 +1885,8 @@ on [OAuth security](oauth-security.md#configuration).
 | `oauth2.authorizationCodeTtlS` | `STS_OAUTH2_AUTHORIZATION_CODE_TTL_S` | `300` | yes | How long an authorization code may wait to be redeemed; RFC 9700 mode's transaction memory is measured from it. |
 | `oauth2.redeemedCodeCacheSize` | `STS_OAUTH2_REDEEMED_CODE_CACHE_SIZE` | `10000` | yes | How many redeemed codes are remembered so an identical repeat gets the same tokens and a different one is refused by name. |
 | `oauth2.expiredTokenRetentionS` | `STS_OAUTH2_EXPIRED_TOKEN_RETENTION_S` | `86400` | yes | How long an expired token stays in the `/admin/tokens` register before the hourly purge job deletes its record. |
+| `oauth2.accessTokenStatusListTtlS` | `STS_OAUTH2_ACCESS_TOKEN_STATUS_LIST_TTL_S` | `60` | yes | The `ttl` (and HTTP `max-age`) of the realm's access-token status list and of the revoked-biscuit list: how long a resource server that checks access tokens on its own may keep them, and so how long a revocation can take to reach it (#432). |
+| `oauth2.accessTokenStatusListLifetimeS` | `STS_OAUTH2_ACCESS_TOKEN_STATUS_LIST_LIFETIME_S` | `3600` | yes | How long after it is signed the access-token status list says it is valid (its `exp`). |
 | `oauth2.maxRevokedJtis` | `STS_OAUTH2_MAX_REVOKED_JTIS` | `100000` | yes | The most revoked token ids a realm keeps. A revocation is dropped anyway once its token expires; at the cap the one whose token expires soonest is forgotten (`STS-OAUTH-0787`), and that token is accepted again until it expires. |
 
 ### Certificate chain headers

@@ -32,6 +32,8 @@
 //   POST    /gnap/resource            resource set registration (RFC 9767 3.4)
 //   GET     /gnap/keys                token-format verification material
 //   GET     /gnap/zcap/controller     the ZCAP-LD controller document
+//   GET     /gnap/biscuit/revocations the revocation identifiers of revoked
+//                                     biscuits (#432; this service's own)
 //   GET|POST /gnap/rs/resource        the demonstration resource server
 //
 // **A NAMED AUTHORIZATION SERVER IS THE OAUTH SUBSYSTEM'S, NOT A SECOND ONE.**
@@ -125,6 +127,8 @@ interface GnapRoutesDeps {
   // Required at the moment they are needed, never at load.
   loadAccess(): AccessCovers;
   loadMonitor(): EventCounter;
+  loadStore(): { biscuitRevocationIds(): string[] };
+  loadStatusList(): { aggregationUri(base: string): string };
 }
 
 // The routes' own table of what an express app offers.
@@ -162,6 +166,8 @@ const STATUS_FOR: Record<string, number> = {
 // THE DEMONSTRATION RESOURCE SERVER'S NAMES — see `demoResource()`.
 // ---------------------------------------------------------------------------
 const DEMO_TYPE = 'urn:iya-sts:gnap:demo';
+// The revoked biscuits' identifiers (#432).
+const BISCUIT_REVOCATIONS_PATH = '/gnap/biscuit/revocations';
 const DEMO_REFERENCE = 'iya-sts-gnap-demo';
 
 /**
@@ -438,6 +444,17 @@ class GnapRoutes {
       if (caps.key_proofs_supported) {
         document.key_proofs_supported = caps.key_proofs_supported;
       }
+      // WHERE A RESOURCE SERVER THAT CHECKS TOKENS ON ITS OWN LEARNS OF A
+      // REVOCATION (#432; RFC 9767 section 6.3 offers it nothing but
+      // introspection). Neither member is in RFC 9767 section 10's registry;
+      // both are this service's own, and an RS that does not know them
+      // ignores them. `status_list_aggregation_endpoint` is the name
+      // draft-ietf-oauth-status-list section 9.1 gives the same document in
+      // an OAuth authorization server's metadata — the realm's ONE
+      // access-token list, which GNAP's two JWT formats share with OAuth.
+      document.status_list_aggregation_endpoint =
+        self.deps.loadStatusList().aggregationUri(base);
+      document.biscuit_revocation_endpoint = base + BISCUIT_REVOCATIONS_PATH;
       res.status(200).type('application/json')
          .set('Cache-Control', 'no-store')
          .send(JSON.stringify(document, null, 2));
@@ -732,6 +749,48 @@ class GnapRoutes {
       log.debug("Leaving GET /gnap/zcap/controller.");
     }));
 
+    // -----------------------------------------------------------------------
+    // THE REVOKED BISCUITS (#432). A biscuit carries its own revocation
+    // identifiers — one per block, the signature that sealed it — and the
+    // format's own answer to revocation is a list of revoked identifiers its
+    // verifier checks a token's against. No GNAP or biscuit document says
+    // where such a list is published, so this is THIS SERVICE'S OWN, named
+    // in the RS-facing discovery document and on /gnap/keys. JSON, unsigned
+    // (it is fetched over the same TLS as the keys that verify the
+    // biscuits), and an identifier stays on it until its token's own `exp`.
+    // Cache-Control is max-age = `oauth2.accessTokenStatusListTtlS`, the
+    // access-token list's ttl: the same promise about the same tokens.
+    // -----------------------------------------------------------------------
+    app.get(BISCUIT_REVOCATIONS_PATH, function (req, res) {
+      log.debug("Entering GET " + BISCUIT_REVOCATIONS_PATH + ".");
+      if (self.offCheck(res)) {
+        log.debug("Leaving GET " + BISCUIT_REVOCATIONS_PATH + ". Off.");
+        return;
+      }
+      let ids: string[] = [];
+      try {
+        ids = self.deps.loadStore().biscuitRevocationIds();
+      } catch (e) {
+        log.debug("Caught in GET " + BISCUIT_REVOCATIONS_PATH + ": " +
+                  ((e && e.message) || e));
+        log.error(errorCodes.tag('STS-GNAP-0751') + 'gnap: the revoked ' +
+                  'biscuits could not be listed: ' + ((e && e.message) || e));
+        errorCodes.mark(res, 'STS-GNAP-0751');
+        res.status(500).type('text/plain')
+           .send('The revocation list could not be built.\n');
+        log.debug("Leaving GET " + BISCUIT_REVOCATIONS_PATH + ". Failed.");
+        return;
+      }
+      const ttl =
+        Number(self.deps.config.value('oauth2.accessTokenStatusListTtlS')) ||
+        60;
+      res.status(200).type('application/json')
+         .set('Cache-Control', 'max-age=' + ttl)
+         .send(JSON.stringify({ revocation_ids: ids, ttl: ttl }, null, 2));
+      log.debug("Leaving GET " + BISCUIT_REVOCATIONS_PATH + ". " +
+                ids.length + ".");
+    });
+
     app.get('/gnap/rs/resource', function (req, res) {
       return self.demoResource(req, res);
     });
@@ -768,6 +827,12 @@ class GnapRoutes {
       },
       loadMonitor: function () {
         return require('./gnap_monitor');
+      },
+      loadStore: function () {
+        return require('./gnap_store');
+      },
+      loadStatusList: function () {
+        return require('../oauth-oidc/access_token_status');
       }
     };
   }

@@ -2993,7 +2993,11 @@ const RESERVED_JWT_CLAIMS = [
   // does — the UserInfo endpoint has to know what the client asked for, and a
   // signed token is the one thing that reaches it — so a settable `claims`
   // would let a web form decide what a request asked for. See oauth2.js.
-  'claims'
+  'claims',
+  // draft-ietf-oauth-status-list section 6.1's reference (#432): where a
+  // resource server checking an access token on its own reads whether it was
+  // revoked. A settable one would point every token at a list somebody chose.
+  'status'
 ];
 
 // PER TRUST REALM, AND IT WAS NOT UNTIL 2026-08-28.

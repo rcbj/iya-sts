@@ -204,6 +204,7 @@ not use this cache: it decrypts the secret every time.
 | Debugger files | the embedded debugger's files with this service's address filled in | per process | until the file changes (400 entries) | — |
 | Fetched status lists | a Status List Token or Bitstring Status List credential a trusted foreign issuer published, fetched when one of its credentials was presented | per process | the list's own `ttl`, never past its `exp`, at most `oid4vp.statusListMaxCacheS` (3600); a failed fetch 30 seconds | `oid4vp.statusListMaxCacheS` |
 | Signed status lists | the last Status List Token and Bitstring Status List credential this process signed for each realm | per process | until the list changes, or half of `oid4vci.statusListTtlS`; 1,024 documents, oldest first | `oid4vci.statusListTtlS` |
+| Signed access-token status lists | the last access-token Status List Token this process signed for each realm (#432) | per process | until the list changes, or half of `oauth2.accessTokenStatusListTtlS`; 1,024 lists, oldest first | `oauth2.accessTokenStatusListTtlS` |
 
 **XACML policy parses are kept by content.** Each distinct policy text is a new
 entry, so an edited policy leaves its old parse behind until it becomes the
@@ -257,6 +258,8 @@ something be used twice, which is why none of them has a control.
 | OpenID4VP transactions | every presentation request the Verifier is waiting on — the bar door's, and a wallet sign-in's with its Digital Credentials API request and the key its answer is encrypted to | per realm, persisted | `oid4vp.maxTransactions` (5000), oldest first | `oid4vp.presentationRequestTtlS`, or `oid4vp.signInTtlS` for a sign-in |
 | Wallet sign-in register | the credentials this realm issued for a person on an access token it verified, which are the only ones a wallet may sign in with | per realm, persisted | `oid4vp.signInRegisterMaxEntries` (10000), the row issued first dropped | until the last credential on the row expires |
 | Credential status entries | each issued credential's index in this realm's status lists, and the status set for it | per realm, persisted | 131,072 | as long as the credential it describes |
+| Access-token status entries | each live access token's index in the realm's access-token status list — OAuth RFC 9068 tokens and GNAP's two JWT formats — with its `jti` (#432) | per realm, persisted, every cell | 1,048,576; **refuses to mint a token when full** | as long as the access token it describes |
+| Revoked biscuits | the revocation identifiers of each revoked GNAP biscuit token, published at `/gnap/biscuit/revocations` (#432) | per realm, persisted, every cell | the biscuits revoked within one token lifetime | at the revoked token's own `exp` |
 | Back-channel Logout deliveries | one row per relying party told that a session ended: its state, its attempts, when it is next due and the signed Logout Token | per realm, persisted | `oauth2.backchannelLogoutMaxRows` (2000), oldest FINISHED first | `oauth2.backchannelLogoutRetentionS` (86400) after it was queued; a row still pending then becomes a dead letter |
 
 Three behaviours are worth knowing:

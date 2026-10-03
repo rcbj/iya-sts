@@ -99,6 +99,10 @@ interface GnapTokensDeps {
   biscuit: any;
   zcap: any;
   access: any;
+  // The realm's access-token status list (#432), loaded LAZILY: it brings
+  // the cluster claims and the status-list codec, which a process that only
+  // verifies GNAP tokens (an in-process format test) never needs.
+  loadStatusList(): any;
 }
 
 // What a refused verification answers.
@@ -351,7 +355,7 @@ class GnapTokens {
   // -------------------------------------------------------------------------
   // THE JWT CLAIMS FOR THE MODEL (RFC 9767 section 2.1's JWT mappings).
   // -------------------------------------------------------------------------
-  private claimsOf(model: any): Record<string, any> {
+  private claimsOf(model: any, statusRef?: any): Record<string, any> {
     const { log } = this;
     log.debug("Entering GnapTokens.claimsOf().");
     const claims: Record<string, any> = {
@@ -367,7 +371,16 @@ class GnapTokens {
       client_id: model.instanceId,
       access: model.access,
       flags: model.flags && model.flags.length ? model.flags : undefined,
-      label: model.label || undefined
+      label: model.label || undefined,
+      // draft-ietf-oauth-status-list section 6.1 (#432): the token's place
+      // in the realm's ONE access-token status list, which it shares with
+      // OAuth's RFC 9068 tokens (rcbj's decision 4) — how a resource server
+      // that verifies this JWT on its own sees it revoked (RFC 9767 section
+      // 6.3). Not part of the section 2.1 model: `modelOfClaims()` does not
+      // read it back, and introspection answers from the record.
+      status: statusRef ? { status_list: { idx: statusRef.idx,
+                                           uri: statusRef.uri } }
+                        : undefined
     };
     if (model.sub) {
       claims.sub = model.sub;
@@ -489,10 +502,19 @@ class GnapTokens {
         refused.errorCode = valid.errorCode;
         throw errorCodes.mark(refused, valid.errorCode);
       }
+      // THE STATUS-LIST INDEX (#432), claimed across the cluster before the
+      // JWS is signed, for as long as the token lives. A token that cannot
+      // be given one is not minted (the allocator's STS-OAUTH-0816 / 0817,
+      // and the caller's own code): a JWT that a resource server could never
+      // see revoked is the hole this list closes. `context.base` is the
+      // realm's base, the ZCAP controller's too.
+      const statusRef = await this.deps.loadStatusList().allocate({
+        jti: valid.model.jti, kind: 'gnap', base: context.base || '',
+        expiresAt: valid.model.exp ? Number(valid.model.exp) * 1000 : 0 });
       // `gnap.accessTokenCertificateHeader` decides the `x5c` / `x5u`, on the
       // JWS in both JWT formats — never on the JWE around jwt-encrypted, which
       // is encrypted to a resource server's key or to a secret.
-      const signed = helpers.signJwt(this.claimsOf(valid.model),
+      const signed = helpers.signJwt(this.claimsOf(valid.model, statusRef),
                                      { grant: 'gnap',
                                        setId: context.setId || null,
                                        sessionId: context.sessionId || null },
@@ -505,7 +527,8 @@ class GnapTokens {
       }
       if (format === 'jwt-signed') {
         log.debug("Leaving GnapTokens.mint(). jwt-signed.");
-        return { value: signed, format: format, jti: model.jti };
+        return { value: signed, format: format, jti: model.jti,
+                 statusIdx: statusRef.idx };
       }
       const rsKey = context.rs && context.rs.jweKey ?
         context.rs.jweKey : null;
@@ -525,6 +548,7 @@ class GnapTokens {
       log.debug("Leaving GnapTokens.mint(). jwt-encrypted to " +
                 (rsKey ? 'the resource ' + 'server' : 'this ' + 'AS') + ".");
       return { value: value, format: format, jti: model.jti,
+               statusIdx: statusRef.idx,
                encryptedTo: rsKey ? 'resource-server' :
                  'authorization-server' };
     }
@@ -778,9 +802,16 @@ class GnapTokens {
       // decides (common/jose_kid.js) — the one this document names has to be
       // it.
       jwt: { jwks_uri: base + '/oauth2/jwks', alg: 'RS256',
-             kid: helpers.publishedKidFor(STS.kid), typ: JWT_TYP },
+             kid: helpers.publishedKidFor(STS.kid), typ: JWT_TYP,
+             // Where a revoked JWT shows (#432): the realm's access-token
+             // status list, named in each token's `status.status_list`.
+             status_list_aggregation_endpoint:
+               this.deps.loadStatusList().aggregationUri(base) },
       biscuit: { algorithm: 'ed25519',
                  root_public_key: 'ed25519/' + raw.toString('hex'),
+                 // The revoked biscuits' identifiers (#432). Non-standard,
+                 // as `root_public_keys` below is.
+                 revocation_endpoint: base + '/gnap/biscuit/revocations',
                  jwk: keys.publicJwk,
                  // Every key a biscuit this realm minted may be signed with
                  // (#49 P5): the current one first, then its next key and the
@@ -864,7 +895,12 @@ class GnapTokens {
       macaroon: macaroon,
       biscuit: biscuit,
       zcap: zcap,
-      access: access
+      access: access,
+      loadStatusList: function loadStatusList(): any {
+        helpers.log.debug("Entering loadStatusList().");
+        helpers.log.debug("Leaving loadStatusList().");
+        return require('../oauth-oidc/access_token_status');
+      }
     };
   }
 }
