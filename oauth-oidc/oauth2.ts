@@ -5171,6 +5171,31 @@ class OAuth2Server {
           'the type does not accept a bearer token for it.' },
         'STS-OAUTH-0878'));
     }
+    // A TYPE THAT NEEDS AN AUTHENTICATION LEVEL (#432 phase 6): every acr
+    // the catalogue declares for a detail type the token carries, met by the
+    // authentication the grant rests on (`opts.acr`, `opts.amr`) — the code's
+    // session, the refresh token's original sign-in, a CIBA or device
+    // approval. A grant with no person behind it (client credentials) meets
+    // none. Here, the funnel every grant mints through, so no grant type can
+    // carry a right its type's resource server would not accept on that
+    // sign-in — GNAP's issue stage asks the same (STS-GNAP-0891).
+    const detailAcrs = richAuthorization.requiredAcrsOf(
+      opts.authorization_details);
+    const acrFacts = { acr: opts.acr || '', amr: opts.amr || [] };
+    const acrMissing = detailAcrs.filter(function (one: string): boolean {
+      return !self.deps.stepUp.meets(one, acrFacts);
+    });
+    if (acrMissing.length) {
+      log.debug("Leaving OAuth2Server.tokenSet(). A detail type's acr is " +
+                "not met: " + acrMissing.join(' '));
+      throw new AccessTokenRefused(log, errorCodes.mark({
+        error: 'invalid_authorization_details',
+        description: 'authorization_details of a type whose resource ' +
+          'server requires authentication level ' + acrMissing.join(' ') +
+          ' cannot be issued on this grant: the authentication it rests on (' +
+          (acrFacts.acr || 'none') + ') does not meet it (RFC 9470).' },
+        'STS-OAUTH-0937'));
+    }
     const derived = !explicit.length && plan.derived.length > 0;
     // THE GRANT BOTH HALVES BELONG TO, NAMED BEFORE EITHER IS SIGNED (#239):
     // the refresh token's jti and its family are chosen here rather than
@@ -6293,6 +6318,21 @@ class OAuth2Server {
    * @returns `{ details }` (null when none were sent), or `{ error }` marked
    *   with its code
    */
+  // The acr values a request's authorization_details need (#432 phase 6):
+  // the catalogue's, for each type among them, every one required. Details
+  // that do not parse need nothing here — they are refused where they are
+  // issued (`issueAuthorizationResponse()`), not stepped up for.
+  private detailAcrsOf(q: Json, req: Req): string[] {
+    const { log, richAuthorization } = this.deps;
+    log.debug("Entering OAuth2Server.detailAcrsOf().");
+    const parsed = this.parseAuthorizationDetails(q.authorization_details,
+      { clientId: q.client_id, req: req });
+    const out = parsed.details
+      ? richAuthorization.requiredAcrsOf(parsed.details) : [];
+    log.debug("Leaving OAuth2Server.detailAcrsOf(). " + out.length);
+    return out;
+  }
+
   parseAuthorizationDetails(raw: Json, context?: Json): Json {
     const { log, applications, errorCodes, richAuthorization } = this.deps;
     const self = this;
@@ -8682,7 +8722,8 @@ class OAuth2Server {
     const jar = req.stsJar;
     // With the client's registered defaults (#120).
     const stepping = stepUp.requirementOf(q,
-      this.deps.applications.registrationOf(q.client_id)).present;
+      this.deps.applications.registrationOf(q.client_id)).present ||
+      this.detailAcrsOf(q, req).length > 0;
     if (!jar) {
       log.debug("Leaving OAuth2Server.authorizationReturnQuery(). A plain " +
                 "request.");
@@ -9870,14 +9911,21 @@ class OAuth2Server {
     // default_acr_values apply where the request names neither (#120).
     const stepUpNeed = stepUp.requirementOf(q,
       applications.registrationOf(q.client_id));
+    // AND EVERY AUTHORIZATION DETAIL TYPE'S acr (#432 phase 6): the
+    // access-type catalogue GNAP shares declares the level a right of a type
+    // needs, and a grant of two types is a grant of both — so each is
+    // REQUIRED, beside (not instead of) `acr_values`' "any of".
+    const detailAcrs = self.detailAcrsOf(q, req);
     const stepUpHonoured = String(((req.stsJar && req.stsJar.outer) || q)
       .step_up_honoured || '') === '1';
     const promptNone = String(q.prompt || '').split(/\s+/).indexOf('none') >= 0;
     let stepUpAssessed = null;
-    if (session && !forcePrompt && stepUpNeed.present) {
+    if (session && !forcePrompt &&
+        (stepUpNeed.present || detailAcrs.length)) {
       stepUpAssessed = stepUp.assessSession(stepUpNeed, session, {
         honoured: stepUpHonoured,
-        windowS: Math.floor(authn.pendingTtlMs() / 1000)
+        windowS: Math.floor(authn.pendingTtlMs() / 1000),
+        required: detailAcrs
       });
       if (!stepUpAssessed.met && (promptNone || !stepUpAssessed.retry)) {
         const unmet = stepUp.unmetRefusal(stepUpNeed, stepUpAssessed,
@@ -10128,7 +10176,7 @@ class OAuth2Server {
     // KEY TOO (2026-09-17): those are met by a password with a security key,
     // so the screen offers exactly that and not a one-time code, which would
     // only be refused on the way back. `step_up.screenDemandFor()`.
-    const screen = stepUp.screenDemandFor(stepUpNeed.acrValues);
+    const screen = stepUp.screenDemandWith(stepUpNeed.acrValues, detailAcrs);
     const forceMfa = !!screen.forceMfa;
     if (stepUpReauth) {
       stepUp.record(q.client_id, 'stepup.reauth_' + stepUpAssessed.reason);
@@ -10136,7 +10184,7 @@ class OAuth2Server {
                'from "' +
                (q.client_id || '') + '" (' + stepUpAssessed.reason + '), so ' +
                'the person is sent to sign in again.');
-    } else if (stepUpNeed.present) {
+    } else if (stepUpNeed.present || detailAcrs.length) {
       stepUp.record(q.client_id, 'stepup.sign_in');
     }
     // What the screen tells the person they are signing in FOR. Written here

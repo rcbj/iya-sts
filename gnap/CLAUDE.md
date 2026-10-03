@@ -724,10 +724,13 @@ header argues the design; what a reader needs here:
   portal could never list it. A grant forwarded from the page was made in
   the cell the person at the page is pinned to; if the named owner is homed
   elsewhere, the same check refuses it, recorded as the decision.
-* **NOT DONE: RFC 9396.** The catalogue is shared, but the OAuth consent
-  screen already asks for every detail every time, and a type's `acr` is
-  not added to the authorization endpoint's step-up requirement —
-  `oauth-oidc/CLAUDE.md` 3am says so.
+* **AND RFC 9396 HOLDS THE SAME acr**, because the catalogue is one: the
+  OAuth authorization endpoint requires every detail type's acr beside
+  `acr_values`, steps up once and refuses `unmet_authentication_requirements`
+  (`STS-OAUTH-0936`), and the token funnel refuses a detail whose acr the
+  grant's authentication does not meet (`STS-OAUTH-0937`) —
+  `oauth-oidc/CLAUDE.md` 3am. `interaction` and `consentActions` need
+  nothing there: the consent screen asks for every detail every time.
 
 ## Error codes
 

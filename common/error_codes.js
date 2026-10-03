@@ -8592,6 +8592,18 @@ const CODES = [
       'the access-type catalogue declares bearer: false, and the request ' +
       'presented neither a DPoP proof nor a client certificate (#432).',
     spec: '400 invalid_authorization_details (RFC 9396 section 5)' },
+  { code: 'STS-OAUTH-0936',
+    summary: 'An authorization request\'s authorization_details carry a ' +
+      'type whose catalogue entry requires an authentication level, and the ' +
+      'session — after one sign-in for it — does not meet it (#432 phase 6, ' +
+      'RFC 9470).',
+    spec: 'RFC 9470 section 5 (unmet_authentication_requirements)' },
+  { code: 'STS-OAUTH-0937',
+    summary: 'A token request would issue authorization_details of a type ' +
+      'whose catalogue entry requires an authentication level the grant\'s ' +
+      'authentication does not meet — or a grant with no person behind it ' +
+      '(#432 phase 6).',
+    spec: 'RFC 9396 (invalid_authorization_details, HTTP 400)' },
   { code: 'STS-SAML-0001',
     summary: 'A SAML 2.0 sign-in resumed with a held-request id that is ' +
       'unknown or has expired (saml2.requestTtlMin), so there is no ' +

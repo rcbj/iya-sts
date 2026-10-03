@@ -405,6 +405,13 @@ issuance policy, and the grant engine does what they say:
 | any right of a type declaring `interaction: always`, or naming an action the type lists in `consentActions` (or naming no actions, which is every action) | the resource owner sees the approval page, every time. A client trusted to skip is sent there too, and is refused `invalid_interaction` if it offers no way to reach the person. **A remembered approval does not count**, and neither does `gnap.consentRequired` off |
 | any right of a type declaring an `acr` | the person's sign-in must meet every such level before the page is drawn; a session that does not is sent to sign in again — with a second factor or a security key, as the level needs and the realm's authentication policy allows — and refused `request_denied` if it comes back short. Nothing needing an `acr` is issued without such a session: not by skipping, and not by deriving from a token whose approval did not meet it |
 
+The same `acr` holds for OAuth: an authorization request whose
+`authorization_details` carry such a type asks the person to sign in again
+with it (every type's level, beside any `acr_values`) and is refused
+`unmet_authentication_requirements` if they come back short, and no token
+endpoint grant — client credentials included — issues the detail without an
+authentication that meets it.
+
 A realm's own issuance policy may make any of these stricter — `always` for
 a class of client, an `acr` for one action — because the most demanding
 answer wins. What the person achieved is recorded on the grant (`acr`), and
