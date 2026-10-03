@@ -1253,8 +1253,9 @@ to on.
     1.2 list while TLS 1.2 is off; a broken list would otherwise wait for
     whoever turns TLS 1.2 on.
   - Each listener's own anchors file must read (`STS-TLS-0045`).
-* **Certificates are NOT per listener.** rcbj stopped #429's phase 2 (a
-  certificate per listener) on 2026-10-02, before any of it was written. The
+* **Certificates are NOT per listener, and will not be.** rcbj stopped
+  #429's phase 2 (a certificate per listener) on 2026-10-02, before any of it
+  was written, and DROPPED it the same day: "We are not doing that." The
   main port, LDAPS and the debugger share one certificate, as they always
   have, and the certificate rows (hostnames, IPs, algorithms, files) stay
   service-wide.
