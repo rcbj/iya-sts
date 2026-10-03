@@ -72,12 +72,23 @@
 //   gnap_token(jti)                 issuer(iss)
 //   issued_at(date)                 expires(date)          not_before(date)?
 //   subject(sub)?                   audience(id)*          client_instance(id)
+//   audience_at(i, id)*             the audience's order, i = 0..
 //   access(i, json)                 one per right, i = 0.., json = the right
 //   access_ref(string)              for a reference-string right
 //   access_type(i, type)  access_action(i, a)  access_location(i, l)
 //   access_datatype(i, d) access_privilege(i, p) access_identifier(i, id)
 //   flag(f)*                        label(l)?
 //   cnf_jkt(tp) | cnf_x5t(tp) | cnf_kid(ref) | bearer(true)
+//   actor(i, sub)*                  the actor chain, i = 0 the most recent
+//
+// `actor(i, sub)` (#432) is RFC 8693 section 4.1's `act` as Datalog: the
+// resource server that DERIVED this token (RFC 9767 section 4) at 0, each
+// earlier deriver after it — so a resource server's own attenuation block
+// can reason about who acted (`check if actor(0, "rs-a")`). It is an
+// AUTHORITY fact for the reason every fact the model is read from is: a
+// block anybody holding the token may append is a block anybody may write
+// an actor into, and an authorizer query sees only the authority block and
+// its own facts (see readModel()).
 //
 // and its checks — so that the token carries its own rules and ANY biscuit
 // verifier enforces them, not only this one:
@@ -385,7 +396,7 @@ class TokenBiscuit {
 
   // The facts and checks of the authority block (see the header).
   private authorityProgram(model: any): Program {
-    const { log } = this.deps;
+    const { log, access } = this.deps;
     log.debug("Entering TokenBiscuit.authorityProgram().");
     const p = this.program();
     p.add('gnap_token(?);', [model.jti]);
@@ -398,8 +409,14 @@ class TokenBiscuit {
     if (model.sub !== null) {
       p.add('subject(?);', [model.sub]);
     }
-    model.aud.forEach(function (a) {
+    model.aud.forEach(function (a, i) {
       p.add('audience(?);', [a]);
+      // The ORDER, which a set of facts does not keep (#432: adding the
+      // actor facts reshuffled what the queries answered, and the round
+      // trip of a two-audience model failed). `audience(id)` stays what the
+      // checks and an attenuation block test; this is only how the model
+      // is read back in the order it was written.
+      p.add('audience_at(?, ?);', [i, a]);
     });
     p.add('client_instance(?);', [model.instanceId]);
     model.access.forEach(function (right, i) {
@@ -427,6 +444,9 @@ class TokenBiscuit {
     if (model.label !== null) {
       p.add('label(?);', [model.label]);
     }
+    (access.actorChain(model.act) || []).forEach(function (sub, i) {
+      p.add('actor(?, ?);', [i, sub]);
+    });
     if (!model.cnf) {
       p.add('bearer(true);');
     } else if (model.cnf.jkt) {
@@ -646,10 +666,27 @@ class TokenBiscuit {
     const sub = one('data($v) <- subject($v)');
     const client = one('data($v) <- client_instance($v)');
     const label = one('data($v) <- label($v)');
-    const aud = this.query(bg, authorizer, 'data($v) <- audience($v)').map(
-        function (r) {
-          return r[0];
-        });
+    const audSet = this.query(bg, authorizer, 'data($v) <- audience($v)')
+      .map(function (r) {
+        return r[0];
+      });
+    const audRows = this.query(bg, authorizer,
+                               'data($i, $v) <- audience_at($i, $v)')
+      .sort(function (a, b) {
+        return a[0] - b[0];
+      });
+    const aud = audRows.map(function (r) {
+      return r[1];
+    });
+    if (audRows.some(function (r, i) { return r[0] !== i; }) ||
+        aud.length !== audSet.length ||
+        audSet.some(function (one) { return aud.indexOf(one) < 0; })) {
+      log.debug("Leaving TokenBiscuit.readModel(). The audience facts " +
+                "disagree.");
+      return this.refusal('STS-GNAP-0323', 'the biscuit\'s audience_at ' +
+                          'facts are not 0..n-1 over exactly its audience ' +
+                          'facts.');
+    }
     const flags = this.query(bg, authorizer, 'data($v) <- flag($v)').map(
         function (r) {
           return r[0];
@@ -677,6 +714,21 @@ class TokenBiscuit {
         return this.refusal('STS-GNAP-0323', 'the biscuit\'s access fact ' +
                             i + ' ' + 'is not JSON.');
       }
+    }
+    const actorRows = this.query(bg, authorizer,
+                                 'data($i, $s) <- actor($i, $s)')
+      .sort(function (a, b) {
+        return a[0] - b[0];
+      });
+    const actors: string[] = [];
+    for (let i = 0; i < actorRows.length; i++) {
+      if (actorRows[i][0] !== i || typeof actorRows[i][1] !== 'string') {
+        log.debug("Leaving TokenBiscuit.readModel(). actor indices are not " +
+                  "0..n-1.");
+        return this.refusal('STS-GNAP-0323', 'the biscuit\'s actor facts ' +
+                            'are not numbered 0..n-1 with one actor each.');
+      }
+      actors.push(actorRows[i][1]);
     }
     const jkt = one('data($v) <- cnf_jkt($v)');
     const x5t = one('data($v) <- cnf_x5t($v)');
@@ -712,7 +764,8 @@ class TokenBiscuit {
       cnf: cnf, iat: this.seconds(iat),
       nbf: nbf === null ? null : this.seconds(nbf),
       exp: this.seconds(exp),
-      label: label
+      label: label,
+      act: access.nestActors(actors)
     };
     const valid = access.validateModel(model);
     if (!valid.ok) {
@@ -935,7 +988,7 @@ class TokenBiscuit {
       ],
       carries: ['jti', 'iss', 'sub', 'aud', 'instanceId', 'access', 'flags',
                 'cnf',
-                'iat', 'nbf', 'exp', 'label'],
+                'iat', 'nbf', 'exp', 'label', 'act'],
       cannot: []
     };
     log.debug("Leaving TokenBiscuit.describe().");

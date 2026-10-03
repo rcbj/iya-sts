@@ -264,7 +264,12 @@ class GnapRs {
     if (record.key && (record.flags || []).indexOf('bearer') < 0) {
       answer.key = record.key;
     }
-    ['flags', 'exp', 'iat', 'nbf', 'sub', 'label'].forEach(function (name) {
+    // `act` (#432): a DERIVED token's actor chain, RFC 8693 section 4.1's
+    // shape — what RFC 7662 section 2.2 lets an introspection response carry
+    // of the token, and what a resource server that cannot read the format
+    // needs to know who acted.
+    ['flags', 'exp', 'iat', 'nbf', 'sub', 'label', 'act'].forEach(function (
+        name) {
       if (record[name] !== undefined && record[name] !== null &&
           !(Array.isArray(record[name]) && !record[name].length)) {
         answer[name] = record[name];

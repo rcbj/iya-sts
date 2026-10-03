@@ -84,7 +84,10 @@ function fullModel(extra) {
     iat: NOW - 60,
     nbf: NOW - 30,
     exp: NOW + 3600,
-    label: 'photos token'
+    label: 'photos token',
+    // #432: a token derived twice (RFC 9767 section 4) — the most recent
+    // deriving resource server outermost, RFC 8693 section 4.1's nesting.
+    act: { sub: 'rs-downstream "b"', act: { sub: 'https://rs1.example/api' } }
   }, extra || {});
 }
 
@@ -96,13 +99,13 @@ function bearerModel() {
     instanceId: 'ci-1',
     access: ['read'], flags: ['bearer'], cnf: null, iat: NOW -
         10, nbf: null, exp: NOW + 60,
-    label: null
+    label: null, act: null
   };
 }
 
 const FIELDS = ['jti', 'iss', 'sub', 'aud', 'instanceId', 'access', 'flags',
                 'cnf',
-                'iat', 'nbf', 'exp', 'label'];
+                'iat', 'nbf', 'exp', 'label', 'act'];
 
 function refused(t, result, code, what) {
   log.debug("Entering refused().");
@@ -244,6 +247,30 @@ function accessCases(t) {
                                                            'durable'] })),
           'STS-GNAP-0303', 'a bound model carrying the bearer flag is not a ' +
                            'model');
+
+  t.log.info('=== the actor chain (act, #432) ===');
+  t.equal(JSON.stringify(gnapAccess.actorChain(fullModel().act)),
+          JSON.stringify(['rs-downstream "b"', 'https://rs1.example/api']),
+          'actorChain() flattens act, the most recent actor first');
+  t.equal(JSON.stringify(gnapAccess.nestActors(['b', 'a'])),
+          JSON.stringify({ sub: 'b', act: { sub: 'a' } }),
+          'nestActors() nests them back, RFC 8693 section 4.1\'s way');
+  t.equal(gnapAccess.nestActors([]), null, 'no actors is no act');
+  refused(t, gnapAccess.validateModel(Object.assign(fullModel(),
+                                                    { act: { sub: '' } })),
+          'STS-GNAP-0303', 'an act with an empty sub is not a model');
+  refused(t, gnapAccess.validateModel(Object.assign(fullModel(),
+    { act: { sub: 'a', iss: 'https://elsewhere' } })), 'STS-GNAP-0303',
+          'an act with a member other than sub and act is not a model — no ' +
+          'format could write it back');
+  let deep = null;
+  for (let i = 0; i <= gnapAccess.MAX_ACTOR_CHAIN; i++) {
+    deep = deep ? { sub: 'rs' + i, act: deep } : { sub: 'rs' + i };
+  }
+  refused(t, gnapAccess.validateModel(Object.assign(fullModel(),
+                                                    { act: deep })),
+          'STS-GNAP-0303', 'a chain deeper than MAX_ACTOR_CHAIN is not a ' +
+                           'model');
   log.debug("Leaving accessCases().");
 }
 
@@ -256,9 +283,9 @@ async function commonCases(t, fmt, keys, wrongKeys, tamper) {
   const d = fmt.describe();
   t.check(d.name === name && d.libraries.length > 0 &&
           d.libraries.every(function (l) { return l.version && l.license; }) &&
-          d.algorithms.length > 0 && d.carries.length === 12,
+          d.algorithms.length > 0 && d.carries.length === 13,
           name + ': describe() names the format, its libraries with versions ' +
-                 'and licences, and 12 carried fields',
+                 'and licences, and 13 carried fields (the actor chain, #432)',
           JSON.stringify(d.libraries));
 
   const full = fullModel();
@@ -476,6 +503,13 @@ async function macaroonCases(t) {
                                 keys, ctx), 'STS-GNAP-0316',
           'macaroon: a subject APPENDED after the authority section is ' +
           'refused, not believed');
+  refused(t,
+          await macaroon.verify(appendRaw(mintedBearer.value, 'gnap:act=' +
+            Buffer.from(JSON.stringify({ sub: 'mallory' }))
+              .toString('base64url')), keys,
+                                { now: NOW, presentedKey: null }),
+          'STS-GNAP-0316', 'macaroon: an actor chain APPENDED by a holder is ' +
+          'refused — only the authority section says who acted (#432)');
   refused(t,
           await macaroon.verify(appendRaw(mintedBearer.value,
                                           'gnap:cnf=jkt:' + JKT), keys,

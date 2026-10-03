@@ -141,6 +141,7 @@ var config = {
     introspection: true,                                                   // Offer token introspection
     resourceRegistration: true,                                            // Offer resource set registration
     tokenDerivation: true,                                                 // Allow downstream token derivation
+    maxDerivationDepth: 2,                                                 // Deepest derivation chain
     pushFinish: true,                                                      // Deliver push interaction finishes
     pushAllowHttp: false,                                                  // Allow http:// for push
     pushSkipTlsVerification: false,                                        // Skip TLS verification for push (development only)

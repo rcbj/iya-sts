@@ -15175,8 +15175,7 @@ const CODES = [
     spec: 'HTTP 403 GNAP request_denied' },
   { code: 'STS-GNAP-0513',
     summary: 'A GNAP derived token asks for more access than the token it ' +
-      'is derived from, beyond rights registered for a downstream resource ' +
-      'server.',
+      'is derived from: a derived token is a subset of the original (#432).',
     spec: 'HTTP 403 GNAP request_denied' },
   { code: 'STS-GNAP-0520',
     summary: 'GNAP token introspection was asked for while it is off ' +
@@ -15445,6 +15444,97 @@ const CODES = [
       'replaced, and its GNAP grants could not be ended with it (#432). ' +
       'Each is still refused at its next use (STS-GNAP-0731).',
     spec: 'none — a warning in the log' },
+  { code: 'STS-GNAP-0770',
+    summary: 'A GNAP client trusted to skip interaction ' +
+      '(gnapSkipInteraction) presented a verified user assertion and ' +
+      'the delegation policy refused it tokens for that person (#432, ' +
+      'product mode): the relationship does not hold — the target is ' +
+      'not the actor itself, not on the actor\'s ' +
+      'appAllowedToDelegateTo, and does not accept it ' +
+      '(appAllowedToActOnBehalfOf), or no usable target was named.',
+    spec: 'RFC 9635 section 3.6 (request_denied, HTTP 403)' },
+  { code: 'STS-GNAP-0771',
+    summary: 'A GNAP client trusted to skip interaction ' +
+      '(gnapSkipInteraction) presented a verified user assertion and ' +
+      'the delegation policy refused it tokens for that person (#432, ' +
+      'product mode): the subject is protected (stsNotDelegated, ' +
+      'appNotDelegated, delegation.protectedGroups, the console ' +
+      'roster) or outside the actor\'s appDelegationSubjectGroup.',
+    spec: 'RFC 9635 section 3.6 (request_denied, HTTP 403)' },
+  { code: 'STS-GNAP-0772',
+    summary: 'A GNAP client trusted to skip interaction ' +
+      '(gnapSkipInteraction) presented a verified user assertion and ' +
+      'the delegation policy refused it tokens for that person (#432, ' +
+      'product mode): the semantics are not allowed by the actor ' +
+      '(appDelegationSemantics; empty is delegation only) or the ' +
+      'subject (stsDelegationSemantics).',
+    spec: 'RFC 9635 section 3.6 (request_denied, HTTP 403)' },
+  { code: 'STS-GNAP-0773',
+    summary: 'A GNAP client trusted to skip interaction ' +
+      '(gnapSkipInteraction) presented a verified user assertion and ' +
+      'the delegation policy refused it tokens for that person (#432, ' +
+      'product mode): the subject holds none of the roles the ' +
+      'application the act stands on requires (appRequiredRole).',
+    spec: 'RFC 9635 section 3.6 (request_denied, HTTP 403)' },
+  { code: 'STS-GNAP-0774',
+    summary: 'A GNAP client trusted to skip interaction ' +
+      '(gnapSkipInteraction) presented a verified user assertion and ' +
+      'the delegation policy refused it tokens for that person (#432, ' +
+      'every mode): the may_act the verified assertion carries names ' +
+      'somebody other than the client.',
+    spec: 'RFC 9635 section 3.6 (request_denied, HTTP 403)' },
+  { code: 'STS-GNAP-0775',
+    summary: 'A GNAP client trusted to skip interaction ' +
+      '(gnapSkipInteraction) presented a verified user assertion and ' +
+      'the delegation policy refused it tokens for that person (#432, ' +
+      'product mode): a rule of the realm\'s own issuance policy, or ' +
+      'an actor this realm does not know.',
+    spec: 'RFC 9635 section 3.6 (request_denied, HTTP 403)' },
+  { code: 'STS-GNAP-0776',
+    summary: 'A GNAP resource server asked to derive a token (RFC 9767 ' +
+      'section 4) and the delegation policy refused it (#432, product ' +
+      'mode): the relationship does not hold — the target is not the ' +
+      'actor itself, not on the actor\'s appAllowedToDelegateTo, and ' +
+      'does not accept it (appAllowedToActOnBehalfOf), or no usable ' +
+      'target was named.',
+    spec: 'RFC 9635 section 3.6 (request_denied, HTTP 403)' },
+  { code: 'STS-GNAP-0777',
+    summary: 'A GNAP resource server asked to derive a token (RFC 9767 ' +
+      'section 4) and the delegation policy refused it (#432, product ' +
+      'mode): the subject is protected (stsNotDelegated, ' +
+      'appNotDelegated, delegation.protectedGroups, the console ' +
+      'roster) or outside the actor\'s appDelegationSubjectGroup.',
+    spec: 'RFC 9635 section 3.6 (request_denied, HTTP 403)' },
+  { code: 'STS-GNAP-0778',
+    summary: 'A GNAP resource server asked to derive a token (RFC 9767 ' +
+      'section 4) and the delegation policy refused it (#432, product ' +
+      'mode): the semantics are not allowed by the actor ' +
+      '(appDelegationSemantics; empty is delegation only) or the ' +
+      'subject (stsDelegationSemantics).',
+    spec: 'RFC 9635 section 3.6 (request_denied, HTTP 403)' },
+  { code: 'STS-GNAP-0779',
+    summary: 'A GNAP resource server asked to derive a token (RFC 9767 ' +
+      'section 4) and the delegation policy refused it (#432, product ' +
+      'mode): the subject holds none of the roles the application the ' +
+      'act stands on requires (appRequiredRole).',
+    spec: 'RFC 9635 section 3.6 (request_denied, HTTP 403)' },
+  { code: 'STS-GNAP-0780',
+    summary: 'A GNAP derivation was refused because the original token\'s ' +
+      'may_act names somebody other than the deriving resource server ' +
+      '(#432; refused in every mode). GNAP tokens carry no may_act ' +
+      'today, so this is reached only through a realm\'s own policy.',
+    spec: 'RFC 9635 section 3.6 (request_denied, HTTP 403)' },
+  { code: 'STS-GNAP-0781',
+    summary: 'A GNAP resource server asked to derive a token (RFC 9767 ' +
+      'section 4) and the delegation policy refused it (#432, product ' +
+      'mode): a rule of the realm\'s own issuance policy, or an actor ' +
+      'this realm does not know.',
+    spec: 'RFC 9635 section 3.6 (request_denied, HTTP 403)' },
+  { code: 'STS-GNAP-0782',
+    summary: 'A GNAP token derivation was refused because the derived ' +
+      'token\'s actor chain (act) would name more resource servers ' +
+      'than gnap.maxDerivationDepth allows (#432, every mode).',
+    spec: 'RFC 9635 section 3.6 (request_denied, HTTP 403)' },
   { code: 'STS-GNAP-0790',
     summary: 'A GNAP continuation or modification arrived after the grant\'s ' +
       'own lifetime (gnap.grantLifetimeS) ended; the grant was finalized as ' +

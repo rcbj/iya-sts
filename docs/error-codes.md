@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3994** of them, in **41** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4007** of them, in **41** subsystems.
 
 ## Where a code appears
 
@@ -80,7 +80,7 @@ is an ordinary outcome.
 * [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 118
 * [Risk scoring (`STS-RISK`)](#sts-risk) — 44
 * [Mail (`STS-MAIL`)](#sts-mail) — 39
-* [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 294
+* [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 307
 * [Device register (`STS-DEVICE`)](#sts-device) — 46
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 87
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 34
@@ -3614,7 +3614,7 @@ Raised from: gnap/.
 | `STS-GNAP-0510` | A resource server asked for a derived token while token derivation is off (gnap.tokenDerivation). | HTTP 403 GNAP request_denied |
 | `STS-GNAP-0511` | A GNAP token derivation names an existing access token that is not active. | HTTP 400 GNAP invalid_request |
 | `STS-GNAP-0512` | A GNAP token derivation names an existing access token that was not issued for the requesting resource server. | HTTP 403 GNAP request_denied |
-| `STS-GNAP-0513` | A GNAP derived token asks for more access than the token it is derived from, beyond rights registered for a downstream resource server. | HTTP 403 GNAP request_denied |
+| `STS-GNAP-0513` | A GNAP derived token asks for more access than the token it is derived from: a derived token is a subset of the original (#432). | HTTP 403 GNAP request_denied |
 | `STS-GNAP-0520` | GNAP token introspection was asked for while it is off (gnap.introspection). | HTTP 404 GNAP invalid_request |
 | `STS-GNAP-0530` | GNAP resource registration was asked for while it is off (gnap.resourceRegistration). | HTTP 404 GNAP invalid_request |
 | `STS-GNAP-0531` | A GNAP resource registration names only token formats this authorization server does not issue. | HTTP 400 GNAP invalid_request |
@@ -3670,6 +3670,19 @@ Raised from: gnap/.
 | `STS-GNAP-0735` | A GNAP access token was presented whose client's application entry no longer exists or no longer names the key the grant is bound to (#432). | RFC 9635 section 7.2 (invalid_token) |
 | `STS-GNAP-0736` | A GNAP grant could not be ended by an act from outside the protocol — a sign-out, a deleted client, a compromised device, a received signal (#432). The others it was asked to end were. | none — a warning in the log |
 | `STS-GNAP-0737` | An application entry was deleted, or its GNAP key removed or replaced, and its GNAP grants could not be ended with it (#432). Each is still refused at its next use (STS-GNAP-0731). | none — a warning in the log |
+| `STS-GNAP-0770` | A GNAP client trusted to skip interaction (gnapSkipInteraction) presented a verified user assertion and the delegation policy refused it tokens for that person (#432, product mode): the relationship does not hold — the target is not the actor itself, not on the actor's appAllowedToDelegateTo, and does not accept it (appAllowedToActOnBehalfOf), or no usable target was named. | RFC 9635 section 3.6 (request_denied, HTTP 403) |
+| `STS-GNAP-0771` | A GNAP client trusted to skip interaction (gnapSkipInteraction) presented a verified user assertion and the delegation policy refused it tokens for that person (#432, product mode): the subject is protected (stsNotDelegated, appNotDelegated, delegation.protectedGroups, the console roster) or outside the actor's appDelegationSubjectGroup. | RFC 9635 section 3.6 (request_denied, HTTP 403) |
+| `STS-GNAP-0772` | A GNAP client trusted to skip interaction (gnapSkipInteraction) presented a verified user assertion and the delegation policy refused it tokens for that person (#432, product mode): the semantics are not allowed by the actor (appDelegationSemantics; empty is delegation only) or the subject (stsDelegationSemantics). | RFC 9635 section 3.6 (request_denied, HTTP 403) |
+| `STS-GNAP-0773` | A GNAP client trusted to skip interaction (gnapSkipInteraction) presented a verified user assertion and the delegation policy refused it tokens for that person (#432, product mode): the subject holds none of the roles the application the act stands on requires (appRequiredRole). | RFC 9635 section 3.6 (request_denied, HTTP 403) |
+| `STS-GNAP-0774` | A GNAP client trusted to skip interaction (gnapSkipInteraction) presented a verified user assertion and the delegation policy refused it tokens for that person (#432, every mode): the may_act the verified assertion carries names somebody other than the client. | RFC 9635 section 3.6 (request_denied, HTTP 403) |
+| `STS-GNAP-0775` | A GNAP client trusted to skip interaction (gnapSkipInteraction) presented a verified user assertion and the delegation policy refused it tokens for that person (#432, product mode): a rule of the realm's own issuance policy, or an actor this realm does not know. | RFC 9635 section 3.6 (request_denied, HTTP 403) |
+| `STS-GNAP-0776` | A GNAP resource server asked to derive a token (RFC 9767 section 4) and the delegation policy refused it (#432, product mode): the relationship does not hold — the target is not the actor itself, not on the actor's appAllowedToDelegateTo, and does not accept it (appAllowedToActOnBehalfOf), or no usable target was named. | RFC 9635 section 3.6 (request_denied, HTTP 403) |
+| `STS-GNAP-0777` | A GNAP resource server asked to derive a token (RFC 9767 section 4) and the delegation policy refused it (#432, product mode): the subject is protected (stsNotDelegated, appNotDelegated, delegation.protectedGroups, the console roster) or outside the actor's appDelegationSubjectGroup. | RFC 9635 section 3.6 (request_denied, HTTP 403) |
+| `STS-GNAP-0778` | A GNAP resource server asked to derive a token (RFC 9767 section 4) and the delegation policy refused it (#432, product mode): the semantics are not allowed by the actor (appDelegationSemantics; empty is delegation only) or the subject (stsDelegationSemantics). | RFC 9635 section 3.6 (request_denied, HTTP 403) |
+| `STS-GNAP-0779` | A GNAP resource server asked to derive a token (RFC 9767 section 4) and the delegation policy refused it (#432, product mode): the subject holds none of the roles the application the act stands on requires (appRequiredRole). | RFC 9635 section 3.6 (request_denied, HTTP 403) |
+| `STS-GNAP-0780` | A GNAP derivation was refused because the original token's may_act names somebody other than the deriving resource server (#432; refused in every mode). GNAP tokens carry no may_act today, so this is reached only through a realm's own policy. | RFC 9635 section 3.6 (request_denied, HTTP 403) |
+| `STS-GNAP-0781` | A GNAP resource server asked to derive a token (RFC 9767 section 4) and the delegation policy refused it (#432, product mode): a rule of the realm's own issuance policy, or an actor this realm does not know. | RFC 9635 section 3.6 (request_denied, HTTP 403) |
+| `STS-GNAP-0782` | A GNAP token derivation was refused because the derived token's actor chain (act) would name more resource servers than gnap.maxDerivationDepth allows (#432, every mode). | RFC 9635 section 3.6 (request_denied, HTTP 403) |
 | `STS-GNAP-0790` | A GNAP continuation or modification arrived after the grant's own lifetime (gnap.grantLifetimeS) ended; the grant was finalized as expired (#432). | RFC 9635 section 5 (invalid_continuation) |
 | `STS-GNAP-0791` | A GNAP access token rotation was refused because the grant the token was issued under has reached the end of its lifetime (gnap.grantLifetimeS) (#432). | RFC 9635 section 6.1 (invalid_rotation) |
 | `STS-GNAP-0792` | An administrator's revoke-grant (console or /admin-api) named a person who is not the resource owner of the grant it named, so nothing was revoked (#432). | HTTP 400 (API) or a 303 with error= |

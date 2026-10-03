@@ -1712,6 +1712,9 @@ class ProtocolStack {
                'GnapSignals');
     this.build('gnap/gnap_revocation', require('../gnap/gnap_revocation'),
                'GnapRevocation');
+    // #432: who may act for whom in GNAP — a library the grant engine reads.
+    this.build('gnap/gnap_delegation', require('../gnap/gnap_delegation'),
+               'GnapDelegation');
     this.build('gnap/gnap_grants', require('../gnap/gnap_grants'),
                'GnapGrants');
     this.build('gnap/gnap_rs', require('../gnap/gnap_rs'), 'GnapRs');

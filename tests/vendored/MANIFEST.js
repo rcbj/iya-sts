@@ -334,6 +334,12 @@ const JOBS = [
   // client certificates on the main port; the foreign leaf names a CRL this
   // job serves (test_crl_host.js).
   { file: 'sts_gnap_mtls.js',            browser: false, local: true },
+  // #432 phase 1: GNAP impersonation by user assertion and RFC 9767
+  // derivation asked of #186's delegation policy, in whichever mode the
+  // service is in — product's refusals by their audited codes, development's
+  // "would have been refused" — the act chain on a derived token, the depth
+  // cap, and the acts on /admin-api/delegation. A throwaway realm left behind.
+  { file: 'sts_gnap_delegation.js',      browser: false, local: true },
   // CERTIFICATE ENROLLMENT (2026-09-13): ACME, EST and SCEP, each driven by an
   // independent client written from its RFC with no code from acme/, est/ or
   // scep/, each in a throwaway realm it leaves behind.

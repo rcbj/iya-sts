@@ -19,8 +19,8 @@ more than one family needs it, not because it felt general.
 | `used_assertions.js` | **EVERY RFC 7523 JWT AND RFC 7522 SAML ASSERTION ACCEPTED, SO NONE IS ACCEPTED TWICE, EVER (2026-09-13).** One history for client authentication and the grant, both profiles, per realm; persisted in every store with one and in BOTH modes; claimed atomically on postgres; spent only when the token request issues tokens. A LIBRARY (rule 3ae) with its own logger, installed by `persistence.js`. |
 | `signing_history.ts` | **EVERY SIGNING KEY A REALM HAS EVER HELD (2026-09-22, #42's follow-up)** — the record that outlives the key. `signing.retire` drops a retired key past its grace and its private half is gone; this keeps the metadata and the CERTIFICATE, so a signature captured months ago can still be read back. Append-only, never swept, and DERIVED from the key set rather than from the rotation events — see below. A LIBRARY over `realms` and `error_codes`, with `helpers` and `pki` reached lazily. |
 | `applications.js` | Every application this service has been asked about, stored in the directory under `ou=applications`. |
-| `delegation.js` | Who acted on whose behalf, through what, to reach what — eight mechanisms across three protocol families in ONE model. What HAPPENED. |
-| `delegation_policy.ts` | **WHO MAY ACT FOR WHOM, AND AS WHAT (#108; #186, 2026-10-03)** — the FACTS of a delegation or impersonation (the actor, the subject, S and R, read off the entries) for the issuance policy, which decides the semantics and the act; enforced in product and recorded in development. The settings are common to WS-Trust, RFC 8693 and Kerberos. Rule 3az, below. |
+| `delegation.js` | Who acted on whose behalf, through what, to reach what — twelve mechanisms across four protocol families (GNAP's two since #432) in ONE model. What HAPPENED. |
+| `delegation_policy.ts` | **WHO MAY ACT FOR WHOM, AND AS WHAT (#108; #186, 2026-10-03)** — the FACTS of a delegation or impersonation (the actor, the subject, S and R, read off the entries) for the issuance policy, which decides the semantics and the act; enforced in product and recorded in development. The settings are common to WS-Trust, RFC 8693, Kerberos and GNAP (#432). Rule 3az, below. |
 | `app_permissions.ts` | **Who MAY reach what, decided in advance** — delegated permissions between two OAuth application entries, in Microsoft Entra ID's shape. The CONFIGURED twin of the file above it, and never to be drawn as one register with it. |
 | `user_graph.ts` | ONE PERSON, END TO END: that register UNIONED with the issued one, so a picture can show every grant, flow, assertion, ticket and SVID in somebody's name beside every delegation naming them. |
 | `credential_graph.ts` | ONE CREDENTIAL, END TO END: where it came from — who held it, in whose name, to reach what — and every generation of exchange behind it, back to the issuance the line rests on. |
@@ -4443,6 +4443,17 @@ the built-in one answers where it does not.
 | S, what the subject's token was issued for | its `aud`, else `client_id` / `azp` | the delegated assertion's Audience | the evidence ticket's service |
 | R, the target | the one `audience` / `resource` | the `AppliesTo` | the requested service |
 
+**GNAP IS THE FOURTH PROTOCOL (#432 phase 1, 2026-10-03)** and asks the same
+two questions with the same settings — no GNAP setting decides who may act
+(`gnap/gnap_delegation.ts`, `gnap/CLAUDE.md` *Delegation*). Its two acts are
+the two S4U shapes: a `gnapSkipInteraction` client presenting a verified user
+assertion is impersonation (actor the client, subject the person, no S, R
+each resource server the rights resolve to — or the client itself, S4U2Self's
+ticket to yourself); a resource server DERIVING a token (RFC 9767 section 4)
+is delegation (actor and S the deriving resource server, R each downstream one
+— or itself, which the policy calls self). One question per R; `protocol` is
+`GNAP` and the register types are `gnap-impersonation` / `gnap-derivation`.
+
 Parties are named by application identifier or username (`partyFacts()`,
 application first); a target is resolved to the application that registered
 it (`resolveTarget()`), and S's candidates are taken in order until one
@@ -4456,7 +4467,7 @@ issues a token whose `act` names the actor; IMPERSONATION does not; a SELF
 exchange — the actor is the subject, or is S and the token stays with S — acts
 for nobody.
 
-**THE SETTINGS ARE COMMON TO THE THREE PROTOCOLS** (rcbj), on the entries —
+**THE SETTINGS ARE COMMON TO THE FOUR PROTOCOLS** (rcbj; GNAP since #432), on the entries —
 `ou=applications` and the person's entry are the store, so an `ldapmodify` IS
 a policy change and rule 7 holds by construction:
 
