@@ -15714,6 +15714,10 @@ const CODES = [
       'owner could not be queued; the grant waits on the portal regardless ' +
       '(#432 phase 6).',
     spec: 'log only' },
+  { code: 'STS-GNAP-0901',
+    summary: 'A GNAP grant could not wait for its resource owner: the user ' +
+      'the request names is not a person the directory holds (#432 phase 6).',
+    spec: 'RFC 9635 section 2.4 (unknown_user, HTTP 400)' },
   { code: 'STS-DEVICE-0001',
     summary: 'A device named an owner that is not a person or an application' +
       ' in the realm\'s directory, named no owner, or an owner kind ' +

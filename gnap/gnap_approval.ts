@@ -365,6 +365,16 @@ class GnapApproval {
     const { log, nowSec, config, audit, store, monitor, realms } = this.deps;
     log.debug("Entering GnapApproval.queue(). " + username);
     const ctx = context || {};
+    // A PERSON THE DIRECTORY HOLDS. A `sub_ids` email or account names a
+    // login name without asking whether anybody has it (`gnap_subject.ts`),
+    // and a grant waiting for nobody would wait for ever on nobody's portal:
+    // section 2.4's `unknown_user`.
+    if (!helpers.subjectForName(username)) {
+      log.debug("Leaving GnapApproval.queue(). Nobody of that name.");
+      return this.refusal('STS-GNAP-0901', 'the user the request names is ' +
+        'not known to this authorization server (RFC 9635 section 2.4).',
+        'unknown_user', 400);
+    }
     const max = Number(config.value('gnap.ownerApprovalMaxPending')) || 5;
     if (this.pendingCount(username) >= max) {
       log.debug("Leaving GnapApproval.queue(). Too many waiting.");

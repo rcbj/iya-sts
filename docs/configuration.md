@@ -1398,7 +1398,9 @@ trust realm. [GNAP](gnap.md) says what each one changes on the wire.
 | `gnap.continueAfterApproval` | `STS_GNAP_CONTINUE_AFTER_APPROVAL` | `true` | yes | Whether an approved grant's response carries a continue member, so the client can modify (section 5.3) or revoke (section 5.4) it later. |
 | `gnap.consentRequired` | `STS_GNAP_CONSENT_REQUIRED` | `true` | yes | Off approves every interactive grant as soon as the resource owner has signed in, with no approval page. |
 | `gnap.rememberApprovals` | `STS_GNAP_REMEMBER_APPROVALS` | `true` | yes | Write what a resource owner approved into the consent register on their own entry (as gnap:<digest> values), so the same rights are not asked for again. |
-| `gnap.allowCrossUser` | `STS_GNAP_ALLOW_CROSS_USER` | `false` | yes | Section 2.4: when the request named a user and somebody else signs in, the AS SHOULD answer unknown_user. |
+| `gnap.ownerApproval` | `STS_GNAP_OWNER_APPROVAL` | `false` | yes | Sections 1.4 and 2.4: a request naming a person who is not at the approval page, or offering no interaction, waits for that person on `/portal/ciba` (with a mail notice) while the client polls. Off: `unknown_user`, or refused. Replaced `gnap.allowCrossUser` (#432). |
+| `gnap.ownerApprovalLifetimeS` | `STS_GNAP_OWNER_APPROVAL_LIFETIME_S` | `600` | yes | Seconds an absent owner has to answer before the grant is finalized as rejected. |
+| `gnap.ownerApprovalMaxPending` | `STS_GNAP_OWNER_APPROVAL_MAX_PENDING` | `5` | yes | The most grants that may wait for one person at once. |
 | `gnap.userCodeLength` | `STS_GNAP_USER_CODE_LENGTH` | `8` | yes | Section 3.3.3: RECOMMENDED between six and eight characters. |
 | `gnap.unknownAccessReferences` | `STS_GNAP_UNKNOWN_ACCESS_REFERENCES` | `accept` | yes | What an access reference string (section 8.1) that names no registered resource set, and is not in the client's gnapAllowedAccess, does: carried onto the token as it stands, or refused with request_denied. |
 | `gnap.introspection` | `STS_GNAP_INTROSPECTION` | `true` | yes | RFC 9767 section 3.3. |

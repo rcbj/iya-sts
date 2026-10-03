@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4043** of them, in **41** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4044** of them, in **41** subsystems.
 
 ## Where a code appears
 
@@ -80,7 +80,7 @@ is an ordinary outcome.
 * [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 118
 * [Risk scoring (`STS-RISK`)](#sts-risk) — 44
 * [Mail (`STS-MAIL`)](#sts-mail) — 40
-* [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 329
+* [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 330
 * [Device register (`STS-DEVICE`)](#sts-device) — 46
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 88
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 34
@@ -3718,6 +3718,7 @@ Raised from: gnap/.
 | `STS-GNAP-0898` | A GNAP grant could not wait for its resource owner: they are homed in another cell than the one holding the client instance, whose portal could never list it (#432 phase 6, #98). | RFC 9635 section 3.6 (request_denied, HTTP 403) |
 | `STS-GNAP-0899` | The person at a GNAP approval page was sent to sign in again for the authentication level the rights need, and came back still short of it; the request is denied (#432 phase 6, RFC 9470). | RFC 9635 section 3.6 (request_denied, HTTP 403), at the next continuation |
 | `STS-GNAP-0900` | The mail notice for a GNAP grant waiting for its resource owner could not be queued; the grant waits on the portal regardless (#432 phase 6). | log only |
+| `STS-GNAP-0901` | A GNAP grant could not wait for its resource owner: the user the request names is not a person the directory holds (#432 phase 6). | RFC 9635 section 2.4 (unknown_user, HTTP 400) |
 
 ## STS-DEVICE
 

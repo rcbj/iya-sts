@@ -347,6 +347,12 @@ const JOBS = [
   // cap, and the acts on /admin-api/delegation. A throwaway realm left behind.
   { file: 'sts_gnap_delegation.js',      browser: false, local: true },
   { file: 'sts_gnap_catalogue.js',       browser: false, local: true },
+  // #432 phase 6: per-type interaction (never, always, a consent action)
+  // against a client trusted to skip, a remembered approval not standing in
+  // for always, the step-up an mfa type demands and its refusal, and
+  // approval by an absent owner on /portal/ciba while the client polls. A
+  // throwaway realm left behind.
+  { file: 'sts_gnap_interaction.js',     browser: false, local: true },
   // CERTIFICATE ENROLLMENT (2026-09-13): ACME, EST and SCEP, each driven by an
   // independent client written from its RFC with no code from acme/, est/ or
   // scep/, each in a throwaway realm it leaves behind.

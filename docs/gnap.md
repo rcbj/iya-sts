@@ -594,7 +594,9 @@ it then publishes is what its grant endpoint enforces.
 | `gnap.continueAfterApproval` | `STS_GNAP_CONTINUE_AFTER_APPROVAL` | `true` | yes | Whether an approved grant's response carries `continue`, so the client can modify or revoke it later. |
 | `gnap.consentRequired` | `STS_GNAP_CONSENT_REQUIRED` | `true` | yes | Off approves every interactive grant as soon as the resource owner has signed in, with no approval page. |
 | `gnap.rememberApprovals` | `STS_GNAP_REMEMBER_APPROVALS` | `true` | yes | Records what a resource owner approved in the consent register on their entry, so the same rights are not asked for again. |
-| `gnap.allowCrossUser` | `STS_GNAP_ALLOW_CROSS_USER` | `false` | yes | On lets whoever signs in approve a grant that named a different user, instead of `unknown_user` (section 2.4). |
+| `gnap.ownerApproval` | `STS_GNAP_OWNER_APPROVAL` | `false` | yes | Sections 1.4 and 2.4: a request naming a person who is not at the approval page, or offering no interaction, waits for that person on `/portal/ciba` (with a mail notice) while the client polls. Off: `unknown_user`, or refused. Replaced `gnap.allowCrossUser` (#432). |
+| `gnap.ownerApprovalLifetimeS` | `STS_GNAP_OWNER_APPROVAL_LIFETIME_S` | `600` | yes | Seconds an absent owner has to answer before the grant is finalized as rejected. |
+| `gnap.ownerApprovalMaxPending` | `STS_GNAP_OWNER_APPROVAL_MAX_PENDING` | `5` | yes | The most grants that may wait for one person at once. |
 | `gnap.userCodeLength` | `STS_GNAP_USER_CODE_LENGTH` | `8` | yes | The length of a user code; section 3.3.3 recommends six to eight characters. |
 | `gnap.unknownAccessReferences` | `STS_GNAP_UNKNOWN_ACCESS_REFERENCES` | `accept` | yes | An access reference naming no registered resource set and not in `gnapAllowedAccess`: carried onto the token (`accept`) or `request_denied` (`refuse`). |
 | `gnap.introspection` | `STS_GNAP_INTROSPECTION` | `true` | yes | RFC 9767 section 3.3 token introspection. |
