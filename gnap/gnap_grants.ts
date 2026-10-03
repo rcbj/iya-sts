@@ -2706,7 +2706,15 @@ class GnapGrants {
       grant.tokens = (grant.tokens || []).concat([next.jti]);
       if (newDescriptor) {
         // Section 6.1.1: the grant's key follows the token's most recent
-        // rotation.
+        // rotation. THE KEY IT CAME FROM IS KEPT (#432): the entry names the
+        // key the grant began with, and a rotated grant is the same client's
+        // — `gnap_revocation.ts` reads the lineage so a rotation is never
+        // mistaken for the entry's key being removed.
+        const before = this.deps.revocation.keyIdentityOf(grant.client.key);
+        if (before) {
+          grant.client.keyLineage = (grant.client.keyLineage || [])
+            .concat([before]).slice(-20);
+        }
         grant.client.key = newDescriptor.value;
         grant.client.keyIdentity = newDescriptor.identity;
       }

@@ -203,7 +203,7 @@ through it too. What reaches it:
 | A person disabled, on a node it has not reached | the check at use | `grantProblem()` / `tokenProblem()`: continuation (not a DELETE), rotation, derivation, presentation and introspection refuse (`0730`–`0735`); writes nothing |
 | An application entry deleted | `applications.deleteApplication()` → `endForClient()` | found in `require.cache`, never required |
 | Its `gnapKey`, `gnapKeyIdentity` or `gnapKeyReference` removed or replaced | `updateApplication()` → `endForClientKeyChange()` | only grants whose key the entry no longer names; a REFERENCE the entry still names keeps its grants (every proof is checked against what it resolves to now) |
-| A key ROTATED | nothing | section 6.1.1 never writes the entry; a mutual-TLS rotation at the authority writes `gnapKeyIdentity` through `seen()`, not the operator's door |
+| A key ROTATED | nothing | section 6.1.1 moves the token and the GRANT to the new key and never writes the entry, so the grant keeps the identities it was rotated from (`client.keyLineage`) and the checks accept any of them — `sts_gnap_core.js` section 9 was refused at use until it did; a mutual-TLS rotation at the authority writes `gnapKeyIdentity` through `seen()`, not the operator's door |
 | A device marked compromised (#164) | `devices.ts` → `endForDeviceKeys()` | a grant whose client key's JWK or SPKI thumbprint is one of the device's keys; and the OAuth tokens DPoP-bound (`jkt`) to them |
 | A partner's verified signal | `signal-revoke-grants` | *Shared Signals*, above |
 

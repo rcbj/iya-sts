@@ -294,13 +294,25 @@ function childMain() {
     const catSession = signIn(CAT);
     const byValue = grantFor(CAT, catSession);
     const byReference = grantFor(CAT, catSession, REFERENCE);
+    // A grant rotated (section 6.1.1) onto a key the entry never named, from
+    // the one it does.
+    const rotated = grantFor(CAT, catSession, keyPair().key);
+    rotated.grant.client.keyLineage = [revocation.keyIdentityOf(first.key)];
+    store.saveGrant(rotated.grant, 'test: rotated');
+    note(revocation.grantProblem(store.getGrant(rotated.grant.id)) === null &&
+         revocation.clientProblem(CLIENT, keyPair().key) !== null,
+         'G0. a grant rotated onto a new key answers to the key it was ' +
+         'rotated from, so a rotation is not a removal — and an unrelated ' +
+         'key is refused (STS-GNAP-0731)');
     const second = keyPair();
     const replaced = applications.updateApplication(CLIENT, {
       attribute: 'gnapKey', mode: 'set',
       value: JSON.stringify(second.key), actor: 'a test' });
-    note(replaced.ok && finalized(byValue) && live(byReference),
+    note(replaced.ok && finalized(byValue) && live(byReference) &&
+         finalized(rotated),
          'G1. the entry\'s gnapKey replaced ends the grant bound to the old ' +
-         'key, and keeps the one bound to a reference the entry still names',
+         'key and the one rotated from it, and keeps the one bound to a ' +
+         'reference the entry still names',
          JSON.stringify([replaced.errors || replaced.message,
                          store.getGrant(byValue.grant.id).state,
                          store.getGrant(byReference.grant.id).state]));

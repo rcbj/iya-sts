@@ -40,7 +40,12 @@
 //     event for one end.
 //
 // **A KEY ROTATED IS NOT A KEY REMOVED.** RFC 9635 section 6.1.1's rotation
-// moves an ACCESS TOKEN to a new key and leaves the entry alone, and a mutual
+// moves an access token — and the grant with it — to a new key and leaves the
+// entry alone, so the grant keeps the identities it was rotated FROM
+// (`client.keyLineage`, written by `gnap_grants.ts`) and answers to any of
+// them (`grantKeyIdentities()`); the sequence that first found this was
+// `tests/vendored/sts_gnap_core.js` section 9, refused after its rotation. A
+// mutual
 // TLS client rotated at its authority has the new thumbprint written to
 // `gnapKeyIdentity` (`placeMtlsCaller()`); both keep their grants, because the
 // identities compared are the entry's `gnapKey`, `gnapKeyIdentity` and
@@ -460,6 +465,28 @@ class GnapRevocation {
   }
 
   /**
+   * The key identities a grant answers to: its key now, and every key it
+   * was rotated from under section 6.1.1 (`keyLineage`, written by
+   * `gnap_grants.ts`), so a rotation is never read as a removal.
+   *
+   * @param grant - the grant
+   * @returns the identities, possibly none
+   */
+  grantKeyIdentities(grant: Json): string[] {
+    const { log } = this.deps;
+    log.debug("Entering GnapRevocation.grantKeyIdentities().");
+    const client = (grant && grant.client) || {};
+    const out = (Array.isArray(client.keyLineage) ? client.keyLineage : [])
+      .map(String);
+    const now = this.keyIdentityOf(client.key);
+    if (now) {
+      out.push(now);
+    }
+    log.debug("Leaving GnapRevocation.grantKeyIdentities(). " + out.length);
+    return out.filter(Boolean);
+  }
+
+  /**
    * The key identities an application entry names now.
    *
    * @param app - the application, as `applications.get()` answers it
@@ -519,8 +546,10 @@ class GnapRevocation {
       if (!grant.client || grant.client.identifier !== app.identifier) {
         return false;
       }
-      const identity = this.keyIdentityOf(grant.client.key);
-      return !!identity && named.indexOf(identity) < 0;
+      const held = this.grantKeyIdentities(grant);
+      return held.length > 0 && !held.some(function (one) {
+        return named.indexOf(one) >= 0;
+      });
     }, how);
     log.debug("Leaving GnapRevocation.endForClientKeyChange(). " + ended);
     return ended;
@@ -643,9 +672,11 @@ class GnapRevocation {
    *
    * @param identifier - the client's application identifier
    * @param key - the key the grant is bound to, or nothing to skip the key
+   * @param lineage - the identities of the keys it was rotated from
    * @returns `{ code, why }`, or null
    */
-  clientProblem(identifier: unknown, key?: Json): Problem | null {
+  clientProblem(identifier: unknown, key?: Json,
+                lineage?: string[]): Problem | null {
     const { log, applications } = this.deps;
     log.debug("Entering GnapRevocation.clientProblem().");
     const id = String(identifier || '');
@@ -662,8 +693,11 @@ class GnapRevocation {
     }
     if (key !== undefined && key !== null) {
       const identity = this.keyIdentityOf(key);
+      const held = (lineage || []).concat(identity ? [identity] : []);
       const named = this.entryKeyIdentities(app);
-      if (identity && named.length && named.indexOf(identity) < 0) {
+      if (identity && named.length && !held.some(function (one) {
+        return named.indexOf(one) >= 0;
+      })) {
         log.debug("Leaving GnapRevocation.clientProblem(). Key replaced.");
         return { code: 'STS-GNAP-0731',
                  why: 'the client\'s application entry no longer names the ' +
@@ -696,7 +730,8 @@ class GnapRevocation {
     }
     const owner = this.ownerProblem(grant.ro && grant.ro.username);
     const problem = owner || (grant.client
-      ? this.clientProblem(grant.client.identifier, grant.client.key) : null);
+      ? this.clientProblem(grant.client.identifier, grant.client.key,
+                         this.grantKeyIdentities(grant)) : null);
     log.debug("Leaving GnapRevocation.grantProblem(). " +
               (problem ? problem.code : 'live'));
     return problem;
@@ -720,7 +755,8 @@ class GnapRevocation {
     const owner = this.ownerProblem(record.username ||
                                     (grant && grant.ro && grant.ro.username));
     const problem = owner || (grant && grant.client
-      ? this.clientProblem(grant.client.identifier, grant.client.key)
+      ? this.clientProblem(grant.client.identifier, grant.client.key,
+                           this.grantKeyIdentities(grant))
       : this.clientProblem(record.instanceId));
     log.debug("Leaving GnapRevocation.tokenProblem(). " +
               (problem ? problem.code : 'live'));
@@ -773,6 +809,7 @@ export = {
   endForClientKeyChange: slot.forward('endForClientKeyChange'),
   endForDeviceKeys: slot.forward('endForDeviceKeys'),
   keyIdentityOf: slot.forward('keyIdentityOf'),
+  grantKeyIdentities: slot.forward('grantKeyIdentities'),
   entryKeyIdentities: slot.forward('entryKeyIdentities'),
   deviceThumbprintsOf: slot.forward('deviceThumbprintsOf'),
   ownerProblem: slot.forward('ownerProblem'),
