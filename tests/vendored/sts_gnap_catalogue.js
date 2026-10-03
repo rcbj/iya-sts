@@ -607,8 +607,24 @@ async function test() {
       additionalProperties: false }) }, "declared the limited type");
   const asked = [{ type: LIMITED, actions: ["spend"],
                    limits: { amount: "50", currency: "EUR", count: 3 } }];
-  let consentPage = await follow(await rp.go("GET", authorizeUrl(asked)),
-                                 { "lim_t0r0_amount": "80" });
+  // A FRESH PKCE pair per authorization: RFC 9700 mode (product) refuses a
+  // code_challenge reused after its code was redeemed, and 8a's is.
+  const pkce = function () {
+    log.debug("Entering pkce().");
+    const verifier = nodeCrypto.randomBytes(32).toString("base64url");
+    log.debug("Leaving pkce().");
+    return { verifier: verifier,
+             challenge: nodeCrypto.createHash("sha256").update(verifier)
+               .digest("base64url") };
+  };
+  const pkceExtra = function (pair) {
+    log.debug("Entering pkceExtra().");
+    log.debug("Leaving pkceExtra().");
+    return { code_challenge: pair.challenge };
+  };
+  const refusedPair = pkce();
+  const consentPage = await follow(await rp.go("GET",
+    authorizeUrl(asked, pkceExtra(refusedPair))), { "lim_t0r0_amount": "80" });
   check("8f. the consent screen refuses a RAISED limit", function () {
     assert.strictEqual(consentPage.status, 400,
                        String(consentPage.text).slice(0, 300));
@@ -616,7 +632,9 @@ async function test() {
               String(consentPage.text).slice(0, 400));
   });
   // Drawn: the screen shows the limit as a control holding the asked value.
-  const drawn = await rp.go("GET", authorizeUrl(asked));
+  const limitedPair = pkce();
+  const drawn = await rp.go("GET", authorizeUrl(asked,
+                                                pkceExtra(limitedPair)));
   const drawnPage = drawn.status === 302 || drawn.status === 303
     ? await rp.go("GET", drawn.location) : drawn;
   check("8g. the consent screen draws the limit as a control", function () {
@@ -637,7 +655,7 @@ async function test() {
   };
   r = await redeem({ grant_type: "authorization_code",
     code: String(limitedCode || ""), redirect_uri: RP_REDIRECT,
-    code_verifier: "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk" });
+    code_verifier: limitedPair.verifier });
   const limitedText = await r.text();
   let limitedAccess = null;
   check("8h. the access token carries the LOWERED limit and a grant_id, " +
@@ -674,12 +692,14 @@ async function test() {
     assert.strictEqual(JSON.parse(limitedIntrospection).grant_id,
                        limitedAccess.grant_id, limitedIntrospection);
   });
-  r = await follow(await rp.go("GET", authorizeUrl([{ type: ONE }])));
+  const plainPair = pkce();
+  r = await follow(await rp.go("GET", authorizeUrl([{ type: ONE }],
+                                                   pkceExtra(plainPair))));
   const plainCode = new URL(r.location || "https://x/").searchParams
     .get("code");
   r = await redeem({ grant_type: "authorization_code",
     code: String(plainCode || ""), redirect_uri: RP_REDIRECT,
-    code_verifier: "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk" });
+    code_verifier: plainPair.verifier });
   const plainText = await r.text();
   check("8k. details without limits carry no grant_id", function () {
     assert.strictEqual(r.status, 200, plainText);
