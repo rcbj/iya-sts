@@ -463,6 +463,7 @@ is and the named file says why.
 | 8a-mail | `common/mail`, `common/mail_uses`, `portal/portal_mail` | Built with the portal, before it: the portal's `registerRoutes()` registers `portal_mail`'s three pages. The channel and its uses are LIBRARIES; the directory fills the channel's slot at 21. | `common/CLAUDE.md` |
 | 8b | `oauth-oidc/consent_screen` | After `authn`, before `oauth2`. | `oauth-oidc/CLAUDE.md` |
 | 9 | `oauth-oidc/oauth2` | Before `admin-ui/admin` (rule 5). | `oauth-oidc/CLAUDE.md` |
+| 9a | `oauth-oidc/access_token_status` | Just after `oauth2` and `grant_management` (#432): the access-token status list both `oauth2` and `gnap/gnap_tokens` allocate through; `/status-lists*` collide with nothing. Requires the status-list codec, built at 11–14, whose facades are called only at request time. | `oauth-oidc/CLAUDE.md` |
 | 10 | `ws-federation/wsfed` | After `authn` (rule 4), whose session it signs people in to. | `ws-federation/CLAUDE.md` |
 | 10a | `saml/saml2_sso` | After `authn`; it has no sign-in screen of its own. | `saml/CLAUDE.md` |
 | 10b | `saml/saml11_sso` | After `authn` and after `saml2_sso` (`slugOf()`). | `saml/CLAUDE.md` |

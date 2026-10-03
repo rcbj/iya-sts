@@ -8552,6 +8552,33 @@ const CODES = [
     summary: 'A token exchange\'s exchange_semantics parameter was neither ' +
       'delegation nor impersonation, or was repeated (#186).',
     spec: '400 invalid_request (RFC 6749 section 5.2)' },
+  { code: 'STS-OAUTH-0816',
+    summary: 'No index in the realm\'s access-token status list could be ' +
+      'allocated because the claim store could not be asked, so the OAuth ' +
+      'or GNAP JWT access token was not minted (#432).',
+    spec: 'server_error at the endpoint that was minting the token' },
+  { code: 'STS-OAUTH-0817',
+    summary: 'The realm\'s access-token status list had no free index in ' +
+      'thirty-two random attempts (it holds 1,048,576), so the access ' +
+      'token was not minted rather than share a live token\'s index ' +
+      '(draft-ietf-oauth-status-list section 13.3; #432).',
+    spec: 'server_error at the endpoint that was minting the token' },
+  { code: 'STS-OAUTH-0818',
+    summary: 'The access-token status list could not be built or signed ' +
+      '(#432).',
+    spec: 'HTTP 500' },
+  { code: 'STS-OAUTH-0819',
+    summary: 'A historical access-token status list was asked for ' +
+      '(`?time=`, draft-ietf-oauth-status-list section 8.4); none is kept ' +
+      '(#432).',
+    spec: 'HTTP 501' },
+  { code: 'STS-OAUTH-0820',
+    summary: 'An access token was asked for without a reserved status-list ' +
+      'index in a process with a shared claims table, where none can be ' +
+      'claimed synchronously; the caller must mint with ' +
+      'accessTokenAsync(). A defect in the caller, refused rather than ' +
+      'minted on an index no other node was asked about (#432).',
+    spec: 'server_error at the endpoint that was minting the token' },
   { code: 'STS-SAML-0001',
     summary: 'A SAML 2.0 sign-in resumed with a held-request id that is ' +
       'unknown or has expired (saml2.requestTtlMin), so there is no ' +
@@ -15555,6 +15582,22 @@ const CODES = [
       'an interaction nor a delegation decision authorized; none was ' +
       'released (#432).',
     spec: 'none — the subject member is omitted (RFC 9635 section 3.4)' },
+  { code: 'STS-GNAP-0750',
+    summary: 'The biscuit library gave no usable revocation identifiers for ' +
+      'a token it had just minted, so the biscuit was not issued: one this ' +
+      'authorization server could never publish as revoked would be ' +
+      'accepted offline until it expired (#432).',
+    spec: 'none — the token is not issued; the grant answers without it' },
+  { code: 'STS-GNAP-0751',
+    summary: 'The revoked biscuits\' identifiers could not be listed at ' +
+      'GET /gnap/biscuit/revocations (#432).',
+    spec: 'HTTP 500' },
+  { code: 'STS-GNAP-0752',
+    summary: 'The revoked-biscuit list reached oauth2.maxRevokedJtis with ' +
+      'nothing expired in it, so its oldest unexpired revocations were ' +
+      'forgotten: those biscuits are accepted again by a resource server ' +
+      'that checks only the list, until they expire (#432).',
+    spec: 'none — a warning in the log' },
   // ===== DEVICE ============================================================
   { code: 'STS-DEVICE-0001',
     summary: 'A device named an owner that is not a person or an application' +

@@ -435,6 +435,11 @@ class GnapConsole {
         userCode: base + '/gnap/code',
         keys: base + '/gnap/keys',
         zcapController: base + '/gnap/zcap/controller',
+        // #432: where a resource server that checks tokens on its own sees a
+        // revocation — the realm's access-token status list (the JWT
+        // formats) and the revoked biscuits' identifiers.
+        accessTokenStatusList: base + '/status-lists/access-tokens',
+        biscuitRevocations: base + '/gnap/biscuit/revocations',
         demonstrationResourceServer: base + '/gnap/rs/resource'
       },
       capabilities: grants.capabilities(req, null),

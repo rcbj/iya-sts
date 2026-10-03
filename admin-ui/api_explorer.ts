@@ -239,7 +239,10 @@ class ApiExplorer {
   }
 
   // A token for the person reading this page, or '' if one cannot be made.
-  private tokenFor(req: Req, gate: GateState): string {
+  // ASYNCHRONOUS since #432: an access token reserves its index in the
+  // realm's access-token status list before it is signed, and that is a
+  // cluster claim (`oauth2.accessTokenAsync()`).
+  private async tokenFor(req: Req, gate: GateState): Promise<string> {
     const { log, realms, baseUrlOf, oauth2, errorCodes } = this.deps;
     const self = this;
     log.debug("Entering ApiExplorer.tokenFor().");
@@ -259,8 +262,9 @@ class ApiExplorer {
     try {
       // IN THE DEFAULT REALM, for the reason in this file's header: the gate
       // verifies with that realm's key wherever it is reached.
-      const token = realms.run(realms.get(realms.DEFAULT_ID), function () {
-        return oauth2.accessToken(baseUrlOf(req), {
+      const token = await realms.run(realms.get(realms.DEFAULT_ID),
+                                     function () {
+        return oauth2.accessTokenAsync(baseUrlOf(req), {
           audience: self.audienceFor(req),
           client_id: 'sts-admin-console',
           scope: scope,
@@ -349,7 +353,7 @@ class ApiExplorer {
     // -------------------------------------------------------------------------
     // THE PAGE.
     // -------------------------------------------------------------------------
-    app.get(PATH, function (req, res) {
+    app.get(PATH, async function (req, res, next) {
       log.debug("Entering the API explorer console page.");
       // THE ONE CLAUSE THIS PAGE RELAXES, and it is the same shape every other
       // scripted page in this service uses: `script-src 'self'` naming one
@@ -363,7 +367,18 @@ class ApiExplorer {
         'connect-src': "'self'"
       }));
       const gate = adminViews.gateStateFor(req);
-      const token = self.tokenFor(req, gate);
+      let token = '';
+      try {
+        token = await self.tokenFor(req, gate);
+      } catch (e) {
+        log.debug("Caught in the API explorer console page: " +
+                  ((e && e.message) || e));
+        // tokenFor() answers '' for every failure it knows of; anything
+        // else is the error handler's, as a throw here always was.
+        log.debug("Leaving the API explorer console page. Failed.");
+        next(e);
+        return;
+      }
       const prefix = realms.currentPrefix() || '';
       const inner = docs.consoleBody({
         // -----------------------------------------------------------------

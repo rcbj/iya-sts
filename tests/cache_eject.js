@@ -124,13 +124,17 @@ function childMain() {
       'vc-api.issued',
       // The rows an attribute source returned, held for a burst of sign-ins
       // (#94).
-      'attribute-sources.lookups'
+      'attribute-sources.lookups',
+      // The access-token status list's rows and signed lists, and the
+      // revoked biscuits' identifiers (#432): each until its token expires.
+      'oauth2.access-token-status', 'oauth2.access-token-status-lists',
+      'gnap.biscuit-revocations'
     ].sort();
     const ejecting = registry.ejecting().filter(function (n) {
       return !/^test\./.test(n);
     });
     note(JSON.stringify(ejecting) === JSON.stringify(expected),
-         'B1. exactly the thirty-two stores whose entries expire eject them',
+         'B1. exactly the thirty-seven stores whose entries expire eject them',
          JSON.stringify({ missing: expected.filter(function (n) {
            return ejecting.indexOf(n) < 0;
          }), extra: ejecting.filter(function (n) {

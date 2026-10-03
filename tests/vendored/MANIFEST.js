@@ -328,6 +328,12 @@ const JOBS = [
   { file: 'sts_gnap_core.js',            browser: false, local: true },
   { file: 'sts_gnap_rs.js',              browser: false, local: true },
   { file: 'sts_gnap_signals.js',         browser: false, local: true },
+  // #432: the access-token status list from OAuth's side — an RFC 9068
+  // token's status claim, the list fetched, verified and read by the job's
+  // own code, and the bit set by RFC 7009 revocation. `local: true` on the
+  // second question: asserted over HTTP, so written here. GNAP's half is
+  // `sts_gnap_rs.js` section 8.
+  { file: 'sts_access_token_status.js',  browser: false, local: true },
   // #107: a key proved by mutual TLS under the pinned and PKI trust models,
   // revocation in both, the binding to an application entry, rotation at the
   // authority, the per-client override and the product default. Presents

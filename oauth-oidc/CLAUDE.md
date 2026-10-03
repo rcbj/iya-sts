@@ -32,10 +32,12 @@ libraries that decide things on its behalf.
 | `client_jwks.js` | **A client's registered `jwks_uri`, fetched and cached (#120, 2026-09-22).** Under `federation_http.ts`'s outbound policy; per realm; refetched for an unknown `kid`. A leaf. See *OpenID Connect Registration*. |
 | `session_management.js` | **OpenID Connect Session Management 1.0 (#121, 2026-09-23), off by default.** The OP browser state, `session_state`, the OP iframe's page, script and framing origins. A leaf. See 3ax. |
 | `jarm.ts` | **JARM, the JWT-secured authorization response (#143, built in #139).** The four response modes, the signed (and optionally encrypted) response JWT, the section 2.3.1 refusal, and the registration key check. `redirectBack()` in `oauth2.ts` is the one place that sends one. See 3aw. |
+| `access_token_status.ts` | **The access-token Token Status List (#432 phase 2, rcbj's decision 4, 2026-10-03)** — one list per realm for every RFC 9068 access token AND GNAP's two JWT formats, at `/status-lists/access-tokens` with its aggregation at `/status-lists`; random indexes claimed across the cluster; the bit computed from the revocation register. A ROUTE MODULE AND A LIBRARY (`oid4vc/vc_status.ts`'s shape), built and registered just after `oauth2` and `grant_management`. See *The access-token status list*, below. |
 | `oauth_grant_signals.ts` | **An OAuth grant revoked is CAEP's `session-revoked` about the grant (#239, 2026-09-26).** Fills `common/admin_stats.js`'s `setRevocationObserver()` slot: one event per grant, subject `oauth-grant:<id>` beside the person, the door's own `initiating_entity`, and a replay also a `risk-level-change`. Built at 23b-vi; registers nothing. See *OAuth grants on CAEP*, below. |
 
 **Everything but `oauth2.ts` — and, since 2026-09-13, the console page
-`oauth2_monitor_admin.ts`, required at 18f rather than from here — registers
+`oauth2_monitor_admin.ts`, required at 18f rather than from here, and since
+#432 `access_token_status.ts`'s two status-list routes — registers
 nothing.** They are libraries in the sense
 rule 3 of the root `CLAUDE.md` means: they require only `../common` and each
 other, so they cannot join a cycle and their position in the require order is not
@@ -4807,3 +4809,53 @@ Left for their own tickets:
   device register (#164 phase 4) and are not a grant's end here.
 
 `tests/vendored/sts_caep_oauth_grants.js` drives the whole of it over HTTP.
+
+## THE ACCESS-TOKEN STATUS LIST (#432 phase 2, lane p2b, 2026-10-03)
+
+A resource server that checks an access token ON ITS OWN could not see a
+revocation: RFC 9068 and RFC 9767 section 6.3 leave it introspection. Every
+RFC 9068 access token now carries draft-ietf-oauth-status-list section 6.1's
+`status: { status_list: { idx, uri } }`, and so do GNAP's `jwt-signed` and
+`jwt-encrypted` tokens — ONE list per realm for both protocols (rcbj's
+decision 4). `access_token_status.ts`'s header argues the list; what a reader
+of THIS directory needs:
+
+* **`accessToken()` stays synchronous; the index is reserved before it.**
+  Claiming an index is a cluster claim, and four callers read
+  `accessToken()`'s answer synchronously (the API explorer and the in-process
+  tests among them). So `reserveAccessToken()` mints the `jti`, claims the
+  index for it and hands both in `opts` (`access_jti`, `status_ref`), and
+  `accessTokenAsync()` is reserve-then-mint. `tokenSet()` and the
+  authorization endpoint's implicit and hybrid responses use it, and the API
+  explorer became asynchronous for it. A caller that still calls
+  `accessToken()` bare gets `allocateInProcess()` — answered only where no
+  shared claims table exists — and otherwise a refusal (`STS-OAUTH-0820`)
+  rather than a token on an index no other node was asked about. A token that
+  cannot get an index is not minted (`STS-OAUTH-0816` store, `0817` full).
+* **The row's expiry is the configured lifetime**, not the FAPI-capped one
+  (#138 only shortens it): a row outliving its token costs an index for a few
+  minutes, never a wrong bit.
+* **The bit is computed** from `admin_stats.isRevoked()`, which every OAuth
+  door that revokes already writes, and is never written by a door. A
+  revocation the register forgets at `oauth2.maxRevokedJtis` reads VALID
+  again here exactly as it does at introspection — one answer.
+* **One list per realm means one URI per realm**: a named authorization
+  server's token names the realm's list (`realmBaseOf()` strips nothing; it
+  rebuilds the realm base from the pinned public base or the base's origin and
+  the AMBIENT prefix, so a CIBA push from the scheduler needs no request).
+  `status_list_aggregation_endpoint` in every authorization server's metadata
+  (section 9.1) is therefore the realm's aggregation, under `base` and not
+  `at`.
+* **`status` is a reserved claim** (`admin_stats.js`'s `RESERVED_JWT_CLAIMS`):
+  a configured one would point every token at a list somebody chose.
+* **The path is neutral**, `/status-lists/access-tokens`, because half of
+  what it describes is GNAP's. Signed with the realm's RS256 `access-token`
+  key (section 11.3: the key the tokens are signed with by default); `ttl`
+  `oauth2.accessTokenStatusListTtlS` (60 s — a revoked access token is in use
+  now, where the credential lists say 300), `exp`
+  `oauth2.accessTokenStatusListLifetimeS`.
+
+Tests: `tests/access_token_status.js` (in process) and
+`tests/vendored/sts_access_token_status.js` (the OAuth half over HTTP, the
+list verified and read by the job's own code); GNAP's half is
+`tests/vendored/sts_gnap_rs.js` section 8.

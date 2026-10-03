@@ -1688,8 +1688,11 @@ const SETTINGS = [
     runtime: true,
     description: 'A Shared Signals stream owned by a GNAP client application ' +
                  'with a finish URI carries events only about people who ' +
-                 'approved a grant to that application. gnapScopedSignals ' +
-                 'FALSE on the entry opts one application out.' },
+                 'approved a grant to that application; one owned by a GNAP ' +
+                 'resource server carries only session-revoked for the ' +
+                 'GNAP tokens and grants audienced to it (#432). ' +
+                 'gnapScopedSignals FALSE on the entry opts one application ' +
+                 'out.' },
 
   // --- XACML: the access policy (the rest of the group is further down) ----
   { key: 'xacml.enforceAccess', group: 'XACML',
@@ -6753,6 +6756,26 @@ const SETTINGS = [
                  'day by default; 0 deletes a record as soon as it expires.' },
 
   // #345: the revoked-jti register's size cap, per realm.
+  // --- the access-token status list (#432) -------------------------------
+  { key: 'oauth2.accessTokenStatusListTtlS', group: 'OAuth 2.0 / OIDC',
+    label: 'Access-token status list time to live (s)',
+    env: 'STS_OAUTH2_ACCESS_TOKEN_STATUS_LIST_TTL_S', type: 'int', dflt: 60,
+    min: 1, max: 86400, runtime: true,
+    description: 'The ttl the realm\'s access-token status list carries ' +
+                 '(draft-ietf-oauth-status-list section 5), and its HTTP ' +
+                 'max-age — and the revoked-biscuit list\'s: how long a ' +
+                 'resource server that checks OAuth RFC 9068 and GNAP JWT ' +
+                 'access tokens on its own may keep the list, and so how ' +
+                 'long a revocation can take to reach it.' },
+
+  { key: 'oauth2.accessTokenStatusListLifetimeS', group: 'OAuth 2.0 / OIDC',
+    label: 'Access-token status list lifetime (s)',
+    env: 'STS_OAUTH2_ACCESS_TOKEN_STATUS_LIST_LIFETIME_S', type: 'int',
+    dflt: 3600, min: 60, max: 86400, runtime: true,
+    description: 'How long after it is signed the access-token status list ' +
+                 'says it is valid (its exp). A resource server must not ' +
+                 'use a list past it.' },
+
   { key: 'oauth2.maxRevokedJtis', group: 'OAuth 2.0 / OIDC',
     label: 'Most revoked token ids kept per realm',
     env: 'STS_OAUTH2_MAX_REVOKED_JTIS', type: 'int', dflt: 100000,

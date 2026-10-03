@@ -47,7 +47,7 @@ Route-free libraries, each require-able from an in-process test:
 | `gnap_subject.ts` | sub_ids and the `id_token` / `saml2` assertions |
 | `gnap_http.ts` | the push finish, the only outbound request here, modelled on `ssf/ssf_http.ts` |
 | `gnap_monitor.ts` | per-application counters (`merge: 'own'`), the `xacml_monitor.js` model |
-| `gnap_signals.ts` | CAEP emission and the SSF subject scope |
+| `gnap_signals.ts` | CAEP emission and the SSF subject scope — a web application's and, since #432, a resource server's |
 | `gnap_revocation.ts` | what ends a grant from OUTSIDE the protocol (#432) — a sign-out, a disable, a deleted client or its key removed, a compromised device, a partner's signal — and the check at use; see *What ends a grant from outside the protocol* |
 | `gnap_delegation.ts` | who may act for whom (#432 phase 1): impersonation by assertion and RFC 9767 derivation asked of #186's delegation policy, recorded in the delegation register; the subset rule and its one extension point; the actor chain and its cap — see *Delegation* below |
 | `gnap_grants.ts` | the engine: identifying a caller, creating, continuing, modifying and revoking grants, issuing, rotating and deriving tokens |
@@ -247,6 +247,76 @@ did not:
   `system`.
   A grant revoked by its resource owner on `/portal/gnap` or per person on
   the console sends the same `session-revoked`, through `revokeGrantBy()`.
+
+**A RESOURCE SERVER'S STREAM (#432, lane p2b).** An entry of kind
+`gnap-resource-server` that owns a stream through the same scheme hears
+`session-revoked` only for `gnap-token:<jti>` and `gnap-grant:<id>` sessions
+AUDIENCED TO IT (`rsCovers()`): the token's `rsIdentifiers` hold its
+identifier, or its `aud` holds the identifier or one of its
+`gnapResourceServerUri`s; a grant counts when any of its tokens does. Every
+other event — a person's sign-on sessions, RISC, another server's tokens — is
+refused, because the server is an authorized party for the tokens it may be
+shown and nothing else (SSF 1.0 section 10.1). Three decisions:
+
+* **An entry that is both a web application and a resource server takes the
+  UNION** of the two rules. Each only ever narrows an unscoped stream, so the
+  union is still narrower than no scope; the alternative — the intersection —
+  would have a resource server that also signs people in hear nothing about
+  its own tokens.
+* **A revocation with no resource owner is now EMITTED**, its complex subject
+  the session alone. A client acting for itself holds tokens a resource
+  server is shown, and `emit()` dropped every event without a username.
+  `token-claims-change` still needs a person: it is about what they granted.
+  A person's stream (#336) and a web application's name a user, so neither
+  takes the user-less event; an unscoped stream does, and the console's and
+  portal's receivers match a GNAP session id against nothing they hold.
+* **The scope reads the token store LAZILY** (`loadStore`), for the reason
+  every other SSF require here is lazy.
+
+## Seeing a revocation without introspection (#432, lane p2b)
+
+RFC 9767 section 6.3's resource server that checks a token on its own had only
+introspection. Each format now gets the mechanism it HAS, and none is invented:
+
+| Format | Mechanism | Where it is |
+|---|---|---|
+| `jwt-signed`, `jwt-encrypted` | a Token Status List `status.status_list` claim, in the realm's ONE access-token list it shares with OAuth's RFC 9068 tokens (rcbj's decision 4) | `oauth-oidc/access_token_status.ts`, which argues the list; `gnap_tokens.ts` allocates in `mint()` |
+| `biscuit` | the revoked tokens' revocation identifiers at `GET /gnap/biscuit/revocations` — **this service's own**, since no document says where a biscuit revocation list is published | `token_biscuit.ts` (read at mint), `gnap_store.ts` (`saveToken()`), `gnap.ts` |
+| `macaroon`, `zcap` | **none** — introspection, or a short `gnap.accessTokenLifetimeS` and rotation; documented in `docs/gnap.md`, no format invented | — |
+
+Why each piece is where it is:
+
+* **The index is allocated INSIDE `GnapTokens.mint()`**, after the model is
+  validated and before the JWS is signed, so issuance, rotation and
+  derivation — every caller of `mint()` — get one without a line of their
+  own, and a token that cannot get one is not minted (the allocator's
+  STS-OAUTH-0816 / 0817, logged by the caller under its own code). The module
+  is loaded lazily (`loadStatusList`), because a process that only verifies
+  GNAP tokens never needs the cluster claims or the codec. `status` is NOT
+  part of the section 2.1 model: `modelOfClaims()` ignores it and introspection
+  answers from the record.
+* **The bit is computed** from the revocation register AND, for a GNAP row,
+  the token record's `revoked` (reached lazily from `oauth-oidc/`): every GNAP
+  JWT revocation calls `stats.revoke()`, but the register can forget a jti at
+  `oauth2.maxRevokedJtis`, and GNAP's introspection reads both.
+* **A biscuit's identifiers are read at MINT**, the only moment the value
+  exists here (the store keeps its digest), and kept on the record as
+  `revocationIds` (rotation overwrites them with the new value's, never copies
+  the old). They are PUBLISHED from `saveToken()`, the one door every
+  revocation of a record goes through — a client's DELETE, rotation,
+  `revokeTokens()` for the client, an administrator or a sign-out (#432 p2a) —
+  so a revocation added later is published without a line of its own. The
+  published rows are `gnap.biscuitRevocations`, GLOBAL across cells
+  (`persistence/tiers.js`) though the records are cell-tier, so a resource
+  server reads one answer from any cell, and kept until the token's own `exp`.
+  A biscuit whose identifiers cannot be read is not minted (`STS-GNAP-0750`):
+  one this server could never publish as revoked would be accepted offline
+  until it expired.
+* **Discovery.** The RS-facing document gains `status_list_aggregation_endpoint`
+  (draft-ietf-oauth-status-list section 9.1's name for the OAuth metadata
+  member) and `biscuit_revocation_endpoint`; `/gnap/keys` gains the same two
+  under `jwt` and `biscuit`. Neither is in RFC 9767 section 10's registry; a
+  resource server that does not know them ignores them.
 
 **THE `ssf` ACCESS RIGHTS ARE THIS SERVICE'S OWN PROTECTED SCOPES (#110,
 2026-09-22).** `ssf:read`/`ssf:write` as reference strings, or an object of type
@@ -502,6 +572,7 @@ modification alike, separately from `gnap.maxPolls` (`too_many_attempts`,
 | 0710–0719 | single-use values spent across the cluster (#46) |
 | 0720 | the push finish's transport: `gnap.pushSkipTlsVerification` ignored in product (#171) |
 | 0730–0749 | what ends a grant from outside the protocol, and the check at use (#432) |
+| 0750–0769 | revocation a resource server sees without introspection (#432 p2b): 0750 a biscuit minted with no readable revocation identifiers, 0751 the revoked-biscuit list could not be built, 0752 that list forgot live revocations at `oauth2.maxRevokedJtis`. The access-token list's own codes are `STS-OAUTH-0816`–`0820` |
 | 0770–0789 | delegation (#432 phase 1): 0770–0775 impersonation by assertion, 0776–0781 derivation, one per refusal kind of the policy (relationship, protected subject, semantics, authority, may_act, a realm's policy); 0782 the depth cap |
 | 0790–0809 | #432 phase 7: the grant lifetime (0790, 0791), the per-person revoke (0792), subject information with no authorization (0793) |
 
@@ -519,8 +590,9 @@ failure patterns.
 | `tests/vendored/sts_gnap_core.js` | the client instance's whole protocol over HTTP, every refusal by its error code — and since #432 phase 7 a reference refused from another client, the subject released once (section 7), and `/portal/gnap` and the per-person `/admin-api` operations (section 15). Its section 6 push listener presents a certificate from a CA the job makes at run time and sets `gnap.pushCaFile` to it (#171; skipped with no directory shared with the service), so the push is VERIFIED in both modes |
 | `tests/outbound_tls.js`, `tests/vendored/sts_outbound_tls.js` | the push finish's transport policy beside SSF's, federation's and XACML's (#171) |
 | `tests/vendored/sts_gnap_rs.js` | RFC 9767: each token format verified by the job's OWN code, then each accepted, narrowed, rotated, revoked and expired at the demonstration RS; introspection, registration, derivation and (section 4b, #432) the actor chain on a derived token in each format, read by the job's own decoders under the signature or MAC it verifies, mutual TLS (in a realm set to `gnap.mtlsTrust=pinned`, since its certificate is self-signed) |
-| `tests/vendored/sts_gnap_signals.js` | a GNAP-owned stream, CAEP on revoke/modify, and the scope, against an unscoped control stream |
+| `tests/vendored/sts_gnap_signals.js` | a GNAP-owned stream, CAEP on revoke/modify, and the scope, against an unscoped control stream; section 7 a resource server's stream (#432) |
 | `tests/gnap_person_grants.js` | #432 phase 7 in process: per-client opaque identifiers and references, subject released once on an authorization, the grant lifetime and the expiry job, finalization reasons, `too_fast`, self-declared display, one person's grants and who may revoke them |
+| `tests/access_token_status.js` | #432 p2b in process: the access-token list, both JWT formats' claim, the bit after `revokeTokens()` and after the register forgets, the biscuit list, discovery, and `rsCovers()` |
 | `tests/gnap_cells.js` | #98 in process, the cell map, channel and routing index stubbed: stamped handles, each door's placement, a grant moved and forwarded, a pinned browser pulling a grant, single-cell mode unchanged |
 | `tests/gnap_revocation.js` | #432 in process with the whole stack: the sign-out families, a grant ending with its session, `/admin/sessions`, `revokeGrantsOf()` narrowed and whole (and never a global sign-out for a person holding nothing), a global sign-out, the check at use and the disable, the entry's key replaced and deleted, a compromised device. The partner's signal is `tests/ssf_transmitters.js` K |
 | `tests/gnap_mtls_trust.js` | #107 in process over real handshakes: both trust models, revocation in both, 0277/0278, every binding refusal (0287–0292), rotation, the override and the product default |

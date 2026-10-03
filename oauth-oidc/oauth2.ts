@@ -246,6 +246,10 @@ import refreshTokenCrypto = require('./refresh_token_crypto');
 // issuerOf() is its issuerFor() — shared with the resource-server check in
 // dpop.ts, which could not otherwise have asked the same question.
 import jwtAccessToken = require('./jwt_access_token');
+// The access-token status list (#432): the index every access token names in
+// `status.status_list`, and the aggregation this server's metadata
+// advertises. A route module and library that requires nothing here.
+import accessTokenStatus = require('./access_token_status');
 // RFC 9701, THE JWT RESPONSE FOR TOKEN INTROSPECTION (2026-09-13). A LIBRARY
 // that registers no route: introspectEndpoint() asks it whether a request wants
 // a JWT and has it build and protect one, the metadata publishes its algorithm
@@ -481,6 +485,7 @@ interface OAuth2ServerDeps {
   errorCodes: typeof errorCodes;
   refreshTokenCrypto: typeof refreshTokenCrypto;
   jwtAccessToken: typeof jwtAccessToken;
+  accessTokenStatus: typeof accessTokenStatus;
   introspectionJwt: typeof introspectionJwt;
   idTokenEncryption: typeof idTokenEncryption;
   jarm: typeof jarm;
@@ -1677,6 +1682,7 @@ class OAuth2Server {
       errorCodes: errorCodes,
       refreshTokenCrypto: refreshTokenCrypto,
       jwtAccessToken: jwtAccessToken,
+      accessTokenStatus: accessTokenStatus,
       introspectionJwt: introspectionJwt,
       idTokenEncryption: idTokenEncryption,
       jarm: jarm,
@@ -2063,6 +2069,13 @@ class OAuth2Server {
       revocation_endpoint_auth_signing_alg_values_supported:
         stsCrypto.JWS_SIGNING_ALGS,
       introspection_endpoint: at + '/oauth2/introspect',
+      // draft-ietf-oauth-status-list section 9.1 (#432): an issuer that is
+      // an OAuth authorization server is RECOMMENDED to name its Status List
+      // Aggregation here. The REALM's, under `base` rather than `at`: every
+      // authorization server in a realm names one list (rcbj's decision 4),
+      // so a named server points at the same aggregation as the default one.
+      status_list_aggregation_endpoint:
+        this.deps.accessTokenStatus.aggregationUri(base),
       // THE METHODS THE INTROSPECTION ENDPOINT CAN VERIFY, which since RFC 9701
       // (2026-09-13) is every method the token endpoint can, through the same
       // `bcp.observeClientAuthentication()`. It named three while nothing
@@ -3800,6 +3813,60 @@ class OAuth2Server {
                ? this.deps.mtls.presentedKeyThumbprint(opts.request) : '' };
   }
 
+  // ---------------------------------------------------------------------------
+  // THE ACCESS TOKEN'S PLACE IN THE REALM'S STATUS LIST (#432, rcbj's decision
+  // 4), RESERVED BEFORE IT IS SIGNED. The index is claimed across the cluster,
+  // which is asynchronous, and `accessToken()` is not — four callers, the
+  // console's API explorer and the in-process tests among them, read its
+  // answer synchronously. So the `jti` is minted HERE, the index claimed for
+  // it, and both handed to `accessToken()` through `opts`; every caller that
+  // can wait goes through `accessTokenAsync()`, and one that cannot gets
+  // `allocateInProcess()` inside `accessToken()`, which refuses to answer
+  // where a shared claims table exists rather than mint on an index no other
+  // node was asked about. The row's expiry is the configured lifetime: FAPI's
+  // cap (#138) only ever shortens it, and a row outliving its token by a few
+  // minutes costs an index, never a wrong bit.
+  // ---------------------------------------------------------------------------
+  /**
+   * Reserves an access token's `jti` and its index in the realm's
+   * access-token status list, for `accessToken()`.
+   *
+   * @param base - the authorization server's base URL
+   * @param opts - the grant's facts; `client_id` decides the lifetime
+   * @returns `opts` with `access_jti` and `status_ref` added
+   */
+  async reserveAccessToken(base: Json, opts: Json): Promise<Json> {
+    const { log, nowSec, randomId, accessTokenStatus } = this.deps;
+    log.debug("Entering OAuth2Server.reserveAccessToken().");
+    if (opts.access_jti && opts.status_ref) {
+      log.debug("Leaving OAuth2Server.reserveAccessToken(). Already held.");
+      return opts;
+    }
+    const jti = cellLocator.stamp(randomId(16));
+    const ref = await accessTokenStatus.allocate({
+      jti: jti, kind: 'oauth', base: base,
+      expiresAt: (nowSec() + Number(this.accessTokenTtl(opts.client_id))) *
+        1000 });
+    log.debug("Leaving OAuth2Server.reserveAccessToken(). idx=" + ref.idx);
+    return Object.assign({}, opts, { access_jti: jti, status_ref: ref });
+  }
+
+  /**
+   * Reserves the token's status-list index, then mints it: `accessToken()`
+   * for every caller that can wait.
+   *
+   * @param base - the authorization server's base URL
+   * @param opts - the grant's facts, as for `accessToken()`
+   * @returns the signed token
+   */
+  async accessTokenAsync(base: Json, opts: Json): Promise<Json> {
+    const { log } = this.deps;
+    log.debug("Entering OAuth2Server.accessTokenAsync().");
+    const reserved = await this.reserveAccessToken(base, opts);
+    log.debug("Leaving OAuth2Server.accessTokenAsync().");
+    return this.accessToken(base, reserved);
+  }
+
   /**
    * Mints an RFC 9068 access token for a grant, with its audience, scope and
    * sender constraint, and records it with the token registry.
@@ -3807,16 +3874,37 @@ class OAuth2Server {
    * @param base - the authorization server's base URL
    * @param opts - the grant's facts: `client_id`, `username` or `user`,
    *   `scope`, `audience`, `jkt`, `authorization_details`, `claims`, `acr`,
-   *   `amr`, `auth_time`, `act`, `grant`, `request` and the rest
+   *   `amr`, `auth_time`, `act`, `grant`, `request` and the rest — and
+   *   `access_jti` / `status_ref` from `reserveAccessToken()`
    * @returns the signed token
+   * @throws Error marked STS-OAUTH-0820 when no status-list index was
+   *   reserved and none can be claimed synchronously
    */
   accessToken(base: Json, opts: Json): Json {
     const { log, nowSec, randomId, signJwt, userFor, mtls, stats,
-            jwtAccessToken } = this.deps;
+            jwtAccessToken, accessTokenStatus, errorCodes } = this.deps;
     const self = this;
     log.debug("Entering OAuth2Server.accessToken().");
     const iat = nowSec();
     const user = opts.user || userFor(opts.username);
+    // The jti and the status-list index — see reserveAccessToken().
+    const accessJti = String(opts.access_jti || '') ||
+      cellLocator.stamp(randomId(16));
+    const statusRef = opts.status_ref ||
+      accessTokenStatus.allocateInProcess({
+        jti: accessJti, kind: 'oauth', base: base,
+        expiresAt: (iat + Number(self.accessTokenTtl(opts.client_id))) *
+          1000 });
+    if (!statusRef) {
+      log.error(errorCodes.tag('STS-OAUTH-0820') + 'oauth2: an access token ' +
+                'was asked for without a reserved status-list index, in a ' +
+                'process with a shared claims table; it is not minted. The ' +
+                'caller must use accessTokenAsync().');
+      log.debug("Leaving OAuth2Server.accessToken(). No status index.");
+      throw errorCodes.mark(new Error('the access token has no status-list ' +
+                                      'index: mint it with ' +
+                                      'accessTokenAsync()'), 'STS-OAUTH-0820');
+    }
     // RFC 9068 section 2.2's seven REQUIRED claims are the first seven below,
     // and `aud`'s default is the default resource indicator section 3 requires
     // — spelt by `jwt_access_token.ts`, which the resource-server check reads
@@ -3834,8 +3922,11 @@ class OAuth2Server {
       // Stamped with the minting cell (#98 D10): a resource that checks the
       // token, or a UserInfo request, reaches the cell that holds its
       // session through this.
-      jti: cellLocator.stamp(randomId(16)), iat: iat, nbf: iat,
-      exp: iat + self.accessTokenTtl(opts.client_id)
+      jti: accessJti, iat: iat, nbf: iat,
+      exp: iat + self.accessTokenTtl(opts.client_id),
+      // draft-ietf-oauth-status-list section 6.1 (#432): where a resource
+      // server that checks this token on its own learns it was revoked.
+      status: { status_list: { idx: statusRef.idx, uri: statusRef.uri } }
     };
     // `username` names the PERSON the token is about, and a
     // client_credentials token is about no person (#93, 2026-09-28): it
@@ -5078,7 +5169,7 @@ class OAuth2Server {
       resources: derived && !(opts.resources && opts.resources.length)
         ? plan.derived.slice(0) : opts.resources
     });
-    const access = self.accessToken(base, issuing);
+    const access = await self.accessTokenAsync(base, issuing);
     // RFC 9700 section 2.2, and it refuses nothing: whether a token is
     // sender-constrained is the CLIENT's decision, since it binds by sending a
     // DPoP proof or presenting a certificate (the settings that REQUIRE one are
@@ -7858,7 +7949,7 @@ class OAuth2Server {
       // another's said `<base>/resource` for the same request. `resources`
       // still wins, for the reason given there. The plan is the one asked
       // above, before anything was minted.
-      out.access_token = self.accessToken(base, {
+      out.access_token = await self.accessTokenAsync(base, {
         user: user,
         client_id: String(query.client_id),
         scope: audiencePlan.scope,
@@ -19265,6 +19356,7 @@ export = {
   ID_TOKEN_SIGNING_ALGS: ID_TOKEN_SIGNING_ALGS,
   USERINFO_SIGNING_ALGS: USERINFO_SIGNING_ALGS,
   accessToken: slot.forward('accessToken'),
+  accessTokenAsync: slot.forward('accessTokenAsync'),
   tokenSet: slot.forward('tokenSet'),
   // THE TWO SCOPE POLICIES (#110), for `tests/scope_policy.js`: which scopes
   // a client may be issued, and whether it holds a delegated permission.

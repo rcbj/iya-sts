@@ -23,6 +23,10 @@
 //   3. revoking a grant or a token emits CAEP session-revoked, whose session is
 //      the grant or the token, and modifying a grant emits token-claims-change.
 //
+// And a fourth since #432 (section 7): a REGISTERED RESOURCE SERVER owns a
+// stream the same way and hears session-revoked for the GNAP tokens and
+// grants AUDIENCED TO IT — and nothing about a token for another server,
+// while the unscoped control stream hears both.
 // And since #432 (2026-10-03), what ends a grant from OUTSIDE the protocol: a
 // global sign-out of the resource owner, their account disabled, and the
 // client's application entry deleted each end the grant — CAEP
@@ -73,6 +77,7 @@ const h = flowLib.harness({
 });
 const check = h.check;
 const OWNER = usernameFor("gnap-sig-owner");
+const RS_OWNER = usernameFor("gnap-sig-rsowner");
 const STRANGER = usernameFor("gnap-sig-stranger");
 const CAEP = "https://schemas.openid.net/secevent/caep/event-type/";
 const REVOKED = CAEP + "session-revoked";
@@ -502,7 +507,109 @@ async function test() {
         });
 
   // =========================================================================
-  // 7.–9. WHAT ENDS A GRANT FROM OUTSIDE THE PROTOCOL (#432). Heard on the
+  // 7. A RESOURCE SERVER OWNS A STREAM (#432): TOKENS AUDIENCED TO IT ONLY.
+  // =========================================================================
+  log.info("=== 7. a resource server's stream ===");
+  await h.ensurePerson(RS_OWNER);
+  SUBJECTS[RS_OWNER] = await h.subjectOf(RS_OWNER);
+  const rsClient = new gnap.Client({ key: gnap.newKey("ES256") });
+  const RS_ID = "gnap-sig-rs-" + h.realm;
+  const RS_URI = "https://rs.signals.gnap.test/api";
+  await h.ok(h.realmApi + "/applications/create", {
+    identifier: RS_ID, kind: "gnap-resource-server", protocols: ["gnap"],
+    fields: { gnapKey: JSON.stringify(rsClient.keyObject()),
+              gnapFinishUri: h.FINISH, gnapResourceServerUri: RS_URI,
+              oauthAllowedScope: ["ssf:read", "ssf:write"] } },
+    "registered the resource server that will own a stream");
+  r = await rsClient.send("POST", h.realmBase + "/gnap/resource", { json: {
+    access: [{ type: "https://rs.signals.gnap.test/photos",
+               actions: ["read"], locations: [RS_URI] }],
+    resource_server: { key: rsClient.keyObject() } } });
+  assert.strictEqual(r.status, 200, "registered a resource set: " + r.text);
+  const rsReference = r.json.resource_reference;
+  // Its own ssf grant, approved by a person of its own — so the web
+  // application rule, which also applies to an entry with a finish URI, is
+  // about RS_OWNER and never about OWNER, whom every event below names.
+  const rsSsf = await h.redirectGrant(rsClient, RS_OWNER,
+    { access_token: { access: ["ssf:read", "ssf:write"] } });
+  const rsSsfToken = rsSsf.released.access_token.value;
+  r = await rsClient.send("POST", h.realmBase + "/ssf/stream",
+                          { token: rsSsfToken, json: streamBody });
+  check("a registered resource server creates a stream with its own GNAP " +
+        "token", function () {
+    assert.strictEqual(r.status, 201, r.text);
+  });
+  const rsStream = r.json.stream_id;
+  const pollRs = function (body) {
+    log.debug("Entering pollRs().");
+    log.debug("Leaving pollRs().");
+    return rsClient.send("POST", h.realmBase + "/ssf/poll",
+                         { token: rsSsfToken, json: body });
+  };
+  await drain(pollRs, rsStream);
+  await drain(pollControl, controlStream);
+  const jtiOf = function (value) {
+    log.debug("Entering jtiOf().");
+    log.debug("Leaving jtiOf().");
+    return JSON.parse(Buffer.from(value.split(".")[1], "base64url")
+                            .toString("utf8")).jti;
+  };
+  // A token FOR the resource server, and one for the demonstration RS, both
+  // about OWNER, both revoked at their manage URIs.
+  const forRs = await h.redirectGrant(web, OWNER,
+                                      { access_token: {
+                                        access: [rsReference] } });
+  const forRsJti = jtiOf(forRs.released.access_token.value);
+  const notForRs = await h.redirectGrant(web, OWNER);
+  const notForRsJti = jtiOf(notForRs.released.access_token.value);
+  r = await web.send("DELETE", notForRs.released.access_token.manage.uri,
+                     { token: notForRs.released.access_token.manage
+                                      .access_token.value });
+  assert.strictEqual(r.status, 204, r.text);
+  r = await web.send("DELETE", forRs.released.access_token.manage.uri,
+                     { token: forRs.released.access_token.manage
+                                   .access_token.value });
+  assert.strictEqual(r.status, 204, r.text);
+  controlSets = await drainUntil(pollControl, controlStream, function (sets) {
+    return about(sets, REVOKED, OWNER, "gnap-token:" + notForRsJti).length &&
+           about(sets, REVOKED, OWNER, "gnap-token:" + forRsJti).length;
+  });
+  let rsSets = await drainUntil(pollRs, rsStream,
+                                hears(REVOKED, OWNER, "gnap-token:" +
+                                      forRsJti));
+  rsSets = rsSets.concat(await drainUntil(pollRs, rsStream, null, SETTLE_MS));
+  check("the control stream hears both revocations — the pipe works",
+        function () {
+    assert.strictEqual(about(controlSets, REVOKED, OWNER, "gnap-token:" +
+                             notForRsJti).length, 1,
+                       JSON.stringify(controlSets));
+  });
+  check("the resource server's stream hears session-revoked for the token " +
+        "audienced to it", function () {
+    const hits = about(rsSets, REVOKED, OWNER, "gnap-token:" + forRsJti);
+    assert.strictEqual(hits.length, 1, JSON.stringify(rsSets));
+    assert.strictEqual(hits[0].sub_id.session.id, "gnap-token:" + forRsJti);
+  });
+  check("…and NOT for the token issued for another resource server",
+        function () {
+    assert.strictEqual(about(rsSets, REVOKED, OWNER, "gnap-token:" +
+                             notForRsJti).length, 0, JSON.stringify(rsSets));
+  });
+  r = await web.send("DELETE", forRs.released.continue.uri,
+                     { token: forRs.released.continue.access_token.value });
+  assert.strictEqual(r.status, 204, r.text);
+  const forRsGrant = "gnap-grant:" + forRs.released.continue.uri
+    .split("/").pop();
+  rsSets = await drainUntil(pollRs, rsStream,
+                            hears(REVOKED, OWNER, forRsGrant));
+  check("and session-revoked for the grant one of whose tokens was " +
+        "audienced to it", function () {
+    assert.strictEqual(about(rsSets, REVOKED, OWNER, forRsGrant).length, 1,
+                       JSON.stringify(rsSets));
+  });
+
+  // =========================================================================
+  // 8.–10. WHAT ENDS A GRANT FROM OUTSIDE THE PROTOCOL (#432). Heard on the
   // CONTROL stream: a global sign-out of OWNER ends the grant that owns the
   // web application's stream too, which is the point.
   // =========================================================================
@@ -548,21 +655,21 @@ async function test() {
     });
     log.debug("Leaving endedFromOutside().");
   };
-  log.info("=== 7. a global sign-out ends the owner's grants ===");
+  log.info("=== 8. a global sign-out ends the owner's grants ===");
   const signedOut = await h.redirectGrant(web, OWNER);
   await endedFromOutside("a global sign-out of the resource owner",
     signedOut, async function () {
       await h.ok(h.realmApi + "/logout/global", { user: OWNER },
                  "signed the owner out everywhere");
     });
-  log.info("=== 8. disabling the account ends the grants ===");
+  log.info("=== 9. disabling the account ends the grants ===");
   const disabledGrant = await h.redirectGrant(other, STRANGER);
   await endedFromOutside("disabling the resource owner's account",
     disabledGrant, async function () {
       await h.ok(h.realmApi + "/users/disable", { user: STRANGER },
                  "disabled the stranger");
     });
-  log.info("=== 9. deleting the client's entry ends its grants ===");
+  log.info("=== 10. deleting the client's entry ends its grants ===");
   const orphaned = await h.redirectGrant(other, OWNER);
   await endedFromOutside("deleting the client's application entry",
     orphaned, async function () {
@@ -570,7 +677,8 @@ async function test() {
                  { application: OTHER_ID }, "deleted the second application");
     });
 
-  assert.ok(h.checks >= 23, "only " + h.checks + " checks ran; a section has " +
+
+  assert.ok(h.checks >= 28, "only " + h.checks + " checks ran; a section has " +
                                                  "stopped being called.");
   log.info(h.checks + " check(s) passed.");
   log.info("Test completed successfully.");

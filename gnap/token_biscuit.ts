@@ -502,6 +502,14 @@ class TokenBiscuit {
     }
     const bg = lib.bg;
     let value;
+    // THE REVOCATION IDENTIFIERS (#432): one per block, hex, each the
+    // signature that block was sealed with — the authority block's first.
+    // Read HERE because this is the only moment the AS holds the token's
+    // value (the store keeps its digest), and published by `/gnap/biscuit/
+    // revocations` once the token is revoked. A derivative a resource server
+    // attenuates offline keeps the authority block, so the authority id
+    // revokes it too.
+    let revocationIds: string[] = [];
     try {
       const root = bg.PrivateKey.fromBytes(new Uint8Array(d),
                                            bg.SignatureAlgorithm.Ed25519);
@@ -510,6 +518,10 @@ class TokenBiscuit {
       builder.addCodeWithParameters(p.source(), p.params, {});
       const token = builder.build(root);
       value = token.toBase64();
+      revocationIds = [].concat(token.getRevocationIdentifiers() || [])
+        .map(function (one: unknown): string {
+          return String(one);
+        });
       token.free();
     } catch (e) {
       log.debug("Caught in TokenBiscuit.mint(): " + this.errorText(e));
@@ -529,8 +541,22 @@ class TokenBiscuit {
       return this.refusal('STS-GNAP-0320', 'the biscuit library emitted a ' +
                           'value that is not token68.');
     }
+    if (!revocationIds.length ||
+        !revocationIds.every(function (one) {
+          return /^[0-9a-f]+$/.test(one);
+        })) {
+      // A biscuit this AS could never publish as revoked would be one a
+      // resource server checking it offline must accept until it expires;
+      // it is not minted.
+      log.warn(errorCodes.tag('STS-GNAP-0750') + 'the biscuit library gave ' +
+               'no usable revocation identifiers for a minted token.');
+      log.debug("Leaving TokenBiscuit.mint(). No revocation identifiers.");
+      return this.refusal('STS-GNAP-0750', 'the biscuit\'s revocation ' +
+                          'identifiers could not be read.');
+    }
     log.debug("Leaving TokenBiscuit.mint(). jti=" + valid.model.jti);
-    return { value: value, format: FORMAT, jti: valid.model.jti };
+    return { value: value, format: FORMAT, jti: valid.model.jti,
+             revocationIds: revocationIds };
   }
 
   private parseToken(bg: any, value: unknown, keys: any): any {
