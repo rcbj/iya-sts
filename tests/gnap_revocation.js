@@ -34,8 +34,10 @@
 //      old key and keeps one bound to a reference the entry still names; the
 //      entry DELETED ends the rest; an entry gone is refused at use
 //      (STS-GNAP-0731);
-//   H. a device marked compromised ends the GNAP grant whose client key is
-//      the device's and revokes the OAuth token DPoP-bound to it.
+//   H. a device marked compromised ends the GNAP grants whose client key is
+//      the device's (a JWK, or its certificate over mutual TLS) and revokes
+//      the OAuth tokens DPoP-bound to its key or mTLS-bound to its
+//      certificate, the binding the token register now records.
 //
 // In a child process, because it loads the whole protocol stack.
 // ===========================================================================
@@ -338,20 +340,52 @@ function childMain() {
     const added = device.ok ? devices.addKey(device.device.id, {
       kind: 'jwk', value: JSON.stringify(deviceKey.jwk) }, 'a test')
       : { ok: false };
+    // And a certificate the device holds, for the mutual-TLS bindings (#432
+    // follow-up): a GNAP client proving by mutual TLS with it, and an OAuth
+    // token bound to it (RFC 8705 cnf x5t#S256).
+    const cert = stsCrypto.selfSignedRsaCertificate({ commonName: 'gr-dev-' +
+                                                      STAMP, bits: 2048 });
+    const x5t = stsCrypto.certificateThumbprint(cert.certPem);
+    const otherCert = stsCrypto.selfSignedRsaCertificate({ commonName:
+                                                           'gr-other-' + STAMP,
+                                                         bits: 2048 });
+    const addedCert = device.ok ? devices.addKey(device.device.id, {
+      kind: 'x509', value: cert.certPem }, 'a test') : { ok: false };
     const h1 = grantFor(CAT, null, deviceKey.key, otherApp);
+    const hMtls = grantFor(CAT, null, { proof: 'mtls', 'cert#S256': x5t },
+                           otherApp);
     const unrelated = grantFor(CAT, null, keyPair().key, otherApp);
+    const unrelatedMtls = grantFor(CAT, null, { proof: 'mtls',
+      'cert#S256': stsCrypto.certificateThumbprint(otherCert.certPem) },
+      otherApp);
     const bound = mintOauth(CAT, 'Bearer', null,
       { cnf: { jkt: stsCrypto.jwkThumbprint(deviceKey.jwk) } });
+    const mtlsBound = mintOauth(CAT, 'Bearer', null,
+      { cnf: { 'x5t#S256': x5t } });
+    const otherMtls = mintOauth(CAT, 'Bearer', null,
+      { cnf: { 'x5t#S256': stsCrypto.certificateThumbprint(
+        otherCert.certPem) } });
+    const recorded = stats.issuedList().filter(function (row) {
+      return row.jti === mtlsBound;
+    })[0] || {};
     const compromised = device.ok
       ? devices.setStatus(device.device.id, 'compromised', 'a test',
                           'a test') : { ok: false };
-    note(device.ok && added.ok && compromised.ok && finalized(h1) &&
-         live(unrelated) && stats.isRevoked(bound) &&
-         compromised.gnapGrantsEnded === 1,
-         'H1. a device marked compromised ends the GNAP grant whose client ' +
-         'key is the device\'s, revokes the OAuth token DPoP-bound to it, ' +
-         'and leaves a grant bound to another key',
-         JSON.stringify([device.errors, added.errors, compromised]));
+    note(recorded.x5t === x5t,
+         'H0. the token register records a token\'s mutual-TLS binding ' +
+         '(x5t#S256) beside DPoP\'s jkt', JSON.stringify(recorded));
+    note(device.ok && added.ok && addedCert.ok && compromised.ok &&
+         finalized(h1) && finalized(hMtls) && live(unrelated) &&
+         live(unrelatedMtls) && stats.isRevoked(bound) &&
+         stats.isRevoked(mtlsBound) && !stats.isRevoked(otherMtls) &&
+         compromised.gnapGrantsEnded === 2,
+         'H1. a device marked compromised ends the GNAP grants whose client ' +
+         'key is the device\'s — by its JWK, and by mutual TLS with its ' +
+         'certificate — revokes the OAuth tokens DPoP-bound to its key and ' +
+         'bound by mutual TLS to its certificate, and leaves a grant and a ' +
+         'token bound to another key or certificate',
+         JSON.stringify([device.errors, added.errors, addedCert.errors,
+                         compromised]));
 
     fs.writeFileSync(OUT, JSON.stringify(findings));
     process.exit(0);

@@ -445,6 +445,12 @@ function recordJwt(payload, signed, context) {
     // jkt rather than the whole cnf: the thumbprint is the binding, and it is
     // what makes a row on the page say "DPoP" honestly rather than by guessing.
     jkt: (payload.cnf && payload.cnf.jkt) || '',
+    // AND THE CERTIFICATE BINDING (#432 follow-up): RFC 8705's x5t#S256, for
+    // a token bound to a client certificate by mutual TLS. Recorded beside
+    // `jkt` for the same reason — it IS the binding — and so a device marked
+    // compromised can revoke the tokens bound to a certificate it holds
+    // (`common/devices.ts`, endGrantsBoundTo()).
+    x5t: (payload.cnf && payload.cnf['x5t#S256']) || '',
     iat: payload.iat || 0,
     nbf: payload.nbf || 0,
     exp: payload.exp || 0,

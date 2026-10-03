@@ -547,8 +547,9 @@ class GnapRevocation {
 
   /**
    * The thumbprints a key by value can be matched to a registered device's
-   * keys by: its RFC 7638 JWK thumbprint and the SHA-256 of its
-   * SubjectPublicKeyInfo, both base64url. A reference matches no device.
+   * keys by: its RFC 7638 JWK thumbprint, a certificate's RFC 8705
+   * x5t#S256, and the SHA-256 of its SubjectPublicKeyInfo, all base64url. A
+   * reference matches no device.
    *
    * @param key - a key by value
    * @returns the thumbprints, possibly none
@@ -573,7 +574,11 @@ class GnapRevocation {
       log.debug("Leaving GnapRevocation.deviceThumbprintsOf(). Undescribed.");
       return out;
     }
-    if (described.format === 'jwk' && described.thumbprint) {
+    // A JWK's RFC 7638 thumbprint; a certificate's (or a bare `cert#S256`'s)
+    // RFC 8705 x5t#S256 — the certificate a device holds, matched by the
+    // certificate itself (#432 follow-up: a client proving by mutual TLS).
+    if ((described.format === 'jwk' || described.format === 'cert' ||
+         described.format === 'cert#S256') && described.thumbprint) {
       out.push(String(described.thumbprint));
     }
     if (described.publicKey) {

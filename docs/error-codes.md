@@ -3728,7 +3728,7 @@ Raised from: common/devices.ts, admin-ui/devices_admin.ts.
 | `STS-DEVICE-0043` | A remembered browser's token was not issued: once signed and encrypted it is larger than a cookie may be (about 4 KB) — devices.browserTokenCertificateHeader set to x5c or both is the usual cause (#265). | none — the browser is not remembered, and the page says so |
 | `STS-DEVICE-0044` | Remembering a browser was refused: devices.browserDevices is off in the realm, nobody is signed in, or the person holds their most devices (#265). | 400 on /portal/devices; the sign-in itself goes on |
 | `STS-DEVICE-0045` | A remembered browser's generation and binding could not be written onto its device entry, so the token it holds was not issued again (#265). | none — the browser keeps the token it has |
-| `STS-DEVICE-0046` | A device was marked compromised and what its keys were trusted with beyond a session — the GNAP grants whose client key is the device's, the OAuth tokens DPoP-bound to its keys — could not all be ended (#432). The sessions, secret and certificates were. | none — an error in the log |
+| `STS-DEVICE-0046` | A device was marked compromised and what its keys were trusted with beyond a session — the GNAP grants whose client key is the device's, the OAuth tokens bound to its keys or certificates — could not all be ended (#432). The sessions, secret and certificates were. | none — an error in the log |
 
 ## STS-XACML
 

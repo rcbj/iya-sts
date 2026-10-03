@@ -15706,7 +15706,8 @@ const CODES = [
   { code: 'STS-DEVICE-0046',
     summary: 'A device was marked compromised and what its keys were ' +
       'trusted with beyond a session — the GNAP grants whose client key is ' +
-      'the device\'s, the OAuth tokens DPoP-bound to its keys — could not ' +
+      'the device\'s, the OAuth tokens bound to its keys or certificates — ' +
+      'could not ' +
       'all be ended (#432). The sessions, secret and certificates were.',
     spec: 'none — an error in the log' },
   // ===== XACML =============================================================

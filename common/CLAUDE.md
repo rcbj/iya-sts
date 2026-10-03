@@ -9856,10 +9856,13 @@ What this directory owns:
   2026-10-03)**: `endGrantsBoundTo()` ends the GNAP grants whose client key's
   JWK or SubjectPublicKeyInfo thumbprint is one of the device's keys
   (`gnap/gnap_revocation.ts`, found in `require.cache` for `loadedAuthn()`'s
-  reason) and revokes the OAuth tokens DPoP-bound (`jkt`) to its JWK keys,
-  whose observer reports the grant each ends (#239). A token bound by mutual
-  TLS is not matched — `admin_stats.js` keeps no certificate binding — and
-  that is said in the code and `docs/devices.md` rather than guessed at.
+  reason) and revokes the OAuth tokens DPoP-bound (`jkt`) to its JWK keys
+  and the ones bound by mutual TLS (`x5t#S256`) to a certificate one of its
+  `x509` keys holds, whose observer reports the grant each ends (#239). The
+  mutual-TLS half was a stated gap until `admin_stats.js` recorded the
+  certificate binding beside `jkt` (rcbj: close gaps, don't document them); a
+  GNAP client proving by mutual TLS with the device's certificate is matched
+  by that certificate's x5t#S256 as well as its key.
   `crypto.publicKeySpkiThumbprint()` is the key-side twin of
   `certificateSpkiThumbprint()` that makes a GNAP key comparable with an
   `x509` device key.

@@ -339,7 +339,7 @@ A grant ends when its client revokes it (RFC 9635 section 5.4), and also when:
 | An administrator revokes the grant on `/admin/gnap` or `/admin/sessions` | that grant |
 | The client's application entry is **deleted** | every grant of that client |
 | The entry's `gnapKey`, `gnapKeyIdentity` or `gnapKeyReference` is **removed or replaced** | the grants bound to a key the entry no longer names. Rotating an access token's key (section 6.1.1) changes nothing |
-| A registered **device is marked compromised** | the grants whose client key is one of the device's keys, and the OAuth tokens DPoP-bound to them |
+| A registered **device is marked compromised** | the grants whose client key is one of the device's keys (by value or by its certificate, for mutual TLS), and the OAuth tokens bound to them by DPoP or mutual TLS |
 | A federation partner's verified signal (above) | the person's grants and tokens |
 
 Ending a grant revokes its tokens, finalizes it — a continuation is refused

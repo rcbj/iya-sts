@@ -401,7 +401,8 @@ interface DevicesDeps {
   // a compromise ends the GNAP grants whose client key is the device's.
   findGnapRevocation: () => Json;
   // The token register, required at the moment of use (#432): a compromise
-  // revokes the OAuth tokens DPoP-bound to the device's keys.
+  // revokes the OAuth tokens bound to the device's keys (DPoP's jkt, mutual
+  // TLS's x5t#S256).
   loadStats: () => Json;
 }
 
@@ -2833,7 +2834,7 @@ class Devices {
     log.warn('devices: device ' + device.id + ' was marked COMPROMISED by ' +
              (actor || 'an administrator') + '; ' + ended + ' session(s) ' +
              'ended, ' + grants.gnap + ' GNAP grant(s) and ' + grants.tokens +
-             ' DPoP-bound OAuth token(s) ended, ' + revoked.length +
+             ' key-bound OAuth token(s) ended, ' + revoked.length +
              ' certificate(s) revoked' +
              (hadSecret ? ', its Native SSO secret revoked' : '') + '.');
     log.debug("Leaving Devices.compromised().");
@@ -2844,21 +2845,25 @@ class Devices {
 
   // -------------------------------------------------------------------------
   // WHAT A COMPROMISED DEVICE'S KEYS WERE TRUSTED WITH BEYOND A SESSION
-  // (#432, phase 2). The register knows a device by its keys' thumbprints —
-  // a `jwk` key's RFC 7638 thumbprint and an `x509` key's SubjectPublicKeyInfo
-  // digest — and two things here are bound to a key by those same digests:
+  // (#432, phase 2). The register knows a device by its keys — a `jwk` key's
+  // RFC 7638 thumbprint, an `x509` key's SubjectPublicKeyInfo digest and the
+  // certificate it holds (`material.certificate`, which is also where a
+  // certificate this service's EST or SCEP CA issued the device is kept) —
+  // and three things here are bound to a key by those same digests:
   //
   //   * a GNAP grant whose CLIENT KEY is one of them (a device acting as a
-  //     client instance): ended as the client's own section 5.4 revocation,
-  //     through `gnap_revocation.ts`;
+  //     client instance, by a JWK or by mutual TLS with its certificate):
+  //     ended as the client's own section 5.4 revocation, through
+  //     `gnap_revocation.ts`;
   //   * an OAuth access or refresh token DPoP-bound (RFC 9449) to one of the
-  //     JWK thumbprints — the `jkt` the token register keeps — revoked in the
-  //     one revocation set, whose observer reports the grant it ends (#239).
+  //     JWK thumbprints — the `jkt` the token register keeps;
+  //   * an OAuth token bound by mutual TLS (RFC 8705) to one of the device's
+  //     certificates — the `x5t#S256` the register keeps since this
+  //     follow-up, compared with each certificate's own thumbprint.
   //
-  // WHAT THE DATA DOES NOT SUPPORT, stated rather than guessed: a token bound
-  // by mutual TLS (RFC 8705's `x5t#S256`) is not matched — the register keeps
-  // no certificate binding — and a WebAuthn key binds no token. The Native SSO
-  // secret, the certificates and the sessions are ended above, as before.
+  // Both kinds of token are revoked in the one revocation set, whose observer
+  // reports the grant each ends (#239). A WebAuthn key binds no token. The
+  // Native SSO secret, the certificates and the sessions are ended above.
   // -------------------------------------------------------------------------
   private endGrantsBoundTo(device: Device, entity: string, actor: string,
                            why: string): { gnap: number; tokens: number } {
@@ -2874,18 +2879,36 @@ class Devices {
     }).map(function (key) {
       return String(key.thumbprint || '');
     }).filter(Boolean);
+    // The x5t#S256 of every certificate the device's x509 keys hold.
+    const certThumbprints: string[] = [];
+    device.keys.forEach((key) => {
+      const pem = key.kind === 'x509' && key.material
+        ? String(key.material.certificate || '') : '';
+      if (!pem) {
+        return;
+      }
+      try {
+        certThumbprints.push(this.deps.stsCrypto.certificateThumbprint(pem));
+      } catch (e) {
+        // A certificate that will not parse binds nothing that can be found.
+        log.debug("Caught in Devices.endGrantsBoundTo(): " +
+                  ((e && e.message) || e));
+      }
+    });
     const out = { gnap: 0, tokens: 0 };
     try {
       const gnap = findGnapRevocation();
-      if (gnap && thumbprints.length) {
-        out.gnap = gnap.endForDeviceKeys(thumbprints, {
+      if (gnap && (thumbprints.length || certThumbprints.length)) {
+        out.gnap = gnap.endForDeviceKeys(
+          thumbprints.concat(certThumbprints), {
           why: 'its client key belongs to device ' + device.id + ', marked ' +
                'compromised', actor: actor, via: 'the device register',
           initiatingEntity: entity });
       }
-      if (jwkThumbprints.length) {
+      if (jwkThumbprints.length || certThumbprints.length) {
         out.tokens = loadStats().revokeWhere(function (record: Json) {
-          return !!record.jkt && jwkThumbprints.indexOf(record.jkt) >= 0;
+          return (!!record.jkt && jwkThumbprints.indexOf(record.jkt) >= 0) ||
+                 (!!record.x5t && certThumbprints.indexOf(record.x5t) >= 0);
         }, why, { initiatingEntity: entity });
       }
     } catch (e) {
