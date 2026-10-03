@@ -920,6 +920,9 @@ const ACTIONS = [
     label: 'A GNAP grant was approved and its tokens released' },
   { action: 'gnap.grant.revoke', category: 'protocol',
     label: 'A GNAP grant was revoked' },
+  { action: 'gnap.grant.finalize', category: 'protocol',
+    label: 'A GNAP grant was finalized, with the reason: issued, revoked, ' +
+           'rejected or expired' },
   { action: 'gnap.token.issue', category: 'protocol',
     label: 'A GNAP access token was issued' },
   { action: 'gnap.token.rotate', category: 'protocol',

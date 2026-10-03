@@ -113,6 +113,7 @@ var config = {
     tokenFormats: "jwt-signed,jwt-encrypted,macaroon,biscuit,zcap",        // Token formats offered
     zcapCryptosuite: "eddsa-jcs-2022",                                     // ZCAP proof suite
     accessTokenLifetimeS: 3600,                                            // Access token lifetime (seconds)
+    grantLifetimeS: 86400,                                                 // Grant lifetime (seconds)
     interactionLifetimeS: 600,                                             // Interaction lifetime (seconds)
     continueWaitS: 5,                                                      // Continuation wait (seconds)
     maxPolls: 60,                                                          // Polls allowed before too_many_attempts

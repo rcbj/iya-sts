@@ -145,7 +145,11 @@ class GnapRs {
       return 'expired';
     }
     const grant = store.getGrant(record.grantId);
-    if (grant && grant.state === store.STATE.FINALIZED) {
+    // A grant finalized as `issued` (#432 phase 7) ended because its tokens
+    // were released and nothing more could be asked of it — its tokens are
+    // what it was FOR, and stay live. Every other reason ends them.
+    if (grant && grant.state === store.STATE.FINALIZED &&
+        !(grant.finalization && grant.finalization.reason === 'issued')) {
       log.debug("Leaving GnapRs.liveProblem().");
       return 'grant finalized';
     }

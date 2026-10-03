@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3993** of them, in **41** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3998** of them, in **41** subsystems.
 
 ## Where a code appears
 
@@ -80,13 +80,13 @@ is an ordinary outcome.
 * [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 118
 * [Risk scoring (`STS-RISK`)](#sts-risk) — 44
 * [Mail (`STS-MAIL`)](#sts-mail) — 39
-* [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 295
+* [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 299
 * [Device register (`STS-DEVICE`)](#sts-device) — 45
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 87
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 34
 * [Admin console (`STS-ADMIN`)](#sts-admin) — 220
 * [Management API (`STS-API`)](#sts-api) — 75
-* [User portal (`STS-PORTAL`)](#sts-portal) — 80
+* [User portal (`STS-PORTAL`)](#sts-portal) — 81
 * [Sign-out (`STS-LOGOUT`)](#sts-logout) — 7
 * [Registries (`STS-REG`)](#sts-reg) — 147
 * [Protocol debugger (`STS-DBG`)](#sts-dbg) — 28
@@ -3675,6 +3675,10 @@ Raised from: gnap/.
 | `STS-GNAP-0780` | A GNAP derivation was refused because the original token's may_act names somebody other than the deriving resource server (#432; refused in every mode). GNAP tokens carry no may_act today, so this is reached only through a realm's own policy. | RFC 9635 section 3.6 (request_denied, HTTP 403) |
 | `STS-GNAP-0781` | A GNAP resource server asked to derive a token (RFC 9767 section 4) and the delegation policy refused it (#432, product mode): a rule of the realm's own issuance policy, or an actor this realm does not know. | RFC 9635 section 3.6 (request_denied, HTTP 403) |
 | `STS-GNAP-0782` | A GNAP token derivation was refused because the derived token's actor chain (act) would name more resource servers than gnap.maxDerivationDepth allows (#432, every mode). | RFC 9635 section 3.6 (request_denied, HTTP 403) |
+| `STS-GNAP-0790` | A GNAP continuation or modification arrived after the grant's own lifetime (gnap.grantLifetimeS) ended; the grant was finalized as expired (#432). | RFC 9635 section 5 (invalid_continuation) |
+| `STS-GNAP-0791` | A GNAP access token rotation was refused because the grant the token was issued under has reached the end of its lifetime (gnap.grantLifetimeS) (#432). | RFC 9635 section 6.1 (invalid_rotation) |
+| `STS-GNAP-0792` | An administrator's revoke-grant (console or /admin-api) named a person who is not the resource owner of the grant it named, so nothing was revoked (#432). | HTTP 400 (API) or a 303 with error= |
+| `STS-GNAP-0793` | A GNAP grant was to release subject information that neither an interaction nor a delegation decision authorized; none was released (#432). | none — the subject member is omitted (RFC 9635 section 3.4) |
 
 ## STS-DEVICE
 
@@ -4270,6 +4274,7 @@ Raised from: portal/.
 | `STS-PORTAL-0100` | A security key was chosen during an activation beside a password and its enrolment could not be started; the activation went on without it. | — |
 | `STS-PORTAL-0101` | A security key was chosen during an activation instead of a password and its enrolment could not be started (the mechanism or role is off, or the authentication policy refuses it), so the activation was refused rather than finished with no way in. | HTTP 400 page |
 | `STS-PORTAL-0102` | An activation's security key step did not register a key — the enrolment had expired, the browser ran no ceremony, the RP ID did not fit, or the registration did not verify — and the step was drawn again. | HTTP 400 page |
+| `STS-PORTAL-0163` | A POST to /portal/gnap named a GNAP grant that is not one the signed-in person approved, or one with nothing live left to revoke (#432). | HTTP 400 page |
 
 ## STS-LOGOUT
 

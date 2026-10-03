@@ -29,6 +29,25 @@
 //   GET  /admin/gnap/monitor   gnapMonitorView()  Monitoring -> GNAP grants
 //   POST /admin/gnap           gnapAction()       revoke-grant,
 //                                                 delete-resource-set
+//   GET  /admin/users?user=    personGrantsView() the GNAP grants tab
+//   GET  /portal/gnap          personGrantsView() the person's own grants
+//   POST /portal/gnap          revokeOwnGrant()   the person revoking one
+//
+// **ONE PERSON'S GRANTS ARE ONE VIEW, DRAWN BY THREE DOORS (#432 phase 7,
+// 2026-10-03)**: the console's user page, `/admin-api/users?user=` (which
+// carries it as `gnapGrants`) and the person's own `/portal/gnap`. A grant is
+// "theirs" when they are its RESOURCE OWNER — the person who approved it at
+// an interaction, or the person a trusted client presented a verified
+// assertion about (`grant.ro`). Revoking is `gnap_grants.ts`'s
+// `revokeGrantBy()` for every door.
+//
+// **CELLS (#98).** A grant is held by one cell. A waiting grant moves to its
+// resource owner's home before it is approved, and the person's browser is
+// pinned there, so their grants are normally all where these pages are
+// drawn; the one documented exception (`gnap/CLAUDE.md`, *Cells*, (3): an
+// instance and a person homed in different cells) leaves a grant in the
+// instance's cell, and it is NOT listed here. The view says so in `cells`
+// rather than presenting a partial list as the whole.
 // ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
@@ -62,6 +81,8 @@ interface GrantRevokedSignal {
 }
 
 interface GnapConsoleDeps {
+  // `common/cells.ts` (#98), for what a person's list can and cannot say.
+  loadCells(): any;
   config: typeof config;
   log: typeof helpers.log;
   baseUrlOf(req: any): string;
@@ -163,8 +184,182 @@ class GnapConsole {
       derivedFrom: grant.derivedFrom || null,
       createdAt: grant.createdAt,
       updatedAt: grant.updatedAt,
+      // #432 phase 7: why it was finalized (null while it is not), and when
+      // its own lifetime ends.
+      finalization: grant.finalization || null,
+      grantExpiresAt: grant.grantExpiresAt || null,
       history: (grant.history || []).slice(-10)
     };
+  }
+
+  // -------------------------------------------------------------------------
+  // ONE PERSON'S GRANTS (#432 phase 7) — the header's three doors.
+  // -------------------------------------------------------------------------
+  // Each access token issued under a grant, as a person reads it: never its
+  // value, and its state as the resource server would find it.
+  private tokenRowsOf(grant: any): any[] {
+    const { log, store, nowSec } = this.deps;
+    log.debug("Entering GnapConsole.tokenRowsOf().");
+    const now = nowSec();
+    const rows = (grant.tokens || []).map(function (jti: string) {
+      const record = store.tokenByJti(jti);
+      if (!record) {
+        return null;
+      }
+      let state = 'live';
+      if (record.revoked) {
+        state = record.rotatedTo ? 'rotated' : 'revoked';
+      } else if (record.exp && record.exp < now) {
+        state = 'expired';
+      }
+      return { jti: record.jti, label: record.label || null,
+               format: record.format, issuedAt: record.iat || null,
+               expiresAt: record.exp || null, state: state,
+               bearer: (record.flags || []).indexOf('bearer') >= 0,
+               access: record.access || [],
+               revokedWhy: record.revoked ? (record.revokedWhy || null)
+                                          : null };
+    }).filter(Boolean);
+    log.debug("Leaving GnapConsole.tokenRowsOf(). " + rows.length + ".");
+    return rows;
+  }
+
+  // One grant as its resource owner's three doors draw it: what was asked,
+  // what was approved (each right with whatever limits it carries), the
+  // tokens, why it ended, and whether a revocation would change anything.
+  private personGrantRow(grant: any): any {
+    const { log, grants, applications } = this.deps;
+    log.debug("Entering GnapConsole.personGrantRow().");
+    const client = grant.client || {};
+    const entry = client.identifier ? applications.get(client.identifier)
+                                    : null;
+    const approved = (grant.approvedAccess && grant.approvedAccess.length)
+      ? grant.approvedAccess : null;
+    const requested = ((grant.request && grant.request.tokens) || [])
+      .reduce(function (all: any[], one: any) {
+        return all.concat(one.access || []);
+      }, []);
+    const row = {
+      id: grant.id,
+      state: grant.state,
+      finalization: grant.finalization || null,
+      client: client.identifier || null,
+      // The REGISTERED name, else the identifier: what a client declares
+      // about itself is never the name a person is shown here (#432 phase
+      // 7, gnap_grants.ts displayOf()).
+      clientName: entry && entry.name && entry.name !== entry.identifier
+        ? entry.name : (client.identifier || null),
+      authorizationServer: grant.as || null,
+      createdAt: grant.createdAt || null,
+      updatedAt: grant.updatedAt || null,
+      grantExpiresAt: grant.grantExpiresAt || null,
+      approvedBy: grant.subjectReleasedBy ||
+        (grant.ro && grant.ro.amr && grant.ro.amr.indexOf('assertion') >= 0
+          ? 'delegation' : 'interaction'),
+      // The rights the grant holds now (or, before approval, the ones asked
+      // for), each as the request carried it — a `limits` member (#432
+      // phase 5) included.
+      rights: approved || requested,
+      rightsAre: approved ? 'approved' : 'requested',
+      subjectReleasedAt: grant.subjectReleasedAt || null,
+      derivedFrom: grant.derivedFrom || null,
+      tokens: this.tokenRowsOf(grant),
+      revocable: grants.revocable(grant)
+    };
+    log.debug("Leaving GnapConsole.personGrantRow().");
+    return row;
+  }
+
+  /**
+   * One person's GNAP grants — every grant in this realm (and this cell)
+   * whose resource owner they are — with each grant's rights, tokens and
+   * finalization, paged. The console's user page, `/admin-api/users?user=`
+   * and the person's own `/portal/gnap` draw it (#432 phase 7).
+   *
+   * @param username - the person
+   * @param query - the request's query: `gnapGrantsPage`, `per`
+   * @returns `{ user, rows, paging, total, cells }`
+   */
+  personGrantsView(username: string, query?: any): any {
+    const { log, store, adminViews } = this.deps;
+    log.debug("Entering GnapConsole.personGrantsView().");
+    const who = String(username || '').trim().toLowerCase();
+    const mine = who ? store.listGrants().filter(function (grant: any) {
+      return !!(grant.ro && String(grant.ro.username || '')
+        .toLowerCase() === who);
+    }) : [];
+    const paging = adminViews.pagingOf(query || {}, mine.length,
+                                       { name: 'gnapGrants',
+                                         noun: 'grants' });
+    const rows = mine.slice(paging.offset, paging.offset + paging.perPage)
+                     .map((grant: any) => this.personGrantRow(grant));
+    const json = {
+      user: who,
+      total: mine.length,
+      rows: rows,
+      paging: adminViews.pagingJson(paging),
+      cells: this.cellsNote()
+    };
+    log.debug("Leaving GnapConsole.personGrantsView(). " + mine.length +
+              " grant(s).");
+    return json;
+  }
+
+  // What a person's list can say under #98 (the header): a single-cell
+  // service lists everything; a multi-cell one lists this cell's grants and
+  // says so.
+  private cellsNote(): any {
+    const { log, loadCells } = this.deps;
+    log.debug("Entering GnapConsole.cellsNote().");
+    let multi = false;
+    let id = '';
+    try {
+      const cells = loadCells();
+      multi = !!cells.isMulti();
+      id = multi ? String(cells.id() || '') : '';
+    } catch (e) {
+      log.debug("Caught in GnapConsole.cellsNote(): " +
+                ((e && e.message) || e));
+      // No cell map in this process (an in-process test): one cell.
+      multi = false;
+    }
+    log.debug("Leaving GnapConsole.cellsNote(). multi=" + multi);
+    return multi
+      ? { multiCell: true, cell: id, complete: false,
+          note: 'The grants this cell holds. A grant is made where its ' +
+                'client arrives and moves to its resource owner\'s home ' +
+                'cell before it is approved, so this is normally all of ' +
+                'them; a grant whose client instance is registered in ' +
+                'another cell stays there and is listed and revoked there.' }
+      : { multiCell: false, cell: '', complete: true, note: '' };
+  }
+
+  /**
+   * The resource owner revoking one of their own grants (`/portal/gnap`): the
+   * grant must be one whose resource owner they are, with something live
+   * left, else nothing changes (#432 phase 7).
+   *
+   * @param username - the signed-in person, from their session
+   * @param grantId - the grant the form named
+   * @param context - `{ req }`
+   * @returns `{ ok: true, grant }`, or `{ ok: false, why }`
+   */
+  revokeOwnGrant(username: string, grantId: string, context?: any): any {
+    const { log, store, grants } = this.deps;
+    log.debug("Entering GnapConsole.revokeOwnGrant().");
+    const who = String(username || '').trim().toLowerCase();
+    const grant = grantId ? store.getGrant(String(grantId)) : null;
+    const theirs = !!(grant && grant.ro &&
+      String(grant.ro.username || '').toLowerCase() === who && who);
+    if (!theirs || !grants.revocable(grant)) {
+      log.debug("Leaving GnapConsole.revokeOwnGrant(). Not theirs, or " +
+                "nothing live.");
+      return { ok: false, why: theirs ? 'nothing-live' : 'not-theirs' };
+    }
+    grants.revokeGrantBy(grant, { by: 'person', actor: who, via: 'portal',
+                                  req: (context && context.req) || null });
+    log.debug("Leaving GnapConsole.revokeOwnGrant(). Revoked.");
+    return { ok: true, grant: this.personGrantRow(grant) };
   }
 
   private resourceRow(row: any) {
@@ -426,7 +621,7 @@ class GnapConsole {
    * @returns `{ ok: true, ... }`, or `{ ok: false, errors }`
    */
   gnapAction(body: any, context?: ActionContext): any {
-    const { log, store, grants, monitor, audit, loadSignals } = this.deps;
+    const { log, store, grants, audit } = this.deps;
     log.debug("Entering GnapConsole.gnapAction(). action=" +
               (body && body.action));
     const ctx = context || {};
@@ -443,36 +638,29 @@ class GnapConsole {
           'in this realm. Name one from the list on ' +
           '/admin/gnap.'] });
       }
-      if (grant.state === store.STATE.FINALIZED) {
+      // PER PERSON (#432 phase 7): the user page's form names the person
+      // too, and a grant whose resource owner is somebody else is refused
+      // rather than revoked — a stale page must not end a stranger's grant.
+      const named = String((body && body.user) || '').trim().toLowerCase();
+      if (named && !(grant.ro && String(grant.ro.username || '')
+                       .toLowerCase() === named)) {
+        log.debug("Leaving GnapConsole.gnapAction(). Not that person's.");
+        return this.refused('STS-GNAP-0792', { ok: false, errors: [
+          'The grant "' + id + '" is not one "' + named + '" approved, so ' +
+          'nothing was revoked. Name one from their GNAP grants.'] });
+      }
+      // ONE PATH (#432 phase 7): `revokeGrantBy()` — tokens revoked, the
+      // grant finalized as `revoked`, CAEP told — which the client's DELETE
+      // and the person's portal take too. A grant with nothing live left
+      // (finalized for any reason but `issued`) is reported unchanged.
+      if (!grants.revokeGrantBy(grant, { by: 'administrator',
+                                         actor: actor || 'administrator',
+                                         via: ctx.via || 'console',
+                                         req: ctx.req || null })) {
         log.debug("Leaving GnapConsole.gnapAction(). Already finalized.");
         return { ok: true, grant: this.grantRow(grant),
                  message: 'The grant was ' +
                    'already finalized; nothing changed.' };
-      }
-      grants.revokeTokens(grant, 'grant revoked by an administrator');
-      grant.state = store.STATE.FINALIZED;
-      store.dropContinuation(grant);
-      store.saveGrant(grant,
-                      'revoked by an administrator' +
-                      (actor ? ' (' + actor + ')' : ''));
-      monitor.record(grant.client.identifier, 'grant.revoked', {});
-      audit.audit({ action: 'gnap.grant.revoke', category: 'protocol',
-        protocol: 'GNAP',
-        channel: 'http', outcome: 'success', actor: actor,
-        target: grant.client.identifier,
-        summary: 'An administrator revoked a GNAP grant',
-        detail: { grant: grant.id, via: ctx.via || '',
-                  tokens: (grant.tokens || []).length } });
-      try {
-        loadSignals().grantRevoked(ctx.req || null, grant, 'An ' +
-            'administrator revoked the grant.');
-      } catch (e) {
-        log.debug("Caught in GnapConsole.gnapAction(): " +
-                  ((e && e.message) || e));
-        // The revocation is done; a signal that could not be sent is logged
-        // by gnap_signals itself and must not undo the answer.
-        log.debug("gnapAction(): the CAEP signal could not be started: " +
-                  e.message);
       }
       log.debug("Leaving GnapConsole.gnapAction(). Revoked.");
       return { ok: true, grant: this.grantRow(grant),
@@ -537,6 +725,9 @@ class GnapConsole {
       monitor: monitor,
       loadSignals: function () {
         return require('./gnap_signals');
+      },
+      loadCells: function () {
+        return require('../common/cells');
       }
     };
   }
@@ -583,5 +774,7 @@ export = {
   STATES: GnapConsole.STATES,
   gnapView: slot.forward('gnapView'),
   gnapMonitorView: slot.forward('gnapMonitorView'),
-  gnapAction: slot.forward('gnapAction')
+  gnapAction: slot.forward('gnapAction'),
+  personGrantsView: slot.forward('personGrantsView'),
+  revokeOwnGrant: slot.forward('revokeOwnGrant')
 };
