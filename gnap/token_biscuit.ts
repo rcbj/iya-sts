@@ -51,10 +51,9 @@
 //     default time budget reads the clock in a way this build cannot, so every
 //     call is `authorizeWithLimits()` / `queryWithLimits()` with `LIMITS`
 //     below. A timeout is a REFUSAL (STS-GNAP-0325), never a pass. **AND THE
-//     FIRST TIMED EVALUATION THAT APPLIES A RULE ANSWERS Timeout WHATEVER THE
-//     BUDGET** (#432) — possibly the same defect as the line above, seen
-//     there first — so the load primes it with a throwaway evaluation
-//     (`primeRunClock()`).
+//     FIRST RULE-APPLYING EVALUATION AFTER LOAD CAN BE REFUSED ON ITS RUN
+//     LIMITS WHATEVER THE BUDGET** (#432), so the load primes it with a
+//     throwaway evaluation (`primeRunClock()`).
 //   * A PARAMETER THAT IS NOT A DATALOG TERM PANICS THE WASM MODULE. A JS
 //     `Date` handed to `addCodeWithParameters()` aborts inside Rust with
 //     `unreachable`; the term must be `{ date: <ISO string> }`, which is what
@@ -309,30 +308,19 @@ class TokenBiscuit {
   }
 
   // -------------------------------------------------------------------------
-  // THE FIRST TIMED EVALUATION IN A LOADED MODULE ALWAYS TIMES OUT, and this
-  // is what absorbs it (#432, 2026-10-03).
+  // THE FIRST RULE-APPLYING EVALUATION AFTER LOAD, ABSORBED HERE (#432,
+  // 2026-10-03).
   //
-  // The first `authorizeWithLimits()` / `queryWithLimits()` in a module
-  // instance that APPLIES A RULE — a rule producing a fact, which is the
-  // moment the engine first compares its run time against `max_time` — is
-  // answered `RunLimit: Timeout` after a few milliseconds, whatever the
-  // budget: probed at 250 ms and at 1000 s alike, the first answer was
-  // Timeout and every later one, in a fresh authorizer, ran in well under a
-  // millisecond. An evaluation that applies no rule (checks only) never
-  // reaches the comparison, which is why it went unseen: a verification
-  // trips it only when the authorizer's `rs($a) <- audience($a)` fires,
-  // i.e. a token WITH an audience verified by a caller that names none — the
-  // first such verification in a process was refused STS-GNAP-0325, and
-  // which call came first depended on what else the process had done
+  // The library's first evaluation that applies a rule can be refused on its
+  // run limits whatever the budget; later ones measure correctly. Which call
+  // came first depended on what else the process had done, so the first
+  // token verified in a process could be refused STS-GNAP-0325
   // (`tests/gnap_delegation.js` found it once the #432 lanes were merged).
-  // The engine's clock baseline is evidently not set until its first
-  // comparison: a library defect, the default-limits one in this file's
-  // header in another form.
   //
   // So the load runs ONE throwaway evaluation that applies a rule, before any
-  // token is judged, and discards its answer. LIMITS are not raised: the
-  // probe shows no budget is enough for the first comparison, and every
-  // later one measures correctly, so the bound on a hostile block stands.
+  // token is judged, and discards its answer. LIMITS are not raised: no
+  // budget changes the first answer, and every later evaluation is bounded
+  // as before, so the bound on a hostile block stands.
   // -------------------------------------------------------------------------
   private primeRunClock(bg: any): void {
     const { log } = this.deps;
@@ -346,7 +334,7 @@ class TokenBiscuit {
       log.debug("Leaving TokenBiscuit.primeRunClock(). It did not time out " +
                 "this time.");
     } catch (e) {
-      // Expected: the first timed evaluation answers Timeout (see above).
+      // Expected: the first evaluation may be refused (see above).
       // Anything else is logged and left — the evaluations that matter
       // report their own refusals.
       log.debug("Caught in TokenBiscuit.primeRunClock(): " +

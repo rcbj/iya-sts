@@ -1111,18 +1111,14 @@ async function jwtCases(t) {
   log.debug("Leaving jwtCases().");
 }
 
-// THE FIRST VERIFICATION IN A FRESH PROCESS (#432). The biscuit engine's
-// first timed evaluation that applies a rule answered `Timeout` whatever its
-// budget, so the first token WITH AN AUDIENCE verified by a caller naming none
-// — the authorizer's `rs($a) <- audience($a)` fires — was refused
-// STS-GNAP-0325 — not every time: about one module load in seven, probed.
-// This file's own biscuit cases cannot see it: by then the module has
-// evaluated plenty. So TWENTY-FIVE children each load `token_biscuit` and
-// verify such a token first; unprimed, the chance that none of them trips is
-// about one in fifty. One module per process: a second instance in the same
-// process shares the first one's glue and corrupts its memory. The
-// children's program runs under `node -e`, so the code style's
-// Entering/Leaving lines do not apply to it.
+// THE FIRST VERIFICATION IN A FRESH PROCESS (#432). The biscuit library's
+// first rule-applying evaluation after load could be refused on its run
+// limits whatever the budget, so the first token WITH AN AUDIENCE verified in
+// a process could be refused STS-GNAP-0325. This file's own biscuit cases
+// cannot see it: by then the module has evaluated plenty. So TWENTY-FIVE
+// children each load `token_biscuit` and verify such a token first. One
+// module per process. The children's program runs under `node -e`, so the
+// code style's Entering/Leaving lines do not apply to it.
 function firstVerifyCase(t) {
   log.debug("Entering firstVerifyCase().");
   const childProcess = require('child_process');
