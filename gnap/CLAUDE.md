@@ -306,7 +306,7 @@ hundred applications and compares every row with the per-application filters.
 | 0700–0709 | signals |
 | 0710–0719 | single-use values spent across the cluster (#46) |
 | 0720 | the push finish's transport: `gnap.pushSkipTlsVerification` ignored in product (#171) |
-| 0750–0769 | revocation a resource server sees without introspection (#432 p2b): 0750 a biscuit minted with no readable revocation identifiers, 0751 the revoked-biscuit list could not be built. The access-token list's own codes are `STS-OAUTH-0816`–`0820` |
+| 0750–0769 | revocation a resource server sees without introspection (#432 p2b): 0750 a biscuit minted with no readable revocation identifiers, 0751 the revoked-biscuit list could not be built, 0752 that list forgot live revocations at `oauth2.maxRevokedJtis`. The access-token list's own codes are `STS-OAUTH-0816`–`0820` |
 
 `tests/error_codes.js` carries `gnapError(res` and `interactionError(res` as
 failure patterns.

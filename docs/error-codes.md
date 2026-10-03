@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3987** of them, in **41** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3988** of them, in **41** subsystems.
 
 ## Where a code appears
 
@@ -80,7 +80,7 @@ is an ordinary outcome.
 * [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 118
 * [Risk scoring (`STS-RISK`)](#sts-risk) — 44
 * [Mail (`STS-MAIL`)](#sts-mail) — 39
-* [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 284
+* [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 285
 * [Device register (`STS-DEVICE`)](#sts-device) — 45
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 87
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 34
@@ -3669,6 +3669,7 @@ Raised from: gnap/.
 | `STS-GNAP-0720` | Product mode ignored gnap.pushSkipTlsVerification: a push finish verifies the client's certificate whatever it says. Logged once per process (#171). | none — a warning in the log |
 | `STS-GNAP-0750` | The biscuit library gave no usable revocation identifiers for a token it had just minted, so the biscuit was not issued: one this authorization server could never publish as revoked would be accepted offline until it expired (#432). | none — the token is not issued; the grant answers without it |
 | `STS-GNAP-0751` | The revoked biscuits' identifiers could not be listed at GET /gnap/biscuit/revocations (#432). | HTTP 500 |
+| `STS-GNAP-0752` | The revoked-biscuit list reached oauth2.maxRevokedJtis with nothing expired in it, so its oldest unexpired revocations were forgotten: those biscuits are accepted again by a resource server that checks only the list, until they expire (#432). | none — a warning in the log |
 
 ## STS-DEVICE
 

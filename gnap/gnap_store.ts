@@ -180,12 +180,15 @@ const biscuitRevocationCount = cacheRegistry.register({
   kind: 'replay',
   persisted: true,
   hitMeaning: 'the published list was read',
-  settings: ['gnap.accessTokenLifetimeS'],
+  settings: ['gnap.accessTokenLifetimeS', 'oauth2.maxRevokedJtis'],
   maxEntries: function (): number {
-    return null;
+    return Number(config.value('oauth2.maxRevokedJtis'));
   },
-  bound: 'Bounded by the biscuit tokens issued and revoked within one ' +
-    'access-token lifetime: a row goes when its token expires.',
+  bound: 'Enforced: oauth2.maxRevokedJtis per realm — the revocation ' +
+    'register\'s own bound, for the same promise about the same tokens. At ' +
+    'the bound an expired row goes first; otherwise the OLDEST revocation ' +
+    'is forgotten (STS-GNAP-0752), and that biscuit is accepted again by a ' +
+    'resource server checking only this list until it expires.',
   lifetime: function (): string {
     return 'until the revoked token\'s own exp.';
   },
@@ -776,6 +779,21 @@ class GnapStore {
     if (record.format === 'biscuit' && record.revoked &&
         Array.isArray(record.revocationIds) && record.revocationIds.length &&
         !biscuitRevocations.has(record.jti)) {
+      // Bounded AT INSERT (a bound cannot wait for the eject job): expired
+      // rows first, then the oldest — the register's own rule, logged.
+      const room = cacheRegistry.makeRoom(biscuitRevocations,
+        Number(config.value('oauth2.maxRevokedJtis')), {
+          counter: biscuitRevocationCount,
+          expired: function (row: any): boolean {
+            return !row || Number(row.exp) * 1000 <= Date.now();
+          } });
+      if (room.evicted) {
+        log.warn(this.deps.errorCodes.tag('STS-GNAP-0752') + 'gnap: the ' +
+                 'revoked-biscuit list reached oauth2.maxRevokedJtis with ' +
+                 'nothing expired in it, so ' + room.evicted + ' unexpired ' +
+                 'revocation(s) were forgotten, the oldest first. Raise the ' +
+                 'setting.');
+      }
       biscuitRevocations.set(record.jti, {
         ids: record.revocationIds.slice(0), exp: Number(record.exp) || 0,
         revokedAt: Number(record.revokedAt) || 0 });

@@ -15434,6 +15434,12 @@ const CODES = [
     summary: 'The revoked biscuits\' identifiers could not be listed at ' +
       'GET /gnap/biscuit/revocations (#432).',
     spec: 'HTTP 500' },
+  { code: 'STS-GNAP-0752',
+    summary: 'The revoked-biscuit list reached oauth2.maxRevokedJtis with ' +
+      'nothing expired in it, so its oldest unexpired revocations were ' +
+      'forgotten: those biscuits are accepted again by a resource server ' +
+      'that checks only the list, until they expire (#432).',
+    spec: 'none — a warning in the log' },
   // ===== DEVICE ============================================================
   { code: 'STS-DEVICE-0001',
     summary: 'A device named an owner that is not a person or an application' +
