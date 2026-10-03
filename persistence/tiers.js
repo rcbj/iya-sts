@@ -301,6 +301,14 @@ const GLOBAL_MINTED = {
   // One list per realm, published by every cell: a credential issued in one
   // cell and revoked in another must show revoked everywhere.
   'vc_status.entries': 'the status list bits every cell publishes',
+  // The same argument for access tokens (#432): one list per realm, and a
+  // token revoked in one cell must read INVALID in every cell's copy. A row
+  // is an index, a jti and an expiry — nobody's data.
+  'access_token_status.entries': 'the access-token status list every cell ' +
+    'publishes',
+  // The revocation identifiers of revoked biscuit tokens (#432), which a
+  // resource server reads from whichever cell it reaches.
+  'gnap.biscuitRevocations': 'revoked biscuit tokens\' revocation ids',
   // A revocation reaches every cell, or a token revoked in one is live in
   // the next (#98 §5).
   'admin_stats.revokedJtis': 'revoked token ids',

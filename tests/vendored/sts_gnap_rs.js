@@ -42,6 +42,14 @@
 //                  carry, so its signature was the service's word; with a
 //                  JCS suite none of the five formats is.
 //
+// **SEEING A REVOCATION WITHOUT INTROSPECTION (#432, section 8)** is checked
+// the same way: the access-token Status List Token is fetched from the URI
+// the JWT names, its JWS verified against /oauth2/jwks here, its ZLIB list
+// inflated here and the token's bit read here (index 0 in the least
+// significant bit, draft-ietf-oauth-status-list section 4.1); and a biscuit's
+// revocation identifier is computed here — the authority block's signature,
+// hex — before it is looked for on /gnap/biscuit/revocations.
+//
 // Everything runs in a THROWAWAY TRUST REALM that is left behind.
 //
 // OWNED HERE (local: true): GNAP exists in this repository and nowhere else.
@@ -321,6 +329,9 @@ function verifyBiscuit(value, rootRaw) {
   log.debug("Leaving verifyBiscuit().");
   return { signatureVerifies: good, proofMatches: proofMatches,
            algorithm: algorithm, block: block,
+           // The authority block's revocation identifier (#432): a biscuit
+           // names each block by the signature that sealed it.
+           revocationId: Buffer.from(signature).toString("hex"),
            blocks: top.filter(function (f) { return f[0] === 3; }).length };
 }
 
@@ -400,6 +411,47 @@ function introspect(rs, token, extra) {
     json: Object.assign({ access_token: token,
                           resource_server: { key: rs.keyObject() } },
                         extra || {}) });
+}
+
+// ---------------------------------------------------------------------------
+// THE ACCESS-TOKEN STATUS LIST, READ BY THIS FILE (#432). `ref` is a JWT's
+// `status.status_list`. Answers the token's bit, after checking the list as
+// section 8.3 asks: its own JWS against the JWKS, `typ`, `sub` equal to the
+// reference's `uri`, not expired.
+// ---------------------------------------------------------------------------
+async function statusBit(ref, jwks) {
+  log.debug("Entering statusBit().");
+  const r = await gnap.rawRequest("GET", ref.uri, {});
+  assert.strictEqual(r.status, 200, "the status list answers: " + r.text);
+  const v = verifyJws(r.text, jwks);
+  assert.strictEqual(v.header.typ, "statuslist+jwt", "section 5.1's typ");
+  assert.strictEqual(v.claims.sub, ref.uri, "the list's sub is the uri the " +
+                                            "token names");
+  assert.ok(v.claims.exp > Date.now() / 1000, "the list has not expired");
+  const bits = v.claims.status_list.bits;
+  const bytes = require("zlib").inflateSync(
+      Buffer.from(v.claims.status_list.lst, "base64url"));
+  const perByte = 8 / bits;
+  const byte = bytes[Math.floor(ref.idx / perByte)];
+  assert.ok(byte !== undefined, "the index is inside the list");
+  const shift = (ref.idx % perByte) * bits;
+  log.debug("Leaving statusBit().");
+  return (byte >> shift) & ((1 << bits) - 1);
+}
+
+// The bit, asked again until it is `want` or a bound passes: revocation
+// reaches another worker or node by replication, as `sts_gnap_signals.js`
+// argues for delivery.
+async function statusBitBecomes(ref, jwks, want) {
+  log.debug("Entering statusBitBecomes().");
+  const deadline = Date.now() + 15000;
+  let bit = await statusBit(ref, jwks);
+  while (bit !== want && Date.now() < deadline) {
+    await new Promise(function (resolve) { setTimeout(resolve, 250); });
+    bit = await statusBit(ref, jwks);
+  }
+  log.debug("Leaving statusBitBecomes().");
+  return bit;
 }
 
 async function test() {
@@ -1165,6 +1217,90 @@ async function test() {
     h.refused(r, "invalid_client", "an mtls key with no client certificate");
   });
   await h.setting("gnap.mtlsTrust", "auto");
+
+  // =========================================================================
+  // 8. A REVOCATION SEEN WITHOUT INTROSPECTION (#432; RFC 9767 section 6.3).
+  // =========================================================================
+  log.info("=== 8. the access-token status list and revoked biscuits ===");
+  r = await gnap.rawRequest("GET", h.realmBase + "/.well-known/gnap-as-rs", {});
+  const rsDoc = r.json;
+  check("the RS-facing discovery names the access-token status list's " +
+        "aggregation and the revoked-biscuit list", function () {
+    assert.strictEqual(rsDoc.status_list_aggregation_endpoint,
+                       h.realmBase + "/status-lists", JSON.stringify(rsDoc));
+    assert.strictEqual(rsDoc.biscuit_revocation_endpoint,
+                       h.realmBase + "/gnap/biscuit/revocations");
+  });
+  r = await gnap.rawRequest("GET", rsDoc.status_list_aggregation_endpoint, {});
+  const listUri = h.realmBase + "/status-lists/access-tokens";
+  check("the aggregation lists the realm's one access-token list",
+        function () {
+    assert.strictEqual(r.status, 200, r.text);
+    assert.deepStrictEqual(r.json.status_lists, [listUri]);
+  });
+  for (const format of ["jwt-signed", "jwt-encrypted"]) {
+    const done = await h.redirectGrant(client, OWNER,
+                                       { access_token: {
+                                         access: [references[format]] } });
+    const token = done.released.access_token;
+    const claims = format === "jwt-signed"
+      ? verifyJws(token.value, jwks).claims
+      : verifyJws(openJwe(token.value, rsJwe.privateKey).plaintext,
+                  jwks).claims;
+    const ref = (claims.status || {}).status_list || {};
+    check(format + ": the token carries status.status_list naming the " +
+          "realm's list (draft-ietf-oauth-status-list section 6.1)",
+          function () {
+      assert.strictEqual(ref.uri, listUri, JSON.stringify(claims.status));
+      assert.ok(Number.isInteger(ref.idx) && ref.idx >= 0,
+                JSON.stringify(claims.status));
+    });
+    const before = await statusBit(ref, jwks);
+    check(format + ": its bit in the list, read and verified here, is 0",
+          function () {
+      assert.strictEqual(before, 0);
+    });
+    r = await client.send("DELETE", token.manage.uri,
+                          { token: token.manage.access_token.value });
+    assert.strictEqual(r.status, 204, r.text);
+    const after = await statusBitBecomes(ref, jwks, 1);
+    check(format + ": revoked at its manage URI, its bit is 1 — a resource " +
+          "server checking on its own now refuses it", function () {
+      assert.strictEqual(after, 1);
+    });
+  }
+  const biscuitDone = await h.redirectGrant(client, OWNER,
+                                            { access_token: {
+                                              access: [references.biscuit] } });
+  const biscuitToken = biscuitDone.released.access_token;
+  const revocationId = verifyBiscuit(biscuitToken.value, rootRaw).revocationId;
+  const revocationsUri = h.realmBase + "/gnap/biscuit/revocations";
+  r = await gnap.rawRequest("GET", revocationsUri, {});
+  check("a live biscuit's authority revocation identifier, computed here, is " +
+        "not on the revoked list", function () {
+    assert.strictEqual(r.status, 200, r.text);
+    assert.ok(Array.isArray(r.json.revocation_ids), r.text);
+    assert.ok(r.json.revocation_ids.indexOf(revocationId) < 0, r.text);
+  });
+  r = await client.send("DELETE", biscuitToken.manage.uri,
+                        { token: biscuitToken.manage.access_token.value });
+  assert.strictEqual(r.status, 204, r.text);
+  let listed = [];
+  const biscuitDeadline = Date.now() + 15000;
+  for (;;) {
+    r = await gnap.rawRequest("GET", revocationsUri, {});
+    listed = (r.json && r.json.revocation_ids) || [];
+    if (listed.indexOf(revocationId) >= 0 || Date.now() > biscuitDeadline) {
+      break;
+    }
+    await new Promise(function (resolve) { setTimeout(resolve, 250); });
+  }
+  check("revoked at its manage URI, the biscuit's identifier is on " +
+        "/gnap/biscuit/revocations", function () {
+    assert.ok(listed.indexOf(revocationId) >= 0, JSON.stringify(listed));
+    assert.ok(/^max-age=\d+$/.test(String(r.headers["cache-control"])),
+              String(r.headers["cache-control"]));
+  });
 
   // =========================================================================
   // 7. THE RESOURCE SERVER DISCOVERY DOCUMENT FOLLOWS THE SETTINGS.

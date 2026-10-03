@@ -446,6 +446,8 @@ var config = {
     idTokenTtlS: 3600,                           // ID Token lifetime (s)
     refreshTokenTtlS: 86400,                     // Refresh token lifetime (s)
     expiredTokenRetentionS: 86400,               // Keep an expired token on /admin/tokens for (seconds)
+    accessTokenStatusListTtlS: 60,               // Access-token status list time to live (s)
+    accessTokenStatusListLifetimeS: 3600,        // Access-token status list lifetime (s)
     maxRevokedJtis: 100000,                      // Most revoked token ids kept per realm
     clockSkewS: 30,                              // Token clock skew (s)
     redirectUris: "",                            // Registered redirect URIs

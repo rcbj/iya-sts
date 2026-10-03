@@ -787,7 +787,14 @@ const SPECS: Spec[] = [
               'through existing_access_token, and every format in the ' +
               'section 5.2 token format registry — jwt-signed, ' +
               'jwt-encrypted, macaroon, biscuit and zcap — minted and ' +
-              'verified.' },
+              'verified. Section 6.3\'s resource server that checks a token ' +
+              'on its own sees a revocation (#432): the JWT formats carry a ' +
+              'Token Status List status claim, revoked biscuits\' ' +
+              'revocation identifiers are published (non-standard), and a ' +
+              'registered resource server may own a Shared Signals stream ' +
+              'that hears session-revoked for the tokens audienced to it. ' +
+              'Macaroon and zcap tokens have no such mechanism; introspection ' +
+              'is their path.' },
   { id: 'rfc9421', name: 'RFC 9421 — HTTP Message Signatures',
     where: 'IETF',
     url: 'https://www.rfc-editor.org/rfc/rfc9421',
@@ -1900,7 +1907,9 @@ const SPECS: Spec[] = [
     coverage: 'full, in every mode: every access token carries typ at+jwt, ' +
               'the seven required claims, scope only when granted, ' +
               'preferred_username for a person and auth_time/amr/acr where ' +
-              'an authentication event is behind it. A scope naming two ' +
+              'an authentication event is behind it, and a ' +
+              'draft-ietf-oauth-status-list status claim naming its index in ' +
+              'the realm\'s access-token status list (#432). A scope naming two ' +
               'resources, or a resource the request did not address, is ' +
               'invalid_scope, and several resources with a scope tied to none ' +
               'of them is invalid_target (section 3); a token for an API ' +
@@ -2950,8 +2959,13 @@ const SPECS: Spec[] = [
               'endpoint, and the status claim in every SD-JWT VC and ' +
               'jwt_vc_json credential; the Verifier resolves a trusted ' +
               'foreign issuer\'s list and refuses when no statement can be ' +
-              'made. No historical resolution (501), no redirects followed, ' +
-              'no mdoc (none is issued).' },
+              'made. And a second list per realm for ACCESS TOKENS (#432): ' +
+              'one bit per token, every OAuth RFC 9068 access token and ' +
+              'every GNAP jwt-signed and jwt-encrypted token carrying its ' +
+              'status claim, advertised as status_list_aggregation_endpoint ' +
+              '(section 9.1) in the authorization server metadata. No ' +
+              'historical resolution (501), no redirects followed, no mdoc ' +
+              '(none is issued).' },
   { id: 'bitstring-status-list', name: 'W3C Bitstring Status List v1.0',
     where: 'W3C', url: 'https://www.w3.org/TR/vc-bitstring-status-list/',
     coverage: 'partial: revocation and suspension lists per realm, served ' +
@@ -3622,6 +3636,18 @@ const ENDPOINTS: EndpointEntry[] = [
           'and for zcap the controller document\'s URL and the one proof ' +
           'suite this realm signs and accepts. Macaroons are symmetric and ' +
           'never appear here. Served no-store.' },
+  { path: '/gnap/biscuit/revocations', group: 'GNAP',
+    name: 'Revoked biscuits',
+    specs: ['rfc9767', 'biscuit'],
+    what: 'NOT A SPECIFICATION ENDPOINT (#432): the revocation identifiers ' +
+          'of every revoked biscuit access token that has not yet expired, ' +
+          'as JSON { revocation_ids, ttl } — a biscuit\'s own answer to ' +
+          'revocation is a list its verifier checks a token\'s identifiers ' +
+          'against, and no document says where one is published. Named in ' +
+          'the RS-facing discovery document (biscuit_revocation_endpoint) ' +
+          'and on /gnap/keys. Macaroon and zcap tokens have no such ' +
+          'mechanism: introspection, or a short lifetime, is their path. ' +
+          'Cache-Control max-age is oauth2.accessTokenStatusListTtlS.' },
   { path: '/gnap/zcap/controller', group: 'GNAP', name: 'The ZCAP controller ' +
                                                         'document',
     specs: ['zcap-ld', 'di-jcs'],
@@ -10616,6 +10642,27 @@ const ENDPOINTS: EndpointEntry[] = [
           'authenticate as a client in every mode and is refused 400 ' +
           'invalid_client otherwise; a JSON request must authenticate in ' +
           'product mode (401) and need not in development.' },
+  { path: '/status-lists/access-tokens', group: 'OAuth 2.0 / OIDC',
+    name: 'Access-token status list',
+    specs: ['token-status-list', 'rfc9068', 'rfc9767', 'rfc7519',
+            'rfc8392', 'rfc9052'],
+    what: 'The realm\'s ONE access-token Status List Token (#432): every ' +
+          'OAuth RFC 9068 access token and every GNAP jwt-signed and ' +
+          'jwt-encrypted token names an index in it ' +
+          '(status.status_list), so a resource server that checks a token ' +
+          'on its own sees it revoked. application/statuslist+jwt, or ' +
+          'application/statuslist+cwt by Accept; one bit per token over ' +
+          '1,048,576 indexes, the bit computed from the revocation register; ' +
+          'ttl oauth2.accessTokenStatusListTtlS, exp ' +
+          'oauth2.accessTokenStatusListLifetimeS, signed with the realm\'s ' +
+          'RS256 access-token key. ?time= answers 501.' },
+  { path: '/status-lists', group: 'OAuth 2.0 / OIDC',
+    name: 'Access-token Status List Aggregation',
+    specs: ['token-status-list'],
+    what: 'The status_lists this authorization server publishes (section ' +
+          '9): the access-token list. Named in the authorization server ' +
+          'metadata and GNAP\'s RS-facing discovery as ' +
+          'status_list_aggregation_endpoint.' },
   { path: '/oauth2/challenge', group: 'OAuth 2.0 / OIDC',
     name: 'Client attestation challenge endpoint',
     specs: ['oauth-attestation', 'rfc9449'],

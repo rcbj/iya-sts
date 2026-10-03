@@ -556,6 +556,19 @@ class ProtocolStack {
     this.register(app, require('../oauth-oidc/oauth2'), 'oauth-oidc/oauth2');
     this.register(app, require('../oauth-oidc/grant_management'),
                   'oauth-oidc/grant_management');
+    // THE ACCESS-TOKEN STATUS LIST (#432): one per realm, for OAuth's RFC 9068
+    // tokens and GNAP's two JWT formats. `oauth2` and `gnap/gnap_tokens.ts`
+    // require it and allocate through it at mint time; built and registered
+    // here, beside the authorization server, because its two routes
+    // (/status-lists, /status-lists/access-tokens) collide with nothing and
+    // its metadata member is `oauth2`'s. It requires the status-list codec,
+    // built further down with the credential lists — a library whose facades
+    // are called only at request time.
+    this.build('oauth-oidc/access_token_status',
+               require('../oauth-oidc/access_token_status'),
+               'AccessTokenStatus');
+    this.register(app, require('../oauth-oidc/access_token_status'),
+                  'oauth-oidc/access_token_status');
     // WS-Federation's passive requestor profile. It must come AFTER authn.js
     // and the order is a dependency and not a preference: it signs users in to
     // the session that service owns (startSession/sessionOf), so that single

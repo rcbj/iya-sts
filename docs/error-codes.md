@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4021** of them, in **41** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4029** of them, in **41** subsystems.
 
 ## Where a code appears
 
@@ -64,7 +64,7 @@ is an ordinary outcome.
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 26
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 47
 * [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 255
-* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 678
+* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 683
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 97
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 25
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 16
@@ -80,7 +80,7 @@ is an ordinary outcome.
 * [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 118
 * [Risk scoring (`STS-RISK`)](#sts-risk) — 44
 * [Mail (`STS-MAIL`)](#sts-mail) — 39
-* [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 315
+* [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 318
 * [Device register (`STS-DEVICE`)](#sts-device) — 46
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 88
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 34
@@ -2028,6 +2028,11 @@ Raised from: oauth-oidc/, common/person_assertions.js.
 | `STS-OAUTH-0793` | A token exchange named an audience or resource no application in the realm registers (#186). | 400 invalid_target (RFC 8693 section 2.2.2) |
 | `STS-OAUTH-0794` | A delegation or impersonation token exchange named no audience or resource; only a self exchange defaults to the subject token's own audience (#186). | 400 invalid_target (RFC 8693 section 2.2.2) |
 | `STS-OAUTH-0795` | A token exchange's exchange_semantics parameter was neither delegation nor impersonation, or was repeated (#186). | 400 invalid_request (RFC 6749 section 5.2) |
+| `STS-OAUTH-0816` | No index in the realm's access-token status list could be allocated because the claim store could not be asked, so the OAuth or GNAP JWT access token was not minted (#432). | server_error at the endpoint that was minting the token |
+| `STS-OAUTH-0817` | The realm's access-token status list had no free index in thirty-two random attempts (it holds 1,048,576), so the access token was not minted rather than share a live token's index (draft-ietf-oauth-status-list section 13.3; #432). | server_error at the endpoint that was minting the token |
+| `STS-OAUTH-0818` | The access-token status list could not be built or signed (#432). | HTTP 500 |
+| `STS-OAUTH-0819` | A historical access-token status list was asked for (`?time=`, draft-ietf-oauth-status-list section 8.4); none is kept (#432). | HTTP 501 |
+| `STS-OAUTH-0820` | An access token was asked for without a reserved status-list index in a process with a shared claims table, where none can be claimed synchronously; the caller must mint with accessTokenAsync(). A defect in the caller, refused rather than minted on an index no other node was asked about (#432). | server_error at the endpoint that was minting the token |
 | `STS-OAUTH-0876` | An authorization_details entry carried limits, and its type declares no limits schema in the access-type catalogue (#432). | 400 invalid_authorization_details (RFC 9396 section 5) |
 | `STS-OAUTH-0877` | An authorization_details entry's limits did not meet the limits schema its type declares (#432). | 400 invalid_authorization_details (RFC 9396 section 5) |
 | `STS-OAUTH-0878` | An access token would carry authorization_details of a type the access-type catalogue declares bearer: false, and the request presented neither a DPoP proof nor a client certificate (#432). | 400 invalid_authorization_details (RFC 9396 section 5) |
@@ -3673,6 +3678,9 @@ Raised from: gnap/.
 | `STS-GNAP-0735` | A GNAP access token was presented whose client's application entry no longer exists or no longer names the key the grant is bound to (#432). | RFC 9635 section 7.2 (invalid_token) |
 | `STS-GNAP-0736` | A GNAP grant could not be ended by an act from outside the protocol — a sign-out, a deleted client, a compromised device, a received signal (#432). The others it was asked to end were. | none — a warning in the log |
 | `STS-GNAP-0737` | An application entry was deleted, or its GNAP key removed or replaced, and its GNAP grants could not be ended with it (#432). Each is still refused at its next use (STS-GNAP-0731). | none — a warning in the log |
+| `STS-GNAP-0750` | The biscuit library gave no usable revocation identifiers for a token it had just minted, so the biscuit was not issued: one this authorization server could never publish as revoked would be accepted offline until it expired (#432). | none — the token is not issued; the grant answers without it |
+| `STS-GNAP-0751` | The revoked biscuits' identifiers could not be listed at GET /gnap/biscuit/revocations (#432). | HTTP 500 |
+| `STS-GNAP-0752` | The revoked-biscuit list reached oauth2.maxRevokedJtis with nothing expired in it, so its oldest unexpired revocations were forgotten: those biscuits are accepted again by a resource server that checks only the list, until they expire (#432). | none — a warning in the log |
 | `STS-GNAP-0770` | A GNAP client trusted to skip interaction (gnapSkipInteraction) presented a verified user assertion and the delegation policy refused it tokens for that person (#432, product mode): the relationship does not hold — the target is not the actor itself, not on the actor's appAllowedToDelegateTo, and does not accept it (appAllowedToActOnBehalfOf), or no usable target was named. | RFC 9635 section 3.6 (request_denied, HTTP 403) |
 | `STS-GNAP-0771` | A GNAP client trusted to skip interaction (gnapSkipInteraction) presented a verified user assertion and the delegation policy refused it tokens for that person (#432, product mode): the subject is protected (stsNotDelegated, appNotDelegated, delegation.protectedGroups, the console roster) or outside the actor's appDelegationSubjectGroup. | RFC 9635 section 3.6 (request_denied, HTTP 403) |
 | `STS-GNAP-0772` | A GNAP client trusted to skip interaction (gnapSkipInteraction) presented a verified user assertion and the delegation policy refused it tokens for that person (#432, product mode): the semantics are not allowed by the actor (appDelegationSemantics; empty is delegation only) or the subject (stsDelegationSemantics). | RFC 9635 section 3.6 (request_denied, HTTP 403) |

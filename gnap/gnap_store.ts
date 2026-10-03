@@ -96,6 +96,7 @@ interface GnapStores {
   userRefs: Store;
   resources: Store;
   replay: Store;
+  biscuitRevocations: Store;
 }
 
 interface GnapStoreDeps {
@@ -170,6 +171,54 @@ const resources = realms.map({ persist: 'gnap.resources' });
 const replay = realms.map({ persist: 'gnap.replay', retain: 'age',
                             // #333: its `until`, epoch seconds.
                             expiresAt: realms.expiryField('until', 1000) });
+
+// THE REVOCATION IDENTIFIERS OF REVOKED BISCUITS (#432): jti -> { ids, exp,
+// revokedAt }. Written by `saveToken()` — the one door every revocation of a
+// token record already goes through (a client's DELETE, a rotation, a grant
+// revoked by its client, an administrator or a sign-out) — so a revocation
+// added later is published without a line of its own. GLOBAL across cells
+// (`persistence/tiers.js`): a resource server reads the list from whichever
+// cell it reaches, while the token records themselves are cell-tier. Kept
+// until the token's own `exp`, after which every verifier refuses it anyway.
+const biscuitRevocations = realms.map({
+  persist: 'gnap.biscuitRevocations',
+  expiresAt: realms.expiryField('exp', 1000) });
+
+const biscuitRevocationCount = cacheRegistry.register({
+  name: 'gnap.biscuit-revocations',
+  title: 'Revoked biscuits',
+  description: 'The revocation identifiers of each revoked biscuit access ' +
+    'token, published at /gnap/biscuit/revocations for a resource server ' +
+    'that verifies biscuits on its own.',
+  owner: 'gnap/gnap_store.ts',
+  scope: 'realm',
+  kind: 'replay',
+  persisted: true,
+  hitMeaning: 'the published list was read',
+  settings: ['gnap.accessTokenLifetimeS', 'oauth2.maxRevokedJtis'],
+  maxEntries: function (): number {
+    return Number(config.value('oauth2.maxRevokedJtis'));
+  },
+  bound: 'Enforced: oauth2.maxRevokedJtis per realm — the revocation ' +
+    'register\'s own bound, for the same promise about the same tokens. At ' +
+    'the bound an expired row goes first; otherwise the OLDEST revocation ' +
+    'is forgotten (STS-GNAP-0752), and that biscuit is accepted again by a ' +
+    'resource server checking only this list until it expires.',
+  lifetime: function (): string {
+    return 'until the revoked token\'s own exp.';
+  },
+  eject: cacheRegistry.realmMapEjector(realms, biscuitRevocations,
+    function (row: any, key: unknown, now: number): boolean {
+      return !row || Number(row.exp) * 1000 <= now;
+    }),
+  entries: function (): unknown[] {
+    return cacheRegistry.realmMapRows(realms, biscuitRevocations,
+      function (row: any, key: unknown): object {
+        return { key: String(key),
+                 validUntil: Number(row && row.exp) * 1000 || null };
+      });
+  }
+});
 
 // Described to `/admin/caches` (#74, rule 3ap). The key is already a digest
 // of the signature; `until` is in seconds.
@@ -737,11 +786,66 @@ class GnapStore {
    */
   saveToken(record: any): any {
     const { log } = this.deps;
-    const { tokens } = this.deps.stores;
+    const { tokens, biscuitRevocations } = this.deps.stores;
     log.debug("Entering GnapStore.saveToken().");
     tokens.set(record.jti, record);
+    // A revoked biscuit's identifiers are published (#432); see the store's
+    // declaration for why it is here.
+    if (record.format === 'biscuit' && record.revoked &&
+        Array.isArray(record.revocationIds) && record.revocationIds.length &&
+        !biscuitRevocations.has(record.jti)) {
+      // Bounded AT INSERT (a bound cannot wait for the eject job): expired
+      // rows first, then the oldest — the register's own rule, logged.
+      const room = cacheRegistry.makeRoom(biscuitRevocations,
+        Number(config.value('oauth2.maxRevokedJtis')), {
+          counter: biscuitRevocationCount,
+          expired: function (row: any): boolean {
+            return !row || Number(row.exp) * 1000 <= Date.now();
+          } });
+      if (room.evicted) {
+        log.warn(this.deps.errorCodes.tag('STS-GNAP-0752') + 'gnap: the ' +
+                 'revoked-biscuit list reached oauth2.maxRevokedJtis with ' +
+                 'nothing expired in it, so ' + room.evicted + ' unexpired ' +
+                 'revocation(s) were forgotten, the oldest first. Raise the ' +
+                 'setting.');
+      }
+      biscuitRevocations.set(record.jti, {
+        ids: record.revocationIds.slice(0), exp: Number(record.exp) || 0,
+        revokedAt: Number(record.revokedAt) || 0 });
+    }
     log.debug("Leaving GnapStore.saveToken().");
     return record;
+  }
+
+  /**
+   * Lists the revocation identifiers of every revoked biscuit in the ambient
+   * realm whose token has not expired, newest revocation first.
+   *
+   * @returns the identifiers, hex
+   */
+  biscuitRevocationIds(): string[] {
+    const { log, nowSec } = this.deps;
+    const { biscuitRevocations } = this.deps.stores;
+    log.debug("Entering GnapStore.biscuitRevocationIds().");
+    const now = nowSec();
+    const rows: any[] = [];
+    biscuitRevocations.forEach(function (row: any) {
+      if (row && (!row.exp || Number(row.exp) > now)) {
+        rows.push(row);
+      }
+    });
+    rows.sort(function (a, b) {
+      return Number(b.revokedAt) - Number(a.revokedAt);
+    });
+    const out: string[] = [];
+    rows.forEach(function (row) {
+      (row.ids || []).forEach(function (id: unknown) {
+        out.push(String(id));
+      });
+    });
+    biscuitRevocationCount.hit();
+    log.debug("Leaving GnapStore.biscuitRevocationIds(). " + out.length);
+    return out;
   }
 
   /**
@@ -1282,7 +1386,8 @@ class GnapStore {
         instances: instances,
         userRefs: userRefs,
         resources: resources,
-        replay: replay
+        replay: replay,
+        biscuitRevocations: biscuitRevocations
       }
     };
   }
@@ -1358,6 +1463,7 @@ export = {
   userCodeTaken: slot.forward('userCodeTaken'),
   putToken: slot.forward('putToken'),
   saveToken: slot.forward('saveToken'),
+  biscuitRevocationIds: slot.forward('biscuitRevocationIds'),
   tokenByJti: slot.forward('tokenByJti'),
   tokenByValue: slot.forward('tokenByValue'),
   listTokens: slot.forward('listTokens'),
