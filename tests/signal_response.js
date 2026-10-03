@@ -74,10 +74,12 @@ function childMain() {
     }).join(',');
     note(slugs === 'end-sessions,end-sessions-on-risk,' +
                    'partner-end-sessions,partner-block,partner-unblock,' +
+                   'partner-revoke-grants,' +
                    'signals-only-enable,device-compliance',
          'A1. the built-in policy ends sessions on the listed events and on ' +
          'a risk-level-change to HIGH; a sign-in partner\'s (#373) end the ' +
-         'sessions it started, block and unblock its sign-ins; a ' +
+         'sessions it started, block and unblock its sign-ins and revoke ' +
+         'the person\'s grants and tokens (#432); a ' +
          'signals-only partner\'s (#374) only lift its own lock; and a ' +
          'device\'s compliance is set — the global sign-out and the ' +
          'account lock are permitted by no rule', slugs);

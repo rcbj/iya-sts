@@ -50,7 +50,10 @@
 //   * `authorize()` WITH DEFAULT LIMITS ANSWERS `RunLimit: Timeout`. Its
 //     default time budget reads the clock in a way this build cannot, so every
 //     call is `authorizeWithLimits()` / `queryWithLimits()` with `LIMITS`
-//     below. A timeout is a REFUSAL (STS-GNAP-0325), never a pass.
+//     below. A timeout is a REFUSAL (STS-GNAP-0325), never a pass. **AND THE
+//     FIRST RULE-APPLYING EVALUATION AFTER LOAD CAN BE REFUSED ON ITS RUN
+//     LIMITS WHATEVER THE BUDGET** (#432), so the load primes it with a
+//     throwaway evaluation (`primeRunClock()`).
 //   * A PARAMETER THAT IS NOT A DATALOG TERM PANICS THE WASM MODULE. A JS
 //     `Date` handed to `addCodeWithParameters()` aborts inside Rust with
 //     `unreachable`; the term must be `{ date: <ISO string> }`, which is what
@@ -72,12 +75,37 @@
 //   gnap_token(jti)                 issuer(iss)
 //   issued_at(date)                 expires(date)          not_before(date)?
 //   subject(sub)?                   audience(id)*          client_instance(id)
+//   audience_at(i, id)*             the audience's order, i = 0..
 //   access(i, json)                 one per right, i = 0.., json = the right
 //   access_ref(string)              for a reference-string right
 //   access_type(i, type)  access_action(i, a)  access_location(i, l)
 //   access_datatype(i, d) access_privilege(i, p) access_identifier(i, id)
 //   flag(f)*                        label(l)?
 //   cnf_jkt(tp) | cnf_x5t(tp) | cnf_kid(ref) | bearer(true)
+//   actor(i, sub)*                  the actor chain, i = 0 the most recent
+//   grant(id)?                      the grant limits are counted against
+//   access_limit_amount(i, v, cur)  a right's limits (#432 phase 5), each
+//   access_limit_count(i, n)        member with a meaning decomposed:
+//   access_limit_receiver(i, r)*    the amount as a decimal STRING (Datalog
+//   access_limit_interval(i, text)  has no decimal and a float is not an
+//   access_limit_not_before(i, d)   amount), the count an integer, the
+//   access_limit_not_after(i, d)    window's ends dates
+//
+// The limits facts exist for a resource server's OWN attenuation block —
+// `check if access_limit_count($i, $n), $n <= 10` — and are authority facts
+// for `actor`'s reason below; the model's limits are read back from the
+// right's JSON in `access(i, json)`, as every other member is. `grant(id)`
+// is the grant a resource server keeps the running totals against (rcbj's
+// decision 2 on #432).
+//
+// `actor(i, sub)` (#432) is RFC 8693 section 4.1's `act` as Datalog: the
+// resource server that DERIVED this token (RFC 9767 section 4) at 0, each
+// earlier deriver after it — so a resource server's own attenuation block
+// can reason about who acted (`check if actor(0, "rs-a")`). It is an
+// AUTHORITY fact for the reason every fact the model is read from is: a
+// block anybody holding the token may append is a block anybody may write
+// an actor into, and an authorizer query sees only the authority block and
+// its own facts (see readModel()).
 //
 // and its checks — so that the token carries its own rules and ANY biscuit
 // verifier enforces them, not only this one:
@@ -146,6 +174,8 @@ import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
 import errorCodes = require('../common/error_codes');
 import gnapAccess = require('./gnap_access');
+// The limits vocabulary (#432 phase 5), for a right's limit facts.
+import AccessLimits = require('../common/access_limits');
 
 interface TokenBiscuitDeps {
   log: {
@@ -288,8 +318,49 @@ class TokenBiscuit {
         console.log = original;
       }
     }
+    this.primeRunClock(bg);
     log.debug("Leaving TokenBiscuit.instantiate(). Loaded.");
     return bg;
+  }
+
+  // -------------------------------------------------------------------------
+  // THE FIRST RULE-APPLYING EVALUATION AFTER LOAD, ABSORBED HERE (#432,
+  // 2026-10-03).
+  //
+  // The library's first evaluation that applies a rule can be refused on its
+  // run limits whatever the budget; later ones measure correctly. Which call
+  // came first depended on what else the process had done, so the first
+  // token verified in a process could be refused STS-GNAP-0325
+  // (`tests/gnap_delegation.js` found it once the #432 lanes were merged).
+  //
+  // So the load runs ONE throwaway evaluation that applies a rule, before any
+  // token is judged, and discards its answer. LIMITS are not raised: no
+  // budget changes the first answer, and every later evaluation is bounded
+  // as before, so the bound on a hostile block stands.
+  // -------------------------------------------------------------------------
+  private primeRunClock(bg: any): void {
+    const { log } = this.deps;
+    log.debug("Entering TokenBiscuit.primeRunClock().");
+    let authorizer = null;
+    try {
+      const builder = new bg.AuthorizerBuilder();
+      builder.addCode('prime(1); primed($x) <- prime($x); allow if true;');
+      authorizer = builder.buildUnauthenticated();
+      authorizer.authorizeWithLimits(LIMITS);
+      log.debug("Leaving TokenBiscuit.primeRunClock(). It did not time out " +
+                "this time.");
+    } catch (e) {
+      // Expected: the first evaluation may be refused (see above).
+      // Anything else is logged and left — the evaluations that matter
+      // report their own refusals.
+      log.debug("Caught in TokenBiscuit.primeRunClock(): " +
+                this.errorText(e));
+      log.debug("Leaving TokenBiscuit.primeRunClock(). Primed.");
+    } finally {
+      if (authorizer) {
+        authorizer.free();
+      }
+    }
   }
 
   private async library(): Promise<any> {
@@ -384,8 +455,44 @@ class TokenBiscuit {
   }
 
   // The facts and checks of the authority block (see the header).
-  private authorityProgram(model: any): Program {
+  // A right's limits as authority facts (#432 phase 5; the header). Only
+  // the members `common/access_limits.ts` gives a meaning, read as it reads
+  // them; another member is in the right's JSON and nowhere else.
+  private addLimitFacts(p: Program, i: number, limits: any): void {
     const { log } = this.deps;
+    log.debug("Entering TokenBiscuit.addLimitFacts().");
+    if (!limits || typeof limits !== 'object') {
+      log.debug("Leaving TokenBiscuit.addLimitFacts(). None.");
+      return;
+    }
+    if (limits.amount !== undefined) {
+      p.add('access_limit_amount(?, ?, ?);',
+            [i, String(limits.amount), String(limits.currency || '')]);
+    }
+    if (Number.isSafeInteger(limits.count)) {
+      p.add('access_limit_count(?, ?);', [i, limits.count]);
+    }
+    (AccessLimits.receiversOf(limits) || []).forEach(function (r: string) {
+      p.add('access_limit_receiver(?, ?);', [i, r]);
+    });
+    if (typeof limits.interval === 'string') {
+      p.add('access_limit_interval(?, ?);', [i, limits.interval]);
+    }
+    const window = limits.window || {};
+    const nb = AccessLimits.timeOf(window.notBefore);
+    const na = AccessLimits.timeOf(window.notAfter);
+    if (nb !== null) {
+      p.add('access_limit_not_before(?, ?);', [i, this.dateTerm(nb)]);
+    }
+    if (na !== null) {
+      p.add('access_limit_not_after(?, ?);', [i, this.dateTerm(na)]);
+    }
+    log.debug("Leaving TokenBiscuit.addLimitFacts().");
+  }
+
+  private authorityProgram(model: any): Program {
+    const { log, access } = this.deps;
+    const self = this;
     log.debug("Entering TokenBiscuit.authorityProgram().");
     const p = this.program();
     p.add('gnap_token(?);', [model.jti]);
@@ -398,8 +505,14 @@ class TokenBiscuit {
     if (model.sub !== null) {
       p.add('subject(?);', [model.sub]);
     }
-    model.aud.forEach(function (a) {
+    model.aud.forEach(function (a, i) {
       p.add('audience(?);', [a]);
+      // The ORDER, which a set of facts does not keep (#432: adding the
+      // actor facts reshuffled what the queries answered, and the round
+      // trip of a two-audience model failed). `audience(id)` stays what the
+      // checks and an attenuation block test; this is only how the model
+      // is read back in the order it was written.
+      p.add('audience_at(?, ?);', [i, a]);
     });
     p.add('client_instance(?);', [model.instanceId]);
     model.access.forEach(function (right, i) {
@@ -420,12 +533,19 @@ class TokenBiscuit {
       if (right.identifier !== undefined) {
         p.add('access_identifier(?, ?);', [i, right.identifier]);
       }
+      self.addLimitFacts(p, i, right.limits);
     });
     model.flags.forEach(function (f) {
       p.add('flag(?);', [f]);
     });
     if (model.label !== null) {
       p.add('label(?);', [model.label]);
+    }
+    (access.actorChain(model.act) || []).forEach(function (sub, i) {
+      p.add('actor(?, ?);', [i, sub]);
+    });
+    if (model.grant) {
+      p.add('grant(?);', [model.grant]);
     }
     if (!model.cnf) {
       p.add('bearer(true);');
@@ -482,6 +602,14 @@ class TokenBiscuit {
     }
     const bg = lib.bg;
     let value;
+    // THE REVOCATION IDENTIFIERS (#432): one per block, hex, each the
+    // signature that block was sealed with — the authority block's first.
+    // Read HERE because this is the only moment the AS holds the token's
+    // value (the store keeps its digest), and published by `/gnap/biscuit/
+    // revocations` once the token is revoked. A derivative a resource server
+    // attenuates offline keeps the authority block, so the authority id
+    // revokes it too.
+    let revocationIds: string[] = [];
     try {
       const root = bg.PrivateKey.fromBytes(new Uint8Array(d),
                                            bg.SignatureAlgorithm.Ed25519);
@@ -490,6 +618,10 @@ class TokenBiscuit {
       builder.addCodeWithParameters(p.source(), p.params, {});
       const token = builder.build(root);
       value = token.toBase64();
+      revocationIds = [].concat(token.getRevocationIdentifiers() || [])
+        .map(function (one: unknown): string {
+          return String(one);
+        });
       token.free();
     } catch (e) {
       log.debug("Caught in TokenBiscuit.mint(): " + this.errorText(e));
@@ -509,8 +641,22 @@ class TokenBiscuit {
       return this.refusal('STS-GNAP-0320', 'the biscuit library emitted a ' +
                           'value that is not token68.');
     }
+    if (!revocationIds.length ||
+        !revocationIds.every(function (one) {
+          return /^[0-9a-f]+$/.test(one);
+        })) {
+      // A biscuit this AS could never publish as revoked would be one a
+      // resource server checking it offline must accept until it expires;
+      // it is not minted.
+      log.warn(errorCodes.tag('STS-GNAP-0750') + 'the biscuit library gave ' +
+               'no usable revocation identifiers for a minted token.');
+      log.debug("Leaving TokenBiscuit.mint(). No revocation identifiers.");
+      return this.refusal('STS-GNAP-0750', 'the biscuit\'s revocation ' +
+                          'identifiers could not be read.');
+    }
     log.debug("Leaving TokenBiscuit.mint(). jti=" + valid.model.jti);
-    return { value: value, format: FORMAT, jti: valid.model.jti };
+    return { value: value, format: FORMAT, jti: valid.model.jti,
+             revocationIds: revocationIds };
   }
 
   private parseToken(bg: any, value: unknown, keys: any): any {
@@ -646,10 +792,28 @@ class TokenBiscuit {
     const sub = one('data($v) <- subject($v)');
     const client = one('data($v) <- client_instance($v)');
     const label = one('data($v) <- label($v)');
-    const aud = this.query(bg, authorizer, 'data($v) <- audience($v)').map(
-        function (r) {
-          return r[0];
-        });
+    const grant = one('data($v) <- grant($v)');
+    const audSet = this.query(bg, authorizer, 'data($v) <- audience($v)')
+      .map(function (r) {
+        return r[0];
+      });
+    const audRows = this.query(bg, authorizer,
+                               'data($i, $v) <- audience_at($i, $v)')
+      .sort(function (a, b) {
+        return a[0] - b[0];
+      });
+    const aud = audRows.map(function (r) {
+      return r[1];
+    });
+    if (audRows.some(function (r, i) { return r[0] !== i; }) ||
+        aud.length !== audSet.length ||
+        audSet.some(function (one) { return aud.indexOf(one) < 0; })) {
+      log.debug("Leaving TokenBiscuit.readModel(). The audience facts " +
+                "disagree.");
+      return this.refusal('STS-GNAP-0323', 'the biscuit\'s audience_at ' +
+                          'facts are not 0..n-1 over exactly its audience ' +
+                          'facts.');
+    }
     const flags = this.query(bg, authorizer, 'data($v) <- flag($v)').map(
         function (r) {
           return r[0];
@@ -678,6 +842,21 @@ class TokenBiscuit {
                             i + ' ' + 'is not JSON.');
       }
     }
+    const actorRows = this.query(bg, authorizer,
+                                 'data($i, $s) <- actor($i, $s)')
+      .sort(function (a, b) {
+        return a[0] - b[0];
+      });
+    const actors: string[] = [];
+    for (let i = 0; i < actorRows.length; i++) {
+      if (actorRows[i][0] !== i || typeof actorRows[i][1] !== 'string') {
+        log.debug("Leaving TokenBiscuit.readModel(). actor indices are not " +
+                  "0..n-1.");
+        return this.refusal('STS-GNAP-0323', 'the biscuit\'s actor facts ' +
+                            'are not numbered 0..n-1 with one actor each.');
+      }
+      actors.push(actorRows[i][1]);
+    }
     const jkt = one('data($v) <- cnf_jkt($v)');
     const x5t = one('data($v) <- cnf_x5t($v)');
     const kid = one('data($v) <- cnf_kid($v)');
@@ -686,7 +865,8 @@ class TokenBiscuit {
     const bindings = [jkt, x5t, kid].filter(function (v) {
       return v !== null;
     });
-    if ([jti, iss, iat, exp, nbf, sub, client, label, jkt, x5t, kid].some(
+    if ([jti, iss, iat, exp, nbf, sub, client, label, grant, jkt, x5t,
+         kid].some(
         function (v) {
           return v === undefined;
         }) ||
@@ -712,7 +892,9 @@ class TokenBiscuit {
       cnf: cnf, iat: this.seconds(iat),
       nbf: nbf === null ? null : this.seconds(nbf),
       exp: this.seconds(exp),
-      label: label
+      label: label,
+      act: access.nestActors(actors),
+      grant: grant
     };
     const valid = access.validateModel(model);
     if (!valid.ok) {
@@ -935,7 +1117,7 @@ class TokenBiscuit {
       ],
       carries: ['jti', 'iss', 'sub', 'aud', 'instanceId', 'access', 'flags',
                 'cnf',
-                'iat', 'nbf', 'exp', 'label'],
+                'iat', 'nbf', 'exp', 'label', 'act', 'grant'],
       cannot: []
     };
     log.debug("Leaving TokenBiscuit.describe().");

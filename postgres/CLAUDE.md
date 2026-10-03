@@ -34,7 +34,9 @@ merged on 2026-09-29 and both tables are created by name — and version
 `sts_minted_expires`, and no table, and version 13 (#349, after #333's
 12) six GENERATED lookup columns on `sts_ldap_entries` and seven indexes over
 them, for a request worker that holds the people and devices as a window
-(`persistence/directory_queries.js`); `sts_app` holds
+(`persistence/directory_queries.js`) — and version 15 (#432 phase 5)
+`sts_cluster_budgets`, a GNAP right's limits spent with one conditional
+upsert (`cluster/cluster_counters.js`); `sts_app` holds
 `SELECT`, `INSERT`, `UPDATE` and `DELETE` on them and `USAGE` — not `CREATE` —
 on the schema, and is what `STS_DATABASE_URL` dials. `schema.sql` creates both
 halves and argues every line of it; do not argue it again here.

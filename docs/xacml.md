@@ -189,6 +189,33 @@ built-in policy decides. RFC 9396 authorization details are asked about in the
 same way (action `issue-authorization-detail`) for the client's registered
 types and the types the server publishes.
 
+**The issuance policy also decides each GNAP access right** (#432). For every
+right a GNAP grant asks for, the grant engine asks one question: the action is
+`issue-gnap-right` and the resource is the right's type (or its reference
+string). The facts are under `urn:sts:xacml:gnap:` — the right's `kind`, its
+`right-action`, `right-location`, `right-datatype`, `right-identifier` and
+`right-privilege`; whether the access-type catalogue declares its type
+(`catalogued`) and what it declares (`type-owner`, `type-bearer`,
+`type-max-lifetime`, `type-acr`, `type-interaction`, `type-consent-action`,
+`type-derivable-from`, `type-introspection-claim`); the token (`token-label`,
+`token-bearer`, `token-format`, `token-target`); the client
+(`client-class`, `client-has-allowed-access`, `client-bearer-refused`,
+`right-listed`, `reference-registered`, `protected`, `protected-declared`);
+and who approved it and how (`approver`, `approval`), the session
+(`session-acr`, `session-amr`), its risk (`risk-level`, `risk-signal`) and
+registered device (`device-*`). The stage is `request` or `issue`. The
+answer's obligation `urn:sts:xacml:obligation:gnap-right` carries
+`urn:sts:xacml:gnap-right-verdict` (`keep`, `narrow` or `refuse`),
+`urn:sts:xacml:gnap-right-code`, any number of
+`urn:sts:xacml:gnap-right-drop-action`, `-drop-location`, `-drop-datatype`
+and `-drop-privilege` values, and `urn:sts:xacml:gnap-right-max-lifetime`.
+Several obligations in one answer are merged: refuse over narrow over keep,
+the drops together, the shortest lifetime. The built-in `role-issuance`
+policy holds the rules (`decideGnapRights`); a document without them leaves
+the question to the built-in policy, and a verdict this service does not
+know refuses the right. [GNAP](gnap.md#each-right-is-a-question-to-the-issuance-policy)
+describes what each rule does.
+
 **Where the service is deployed as cells, the issuance policy also decides
 where a person's data may go** (#98). A cell asks three questions: may a
 visitor's session be held here (`hold-session`), may a request about them be

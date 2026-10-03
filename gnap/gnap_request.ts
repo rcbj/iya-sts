@@ -1160,11 +1160,34 @@ class GnapRequest {
       return this.refusal('STS-GNAP-0502', '"token_introspection_required" ' +
                           'must be a boolean.');
     }
+    // THE OWNERS (#432 phase 5): an identifier the set's access carries, to
+    // a DN. Whether the DN names a person or a group is the directory's
+    // question, asked by `gnap_rs.ts` in the realm the set is registered in.
+    const owners = body.resource_owners;
+    if (owners !== undefined) {
+      const carried = access.access.filter(function (one) {
+        return one && typeof one === 'object' &&
+          typeof one.identifier === 'string';
+      }).map(function (one) {
+        return one.identifier;
+      });
+      const stray = Object.keys(owners || {}).filter(function (id) {
+        return carried.indexOf(id) < 0;
+      });
+      if (stray.length) {
+        log.debug("Leaving GnapRequest.parseRegistration(). " +
+                  "resource_owners names an identifier the set lacks.");
+        return this.refusal('STS-GNAP-0864', '"resource_owners" names "' +
+                            stray[0].slice(0, 80) + '", which no right in ' +
+                            '"access" carries as its identifier.');
+      }
+    }
     log.debug("Leaving GnapRequest.parseRegistration().");
     return { ok: true, request: {
       access: access.access, resourceServer: rs.resourceServer,
       tokenFormats: body.token_formats_supported || null,
-      introspectionRequired: body.token_introspection_required === true
+      introspectionRequired: body.token_introspection_required === true,
+      resourceOwners: owners === undefined ? null : owners
     } };
   }
 

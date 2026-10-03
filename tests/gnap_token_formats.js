@@ -77,14 +77,27 @@ function fullModel(extra) {
       'dolphin-metadata',
       { type: 'financial-transaction', actions: ['withdraw'],
         identifier: 'account-14-32-32-3',
-        currency: 'USD' }
+        currency: 'USD' },
+      // #432 phase 5: a right's LIMITS, every member with a meaning, which
+      // each format must carry where only the authorization server writes.
+      { type: 'payments', actions: ['spend'], identifier: 'acct-1',
+        limits: { amount: '250.00', currency: 'EUR', count: 3,
+                  receiver: ['bob', 'carol "c"'],
+                  interval: 'R30/2026-10-01T00:00:00Z/P1D',
+                  window: { notBefore: '2026-10-01T00:00:00Z',
+                            notAfter: '2026-12-31T00:00:00Z' } } }
     ],
     flags: ['durable'],
     cnf: { jkt: JKT },
     iat: NOW - 60,
     nbf: NOW - 30,
     exp: NOW + 3600,
-    label: 'photos token'
+    label: 'photos token',
+    // #432: a token derived twice (RFC 9767 section 4) — the most recent
+    // deriving resource server outermost, RFC 8693 section 4.1's nesting.
+    act: { sub: 'rs-downstream "b"', act: { sub: 'https://rs1.example/api' } },
+    // #432 phase 5: the grant the limits are counted against.
+    grant: 'grant-"9"'
   }, extra || {});
 }
 
@@ -96,13 +109,13 @@ function bearerModel() {
     instanceId: 'ci-1',
     access: ['read'], flags: ['bearer'], cnf: null, iat: NOW -
         10, nbf: null, exp: NOW + 60,
-    label: null
+    label: null, act: null, grant: null
   };
 }
 
 const FIELDS = ['jti', 'iss', 'sub', 'aud', 'instanceId', 'access', 'flags',
                 'cnf',
-                'iat', 'nbf', 'exp', 'label'];
+                'iat', 'nbf', 'exp', 'label', 'act', 'grant'];
 
 function refused(t, result, code, what) {
   log.debug("Entering refused().");
@@ -244,6 +257,30 @@ function accessCases(t) {
                                                            'durable'] })),
           'STS-GNAP-0303', 'a bound model carrying the bearer flag is not a ' +
                            'model');
+
+  t.log.info('=== the actor chain (act, #432) ===');
+  t.equal(JSON.stringify(gnapAccess.actorChain(fullModel().act)),
+          JSON.stringify(['rs-downstream "b"', 'https://rs1.example/api']),
+          'actorChain() flattens act, the most recent actor first');
+  t.equal(JSON.stringify(gnapAccess.nestActors(['b', 'a'])),
+          JSON.stringify({ sub: 'b', act: { sub: 'a' } }),
+          'nestActors() nests them back, RFC 8693 section 4.1\'s way');
+  t.equal(gnapAccess.nestActors([]), null, 'no actors is no act');
+  refused(t, gnapAccess.validateModel(Object.assign(fullModel(),
+                                                    { act: { sub: '' } })),
+          'STS-GNAP-0303', 'an act with an empty sub is not a model');
+  refused(t, gnapAccess.validateModel(Object.assign(fullModel(),
+    { act: { sub: 'a', iss: 'https://elsewhere' } })), 'STS-GNAP-0303',
+          'an act with a member other than sub and act is not a model — no ' +
+          'format could write it back');
+  let deep = null;
+  for (let i = 0; i <= gnapAccess.MAX_ACTOR_CHAIN; i++) {
+    deep = deep ? { sub: 'rs' + i, act: deep } : { sub: 'rs' + i };
+  }
+  refused(t, gnapAccess.validateModel(Object.assign(fullModel(),
+                                                    { act: deep })),
+          'STS-GNAP-0303', 'a chain deeper than MAX_ACTOR_CHAIN is not a ' +
+                           'model');
   log.debug("Leaving accessCases().");
 }
 
@@ -256,9 +293,10 @@ async function commonCases(t, fmt, keys, wrongKeys, tamper) {
   const d = fmt.describe();
   t.check(d.name === name && d.libraries.length > 0 &&
           d.libraries.every(function (l) { return l.version && l.license; }) &&
-          d.algorithms.length > 0 && d.carries.length === 12,
+          d.algorithms.length > 0 && d.carries.length === 14,
           name + ': describe() names the format, its libraries with versions ' +
-                 'and licences, and 12 carried fields',
+                 'and licences, and 14 carried fields (the actor chain and ' +
+                 'the grant, #432)',
           JSON.stringify(d.libraries));
 
   const full = fullModel();
@@ -476,6 +514,13 @@ async function macaroonCases(t) {
                                 keys, ctx), 'STS-GNAP-0316',
           'macaroon: a subject APPENDED after the authority section is ' +
           'refused, not believed');
+  refused(t,
+          await macaroon.verify(appendRaw(mintedBearer.value, 'gnap:act=' +
+            Buffer.from(JSON.stringify({ sub: 'mallory' }))
+              .toString('base64url')), keys,
+                                { now: NOW, presentedKey: null }),
+          'STS-GNAP-0316', 'macaroon: an actor chain APPENDED by a holder is ' +
+          'refused — only the authority section says who acted (#432)');
   refused(t,
           await macaroon.verify(appendRaw(mintedBearer.value,
                                           'gnap:cnf=jkt:' + JKT), keys,
@@ -794,7 +839,7 @@ async function zcapSuiteCases(t, suite, controller) {
           doc.controller === 'urn:ietf:params:oauth:jwk-thumbprint:sha-256:' +
                              JKT &&
           JSON.stringify(doc.allowedAction) === JSON.stringify(
-              ['read', 'write', 'withdraw']) &&
+              ['read', 'write', 'withdraw', 'spend']) &&
           doc.proof && doc.proof.proofPurpose === 'capabilityDelegation',
           'zcap (' + suite + '): target is aud[0], parent is its root, ' +
           'controller is the RFC 9278 jkt URN, allowedAction is the union of ' +
@@ -1077,8 +1122,66 @@ async function jwtCases(t) {
   log.debug("Leaving jwtCases().");
 }
 
+// THE FIRST VERIFICATION IN A FRESH PROCESS (#432). The biscuit library's
+// first rule-applying evaluation after load could be refused on its run
+// limits whatever the budget, so the first token WITH AN AUDIENCE verified in
+// a process could be refused STS-GNAP-0325. This file's own biscuit cases
+// cannot see it: by then the module has evaluated plenty. So TWENTY-FIVE
+// children each load `token_biscuit` and verify such a token first. One
+// module per process. The children's program runs under `node -e`, so the
+// code style's Entering/Leaving lines do not apply to it.
+function firstVerifyCase(t) {
+  log.debug("Entering firstVerifyCase().");
+  const childProcess = require('child_process');
+  const path = require('path');
+  const program = '(' + function (root) {
+    const nodeCrypto = require('crypto');
+    const biscuit = require(root + '/gnap/token_biscuit');
+    const pair = nodeCrypto.generateKeyPairSync('ed25519');
+    const now = Math.floor(Date.now() / 1000);
+    (async function () {
+      const minted = await biscuit.mint({ jti: 'first', iss:
+        'https://as.example/gnap', sub: null, aud: ['rs-b'],
+        instanceId: 'c', access: ['x'], flags: ['bearer'], cnf: null,
+        iat: now, nbf: null, exp: now + 300, label: null, act: null },
+                                        { privateKey: pair.privateKey });
+      const v = await biscuit.verify(minted.value,
+                                     { publicKey: pair.publicKey }, {});
+      process.stdout.write(JSON.stringify({ ok: v.ok,
+                                            code: v.errorCode || '' }));
+      process.exit(0);
+    })().catch(function (e) {
+      process.stdout.write(JSON.stringify({ ok: false, code: String(e) }));
+      process.exit(0);
+    });
+  }.toString() + ')(' + JSON.stringify(path.join(__dirname, '..')) + ')';
+  const refused = [];
+  for (let i = 0; i < 25; i++) {
+    const out = childProcess.spawnSync(process.execPath, ['-e', program],
+      { encoding: 'utf8', timeout: 60000,
+        env: Object.assign({}, process.env, { LOG_LEVEL: 'fatal' }) });
+    let answer = null;
+    try {
+      answer = JSON.parse(String(out.stdout || '').trim().split('\n').pop());
+    } catch (e) {
+      log.debug("Caught in firstVerifyCase(): " + ((e && e.message) || e));
+      // No answer: recorded as a refusal, with stderr.
+      answer = { ok: false, code: String(out.stderr || '').slice(-300) };
+    }
+    if (!answer.ok) {
+      refused.push(i + ': ' + answer.code);
+    }
+  }
+  t.check(!refused.length, 'biscuit: the FIRST verification in each of ' +
+          'twenty-five fresh processes, of a token with an audience, is ' +
+          'accepted (the run clock is primed at load, #432)',
+          refused.join('; '));
+  log.debug("Leaving firstVerifyCase().");
+}
+
 async function run(t) {
   log.debug("Entering run().");
+  firstVerifyCase(t);
   accessCases(t);
   const started = Date.now();
   await macaroonCases(t);

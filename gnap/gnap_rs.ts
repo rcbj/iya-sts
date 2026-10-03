@@ -67,6 +67,12 @@ import tokens = require('./gnap_tokens');
 import monitor = require('./gnap_monitor');
 import grants = require('./gnap_grants');
 import accessRights = require('./gnap_access');
+import revocation = require('./gnap_revocation');
+// The access-type catalogue's introspection view (#432 phase 4). A library.
+import gnapRights = require('./gnap_rights');
+// Who owns an identifier (#432 phase 5): a registration's owners are checked
+// against the directory.
+import ownership = require('./gnap_ownership');
 
 interface GnapRsDeps {
   config: typeof config;
@@ -84,6 +90,9 @@ interface GnapRsDeps {
   monitor: typeof monitor;
   grants: typeof grants;
   accessRights: typeof accessRights;
+  revocation: typeof revocation;
+  rights: typeof gnapRights;
+  ownership: typeof ownership;
 }
 
 // What `authenticate()` is told about the resource being asked for.
@@ -145,7 +154,11 @@ class GnapRs {
       return 'expired';
     }
     const grant = store.getGrant(record.grantId);
-    if (grant && grant.state === store.STATE.FINALIZED) {
+    // A grant finalized as `issued` (#432 phase 7) ended because its tokens
+    // were released and nothing more could be asked of it — its tokens are
+    // what it was FOR, and stay live. Every other reason ends them.
+    if (grant && grant.state === store.STATE.FINALIZED &&
+        !(grant.finalization && grant.finalization.reason === 'issued')) {
       log.debug("Leaving GnapRs.liveProblem().");
       return 'grant finalized';
     }
@@ -206,6 +219,17 @@ class GnapRs {
     const record: any = store.tokenByValue(parsed.request.accessToken);
     const problem = this.liveProblem(record);
     let inactiveWhy = problem;
+    // THE RESOURCE OWNER DISABLED, OR THE CLIENT'S ENTRY GONE OR NO LONGER
+    // NAMING ITS KEY (#432): inactive at the next check, whichever door made
+    // the change and on a node it has not reached yet. The code is the
+    // operator's, on the log line below; the answer is section 3.3's.
+    const ended = inactiveWhy ? null
+      : this.deps.revocation.tokenProblem(record);
+    if (ended) {
+      inactiveWhy = ended.why;
+      log.info(this.deps.errorCodes.tag(ended.code) + 'gnap: a token ' +
+               'introspected while ' + ended.why);
+    }
     if (!inactiveWhy) {
       const names = this.rsNamesOf(rs);
       if (record.aud && record.aud.length &&
@@ -242,12 +266,24 @@ class GnapRs {
       return { ok: true, status: 200, body: { active: false } };
     }
     monitor.record(rs.identifier, 'rs.introspection_active', {});
-    const answer: any = { active: true, access: record.access,
+    // FILTERED PER RESOURCE SERVER (#432 phase 4; RFC 9767 section 3.3 lets
+    // the AS limit what it returns): a right of a type ANOTHER resource
+    // server owns is withheld, and the person's claims this one's types
+    // declare in `introspectionClaims` are added below — never in place of a
+    // member the response already carries (the catalogue refuses those
+    // names, and `status` among them).
+    const view = this.deps.rights.introspection(record, rs);
+    const answer: any = { active: true, access: view.rights,
                           iss: record.iss };
     if (record.key && (record.flags || []).indexOf('bearer') < 0) {
       answer.key = record.key;
     }
-    ['flags', 'exp', 'iat', 'nbf', 'sub', 'label'].forEach(function (name) {
+    // `act` (#432): a DERIVED token's actor chain, RFC 8693 section 4.1's
+    // shape — what RFC 7662 section 2.2 lets an introspection response carry
+    // of the token, and what a resource server that cannot read the format
+    // needs to know who acted.
+    ['flags', 'exp', 'iat', 'nbf', 'sub', 'label', 'act'].forEach(function (
+        name) {
       if (record[name] !== undefined && record[name] !== null &&
           !(Array.isArray(record[name]) && !record[name].length)) {
         answer[name] = record[name];
@@ -257,10 +293,25 @@ class GnapRs {
       answer.aud = record.aud.length === 1 ? record.aud[0] : record.aud;
     }
     answer.instance_id = record.instanceId;
+    // THE GRANT THE TOKEN SPENDS AGAINST (#432 phase 5): a right's `limits`
+    // (returned above, in `access`, as the token states them) are totals the
+    // RESOURCE SERVER keeps per grant (rcbj's decision 2), so it is told
+    // which grant — the same across a rotation, and for a DERIVED token the
+    // grant of the token it was derived from, so a derivation is not a
+    // second budget. RFC 7662 section 2.2 lets the response carry it; the
+    // registry names no member, and `grant_id` is RFC 9635's own word.
+    if (record.grant || record.grantId) {
+      answer.grant_id = record.grant || record.grantId;
+    }
     // RFC 9767 section 2.2: "The AS can return the token's format in an
     // introspection response". The registry names no member for it; `format`
     // is the obvious spelling and is what this AS uses.
     answer.format = record.format;
+    Object.keys(view.claims || {}).forEach(function (name: string): void {
+      if (answer[name] === undefined) {
+        answer[name] = view.claims[name];
+      }
+    });
     log.debug("Leaving GnapRs.introspect(). Active.");
     return { ok: true, status: 200, body: answer };
   }
@@ -346,15 +397,31 @@ class GnapRs {
                            denied[0].type) + '".',
                           'invalid_access');
     }
+    // THE OWNERS (#432 phase 5): each must be a person or a group in this
+    // realm's directory, or no person could ever be found to match it and
+    // every right naming the identifier would be refused for a typo.
+    const owners = asked.resourceOwners || null;
+    const ownerIds = owners ? Object.keys(owners) : [];
+    for (let i = 0; i < ownerIds.length; i++) {
+      if (!this.deps.ownership.ownerKind(owners[ownerIds[i]])) {
+        log.debug("Leaving GnapRs.register(). An owner names nobody.");
+        return this.refusal('STS-GNAP-0865', 'the owner of "' +
+                            ownerIds[i].slice(0, 80) + '" is not the DN of a ' +
+                            'person or a group in this realm\'s directory ' +
+                            '(resource_owners).', 'invalid_request');
+      }
+    }
     const canonical = grants.canonicalJson({ access: asked.access,
-                                             formats: formats });
+                                             formats: formats,
+                                             owners: owners });
     let row: any = store.resourceByCanonical(canonical, rs.identifier);
     if (!row) {
       row = store.putResource(store.mint(12), {
         canonical: canonical, rsIdentity: rs.identifier,
         rsIdentifier: rs.identifier,
         access: asked.access, tokenFormats: formats,
-        introspectionRequired: asked.introspectionRequired
+        introspectionRequired: asked.introspectionRequired,
+        resourceOwners: owners
       });
       monitor.record(rs.identifier, 'rs.registration', {});
     }
@@ -377,7 +444,8 @@ class GnapRs {
       outcome: 'success', actor: rs.identifier, target: rs.identifier,
       summary: 'A resource server registered a GNAP resource set',
       detail: { reference: row.reference, rights: asked.access.length,
-                formats: (formats || []).join(',') } });
+                formats: (formats || []).join(','),
+                owners: ownerIds.length } });
     log.debug("Leaving GnapRs.register(). reference=" + row.reference);
     return { ok: true, status: 200, body: response };
   }
@@ -481,6 +549,16 @@ class GnapRs {
                           'the access token is ' + (problem === 'unknown'
         ? 'not one this authorization server issued' : problem) + '.',
                           'invalid_token', 401);
+    }
+    // #432: the check at use, synchronous like the rest of this half
+    // (`ssf/ssf_auth.ts` calls it that way).
+    const ended = this.deps.revocation.tokenProblem(record);
+    if (ended) {
+      log.debug("Leaving GnapRs.presentation(). " + ended.why);
+      return this.refusal(ended.code === 'STS-GNAP-0730' ? 'STS-GNAP-0734'
+                                                         : 'STS-GNAP-0735',
+                          'the access token is no longer active: ' +
+                          ended.why + '.', 'invalid_token', 401);
     }
     const bearer = (record.flags || []).indexOf('bearer') >= 0;
     // Section 7.2: a bearer token "MUST be sent using the Authorization
@@ -638,7 +716,10 @@ class GnapRs {
       tokens: tokens,
       monitor: monitor,
       grants: grants,
-      accessRights: accessRights
+      accessRights: accessRights,
+      revocation: revocation,
+      rights: gnapRights,
+      ownership: ownership
     };
   }
 }

@@ -1236,6 +1236,32 @@ function issuesThroughUndeclaredProtocols() {
   return !isProduct();
 }
 
+// Is a GNAP access right of a type NO resource server declares granted
+// (#432 phase 4, 2026-10-03)? Development says yes: a client is exercised with
+// whatever right a tester types, and a type nobody catalogued is still a
+// right RFC 9635 section 8 lets an API define for itself. Product says no:
+// the access-type catalogue (`oauthAuthorizationDetailsType` on the resource
+// application) is the administrator's statement of which kinds of access
+// exist, and the issuance policy's `gnap-type-not-catalogued` rule refuses
+// the rest at the grant endpoint (STS-GNAP-0810). RFC 9396 is NOT behind this
+// predicate: section 5 makes an unknown authorization_details type a refusal
+// in every mode, and `authorization_details.ts` refuses it so. A reference
+// string (section 8.1) is a different question:
+// `gnap.unknownAccessReferences`.
+// The policy reads the realm's mode itself; this is the same question asked
+// for the pages that SAY which answer applies (the console's Access types tab).
+/**
+ * Tells whether a GNAP access right of a type no resource server declares in
+ * the access-type catalogue is granted.
+ *
+ * @returns true in development mode
+ */
+function grantsUncataloguedAccess() {
+  log.debug("Entering grantsUncataloguedAccess().");
+  log.debug("Leaving grantsUncataloguedAccess().");
+  return !isProduct();
+}
+
 // Is a delegated permission the client has NOT been granted honoured anyway
 // (#110, 2026-09-22)? Development says yes unless
 // `oauth2.delegatedPermissionsEnforced` is set, because a client is exercised
@@ -2089,6 +2115,18 @@ const REQUIREMENTS = [
              'nothing is not refused.',
     where: 'common/issuance_gate.js, xacml/xacml_role_pep.ts, ' +
            'xacml/xacml_templates.ts' },
+  { id: 'uncatalogued-access',
+    what: 'A GNAP access right is granted only of a type the access-type ' +
+          'catalogue declares',
+    development: 'A right of a type no resource application declares ' +
+                 '(oauthAuthorizationDetailsType) is granted as the client ' +
+                 'asked for it.',
+    product: 'The issuance policy\'s gnap-type-not-catalogued rule refuses ' +
+             'it at the grant endpoint (request_denied, STS-GNAP-0810). RFC ' +
+             '9396 authorization_details refuse an undeclared type in both ' +
+             'modes, as section 5 requires.',
+    where: 'gnap/gnap_rights.ts, xacml/xacml_templates.ts, ' +
+           'oauth-oidc/authorization_details.ts' },
   { id: 'delegated-permissions',
     what: 'A delegated permission is issued only to a client granted it',
     development: 'An ungranted permission is honoured and recorded as ' +
@@ -3581,6 +3619,7 @@ module.exports = {
   authorizesDelegation: authorizesDelegation,
   grantsUndeclaredScopes: grantsUndeclaredScopes,
   issuesThroughUndeclaredProtocols: issuesThroughUndeclaredProtocols,
+  grantsUncataloguedAccess: grantsUncataloguedAccess,
   honoursUngrantedPermissions: honoursUngrantedPermissions,
   enrolsKeysOnFirstUse: enrolsKeysOnFirstUse,
   acceptsUnverifiedAttestation: acceptsUnverifiedAttestation,

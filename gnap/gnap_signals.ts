@@ -31,7 +31,23 @@
 //      token revoked is a `session-revoked` whose session is that token, and a
 //      grant modified onto different rights is a `token-claims-change`
 //      carrying the new `access`.
-//   4. NOT: signals revoking grants. Nothing here listens to CAEP or RISC.
+//   4. ~~NOT: signals revoking grants.~~ REVERSED 2026-10-03 (#432, rcbj's
+//      decision 1): a federation partner's verified CAEP or RISC event about
+//      a person may end their grants, as the `signal-response` policy's
+//      `signal-revoke-grants` permits and `ssf.signalsRevokeGrants` allows.
+//      Not here — this file still listens to nothing: the receiver is
+//      `ssf/ssf_transmitters.ts`, and what ends a grant is
+//      `gnap_revocation.ts` (`gnap/CLAUDE.md`, *Shared Signals*).
+//   5. **A REGISTERED RESOURCE SERVER OWNS A STREAM TOO (#432, 2026-10-03)**,
+//      through the same `gnap` scheme, and hears `session-revoked` for
+//      `gnap-token:<jti>` and `gnap-grant:<id>` — but only about tokens
+//      AUDIENCED TO IT (RFC 9767 section 6.3's resource server that checks a
+//      token on its own, given a push instead of a poll of introspection).
+//      See `rsCovers()`. Because such a server must hear about a token that
+//      has no resource owner as well — a client acting for itself — an event
+//      about a GNAP session with nobody behind it is now SENT, its complex
+//      subject carrying the session alone; a person's stream (#336) and a web
+//      application's (above) name a user, so neither takes it.
 //
 // **THE SUBJECT IS A COMPLEX ONE, `user` + `session`**, with the session id
 // prefixed `gnap-grant:` or `gnap-token:` — the same shape `caep.subjectFor()`
@@ -87,6 +103,8 @@ interface GnapSignalsDeps {
   loadSsf(): any;
   loadApplications(): any;
   loadSsfStreams(): any;
+  // The token and grant records an RS stream's scope reads (#432).
+  loadStore(): any;
 }
 
 // WHO APPROVED WHICH APPLICATION, for the scope. The durable record is the
@@ -182,6 +200,13 @@ class GnapSignals {
   private subjectFor(req: unknown, username: string, sessionId: string) {
     const { log, userFor, loadSsfHttp } = this.deps;
     log.debug("Entering GnapSignals.subjectFor().");
+    if (!username) {
+      // A GNAP session nobody approved (a client instance acting for itself,
+      // #432): the session alone, which is all there is to name.
+      log.debug("Leaving GnapSignals.subjectFor(). The session alone.");
+      return { format: 'complex',
+               session: { format: 'opaque', id: sessionId } };
+    }
     const transport = loadSsfHttp();
     log.debug("Leaving GnapSignals.subjectFor().");
     // SSF 1.0 final's complex subject, `"format": "complex"` included.
@@ -197,12 +222,19 @@ class GnapSignals {
   // Deliver one CAEP event to every stream that takes it. Never rejects.
   private emit(req: unknown, type: string, username: string,
                sessionId: string, values: object,
-               reason: string): Promise<any> {
+               reason: string, entity?: string): Promise<any> {
     const { log, errorCodes, config, loadSsf } = this.deps;
     log.debug("Entering GnapSignals.emit(). type=" + type);
-    if (!username || config.value('gnap.caepEvents') === false) {
-      log.debug("Leaving GnapSignals.emit(). No resource owner, or GNAP " +
-                "CAEP events are off.");
+    if (config.value('gnap.caepEvents') === false) {
+      log.debug("Leaving GnapSignals.emit(). GNAP CAEP events are off.");
+      return Promise.resolve({ sent: 0 });
+    }
+    // An event with no resource owner went nowhere until #432; a registered
+    // resource server's stream needs it (see the header, item 5). A
+    // token-claims-change still needs a person: it is about what THEY
+    // granted, and a resource server learns new access from the token.
+    if (!username && type !== 'session-revoked') {
+      log.debug("Leaving GnapSignals.emit(). No resource owner.");
       return Promise.resolve({ sent: 0 });
     }
     let ssf;
@@ -225,7 +257,10 @@ class GnapSignals {
     return Promise.resolve(ssf.emitProtocolEvent({
       req: req, protocol: 'GNAP', type: type,
       subject: this.subjectFor(req, username, sessionId),
-      values: values || {}, initiatingEntity: 'system',
+      // CAEP section 2's initiating entity: what the caller states (#432 —
+      // an administrator, a sign-out, a policy), `system` where it says
+      // nothing, which is every end the protocol itself makes.
+      values: values || {}, initiatingEntity: entity || 'system',
       reasonAdmin: reason, reasonUser: reason
     })).catch(function (e) {
       log.debug("Caught in GnapSignals.emit(): " + ((e && e.message) || e));
@@ -242,15 +277,17 @@ class GnapSignals {
    * @param req - the request that revoked it
    * @param grant - the grant
    * @param reason - why it was revoked
+   * @param entity - CAEP's initiating entity; `system` when not given
    * @returns the delivery's promise
    */
-  grantRevoked(req: unknown, grant: any, reason?: string): Promise<any> {
+  grantRevoked(req: unknown, grant: any, reason?: string,
+               entity?: string): Promise<any> {
     const { log } = this.deps;
     log.debug("Entering GnapSignals.grantRevoked().");
     log.debug("Leaving GnapSignals.grantRevoked().");
     return this.emit(req, 'session-revoked', grant.ro && grant.ro.username,
                      'gnap-grant:' + grant.id, {},
-                     reason || 'A GNAP grant was revoked.');
+                     reason || 'A GNAP grant was revoked.', entity);
   }
 
   /**
@@ -366,7 +403,10 @@ class GnapSignals {
       // No registry: no opinion.
       return undefined;
     }
-    if (!app || (app.kinds || []).indexOf('gnap-client') < 0) {
+    const kinds = (app && app.kinds) || [];
+    const isClient = kinds.indexOf('gnap-client') >= 0;
+    const isRs = kinds.indexOf('gnap-resource-server') >= 0;
+    if (!app || (!isClient && !isRs)) {
       log.debug("Leaving GnapSignals.scope().");
       return undefined;
     }
@@ -378,15 +418,95 @@ class GnapSignals {
     // A WEB APPLICATION is the population the user named: a client that
     // finishes an interaction in a browser or by push has a finish URI on its
     // entry.
-    if (!fields.gnapFinishUri ||
-        (Array.isArray(fields.gnapFinishUri) &&
-         !fields.gnapFinishUri.length)) {
-      log.debug("Leaving GnapSignals.scope().");
-      return undefined;
+    const isWebApp = isClient && !!fields.gnapFinishUri &&
+      !(Array.isArray(fields.gnapFinishUri) && !fields.gnapFinishUri.length);
+    // AN ENTRY THAT IS BOTH takes what EITHER rule covers: what its users
+    // approved, and the tokens audienced to it. Each rule only ever takes
+    // events away from an unscoped stream, so their union is still narrower
+    // than no scope, and neither widens the other's population.
+    const verdicts: boolean[] = [];
+    if (isWebApp) {
+      const username = this.usernameOf(subjectValue);
+      verdicts.push(username ? this.approvedBy(app.identifier, username)
+                             : false);
     }
-    const username = this.usernameOf(subjectValue);
-    log.debug("Leaving GnapSignals.scope().");
-    return username ? this.approvedBy(app.identifier, username) : false;
+    if (isRs) {
+      verdicts.push(this.rsCovers(app, subjectValue));
+    }
+    log.debug("Leaving GnapSignals.scope(). " + verdicts.join(','));
+    return verdicts.length ? verdicts.some(Boolean) : undefined;
+  }
+
+  // ---------------------------------------------------------------------------
+  // A RESOURCE SERVER'S STREAM (#432): an event whose session is a GNAP token
+  // AUDIENCED TO THIS RESOURCE SERVER, or a GNAP grant one of whose tokens
+  // was — and nothing else. Audienced means what `gnap_grants.ts` recorded
+  // when it minted the token: the resource server's identifier among the
+  // token's `rsIdentifiers` (the servers its access resolved to), or its
+  // identifier or one of its `gnapResourceServerUri`s in the token's `aud`.
+  // A person's other sessions, RISC about accounts, and every GNAP token for
+  // another server are refused: a resource server is told about the tokens
+  // it may be shown, which is what RFC 9767 section 6.3's self-checking
+  // server needs and no more (SSF 1.0 section 10.1: "only authorized
+  // parties").
+  // ---------------------------------------------------------------------------
+  /**
+   * Says whether an event's subject is a GNAP token or grant audienced to a
+   * resource server.
+   *
+   * @param app - the resource server's application entry
+   * @param subjectValue - the event's subject
+   * @returns true when the session is a token or grant audienced to it
+   */
+  rsCovers(app: any, subjectValue: any): boolean {
+    const { log, loadStore } = this.deps;
+    log.debug("Entering GnapSignals.rsCovers().");
+    const session = subjectValue && subjectValue.format === 'complex'
+      ? subjectValue.session : null;
+    const id = String((session && session.id) || '');
+    const match = /^gnap-(token|grant):(.+)$/.exec(id);
+    if (!match) {
+      log.debug("Leaving GnapSignals.rsCovers(). Not a GNAP session.");
+      return false;
+    }
+    let store = null;
+    try {
+      store = loadStore();
+    } catch (e) {
+      log.debug("Caught in GnapSignals.rsCovers(): " +
+                ((e && e.message) || e));
+      // No GNAP store here: nothing can be shown to be audienced to it.
+      log.debug("Leaving GnapSignals.rsCovers(). No store.");
+      return false;
+    }
+    const names = [String(app.identifier)].concat(
+      [].concat((app.fields || {}).gnapResourceServerUri || [])
+        .map(function (one: unknown): string {
+          return String(one);
+        }));
+    const audiencedTo = function (record: any): boolean {
+      if (!record) {
+        return false;
+      }
+      const servers = [].concat(record.rsIdentifiers || []);
+      const aud = [].concat(record.aud || []);
+      return servers.indexOf(String(app.identifier)) >= 0 ||
+        aud.some(function (one: unknown): boolean {
+          return names.indexOf(String(one)) >= 0;
+        });
+    };
+    let covered = false;
+    if (match[1] === 'token') {
+      covered = audiencedTo(store.tokenByJti(match[2]));
+    } else {
+      const grant = store.getGrant(match[2]);
+      covered = !!grant && [].concat(grant.tokens || [])
+        .some(function (jti: unknown): boolean {
+          return audiencedTo(store.tokenByJti(String(jti)));
+        });
+    }
+    log.debug("Leaving GnapSignals.rsCovers(). " + covered);
+    return covered;
   }
 
   /**
@@ -449,6 +569,9 @@ class GnapSignals {
       },
       loadSsfStreams: function () {
         return require('../ssf/ssf_streams');
+      },
+      loadStore: function () {
+        return require('./gnap_store');
       }
     };
   }
@@ -497,6 +620,7 @@ export = {
   tokenRevoked: slot.forward('tokenRevoked'),
   grantModified: slot.forward('grantModified'),
   scope: slot.forward('scope'),
+  rsCovers: slot.forward('rsCovers'),
   usernameOf: slot.forward('usernameOf'),
   install: slot.forward('install')
 };

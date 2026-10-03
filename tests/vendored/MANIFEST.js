@@ -335,12 +335,37 @@ const JOBS = [
   { file: 'sts_gnap_core.js',            browser: false, local: true },
   { file: 'sts_gnap_rs.js',              browser: false, local: true },
   { file: 'sts_gnap_signals.js',         browser: false, local: true },
+  // #432: the access-token status list from OAuth's side — an RFC 9068
+  // token's status claim, the list fetched, verified and read by the job's
+  // own code, and the bit set by RFC 7009 revocation. `local: true` on the
+  // second question: asserted over HTTP, so written here. GNAP's half is
+  // `sts_gnap_rs.js` section 8.
+  { file: 'sts_access_token_status.js',  browser: false, local: true },
   // #107: a key proved by mutual TLS under the pinned and PKI trust models,
   // revocation in both, the binding to an application entry, rotation at the
   // authority, the per-client override and the product default. Presents
   // client certificates on the main port; the foreign leaf names a CRL this
   // job serves (test_crl_host.js).
   { file: 'sts_gnap_mtls.js',            browser: false, local: true },
+  // #432 phase 1: GNAP impersonation by user assertion and RFC 9767
+  // derivation asked of #186's delegation policy, in whichever mode the
+  // service is in — product's refusals by their audited codes, development's
+  // "would have been refused" — the act chain on a derived token, the depth
+  // cap, and the acts on /admin-api/delegation. A throwaway realm left behind.
+  { file: 'sts_gnap_delegation.js',      browser: false, local: true },
+  { file: 'sts_gnap_catalogue.js',       browser: false, local: true },
+  // #432 phase 5: an identifier's owner from a registered resource set
+  // (a non-owner refused on the approval page, a group member approving),
+  // a limit lowered on the page and read off the token by the job, and the
+  // demonstration resource server spending to the limit, refunding a failed
+  // operation and refusing past it. A throwaway realm left behind.
+  { file: 'sts_gnap_limits.js',          browser: false, local: true },
+  // #432 phase 6: per-type interaction (never, always, a consent action)
+  // against a client trusted to skip, a remembered approval not standing in
+  // for always, the step-up an mfa type demands and its refusal, and
+  // approval by an absent owner on /portal/ciba while the client polls. A
+  // throwaway realm left behind.
+  { file: 'sts_gnap_interaction.js',     browser: false, local: true },
   // CERTIFICATE ENROLLMENT (2026-09-13): ACME, EST and SCEP, each driven by an
   // independent client written from its RFC with no code from acme/, est/ or
   // scep/, each in a throwaway realm it leaves behind.

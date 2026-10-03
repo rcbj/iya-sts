@@ -618,6 +618,100 @@ function checkScopes(request) {
 }
 
 // ---------------------------------------------------------------------------
+// THE PER-RIGHT GNAP QUESTION (#432 phase 3): which access rights a GNAP
+// grant issues, narrowed how, in a token that lives how long. `request` is
+// the question `xacml/xacml_gnap_right_verdicts.ts` asks — `{ subject,
+// protocol, mode, stage, settings, rights: [gnapRight() facts] }` — the
+// FACTS, gathered by `gnap/gnap_rights.ts`; this answers `{ verdicts: [{ id,
+// verdict, code, drop, maxLifetimeS, decidedBy }] }`, verdict `keep`,
+// `narrow` or `refuse`. The scope question's arrangement exactly: with no
+// decider, or one that throws or answers nothing, the built-in policy decides
+// through the same library. Not a member of `ISSUANCE`, for the scope
+// question's reason: it decides WHAT is in a token whose issuance
+// `check()` still decides.
+// ---------------------------------------------------------------------------
+function builtInGnapRightVerdicts(asked, why) {
+  log.debug('Entering builtInGnapRightVerdicts().');
+  let verdicts;
+  try {
+    verdicts = require('../xacml/xacml_gnap_right_verdicts')
+      .decide(asked, null, {});
+  } catch (error) {
+    // THE ENGINE ITSELF COULD NOT BE LOADED OR RUN — a defect, and a right
+    // is not issued because the engine broke.
+    log.error(errorCodes.tag('STS-XACML-0168') + 'issuance_gate: the ' +
+              'built-in issuance policy could not be evaluated for the GNAP ' +
+              'right question; every right is refused. ' +
+              ((error && error.message) || error));
+    verdicts = (asked.rights || []).map(function (one) {
+      return { id: String((one && one.right && one.right.id) || ''),
+               verdict: 'refuse', code: 'STS-GNAP-0816',
+               drop: { actions: [], locations: [], datatypes: [],
+                       privileges: [] },
+               maxLifetimeS: null, decidedBy: 'none' };
+    });
+  }
+  log.debug('Leaving builtInGnapRightVerdicts().');
+  return { verdicts: verdicts, why: why, policy: 'built-in' };
+}
+
+/**
+ * Puts the per-right GNAP question (#432 phase 3) to the issuance policy,
+ * with the facts `gnap/gnap_rights.ts` gathered.
+ *
+ * Never throws and never returns a promise. With no decider, or a decider
+ * that throws or answers no verdicts, the built-in policy decides.
+ *
+ * @param request - `{ subject, protocol, mode, stage, settings, rights }`
+ * @returns `{ verdicts, why, policy }`
+ */
+function checkGnapRights(request) {
+  log.debug('Entering checkGnapRights().');
+  const asked = Object.assign({}, request || {});
+  asked.rights = Array.isArray(asked.rights) ? asked.rights : [];
+  if (!asked.rights.length) {
+    log.debug('Leaving checkGnapRights(). Nothing asked.');
+    return { verdicts: [], why: '' };
+  }
+  if (!decider) {
+    log.debug('Leaving checkGnapRights(). No decider: the built-in policy.');
+    return builtInGnapRightVerdicts(asked, 'No XACML family is loaded in ' +
+                                    'this process; the built-in policy ' +
+                                    'decided.');
+  }
+  let answer;
+  try {
+    answer = decider({
+      kind: 'issue-gnap-right',
+      application: '',
+      subject: asked.subject || {},
+      protocol: asked.protocol || 'GNAP',
+      claims: null,
+      risk: null,
+      rolesWaived: true,
+      gnapRightQuestion: asked
+    });
+  } catch (error) {
+    log.error(errorCodes.tag('STS-XACML-0052') +
+              'issuance_gate: the decider threw on the GNAP right question; ' +
+              'the built-in policy decides instead. This is a defect in the ' +
+              'embedded PEP rather than a decision. ' + error.message);
+    log.debug('Leaving checkGnapRights(). The decider threw.');
+    return builtInGnapRightVerdicts(asked, 'The embedded PEP threw: ' +
+                                    error.message);
+  }
+  const verdicts = answer && Array.isArray(answer.gnapRights)
+    ? answer.gnapRights : null;
+  if (!verdicts) {
+    log.debug('Leaving checkGnapRights(). The PEP answered no verdicts.');
+    return builtInGnapRightVerdicts(asked, 'The embedded PEP answered no ' +
+                                    'verdicts.');
+  }
+  log.debug('Leaving checkGnapRights(). ' + verdicts.length + ' verdict(s).');
+  return { verdicts: verdicts, why: '', policy: answer.policy || '' };
+}
+
+// ---------------------------------------------------------------------------
 // THE TRANSFER QUESTIONS (#98 D4, the design's section 6): action-ids
 // `hold-session`, `serve-request` and `release-attributes`, asked by
 // `common/cell_transfer.ts` when the service is deployed as cells.
@@ -901,10 +995,14 @@ module.exports = {
   deciderInstalled: deciderInstalled,
   check: check,
   checkScopes: checkScopes,
+  checkGnapRights: checkGnapRights,
   PROTOCOL_OF_KIND: PROTOCOL_OF_KIND,
   FAMILIES_OF_KIND: FAMILIES_OF_KIND,
   deviceFactsOf: deviceFactsOf,
   deviceRequirementOf: deviceRequirementOf,
+  // #432 phase 3: the GNAP right question gathers the same risk facts a
+  // token's issuance is decided on.
+  riskFactsOf: riskFactsOf,
   EXCHANGE: EXCHANGE,
   checkExchange: checkExchange,
   TRANSFER: TRANSFER,

@@ -287,6 +287,54 @@ const SCOPE_ATTRIBUTE = {
 };
 
 // ---------------------------------------------------------------------------
+// THE PER-RIGHT VERDICT FOR GNAP (#432 phase 3). `gnap/gnap_rights.ts` asks
+// one question per access right, action-id `issue-gnap-right` and the right's
+// type (or reference string) as the resource-id, with the facts
+// `xacml_request.js`'s `gnapRight()` spells; the answer carries this
+// obligation, on a Permit as well as a Deny (the scope verdict's reason: a
+// document with no GNAP rules says nothing, and the BUILT-IN policy is asked
+// instead):
+//
+//   VERDICT       keep, narrow or refuse
+//   CODE          the error code a refusal records
+//   DROP_*        each one value a NARROW takes off the right — an action, a
+//                 location, a datatype or a privilege; several assignments
+//                 for several values
+//   MAX_LIFETIME  seconds: the token carrying the right lives no longer
+//
+// Several Permit rules may apply and each carries its own obligation: the
+// reader MERGES them — refuse over narrow over keep, the drops unioned, the
+// shortest lifetime — so a lifetime rule and an operator's narrowing rule
+// both take effect.
+// ---------------------------------------------------------------------------
+const GNAP_RIGHT_ATTRIBUTE = {
+  ACTION: 'issue-gnap-right',
+  OBLIGATION: 'urn:sts:xacml:obligation:gnap-right',
+  VERDICT: 'urn:sts:xacml:gnap-right-verdict',
+  CODE: 'urn:sts:xacml:gnap-right-code',
+  DROP_ACTION: 'urn:sts:xacml:gnap-right-drop-action',
+  DROP_LOCATION: 'urn:sts:xacml:gnap-right-drop-location',
+  DROP_DATATYPE: 'urn:sts:xacml:gnap-right-drop-datatype',
+  DROP_PRIVILEGE: 'urn:sts:xacml:gnap-right-drop-privilege',
+  MAX_LIFETIME: 'urn:sts:xacml:gnap-right-max-lifetime',
+  // #432 PHASE 6: whether the right may be issued without its resource
+  // owner, and the authentication level an approval of it needs.
+  //   INTERACTION   none (may be issued with nobody asked — the type is
+  //                 `never`), skippable (a client trusted to skip the page,
+  //                 `gnapSkipInteraction`, may; a remembered approval
+  //                 counts) or always (the person sees the page, every time)
+  //   REQUIRED_ACR  an acr value (RFC 9470's levels, `step_up.ts`) the
+  //                 session approving the right must meet; several
+  //                 assignments for several, every one required
+  // No INTERACTION stated is `skippable`, the rule before #432. The reader
+  // merges the most demanding: always over skippable over none.
+  INTERACTION: 'urn:sts:xacml:gnap-right-interaction',
+  REQUIRED_ACR: 'urn:sts:xacml:gnap-right-acr',
+  INTERACTIONS: ['none', 'skippable', 'always'],
+  VERDICTS: ['keep', 'narrow', 'refuse']
+};
+
+// ---------------------------------------------------------------------------
 // THE TRANSFER QUESTIONS (#98 D4, the design's section 6: "geofencing is
 // policy, not code"). When the service is deployed as CELLS — each in one
 // legal jurisdiction, each person homed in one — three questions go to the
@@ -648,7 +696,13 @@ const SIGNAL_RESPONSE = {
   DISABLE_ACCOUNT: 'signal-disable-account',
   ENABLE_ACCOUNT: 'signal-enable-account',
   // CAEP device-compliance-change, onto the device register (#164, #374).
-  SET_DEVICE_COMPLIANCE: 'signal-set-device-compliance'
+  SET_DEVICE_COMPLIANCE: 'signal-set-device-compliance',
+  // REVOKE THE PERSON'S GRANTS (#432, rcbj's decision 1): every GNAP grant
+  // they approved and every OAuth grant, token and code held for them — or,
+  // for a `session-revoked`, what was issued on the sessions that partner
+  // started. Sessions are other reactions' business. `ssf.signalsRevokeGrants`
+  // turns the reaction off whatever this permits.
+  REVOKE_GRANTS: 'signal-revoke-grants'
 };
 
 // ---------------------------------------------------------------------------
@@ -880,6 +934,26 @@ const TEMPLATES: TemplateRow[] = [
               'scope is kept. No leaves the rules out — and the PEP then ' +
               'asks the BUILT-IN policy about scopes instead, so role ' +
               'gating is never switched off by rebuilding this document.' },
+      { name: 'decideGnapRights',
+        label: 'Decide each GNAP access right (#432)',
+        dflt: 'yes', type: 'string',
+        help: 'yes or no. When yes, the policy answers the GNAP grant ' +
+              'engine\'s per-right question (action-id issue-gnap-right): ' +
+              'a bearer token the realm (gnap.bearerTokens) or the client ' +
+              '(gnapBearerTokens) refuses, one of this service\'s ' +
+              'protected scopes the client does not declare, a right its ' +
+              'gnapAllowedAccess does not list, an unregistered reference ' +
+              'where gnap.unknownAccessReferences refuses one, and — in ' +
+              'product mode — a type the access-type catalogue does not ' +
+              'declare are REFUSED; a type declaring bearer: false refuses ' +
+              'a bearer token; a type declaring maxLifetimeS caps the ' +
+              'token; a type\'s interaction (never, always) and ' +
+              'consentActions say whether its resource owner must be ' +
+              'asked, and its acr what their session must meet (#432 ' +
+              'phase 6); everything else is kept. No leaves the rules out — ' +
+              'and the grant engine then asks the BUILT-IN policy instead, ' +
+              'so the rules are never switched off by rebuilding this ' +
+              'document.' },
       { name: 'decideTransfers',
         label: 'Decide where a traveller\'s session may be held (#98)',
         dflt: 'yes', type: 'string',
@@ -1014,6 +1088,7 @@ const TEMPLATES: TemplateRow[] = [
       const decideDevices = B.yes(given.decideDevices, true);
       const decideProtocols = B.yes(given.decideProtocols, true);
       const decideScopes = B.yes(given.decideScopes, true);
+      const decideGnapRights = B.yes(given.decideGnapRights, true);
       const decideTransfers = B.yes(given.decideTransfers, true);
       const decideExchanges = B.yes(given.decideExchanges, true);
       const deviceExempt = B.listOf(given.deviceExempt === undefined
@@ -1618,6 +1693,209 @@ const TEMPLATES: TemplateRow[] = [
            advice: [] }]) : [];
 
       // -------------------------------------------------------------------
+      // THE GNAP RIGHT RULES (#432 phase 3), targeted at `issue-gnap-right`,
+      // so no other question reaches them and they reach no other question.
+      // They RE-EXPRESS what `gnap_grants.ts` decided in code before #432 —
+      // the bearer flag (section 2.1.1), this service's protected scopes
+      // (#110), gnapAllowedAccess, an unknown reference — and add the
+      // access-type catalogue's: an uncatalogued type in product mode, a
+      // type refusing a bearer token, a type's maximum lifetime. The Denies
+      // in the order the code asked them, so the refusal a client hears is
+      // the one it heard; then the two Permits, whose obligations the reader
+      // merges. A fact absent from the question makes its rule inapplicable
+      // (`fact()` over an empty bag), so a realm's rule may read any fact
+      // and the built-in ones never fire on what nobody sent.
+      // -------------------------------------------------------------------
+      const GR = GNAP_RIGHT_ATTRIBUTE;
+      const GV = xacmlRequest.VOCABULARY;
+      const gnapTarget = B.targetOf([[
+        B.match(F1 + 'string-equal', B.value(TYPE.STRING, GR.ACTION),
+                B.designator(model.CATEGORY.ACTION,
+                             model.ATTRIBUTE.ACTION_ID, TYPE.STRING))]]);
+      const rightVerdict = function (on: string, value: string,
+                                     code: string, extra?: any[]): any[] {
+        log.debug("Entering rightVerdict().");
+        const assignments: any[] = [{ attributeId: GR.VERDICT,
+          category: null, issuer: null,
+          expression: B.value(TYPE.STRING, value) }];
+        if (code) {
+          assignments.push({ attributeId: GR.CODE, category: null,
+            issuer: null, expression: B.value(TYPE.STRING, code) });
+        }
+        (extra || []).forEach(function (one: any): void {
+          assignments.push(one);
+        });
+        log.debug("Leaving rightVerdict().");
+        return [{ id: GR.OBLIGATION, on: on, assignments: assignments }];
+      };
+      const gnapRefusal = function (id: string, description: string,
+                                    condition: any, code: string): any {
+        log.debug("Entering gnapRefusal().");
+        log.debug("Leaving gnapRefusal().");
+        return { id: options.idBase + ':rule:' + id, effect: model.EFFECT.DENY,
+                 description: description, target: gnapTarget,
+                 condition: condition,
+                 obligations: rightVerdict(model.EFFECT.DENY, 'refuse', code),
+                 advice: [] };
+      };
+      // A Permit that keeps the right and states who must be asked (#432
+      // phase 6).
+      const gnapInteraction = function (id: string, description: string,
+                                        condition: any, value: string): any {
+        log.debug("Entering gnapInteraction().");
+        log.debug("Leaving gnapInteraction().");
+        return { id: options.idBase + ':rule:' + id,
+                 effect: model.EFFECT.PERMIT,
+                 description: description, target: gnapTarget,
+                 condition: condition,
+                 obligations: rightVerdict(model.EFFECT.PERMIT, 'keep', '', [
+                   { attributeId: GR.INTERACTION, category: null,
+                     issuer: null,
+                     expression: B.value(TYPE.STRING, value) }]),
+                 advice: [] };
+      };
+      const GA = model.CATEGORY.ACTION;
+      const GS = model.CATEGORY.ACCESS_SUBJECT;
+      const GE = model.CATEGORY.ENVIRONMENT;
+      const gnapRightRules: any[] = decideGnapRights ? [
+        gnapRefusal('gnap-bearer-refused', 'A bearer token (RFC 9635 ' +
+          'section 2.1.1) where the realm (gnap.bearerTokens) or the ' +
+          'client (gnapBearerTokens) refuses one.',
+          and([fact(GA, GV.GNAP_TOKEN_BEARER, true),
+               B.apply(F1 + 'or', [
+                 fact(GE, GV.SETTING_PREFIX + 'gnap.bearerTokens', false),
+                 fact(GS, GV.GNAP_CLIENT_BEARER_REFUSED, true)])]),
+          'STS-GNAP-0111'),
+        gnapRefusal('gnap-protected-undeclared', 'A right that is one of ' +
+          'this service\'s protected scopes (#110), for a client whose ' +
+          'entry does not declare it in oauthAllowedScope — in both modes.',
+          and([fact(R, GV.GNAP_PROTECTED, true),
+               fact(R, GV.GNAP_PROTECTED_DECLARED, false)]),
+          'STS-GNAP-0719'),
+        gnapRefusal('gnap-right-not-listed', 'A right the client\'s ' +
+          'gnapAllowedAccess does not list, where it lists any.',
+          and([fact(GS, GV.GNAP_CLIENT_HAS_ALLOWED_ACCESS, true),
+               fact(R, GV.GNAP_RIGHT_LISTED, false)]),
+          'STS-GNAP-0112'),
+        gnapRefusal('gnap-reference-unknown', 'A reference string (RFC ' +
+          '9635 section 8.1) that names no registered resource set, where ' +
+          'gnap.unknownAccessReferences refuses one and the client\'s ' +
+          'gnapAllowedAccess does not list it.',
+          and([stringIs(R, GV.GNAP_RIGHT_KIND, 'reference'),
+               fact(R, GV.GNAP_REFERENCE_REGISTERED, false),
+               stringIs(GE, GV.SETTING_PREFIX + 'gnap.unknownAccessReferences',
+                        'refuse'),
+               fact(R, GV.GNAP_RIGHT_LISTED, false)]),
+          'STS-GNAP-0112'),
+        gnapRefusal('gnap-type-not-catalogued', 'In product mode, a right ' +
+          'of a type the access-type catalogue does not declare (no ' +
+          'resource application\'s oauthAuthorizationDetailsType names ' +
+          'it).',
+          and([inProduct, stringIs(R, GV.GNAP_RIGHT_KIND, 'object'),
+               fact(R, GV.GNAP_CATALOGUED, false)]),
+          'STS-GNAP-0810'),
+        gnapRefusal('gnap-type-bearer-refused', 'A bearer token carrying a ' +
+          'right of a type the catalogue declares bearer: false.',
+          and([fact(GA, GV.GNAP_TOKEN_BEARER, true),
+               fact(R, GV.GNAP_TYPE_BEARER, false)]),
+          'STS-GNAP-0811'),
+        // #432 PHASE 5: THE RESOURCE OWNER. A right naming an identifier the
+        // resource server says somebody owns is granted only to that owner
+        // (or a member of that group) — RFC 9635 section 1.4 — at whichever
+        // stage the person is known: on the approval page, for a client
+        // that skips it with a verified assertion, for a derivation, and at
+        // issue. A realm's own policy may allow a delegate; this rule is
+        // what applies where it says nothing. And a resource server that
+        // declared an owner lookup and could not answer it has said the
+        // identifier HAS an owner: not knowing which is not permission.
+        gnapRefusal('gnap-owner-unresolved', 'A right naming an ' +
+          'identifier whose resource server declares an owner lookup ' +
+          '(gnapOwnerLookupUri) that could not be answered.',
+          fact(R, GV.GNAP_OWNER_UNRESOLVED, true),
+          'STS-GNAP-0863'),
+        gnapRefusal('gnap-owner-mismatch', 'A right naming an identifier ' +
+          'whose owner — on a registered resource set, or by the resource ' +
+          'server\'s lookup — is not the person the grant is for, nor a ' +
+          'group they are a member of.',
+          and([fact(R, GV.GNAP_OWNER_KNOWN, true),
+               fact(R, GV.GNAP_OWNER_MATCHES, false)]),
+          'STS-GNAP-0861'),
+        // -----------------------------------------------------------------
+        // #432 PHASE 6: WHO MUST BE ASKED, AND HOW STRONGLY SIGNED IN. The
+        // catalogue's `interaction`, `consentActions` and `acr`, until then
+        // facts nothing read, as Permits whose obligations the engine
+        // honours (`gnap_rights.ts` aggregates them, `gnap_grants.ts` acts
+        // on them). A realm tightens any of them with a rule of its own —
+        // `always` for a client class, an acr for an action — and the
+        // reader keeps the most demanding answer.
+        // -----------------------------------------------------------------
+        gnapInteraction('gnap-type-interaction-never', 'A right of a type ' +
+          'the catalogue declares interaction: never — a machine-to-machine ' +
+          'API nobody approves — may be issued with nobody asked.',
+          stringIs(R, GV.GNAP_TYPE_INTERACTION, 'never'), 'none'),
+        gnapInteraction('gnap-type-interaction-always', 'A right of a type ' +
+          'the catalogue declares interaction: always: its resource owner ' +
+          'sees the approval page every time — no client skips it and no ' +
+          'remembered approval stands in for it.',
+          stringIs(R, GV.GNAP_TYPE_INTERACTION, 'always'), 'always'),
+        gnapInteraction('gnap-type-consent-action', 'A right naming an ' +
+          'action the catalogue lists in consentActions — or naming no ' +
+          'actions, which is every action — needs its resource owner, as ' +
+          'interaction: always does.',
+          and([B.apply(F1 + 'integer-greater-than', [
+                 B.apply(F1 + 'string-bag-size', [
+                   B.designator(R, GV.GNAP_TYPE_CONSENT_ACTION,
+                                TYPE.STRING)]),
+                 B.value(TYPE.INTEGER, '0')]),
+               B.apply(F1 + 'or', [
+                 B.apply(F1 + 'string-at-least-one-member-of', [
+                   B.designator(R, GV.GNAP_RIGHT_ACTION, TYPE.STRING),
+                   B.designator(R, GV.GNAP_TYPE_CONSENT_ACTION,
+                                TYPE.STRING)]),
+                 B.apply(F1 + 'integer-equal', [
+                   B.apply(F1 + 'string-bag-size', [
+                     B.designator(R, GV.GNAP_RIGHT_ACTION, TYPE.STRING)]),
+                   B.value(TYPE.INTEGER, '0')])])]),
+          'always'),
+        { id: options.idBase + ':rule:gnap-type-acr',
+          effect: model.EFFECT.PERMIT,
+          description: 'A right of a type the catalogue declares an acr ' +
+                       'for: the session that approves it must meet that ' +
+                       'level (RFC 9470), and nothing is issued without ' +
+                       'one.',
+          target: gnapTarget,
+          condition: B.apply(F1 + 'integer-greater-than', [
+            B.apply(F1 + 'string-bag-size', [
+              B.designator(R, GV.GNAP_TYPE_ACR, TYPE.STRING)]),
+            B.value(TYPE.INTEGER, '0')]),
+          obligations: rightVerdict(model.EFFECT.PERMIT, 'keep', '', [
+            { attributeId: GR.REQUIRED_ACR, category: null, issuer: null,
+              expression: B.designator(R, GV.GNAP_TYPE_ACR, TYPE.STRING) }]),
+          advice: [] },
+        { id: options.idBase + ':rule:gnap-type-lifetime',
+          effect: model.EFFECT.PERMIT,
+          description: 'A right of a type the catalogue declares a ' +
+                       'maxLifetimeS for: the token carrying it lives no ' +
+                       'longer.',
+          target: gnapTarget,
+          condition: B.apply(F1 + 'integer-greater-than', [
+            B.apply(F1 + 'integer-bag-size', [
+              B.designator(R, GV.GNAP_TYPE_MAX_LIFETIME, TYPE.INTEGER)]),
+            B.value(TYPE.INTEGER, '0')]),
+          obligations: rightVerdict(model.EFFECT.PERMIT, 'keep', '', [
+            { attributeId: GR.MAX_LIFETIME, category: null, issuer: null,
+              expression: B.designator(R, GV.GNAP_TYPE_MAX_LIFETIME,
+                                       TYPE.INTEGER) }]),
+          advice: [] },
+        { id: options.idBase + ':rule:gnap-right-kept',
+          effect: model.EFFECT.PERMIT,
+          description: 'Keep every other GNAP access right.',
+          target: gnapTarget,
+          condition: null,
+          obligations: rightVerdict(model.EFFECT.PERMIT, 'keep', ''),
+          advice: [] }] : [];
+
+      // -------------------------------------------------------------------
       // THE TRANSFER RULES (#98 D4). Targeted at the two action-ids, so no
       // issuance question reaches them and they reach no other question —
       // and every rule above that has no target reads a fact a transfer
@@ -2064,6 +2342,14 @@ const TEMPLATES: TemplateRow[] = [
                           'consent; and on each RFC 9396 authorization ' +
                           'detail\'s type.'
                         : '') +
+                     (decideGnapRights
+                        ? ' AND ON EACH GNAP ACCESS RIGHT (#432): the ' +
+                          'bearer flag, the protected scopes, the client\'s ' +
+                          'gnapAllowedAccess, unknown references, and the ' +
+                          'access-type catalogue — an undeclared type ' +
+                          'refused in product mode, a type\'s bearer rule ' +
+                          'and its maximum token lifetime.'
+                        : '') +
                      (decideTransfers
                         ? ' AND, WHERE THE SERVICE IS DEPLOYED AS CELLS ' +
                           '(#98), WHERE A PERSON\'S DATA MAY GO: a session ' +
@@ -2086,7 +2372,7 @@ const TEMPLATES: TemplateRow[] = [
                         : ''),
         combiningAlgId: decideRisk || refuseEmail || decideDevices ||
                         decideProtocols || decideScopes || decideTransfers ||
-                        decideExchanges
+                        decideExchanges || decideGnapRights
           ? model.RULE_ALG.ORDERED_DENY_OVERRIDES
           : model.RULE_ALG.DENY_UNLESS_PERMIT,
         // NO TARGET, and that is deliberate rather than an omission: this
@@ -2099,6 +2385,7 @@ const TEMPLATES: TemplateRow[] = [
         variables: {},
         rules: deviceRules.concat(protocolRules).concat(riskRules)
           .concat(scopeRules)
+          .concat(gnapRightRules)
           .concat(transferRules)
           .concat(exchangeRules)
           .concat(decideRisk &&
@@ -2315,7 +2602,8 @@ const TEMPLATES: TemplateRow[] = [
     blurb: 'What a verified CAEP or RISC event leads to. This service\'s ' +
            'own console and portal end their own sessions for the person ' +
            'it names. A federation partner\'s events end the sessions that ' +
-           'partner started and block its sign-ins of the person, and a ' +
+           'partner started, revoke the person\'s GNAP and OAuth grants ' +
+           'and tokens, and block its sign-ins of the person, and a ' +
            'signals-only partner\'s are recorded — except a device\'s ' +
            'compliance, which is set.',
     what: 'Produces Permit rules under deny-unless-permit, one per ' +
@@ -2363,6 +2651,27 @@ const TEMPLATES: TemplateRow[] = [
         dflt: 'account-enabled', type: 'string',
         help: 'Comma separated short names. Only a block the same ' +
               'relationship\'s event put there is lifted.' },
+      // #432: a partner's word about a person reaches what they DELEGATED —
+      // the grants and tokens clients hold for them — and not only the
+      // sessions it started (rcbj's decision 1).
+      { name: 'partnerRevokeGrantEvents',
+        label: 'A partner\'s events that revoke the person\'s grants and ' +
+               'tokens',
+        dflt: 'session-revoked, account-disabled, account-purged, ' +
+              'credential-compromise',
+        type: 'string',
+        help: 'Comma separated short names, from a sign-in relationship. ' +
+              'Every GNAP grant the person approved and every OAuth grant, ' +
+              'token and code held for them is revoked — for a ' +
+              'session-revoked, only what was issued on the sessions that ' +
+              'relationship started. ssf.signalsRevokeGrants turns it off. ' +
+              'Empty builds no such rule.' },
+      { name: 'signalsOnlyRevokeGrantEvents',
+        label: 'A signals-only partner\'s events that revoke them',
+        dflt: '', type: 'string',
+        help: 'Comma separated short names, from an ssf relationship. Empty ' +
+              '— the default, #374\'s rule that such a partner\'s word is ' +
+              'recorded — revokes nothing.' },
       { name: 'partnerGlobalSignOutEvents',
         label: 'A partner\'s events that end EVERY session the person holds',
         dflt: '', type: 'string',
@@ -2411,6 +2720,10 @@ const TEMPLATES: TemplateRow[] = [
       const partnerBlock = listed('partnerBlockEvents', 'account-disabled');
       const partnerUnblock = listed('partnerUnblockEvents', 'account-enabled');
       const partnerGlobal = listed('partnerGlobalSignOutEvents', '');
+      const partnerGrants = listed('partnerRevokeGrantEvents',
+        'session-revoked, account-disabled, account-purged, ' +
+        'credential-compromise');
+      const onlyGrants = listed('signalsOnlyRevokeGrantEvents', '');
       const onlyEnd = listed('signalsOnlyEndSessionEvents', '');
       const onlyDisable = listed('signalsOnlyDisableEvents', '');
       const onlyEnable = listed('signalsOnlyEnableEvents', 'account-enabled');
@@ -2497,6 +2810,14 @@ const TEMPLATES: TemplateRow[] = [
           partnerUnblock,
           [actionIs(SIGNAL_RESPONSE.UNBLOCK_RELATIONSHIP), fromPartner,
            kindIs('sign-in')]);
+      add('partner-revoke-grants', 'From a sign-in partner, revoke the ' +
+          'person\'s grants and tokens', partnerGrants,
+          [actionIs(SIGNAL_RESPONSE.REVOKE_GRANTS), fromPartner,
+           kindIs('sign-in')]);
+      add('signals-only-revoke-grants', 'From a signals-only partner, revoke ' +
+          'the person\'s grants and tokens', onlyGrants,
+          [actionIs(SIGNAL_RESPONSE.REVOKE_GRANTS), fromPartner,
+           kindIs('signals-only')]);
       add('partner-global-sign-out', 'From a sign-in partner, end every ' +
           'session the person holds', partnerGlobal,
           [actionIs(SIGNAL_RESPONSE.END_PERSON_SESSIONS), fromPartner,
@@ -3117,6 +3438,10 @@ class XacmlTemplates {
   static readonly ISSUANCE_ATTRIBUTE = ISSUANCE_ATTRIBUTE;
   static readonly SCOPE_ATTRIBUTE = SCOPE_ATTRIBUTE;
   /**
+   * The per-right GNAP question's action-id and obligation (#432).
+   */
+  static readonly GNAP_RIGHT_ATTRIBUTE = GNAP_RIGHT_ATTRIBUTE;
+  /**
    * The risk attribute identifiers.
    */
   static readonly RISK_ATTRIBUTE = RISK_ATTRIBUTE;
@@ -3303,6 +3628,7 @@ export = {
   PolicyBuilders: PolicyBuilders,
   ISSUANCE_ATTRIBUTE: XacmlTemplates.ISSUANCE_ATTRIBUTE,
   SCOPE_ATTRIBUTE: XacmlTemplates.SCOPE_ATTRIBUTE,
+  GNAP_RIGHT_ATTRIBUTE: XacmlTemplates.GNAP_RIGHT_ATTRIBUTE,
   RISK_ATTRIBUTE: XacmlTemplates.RISK_ATTRIBUTE,
   AUTHN_ATTRIBUTE: XacmlTemplates.AUTHN_ATTRIBUTE,
   DEVICE_ATTRIBUTE: XacmlTemplates.DEVICE_ATTRIBUTE,

@@ -1319,6 +1319,23 @@ const SETTINGS = [
     description: 'The expires_in of every access token, and the exp of the ' +
                  'formats that carry one. A client application may override ' +
                  'it with its own gnapAccessTokenLifetimeS.' },
+  // THE GRANT'S OWN LIFETIME (#432 phase 7, 2026-10-03), separate from any
+  // token's. A DAY by default, oauth2.refreshTokenTtlS's figure, for its
+  // reason: rotation renews a token without the resource owner, and this is
+  // the point at which they are asked again. gnap/gnap_grants.ts argues it.
+  { key: 'gnap.grantLifetimeS', group: 'GNAP', label: 'Grant lifetime ' +
+      '(seconds)',
+    path: 'gnap.grantLifetimeS', env: 'STS_GNAP_GRANT_LIFETIME_S',
+    type: 'int',
+    dflt: 86400, min: 60, max: 31536000, runtime: true,
+    description: 'How long a grant lives, counted from its request and ' +
+                 'separate from the access token lifetime. Past it the ' +
+                 'grant can no longer be continued or modified (RFC 9635 ' +
+                 'section 5) and none of its tokens can be rotated (section ' +
+                 '6.1); no token issued under it is given an expiry later ' +
+                 'than it; and it is finalized as expired. Fixed on each ' +
+                 'grant when it is made. A longer one lets a client keep ' +
+                 'access by rotation for longer on one approval.' },
   { key: 'gnap.interactionLifetimeS', group: 'GNAP', label: 'Interaction ' +
       'lifetime (seconds)',
     path: 'gnap.interactionLifetimeS', env: 'STS_GNAP_INTERACTION_LIFETIME_S',
@@ -1518,14 +1535,36 @@ const SETTINGS = [
     description: 'Write what a resource owner approved into the consent ' +
                  'register on their own entry (as gnap:<digest> values), so ' +
                  'the same rights are not asked for again.' },
-  { key: 'gnap.allowCrossUser', group: 'GNAP', label: 'Allow a different ' +
-                                                      'person to approve',
-    path: 'gnap.allowCrossUser', env: 'STS_GNAP_ALLOW_CROSS_USER', type: 'bool',
-    dflt: false,
-    runtime: true,
-    description: 'Section 2.4: when the request named a user and somebody ' +
-                 'else signs in, the AS SHOULD answer unknown_user. On lets ' +
-                 'whoever signs in approve.' },
+  // #432 PHASE 6: approval by an absent resource owner, which RETIRED
+  // `gnap.allowCrossUser` (whoever signed in could approve a grant naming
+  // somebody else) with no switch of that meaning left.
+  { key: 'gnap.ownerApproval', group: 'GNAP',
+    label: 'Approval by an absent resource owner',
+    path: 'gnap.ownerApproval', env: 'STS_GNAP_OWNER_APPROVAL', type: 'bool',
+    dflt: false, runtime: true,
+    description: 'RFC 9635 sections 1.4 and 2.4: when a request names a ' +
+                 'person who is not the one at the approval page, or offers ' +
+                 'no interaction at all, the grant waits for that person on ' +
+                 '/portal/ciba (with a mail notice) while the client polls. ' +
+                 'OFF by default: a new way in is something a realm turns ' +
+                 'on. Off, a request naming somebody else is answered ' +
+                 'unknown_user and one offering no interaction is refused.' },
+  { key: 'gnap.ownerApprovalLifetimeS', group: 'GNAP',
+    label: 'Time an absent owner has to answer',
+    path: 'gnap.ownerApprovalLifetimeS',
+    env: 'STS_GNAP_OWNER_APPROVAL_LIFETIME_S', type: 'int', dflt: 600,
+    min: 60, max: 86400, runtime: true,
+    description: 'Seconds a grant waits on its resource owner\'s portal ' +
+                 'before it is finalized as rejected. The client\'s wait ' +
+                 'between polls is stretched so gnap.maxPolls covers it.' },
+  { key: 'gnap.ownerApprovalMaxPending', group: 'GNAP',
+    label: 'Requests one person may have waiting',
+    path: 'gnap.ownerApprovalMaxPending',
+    env: 'STS_GNAP_OWNER_APPROVAL_MAX_PENDING', type: 'int', dflt: 5,
+    min: 1, max: 100, runtime: true,
+    description: 'The most grants that may wait for one person on their ' +
+                 'portal at once; more are refused request_denied, so a ' +
+                 'client cannot fill somebody\'s page.' },
   { key: 'gnap.userCodeLength', group: 'GNAP', label: 'User code length',
     path: 'gnap.userCodeLength', env: 'STS_GNAP_USER_CODE_LENGTH', type: 'int',
     dflt: 8, min: 6,
@@ -1560,6 +1599,21 @@ const SETTINGS = [
     description: 'RFC 9767 section 4: a resource server presents a token it ' +
                  'was given as existing_access_token and receives a token ' +
                  'for a downstream resource server.' },
+  // HOW FAR A TOKEN MAY TRAVEL FROM WHAT ITS PERSON APPROVED (#432 phase 1).
+  // Every derivation puts the deriving resource server on the token's actor
+  // chain (`act`, RFC 8693 section 4.1); this caps the chain. Two lets the
+  // resource server a client called reach one more, and that one a third —
+  // the common three-tier case — and stops there; 1 allows one hop only.
+  // A bound, in every mode (STS-GNAP-0782).
+  { key: 'gnap.maxDerivationDepth', group: 'GNAP', label: 'Deepest ' +
+                                                         'derivation chain',
+    path: 'gnap.maxDerivationDepth', env: 'STS_GNAP_MAX_DERIVATION_DEPTH',
+    type: 'int', dflt: 2, min: 1, max: 16,
+    runtime: true,
+    description: 'How many resource servers a derived token\'s actor chain ' +
+                 '(act) may name: each RFC 9767 section 4 derivation adds ' +
+                 'the deriving resource server, and a derivation past this ' +
+                 'depth is refused (request_denied) in every mode.' },
   { key: 'gnap.pushFinish', group: 'GNAP', label: 'Deliver push interaction ' +
                                                   'finishes',
     path: 'gnap.pushFinish', env: 'STS_GNAP_PUSH_FINISH', type: 'bool',
@@ -1642,6 +1696,17 @@ const SETTINGS = [
     description: 'GET/POST /gnap/rs/resource: judges a presented token in ' +
                  'any of the five formats and answers the RS-first challenge ' +
                  'of section 9.1.' },
+  { key: 'gnap.ownerLookupCacheS', group: 'GNAP', label: 'Owner lookup ' +
+      'cache (seconds)',
+    path: 'gnap.ownerLookupCacheS', env: 'STS_GNAP_OWNER_LOOKUP_CACHE_S',
+    type: 'int', dflt: 60, min: 0, max: 3600, runtime: true,
+    description: 'How long the owner a resource server\'s ' +
+                 'gnapOwnerLookupUri named for an identifier is held before ' +
+                 'it is asked again (#432 phase 5): a grant asks at its ' +
+                 'request, on its approval page and at issue. A failed ' +
+                 'lookup is never held. 0 asks every time; a longer one ' +
+                 'keeps a former owner able to approve for that long after ' +
+                 'the resource server says otherwise.' },
   { key: 'gnap.caepEvents', group: 'GNAP', label: 'Emit CAEP for grants and ' +
                                                   'tokens',
     path: 'gnap.caepEvents', env: 'STS_GNAP_CAEP_EVENTS', type: 'bool',
@@ -1656,8 +1721,11 @@ const SETTINGS = [
     runtime: true,
     description: 'A Shared Signals stream owned by a GNAP client application ' +
                  'with a finish URI carries events only about people who ' +
-                 'approved a grant to that application. gnapScopedSignals ' +
-                 'FALSE on the entry opts one application out.' },
+                 'approved a grant to that application; one owned by a GNAP ' +
+                 'resource server carries only session-revoked for the ' +
+                 'GNAP tokens and grants audienced to it (#432). ' +
+                 'gnapScopedSignals FALSE on the entry opts one application ' +
+                 'out.' },
 
   // --- XACML: the access policy (the rest of the group is further down) ----
   { key: 'xacml.enforceAccess', group: 'XACML',
@@ -6742,6 +6810,26 @@ const SETTINGS = [
                  'day by default; 0 deletes a record as soon as it expires.' },
 
   // #345: the revoked-jti register's size cap, per realm.
+  // --- the access-token status list (#432) -------------------------------
+  { key: 'oauth2.accessTokenStatusListTtlS', group: 'OAuth 2.0 / OIDC',
+    label: 'Access-token status list time to live (s)',
+    env: 'STS_OAUTH2_ACCESS_TOKEN_STATUS_LIST_TTL_S', type: 'int', dflt: 60,
+    min: 1, max: 86400, runtime: true,
+    description: 'The ttl the realm\'s access-token status list carries ' +
+                 '(draft-ietf-oauth-status-list section 5), and its HTTP ' +
+                 'max-age — and the revoked-biscuit list\'s: how long a ' +
+                 'resource server that checks OAuth RFC 9068 and GNAP JWT ' +
+                 'access tokens on its own may keep the list, and so how ' +
+                 'long a revocation can take to reach it.' },
+
+  { key: 'oauth2.accessTokenStatusListLifetimeS', group: 'OAuth 2.0 / OIDC',
+    label: 'Access-token status list lifetime (s)',
+    env: 'STS_OAUTH2_ACCESS_TOKEN_STATUS_LIST_LIFETIME_S', type: 'int',
+    dflt: 3600, min: 60, max: 86400, runtime: true,
+    description: 'How long after it is signed the access-token status list ' +
+                 'says it is valid (its exp). A resource server must not ' +
+                 'use a list past it.' },
+
   { key: 'oauth2.maxRevokedJtis', group: 'OAuth 2.0 / OIDC',
     label: 'Most revoked token ids kept per realm',
     env: 'STS_OAUTH2_MAX_REVOKED_JTIS', type: 'int', dflt: 100000,
@@ -12295,6 +12383,27 @@ const SETTINGS = [
                  'sends (#373, #374). Development records what it would ' +
                  'have done and does nothing, unless this is on. An ' +
                  'unverified event is never acted on, whatever this says.' },
+
+  // #432, rcbj's decision 1 and "provide a flag to disable this behavior".
+  { key: 'ssf.signalsRevokeGrants', group: 'SSF',
+    label: 'A federation partner\'s signals revoke the person\'s grants and ' +
+           'tokens',
+    env: 'STS_SSF_SIGNALS_REVOKE_GRANTS', type: 'bool', dflt: true,
+    runtime: true,
+    description: 'On by default. A verified CAEP or RISC event from a ' +
+                 'federation partner that the signal-response policy ' +
+                 'answers with signal-revoke-grants (by default a sign-in ' +
+                 'partner\'s session-revoked, account-disabled, ' +
+                 'account-purged and credential-compromise) revokes every ' +
+                 'GNAP grant the person approved and every OAuth grant, ' +
+                 'token and authorization code held for them — for a ' +
+                 'session-revoked, only what was issued on the sessions ' +
+                 'that partner started. Off, the reaction is recorded as ' +
+                 'skipped and nothing is revoked; the other reactions ' +
+                 '(ending the partner\'s sessions, blocking its sign-ins) ' +
+                 'are unaffected. Development records what it would do ' +
+                 'unless ssf.actOnSignalsInDevelopment is on, and an ' +
+                 'unverified event is never acted on.' },
 
   { key: 'ssf.legacySubClaim', group: 'SSF',
     label: 'Also emit the deprecated `sub` claim (development only)',

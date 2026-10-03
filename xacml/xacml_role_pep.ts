@@ -141,6 +141,9 @@ import scopeVerdicts = require('./xacml_scope_verdicts');
 import transferVerdicts = require('./xacml_transfer_verdicts');
 // #186: who may act for whom, asked the same way by the gate.
 import exchangeVerdicts = require('./xacml_exchange_verdicts');
+// #432 phase 3: one question per GNAP access right, asked the same way by
+// the gate.
+import gnapRightVerdicts = require('./xacml_gnap_right_verdicts');
 const { AuthorizationRequest } = xacmlRequest;
 
 // The question an issuance site asks, through `common/issuance_gate.js`.
@@ -199,6 +202,10 @@ interface IssuanceQuestion {
   // `common/cell_transfer.ts` through `issuance_gate.checkTransfer()`, and
   // answered with a verdict (`decideTransfer()`).
   transferQuestion?: Record<string, any> | null;
+  // THE PER-RIGHT GNAP QUESTION (#432 phase 3): present, one question per
+  // GNAP access right, answered with a verdict each
+  // (`decideGnapRights()`).
+  gnapRightQuestion?: Record<string, any> | null;
 }
 
 // One requested scope (or RFC 9396 detail), with the facts the policy
@@ -273,6 +280,8 @@ interface IssuanceAnswer {
   transfer?: { verdict: string; decidedBy: string } | null;
   // The exchange verdict (#186), `xacml_exchange_verdicts.js`'s shape.
   exchange?: Record<string, any> | null;
+  // The per-right verdicts, for a GNAP right question (#432).
+  gnapRights?: Array<Record<string, any>>;
 }
 
 // Which document decides: `policy` when one does, `why` when none can.
@@ -884,6 +893,11 @@ class XacmlRolePep {
       return this.decideTransfer(asked);
     }
 
+    if (asked.gnapRightQuestion) {
+      log.debug('Leaving XacmlRolePep.decideNow(). A GNAP right question.');
+      return this.decideGnapRights(asked);
+    }
+
     if (config.value('xacml.enabled') === false) {
       log.debug('Leaving XacmlRolePep.decideNow(). The XACML family is ' +
                 'switched off.');
@@ -1264,6 +1278,35 @@ class XacmlRolePep {
              why: 'One verdict per requested scope.',
              roles: question.held || [], required: [],
              policy: (loaded && loaded.name) || '', scopes: verdicts };
+  }
+
+  // -------------------------------------------------------------------------
+  // THE PER-RIGHT GNAP QUESTION (#432 phase 3), `decideScopes()`'s
+  // arrangement: the realm's issuance policy first, with the repository and
+  // the PIP, the BUILT-IN policy for a right it says nothing about —
+  // `xacml.enabled` off, no loadable policy, an override built without the
+  // GNAP rules — through `xacml_gnap_right_verdicts.ts`, the one library the
+  // gate asks too. Nothing is audited here: the grant engine records what it
+  // refused or narrowed, once.
+  // -------------------------------------------------------------------------
+  private decideGnapRights(asked: IssuanceQuestion): IssuanceAnswer {
+    const { log, config, store, pip } = this.deps;
+    log.debug('Entering XacmlRolePep.decideGnapRights().');
+    const question = asked.gnapRightQuestion as Record<string, any>;
+    const loaded = config.value('xacml.enabled') === false
+      ? null : this.issuancePolicy();
+    const verdicts = gnapRightVerdicts.decide(Object.assign({}, question, {
+      policyName: this.issuancePolicyName()
+    }), loaded && loaded.policy ? loaded : null, function (request: any): any {
+      return { repository: store.repository(),
+               resolver: pip.resolverFor(request) };
+    });
+    log.debug('Leaving XacmlRolePep.decideGnapRights(). ' + verdicts.length +
+              ' verdict(s).');
+    return { allowed: true, decision: 'Permit',
+             why: 'One verdict per GNAP access right.',
+             roles: [], required: [],
+             policy: (loaded && loaded.name) || '', gnapRights: verdicts };
   }
 
   // -------------------------------------------------------------------------

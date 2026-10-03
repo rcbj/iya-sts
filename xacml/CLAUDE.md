@@ -43,7 +43,7 @@ and the nudge.
 | `xacml_admin.ts` | The five `/admin/xacml` console pages and their actions, and `/admin/xacml/monitor`'s body. |
 | `xacml_monitor.ts` | The decision and enforcement counters behind `/admin/xacml/monitor`. A LEAF. See *`/admin/xacml/monitor`* below. |
 | `xacml_access_pep.ts`, `xacml_role_pep.ts` | The two embedded PEPs that decide THIS service's own access and issuance. See *AND SINCE 2026-09-05 IT DECIDES THIS SERVICE'S OWN ISSUANCE* below. |
-| `xacml_risk_pep.ts`, `xacml_signal_pep.ts` | **The two embedded PEPs for REACTIONS (#62, 2026-09-22)**, each asking a built-in policy one question per reaction, where a Permit means do it. `risk-response` covers what a change of a person's risk leads to (`risk/CLAUDE.md`). `signal-response` covers whether this service's own console or portal ends its own sessions on a CAEP or RISC event it RECEIVED and verified (`ssf/CLAUDE.md`). Both are libraries, reached lazily and built at 23c. |
+| `xacml_risk_pep.ts`, `xacml_signal_pep.ts` | **The two embedded PEPs for REACTIONS (#62, 2026-09-22)**, each asking a built-in policy one question per reaction, where a Permit means do it. `risk-response` covers what a change of a person's risk leads to (`risk/CLAUDE.md`). `signal-response` covers whether this service's own console or portal ends its own sessions on a CAEP or RISC event it RECEIVED and verified, and what a federation partner's verified event does — since #432 including `signal-revoke-grants`, a person's GNAP and OAuth grants and tokens, behind `ssf.signalsRevokeGrants` (`ssf/CLAUDE.md`). Both are libraries, reached lazily and built at 23c. |
 | `conformance/` | The vendored OASIS suite. `PROVENANCE.md` is the argument, `MANIFEST.js` the drift check. **Not edited here, ever.** |
 
 Five tests, all in-process, no port, no container:
@@ -1323,6 +1323,62 @@ decider the gate evaluates the built-in policy itself** (rcbj's decision on
 #305): `xacml_scope_verdicts.js` is a library — engine, builder and templates,
 no route and no slot — which the issuance PEP and `issuance_gate.js` both ask
 through, so the rules hold in every process.
+
+**AND SINCE #432 (phase 3) EACH GNAP ACCESS RIGHT.** `gnap/gnap_rights.ts`
+asks one question per right, action-id `issue-gnap-right`, the right's type
+(or reference string) as the resource-id, with the facts `xacml_request.js`'s
+`gnapRight()` spells (`urn:sts:xacml:gnap:*`: the right's five fields, what
+the access-type catalogue declares for its type, the token, the client, the
+approver and how it approved, the session, risk and device), through
+`issuance_gate.checkGnapRights()`, `decideGnapRights()` here and
+`xacml_gnap_right_verdicts.ts` — the scope question's arrangement, a realm's
+policy first and the built-in one where it says nothing. Two things differ
+from the scope question, and each is there for a reason:
+
+* **`narrow` and a lifetime.** A right has dimensions, so the obligation
+  `urn:sts:xacml:obligation:gnap-right` may carry DROP values per dimension
+  and a maximum lifetime beside keep / narrow / refuse. Several Permit rules
+  may each carry it — the built-in `gnap-type-lifetime` and an operator's
+  narrowing rule — so the reader MERGES every obligation (refuse over narrow
+  over keep, drops unioned, the shortest lifetime). That is why the built-in
+  lifetime rule is a separate Permit and not a member of `gnap-right-kept`.
+* **The risk, device and session facts have names of their own**
+  (`urn:sts:xacml:gnap:risk-level` and the rest), because the document's risk
+  and device rules are untargeted: given their attributes, every per-right
+  question would trip them and answer with an obligation the right reader
+  does not know. A realm rule may still read the GNAP names.
+
+The built-in rules (`decideGnapRights`, default yes) are the code
+`gnap_grants.ts` used to run, in its order — bearer, protected scope,
+gnapAllowedAccess, unknown reference — then the catalogue's: uncatalogued in
+product (`inProduct`, the mode as a fact), a type's `bearer: false`, its
+`maxLifetimeS` — and, since phase 5, the resource OWNER's two: a right
+naming an identifier somebody else owns (`gnap-owner-mismatch`,
+`STS-GNAP-0861`, read off `owner-known` and `owner-matches`, the latter sent
+only once a person is known) and one whose owner lookup could not be
+answered (`gnap-owner-unresolved`, `0863`). The right's limits ride with the
+question too (`urn:sts:xacml:gnap:limits` and each member decomposed —
+`limit-amount` a double, `limit-count` an integer), for a realm that wants a
+rule on them; no built-in rule reads them, because a limit is stated and
+counted, not granted or refused (`gnap/CLAUDE.md`, *Ownership and limits*).
+A verdict this reader does not know refuses
+(`STS-GNAP-0815`); no verdict at all is a defect and refuses
+(`STS-XACML-0168`, `STS-GNAP-0816`) — a right is never issued because the
+engine broke. `tests/gnap_catalogue.js` holds each rule through the policy
+and a realm's narrowing override.
+
+**WHO MUST BE ASKED, AND HOW STRONGLY (#432 phase 6).** Two more members of
+the same obligation, `urn:sts:xacml:gnap-right-interaction` (none, skippable,
+always) and `urn:sts:xacml:gnap-right-acr`, carried by four more built-in
+Permits — `gnap-type-interaction-never`, `-always`, `gnap-type-consent-action`
+(a right naming a listed consent action, or naming no actions, which is
+every action) and `gnap-type-acr`. They are Permits that keep the right and
+STATE A REQUIREMENT, merged like the lifetime: the most demanding
+interaction, every acr. So a realm tightens by adding a Permit with the
+obligation, and an interaction word the reader does not know reads as
+`always`. The grant engine does what they say (`gnap/CLAUDE.md`, *Phase 6*);
+the approval fact gained the value `owner`, the resource owner approving on
+their portal.
 
 **AND SINCE #98 (D4, D11) WHERE A PERSON'S DATA MAY GO.** When the service is
 deployed as cells, three questions go to the same policy from

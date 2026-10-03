@@ -1350,12 +1350,28 @@ class SsfTransmitters {
       return [{ event: short, reaction: '', done: false,
                 why: mapped.why || 'the subject names nobody here' }];
     }
-    const PERSON = [RESPONSE.END_PARTNER_SESSIONS,
+    const PERSON = [RESPONSE.REVOKE_GRANTS, RESPONSE.END_PARTNER_SESSIONS,
       RESPONSE.BLOCK_RELATIONSHIP, RESPONSE.UNBLOCK_RELATIONSHIP,
       RESPONSE.END_PERSON_SESSIONS, RESPONSE.DISABLE_ACCOUNT,
       RESPONSE.ENABLE_ACCOUNT];
+    // THE SESSIONS THIS RELATIONSHIP STARTED THAT A session-revoked NAMES
+    // (#432), worked out BEFORE any reaction runs: ending the partner's
+    // sessions is another reaction, and what was issued on them is still
+    // recorded against their ids after they are gone.
+    const partnerSessions = family === 'caep' && short === 'session-revoked'
+      ? this.partnerSessionIds(record, mapped.username,
+                               this.sessionIdOf(subject)) : null;
     for (const reaction of permitted) {
       if (PERSON.indexOf(reaction) < 0) {
+        continue;
+      }
+      // THE OPERATOR'S SWITCH (#432): `ssf.signalsRevokeGrants` off records
+      // the reaction as skipped, whatever the policy permitted — in
+      // development too, so a run that would have revoked says it would not.
+      if (reaction === RESPONSE.REVOKE_GRANTS &&
+          this.deps.config.value('ssf.signalsRevokeGrants') === false) {
+        out.push({ event: short, reaction: reaction, done: false,
+                   skipped: 'ssf.signalsRevokeGrants is off' });
         continue;
       }
       if (observe) {
@@ -1365,13 +1381,55 @@ class SsfTransmitters {
       }
       out.push(await this.react(record, reaction, short, mapped.username,
                                 RESPONSE, { jti: jti,
-                                  sid: this.sessionIdOf(subject) }));
+                                  sid: this.sessionIdOf(subject),
+                                  partnerSessions: partnerSessions }));
     }
     if (!out.length) {
       out.push({ event: short, reaction: '', done: false,
                  why: 'the signal-response policy permits no reaction' });
     }
     log.debug("Leaving SsfTransmitters.actOn(). " + out.length);
+    return out;
+  }
+
+  // The ids of the sessions this relationship started for the person — the
+  // one `sid` names where the event gave one — live or not yet swept (#432).
+  private partnerSessionIds(record: Json, username: string,
+                            sid: string): string[] {
+    const { log } = this.deps;
+    log.debug("Entering SsfTransmitters.partnerSessionIds(). " +
+              record.fedId);
+    const out: string[] = [];
+    if (!username) {
+      log.debug("Leaving SsfTransmitters.partnerSessionIds(). Nobody.");
+      return out;
+    }
+    const wanted = String(username).toLowerCase();
+    let authn: Json = null;
+    try {
+      authn = this.deps.authn();
+    } catch (e) {
+      log.debug("Caught in SsfTransmitters.partnerSessionIds(): " +
+                ((e && e.message) || e));
+      authn = null;
+    }
+    if (authn && authn.sessions) {
+      authn.sessions.forEach(function (session: Json): void {
+        const held = session && session.fedPartnerSession;
+        if (!held || held.relationship !== record.fedId) {
+          return;
+        }
+        if (String((session.user && session.user.username) || '')
+              .toLowerCase() !== wanted) {
+          return;
+        }
+        if (sid && String(held.sid || held.sessionIndex || '') !== sid) {
+          return;
+        }
+        out.push(String(session.id));
+      });
+    }
+    log.debug("Leaving SsfTransmitters.partnerSessionIds(). " + out.length);
     return out;
   }
 
@@ -1418,6 +1476,49 @@ class SsfTransmitters {
     return ended;
   }
 
+  // ---------------------------------------------------------------------------
+  // signal-revoke-grants (#432, rcbj's decision 1): the person's GNAP grants
+  // and OAuth grants, tokens and codes, through `logout.revokeGrantsOf()` —
+  // a selective sign-out of exactly those families, so it is the same act
+  // `/admin/logout` performs with them ticked (its audit row, CAEP, the
+  // grant observer #239). A `session-revoked` narrows it to what was issued
+  // on the sessions this relationship started (`partnerSessions`), and one
+  // that names none of them revokes nothing. Realm-confined: the ambient
+  // realm is the relationship's, and every register read is per realm.
+  // `policy` is CAEP's initiating entity, as for every reaction here (#242).
+  // ---------------------------------------------------------------------------
+  private revokeGrants(record: Json, username: string, event: string,
+                       by: string, actor: string,
+                       partnerSessions: string[] | null): Json {
+    const { log } = this.deps;
+    log.debug("Entering SsfTransmitters.revokeGrants(). " + event);
+    const logout = this.deps.logout();
+    if (!logout || typeof logout.revokeGrantsOf !== 'function') {
+      log.debug("Leaving SsfTransmitters.revokeGrants(). No sign-out here.");
+      return { event: event, reaction: 'signal-revoke-grants', done: false,
+               why: 'no sign-out module is loaded in this process' };
+    }
+    if (partnerSessions && !partnerSessions.length) {
+      log.debug("Leaving SsfTransmitters.revokeGrants(). No session named.");
+      return { event: event, reaction: 'signal-revoke-grants', done: false,
+               why: 'the event names no session this relationship started' };
+    }
+    const result: Json = logout.revokeGrantsOf(username, {
+      actor: actor, channel: 'internal', by: by, initiatingEntity: 'policy',
+      sessionIds: partnerSessions || undefined });
+    const ended = ((result && result.terminated) || []);
+    const count = function (family: string): number {
+      return ended.filter(function (one: Json): boolean {
+        return one && one.family === family;
+      }).length;
+    };
+    log.debug("Leaving SsfTransmitters.revokeGrants(). " + ended.length);
+    return { event: event, reaction: 'signal-revoke-grants', done: true,
+             revoked: ended.length, gnapGrants: count('gnap'),
+             oauthGrants: count('oauth-grant'), tokens: count('token'),
+             codes: count('code') };
+  }
+
   private async react(record: Json, reaction: string, event: string,
                       username: string, RESPONSE: Json,
                       ctx: Json): Promise<Json> {
@@ -1427,6 +1528,12 @@ class SsfTransmitters {
                'the federation relationship ' + record.fedId;
     const actor = 'federation:' + record.fedId;
     try {
+      if (reaction === RESPONSE.REVOKE_GRANTS) {
+        const done = this.revokeGrants(record, username, event, by, actor,
+                                       ctx.partnerSessions);
+        log.debug("Leaving SsfTransmitters.react(). Grants.");
+        return done;
+      }
       if (reaction === RESPONSE.END_PARTNER_SESSIONS) {
         const ended = this.endPartnerSessions(record, username, ctx.sid, by);
         log.debug("Leaving SsfTransmitters.react(). Partner sessions.");

@@ -445,6 +445,19 @@ function recordJwt(payload, signed, context) {
     // jkt rather than the whole cnf: the thumbprint is the binding, and it is
     // what makes a row on the page say "DPoP" honestly rather than by guessing.
     jkt: (payload.cnf && payload.cnf.jkt) || '',
+    // AND THE CERTIFICATE BINDING (#432 follow-up): RFC 8705's x5t#S256, for
+    // a token bound to a client certificate by mutual TLS. Recorded beside
+    // `jkt` for the same reason — it IS the binding — and so a device marked
+    // compromised can revoke the tokens bound to a certificate it holds
+    // (`common/devices.ts`, endGrantsBoundTo()).
+    x5t: (payload.cnf && payload.cnf['x5t#S256']) || '',
+    // AND THE KEY UNDER THAT CERTIFICATE: its SubjectPublicKeyInfo SHA-256,
+    // stated by the issuer out of band (no claim carries it), and kept only
+    // for a token that IS certificate-bound. `x5t` names the certificate,
+    // which changes when the key is re-certified or certified elsewhere; this
+    // names the key a device holds.
+    x5tSpki: payload.cnf && payload.cnf['x5t#S256']
+      ? String(issuedUnder.certSpki || '') : '',
     iat: payload.iat || 0,
     nbf: payload.nbf || 0,
     exp: payload.exp || 0,
@@ -2993,7 +3006,11 @@ const RESERVED_JWT_CLAIMS = [
   // does — the UserInfo endpoint has to know what the client asked for, and a
   // signed token is the one thing that reaches it — so a settable `claims`
   // would let a web form decide what a request asked for. See oauth2.js.
-  'claims'
+  'claims',
+  // draft-ietf-oauth-status-list section 6.1's reference (#432): where a
+  // resource server checking an access token on its own reads whether it was
+  // revoked. A settable one would point every token at a list somebody chose.
+  'status'
 ];
 
 // PER TRUST REALM, AND IT WAS NOT UNTIL 2026-08-28.

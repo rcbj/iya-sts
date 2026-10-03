@@ -249,6 +249,10 @@ import refreshTokenCrypto = require('./refresh_token_crypto');
 // issuerOf() is its issuerFor() — shared with the resource-server check in
 // dpop.ts, which could not otherwise have asked the same question.
 import jwtAccessToken = require('./jwt_access_token');
+// The access-token status list (#432): the index every access token names in
+// `status.status_list`, and the aggregation this server's metadata
+// advertises. A route module and library that requires nothing here.
+import accessTokenStatus = require('./access_token_status');
 // RFC 9701, THE JWT RESPONSE FOR TOKEN INTROSPECTION (2026-09-13). A LIBRARY
 // that registers no route: introspectEndpoint() asks it whether a request wants
 // a JWT and has it build and protect one, the metadata publishes its algorithm
@@ -484,6 +488,7 @@ interface OAuth2ServerDeps {
   errorCodes: typeof errorCodes;
   refreshTokenCrypto: typeof refreshTokenCrypto;
   jwtAccessToken: typeof jwtAccessToken;
+  accessTokenStatus: typeof accessTokenStatus;
   introspectionJwt: typeof introspectionJwt;
   idTokenEncryption: typeof idTokenEncryption;
   jarm: typeof jarm;
@@ -1683,6 +1688,7 @@ class OAuth2Server {
       errorCodes: errorCodes,
       refreshTokenCrypto: refreshTokenCrypto,
       jwtAccessToken: jwtAccessToken,
+      accessTokenStatus: accessTokenStatus,
       introspectionJwt: introspectionJwt,
       idTokenEncryption: idTokenEncryption,
       jarm: jarm,
@@ -2069,6 +2075,13 @@ class OAuth2Server {
       revocation_endpoint_auth_signing_alg_values_supported:
         stsCrypto.JWS_SIGNING_ALGS,
       introspection_endpoint: at + '/oauth2/introspect',
+      // draft-ietf-oauth-status-list section 9.1 (#432): an issuer that is
+      // an OAuth authorization server is RECOMMENDED to name its Status List
+      // Aggregation here. The REALM's, under `base` rather than `at`: every
+      // authorization server in a realm names one list (rcbj's decision 4),
+      // so a named server points at the same aggregation as the default one.
+      status_list_aggregation_endpoint:
+        this.deps.accessTokenStatus.aggregationUri(base),
       // THE METHODS THE INTROSPECTION ENDPOINT CAN VERIFY, which since RFC 9701
       // (2026-09-13) is every method the token endpoint can, through the same
       // `bcp.observeClientAuthentication()`. It named three while nothing
@@ -3796,7 +3809,68 @@ class OAuth2Server {
              // refresh token. `oauth-oidc/oauth_grant_signals.ts` reads both.
              grantId: String((opts && (opts.grant_id || opts.grant_family ||
                                        opts.set_id)) || ''),
-             grantRefresh: !!(opts && opts.grant_family) };
+             grantRefresh: !!(opts && opts.grant_family),
+             // THE KEY UNDER A BOUND CERTIFICATE (#432 follow-up): the
+             // SubjectPublicKeyInfo SHA-256 of the client certificate on the
+             // Token Request, which the register keeps beside `x5t` when the
+             // token is certificate-bound — so a compromised device's KEY
+             // finds a token bound to any certificate over it.
+             certSpki: opts && opts.request
+               ? this.deps.mtls.presentedKeyThumbprint(opts.request) : '' };
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE ACCESS TOKEN'S PLACE IN THE REALM'S STATUS LIST (#432, rcbj's decision
+  // 4), RESERVED BEFORE IT IS SIGNED. The index is claimed across the cluster,
+  // which is asynchronous, and `accessToken()` is not — four callers, the
+  // console's API explorer and the in-process tests among them, read its
+  // answer synchronously. So the `jti` is minted HERE, the index claimed for
+  // it, and both handed to `accessToken()` through `opts`; every caller that
+  // can wait goes through `accessTokenAsync()`, and one that cannot gets
+  // `allocateInProcess()` inside `accessToken()`, which refuses to answer
+  // where a shared claims table exists rather than mint on an index no other
+  // node was asked about. The row's expiry is the configured lifetime: FAPI's
+  // cap (#138) only ever shortens it, and a row outliving its token by a few
+  // minutes costs an index, never a wrong bit.
+  // ---------------------------------------------------------------------------
+  /**
+   * Reserves an access token's `jti` and its index in the realm's
+   * access-token status list, for `accessToken()`.
+   *
+   * @param base - the authorization server's base URL
+   * @param opts - the grant's facts; `client_id` decides the lifetime
+   * @returns `opts` with `access_jti` and `status_ref` added
+   */
+  async reserveAccessToken(base: Json, opts: Json): Promise<Json> {
+    const { log, nowSec, randomId, accessTokenStatus } = this.deps;
+    log.debug("Entering OAuth2Server.reserveAccessToken().");
+    if (opts.access_jti && opts.status_ref) {
+      log.debug("Leaving OAuth2Server.reserveAccessToken(). Already held.");
+      return opts;
+    }
+    const jti = cellLocator.stamp(randomId(16));
+    const ref = await accessTokenStatus.allocate({
+      jti: jti, kind: 'oauth', base: base,
+      expiresAt: (nowSec() + Number(this.accessTokenTtl(opts.client_id))) *
+        1000 });
+    log.debug("Leaving OAuth2Server.reserveAccessToken(). idx=" + ref.idx);
+    return Object.assign({}, opts, { access_jti: jti, status_ref: ref });
+  }
+
+  /**
+   * Reserves the token's status-list index, then mints it: `accessToken()`
+   * for every caller that can wait.
+   *
+   * @param base - the authorization server's base URL
+   * @param opts - the grant's facts, as for `accessToken()`
+   * @returns the signed token
+   */
+  async accessTokenAsync(base: Json, opts: Json): Promise<Json> {
+    const { log } = this.deps;
+    log.debug("Entering OAuth2Server.accessTokenAsync().");
+    const reserved = await this.reserveAccessToken(base, opts);
+    log.debug("Leaving OAuth2Server.accessTokenAsync().");
+    return this.accessToken(base, reserved);
   }
 
   /**
@@ -3806,16 +3880,37 @@ class OAuth2Server {
    * @param base - the authorization server's base URL
    * @param opts - the grant's facts: `client_id`, `username` or `user`,
    *   `scope`, `audience`, `jkt`, `authorization_details`, `claims`, `acr`,
-   *   `amr`, `auth_time`, `act`, `grant`, `request` and the rest
+   *   `amr`, `auth_time`, `act`, `grant`, `request` and the rest — and
+   *   `access_jti` / `status_ref` from `reserveAccessToken()`
    * @returns the signed token
+   * @throws Error marked STS-OAUTH-0820 when no status-list index was
+   *   reserved and none can be claimed synchronously
    */
   accessToken(base: Json, opts: Json): Json {
     const { log, nowSec, randomId, signJwt, userFor, mtls, stats,
-            jwtAccessToken } = this.deps;
+            jwtAccessToken, accessTokenStatus, errorCodes } = this.deps;
     const self = this;
     log.debug("Entering OAuth2Server.accessToken().");
     const iat = nowSec();
     const user = opts.user || userFor(opts.username);
+    // The jti and the status-list index — see reserveAccessToken().
+    const accessJti = String(opts.access_jti || '') ||
+      cellLocator.stamp(randomId(16));
+    const statusRef = opts.status_ref ||
+      accessTokenStatus.allocateInProcess({
+        jti: accessJti, kind: 'oauth', base: base,
+        expiresAt: (iat + Number(self.accessTokenTtl(opts.client_id))) *
+          1000 });
+    if (!statusRef) {
+      log.error(errorCodes.tag('STS-OAUTH-0820') + 'oauth2: an access token ' +
+                'was asked for without a reserved status-list index, in a ' +
+                'process with a shared claims table; it is not minted. The ' +
+                'caller must use accessTokenAsync().');
+      log.debug("Leaving OAuth2Server.accessToken(). No status index.");
+      throw errorCodes.mark(new Error('the access token has no status-list ' +
+                                      'index: mint it with ' +
+                                      'accessTokenAsync()'), 'STS-OAUTH-0820');
+    }
     // RFC 9068 section 2.2's seven REQUIRED claims are the first seven below,
     // and `aud`'s default is the default resource indicator section 3 requires
     // — spelt by `jwt_access_token.ts`, which the resource-server check reads
@@ -3833,8 +3928,11 @@ class OAuth2Server {
       // Stamped with the minting cell (#98 D10): a resource that checks the
       // token, or a UserInfo request, reaches the cell that holds its
       // session through this.
-      jti: cellLocator.stamp(randomId(16)), iat: iat, nbf: iat,
-      exp: iat + self.accessTokenTtl(opts.client_id)
+      jti: accessJti, iat: iat, nbf: iat,
+      exp: iat + self.accessTokenTtl(opts.client_id),
+      // draft-ietf-oauth-status-list section 6.1 (#432): where a resource
+      // server that checks this token on its own learns it was revoked.
+      status: { status_list: { idx: statusRef.idx, uri: statusRef.uri } }
     };
     // `username` names the PERSON the token is about, and a
     // client_credentials token is about no person (#93, 2026-09-28): it
@@ -3920,6 +4018,15 @@ class OAuth2Server {
     payload.exp = payload.iat +
       this.deps.fapi.accessTokenLifetime(payload.exp - payload.iat,
                                          !!payload.cnf);
+    // THE ACCESS-TYPE CATALOGUE'S `maxLifetimeS` (#432 phase 4): a token
+    // carrying a detail of a type that declares one lives no longer than the
+    // shortest of them. Here, beside FAPI's cap, so the token response's
+    // `expires_in` (read off the token) reports it.
+    const typeCap = opts.authorization_details
+      ? richAuthorization.maxLifetimeFor(opts.authorization_details) : null;
+    if (typeCap !== null && payload.exp - payload.iat > typeCap) {
+      payload.exp = payload.iat + typeCap;
+    }
     // OID4VCI section 6.2: when the authorization was expressed as
     // authorization_details, the token response grants credential_identifiers
     // and the Credential Request must use one of them. They ride in the access
@@ -3928,6 +4035,18 @@ class OAuth2Server {
     // identifier.
     if (opts.authorization_details) payload.authorization_details =
         opts.authorization_details;
+    // THE GRANT A DETAIL'S LIMITS ARE COUNTED AGAINST (#432 phase 5): RFC
+    // 9396 lets a detail carry `limits`, and the RESOURCE SERVER keeps the
+    // running totals (rcbj's decision 2) — which it can do only with one key
+    // that survives every refresh, or a client renewing its token would be
+    // renewing its budget. `tokenSet()` chooses it: the Grant Management
+    // grant (#142) where one is recorded, otherwise an identifier minted per
+    // authorization and carried forward inside the refresh token. GNAP's
+    // tokens and introspection use the same name.
+    if (opts.limits_grant && opts.authorization_details &&
+        richAuthorization.carriesLimits(opts.authorization_details)) {
+      payload.grant_id = String(opts.limits_grant);
+    }
     // OIDC Core section 5.5's claims request, as the authorization endpoint
     // understood it. It rides here for the reason authorization_details does:
     // the UserInfo endpoint sees this token and NOTHING ELSE — no code, no
@@ -4100,6 +4219,9 @@ class OAuth2Server {
       // refuses it on every node.
       grant_id: opts.grant_id ? String(opts.grant_id) : undefined,
       grant_gen: opts.grant_id ? Number(opts.grant_gen) || 1 : undefined,
+      // THE GRANT LIMITS ARE COUNTED AGAINST (#432 phase 5), inside the JWE,
+      // carried unchanged through every refresh — see accessToken().
+      limits_grant: opts.limits_grant ? String(opts.limits_grant) : undefined,
       // THE CLIENT INSTANCE (#229, draft-ietf-oauth-attestation-based-
       // client-auth section 10.3): where the Token Request carried a verified
       // client attestation, the refresh token is bound to the attested key,
@@ -5047,6 +5169,54 @@ class OAuth2Server {
                 "audience.");
       throw new AccessTokenRefused(log, plan.refusal);
     }
+    // A TYPE THAT REFUSES A BEARER TOKEN (#432 phase 4): the access-type
+    // catalogue's `bearer: false`, which GNAP's issuance policy reads for an
+    // access right, read here for the RFC 9396 detail the same declaration
+    // describes. Here, the funnel every grant mints through, because whether
+    // the token will be bound — a DPoP key (`jkt`) or a client certificate
+    // on this connection (RFC 8705) — is known only now. In every mode: the
+    // resource server declared the type that way.
+    const unbound = !opts.jkt &&
+      !(opts.request && mtls.presentedThumbprint(opts.request));
+    const bearerRefused = unbound
+      ? richAuthorization.bearerRefusedBy(opts.authorization_details) : '';
+    if (bearerRefused) {
+      log.debug("Leaving OAuth2Server.tokenSet(). The type " +
+                bearerRefused + " refuses a bearer token.");
+      throw new AccessTokenRefused(log, errorCodes.mark({
+        error: 'invalid_authorization_details',
+        description: 'authorization_details of type "' + bearerRefused +
+          '" may be carried only by a sender-constrained access token, and ' +
+          'this request presented neither a DPoP proof (RFC 9449) nor a ' +
+          'client certificate (RFC 8705): the resource server that declares ' +
+          'the type does not accept a bearer token for it.' },
+        'STS-OAUTH-0878'));
+    }
+    // A TYPE THAT NEEDS AN AUTHENTICATION LEVEL (#432 phase 6): every acr
+    // the catalogue declares for a detail type the token carries, met by the
+    // authentication the grant rests on (`opts.acr`, `opts.amr`) — the code's
+    // session, the refresh token's original sign-in, a CIBA or device
+    // approval. A grant with no person behind it (client credentials) meets
+    // none. Here, the funnel every grant mints through, so no grant type can
+    // carry a right its type's resource server would not accept on that
+    // sign-in — GNAP's issue stage asks the same (STS-GNAP-0891).
+    const detailAcrs = richAuthorization.requiredAcrsOf(
+      opts.authorization_details);
+    const acrFacts = { acr: opts.acr || '', amr: opts.amr || [] };
+    const acrMissing = detailAcrs.filter(function (one: string): boolean {
+      return !self.deps.stepUp.meets(one, acrFacts);
+    });
+    if (acrMissing.length) {
+      log.debug("Leaving OAuth2Server.tokenSet(). A detail type's acr is " +
+                "not met: " + acrMissing.join(' '));
+      throw new AccessTokenRefused(log, errorCodes.mark({
+        error: 'invalid_authorization_details',
+        description: 'authorization_details of a type whose resource ' +
+          'server requires authentication level ' + acrMissing.join(' ') +
+          ' cannot be issued on this grant: the authentication it rests on (' +
+          (acrFacts.acr || 'none') + ') does not meet it (RFC 9470).' },
+        'STS-OAUTH-0937'));
+    }
     const derived = !explicit.length && plan.derived.length > 0;
     // THE GRANT BOTH HALVES BELONG TO, NAMED BEFORE EITHER IS SIGNED (#239):
     // the refresh token's jti and its family are chosen here rather than
@@ -5062,9 +5232,24 @@ class OAuth2Server {
       ? bcp.familyForIssuance(refreshJti, opts.parent_refresh_jti,
                               opts.parent_refresh_family)
       : '';
+    // THE GRANT LIMITS ARE COUNTED AGAINST (#432 phase 5), chosen once per
+    // authorization: Grant Management's grant where there is one; else the
+    // one the refresh token being redeemed carries; else a new one — this
+    // is an authorization's first token set. Named whenever the details the
+    // GRANT authorized carry limits, so the refresh token keeps it even
+    // when this access token was narrowed to details that carry none.
+    const grantDetails = Object.prototype.hasOwnProperty.call(
+      opts, 'grantAuthorizationDetails')
+      ? opts.grantAuthorizationDetails : opts.authorization_details;
+    const limitsGrant = richAuthorization.carriesLimits(grantDetails) ||
+      richAuthorization.carriesLimits(opts.authorization_details)
+      ? String(opts.grant_id || opts.limits_grant ||
+               cellLocator.stamp(randomId(16)))
+      : '';
     const issuing = Object.assign({}, opts, {
       refresh_jti: refreshJti || undefined,
       grant_family: grantFamily || undefined,
+      limits_grant: limitsGrant || undefined,
       scope: plan.scope,
       audience: self.audienceClaim(plan.audiences),
       // Onto the refresh token as well, for the reason the RFC 8707 call sites
@@ -5077,7 +5262,7 @@ class OAuth2Server {
       resources: derived && !(opts.resources && opts.resources.length)
         ? plan.derived.slice(0) : opts.resources
     });
-    const access = self.accessToken(base, issuing);
+    const access = await self.accessTokenAsync(base, issuing);
     // RFC 9700 section 2.2, and it refuses nothing: whether a token is
     // sender-constrained is the CLIENT's decision, since it binds by sending a
     // DPoP proof or presenting a certificate (the settings that REQUIRE one are
@@ -6284,6 +6469,21 @@ class OAuth2Server {
    * @returns `{ details }` (null when none were sent), or `{ error }` marked
    *   with its code
    */
+  // The acr values a request's authorization_details need (#432 phase 6):
+  // the catalogue's, for each type among them, every one required. Details
+  // that do not parse need nothing here — they are refused where they are
+  // issued (`issueAuthorizationResponse()`), not stepped up for.
+  private detailAcrsOf(q: Json, req: Req): string[] {
+    const { log, richAuthorization } = this.deps;
+    log.debug("Entering OAuth2Server.detailAcrsOf().");
+    const parsed = this.parseAuthorizationDetails(q.authorization_details,
+      { clientId: q.client_id, req: req });
+    const out = parsed.details
+      ? richAuthorization.requiredAcrsOf(parsed.details) : [];
+    log.debug("Leaving OAuth2Server.detailAcrsOf(). " + out.length);
+    return out;
+  }
+
   parseAuthorizationDetails(raw: Json, context?: Json): Json {
     const { log, applications, errorCodes, richAuthorization } = this.deps;
     const self = this;
@@ -7972,7 +8172,7 @@ class OAuth2Server {
       // another's said `<base>/resource` for the same request. `resources`
       // still wins, for the reason given there. The plan is the one asked
       // above, before anything was minted.
-      out.access_token = self.accessToken(base, {
+      out.access_token = await self.accessTokenAsync(base, {
         user: user,
         client_id: String(query.client_id),
         scope: audiencePlan.scope,
@@ -8673,7 +8873,8 @@ class OAuth2Server {
     const jar = req.stsJar;
     // With the client's registered defaults (#120).
     const stepping = stepUp.requirementOf(q,
-      this.deps.applications.registrationOf(q.client_id)).present;
+      this.deps.applications.registrationOf(q.client_id)).present ||
+      this.detailAcrsOf(q, req).length > 0;
     if (!jar) {
       log.debug("Leaving OAuth2Server.authorizationReturnQuery(). A plain " +
                 "request.");
@@ -9861,14 +10062,21 @@ class OAuth2Server {
     // default_acr_values apply where the request names neither (#120).
     const stepUpNeed = stepUp.requirementOf(q,
       applications.registrationOf(q.client_id));
+    // AND EVERY AUTHORIZATION DETAIL TYPE'S acr (#432 phase 6): the
+    // access-type catalogue GNAP shares declares the level a right of a type
+    // needs, and a grant of two types is a grant of both — so each is
+    // REQUIRED, beside (not instead of) `acr_values`' "any of".
+    const detailAcrs = self.detailAcrsOf(q, req);
     const stepUpHonoured = String(((req.stsJar && req.stsJar.outer) || q)
       .step_up_honoured || '') === '1';
     const promptNone = String(q.prompt || '').split(/\s+/).indexOf('none') >= 0;
     let stepUpAssessed = null;
-    if (session && !forcePrompt && stepUpNeed.present) {
+    if (session && !forcePrompt &&
+        (stepUpNeed.present || detailAcrs.length)) {
       stepUpAssessed = stepUp.assessSession(stepUpNeed, session, {
         honoured: stepUpHonoured,
-        windowS: Math.floor(authn.pendingTtlMs() / 1000)
+        windowS: Math.floor(authn.pendingTtlMs() / 1000),
+        required: detailAcrs
       });
       if (!stepUpAssessed.met && (promptNone || !stepUpAssessed.retry)) {
         const unmet = stepUp.unmetRefusal(stepUpNeed, stepUpAssessed,
@@ -9954,9 +10162,30 @@ class OAuth2Server {
       const detailsDigest = detailsPlannable &&
         richAuthorization.needsConsent(consentDetails.details)
         ? richAuthorization.digestOf(consentDetails.details) : '';
-      const detailsOutstanding = !!detailsDigest &&
-        !richAuthorization.consumeConsented((session.user || {}).username,
-                                            q.client_id, detailsDigest);
+      const detailsAllowed = detailsDigest
+        ? richAuthorization.consumeConsent((session.user || {}).username,
+                                           q.client_id, detailsDigest)
+        : null;
+      const detailsOutstanding = !!detailsDigest && !detailsAllowed;
+      // THE LIMITS THE PERSON LOWERED ON THE SCREEN (#432 phase 5) are what
+      // this authorization grants: the request's details are replaced by
+      // them for the rest of this pass, so the code — and every token and
+      // refresh minted from it — carries the lowered values.
+      // `consent_screen.ts` accepted only lower ones, and they are held to
+      // that again here against the details the client sent, because the
+      // Allow and this pass are two requests.
+      if (detailsAllowed && detailsAllowed.lowered) {
+        const raised = richAuthorization.limitsRaisedBy(
+          consentDetails.details, detailsAllowed.lowered);
+        if (raised) {
+          log.debug("Leaving the authorization endpoint. Lowered limits " +
+                    "would raise one.");
+          errorCodes.mark(res, 'STS-OAUTH-0917');
+          log.debug("Leaving OAuth2Server.authorizeEndpoint().");
+          return fail('invalid_authorization_details', raised);
+        }
+        q.authorization_details = JSON.stringify(detailsAllowed.lowered);
+      }
       if (decision.outstanding.length || detailsOutstanding) {
         // prompt=none FORBIDS ANY UI, and OIDC Core section 3.1.2.6 gives this
         // exact case its own error code. Answering `interaction_required` — the
@@ -10044,6 +10273,9 @@ class OAuth2Server {
           authorizationDetails: detailsOutstanding
             ? richAuthorization.describe(consentDetails.details) : [],
           detailsDigest: detailsOutstanding ? detailsDigest : '',
+          // The details themselves, for their limits' controls (#432 phase 5).
+          rawAuthorizationDetails: detailsOutstanding
+            ? consentDetails.details : [],
           already: decision.scopes.filter(function (one) {
             return decision.outstanding.indexOf(one) < 0;
           }),
@@ -10119,7 +10351,7 @@ class OAuth2Server {
     // KEY TOO (2026-09-17): those are met by a password with a security key,
     // so the screen offers exactly that and not a one-time code, which would
     // only be refused on the way back. `step_up.screenDemandFor()`.
-    const screen = stepUp.screenDemandFor(stepUpNeed.acrValues);
+    const screen = stepUp.screenDemandWith(stepUpNeed.acrValues, detailAcrs);
     const forceMfa = !!screen.forceMfa;
     if (stepUpReauth) {
       stepUp.record(q.client_id, 'stepup.reauth_' + stepUpAssessed.reason);
@@ -10127,7 +10359,7 @@ class OAuth2Server {
                'from "' +
                (q.client_id || '') + '" (' + stepUpAssessed.reason + '), so ' +
                'the person is sent to sign in again.');
-    } else if (stepUpNeed.present) {
+    } else if (stepUpNeed.present || detailAcrs.length) {
       stepUp.record(q.client_id, 'stepup.sign_in');
     }
     // What the screen tells the person they are signing in FOR. Written here
@@ -14109,7 +14341,10 @@ class OAuth2Server {
         // Still under the same grant and generation (#142), which the check
         // above established is the grant's current one.
         grant_id: claims.grant_id || undefined,
-        grant_gen: claims.grant_id ? claims.grant_gen : undefined
+        grant_gen: claims.grant_id ? claims.grant_gen : undefined,
+        // The grant its details' limits are counted against (#432 phase 5),
+        // so a renewed token is the same budget.
+        limits_grant: claims.limits_grant || undefined
       });
       // And the grant lives as long as what was just minted under it.
       if (claims.grant_id) {
@@ -16679,6 +16914,9 @@ class OAuth2Server {
       // RFC 9396 section 9.2: the resource server learns what the token
       // authorizes in detail the same way it learns its scope.
       authorization_details: claims.authorization_details,
+      // #432 phase 5: the grant those details' limits are counted against,
+      // the same across every refresh — the resource server's key.
+      grant_id: claims.typ === 'Refresh' ? undefined : claims.grant_id,
       // RFC 9470 section 6.2: WHEN the person behind the token authenticated
       // and to what level, so a resource server that introspects rather than
       // reading a JWT can make the same step-up decision. Absent where the
@@ -16956,6 +17194,25 @@ class OAuth2Server {
                'not intended for it (client_id ' + answer.client_id + ', aud ' +
                JSON.stringify(answer.aud) + '), answered as inactive.');
       answer = { active: false };
+    }
+    // WHAT THIS RESOURCE SERVER MAY SEE (#432 phase 4): an authenticated
+    // caller that OWNS a type among the token's details is shown the details
+    // of its own types only, and the person's claims those types declare in
+    // `introspectionClaims` (`authorization_details.ts`'s
+    // `introspectionView()`, GNAP's introspection reads the same). A caller
+    // that owns none sees the token as before.
+    if (authenticated && answer.active === true &&
+        Array.isArray(answer.authorization_details)) {
+      const view = richAuthorization.introspectionView(
+        answer.authorization_details, clientId, answer.username || '');
+      if (view.owned) {
+        answer.authorization_details = view.rights;
+        Object.keys(view.claims).forEach(function (name: string): void {
+          if (answer[name] === undefined) {
+            answer[name] = view.claims[name];
+          }
+        });
+      }
     }
     if (!wantsJwt) {
       res.status(200).type('application/json').send(JSON.stringify(answer));
@@ -19494,6 +19751,7 @@ export = {
   ID_TOKEN_SIGNING_ALGS: ID_TOKEN_SIGNING_ALGS,
   USERINFO_SIGNING_ALGS: USERINFO_SIGNING_ALGS,
   accessToken: slot.forward('accessToken'),
+  accessTokenAsync: slot.forward('accessTokenAsync'),
   tokenSet: slot.forward('tokenSet'),
   // THE TWO SCOPE POLICIES (#110), for `tests/scope_policy.js`: which scopes
   // a client may be issued, and whether it holds a delegated permission.

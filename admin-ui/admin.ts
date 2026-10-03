@@ -3161,7 +3161,8 @@ const APPLICATION_TAB_IDS = ['tab-overview', 'tab-config', 'tab-credentials',
 // seven tabs, the Attributes tab one sub-tab per field group (ufg-<group>,
 // each with its own Save) and the Credentials tab one per kind of credential.
 const USER_TAB_IDS = ['utab-overview', 'utab-activity', 'utab-attributes',
-  'utab-credentials', 'utab-federation', 'utab-entry', 'utab-signout'];
+  'utab-credentials', 'utab-federation', 'utab-gnap', 'utab-entry',
+  'utab-signout'];
 const USER_SUB_TAB_IDS = ['ucred-factors', 'ucred-password', 'ucred-keys',
   'ucred-kerberos'].concat(personEditor.FIELD_GROUPS.map(function (group) {
   return 'ufg-' + group.id;
@@ -8695,6 +8696,15 @@ class AdminConsole {
         '" title="' + this.esc('Every Kerberos ticket this KDC has minted. ' +
           'There is no per-session link: a ticket carries no identifier this ' +
           'service keeps a handle on.') + '">the ticket table</a></td>';
+    }
+    if (row.family === 'gnap') {
+      // A GNAP GRANT (#432): its tokens are in GNAP's own store, listed with
+      // the grant on Protocols → GNAP.
+      log.debug("Leaving AdminConsole.sessionCredentialsCell().");
+      return '<td><a href="' + this.esc('/admin/gnap' +
+        queryWith({ state: 'approved' }, {})) +
+        '" title="' + this.esc('The grants this authorization server holds, ' +
+          'with the tokens each issued') + '">the grant list</a></td>';
     }
     log.debug("Leaving AdminConsole.sessionCredentialsCell().");
     return '<td class="sub" title="' +
@@ -14777,6 +14787,122 @@ class AdminConsole {
   }
 
   // ---------------------------------------------------------------------------
+  // THE PERSON'S GNAP GRANTS (#432 phase 7, 2026-10-03): every grant they are
+  // the resource owner of — approved at an interaction, or acted on through a
+  // verified assertion — with the rights it holds, the tokens issued under
+  // it, why it ended, and a Revoke for one with something live left. The
+  // facts are `gnap/gnap_console.ts`'s `personGrantsView()` through
+  // `admin_views.ts` (`gnapGrants` in /admin-api/users?user=), the same view
+  // the person's own /portal/gnap draws; Revoke posts to /admin/gnap's
+  // `revoke-grant` naming the person too, so a stale page cannot end a
+  // stranger's grant (STS-GNAP-0792), and lands back on this tab.
+  // ---------------------------------------------------------------------------
+  /**
+   * Draws a person's GNAP grants tab: each grant they are the resource owner
+   * of, its rights, tokens and finalization, and a Revoke (#432 phase 7).
+   *
+   * @param key - the person
+   * @param gnap - `{ rows, paging, cells }` from the view
+   * @param gate - the console gate's state for this request
+   * @param params - the page's query, for the paging links
+   * @returns the tab's HTML
+   */
+  userGnapGrantsSection(key, gnap, gate, params) {
+    const { log } = this.deps;
+    const self = this;
+    log.debug("Entering AdminConsole.userGnapGrantsSection().");
+    const view = gnap || { rows: [], paging: null, cells: null };
+    const when = function (seconds) {
+      log.debug("Entering when().");
+      log.debug("Leaving when().");
+      return seconds ? self.whenText(seconds * 1000) : '—';
+    };
+    const rightText = function (right) {
+      log.debug("Entering rightText().");
+      if (typeof right === 'string') {
+        log.debug("Leaving rightText(). A reference.");
+        return '<code>' + self.esc(right) + '</code>';
+      }
+      const parts = [];
+      ['actions', 'locations', 'datatypes', 'privileges'].forEach(
+          function (dimension) {
+        if (Array.isArray(right[dimension]) && right[dimension].length) {
+          parts.push(dimension + ': ' + right[dimension].join(', '));
+        }
+      });
+      if (right.identifier) {
+        parts.push('identifier: ' + right.identifier);
+      }
+      if (right.limits !== undefined) {
+        parts.push('limits: ' + JSON.stringify(right.limits));
+      }
+      log.debug("Leaving rightText().");
+      return '<code>' + self.esc(right.type || '') + '</code>' +
+        (parts.length ? ' <span class="sub">' + self.esc(parts.join('; ')) +
+                        '</span>' : '');
+    };
+    const heading = '<h2 id="gnap-grants">GNAP grants</h2>' +
+      this.note('Every GNAP (RFC 9635) grant this person is the resource ' +
+        'owner of: approved by them on the approval page, or acted on by a ' +
+        'trusted client presenting a verified assertion about them. ' +
+        '<strong>Revoke</strong> is the client\'s own section 5.4 act ' +
+        'performed for them: every token issued under the grant stops ' +
+        'working, the grant is finalized as <code>revoked</code> and CAEP ' +
+        '<code>session-revoked</code> is sent. The person can do the same ' +
+        'on their own <code>/portal/gnap</code>.') +
+      (view.cells && view.cells.multiCell
+        ? this.note('<strong>This cell only</strong> (' +
+                    this.esc(view.cells.cell) + '). ' +
+                    this.esc(view.cells.note))
+        : '');
+    if (!view.rows.length) {
+      log.debug("Leaving AdminConsole.userGnapGrantsSection(). None.");
+      return heading + this.note('This person is the resource owner of no ' +
+                                 'GNAP grant in this realm.');
+    }
+    const nav = view.paging
+      ? this.pageNavPair('/admin/users', params,
+                         Object.assign({}, view.paging,
+                                       { param: 'gnapGrantsPage' }))
+      : { head: '', foot: '' };
+    const rows = '<table><tr><th>Grant</th><th>Client</th><th>State</th>' +
+      '<th>Rights</th><th>Tokens</th><th>Lifetime ends</th><th></th></tr>' +
+      view.rows.map(function (row) {
+        const tokens = row.tokens.length
+          ? row.tokens.map(function (token) {
+              return self.esc((token.label ? token.label + ' · ' : '') +
+                              token.format + ' · ' + token.state) +
+                ' <span class="sub">until ' + self.esc(when(token.expiresAt)) +
+                '</span>';
+            }).join('<br>')
+          : '<span class="sub">none</span>';
+        const control = row.revocable && gate.write
+          ? '<form method="post" action="/admin/gnap">' +
+            '<input type="hidden" name="action" value="revoke-grant">' +
+            '<input type="hidden" name="grant" value="' + self.esc(row.id) +
+            '"><input type="hidden" name="user" value="' + self.esc(key) +
+            '"><button type="submit" class="danger">Revoke</button></form>'
+          : '';
+        return '<tr><td><code>' + self.esc(row.id) + '</code></td>' +
+          '<td><a href="/admin/applications?application=' +
+          encodeURIComponent(row.client || '') + '">' +
+          self.esc(row.clientName || row.client || '') + '</a></td>' +
+          '<td>' + self.esc(row.state) +
+          (row.finalization ? '<div class="sub">' +
+            self.esc(row.finalization.reason) + '</div>' : '') + '</td>' +
+          '<td>' + (row.rights.map(rightText).join('<br>') || '—') +
+          '<div class="sub">' + self.esc(row.rightsAre) + '</div></td>' +
+          '<td>' + tokens + '</td><td>' +
+          self.esc(when(row.grantExpiresAt)) + '</td><td>' + control +
+          '</td></tr>';
+      }).join('') + '</table>';
+    log.debug("Leaving AdminConsole.userGnapGrantsSection().");
+    return heading + nav.head + rows + nav.foot +
+      (gate.write ? '' : this.note('Revoking a grant needs <strong>Admin ' +
+                                   'Write</strong>.'));
+  }
+
+  // ---------------------------------------------------------------------------
   // THE PERSON'S KERBEROS ACCOUNT (#59, 2026-09-22): the principal, what this
   // realm's KDC holds for them — the PUBLIC half, never a key — and "Reset
   // password and download keytab".
@@ -15764,6 +15890,12 @@ class AdminConsole {
           html: this.userFederationLinksSection(key, view.federationLinkPage,
                                                 gateStateFor(req), back,
                                                 params) },
+        // The GNAP grants they are the resource owner of (#432 phase 7): a
+        // grant is access they gave an application, so it has a tab of its
+        // own beside the links, with a Revoke per grant.
+        { id: 'utab-gnap', label: 'GNAP grants',
+          html: this.userGnapGrantsSection(key, view.gnapGrants,
+                                           gateStateFor(req), params) },
         // Every attribute the entry holds, and the one-attribute forms the
         // Attributes tab replaced as the usual door (#228).
         { id: 'utab-entry', label: 'Directory entry',
@@ -18147,7 +18279,11 @@ class AdminConsole {
     const made = result.ok && result.application
       ? String(result.application.identifier || '') : '';
     const claimAction = String(body.action || '') === 'set-custom-claim' ||
-      String(body.action || '') === 'remove-custom-claim';
+      String(body.action || '') === 'remove-custom-claim' ||
+      // The Access types tab (#432 phase 4) comes back to itself the same
+      // way, refused or not.
+      String(body.action || '') === 'set-access-type' ||
+      String(body.action || '') === 'remove-access-type';
     // A claim action comes back to its section whether it was refused or
     // not (2026-10-01): the refusal is about one row, and the reader is
     // still working on that application.
@@ -18170,8 +18306,10 @@ class AdminConsole {
                 ? (String(body.from || '') === 'credentials'
                   ? '#credentials-did' : '#cfg-did')
                 : (claimAction
-                  ? (['saml2', 'saml11'].indexOf(String(body.set || '')) >= 0
-                    ? '#cfg-saml-attributes' : '#cfg-oauth-claims')
+                  ? (/-access-type$/.test(String(body.action || ''))
+                    ? '#tab-access-types'
+                    : (['saml2', 'saml11'].indexOf(String(body.set || '')) >= 0
+                      ? '#cfg-saml-attributes' : '#cfg-oauth-claims'))
                   : '')))))
       : '/admin/applications' + queryWith(listView, {});
     this.respondToAction(req, res, back, result);
@@ -19568,6 +19706,158 @@ class AdminConsole {
   // (`STS-REG-0150`) and the normalisation are there, and
   // `POST /admin-api/applications/add|remove` reaches the same function.
   // ---------------------------------------------------------------------------
+  // -------------------------------------------------------------------------
+  // THE ACCESS TYPES TAB (#432 phase 4): every type this application declares
+  // in the access-type catalogue — `oauthAuthorizationDetailsType`, one
+  // definition per value — with what each declares, a form that declares or
+  // replaces one from named fields, and a Remove per type. Both post to
+  // `/admin/applications` (`set-access-type`, `remove-access-type`), the
+  // actions `/admin-api/applications/{action}` takes too (rule 7).
+  // -------------------------------------------------------------------------
+  /**
+   * Draws an application's Access types tab: the catalogue entries it owns,
+   * and the forms that declare, replace and remove one.
+   *
+   * @param row - the application
+   * @param carryBack - the hidden field that returns to the list's view
+   * @returns the tab's HTML
+   */
+  applicationAccessTypesSection(row, carryBack) {
+    const { log, applications, mode } = this.deps;
+    const self = this;
+    log.debug("Entering AdminConsole.applicationAccessTypesSection().");
+    const held = [].concat((row.fields &&
+                            row.fields.oauthAuthorizationDetailsType) || [])
+      .map(function (one) { return String(one); })
+      .filter(function (one) { return one !== ''; });
+    const listed = function (values) {
+      log.debug("Entering listed().");
+      log.debug("Leaving listed().");
+      return values && values.length
+        ? values.map(function (one) {
+          return '<code>' + self.esc(one) + '</code>';
+        }).join(', ') : '<span class="state-none">any</span>';
+    };
+    const rows = held.map(function (stored) {
+      const d = applications.authorizationDetailsTypeOf(stored);
+      if (d.problem) {
+        return '<tr><td colspan="3"><span class="state-revoked">unusable' +
+          '</span> <code>' + self.esc(stored.slice(0, 200)) + '</code> ' +
+          '&mdash; ' + self.esc(d.problem) + '</td></tr>';
+      }
+      const facts = [
+        ['Actions', listed(d.actions)],
+        ['Datatypes', listed(d.datatypes)],
+        ['Privileges', listed(d.privileges)],
+        ['Locations', d.locations.length ? listed(d.locations)
+          : '<span class="state-none">this application\'s own addresses' +
+            '</span>'],
+        ['Required members', d.required.length ? listed(d.required)
+          : '<span class="state-none">none</span>'],
+        ['Bearer token', d.bearer === false ? 'refused' : (d.bearer === true
+          ? 'allowed' : '<span class="state-none">no rule of its own</span>')],
+        ['Maximum token lifetime', d.maxLifetimeS ? d.maxLifetimeS + ' s'
+          : '<span class="state-none">none</span>'],
+        ['Derivable from', d.derivableFrom.length ? listed(d.derivableFrom)
+          : '<span class="state-none">nothing</span>'],
+        ['Introspection claims', d.introspectionClaims.length
+          ? listed(d.introspectionClaims)
+          : '<span class="state-none">none</span>'],
+        ['Limits schema', d.limits ? '<code>' +
+          self.esc(JSON.stringify(d.limits)) + '</code>'
+          : '<span class="state-none">none: limits are refused</span>'],
+        ['Interaction (phase 6)', self.esc(d.interaction) +
+          (d.consentActions.length ? '; consent forced by ' +
+            listed(d.consentActions) : '')],
+        ['Authentication level (phase 6)', d.acr
+          ? '<code>' + self.esc(d.acr) + '</code>'
+          : '<span class="state-none">none</span>']
+      ].map(function (pair) {
+        return '<div><strong>' + pair[0] + ':</strong> ' + pair[1] + '</div>';
+      }).join('');
+      return '<tr><td><code>' + self.esc(d.type) + '</code>' +
+        (d.description ? '<div class="sub">' + self.esc(d.description) +
+                         '</div>' : '') + '</td><td>' + facts + '</td><td>' +
+        '<form method="post" action="/admin/applications" class="inline">' +
+        carryBack + '<input type="hidden" name="action" ' +
+        'value="remove-access-type"><input type="hidden" name="application" ' +
+        'value="' + self.esc(row.identifier) + '"><input type="hidden" ' +
+        'name="type" value="' + self.esc(d.type) + '"><button type="submit" ' +
+        'class="secondary">Remove</button></form></td></tr>';
+    }).join('');
+    const box = function (id, label, help, rowsN?) {
+      log.debug("Entering box().");
+      log.debug("Leaving box().");
+      return '<div class="formrow"><label for="at-' + id + '">' + label +
+        '</label>' + (rowsN
+          ? '<textarea id="at-' + id + '" name="' + id + '" rows="' + rowsN +
+            '" cols="48"></textarea>'
+          : '<input type="text" id="at-' + id + '" name="' + id +
+            '" size="40">') +
+        '<span class="sub">' + help + '</span></div>';
+    };
+    log.debug("Leaving AdminConsole.applicationAccessTypesSection(). " +
+              held.length + " type(s).");
+    return '<h2>Access types this resource server owns</h2>' +
+      '<p>The <strong>access-type catalogue</strong>: each type here is read ' +
+      'by RFC 9396 <code>authorization_details</code> at the OAuth endpoints ' +
+      'and by GNAP access rights alike, and a token carrying one is for this ' +
+      'application. They are this entry\'s ' +
+      '<code>oauthAuthorizationDetailsType</code>.</p>' +
+      this.note('A type no application declares is refused by RFC 9396 in ' +
+      'every mode, and by GNAP ' +
+      (mode.grantsUncataloguedAccess()
+        ? 'only in product mode &mdash; this realm is in development mode, ' +
+          'where it is granted as asked'
+        : 'in this realm, which is in product mode') +
+      ' (the issuance policy\'s <code>gnap-type-not-catalogued</code> ' +
+      'rule). For GNAP, interaction (always, default, never) and the ' +
+      'actions that force consent decide whether the resource owner must ' +
+      'see the approval page, and the authentication level is what their ' +
+      'session must meet before it is drawn (#432 phase 6).') +
+      '<table><tr><th>Type</th><th>What it declares</th><th></th></tr>' +
+      (rows || '<tr><td colspan="3"><span class="state-none">None.</span>' +
+       '</td></tr>') + '</table>' +
+      '<h3>Declare or replace a type</h3>' +
+      '<form method="post" action="/admin/applications">' + carryBack +
+      '<input type="hidden" name="action" value="set-access-type">' +
+      '<input type="hidden" name="application" value="' +
+      this.esc(row.identifier) + '">' +
+      box('type', 'Type', 'Required. A type of the same name is replaced.') +
+      box('description', 'Description', 'Shown on the consent and approval ' +
+          'pages.') +
+      box('actions', 'Actions', 'One per line; empty allows any.', 3) +
+      box('datatypes', 'Datatypes', 'One per line; empty allows any.', 2) +
+      box('privileges', 'Privileges', 'One per line; empty allows any.', 2) +
+      box('locations', 'Locations', 'One absolute URI per line, beside this ' +
+          'application\'s own addresses.', 2) +
+      box('requiredMembers', 'Required members', 'Member names a right ' +
+          'must carry, one per line.', 2) +
+      box('bearer', 'Bearer token', '<code>false</code> refuses a bearer ' +
+          'token carrying the type; empty sets no rule of its own.') +
+      box('maxLifetimeS', 'Maximum token lifetime (s)', 'A token carrying ' +
+          'the type lives no longer.') +
+      box('derivableFrom', 'Derivable from', 'Types a right of this one may ' +
+          'be derived from at RFC 9767 section 4, one per line.', 2) +
+      box('introspectionClaims', 'Introspection claims', 'The person\'s ' +
+          'claims this resource server is told at introspection, one per ' +
+          'line.', 2) +
+      box('schema', 'Schema', 'A JSON Schema every right of the type must ' +
+          'meet.', 4) +
+      box('limits', 'Limits schema', 'A JSON Schema (a subset: type, ' +
+          'properties, required, bounds, enum, pattern, format) a ' +
+          'right\'s <code>limits</code> must meet; none refuses limits.', 4) +
+      box('interaction', 'Interaction (phase 6)', '<code>always</code>, ' +
+          '<code>default</code> or <code>never</code>.') +
+      box('consentActions', 'Actions forcing consent (phase 6)', 'One per ' +
+          'line.', 2) +
+      box('acr', 'Authentication level (phase 6)', 'One acr value.') +
+      '<div class="formrow"><button type="submit">Save the type</button>' +
+      '</div></form>' +
+      this.note('A definition that does not read is refused with the reason ' +
+      '(<code>STS-REG-0294</code>), and the type already declared stays.');
+  }
+
   /**
    * Draws an application's CORS origins (`appCorsOrigin`), one row each with
    * a Remove button that posts the value as stored, and a form to add one.
@@ -21384,6 +21674,12 @@ class AdminConsole {
                                                           'credentials')) },
       { id: 'tab-origins', label: 'Browser origins',
         html: this.applicationCorsSection(row, carryBack) },
+      // THE ACCESS-TYPE CATALOGUE (#432 phase 4): the types this
+      // application, as a resource server, owns — read by RFC 9396 and GNAP
+      // alike, so drawn for either.
+      { id: 'tab-access-types', label: 'Access types',
+        html: forFamilies(OAUTH.concat(['gnap']),
+          this.applicationAccessTypesSection(row, carryBack)) },
       { id: 'tab-signals', label: 'Shared Signals',
         html: forFamilies(['ssf'], this.applicationSignalsSection(view,
           carryBack, this.mayWrite(req))) },

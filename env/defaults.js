@@ -113,6 +113,7 @@ var config = {
     tokenFormats: "jwt-signed,jwt-encrypted,macaroon,biscuit,zcap",        // Token formats offered
     zcapCryptosuite: "eddsa-jcs-2022",                                     // ZCAP proof suite
     accessTokenLifetimeS: 3600,                                            // Access token lifetime (seconds)
+    grantLifetimeS: 86400,                                                 // Grant lifetime (seconds)
     interactionLifetimeS: 600,                                             // Interaction lifetime (seconds)
     continueWaitS: 5,                                                      // Continuation wait (seconds)
     maxPolls: 60,                                                          // Polls allowed before too_many_attempts
@@ -134,12 +135,15 @@ var config = {
     continueAfterApproval: true,                                           // Keep approved grants continuable
     consentRequired: true,                                                 // Ask the resource owner
     rememberApprovals: true,                                               // Remember approvals
-    allowCrossUser: false,                                                 // Allow a different person to approve
+    ownerApproval: false,                                                  // Approval by an absent resource owner
+    ownerApprovalLifetimeS: 600,                                           // Time an absent owner has to answer
+    ownerApprovalMaxPending: 5,                                            // Requests one person may have waiting
     userCodeLength: 8,                                                     // User code length
     unknownAccessReferences: "accept",                                     // Unregistered access references
     introspection: true,                                                   // Offer token introspection
     resourceRegistration: true,                                            // Offer resource set registration
     tokenDerivation: true,                                                 // Allow downstream token derivation
+    maxDerivationDepth: 2,                                                 // Deepest derivation chain
     pushFinish: true,                                                      // Deliver push interaction finishes
     pushAllowHttp: false,                                                  // Allow http:// for push
     pushSkipTlsVerification: false,                                        // Skip TLS verification for push (development only)
@@ -149,6 +153,7 @@ var config = {
     jweEnc: "A256GCM",                                                     // jwt-encrypted content encryption
     accessTokenCertificateHeader: "x5u",                                   // JWT access token certificate header
     demoResourceServer: true,                                              // Run the demonstration resource server
+    ownerLookupCacheS: 60,                                                 // Owner lookup cache (seconds)
     caepEvents: true,                                                      // Emit CAEP for grants and tokens
     scopedSignals: true                                                    // Scope a GNAP web application's streams
   },
@@ -445,6 +450,8 @@ var config = {
     idTokenTtlS: 3600,                             // ID Token lifetime (s)
     refreshTokenTtlS: 86400,                       // Refresh token lifetime (s)
     expiredTokenRetentionS: 86400,                 // Keep an expired token on /admin/tokens for (seconds)
+    accessTokenStatusListTtlS: 60,                 // Access-token status list time to live (s)
+    accessTokenStatusListLifetimeS: 3600,          // Access-token status list lifetime (s)
     maxRevokedJtis: 100000,                        // Most revoked token ids kept per realm
     clockSkewS: 30,                                // Token clock skew (s)
     redirectUris: "",                              // Registered redirect URIs
@@ -999,6 +1006,7 @@ var config = {
     foreignInboxMax: 500,                                                                                                                                 // Partner SETs kept
     foreignTimeoutMs: 10000,                                                                                                                              // Partner signals timeout (ms)
     actOnSignalsInDevelopment: false,                                                                                                                     // The console and portal act on received signals in development
+    signalsRevokeGrants: true,                                                                                                                            // A federation partner's signals revoke the person's grants and tokens
     legacySubClaim: false,                                                                                                                                // Also emit the deprecated `sub` claim (development only)
     breakSetSignature: false                                                                                                                              // Sign every SET badly (development only)
   },

@@ -32,6 +32,8 @@
 //   POST    /gnap/resource            resource set registration (RFC 9767 3.4)
 //   GET     /gnap/keys                token-format verification material
 //   GET     /gnap/zcap/controller     the ZCAP-LD controller document
+//   GET     /gnap/biscuit/revocations the revocation identifiers of revoked
+//                                     biscuits (#432; this service's own)
 //   GET|POST /gnap/rs/resource        the demonstration resource server
 //
 // **A NAMED AUTHORIZATION SERVER IS THE OAUTH SUBSYSTEM'S, NOT A SECOND ONE.**
@@ -92,6 +94,7 @@ import errorCodes = require('../common/error_codes');
 import validation = require('../common/validation');
 import authorizationServers = require('../oauth-oidc/authorization_servers');
 import grants = require('./gnap_grants');
+import gnapRights = require('./gnap_rights');
 import rs = require('./gnap_rs');
 import tokens = require('./gnap_tokens');
 import zcap = require('./token_zcap');
@@ -125,6 +128,12 @@ interface GnapRoutesDeps {
   // Required at the moment they are needed, never at load.
   loadAccess(): AccessCovers;
   loadMonitor(): EventCounter;
+  loadStore(): { biscuitRevocationIds(): string[] };
+  loadStatusList(): { aggregationUri(base: string): string };
+  // #432 phase 5: the demonstration resource server's running totals, and
+  // the body reader its spend operation shares with every GNAP endpoint.
+  loadSpend(): any;
+  loadProof(): any;
 }
 
 // The routes' own table of what an express app offers.
@@ -148,6 +157,15 @@ const vt = validation.types;
 
 const AS_PARAMS = vz.object({ as: vt.opt(vt.identifier) });
 const GRANT_PARAMS = vz.object({ grant: vt.base64url });
+// The demonstration spend operation's body (#432 phase 5): flat, so each
+// member is a scalar the shared validator reads as it reads every body.
+const SPEND_BODY = vz.object({
+  amount: vz.string().max(40).optional(),
+  currency: vz.string().max(8).optional(),
+  receiver: vz.string().max(512).optional(),
+  // A JSON true arrives as the scalar "true" (`validation.js` flattens).
+  simulateFailure: vt.opt(vt.oneOf(['true', 'false']))
+});
 const HANDLE_PARAMS = vz.object({ handle: vt.base64url });
 
 const STATUS_FOR: Record<string, number> = {
@@ -161,7 +179,11 @@ const STATUS_FOR: Record<string, number> = {
 // ---------------------------------------------------------------------------
 // THE DEMONSTRATION RESOURCE SERVER'S NAMES — see `demoResource()`.
 // ---------------------------------------------------------------------------
-const DEMO_TYPE = 'urn:iya-sts:gnap:demo';
+// One spelling, the catalogue's (#432 phase 4): `gnap_rights.ts` builds it
+// in while the demonstration resource server is on.
+const DEMO_TYPE = gnapRights.DEMO_TYPE;
+// The revoked biscuits' identifiers (#432).
+const BISCUIT_REVOCATIONS_PATH = '/gnap/biscuit/revocations';
 const DEMO_REFERENCE = 'iya-sts-gnap-demo';
 
 /**
@@ -438,6 +460,17 @@ class GnapRoutes {
       if (caps.key_proofs_supported) {
         document.key_proofs_supported = caps.key_proofs_supported;
       }
+      // WHERE A RESOURCE SERVER THAT CHECKS TOKENS ON ITS OWN LEARNS OF A
+      // REVOCATION (#432; RFC 9767 section 6.3 offers it nothing but
+      // introspection). Neither member is in RFC 9767 section 10's registry;
+      // both are this service's own, and an RS that does not know them
+      // ignores them. `status_list_aggregation_endpoint` is the name
+      // draft-ietf-oauth-status-list section 9.1 gives the same document in
+      // an OAuth authorization server's metadata — the realm's ONE
+      // access-token list, which GNAP's two JWT formats share with OAuth.
+      document.status_list_aggregation_endpoint =
+        self.deps.loadStatusList().aggregationUri(base);
+      document.biscuit_revocation_endpoint = base + BISCUIT_REVOCATIONS_PATH;
       res.status(200).type('application/json')
          .set('Cache-Control', 'no-store')
          .send(JSON.stringify(document, null, 2));
@@ -543,6 +576,164 @@ class GnapRoutes {
                                 method: judged.method,
                                 token: judged.model }, null, 2));
       log.debug("Leaving the demonstration RS. Allowed.");
+    })(req, res);
+  }
+
+  // -------------------------------------------------------------------------
+  // THE DEMONSTRATION RESOURCE SERVER SPENDS (#432 phase 5).
+  //
+  // `POST /gnap/rs/spend`, body `{ amount, currency, receiver,
+  // simulateFailure }` (each optional): an operation that SPENDS — a
+  // payment, say — and so is what a right's limits are for. It needs the
+  // action `spend` on `urn:iya-sts:gnap:demo`, and is then checked against
+  // the limits of the first right that covers it (`gnap_spend.ts`: the
+  // window, the interval, the receiver, the currency, then the totals per
+  // grant, atomically across the cluster). A covering right with NO limits
+  // allows it unaccounted, because no limit was asked for. With
+  // `simulateFailure` the operation fails AFTER its spend was counted and
+  // the spend is refunded — the reference for an operation that fails.
+  // -------------------------------------------------------------------------
+  private demoSpend(req: Req, res: Res): void {
+    const self = this;
+    const { log, config, errorCodes, grants, rs, loadAccess,
+            loadMonitor } = this.deps;
+    log.debug("Entering GnapRoutes.demoSpend().");
+    log.debug("Leaving GnapRoutes.demoSpend().");
+    this.guarded('the demonstration spend', async function () {
+      log.debug("Entering the demonstration spend.");
+      if (self.offCheck(res)) {
+        log.debug("Leaving the demonstration spend. Off.");
+        return;
+      }
+      if (config.value('gnap.demoResourceServer') === false) {
+        errorCodes.mark(res, 'STS-GNAP-0550');
+        self.gnapError(res, 404, 'invalid_request', 'The demonstration ' +
+                       'resource server is turned off ' +
+                       '(gnap.demoResourceServer).');
+        log.debug("Leaving the demonstration spend. Turned off.");
+        return;
+      }
+      const base = grants.realmBase(req);
+      // The same resource server as `/gnap/rs/resource`, so the same
+      // audience: one token reads, writes and spends there.
+      const selfUri = base + '/gnap/rs/resource';
+      const challenge = 'GNAP as_uri="' + grants.grantEndpointOf(req, null) +
+        '", access="' + DEMO_REFERENCE + '", referrer="' + base +
+        '/gnap/rs/spend"';
+      const answer = function (status: number, code: string, error: string,
+                               why: string): void {
+        log.debug("Entering answer(). " + code);
+        errorCodes.mark(res, code);
+        res.status(status).set('Cache-Control', 'no-store');
+        if (status === 401 || status === 403) {
+          res.set('WWW-Authenticate', challenge + ', error="' + error + '"');
+        }
+        res.type('application/json')
+           .send(JSON.stringify({ error: error, error_description: why }));
+        log.debug("Leaving answer().");
+      };
+      if (!req.headers.authorization) {
+        answer(401, 'STS-GNAP-0551', 'invalid_token', 'This operation ' +
+               'needs a GNAP access token.');
+        log.debug("Leaving the demonstration spend. RS-first challenge.");
+        return;
+      }
+      const presented = /^GNAP\s+(\S+)$/i.exec(
+        String(req.headers.authorization).trim());
+      if (presented && await gnapCells.placeToken(req, res, presented[1],
+                                                  'gnap:resource')) {
+        log.debug("Leaving the demonstration spend. Relayed to its cell.");
+        return;
+      }
+      const judged: any = await rs.authenticate(req, { audience: selfUri,
+                                                       base: base });
+      if (!judged.ok) {
+        answer(judged.status || 401,
+               errorCodes.codeOf(judged) || 'STS-GNAP-0552',
+               judged.gnapError || 'invalid_token', judged.why);
+        log.debug("Leaving the demonstration spend. Refused: " + judged.why);
+        return;
+      }
+      const body = self.deps.loadProof().readBody(req);
+      const posted: any = body.ok
+        ? self.deps.validation.checkParsed(body.json || {}, 'body',
+                                           SPEND_BODY)
+        : { ok: false, detail: body.why };
+      if (!posted.ok) {
+        answer(400, 'STS-GNAP-0874', 'invalid_request', 'The operation ' +
+               'is not readable: ' + String(posted.detail || posted.why ||
+                                            ''));
+        log.debug("Leaving the demonstration spend. Malformed.");
+        return;
+      }
+      const op = posted.value;
+      // THE RIGHT THAT COVERS IT: of the demonstration type, allowing
+      // `spend` (an absent `actions` is every action, `gnap_access.ts`).
+      const access = loadAccess();
+      const covering = (judged.model.access || []).filter(function (r: any) {
+        return r && typeof r === 'object' &&
+          access.accessCovers([r], [{ type: DEMO_TYPE, actions: ['spend'] }]);
+      });
+      if (!covering.length) {
+        answer(403, 'STS-GNAP-0553', 'insufficient_scope', 'The token does ' +
+               'not grant spend on ' + DEMO_TYPE + '.');
+        log.debug("Leaving the demonstration spend. Not covered.");
+        return;
+      }
+      const limited = covering.filter(function (r: any) {
+        return r.limits !== undefined;
+      });
+      const grant = judged.model.grant || judged.record.grantId || '';
+      const operation = { receiver: op.receiver, amount: op.amount,
+                          currency: op.currency };
+      let spent: any = null;
+      let refused: any = null;
+      if (limited.length === covering.length) {
+        // EVERY covering right is limited: the first one whose limits take
+        // this operation is the one spent against.
+        const spend = self.deps.loadSpend();
+        for (let i = 0; i < limited.length && !spent; i++) {
+          const tried = await spend.spend({
+            grant: grant, right: limited[i], operation: operation,
+            expiresAt: judged.record.grantExpiresAt || judged.record.exp });
+          if (tried.ok) {
+            spent = tried;
+          } else if (!refused || tried.code === 'STS-GNAP-0875') {
+            refused = tried;
+          }
+        }
+        if (!spent) {
+          answer(refused.status, refused.code, refused.error, refused.why);
+          log.debug("Leaving the demonstration spend. " + refused.code);
+          return;
+        }
+      }
+      if (op.simulateFailure === 'true') {
+        const refunded = spent
+          ? await self.deps.loadSpend().refund(spent.spent) : false;
+        errorCodes.mark(res, 'STS-GNAP-0876');
+        res.status(502).set('Cache-Control', 'no-store')
+           .type('application/json')
+           .send(JSON.stringify({ error: 'operation_failed',
+             error_description: 'The demonstration operation failed after ' +
+             'its spend was counted' + (spent ? (refunded
+               ? '; the spend was refunded.'
+               : '; the spend could not be refunded.') : '.'),
+             refunded: refunded }));
+        log.debug("Leaving the demonstration spend. Failed and refunded.");
+        return;
+      }
+      loadMonitor().record(judged.record.instanceId, 'rs.presented', {});
+      res.status(200).type('application/json')
+         .set('Cache-Control', 'no-store')
+         .send(JSON.stringify({
+           ok: true, action: 'spend', format: judged.format,
+           grant_id: grant,
+           limited: !!spent,
+           totals: spent ? spent.totals : undefined,
+           remaining: spent ? spent.remaining : undefined,
+           period: spent ? spent.period : undefined }, null, 2));
+      log.debug("Leaving the demonstration spend. Spent.");
     })(req, res);
   }
 
@@ -732,11 +923,56 @@ class GnapRoutes {
       log.debug("Leaving GET /gnap/zcap/controller.");
     }));
 
+    // -----------------------------------------------------------------------
+    // THE REVOKED BISCUITS (#432). A biscuit carries its own revocation
+    // identifiers — one per block, the signature that sealed it — and the
+    // format's own answer to revocation is a list of revoked identifiers its
+    // verifier checks a token's against. No GNAP or biscuit document says
+    // where such a list is published, so this is THIS SERVICE'S OWN, named
+    // in the RS-facing discovery document and on /gnap/keys. JSON, unsigned
+    // (it is fetched over the same TLS as the keys that verify the
+    // biscuits), and an identifier stays on it until its token's own `exp`.
+    // Cache-Control is max-age = `oauth2.accessTokenStatusListTtlS`, the
+    // access-token list's ttl: the same promise about the same tokens.
+    // -----------------------------------------------------------------------
+    app.get(BISCUIT_REVOCATIONS_PATH, function (req, res) {
+      log.debug("Entering GET " + BISCUIT_REVOCATIONS_PATH + ".");
+      if (self.offCheck(res)) {
+        log.debug("Leaving GET " + BISCUIT_REVOCATIONS_PATH + ". Off.");
+        return;
+      }
+      let ids: string[] = [];
+      try {
+        ids = self.deps.loadStore().biscuitRevocationIds();
+      } catch (e) {
+        log.debug("Caught in GET " + BISCUIT_REVOCATIONS_PATH + ": " +
+                  ((e && e.message) || e));
+        log.error(errorCodes.tag('STS-GNAP-0751') + 'gnap: the revoked ' +
+                  'biscuits could not be listed: ' + ((e && e.message) || e));
+        errorCodes.mark(res, 'STS-GNAP-0751');
+        res.status(500).type('text/plain')
+           .send('The revocation list could not be built.\n');
+        log.debug("Leaving GET " + BISCUIT_REVOCATIONS_PATH + ". Failed.");
+        return;
+      }
+      const ttl =
+        Number(self.deps.config.value('oauth2.accessTokenStatusListTtlS')) ||
+        60;
+      res.status(200).type('application/json')
+         .set('Cache-Control', 'max-age=' + ttl)
+         .send(JSON.stringify({ revocation_ids: ids, ttl: ttl }, null, 2));
+      log.debug("Leaving GET " + BISCUIT_REVOCATIONS_PATH + ". " +
+                ids.length + ".");
+    });
+
     app.get('/gnap/rs/resource', function (req, res) {
       return self.demoResource(req, res);
     });
     app.post('/gnap/rs/resource', function (req, res) {
       return self.demoResource(req, res);
+    });
+    app.post('/gnap/rs/spend', function (req, res) {
+      return self.demoSpend(req, res);
     });
 
     log.debug("Leaving GnapRoutes.registerRoutes().");
@@ -768,6 +1004,18 @@ class GnapRoutes {
       },
       loadMonitor: function () {
         return require('./gnap_monitor');
+      },
+      loadStore: function () {
+        return require('./gnap_store');
+      },
+      loadStatusList: function () {
+        return require('../oauth-oidc/access_token_status');
+      },
+      loadSpend: function () {
+        return require('./gnap_spend');
+      },
+      loadProof: function () {
+        return require('./gnap_proof');
       }
     };
   }

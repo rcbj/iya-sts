@@ -345,7 +345,14 @@ const SCHEMAS: Record<string, any> = {
       access: { $ref: '#/$defs/access' },
       resource_server: { $ref: '#/$defs/resourceServer' },
       token_formats_supported: strings(16, 64),
-      token_introspection_required: { type: 'boolean' }
+      token_introspection_required: { type: 'boolean' },
+      // THIS SERVICE'S EXTENSION (#432 phase 5): the owner of each
+      // identifier in the set, an identifier to the DN of a person or a
+      // group — `gnap_ownership.ts`. `gnap_rs.ts`'s `register()` holds each
+      // key to an identifier the set carries and each value to an entry.
+      resource_owners: { type: 'object', maxProperties: 256,
+                         propertyNames: { maxLength: 1024 },
+                         additionalProperties: str(1024) }
     },
     additionalProperties: true,
     $defs: DEFS

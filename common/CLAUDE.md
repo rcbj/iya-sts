@@ -19,8 +19,8 @@ more than one family needs it, not because it felt general.
 | `used_assertions.js` | **EVERY RFC 7523 JWT AND RFC 7522 SAML ASSERTION ACCEPTED, SO NONE IS ACCEPTED TWICE, EVER (2026-09-13).** One history for client authentication and the grant, both profiles, per realm; persisted in every store with one and in BOTH modes; claimed atomically on postgres; spent only when the token request issues tokens. A LIBRARY (rule 3ae) with its own logger, installed by `persistence.js`. |
 | `signing_history.ts` | **EVERY SIGNING KEY A REALM HAS EVER HELD (2026-09-22, #42's follow-up)** — the record that outlives the key. `signing.retire` drops a retired key past its grace and its private half is gone; this keeps the metadata and the CERTIFICATE, so a signature captured months ago can still be read back. Append-only, never swept, and DERIVED from the key set rather than from the rotation events — see below. A LIBRARY over `realms` and `error_codes`, with `helpers` and `pki` reached lazily. |
 | `applications.js` | Every application this service has been asked about, stored in the directory under `ou=applications`. |
-| `delegation.js` | Who acted on whose behalf, through what, to reach what — eight mechanisms across three protocol families in ONE model. What HAPPENED. |
-| `delegation_policy.ts` | **WHO MAY ACT FOR WHOM, AND AS WHAT (#108; #186, 2026-10-03)** — the FACTS of a delegation or impersonation (the actor, the subject, S and R, read off the entries) for the issuance policy, which decides the semantics and the act; enforced in product and recorded in development. The settings are common to WS-Trust, RFC 8693 and Kerberos. Rule 3az, below. |
+| `delegation.js` | Who acted on whose behalf, through what, to reach what — twelve mechanisms across four protocol families (GNAP's two since #432) in ONE model. What HAPPENED. |
+| `delegation_policy.ts` | **WHO MAY ACT FOR WHOM, AND AS WHAT (#108; #186, 2026-10-03)** — the FACTS of a delegation or impersonation (the actor, the subject, S and R, read off the entries) for the issuance policy, which decides the semantics and the act; enforced in product and recorded in development. The settings are common to WS-Trust, RFC 8693, Kerberos and GNAP (#432). Rule 3az, below. |
 | `app_permissions.ts` | **Who MAY reach what, decided in advance** — delegated permissions between two OAuth application entries, in Microsoft Entra ID's shape. The CONFIGURED twin of the file above it, and never to be drawn as one register with it. |
 | `user_graph.ts` | ONE PERSON, END TO END: that register UNIONED with the issued one, so a picture can show every grant, flow, assertion, ticket and SVID in somebody's name beside every delegation naming them. |
 | `credential_graph.ts` | ONE CREDENTIAL, END TO END: where it came from — who held it, in whose name, to reach what — and every generation of exchange behind it, back to the issuance the line rests on. |
@@ -39,6 +39,8 @@ more than one family needs it, not because it felt general.
 | `tls_client_certificates.js` | **A PERSON'S — AND SINCE 2026-09-13 AN APPLICATION'S — TLS CLIENT CERTIFICATE, AND THE GATE THAT MAKES TRUSTING THE SERVICE ROOT SAFE (2026-09-13).** Issues a `clientAuth` leaf from the realm's `tls-client` Issuing CA through `pki.certify()` (so OCSP, the CRL and `/admin/pki`'s revocation pane know it), packages it as a password-protected PKCS#12 and PEM files through the vendored exporter, and revokes one only among the holder's own. **And `identityOf()`**, which every door that turns a verified client certificate into an identity asks — see *3ag* below. A LIBRARY: it registers nothing. |
 | `certificate_subject.js` | **RFC 8705 SECTION 2.1.2's FIVE CERTIFICATE SUBJECT PARAMETERS, READ AND COMPARED (2026-09-13)** — an RFC 4514 DN compared as a name (types, OIDs, escapes, caseIgnoreMatch, a multi-valued RDN in any order), the four subjectAltName kinds off node's `X509Certificate` (a host name without case, an IP by value, an email's domain without case, a URI exactly), and the grammar a registration may hold. `applications.js` asks it what may be written and `oauth-oidc/client_auth.js` whether a certificate matches. A LEAF over `helpers.js`. |
 | `realm_chooser.ts` | **WHICH REALM TO SIGN IN THROUGH (2026-09-14, #32).** A GET of exactly `/admin` or `/portal`, in the default realm, with no session and realms defined, asks which realm first — a list in development and a text box in product (`mode.listsRealmsBeforeSignIn()`) — and `?realm=<id>` redirects to that realm's surface, BUILT from the registry and never echoed. A LIBRARY both surfaces call from their own gate, so they cannot ask differently; `admin-ui/CLAUDE.md` 8d. |
+| `access_limits.ts` | **WHAT A RIGHT'S LIMITS MEAN (#432 phase 5, 2026-10-03).** A catalogue type's `limits` schema says a limit's shape; this static utility class says what its six meaningful members mean — `amount` with its `currency`, `count`, `receiver`, an ISO 8601 repeating `interval`, a `window` — to the three parties that must agree: `authorization_details.conformance()` (RFC 9396 and GNAP alike), the GNAP approval page that lets a person LOWER a limit (`raised()`, member by member; a shorter period is a raise), and the resource server counting against it (`periodAt()`, amounts in millionths as BigInt). A leaf: no route, no store. `gnap/CLAUDE.md`, *Ownership and limits*. |
+| `limits_form.ts` | **A LIMIT AS A FORM A PERSON CAN LOWER (#432 phase 5).** The controls under each right or detail carrying `limits`, and the reading back that accepts only lower values and values still meeting the type: one static utility class for GNAP's approval page, `/portal/ciba`'s absent-owner approvals and OAuth's consent screen, so the three cannot draw or judge a limit differently. In `common/` because two protocol directories read it. |
 | `account_state.ts` | **A DISABLED ACCOUNT — THE ONE PLACE ONE IS DISABLED, ENABLED AND ASKED ABOUT (2026-09-17).** `pwdAccountLockedTime` on the person's entry, written by the console's Disable button, `POST /admin-api/users/disable` and SCIM's `active: false` alike; a disable ENDS everything the person holds through the same global logout. A LIBRARY (rule 3at) that finds `logout/logout.ts` in `require.cache` and never requires it. |
 | `outbound_tls.ts` | **WHETHER AN OUTBOUND REQUEST MAY BE PLAIN HTTP, AND WHETHER THE CERTIFICATE OF WHOEVER ANSWERS IS VERIFIED (#171, 2026-09-23)** — one policy for GNAP's push finish, SSF push, federation's back channels (and every requester that borrows them) and the XACML nudge, each handing in its three settings and two codes. A static utility class. See *`outbound_tls.ts`* below. |
 | `lingering_close.js` | **AN ANSWER SENT BEFORE AN UPLOAD HAS ALL ARRIVED, CLOSED WITHOUT A RESET (2026-09-26).** `arm(req, res)` in place of `res.set('Connection', 'close')`: after the answer is flushed the socket half-closes and discards what the client is still sending (until it closes, 5 s idle or 30 s), instead of node's immediate destroy — which, with unread data in the buffer, sends a TCP RESET that throws away the answer the peer had not read. The risk upload routes and `request_pool.js`'s early-answer path use it, and **since 2026-09-27 `request_worker.ts` arms it for every dispatched request**: the front asks each for `Connection: close` (#77), so any early answer — a refusal, a 404, a sign-out with no session — closed a socket the front was still writing, and the answer was lost to `write EPIPE` and a 502 (`STS-WORKER-0030`; 17 in 2000 races measured, none armed). A LEAF over `config`. |
@@ -4443,6 +4445,17 @@ the built-in one answers where it does not.
 | S, what the subject's token was issued for | its `aud`, else `client_id` / `azp` | the delegated assertion's Audience | the evidence ticket's service |
 | R, the target | the one `audience` / `resource` | the `AppliesTo` | the requested service |
 
+**GNAP IS THE FOURTH PROTOCOL (#432 phase 1, 2026-10-03)** and asks the same
+two questions with the same settings — no GNAP setting decides who may act
+(`gnap/gnap_delegation.ts`, `gnap/CLAUDE.md` *Delegation*). Its two acts are
+the two S4U shapes: a `gnapSkipInteraction` client presenting a verified user
+assertion is impersonation (actor the client, subject the person, no S, R
+each resource server the rights resolve to — or the client itself, S4U2Self's
+ticket to yourself); a resource server DERIVING a token (RFC 9767 section 4)
+is delegation (actor and S the deriving resource server, R each downstream one
+— or itself, which the policy calls self). One question per R; `protocol` is
+`GNAP` and the register types are `gnap-impersonation` / `gnap-derivation`.
+
 Parties are named by application identifier or username (`partyFacts()`,
 application first); a target is resolved to the application that registered
 it (`resolveTarget()`), and S's candidates are taken in order until one
@@ -4456,7 +4469,7 @@ issues a token whose `act` names the actor; IMPERSONATION does not; a SELF
 exchange — the actor is the subject, or is S and the token stays with S — acts
 for nobody.
 
-**THE SETTINGS ARE COMMON TO THE THREE PROTOCOLS** (rcbj), on the entries —
+**THE SETTINGS ARE COMMON TO THE FOUR PROTOCOLS** (rcbj; GNAP since #432), on the entries —
 `ou=applications` and the person's entry are the store, so an `ldapmodify` IS
 a policy change and rule 7 holds by construction:
 
@@ -9852,6 +9865,30 @@ What this directory owns:
   device is marked COMPROMISED (`STS-DEVICE-0041`, CAEP and RISC through
   `setStatus()`). The next sign-in clears the cookie so the victim is not
   refused on it again.
+* **A COMPROMISE REACHES WHAT THE DEVICE'S KEYS WERE TRUSTED WITH (#432,
+  2026-10-03)**: `endGrantsBoundTo()` ends the GNAP grants whose client key's
+  JWK or SubjectPublicKeyInfo thumbprint is one of the device's keys
+  (`gnap/gnap_revocation.ts`, found in `require.cache` for `loadedAuthn()`'s
+  reason) and revokes the OAuth tokens DPoP-bound (`jkt`) to its JWK keys
+  and the ones bound by mutual TLS (`x5t#S256`) to a certificate one of its
+  `x509` keys holds — or to ANY certificate over one of its keys — whose
+  observer reports the grant each ends (#239). The mutual-TLS half was a
+  stated gap until `admin_stats.js` recorded the certificate binding beside
+  `jkt` (rcbj: close gaps, don't document them), and then a narrower one —
+  a certificate over the device's key that the register never held — until
+  it also recorded the KEY under the bound certificate (`x5tSpki`, its
+  SubjectPublicKeyInfo SHA-256, from `mtls.presentedKeyThumbprint()` via
+  `oauth2.ts`'s `issuanceContext()`). A GNAP client proving by mutual TLS is
+  matched the same two ways: the certificate's x5t#S256, and the key under
+  the certificate it proved with (`client.certSpki`, recorded on the grant).
+  `crypto.publicKeySpkiThumbprint()` is the key-side twin of
+  `certificateSpkiThumbprint()` that makes a GNAP key comparable with an
+  `x509` device key.
+* **AN APPLICATION ENTRY DELETED, OR ITS GNAP KEY REMOVED OR REPLACED, ENDS
+  ITS GNAP GRANTS (#432)**: `applications.js`'s `endGnapGrants()`, after
+  `deleteApplication()` and an `updateApplication()` of `gnapKey`,
+  `gnapKeyIdentity` or `gnapKeyReference` — `gnap/CLAUDE.md` has the rule.
+  There is no "disabled" application state to watch.
 * **ATTESTATION `bearer`** (a level below `self-asserted`). Such a device is
   never compliant (`STS-DEVICE-0039`) and never earns a lowering risk signal.
   Three signals raise risk instead (`risk/CLAUDE.md`).

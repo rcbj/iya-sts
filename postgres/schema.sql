@@ -440,6 +440,25 @@ CREATE TABLE IF NOT EXISTS sts_cluster_windows (
 
 CREATE INDEX IF NOT EXISTS sts_cluster_windows_expiry ON sts_cluster_windows (window_ends_at);
 
+-- A BUDGET SPENT AGAINST A LIMIT (#432 phase 5, schema version 15): the
+-- running totals of a GNAP right's limits, spent by every node with one
+-- conditional upsert so two spends at once cannot both pass a limit.
+-- `amount` is millionths; a row is purged once its grant has ended.
+-- `cluster/cluster_counters.js` argues it.
+CREATE TABLE IF NOT EXISTS sts_cluster_budgets (
+  scope      text   NOT NULL,
+  realm      text   NOT NULL,
+  key        text   NOT NULL,
+  period     bigint NOT NULL,
+  amount     bigint NOT NULL,
+  count      bigint NOT NULL,
+  origin     text   NOT NULL DEFAULT '',
+  expires_at bigint NOT NULL,
+  updated_at bigint NOT NULL,
+  PRIMARY KEY (scope, realm, key));
+
+CREATE INDEX IF NOT EXISTS sts_cluster_budgets_expiry ON sts_cluster_budgets (expires_at);
+
 -- WHAT EACH NODE LAST SAID ABOUT ITSELF (#332, schema version 11): its own
 -- Monitoring → Worker Pools and → Node Health views, written every fifteen
 -- seconds by its front process and read by whichever node draws those pages.
@@ -737,7 +756,7 @@ CREATE TABLE IF NOT EXISTS sts_schema (
 -- WHAT VERSION OF THE ABOVE THIS IS. The driver writes the same row on open()
 -- and `tests/postgres_schema.js` checks that this number is its SCHEMA_VERSION,
 -- so the two cannot disagree about which schema is on disk.
-INSERT INTO sts_schema (version) VALUES (14) ON CONFLICT (version) DO NOTHING;
+INSERT INTO sts_schema (version) VALUES (15) ON CONFLICT (version) DO NOTHING;
 
 -- ---------------------------------------------------------------------------
 -- THE APPLICATION ROLE: READ AND WRITE THE ROWS, AND NOTHING ELSE.

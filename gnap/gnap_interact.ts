@@ -95,6 +95,13 @@ import store = require('./gnap_store');
 import grants = require('./gnap_grants');
 import monitor = require('./gnap_monitor');
 import gnapCells = require('./gnap_cells');
+// #432 phase 5: what a limit means, and the catalogue a lowered one must
+// still meet.
+import LimitsForm = require('../common/limits_form');
+import gnapRights = require('./gnap_rights');
+// #432 phase 6: the step-up an approval needs, and approval by an absent
+// resource owner. A library.
+import gnapApproval = require('./gnap_approval');
 
 type Req = import('express').Request;
 type Res = import('express').Response;
@@ -115,6 +122,8 @@ interface GnapInteractDeps {
   store: typeof store;
   grants: typeof grants;
   monitor: typeof monitor;
+  rights: typeof gnapRights;
+  approval: typeof gnapApproval;
 }
 
 // The routes' own table of what an express app offers.
@@ -129,7 +138,9 @@ const vt = validation.types;
 const ID_PARAMS = vz.object({ id: vt.base64url });
 const APPROVE_QUERY = vz.object({
   authn_error: vt.opt(vt.token),
-  authn_error_description: vt.opt(vt.text)
+  authn_error_description: vt.opt(vt.text),
+  // #432 phase 6: the sign-in for a step-up has happened once.
+  step_up_honoured: vt.opt(vt.oneOf(['1']))
 });
 const APPROVE_FORM = vz.object({
   action: vt.opt(vt.oneOf(['allow', 'deny'])),
@@ -151,7 +162,10 @@ const PAGE_CSS =
   'span{display:block;color:#666;font-size:.9em;margin-top:3px}' +
   'img.logo{max-width:48px;max-height:48px;float:right;margin:0 0 6px 8px}' +
   'input.code{font-size:1.4em;letter-spacing:.2em;text-transform:uppercase;' +
-  'width:100%}';
+  'width:100%}' +
+  // #432 phase 5: a right's limits, under it.
+  'div.limits{margin:6px 0 0 24px;font-size:.9em}div.limits div{margin:3px 0}' +
+  'div.limits input{font-size:.95em}';
 
 /**
  * The pages a GNAP resource owner sees: the four start modes, sign-in through
@@ -382,14 +396,107 @@ class GnapInteract {
       '</span>';
   }
 
+  // =========================================================================
+  // #432 PHASE 5 ON THE APPROVAL PAGE: A RIGHT'S LIMITS, AND WHOSE RESOURCE IT
+  // IS. Kept in these functions, apart from the page's other business.
+  //
+  // THE LIMITS are drawn under the right they belong to, each member with a
+  // meaning (`common/access_limits.ts`) as a control holding the requested
+  // value, so the person can LOWER it — section 4 lets the resource owner
+  // limit the access they approve, and a limit is the finest-grained way to.
+  // A value the person did not change is sent back unchanged and kept
+  // byte for byte; a changed one must be LOWER (`AccessLimits.raised()`:
+  // STS-GNAP-0866) and the lowered limits must still meet the type's limits
+  // schema (0867). A member this service gives no meaning is shown and not
+  // editable. With script off (there is none here) every control is plain
+  // markup.
+  //
+  // THE OWNERSHIP CHECK runs before the page is drawn and again before an
+  // approval is recorded: `grants.approverRefusal()` puts the rights whose
+  // identifier somebody else owns to the issuance policy, and a refusal is
+  // the page's refusal (STS-GNAP-0862) — RFC 9635 section 1.4: only the
+  // resource owner authorizes access to their resource.
+  // =========================================================================
+
+  // The controls of one right's limits (`common/limits_form.ts`, shared with
+  // the portal's absent-owner approvals).
+  private limitsControls(right: any, t: number, r: number): string {
+    const { log, xmlEscape } = this.deps;
+    log.debug("Entering GnapInteract.limitsControls().");
+    log.debug("Leaving GnapInteract.limitsControls().");
+    return LimitsForm.controls(right, t, r, xmlEscape);
+  }
+
+  // The ticked rights with the limits the person sent back: `{ ok: true,
+  // tokens }`, or `{ ok: false, code, why }`.
+  private loweredTokens(req: Req, body: any, grant: any,
+                        tokens: any[]): any {
+    const { log, bodyValues, rights } = this.deps;
+    log.debug("Entering GnapInteract.loweredTokens().");
+    log.debug("Leaving GnapInteract.loweredTokens().");
+    return LimitsForm.lowered(grant.request.tokens, tokens, {
+      value: function (name: string): string | undefined {
+        return typeof body[name] === 'string' ? body[name] : undefined;
+      },
+      values: function (name: string): string[] {
+        return bodyValues(req, body, name);
+      }
+    }, rights.conformanceRefusal);
+  }
+
+  // The posted form without its limit controls, which the form's own schema
+  // does not describe and `loweredTokens()` reads.
+  private withoutLimitFields(body: any): any {
+    const { log } = this.deps;
+    log.debug("Entering GnapInteract.withoutLimitFields().");
+    log.debug("Leaving GnapInteract.withoutLimitFields().");
+    return LimitsForm.strip(body);
+  }
+
+  // -------------------------------------------------------------------------
+  // The ownership check: true when the page has refused (and answered).
+  // -------------------------------------------------------------------------
+  private async ownershipRefused(req: Req, res: Res, grant: any,
+                                 session: any): Promise<boolean> {
+    const { log, grants } = this.deps;
+    log.debug("Entering GnapInteract.ownershipRefused().");
+    const refused: any = await grants.approverRefusal(req, grant,
+                                                      session.user.username);
+    if (!refused) {
+      log.debug("Leaving GnapInteract.ownershipRefused(). The owner.");
+      return false;
+    }
+    this.interactionError(res, 'STS-GNAP-0862', 'You cannot approve this ' +
+      'request', 'It asks for access to a resource that is not yours to ' +
+      'give: ' + String(refused.why || '') + ' Only its owner can approve ' +
+      'it.');
+    log.debug("Leaving GnapInteract.ownershipRefused(). Refused.");
+    return true;
+  }
+
   private approvalPage(req: Req, res: Res, grant: any, session: any): void {
     const self = this;
     const { log, xmlEscape, websecurity } = this.deps;
     log.debug("Entering GnapInteract.approvalPage().");
     const display = grant.client.display || {};
-    const logo = display.logoUri && /^data:image\//i.test(display.logoUri)
+    // ---------------------------------------------------------------------
+    // WHAT THE CLIENT SAID ABOUT ITSELF IS SAID TO BE ITS OWN CLAIM (#432
+    // phase 7). A name, home page or logo the application ENTRY does not
+    // carry came from the request, which any key can send (section 2.3;
+    // `gnap_grants.ts`'s displayOf()). It is still drawn — a person needs
+    // something to recognise — but beside the words "as it describes
+    // itself", and the registered identifier is always shown; a self-declared
+    // logo is not drawn at all, because a picture cannot carry that caveat
+    // and a borrowed logo is the cheapest impersonation there is.
+    // ---------------------------------------------------------------------
+    const declared: string[] = Array.isArray(display.declared)
+      ? display.declared : [];
+    const logo = display.logoUri && declared.indexOf('logoUri') < 0 &&
+      /^data:image\//i.test(display.logoUri)
       ? '<img class="logo" alt="" src="' + xmlEscape(display.logoUri) + '">'
       : '';
+    const unverified = ' <span class="sub">(as it describes itself; this ' +
+      'service has not verified it)</span>';
     let rows = '';
     grant.request.tokens.forEach(function (token, t) {
       rows += (grant.request.tokens.length > 1 || token.label
@@ -401,9 +508,33 @@ class GnapInteract {
         rows += '<li><label><input type="checkbox" name="right" value="t' +
           t + 'r' + r +
           '" checked><span>' + self.describeRight(right) +
-          '</span></label></li>';
+          '</span></label>' + self.limitsControls(right, t, r) + '</li>';
       });
     });
+    // WHAT THE ISSUANCE POLICY NARROWED BEFORE THIS PAGE WAS DRAWN (#432
+    // phase 3): the rights above are already the narrowed ones, and the
+    // person is told what was taken off and that it was not their choice.
+    const narrowed = (Array.isArray(grant.narrowed) ? grant.narrowed : [])
+      .map(function (one: any): string {
+        const before = one.before || {};
+        const after = one.after || {};
+        const taken: string[] = [];
+        ['actions', 'locations', 'datatypes', 'privileges'].forEach(
+            function (dim: string): void {
+          const was = Array.isArray(before[dim]) ? before[dim] : null;
+          const now = Array.isArray(after[dim]) ? after[dim] : [];
+          const off = was ? was.filter(function (v: string): boolean {
+            return now.indexOf(v) < 0;
+          }) : [];
+          if (off.length) {
+            taken.push(dim + ' ' + off.join(', '));
+          } else if (!was && now.length) {
+            taken.push(dim + ' limited to ' + now.join(', '));
+          }
+        });
+        return '<li><code>' + xmlEscape(String(one.type || '')) +
+          '</code>: ' + xmlEscape(taken.join('; ') || 'narrowed') + '</li>';
+      }).join('');
     const subjectAsked = grant.request.subject &&
       (grant.request.subject.subIdFormats.length ||
        grant.request.subject.assertionFormats.length);
@@ -424,13 +555,19 @@ class GnapInteract {
       '</code></p><p ' +
       'class="app"><strong>' +
       xmlEscape(display.name || grant.client.identifier) +
-      '</strong> is asking for access on your behalf.' +
+      '</strong>' + (declared.indexOf('name') >= 0 ? unverified : '') +
+      ' is asking for access on your behalf.' +
       (display.uri ? '<br><a href="' + xmlEscape(display.uri) + '" ' +
           'rel="noreferrer">' +
-        xmlEscape(display.uri) + '</a>' : '') + '</p>' +
+        xmlEscape(display.uri) + '</a>' +
+        (declared.indexOf('uri') >= 0 ? unverified : '') : '') + '</p>' +
       '<form method="post" action="/gnap/approve/' +
       xmlEscape(grant.interaction.approvalId) + '">' +
       websecurity.field(session.id) +
+      (narrowed ? '<p class="sub">This service\'s issuance policy ' +
+        'narrowed what the application asked for before you were asked; ' +
+        'it cannot be widened here:</p><ul class="rights">' + narrowed +
+        '</ul>' : '') +
       '<ul class="rights">' + (rows || '<li>Nothing specific — this ' +
         'request ' +
         'asks only to be continued.</li>') + '</ul><div class="row"><button ' +
@@ -453,7 +590,9 @@ class GnapInteract {
       xmlEscape(grant.client.proof) + '</code>' +
       (grant.client.classId ? ' · ' +
           'class: <code>' +
-      xmlEscape(grant.client.classId) + '</code>' : '') + '</div>' +
+      xmlEscape(grant.client.classId) + '</code>' +
+        (grant.client.classIdDeclared ? ' (self-declared)' : '') : '') +
+      '</div>' +
       '<div>Authorization server: <code>' + xmlEscape(grant.grantEndpoint) +
       '</code></div></div>';
     this.sendPage(res, 200, 'Allow access?', inner);
@@ -545,6 +684,129 @@ class GnapInteract {
     }
     log.debug("Leaving GnapInteract.approvalGrant().");
     return grant;
+  }
+
+  // -------------------------------------------------------------------------
+  // #432 PHASE 6, IN TWO CALLS FROM THE APPROVAL ROUTES (`gnap_approval.ts`
+  // argues both). `beforeApproval()` decides SYNCHRONOUSLY whether it
+  // answers — so the route's own shape is unchanged — and does the
+  // asynchronous work itself, answering the page or a coded error:
+  //
+  //   * the person here is not the user the request named, and approval by
+  //     an absent owner is on: the grant goes to that owner's portal and the
+  //     interaction finishes (`grants.forwardToOwner()`);
+  //   * the session does not meet every acr the requested rights need: the
+  //     person signs in again, once, with what the screen must demand — and
+  //     back here still short, the request is refused `request_denied`
+  //     (`grants.refuseUnmetStepUp()`, STS-GNAP-0899).
+  // -------------------------------------------------------------------------
+  private beforeApproval(req: Req, res: Res, grant: any, session: any,
+                         honoured: boolean): boolean {
+    const self = this;
+    const { log, grants, approval, authn, errorCodes } = this.deps;
+    log.debug("Entering GnapInteract.beforeApproval().");
+    const present = String(session.user.username || '').toLowerCase();
+    if (grant.userHint && String(grant.userHint).toLowerCase() !== present &&
+        approval.available()) {
+      this.claimDecision(res, grant).then(function (claimed) {
+        if (!claimed) {
+          return undefined;
+        }
+        return grants.forwardToOwner(req, grant, session)
+          .then(function (out: any) {
+            if (out && out.finished && out.finished.redirect) {
+              return res.set('Cache-Control', 'no-store')
+                        .redirect(303, out.finished.redirect);
+            }
+            if (!out || !out.queued) {
+              errorCodes.mark(res, (grant.decision && grant.decision.code) ||
+                              'STS-GNAP-0897');
+              return self.afterDecision(res, grant,
+                                        (out && out.finished) || {});
+            }
+            return self.sendPage(res, 200, 'Sent for approval',
+              '<h1>Sent to the person it names</h1><p class="sub">This ' +
+              'request is for somebody else\'s account, so you cannot ' +
+              'approve it. It is waiting for them on their own portal; the ' +
+              'application finds out when they answer.</p>');
+          });
+      }).catch(function (e) {
+        log.debug("Caught in GnapInteract.beforeApproval(): " +
+                  ((e && e.message) || e));
+        log.error(errorCodes.tag('STS-GNAP-0409') + 'gnap: a grant could ' +
+                  'not be sent to its owner: ' + ((e && e.stack) || e));
+        if (!res.headersSent) {
+          self.interactionError(res, 'STS-GNAP-0409', 'Something went wrong',
+                                'The request could not be completed.');
+        }
+      });
+      log.debug("Leaving GnapInteract.beforeApproval(). To the owner.");
+      return true;
+    }
+    const assessed = approval.assess(approval.requiredAcr(grant), session);
+    if (assessed.met) {
+      log.debug("Leaving GnapInteract.beforeApproval(). Nothing to do.");
+      return false;
+    }
+    if (!honoured) {
+      res.set('Cache-Control', 'no-store')
+         .redirect(303, authn.beginAuthentication({
+        returnTo: '/gnap/approve/' + grant.interaction.approvalId +
+                  '?step_up_honoured=1',
+        protocol: 'GNAP',
+        application: grant.client.identifier,
+        hint: session.user.username,
+        forceMfa: !!assessed.forceMfa, forceKey: !!assessed.forceKey,
+        details: [
+          { label: 'Application',
+            value: (grant.client.display && grant.client.display.name) ||
+                   grant.client.identifier },
+          { label: 'Protocol', value: 'GNAP (RFC 9635)' },
+          { label: 'Sign-in level needed', value: assessed.ask.join(' ') }
+        ]
+      }));
+      log.debug("Leaving GnapInteract.beforeApproval(). Stepping up.");
+      return true;
+    }
+    this.claimDecision(res, grant).then(function (claimed) {
+      if (!claimed) {
+        return undefined;
+      }
+      return grants.refuseUnmetStepUp(req, grant, session, assessed.missing)
+        .then(function (finished: any) {
+          errorCodes.mark(res, 'STS-GNAP-0899');
+          return self.afterDecision(res, grant, finished);
+        });
+    }).catch(function (e) {
+      log.debug("Caught in GnapInteract.beforeApproval(): " +
+                ((e && e.message) || e));
+      log.error(errorCodes.tag('STS-GNAP-0409') + 'gnap: an unmet step-up ' +
+                'could not be answered: ' + ((e && e.stack) || e));
+      if (!res.headersSent) {
+        self.interactionError(res, 'STS-GNAP-0409', 'Something went wrong',
+                              'The request could not be completed.');
+      }
+    });
+    log.debug("Leaving GnapInteract.beforeApproval(). Refused: unmet.");
+    return true;
+  }
+
+  // The rights left ticked need an acr the session does not meet: back to
+  // the page, which steps the person up (#432 phase 6). True when answered.
+  private stepUpOwed(res: Res, grant: any, session: any,
+                     ticked: string[]): boolean {
+    const { log, approval } = this.deps;
+    log.debug("Entering GnapInteract.stepUpOwed().");
+    const assessed = approval.assess(approval.requiredAcr(grant, ticked),
+                                     session);
+    if (assessed.met) {
+      log.debug("Leaving GnapInteract.stepUpOwed(). Met.");
+      return false;
+    }
+    res.set('Cache-Control', 'no-store')
+       .redirect(303, '/gnap/approve/' + grant.interaction.approvalId);
+    log.debug("Leaving GnapInteract.stepUpOwed(). Back to the page.");
+    return true;
   }
 
   // The six routes, in the order this file has always registered them.
@@ -705,28 +967,47 @@ class GnapInteract {
       }
       // An EXISTING session is being honoured: CAEP session-presented.
       notePresented(session, 'GNAP', req);
-      if (grants.rememberedFor(grant, session.user.username)) {
-        log.debug("Leaving GET /gnap/approve. Already approved before.");
-        return self.claimDecision(res, grant).then(function (claimed) {
-          if (!claimed) {
+      // #432 phase 6: another person's grant goes to its owner's portal, and
+      // a session short of the rights' acr is stepped up — both before the
+      // page, and before a remembered approval could stand in for it.
+      if (self.beforeApproval(req, res, grant, session,
+                              query.ok && !!query.value.step_up_honoured)) {
+        log.debug("Leaving GET /gnap/approve. Phase 6 answered.");
+        return undefined;
+      }
+      // #432 phase 5, after phase 6's step-up and before anything else: the
+      // person must own what the rights name — a remembered approval
+      // included, which would otherwise answer for somebody else's
+      // resource without the page.
+      return self.ownershipRefused(req, res, grant, session)
+        .then(function (refused) {
+          if (refused) {
+            log.debug("Leaving GET /gnap/approve. Not the owner.");
             return undefined;
           }
-          return grants.decide(req, grant, session,
-                               { approve: true, tokens: grant.request.tokens,
-                                 subject: false })
-            .then(function (finished) {
-              return self.afterDecision(res, grant, finished);
-            }, function (e) {
-              log.debug("Caught in GET /gnap/approve: " +
-                        ((e && e.message) || e));
-              store.unspend(claimed.handle);
-              throw e;
+          if (grants.rememberedFor(grant, session.user.username)) {
+            log.debug("Leaving GET /gnap/approve. Already approved before.");
+            return self.claimDecision(res, grant).then(function (claimed) {
+              if (!claimed) {
+                return undefined;
+              }
+              return grants.decide(req, grant, session, {
+                approve: true, tokens: grant.request.tokens, subject: false,
+                remembered: true })
+                .then(function (finished) {
+                  return self.afterDecision(res, grant, finished);
+                }, function (e) {
+                  log.debug("Caught in GET /gnap/approve: " +
+                            ((e && e.message) || e));
+                  store.unspend(claimed.handle);
+                  throw e;
+                });
             });
+          }
+          self.approvalPage(req, res, grant, session);
+          log.debug("Leaving GET /gnap/approve. Page drawn.");
+          return undefined;
         });
-      }
-      self.approvalPage(req, res, grant, session);
-      log.debug("Leaving GET /gnap/approve. Page drawn.");
-      return undefined;
     }));
 
     app.post('/gnap/approve/:id', self.placed('POST /gnap/approve',
@@ -759,8 +1040,9 @@ class GnapInteract {
       // repeated values are read off the raw body and handed to the schema as
       // the array they are.
       const ticked = bodyValues(req, body, 'right');
-      const posted = validation.checkParsed(Object.assign({}, body,
-                                                          { right: ticked }),
+      const posted = validation.checkParsed(Object.assign(
+                                              self.withoutLimitFields(body),
+                                              { right: ticked }),
                                             'body',
                                             APPROVE_FORM);
       if (!posted.ok) {
@@ -778,8 +1060,32 @@ class GnapInteract {
       const anything = tokens.some(function (token) {
         return token.access.length;
       }) || posted.value.subject === 'yes';
+      // #432 phase 6: the rights left ticked are approved only on a session
+      // meeting their acr — the page stepped the person up before it was
+      // drawn, and a form posted without that is sent back to it.
+      if (approve && self.stepUpOwed(res, grant, session, ticked)) {
+        log.debug("Leaving POST /gnap/approve. A step-up is owed.");
+        return undefined;
+      }
+      // #432 phase 5: the limits as the person lowered them.
+      const lowered = approve ? self.loweredTokens(req, body, grant, tokens)
+                              : { ok: true, tokens: tokens };
+      if (!lowered.ok) {
+        log.debug("Leaving POST /gnap/approve. Limits refused.");
+        return self.interactionError(res, lowered.code === 'STS-GNAP-0867'
+                                       ? 'STS-GNAP-0867' : 'STS-GNAP-0866',
+                                     'These limits could not be accepted',
+                                     lowered.why);
+      }
       let claimedDecision = null;
-      return self.claimDecision(res, grant).then(function (claimed) {
+      return (approve ? self.ownershipRefused(req, res, grant, session)
+                      : Promise.resolve(false)).then(function (refused) {
+        if (refused) {
+          log.debug("Leaving POST /gnap/approve. Not the owner.");
+          return null;
+        }
+        return self.claimDecision(res, grant);
+      }).then(function (claimed) {
         if (!claimed) {
           log.debug("Leaving POST /gnap/approve. Already answered.");
           return undefined;
@@ -787,7 +1093,7 @@ class GnapInteract {
         claimedDecision = claimed;
         return grants.decide(req, grant, session, {
           approve: approve && anything,
-          tokens: tokens,
+          tokens: lowered.tokens,
           subject: posted.value.subject === 'yes'
         }).then(function (finished) {
           log.debug("Leaving POST /gnap/approve. Decided.");
@@ -835,7 +1141,9 @@ class GnapInteract {
       authn: authn,
       store: store,
       grants: grants,
-      monitor: monitor
+      monitor: monitor,
+      rights: gnapRights,
+      approval: gnapApproval
     };
   }
 }

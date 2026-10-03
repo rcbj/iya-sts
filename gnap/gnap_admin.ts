@@ -90,6 +90,9 @@ const ACTION_FORM = vz.looseObject({
   action: vt.opt(vt.token),
   grant: vt.opt(vt.base64url),
   reference: vt.opt(vt.base64url),
+  // The person whose grant it is (#432 phase 7): set by the GNAP grants tab
+  // of their page on /admin/users, which the answer goes back to.
+  user: vt.opt(vt.name),
   csrf_token: vt.opt(vt.token)
 });
 
@@ -220,14 +223,20 @@ class GnapAdmin {
                                                            'grantsPage' }));
       const grantRows = json.grants.rows.length ?
                         json.grants.rows.map(function (grant) {
-        const control = grant.state === 'finalized' ? '<span ' +
-          'class="sub">finalized</span>'
+        // A grant finalized as `issued` still has live tokens, so it can
+        // still be revoked (#432 phase 7).
+        const control = grant.state === 'finalized' &&
+          !(grant.finalization && grant.finalization.reason === 'issued')
+          ? '<span class="sub">finalized</span>'
           : '<form method="post" action="/admin/gnap"><input type="hidden" ' +
             'name="action" value="revoke-grant"><input type="hidden" ' +
             'name="grant" value="' + esc(grant.id) + '">' +
             '<button type="submit" class="danger">Revoke</button></form>';
+        // The reason a finalized grant ended (#432 phase 7).
         return '<tr><td><code>' + esc(grant.id) + '</code></td><td>' +
-          esc(grant.state) + '</td><td><a ' +
+          esc(grant.state) +
+          (grant.finalization ? '<div class="sub">' +
+            esc(grant.finalization.reason) + '</div>' : '') + '</td><td><a ' +
           'href="/admin/applications?application=' + encodeURIComponent(
               grant.client || '') + '"><code>' +
           esc(grant.client) + '</code></a><div class="sub">' + esc(
@@ -376,7 +385,14 @@ class GnapAdmin {
       }
       const result = consoleModel.gnapAction(posted.value,
                                              { via: 'console', req: req });
-      admin.respondToAction(req, res, '/admin/gnap', result);
+      // From a person's page (#432 phase 7): back to its GNAP grants tab, at
+      // the section heading inside it, which shows the tab again
+      // (`tabbedPanels()`).
+      const target = posted.value.user
+        ? '/admin/users?user=' + encodeURIComponent(posted.value.user) +
+          '#gnap-grants'
+        : '/admin/gnap';
+      admin.respondToAction(req, res, target, result);
       log.debug("Leaving the admin GNAP action. ok=" + result.ok);
       return undefined;
     });

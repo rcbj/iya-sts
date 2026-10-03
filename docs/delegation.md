@@ -4,7 +4,7 @@ title: Delegation and impersonation
 
 # Delegation and impersonation
 
-Three of the protocols iya-sts speaks let one party obtain a token **about
+Four of the protocols iya-sts speaks let one party obtain a token **about
 somebody else**:
 
 * the **OAuth 2.0 token exchange**
@@ -14,14 +14,18 @@ somebody else**:
   [1.4](https://docs.oasis-open.org/ws-sx/ws-trust/v1.4/ws-trust.html));
 * **Kerberos**' two Microsoft extensions, S4U2Self and S4U2Proxy
   ([MS-SFU](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-sfu/)),
-  and a forwarded ticket-granting ticket.
+  and a forwarded ticket-granting ticket;
+* **GNAP**'s trusted client presenting a user assertion, and a resource
+  server deriving a downstream token
+  ([RFC 9635](https://www.rfc-editor.org/rfc/rfc9635),
+  [RFC 9767](https://www.rfc-editor.org/rfc/rfc9767)).
 
-None of the three specifications says who may do this. RFC 8693 section 5
+None of the four specifications says who may do this. RFC 8693 section 5
 leaves it to "the policy of the authorization server", and WS-Trust describes
 only what a requester *asks for*. Active Directory's answer for Kerberos is a
 handful of account attributes.
 
-iya-sts answers the question **once, for all three protocols**:
+iya-sts answers the question **once, for all four protocols**:
 
 * the same settings on the same directory entries;
 * the same two questions asked of the same
@@ -91,7 +95,7 @@ allow:
 
 ## The common controls
 
-These are the same for all three protocols. They live on the directory
+These are the same for all four protocols. They live on the directory
 entries, so they can be edited from the console, through `/admin-api`, or with
 an `ldapmodify`.
 
@@ -107,7 +111,7 @@ an `ldapmodify`.
 | `appNotDelegated` | an application as subject | Never acted for. | `NOT_DELEGATED` |
 | `appMayAct` | an application as subject | The DN of one party it names as its delegate: tokens about it carry `may_act` naming that party, as the issuance policy assigns it. | — |
 | `krb5TrustedForDelegation` | a Kerberos service | **Kerberos only, off by default.** Unconstrained delegation: it may receive and use a user's forwarded TGT. | `TRUSTED_FOR_DELEGATION` |
-| `appAllowedProtocol` | any application | Protocols the application is used with. The controls above apply to whichever of WS-Trust, OAuth 2.0 and Kerberos it lists; there are no per-protocol copies. | — |
+| `appAllowedProtocol` | any application | Protocols the application is used with. The controls above apply to whichever of WS-Trust, OAuth 2.0, Kerberos and GNAP it lists; there are no per-protocol copies. | — |
 
 **On a person's entry** (Directory → People → the person, *Delegation*):
 
@@ -369,10 +373,39 @@ does not already hold, and the person `sensitive` carries `stsNotDelegated`.
 
 See [Kerberos and SPNEGO](kerberos.html).
 
+### GNAP (RFC 9635, RFC 9767)
+
+* **A trusted client presenting a user assertion is impersonation** — the
+  S4U2Self shape. A client whose entry carries `gnapSkipInteraction` and that
+  presents a verified `id_token` or `saml2` assertion in the grant request's
+  `user` is issued tokens for that person with nobody asked:
+  * the actor is the client, the subject the person the assertion names;
+  * there is no S;
+  * R is each resource server the requested access rights resolve to (one
+    question each), or the client itself when they name none — which still
+    needs `impersonation` in the client's `appDelegationSemantics`, because
+    the token can be presented;
+  * a `may_act` claim in the ID Token must name the client (every mode).
+  The token is the person's and names no actor.
+* **Token derivation is delegation** — the S4U2Proxy shape. A resource server
+  presenting `existing_access_token` (RFC 9767 section 4):
+  * is the actor and S; the subject is the original token's person;
+  * R is each downstream resource server the requested rights resolve to, or
+    the deriving one itself when it only narrows (self);
+  * the derived token carries **no more access** than the original, in every
+    mode, and names the deriving resource server in an `act` chain — in all
+    five token formats — capped by `gnap.maxDerivationDepth`.
+* A client skipping interaction **without** an assertion acts for nobody and
+  is asked nothing.
+* **Refusals** are `request_denied` (HTTP 403); the audited code says which
+  rule (`STS-GNAP-0770` to `0782`).
+
+See [GNAP](gnap.html#acting-for-somebody-else).
+
 ## Watching it
 
 * **Monitoring → Delegation** (`/admin/delegation`) lists every act, issued or
-  refused, from all three protocols, with the four parties, the semantics, the
+  refused, from all four protocols, with the four parties, the semantics, the
   tokens consumed and produced, and the sentence saying what allowed or
   refused it. Filter by protocol, semantics, outcome or any name. In
   development, a refused act reads *WOULD HAVE BEEN REFUSED*.

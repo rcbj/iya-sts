@@ -106,6 +106,8 @@ import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
 import realms = require('../common/realms');
 import cacheRegistry = require('../common/cache_registry');
+// The limits vocabulary (#432 phase 5): a static utility class, a leaf.
+import AccessLimits = require('../common/access_limits');
 // THE TWO AUTHORIZATION QUESTIONS ABOUT A DETAIL'S TYPE ARE THE ISSUANCE
 // POLICY'S (#305, part D of #88): whether the client registered types and
 // not this one (RFC 9396 section 10), and whether this authorization server
@@ -127,6 +129,19 @@ interface AuthorizationDetailsDeps {
   gate: typeof gate;
   scopeVerdicts: typeof scopeVerdicts;
 }
+
+// A refusal of `conformance()`, by kind, as RFC 9396's codes: the schema's
+// own (0456) for a definition, the location one (0457), and #432 phase 4's
+// two about limits.
+const CONFORMANCE_CODES: Record<string, string> = {
+  definition: 'STS-OAUTH-0456',
+  location: 'STS-OAUTH-0457',
+  'limits-undeclared': 'STS-OAUTH-0876',
+  limits: 'STS-OAUTH-0877',
+  // #432 phase 5: a limit whose amount, count, receiver, interval or window
+  // is not one `common/access_limits.ts` can read.
+  'limits-value': 'STS-OAUTH-0916'
+};
 
 // Section 2.2's common data fields: four arrays of strings and one string.
 const COMMON_ARRAYS = ['locations', 'actions', 'datatypes', 'privileges'];
@@ -176,8 +191,10 @@ const definitionCount = cacheRegistry.register({
 // consent POST and the authorization endpoint's second pass may be answered by
 // two different request workers.
 const consented = realms.map({ persist: 'authorization_details.consented',
-                               // #333: the value IS the expiry, in ms.
-                               expiresAt: realms.expiryField(null, 1) });
+                               // #333: `expires`, in ms. Beside it (#432
+                               // phase 5) the details as the person LOWERED
+                               // their limits on the screen, or null.
+                               expiresAt: realms.expiryField('expires', 1) });
 
 /**
  * RFC 9396 rich authorization requests: the types applications declare, the
@@ -341,6 +358,10 @@ class AuthorizationDetails {
       this.valuesOf(fields.oauthAudience).map(String)));
     const clientId = String(this.valuesOf(fields.oauthClientId)[0] || '');
     const primary = audiences[0] || clientId || String(row.identifier);
+    // A GNAP RESOURCE SERVER answers to its `gnapResourceServerUri` values
+    // too (#432 phase 4): the catalogue is GNAP's as well, and an access
+    // right names the resource server's address as its location.
+    const gnapUris = this.valuesOf(fields.gnapResourceServerUri).map(String);
     log.debug("Leaving AuthorizationDetails.resourceDefinition().");
     return {
       type: definition.type,
@@ -349,12 +370,452 @@ class AuthorizationDetails {
       validate: definition.validate,
       identifier: row.identifier,
       name: row.name || row.identifier,
+      clientId: clientId,
       primary: primary,
       identifiers: this.unique([primary].concat(audiences,
                                                 clientId ? [clientId] : [],
+                                                gnapUris,
                                                 definition.locations)),
-      locations: definition.locations.slice(0)
+      locations: definition.locations.slice(0),
+      // THE CATALOGUE'S DECLARATIONS (#432 phase 4), as
+      // `applications.authorizationDetailsTypeOf()` read them.
+      actions: definition.actions, datatypes: definition.datatypes,
+      privileges: definition.privileges, required: definition.required,
+      interaction: definition.interaction,
+      consentActions: definition.consentActions, bearer: definition.bearer,
+      maxLifetimeS: definition.maxLifetimeS, acr: definition.acr,
+      derivableFrom: definition.derivableFrom,
+      introspectionClaims: definition.introspectionClaims,
+      limits: definition.limits, validateLimits: definition.validateLimits
     };
+  }
+
+  // -------------------------------------------------------------------------
+  // ONE RIGHT AGAINST ITS CATALOGUE ENTRY (#432 phase 4) — the questions a
+  // type's DEFINITION answers, asked identically of an RFC 9396 detail and
+  // of a GNAP access right, which share the five common fields (RFC 9396
+  // section 2.2 is RFC 9635 section 8's list). Well-formedness, not
+  // authorization: whether the right is ISSUED is the issuance policy's
+  // (rule 3bt for RAR's two type questions, `issue-gnap-right` for GNAP).
+  //
+  // `{ kind, problem }`, kind '' when it conforms, otherwise:
+  //   definition          a value outside `actions` / `datatypes` /
+  //                       `privileges`, a `required` member missing, or the
+  //                       type's JSON Schema refusing it
+  //   limits-undeclared   a `limits` member on a type that declares no limits
+  //                       schema
+  //   limits              a `limits` member its schema refuses
+  //   limits-value        a `limits` member whose amount, count, receiver,
+  //                       interval or window means nothing (#432 phase 5,
+  //                       `common/access_limits.ts`)
+  //   location            a location the owning resource does not answer to
+  // -------------------------------------------------------------------------
+  /**
+   * Checks one right — an RFC 9396 detail or a GNAP access right — against
+   * the catalogue entry of its type.
+   *
+   * @param right - the detail or right (an object carrying `type`)
+   * @param definition - the type's entry from `declaredTypes()`
+   * @param where - how a sentence names the right
+   * @returns `{ kind, problem }`; `kind` is '' when the right conforms
+   */
+  conformance(right: Json, definition: Json, where: string): Json {
+    const { log } = this.deps;
+    log.debug("Entering AuthorizationDetails.conformance().");
+    const ok = { kind: '', problem: '' };
+    if (!right || typeof right !== 'object' || !definition) {
+      log.debug("Leaving AuthorizationDetails.conformance(). Nothing to " +
+                "compare.");
+      return ok;
+    }
+    const lists = ['actions', 'datatypes', 'privileges'];
+    for (let i = 0; i < lists.length; i++) {
+      const name = lists[i];
+      const allowed = definition[name];
+      if (!Array.isArray(allowed) || !Array.isArray(right[name])) {
+        continue;
+      }
+      const strangers = right[name].filter(function (one: Json): boolean {
+        return allowed.indexOf(one) < 0;
+      });
+      if (strangers.length) {
+        log.debug("Leaving AuthorizationDetails.conformance(). " + name +
+                  ".");
+        return { kind: 'definition', problem: where + '.' + name +
+          ' names ' + JSON.stringify(strangers).slice(0, 200) + ', and the ' +
+          'type "' + definition.type + '" (declared by "' +
+          definition.identifier + '") allows only ' +
+          JSON.stringify(allowed).slice(0, 300) };
+      }
+    }
+    const missing = (definition.required || []).filter(function (one: string):
+        boolean {
+      return right[one] === undefined || right[one] === null;
+    });
+    if (missing.length) {
+      log.debug("Leaving AuthorizationDetails.conformance(). required.");
+      return { kind: 'definition', problem: where + ' carries no ' +
+        missing.join(', ') + ', which the type "' + definition.type +
+        '" (declared by "' + definition.identifier + '") requires' };
+    }
+    if (definition.validate && !definition.validate(right)) {
+      log.debug("Leaving AuthorizationDetails.conformance(). The schema.");
+      return { kind: 'definition', problem: where + ' does not conform to ' +
+        'the definition of "' + definition.type + '" that "' +
+        definition.identifier + '" declares: ' +
+        this.schemaProblem(definition.validate) };
+    }
+    if (right.limits !== undefined) {
+      if (!definition.validateLimits) {
+        log.debug("Leaving AuthorizationDetails.conformance(). Limits on a " +
+                  "type that declares none.");
+        return { kind: 'limits-undeclared', problem: where + ' carries ' +
+          'limits, and the type "' + definition.type + '" declares no ' +
+          'limits schema, so no limit on it means anything this ' +
+          'authorization server could show or check' };
+      }
+      if (!definition.validateLimits(right.limits)) {
+        log.debug("Leaving AuthorizationDetails.conformance(). Limits " +
+                  "refused.");
+        return { kind: 'limits', problem: where + '.limits does not meet ' +
+          'the limits schema of "' + definition.type + '": ' +
+          this.schemaProblem(definition.validateLimits) };
+      }
+      // THE VOCABULARY (#432 phase 5): the schema says what SHAPE a limit
+      // has; `common/access_limits.ts` says what its five members with a
+      // meaning — amount, count, receiver, interval, window — must be for
+      // the approval page to lower them and a resource server to count
+      // against them. Asked of both protocols here, so a RAR detail and a
+      // GNAP right of one type are held to one reading.
+      const meaning = AccessLimits.problem(right.limits);
+      if (meaning) {
+        log.debug("Leaving AuthorizationDetails.conformance(). Limits " +
+                  "vocabulary.");
+        return { kind: 'limits-value', problem: where + '.limits is not a ' +
+          'limit this service can read: ' + meaning };
+      }
+    }
+    const strangers = (Array.isArray(right.locations) ? right.locations : [])
+      .filter(function (one: Json): boolean {
+        return definition.identifiers.indexOf(one) < 0;
+      });
+    if (strangers.length) {
+      log.debug("Leaving AuthorizationDetails.conformance(). A location.");
+      return { kind: 'location', problem: where + ' names the location' +
+        (strangers.length === 1 ? ' ' : 's ') +
+        strangers.map(function (one: Json): string {
+          return '"' + one + '"';
+        }).join(', ') + ', and "' + definition.identifier + '", which ' +
+        'declares "' + right.type + '", answers to ' +
+        definition.identifiers.map(function (one: Json): string {
+          return '"' + one + '"';
+        }).join(', ') + '. A token is addressed to its locations, so a ' +
+        'location nobody declared would be an audience nobody checks' };
+    }
+    log.debug("Leaving AuthorizationDetails.conformance().");
+    return ok;
+  }
+
+  // The catalogue entry of one type in this realm, or null (#432 phase 4).
+  /**
+   * Returns the catalogue entry of one type in this realm.
+   *
+   * @param type - the type name
+   * @returns the entry, as `declaredTypes()` holds it, or null
+   */
+  typeOf(type: unknown): Json {
+    const { log } = this.deps;
+    log.debug("Entering AuthorizationDetails.typeOf().");
+    const name = typeof type === 'string' ? type : '';
+    const found = name ? this.declaredTypes()[name] || null : null;
+    log.debug("Leaving AuthorizationDetails.typeOf(). " + !!found);
+    return found;
+  }
+
+  // The shortest `maxLifetimeS` among a set of details' types, or null where
+  // none declares one (#432 phase 4) — what `oauth2.ts` caps an access token
+  // carrying them at. A GNAP token's cap is the issuance policy's obligation
+  // instead (`issue-gnap-right`), which reads the same declaration.
+  /**
+   * Returns the shortest maximum lifetime the types of a set of details
+   * declare.
+   *
+   * @param details - RFC 9396 details
+   * @returns seconds, or null when no type declares one
+   */
+  maxLifetimeFor(details: Json[]): number | null {
+    const { log } = this.deps;
+    log.debug("Entering AuthorizationDetails.maxLifetimeFor().");
+    const declared = this.declaredTypes();
+    let out: number | null = null;
+    (details || []).forEach(function (one: Json): void {
+      const definition = one && declared[one.type];
+      if (definition && typeof definition.maxLifetimeS === 'number' &&
+          (out === null || definition.maxLifetimeS < out)) {
+        out = definition.maxLifetimeS;
+      }
+    });
+    log.debug("Leaving AuthorizationDetails.maxLifetimeFor(). " + out);
+    return out;
+  }
+
+  // Whether any of a set of details carries `limits` (#432 phase 5): what
+  // makes `oauth2.ts` put a grant identifier on the access token, so the
+  // resource server has one stable key to keep its running totals under.
+  /**
+   * Says whether any detail of a set carries limits.
+   *
+   * @param details - RFC 9396 details
+   * @returns true when one does
+   */
+  carriesLimits(details: Json[]): boolean {
+    const { log } = this.deps;
+    log.debug("Entering AuthorizationDetails.carriesLimits().");
+    const out = (Array.isArray(details) ? details : []).some(
+      function (one: Json): boolean {
+        return !!one && typeof one === 'object' && one.limits !== undefined;
+      });
+    log.debug("Leaving AuthorizationDetails.carriesLimits(). " + out);
+    return out;
+  }
+
+  // Whether `lowered` is the same details as `asked` with no limit raised
+  // (#432 phase 5): the same number of details, each the same but for its
+  // `limits`, and those no more than asked (`common/access_limits.ts`).
+  // '' when it is, or the sentence naming the first that is not.
+  /**
+   * Says whether one list of details is another with limits lowered only.
+   *
+   * @param asked - the details the client sent
+   * @param lowered - the details as the person lowered them
+   * @returns '' when only limits were lowered, or the problem
+   */
+  limitsRaisedBy(asked: Json[], lowered: Json[]): string {
+    const { log } = this.deps;
+    log.debug("Entering AuthorizationDetails.limitsRaisedBy().");
+    const a = Array.isArray(asked) ? asked : [];
+    const b = Array.isArray(lowered) ? lowered : [];
+    if (a.length !== b.length) {
+      log.debug("Leaving AuthorizationDetails.limitsRaisedBy(). Count.");
+      return 'the lowered authorization_details are not the details asked for';
+    }
+    for (let i = 0; i < a.length; i++) {
+      const was = Object.assign({}, a[i]);
+      const now = Object.assign({}, b[i]);
+      delete was.limits;
+      delete now.limits;
+      if (JSON.stringify(this.sorted(was)) !==
+          JSON.stringify(this.sorted(now))) {
+        log.debug("Leaving AuthorizationDetails.limitsRaisedBy(). Changed.");
+        return 'authorization_details[' + i + '] changed beyond its limits';
+      }
+      const why = AccessLimits.raised(a[i] && a[i].limits,
+                                      b[i] && b[i].limits);
+      if (why) {
+        log.debug("Leaving AuthorizationDetails.limitsRaisedBy(). Raised.");
+        return 'authorization_details[' + i + ']: ' + why;
+      }
+    }
+    log.debug("Leaving AuthorizationDetails.limitsRaisedBy().");
+    return '';
+  }
+
+  // A value with its object keys in order, for comparing.
+  private sorted(value: Json): Json {
+    const { log } = this.deps;
+    log.debug("Entering AuthorizationDetails.sorted().");
+    const self = this;
+    let out: Json = value;
+    if (Array.isArray(value)) {
+      out = value.map(function (one: Json): Json {
+        return self.sorted(one);
+      });
+    } else if (value && typeof value === 'object') {
+      out = {};
+      Object.keys(value).sort().forEach(function (k: string): void {
+        out[k] = self.sorted(value[k]);
+      });
+    }
+    log.debug("Leaving AuthorizationDetails.sorted().");
+    return out;
+  }
+
+  // The first type among a set of details that declares `bearer: false`, or
+  // '' (#432 phase 4): a token carrying it must be sender-constrained.
+  /**
+   * Returns the first type among a set of details that refuses a bearer
+   * token.
+   *
+   * @param details - RFC 9396 details
+   * @returns the type name, or ''
+   */
+  bearerRefusedBy(details: Json[]): string {
+    const { log } = this.deps;
+    log.debug("Entering AuthorizationDetails.bearerRefusedBy().");
+    const declared = this.declaredTypes();
+    const hit = (details || []).filter(function (one: Json): boolean {
+      const definition = one && declared[one.type];
+      return !!definition && definition.bearer === false;
+    })[0];
+    log.debug("Leaving AuthorizationDetails.bearerRefusedBy().");
+    return hit ? String(hit.type) : '';
+  }
+
+  // -------------------------------------------------------------------------
+  // THE AUTHENTICATION LEVELS A SET OF DETAILS NEEDS (#432 phase 6): every
+  // `acr` the catalogue declares for a type among them, each REQUIRED — a
+  // grant carrying two types is a grant of both, so it must meet both, which
+  // is not `acr_values`' "any of". GNAP's approval holds a session to the
+  // same declarations (`gnap/gnap_approval.ts`); the authorization endpoint
+  // and the token endpoint's funnel ask this.
+  // -------------------------------------------------------------------------
+  /**
+   * Returns every acr the catalogue declares for a type among some details.
+   *
+   * @param details - RFC 9396 details
+   * @returns the distinct values, each required
+   */
+  requiredAcrsOf(details: Json[]): string[] {
+    const { log } = this.deps;
+    log.debug("Entering AuthorizationDetails.requiredAcrsOf().");
+    const declared = this.declaredTypes();
+    const out: string[] = [];
+    (details || []).forEach(function (one: Json): void {
+      const definition = one && declared[one.type];
+      const acr = definition && definition.acr ? String(definition.acr) : '';
+      if (acr && out.indexOf(acr) < 0) {
+        out.push(acr);
+      }
+    });
+    log.debug("Leaving AuthorizationDetails.requiredAcrsOf(). " +
+              out.join(' '));
+    return out;
+  }
+
+  // Whether a right of `type` may be DERIVED from a token carrying the types
+  // `originalTypes` (RFC 9767 section 4; rcbj's decision 3 on #432): the
+  // catalogue entry of `type` names one of them in `derivableFrom`.
+  /**
+   * Tells whether a right of one type may be derived from a token carrying
+   * others, by the catalogue's `derivableFrom`.
+   *
+   * @param type - the derived right's type
+   * @param originalTypes - the types the original token carries
+   * @returns the original type it is derivable from, or ''
+   */
+  derivableFrom(type: unknown, originalTypes: string[]): string {
+    const { log } = this.deps;
+    log.debug("Entering AuthorizationDetails.derivableFrom().");
+    const definition = this.typeOf(type);
+    const from = definition ? (definition.derivableFrom || []).filter(
+      function (one: string): boolean {
+        return (originalTypes || []).indexOf(one) >= 0;
+      })[0] || '' : '';
+    log.debug("Leaving AuthorizationDetails.derivableFrom(). " +
+              (from || 'No.'));
+    return from;
+  }
+
+  // Whether an application is the OWNER of a catalogue entry: its identifier,
+  // or (an OAuth caller is named by client_id) its client_id.
+  /**
+   * Tells whether a caller — an application identifier or a client_id — owns
+   * a catalogue entry.
+   *
+   * @param definition - the entry
+   * @param caller - the application identifier or client_id
+   * @returns true when it is the owner
+   */
+  ownedBy(definition: Json, caller: unknown): boolean {
+    const { log } = this.deps;
+    log.debug("Entering AuthorizationDetails.ownedBy().");
+    const name = String(caller || '');
+    const answer = !!definition && !!name &&
+      (definition.identifier === name ||
+       (!!definition.clientId && definition.clientId === name));
+    log.debug("Leaving AuthorizationDetails.ownedBy(). " + answer);
+    return answer;
+  }
+
+  // -------------------------------------------------------------------------
+  // WHAT A RESOURCE SERVER SEES AT INTROSPECTION (#432 phase 4), for RFC
+  // 9396's `authorization_details` and GNAP's `access` alike: FILTERED PER
+  // RESOURCE SERVER, which RFC 9767 section 3.3 permits ("the AS MAY ...
+  // limit the access returned") and RFC 7662 section 2.2 leaves to the
+  // server.
+  //
+  //   * A right of a catalogued type OWNED BY ANOTHER resource server is
+  //     withheld: the caller may be in the token's audience for its own
+  //     rights, and another API's rights say what the person granted
+  //     somebody else.
+  //   * The person's claims the caller's OWN types declare in
+  //     `introspectionClaims` are added, read off the directory through
+  //     `common/claim_attributes.ts`'s `requestedClaimsFor()` — the one
+  //     reader of the attribute catalogue (OIDC Core section 5.5's door) —
+  //     and only for a token about a person.
+  //
+  // `rights` is the token's list; `caller` the resource server's application
+  // identifier or client_id; `username` the person, or ''. Answers `{ rights,
+  // claims, owned }` — `owned` false when the caller owns none of the
+  // token's types, which is when a caller that is not a resource server sees
+  // the list unfiltered (the OAuth door's decision; GNAP's caller is always
+  // a resource server).
+  // -------------------------------------------------------------------------
+  /**
+   * Filters a token's rights for the resource server introspecting it, and
+   * adds the person's claims its own types declare.
+   *
+   * @param rights - the token's details or access rights
+   * @param caller - the resource server's application identifier or
+   *   client_id
+   * @param username - the person the token is about, or ''
+   * @returns `{ rights, claims, owned }`
+   */
+  introspectionView(rights: Json[], caller: unknown, username: unknown): Json {
+    const { log } = this.deps;
+    const self = this;
+    log.debug("Entering AuthorizationDetails.introspectionView().");
+    const declared = this.declaredTypes();
+    const wanted: string[] = [];
+    let owned = false;
+    const kept = (rights || []).filter(function (one: Json): boolean {
+      const definition = one && typeof one === 'object'
+        ? declared[one.type] : null;
+      if (!definition) {
+        return true;
+      }
+      if (!self.ownedBy(definition, caller)) {
+        return false;
+      }
+      owned = true;
+      (definition.introspectionClaims || []).forEach(function (name: string):
+          void {
+        if (wanted.indexOf(name) < 0) {
+          wanted.push(name);
+        }
+      });
+      return true;
+    });
+    let claims: Json = {};
+    if (wanted.length && username) {
+      try {
+        // LAZILY: the claim reader requires the credential module's claim
+        // catalogue, and this library is required long before it.
+        const claimAttributes = require('../common/claim_attributes');
+        claims = claimAttributes.requestedClaimsFor(String(username),
+                                                    wanted).claims || {};
+      } catch (e) {
+        log.debug("Caught in AuthorizationDetails.introspectionView(): " +
+                  ((e && e.message) || e));
+        // No directory in this process: no claims, which is what a person
+        // with none of them on their entry gets too.
+        claims = {};
+      }
+    }
+    log.debug("Leaving AuthorizationDetails.introspectionView(). " +
+              kept.length + " of " + (rights || []).length + " kept, " +
+              Object.keys(claims).length + " claim(s).");
+    return { rights: kept, claims: claims, owned: owned };
   }
 
   // The realm's `authorization_details_types_supported`: the built-in type and
@@ -600,31 +1061,17 @@ class AuthorizationDetails {
         resolved.push({ detail: built.entry, definition: null });
         continue;
       }
-      if (definition.validate && !definition.validate(detail)) {
-        log.debug("Leaving AuthorizationDetails.parse(). The type's schema " +
-                  "refused it.");
-        return self.refusal('STS-OAUTH-0456', where + ' does not conform to ' +
-          'the definition of "' + detail.type + '" that "' +
-          definition.identifier + '" declares: ' +
-          self.schemaProblem(definition.validate) + ' (RFC 9396 ' +
-          'section 5).');
-      }
-      const strangers = (detail.locations || []).filter(function (one) {
-        return definition.identifiers.indexOf(one) < 0;
-      });
-      if (strangers.length) {
-        log.debug("Leaving AuthorizationDetails.parse(). A location the " +
-                  "resource does not declare.");
-        return self.refusal('STS-OAUTH-0457', where + ' names the location' +
-          (strangers.length === 1 ? ' ' : 's ') +
-          strangers.map(function (one) {
-            return '"' + one + '"';
-          }).join(', ') + ', and "' + definition.identifier + '", which ' +
-          'declares "' + detail.type + '", answers to ' +
-          definition.identifiers.map(function (one) {
-            return '"' + one + '"';
-          }).join(', ') + '. A token is addressed to its locations, so a ' +
-          'location nobody declared would be an audience nobody checks.');
+      // THE TYPE'S DEFINITION — its schema, and since #432 phase 4 the
+      // catalogue's values, required members, limits and locations — asked
+      // through `conformance()`, the one reading GNAP shares.
+      const conforms = self.conformance(detail, definition, where);
+      if (conforms.kind) {
+        log.debug("Leaving AuthorizationDetails.parse(). The type's " +
+                  "definition refused it (" + conforms.kind + ").");
+        return self.refusal(CONFORMANCE_CODES[conforms.kind] ||
+                            'STS-OAUTH-0456', conforms.problem +
+                            (conforms.kind === 'location' ? '.'
+                              : ' (RFC 9396 section 5).'));
       }
       details.push(detail);
       resolved.push({ detail: detail, definition: definition });
@@ -938,18 +1385,22 @@ class AuthorizationDetails {
    * @param username - the person
    * @param clientId - the client
    * @param digest - `digestOf()` the details
+   * @param lowered - the details with the limits the person lowered on the
+   *   screen (#432 phase 5), or null when they lowered none
    */
-  noteConsented(username: unknown, clientId: unknown, digest: unknown): void {
+  noteConsented(username: unknown, clientId: unknown, digest: unknown,
+                lowered?: Json[] | null): void {
     const { log } = this.deps;
     log.debug("Entering AuthorizationDetails.noteConsented().");
     const now = Date.now();
-    consented.forEach(function (expires, key) {
-      if (expires < now) {
+    consented.forEach(function (held, key) {
+      if (!(held && held.expires >= now)) {
         consented.delete(key);
       }
     });
     consented.set(this.consentKey(username, clientId, digest),
-                  now + this.consentTtlMs());
+                  { expires: now + this.consentTtlMs(),
+                    lowered: Array.isArray(lowered) ? lowered : null });
     log.debug("Leaving AuthorizationDetails.noteConsented().");
   }
 
@@ -968,17 +1419,37 @@ class AuthorizationDetails {
                    digest: unknown): boolean {
     const { log } = this.deps;
     log.debug("Entering AuthorizationDetails.consumeConsented().");
+    const answer = this.consumeConsent(username, clientId, digest);
+    log.debug("Leaving AuthorizationDetails.consumeConsented().");
+    return !!answer;
+  }
+
+  // The same, answering WHAT was allowed (#432 phase 5): `{ lowered }`, the
+  // details with the limits the person lowered on the screen (null when
+  // they lowered none), or null when nothing was allowed. Spent either way.
+  /**
+   * Spends a person's Allow on these details, answering the details as they
+   * lowered them.
+   *
+   * @param username - the person
+   * @param clientId - the client
+   * @param digest - `digestOf()` the details as the client sent them
+   * @returns `{ lowered }`, or null when nothing was allowed
+   */
+  consumeConsent(username: unknown, clientId: unknown, digest: unknown): Json {
+    const { log } = this.deps;
+    log.debug("Entering AuthorizationDetails.consumeConsent().");
     const key = this.consentKey(username, clientId, digest);
-    const expires = consented.get(key);
-    if (expires === undefined) {
-      log.debug("Leaving AuthorizationDetails.consumeConsented(). Not " +
+    const held = consented.get(key);
+    if (held === undefined) {
+      log.debug("Leaving AuthorizationDetails.consumeConsent(). Not " +
                 "consented.");
-      return false;
+      return null;
     }
     consented.delete(key);
-    log.debug("Leaving AuthorizationDetails.consumeConsented(). " +
-              (expires >= Date.now()));
-    return expires >= Date.now();
+    const live = !!held && held.expires >= Date.now();
+    log.debug("Leaving AuthorizationDetails.consumeConsent(). " + live);
+    return live ? { lowered: held.lowered || null } : null;
   }
 }
 
@@ -1029,6 +1500,16 @@ export = {
   typesSupported: slot.forward('typesSupported'),
   parse: slot.forward('parse'),
   covers: slot.forward('covers'),
+  conformance: slot.forward('conformance'),
+  typeOf: slot.forward('typeOf'),
+  maxLifetimeFor: slot.forward('maxLifetimeFor'),
+  carriesLimits: slot.forward('carriesLimits'),
+  limitsRaisedBy: slot.forward('limitsRaisedBy'),
+  bearerRefusedBy: slot.forward('bearerRefusedBy'),
+  requiredAcrsOf: slot.forward('requiredAcrsOf'),
+  derivableFrom: slot.forward('derivableFrom'),
+  ownedBy: slot.forward('ownedBy'),
+  introspectionView: slot.forward('introspectionView'),
   coveredProblem: slot.forward('coveredProblem'),
   narrow: slot.forward('narrow'),
   audienceFor: slot.forward('audienceFor'),
@@ -1036,5 +1517,6 @@ export = {
   describe: slot.forward('describe'),
   digestOf: slot.forward('digestOf'),
   noteConsented: slot.forward('noteConsented'),
+  consumeConsent: slot.forward('consumeConsent'),
   consumeConsented: slot.forward('consumeConsented')
 };
