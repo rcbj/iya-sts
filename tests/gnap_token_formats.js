@@ -77,7 +77,15 @@ function fullModel(extra) {
       'dolphin-metadata',
       { type: 'financial-transaction', actions: ['withdraw'],
         identifier: 'account-14-32-32-3',
-        currency: 'USD' }
+        currency: 'USD' },
+      // #432 phase 5: a right's LIMITS, every member with a meaning, which
+      // each format must carry where only the authorization server writes.
+      { type: 'payments', actions: ['spend'], identifier: 'acct-1',
+        limits: { amount: '250.00', currency: 'EUR', count: 3,
+                  receiver: ['bob', 'carol "c"'],
+                  interval: 'R30/2026-10-01T00:00:00Z/P1D',
+                  window: { notBefore: '2026-10-01T00:00:00Z',
+                            notAfter: '2026-12-31T00:00:00Z' } } }
     ],
     flags: ['durable'],
     cnf: { jkt: JKT },
@@ -87,7 +95,9 @@ function fullModel(extra) {
     label: 'photos token',
     // #432: a token derived twice (RFC 9767 section 4) — the most recent
     // deriving resource server outermost, RFC 8693 section 4.1's nesting.
-    act: { sub: 'rs-downstream "b"', act: { sub: 'https://rs1.example/api' } }
+    act: { sub: 'rs-downstream "b"', act: { sub: 'https://rs1.example/api' } },
+    // #432 phase 5: the grant the limits are counted against.
+    grant: 'grant-"9"'
   }, extra || {});
 }
 
@@ -99,13 +109,13 @@ function bearerModel() {
     instanceId: 'ci-1',
     access: ['read'], flags: ['bearer'], cnf: null, iat: NOW -
         10, nbf: null, exp: NOW + 60,
-    label: null, act: null
+    label: null, act: null, grant: null
   };
 }
 
 const FIELDS = ['jti', 'iss', 'sub', 'aud', 'instanceId', 'access', 'flags',
                 'cnf',
-                'iat', 'nbf', 'exp', 'label', 'act'];
+                'iat', 'nbf', 'exp', 'label', 'act', 'grant'];
 
 function refused(t, result, code, what) {
   log.debug("Entering refused().");
@@ -283,9 +293,10 @@ async function commonCases(t, fmt, keys, wrongKeys, tamper) {
   const d = fmt.describe();
   t.check(d.name === name && d.libraries.length > 0 &&
           d.libraries.every(function (l) { return l.version && l.license; }) &&
-          d.algorithms.length > 0 && d.carries.length === 13,
+          d.algorithms.length > 0 && d.carries.length === 14,
           name + ': describe() names the format, its libraries with versions ' +
-                 'and licences, and 13 carried fields (the actor chain, #432)',
+                 'and licences, and 14 carried fields (the actor chain and ' +
+                 'the grant, #432)',
           JSON.stringify(d.libraries));
 
   const full = fullModel();
@@ -828,7 +839,7 @@ async function zcapSuiteCases(t, suite, controller) {
           doc.controller === 'urn:ietf:params:oauth:jwk-thumbprint:sha-256:' +
                              JKT &&
           JSON.stringify(doc.allowedAction) === JSON.stringify(
-              ['read', 'write', 'withdraw']) &&
+              ['read', 'write', 'withdraw', 'spend']) &&
           doc.proof && doc.proof.proofPurpose === 'capabilityDelegation',
           'zcap (' + suite + '): target is aud[0], parent is its root, ' +
           'controller is the RFC 9278 jkt URN, allowedAction is the union of ' +

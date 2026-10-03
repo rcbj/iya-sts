@@ -19,12 +19,16 @@
 // (rcbj's decision 2 on #432) — so "lower" and "spent" must mean one thing
 // to all three.
 //
-// THE FIVE MEMBERS WITH A MEANING:
+// THE SIX MEMBERS WITH A MEANING:
 //
-//   amount    { value, currency }   a decimal string (or number) of at most
-//                                   18 integer and 6 fraction digits, and an
-//                                   ISO 4217 code — the most that may be
-//                                   spent (per interval, where one is given)
+//   amount    a decimal             a string (or number) of at most 18
+//                                   integer and 6 fraction digits — the most
+//                                   that may be spent (per interval, where
+//                                   one is given)
+//   currency  an ISO 4217 code      what `amount` is in; REQUIRED beside it
+//                                   and meaningless without it. Flat beside
+//                                   the amount, as RFC 9396's own example
+//                                   (`instructedAmount`) spells the pair
 //   count     integer >= 0          the most operations (per interval)
 //   receiver  string or [strings]   who an operation may be FOR; an
 //                                   operation naming anybody else is refused
@@ -41,7 +45,8 @@
 //
 // "LOWER", PER MEMBER, AND NOTHING ELSE IS:
 //
-//   amount    the same currency and a value no greater
+//   amount    a value no greater, in the same currency (which never
+//             changes)
 //   count     no greater
 //   receiver  a subset of the receivers (a single string is a set of one)
 //   interval  the same start, a duration no SHORTER (a longer period resets
@@ -73,7 +78,8 @@ import helpers = require('./helpers');
 type Json = any;
 
 // The members with a meaning, in the order a page draws them.
-const MEMBERS = ['amount', 'count', 'receiver', 'interval', 'window'];
+const MEMBERS = ['amount', 'currency', 'count', 'receiver', 'interval',
+                 'window'];
 
 // Millionths: see the header.
 const FRACTION_DIGITS = 6;
@@ -351,24 +357,23 @@ class AccessLimits {
       helpers.log.debug("Leaving AccessLimits.problem(). Not an object.");
       return 'limits is not a JSON object';
     }
-    if (limits.amount !== undefined) {
-      const a = limits.amount;
-      if (!a || typeof a !== 'object' || Array.isArray(a) ||
-          Object.keys(a).sort().join(',') !== 'currency,value') {
-        helpers.log.debug("Leaving AccessLimits.problem(). amount shape.");
-        return 'limits.amount must be an object of exactly "value" and ' +
-          '"currency"';
-      }
-      if (AccessLimits.units(a.value) === null) {
-        helpers.log.debug("Leaving AccessLimits.problem(). amount value.");
-        return 'limits.amount.value must be a non-negative decimal of at ' +
-          'most 18 integer and ' + FRACTION_DIGITS + ' fraction digits';
-      }
-      if (typeof a.currency !== 'string' || !CURRENCY_RE.test(a.currency)) {
-        helpers.log.debug("Leaving AccessLimits.problem(). currency.");
-        return 'limits.amount.currency must be an ISO 4217 code of three ' +
-          'capital letters';
-      }
+    if (limits.amount !== undefined &&
+        AccessLimits.units(limits.amount) === null) {
+      helpers.log.debug("Leaving AccessLimits.problem(). amount.");
+      return 'limits.amount must be a non-negative decimal of at most 18 ' +
+        'integer and ' + FRACTION_DIGITS + ' fraction digits';
+    }
+    if ((limits.amount !== undefined) !== (limits.currency !== undefined)) {
+      helpers.log.debug("Leaving AccessLimits.problem(). The pair.");
+      return 'limits.amount and limits.currency come together: an amount ' +
+        'is in a currency, and a currency limits nothing alone';
+    }
+    if (limits.currency !== undefined &&
+        (typeof limits.currency !== 'string' ||
+         !CURRENCY_RE.test(limits.currency))) {
+      helpers.log.debug("Leaving AccessLimits.problem(). currency.");
+      return 'limits.currency must be an ISO 4217 code of three capital ' +
+        'letters';
     }
     if (limits.count !== undefined &&
         !(Number.isSafeInteger(limits.count) && limits.count >= 0)) {
@@ -456,6 +461,8 @@ class AccessLimits {
       return original[k] === undefined;
     });
     for (let i = 0; i < added.length; i++) {
+      // An amount and its currency may be added together; `problem()`
+      // above has held them to coming as a pair.
       if (MEMBERS.indexOf(added[i]) < 0 || added[i] === 'interval') {
         helpers.log.debug("Leaving AccessLimits.raised(). " + added[i] +
                           " added.");
@@ -470,12 +477,14 @@ class AccessLimits {
       const now = proposed[k];
       let why = '';
       if (k === 'amount') {
-        const a = AccessLimits.units(was && was.value);
-        const b = AccessLimits.units(now.value);
-        if (!was || now.currency !== was.currency) {
-          why = 'limits.amount must stay in ' + (was && was.currency);
-        } else if (a === null || b === null || b > a) {
-          why = 'limits.amount.value is more than ' + String(was.value);
+        const a = AccessLimits.units(was);
+        const b = AccessLimits.units(now);
+        if (a === null || b === null || b > a) {
+          why = 'limits.amount is more than ' + String(was);
+        }
+      } else if (k === 'currency') {
+        if (now !== was) {
+          why = 'limits.currency must stay ' + String(was);
         }
       } else if (k === 'count') {
         if (!(now <= was)) {
@@ -548,9 +557,13 @@ class AccessLimits {
       const v = limits[k];
       let label = k;
       let text = '';
-      if (k === 'amount' && v && typeof v === 'object') {
+      if (k === 'amount') {
         label = 'At most';
-        text = String(v.value) + ' ' + String(v.currency);
+        text = String(v) + (limits.currency ? ' ' + String(limits.currency)
+                                            : '');
+      } else if (k === 'currency') {
+        label = 'In';
+        text = String(v);
       } else if (k === 'count') {
         label = 'At most';
         text = String(v) + ' operation' + (v === 1 ? '' : 's');

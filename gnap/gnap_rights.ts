@@ -111,7 +111,7 @@ interface GnapRightsDeps {
 // existence and owns no audience (a token for it is audienced as before).
 const DEMO_TYPE = 'urn:iya-sts:gnap:demo';
 
-// THE DEMONSTRATION TYPE'S LIMITS (#432 phase 5): the five members
+// THE DEMONSTRATION TYPE'S LIMITS (#432 phase 5): the six members
 // `common/access_limits.ts` gives a meaning to and nothing else, so the
 // demonstration resource server — the reference for what a resource server
 // does with a limit (rcbj's decision 2) — can be asked for every one of
@@ -123,11 +123,8 @@ const DEMO_DEFINITION = JSON.stringify({
   limits: {
     type: 'object',
     properties: {
-      amount: { type: 'object',
-                properties: { value: { type: ['string', 'number'] },
-                              currency: { type: 'string' } },
-                required: ['value', 'currency'],
-                additionalProperties: false },
+      amount: { type: ['string', 'number'] },
+      currency: { type: 'string' },
       count: { type: 'integer', minimum: 0 },
       receiver: { type: ['string', 'array'] },
       interval: { type: 'string' },
@@ -415,13 +412,13 @@ class GnapRights {
       log.debug("Leaving GnapRights.limitFacts(). None.");
       return null;
     }
-    const units = limits.amount ? AccessLimits.units(limits.amount.value)
-                                : null;
+    const units = limits.amount !== undefined
+      ? AccessLimits.units(limits.amount) : null;
     log.debug("Leaving GnapRights.limitFacts().");
     return {
       json: JSON.stringify(limits),
       amount: units === null ? null : Number(AccessLimits.decimal(units)),
-      currency: limits.amount ? String(limits.amount.currency || '') : '',
+      currency: typeof limits.currency === 'string' ? limits.currency : '',
       count: typeof limits.count === 'number' ? limits.count : null,
       receivers: AccessLimits.receiversOf(limits) || [],
       interval: typeof limits.interval === 'string' ? limits.interval : '',

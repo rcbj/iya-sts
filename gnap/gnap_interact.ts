@@ -445,14 +445,20 @@ class GnapInteract {
     AccessLimits.rows(limits).forEach(function (row: any): void {
       const v = limits[row.member];
       let control = '';
-      if (row.member === 'amount' && v && typeof v === 'object') {
-        control = 'at most ' + input('amount', String(v.value), 'decimal') +
-          ' ' + xmlEscape(String(v.currency));
+      if (row.member === 'amount') {
+        control = 'at most ' + input('amount', String(v), 'decimal') +
+          ' ' + xmlEscape(String(limits.currency || ''));
+      } else if (row.member === 'currency') {
+        // Drawn beside the amount; a currency never changes.
+        return;
       } else if (row.member === 'count') {
         control = 'at most ' + input('count', String(v), 'numeric') +
           ' operations';
       } else if (row.member === 'receiver') {
-        control = 'only to ' + (AccessLimits.receiversOf(limits) || [])
+        // The marker says the boxes were DRAWN, so a form sent back with
+        // every one unticked is told from one that never showed them.
+        control = '<input type="hidden" name="' + name('receiverShown') +
+          '" value="1">only to ' + (AccessLimits.receiversOf(limits) || [])
           .map(function (one: string): string {
             return '<label><input type="checkbox" name="' +
               name('receiver') + '" value="' + xmlEscape(one) +
@@ -506,18 +512,20 @@ class GnapInteract {
           log.debug("Leaving posted().");
           return typeof value === 'string' ? value.trim() : undefined;
         };
-        if (was.amount && typeof was.amount === 'object' &&
-            posted('amount') !== undefined &&
-            posted('amount') !== String(was.amount.value)) {
-          proposed.amount = { value: posted('amount'),
-                              currency: was.amount.currency };
+        if (was.amount !== undefined && posted('amount') !== undefined &&
+            posted('amount') !== String(was.amount)) {
+          // The spelling the request used: a number stays a number, so
+          // the type's schema reads the lowered value as it read the asked.
+          proposed.amount = typeof was.amount === 'number' &&
+            /^\d{1,15}(\.\d{1,6})?$/.test(posted('amount'))
+            ? Number(posted('amount')) : posted('amount');
         }
         if (was.count !== undefined && posted('count') !== undefined &&
             posted('count') !== String(was.count)) {
           proposed.count = /^\d{1,15}$/.test(posted('count'))
             ? Number(posted('count')) : posted('count');
         }
-        if (was.receiver !== undefined) {
+        if (was.receiver !== undefined && posted('receiverShown') === '1') {
           const kept = bodyValues(req, body,
                                   GnapInteract.limitField(t, r, 'receiver'));
           const before = AccessLimits.receiversOf(was) || [];

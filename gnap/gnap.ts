@@ -683,10 +683,8 @@ class GnapRoutes {
         return r.limits !== undefined;
       });
       const grant = judged.model.grant || judged.record.grantId || '';
-      const operation = { receiver: op.receiver,
-                          amount: op.amount !== undefined
-                            ? { value: op.amount, currency: op.currency }
-                            : undefined };
+      const operation = { receiver: op.receiver, amount: op.amount,
+                          currency: op.currency };
       let spent: any = null;
       let refused: any = null;
       if (limited.length === covering.length) {

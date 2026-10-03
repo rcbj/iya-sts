@@ -1839,6 +1839,19 @@ so must `admin-ui/admin.ts`.
      caller owning none sees the token as before;
    * `derivableFrom` is GNAP's (RFC 9767); `interaction`, `consentActions`
      and `acr` are ENFORCED BY PHASE 6 of #432 (the next lane).
+   * `limits` MEAN THE SAME TO BOTH PROTOCOLS (#432 phase 5): beyond the
+     type's schema, `conformance()` asks `common/access_limits.ts` whether
+     the amount with its currency, the count, the receivers, the repeating
+     interval and the window are ones it can read (`STS-OAUTH-0916`), so a
+     detail and a GNAP right of one type are refused alike. A detail's
+     limits are then CARRIED as it was sent — in the RFC 9068 token's
+     `authorization_details` and at `/oauth2/introspect` — and counted by
+     the resource server. What RAR does NOT have is GNAP's two other halves:
+     the consent screen shows a detail and does not offer to lower its
+     limits, and no grant identifier rides in the token beside them (a
+     Grant Management `grant_id` is returned only where that profile is
+     asked for), so a resource server counting RAR limits keys them itself —
+     the demonstration resource server is GNAP's.
 
    **AN UNKNOWN TYPE STAYS REFUSED IN EVERY MODE HERE**, unlike GNAP's
    development mode (`mode.grantsUncataloguedAccess()`): RFC 9396 section 5

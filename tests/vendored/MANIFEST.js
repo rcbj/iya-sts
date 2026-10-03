@@ -347,6 +347,12 @@ const JOBS = [
   // cap, and the acts on /admin-api/delegation. A throwaway realm left behind.
   { file: 'sts_gnap_delegation.js',      browser: false, local: true },
   { file: 'sts_gnap_catalogue.js',       browser: false, local: true },
+  // #432 phase 5: an identifier's owner from a registered resource set
+  // (a non-owner refused on the approval page, a group member approving),
+  // a limit lowered on the page and read off the token by the job, and the
+  // demonstration resource server spending to the limit, refunding a failed
+  // operation and refusing past it. A throwaway realm left behind.
+  { file: 'sts_gnap_limits.js',          browser: false, local: true },
   // CERTIFICATE ENROLLMENT (2026-09-13): ACME, EST and SCEP, each driven by an
   // independent client written from its RFC with no code from acme/, est/ or
   // scep/, each in a throwaway realm it leaves behind.

@@ -173,7 +173,9 @@ async function test() {
     requiredMembers: ["actions"],
     bearer: false, maxLifetimeS: 120, introspectionClaims: ["email"],
     limits: { type: "object",
-              properties: { amount: { type: "number", minimum: 0 } },
+              // #432 phase 5: an amount is in a currency, beside it.
+              properties: { amount: { type: "number", minimum: 0 },
+                            currency: { type: "string" } },
               required: ["amount"], additionalProperties: false } },
              "declared the payment type");
   await h.ok(h.realmApi + "/applications/set-access-type", {
@@ -213,7 +215,7 @@ async function test() {
   log.info("=== 1. a declared type ===");
   const client = new gnap.Client({ key: gnap.newKey("ES256") });
   const payRight = { type: PAY, actions: ["status", "initiate"],
-                     limits: { amount: 25 } };
+                     limits: { amount: 25, currency: "EUR" } };
   const both = await h.redirectGrant(client, OWNER, {
     access_token: { access: [payRight, { type: OTHER }] } });
   const token = both.released.access_token;
@@ -416,7 +418,8 @@ async function test() {
   await h.setting("xacml.issuancePolicy", "cat-narrow");
   const fresh = new gnap.Client({ key: gnap.newKey("ES256") });
   const body = h.grantBody(fresh, { access_token: { access: [
-    { type: PAY, actions: ["status", "refund"], limits: { amount: 3 } }] } });
+    { type: PAY, actions: ["status", "refund"],
+      limits: { amount: 3, currency: "EUR" } }] } });
   r = await fresh.send("POST", h.GRANT, { json: body });
   check("7a. the grant request is accepted", function () {
     assert.strictEqual(r.status, 200, r.text);

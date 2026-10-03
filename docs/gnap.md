@@ -51,6 +51,7 @@ be continued, be modified onto different access, and be revoked.
 | `/gnap/biscuit/revocations` | GET | the revocation identifiers of revoked biscuit tokens (this service's own; see [revocation](#seeing-a-revocation-without-introspection)) |
 | `/status-lists/access-tokens` | GET | the realm's access-token status list, shared with OAuth (see [revocation](#seeing-a-revocation-without-introspection)) |
 | `/gnap/rs/resource` | GET · POST | a demonstration resource server |
+| `/gnap/rs/spend` | POST | the demonstration resource server's operation that spends against a right's [limits](#limits) |
 
 In a trust realm every path is under `/realm/{id}`.
 
@@ -203,6 +204,7 @@ kinds: `gnap-client` or `gnap-resource-server`. The attributes:
 | `gnapBearerTokens`, `gnapSkipInteraction` | per-client permissions. `gnapSkipInteraction` lets a client skip the approval page; it does **not** let it act for a person — see [acting for somebody else](#acting-for-somebody-else) |
 | `gnapAccessTokenFormat`, `gnapAccessTokenLifetimeS` | per-application overrides |
 | `gnapResourceServerUri` | the locations a resource server answers for |
+| `gnapOwnerLookupUri` | where a resource server answers who owns a resource: an https template with `{identifier}` as one path segment — see [who owns a resource](#who-owns-a-resource) |
 | `gnapJweKey` | the public key `jwt-encrypted` tokens are encrypted to |
 | `gnapMacaroonKey` | the macaroon root key, written by this service — **sealed at rest** |
 | `gnapScopedSignals` | `FALSE` lets this application's streams hear about everybody |
@@ -382,6 +384,119 @@ subtracts it from the values the catalogue lists, and a narrowing that cannot
 be carried out that way, leaves nothing, or fails the catalogue again is a
 refusal (`STS-GNAP-0817`). **The approval page says what was narrowed** before
 the person was asked. [XACML](xacml.md) describes the obligation.
+
+## Who owns a resource
+
+An access right may name one resource with `identifier` (RFC 9635 section
+8): an account, an album, a mailbox. **Only the resource's owner may approve
+access to it.** A person who signs in on the approval page and does not own
+it is told so and cannot approve; the request waits for its owner.
+
+The resource server says who owns what, in one of two ways:
+
+**On a registered resource set.** A registration (`POST /gnap/resource`, RFC
+9767 section 3.4) may carry `resource_owners`, mapping an identifier in the
+set's `access` to the DN of a person or a group in the realm's directory:
+
+```json
+{
+  "access": [{ "type": "account", "identifier": "acct-14", "actions": ["read"] }],
+  "resource_server": { "key": { "proof": "httpsig", "jwk": { … } } },
+  "resource_owners": { "acct-14": "cn=finance,ou=groups,dc=example,dc=com" }
+}
+```
+
+An owner that is neither a person nor a group, or an identifier the set does
+not carry, is refused (`STS-GNAP-0865`, `0864`). The newest registration
+that names an owner for an identifier is the one used.
+
+**By a lookup.** Set `gnapOwnerLookupUri` on the resource server's
+application entry to an https URL template with `{identifier}` as one whole
+path segment, such as `https://rs.example.com/owners/{identifier}`. This
+service fetches it with the identifier percent-encoded into that segment and
+expects `{"owner": "<DN>"}`, or 404 when nobody owns the resource. The
+request uses the outbound policy (the certificate verified, internal
+addresses refused in product mode, no redirects, a timeout and a size cap)
+and the answer is held for `gnap.ownerLookupCacheS` (60 seconds).
+
+> **Warning.** A lookup that fails (a timeout, an error status, an answer
+> that is not `{"owner": …}`) refuses the right (`STS-GNAP-0863`): a
+> resource server that declared a lookup said the identifier has an owner. A
+> longer `gnap.ownerLookupCacheS` keeps a former owner able to approve for
+> that long after the resource server changes its answer.
+
+A person owns a resource when the owner DN is their own entry or a group
+they are a direct member of. An identifier no resource server declares an
+owner for is not checked.
+
+The decision is the issuance policy's (`issue-gnap-right`, with the facts
+`urn:sts:xacml:gnap:owner-known`, `owner`, `owner-source`,
+`owner-unresolved` and `owner-matches`): the built-in rules refuse a
+non-owner (`STS-GNAP-0861`) and an unanswered lookup, and a realm's own
+policy can allow a delegate or require more. A client that skips the
+approval page, a derived token and a remembered approval meet the same rule
+when the token is issued, and the right is left out of the token.
+
+## Limits
+
+A catalogued access type may declare a `limits` schema, and a right of that
+type may then carry `limits`. Six members have a meaning to this service:
+
+| Member | Value | Means |
+|---|---|---|
+| `amount` | a decimal (string or number), at most 6 fraction digits | the most that may be spent, per interval where one is given |
+| `currency` | an ISO 4217 code | what `amount` is in — required beside it |
+| `count` | a non-negative integer | the most operations, per interval |
+| `receiver` | a string, or an array of strings | who an operation may be for |
+| `interval` | an ISO 8601 repeating interval, `R[n]/<RFC 3339 start>/<duration>` | the totals reset at each boundary; before the start or after the last repetition nothing is allowed |
+| `window` | `{ "notBefore", "notAfter" }`, RFC 3339 times | operations only inside it |
+
+Any other member is the resource server's own: carried and shown, never
+changed here. A request whose limits use these members wrongly is refused
+`invalid_request` (`STS-GNAP-0860`); an RFC 9396 authorization detail of the
+same type is refused the same way (`STS-OAUTH-0916`).
+
+**The person may lower a limit on the approval page, never raise it**: a
+smaller amount or count, fewer receivers, a narrower window, or an interval
+with the same start and a period no shorter and no more repetitions (a
+shorter period resets the budget more often, so it is more). Removing a
+limit, or adding an interval, is a raise. A later modification that drops or
+raises a limit goes back to the person, and a derived token cannot carry
+more than the original (`STS-GNAP-0868`).
+
+**The token states the limits** in each right of `access`, in all five
+formats, where only this service writes (a biscuit also carries them as
+`access_limit_amount`, `access_limit_count`, `access_limit_receiver`,
+`access_limit_interval`, `access_limit_not_before` and
+`access_limit_not_after` authority facts a resource server's own block can
+test), together with the **grant** they are counted against: `grant_id` in
+the JWT formats, `gnap:grant=` in a macaroon, `grant(id)` in a biscuit,
+`gnapGrant` in a zcap. Introspection returns the limits and `grant_id`. A
+rotated token keeps the grant; a derived token carries the original's, so
+deriving does not create a second budget.
+
+**The resource server keeps the running totals** — this service does not:
+there is no standard spend call, and a resource server would otherwise
+depend on this one for every operation. A resource server should:
+
+1. key its totals by `grant_id`, the right's `type` and its `identifier`;
+2. check the window and the interval, and find the current period;
+3. check the receiver and the currency;
+4. add the operation's amount and one to the count **atomically**, and
+   refuse with `403` and `error="insufficient_scope"` when that would pass a
+   limit;
+5. reset the totals at each interval boundary;
+6. give a spend back when the operation then fails.
+
+`POST /gnap/rs/spend` is the reference. It needs a token granting the action
+`spend` on `urn:iya-sts:gnap:demo` and takes
+`{ "amount": "12.50", "currency": "EUR", "receiver": "bob" }` (each
+optional; `"simulateFailure": true` makes the operation fail after the spend
+so you can see it refunded). It answers the totals and what remains for the
+period, `403` past a limit (`STS-GNAP-0870`), outside the window or interval
+(`0871`), for another receiver (`0872`) or currency (`0873`), and keeps the
+totals in one store every node shares (`sts_cluster_budgets` on postgres),
+so a cluster spends one budget. A right with no limits is spent unaccounted.
 
 ## The resource owner
 

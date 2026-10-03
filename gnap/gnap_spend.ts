@@ -165,7 +165,7 @@ class GnapSpend {
    * totals.
    *
    * @param limits - the right's limits
-   * @param operation - `{ amount: { value, currency }?, receiver? }`
+   * @param operation - `{ amount?, currency?, receiver? }`
    * @param now - seconds since the epoch
    * @returns `{ ok: true, period, units }`, or a refusal
    */
@@ -207,23 +207,22 @@ class GnapSpend {
     }
     let units = BigInt(0);
     if (op.amount !== undefined) {
-      const parsed = op.amount && typeof op.amount === 'object'
-        ? AccessLimits.units(op.amount.value) : null;
+      const parsed = AccessLimits.units(op.amount);
       if (parsed === null) {
         log.debug("Leaving GnapSpend.check(). The amount is unreadable.");
         return this.spendRefusal('STS-GNAP-0874', 'the operation\'s amount ' +
-          'is not { "value": <decimal>, "currency": <ISO 4217> }.', 400,
-          'invalid_request');
+          'is not a non-negative decimal.', 400, 'invalid_request');
       }
       units = parsed;
     }
-    if (limits.amount) {
-      if (!op.amount || op.amount.currency !== limits.amount.currency) {
+    if (limits.amount !== undefined) {
+      if (op.amount === undefined || op.currency !== limits.currency) {
         log.debug("Leaving GnapSpend.check(). The currency.");
         return this.spendRefusal('STS-GNAP-0873', 'the token\'s limits count ' +
-          'amounts in ' + limits.amount.currency + ', and this operation ' +
-          (op.amount ? 'is in ' + String(op.amount.currency) : 'states no ' +
-           'amount') + '.', 403, 'insufficient_scope');
+          'amounts in ' + limits.currency + ', and this operation ' +
+          (op.amount !== undefined ? 'is in ' + String(op.currency || 'no ' +
+            'currency') : 'states no amount') + '.', 403,
+          'insufficient_scope');
       }
     }
     log.debug("Leaving GnapSpend.check(). Within.");
@@ -253,13 +252,14 @@ class GnapSpend {
       return checked;
     }
     const key = GnapSpend.keyOf(args.grant, right);
-    const limitAmount = limits.amount ? AccessLimits.units(
-      limits.amount.value) : null;
+    const limitAmount = limits.amount !== undefined
+      ? AccessLimits.units(limits.amount) : null;
     const limitCount = typeof limits.count === 'number' ? limits.count : null;
     const expiresAt = Number(args.expiresAt) > now ? Number(args.expiresAt)
                                                    : now + DEFAULT_HOLD_S;
     const spent = { key: key, period: checked.period.index,
-                    amount: limits.amount ? checked.units : BigInt(0),
+                    amount: limitAmount !== null ? checked.units
+                                                 : BigInt(0),
                     count: 1 };
     let totals: Json;
     if (counters.sharesBudgets()) {
@@ -307,14 +307,13 @@ class GnapSpend {
     log.debug("Leaving GnapSpend.spend(). Spent.");
     return {
       ok: true, spent: spent,
-      totals: { amount: limits.amount
-                  ? { value: AccessLimits.decimal(totals.amount),
-                      currency: limits.amount.currency } : undefined,
+      totals: { amount: limitAmount !== null
+                  ? AccessLimits.decimal(totals.amount) : undefined,
+                currency: limitAmount !== null ? limits.currency : undefined,
                 count: totals.count },
       remaining: {
         amount: limitAmount !== null
-          ? { value: AccessLimits.decimal(limitAmount - totals.amount),
-              currency: limits.amount.currency } : undefined,
+          ? AccessLimits.decimal(limitAmount - totals.amount) : undefined,
         count: limitCount !== null ? limitCount - totals.count : undefined
       },
       period: checked.period.end ? { start: new Date(checked.period.start *

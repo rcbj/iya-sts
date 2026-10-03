@@ -51,6 +51,8 @@ Route-free libraries, each require-able from an in-process test:
 | `gnap_revocation.ts` | what ends a grant from OUTSIDE the protocol (#432) — a sign-out, a disable, a deleted client or its key removed, a compromised device, a partner's signal — and the check at use; see *What ends a grant from outside the protocol* |
 | `gnap_delegation.ts` | who may act for whom (#432 phase 1): impersonation by assertion and RFC 9767 derivation asked of #186's delegation policy, recorded in the delegation register; the subset rule and its one extension point; the actor chain and its cap — see *Delegation* below |
 | `gnap_rights.ts` | each access right against the access-type catalogue and the issuance policy (#432 phases 3 and 4): well-formedness, the `issue-gnap-right` facts and verdicts, narrowing, "derivable from", the introspection view — see *Each right a policy question* below |
+| `gnap_ownership.ts` | who owns the resource a right's `identifier` names (#432 phase 5): a registered resource set's `resource_owners`, or the resource server's `gnapOwnerLookupUri`, fetched under the outbound policy and cached briefly; the `issue-gnap-right` owner facts — see *Ownership and limits* below |
+| `gnap_spend.ts` | the demonstration resource server's running totals of a right's limits (#432 phase 5): checked, spent atomically across the cluster, reset per interval, refunded; the `gnap.spend-purge` job |
 | `gnap_grants.ts` | the engine: identifying a caller, creating, continuing, modifying and revoking grants, issuing, rotating and deriving tokens |
 | `gnap_rs.ts` | introspection, registration, and judging a presented token |
 | `gnap_console.ts` | the view and action layer both admin doors render (no route, no `res`, no markup) |
@@ -272,7 +274,101 @@ access token for X" without ever seeing a right. Both halves are replaced;
   policy as facts; nothing acts on them yet. Everything else declared is
   enforced.
 
-## Shared Signals
+## Ownership and limits (#432 phase 5, 2026-10-03)
+
+**AN IDENTIFIER HAS AN OWNER, AND ONLY THE OWNER APPROVES ACCESS TO IT.**
+RFC 9635 section 1.4 makes the resource owner the one who authorizes access
+to a resource; until phase 5 any person signed in on the approval page could
+approve a right naming somebody else's account. `gnap_ownership.ts`'s header
+argues the mechanism; what a reader needs here:
+
+* **THE RESOURCE SERVER SAYS WHO OWNS WHAT**, two ways. A registration (RFC
+  9767 section 3.4) may carry `resource_owners`, this service's extension: an
+  identifier the set's `access` carries, to the DN of a person or a group in
+  the realm (`register()` refuses a stray identifier, STS-GNAP-0864, and a DN
+  that is neither, 0865 — a typo would otherwise refuse every right naming
+  the identifier for good). Or the resource server's entry declares
+  `gnapOwnerLookupUri`, an https template with `{identifier}` as one whole
+  path segment, answered `{"owner": "<DN>"}` or 404. The newest registration
+  naming an owner wins over the lookup.
+* **THE LOOKUP IS A DIALLED URL A CLIENT CAN INFLUENCE — ONLY BY THE
+  IDENTIFIER.** Everything else is the administrator's, checked when written
+  (`applications.ownerLookupUriProblem()`, STS-REG-0334: https, a host, no
+  user, query or fragment); the identifier is percent-encoded into its
+  segment with `.` encoded too, so neither `/` nor `..` leaves it; the
+  request is `federation_http.fetchPublished()` — certificate verified,
+  internal addresses refused in product, no redirect, a timeout, 16 KiB — at
+  most sixteen per request, and nothing in the answer is dialled. It is the
+  root CLAUDE.md's sixteenth exception to "does not dial a URL a caller
+  supplied".
+* **A LOOKUP THAT CANNOT BE ANSWERED IS NOT "NOBODY"** (STS-GNAP-0863 from
+  the policy, 0869 on the log): a resource server that declared one said
+  its identifiers have owners. A 404 IS an answer: nobody owns it, and the
+  right is the page's ordinary business. An identifier no resource server
+  declares an owner for is not checked — most identifiers are not personal,
+  and refusing them all would make `identifier` unusable; a realm wanting
+  that writes a rule on `owner-known`.
+* **THE DECISION IS POLICY.** `gnap_rights.ts` sends `owner-known`, `owner`,
+  `owner-source`, `owner-unresolved` and — once a person is known —
+  `owner-matches` with every `issue-gnap-right` question; the built-in
+  rules `gnap-owner-unresolved` and `gnap-owner-mismatch` refuse, and a
+  realm's own policy can allow a delegate or ask more. Matching is the
+  person's own DN or DIRECT membership of the owner group (what the console
+  rosters read).
+* **WHERE IT IS ASKED.** The approval page, before it draws and again
+  before it records an allow: `grants.approverRefusal()` puts only the
+  disputed rights to the policy as this person's interaction, and a refusal
+  is the page's (STS-GNAP-0862) — the grant stays pending for its owner.
+  A client that skips interaction with a verified assertion, a derivation
+  and every release meet the same rule at the issue stage, where the right
+  is DROPPED (audited). At creation, before anybody is known, nothing is
+  refused for ownership. The lookups are made first, asynchronously
+  (`rights.owners()`), because the policy question is synchronous.
+
+**LIMITS: THE AUTHORIZATION SERVER STATES THEM, THE RESOURCE SERVER COUNTS
+THEM** (rcbj's decision 2). A catalogue type's `limits` schema says a
+limit's SHAPE; `common/access_limits.ts` says what its six meaningful
+members mean — `amount` with its `currency`, `count`, `receiver`, an ISO
+8601 repeating `interval`, a `window` — for both protocols
+(`authorization_details.conformance()`'s `limits-value`: STS-GNAP-0860,
+STS-OAUTH-0916). Then:
+
+* **THE PERSON MAY LOWER, NEVER RAISE** (`AccessLimits.raised()`): a
+  smaller amount or count, fewer receivers, a window no wider, an interval
+  with the same start, a period no shorter and no more repetitions — a
+  shorter period with the same budget is MORE spend, which is why it runs
+  that way. A member removed is raised (no limit is the most of all); an
+  interval cannot be added; a member this service gives no meaning cannot be
+  changed. The page draws each as a control under its right, an unchanged
+  value comes back byte for byte, and a raise (0866) or a lowered limit its
+  schema refuses (0867) is refused.
+* **NOTHING LATER RAISES ONE.** The matcher (`gnap_access.ts`) reads
+  `limits` as an API member a requirement that does not name it is not asked
+  about — right at a resource server, wrong for "is this within what was
+  approved": a modification within an approval and a derivation each ask
+  `rights.limitsRaised()`, so a right asked for without its limits goes back
+  to the person (modification) or is refused (derivation, STS-GNAP-0868).
+* **THE TOKEN CARRIES THEM WHERE ONLY THE AUTHORIZATION SERVER WRITES**, in
+  each right of `access` — the JWT formats' claim, the macaroon's authority
+  `gnap:access=`, the biscuit's `access(i, json)` plus decomposed
+  `access_limit_*` authority facts a resource server's own block can test,
+  the zcap's `gnapAccess` under the AS proof — and beside them the model's
+  `grant`: the grant the totals are counted against (`grant_id` in a JWT,
+  `gnap:grant=` in the macaroon's authority section, `grant(id)` in the
+  biscuit's, `gnapGrant` in the zcap). Rotation keeps it; a DERIVED token
+  carries the ORIGINAL's, so a derivation spends the same budget from
+  somewhere else and is never a second one. Introspection returns the
+  limits in `access` and `grant_id` (reserved from `introspectionClaims`).
+* **THE DEMONSTRATION RESOURCE SERVER IS THE REFERENCE** (`gnap_spend.ts`,
+  `POST /gnap/rs/spend`): per grant, type and identifier, the window, the
+  interval's period, the receiver and the currency, then the totals —
+  ATOMICALLY ACROSS THE CLUSTER through `cluster_counters.spendBudget()`
+  (one conditional upsert in `sts_cluster_budgets`, schema version 15, no
+  memory fallback, capability `gnap.limits`), or a persisted ledger on one
+  process; reset at each boundary; refunded when the operation fails; 403
+  `insufficient_scope` past a limit (0870). A shared store that cannot be
+  asked refuses (0875). Rows outlive no grant: `gnap.spend-purge`.
+
 
 `gnap_signals.ts` does three things and its header argues each: grant and
 token revocation send CAEP `session-revoked` (session `gnap-grant:<id>` /
@@ -651,6 +747,7 @@ modification alike, separately from `gnap.maxPolls` (`too_many_attempts`,
 | 0770–0789 | delegation (#432 phase 1): 0770–0775 impersonation by assertion, 0776–0781 derivation, one per refusal kind of the policy (relationship, protected subject, semantics, authority, may_act, a realm's policy); 0782 the depth cap |
 | 0790–0809 | #432 phase 7: the grant lifetime (0790, 0791), the per-person revoke (0792), subject information with no authorization (0793) |
 | 0810–0817 | #432 phases 3 and 4: an uncatalogued type in product (0810), a type refusing bearer (0811), a right not meeting its catalogue entry (0812) or its limits (0813, 0814), a verdict nobody knows (0815), no verdict at all (0816), narrowed to nothing (0817) |
+| 0860–0877 | #432 phase 5: unreadable limits (0860); the owner policy (0861 a non-owner, 0863 an unanswered lookup); the approval page refusing a non-owner (0862), a raised limit (0866) or a lowered one its schema refuses (0867); a registration's owners (0864, 0865); a derivation raising a limit (0868); a lookup failing (0869); the demonstration resource server's spend (0870 over a limit, 0871 outside the window or interval, 0872 the receiver, 0873 the currency, 0874 an unreadable body, 0875 the store, 0876 a failed operation refunded, 0877 a refund that could not be made) |
 
 `tests/error_codes.js` carries `gnapError(res` and `interactionError(res` as
 failure patterns.
@@ -660,7 +757,7 @@ failure patterns.
 | File | What it holds |
 |---|---|
 | `tests/gnap_httpsig.js` | RFC 9421 / 9530 / 8941, including the Appendix B vectors |
-| `tests/gnap_token_formats.js` | one matrix over all five formats (the JWT two through an adapter), and attenuation for the three that attenuate; since #432 the full model carries a two-link `act` chain every format round-trips, an `act` appended to a macaroon by a holder is refused (0316), and the chain's grammar |
+| `tests/gnap_token_formats.js` | one matrix over all five formats (the JWT two through an adapter), and attenuation for the three that attenuate; since #432 the full model carries a two-link `act` chain every format round-trips, an `act` appended to a macaroon by a holder is refused (0316), and the chain's grammar; since phase 5 a right with every kind of limit and the model's `grant` round-trip too |
 | `tests/gnap_request.js` | which layer refuses what — the schemas, control characters, the walkers — RFC 7638's thumbprint and RFC 9635's two interaction hash vectors |
 | `tests/realm_isolation.js` | the GNAP stores are per realm and purged with it, and no module-scope Map |
 | `tests/vendored/sts_gnap_core.js` | the client instance's whole protocol over HTTP, every refusal by its error code — and since #432 phase 7 a reference refused from another client, the subject released once (section 7), and `/portal/gnap` and the per-person `/admin-api` operations (section 15). Its section 6 push listener presents a certificate from a CA the job makes at run time and sets `gnap.pushCaFile` to it (#171; skipped with no directory shared with the service), so the push is VERIFIED in both modes |
@@ -669,6 +766,8 @@ failure patterns.
 | `tests/vendored/sts_gnap_signals.js` | a GNAP-owned stream, CAEP on revoke/modify, and the scope, against an unscoped control stream; section 7 a resource server's stream (#432) |
 | `tests/gnap_catalogue.js` | #432 phases 3 and 4 in process: the catalogue's grammar, the console's `set-access-type` / `remove-access-type`, RFC 9396 reading it (values, required, limits, lifetime, bearer, the introspection view), GNAP's conformance, each built-in rule through the policy in both modes, an issue-stage refusal dropping a right, narrowing through a realm's own policy, `derivableBeyond()`, GNAP introspection per resource server |
 | `tests/vendored/sts_gnap_catalogue.js` | the same over HTTP: a declared type accepted and its bearer, lifetime and limits rules, an undeclared one refused in product, a narrowed right, derivation into a `derivableFrom` type, introspection claims per resource server, and RAR at `/oauth2/token` and `/oauth2/introspect` |
+| `tests/gnap_limits_ownership.js` | #432 phase 5 in process: the limits vocabulary and "lower", ownership from a resource set and by a stubbed lookup, the owner rules at both stages, `limitsRaised()`, the demonstration resource server's totals and the shared store's statement |
+| `tests/vendored/sts_gnap_limits.js` | the same over HTTP: a group owner registered on a resource set, a stranger refused on the approval page, a member approving, limits and `grant_id` at introspection, a limit lowered on the page and read off the token by the job, the demonstration resource server spending to the limit, refunding and refusing |
 | `tests/gnap_person_grants.js` | #432 phase 7 in process: per-client opaque identifiers and references, subject released once on an authorization, the grant lifetime and the expiry job, finalization reasons, `too_fast`, self-declared display, one person's grants and who may revoke them |
 | `tests/access_token_status.js` | #432 p2b in process: the access-token list, both JWT formats' claim, the bit after `revokeTokens()` and after the register forgets, the biscuit list, discovery, and `rsCovers()` |
 | `tests/gnap_cells.js` | #98 in process, the cell map, channel and routing index stubbed: stamped handles, each door's placement, a grant moved and forwarded, a pinned browser pulling a grant, single-cell mode unchanged |

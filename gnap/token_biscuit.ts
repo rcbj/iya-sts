@@ -465,9 +465,9 @@ class TokenBiscuit {
       log.debug("Leaving TokenBiscuit.addLimitFacts(). None.");
       return;
     }
-    if (limits.amount && typeof limits.amount === 'object') {
+    if (limits.amount !== undefined) {
       p.add('access_limit_amount(?, ?, ?);',
-            [i, String(limits.amount.value), String(limits.amount.currency)]);
+            [i, String(limits.amount), String(limits.currency || '')]);
     }
     if (Number.isSafeInteger(limits.count)) {
       p.add('access_limit_count(?, ?);', [i, limits.count]);
