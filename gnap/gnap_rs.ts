@@ -67,6 +67,7 @@ import tokens = require('./gnap_tokens');
 import monitor = require('./gnap_monitor');
 import grants = require('./gnap_grants');
 import accessRights = require('./gnap_access');
+import revocation = require('./gnap_revocation');
 
 interface GnapRsDeps {
   config: typeof config;
@@ -84,6 +85,7 @@ interface GnapRsDeps {
   monitor: typeof monitor;
   grants: typeof grants;
   accessRights: typeof accessRights;
+  revocation: typeof revocation;
 }
 
 // What `authenticate()` is told about the resource being asked for.
@@ -206,6 +208,17 @@ class GnapRs {
     const record: any = store.tokenByValue(parsed.request.accessToken);
     const problem = this.liveProblem(record);
     let inactiveWhy = problem;
+    // THE RESOURCE OWNER DISABLED, OR THE CLIENT'S ENTRY GONE OR NO LONGER
+    // NAMING ITS KEY (#432): inactive at the next check, whichever door made
+    // the change and on a node it has not reached yet. The code is the
+    // operator's, on the log line below; the answer is section 3.3's.
+    const ended = inactiveWhy ? null
+      : this.deps.revocation.tokenProblem(record);
+    if (ended) {
+      inactiveWhy = ended.why;
+      log.info(this.deps.errorCodes.tag(ended.code) + 'gnap: a token ' +
+               'introspected while ' + ended.why);
+    }
     if (!inactiveWhy) {
       const names = this.rsNamesOf(rs);
       if (record.aud && record.aud.length &&
@@ -482,6 +495,16 @@ class GnapRs {
         ? 'not one this authorization server issued' : problem) + '.',
                           'invalid_token', 401);
     }
+    // #432: the check at use, synchronous like the rest of this half
+    // (`ssf/ssf_auth.ts` calls it that way).
+    const ended = this.deps.revocation.tokenProblem(record);
+    if (ended) {
+      log.debug("Leaving GnapRs.presentation(). " + ended.why);
+      return this.refusal(ended.code === 'STS-GNAP-0730' ? 'STS-GNAP-0734'
+                                                         : 'STS-GNAP-0735',
+                          'the access token is no longer active: ' +
+                          ended.why + '.', 'invalid_token', 401);
+    }
     const bearer = (record.flags || []).indexOf('bearer') >= 0;
     // Section 7.2: a bearer token "MUST be sent using the Authorization
     // request header field method defined in [RFC6750]", and a bound token
@@ -638,7 +661,8 @@ class GnapRs {
       tokens: tokens,
       monitor: monitor,
       grants: grants,
-      accessRights: accessRights
+      accessRights: accessRights,
+      revocation: revocation
     };
   }
 }

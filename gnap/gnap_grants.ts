@@ -106,6 +106,9 @@ import transport = require('./gnap_http');
 import monitor = require('./gnap_monitor');
 import signals = require('./gnap_signals');
 import accessRights = require('./gnap_access');
+// WHAT ENDS A GRANT FROM OUTSIDE THE PROTOCOL, and the check at use (#432):
+// it requires nothing of this module, so this require closes no cycle.
+import revocation = require('./gnap_revocation');
 // WHICH CLIENTS MAY HOLD THIS SERVICE'S PROTECTED SCOPES (#110), the same
 // question the OAuth token endpoint asks. A library.
 import scopePolicy = require('../common/scope_policy');
@@ -180,6 +183,7 @@ interface GnapGrantsDeps {
   monitor: typeof monitor;
   signals: typeof signals;
   accessRights: typeof accessRights;
+  revocation: typeof revocation;
   scopePolicy: typeof scopePolicy;
   mtls: typeof mtls;
   // oauth2.js, required when it is needed and not before (it registers
@@ -1797,6 +1801,15 @@ class GnapGrants {
           'active at this authorization server (RFC 9767 section 4).',
                           'invalid_request');
     }
+    // Nor one whose resource owner is disabled or whose client is gone
+    // (#432): a derived token would carry the person on past the end.
+    const ended = this.deps.revocation.tokenProblem(existing);
+    if (ended) {
+      log.debug("Leaving GnapGrants.deriveToken(). " + ended.why);
+      return this.refusal('STS-GNAP-0733', 'the existing access token is not ' +
+          'active at this authorization server: ' + ended.why + ' (RFC 9767 ' +
+          'section 4).', 'invalid_request');
+    }
     const rsNames = [app.identifier].concat(this.fieldValues(app,
         'gnapResourceServerUri'));
     const forThisRs = !existing.aud.length || existing.aud.some(function (aud) {
@@ -2031,6 +2044,20 @@ class GnapGrants {
       return this.refusal('STS-GNAP-0131', 'this grant request is finalized ' +
                           'and cannot be continued.', 'invalid_continuation',
                           400);
+    }
+    // ITS RESOURCE OWNER DISABLED, OR ITS CLIENT'S ENTRY GONE OR NO LONGER
+    // NAMING ITS KEY (#432): refused at use, whatever door made the change
+    // and on a node it has not reached yet. Nothing is written here — the act
+    // that disabled the person or changed the entry ends the grant. A DELETE
+    // is the client revoking it (section 5.4), which is never refused for
+    // this.
+    const ended = req.method === 'DELETE' ? null
+      : this.deps.revocation.grantProblem(grant);
+    if (ended) {
+      log.debug("Leaving GnapGrants.continuationCaller(). " + ended.why);
+      return this.refusal(ended.code, 'this grant can no longer be ' +
+                          'continued: ' + ended.why + '.',
+                          'invalid_continuation', 400);
     }
     const body = proof.readBody(req);
     if (!body.ok) {
@@ -2394,21 +2421,13 @@ class GnapGrants {
    * @param why - the reason recorded
    */
   revokeTokens(grant, why) {
-    const { log, nowSec, stats, store } = this.deps;
+    const { log, revocation } = this.deps;
     log.debug("Entering GnapGrants.revokeTokens().");
-    (grant.tokens || []).forEach(function (jti) {
-      const record = store.tokenByJti(jti);
-      if (record && !record.revoked) {
-        record.revoked = true;
-        record.revokedAt = nowSec();
-        record.revokedWhy = why;
-        store.dropManagement(record);
-        store.saveToken(record);
-        if (/^jwt/.test(record.format)) {
-          stats.revoke(record.jti, 'GNAP: ' + why, undefined, record.exp);
-        }
-      }
-    });
+    // ONE WAY TO REVOKE A GRANT'S TOKENS (#432): `gnap_revocation.ts` holds
+    // it, because a sign-out, a deleted client and a received signal end
+    // grants there and must revoke exactly what the client's own section
+    // 5.4 revocation does.
+    revocation.revokeTokens(grant, why);
     log.debug("Leaving GnapGrants.revokeTokens().");
   }
 
@@ -2565,7 +2584,15 @@ class GnapGrants {
       log.debug("Leaving GnapGrants.manageVerified(). Revoked.");
       return { ok: true, status: 204, body: null };
     }
-    // POST: rotation, optionally with a new key.
+    // POST: rotation, optionally with a new key. A token whose resource owner
+    // is disabled, or whose client's entry is gone or no longer names its
+    // key, is not rotated (#432) — revoking it, above, is still allowed.
+    const ended = this.deps.revocation.tokenProblem(record);
+    if (ended) {
+      log.debug("Leaving GnapGrants.manageVerified(). " + ended.why);
+      return this.refusal('STS-GNAP-0732', 'this access token cannot be ' +
+                          'rotated: ' + ended.why + '.', 'invalid_rotation');
+    }
     const parsed = request.parseRotation(body.json, body.hadContent);
     if (!parsed.ok) {
       log.debug("Leaving GnapGrants.manageVerified(). Rotation body refused.");
@@ -2749,6 +2776,7 @@ class GnapGrants {
       monitor: monitor,
       signals: signals,
       accessRights: accessRights,
+      revocation: revocation,
       scopePolicy: scopePolicy,
       mtls: mtls,
       loadOauth2: function loadOauth2() {

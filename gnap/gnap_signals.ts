@@ -31,7 +31,13 @@
 //      token revoked is a `session-revoked` whose session is that token, and a
 //      grant modified onto different rights is a `token-claims-change`
 //      carrying the new `access`.
-//   4. NOT: signals revoking grants. Nothing here listens to CAEP or RISC.
+//   4. ~~NOT: signals revoking grants.~~ REVERSED 2026-10-03 (#432, rcbj's
+//      decision 1): a federation partner's verified CAEP or RISC event about
+//      a person may end their grants, as the `signal-response` policy's
+//      `signal-revoke-grants` permits and `ssf.signalsRevokeGrants` allows.
+//      Not here — this file still listens to nothing: the receiver is
+//      `ssf/ssf_transmitters.ts`, and what ends a grant is
+//      `gnap_revocation.ts` (`gnap/CLAUDE.md`, *Shared Signals*).
 //
 // **THE SUBJECT IS A COMPLEX ONE, `user` + `session`**, with the session id
 // prefixed `gnap-grant:` or `gnap-token:` — the same shape `caep.subjectFor()`
@@ -197,7 +203,7 @@ class GnapSignals {
   // Deliver one CAEP event to every stream that takes it. Never rejects.
   private emit(req: unknown, type: string, username: string,
                sessionId: string, values: object,
-               reason: string): Promise<any> {
+               reason: string, entity?: string): Promise<any> {
     const { log, errorCodes, config, loadSsf } = this.deps;
     log.debug("Entering GnapSignals.emit(). type=" + type);
     if (!username || config.value('gnap.caepEvents') === false) {
@@ -225,7 +231,10 @@ class GnapSignals {
     return Promise.resolve(ssf.emitProtocolEvent({
       req: req, protocol: 'GNAP', type: type,
       subject: this.subjectFor(req, username, sessionId),
-      values: values || {}, initiatingEntity: 'system',
+      // CAEP section 2's initiating entity: what the caller states (#432 —
+      // an administrator, a sign-out, a policy), `system` where it says
+      // nothing, which is every end the protocol itself makes.
+      values: values || {}, initiatingEntity: entity || 'system',
       reasonAdmin: reason, reasonUser: reason
     })).catch(function (e) {
       log.debug("Caught in GnapSignals.emit(): " + ((e && e.message) || e));
@@ -242,15 +251,17 @@ class GnapSignals {
    * @param req - the request that revoked it
    * @param grant - the grant
    * @param reason - why it was revoked
+   * @param entity - CAEP's initiating entity; `system` when not given
    * @returns the delivery's promise
    */
-  grantRevoked(req: unknown, grant: any, reason?: string): Promise<any> {
+  grantRevoked(req: unknown, grant: any, reason?: string,
+               entity?: string): Promise<any> {
     const { log } = this.deps;
     log.debug("Entering GnapSignals.grantRevoked().");
     log.debug("Leaving GnapSignals.grantRevoked().");
     return this.emit(req, 'session-revoked', grant.ro && grant.ro.username,
                      'gnap-grant:' + grant.id, {},
-                     reason || 'A GNAP grant was revoked.');
+                     reason || 'A GNAP grant was revoked.', entity);
   }
 
   /**

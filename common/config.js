@@ -12275,6 +12275,27 @@ const SETTINGS = [
                  'have done and does nothing, unless this is on. An ' +
                  'unverified event is never acted on, whatever this says.' },
 
+  // #432, rcbj's decision 1 and "provide a flag to disable this behavior".
+  { key: 'ssf.signalsRevokeGrants', group: 'SSF',
+    label: 'A federation partner\'s signals revoke the person\'s grants and ' +
+           'tokens',
+    env: 'STS_SSF_SIGNALS_REVOKE_GRANTS', type: 'bool', dflt: true,
+    runtime: true,
+    description: 'On by default. A verified CAEP or RISC event from a ' +
+                 'federation partner that the signal-response policy ' +
+                 'answers with signal-revoke-grants (by default a sign-in ' +
+                 'partner\'s session-revoked, account-disabled, ' +
+                 'account-purged and credential-compromise) revokes every ' +
+                 'GNAP grant the person approved and every OAuth grant, ' +
+                 'token and authorization code held for them — for a ' +
+                 'session-revoked, only what was issued on the sessions ' +
+                 'that partner started. Off, the reaction is recorded as ' +
+                 'skipped and nothing is revoked; the other reactions ' +
+                 '(ending the partner\'s sessions, blocking its sign-ins) ' +
+                 'are unaffected. Development records what it would do ' +
+                 'unless ssf.actOnSignalsInDevelopment is on, and an ' +
+                 'unverified event is never acted on.' },
+
   { key: 'ssf.legacySubClaim', group: 'SSF',
     label: 'Also emit the deprecated `sub` claim (development only)',
     env: 'STS_SSF_LEGACY_SUB_CLAIM', type: 'bool', dflt: false, runtime: true,

@@ -648,7 +648,13 @@ const SIGNAL_RESPONSE = {
   DISABLE_ACCOUNT: 'signal-disable-account',
   ENABLE_ACCOUNT: 'signal-enable-account',
   // CAEP device-compliance-change, onto the device register (#164, #374).
-  SET_DEVICE_COMPLIANCE: 'signal-set-device-compliance'
+  SET_DEVICE_COMPLIANCE: 'signal-set-device-compliance',
+  // REVOKE THE PERSON'S GRANTS (#432, rcbj's decision 1): every GNAP grant
+  // they approved and every OAuth grant, token and code held for them — or,
+  // for a `session-revoked`, what was issued on the sessions that partner
+  // started. Sessions are other reactions' business. `ssf.signalsRevokeGrants`
+  // turns the reaction off whatever this permits.
+  REVOKE_GRANTS: 'signal-revoke-grants'
 };
 
 // ---------------------------------------------------------------------------
@@ -2315,7 +2321,8 @@ const TEMPLATES: TemplateRow[] = [
     blurb: 'What a verified CAEP or RISC event leads to. This service\'s ' +
            'own console and portal end their own sessions for the person ' +
            'it names. A federation partner\'s events end the sessions that ' +
-           'partner started and block its sign-ins of the person, and a ' +
+           'partner started, revoke the person\'s GNAP and OAuth grants ' +
+           'and tokens, and block its sign-ins of the person, and a ' +
            'signals-only partner\'s are recorded — except a device\'s ' +
            'compliance, which is set.',
     what: 'Produces Permit rules under deny-unless-permit, one per ' +
@@ -2363,6 +2370,27 @@ const TEMPLATES: TemplateRow[] = [
         dflt: 'account-enabled', type: 'string',
         help: 'Comma separated short names. Only a block the same ' +
               'relationship\'s event put there is lifted.' },
+      // #432: a partner's word about a person reaches what they DELEGATED —
+      // the grants and tokens clients hold for them — and not only the
+      // sessions it started (rcbj's decision 1).
+      { name: 'partnerRevokeGrantEvents',
+        label: 'A partner\'s events that revoke the person\'s grants and ' +
+               'tokens',
+        dflt: 'session-revoked, account-disabled, account-purged, ' +
+              'credential-compromise',
+        type: 'string',
+        help: 'Comma separated short names, from a sign-in relationship. ' +
+              'Every GNAP grant the person approved and every OAuth grant, ' +
+              'token and code held for them is revoked — for a ' +
+              'session-revoked, only what was issued on the sessions that ' +
+              'relationship started. ssf.signalsRevokeGrants turns it off. ' +
+              'Empty builds no such rule.' },
+      { name: 'signalsOnlyRevokeGrantEvents',
+        label: 'A signals-only partner\'s events that revoke them',
+        dflt: '', type: 'string',
+        help: 'Comma separated short names, from an ssf relationship. Empty ' +
+              '— the default, #374\'s rule that such a partner\'s word is ' +
+              'recorded — revokes nothing.' },
       { name: 'partnerGlobalSignOutEvents',
         label: 'A partner\'s events that end EVERY session the person holds',
         dflt: '', type: 'string',
@@ -2411,6 +2439,10 @@ const TEMPLATES: TemplateRow[] = [
       const partnerBlock = listed('partnerBlockEvents', 'account-disabled');
       const partnerUnblock = listed('partnerUnblockEvents', 'account-enabled');
       const partnerGlobal = listed('partnerGlobalSignOutEvents', '');
+      const partnerGrants = listed('partnerRevokeGrantEvents',
+        'session-revoked, account-disabled, account-purged, ' +
+        'credential-compromise');
+      const onlyGrants = listed('signalsOnlyRevokeGrantEvents', '');
       const onlyEnd = listed('signalsOnlyEndSessionEvents', '');
       const onlyDisable = listed('signalsOnlyDisableEvents', '');
       const onlyEnable = listed('signalsOnlyEnableEvents', 'account-enabled');
@@ -2497,6 +2529,14 @@ const TEMPLATES: TemplateRow[] = [
           partnerUnblock,
           [actionIs(SIGNAL_RESPONSE.UNBLOCK_RELATIONSHIP), fromPartner,
            kindIs('sign-in')]);
+      add('partner-revoke-grants', 'From a sign-in partner, revoke the ' +
+          'person\'s grants and tokens', partnerGrants,
+          [actionIs(SIGNAL_RESPONSE.REVOKE_GRANTS), fromPartner,
+           kindIs('sign-in')]);
+      add('signals-only-revoke-grants', 'From a signals-only partner, revoke ' +
+          'the person\'s grants and tokens', onlyGrants,
+          [actionIs(SIGNAL_RESPONSE.REVOKE_GRANTS), fromPartner,
+           kindIs('signals-only')]);
       add('partner-global-sign-out', 'From a sign-in partner, end every ' +
           'session the person holds', partnerGlobal,
           [actionIs(SIGNAL_RESPONSE.END_PERSON_SESSIONS), fromPartner,

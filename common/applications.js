@@ -12117,11 +12117,74 @@ function updateApplication(identifier, change) {
   if (mode === 'remove') {
     announceScopeRemoval(String(identifier), record, attribute, value);
   }
+  if (GNAP_KEY_ATTRIBUTES.indexOf(attribute) >= 0) {
+    endGnapGrants(String(identifier), true, asked.actor || '');
+  }
   log.debug("Leaving updateApplication(). " + what + ".");
   log.debug("Leaving updateApplication().");
   return { ok: true, changed: true,
            application: viewAfterWrite(identifier, record),
            message: what + '.' };
+}
+
+// ---------------------------------------------------------------------------
+// A GNAP CLIENT'S GRANTS END WITH ITS ENTRY, OR WITH ITS KEY (#432).
+//
+// An application entry DELETED, or its `gnapKey`, `gnapKeyReference` or
+// `gnapKeyIdentity` REMOVED or REPLACED through the operator's door, ends
+// every GNAP grant of that client the entry no longer names a key for —
+// `gnap/gnap_revocation.ts`'s acts, each the client's own section 5.4
+// revocation performed for it (tokens revoked, the grant finalized, CAEP
+// session-revoked with `admin` as the initiating entity). A key ROTATED keeps
+// its grants: RFC 9635 section 6.1.1's rotation never writes the entry, and
+// a mutual TLS client rotated at its authority has its new thumbprint written
+// through `seen()`, not here. There is no "disabled" application to watch:
+// the registry has no such state.
+//
+// FOUND IN `require.cache`, NEVER REQUIRED — `account_state.ts`'s rule for
+// the logout family: this file is loaded long before GNAP, and a process
+// without the family holds no grant to end. A door that does not come
+// through here (an `ldapmodify` of the entry, a delete over LDAP) is caught at
+// the grant's next use instead (`gnap_revocation.ts`, the check at use).
+// Never throws into the write.
+// ---------------------------------------------------------------------------
+const GNAP_KEY_ATTRIBUTES = ['gnapKey', 'gnapKeyReference', 'gnapKeyIdentity'];
+
+function endGnapGrants(identifier, keyChanged, actor) {
+  log.debug("Entering endGnapGrants(). " + identifier);
+  let found = null;
+  try {
+    found = require.cache[require.resolve('../gnap/gnap_revocation')] || null;
+  } catch (e) {
+    log.debug("Caught in endGnapGrants(): " + ((e && e.message) || e));
+    found = null;
+  }
+  if (!found || !found.exports) {
+    log.debug("Leaving endGnapGrants(). GNAP is not loaded here.");
+    return 0;
+  }
+  let ended = 0;
+  try {
+    const how = { why: keyChanged
+                    ? 'its client\'s key was removed or replaced on its ' +
+                      'application entry'
+                    : 'its client\'s application entry was deleted',
+                  actor: actor, via: 'the application registry',
+                  initiatingEntity: 'admin' };
+    ended = keyChanged
+      ? found.exports.endForClientKeyChange(identifier, how)
+      : found.exports.endForClient(identifier, how);
+    if (ended) {
+      log.info('applications: ' + ended + ' GNAP grant(s) of "' + identifier +
+               '" ended (' + how.why + ').');
+    }
+  } catch (e) {
+    log.warn(errorCodes.tag('STS-GNAP-0737') + 'applications: the GNAP ' +
+             'grants of "' + identifier + '" could not be ended: ' +
+             ((e && e.message) || e));
+  }
+  log.debug("Leaving endGnapGrants(). " + ended);
+  return ended;
 }
 
 // ---------------------------------------------------------------------------
@@ -13681,6 +13744,7 @@ function deleteApplication(identifier, options) {
   });
   log.info('applications: "' + identifier + '" was deleted. ' + count() + ' ' +
       'left.');
+  endGnapGrants(String(identifier), false, opts.actor || '');
   log.debug("Leaving deleteApplication(). Gone.");
   log.debug("Leaving deleteApplication().");
   return { ok: true,

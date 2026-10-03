@@ -37,8 +37,9 @@
 // `GnapConsoleDeps`, and the module still exports `GNAP_ACTIONS`, `STATES` and
 // the three calls as FACADES forwarding to the instance the composition root
 // builds (#50, R2), for `gnap_admin.ts` and `mgmt-api/admin_api.ts`.
-// `gnap_signals` stays LAZY: the instance is handed a loader that requires it
-// at the moment a grant is revoked, as the code here did before. A process
+// A grant is revoked through `gnap_revocation.ts` (#432), which reaches
+// `gnap_signals` LAZILY at the moment a grant is revoked, as the code here
+// did before. A process
 // that loads this module without the root builds a default instance when the
 // module loads.
 // ---------------------------------------------------------------------------
@@ -55,11 +56,7 @@ import store = require('./gnap_store');
 import grants = require('./gnap_grants');
 import tokens = require('./gnap_tokens');
 import monitor = require('./gnap_monitor');
-
-// The part of `gnap_signals` this module calls.
-interface GrantRevokedSignal {
-  grantRevoked(req: unknown, grant: any, reason: string): unknown;
-}
+import revocation = require('./gnap_revocation');
 
 interface GnapConsoleDeps {
   config: typeof config;
@@ -75,8 +72,7 @@ interface GnapConsoleDeps {
   grants: typeof grants;
   tokens: typeof tokens;
   monitor: typeof monitor;
-  // Required at the moment it is needed, never at load.
-  loadSignals(): GrantRevokedSignal;
+  revocation: typeof revocation;
 }
 
 // What a caller tells an action about itself.
@@ -426,7 +422,7 @@ class GnapConsole {
    * @returns `{ ok: true, ... }`, or `{ ok: false, errors }`
    */
   gnapAction(body: any, context?: ActionContext): any {
-    const { log, store, grants, monitor, audit, loadSignals } = this.deps;
+    const { log, store, revocation, audit } = this.deps;
     log.debug("Entering GnapConsole.gnapAction(). action=" +
               (body && body.action));
     const ctx = context || {};
@@ -449,31 +445,12 @@ class GnapConsole {
                  message: 'The grant was ' +
                    'already finalized; nothing changed.' };
       }
-      grants.revokeTokens(grant, 'grant revoked by an administrator');
-      grant.state = store.STATE.FINALIZED;
-      store.dropContinuation(grant);
-      store.saveGrant(grant,
-                      'revoked by an administrator' +
-                      (actor ? ' (' + actor + ')' : ''));
-      monitor.record(grant.client.identifier, 'grant.revoked', {});
-      audit.audit({ action: 'gnap.grant.revoke', category: 'protocol',
-        protocol: 'GNAP',
-        channel: 'http', outcome: 'success', actor: actor,
-        target: grant.client.identifier,
-        summary: 'An administrator revoked a GNAP grant',
-        detail: { grant: grant.id, via: ctx.via || '',
-                  tokens: (grant.tokens || []).length } });
-      try {
-        loadSignals().grantRevoked(ctx.req || null, grant, 'An ' +
-            'administrator revoked the grant.');
-      } catch (e) {
-        log.debug("Caught in GnapConsole.gnapAction(): " +
-                  ((e && e.message) || e));
-        // The revocation is done; a signal that could not be sent is logged
-        // by gnap_signals itself and must not undo the answer.
-        log.debug("gnapAction(): the CAEP signal could not be started: " +
-                  e.message);
-      }
+      // THE ONE END OF A GRANT FROM OUTSIDE THE PROTOCOL (#432): tokens
+      // revoked, finalized, counted, audited, CAEP told — with `admin` as
+      // CAEP's initiating entity, which it now says.
+      revocation.endGrant(grant, { why: 'revoked by an administrator',
+        actor: actor, via: ctx.via || 'the console', req: ctx.req || null,
+        initiatingEntity: 'admin' });
       log.debug("Leaving GnapConsole.gnapAction(). Revoked.");
       return { ok: true, grant: this.grantRow(grant),
                message: 'Grant ' + grant.id + ' is finalized and its ' +
@@ -535,9 +512,7 @@ class GnapConsole {
       grants: grants,
       tokens: tokens,
       monitor: monitor,
-      loadSignals: function () {
-        return require('./gnap_signals');
-      }
+      revocation: revocation
     };
   }
 }
