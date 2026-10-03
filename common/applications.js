@@ -1724,23 +1724,38 @@ const SCHEMA = {
     // `authorization_details_types`). READ by
     // `oauth-oidc/authorization_details.ts`. Family-scoped for the
     // introspection attributes' reason.
+    // SINCE #432 PHASE 4 (2026-10-03) IT IS THE ACCESS-TYPE CATALOGUE that
+    // RFC 9396 and GNAP share — see `authorizationDetailsTypeOf()`'s block —
+    // so a GNAP resource server declares its types here too.
     { name: 'oauthAuthorizationDetailsType', kind: 'multi',
-      from: 'the console, the management API, the RFC 9728 import, or by ' +
-            'hand',
-      families: ['oauth2', 'oidc'],
-      familyWhy: 'It is a type /oauth2/authorize and /oauth2/token accept ' +
-        'and address tokens to this application for, so on an entry ' +
-        'declared for neither OAuth family it would read like an API in ' +
-        'service.',
-      what: 'An RFC 9396 authorization_details TYPE this application, as a ' +
-            'resource server, understands — one per value. A bare type ' +
-            'name, or a JSON object {"type", "description", "locations", ' +
-            '"schema"}: `locations` are the addresses a detail of this type ' +
-            'may name (the permission base URI and oauthAudience always ' +
-            'count), and `schema` is a JSON Schema every detail of this type ' +
-            'must satisfy. A detail whose type no application declares is ' +
-            'refused invalid_authorization_details, and a token carrying one ' +
-            'is addressed to the application that declares it.' },
+      from: 'the console (the Access types tab), the management API, the ' +
+            'RFC 9728 import, or by hand',
+      families: ['oauth2', 'oidc', 'gnap'],
+      familyWhy: 'It is a type /oauth2/authorize, /oauth2/token and /gnap ' +
+        'accept and address tokens to this application for, so on an entry ' +
+        'declared for no OAuth family and not for GNAP it would read like ' +
+        'an API in service.',
+      what: 'An ACCESS TYPE this application, as a resource server, owns — ' +
+            'one per value, read by RFC 9396 authorization_details and by ' +
+            'GNAP access rights alike. A bare type name, or a JSON object ' +
+            '{"type", "description", "locations", "schema", "actions", ' +
+            '"datatypes", "privileges", "required", "interaction", ' +
+            '"consentActions", "bearer", "maxLifetimeS", "acr", ' +
+            '"derivableFrom", "introspectionClaims", "limits"}: `locations` ' +
+            'are the addresses a right of this type may name (the ' +
+            'permission base URI and oauthAudience always count), `schema` ' +
+            'a JSON Schema every right of it must satisfy, `actions`, ' +
+            '`datatypes` and `privileges` the values it may name, ' +
+            '`required` the members it must carry, `bearer: false` that a ' +
+            'token carrying it is sender-constrained, `maxLifetimeS` the ' +
+            'longest such a token lives, `derivableFrom` the types it may ' +
+            'be derived from (RFC 9767 section 4), `introspectionClaims` ' +
+            'what this resource server is told about the person at ' +
+            'introspection, and `limits` the JSON Schema (a subset) a ' +
+            'right\'s limits must meet. `interaction`, `consentActions` and ' +
+            '`acr` are enforced by phase 6 of #432. An undeclared type is ' +
+            'refused invalid_authorization_details by RFC 9396 in every ' +
+            'mode, and by GNAP in product mode.' },
     { name: 'oauthAuthorizationDetailsTypes', kind: 'multi',
       from: 'POST /oauth2/register, the console, the management API, or by ' +
             'hand',
@@ -8201,10 +8216,43 @@ function gnapMtlsTrustProblem(attribute, value) {
 //                                  (required), `description` (a string),
 //                                  `locations` (absolute URIs, no fragment)
 //                                  and `schema` (a JSON Schema that COMPILES) —
-//                                  nothing else, so a misspelt member is
-//                                  refused rather than ignored
+//                                  and, since #432 phase 4, the CATALOGUE
+//                                  members below — nothing else, so a misspelt
+//                                  member is refused rather than ignored
 //   authorization_details_types    a client's registration member: an array of
 //                                  type names
+//
+// THE ACCESS-TYPE CATALOGUE (#432 phase 4, 2026-10-03). RFC 9396's
+// authorization detail grew out of GNAP's access right (RFC 9635 section 8),
+// and the two share their five common fields, so ONE declaration on the
+// resource application serves both protocols: `oauth-oidc/
+// authorization_details.ts` reads it for RAR at the OAuth endpoints and
+// `gnap/gnap_rights.ts` for GNAP access rights. The declaring application
+// OWNS the type — the resource server a token carrying it is for. The members
+// a definition may add, each optional:
+//
+//   actions, datatypes,            the values a right of this type may name in
+//   privileges                     that common field (absent: any)
+//   required                       member names a right of this type must carry
+//   interaction                    `always`, `default` or `never`, and
+//   consentActions                 the actions that force consent — ENFORCED
+//                                  BY PHASE 6 of #432 (the next lane), which
+//                                  replaces gnapSkipInteraction's all-or-nothing
+//   acr                            the authentication level a right of this
+//                                  type needs — ENFORCED BY PHASE 6 (step-up)
+//   bearer                         false: a token carrying the type must be
+//                                  sender-constrained (absent: no rule of its
+//                                  own, the client's and the realm's apply)
+//   maxLifetimeS                   the longest a token carrying it may live
+//   derivableFrom                  types a right of this type may be DERIVED
+//                                  from at RFC 9767 section 4 (rcbj's
+//                                  decision 3)
+//   introspectionClaims            the person's claims the owning resource
+//                                  server is told at introspection
+//   limits                         a JSON Schema (a SUBSET, below) a right's
+//                                  `limits` member must meet; a type that
+//                                  declares none refuses `limits` (phase 5
+//                                  uses it)
 // ---------------------------------------------------------------------------
 /**
  * The RFC 9396 authorization details types this service defines itself.
@@ -8212,7 +8260,52 @@ function gnapMtlsTrustProblem(attribute, value) {
 const AUTHORIZATION_DETAILS_BUILT_IN = ['openid_credential'];
 
 const AUTHORIZATION_DETAILS_DEFINITION_MEMBERS = ['type', 'description',
-                                                  'locations', 'schema'];
+                                                  'locations', 'schema',
+                                                  'actions', 'datatypes',
+                                                  'privileges', 'required',
+                                                  'interaction',
+                                                  'consentActions', 'bearer',
+                                                  'maxLifetimeS', 'acr',
+                                                  'derivableFrom',
+                                                  'introspectionClaims',
+                                                  'limits'];
+
+// The three values `interaction` may take (#432 phase 4; enforced by phase
+// 6): `always` asks the resource owner whatever the client is, `never` lets a
+// client that may skip the page skip it, `default` leaves it to the client.
+const ACCESS_TYPE_INTERACTIONS = ['always', 'default', 'never'];
+
+// The members an introspection response already carries, which no type may
+// name as a claim to add beside them: RFC 7662 section 2.2's, RFC 9767
+// section 3.3's and the ones this service adds (`act`, `format`,
+// `instance_id`, `authorization_details`, `acr`, `device_id`).
+const INTROSPECTION_RESERVED = ['active', 'access', 'iss', 'sub', 'aud', 'exp',
+                                'iat', 'nbf', 'jti', 'flags', 'key', 'label',
+                                'act', 'instance_id', 'format', 'scope',
+                                'client_id', 'username', 'token_type', 'cnf',
+                                'authorization_details', 'acr', 'auth_time',
+                                'device_id', 'may_act', 'status'];
+
+// The JSON Schema keywords a `limits` schema may use (#432 phase 4). A
+// SUBSET, because a limit is a number, a currency, a count, a receiver, an
+// interval or a window, and every one of those is a typed member with
+// bounds: no `$ref` (nothing is fetched), no combinators (`anyOf` and the
+// rest make a schema whose meaning nobody can read off the approval page),
+// no conditionals. Every other keyword is refused when the definition is
+// written, so a limit's shape is always one a person can be shown.
+const LIMITS_SCHEMA_KEYWORDS = ['type', 'properties', 'required',
+                                'additionalProperties', 'items', 'enum',
+                                'const', 'minimum', 'maximum',
+                                'exclusiveMinimum', 'exclusiveMaximum',
+                                'multipleOf', 'minLength', 'maxLength',
+                                'pattern', 'format', 'minItems', 'maxItems',
+                                'uniqueItems', 'description', 'title'];
+const LIMITS_SCHEMA_TYPES = ['object', 'string', 'number', 'integer',
+                             'boolean', 'array'];
+
+// The longest maxLifetimeS a type may declare: a year, past which "maximum"
+// says nothing a token lifetime setting does not.
+const ACCESS_TYPE_MAX_LIFETIME_S = 31536000;
 
 // The largest definition an entry may hold: a schema is data a person wrote,
 // and every authorization request carrying the type compiles it once.
@@ -8278,7 +8371,14 @@ function authorizationDetailsTypeOf(value) {
   const text = String(value === undefined || value === null ? '' : value)
     .trim();
   const out = { type: '', description: '', locations: [], schema: null,
-                validate: null, problem: '' };
+                validate: null, problem: '',
+                // THE CATALOGUE (#432 phase 4): null or [] where the
+                // definition says nothing — see the block's header.
+                actions: null, datatypes: null, privileges: null,
+                required: [], interaction: 'default', consentActions: [],
+                bearer: null, maxLifetimeS: null, acr: '',
+                derivableFrom: [], introspectionClaims: [], limits: null,
+                validateLimits: null };
   if (!text) {
     out.problem = 'the definition is empty';
     log.debug("Leaving authorizationDetailsTypeOf(). Empty.");
@@ -8377,8 +8477,228 @@ function authorizationDetailsTypeOf(value) {
     }
     out.schema = definition.schema;
   }
+  const catalogue = accessTypeCatalogueProblem(definition, out);
+  if (catalogue) {
+    out.problem = catalogue;
+    log.debug("Leaving authorizationDetailsTypeOf(). A catalogue member.");
+    return out;
+  }
   log.debug("Leaving authorizationDetailsTypeOf(). " + out.type + ".");
   return out;
+}
+
+// A list member of a definition: an array of distinct non-empty printable
+// strings, at most 256 of them. As a sentence, or ''.
+function accessTypeListProblem(name, value) {
+  log.debug("Entering accessTypeListProblem(). " + name);
+  if (!Array.isArray(value)) {
+    log.debug("Leaving accessTypeListProblem(). Not an array.");
+    return name + ' must be an array of strings';
+  }
+  if (value.length > 256) {
+    log.debug("Leaving accessTypeListProblem(). Too many.");
+    return name + ' lists ' + value.length + ' values, and at most 256 are ' +
+      'kept';
+  }
+  for (let i = 0; i < value.length; i++) {
+    const one = value[i];
+    if (typeof one !== 'string' || !one || one.length > 512 ||
+        /[\u0000-\u001f\u007f]/.test(one)) {
+      log.debug("Leaving accessTypeListProblem(). A value.");
+      return name + '[' + i + '] is not a non-empty string of at most 512 ' +
+        'characters with no control character';
+    }
+    if (value.indexOf(one) !== i) {
+      log.debug("Leaving accessTypeListProblem(). Repeated.");
+      return name + ' names "' + one.slice(0, 80) + '" twice';
+    }
+  }
+  log.debug("Leaving accessTypeListProblem().");
+  return '';
+}
+
+// A `limits` schema held to the SUBSET (LIMITS_SCHEMA_KEYWORDS), walked
+// node by node: `properties` and `items` are schemas again, every other
+// keyword is a value. As a sentence naming the path, or ''.
+function limitsSchemaProblem(node, path, depth) {
+  log.debug("Entering limitsSchemaProblem(). " + path);
+  if (depth > 8) {
+    log.debug("Leaving limitsSchemaProblem(). Too deep.");
+    return path + ' nests more than eight schemas deep';
+  }
+  if (!node || typeof node !== 'object' || Array.isArray(node)) {
+    log.debug("Leaving limitsSchemaProblem(). Not an object.");
+    return path + ' is not a schema object';
+  }
+  const keys = Object.keys(node);
+  for (let i = 0; i < keys.length; i++) {
+    const key = keys[i];
+    if (LIMITS_SCHEMA_KEYWORDS.indexOf(key) < 0) {
+      log.debug("Leaving limitsSchemaProblem(). " + key + ".");
+      return path + ' uses "' + key.slice(0, 60) + '", and a limits schema ' +
+        'may use only ' + LIMITS_SCHEMA_KEYWORDS.join(', ');
+    }
+  }
+  if (node.type !== undefined) {
+    const types = Array.isArray(node.type) ? node.type : [node.type];
+    if (!types.length || types.some(function (one) {
+      return LIMITS_SCHEMA_TYPES.indexOf(one) < 0;
+    })) {
+      log.debug("Leaving limitsSchemaProblem(). type.");
+      return path + '.type must be one or more of ' +
+        LIMITS_SCHEMA_TYPES.join(', ');
+    }
+  }
+  if (node.properties !== undefined) {
+    if (!node.properties || typeof node.properties !== 'object' ||
+        Array.isArray(node.properties)) {
+      log.debug("Leaving limitsSchemaProblem(). properties.");
+      return path + '.properties must be an object of schemas';
+    }
+    const names = Object.keys(node.properties);
+    for (let j = 0; j < names.length; j++) {
+      const inner = limitsSchemaProblem(node.properties[names[j]],
+                                        path + '.properties.' + names[j],
+                                        depth + 1);
+      if (inner) {
+        log.debug("Leaving limitsSchemaProblem(). A property.");
+        return inner;
+      }
+    }
+  }
+  if (node.items !== undefined) {
+    const items = limitsSchemaProblem(node.items, path + '.items', depth + 1);
+    if (items) {
+      log.debug("Leaving limitsSchemaProblem(). items.");
+      return items;
+    }
+  }
+  if (node.additionalProperties !== undefined &&
+      typeof node.additionalProperties !== 'boolean') {
+    log.debug("Leaving limitsSchemaProblem(). additionalProperties.");
+    return path + '.additionalProperties must be true or false (a schema ' +
+      'there is outside the subset)';
+  }
+  if (node.required !== undefined &&
+      accessTypeListProblem(path + '.required', node.required)) {
+    log.debug("Leaving limitsSchemaProblem(). required.");
+    return accessTypeListProblem(path + '.required', node.required);
+  }
+  log.debug("Leaving limitsSchemaProblem().");
+  return '';
+}
+
+// ---------------------------------------------------------------------------
+// THE CATALOGUE MEMBERS OF ONE DEFINITION (#432 phase 4), read onto `out`.
+// As a sentence, or '' for a usable definition. Every member is optional;
+// what is checked is that a member present means one thing and only one.
+// ---------------------------------------------------------------------------
+function accessTypeCatalogueProblem(definition, out) {
+  log.debug("Entering accessTypeCatalogueProblem().");
+  const lists = ['actions', 'datatypes', 'privileges', 'required',
+                 'consentActions', 'derivableFrom', 'introspectionClaims'];
+  for (let i = 0; i < lists.length; i++) {
+    const name = lists[i];
+    if (definition[name] === undefined) {
+      continue;
+    }
+    const problem = accessTypeListProblem(name, definition[name]);
+    if (problem) {
+      log.debug("Leaving accessTypeCatalogueProblem(). " + name + ".");
+      return problem;
+    }
+    out[name] = definition[name].slice(0);
+  }
+  if (out.required.indexOf('type') >= 0) {
+    log.debug("Leaving accessTypeCatalogueProblem(). required type.");
+    return 'required need not name "type", which every right carries';
+  }
+  if (out.actions && out.consentActions.some(function (one) {
+    return out.actions.indexOf(one) < 0;
+  })) {
+    log.debug("Leaving accessTypeCatalogueProblem(). consentActions.");
+    return 'consentActions names an action the type does not list in ' +
+      'actions';
+  }
+  for (let j = 0; j < out.derivableFrom.length; j++) {
+    const name = authorizationDetailsTypeNameProblem(out.derivableFrom[j]);
+    if (name) {
+      log.debug("Leaving accessTypeCatalogueProblem(). derivableFrom.");
+      return 'derivableFrom: ' + name;
+    }
+    if (out.derivableFrom[j] === out.type) {
+      log.debug("Leaving accessTypeCatalogueProblem(). derivableFrom self.");
+      return 'derivableFrom names the type itself, and a right of a type ' +
+        'is derivable from its own type only as a subset, which needs no ' +
+        'declaration';
+    }
+  }
+  for (let k = 0; k < out.introspectionClaims.length; k++) {
+    const claim = out.introspectionClaims[k];
+    if (!/^[A-Za-z][A-Za-z0-9_.:-]{0,127}$/.test(claim)) {
+      log.debug("Leaving accessTypeCatalogueProblem(). A claim name.");
+      return 'introspectionClaims: "' + claim.slice(0, 80) + '" is not a ' +
+        'claim name';
+    }
+    if (INTROSPECTION_RESERVED.indexOf(claim) >= 0) {
+      log.debug("Leaving accessTypeCatalogueProblem(). A reserved claim.");
+      return 'introspectionClaims: "' + claim + '" is a member every ' +
+        'introspection response already carries or reserves';
+    }
+  }
+  if (definition.interaction !== undefined) {
+    if (ACCESS_TYPE_INTERACTIONS.indexOf(definition.interaction) < 0) {
+      log.debug("Leaving accessTypeCatalogueProblem(). interaction.");
+      return 'interaction must be one of ' +
+        ACCESS_TYPE_INTERACTIONS.join(', ');
+    }
+    out.interaction = definition.interaction;
+  }
+  if (definition.bearer !== undefined) {
+    if (typeof definition.bearer !== 'boolean') {
+      log.debug("Leaving accessTypeCatalogueProblem(). bearer.");
+      return 'bearer must be true or false';
+    }
+    out.bearer = definition.bearer;
+  }
+  if (definition.maxLifetimeS !== undefined) {
+    const life = definition.maxLifetimeS;
+    if (typeof life !== 'number' || !Number.isInteger(life) || life < 1 ||
+        life > ACCESS_TYPE_MAX_LIFETIME_S) {
+      log.debug("Leaving accessTypeCatalogueProblem(). maxLifetimeS.");
+      return 'maxLifetimeS must be a whole number of seconds from 1 to ' +
+        ACCESS_TYPE_MAX_LIFETIME_S;
+    }
+    out.maxLifetimeS = life;
+  }
+  if (definition.acr !== undefined) {
+    if (typeof definition.acr !== 'string' ||
+        !/^[\x21-\x7e]{1,256}$/.test(definition.acr)) {
+      log.debug("Leaving accessTypeCatalogueProblem(). acr.");
+      return 'acr must be one authentication context class reference, 1 ' +
+        'to 256 printable characters with no space';
+    }
+    out.acr = definition.acr;
+  }
+  if (definition.limits !== undefined) {
+    const shape = limitsSchemaProblem(definition.limits, 'limits', 0);
+    if (shape) {
+      log.debug("Leaving accessTypeCatalogueProblem(). limits.");
+      return shape;
+    }
+    try {
+      out.validateLimits = authorizationDetailsSchemaCompiler()
+        .compile(definition.limits);
+    } catch (e) {
+      log.debug("Caught in accessTypeCatalogueProblem(): " +
+                ((e && e.message) || e));
+      log.debug("Leaving accessTypeCatalogueProblem(). limits compile.");
+      return 'limits does not compile as a JSON Schema: ' + e.message;
+    }
+    out.limits = definition.limits;
+  }
+  log.debug("Leaving accessTypeCatalogueProblem().");
+  return '';
 }
 
 // One location, as RFC 9396 section 2.2 describes one: an absolute URI with no
@@ -15951,6 +16271,9 @@ module.exports = {
   // definition reader `oauth-oidc/authorization_details.ts` uses.
   AUTHORIZATION_DETAILS_BUILT_IN: AUTHORIZATION_DETAILS_BUILT_IN,
   authorizationDetailsTypeOf: authorizationDetailsTypeOf,
+  ACCESS_TYPE_INTERACTIONS: ACCESS_TYPE_INTERACTIONS,
+  INTROSPECTION_RESERVED: INTROSPECTION_RESERVED,
+  LIMITS_SCHEMA_KEYWORDS: LIMITS_SCHEMA_KEYWORDS,
   authorizationDetailsLocationProblem: authorizationDetailsLocationProblem,
   authorizationDetailsTypeNameProblem: authorizationDetailsTypeNameProblem,
   authorizationDetailsMetadataProblem: authorizationDetailsMetadataProblem,

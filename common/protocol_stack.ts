@@ -1712,6 +1712,11 @@ class ProtocolStack {
                'GnapSignals');
     this.build('gnap/gnap_revocation', require('../gnap/gnap_revocation'),
                'GnapRevocation');
+    // #432 phases 3 and 4: each access right against the access-type
+    // catalogue and the issuance policy — a library the delegation module
+    // (its "derivable from") and the grant engine read.
+    this.build('gnap/gnap_rights', require('../gnap/gnap_rights'),
+               'GnapRights');
     // #432: who may act for whom in GNAP — a library the grant engine reads.
     this.build('gnap/gnap_delegation', require('../gnap/gnap_delegation'),
                'GnapDelegation');

@@ -132,7 +132,13 @@ function childMain() {
           gnapKey: JSON.stringify(keys[id].keyObject()),
           gnapResourceServerUri: uri }, fields || {}) }));
     };
-    rs('gd-rs-a', RS.a, { appAllowedToDelegateTo: ['gd-rs-b'] });
+    // `gd-photos` is a CATALOGUED type (#432 phase 4) — product mode
+    // refuses one nobody declares — owned by gd-rs-a and answering at all
+    // three resource servers' addresses, so the rights below keep the
+    // targets their locations name.
+    rs('gd-rs-a', RS.a, { appAllowedToDelegateTo: ['gd-rs-b'],
+      oauthAuthorizationDetailsType: [JSON.stringify({
+        type: 'gd-photos', locations: [RS.b, RS.c] })] });
     rs('gd-rs-b', RS.b);
     rs('gd-rs-c', RS.c);
     // No impersonation in its semantics: delegation only, the default.
@@ -408,7 +414,9 @@ function childMain() {
            (picture.edges || []).slice(0, 2)));
     note(gnapDelegation.derivableBeyond([right([RS.a])], right([RS.b]), {})
          === false,
-         'IV4. the catalogue\'s extension point allows nothing yet');
+         'IV4. the catalogue\'s extension point allows nothing its ' +
+         '"derivableFrom" does not declare (#432 phase 4; ' +
+         'tests/gnap_catalogue.js holds what it does)');
 
     product(false);
     server.close();

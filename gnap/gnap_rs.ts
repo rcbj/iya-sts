@@ -68,6 +68,8 @@ import monitor = require('./gnap_monitor');
 import grants = require('./gnap_grants');
 import accessRights = require('./gnap_access');
 import revocation = require('./gnap_revocation');
+// The access-type catalogue's introspection view (#432 phase 4). A library.
+import gnapRights = require('./gnap_rights');
 
 interface GnapRsDeps {
   config: typeof config;
@@ -86,6 +88,7 @@ interface GnapRsDeps {
   grants: typeof grants;
   accessRights: typeof accessRights;
   revocation: typeof revocation;
+  rights: typeof gnapRights;
 }
 
 // What `authenticate()` is told about the resource being asked for.
@@ -259,7 +262,14 @@ class GnapRs {
       return { ok: true, status: 200, body: { active: false } };
     }
     monitor.record(rs.identifier, 'rs.introspection_active', {});
-    const answer: any = { active: true, access: record.access,
+    // FILTERED PER RESOURCE SERVER (#432 phase 4; RFC 9767 section 3.3 lets
+    // the AS limit what it returns): a right of a type ANOTHER resource
+    // server owns is withheld, and the person's claims this one's types
+    // declare in `introspectionClaims` are added below — never in place of a
+    // member the response already carries (the catalogue refuses those
+    // names, and `status` among them).
+    const view = this.deps.rights.introspection(record, rs);
+    const answer: any = { active: true, access: view.rights,
                           iss: record.iss };
     if (record.key && (record.flags || []).indexOf('bearer') < 0) {
       answer.key = record.key;
@@ -283,6 +293,11 @@ class GnapRs {
     // introspection response". The registry names no member for it; `format`
     // is the obvious spelling and is what this AS uses.
     answer.format = record.format;
+    Object.keys(view.claims || {}).forEach(function (name: string): void {
+      if (answer[name] === undefined) {
+        answer[name] = view.claims[name];
+      }
+    });
     log.debug("Leaving GnapRs.introspect(). Active.");
     return { ok: true, status: 200, body: answer };
   }
@@ -671,7 +686,8 @@ class GnapRs {
       monitor: monitor,
       grants: grants,
       accessRights: accessRights,
-      revocation: revocation
+      revocation: revocation,
+      rights: gnapRights
     };
   }
 }

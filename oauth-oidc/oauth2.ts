@@ -3921,6 +3921,15 @@ class OAuth2Server {
     payload.exp = payload.iat +
       this.deps.fapi.accessTokenLifetime(payload.exp - payload.iat,
                                          !!payload.cnf);
+    // THE ACCESS-TYPE CATALOGUE'S `maxLifetimeS` (#432 phase 4): a token
+    // carrying a detail of a type that declares one lives no longer than the
+    // shortest of them. Here, beside FAPI's cap, so the token response's
+    // `expires_in` (read off the token) reports it.
+    const typeCap = opts.authorization_details
+      ? richAuthorization.maxLifetimeFor(opts.authorization_details) : null;
+    if (typeCap !== null && payload.exp - payload.iat > typeCap) {
+      payload.exp = payload.iat + typeCap;
+    }
     // OID4VCI section 6.2: when the authorization was expressed as
     // authorization_details, the token response grants credential_identifiers
     // and the Credential Request must use one of them. They ride in the access
@@ -5047,6 +5056,29 @@ class OAuth2Server {
       log.debug("Leaving OAuth2Server.tokenSet(). RFC 9068 refused the " +
                 "audience.");
       throw new AccessTokenRefused(log, plan.refusal);
+    }
+    // A TYPE THAT REFUSES A BEARER TOKEN (#432 phase 4): the access-type
+    // catalogue's `bearer: false`, which GNAP's issuance policy reads for an
+    // access right, read here for the RFC 9396 detail the same declaration
+    // describes. Here, the funnel every grant mints through, because whether
+    // the token will be bound — a DPoP key (`jkt`) or a client certificate
+    // on this connection (RFC 8705) — is known only now. In every mode: the
+    // resource server declared the type that way.
+    const unbound = !opts.jkt &&
+      !(opts.request && mtls.presentedThumbprint(opts.request));
+    const bearerRefused = unbound
+      ? richAuthorization.bearerRefusedBy(opts.authorization_details) : '';
+    if (bearerRefused) {
+      log.debug("Leaving OAuth2Server.tokenSet(). The type " +
+                bearerRefused + " refuses a bearer token.");
+      throw new AccessTokenRefused(log, errorCodes.mark({
+        error: 'invalid_authorization_details',
+        description: 'authorization_details of type "' + bearerRefused +
+          '" may be carried only by a sender-constrained access token, and ' +
+          'this request presented neither a DPoP proof (RFC 9449) nor a ' +
+          'client certificate (RFC 8705): the resource server that declares ' +
+          'the type does not accept a bearer token for it.' },
+        'STS-OAUTH-0878'));
     }
     const derived = !explicit.length && plan.derived.length > 0;
     // THE GRANT BOTH HALVES BELONG TO, NAMED BEFORE EITHER IS SIGNED (#239):
@@ -16727,6 +16759,25 @@ class OAuth2Server {
                'not intended for it (client_id ' + answer.client_id + ', aud ' +
                JSON.stringify(answer.aud) + '), answered as inactive.');
       answer = { active: false };
+    }
+    // WHAT THIS RESOURCE SERVER MAY SEE (#432 phase 4): an authenticated
+    // caller that OWNS a type among the token's details is shown the details
+    // of its own types only, and the person's claims those types declare in
+    // `introspectionClaims` (`authorization_details.ts`'s
+    // `introspectionView()`, GNAP's introspection reads the same). A caller
+    // that owns none sees the token as before.
+    if (authenticated && answer.active === true &&
+        Array.isArray(answer.authorization_details)) {
+      const view = richAuthorization.introspectionView(
+        answer.authorization_details, clientId, answer.username || '');
+      if (view.owned) {
+        answer.authorization_details = view.rights;
+        Object.keys(view.claims).forEach(function (name: string): void {
+          if (answer[name] === undefined) {
+            answer[name] = view.claims[name];
+          }
+        });
+      }
     }
     if (!wantsJwt) {
       res.status(200).type('application/json').send(JSON.stringify(answer));

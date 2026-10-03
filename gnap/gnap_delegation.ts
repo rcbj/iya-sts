@@ -80,13 +80,10 @@
 //     (`gnap_access.accessCovers()`). The exception that let a derivation add
 //     "rights registered for a downstream resource server" is GONE: it let
 //     any resource server a token reached mint access nobody approved.
-//   * **THE ONE EXTENSION POINT IS `derivableBeyond()`**, and it answers
-//     false. rcbj's decision 3 adds, later, the rights of an access-type
-//     catalogue entry that declares itself "derivable from" a type the
-//     original token carries; that catalogue is #432's phase 4, and the lane
-//     that builds it fills this ONE method and nothing else. Until then
-//     nothing beyond the original is derivable — deliberately no
-//     placeholder that allows anything.
+//   * **THE ONE EXTENSION POINT IS `derivableBeyond()`**, filled by #432's
+//     phase 4: rcbj's decision 3 adds the rights of an access-type catalogue
+//     entry that declares itself "derivable from" a type the original token
+//     carries (`gnap_rights.ts`'s `derivable()`), and nothing else.
 //   * `actorChainFor()` builds RFC 8693 section 4.1's `act`: the deriving
 //     resource server outermost, the original token's chain nested under it.
 //     Every derivation adds a link, including a narrowing for the deriving
@@ -110,6 +107,10 @@ import InstanceSlot = require('../common/instance_slot');
 import delegationPolicy = require('../common/delegation_policy');
 import delegation = require('../common/delegation');
 import accessRights = require('./gnap_access');
+// THE ACCESS-TYPE CATALOGUE'S "derivable from" (#432 phase 4), the one
+// extension point below. A library that requires nothing of `gnap/` but the
+// store, so it closes no cycle.
+import gnapRights = require('./gnap_rights');
 
 type Json = any;
 
@@ -121,6 +122,7 @@ interface GnapDelegationDeps {
   policy: Json;
   register: Json;
   access: Json;
+  rights: Json;
 }
 
 // One act's question, and what each door passes.
@@ -215,7 +217,8 @@ class GnapDelegation {
       applications: applications,
       policy: delegationPolicy,
       register: delegation,
-      access: accessRights
+      access: accessRights,
+      rights: gnapRights
     };
   }
 
@@ -402,30 +405,36 @@ class GnapDelegation {
   // -------------------------------------------------------------------------
   // THE EXTENSION POINT (rcbj's decision 3 on #432). Whether one right a
   // derivation asks for, which the original token does NOT cover, may still
-  // be derived: the access-type catalogue (#432 phase 4) will answer true for
-  // a right of a type declared "derivable from" a type the original carries.
-  // Until that lane fills this method, nothing is: false, always.
+  // be derived: FILLED BY #432 PHASE 4 — a right of a catalogued type whose
+  // `derivableFrom` names a type the original token carries
+  // (`gnap_rights.ts`'s `derivable()`). Nothing else widens a derivation; a
+  // right so derived is still put to the issuance policy (`issue-gnap-right`,
+  // approval `derived`) and to #186's delegation question for its resource
+  // server, like any other.
   // -------------------------------------------------------------------------
   /**
    * Says whether a right the original token does not cover may still be
-   * derived. The access-type catalogue's "derivable from" fills this; until
-   * then it answers false.
+   * derived: a right of a type the access-type catalogue declares derivable
+   * from a type the original carries.
    *
    * @param original - the original token's access rights
    * @param right - the right asked for
    * @param context - `{ rs, downstream }`: the deriving resource server and
-   *   the downstream ones
-   * @returns false — nothing beyond the original is derivable yet
+   *   the downstream ones (recorded on the log line)
+   * @returns true when the catalogue makes it derivable
    */
   derivableBeyond(original: Json[], right: Json, context: Json): boolean {
-    const { log } = this.deps;
+    const { log, rights } = this.deps;
     log.debug("Entering GnapDelegation.derivableBeyond().");
-    // The arguments are the catalogue lane's contract; nothing reads them yet.
-    void original;
-    void right;
-    void context;
-    log.debug("Leaving GnapDelegation.derivableBeyond(). Nothing is, yet.");
-    return false;
+    const from = rights.derivable(original, right);
+    if (from) {
+      log.info('gnap: a derivation by ' + String((context && context.rs) ||
+               '') + ' adds a right of type "' + String(right.type) +
+               '", which the catalogue declares derivable from "' + from +
+               '" (#432).');
+    }
+    log.debug("Leaving GnapDelegation.derivableBeyond(). " + !!from);
+    return !!from;
   }
 
   // -------------------------------------------------------------------------

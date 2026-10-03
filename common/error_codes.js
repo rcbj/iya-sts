@@ -8552,6 +8552,19 @@ const CODES = [
     summary: 'A token exchange\'s exchange_semantics parameter was neither ' +
       'delegation nor impersonation, or was repeated (#186).',
     spec: '400 invalid_request (RFC 6749 section 5.2)' },
+  { code: 'STS-OAUTH-0876',
+    summary: 'An authorization_details entry carried limits, and its type ' +
+      'declares no limits schema in the access-type catalogue (#432).',
+    spec: '400 invalid_authorization_details (RFC 9396 section 5)' },
+  { code: 'STS-OAUTH-0877',
+    summary: 'An authorization_details entry\'s limits did not meet the ' +
+      'limits schema its type declares (#432).',
+    spec: '400 invalid_authorization_details (RFC 9396 section 5)' },
+  { code: 'STS-OAUTH-0878',
+    summary: 'An access token would carry authorization_details of a type ' +
+      'the access-type catalogue declares bearer: false, and the request ' +
+      'presented neither a DPoP proof nor a client certificate (#432).',
+    spec: '400 invalid_authorization_details (RFC 9396 section 5)' },
   { code: 'STS-SAML-0001',
     summary: 'A SAML 2.0 sign-in resumed with a held-request id that is ' +
       'unknown or has expired (saml2.requestTtlMin), so there is no ' +
@@ -15555,6 +15568,45 @@ const CODES = [
       'an interaction nor a delegation decision authorized; none was ' +
       'released (#432).',
     spec: 'none — the subject member is omitted (RFC 9635 section 3.4)' },
+  { code: 'STS-GNAP-0810',
+    summary: 'A GNAP access right was of a type the access-type catalogue ' +
+      'does not declare (no resource application\'s ' +
+      'oauthAuthorizationDetailsType names it), and the issuance ' +
+      'policy\'s gnap-type-not-catalogued rule refuses one in product ' +
+      'mode (#432).',
+    spec: 'RFC 9635 section 3.6 (request_denied, HTTP 403)' },
+  { code: 'STS-GNAP-0811',
+    summary: 'A GNAP bearer token was asked for carrying a right of a type ' +
+      'the access-type catalogue declares bearer: false (#432).',
+    spec: 'RFC 9635 section 3.6 (request_denied, HTTP 403)' },
+  { code: 'STS-GNAP-0812',
+    summary: 'A GNAP access right did not meet its type\'s catalogue ' +
+      'definition: an action, datatype or privilege it does not allow, a ' +
+      'required member missing, its JSON Schema, or a location its owning ' +
+      'resource server does not answer to (#432).',
+    spec: 'RFC 9635 section 3.6 (invalid_request, HTTP 400)' },
+  { code: 'STS-GNAP-0813',
+    summary: 'A GNAP access right carried limits, and its type declares no ' +
+      'limits schema in the access-type catalogue (#432).',
+    spec: 'RFC 9635 section 3.6 (invalid_request, HTTP 400)' },
+  { code: 'STS-GNAP-0814',
+    summary: 'A GNAP access right\'s limits did not meet the limits schema ' +
+      'its type declares (#432).',
+    spec: 'RFC 9635 section 3.6 (invalid_request, HTTP 400)' },
+  { code: 'STS-GNAP-0815',
+    summary: 'The issuance policy answered a GNAP access right with a ' +
+      'verdict this service does not know; the right was refused (#432).',
+    spec: 'RFC 9635 section 3.6 (request_denied, HTTP 403)' },
+  { code: 'STS-GNAP-0816',
+    summary: 'No issuance policy, not even the built-in one, gave a verdict ' +
+      'on a GNAP access right; it was refused (#432).',
+    spec: 'RFC 9635 section 3.6 (request_denied, HTTP 403)' },
+  { code: 'STS-GNAP-0817',
+    summary: 'The issuance policy narrowed a GNAP access right to nothing it ' +
+      'could still grant: a reference string, an unrestricted dimension ' +
+      'the catalogue lists no values for, every value taken off, or a ' +
+      'narrowed right its type no longer accepts (#432).',
+    spec: 'RFC 9635 section 3.6 (request_denied, HTTP 403)' },
   // ===== DEVICE ============================================================
   { code: 'STS-DEVICE-0001',
     summary: 'A device named an owner that is not a person or an application' +
@@ -16203,6 +16255,11 @@ const CODES = [
     summary: 'No issuance policy, not even the built-in one, answered the ' +
       'may_act question for a subject who named a delegate (#186); the ' +
       'subject\'s own choice was put in the token.',
+    spec: '' },
+  { code: 'STS-XACML-0168',
+    summary: 'No issuance policy, not even the built-in one, could answer ' +
+      'the per-right GNAP question (issue-gnap-right); the right was ' +
+      'refused (#432).',
     spec: '' },
   // ===== XPEP ==============================================================
   { code: 'STS-XPEP-0001',
@@ -18723,6 +18780,15 @@ const CODES = [
     summary: 'A client secret could not be sealed, so it was not written: ' +
       'storing it in the clear where keys persist would put a working ' +
       'client credential in every directory dump.',
+    spec: 'none (a console or management API refusal, HTTP 400)' },
+  { code: 'STS-REG-0294',
+    summary: 'An access type was not declared on an application: no such ' +
+      'application, or the definition built from the fields does not read ' +
+      '(the access-type catalogue\'s grammar, #432).',
+    spec: 'none (a console or management API refusal, HTTP 400)' },
+  { code: 'STS-REG-0295',
+    summary: 'An access type could not be taken off an application: it ' +
+      'declares no type of that name (#432).',
     spec: 'none (a console or management API refusal, HTTP 400)' },
   { code: 'STS-DBG-0001',
     summary: 'The debugger permission was asked for by somebody who may ' +

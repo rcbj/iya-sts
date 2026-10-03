@@ -172,7 +172,70 @@ const VOCABULARY = Object.freeze({
   // #186: the party the subject NAMED as their delegate (`stsMayAct` on a
   // person, `appMayAct` on an application), as the `may_act` claim would
   // name it — the fact the `assign-may-act` question decides on.
-  EXCHANGE_SUBJECT_DELEGATE: 'urn:sts:xacml:exchange:subject-delegate'
+  EXCHANGE_SUBJECT_DELEGATE: 'urn:sts:xacml:exchange:subject-delegate',
+  // THE FACTS OF A GNAP ACCESS RIGHT (#432 phase 3): one question per right,
+  // action-id `issue-gnap-right`, the right's type (or its reference string)
+  // as the resource-id. Gathered by `gnap/gnap_rights.ts`; nothing here
+  // decides. RESOURCE: the right itself — `object` or `reference`, its five
+  // common fields (RFC 9635 section 8) — whether the access-type catalogue
+  // declares its type and what that entry declares, whether the client's
+  // gnapAllowedAccess lists it, whether a reference names a registered
+  // resource set, and whether it asks for one of this service's protected
+  // scopes (#110) the client's entry does not declare.
+  GNAP_RIGHT_KIND: 'urn:sts:xacml:gnap:right-kind',
+  GNAP_RIGHT_ACTION: 'urn:sts:xacml:gnap:right-action',
+  GNAP_RIGHT_LOCATION: 'urn:sts:xacml:gnap:right-location',
+  GNAP_RIGHT_DATATYPE: 'urn:sts:xacml:gnap:right-datatype',
+  GNAP_RIGHT_IDENTIFIER: 'urn:sts:xacml:gnap:right-identifier',
+  GNAP_RIGHT_PRIVILEGE: 'urn:sts:xacml:gnap:right-privilege',
+  GNAP_RIGHT_LISTED: 'urn:sts:xacml:gnap:right-listed',
+  GNAP_REFERENCE_REGISTERED: 'urn:sts:xacml:gnap:reference-registered',
+  GNAP_PROTECTED: 'urn:sts:xacml:gnap:protected',
+  GNAP_PROTECTED_DECLARED: 'urn:sts:xacml:gnap:protected-declared',
+  GNAP_CATALOGUED: 'urn:sts:xacml:gnap:catalogued',
+  GNAP_TYPE_OWNER: 'urn:sts:xacml:gnap:type-owner',
+  GNAP_TYPE_BEARER: 'urn:sts:xacml:gnap:type-bearer',
+  GNAP_TYPE_MAX_LIFETIME: 'urn:sts:xacml:gnap:type-max-lifetime',
+  GNAP_TYPE_ACR: 'urn:sts:xacml:gnap:type-acr',
+  GNAP_TYPE_INTERACTION: 'urn:sts:xacml:gnap:type-interaction',
+  GNAP_TYPE_CONSENT_ACTION: 'urn:sts:xacml:gnap:type-consent-action',
+  GNAP_TYPE_DERIVABLE_FROM: 'urn:sts:xacml:gnap:type-derivable-from',
+  GNAP_TYPE_INTROSPECTION_CLAIM:
+    'urn:sts:xacml:gnap:type-introspection-claim',
+  // ACTION: the token the right is to be issued in — its label, the bearer
+  // flag, the format it would be minted in and the resource servers it is
+  // for.
+  GNAP_TOKEN_LABEL: 'urn:sts:xacml:gnap:token-label',
+  GNAP_TOKEN_BEARER: 'urn:sts:xacml:gnap:token-bearer',
+  GNAP_TOKEN_FORMAT: 'urn:sts:xacml:gnap:token-format',
+  GNAP_TOKEN_TARGET: 'urn:sts:xacml:gnap:token-target',
+  // ACCESS-SUBJECT: the client — its REGISTERED class (a declared class_id
+  // never raises trust, so it is never sent), whether its entry lists any
+  // gnapAllowedAccess, and whether it refuses bearer tokens.
+  GNAP_CLIENT_CLASS: 'urn:sts:xacml:gnap:client-class',
+  GNAP_CLIENT_HAS_ALLOWED_ACCESS:
+    'urn:sts:xacml:gnap:client-has-allowed-access',
+  GNAP_CLIENT_BEARER_REFUSED: 'urn:sts:xacml:gnap:client-bearer-refused',
+  // ENVIRONMENT: who approved and how (`pending` before anybody has,
+  // `interaction`, `skipped`, `derived` or `remembered`), the session the
+  // approval stands on (acr, amr), its risk (#62) and the registered device
+  // (#164). UNDER NAMES OF THEIR OWN rather than the issuance's risk and
+  // device attributes: the issuance's untargeted risk and device rules
+  // decide the TOKEN through `gate.check()`, which is still asked, and a
+  // right that carried their attributes would trip them on every
+  // per-right question and answer it with an obligation no right reader
+  // knows.
+  GNAP_APPROVER: 'urn:sts:xacml:gnap:approver',
+  GNAP_APPROVAL: 'urn:sts:xacml:gnap:approval',
+  GNAP_SESSION_ACR: 'urn:sts:xacml:gnap:session-acr',
+  GNAP_SESSION_AMR: 'urn:sts:xacml:gnap:session-amr',
+  GNAP_RISK_LEVEL: 'urn:sts:xacml:gnap:risk-level',
+  GNAP_RISK_SIGNAL: 'urn:sts:xacml:gnap:risk-signal',
+  GNAP_DEVICE_RECOGNIZED: 'urn:sts:xacml:gnap:device-recognized',
+  GNAP_DEVICE_STATUS: 'urn:sts:xacml:gnap:device-status',
+  GNAP_DEVICE_COMPLIANCE: 'urn:sts:xacml:gnap:device-compliance',
+  GNAP_DEVICE_ATTESTATION: 'urn:sts:xacml:gnap:device-attestation',
+  GNAP_DEVICE_OWNER_MATCHES: 'urn:sts:xacml:gnap:device-owner-matches'
 });
 
 // The principal types a request may name. Anything else is a person, which
@@ -470,6 +533,98 @@ class AuthorizationRequest {
     this.environment(V.EXCHANGE_MAY_ACT_NAMES_ACTOR,
                      [!!given.mayActNamesActor], model.TYPE.BOOLEAN);
     this.environment(V.EXCHANGE_PROTECTED_GROUP, list(given.protectedGroups));
+    return this;
+  }
+
+  // THE FACTS OF A GNAP ACCESS RIGHT (#432 phase 3). `facts` (each optional):
+  //   right     { kind, type, actions, locations, datatypes, identifier,
+  //               privileges, listed, referenceRegistered, protected,
+  //               protectedDeclared }
+  //   catalogue { catalogued, owner, bearer (null when undeclared),
+  //               maxLifetimeS (null when undeclared), acr, interaction,
+  //               consentActions, derivableFrom, introspectionClaims }
+  //   token     { label, bearer, format, targets }
+  //   client    { id, class, hasAllowedAccess, bearerRefused }
+  //   approver, approval
+  //   session   { acr, amr }, risk { level, signals },
+  //   device    { recognized, status, compliance, attestation, ownerMatches }
+  // A fact that is not known is left out rather than sent empty, so a rule
+  // reading it is inapplicable — `boolean-is-in` over an empty bag is false.
+  // The resource-id, principal, action-id, mode, stage and settings are the
+  // caller's, through the methods above.
+  gnapRight(facts) {
+    log.debug("Entering AuthorizationRequest.gnapRight().");
+    const given = facts || {};
+    const V = VOCABULARY;
+    const B = model.TYPE.BOOLEAN;
+    const one = function (value) {
+      log.debug("Entering one().");
+      log.debug("Leaving one().");
+      return value ? [String(value)] : [];
+    };
+    const list = function (values) {
+      log.debug("Entering list().");
+      log.debug("Leaving list().");
+      return (Array.isArray(values) ? values : []).map(String)
+        .filter(function (v) { return !!v; });
+    };
+    const bool = function (value) {
+      log.debug("Entering bool().");
+      log.debug("Leaving bool().");
+      return typeof value === 'boolean' ? [value] : [];
+    };
+    const right = given.right || {};
+    const catalogue = given.catalogue || {};
+    const token = given.token || {};
+    const client = given.client || {};
+    const session = given.session || {};
+    const risk = given.risk || {};
+    const device = given.device || {};
+    this.resource(V.GNAP_RIGHT_KIND, one(right.kind));
+    this.resource(V.GNAP_RIGHT_ACTION, list(right.actions));
+    this.resource(V.GNAP_RIGHT_LOCATION, list(right.locations));
+    this.resource(V.GNAP_RIGHT_DATATYPE, list(right.datatypes));
+    this.resource(V.GNAP_RIGHT_IDENTIFIER, one(right.identifier));
+    this.resource(V.GNAP_RIGHT_PRIVILEGE, list(right.privileges));
+    this.resource(V.GNAP_RIGHT_LISTED, bool(right.listed), B);
+    this.resource(V.GNAP_REFERENCE_REGISTERED,
+                  bool(right.referenceRegistered), B);
+    this.resource(V.GNAP_PROTECTED, bool(right.protected), B);
+    this.resource(V.GNAP_PROTECTED_DECLARED, bool(right.protectedDeclared), B);
+    this.resource(V.GNAP_CATALOGUED, bool(catalogue.catalogued), B);
+    this.resource(V.GNAP_TYPE_OWNER, one(catalogue.owner));
+    this.resource(V.GNAP_TYPE_BEARER, bool(catalogue.bearer), B);
+    this.resource(V.GNAP_TYPE_MAX_LIFETIME,
+                  typeof catalogue.maxLifetimeS === 'number'
+                    ? [catalogue.maxLifetimeS] : [], model.TYPE.INTEGER);
+    this.resource(V.GNAP_TYPE_ACR, one(catalogue.acr));
+    this.resource(V.GNAP_TYPE_INTERACTION, one(catalogue.interaction));
+    this.resource(V.GNAP_TYPE_CONSENT_ACTION, list(catalogue.consentActions));
+    this.resource(V.GNAP_TYPE_DERIVABLE_FROM, list(catalogue.derivableFrom));
+    this.resource(V.GNAP_TYPE_INTROSPECTION_CLAIM,
+                  list(catalogue.introspectionClaims));
+    this.action(V.GNAP_TOKEN_LABEL, one(token.label));
+    this.action(V.GNAP_TOKEN_BEARER, bool(token.bearer), B);
+    this.action(V.GNAP_TOKEN_FORMAT, one(token.format));
+    this.action(V.GNAP_TOKEN_TARGET, list(token.targets));
+    this.subject(V.CLIENT_ID, one(client.id));
+    this.subject(V.GNAP_CLIENT_CLASS, one(client.class));
+    this.subject(V.GNAP_CLIENT_HAS_ALLOWED_ACCESS,
+                 bool(client.hasAllowedAccess), B);
+    this.subject(V.GNAP_CLIENT_BEARER_REFUSED, bool(client.bearerRefused), B);
+    this.environment(V.GNAP_APPROVER, one(given.approver));
+    this.environment(V.GNAP_APPROVAL, one(given.approval));
+    this.environment(V.GNAP_SESSION_ACR, one(session.acr));
+    this.environment(V.GNAP_SESSION_AMR, list(session.amr));
+    this.environment(V.GNAP_RISK_LEVEL, one(risk.level));
+    this.environment(V.GNAP_RISK_SIGNAL, list(risk.signals));
+    this.environment(V.GNAP_DEVICE_RECOGNIZED, bool(device.recognized), B);
+    this.environment(V.GNAP_DEVICE_STATUS, one(device.status));
+    this.environment(V.GNAP_DEVICE_COMPLIANCE, one(device.compliance));
+    this.environment(V.GNAP_DEVICE_ATTESTATION, one(device.attestation));
+    this.environment(V.GNAP_DEVICE_OWNER_MATCHES, bool(device.ownerMatches),
+                     B);
+    log.debug("Leaving AuthorizationRequest.gnapRight().");
     return this;
   }
 

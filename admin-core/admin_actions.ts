@@ -532,7 +532,8 @@ const APPLICATION_ACTIONS = ['create', 'set', 'add', 'remove',
                              'revoke-registration', 'refresh-metadata',
                              'load-resource-metadata', 'generate-did-key',
                              'sign-domain-linkage', 'set-custom-claim',
-                             'remove-custom-claim', 'forget'];
+                             'remove-custom-claim', 'set-access-type',
+                             'remove-access-type', 'forget'];
 
 // ---------------------------------------------------------------------------
 // GET /admin/saml2, POST /admin/saml2 — THE SAML 2.0 IDENTITY PROVIDER.
@@ -4201,6 +4202,178 @@ class AdminActions {
   // addressed by the base URL of the REQUEST. The route computes it and hands
   // it down — `listField()`'s arrangement one argument along — so this function
   // still never sees `req`.
+  // -------------------------------------------------------------------------
+  // ONE CATALOGUE ENTRY, FROM NAMED FIELDS (#432 phase 4). A list field is a
+  // JSON array or text with one value per line; `schema` and `limits` are
+  // JSON (text or an object); `bearer` is true, false or empty for no rule;
+  // `maxLifetimeS` a whole number or empty. What the definition may say is
+  // `applications.authorizationDetailsTypeOf()`'s, asked before anything is
+  // written.
+  // -------------------------------------------------------------------------
+  private accessTypeDefinitionFrom(body: any): any {
+    const { log } = this.deps;
+    log.debug("Entering AdminActions.accessTypeDefinitionFrom().");
+    const out: any = { type: String(body.type || '').trim() };
+    const text = function (name: string): string {
+      log.debug("Entering text().");
+      log.debug("Leaving text().");
+      return body[name] === undefined || body[name] === null ? ''
+        : String(body[name]).trim();
+    };
+    const list = function (name: string): string[] | null {
+      log.debug("Entering list().");
+      const value = body[name];
+      if (value === undefined || value === null || value === '') {
+        log.debug("Leaving list(). Absent.");
+        return null;
+      }
+      log.debug("Leaving list().");
+      return (Array.isArray(value) ? value : String(value).split(/\r?\n/))
+        .map(function (one: any): string { return String(one).trim(); })
+        .filter(function (one: string): boolean { return !!one; });
+    };
+    const json = function (name: string): any {
+      log.debug("Entering json().");
+      const value = body[name];
+      if (value === undefined || value === null || value === '') {
+        log.debug("Leaving json(). Absent.");
+        return undefined;
+      }
+      if (typeof value === 'object') {
+        log.debug("Leaving json(). An object.");
+        return value;
+      }
+      try {
+        log.debug("Leaving json().");
+        return JSON.parse(String(value));
+      } catch (e) {
+        log.debug("Caught in AdminActions.accessTypeDefinitionFrom(): " +
+                  ((e && e.message) || e));
+        // Not JSON: handed on as text, which the grammar then refuses with
+        // a sentence naming the member.
+        log.debug("Leaving json(). Not JSON.");
+        return String(value);
+      }
+    };
+    if (text('description')) {
+      out.description = text('description');
+    }
+    ['locations', 'actions', 'datatypes', 'privileges', 'required',
+     'consentActions', 'derivableFrom', 'introspectionClaims']
+      .forEach(function (name: string): void {
+        const values = list(name);
+        if (values && values.length) {
+          out[name] = values;
+        }
+      });
+    if (text('interaction')) {
+      out.interaction = text('interaction');
+    }
+    const bearer = body.bearer === true || body.bearer === false
+      ? String(body.bearer) : text('bearer');
+    if (bearer === 'true' || bearer === 'false') {
+      out.bearer = bearer === 'true';
+    } else if (bearer) {
+      out.bearer = bearer;
+    }
+    if (text('maxLifetimeS')) {
+      const seconds = Number(text('maxLifetimeS'));
+      out.maxLifetimeS = Number.isFinite(seconds) ? seconds
+                                                  : text('maxLifetimeS');
+    }
+    if (text('acr')) {
+      out.acr = text('acr');
+    }
+    const schema = json('schema');
+    if (schema !== undefined) {
+      out.schema = schema;
+    }
+    const limits = json('limits');
+    if (limits !== undefined) {
+      out.limits = limits;
+    }
+    log.debug("Leaving AdminActions.accessTypeDefinitionFrom().");
+    return out;
+  }
+
+  // The `set-access-type` and `remove-access-type` actions (see the switch).
+  private accessTypeAction(action: string, identifier: string,
+                           body: any): any {
+    const { log, applications } = this.deps;
+    log.debug("Entering AdminActions.accessTypeAction(). " + action);
+    const entry = applications.get(identifier);
+    if (!entry) {
+      log.debug("Leaving AdminActions.accessTypeAction(). No entry.");
+      return this.refused('STS-REG-0294', { ok: false,
+        errors: ['There is no application called "' + identifier + '".'] });
+    }
+    const type = String(body.type || '').trim();
+    const held = [].concat((entry.fields || {}).oauthAuthorizationDetailsType ||
+                           []).map(String);
+    const mine = held.filter(function (value: string): boolean {
+      return applications.authorizationDetailsTypeOf(value).type === type;
+    });
+    if (action === 'remove-access-type') {
+      if (!mine.length) {
+        log.debug("Leaving AdminActions.accessTypeAction(). Not held.");
+        return this.refused('STS-REG-0295', { ok: false,
+          errors: ['The application "' + identifier + '" declares no ' +
+                   'access type "' + type.slice(0, 120) + '".'] });
+      }
+      for (let i = 0; i < mine.length; i++) {
+        const gone = applications.updateApplication(identifier, {
+          mode: 'remove', attribute: 'oauthAuthorizationDetailsType',
+          value: mine[i] });
+        if (!gone.ok) {
+          log.debug("Leaving AdminActions.accessTypeAction(). Remove " +
+                    "refused.");
+          return this.refusedBy('STS-REG-0295', gone);
+        }
+      }
+      log.debug("Leaving AdminActions.accessTypeAction(). Removed.");
+      return { ok: true, application: identifier, type: type,
+               message: 'The access type "' + type + '" was taken off "' +
+                        identifier + '". A right of it is now refused by ' +
+                        'RFC 9396 in every mode and by GNAP in product ' +
+                        'mode.' };
+    }
+    const definition = this.accessTypeDefinitionFrom(body);
+    const value = JSON.stringify(definition);
+    const parsed = applications.authorizationDetailsTypeOf(value);
+    if (parsed.problem) {
+      log.debug("Leaving AdminActions.accessTypeAction(). Refused: " +
+                parsed.problem);
+      return this.refused('STS-REG-0294', { ok: false,
+        errors: ['The access type was not saved: ' + parsed.problem + '.'] });
+    }
+    for (let j = 0; j < mine.length; j++) {
+      applications.updateApplication(identifier, {
+        mode: 'remove', attribute: 'oauthAuthorizationDetailsType',
+        value: mine[j] });
+    }
+    const added = applications.updateApplication(identifier, {
+      mode: 'add', attribute: 'oauthAuthorizationDetailsType', value: value });
+    if (!added.ok) {
+      // PUT BACK what was there, so a refused replacement does not leave the
+      // type undeclared.
+      mine.forEach(function (old: string): void {
+        applications.updateApplication(identifier, {
+          mode: 'add', attribute: 'oauthAuthorizationDetailsType',
+          value: old });
+      });
+      log.debug("Leaving AdminActions.accessTypeAction(). Write refused.");
+      return this.refusedBy('STS-REG-0294', added);
+    }
+    log.debug("Leaving AdminActions.accessTypeAction(). Saved.");
+    return { ok: true, application: identifier, type: type,
+             definition: definition,
+             message: 'The access type "' + type + '" is ' +
+                      (mine.length ? 'replaced' : 'declared') + ' on "' +
+                      identifier + '": RFC 9396 authorization_details and ' +
+                      'GNAP access rights of it are read against this ' +
+                      'definition from the next request.' };
+  }
+
   /**
    * Performs a `/admin/applications` action: create, edit attributes, confirm
    * or discard an observed address, manage secrets, software statements and TLS
@@ -4231,7 +4404,8 @@ class AdminActions {
                       'revoke-tls-client-certificate',
                       'revoke-registration', 'generate-did-key',
                       'sign-domain-linkage', 'set-custom-claim',
-                      'remove-custom-claim', 'forget'];
+                      'remove-custom-claim', 'set-access-type',
+                      'remove-access-type', 'forget'];
     if (needsOne.indexOf(action) >= 0 && !identifier) {
       log.debug("Leaving AdminActions.applicationsAction(). No application " +
                 "named.");
@@ -4523,6 +4697,23 @@ class AdminActions {
                  : 'The ' + setId + ' claim "' + name + '" is set on "' +
                    identifier + '"; it is added to the realm\'s set and wins ' +
                    'by name.') };
+    }
+
+    // ---------------------------------------------------------------------
+    // THE ACCESS-TYPE CATALOGUE (#432 phase 4), from the Access types tab of
+    // a resource application's page. A type IS one value of
+    // `oauthAuthorizationDetailsType`, so these build that value from named
+    // fields and write it through `updateApplication()` — the door every
+    // other write of the attribute takes, which holds the grammar
+    // (`STS-REG-0112`) and the family scope. `set-access-type` replaces the
+    // entry's definition of the same type, or adds one; `remove-access-type`
+    // takes it off.
+    // ---------------------------------------------------------------------
+    if (action === 'set-access-type' || action === 'remove-access-type') {
+      const result = this.accessTypeAction(action, identifier, body);
+      log.debug("Leaving AdminActions.applicationsAction(). " + action + " " +
+                (result.ok ? 'ok' : 'refused') + ".");
+      return result;
     }
 
     if (action === 'generate-did-key') {

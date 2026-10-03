@@ -419,6 +419,30 @@ class GnapInteract {
           '</span></label></li>';
       });
     });
+    // WHAT THE ISSUANCE POLICY NARROWED BEFORE THIS PAGE WAS DRAWN (#432
+    // phase 3): the rights above are already the narrowed ones, and the
+    // person is told what was taken off and that it was not their choice.
+    const narrowed = (Array.isArray(grant.narrowed) ? grant.narrowed : [])
+      .map(function (one: any): string {
+        const before = one.before || {};
+        const after = one.after || {};
+        const taken: string[] = [];
+        ['actions', 'locations', 'datatypes', 'privileges'].forEach(
+            function (dim: string): void {
+          const was = Array.isArray(before[dim]) ? before[dim] : null;
+          const now = Array.isArray(after[dim]) ? after[dim] : [];
+          const off = was ? was.filter(function (v: string): boolean {
+            return now.indexOf(v) < 0;
+          }) : [];
+          if (off.length) {
+            taken.push(dim + ' ' + off.join(', '));
+          } else if (!was && now.length) {
+            taken.push(dim + ' limited to ' + now.join(', '));
+          }
+        });
+        return '<li><code>' + xmlEscape(String(one.type || '')) +
+          '</code>: ' + xmlEscape(taken.join('; ') || 'narrowed') + '</li>';
+      }).join('');
     const subjectAsked = grant.request.subject &&
       (grant.request.subject.subIdFormats.length ||
        grant.request.subject.assertionFormats.length);
@@ -448,6 +472,10 @@ class GnapInteract {
       '<form method="post" action="/gnap/approve/' +
       xmlEscape(grant.interaction.approvalId) + '">' +
       websecurity.field(session.id) +
+      (narrowed ? '<p class="sub">This service\'s issuance policy ' +
+        'narrowed what the application asked for before you were asked; ' +
+        'it cannot be widened here:</p><ul class="rights">' + narrowed +
+        '</ul>' : '') +
       '<ul class="rights">' + (rows || '<li>Nothing specific — this ' +
         'request ' +
         'asks only to be continued.</li>') + '</ul><div class="row"><button ' +
@@ -732,7 +760,7 @@ class GnapInteract {
           }
           return grants.decide(req, grant, session,
                                { approve: true, tokens: grant.request.tokens,
-                                 subject: false })
+                                 subject: false, remembered: true })
             .then(function (finished) {
               return self.afterDecision(res, grant, finished);
             }, function (e) {

@@ -18279,7 +18279,11 @@ class AdminConsole {
     const made = result.ok && result.application
       ? String(result.application.identifier || '') : '';
     const claimAction = String(body.action || '') === 'set-custom-claim' ||
-      String(body.action || '') === 'remove-custom-claim';
+      String(body.action || '') === 'remove-custom-claim' ||
+      // The Access types tab (#432 phase 4) comes back to itself the same
+      // way, refused or not.
+      String(body.action || '') === 'set-access-type' ||
+      String(body.action || '') === 'remove-access-type';
     // A claim action comes back to its section whether it was refused or
     // not (2026-10-01): the refusal is about one row, and the reader is
     // still working on that application.
@@ -18302,8 +18306,10 @@ class AdminConsole {
                 ? (String(body.from || '') === 'credentials'
                   ? '#credentials-did' : '#cfg-did')
                 : (claimAction
-                  ? (['saml2', 'saml11'].indexOf(String(body.set || '')) >= 0
-                    ? '#cfg-saml-attributes' : '#cfg-oauth-claims')
+                  ? (/-access-type$/.test(String(body.action || ''))
+                    ? '#tab-access-types'
+                    : (['saml2', 'saml11'].indexOf(String(body.set || '')) >= 0
+                      ? '#cfg-saml-attributes' : '#cfg-oauth-claims'))
                   : '')))))
       : '/admin/applications' + queryWith(listView, {});
     this.respondToAction(req, res, back, result);
@@ -19700,6 +19706,157 @@ class AdminConsole {
   // (`STS-REG-0150`) and the normalisation are there, and
   // `POST /admin-api/applications/add|remove` reaches the same function.
   // ---------------------------------------------------------------------------
+  // -------------------------------------------------------------------------
+  // THE ACCESS TYPES TAB (#432 phase 4): every type this application declares
+  // in the access-type catalogue — `oauthAuthorizationDetailsType`, one
+  // definition per value — with what each declares, a form that declares or
+  // replaces one from named fields, and a Remove per type. Both post to
+  // `/admin/applications` (`set-access-type`, `remove-access-type`), the
+  // actions `/admin-api/applications/{action}` takes too (rule 7).
+  // -------------------------------------------------------------------------
+  /**
+   * Draws an application's Access types tab: the catalogue entries it owns,
+   * and the forms that declare, replace and remove one.
+   *
+   * @param row - the application
+   * @param carryBack - the hidden field that returns to the list's view
+   * @returns the tab's HTML
+   */
+  applicationAccessTypesSection(row, carryBack) {
+    const { log, applications, mode } = this.deps;
+    const self = this;
+    log.debug("Entering AdminConsole.applicationAccessTypesSection().");
+    const held = [].concat((row.fields &&
+                            row.fields.oauthAuthorizationDetailsType) || [])
+      .map(function (one) { return String(one); })
+      .filter(function (one) { return one !== ''; });
+    const listed = function (values) {
+      log.debug("Entering listed().");
+      log.debug("Leaving listed().");
+      return values && values.length
+        ? values.map(function (one) {
+          return '<code>' + self.esc(one) + '</code>';
+        }).join(', ') : '<span class="state-none">any</span>';
+    };
+    const rows = held.map(function (stored) {
+      const d = applications.authorizationDetailsTypeOf(stored);
+      if (d.problem) {
+        return '<tr><td colspan="3"><span class="state-revoked">unusable' +
+          '</span> <code>' + self.esc(stored.slice(0, 200)) + '</code> ' +
+          '&mdash; ' + self.esc(d.problem) + '</td></tr>';
+      }
+      const facts = [
+        ['Actions', listed(d.actions)],
+        ['Datatypes', listed(d.datatypes)],
+        ['Privileges', listed(d.privileges)],
+        ['Locations', d.locations.length ? listed(d.locations)
+          : '<span class="state-none">this application\'s own addresses' +
+            '</span>'],
+        ['Required members', d.required.length ? listed(d.required)
+          : '<span class="state-none">none</span>'],
+        ['Bearer token', d.bearer === false ? 'refused' : (d.bearer === true
+          ? 'allowed' : '<span class="state-none">no rule of its own</span>')],
+        ['Maximum token lifetime', d.maxLifetimeS ? d.maxLifetimeS + ' s'
+          : '<span class="state-none">none</span>'],
+        ['Derivable from', d.derivableFrom.length ? listed(d.derivableFrom)
+          : '<span class="state-none">nothing</span>'],
+        ['Introspection claims', d.introspectionClaims.length
+          ? listed(d.introspectionClaims)
+          : '<span class="state-none">none</span>'],
+        ['Limits schema', d.limits ? '<code>' +
+          self.esc(JSON.stringify(d.limits)) + '</code>'
+          : '<span class="state-none">none: limits are refused</span>'],
+        ['Interaction (phase 6)', self.esc(d.interaction) +
+          (d.consentActions.length ? '; consent forced by ' +
+            listed(d.consentActions) : '')],
+        ['Authentication level (phase 6)', d.acr
+          ? '<code>' + self.esc(d.acr) + '</code>'
+          : '<span class="state-none">none</span>']
+      ].map(function (pair) {
+        return '<div><strong>' + pair[0] + ':</strong> ' + pair[1] + '</div>';
+      }).join('');
+      return '<tr><td><code>' + self.esc(d.type) + '</code>' +
+        (d.description ? '<div class="sub">' + self.esc(d.description) +
+                         '</div>' : '') + '</td><td>' + facts + '</td><td>' +
+        '<form method="post" action="/admin/applications" class="inline">' +
+        carryBack + '<input type="hidden" name="action" ' +
+        'value="remove-access-type"><input type="hidden" name="application" ' +
+        'value="' + self.esc(row.identifier) + '"><input type="hidden" ' +
+        'name="type" value="' + self.esc(d.type) + '"><button type="submit" ' +
+        'class="secondary">Remove</button></form></td></tr>';
+    }).join('');
+    const box = function (id, label, help, rowsN?) {
+      log.debug("Entering box().");
+      log.debug("Leaving box().");
+      return '<div class="formrow"><label for="at-' + id + '">' + label +
+        '</label>' + (rowsN
+          ? '<textarea id="at-' + id + '" name="' + id + '" rows="' + rowsN +
+            '" cols="48"></textarea>'
+          : '<input type="text" id="at-' + id + '" name="' + id +
+            '" size="40">') +
+        '<span class="sub">' + help + '</span></div>';
+    };
+    log.debug("Leaving AdminConsole.applicationAccessTypesSection(). " +
+              held.length + " type(s).");
+    return '<h2>Access types this resource server owns</h2>' +
+      '<p>The <strong>access-type catalogue</strong>: each type here is read ' +
+      'by RFC 9396 <code>authorization_details</code> at the OAuth endpoints ' +
+      'and by GNAP access rights alike, and a token carrying one is for this ' +
+      'application. They are this entry\'s ' +
+      '<code>oauthAuthorizationDetailsType</code>.</p>' +
+      this.note('A type no application declares is refused by RFC 9396 in ' +
+      'every mode, and by GNAP ' +
+      (mode.grantsUncataloguedAccess()
+        ? 'only in product mode &mdash; this realm is in development mode, ' +
+          'where it is granted as asked'
+        : 'in this realm, which is in product mode') +
+      ' (the issuance policy\'s <code>gnap-type-not-catalogued</code> ' +
+      'rule). Interaction, the actions that force consent and the ' +
+      'authentication level are recorded now and enforced by phase 6 of ' +
+      '#432.') +
+      '<table><tr><th>Type</th><th>What it declares</th><th></th></tr>' +
+      (rows || '<tr><td colspan="3"><span class="state-none">None.</span>' +
+       '</td></tr>') + '</table>' +
+      '<h3>Declare or replace a type</h3>' +
+      '<form method="post" action="/admin/applications">' + carryBack +
+      '<input type="hidden" name="action" value="set-access-type">' +
+      '<input type="hidden" name="application" value="' +
+      this.esc(row.identifier) + '">' +
+      box('type', 'Type', 'Required. A type of the same name is replaced.') +
+      box('description', 'Description', 'Shown on the consent and approval ' +
+          'pages.') +
+      box('actions', 'Actions', 'One per line; empty allows any.', 3) +
+      box('datatypes', 'Datatypes', 'One per line; empty allows any.', 2) +
+      box('privileges', 'Privileges', 'One per line; empty allows any.', 2) +
+      box('locations', 'Locations', 'One absolute URI per line, beside this ' +
+          'application\'s own addresses.', 2) +
+      box('required', 'Required members', 'Member names a right must carry, ' +
+          'one per line.', 2) +
+      box('bearer', 'Bearer token', '<code>false</code> refuses a bearer ' +
+          'token carrying the type; empty sets no rule of its own.') +
+      box('maxLifetimeS', 'Maximum token lifetime (s)', 'A token carrying ' +
+          'the type lives no longer.') +
+      box('derivableFrom', 'Derivable from', 'Types a right of this one may ' +
+          'be derived from at RFC 9767 section 4, one per line.', 2) +
+      box('introspectionClaims', 'Introspection claims', 'The person\'s ' +
+          'claims this resource server is told at introspection, one per ' +
+          'line.', 2) +
+      box('schema', 'Schema', 'A JSON Schema every right of the type must ' +
+          'meet.', 4) +
+      box('limits', 'Limits schema', 'A JSON Schema (a subset: type, ' +
+          'properties, required, bounds, enum, pattern, format) a ' +
+          'right\'s <code>limits</code> must meet; none refuses limits.', 4) +
+      box('interaction', 'Interaction (phase 6)', '<code>always</code>, ' +
+          '<code>default</code> or <code>never</code>.') +
+      box('consentActions', 'Actions forcing consent (phase 6)', 'One per ' +
+          'line.', 2) +
+      box('acr', 'Authentication level (phase 6)', 'One acr value.') +
+      '<div class="formrow"><button type="submit">Save the type</button>' +
+      '</div></form>' +
+      this.note('A definition that does not read is refused with the reason ' +
+      '(<code>STS-REG-0294</code>), and the type already declared stays.');
+  }
+
   /**
    * Draws an application's CORS origins (`appCorsOrigin`), one row each with
    * a Remove button that posts the value as stored, and a form to add one.
@@ -21516,6 +21673,12 @@ class AdminConsole {
                                                           'credentials')) },
       { id: 'tab-origins', label: 'Browser origins',
         html: this.applicationCorsSection(row, carryBack) },
+      // THE ACCESS-TYPE CATALOGUE (#432 phase 4): the types this
+      // application, as a resource server, owns — read by RFC 9396 and GNAP
+      // alike, so drawn for either.
+      { id: 'tab-access-types', label: 'Access types',
+        html: forFamilies(OAUTH.concat(['gnap']),
+          this.applicationAccessTypesSection(row, carryBack)) },
       { id: 'tab-signals', label: 'Shared Signals',
         html: forFamilies(['ssf'], this.applicationSignalsSection(view,
           carryBack, this.mayWrite(req))) },

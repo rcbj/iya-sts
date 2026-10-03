@@ -12212,6 +12212,98 @@ class AdminApi {
             responseDescription: 'The application\'s rows for that set ' +
                                  'after the change, in `claims`.' },
 
+          // THE ACCESS TYPES TAB (#432 phase 4): one entry of the access-type
+          // catalogue RFC 9396 and GNAP share.
+          { action: 'set-access-type',
+            operationId: 'setApplicationAccessType',
+            summary: 'Declare or replace an access type a resource ' +
+                     'application owns',
+            description: 'Writes one `oauthAuthorizationDetailsType` value ' +
+                         'from named fields — the access-type catalogue ' +
+                         'read by RFC 9396 authorization_details and by ' +
+                         'GNAP access rights alike — replacing the ' +
+                         'application\'s definition of the same `type`. ' +
+                         'A list field is an array or text with one value ' +
+                         'per line; `schema` and `limits` are JSON Schemas ' +
+                         '(`limits` a subset: type, properties, required, ' +
+                         'additionalProperties, items, enum, const, bounds, ' +
+                         'pattern, format). `bearer: false` makes a token ' +
+                         'carrying the type sender-constrained; ' +
+                         '`maxLifetimeS` caps it; `derivableFrom` names the ' +
+                         'types it may be derived from (RFC 9767 section 4); ' +
+                         '`introspectionClaims` the person\'s claims the ' +
+                         'application is told at introspection. ' +
+                         '`interaction`, `consentActions` and `acr` are ' +
+                         'enforced by phase 6 of #432. A definition that ' +
+                         'does not read is refused (`STS-REG-0294`) and the ' +
+                         'one declared stays.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                application: { type: 'string' },
+                type: { type: 'string' },
+                description: { type: 'string' },
+                locations: { type: ['array', 'string'],
+                             items: { type: 'string' } },
+                actions: { type: ['array', 'string'],
+                           items: { type: 'string' } },
+                datatypes: { type: ['array', 'string'],
+                             items: { type: 'string' } },
+                privileges: { type: ['array', 'string'],
+                              items: { type: 'string' } },
+                required: { type: ['array', 'string'],
+                            items: { type: 'string' } },
+                interaction: { type: 'string',
+                               enum: ['', 'always', 'default', 'never'] },
+                consentActions: { type: ['array', 'string'],
+                                  items: { type: 'string' } },
+                bearer: { type: ['boolean', 'string'] },
+                maxLifetimeS: { type: ['integer', 'string'] },
+                acr: { type: 'string' },
+                derivableFrom: { type: ['array', 'string'],
+                                 items: { type: 'string' } },
+                introspectionClaims: { type: ['array', 'string'],
+                                       items: { type: 'string' } },
+                schema: { type: ['object', 'string'] },
+                limits: { type: ['object', 'string'] }
+              },
+              required: ['application', 'type'],
+              examples: [{ application: 'payments-api',
+                           type: 'payment_initiation',
+                           actions: ['initiate', 'status'],
+                           bearer: false, maxLifetimeS: 300,
+                           introspectionClaims: ['email'],
+                           limits: { type: 'object',
+                                     properties: {
+                                       amount: { type: 'number',
+                                                 minimum: 0 } },
+                                     additionalProperties: false } }],
+              additionalProperties: false
+            },
+            responseDescription: 'The definition written, in `definition`.' },
+          { action: 'remove-access-type',
+            operationId: 'removeApplicationAccessType',
+            summary: 'Take an access type off a resource application',
+            description: 'Removes the application\'s definition of `type` ' +
+                         'from the access-type catalogue. A right of the ' +
+                         'type is then refused by RFC 9396 in every mode and ' +
+                         'by GNAP in product mode. Refused (`STS-REG-0295`) ' +
+                         'for a type the application does not declare.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                application: { type: 'string' },
+                type: { type: 'string' }
+              },
+              required: ['application', 'type'],
+              examples: [{ application: 'payments-api',
+                           type: 'payment_initiation' }],
+              additionalProperties: false
+            },
+            responseDescription: 'The application and the type removed.' },
+
           // THE CREDENTIALS SECTION'S MUTUAL TLS CONTROLS (RFC 8705,
           // 2026-09-13).
           { action: 'issue-tls-client-certificate',
