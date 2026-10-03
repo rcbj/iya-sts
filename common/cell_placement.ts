@@ -184,6 +184,12 @@ const ROWS: Row[] = [
          'where the browser is pinned' },
   { prefix: '/oauth2/jwks', strategy: 'local',
     why: 'the realm keys are the global tier\'s' },
+  // #432: the access-token status list and its aggregation. Its rows and the
+  // revocation register its bits are computed from are both global-tier, so
+  // every cell publishes the same list.
+  { prefix: '/status-lists', strategy: 'local',
+    why: 'the access-token status list: its rows and the revocation ' +
+         'register are the global tier\'s' },
   { prefix: '/oauth2/check_session', strategy: 'local',
     why: 'the OP iframe answers from the browser state it is given' },
   { prefix: '/oauth2/autopost.js', strategy: 'local', why: 'a static script' },
@@ -314,6 +320,9 @@ const ROWS: Row[] = [
     why: 'a grant request is placed by the instance, token or person it ' +
          'names — read from the body — and served where it arrives when it ' +
          'names none' },
+  // #432: the revoked biscuits' identifiers are a global-tier store.
+  { prefix: '/gnap/biscuit', strategy: 'local',
+    why: 'the revoked-biscuit list is the global tier\'s' },
   { prefix: '/gnap/keys', strategy: 'local',
     why: 'the key set is the global tier\'s' },
   { prefix: '/gnap/zcap', strategy: 'local',
