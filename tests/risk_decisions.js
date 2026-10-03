@@ -191,6 +191,15 @@ function childMain() {
          'exchange-widens-scope,' +
          'scope-not-authorized,consent-outstanding,scope-kept,' +
          'detail-type-not-registered,detail-type-not-published,detail-kept,' +
+         // The per-right GNAP rules (#432 phases 3, 5 and 6): today's
+         // checks, the catalogue's, ownership, interaction and acr.
+         'gnap-bearer-refused,gnap-protected-undeclared,' +
+         'gnap-right-not-listed,gnap-reference-unknown,' +
+         'gnap-type-not-catalogued,gnap-type-bearer-refused,' +
+         'gnap-owner-unresolved,gnap-owner-mismatch,' +
+         'gnap-type-interaction-never,gnap-type-interaction-always,' +
+         'gnap-type-consent-action,gnap-type-acr,gnap-type-lifetime,' +
+         'gnap-right-kept,' +
          'transfer-hold-relayed,transfer-hold-kept,' +
          'transfer-serve-geofenced,transfer-serve-kept,' +
          'transfer-release-withheld,transfer-release-kept,' +
@@ -214,14 +223,15 @@ function childMain() {
          ruleIds.join(',') + ' ' + (built.policy || {}).combiningAlgId);
     const rolesOnly = templates.build('role-issuance',
       { decideRisk: 'no', decideDevices: 'no', decideProtocols: 'no',
-        decideScopes: 'no', decideTransfers: 'no', decideExchanges: 'no' },
+        decideScopes: 'no', decideTransfers: 'no', decideExchanges: 'no',
+        decideGnapRights: 'no' },
       { name: 'role-issuance' });
     note(rolesOnly.ok && rolesOnly.policy.rules.length === 1 &&
          /deny-unless-permit$/.test(rolesOnly.policy.combiningAlgId),
          'A2. decideRisk: no (and decideDevices, decideProtocols, ' +
          'decideScopes and ' +
-         'decideTransfers and decideExchanges: no, #164, #304, #98 and ' +
-         '#186) builds the ' +
+         'decideTransfers, decideExchanges and decideGnapRights: no, #164, ' +
+         '#304, #98, #186 and #432) builds the ' +
          'roles-only document it was');
     const request = rolePep.buildRequest({
       application: CLIENT, kind: 'start-session',
@@ -524,9 +534,10 @@ function childMain() {
     note(unprotectedPolicy.ok && plain.decision === 'Deny' &&
          // The three risk rules, the role rule, #164's two device rules,
          // the fourteen scope and detail rules of #304, #305 and #186, the
-         // six transfer rules of #98, the protocol-declaration rule, and
-         // the twenty exchange rules of #186.
-         unprotectedPolicy.policy.rules.length === 47,
+         // six transfer rules of #98, the protocol-declaration rule, the
+         // twenty exchange rules of #186, and the fourteen per-right GNAP
+         // rules of #432.
+         unprotectedPolicy.policy.rules.length === 61,
          'I5. neverLockOut none puts the console under the three rules, ' +
          'and HIGH refuses it', plain.decision);
 
