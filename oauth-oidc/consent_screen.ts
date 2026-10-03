@@ -106,6 +106,9 @@ import validation = require('../common/validation');
 // it could move no route from anywhere; and that module does not require this
 // one, so there is no cycle.
 import authn = require('../authn/authn');
+// #432 phase 5: a detail's limits as controls the person can lower — the
+// same ones GNAP's approval page draws. A static utility class, a leaf.
+import LimitsForm = require('../common/limits_form');
 // RFC 9396: what an authorization_details row says, and the one-time Allow.
 // A library that registers nothing, so requiring it here moves no route.
 import authorizationDetails = require('./authorization_details');
@@ -172,6 +175,8 @@ const pending = realms.map({ persist: 'consent_screen.pending',
 // than merged into CARD_CSS, so that a change here cannot alter the sign-in
 // screen — which four tests and a person's muscle memory depend on.
 const CONSENT_CSS =
+  // #432 phase 5: a detail's limit controls, as GNAP's approval page draws.
+  'div.limits{margin:6px 0 0;font-size:.9em}div.limits div{margin:3px 0}' +
   '.card{width:460px}p.app{font-size:.9em;margin:0 0 ' +
   '14px}ul.scopes{list-style:none;padding:0;margin:0 0 8px}ul.scopes ' +
   'li{padding:8px 10px;margin:6px 0;border:1px solid ' +
@@ -336,6 +341,11 @@ class ConsentScreen {
       authorizationDetails: Array.isArray(info.authorizationDetails)
         ? info.authorizationDetails : [],
       detailsDigest: String(info.detailsDigest || ''),
+      // The details THEMSELVES (#432 phase 5), so a detail's limits can be
+      // drawn as controls and read back lowered; `authorizationDetails`
+      // above is how each is described.
+      rawAuthorizationDetails: Array.isArray(info.rawAuthorizationDetails)
+        ? info.rawAuthorizationDetails : [],
       protocol: String(info.protocol || 'OAuth 2.0 / OIDC'),
       expires: Date.now() + this.consentTtlMs()
     };
@@ -528,7 +538,7 @@ class ConsentScreen {
       '<form method="post" action="' + CONSENT_PATH + '">' +
       '<input type="hidden" name="consent_id" value="' +
       xmlEscape(record.id) +
-      '"><div ' +
+      '">' + this.limitsBlock(record) + '<div ' +
       'class="row"><button type="submit" id="consent-allow" name="action" ' +
       'value="allow">Allow</button><button type="submit" id="consent-deny" ' +
       'name="action" value="deny" ' +
@@ -551,6 +561,67 @@ class ConsentScreen {
       '</div></div></body></html>\n';
     log.debug("Leaving ConsentScreen.consentPage().");
     return page;
+  }
+
+  // -------------------------------------------------------------------------
+  // #432 PHASE 5: A DETAIL'S LIMITS, WHICH THE PERSON MAY LOWER. RFC 9396
+  // lets a detail carry `limits` (an amount, a count, an interval …), and
+  // the person agreeing to it may agree to LESS — as on GNAP's approval page,
+  // with the same controls (`common/limits_form.ts`): each detail carrying
+  // limits gets them inside the form, `allow` reads them back, and only a
+  // lower value is accepted. The details as lowered are recorded with the
+  // Allow and are what the authorization endpoint's next pass issues.
+  // -------------------------------------------------------------------------
+  private limitsBlock(record: Json): string {
+    const { log, xmlEscape } = this.deps;
+    log.debug("Entering ConsentScreen.limitsBlock().");
+    const raw = Array.isArray(record.rawAuthorizationDetails)
+      ? record.rawAuthorizationDetails : [];
+    const rows = raw.map(function (detail: Json, r: number): string {
+      const controls = LimitsForm.controls(detail, 0, r, xmlEscape);
+      return controls ? '<li class="detail"><code>' +
+        xmlEscape(String(detail.type || '')) + '</code>' + controls +
+        '</li>' : '';
+    }).join('');
+    log.debug("Leaving ConsentScreen.limitsBlock().");
+    return rows ? '<ul class="scopes">' + rows + '</ul>' : '';
+  }
+
+  // The details as the person lowered their limits: `{ ok, lowered }`
+  // (lowered null when nothing changed), or `{ ok: false, code, why }`.
+  private loweredDetails(req: Req, body: Json, record: Json): Json {
+    const { log, authorizationDetails } = this.deps;
+    log.debug("Entering ConsentScreen.loweredDetails().");
+    const raw = Array.isArray(record.rawAuthorizationDetails)
+      ? record.rawAuthorizationDetails : [];
+    if (!raw.length) {
+      log.debug("Leaving ConsentScreen.loweredDetails(). No details.");
+      return { ok: true, lowered: null };
+    }
+    const read = LimitsForm.lowered([{ access: raw }], [{ access: raw }], {
+      value: function (name: string): string | undefined {
+        return typeof body[name] === 'string' ? body[name] : undefined;
+      },
+      values: function (name: string): string[] {
+        return helpers.bodyValues(req, body, name);
+      }
+    }, function (tokens: Json[]): Json {
+      // The catalogue's own reading (RFC 9396 and GNAP alike).
+      const detail = tokens[0].access[0];
+      const entry = authorizationDetails.typeOf(detail.type);
+      const found = entry ? authorizationDetails.conformance(detail, entry,
+        'the lowered authorization detail') : { kind: '' };
+      return found.kind ? { why: found.problem } : null;
+    });
+    if (!read.ok) {
+      log.debug("Leaving ConsentScreen.loweredDetails(). " + read.code);
+      return { ok: false, code: read.code === 'STS-GNAP-0867'
+                 ? 'STS-OAUTH-0919' : 'STS-OAUTH-0918', why: read.why };
+    }
+    const lowered = read.tokens[0].access;
+    const changed = JSON.stringify(lowered) !== JSON.stringify(raw);
+    log.debug("Leaving ConsentScreen.loweredDetails(). changed=" + changed);
+    return { ok: true, lowered: changed ? lowered : null };
   }
 
   private sendConsentPage(res: Res, html: string): void {
@@ -659,7 +730,10 @@ class ConsentScreen {
     // -----------------------------------------------------------------------
     app.post(CONSENT_PATH, function (req, res) {
       log.debug("Entering the consent endpoint.");
-      const posted = validation.checkParsed(parseBody(req), 'body',
+      // A detail's limit controls (#432 phase 5) are not this form's own
+      // fields: `loweredDetails()` reads them off the raw body.
+      const raw = parseBody(req);
+      const posted = validation.checkParsed(LimitsForm.strip(raw), 'body',
                                             CONSENT_FORM);
       if (!posted.ok) {
         log.debug("Leaving the consent endpoint. The request is malformed.");
@@ -689,6 +763,19 @@ class ConsentScreen {
             : 'This consent was asked of "' + record.username + '" and ' +
               'this browser is signed in as "' + who.who + '". Nothing was ' +
               'recorded.');
+      }
+      // THE LIMITS, before the record is spent: a value raised or no longer
+      // meeting its type is refused, and the form can be answered again.
+      let lowered: Json = null;
+      if (String(body.action || '') === 'allow') {
+        const read = self.loweredDetails(req, raw, record);
+        if (!read.ok) {
+          log.debug("Leaving the consent endpoint. The limits.");
+          errorCodes.mark(res, read.code === 'STS-OAUTH-0919'
+            ? 'STS-OAUTH-0919' : 'STS-OAUTH-0918');
+          return oauthError(res, 400, 'invalid_request', read.why);
+        }
+        lowered = read.lowered;
       }
       pending.delete(record.id);
 
@@ -720,7 +807,7 @@ class ConsentScreen {
       // scopes are written down as they always were; the details never are.
       if (record.detailsDigest) {
         authorizationDetails.noteConsented(record.username, record.clientId,
-                                           record.detailsDigest);
+                                           record.detailsDigest, lowered);
       }
       const written = consent.record(record.username, record.clientId,
         record.scopes.map(function (one) {

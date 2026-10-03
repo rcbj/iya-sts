@@ -97,7 +97,7 @@ import monitor = require('./gnap_monitor');
 import gnapCells = require('./gnap_cells');
 // #432 phase 5: what a limit means, and the catalogue a lowered one must
 // still meet.
-import GnapLimitsForm = require('./gnap_limits_form');
+import LimitsForm = require('../common/limits_form');
 import gnapRights = require('./gnap_rights');
 // #432 phase 6: the step-up an approval needs, and approval by an absent
 // resource owner. A library.
@@ -418,13 +418,13 @@ class GnapInteract {
   // resource owner authorizes access to their resource.
   // =========================================================================
 
-  // The controls of one right's limits (`gnap_limits_form.ts`, shared with
+  // The controls of one right's limits (`common/limits_form.ts`, shared with
   // the portal's absent-owner approvals).
   private limitsControls(right: any, t: number, r: number): string {
     const { log, xmlEscape } = this.deps;
     log.debug("Entering GnapInteract.limitsControls().");
     log.debug("Leaving GnapInteract.limitsControls().");
-    return GnapLimitsForm.controls(right, t, r, xmlEscape);
+    return LimitsForm.controls(right, t, r, xmlEscape);
   }
 
   // The ticked rights with the limits the person sent back: `{ ok: true,
@@ -434,7 +434,7 @@ class GnapInteract {
     const { log, bodyValues, rights } = this.deps;
     log.debug("Entering GnapInteract.loweredTokens().");
     log.debug("Leaving GnapInteract.loweredTokens().");
-    return GnapLimitsForm.lowered(grant.request.tokens, tokens, {
+    return LimitsForm.lowered(grant.request.tokens, tokens, {
       value: function (name: string): string | undefined {
         return typeof body[name] === 'string' ? body[name] : undefined;
       },
@@ -450,7 +450,7 @@ class GnapInteract {
     const { log } = this.deps;
     log.debug("Entering GnapInteract.withoutLimitFields().");
     log.debug("Leaving GnapInteract.withoutLimitFields().");
-    return GnapLimitsForm.strip(body);
+    return LimitsForm.strip(body);
   }
 
   // -------------------------------------------------------------------------

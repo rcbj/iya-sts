@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4068** of them, in **41** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4071** of them, in **41** subsystems.
 
 ## Where a code appears
 
@@ -64,7 +64,7 @@ is an ordinary outcome.
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 26
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 47
 * [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 255
-* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 686
+* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 689
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 97
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 25
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 16
@@ -2039,6 +2039,9 @@ Raised from: oauth-oidc/, common/person_assertions.js.
 | `STS-OAUTH-0877` | An authorization_details entry's limits did not meet the limits schema its type declares (#432). | 400 invalid_authorization_details (RFC 9396 section 5) |
 | `STS-OAUTH-0878` | An access token would carry authorization_details of a type the access-type catalogue declares bearer: false, and the request presented neither a DPoP proof nor a client certificate (#432). | 400 invalid_authorization_details (RFC 9396 section 5) |
 | `STS-OAUTH-0916` | An authorization detail's limits are not ones this service can read: an amount, count, receiver, repeating interval or window that common/access_limits.ts gives no meaning (#432 phase 5). | 400 invalid_authorization_details (RFC 9396 section 5) |
+| `STS-OAUTH-0917` | The authorization_details an Allow on the consent screen lowered would raise a limit, or are not the details the request carries; nothing was issued (#432 phase 5). | RFC 9396 section 5 (invalid_authorization_details) |
+| `STS-OAUTH-0918` | The consent screen was sent limits that raise an authorization detail's limits rather than lower them, or that cannot be read (#432 phase 5). | HTTP 400 invalid_request (the consent form) |
+| `STS-OAUTH-0919` | Limits lowered on the consent screen no longer meet the authorization detail type's limits schema (#432 phase 5). | HTTP 400 invalid_request (the consent form) |
 | `STS-OAUTH-0936` | An authorization request's authorization_details carry a type whose catalogue entry requires an authentication level, and the session — after one sign-in for it — does not meet it (#432 phase 6, RFC 9470). | RFC 9470 section 5 (unmet_authentication_requirements) |
 | `STS-OAUTH-0937` | A token request would issue authorization_details of a type whose catalogue entry requires an authentication level the grant's authentication does not meet — or a grant with no person behind it (#432 phase 6). | RFC 9396 (invalid_authorization_details, HTTP 400) |
 

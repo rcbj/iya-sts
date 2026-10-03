@@ -3,24 +3,28 @@
 
 'use strict';
 //
-// File: gnap_limits_form.ts
+// File: limits_form.ts
 //
 // ===========================================================================
 // A RIGHT'S LIMITS AS A FORM A PERSON CAN LOWER (#432 phase 5).
 //
-// Two pages ask a resource owner to approve GNAP rights: the approval page
-// (`gnap_interact.ts`) for the person at the browser, and `/portal/ciba`
-// (`portal/portal_ciba.ts`, through `gnap_approval.ts`) for an owner who was
-// not there when the client asked (#432 phase 6). Both must draw a right's
-// limits the same way and accept back only LOWER ones, so the drawing and
-// the reading are here, once:
+// Three pages ask a person to approve access that may carry limits: GNAP's
+// approval page (`gnap/gnap_interact.ts`) for the person at the browser,
+// `/portal/ciba` (`portal/portal_ciba.ts`, through `gnap/gnap_approval.ts`)
+// for a GNAP resource owner who was not there when the client asked (#432
+// phase 6), and OAuth's consent screen (`oauth-oidc/consent_screen.ts`) for
+// an RFC 9396 detail. All three must draw a limit the same way and accept
+// back only LOWER ones, so the drawing and the reading are here, once — in
+// `common/`, because two protocol directories read it (a GNAP right and an
+// RFC 9396 detail share the `limits` member and its vocabulary):
 //
 //   * `controls()` draws each member with a meaning (`common/
 //     access_limits.ts`) as a control holding the requested value, under
 //     its right; a member this service gives no meaning is shown and not
 //     editable; the receiver boxes carry a marker, so a form sent back with
 //     every box unticked is told from one that never showed them.
-//   * `lowered()` reads the posted values back onto the ticked rights: an
+//   * `lowered()` reads the posted values back onto the ticked rights (a
+//     GNAP token's `access`, or the one list of a request's details): an
 //     unchanged value is kept byte for byte, a changed one must be LOWER
 //     (`AccessLimits.raised()`: STS-GNAP-0866) and the lowered limits must
 //     still meet the type's limits schema (0867).
@@ -31,8 +35,8 @@
 // (there is none on either page) every control is plain markup.
 // ===========================================================================
 
-import helpers = require('../common/helpers');
-import AccessLimits = require('../common/access_limits');
+import helpers = require('./helpers');
+import AccessLimits = require('./access_limits');
 
 type Json = any;
 
@@ -44,10 +48,11 @@ interface PostedForm {
 }
 
 /**
- * A GNAP right's limits as a form a person can lower, shared by the approval
- * page and the portal's absent-owner approvals (#432 phase 5).
+ * A right's limits as a form a person can lower, shared by GNAP's approval
+ * page, the portal's absent-owner approvals and OAuth's consent screen (#432
+ * phase 5).
  */
-class GnapLimitsForm {
+class LimitsForm {
   /**
    * The name of one limit control of right `r` of token `t`.
    *
@@ -57,8 +62,8 @@ class GnapLimitsForm {
    * @returns the field name
    */
   static field(t: number, r: number, member: string): string {
-    helpers.log.debug("Entering GnapLimitsForm.field().");
-    helpers.log.debug("Leaving GnapLimitsForm.field().");
+    helpers.log.debug("Entering LimitsForm.field().");
+    helpers.log.debug("Leaving LimitsForm.field().");
     return 'lim_t' + t + 'r' + r + '_' + member;
   }
 
@@ -74,17 +79,17 @@ class GnapLimitsForm {
   static controls(right: Json, t: number, r: number,
                   esc: (text: string) => string): string {
     const log = helpers.log;
-    log.debug("Entering GnapLimitsForm.controls().");
+    log.debug("Entering LimitsForm.controls().");
     if (!right || typeof right !== 'object' || !right.limits ||
         typeof right.limits !== 'object') {
-      log.debug("Leaving GnapLimitsForm.controls(). None.");
+      log.debug("Leaving LimitsForm.controls(). None.");
       return '';
     }
     const limits = right.limits;
     const name = function (member: string): string {
       log.debug("Entering name().");
       log.debug("Leaving name().");
-      return GnapLimitsForm.field(t, r, member);
+      return LimitsForm.field(t, r, member);
     };
     const input = function (member: string, value: string,
                             mode: string): string {
@@ -128,7 +133,7 @@ class GnapLimitsForm {
       }
       rows.push('<div>' + control + '</div>');
     });
-    log.debug("Leaving GnapLimitsForm.controls().");
+    log.debug("Leaving LimitsForm.controls().");
     return '<div class="limits"><span>Limits — you may lower any of them, ' +
       'never raise one:</span>' + rows.join('') + '</div>';
   }
@@ -140,14 +145,14 @@ class GnapLimitsForm {
    * @returns a copy without them
    */
   static strip(body: Json): Json {
-    helpers.log.debug("Entering GnapLimitsForm.strip().");
+    helpers.log.debug("Entering LimitsForm.strip().");
     const out: Json = {};
     Object.keys(body || {}).forEach(function (key: string): void {
       if (!/^lim_t\d+r\d+_/.test(key)) {
         out[key] = body[key];
       }
     });
-    helpers.log.debug("Leaving GnapLimitsForm.strip().");
+    helpers.log.debug("Leaving LimitsForm.strip().");
     return out;
   }
 
@@ -163,7 +168,7 @@ class GnapLimitsForm {
   static lowered(asked: Json[], tokens: Json[], posted: PostedForm,
                  conformanceRefusal: (tokens: Json[]) => Json): Json {
     const log = helpers.log;
-    log.debug("Entering GnapLimitsForm.lowered().");
+    log.debug("Entering LimitsForm.lowered().");
     const out: Json[] = [];
     for (let t = 0; t < tokens.length; t++) {
       const from = (asked && asked[t]) || { access: [] };
@@ -180,7 +185,7 @@ class GnapLimitsForm {
         const proposed: Json = JSON.parse(JSON.stringify(was));
         const value = function (member: string): string | undefined {
           log.debug("Entering value().");
-          const got = posted.value(GnapLimitsForm.field(t, r, member));
+          const got = posted.value(LimitsForm.field(t, r, member));
           log.debug("Leaving value().");
           return typeof got === 'string' ? got.trim() : undefined;
         };
@@ -198,14 +203,14 @@ class GnapLimitsForm {
             ? Number(value('count')) : value('count');
         }
         if (was.receiver !== undefined && value('receiverShown') === '1') {
-          const kept = posted.values(GnapLimitsForm.field(t, r, 'receiver'));
+          const kept = posted.values(LimitsForm.field(t, r, 'receiver'));
           const before = AccessLimits.receiversOf(was) || [];
           if (kept.length !== before.length ||
               kept.some(function (one: string): boolean {
                 return before.indexOf(one) < 0;
               })) {
             if (!kept.length) {
-              log.debug("Leaving GnapLimitsForm.lowered(). No receiver.");
+              log.debug("Leaving LimitsForm.lowered(). No receiver.");
               return { ok: false, code: 'STS-GNAP-0866', why: 'Every ' +
                 'receiver of "' + right.type + '" was unticked; untick the ' +
                 'right itself to leave it out.' };
@@ -234,27 +239,27 @@ class GnapLimitsForm {
         }
         const raised = AccessLimits.raised(was, proposed);
         if (raised) {
-          log.debug("Leaving GnapLimitsForm.lowered(). Raised.");
+          log.debug("Leaving LimitsForm.lowered(). Raised.");
           return { ok: false, code: 'STS-GNAP-0866', why: 'The limits of "' +
             right.type + '" may only be lowered here: ' + raised + '.' };
         }
         const next = Object.assign({}, right, { limits: proposed });
         const malformed = conformanceRefusal([{ access: [next] }]);
         if (malformed) {
-          log.debug("Leaving GnapLimitsForm.lowered(). The schema.");
+          log.debug("Leaving LimitsForm.lowered(). The schema.");
           return { ok: false, code: 'STS-GNAP-0867', why: malformed.why };
         }
         access.push(next);
       }
       out.push(Object.assign({}, tokens[t], { access: access }));
     }
-    log.debug("Leaving GnapLimitsForm.lowered().");
+    log.debug("Leaving LimitsForm.lowered().");
     return { ok: true, tokens: out };
   }
 }
 
 /**
- * A GNAP right's limits as a form a person can lower (#432 phase 5). A
- * static utility class.
+ * A right's limits as a form a person can lower (#432 phase 5). A static
+ * utility class.
  */
-export = GnapLimitsForm;
+export = LimitsForm;

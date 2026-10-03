@@ -36,6 +36,16 @@
 //      pool receives — and a store that cannot be asked refuses (0875).
 //   I. INTROSPECTION'S grant_id is reserved: no type may declare it as a
 //      claim.
+//   J. RFC 9396 LIMITS ARE ENFORCEABLE TOO: `carriesLimits()`,
+//      `limitsRaisedBy()`, an Allow recorded with the details as the person
+//      lowered them and spent once (`consumeConsent()`); `tokenSet()` puts a
+//      `grant_id` on an access token whose details carry limits — none on
+//      one whose details carry none — keeps it inside the refresh token, and
+//      hands the SAME one to the refreshed token; Grant Management's
+//      `grant_id` is used where there is one; the consent record keeps the
+//      details themselves (the screen's controls, a lowered Allow and a
+//      raised one refused are `tests/vendored/sts_gnap_catalogue.js`'s
+//      section 8, over HTTP).
 //
 // IN PROCESS, in a throwaway realm. The over-HTTP half is
 // `tests/vendored/sts_gnap_limits.js`.
@@ -123,6 +133,7 @@ async function inRealm(t) {
   await totals(t);
   await sharedStore(t);
   reserved(t);
+  await rar(t);
   log.debug("Leaving inRealm().");
 }
 
@@ -681,6 +692,92 @@ function reserved(t) {
           'I1. a type may not declare grant_id as an introspection claim',
           d.problem);
   log.debug("Leaving reserved().");
+}
+
+// ---------------------------------------------------------------- J
+async function rar(t) {
+  log.debug("Entering rar().");
+  t.log.info('=== J. RFC 9396 limits: the grant id and lowering ===');
+  const oauth2 = require('../oauth-oidc/oauth2');
+  const sealed = require('../oauth-oidc/refresh_token_crypto');
+  const helpers = require('../common/helpers');
+  const BASE = 'https://sts.lo.test';
+  const limited = [{ type: 'lo-acct', actions: ['spend'],
+                     limits: { amount: '50', currency: 'EUR', count: 3 } }];
+  const plain = [{ type: 'lo-acct', actions: ['read'] }];
+  t.check(catalogue.carriesLimits(limited) && !catalogue.carriesLimits(plain),
+          'J1. carriesLimits() tells a detail with limits from one without');
+  const lowered = [{ type: 'lo-acct', actions: ['spend'],
+                     limits: { amount: '20', currency: 'EUR', count: 3 } }];
+  t.check(catalogue.limitsRaisedBy(limited, lowered) === '' &&
+          /amount/.test(catalogue.limitsRaisedBy(limited, [{ type: 'lo-acct',
+            actions: ['spend'], limits: { amount: '60', currency: 'EUR',
+                                          count: 3 } }])) &&
+          /changed/.test(catalogue.limitsRaisedBy(limited, [{
+            type: 'lo-acct', actions: ['spend', 'read'],
+            limits: lowered[0].limits }])) &&
+          /not the details/.test(catalogue.limitsRaisedBy(limited, [])),
+          'J2. limitsRaisedBy(): lower limits only — a raise, another ' +
+          'member changed and a missing detail are named');
+  const digest = catalogue.digestOf(limited);
+  catalogue.noteConsented('lo-alice', 'lo-client', digest, lowered);
+  const spent = catalogue.consumeConsent('lo-alice', 'lo-client', digest);
+  t.check(spent && JSON.stringify(spent.lowered) === JSON.stringify(lowered) &&
+          catalogue.consumeConsent('lo-alice', 'lo-client', digest) === null,
+          'J3. an Allow carries the details as lowered, and is spent once',
+          JSON.stringify(spent));
+  const claimsOf = function (jwt) {
+    log.debug("Entering claimsOf().");
+    log.debug("Leaving claimsOf().");
+    return JSON.parse(Buffer.from(String(jwt).split('.')[1], 'base64url')
+                            .toString('utf8'));
+  };
+  const issue = function (extra) {
+    log.debug("Entering issue().");
+    log.debug("Leaving issue().");
+    return oauth2.tokenSet(BASE, Object.assign({
+      client_id: 'lo-client', grant: 'authorization_code', scope: '',
+      sub: 'lo-alice', username: 'lo-alice',
+      user: { username: 'lo-alice', sub: 'lo-alice' } }, extra));
+  };
+  const first = await issue({ authorization_details: limited });
+  const firstGrant = claimsOf(first.access_token).grant_id;
+  t.check(typeof firstGrant === 'string' && firstGrant.length > 8 &&
+          first.grant_id === undefined,
+          'J4. an access token whose details carry limits has a grant_id ' +
+          '(and the response no Grant Management member)',
+          JSON.stringify(claimsOf(first.access_token)));
+  const inner = helpers.verifyOwnJws(sealed.open(first.refresh_token));
+  t.check(inner && inner.limits_grant === firstGrant,
+          'J5. the refresh token keeps it, inside its JWE',
+          JSON.stringify(inner && inner.limits_grant));
+  const renewed = await issue({ grant: 'refresh_token',
+                                authorization_details: limited,
+                                limits_grant: inner.limits_grant });
+  t.check(claimsOf(renewed.access_token).grant_id === firstGrant,
+          'J6. the refreshed token carries the SAME grant_id: one budget');
+  const other = await issue({ authorization_details: limited });
+  t.check(claimsOf(other.access_token).grant_id !== firstGrant,
+          'J7. another authorization is another grant');
+  const none = await issue({ authorization_details: plain });
+  t.check(claimsOf(none.access_token).grant_id === undefined,
+          'J8. details without limits carry no grant_id');
+  const managed = await issue({ authorization_details: limited,
+                                grant_id: 'gm-lo-1', grant_gen: 1 });
+  t.check(claimsOf(managed.access_token).grant_id === 'gm-lo-1',
+          'J9. Grant Management\'s grant_id is the one used where there is one');
+  // The consent screen.
+  const screen = require('../oauth-oidc/consent_screen');
+  const path = screen.beginConsent({
+    returnTo: '/oauth2/authorize?x=1', username: 'lo-alice',
+    clientId: 'lo-client', scopes: [],
+    authorizationDetails: catalogue.describe(limited),
+    rawAuthorizationDetails: limited, detailsDigest: digest });
+  const id = decodeURIComponent(path.split('consent=')[1]);
+  const record = screen.pendingFor(id);
+  t.check(!!record && record.rawAuthorizationDetails.length === 1,
+          'J10. the consent record keeps the details themselves');
+  log.debug("Leaving rar().");
 }
 
 module.exports = {

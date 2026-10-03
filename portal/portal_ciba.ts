@@ -53,7 +53,7 @@ import ciba = require('../oauth-oidc/ciba');
 import stepUp = require('../oauth-oidc/step_up');
 // #432 phase 5: a waiting right's limits, drawn and read back as the approval
 // page does. A static utility class that loads nothing of GNAP's engine.
-import GnapLimitsForm = require('../gnap/gnap_limits_form');
+import LimitsForm = require('../common/limits_form');
 
 // GNAP's approval library, LAZILY (#432 phase 6): the portal is built at
 // 8a and GNAP at 23d, and requiring it here would load GNAP's stores and
@@ -263,7 +263,7 @@ class PortalCibaPage {
     // A GNAP request's limit controls (#432 phase 5) are not this form's:
     // `postGnap()` reads them off the raw body.
     const posted = ctx.validation.checkParsed(
-      GnapLimitsForm.strip(ctx.parseBody(req)), 'body', this.FORM);
+      LimitsForm.strip(ctx.parseBody(req)), 'body', this.FORM);
     if (!posted.ok) {
       ctx.errorCodes.mark(res, ctx.innerCode(posted) || 'STS-PORTAL-0001');
       log.debug('Leaving POST ' + PATH + '. Malformed.');
@@ -385,7 +385,7 @@ class PortalCibaPage {
           rows += '<li><label><input type="checkbox" name="right" ' +
             'value="t' + t + 'r' + r + '" checked> ' +
             self.gnapRight(right) + '</label>' +
-            GnapLimitsForm.controls(right, t, r, esc) + '</li>';
+            LimitsForm.controls(right, t, r, esc) + '</li>';
         });
       });
       if (one.subject) {

@@ -52,7 +52,6 @@ Route-free libraries, each require-able from an in-process test:
 | `gnap_delegation.ts` | who may act for whom (#432 phase 1): impersonation by assertion and RFC 9767 derivation asked of #186's delegation policy, recorded in the delegation register; the subset rule and its one extension point; the actor chain and its cap — see *Delegation* below |
 | `gnap_rights.ts` | each access right against the access-type catalogue and the issuance policy (#432 phases 3 and 4): well-formedness, the `issue-gnap-right` facts and verdicts, narrowing, "derivable from", the introspection view — see *Each right a policy question* below |
 | `gnap_ownership.ts` | who owns the resource a right's `identifier` names (#432 phase 5): a registered resource set's `resource_owners`, or the resource server's `gnapOwnerLookupUri`, fetched under the outbound policy and cached briefly; the `issue-gnap-right` owner facts — see *Ownership and limits* below |
-| `gnap_limits_form.ts` | a right's limits as a form a person can lower, drawn and read back the same way by the approval page and by `/portal/ciba`'s absent-owner approvals (#432 phase 5) |
 | `gnap_spend.ts` | the demonstration resource server's running totals of a right's limits (#432 phase 5): checked, spent atomically across the cluster, reset per interval, refunded; the `gnap.spend-purge` job |
 | `gnap_approval.ts` | who approves and how strongly signed in (#432 phase 6): the acr an approval needs and what the sign-in screen must demand, and approval by an absent resource owner on `/portal/ciba` — see *Phase 6* below |
 | `gnap_grants.ts` | the engine: identifying a caller, creating, continuing, modifying and revoking grants, issuing, rotating and deriving tokens |
@@ -325,7 +324,7 @@ argues the mechanism; what a reader needs here:
   absent owner answering on `/portal/ciba` (phase 6, `gnap_approval.ts`'s
   `answer()`) is asked the same question, after the step-up and before the
   answer is claimed, and lowers limits there with the same controls
-  (`gnap_limits_form.ts`).
+  (`common/limits_form.ts`).
   A client that skips interaction with a verified assertion, a derivation
   and every release meet the same rule at the issue stage, where the right
   is DROPPED (audited). At creation, before anybody is known, nothing is

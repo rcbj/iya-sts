@@ -8606,6 +8606,20 @@ const CODES = [
       'can read: an amount, count, receiver, repeating interval or window ' +
       'that common/access_limits.ts gives no meaning (#432 phase 5).',
     spec: '400 invalid_authorization_details (RFC 9396 section 5)' },
+  { code: 'STS-OAUTH-0917',
+    summary: 'The authorization_details an Allow on the consent screen ' +
+      'lowered would raise a limit, or are not the details the request ' +
+      'carries; nothing was issued (#432 phase 5).',
+    spec: 'RFC 9396 section 5 (invalid_authorization_details)' },
+  { code: 'STS-OAUTH-0918',
+    summary: 'The consent screen was sent limits that raise an ' +
+      'authorization detail\'s limits rather than lower them, or that ' +
+      'cannot be read (#432 phase 5).',
+    spec: 'HTTP 400 invalid_request (the consent form)' },
+  { code: 'STS-OAUTH-0919',
+    summary: 'Limits lowered on the consent screen no longer meet the ' +
+      'authorization detail type\'s limits schema (#432 phase 5).',
+    spec: 'HTTP 400 invalid_request (the consent form)' },
   { code: 'STS-OAUTH-0936',
     summary: 'An authorization request\'s authorization_details carry a ' +
       'type whose catalogue entry requires an authentication level, and the ' +

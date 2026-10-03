@@ -1386,6 +1386,22 @@ JSON definition may also say, and each is enforced here:
 | `maxLifetimeS` | the access token lives no longer than this |
 | `introspectionClaims` | the person's claims the declaring resource server is told at `/oauth2/introspect` (as top-level members), when it authenticates there; it then sees only the details of its own types |
 
+**Limits on a detail.** A detail of a type that declares a `limits` schema
+may carry `limits` — `amount` with its `currency`, `count`, `receiver`, an
+ISO 8601 repeating `interval`, a `window` — read exactly as GNAP reads them
+(see [GNAP limits](gnap.md#limits)); unreadable ones are refused
+`invalid_authorization_details` (`STS-OAUTH-0916`). The consent screen shows
+each detail's limits as fields the person may **lower, never raise**
+(`STS-OAUTH-0918`, `0919`), and the authorization grants the lowered values.
+Every access token carrying a detail with limits has a `grant_id` claim —
+the Grant Management `grant_id` where the grant is managed, otherwise an
+identifier fixed for the authorization — that stays the same across every
+refresh, and `/oauth2/introspect` returns it. **A resource server keeps its
+running totals under that `grant_id`**, so a client cannot renew its budget
+by refreshing its token. (The demonstration resource server's
+`/gnap/rs/spend` takes GNAP tokens only; it shows what a resource server
+does with the totals.)
+
 `derivableFrom` is GNAP's (RFC 9767 derivation). `interaction`,
 `consentActions` and `acr` are recorded and enforced by a later phase of #432.
 The resource application's page has an **Access types** tab that edits the

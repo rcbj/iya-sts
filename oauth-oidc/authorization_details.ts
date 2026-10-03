@@ -191,8 +191,10 @@ const definitionCount = cacheRegistry.register({
 // consent POST and the authorization endpoint's second pass may be answered by
 // two different request workers.
 const consented = realms.map({ persist: 'authorization_details.consented',
-                               // #333: the value IS the expiry, in ms.
-                               expiresAt: realms.expiryField(null, 1) });
+                               // #333: `expires`, in ms. Beside it (#432
+                               // phase 5) the details as the person LOWERED
+                               // their limits on the screen, or null.
+                               expiresAt: realms.expiryField('expires', 1) });
 
 /**
  * RFC 9396 rich authorization requests: the types applications declare, the
@@ -554,6 +556,87 @@ class AuthorizationDetails {
       }
     });
     log.debug("Leaving AuthorizationDetails.maxLifetimeFor(). " + out);
+    return out;
+  }
+
+  // Whether any of a set of details carries `limits` (#432 phase 5): what
+  // makes `oauth2.ts` put a grant identifier on the access token, so the
+  // resource server has one stable key to keep its running totals under.
+  /**
+   * Says whether any detail of a set carries limits.
+   *
+   * @param details - RFC 9396 details
+   * @returns true when one does
+   */
+  carriesLimits(details: Json[]): boolean {
+    const { log } = this.deps;
+    log.debug("Entering AuthorizationDetails.carriesLimits().");
+    const out = (Array.isArray(details) ? details : []).some(
+      function (one: Json): boolean {
+        return !!one && typeof one === 'object' && one.limits !== undefined;
+      });
+    log.debug("Leaving AuthorizationDetails.carriesLimits(). " + out);
+    return out;
+  }
+
+  // Whether `lowered` is the same details as `asked` with no limit raised
+  // (#432 phase 5): the same number of details, each the same but for its
+  // `limits`, and those no more than asked (`common/access_limits.ts`).
+  // '' when it is, or the sentence naming the first that is not.
+  /**
+   * Says whether one list of details is another with limits lowered only.
+   *
+   * @param asked - the details the client sent
+   * @param lowered - the details as the person lowered them
+   * @returns '' when only limits were lowered, or the problem
+   */
+  limitsRaisedBy(asked: Json[], lowered: Json[]): string {
+    const { log } = this.deps;
+    log.debug("Entering AuthorizationDetails.limitsRaisedBy().");
+    const a = Array.isArray(asked) ? asked : [];
+    const b = Array.isArray(lowered) ? lowered : [];
+    if (a.length !== b.length) {
+      log.debug("Leaving AuthorizationDetails.limitsRaisedBy(). Count.");
+      return 'the lowered authorization_details are not the details asked for';
+    }
+    for (let i = 0; i < a.length; i++) {
+      const was = Object.assign({}, a[i]);
+      const now = Object.assign({}, b[i]);
+      delete was.limits;
+      delete now.limits;
+      if (JSON.stringify(this.sorted(was)) !==
+          JSON.stringify(this.sorted(now))) {
+        log.debug("Leaving AuthorizationDetails.limitsRaisedBy(). Changed.");
+        return 'authorization_details[' + i + '] changed beyond its limits';
+      }
+      const why = AccessLimits.raised(a[i] && a[i].limits,
+                                      b[i] && b[i].limits);
+      if (why) {
+        log.debug("Leaving AuthorizationDetails.limitsRaisedBy(). Raised.");
+        return 'authorization_details[' + i + ']: ' + why;
+      }
+    }
+    log.debug("Leaving AuthorizationDetails.limitsRaisedBy().");
+    return '';
+  }
+
+  // A value with its object keys in order, for comparing.
+  private sorted(value: Json): Json {
+    const { log } = this.deps;
+    log.debug("Entering AuthorizationDetails.sorted().");
+    const self = this;
+    let out: Json = value;
+    if (Array.isArray(value)) {
+      out = value.map(function (one: Json): Json {
+        return self.sorted(one);
+      });
+    } else if (value && typeof value === 'object') {
+      out = {};
+      Object.keys(value).sort().forEach(function (k: string): void {
+        out[k] = self.sorted(value[k]);
+      });
+    }
+    log.debug("Leaving AuthorizationDetails.sorted().");
     return out;
   }
 
@@ -1302,18 +1385,22 @@ class AuthorizationDetails {
    * @param username - the person
    * @param clientId - the client
    * @param digest - `digestOf()` the details
+   * @param lowered - the details with the limits the person lowered on the
+   *   screen (#432 phase 5), or null when they lowered none
    */
-  noteConsented(username: unknown, clientId: unknown, digest: unknown): void {
+  noteConsented(username: unknown, clientId: unknown, digest: unknown,
+                lowered?: Json[] | null): void {
     const { log } = this.deps;
     log.debug("Entering AuthorizationDetails.noteConsented().");
     const now = Date.now();
-    consented.forEach(function (expires, key) {
-      if (expires < now) {
+    consented.forEach(function (held, key) {
+      if (!(held && held.expires >= now)) {
         consented.delete(key);
       }
     });
     consented.set(this.consentKey(username, clientId, digest),
-                  now + this.consentTtlMs());
+                  { expires: now + this.consentTtlMs(),
+                    lowered: Array.isArray(lowered) ? lowered : null });
     log.debug("Leaving AuthorizationDetails.noteConsented().");
   }
 
@@ -1332,17 +1419,37 @@ class AuthorizationDetails {
                    digest: unknown): boolean {
     const { log } = this.deps;
     log.debug("Entering AuthorizationDetails.consumeConsented().");
+    const answer = this.consumeConsent(username, clientId, digest);
+    log.debug("Leaving AuthorizationDetails.consumeConsented().");
+    return !!answer;
+  }
+
+  // The same, answering WHAT was allowed (#432 phase 5): `{ lowered }`, the
+  // details with the limits the person lowered on the screen (null when
+  // they lowered none), or null when nothing was allowed. Spent either way.
+  /**
+   * Spends a person's Allow on these details, answering the details as they
+   * lowered them.
+   *
+   * @param username - the person
+   * @param clientId - the client
+   * @param digest - `digestOf()` the details as the client sent them
+   * @returns `{ lowered }`, or null when nothing was allowed
+   */
+  consumeConsent(username: unknown, clientId: unknown, digest: unknown): Json {
+    const { log } = this.deps;
+    log.debug("Entering AuthorizationDetails.consumeConsent().");
     const key = this.consentKey(username, clientId, digest);
-    const expires = consented.get(key);
-    if (expires === undefined) {
-      log.debug("Leaving AuthorizationDetails.consumeConsented(). Not " +
+    const held = consented.get(key);
+    if (held === undefined) {
+      log.debug("Leaving AuthorizationDetails.consumeConsent(). Not " +
                 "consented.");
-      return false;
+      return null;
     }
     consented.delete(key);
-    log.debug("Leaving AuthorizationDetails.consumeConsented(). " +
-              (expires >= Date.now()));
-    return expires >= Date.now();
+    const live = !!held && held.expires >= Date.now();
+    log.debug("Leaving AuthorizationDetails.consumeConsent(). " + live);
+    return live ? { lowered: held.lowered || null } : null;
   }
 }
 
@@ -1396,6 +1503,8 @@ export = {
   conformance: slot.forward('conformance'),
   typeOf: slot.forward('typeOf'),
   maxLifetimeFor: slot.forward('maxLifetimeFor'),
+  carriesLimits: slot.forward('carriesLimits'),
+  limitsRaisedBy: slot.forward('limitsRaisedBy'),
   bearerRefusedBy: slot.forward('bearerRefusedBy'),
   requiredAcrsOf: slot.forward('requiredAcrsOf'),
   derivableFrom: slot.forward('derivableFrom'),
@@ -1408,5 +1517,6 @@ export = {
   describe: slot.forward('describe'),
   digestOf: slot.forward('digestOf'),
   noteConsented: slot.forward('noteConsented'),
+  consumeConsent: slot.forward('consumeConsent'),
   consumeConsented: slot.forward('consumeConsented')
 };

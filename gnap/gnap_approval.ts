@@ -91,7 +91,7 @@ import store = require('./gnap_store');
 import monitor = require('./gnap_monitor');
 import gnapRights = require('./gnap_rights');
 // #432 phase 5: a right's limits as a form the owner can lower here too.
-import GnapLimitsForm = require('./gnap_limits_form');
+import LimitsForm = require('../common/limits_form');
 
 type Json = any;
 
@@ -504,7 +504,7 @@ class GnapApproval {
    * @param id - the waiting row
    * @param selection - `{ approve, ticked, subject }`, and (#432 phase 5)
    *   `req`, the portal's request, and `form`, how its posted limit
-   *   controls are read (`gnap_limits_form.ts`)
+   *   controls are read (`common/limits_form.ts`)
    * @returns `{ ok: true }`, `{ ok: false, stepUp: true, ask }` when the
    *   session falls short, or `{ ok: false, why, code }`
    */
@@ -536,7 +536,7 @@ class GnapApproval {
     // owner must own what the rights name — the approval page's own
     // question (`grants.approverRefusal()`, STS-GNAP-0862), asked of the
     // person this portal signed in — and the limits they sent back must be
-    // the asked ones or lower (`gnap_limits_form.ts`, 0866 / 0867).
+    // the asked ones or lower (`common/limits_form.ts`, 0866 / 0867).
     const tokens = grant.request.tokens.map(function (token: Json,
                                                       t: number): Json {
       return { label: token.label, bearer: token.bearer,
@@ -557,7 +557,7 @@ class GnapApproval {
                       'owner can approve it.' };
       }
       if (selection.form) {
-        const lowered: Json = GnapLimitsForm.lowered(
+        const lowered: Json = LimitsForm.lowered(
           grant.request.tokens, tokens, selection.form,
           gnapRights.conformanceRefusal);
         if (!lowered.ok) {

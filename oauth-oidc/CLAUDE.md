@@ -1839,45 +1839,40 @@ so must `admin-ui/admin.ts`.
      caller owning none sees the token as before;
    * `derivableFrom` is GNAP's (RFC 9767); `interaction`, `consentActions`
      and `acr` are ENFORCED BY PHASE 6 of #432 (the next lane).
-   * `limits` MEAN THE SAME TO BOTH PROTOCOLS (#432 phase 5): beyond the
-     type's schema, `conformance()` asks `common/access_limits.ts` whether
-     the amount with its currency, the count, the receivers, the repeating
-     interval and the window are ones it can read (`STS-OAUTH-0916`), so a
-     detail and a GNAP right of one type are refused alike. A detail's
-     limits are then CARRIED as it was sent — in the RFC 9068 token's
-     `authorization_details` and at `/oauth2/introspect` — and counted by
-     the resource server. What RAR does NOT have is GNAP's two other halves:
-     the consent screen shows a detail and does not offer to lower its
-     limits, and no grant identifier rides in the token beside them (a
-     Grant Management `grant_id` is returned only where that profile is
-     asked for), so a resource server counting RAR limits keys them itself —
-     the demonstration resource server is GNAP's.
-   * `derivableFrom` is GNAP's (RFC 9767); `interaction` and
-     `consentActions` are GNAP's too (#432 phase 6, `gnap/CLAUDE.md`) and
-     are not read here: the consent screen asks for every detail every time
-     and has no unattended path, so `always` and the consent actions hold by
-     construction and `never` has nothing to relax.
-   * **A TYPE'S `acr` HOLDS ON BOTH SIDES (#432 phase 6)**, because the
-     catalogue is one: a right GNAP refuses on a short sign-in must not be
-     had through `authorization_details` instead. `requiredAcrsOf()` names
-     every level the request's types declare, and EVERY one is required —
-     not `acr_values`' "any of", since a grant of two types is a grant of
-     both. The authorization endpoint passes them to `step_up.ts`'s
-     `assessSession()` as `required` beside the request's own requirement:
-     a session short of one is sent to sign in once with
-     `screenDemandWith()`'s demand (the return carries `step_up_honoured`,
-     as for `acr_values`), and short again is refused
-     `unmet_authentication_requirements` (`STS-OAUTH-0936`) — this covers
-     PAR and JAR too, whose parameters arrive here resolved. The token's
-     `acr` is the most preferred requested value that also expresses every
-     required level, else the session's own, so what a resource server reads
-     is a level its type accepts. **And `tokenSet()` asks again**, the funnel
-     every grant mints through: a detail type whose acr the grant's
-     authentication (`acr`, `amr` off the code, the refresh token, a CIBA or
-     device approval) does not meet is `invalid_authorization_details`
-     (`STS-OAUTH-0937`), and a grant with no person behind it — client
-     credentials — meets no level, so such a type is never issued that
-     way.
+   * `limits` MEAN THE SAME TO BOTH PROTOCOLS, AND ARE ENFORCEABLE IN BOTH
+     (#432 phase 5). Beyond the type's schema, `conformance()` asks
+     `common/access_limits.ts` whether the amount with its currency, the
+     count, the receivers, the repeating interval and the window are ones
+     it can read (`STS-OAUTH-0916`). Then the two halves GNAP has:
+     - **A STABLE GRANT IDENTIFIER.** The resource server keeps the running
+       totals (rcbj's decision 2), and a key that changed on every refresh
+       would make each renewed token a renewed budget — limits stated and
+       unenforceable. So `tokenSet()` names one whenever the details the
+       GRANT authorized carry limits: Grant Management's `grant_id` (3bf)
+       where the grant is recorded, otherwise an identifier minted for the
+       authorization's first token set and carried forward inside the
+       refresh token's JWE (`limits_grant`), so every refresh hands on the
+       same one. The RFC 9068 token carries it as `grant_id` (beside the
+       details that carry limits; a token without such details carries
+       none) and `/oauth2/introspect` returns it — the name GNAP's tokens
+       and introspection use. The token response's `grant_id` member stays
+       Grant Management's alone: a client that did not ask for a managed
+       grant is not handed a handle to manage.
+     - **LOWERING ON THE CONSENT SCREEN.** `consent_screen.ts` draws each
+       detail's limits with GNAP's controls (`common/limits_form.ts`) inside
+       its form, and Allow accepts only a lower value (`STS-OAUTH-0918`) that
+       still meets the type (`0919`). The screen cannot change the request —
+       the authorization endpoint's second pass re-reads it from the query —
+       so the lowered details are RECORDED WITH THE ALLOW
+       (`noteConsented(…, lowered)`) and the second pass, spending it
+       (`consumeConsent()`), replaces the request's details with them after
+       holding them to "the same details, limits no higher" once more
+       (`limitsRaisedBy()`, `STS-OAUTH-0917`): the Allow and the pass are two
+       requests. The code, its tokens and every refresh carry the lowered
+       values.
+     The demonstration resource server's spend (`POST /gnap/rs/spend`)
+     accepts GNAP tokens only — it is GNAP's reference — so an RS counting
+     RAR limits keys its totals on the token's `grant_id` the same way.
 
    **AN UNKNOWN TYPE STAYS REFUSED IN EVERY MODE HERE**, unlike GNAP's
    development mode (`mode.grantsUncataloguedAccess()`): RFC 9396 section 5

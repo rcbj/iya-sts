@@ -4029,6 +4029,18 @@ class OAuth2Server {
     // identifier.
     if (opts.authorization_details) payload.authorization_details =
         opts.authorization_details;
+    // THE GRANT A DETAIL'S LIMITS ARE COUNTED AGAINST (#432 phase 5): RFC
+    // 9396 lets a detail carry `limits`, and the RESOURCE SERVER keeps the
+    // running totals (rcbj's decision 2) — which it can do only with one key
+    // that survives every refresh, or a client renewing its token would be
+    // renewing its budget. `tokenSet()` chooses it: the Grant Management
+    // grant (#142) where one is recorded, otherwise an identifier minted per
+    // authorization and carried forward inside the refresh token. GNAP's
+    // tokens and introspection use the same name.
+    if (opts.limits_grant && opts.authorization_details &&
+        richAuthorization.carriesLimits(opts.authorization_details)) {
+      payload.grant_id = String(opts.limits_grant);
+    }
     // OIDC Core section 5.5's claims request, as the authorization endpoint
     // understood it. It rides here for the reason authorization_details does:
     // the UserInfo endpoint sees this token and NOTHING ELSE — no code, no
@@ -4201,6 +4213,9 @@ class OAuth2Server {
       // refuses it on every node.
       grant_id: opts.grant_id ? String(opts.grant_id) : undefined,
       grant_gen: opts.grant_id ? Number(opts.grant_gen) || 1 : undefined,
+      // THE GRANT LIMITS ARE COUNTED AGAINST (#432 phase 5), inside the JWE,
+      // carried unchanged through every refresh — see accessToken().
+      limits_grant: opts.limits_grant ? String(opts.limits_grant) : undefined,
       // THE CLIENT INSTANCE (#229, draft-ietf-oauth-attestation-based-
       // client-auth section 10.3): where the Token Request carried a verified
       // client attestation, the refresh token is bound to the attested key,
@@ -5211,9 +5226,24 @@ class OAuth2Server {
       ? bcp.familyForIssuance(refreshJti, opts.parent_refresh_jti,
                               opts.parent_refresh_family)
       : '';
+    // THE GRANT LIMITS ARE COUNTED AGAINST (#432 phase 5), chosen once per
+    // authorization: Grant Management's grant where there is one; else the
+    // one the refresh token being redeemed carries; else a new one — this
+    // is an authorization's first token set. Named whenever the details the
+    // GRANT authorized carry limits, so the refresh token keeps it even
+    // when this access token was narrowed to details that carry none.
+    const grantDetails = Object.prototype.hasOwnProperty.call(
+      opts, 'grantAuthorizationDetails')
+      ? opts.grantAuthorizationDetails : opts.authorization_details;
+    const limitsGrant = richAuthorization.carriesLimits(grantDetails) ||
+      richAuthorization.carriesLimits(opts.authorization_details)
+      ? String(opts.grant_id || opts.limits_grant ||
+               cellLocator.stamp(randomId(16)))
+      : '';
     const issuing = Object.assign({}, opts, {
       refresh_jti: refreshJti || undefined,
       grant_family: grantFamily || undefined,
+      limits_grant: limitsGrant || undefined,
       scope: plan.scope,
       audience: self.audienceClaim(plan.audiences),
       // Onto the refresh token as well, for the reason the RFC 8707 call sites
@@ -10011,9 +10041,30 @@ class OAuth2Server {
       const detailsDigest = detailsPlannable &&
         richAuthorization.needsConsent(consentDetails.details)
         ? richAuthorization.digestOf(consentDetails.details) : '';
-      const detailsOutstanding = !!detailsDigest &&
-        !richAuthorization.consumeConsented((session.user || {}).username,
-                                            q.client_id, detailsDigest);
+      const detailsAllowed = detailsDigest
+        ? richAuthorization.consumeConsent((session.user || {}).username,
+                                           q.client_id, detailsDigest)
+        : null;
+      const detailsOutstanding = !!detailsDigest && !detailsAllowed;
+      // THE LIMITS THE PERSON LOWERED ON THE SCREEN (#432 phase 5) are what
+      // this authorization grants: the request's details are replaced by
+      // them for the rest of this pass, so the code — and every token and
+      // refresh minted from it — carries the lowered values.
+      // `consent_screen.ts` accepted only lower ones, and they are held to
+      // that again here against the details the client sent, because the
+      // Allow and this pass are two requests.
+      if (detailsAllowed && detailsAllowed.lowered) {
+        const raised = richAuthorization.limitsRaisedBy(
+          consentDetails.details, detailsAllowed.lowered);
+        if (raised) {
+          log.debug("Leaving the authorization endpoint. Lowered limits " +
+                    "would raise one.");
+          errorCodes.mark(res, 'STS-OAUTH-0917');
+          log.debug("Leaving OAuth2Server.authorizeEndpoint().");
+          return fail('invalid_authorization_details', raised);
+        }
+        q.authorization_details = JSON.stringify(detailsAllowed.lowered);
+      }
       if (decision.outstanding.length || detailsOutstanding) {
         // prompt=none FORBIDS ANY UI, and OIDC Core section 3.1.2.6 gives this
         // exact case its own error code. Answering `interaction_required` — the
@@ -10101,6 +10152,9 @@ class OAuth2Server {
           authorizationDetails: detailsOutstanding
             ? richAuthorization.describe(consentDetails.details) : [],
           detailsDigest: detailsOutstanding ? detailsDigest : '',
+          // The details themselves, for their limits' controls (#432 phase 5).
+          rawAuthorizationDetails: detailsOutstanding
+            ? consentDetails.details : [],
           already: decision.scopes.filter(function (one) {
             return decision.outstanding.indexOf(one) < 0;
           }),
@@ -14166,7 +14220,10 @@ class OAuth2Server {
         // Still under the same grant and generation (#142), which the check
         // above established is the grant's current one.
         grant_id: claims.grant_id || undefined,
-        grant_gen: claims.grant_id ? claims.grant_gen : undefined
+        grant_gen: claims.grant_id ? claims.grant_gen : undefined,
+        // The grant its details' limits are counted against (#432 phase 5),
+        // so a renewed token is the same budget.
+        limits_grant: claims.limits_grant || undefined
       });
       // And the grant lives as long as what was just minted under it.
       if (claims.grant_id) {
@@ -16621,6 +16678,9 @@ class OAuth2Server {
       // RFC 9396 section 9.2: the resource server learns what the token
       // authorizes in detail the same way it learns its scope.
       authorization_details: claims.authorization_details,
+      // #432 phase 5: the grant those details' limits are counted against,
+      // the same across every refresh — the resource server's key.
+      grant_id: claims.typ === 'Refresh' ? undefined : claims.grant_id,
       // RFC 9470 section 6.2: WHEN the person behind the token authenticated
       // and to what level, so a resource server that introspects rather than
       // reading a JWT can make the same step-up decision. Absent where the

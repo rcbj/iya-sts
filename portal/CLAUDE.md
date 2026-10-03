@@ -1465,7 +1465,7 @@ judging a request for their access needs to know who wants it.
 
 **AND THE OWNER CHECK AND THE LIMITS, AS ON THE APPROVAL PAGE (#432 phase
 5).** Each right's limits are drawn under it with the approval page's own
-controls (`gnap/gnap_limits_form.ts`, a static utility imported directly
+controls (`common/limits_form.ts`, a static utility imported directly
 because it loads nothing of GNAP's engine), and the form's schema reads the
 post with them stripped off; `gnap_approval.answer()` is handed the request
 and a reader of the raw body, asks `grants.approverRefusal()` after the

@@ -39,7 +39,12 @@
 //      the ID Token's acr the one met; a type needing mfa sending the same
 //      session to sign in again, and refused
 //      unmet_authentication_requirements on the way back; client
-//      credentials refused a type needing any acr.
+//      credentials refused a type needing any acr. And LIMITS ON A DETAIL
+//      (#432 phase 5): the consent screen drawing a limit as a control and
+//      refusing a raised one, the access token carrying the lowered value
+//      and a grant_id (read off the token by this job), a refresh keeping
+//      the same grant_id, introspection returning it, and a detail with no
+//      limits carrying none.
 //
 // The in-process half, with each built-in rule in both modes, is
 // `tests/gnap_catalogue.js`. Everything runs in a THROWAWAY TRUST REALM that
@@ -467,11 +472,14 @@ async function test() {
   const RP_REDIRECT = "https://rp.cat.test/cb";
   const rpSecret = "cat-rp-" + nodeCrypto.randomBytes(18).toString("base64url");
   await h.ok(h.realmApi + "/applications/create", {
-    identifier: RP, kind: "oauth2-client", protocols: ["oauth2"],
+    // OpenID Connect too: the flow asks `openid`, and product refuses
+    // issuance through a protocol family the application does not declare.
+    identifier: RP, kind: "oauth2-client", protocols: ["oauth2", "oidc"],
     fields: { oauthClientId: [RP], oauthClientSecret: rpSecret,
               oauthRedirectUri: [RP_REDIRECT],
               oauthTokenEndpointAuthMethod: "client_secret_post",
-              oauthGrantType: ["authorization_code", "client_credentials"] } },
+              oauthGrantType: ["authorization_code", "client_credentials",
+                               "refresh_token"] } },
              "registered the relying party");
   const rp = h.browser();
   const authorizeUrl = function (details, extra) {
@@ -489,7 +497,9 @@ async function test() {
   };
   // Sign-in and consent until the relying party's redirect URI, or the first
   // page that is neither.
-  const follow = async function (first) {
+  // `lowering`, where given, is added to the consent form's Allow — the
+  // limit controls a person changed (#432 phase 5).
+  const follow = async function (first, lowering) {
     log.debug("Entering follow().");
     let res = first;
     for (let hop = 0; hop < 14; hop++) {
@@ -522,6 +532,7 @@ async function test() {
             }
           });
         form.action = "allow";
+        Object.assign(form, lowering || {});
         res = await rp.go("POST", consentAction.replace(/&amp;/g, "&"), form);
         continue;
       }
@@ -577,6 +588,103 @@ async function test() {
     assert.strictEqual(r.status, 400, ccText);
     assert.strictEqual(JSON.parse(ccText).error,
                        "invalid_authorization_details", ccText);
+  });
+
+  // =========================================================================
+  // 8f–8k. LIMITS ON AN RFC 9396 DETAIL (#432 phase 5): lowered on the
+  // consent screen, a raise refused there, and the access token carrying
+  // the lowered values with a grant_id that every refresh keeps and
+  // introspection returns — the key a resource server counts under.
+  // =========================================================================
+  log.info("=== 8f. limits on an RFC 9396 detail ===");
+  const LIMITED = "cat-limited";
+  await h.ok(h.realmApi + "/applications/set-access-type", {
+    application: RS2, type: LIMITED, actions: ["spend"],
+    limits: JSON.stringify({ type: "object",
+      properties: { amount: { type: "string" },
+                    currency: { type: "string" },
+                    count: { type: "integer", minimum: 0 } },
+      additionalProperties: false }) }, "declared the limited type");
+  const asked = [{ type: LIMITED, actions: ["spend"],
+                   limits: { amount: "50", currency: "EUR", count: 3 } }];
+  let consentPage = await follow(await rp.go("GET", authorizeUrl(asked)),
+                                 { "lim_t0r0_amount": "80" });
+  check("8f. the consent screen refuses a RAISED limit", function () {
+    assert.strictEqual(consentPage.status, 400,
+                       String(consentPage.text).slice(0, 300));
+    assert.ok(/lowered/.test(consentPage.text),
+              String(consentPage.text).slice(0, 400));
+  });
+  // Drawn: the screen shows the limit as a control holding the asked value.
+  const drawn = await rp.go("GET", authorizeUrl(asked));
+  const drawnPage = drawn.status === 302 || drawn.status === 303
+    ? await rp.go("GET", drawn.location) : drawn;
+  check("8g. the consent screen draws the limit as a control", function () {
+    assert.ok(/name="lim_t0r0_amount" value="50"/.test(drawnPage.text),
+              String(drawnPage.text).slice(0, 800));
+  });
+  r = await follow(drawnPage, { "lim_t0r0_amount": "20" });
+  const limitedCode = new URL(r.location || "https://x/").searchParams
+    .get("code");
+  const redeem = function (form) {
+    log.debug("Entering redeem().");
+    log.debug("Leaving redeem().");
+    return fetch(h.realmBase + "/oauth2/token", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams(Object.assign({ client_id: RP,
+        client_secret: rpSecret }, form)).toString() });
+  };
+  r = await redeem({ grant_type: "authorization_code",
+    code: String(limitedCode || ""), redirect_uri: RP_REDIRECT,
+    code_verifier: "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk" });
+  const limitedText = await r.text();
+  let limitedAccess = null;
+  check("8h. the access token carries the LOWERED limit and a grant_id, " +
+        "read off the token by this job", function () {
+    assert.strictEqual(r.status, 200, limitedText);
+    limitedAccess = claimsOf(JSON.parse(limitedText).access_token);
+    assert.deepStrictEqual(limitedAccess.authorization_details[0].limits,
+                           { amount: "20", currency: "EUR", count: 3 },
+                           JSON.stringify(limitedAccess));
+    assert.ok(typeof limitedAccess.grant_id === "string" &&
+              limitedAccess.grant_id, JSON.stringify(limitedAccess));
+  });
+  const refreshToken = JSON.parse(limitedText).refresh_token;
+  r = await redeem({ grant_type: "refresh_token",
+                     refresh_token: String(refreshToken || "") });
+  const refreshedText = await r.text();
+  check("8i. a refreshed token keeps the SAME grant_id and the lowered limit",
+        function () {
+    assert.strictEqual(r.status, 200, refreshedText);
+    const renewed = claimsOf(JSON.parse(refreshedText).access_token);
+    assert.strictEqual(renewed.grant_id, limitedAccess.grant_id,
+                       refreshedText);
+    assert.strictEqual(renewed.authorization_details[0].limits.amount, "20",
+                       refreshedText);
+  });
+  r = await fetch(h.realmBase + "/oauth2/introspect", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ client_id: RP, client_secret: rpSecret,
+      token: JSON.parse(limitedText).access_token }).toString() });
+  const limitedIntrospection = await r.text();
+  check("8j. introspection returns the grant_id", function () {
+    assert.strictEqual(r.status, 200, limitedIntrospection);
+    assert.strictEqual(JSON.parse(limitedIntrospection).grant_id,
+                       limitedAccess.grant_id, limitedIntrospection);
+  });
+  r = await follow(await rp.go("GET", authorizeUrl([{ type: ONE }])));
+  const plainCode = new URL(r.location || "https://x/").searchParams
+    .get("code");
+  r = await redeem({ grant_type: "authorization_code",
+    code: String(plainCode || ""), redirect_uri: RP_REDIRECT,
+    code_verifier: "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk" });
+  const plainText = await r.text();
+  check("8k. details without limits carry no grant_id", function () {
+    assert.strictEqual(r.status, 200, plainText);
+    assert.strictEqual(claimsOf(JSON.parse(plainText).access_token).grant_id,
+                       undefined, plainText);
   });
 
   log.info(h.checks + " check(s) passed.");
