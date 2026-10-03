@@ -34,6 +34,33 @@
 //   finalized   revoked by the client (section 5.4), exhausted (too many polls,
 //               an interaction reference replayed), or expired. Never leaves.
 //
+// **EVERY FINALIZED GRANT RECORDS WHY (#432 phase 7, 2026-10-03)**, as
+// `grant.finalization = { reason, at, note }`, through `finalize()` and
+// nowhere else, with an audit row (`gnap.grant.finalize`). Four reasons:
+//
+//   issued    its tokens were released and nothing more can be asked of it —
+//             an approved grant whose response carries no continuation
+//             (`gnap.continueAfterApproval` off). Section 1.5's Approved ->
+//             Finalized edge. ITS TOKENS STAY LIVE: the one reason
+//             `gnap_rs.ts`'s liveProblem() and a rotation do not refuse.
+//   revoked   ended by an act — the client's DELETE (section 5.4), an
+//             administrator, the resource owner on /portal/gnap.
+//   rejected  refused: no way to interact, an interaction that could not
+//             start, too many polls, an interaction reference outside the
+//             pending state — and a grant that expires after its resource
+//             owner said no.
+//   expired   its interaction ran out, or its GRANT LIFETIME did.
+//
+// **THE GRANT HAS A LIFETIME OF ITS OWN (#432 phase 7)**,
+// `gnap.grantLifetimeS`, counted from its creation and separate from any
+// token's: past it the grant can no longer be continued, modified
+// (`STS-GNAP-0790`) or have a token rotated (`STS-GNAP-0791`), and no token
+// issued under it is given an `exp` past it. A rotation could otherwise
+// renew a grant's access for ever on the strength of one approval; the
+// lifetime is the point at which the resource owner is asked again. The
+// `gnap.grant-expiry` scheduler job records the expiry of a grant nobody
+// touches.
+//
 // ---------------------------------------------------------------------------
 // WHAT IS MODE-GATED, AND WHAT IS NOT.
 //
@@ -116,6 +143,19 @@ import mtls = require('../oauth-oidc/mtls');
 const PROTOCOL = 'GNAP';
 const STATE = store.STATE;
 
+// Why a grant was finalized (#432 phase 7) — the header's four.
+const FINALIZATION_REASONS = ['issued', 'revoked', 'rejected', 'expired'];
+
+// What authorizes releasing subject information (#432 phase 7): the resource
+// owner ticking the subject checkbox at an interaction, or a delegation
+// decision for a client acting for a person by assertion. releaseSubject()'s
+// header argues it.
+const SUBJECT_AUTHORIZATIONS = ['interaction', 'delegation'];
+
+// The expiry job (#432 phase 7): finalizes, and records the reason of, every
+// grant past its interaction or its grant lifetime that nobody has touched.
+const EXPIRY_JOB = 'gnap.grant-expiry';
+
 // Application kinds this family records (common/applications.js KINDS).
 const KIND_CLIENT = 'gnap-client';
 const KIND_RS = 'gnap-resource-server';
@@ -185,6 +225,9 @@ interface GnapGrantsDeps {
   // oauth2.js, required when it is needed and not before (it registers
   // routes, and was a lazy require before the conversion).
   loadOauth2(): typeof import('../oauth-oidc/oauth2');
+  // The scheduler (#49), for the expiry job (#432 phase 7). Lazily, as every
+  // job owner reaches it.
+  scheduler(): any;
 }
 
 /**
@@ -218,6 +261,20 @@ class GnapGrants {
    * name by `/:as/gnap`.
    */
   static readonly RESERVED_AS_NAMES = RESERVED_AS_NAMES;
+  /**
+   * Why a grant may be finalized: `issued`, `revoked`, `rejected`,
+   * `expired` (#432 phase 7).
+   */
+  static readonly FINALIZATION_REASONS = FINALIZATION_REASONS;
+  /**
+   * What may authorize releasing subject information: `interaction` or
+   * `delegation` (#432 phase 7).
+   */
+  static readonly SUBJECT_AUTHORIZATIONS = SUBJECT_AUTHORIZATIONS;
+  /**
+   * The scheduler job that records the expiry of untouched grants.
+   */
+  static readonly EXPIRY_JOB = EXPIRY_JOB;
 
   /**
    * Builds the grant engine from the modules it reads.
@@ -235,6 +292,49 @@ class GnapGrants {
   private readonly referenceResolver = {
     resolveReference: (reference) => this.resolveKeyReference(reference)
   };
+
+  // -------------------------------------------------------------------------
+  // THE GRANT LIFETIME (#432 phase 7, the header). `gnap.grantLifetimeS` is
+  // read when a grant is made and fixed on it then, so changing the setting
+  // moves no grant already made.
+  // -------------------------------------------------------------------------
+  /**
+   * Returns when a grant made now expires: `gnap.grantLifetimeS` after it.
+   *
+   * @param createdAt - the grant's creation, epoch seconds
+   * @returns the expiry, epoch seconds
+   */
+  grantExpiryFrom(createdAt: number): number {
+    const { log, config } = this.deps;
+    log.debug("Entering GnapGrants.grantExpiryFrom().");
+    const lifetime = Number(config.value('gnap.grantLifetimeS'));
+    log.debug("Leaving GnapGrants.grantExpiryFrom().");
+    return createdAt + (lifetime > 0 ? lifetime : 86400);
+  }
+
+  /**
+   * Says whether a grant's own lifetime has ended (#432 phase 7).
+   *
+   * @param grant - the grant, or a token record carrying `grantExpiresAt`
+   * @returns true once its lifetime is over
+   */
+  grantLifetimeEnded(grant: any): boolean {
+    const { log, nowSec } = this.deps;
+    log.debug("Entering GnapGrants.grantLifetimeEnded().");
+    const until = Number(grant && grant.grantExpiresAt);
+    log.debug("Leaving GnapGrants.grantLifetimeEnded().");
+    return until > 0 && nowSec() >= until;
+  }
+
+  // A token's lifetime, cut short where it would outlive its grant.
+  private cappedLifetime(grant: any, iat: number, lifetime: number): number {
+    const { log } = this.deps;
+    log.debug("Entering GnapGrants.cappedLifetime().");
+    const until = Number(grant && grant.grantExpiresAt);
+    log.debug("Leaving GnapGrants.cappedLifetime().");
+    return until > 0 ? Math.max(1, Math.min(lifetime, until - iat))
+                     : lifetime;
+  }
 
   private refusal(code, why, gnapError?, status?) {
     const { log, errorCodes } = this.deps;
@@ -845,23 +945,24 @@ class GnapGrants {
       const identifier = 'gnap-' +
                          descriptor.identity.replace(/[^A-Za-z0-9_-]/g, '-')
                                             .slice(0, 48);
+      // ---------------------------------------------------------------------
+      // NOTHING THE CLIENT SAID ABOUT ITSELF IS WRITTEN ONTO THE ENTRY (#432
+      // phase 7, 2026-10-03). `class_id` and `display` (section 2.3) are
+      // SELF-DECLARED: any key can claim any name, logo, home page or class.
+      // They were copied into `gnapClassId`, `gnapDisplayUri`, `gnapLogoUri`
+      // and the entry's name here — and section 2.3 has "the pre-registered
+      // values ... take precedence", so the client's own claims became the
+      // REGISTERED values from its second request on, and the approval page
+      // drew them as the administrator's. The entry records the key and
+      // nothing else; what the client declares is read from each request
+      // and marked as declared (below).
+      // ---------------------------------------------------------------------
       const fields: Record<string, any> = { gnapKey:
                                             JSON.stringify(descriptor.value),
                                             gnapKeyIdentity:
                                             descriptor.identity };
-      if (member.classId) {
-        fields.gnapClassId = member.classId;
-      }
-      if (member.display && member.display.uri) {
-        fields.gnapDisplayUri = member.display.uri;
-      }
-      if (member.display && member.display.logoUri &&
-          member.display.logoUri.length < 2048) {
-        fields.gnapLogoUri = member.display.logoUri;
-      }
       applications.seen({ identifier: identifier, kind: kind, protocol:
-                          PROTOCOL, name: (member.display &&
-                                           member.display.name) || undefined,
+                          PROTOCOL,
                           counts: false, fields: fields, note:
           'Created on first sight of a proved GNAP key (development mode).' });
       app = applications.get(identifier);
@@ -881,15 +982,55 @@ class GnapGrants {
     return { ok: true, app: app, descriptor: descriptor, proof: verified,
              instanceId: instanceId,
              created: created,
-            // Section 2.3: "the pre-registered values MUST take precedence".
-             display: {
-               name: app.name || (member.display && member.display.name) ||
-                   app.identifier, uri: this.field(app, 'gnapDisplayUri') ||
-                   (member.display && member.display.uri) || null, logoUri:
-                   this.field(app, 'gnapLogoUri') || (member.display &&
-                                                      member.display.logoUri) ||
-                   null }, classId: this.field(app, 'gnapClassId') ||
-                   member.classId || null };
+             display: this.displayOf(app, member),
+             classId: this.field(app, 'gnapClassId') || member.classId || null,
+             classIdDeclared: !this.field(app, 'gnapClassId') &&
+                              !!member.classId };
+  }
+
+  // -------------------------------------------------------------------------
+  // `class_id` AND `display` ARE SELF-DECLARED AND NEVER RAISE TRUST (#432
+  // phase 7, 2026-10-03).
+  //
+  // Section 2.3: "the pre-registered values MUST take precedence" — so a
+  // value an administrator put on the entry wins, and a value only the
+  // request carries is the CLIENT's claim about itself, which any key can
+  // make. Every member taken from the request is named in `declared`, and
+  // the approval page says so beside it rather than drawing it as this
+  // service's word. NOTHING DECIDES ON EITHER: no reader of `classId` or
+  // `display` grants, skips interaction, picks a token format or relaxes a
+  // check — `gnapSkipInteraction`, the access policy and the issuance gate
+  // read the ENTRY. Audited 2026-10-03 (`gnap/CLAUDE.md`); a reader added
+  // later that decides on one of them is a defect, and the in-process test
+  // (`tests/gnap_person_grants.js`) holds the auto-created entry to carrying
+  // none of them.
+  // -------------------------------------------------------------------------
+  private displayOf(app: any, member: any): any {
+    const { log } = this.deps;
+    log.debug("Entering GnapGrants.displayOf().");
+    const asked = member.display || {};
+    const declared: string[] = [];
+    const registeredName = app.name && app.name !== app.identifier
+      ? app.name : '';
+    let name = registeredName;
+    if (!name && asked.name) {
+      name = String(asked.name);
+      declared.push('name');
+    }
+    let uri = this.field(app, 'gnapDisplayUri');
+    if (!uri && asked.uri) {
+      uri = String(asked.uri);
+      declared.push('uri');
+    }
+    let logoUri = this.field(app, 'gnapLogoUri');
+    if (!logoUri && asked.logoUri && String(asked.logoUri).length < 2048) {
+      logoUri = String(asked.logoUri);
+      declared.push('logoUri');
+    }
+    log.debug("Leaving GnapGrants.displayOf(). declared=" +
+              declared.join(','));
+    return { name: name || app.identifier, uri: uri || null,
+             logoUri: logoUri || null, declared: declared };
   }
 
   // ---------------------------------------------------------------------------
@@ -1158,8 +1299,12 @@ class GnapGrants {
         continue;
       }
       const iat = nowSec();
-      const lifetime = Number(applications.settingFor(grant.client.identifier,
-          'gnap.accessTokenLifetimeS', config)) || 3600;
+      // NO TOKEN OUTLIVES ITS GRANT (#432 phase 7): the token's lifetime,
+      // cut short at the grant's own expiry.
+      const lifetime = this.cappedLifetime(grant, iat,
+          Number(applications.settingFor(grant.client.identifier,
+                                         'gnap.accessTokenLifetimeS',
+                                         config)) || 3600);
       const durable = !!config.value('gnap.durableTokens');
       const flags = [];
       if (asked.bearer) {
@@ -1225,7 +1370,10 @@ class GnapGrants {
         key: asked.bearer ? null : grant.client.key,
         proof: asked.bearer ? null :
                keyDescriptor.proof, revoked: false, createdAt: iat,
-        rsIdentifiers: rsIds, username: username
+        rsIdentifiers: rsIds, username: username,
+        // Kept on the token too, so a rotation is held to it after the
+        // finalized grant itself is pruned.
+        grantExpiresAt: grant.grantExpiresAt || null
       }), minted.value);
       const response: Record<string, any> = { value: minted.value, access:
                                               asked.access, expires_in:
@@ -1303,6 +1451,37 @@ class GnapGrants {
     }
   }
 
+  // -------------------------------------------------------------------------
+  // SUBJECT INFORMATION IS RELEASED ONCE, AND ONLY ON AN AUTHORIZATION (#432
+  // phase 7, 2026-10-03).
+  //
+  // Section 3.4's sub_ids and assertions say WHO the resource owner is, and
+  // the only parties who can authorize telling a client that are the person
+  // and the policy that lets a client act for them. So `release()` releases
+  // subject information only when the grant carries
+  // `subjectAuthorizedBy`:
+  //
+  //   'interaction'  the resource owner left the "who you are" box ticked on
+  //                  the approval page (`decide()`);
+  //   'delegation'   a trusted client presented a verified assertion about
+  //                  the person and the delegation decision (#432 phase 1,
+  //                  `delegation_policy.ts`, S4U2Self's question) allowed it
+  //                  to act for them (`createGrant()`).
+  //
+  // **THE AUTHORIZATION IS SPENT BY THE RELEASE.** Once subject information
+  // has gone out the flag is cleared and the instant recorded
+  // (`subjectReleasedAt`, `subjectReleasedBy`), so nothing later in the
+  // grant's life sends it again: not a continuation after approval
+  // (`settle()` answers a continue member only), not a modification within
+  // the earlier approval (its decision carries `subject: false`), not a token
+  // rotation (`manageVerified()` mints a token and nothing else), and not a
+  // derivation (`deriveToken()`, `subject: false`). A modification that ASKS
+  // for subject information is not within the earlier approval
+  // (`modifyGrant()`), so it goes to a new interaction, whose decision
+  // authorizes the one release that follows it. A decision that asks for the
+  // subject without either authorization releases nothing and says so
+  // (`STS-GNAP-0793`).
+  // -------------------------------------------------------------------------
   private async releaseSubject(req, grant) {
     const { log, nowSec, gate, subject, monitor } = this.deps;
     log.debug("Entering GnapGrants.releaseSubject().");
@@ -1325,8 +1504,12 @@ class GnapGrants {
                          format);
     });
     const out: Record<string, any> = {};
-    const ids = subject.subIdsFor(grant.ro.username, formats, { issuer:
-        issuer });
+    // The CLIENT the identifiers are for (#432 phase 7): the opaque
+    // identifier is per client or sector, and `iss_sub` is the `sub` this
+    // client's ID Token carries.
+    const ids = subject.subIdsFor(grant.ro.username, formats, {
+      issuer: issuer, client: grant.client.identifier,
+      sessionId: grant.ro.sessionId || null });
     if (ids.length) {
       out.sub_ids = ids;
     }
@@ -1626,7 +1809,10 @@ class GnapGrants {
     const oauth2 = this.deps.loadOauth2();
     const resolved = subject.resolveUser(asked.user, {
       issuer: oauth2.issuerOf(this.realmBase(req)),
-      oauthIssuer: oauth2.issuerOf(this.realmBase(req))
+      oauthIssuer: oauth2.issuerOf(this.realmBase(req)),
+      // A user reference resolves only for the client it was issued to
+      // (#432 phase 7, gnap_subject.ts).
+      client: identifier
     });
     if (!resolved.ok) {
       log.debug("Leaving GnapGrants.createGrant(). User refused.");
@@ -1640,7 +1826,8 @@ class GnapGrants {
                 key: caller.descriptor.value,
                 keyIdentity: caller.descriptor.identity,
                 proof: caller.descriptor.proof.method,
-                display: caller.display, classId: caller.classId },
+                display: caller.display, classId: caller.classId,
+                classIdDeclared: caller.classIdDeclared },
       request: { tokens: asked.tokens, multiple: asked.multiple,
                  subject: asked.subject,
                  interact: asked.interact },
@@ -1649,7 +1836,13 @@ class GnapGrants {
       ro: null,
       decision: null,
       delivered: false,
-      polls: 0
+      polls: 0,
+      // The grant's own lifetime (#432 phase 7, the header).
+      grantExpiresAt: this.grantExpiryFrom(nowSec()),
+      // What authorizes releasing subject information, set by an interaction
+      // or a delegation decision and spent by the release (releaseSubject()).
+      subjectAuthorizedBy: null,
+      finalization: null
     });
     store.saveGrant(grant,
                     'requested by ' + identifier + ' (' +
@@ -1692,6 +1885,16 @@ class GnapGrants {
                                        amr: ['assertion'], acr: null } : null;
       grant.decision = { approved: true, tokens: asked.tokens,
                          subject: !!asked.subject };
+      // SUBJECT INFORMATION WITHOUT AN INTERACTION IS A DELEGATION (#432
+      // phase 7). The only way here with subject information asked for is a
+      // trusted client presenting a VERIFIED assertion about a person — an
+      // act for that person with nobody asked, which #432 phase 1 puts
+      // before `delegation_policy.ts`'s decide() (S4U2Self's question). This
+      // branch is reached only when that decision allowed it, so the flag
+      // names the decision; release() releases nothing without one of the
+      // two (releaseSubject()'s header).
+      grant.subjectAuthorizedBy = asked.subject && resolved.verified
+        ? 'delegation' : null;
       const released = await this.release(req, grant);
       Object.assign(response, released);
       monitor.record(identifier, 'grant.immediate', {});
@@ -1700,9 +1903,8 @@ class GnapGrants {
       return { ok: true, status: 200, body: response, grant: grant };
     }
     if (!asked.interact) {
-      grant.state = STATE.FINALIZED;
-      store.saveGrant(grant, 'refused: interaction required and the client ' +
-                             'offers none');
+      this.finalize(grant, 'refused: interaction required and the client ' +
+                           'offers none', 'rejected');
       monitor.record(identifier, 'grant.refused',
                      { gnapError: 'invalid_interaction' });
       log.debug("Leaving GnapGrants.createGrant(). Interaction needed, none " +
@@ -1713,8 +1915,7 @@ class GnapGrants {
     }
     const started = this.startInteraction(req, grant, app, asked.interact);
     if (!started.ok) {
-      grant.state = STATE.FINALIZED;
-      store.saveGrant(grant, 'refused: ' + started.why);
+      this.finalize(grant, 'refused: ' + started.why, 'rejected');
       monitor.record(identifier, 'grant.refused',
                      { gnapError: started.gnapError });
       log.debug("Leaving GnapGrants.createGrant(). Interaction refused.");
@@ -1729,7 +1930,8 @@ class GnapGrants {
 
   // Tokens and subject information for a grant whose decision is approved.
   private async release(req, grant) {
-    const { log, config, audit, store, monitor, accessRights } = this.deps;
+    const { log, nowSec, config, errorCodes, audit, store, monitor,
+            accessRights } = this.deps;
     log.debug("Entering GnapGrants.release(). grant=" + grant.id);
     const out: Record<string, any> = {};
     const requests = grant.decision.tokens || [];
@@ -1741,10 +1943,26 @@ class GnapGrants {
       }
     }
     if (grant.decision.subject) {
-      const released = await this.releaseSubject(req, grant);
-      if (released && (released.sub_ids || released.assertions)) {
-        out.subject = released;
+      const authorizedBy = String(grant.subjectAuthorizedBy || '');
+      if (SUBJECT_AUTHORIZATIONS.indexOf(authorizedBy) >= 0) {
+        const released = await this.releaseSubject(req, grant);
+        if (released && (released.sub_ids || released.assertions)) {
+          out.subject = released;
+          grant.subjectReleasedAt = nowSec();
+          grant.subjectReleasedBy = authorizedBy;
+        }
+      } else if (!grant.subjectReleasedAt) {
+        // Asked and approved, but by nothing that may authorize it — never
+        // reached by this file's own paths; the code says which grant if a
+        // new one ever does. (Already released and spent is the ordinary
+        // case of a later release, and says nothing.)
+        log.warn(errorCodes.tag('STS-GNAP-0793') + 'gnap: grant ' + grant.id +
+                 ' was to release subject information that neither an ' +
+                 'interaction nor a delegation decision authorized; none ' +
+                 'was released.');
       }
+      // SPENT, released or not: the next release needs a new authorization.
+      grant.subjectAuthorizedBy = null;
     }
     grant.state = STATE.APPROVED;
     grant.delivered = true;
@@ -1756,12 +1974,18 @@ class GnapGrants {
       : requests.reduce(function (all, one) {
         return all.concat(one.access);
       }, grant.approvedAccess || []);
-    if (config.value('gnap.continueAfterApproval') !== false) {
+    const continuable = config.value('gnap.continueAfterApproval') !== false;
+    if (continuable) {
       out.continue = this.continueMember(req, grant);
-    } else {
-      store.dropContinuation(grant);
     }
     store.saveGrant(grant, 'approved and released');
+    if (!continuable) {
+      // Section 1.5's Approved -> Finalized: the tokens are out and nothing
+      // more can be asked of this grant. FINALIZED AS `issued`, whose tokens
+      // stay live (the header).
+      this.finalize(grant, 'released with no continuation offered',
+                    'issued');
+    }
     monitor.record(grant.client.identifier, 'grant.approved', {});
     audit.audit({ action: 'gnap.grant.approve', category: 'protocol', protocol:
                   PROTOCOL, channel: 'http', outcome: 'success', actor:
@@ -1866,6 +2090,10 @@ class GnapGrants {
     const interaction = grant.interaction;
     interaction.decided = true;
     const username = subject.normaliseName(session.user.username);
+    // Nothing about who the person is may go out unless THIS decision says
+    // so (releaseSubject()'s header): cleared first, set below only by an
+    // approval with the subject box ticked.
+    grant.subjectAuthorizedBy = null;
     if (selection.approve && grant.userHint && grant.userHint !== username &&
         config.value('gnap.allowCrossUser') !== true) {
       // Section 2.4: "If the identified end user does not match the RO present
@@ -1875,6 +2103,7 @@ class GnapGrants {
     } else if (selection.approve) {
       grant.decision = { approved: true, tokens: selection.tokens,
                          subject: !!selection.subject };
+      grant.subjectAuthorizedBy = selection.subject ? 'interaction' : null;
       grant.ro = { username: username, sessionId: session.id,
                    authTime: session.authTime,
                    amr: session.amr, acr: session.acr };
@@ -2068,13 +2297,49 @@ class GnapGrants {
            grant.expiresAt < nowSec();
   }
 
-  private finalize(grant, note) {
-    const { log, store } = this.deps;
-    log.debug("Entering GnapGrants.finalize().");
+  // THE ONE PLACE A GRANT IS FINALIZED (#432 phase 7): the state, the
+  // reason (`FINALIZATION_REASONS`, the header), the continuation dropped,
+  // the history note and the audit row, together — so no path can finalize
+  // a grant without saying why.
+  /**
+   * Finalizes a grant, recording why (#432 phase 7): `issued`, `revoked`,
+   * `rejected` or `expired`, with the transition on its history and an audit
+   * row.
+   *
+   * @param grant - the grant
+   * @param note - the transition, as its history records it
+   * @param reason - one of `FINALIZATION_REASONS`
+   * @param actor - who finalized it, for the audit row; the client otherwise
+   */
+  finalize(grant, note, reason, actor?) {
+    const { log, nowSec, audit, store } = this.deps;
+    log.debug("Entering GnapGrants.finalize(). reason=" + reason);
+    const why = FINALIZATION_REASONS.indexOf(reason) >= 0 ? reason
+      : (grant.delivered ? 'issued' : 'rejected');
     grant.state = STATE.FINALIZED;
+    grant.finalization = { reason: why, at: nowSec(),
+                           note: String(note || '').slice(0, 200) };
     store.dropContinuation(grant);
-    store.saveGrant(grant, note);
+    store.saveGrant(grant, note + ' (finalized: ' + why + ')');
+    audit.audit({ action: 'gnap.grant.finalize', category: 'protocol',
+                  protocol: PROTOCOL, channel: 'http', outcome: 'success',
+                  actor: actor || (grant.client && grant.client.identifier),
+                  target: grant.client && grant.client.identifier,
+                  summary: 'A GNAP grant was finalized: ' + why,
+                  detail: { grant: grant.id, reason: why,
+                            note: String(note || '').slice(0, 200),
+                            resourceOwner: grant.ro ? grant.ro.username :
+                                           '' } });
     log.debug("Leaving GnapGrants.finalize().");
+  }
+
+  // Why an untouched grant that ran out is finalized: `rejected` when the
+  // last thing its resource owner said was no, `expired` otherwise.
+  private expiryReason(grant) {
+    const { log } = this.deps;
+    log.debug("Entering GnapGrants.expiryReason().");
+    log.debug("Leaving GnapGrants.expiryReason().");
+    return grant.lastDenial ? 'rejected' : 'expired';
   }
 
   // ---------------------------------------------------------------------------
@@ -2147,7 +2412,7 @@ class GnapGrants {
     const grant = caller.grant;
     const identifier = grant.client.identifier;
     if (this.expired(grant)) {
-      this.finalize(grant, 'expired');
+      this.finalize(grant, 'expired', this.expiryReason(grant));
       log.debug("Leaving GnapGrants.continueAccepted(). Expired.");
       return this.refusal('STS-GNAP-0132', 'this grant request expired ' +
                           'before it was approved.', 'invalid_continuation');
@@ -2155,6 +2420,18 @@ class GnapGrants {
     if (req.method === 'DELETE') {
       log.debug("Leaving GnapGrants.continueAccepted().");
       return this.revokeGrant(req, grant);
+    }
+    // THE GRANT'S OWN LIFETIME (#432 phase 7): past it nothing continues or
+    // modifies the grant — only the DELETE above, which ends it anyway.
+    if (this.grantLifetimeEnded(grant)) {
+      this.finalize(grant, 'the grant lifetime ended', 'expired');
+      monitor.record(identifier, 'grant.refused',
+                     { gnapError: 'invalid_continuation' });
+      log.debug("Leaving GnapGrants.continueAccepted(). Lifetime ended.");
+      return this.refusal('STS-GNAP-0790', 'this grant\'s lifetime ' +
+          '(gnap.grantLifetimeS) has ended, so it can no longer be ' +
+          'continued or modified; make a new grant request (RFC 9635 ' +
+          'section 5).', 'invalid_continuation');
     }
     if (grant.continueNotBefore && nowSec() < grant.continueNotBefore) {
       monitor.record(identifier, 'continue.too_fast', { gnapError:
@@ -2182,7 +2459,7 @@ class GnapGrants {
       if (grant.state !== STATE.PENDING || !interaction) {
         // Section 5.1: MUST return too_many_attempts, SHOULD finalize.
         this.finalize(grant, 'interaction reference presented outside the ' +
-                      'pending state');
+                      'pending state', 'rejected');
         monitor.record(identifier, 'grant.refused',
                        { gnapError: 'too_many_attempts' });
         log.debug("Leaving GnapGrants.continueAccepted(). interact_ref when " +
@@ -2231,7 +2508,7 @@ class GnapGrants {
     grant.polls = (grant.polls || 0) + 1;
     const maxPolls = Number(config.value('gnap.maxPolls')) || 60;
     if (grant.state === STATE.PENDING && grant.polls > maxPolls) {
-      this.finalize(grant, 'too many polls');
+      this.finalize(grant, 'too many polls', 'rejected');
       log.debug("Leaving GnapGrants.continueAccepted(). Too many polls.");
       return this.refusal('STS-GNAP-0136',
                           'the client polled more than ' + maxPolls + ' ' +
@@ -2277,6 +2554,9 @@ class GnapGrants {
     }
     if (!grant.decision.approved) {
       const code = grant.decision.error || 'user_denied';
+      // Remembered so that a grant left to run out after a no is finalized
+      // as `rejected` rather than `expired` (expiryReason()).
+      grant.lastDenial = code;
       grant.decision = null;
       grant.interaction = null;
       const keepGoing = { continue: this.continueMember(req, grant) };
@@ -2414,20 +2694,88 @@ class GnapGrants {
 
   // Section 5.4.
   private revokeGrant(req, grant) {
-    const { log, audit, monitor, signals } = this.deps;
+    const { log } = this.deps;
     log.debug("Entering GnapGrants.revokeGrant().");
-    this.revokeTokens(grant, 'grant revoked by the client instance');
-    this.finalize(grant, 'revoked by the client instance');
+    this.revokeGrantBy(grant, { by: 'client', actor: grant.client.identifier,
+                                via: 'continuation', req: req });
+    log.debug("Leaving GnapGrants.revokeGrant().");
+    return { ok: true, status: 204, body: null };
+  }
+
+  /**
+   * Says whether a grant can still be revoked: not finalized, or finalized
+   * as `issued` with its tokens live (#432 phase 7).
+   *
+   * @param grant - the grant
+   * @returns true when a revocation would change something
+   */
+  revocable(grant: any): boolean {
+    const { log } = this.deps;
+    log.debug("Entering GnapGrants.revocable().");
+    log.debug("Leaving GnapGrants.revocable().");
+    return !!grant && (grant.state !== STATE.FINALIZED ||
+      !!(grant.finalization && grant.finalization.reason === 'issued'));
+  }
+
+  // -------------------------------------------------------------------------
+  // REVOKING A GRANT, BY WHOEVER MAY (#432 phase 7). Section 5.4's act — the
+  // tokens revoked, the grant finalized as `revoked`, CAEP `session-revoked`
+  // sent (`gnap_signals.ts`) — in ONE function, which the client's DELETE,
+  // the console and `/admin-api` (`gnap_console.ts`) and the person's own
+  // `/portal/gnap` all call, so what the client sees next is the same
+  // whoever ended it. `by` is who: `client`, `administrator` or `person`
+  // (the resource owner); it goes onto the history, the audit row and the
+  // CAEP reason. A grant finalized for any reason but `issued` is left alone
+  // and answered false — there is nothing live left to revoke.
+  // -------------------------------------------------------------------------
+  /**
+   * Revokes a grant (section 5.4): its tokens revoked, the grant finalized as
+   * `revoked`, CAEP `session-revoked` sent — the one path for the client, an
+   * administrator and the resource owner.
+   *
+   * @param grant - the grant
+   * @param context - `{ by, actor, via, req }`: `client`, `administrator` or
+   *   `person`, who acted, through which door, and the request
+   * @returns true when it was revoked, false when nothing live was left
+   */
+  revokeGrantBy(grant: any, context: any): boolean {
+    const { log, audit, monitor, signals } = this.deps;
+    const ctx = context || {};
+    const by = String(ctx.by || 'client');
+    log.debug("Entering GnapGrants.revokeGrantBy(). by=" + by);
+    if (!this.revocable(grant)) {
+      log.debug("Leaving GnapGrants.revokeGrantBy(). Nothing live.");
+      return false;
+    }
+    const who = by === 'administrator' ? 'an administrator'
+      : (by === 'person' ? 'its resource owner' : 'the client instance');
+    const actor = String(ctx.actor || grant.client.identifier);
+    this.revokeTokens(grant, 'grant revoked by ' + who);
+    this.finalize(grant, 'revoked by ' + who +
+                  (by === 'client' ? '' : ' (' + actor + ')'), 'revoked',
+                  actor);
     monitor.record(grant.client.identifier, 'grant.revoked', {});
     audit.audit({ action: 'gnap.grant.revoke', category: 'protocol',
       protocol: PROTOCOL,
-      channel: 'http', outcome: 'success', actor: grant.client.identifier,
+      channel: ctx.via === 'portal' ? 'portal' : 'http', outcome: 'success',
+      actor: actor,
       target: grant.client.identifier, summary: 'A GNAP grant was revoked by ' +
-                                                'its client instance',
-      detail: { grant: grant.id, tokens: (grant.tokens || []).length } });
-    signals.grantRevoked(req, grant, 'The client instance revoked the grant.');
-    log.debug("Leaving GnapGrants.revokeGrant().");
-    return { ok: true, status: 204, body: null };
+                                                who,
+      detail: { grant: grant.id, by: by, via: String(ctx.via || ''),
+                tokens: (grant.tokens || []).length } });
+    try {
+      signals.grantRevoked(ctx.req || null, grant,
+                           'The grant was revoked by ' + who + '.');
+    } catch (e) {
+      log.debug("Caught in GnapGrants.revokeGrantBy(): " +
+                ((e && e.message) || e));
+      // The revocation is done; a signal that could not be started is logged
+      // by gnap_signals itself and must not undo the answer.
+      log.debug("revokeGrantBy(): the CAEP signal could not be started: " +
+                e.message);
+    }
+    log.debug("Leaving GnapGrants.revokeGrantBy().");
+    return true;
   }
 
   // ---------------------------------------------------------------------------
@@ -2623,14 +2971,30 @@ class GnapGrants {
       return this.refusal('STS-GNAP-0153', 'a revoked access token cannot be ' +
                           'rotated.', 'invalid_rotation');
     }
-    if (grant && grant.state === STATE.FINALIZED) {
+    // A grant finalized as `issued` keeps its tokens, and they rotate (#432
+    // phase 7); every other finalized grant's tokens are over.
+    if (grant && grant.state === STATE.FINALIZED && !this.revocable(grant)) {
       log.debug("Leaving GnapGrants.manageVerified(). The grant is finalized.");
       return this.refusal('STS-GNAP-0154', 'the grant this token belongs to ' +
                           'is finalized.', 'invalid_rotation');
     }
+    // THE GRANT'S OWN LIFETIME (#432 phase 7): a rotation would renew the
+    // grant's access past the point its resource owner is to be asked again.
+    // The token record carries it too, for a grant already pruned.
+    if (this.grantLifetimeEnded(grant || record)) {
+      if (grant && grant.state !== STATE.FINALIZED) {
+        this.finalize(grant, 'the grant lifetime ended', 'expired');
+      }
+      log.debug("Leaving GnapGrants.manageVerified(). Lifetime ended.");
+      return this.refusal('STS-GNAP-0791', 'the grant this token was issued ' +
+          'under has reached the end of its lifetime (gnap.grantLifetimeS), ' +
+          'so the token cannot be rotated; make a new grant request (RFC ' +
+          '9635 section 6.1).', 'invalid_rotation');
+    }
     const iat = nowSec();
-    const lifetime = Math.max(1, (record.exp || iat) - (record.iat || iat)) ||
-      (Number(config.value('gnap.accessTokenLifetimeS')) || 3600);
+    const lifetime = this.cappedLifetime(grant || record, iat,
+      Math.max(1, (record.exp || iat) - (record.iat || iat)) ||
+      (Number(config.value('gnap.accessTokenLifetimeS')) || 3600));
     const cnf = newDescriptor ? keys.confirmationOf(newDescriptor) : record.cnf;
     const model = { jti: store.handle(16), iss: record.iss, sub: record.sub,
                     aud: record.aud,
@@ -2713,6 +3077,74 @@ class GnapGrants {
     return { ok: true, status: 200, body: { access_token: response } };
   }
 
+  // -------------------------------------------------------------------------
+  // THE EXPIRY JOB (#432 phase 7). A grant past its interaction or its grant
+  // lifetime is refused by the next request that touches it, which finalizes
+  // it then (continueAccepted(), manageVerified()); this records the end of
+  // one NOBODY touches, so the console, the portal and the audit log say
+  // `expired` (or `rejected`) about it rather than showing it approved or
+  // pending for ever. A cluster job per realm (#49: anything periodic is a
+  // scheduler job); the opportunistic prune in `gnap_store.ts` still deletes
+  // the rows later, as it did.
+  // -------------------------------------------------------------------------
+  /**
+   * Finalizes every grant in the ambient realm past its interaction or its
+   * grant lifetime, recording why. The `gnap.grant-expiry` job's body.
+   *
+   * @returns `{ summary }` for the scheduler
+   */
+  expireGrants(): any {
+    const { log, store } = this.deps;
+    log.debug("Entering GnapGrants.expireGrants().");
+    let ended = 0;
+    store.listGrants().forEach((grant) => {
+      if (grant.state === STATE.FINALIZED) {
+        return;
+      }
+      if (this.expired(grant)) {
+        this.finalize(grant, 'the interaction expired',
+                      this.expiryReason(grant), 'scheduler');
+        ended += 1;
+      } else if (this.grantLifetimeEnded(grant)) {
+        this.finalize(grant, 'the grant lifetime ended', 'expired',
+                      'scheduler');
+        ended += 1;
+      }
+    });
+    log.debug("Leaving GnapGrants.expireGrants(). " + ended + ".");
+    return { summary: ended + ' GNAP grant(s) finalized as expired' };
+  }
+
+  /**
+   * Registers the expiry job on the scheduler, once.
+   */
+  scheduleJobs(): void {
+    const { log, scheduler } = this.deps;
+    const self = this;
+    log.debug("Entering GnapGrants.scheduleJobs().");
+    const s = scheduler();
+    if (s.job(EXPIRY_JOB)) {
+      log.debug("Leaving GnapGrants.scheduleJobs(). Registered.");
+      return;
+    }
+    s.register({
+      id: EXPIRY_JOB,
+      title: 'GNAP: expired grants',
+      describe: 'Finalizes each GNAP grant whose interaction or grant ' +
+                'lifetime (gnap.grantLifetimeS) has ended and that no ' +
+                'request has touched since, recording why (#432).',
+      owner: 'gnap/gnap_grants.ts',
+      kind: 'cluster', scope: 'realm', everyMs: function (): number {
+        return 300000;
+      },
+      manual: true,
+      run: function (): any {
+        return self.expireGrants();
+      }
+    });
+    log.debug("Leaving GnapGrants.scheduleJobs(). On the scheduler.");
+  }
+
   // What the composition root passes (#50, R2): the real modules, as the
   // module built its own instance from before.
   /**
@@ -2755,6 +3187,11 @@ class GnapGrants {
         helpers.log.debug("Entering loadOauth2().");
         helpers.log.debug("Leaving loadOauth2().");
         return require('../oauth-oidc/oauth2');
+      },
+      scheduler: function scheduler() {
+        helpers.log.debug("Entering scheduler().");
+        helpers.log.debug("Leaving scheduler().");
+        return require('../cluster/scheduler');
       }
     };
   }
@@ -2771,7 +3208,11 @@ class GnapGrants {
 const slot = new InstanceSlot<GnapGrants>(
   'gnap/gnap_grants',
   () => new GnapGrants(GnapGrants.defaultDeps()),
-  null,
+  // The wire step registers the expiry job (#432 phase 7), as
+  // `pairwise_subjects.ts`'s registers its purge.
+  function (instance: GnapGrants): void {
+    instance.scheduleJobs();
+  },
   helpers.log);
 
 // Standalone, build the default now, as loading this module always did.
@@ -2802,6 +3243,9 @@ export = {
   KIND_RS: GnapGrants.KIND_RS,
   GNAP_MEMBERS: GnapGrants.GNAP_MEMBERS,
   RESERVED_AS_NAMES: GnapGrants.RESERVED_AS_NAMES,
+  FINALIZATION_REASONS: GnapGrants.FINALIZATION_REASONS,
+  SUBJECT_AUTHORIZATIONS: GnapGrants.SUBJECT_AUTHORIZATIONS,
+  EXPIRY_JOB: GnapGrants.EXPIRY_JOB,
   capabilities: slot.forward('capabilities'),
   capabilityList: slot.forward('capabilityList'),
   defaultCapabilities: slot.forward('defaultCapabilities'),
@@ -2823,5 +3267,11 @@ export = {
   digestTokenOf: slot.forward('digestTokenOf'),
   canonicalJson: slot.forward('canonicalJson'),
   resourceServersFor: slot.forward('resourceServersFor'),
-  revokeTokens: slot.forward('revokeTokens')
+  revokeTokens: slot.forward('revokeTokens'),
+  revokeGrantBy: slot.forward('revokeGrantBy'),
+  revocable: slot.forward('revocable'),
+  finalize: slot.forward('finalize'),
+  grantLifetimeEnded: slot.forward('grantLifetimeEnded'),
+  grantExpiryFrom: slot.forward('grantExpiryFrom'),
+  expireGrants: slot.forward('expireGrants')
 };

@@ -65,9 +65,11 @@ Everything the two specifications define on the authorization server's side:
   `cert`, `cert#S256`, and a key **reference** to a key registered on an
   application entry, including a shared symmetric key.
 * **Grants:** single and multiple access tokens, `bearer` tokens, subject
-  identifiers in the RFC 9493 formats, `id_token` and `saml2` assertions,
-  `instance_id`, user references, polling with `wait` and `too_fast`,
-  modification, revocation, and a trusted client that needs no interaction.
+  identifiers in the RFC 9493 formats (the `opaque` one per client),
+  `id_token` and `saml2` assertions, `instance_id`, user references, polling
+  with `wait` and `too_fast`, modification, revocation, a trusted client that
+  needs no interaction, and a grant lifetime separate from the token
+  lifetime.
 * **Token management:** rotation, revocation, and client **key rotation**
   proved by both keys.
 * **RFC 9767:** discovery, introspection, resource set registration, and
@@ -214,6 +216,76 @@ however they signed in. An approval is remembered in the consent register, so
 the same application asking the same person for the same rights is not asked
 again (`gnap.rememberApprovals`).
 
+### What a person sees: `/portal/gnap`
+
+Every grant a person is the resource owner of is listed on their own portal,
+under **Your account → GNAP grants** (`/portal/gnap`): the application, what
+the grant allows (each access right, with any limits it carries), the tokens
+issued under it (label, format, expiry and whether each still works — never a
+token's value), how long the grant can still be renewed, and, once it has
+ended, why. **Revoke this grant** ends it at once: every token issued under it
+stops working, the application can no longer continue or modify it, and CAEP
+`session-revoked` is sent — exactly what the application would see had it
+revoked the grant itself (section 5.4). The page takes no name from the
+request: it lists and revokes only the signed-in person's own grants.
+
+An administrator sees the same list on the person's page in the console, in
+its **GNAP grants** tab (`/admin/users?user=…`), with a Revoke on each, and
+the management API carries it as `gnapGrants` on `GET
+/admin-api/users?user=…`. `POST /admin-api/gnap/revoke-grant` with both
+`grant` and `user` revokes a grant only if that person is its resource owner.
+
+In a service deployed as several [cells](cells.md), each list is the grants
+the cell holds; a grant whose client instance is registered in another cell
+stays there and is listed there, and the page says so.
+
+### Why a grant ended
+
+Every finalized grant records one of four reasons, shown on the console, the
+portal and in the audit log (`gnap.grant.finalize`):
+
+| Reason | What happened |
+|---|---|
+| `issued` | Its tokens were released and nothing more can be asked of it (an approved grant answered with no `continue`, `gnap.continueAfterApproval` off). Its tokens keep working. |
+| `revoked` | Ended by its client (`DELETE` on the continuation URI), an administrator, or its resource owner on `/portal/gnap`. |
+| `rejected` | Refused: no way to interact, an interaction that could not start, too many polls, an interaction reference presented out of turn, or a grant that ran out after its resource owner said no. |
+| `expired` | Its interaction ran out, or its grant lifetime did. |
+
+### The grant lifetime
+
+A grant has a lifetime of its own, `gnap.grantLifetimeS` (a day by default),
+counted from its request and separate from the access token lifetime. Past it
+the grant cannot be continued or modified (`invalid_continuation`), none of
+its tokens can be rotated (`invalid_rotation`), and it is finalized as
+`expired`. No token issued under a grant is given an expiry later than the
+grant's. A longer lifetime lets a client keep access by rotating its tokens
+for longer on the strength of one approval.
+
+### What a client is told about the person
+
+* **Subject identifiers are per client.** An `opaque` identifier is different
+  for every client instance (or for every client of one registered sector —
+  the application's `oauthSectorIdentifierUri`), so two clients cannot match
+  their records on it. The same value doubles as a **user reference**
+  (section 2.4.1), and it resolves only for the client it was given to; from
+  any other client it is `unknown_user`. `iss_sub` carries the `sub` the
+  client's ID Token carries — pairwise for a client registered as pairwise —
+  and `uri`, which is the person's public subject, is given only to a client
+  told the public `sub`.
+* **Subject information is released once, and only on an authorization**: the
+  person leaving "Who you are" ticked on the approval page, or a delegation
+  decision for a trusted client acting for a person by a verified assertion.
+  Nothing later in the grant's life — a continuation, a modification within
+  what was approved, a token rotation — sends it again. A modification that
+  asks for it again goes back to the person.
+* **`class_id` and `display` are what the client says about itself**, and
+  never raise trust. A name, home page or logo the application's entry does
+  not hold is shown on the approval page as the application's own
+  description, which this service has not verified; a self-declared logo is
+  not drawn. Nothing about either changes what a client may be granted, and
+  an application entry made on first sight in development mode records only
+  the key.
+
 ## Every request body is validated
 
 Before any handler reads a GNAP request, the body is:
@@ -229,7 +301,8 @@ with a sentence saying what was wrong.
 
 ## Shared Signals
 
-* A **grant revoked** — by its client or on `/admin/gnap` — sends CAEP
+* A **grant revoked** — by its client, on `/admin/gnap`, on the person's
+  console page or by the person on `/portal/gnap` — sends CAEP
   `session-revoked` whose session is `gnap-grant:<id>`.
 * A **token revoked** at its management URI sends `session-revoked` whose
   session is `gnap-token:<jti>`.
@@ -275,6 +348,7 @@ it then publishes is what its grant endpoint enforces.
 | `gnap.tokenFormats` | `STS_GNAP_TOKEN_FORMATS` | `jwt-signed,jwt-encrypted,macaroon,biscuit,zcap` | yes | `token_formats_supported`: a format not listed is never issued, and a resource set accepting only unlisted formats is refused. |
 | `gnap.zcapCryptosuite` | `STS_GNAP_ZCAP_CRYPTOSUITE` | `eddsa-jcs-2022` | yes | The proof a zcap token is signed with, and the only one accepted: `eddsa-jcs-2022`, `mldsa44-jcs-2024`, `slhdsa128-jcs-2024`, or — **with the [warning above](#zcap-proof-suites)** — `Ed25519Signature2020`. |
 | `gnap.accessTokenLifetimeS` | `STS_GNAP_ACCESS_TOKEN_LIFETIME_S` | `3600` | yes | The `expires_in` of every access token; a client may override it with `gnapAccessTokenLifetimeS`. |
+| `gnap.grantLifetimeS` | `STS_GNAP_GRANT_LIFETIME_S` | `86400` | yes | How long a grant lives, separate from its tokens: past it the grant cannot be continued, modified or have a token rotated, and no token issued under it expires later. **A longer one lets a client keep access by rotation for longer on one approval.** |
 | `gnap.interactionLifetimeS` | `STS_GNAP_INTERACTION_LIFETIME_S` | `600` | yes | How long a pending grant's interaction start URIs and user codes stay usable. |
 | `gnap.continueWaitS` | `STS_GNAP_CONTINUE_WAIT_S` | `5` | yes | The `wait` of every continuation response; continuing sooner is `too_fast`, and `0` lets a test run without sleeping. |
 | `gnap.maxPolls` | `STS_GNAP_MAX_POLLS` | `60` | yes | Continuation polls a pending grant accepts before it is finalized with `too_many_attempts`. |
@@ -359,11 +433,16 @@ changed — the console page, or `POST /admin-api/config/set`.
   can be replayed, so when `gnap.replayCacheSize` is reached the next signed
   request is refused (`STS-GNAP-0718`) instead of the oldest live entry being
   dropped.
-* **A person's opaque identifier is derived from their stable subject.** It is
-  an HMAC over the person's directory subject rather than their name, so a
-  rename keeps it and a name deleted and re-created gets a new one — RFC 9635
-  section 3.4's "SHOULD NOT reuse" held across a directory edit. `account` is a
-  name by definition and still follows a rename.
+* **A person's opaque identifier is derived per client from their stable
+  subject.** It is an HMAC over the client's sector and the person's directory
+  subject rather than their name, so a rename keeps it, a name deleted and
+  re-created gets a new one — RFC 9635 section 3.4's "SHOULD NOT reuse" held
+  across a directory edit — and two clients are never given the same one.
+  `account` is a name by definition and still follows a rename.
+* **Instance attestation is not used.** OAuth 2.0 Attestation-Based Client
+  Authentication could vouch for a client instance's `class_id`; it is
+  optional in the plan for GNAP and not wired here, so `class_id` stays a
+  self-declared hint.
 * **Remembered approvals live in the consent register, as digests.** Each
   approved access right is stored on the person's own entry as a `gnap:` digest
   of that right, in the same consent register the OAuth consent screen uses,

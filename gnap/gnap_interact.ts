@@ -387,9 +387,24 @@ class GnapInteract {
     const { log, xmlEscape, websecurity } = this.deps;
     log.debug("Entering GnapInteract.approvalPage().");
     const display = grant.client.display || {};
-    const logo = display.logoUri && /^data:image\//i.test(display.logoUri)
+    // ---------------------------------------------------------------------
+    // WHAT THE CLIENT SAID ABOUT ITSELF IS SAID TO BE ITS OWN CLAIM (#432
+    // phase 7). A name, home page or logo the application ENTRY does not
+    // carry came from the request, which any key can send (section 2.3;
+    // `gnap_grants.ts`'s displayOf()). It is still drawn — a person needs
+    // something to recognise — but beside the words "as it describes
+    // itself", and the registered identifier is always shown; a self-declared
+    // logo is not drawn at all, because a picture cannot carry that caveat
+    // and a borrowed logo is the cheapest impersonation there is.
+    // ---------------------------------------------------------------------
+    const declared: string[] = Array.isArray(display.declared)
+      ? display.declared : [];
+    const logo = display.logoUri && declared.indexOf('logoUri') < 0 &&
+      /^data:image\//i.test(display.logoUri)
       ? '<img class="logo" alt="" src="' + xmlEscape(display.logoUri) + '">'
       : '';
+    const unverified = ' <span class="sub">(as it describes itself; this ' +
+      'service has not verified it)</span>';
     let rows = '';
     grant.request.tokens.forEach(function (token, t) {
       rows += (grant.request.tokens.length > 1 || token.label
@@ -424,10 +439,12 @@ class GnapInteract {
       '</code></p><p ' +
       'class="app"><strong>' +
       xmlEscape(display.name || grant.client.identifier) +
-      '</strong> is asking for access on your behalf.' +
+      '</strong>' + (declared.indexOf('name') >= 0 ? unverified : '') +
+      ' is asking for access on your behalf.' +
       (display.uri ? '<br><a href="' + xmlEscape(display.uri) + '" ' +
           'rel="noreferrer">' +
-        xmlEscape(display.uri) + '</a>' : '') + '</p>' +
+        xmlEscape(display.uri) + '</a>' +
+        (declared.indexOf('uri') >= 0 ? unverified : '') : '') + '</p>' +
       '<form method="post" action="/gnap/approve/' +
       xmlEscape(grant.interaction.approvalId) + '">' +
       websecurity.field(session.id) +
@@ -453,7 +470,9 @@ class GnapInteract {
       xmlEscape(grant.client.proof) + '</code>' +
       (grant.client.classId ? ' · ' +
           'class: <code>' +
-      xmlEscape(grant.client.classId) + '</code>' : '') + '</div>' +
+      xmlEscape(grant.client.classId) + '</code>' +
+        (grant.client.classIdDeclared ? ' (self-declared)' : '') : '') +
+      '</div>' +
       '<div>Authorization server: <code>' + xmlEscape(grant.grantEndpoint) +
       '</code></div></div>';
     this.sendPage(res, 200, 'Allow access?', inner);

@@ -618,21 +618,28 @@ function childMain() {
                                        former: louRisc.formerIdentifiers }));
 
       // GNAP's opaque subject identifier and user reference follow the entry.
+      // Per client since #432 phase 7: the identifier and the reference are
+      // the ones ONE client instance was given, so this asks as that client.
       const gnapSubject = require(ROOT + '/gnap/gnap_subject');
+      const GNAP_CLIENT = 'ss-gnap-client';
       ldap.createUser('ss-kim', { invent: false });
-      const kimOpaque = gnapSubject.opaqueIdFor('ss-kim');
+      const kimOpaque = gnapSubject.opaqueIdFor('ss-kim', GNAP_CLIENT);
       ldap.performOperation('modifyDN', {
         dn: ldap.objectFor('ss-kim').entry.dn, boundDn: '', channel: 'ldaps',
         newRdn: 'uid=ss-kimberly', newSuperior: '', deleteOldRdn: true });
-      const kimByRef = gnapSubject.resolveUser({ reference: kimOpaque }, {});
-      note(gnapSubject.opaqueIdFor('ss-kimberly') === kimOpaque &&
+      const kimByRef = gnapSubject.resolveUser({ reference: kimOpaque },
+                                               { client: GNAP_CLIENT });
+      note(gnapSubject.opaqueIdFor('ss-kimberly', GNAP_CLIENT) ===
+             kimOpaque &&
            kimByRef.ok && kimByRef.username === 'ss-kimberly',
            'D9. a GNAP opaque subject identifier survives a rename, and the ' +
            'reference names the renamed person', JSON.stringify(kimByRef));
       ldap.deletePerson(ldap.objectFor('ss-kimberly').entry.dn);
       ldap.createUser('ss-kim', { invent: false });
-      const kimGone = gnapSubject.resolveUser({ reference: kimOpaque }, {});
-      note(!kimGone.ok && gnapSubject.opaqueIdFor('ss-kim') !== kimOpaque,
+      const kimGone = gnapSubject.resolveUser({ reference: kimOpaque },
+                                              { client: GNAP_CLIENT });
+      note(!kimGone.ok &&
+           gnapSubject.opaqueIdFor('ss-kim', GNAP_CLIENT) !== kimOpaque,
            'D10. and a person re-created under the old name has a different ' +
            'one, while the old reference names nobody',
            JSON.stringify(kimGone));

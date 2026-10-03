@@ -54,7 +54,6 @@
 // builds a default instance when the module loads.
 // ---------------------------------------------------------------------------
 
-import nodeCrypto = require('crypto');
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
 import stsCrypto = require('../common/crypto');
@@ -74,6 +73,10 @@ interface GnapSubjectDeps {
   loadClaimAttributes(): any;
   loadOauth2(): any;
   loadSaml2(): any;
+  // `oauth-oidc/pairwise_subjects.ts` (#432 phase 7): the per-client opaque
+  // identifier and the `sub` a client is told, by OIDC Core section 8's
+  // model. Lazily, as the other two OAuth modules are.
+  loadPairwise(): any;
 }
 
 // What a resolution answers.
@@ -156,14 +159,27 @@ class GnapSubject {
   // -------------------------------------------------------------------------
   // THE OPAQUE IDENTIFIER, and why it doubles as a user reference.
   //
-  // Stable per person PER REALM (an HMAC under a realm-derived key), so the
-  // same person gets the same identifier across grants and clients — section
-  // 3.4 says identifiers "SHOULD uniquely identify the RO at the AS" and
-  // "SHOULD NOT reuse Subject Identifiers for multiple different ROs". And
-  // section 2.4.1 names this exact value as the way a client obtains a USER
+  // **PER CLIENT OR SECTOR SINCE #432 PHASE 7 (2026-10-03).** It was stable
+  // per person PER REALM — one HMAC under a realm-derived key — so every
+  // client instance was handed the same value for a person and any two could
+  // correlate them by it. It is now `pairwise_subjects.ts`'s
+  // `gnapOpaqueFor()`: stable for one client (or one registered sector) and
+  // different for every other, OIDC Core section 8's model, which that file
+  // argues. Section 3.4's "SHOULD uniquely identify the RO at the AS" holds
+  // per client, and its "SHOULD NOT reuse Subject Identifiers for multiple
+  // different ROs" holds as before, because the input is still the person's
+  // stable subject.
+  //
+  // Section 2.4.1 names this exact value as the way a client obtains a USER
   // REFERENCE, so it is recorded in the reference store the moment it is
-  // issued: presenting it back as `user` then resolves, and a value this AS
-  // never issued does not.
+  // issued — WITH THE CLIENT AND SECTOR IT WAS ISSUED TO. Presenting it back
+  // as `user` resolves only for that client (or a client of the same
+  // registered sector, which derives the same value); from any other client
+  // it is `unknown_user`, exactly as a value this AS never issued is, because
+  // a reference that resolved anywhere would be the correlation handle the
+  // per-client derivation exists to remove. No migration: a reference
+  // recorded before this change carries no client and resolves for nobody
+  // (installs are rebuilt).
   // -------------------------------------------------------------------------
   //
   // **OVER THE PERSON'S STABLE SUBJECT WHERE THERE IS ONE (2026-09-14)**, and
@@ -174,33 +190,56 @@ class GnapSubject {
   // presenting it back names whoever that entry is called now, and nobody once
   // the entry is gone.
   /**
-   * Returns the opaque Subject Identifier for a person, derived over their
-   * stable subject where there is one, and records it in the reference store so
-   * that presenting it back as `user` resolves (section 2.4.1).
+   * Returns the opaque Subject Identifier a client instance is told for a
+   * person — per client or registered sector (`pairwise_subjects.ts`),
+   * derived over their stable subject where there is one — and records it in
+   * the reference store, with the client and sector, so that presenting it
+   * back as `user` resolves for that client only (section 2.4.1).
    *
    * @param username - the person
+   * @param clientId - the client instance's application identifier
    * @returns the opaque identifier
    */
-  opaqueIdFor(username: string): string {
+  opaqueIdFor(username: string, clientId: string): string {
     const { log } = this;
-    const { helpers, store } = this.deps;
-    log.debug("Entering GnapSubject.opaqueIdFor().");
-    const secret = helpers.refreshTokenKeysFor().secret;
-    const key = Buffer.from(nodeCrypto.hkdfSync('sha256', secret,
-                                                Buffer.alloc(0),
-                                                Buffer.from('iya-sts gnap ' +
-                                                    'opaque subject v1'),
-                                                32));
+    const { helpers, store, loadPairwise } = this.deps;
+    log.debug("Entering GnapSubject.opaqueIdFor(). client=" + clientId);
     const subject = helpers.subjectForName(username);
-    const id = nodeCrypto.createHmac('sha256', key)
-                         .update(subject || this.normaliseName(username))
-                         .digest('base64url')
-      .slice(0, 20);
-    store.putUserRef(id, subject ? { username: this.normaliseName(username),
-                                     sub: subject }
-                                 : { username: this.normaliseName(username) });
+    const made = loadPairwise().gnapOpaqueFor(
+        String(clientId || ''), subject || this.normaliseName(username));
+    const row: Record<string, string> = {
+      username: this.normaliseName(username),
+      client: String(clientId || ''),
+      sector: made.sector
+    };
+    if (subject) {
+      row.sub = subject;
+    }
+    store.putUserRef(made.id, row);
     log.debug("Leaving GnapSubject.opaqueIdFor().");
-    return id;
+    return made.id;
+  }
+
+  // A recorded reference is usable only by the client it was issued to, or
+  // by a client of the same registered sector — the one that derives the
+  // same value (the header of opaqueIdFor()).
+  private refIsForClient(row: any, clientId: unknown): boolean {
+    const { log } = this;
+    const { loadPairwise } = this.deps;
+    log.debug("Entering GnapSubject.refIsForClient().");
+    const client = String(clientId || '');
+    if (!row || !row.client || !client) {
+      log.debug("Leaving GnapSubject.refIsForClient(). No client to match.");
+      return false;
+    }
+    if (row.client === client) {
+      log.debug("Leaving GnapSubject.refIsForClient(). The same client.");
+      return true;
+    }
+    const shared = /^sector:/.test(String(row.sector || '')) &&
+      loadPairwise().gnapSectorOf(client) === row.sector;
+    log.debug("Leaving GnapSubject.refIsForClient(). sector=" + shared);
+    return shared;
   }
 
   // The facts the directory holds about a person, for the formats that need
@@ -253,7 +292,8 @@ class GnapSubject {
    *
    * @param username - the person
    * @param formats - the requested formats
-   * @param ctx - the grant's context
+   * @param ctx - the grant's context: `{ issuer, client, sessionId }`, the
+   *   client being the instance the identifiers are released to
    * @returns the Subject Identifiers
    */
   subIdsFor(username: string, formats: string[], ctx?: any): any[] {
@@ -274,17 +314,45 @@ class GnapSubject {
         return '';
       }
     }());
+    // -----------------------------------------------------------------------
+    // THE `sub` OF `iss_sub` IS THE ONE THIS CLIENT'S ID TOKEN CARRIES (#432
+    // phase 7). `oauth2.idToken()` — the `id_token` assertion beside it —
+    // maps the person's public subject through the client's registered
+    // `subject_type` (public, pairwise per sector, ephemeral), and an
+    // `iss_sub` that named the public subject beside a pairwise ID Token
+    // would hand the client the correlation handle the ID Token withholds.
+    // A pairwise client with no sector is told no `iss_sub` (and no `uri`),
+    // rather than a public one it registered not to be given.
+    // -----------------------------------------------------------------------
+    const clientSub = (function () {
+      if (!context.client) {
+        return facts.person.sub || null;
+      }
+      try {
+        return self.deps.loadPairwise().subjectFor(context.client,
+                                                   facts.person.sub,
+                                                   context.sessionId) ||
+               null;
+      } catch (e) {
+        log.debug("Caught in a callback in GnapSubject.subIdsFor(): " +
+                  ((e && e.message) || e));
+        // A pairwise client with no sector (pairwise_subjects.ts refuses to
+        // pick one): no `iss_sub` and no `uri` for it.
+        return null;
+      }
+    }());
     const made = {
       opaque: function () {
         log.debug("Entering opaque().");
         log.debug("Leaving opaque().");
-        return { format: 'opaque', id: self.opaqueIdFor(username) };
+        return { format: 'opaque',
+                 id: self.opaqueIdFor(username, context.client) };
       },
       iss_sub: function () {
         log.debug("Entering iss_sub().");
         log.debug("Leaving iss_sub().");
-        return { format: 'iss_sub', iss: context.issuer,
-                 sub: facts.person.sub };
+        return clientSub ? { format: 'iss_sub', iss: context.issuer,
+                             sub: clientSub } : null;
       },
       email: function () {
         log.debug("Entering email().");
@@ -302,7 +370,11 @@ class GnapSubject {
       uri: function () {
         log.debug("Entering uri().");
         log.debug("Leaving uri().");
-        return { format: 'uri', uri: facts.person.sub };
+        // The PUBLIC subject, so only for a client told the public `sub`:
+        // handed to a pairwise or ephemeral client it would undo what its
+        // `iss_sub` withholds.
+        return clientSub && clientSub === facts.person.sub
+          ? { format: 'uri', uri: facts.person.sub } : null;
       },
       phone_number: function () {
         log.debug("Entering phone_number().");
@@ -409,7 +481,9 @@ class GnapSubject {
    * reference is `unknown_user`.
    *
    * @param user - the `user` member of the grant request
-   * @param ctx - the grant's context
+   * @param ctx - the grant's context: `{ issuer, oauthIssuer, client }`, the
+   *   client being the instance presenting it — a user reference resolves
+   *   only for the client it was issued to
    * @returns `{ ok: true, username, verified }` (username null when nothing
    *   resolved), or a refusal
    */
@@ -425,7 +499,11 @@ class GnapSubject {
     }
     if (user.reference) {
       const row = store.userByRef(user.reference);
-      const referenced = this.nameOfUserRef(row);
+      // Only the client it was issued to (or one of the same registered
+      // sector) may present it; anybody else is told what a value this AS
+      // never issued is told (opaqueIdFor()'s header).
+      const referenced = this.refIsForClient(row, context.client)
+        ? this.nameOfUserRef(row) : null;
       if (!referenced) {
         log.debug("Leaving GnapSubject.resolveUser(). Unknown reference.");
         return this.refusal('STS-GNAP-0070', 'the user reference is not one ' +
@@ -506,8 +584,10 @@ class GnapSubject {
       return null;
     }
     if (subId.format === 'opaque') {
+      const row = store.userByRef(subId.id);
       log.debug("Leaving GnapSubject.usernameFromSubId().");
-      return this.nameOfUserRef(store.userByRef(subId.id));
+      return this.refIsForClient(row, ctx.client) ? this.nameOfUserRef(row)
+                                                  : null;
     }
     // A SUBJECT THIS SERVICE ISSUED, IN EITHER FORM (2026-09-14):
     // `urn:uuid:<entryUUID>` is looked up in the directory and the legacy
@@ -643,6 +723,9 @@ class GnapSubject {
       },
       loadSaml2: function () {
         return require('../saml/saml2');
+      },
+      loadPairwise: function () {
+        return require('../oauth-oidc/pairwise_subjects');
       }
     };
   }

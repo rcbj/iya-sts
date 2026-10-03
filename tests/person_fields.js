@@ -218,9 +218,10 @@ function childMain() {
       const req = { query: { user: 'pf-alice' }, headers: {}, cookies: {},
                     method: 'GET', path: '/admin/users', url: '/admin/users' };
       const inner = String((admin.usersView(req, undefined) || {}).inner || '');
+      // GNAP grants (#432 phase 7) joined after Federation links.
       const tabs = ['utab-overview', 'utab-activity', 'utab-attributes',
-                    'utab-credentials', 'utab-federation', 'utab-entry',
-                    'utab-signout'];
+                    'utab-credentials', 'utab-federation', 'utab-gnap',
+                    'utab-entry', 'utab-signout'];
       const at = tabs.map(function (id) {
         return inner.indexOf('<section class="tabpanel' +
           (id === 'utab-overview' ? ' first' : '') + '" id="' + id + '">');
@@ -231,7 +232,7 @@ function childMain() {
       note(inOrder &&
              /<nav class="tabbar" aria-label="Sections of this page">/.test(
                inner),
-           'E. seven tabs, in order', JSON.stringify(at));
+           'E. eight tabs, in order', JSON.stringify(at));
       ['ucred-factors', 'ucred-password', 'ucred-keys']
         .forEach(function (id) {
           note(inner.indexOf('id="' + id + '"') > at[3] &&

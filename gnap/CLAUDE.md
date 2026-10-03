@@ -129,7 +129,9 @@ installed with `ssf_streams.setSubjectScope('gnap', …)` refuses a stream owned
 a GNAP web application (a `gnap-client` with a finish URI) any subject who never
 approved a grant to it. `ssf/ssf.ts`'s `emitProtocolEvent()` is the delivery,
 and `ssf/ssf_auth.ts`'s `gnap` scheme is how an application owns a stream as
-itself. **Nothing listens to CAEP or RISC to revoke a grant**, by decision.
+itself. **Nothing listens to CAEP or RISC to revoke a grant**, by decision (#432
+reverses this in phase 2). A grant revoked by its resource owner on `/portal/gnap` or
+per person on the console sends the same `session-revoked`, through `revokeGrantBy()`.
 
 **THE `ssf` ACCESS RIGHTS ARE THIS SERVICE'S OWN PROTECTED SCOPES (#110,
 2026-09-22).** `ssf:read`/`ssf:write` as reference strings, or an object of type
@@ -143,16 +145,39 @@ in. `protectedAccessProblem()` refuses at grant creation and modification with
 transmitter asks again on every call (`ssf/CLAUDE.md`). The policy is
 `common/scope_policy.ts`'s. Nothing else in a GNAP access right is held to it.
 
-## A person's opaque identifier is over their subject (2026-09-14)
+## A person's opaque identifier is over their subject (2026-09-14), per client (2026-10-03)
 
 `gnap_subject.ts`'s `opaqueIdFor()` HMACs the person's `urn:uuid:` subject where the
 directory holds one, and the name only where it does not, and the user reference it
 records keeps that subject. So a rename leaves the identifier and the reference naming
 the renamed person, and a name deleted and re-created gets a different identifier while
 the old reference names nobody — RFC 9635 section 3.4's "SHOULD NOT reuse" held across a
-directory edit. Every identifier minted before the change moves once. `account` (an
-`acct:` URI, RFC 7565) is a name by definition and still changes with one.
-`tests/stable_subject.js` D9–D10.
+directory edit. `account` (an `acct:` URI, RFC 7565) is a name by definition and still
+changes with one. `tests/stable_subject.js` D9–D10.
+
+**PER CLIENT OR SECTOR SINCE #432 PHASE 7.** It was one HMAC per realm, so every client
+was handed the same value and any two could correlate a person by it. It is now
+`oauth-oidc/pairwise_subjects.ts`'s `gnapOpaqueFor()` — OIDC Core section 8's model, in
+the file that already holds it, with a label of its own (`gnap-opaque-sub`) so it can
+never equal the client's OIDC pairwise `sub`:
+
+* **always pairwise**, whatever `subject_type` the entry registers — GNAP has no member
+  asking for a public opaque identifier, and `iss_sub` is the public form;
+* **the sector** is the host of the entry's registered `oauthSectorIdentifierUri`, else
+  the client itself. Section 8.1's other rule (the one host every redirect URI shares)
+  is about redirect URIs, which a GNAP client has none of; a sector inferred from finish
+  URIs would move the day one was added;
+* **the user reference keeps `client` and `sector`**, and `resolveUser()` /
+  `usernameFromSubId()` resolve it only for that client or a client of the same
+  registered sector (the one that derives the same value). Any other client is told
+  `unknown_user`, `STS-GNAP-0070`, exactly as for a value never issued — a reference that
+  resolved anywhere would be the correlation handle the derivation removes. No
+  migration: a reference without `client` resolves for nobody (installs are rebuilt).
+  `gnap_cells.ts` still routes a reference by its digest, unchanged.
+* **`iss_sub` is the `sub` the client's ID Token carries** (`pairwise_subjects.ts`'s
+  `subjectFor()`, the `id_token` assertion's own mapping), and `uri` — the public
+  subject — is given only to a client told the public `sub`. A pairwise client with no
+  sector gets neither, rather than the public value it registered not to be given.
 ## Spent once across the cluster (2026-09-14, #46) — capability `gnap.once`
 
 Every one-time value here was spent in `gnap_store.ts`'s persisted maps — once
@@ -220,6 +245,79 @@ row's counters, which are the monitor's own and cost nothing to read.
 `tests/certificate_listing_bounds.js` counts the store calls against two
 hundred applications and compares every row with the per-application filters.
 
+## Phase 7 of #432: what a person sees, subject release, and how a grant ends (2026-10-03)
+
+**One person's grants are one view with three doors.** `gnap_console.ts`'s
+`personGrantsView()` — every grant whose `ro` is the person, with its rights (a
+`limits` member included), its tokens (label, format, expiry, state — never a value),
+its lifetime and why it ended — is drawn by the GNAP grants tab of `/admin/users`
+(`admin-ui/admin.ts`, `userGnapGrantsSection()`), carried as `gnapGrants` by
+`GET /admin-api/users?user=` (`admin-core/admin_views.ts`, lazily, GNAP being 23d), and
+drawn by the person's own `/portal/gnap` (`portal/portal_gnap.ts`, whose header argues a
+page of its own over a section of `/portal/consents`). **Revoking is one function**,
+`gnap_grants.ts`'s `revokeGrantBy(grant, { by, actor, via, req })` — the client's DELETE,
+`revoke-grant` from the console and the API, and the portal's `revokeOwnGrant()` — so
+tokens, finalization, monitor, audit and CAEP cannot differ by door. The console's
+per-person form and the API name the person too (`user`), and a grant whose resource
+owner is somebody else is refused, `STS-GNAP-0792`; the portal's form names only a
+grant, checked against the session's person (`STS-PORTAL-0163`). **Cells (#98)**: a
+grant moves to its resource owner's home before approval and the person's browser is
+pinned there, so the list is normally complete; exception (3) of *Cells* below (an
+instance and a person homed apart) leaves a grant in the instance's cell, and it is not
+listed — the view returns `cells: { multiCell, complete: false, note }` and every door
+says so rather than presenting a partial list as the whole. Asking every cell was
+weighed and not built: it is one more inter-cell operation for a case the move already
+makes rare, and the grant is listed and revoked in the cell that holds it.
+
+**Every finalized grant records why** — `grant.finalization = { reason, at, note }`
+through `finalize()` only, with a `gnap.grant.finalize` audit row. `issued` (released,
+nothing more can be asked — section 1.5's Approved -> Finalized, reached when
+`gnap.continueAfterApproval` is off), `revoked`, `rejected` (refused at creation, too
+many polls, an interaction reference out of turn, or a grant left to expire after a
+no — `lastDenial`), `expired`. **`issued` is the one reason whose tokens stay live**:
+`gnap_rs.ts`'s `liveProblem()` and a rotation (`STS-GNAP-0154`) refuse a finalized
+grant's tokens for every other reason, as they did for every finalized grant before,
+and the store keeps an `issued` grant a day past its lifetime so its tokens never name
+a grant that is gone.
+
+**The grant has a lifetime of its own**, `gnap.grantLifetimeS` (a day, the refresh
+token's figure), fixed on the grant when it is made. Past it a continuation or
+modification is `STS-GNAP-0790`, a rotation `STS-GNAP-0791` (read off the token record
+too, so a pruned grant cannot be outlived), and no token is minted with an `exp` past
+it. **`gnap.grant-expiry`** (cluster, realm, five minutes) finalizes a grant nobody
+touches, so the console and the portal never show an expired grant as approved; the
+opportunistic prune still deletes rows later.
+
+**Subject information is released once, on an authorization.** `grant.subjectAuthorizedBy`
+is `'interaction'` (set by `decide()` when the person left "Who you are" ticked) or
+`'delegation'` (set in `createGrant()`'s trusted path, where a client presents a verified
+assertion about a person — **the branch #432 phase 1 puts behind
+`delegation_policy.ts`'s decide(); this flag names that decision and phase 1 must keep
+setting it only when the decision allowed the act**). `release()` releases nothing
+without one (`STS-GNAP-0793`), and the flag is SPENT by the release — cleared, with
+`subjectReleasedAt` / `subjectReleasedBy` recorded — so a continuation after approval,
+a modification within it, a rotation or a derivation never sends it again; a
+modification that asks for the subject is not within the approval and goes back to the
+person.
+
+**`class_id` and `display` never raise trust** (section 2.3: self-declared; "the
+pre-registered values MUST take precedence"). Audited 2026-10-03: no reader decides on
+either — `gnapSkipInteraction`, `gnapAllowedAccess`, the issuance gate and the format
+choice all read the ENTRY. Two things were wrong and are fixed: the development
+auto-create COPIED them into `gnapClassId`, `gnapDisplayUri`, `gnapLogoUri` and the
+entry's name, so from the client's second request its own claims were the "registered"
+values; it now writes the key only. And the approval page drew a declared name as this
+service's word: `displayOf()` marks every member taken from the request (`declared`),
+the page says "as it describes itself" beside it and draws no self-declared logo, and
+`classIdDeclared` marks a declared class. **Instance attestation (#229's
+`client_attestation.ts`) is out of scope** — the plan calls it optional — so a class is
+never more than a hint.
+
+**`too_fast` was already enforced** (`continueAccepted()`, `STS-GNAP-0133`, with a
+continuation to use later) on every continuation, a poll, an interaction reference and a
+modification alike, separately from `gnap.maxPolls` (`too_many_attempts`,
+`STS-GNAP-0136`). Phase 7 added only its in-process test.
+
 ## Error codes
 
 `STS-GNAP-NNNN`, registered in `common/error_codes.js`:
@@ -236,6 +334,7 @@ hundred applications and compares every row with the per-application filters.
 | 0700–0709 | signals |
 | 0710–0719 | single-use values spent across the cluster (#46) |
 | 0720 | the push finish's transport: `gnap.pushSkipTlsVerification` ignored in product (#171) |
+| 0790–0809 | #432 phase 7: the grant lifetime (0790, 0791), the per-person revoke (0792), subject information with no authorization (0793) |
 
 `tests/error_codes.js` carries `gnapError(res` and `interactionError(res` as
 failure patterns.
@@ -248,10 +347,11 @@ failure patterns.
 | `tests/gnap_token_formats.js` | one matrix over all five formats (the JWT two through an adapter), and attenuation for the three that attenuate |
 | `tests/gnap_request.js` | which layer refuses what — the schemas, control characters, the walkers — RFC 7638's thumbprint and RFC 9635's two interaction hash vectors |
 | `tests/realm_isolation.js` | the GNAP stores are per realm and purged with it, and no module-scope Map |
-| `tests/vendored/sts_gnap_core.js` | the client instance's whole protocol over HTTP, every refusal by its error code. Its section 6 push listener presents a certificate from a CA the job makes at run time and sets `gnap.pushCaFile` to it (#171; skipped with no directory shared with the service), so the push is VERIFIED in both modes |
+| `tests/vendored/sts_gnap_core.js` | the client instance's whole protocol over HTTP, every refusal by its error code — and since #432 phase 7 a reference refused from another client, the subject released once (section 7), and `/portal/gnap` and the per-person `/admin-api` operations (section 15). Its section 6 push listener presents a certificate from a CA the job makes at run time and sets `gnap.pushCaFile` to it (#171; skipped with no directory shared with the service), so the push is VERIFIED in both modes |
 | `tests/outbound_tls.js`, `tests/vendored/sts_outbound_tls.js` | the push finish's transport policy beside SSF's, federation's and XACML's (#171) |
 | `tests/vendored/sts_gnap_rs.js` | RFC 9767: each token format verified by the job's OWN code, then each accepted, narrowed, rotated, revoked and expired at the demonstration RS; introspection, registration, derivation, mutual TLS (in a realm set to `gnap.mtlsTrust=pinned`, since its certificate is self-signed) |
 | `tests/vendored/sts_gnap_signals.js` | a GNAP-owned stream, CAEP on revoke/modify, and the scope, against an unscoped control stream |
+| `tests/gnap_person_grants.js` | #432 phase 7 in process: per-client opaque identifiers and references, subject released once on an authorization, the grant lifetime and the expiry job, finalization reasons, `too_fast`, self-declared display, one person's grants and who may revoke them |
 | `tests/gnap_cells.js` | #98 in process, the cell map, channel and routing index stubbed: stamped handles, each door's placement, a grant moved and forwarded, a pinned browser pulling a grant, single-cell mode unchanged |
 | `tests/gnap_mtls_trust.js` | #107 in process over real handshakes: both trust models, revocation in both, 0277/0278, every binding refusal (0287–0292), rotation, the override and the product default |
 | `tests/vendored/sts_gnap_mtls.js` | #107 against a running service: the same, with the realm's own certificates from the Credentials door and a foreign authority whose leaf names a CRL the job serves |

@@ -118,7 +118,10 @@ interface GnapStoreDeps {
 
 // `expiresAt` (#333): prune()'s rule, in epoch SECONDS — a FINALIZED grant
 // a day after it last moved, a grant neither approved nor finalized an hour
-// past its interaction's expiry. An APPROVED grant never expires here.
+// past its interaction's expiry. An APPROVED grant never expires here. A
+// grant finalized as `issued` (#432 phase 7) still has live tokens, which
+// name it, so it is kept a day past its GRANT LIFETIME — which no token
+// outlives — whichever is later (keptUntil()).
 const grants = realms.map({
   persist: 'gnap.grants',
   // A hot path (every row a flush writes): no Entering/Leaving pair.
@@ -127,14 +130,26 @@ const grants = realms.map({
       return null;
     }
     if (grant.state === STATE.FINALIZED) {
-      const moved = Number(grant.updatedAt);
-      return moved > 0 ? (moved + 86400) * 1000 : null;
+      const kept = keptUntil(grant);
+      return kept > 0 ? kept * 1000 : null;
     }
     const until = Number(grant.expiresAt);
     return grant.state !== STATE.APPROVED && until > 0
       ? (until + 3600) * 1000 : null;
   }
 });
+// When a FINALIZED grant may go, in epoch seconds: a day after it last moved,
+// or — finalized as `issued`, its tokens live — a day after its grant
+// lifetime, whichever is later. A hot path (the expiresAt above): no
+// Entering/Leaving pair.
+function keptUntil(grant: any): number {
+  const moved = Number(grant.updatedAt);
+  const base = moved > 0 ? moved + 86400 : 0;
+  const issued = grant.finalization && grant.finalization.reason === 'issued';
+  const life = Number(grant.grantExpiresAt);
+  return issued && life > 0 ? Math.max(base, life + 86400) : base;
+}
+
 const continuations = realms.map({ persist: 'gnap.continuations',
                                    retain: 'age' });
 const interactions = realms.map({ persist: 'gnap.interactions',
@@ -1219,7 +1234,7 @@ class GnapStore {
       // A FINALIZED grant is kept for a day so the console can show what
       // happened to it; a pending one past its life is simply gone.
       const finalizedLongAgo = grant.state === STATE.FINALIZED &&
-                               grant.updatedAt < now - 86400;
+                               keptUntil(grant) < now;
       const pendingExpired = grant.state !== STATE.APPROVED &&
         grant.state !== STATE.FINALIZED &&
         grant.expiresAt && grant.expiresAt < now - 3600;

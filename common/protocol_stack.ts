@@ -407,6 +407,10 @@ class ProtocolStack {
     this.build('portal/portal_consents',
                require('../portal/portal_consents'),
                'PortalConsents');
+    // #432 phase 7: /portal/gnap, the person's own GNAP grants.
+    this.build('portal/portal_gnap',
+               require('../portal/portal_gnap'),
+               'PortalGnap');
     this.build('portal/portal_delegate',
                require('../portal/portal_delegate'),
                'PortalDelegate');
