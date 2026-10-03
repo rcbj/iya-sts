@@ -80,6 +80,18 @@ is ONE require in the require order — and three `register()` calls, `gnap`,
 * **`@biscuit-auth/biscuit-wasm` needs a custom WebAssembly loader** that walks
   `Module.imports`, and every authorization must go through
   `authorizeWithLimits` — Datalog carried in a token is code a holder wrote.
+* **The biscuit engine's first timed evaluation that applies a rule can
+  answer `RunLimit: Timeout` whatever the budget** (#432, 2026-10-03) — about
+  one module load in seven when probed, then never again in that process; a
+  budget of 1000 s timed out the same way, so raising `LIMITS` is not the
+  fix. It refused the first biscuit WITH AN AUDIENCE verified by a caller
+  naming none (the authorizer's `rs($a) <- audience($a)` fires) with 0325,
+  and surfaced only when the #432 lanes merged and `tests/gnap_delegation.js`
+  happened to verify such a biscuit first. `token_biscuit.ts`'s
+  `primeRunClock()` runs one throwaway rule-applying evaluation at load;
+  `tests/gnap_token_formats.js` verifies first in twenty-five fresh
+  processes. **Never load the module twice in one process**: a second
+  instance shares the first one's glue and corrupts its memory.
 * **`@digitalbazaar/zcap` and the jsonld-signatures stack are ESM**, loaded by
   dynamic import, with an **offline document loader**: the contexts are
   vendored and nothing is fetched. Under a JCS suite the loader serves only

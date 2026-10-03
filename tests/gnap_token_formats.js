@@ -1111,8 +1111,70 @@ async function jwtCases(t) {
   log.debug("Leaving jwtCases().");
 }
 
+// THE FIRST VERIFICATION IN A FRESH PROCESS (#432). The biscuit engine's
+// first timed evaluation that applies a rule answered `Timeout` whatever its
+// budget, so the first token WITH AN AUDIENCE verified by a caller naming none
+// — the authorizer's `rs($a) <- audience($a)` fires — was refused
+// STS-GNAP-0325 — not every time: about one module load in seven, probed.
+// This file's own biscuit cases cannot see it: by then the module has
+// evaluated plenty. So TWENTY-FIVE children each load `token_biscuit` and
+// verify such a token first; unprimed, the chance that none of them trips is
+// about one in fifty. One module per process: a second instance in the same
+// process shares the first one's glue and corrupts its memory. The
+// children's program runs under `node -e`, so the code style's
+// Entering/Leaving lines do not apply to it.
+function firstVerifyCase(t) {
+  log.debug("Entering firstVerifyCase().");
+  const childProcess = require('child_process');
+  const path = require('path');
+  const program = '(' + function (root) {
+    const nodeCrypto = require('crypto');
+    const biscuit = require(root + '/gnap/token_biscuit');
+    const pair = nodeCrypto.generateKeyPairSync('ed25519');
+    const now = Math.floor(Date.now() / 1000);
+    (async function () {
+      const minted = await biscuit.mint({ jti: 'first', iss:
+        'https://as.example/gnap', sub: null, aud: ['rs-b'],
+        instanceId: 'c', access: ['x'], flags: ['bearer'], cnf: null,
+        iat: now, nbf: null, exp: now + 300, label: null, act: null },
+                                        { privateKey: pair.privateKey });
+      const v = await biscuit.verify(minted.value,
+                                     { publicKey: pair.publicKey }, {});
+      process.stdout.write(JSON.stringify({ ok: v.ok,
+                                            code: v.errorCode || '' }));
+      process.exit(0);
+    })().catch(function (e) {
+      process.stdout.write(JSON.stringify({ ok: false, code: String(e) }));
+      process.exit(0);
+    });
+  }.toString() + ')(' + JSON.stringify(path.join(__dirname, '..')) + ')';
+  const refused = [];
+  for (let i = 0; i < 25; i++) {
+    const out = childProcess.spawnSync(process.execPath, ['-e', program],
+      { encoding: 'utf8', timeout: 60000,
+        env: Object.assign({}, process.env, { LOG_LEVEL: 'fatal' }) });
+    let answer = null;
+    try {
+      answer = JSON.parse(String(out.stdout || '').trim().split('\n').pop());
+    } catch (e) {
+      log.debug("Caught in firstVerifyCase(): " + ((e && e.message) || e));
+      // No answer: recorded as a refusal, with stderr.
+      answer = { ok: false, code: String(out.stderr || '').slice(-300) };
+    }
+    if (!answer.ok) {
+      refused.push(i + ': ' + answer.code);
+    }
+  }
+  t.check(!refused.length, 'biscuit: the FIRST verification in each of ' +
+          'twenty-five fresh processes, of a token with an audience, is ' +
+          'accepted (the run clock is primed at load, #432)',
+          refused.join('; '));
+  log.debug("Leaving firstVerifyCase().");
+}
+
 async function run(t) {
   log.debug("Entering run().");
+  firstVerifyCase(t);
   accessCases(t);
   const started = Date.now();
   await macaroonCases(t);
