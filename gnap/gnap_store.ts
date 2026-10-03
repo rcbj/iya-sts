@@ -1430,6 +1430,7 @@ export = {
   userCodeTaken: slot.forward('userCodeTaken'),
   putToken: slot.forward('putToken'),
   saveToken: slot.forward('saveToken'),
+  biscuitRevocationIds: slot.forward('biscuitRevocationIds'),
   tokenByJti: slot.forward('tokenByJti'),
   tokenByValue: slot.forward('tokenByValue'),
   listTokens: slot.forward('listTokens'),

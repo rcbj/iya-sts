@@ -1288,6 +1288,17 @@ GNAP web application owns a stream as ITSELF — which is what
 `gnap/gnap_signals.ts`'s subject scope needs. It takes only the `GNAP` scheme;
 `Bearer` on these endpoints stays OAuth 2.0.
 
+**A GNAP RESOURCE SERVER OWNS A STREAM THE SAME WAY (#432, 2026-10-03)**, and
+the second scope is `gnap/gnap_signals.ts`'s `rsCovers()`: a stream whose owner
+is a `gnap-resource-server` entry hears `session-revoked` only for the
+`gnap-token:` and `gnap-grant:` sessions audienced to it. Nothing changed
+here — the scheme already made the owner the application, and the scope is a
+registered subject scope that only takes events away. GNAP now also emits a
+`session-revoked` with NO `user` member for a token nobody approved;
+`ownerPersonCovers()` already refuses such a subject on a person's stream, and
+the internal receivers match a GNAP session id against no session of theirs.
+`gnap/CLAUDE.md` argues it.
+
 ## `ssfAllowedEvents`: THE ONE PLACE AN APPLICATION ENTRY LIMITS A STREAM (2026-09-12)
 
 rcbj asked for it after asking whether ticking Shared Signals on the application
