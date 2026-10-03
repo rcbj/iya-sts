@@ -12257,7 +12257,7 @@ class AdminApi {
                 requiredMembers: { type: ['array', 'string'],
                                    items: { type: 'string' } },
                 interaction: { type: 'string',
-                               enum: ['', 'always', 'default', 'never'] },
+                               enum: ['always', 'default', 'never'] },
                 consentActions: { type: ['array', 'string'],
                                   items: { type: 'string' } },
                 bearer: { type: ['boolean', 'string'] },
