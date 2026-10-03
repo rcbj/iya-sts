@@ -316,8 +316,44 @@ with a sentence saying what was wrong.
   `urn:ietf:rfc:9635` for it.
 * A stream a GNAP web application owns is **scoped**: it hears only about
   people who approved a grant to that application.
+* **A federation partner's signal can revoke grants.** A verified CAEP or
+  RISC event from a federation relationship that signs people in —
+  `session-revoked`, `account-disabled`, `account-purged` or
+  `credential-compromise` by default — revokes every GNAP grant the person
+  approved, with every OAuth grant, token and authorization code held for
+  them; a `session-revoked` reaches only what was issued on the sessions that
+  partner started. It is the `signal-revoke-grants` rule of the
+  `signal-response` policy, and `ssf.signalsRevokeGrants` (on by default)
+  turns it off. See [signals received](signals-received.md).
 
 See [CAEP events](caep-events.md).
+
+## What ends a grant besides its client
+
+A grant ends when its client revokes it (RFC 9635 section 5.4), and also when:
+
+| What happens | What it ends |
+|---|---|
+| The person signs out everywhere (`/logout`), is signed out by an administrator (`/admin/logout`, `/admin-api/logout`), or is **disabled** or deleted | every grant they approved, and every token on it |
+| A sign-out ends one of their sessions (a Revoke on `/admin/sessions`, a partner's sign-out) | the grants approved on that session |
+| An administrator revokes the grant on `/admin/gnap` or `/admin/sessions` | that grant |
+| The client's application entry is **deleted** | every grant of that client |
+| The entry's `gnapKey`, `gnapKeyIdentity` or `gnapKeyReference` is **removed or replaced** | the grants bound to a key the entry no longer names. Rotating an access token's key (section 6.1.1) changes nothing |
+| A registered **device is marked compromised** | the grants whose client key is one of the device's keys, and the OAuth tokens DPoP-bound to them |
+| A federation partner's verified signal (above) | the person's grants and tokens |
+
+Ending a grant revokes its tokens, finalizes it — a continuation is refused
+and introspection answers `active: false` — and sends CAEP `session-revoked`
+about it. Separately, **every use is checked**: a token or grant whose
+resource owner is disabled, or whose client's entry is gone or no longer names
+its key, is refused at its next continuation, rotation, derivation,
+presentation or introspection (`STS-GNAP-0730`–`0735`), whatever changed the
+account or the entry and on a cluster node the change has not reached yet.
+
+The person's grants appear on `/admin/logout` and as **GNAP grant** rows on
+`/admin/sessions`. A sign-out of one application elsewhere (`/oauth2/logout`,
+SAML Single Logout) and a session simply expiring do **not** end them: a
+grant is given to outlive the browser.
 
 ## The console
 
@@ -447,9 +483,11 @@ changed — the console page, or `POST /admin-api/config/set`.
   approved access right is stored on the person's own entry as a `gnap:` digest
   of that right, in the same consent register the OAuth consent screen uses,
   rather than in a store of GNAP's own.
-* **Signals go out and never come in.** Revoking or modifying a grant sends
-  CAEP, and a GNAP web application can own a scoped stream; nothing listens to
-  CAEP or RISC to revoke a grant, by decision.
+* **Signals go out, and a partner's come in.** Revoking or modifying a grant
+  sends CAEP, and a GNAP web application can own a scoped stream. Since #432 a
+  federation partner's verified signal about a person can revoke their grants
+  (`signal-revoke-grants`, `ssf.signalsRevokeGrants`); this service's own
+  signals, played back to its own console and portal, never do.
 * **The push finish is the only outbound request, and it is constrained.** It
   goes to a URI the client supplied, so it verifies TLS by default, can be
   limited to `gnap.pushAllowedHosts`, is restricted to registered URIs in

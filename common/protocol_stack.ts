@@ -1710,6 +1710,8 @@ class ProtocolStack {
                'GnapMonitor');
     this.build('gnap/gnap_signals', require('../gnap/gnap_signals'),
                'GnapSignals');
+    this.build('gnap/gnap_revocation', require('../gnap/gnap_revocation'),
+               'GnapRevocation');
     this.build('gnap/gnap_grants', require('../gnap/gnap_grants'),
                'GnapGrants');
     this.build('gnap/gnap_rs', require('../gnap/gnap_rs'), 'GnapRs');

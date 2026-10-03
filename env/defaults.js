@@ -999,6 +999,7 @@ var config = {
     foreignInboxMax: 500,                                                                                                                                 // Partner SETs kept
     foreignTimeoutMs: 10000,                                                                                                                              // Partner signals timeout (ms)
     actOnSignalsInDevelopment: false,                                                                                                                     // The console and portal act on received signals in development
+    signalsRevokeGrants: true,                                                                                                                            // A federation partner's signals revoke the person's grants and tokens
     legacySubClaim: false,                                                                                                                                // Also emit the deprecated `sub` claim (development only)
     breakSetSignature: false                                                                                                                              // Sign every SET badly (development only)
   },

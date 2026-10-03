@@ -152,6 +152,12 @@ class SsfTransmittersAdmin {
         '</td><td>' + (r.reactions || []).map(function (x: Json) {
           return esc(x.reaction || '—') + (x.done ? ' ✓' : '') +
             (x.observed ? ' (observed only)' : '') +
+            // #432: how much a signal-revoke-grants revoked, and a reaction
+            // the operator's switch skipped.
+            (x.revoked !== undefined ? ' — ' + esc(String(x.revoked)) +
+              ' revoked' : '') +
+            (x.skipped ? ' <span class="sub">skipped: ' + esc(x.skipped) +
+              '</span>' : '') +
             (x.why ? ' <span class="sub">' + esc(x.why) + '</span>' : '');
         }).join('<br>') + '</td></tr>';
     }).join('') : '<tr><td colspan="6" class="sub">Nothing has arrived.' +

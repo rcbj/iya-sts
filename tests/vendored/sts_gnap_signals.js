@@ -23,6 +23,12 @@
 //   3. revoking a grant or a token emits CAEP session-revoked, whose session is
 //      the grant or the token, and modifying a grant emits token-claims-change.
 //
+// And since #432 (2026-10-03), what ends a grant from OUTSIDE the protocol: a
+// global sign-out of the resource owner, their account disabled, and the
+// client's application entry deleted each end the grant — CAEP
+// session-revoked naming it, with `admin` as the initiating entity — and its
+// token stops working at the demonstration resource server.
+//
 // Every SET read here is verified against the realm's /oauth2/jwks with node's
 // crypto before its contents are believed.
 //
@@ -495,7 +501,76 @@ async function test() {
                              JSON.stringify(webSets));
         });
 
-  assert.ok(h.checks >= 17, "only " + h.checks + " checks ran; a section has " +
+  // =========================================================================
+  // 7.–9. WHAT ENDS A GRANT FROM OUTSIDE THE PROTOCOL (#432). Heard on the
+  // CONTROL stream: a global sign-out of OWNER ends the grant that owns the
+  // web application's stream too, which is the point.
+  // =========================================================================
+  const endedFromOutside = async function (what, grant, act) {
+    log.debug("Entering endedFromOutside().");
+    const id = "gnap-grant:" + grant.released.continue.uri.split("/").pop();
+    let before = await web.send("GET", h.RS,
+                                { token: grant.released.access_token.value });
+    if (before.status === 401) {
+      before = await other.send("GET", h.RS,
+                                { token: grant.released.access_token.value });
+    }
+    await act();
+    const sets = await drainUntil(pollControl, controlStream,
+      function (all) {
+        return all.some(function (set) {
+          const subject = set.sub_id || {};
+          return set.events && set.events[REVOKED] &&
+                 String((subject.session || {}).id) === id;
+        });
+      });
+    const hit = sets.filter(function (set) {
+      return set.events && set.events[REVOKED] &&
+             String(((set.sub_id || {}).session || {}).id) === id;
+    })[0];
+    check(what + " ends the grant: CAEP session-revoked names it, as an " +
+          "administrator's act (#432)", function () {
+      assert.ok(hit, JSON.stringify(sets).slice(0, 800));
+      assert.strictEqual(hit.events[REVOKED].initiating_entity, "admin",
+                         JSON.stringify(hit.events[REVOKED]));
+    });
+    const afterWeb = await web.send("GET", h.RS,
+                                    { token: grant.released.access_token
+                                                   .value });
+    const afterOther = await other.send("GET", h.RS,
+                                        { token: grant.released.access_token
+                                                       .value });
+    check("…and its access token, which worked before, stops working at " +
+          "the resource server", function () {
+      assert.strictEqual(before.status, 200, before.text);
+      assert.strictEqual(afterWeb.status, 401, afterWeb.text);
+      assert.strictEqual(afterOther.status, 401, afterOther.text);
+    });
+    log.debug("Leaving endedFromOutside().");
+  };
+  log.info("=== 7. a global sign-out ends the owner's grants ===");
+  const signedOut = await h.redirectGrant(web, OWNER);
+  await endedFromOutside("a global sign-out of the resource owner",
+    signedOut, async function () {
+      await h.ok(h.realmApi + "/logout/global", { user: OWNER },
+                 "signed the owner out everywhere");
+    });
+  log.info("=== 8. disabling the account ends the grants ===");
+  const disabledGrant = await h.redirectGrant(other, STRANGER);
+  await endedFromOutside("disabling the resource owner's account",
+    disabledGrant, async function () {
+      await h.ok(h.realmApi + "/users/disable", { user: STRANGER },
+                 "disabled the stranger");
+    });
+  log.info("=== 9. deleting the client's entry ends its grants ===");
+  const orphaned = await h.redirectGrant(other, OWNER);
+  await endedFromOutside("deleting the client's application entry",
+    orphaned, async function () {
+      await h.ok(h.realmApi + "/applications/forget",
+                 { application: OTHER_ID }, "deleted the second application");
+    });
+
+  assert.ok(h.checks >= 23, "only " + h.checks + " checks ran; a section has " +
                                                  "stopped being called.");
   log.info(h.checks + " check(s) passed.");
   log.info("Test completed successfully.");

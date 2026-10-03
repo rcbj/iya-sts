@@ -38,7 +38,12 @@
 //      device;
 //   I. the push endpoint refuses a header it did not give, and a disabled
 //      relationship;
-//   J. deleting forgets the stream and lifts the blocks.
+//   J. deleting forgets the stream and lifts the blocks;
+//   K. signal-revoke-grants (#432): a sign-in partner's session-revoked
+//      revokes what was issued on the session it names, its account-disabled
+//      everything the person delegated, through `logout.revokeGrantsOf()`;
+//      ssf.signalsRevokeGrants off skips it, development observes it, and a
+//      signals-only partner's and an unverified SET's revoke nothing.
 // ===========================================================================
 
 const fs = require('fs');
@@ -101,6 +106,19 @@ function childMain() {
                         'signals-only')
     };
     const ownConsole = reactions('account-disabled', 'risc', 'admin-console');
+    note(has(signIn.revoked, R.REVOKE_GRANTS) &&
+         has(signIn.disabled, R.REVOKE_GRANTS) &&
+         has(reactions('account-purged', 'risc', p, 'sign-in'),
+             R.REVOKE_GRANTS) &&
+         has(reactions('credential-compromise', 'risc', p, 'sign-in'),
+             R.REVOKE_GRANTS) &&
+         !has(signIn.enabled, R.REVOKE_GRANTS) &&
+         !has(only.disabled, R.REVOKE_GRANTS) &&
+         !has(ownConsole, R.REVOKE_GRANTS),
+         'A4. a sign-in partner\'s session-revoked, account-disabled, ' +
+         'account-purged and credential-compromise revoke the person\'s ' +
+         'grants (#432); a signals-only partner\'s and this service\'s own ' +
+         'receivers\' do not', JSON.stringify([signIn, only, ownConsole]));
     note(has(signIn.revoked, R.END_PARTNER_SESSIONS) &&
          !has(signIn.revoked, R.END_PERSON_SESSIONS) &&
          has(signIn.disabled, R.BLOCK_RELATIONSHIP) &&
@@ -222,8 +240,15 @@ function childMain() {
       terminate: function () {
         ended.push('EVERYTHING');
         return { terminated: [] };
+      },
+      // #432: what a signal-revoke-grants asked to revoke.
+      revokeGrantsOf: function (key, opts) {
+        revokedGrants.push({ key: key, sessionIds: opts.sessionIds || null,
+                             entity: opts.initiatingEntity });
+        return { terminated: [{ family: 'gnap' }, { family: 'token' }] };
       }
     };
+    const revokedGrants = [];
     const compliance = [];
     const devices = {
       byId: function (id) {
@@ -312,6 +337,12 @@ function childMain() {
          'client; a session-revoked naming one session the partner started ' +
          'ends that one and nothing else', JSON.stringify([stream.errors,
                                                            ended]));
+    note(revokedGrants.length === 1 && revokedGrants[0].key === 'ft-alice' &&
+         JSON.stringify(revokedGrants[0].sessionIds) ===
+           JSON.stringify(['s1']) && revokedGrants[0].entity === 'policy',
+         'C2. and it revokes what was issued on that one session — worked ' +
+         'out before the session was ended — as policy (#432)',
+         JSON.stringify(revokedGrants));
 
     // --- D. a polled account-disabled ---------------------------------------
     const disabled = set('account-disabled',
@@ -336,6 +367,11 @@ function childMain() {
          JSON.stringify([polled, ended, pollCalls.map(function (c) {
            return c.body;
          })]));
+
+    note(revokedGrants.length === 2 && revokedGrants[1].key === 'ft-alice' &&
+         revokedGrants[1].sessionIds === null,
+         'D2. its account-disabled revokes everything the person delegated, ' +
+         'not narrowed to a session (#432)', JSON.stringify(revokedGrants));
 
     // --- E. the block at sign-in --------------------------------------------
     const signInAs = function () {
@@ -375,6 +411,9 @@ function childMain() {
     const wrongAud = await rx.receive(rel(), sign(set(
       'account-purged', { format: 'iss_sub', iss: ISS, sub: 'ext-alice' },
       { aud: 'somebody-else' })), 'push');
+    note(revokedGrants.length === 2,
+         'F2. neither the replay nor the unverified SETs revoked anything',
+         JSON.stringify(revokedGrants));
     note(again.ok && again.duplicate &&
          devBad.ok && devRow && devRow.verified === false &&
          (devRow.reactions || []).length === 0 &&
@@ -446,6 +485,7 @@ function childMain() {
       'push');
     note(!accountState.isDisabled('ft-bob') &&
          !fedBlocks.blockOf('mdm', 'ft-bob') && ended.length === before &&
+         revokedGrants.length === 2 &&
          JSON.stringify(compliance) === JSON.stringify(['dev-1=not-compliant']),
          'H2. a signals-only partner\'s account-disabled is recorded and ' +
          'does nothing; its device-compliance-change sets the device',
@@ -492,6 +532,37 @@ function childMain() {
          'I1. the push endpoint refuses an Authorization header it did not ' +
          'give, and a disabled relationship',
          JSON.stringify([wrongHeader.body, disabledRel.body]));
+
+    // --- K. the switch and development (#432) --------------------------------
+    const rowOf = function (jti) {
+      return rx.report({}).received.filter(function (r) {
+        return r.jti === jti;
+      })[0] || {};
+    };
+    const grantsRow = function (row) {
+      return (row.reactions || []).filter(function (x) {
+        return x.reaction === R.REVOKE_GRANTS;
+      })[0] || {};
+    };
+    config.setOverride('ssf.signalsRevokeGrants', false);
+    const switchedOff = set('credential-compromise',
+                    { format: 'iss_sub', iss: ISS, sub: 'ext-alice' });
+    await rx.receive(rel(), sign(switchedOff), 'push');
+    config.clearOverride('ssf.signalsRevokeGrants');
+    config.setOverride('ssf.actOnSignalsInDevelopment', false);
+    const watched = set('account-purged',
+                        { format: 'iss_sub', iss: ISS, sub: 'ext-alice' });
+    await rx.receive(rel(), sign(watched), 'push');
+    config.setOverride('ssf.actOnSignalsInDevelopment', true);
+    note(revokedGrants.length === 2 &&
+         /signalsRevokeGrants/.test(
+           grantsRow(rowOf(switchedOff.jti)).skipped || '') &&
+         grantsRow(rowOf(watched.jti)).observed === true,
+         'K1. ssf.signalsRevokeGrants off records the reaction as skipped ' +
+         'and revokes nothing; in development without ' +
+         'ssf.actOnSignalsInDevelopment it is observed and revokes nothing',
+         JSON.stringify([rowOf(switchedOff.jti).reactions,
+                         rowOf(watched.jti).reactions]));
 
     // --- J. forgetting ------------------------------------------------------
     fedBlocks.block('partner', 'ft-alice', { event: 'test' });

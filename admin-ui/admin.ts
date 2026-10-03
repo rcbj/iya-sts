@@ -8697,6 +8697,15 @@ class AdminConsole {
           'There is no per-session link: a ticket carries no identifier this ' +
           'service keeps a handle on.') + '">the ticket table</a></td>';
     }
+    if (row.family === 'gnap') {
+      // A GNAP GRANT (#432): its tokens are in GNAP's own store, listed with
+      // the grant on Protocols → GNAP.
+      log.debug("Leaving AdminConsole.sessionCredentialsCell().");
+      return '<td><a href="' + this.esc('/admin/gnap' +
+        queryWith({ state: 'approved' }, {})) +
+        '" title="' + this.esc('The grants this authorization server holds, ' +
+          'with the tokens each issued') + '">the grant list</a></td>';
+    }
     log.debug("Leaving AdminConsole.sessionCredentialsCell().");
     return '<td class="sub" title="' +
            this.esc('A Bind issues no credential. It sets the authorization ' +

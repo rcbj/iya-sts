@@ -20,7 +20,7 @@ CAEP/RISC for GNAP web applications. Asked, rcbj decided:
 |---|---|
 | What seals `gnapSymmetricKey` / `gnapMacaroonKey` | the **process key-encryption key** (`keystore.seal()`), under the existing rule — sealed only when `keystore.persists()` |
 | An unknown client key | **mode-gated**: development creates an application entry on first sight (`mode.autoCreates()`), product refuses `invalid_client` |
-| CAEP / RISC | **GNAP sessions emit CAEP**, **GNAP web apps are scoped receivers**, **grant revocation emits CAEP** — and explicitly NOT "signals revoke grants" |
+| CAEP / RISC | **GNAP sessions emit CAEP**, **GNAP web apps are scoped receivers**, **grant revocation emits CAEP** — and explicitly NOT "signals revoke grants" (**REVERSED 2026-10-03, #432** — see *Shared Signals*) |
 | Where the tests live | **owned here**: `tests/*.js` in process, plus `tests/vendored/` `local: true` jobs with an independent client |
 
 Later in the same session: remembered approvals are stored in `common/consent.ts`
@@ -48,6 +48,7 @@ Route-free libraries, each require-able from an in-process test:
 | `gnap_http.ts` | the push finish, the only outbound request here, modelled on `ssf/ssf_http.ts` |
 | `gnap_monitor.ts` | per-application counters (`merge: 'own'`), the `xacml_monitor.js` model |
 | `gnap_signals.ts` | CAEP emission and the SSF subject scope |
+| `gnap_revocation.ts` | what ends a grant from OUTSIDE the protocol (#432) — a sign-out, a disable, a deleted client or its key removed, a compromised device, a partner's signal — and the check at use; see *What ends a grant from outside the protocol* |
 | `gnap_grants.ts` | the engine: identifying a caller, creating, continuing, modifying and revoking grants, issuing, rotating and deriving tokens |
 | `gnap_rs.ts` | introspection, registration, and judging a presented token |
 | `gnap_console.ts` | the view and action layer both admin doors render (no route, no `res`, no markup) |
@@ -129,9 +130,47 @@ installed with `ssf_streams.setSubjectScope('gnap', …)` refuses a stream owned
 a GNAP web application (a `gnap-client` with a finish URI) any subject who never
 approved a grant to it. `ssf/ssf.ts`'s `emitProtocolEvent()` is the delivery,
 and `ssf/ssf_auth.ts`'s `gnap` scheme is how an application owns a stream as
-itself. **Nothing listens to CAEP or RISC to revoke a grant**, by decision (#432
-reverses this in phase 2). A grant revoked by its resource owner on `/portal/gnap` or
-per person on the console sends the same `session-revoked`, through `revokeGrantBy()`.
+itself.
+
+**SIGNALS REVOKE GRANTS — REVERSED 2026-10-03 (#432, rcbj's decision 1).**
+This said "Nothing listens to CAEP or RISC to revoke a grant, by decision".
+The decision was made when the only signals this service received were its
+OWN, played back to its own console and portal — acting on those would have
+been this service obeying itself, and on a `session-revoked` about a grant it
+had just revoked, a loop. Since #153 and #373 a FEDERATION PARTNER's signals
+arrive, verified, about people who signed in through it; a partner saying an
+account is compromised or purged, while every client that person delegated to
+keeps its grant here, is the gap #432 names (gap 5). What changed, and what
+did not:
+
+* **The reaction is a rule of the `signal-response` policy**,
+  `signal-revoke-grants` (`xacml/xacml_templates.ts`), because ending access
+  is an authorization decision (rcbj's directive). By default a SIGN-IN
+  partner's `session-revoked`, `account-disabled`, `account-purged` and
+  `credential-compromise` permit it; a signals-only partner's permit nothing
+  (#374's rule that its word is recorded), and this service's own receivers
+  never get it.
+* **It reaches GNAP AND OAuth** (decision 1): `logout.revokeGrantsOf()` ends
+  the person's GNAP grants, their Grant Management grants, their OAuth tokens
+  and their unredeemed codes — a selective sign-out of exactly those families,
+  so it is the act `/admin/logout` performs with them ticked. A
+  `session-revoked` narrows it to what was issued on the sessions that partner
+  started. Sessions are not its business: ending them is the other reactions'.
+* **`ssf.signalsRevokeGrants`** (on by default) turns it off — rcbj's "provide
+  a flag to disable this behavior". Off, the inbox row says the reaction was
+  skipped.
+* **#117's rules are unchanged**: nothing acts on a SET that did not verify,
+  the realm is the one the SET arrived in, development observes unless
+  `ssf.actOnSignalsInDevelopment`, and the inbox row records what was done
+  (`ssf/ssf_transmitters.ts`, `revokeGrants()`).
+* **This file still listens to nothing.** The receiver is
+  `ssf/ssf_transmitters.ts` and the end is `gnap_revocation.ts`;
+  `gnap_signals.ts` only TELLS, and an end it reports carries the initiating
+  entity its caller states (`grantRevoked(…, entity)`), so a partner's
+  revocation says `policy` and an administrator's `admin` where both said
+  `system`.
+  A grant revoked by its resource owner on `/portal/gnap` or per person on
+  the console sends the same `session-revoked`, through `revokeGrantBy()`.
 
 **THE `ssf` ACCESS RIGHTS ARE THIS SERVICE'S OWN PROTECTED SCOPES (#110,
 2026-09-22).** `ssf:read`/`ssf:write` as reference strings, or an object of type
@@ -144,6 +183,58 @@ in. `protectedAccessProblem()` refuses at grant creation and modification with
 `request_denied` (`STS-GNAP-0719`), in both modes, before `accessProblem()`; the
 transmitter asks again on every call (`ssf/CLAUDE.md`). The policy is
 `common/scope_policy.ts`'s. Nothing else in a GNAP access right is held to it.
+
+## What ends a grant from outside the protocol (#432 phase 2, 2026-10-03)
+
+RFC 9635 ends a grant two ways, the client's revocation (section 5.4) and
+token management (section 6.2). `logout/` never named GNAP, so a global
+sign-out, an account disable and an administrator's sign-out left every grant
+and token live, and nothing about an application entry or a device reached
+one. `gnap_revocation.ts` is now the ONE place that decides WHICH grants an act
+from outside ends, and its `endGrant()` ends each through `gnap_grants.ts`'s
+`revokeGrantBy()` — the ONE function every end of a grant goes through,
+whoever asks (the client's section 5.4 DELETE, the console and `/admin-api`,
+the person's `/portal/gnap`, and every act below): tokens revoked
+(`revokeTokens()`, here and forwarded from `gnap_grants.ts`), the grant
+finalized as `revoked` (phase 7's reason), the monitor counted, an audit row,
+CAEP `session-revoked` about the grant with the caller's initiating entity.
+**A grant finalized as `issued` (its tokens still live, phase 7) is still
+LIVE here** — `isLive()` is `revocable()` — so a sign-out or a signal ends
+its tokens rather than skipping it as finished. What reaches it:
+
+| Act | How | Notes |
+|---|---|---|
+| A sign-out of everything | the `gnap` family of `logout/logout.ts` | so an account disable, an administrator's sign-out, `/admin-api/logout`, risk's lockout (#226) and the cells' `revoke-subject` (#98) inherit it; `logout/CLAUDE.md` |
+| A sign-out of one session | `endsWithSession` on that family | a grant approved on a session a `terminate()` ends ends with it, ticked or not; an ordinary per-session sign-out (`authn.dropSession()`) and an expiry do not — the grant was given to outlive the browser |
+| `/admin/sessions` | a fourth kind of live row, `GNAP grant` | Revoke is `terminate()` of that row |
+| A person disabled, on a node it has not reached | the check at use | `grantProblem()` / `tokenProblem()`: continuation (not a DELETE), rotation, derivation, presentation and introspection refuse (`0730`–`0735`); writes nothing |
+| An application entry deleted | `applications.deleteApplication()` → `endForClient()` | found in `require.cache`, never required |
+| Its `gnapKey`, `gnapKeyIdentity` or `gnapKeyReference` removed or replaced | `updateApplication()` → `endForClientKeyChange()` | only grants whose key the entry no longer names; a REFERENCE the entry still names keeps its grants (every proof is checked against what it resolves to now) |
+| A key ROTATED | nothing | section 6.1.1 moves the token and the GRANT to the new key and never writes the entry, so the grant keeps the identities it was rotated from (`client.keyLineage`) and the checks accept any of them — `sts_gnap_core.js` section 9 was refused at use until it did; a mutual-TLS rotation at the authority writes `gnapKeyIdentity` through `seen()`, not the operator's door |
+| A device marked compromised (#164) | `devices.ts` → `endForDeviceKeys()` | a grant whose client key's JWK or SPKI thumbprint is one of the device's keys; and the OAuth tokens DPoP-bound (`jkt`) to them |
+| A partner's verified signal | `signal-revoke-grants` | *Shared Signals*, above |
+
+Three things a reader would otherwise rediscover:
+
+* **NO APPLICATION IS "DISABLED".** The registry has no such state; the
+  issuance policy refusing an application stops NEW tokens and ends no grant.
+  A delete or a key removed is what ends a client's grants, and an
+  `ldapmodify` or an LDAP delete — doors the registry does not observe — is
+  caught at the grant's next use (`0731`), not ended then and there.
+* **THE CHECK AT USE WRITES NOTHING.** Two nodes finalizing one grant at use
+  would send CAEP twice for one end; the act that changed the account or the
+  entry is what ends the grant, once, and the check only refuses meanwhile.
+  `presentation()` stays synchronous for `ssf/ssf_auth.ts`:
+  `account_state.isDisabled()` and `applications.get()` are both synchronous
+  reads.
+* **WHERE A GRANT IS HELD IN ANOTHER CELL** (#98), a global sign-out reaches
+  it through `cell_sessions.subjectTerminated()`: home tells every cell that
+  holds an export of the person, and each runs the same `terminate()` — so its
+  own `gnap` family ends what it holds. A grant is approved where the person's
+  browser is pinned, which is a cell holding their export. An application
+  entry deleted or a device compromised acts in the cell where it happened;
+  another cell's grants are refused at their next use there once the entry or
+  the device change reaches it.
 
 ## A person's opaque identifier is over their subject (2026-09-14), per client (2026-10-03)
 
@@ -334,6 +425,7 @@ modification alike, separately from `gnap.maxPolls` (`too_many_attempts`,
 | 0700–0709 | signals |
 | 0710–0719 | single-use values spent across the cluster (#46) |
 | 0720 | the push finish's transport: `gnap.pushSkipTlsVerification` ignored in product (#171) |
+| 0730–0749 | what ends a grant from outside the protocol, and the check at use (#432) |
 | 0790–0809 | #432 phase 7: the grant lifetime (0790, 0791), the per-person revoke (0792), subject information with no authorization (0793) |
 
 `tests/error_codes.js` carries `gnapError(res` and `interactionError(res` as
@@ -353,6 +445,7 @@ failure patterns.
 | `tests/vendored/sts_gnap_signals.js` | a GNAP-owned stream, CAEP on revoke/modify, and the scope, against an unscoped control stream |
 | `tests/gnap_person_grants.js` | #432 phase 7 in process: per-client opaque identifiers and references, subject released once on an authorization, the grant lifetime and the expiry job, finalization reasons, `too_fast`, self-declared display, one person's grants and who may revoke them |
 | `tests/gnap_cells.js` | #98 in process, the cell map, channel and routing index stubbed: stamped handles, each door's placement, a grant moved and forwarded, a pinned browser pulling a grant, single-cell mode unchanged |
+| `tests/gnap_revocation.js` | #432 in process with the whole stack: the sign-out families, a grant ending with its session, `/admin/sessions`, `revokeGrantsOf()` narrowed and whole (and never a global sign-out for a person holding nothing), a global sign-out, the check at use and the disable, the entry's key replaced and deleted, a compromised device. The partner's signal is `tests/ssf_transmitters.js` K |
 | `tests/gnap_mtls_trust.js` | #107 in process over real handshakes: both trust models, revocation in both, 0277/0278, every binding refusal (0287–0292), rotation, the override and the product default |
 | `tests/vendored/sts_gnap_mtls.js` | #107 against a running service: the same, with the realm's own certificates from the Credentials door and a foreign authority whose leaf names a CRL the job serves |
 

@@ -397,6 +397,12 @@ interface DevicesDeps {
   findAuthn: () => Json;
   // `common/cert_enrollment`, required at the moment of use (header).
   loadEnrollment: () => Json;
+  // `gnap/gnap_revocation` as it is loaded in this process, or null (#432):
+  // a compromise ends the GNAP grants whose client key is the device's.
+  findGnapRevocation: () => Json;
+  // The token register, required at the moment of use (#432): a compromise
+  // revokes the OAuth tokens DPoP-bound to the device's keys.
+  loadStats: () => Json;
 }
 
 // ---------------------------------------------------------------------------
@@ -509,7 +515,38 @@ class Devices {
              findAuthn: Devices.loadedAuthn,
              loadEnrollment: function (): Json {
                return require('./cert_enrollment');
+             },
+             findGnapRevocation: Devices.loadedGnapRevocation,
+             loadStats: function (): Json {
+               return require('./admin_stats');
              } };
+  }
+
+  // `gnap/gnap_revocation` as it is loaded in THIS process, or null — never
+  // required (#432), for `loadedAuthn()`'s reason: this file is loaded long
+  // before the GNAP family, and a process without it holds no grant.
+  /**
+   * Returns `gnap/gnap_revocation` as it is loaded in this process, found in
+   * `require.cache`; it is never required from here.
+   *
+   * @returns the module, or null when it is not loaded
+   */
+  static loadedGnapRevocation(): Json {
+    helpers.log.debug("Entering Devices.loadedGnapRevocation().");
+    let id = '';
+    try {
+      id = require.resolve('../gnap/gnap_revocation');
+    } catch (e) {
+      helpers.log.debug("Caught in Devices.loadedGnapRevocation(): " +
+                        ((e && e.message) || e));
+      helpers.log.debug("Leaving Devices.loadedGnapRevocation(). Not " +
+                        "resolvable.");
+      return null;
+    }
+    const cached = require.cache[id];
+    helpers.log.debug("Leaving Devices.loadedGnapRevocation(). " +
+                      (cached ? 'Loaded.' : 'Not loaded.'));
+    return cached && cached.exports ? cached.exports : null;
   }
 
   // `authn/authn` as it is loaded in THIS process, found in `require.cache`,
@@ -2767,6 +2804,7 @@ class Devices {
     const ended = this.endSessionsFrom(device, entity === 'admin'
       ? 'an administrator marking device ' + device.id + ' compromised'
       : 'device ' + device.id + ' being marked compromised', entity);
+    const grants = this.endGrantsBoundTo(device, entity, actor, reasonAdmin);
     this.setRiskLevel(device.id, 'HIGH', 'DEVICE_COMPROMISED',
                       { source: 'compromise', actor: actor,
                         initiatingEntity: entity,
@@ -2794,11 +2832,70 @@ class Devices {
     }
     log.warn('devices: device ' + device.id + ' was marked COMPROMISED by ' +
              (actor || 'an administrator') + '; ' + ended + ' session(s) ' +
-             'ended, ' + revoked.length + ' certificate(s) revoked' +
+             'ended, ' + grants.gnap + ' GNAP grant(s) and ' + grants.tokens +
+             ' DPoP-bound OAuth token(s) ended, ' + revoked.length +
+             ' certificate(s) revoked' +
              (hadSecret ? ', its Native SSO secret revoked' : '') + '.');
     log.debug("Leaving Devices.compromised().");
     return { sessionsEnded: ended, certificatesRevoked: revoked.length,
-             secretRevoked: hadSecret };
+             secretRevoked: hadSecret, gnapGrantsEnded: grants.gnap,
+             oauthTokensRevoked: grants.tokens };
+  }
+
+  // -------------------------------------------------------------------------
+  // WHAT A COMPROMISED DEVICE'S KEYS WERE TRUSTED WITH BEYOND A SESSION
+  // (#432, phase 2). The register knows a device by its keys' thumbprints —
+  // a `jwk` key's RFC 7638 thumbprint and an `x509` key's SubjectPublicKeyInfo
+  // digest — and two things here are bound to a key by those same digests:
+  //
+  //   * a GNAP grant whose CLIENT KEY is one of them (a device acting as a
+  //     client instance): ended as the client's own section 5.4 revocation,
+  //     through `gnap_revocation.ts`;
+  //   * an OAuth access or refresh token DPoP-bound (RFC 9449) to one of the
+  //     JWK thumbprints — the `jkt` the token register keeps — revoked in the
+  //     one revocation set, whose observer reports the grant it ends (#239).
+  //
+  // WHAT THE DATA DOES NOT SUPPORT, stated rather than guessed: a token bound
+  // by mutual TLS (RFC 8705's `x5t#S256`) is not matched — the register keeps
+  // no certificate binding — and a WebAuthn key binds no token. The Native SSO
+  // secret, the certificates and the sessions are ended above, as before.
+  // -------------------------------------------------------------------------
+  private endGrantsBoundTo(device: Device, entity: string, actor: string,
+                           why: string): { gnap: number; tokens: number } {
+    const { log, errorCodes, findGnapRevocation, loadStats } = this.deps;
+    log.debug("Entering Devices.endGrantsBoundTo(). " + device.id);
+    const thumbprints = device.keys.filter(function (key) {
+      return key.kind === 'jwk' || key.kind === 'x509';
+    }).map(function (key) {
+      return String(key.thumbprint || '');
+    }).filter(Boolean);
+    const jwkThumbprints = device.keys.filter(function (key) {
+      return key.kind === 'jwk';
+    }).map(function (key) {
+      return String(key.thumbprint || '');
+    }).filter(Boolean);
+    const out = { gnap: 0, tokens: 0 };
+    try {
+      const gnap = findGnapRevocation();
+      if (gnap && thumbprints.length) {
+        out.gnap = gnap.endForDeviceKeys(thumbprints, {
+          why: 'its client key belongs to device ' + device.id + ', marked ' +
+               'compromised', actor: actor, via: 'the device register',
+          initiatingEntity: entity });
+      }
+      if (jwkThumbprints.length) {
+        out.tokens = loadStats().revokeWhere(function (record: Json) {
+          return !!record.jkt && jwkThumbprints.indexOf(record.jkt) >= 0;
+        }, why, { initiatingEntity: entity });
+      }
+    } catch (e) {
+      log.error(errorCodes.tag('STS-DEVICE-0046') + 'devices: what the keys ' +
+                'of device ' + device.id + ' were trusted with could not all ' +
+                'be ended: ' + ((e && e.message) || e));
+    }
+    log.debug("Leaving Devices.endGrantsBoundTo(). " + out.gnap +
+              " grant(s), " + out.tokens + " token(s).");
+    return out;
   }
 
   // -------------------------------------------------------------------------

@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3985** of them, in **41** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3994** of them, in **41** subsystems.
 
 ## Where a code appears
 
@@ -80,8 +80,8 @@ is an ordinary outcome.
 * [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 118
 * [Risk scoring (`STS-RISK`)](#sts-risk) — 44
 * [Mail (`STS-MAIL`)](#sts-mail) — 39
-* [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 286
-* [Device register (`STS-DEVICE`)](#sts-device) — 45
+* [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 294
+* [Device register (`STS-DEVICE`)](#sts-device) — 46
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 87
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 34
 * [Admin console (`STS-ADMIN`)](#sts-admin) — 220
@@ -3662,6 +3662,14 @@ Raised from: gnap/.
 | `STS-GNAP-0718` | A signed GNAP request was refused because the realm's signature replay history held gnap.replayCacheSize LIVE entries: forgetting one would let that signature be replayed, so the request is refused instead until entries age out. | RFC 9635 section 7.3 (invalid_request) |
 | `STS-GNAP-0719` | A GNAP client asked for an access right naming one of this service's own protected scopes (ssf:read, ssf:write, as a reference string or an object of type ssf) that its application's oauthAllowedScope does not list. | RFC 9635 section 3.6 (request_denied) |
 | `STS-GNAP-0720` | Product mode ignored gnap.pushSkipTlsVerification: a push finish verifies the client's certificate whatever it says. Logged once per process (#171). | none — a warning in the log |
+| `STS-GNAP-0730` | A GNAP grant was refused at use — its continuation (other than the client revoking it), or introspected inactive — because its resource owner's account is disabled. Covers a node the disable has not reached yet; the disable itself ends the grant (#432). | RFC 9635 section 5 (invalid_continuation); RFC 9767 section 3.3 (active: false) |
+| `STS-GNAP-0731` | A GNAP grant was refused at use — its continuation, or introspected inactive — because its client's application entry no longer exists, or no longer names the key the grant is bound to (gnapKey, gnapKeyIdentity or gnapKeyReference removed or replaced, #432). | RFC 9635 section 5 (invalid_continuation); RFC 9767 section 3.3 (active: false) |
+| `STS-GNAP-0732` | A GNAP access token was not rotated because its resource owner's account is disabled, or its client's application entry is gone or no longer names the grant's key (#432). Revoking it is still allowed. | RFC 9635 section 6.1 (invalid_rotation) |
+| `STS-GNAP-0733` | A resource server asked to derive from a GNAP access token whose resource owner's account is disabled, or whose client's application entry is gone or no longer names the grant's key (#432). | RFC 9767 section 4 (invalid_request) |
+| `STS-GNAP-0734` | A GNAP access token was presented (the demonstration resource server, a Shared Signals endpoint) whose resource owner's account is disabled (#432). | RFC 9635 section 7.2 (invalid_token) |
+| `STS-GNAP-0735` | A GNAP access token was presented whose client's application entry no longer exists or no longer names the key the grant is bound to (#432). | RFC 9635 section 7.2 (invalid_token) |
+| `STS-GNAP-0736` | A GNAP grant could not be ended by an act from outside the protocol — a sign-out, a deleted client, a compromised device, a received signal (#432). The others it was asked to end were. | none — a warning in the log |
+| `STS-GNAP-0737` | An application entry was deleted, or its GNAP key removed or replaced, and its GNAP grants could not be ended with it (#432). Each is still refused at its next use (STS-GNAP-0731). | none — a warning in the log |
 | `STS-GNAP-0790` | A GNAP continuation or modification arrived after the grant's own lifetime (gnap.grantLifetimeS) ended; the grant was finalized as expired (#432). | RFC 9635 section 5 (invalid_continuation) |
 | `STS-GNAP-0791` | A GNAP access token rotation was refused because the grant the token was issued under has reached the end of its lifetime (gnap.grantLifetimeS) (#432). | RFC 9635 section 6.1 (invalid_rotation) |
 | `STS-GNAP-0792` | An administrator's revoke-grant (console or /admin-api) named a person who is not the resource owner of the grant it named, so nothing was revoked (#432). | HTTP 400 (API) or a 303 with error= |
@@ -3720,6 +3728,7 @@ Raised from: common/devices.ts, admin-ui/devices_admin.ts.
 | `STS-DEVICE-0043` | A remembered browser's token was not issued: once signed and encrypted it is larger than a cookie may be (about 4 KB) — devices.browserTokenCertificateHeader set to x5c or both is the usual cause (#265). | none — the browser is not remembered, and the page says so |
 | `STS-DEVICE-0044` | Remembering a browser was refused: devices.browserDevices is off in the realm, nobody is signed in, or the person holds their most devices (#265). | 400 on /portal/devices; the sign-in itself goes on |
 | `STS-DEVICE-0045` | A remembered browser's generation and binding could not be written onto its device entry, so the token it holds was not issued again (#265). | none — the browser keeps the token it has |
+| `STS-DEVICE-0046` | A device was marked compromised and what its keys were trusted with beyond a session — the GNAP grants whose client key is the device's, the OAuth tokens DPoP-bound to its keys — could not all be ended (#432). The sessions, secret and certificates were. | none — an error in the log |
 
 ## STS-XACML
 

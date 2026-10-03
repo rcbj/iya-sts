@@ -56,8 +56,9 @@
 // `GnapConsoleDeps`, and the module still exports `GNAP_ACTIONS`, `STATES` and
 // the three calls as FACADES forwarding to the instance the composition root
 // builds (#50, R2), for `gnap_admin.ts` and `mgmt-api/admin_api.ts`.
-// `gnap_signals` stays LAZY: the instance is handed a loader that requires it
-// at the moment a grant is revoked, as the code here did before. A process
+// A grant is revoked through `gnap_grants.ts`'s `revokeGrantBy()` (#432),
+// the one path every door ends a grant by, and which reaches `gnap_signals`
+// for the CAEP event. A process
 // that loads this module without the root builds a default instance when the
 // module loads.
 // ---------------------------------------------------------------------------
@@ -75,11 +76,6 @@ import grants = require('./gnap_grants');
 import tokens = require('./gnap_tokens');
 import monitor = require('./gnap_monitor');
 
-// The part of `gnap_signals` this module calls.
-interface GrantRevokedSignal {
-  grantRevoked(req: unknown, grant: any, reason: string): unknown;
-}
-
 interface GnapConsoleDeps {
   // `common/cells.ts` (#98), for what a person's list can and cannot say.
   loadCells(): any;
@@ -96,8 +92,6 @@ interface GnapConsoleDeps {
   grants: typeof grants;
   tokens: typeof tokens;
   monitor: typeof monitor;
-  // Required at the moment it is needed, never at load.
-  loadSignals(): GrantRevokedSignal;
 }
 
 // What a caller tells an action about itself.
@@ -723,9 +717,6 @@ class GnapConsole {
       grants: grants,
       tokens: tokens,
       monitor: monitor,
-      loadSignals: function () {
-        return require('./gnap_signals');
-      },
       loadCells: function () {
         return require('../common/cells');
       }

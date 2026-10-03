@@ -15397,6 +15397,54 @@ const CODES = [
       'finish verifies the client\'s certificate whatever it says. Logged ' +
       'once per process (#171).',
     spec: 'none — a warning in the log' },
+  // #432 phase 2: what ends a GNAP grant from outside the protocol.
+  { code: 'STS-GNAP-0730',
+    summary: 'A GNAP grant was refused at use — its continuation (other than ' +
+      'the client revoking it), or introspected inactive — because its ' +
+      'resource owner\'s account is disabled. Covers a node the disable ' +
+      'has not reached yet; the disable itself ends the grant (#432).',
+    spec: 'RFC 9635 section 5 (invalid_continuation); RFC 9767 section 3.3 ' +
+      '(active: false)' },
+  { code: 'STS-GNAP-0731',
+    summary: 'A GNAP grant was refused at use — its continuation, or ' +
+      'introspected inactive — because its client\'s application entry no ' +
+      'longer exists, or no longer names the key the grant is bound to ' +
+      '(gnapKey, gnapKeyIdentity or gnapKeyReference removed or replaced, ' +
+      '#432).',
+    spec: 'RFC 9635 section 5 (invalid_continuation); RFC 9767 section 3.3 ' +
+      '(active: false)' },
+  { code: 'STS-GNAP-0732',
+    summary: 'A GNAP access token was not rotated because its resource ' +
+      'owner\'s account is disabled, or its client\'s application entry is ' +
+      'gone or no longer names the grant\'s key (#432). Revoking it is ' +
+      'still allowed.',
+    spec: 'RFC 9635 section 6.1 (invalid_rotation)' },
+  { code: 'STS-GNAP-0733',
+    summary: 'A resource server asked to derive from a GNAP access token ' +
+      'whose resource owner\'s account is disabled, or whose client\'s ' +
+      'application entry is gone or no longer names the grant\'s key ' +
+      '(#432).',
+    spec: 'RFC 9767 section 4 (invalid_request)' },
+  { code: 'STS-GNAP-0734',
+    summary: 'A GNAP access token was presented (the demonstration resource ' +
+      'server, a Shared Signals endpoint) whose resource owner\'s account ' +
+      'is disabled (#432).',
+    spec: 'RFC 9635 section 7.2 (invalid_token)' },
+  { code: 'STS-GNAP-0735',
+    summary: 'A GNAP access token was presented whose client\'s ' +
+      'application entry no longer exists or no longer names the key the ' +
+      'grant is bound to (#432).',
+    spec: 'RFC 9635 section 7.2 (invalid_token)' },
+  { code: 'STS-GNAP-0736',
+    summary: 'A GNAP grant could not be ended by an act from outside the ' +
+      'protocol — a sign-out, a deleted client, a compromised device, a ' +
+      'received signal (#432). The others it was asked to end were.',
+    spec: 'none — a warning in the log' },
+  { code: 'STS-GNAP-0737',
+    summary: 'An application entry was deleted, or its GNAP key removed or ' +
+      'replaced, and its GNAP grants could not be ended with it (#432). ' +
+      'Each is still refused at its next use (STS-GNAP-0731).',
+    spec: 'none — a warning in the log' },
   { code: 'STS-GNAP-0790',
     summary: 'A GNAP continuation or modification arrived after the grant\'s ' +
       'own lifetime (gnap.grantLifetimeS) ended; the grant was finalized as ' +
@@ -15655,6 +15703,12 @@ const CODES = [
       'written onto its device entry, so the token it holds was not ' +
       'issued again (#265).',
     spec: 'none — the browser keeps the token it has' },
+  { code: 'STS-DEVICE-0046',
+    summary: 'A device was marked compromised and what its keys were ' +
+      'trusted with beyond a session — the GNAP grants whose client key is ' +
+      'the device\'s, the OAuth tokens DPoP-bound to its keys — could not ' +
+      'all be ended (#432). The sessions, secret and certificates were.',
+    spec: 'none — an error in the log' },
   // ===== XACML =============================================================
   { code: 'STS-XACML-0001',
     summary: 'A request reached an XACML endpoint while the family is ' +

@@ -9852,6 +9852,22 @@ What this directory owns:
   device is marked COMPROMISED (`STS-DEVICE-0041`, CAEP and RISC through
   `setStatus()`). The next sign-in clears the cookie so the victim is not
   refused on it again.
+* **A COMPROMISE REACHES WHAT THE DEVICE'S KEYS WERE TRUSTED WITH (#432,
+  2026-10-03)**: `endGrantsBoundTo()` ends the GNAP grants whose client key's
+  JWK or SubjectPublicKeyInfo thumbprint is one of the device's keys
+  (`gnap/gnap_revocation.ts`, found in `require.cache` for `loadedAuthn()`'s
+  reason) and revokes the OAuth tokens DPoP-bound (`jkt`) to its JWK keys,
+  whose observer reports the grant each ends (#239). A token bound by mutual
+  TLS is not matched — `admin_stats.js` keeps no certificate binding — and
+  that is said in the code and `docs/devices.md` rather than guessed at.
+  `crypto.publicKeySpkiThumbprint()` is the key-side twin of
+  `certificateSpkiThumbprint()` that makes a GNAP key comparable with an
+  `x509` device key.
+* **AN APPLICATION ENTRY DELETED, OR ITS GNAP KEY REMOVED OR REPLACED, ENDS
+  ITS GNAP GRANTS (#432)**: `applications.js`'s `endGnapGrants()`, after
+  `deleteApplication()` and an `updateApplication()` of `gnapKey`,
+  `gnapKeyIdentity` or `gnapKeyReference` — `gnap/CLAUDE.md` has the rule.
+  There is no "disabled" application state to watch.
 * **ATTESTATION `bearer`** (a level below `self-asserted`). Such a device is
   never compliant (`STS-DEVICE-0039`) and never earns a lowering risk signal.
   Three signals raise risk instead (`risk/CLAUDE.md`).
