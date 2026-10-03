@@ -4258,12 +4258,15 @@ class AdminActions {
     if (text('description')) {
       out.description = text('description');
     }
-    ['locations', 'actions', 'datatypes', 'privileges', 'required',
+    // `requiredMembers` is the body's name for the definition's `required`:
+    // a body member called `required` would collide with the JSON Schema
+    // keyword the management API's request schema is written in.
+    ['locations', 'actions', 'datatypes', 'privileges', 'requiredMembers',
      'consentActions', 'derivableFrom', 'introspectionClaims']
       .forEach(function (name: string): void {
         const values = list(name);
         if (values && values.length) {
-          out[name] = values;
+          out[name === 'requiredMembers' ? 'required' : name] = values;
         }
       });
     if (text('interaction')) {

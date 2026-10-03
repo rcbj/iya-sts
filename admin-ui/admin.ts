@@ -19830,8 +19830,8 @@ class AdminConsole {
       box('privileges', 'Privileges', 'One per line; empty allows any.', 2) +
       box('locations', 'Locations', 'One absolute URI per line, beside this ' +
           'application\'s own addresses.', 2) +
-      box('required', 'Required members', 'Member names a right must carry, ' +
-          'one per line.', 2) +
+      box('requiredMembers', 'Required members', 'Member names a right ' +
+          'must carry, one per line.', 2) +
       box('bearer', 'Bearer token', '<code>false</code> refuses a bearer ' +
           'token carrying the type; empty sets no rule of its own.') +
       box('maxLifetimeS', 'Maximum token lifetime (s)', 'A token carrying ' +

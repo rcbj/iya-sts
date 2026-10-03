@@ -169,7 +169,8 @@ async function test() {
                                   "client_secret_post" });
   await h.ok(h.realmApi + "/applications/set-access-type", {
     application: RS, type: PAY, description: "Initiate and track a payment",
-    actions: ["initiate", "status", "refund"], required: ["actions"],
+    actions: ["initiate", "status", "refund"],
+    requiredMembers: ["actions"],
     bearer: false, maxLifetimeS: 120, introspectionClaims: ["email"],
     limits: { type: "object",
               properties: { amount: { type: "number", minimum: 0 } },

@@ -12224,7 +12224,9 @@ class AdminApi {
                          'GNAP access rights alike — replacing the ' +
                          'application\'s definition of the same `type`. ' +
                          'A list field is an array or text with one value ' +
-                         'per line; `schema` and `limits` are JSON Schemas ' +
+                         'per line (`requiredMembers` is the definition\'s ' +
+                         '`required`); `schema` and `limits` are JSON ' +
+                         'Schemas ' +
                          '(`limits` a subset: type, properties, required, ' +
                          'additionalProperties, items, enum, const, bounds, ' +
                          'pattern, format). `bearer: false` makes a token ' +
@@ -12252,8 +12254,8 @@ class AdminApi {
                              items: { type: 'string' } },
                 privileges: { type: ['array', 'string'],
                               items: { type: 'string' } },
-                required: { type: ['array', 'string'],
-                            items: { type: 'string' } },
+                requiredMembers: { type: ['array', 'string'],
+                                   items: { type: 'string' } },
                 interaction: { type: 'string',
                                enum: ['', 'always', 'default', 'never'] },
                 consentActions: { type: ['array', 'string'],
