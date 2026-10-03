@@ -1837,8 +1837,15 @@ so must `admin-ui/admin.ts`.
      details sees only its own types' details and the person's claims they
      declare, added as top-level members never over one already there; a
      caller owning none sees the token as before;
-   * `derivableFrom` is GNAP's (RFC 9767); `interaction`, `consentActions`
-     and `acr` are ENFORCED BY PHASE 6 of #432 (the next lane).
+   * `derivableFrom` is GNAP's (RFC 9767); so are `interaction`,
+     `consentActions` and `acr`, enforced for GNAP since #432 phase 6
+     (`gnap/CLAUDE.md`). **For RFC 9396 they are not read**: the consent
+     screen already asks for every detail every time and has no unattended
+     path, so `always` and the consent actions hold here by construction and
+     `never` has nothing to relax; a type's `acr` is NOT yet added to the
+     authorization endpoint's step-up requirement (whose `acr_values` mean
+     "any of", where a type's acr means "this one too") — a recorded gap,
+     not a silent one.
 
    **AN UNKNOWN TYPE STAYS REFUSED IN EVERY MODE HERE**, unlike GNAP's
    development mode (`mode.grantsUncataloguedAccess()`): RFC 9396 section 5

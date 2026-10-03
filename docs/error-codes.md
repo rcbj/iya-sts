@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4029** of them, in **41** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4043** of them, in **41** subsystems.
 
 ## Where a code appears
 
@@ -79,14 +79,14 @@ is an ordinary outcome.
 * [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 112
 * [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 118
 * [Risk scoring (`STS-RISK`)](#sts-risk) — 44
-* [Mail (`STS-MAIL`)](#sts-mail) — 39
-* [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 318
+* [Mail (`STS-MAIL`)](#sts-mail) — 40
+* [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 329
 * [Device register (`STS-DEVICE`)](#sts-device) — 46
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 88
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 34
 * [Admin console (`STS-ADMIN`)](#sts-admin) — 220
 * [Management API (`STS-API`)](#sts-api) — 75
-* [User portal (`STS-PORTAL`)](#sts-portal) — 81
+* [User portal (`STS-PORTAL`)](#sts-portal) — 83
 * [Sign-out (`STS-LOGOUT`)](#sts-logout) — 7
 * [Registries (`STS-REG`)](#sts-reg) — 149
 * [Protocol debugger (`STS-DBG`)](#sts-dbg) — 28
@@ -3379,6 +3379,7 @@ Raised from: common/mail.ts, common/mail_transports.ts, common/mail_uses.ts, com
 | `STS-MAIL-0037` | A self-service reset was asked for an account that holds no unused recovery code, while one is required (#64, D4). | the same sentence as a sent link |
 | `STS-MAIL-0038` | A followed verification link for a NEW address could not write it to the entry (#64, D5). | HTTP 400 page |
 | `STS-MAIL-0039` | A person asked to change their address to something that is not an address this service can send to (#64, D5). | HTTP 400 page |
+| `STS-MAIL-0180` | The notice telling a person that a GNAP grant waits for their approval on the portal could not be queued; the request still waits there (#432 phase 6). | log only |
 
 ## STS-GNAP
 
@@ -3463,7 +3464,7 @@ Raised from: gnap/.
 | `STS-GNAP-0112` | A GNAP grant request or modification asks for an access right the client may not request (gnapAllowedAccess), or names an unregistered reference while gnap.unknownAccessReferences is refuse. | HTTP 403 GNAP request_denied |
 | `STS-GNAP-0113` | A GNAP grant needs the resource owner's approval and the client offered no way to interact; the grant was finalized. | HTTP 400 GNAP invalid_interaction |
 | `STS-GNAP-0120` | A resource owner did not approve a GNAP grant — recorded when they answer, and again when the client continues and is told. | HTTP 403 GNAP user_denied, at the next continuation |
-| `STS-GNAP-0121` | The person who approved a GNAP grant is not the user the request named, and gnap.allowCrossUser is off. | HTTP 403 GNAP unknown_user, at the next continuation |
+| `STS-GNAP-0121` | The person who approved a GNAP grant is not the user the request named, and approval by an absent owner (gnap.ownerApproval) is off. | HTTP 403 GNAP unknown_user, at the next continuation |
 | `STS-GNAP-0130` | A GNAP continuation URI and access token do not together identify an active grant request. | HTTP 401 GNAP invalid_continuation |
 | `STS-GNAP-0131` | A GNAP continuation named a grant request that is finalized. | HTTP 400 GNAP invalid_continuation |
 | `STS-GNAP-0132` | A pending GNAP grant request expired before it was approved; the continuation finalized it. | HTTP 400 GNAP invalid_continuation |
@@ -3706,6 +3707,17 @@ Raised from: gnap/.
 | `STS-GNAP-0815` | The issuance policy answered a GNAP access right with a verdict this service does not know; the right was refused (#432). | RFC 9635 section 3.6 (request_denied, HTTP 403) |
 | `STS-GNAP-0816` | No issuance policy, not even the built-in one, gave a verdict on a GNAP access right; it was refused (#432). | RFC 9635 section 3.6 (request_denied, HTTP 403) |
 | `STS-GNAP-0817` | The issuance policy narrowed a GNAP access right to nothing it could still grant: a reference string, an unrestricted dimension the catalogue lists no values for, every value taken off, or a narrowed right its type no longer accepts (#432). | RFC 9635 section 3.6 (request_denied, HTTP 403) |
+| `STS-GNAP-0890` | A GNAP access right whose type requires its resource owner on the approval page (interaction: always, or a consent action) was approved by skipping the page or by a remembered approval, and was left out of its token at issuance (#432 phase 6). | audit only; the token is issued without the right |
+| `STS-GNAP-0891` | A GNAP access right whose type requires an authentication level the approving session did not meet was left out of its token at issuance (#432 phase 6, RFC 9470). | audit only; the token is issued without the right |
+| `STS-GNAP-0892` | A client trusted to skip interaction (gnapSkipInteraction) asked for a right whose type requires its resource owner on the approval page, and offered no way to interact (#432 phase 6). | RFC 9635 section 2.5 (invalid_interaction, HTTP 400) |
+| `STS-GNAP-0893` | A GNAP request that could otherwise have been issued without interaction asked for a right needing an authentication level, which no session met, and offered no way to interact (#432 phase 6). | RFC 9635 section 2.5 (invalid_interaction, HTTP 400) |
+| `STS-GNAP-0894` | A GNAP grant waiting for its absent resource owner on the portal ran out (gnap.ownerApprovalLifetimeS) without an answer; it is finalized as rejected (#432 phase 6). | RFC 9635 section 5 (invalid_continuation, HTTP 400) |
+| `STS-GNAP-0895` | A derived GNAP token asked for a right beyond the original token of a type that requires its resource owner on the approval page (#432 phase 6). | RFC 9767 section 4 (request_denied, HTTP 403) |
+| `STS-GNAP-0896` | A derived GNAP token asked for a right needing an authentication level the session the original grant was approved on did not meet (#432 phase 6, RFC 9470). | RFC 9767 section 4 (request_denied, HTTP 403) |
+| `STS-GNAP-0897` | A GNAP grant could not wait for its resource owner: they already have gnap.ownerApprovalMaxPending requests waiting (#432 phase 6). | RFC 9635 section 3.6 (request_denied, HTTP 403) |
+| `STS-GNAP-0898` | A GNAP grant could not wait for its resource owner: they are homed in another cell than the one holding the client instance, whose portal could never list it (#432 phase 6, #98). | RFC 9635 section 3.6 (request_denied, HTTP 403) |
+| `STS-GNAP-0899` | The person at a GNAP approval page was sent to sign in again for the authentication level the rights need, and came back still short of it; the request is denied (#432 phase 6, RFC 9470). | RFC 9635 section 3.6 (request_denied, HTTP 403), at the next continuation |
+| `STS-GNAP-0900` | The mail notice for a GNAP grant waiting for its resource owner could not be queued; the grant waits on the portal regardless (#432 phase 6). | log only |
 
 ## STS-DEVICE
 
@@ -4304,6 +4316,8 @@ Raised from: portal/.
 | `STS-PORTAL-0101` | A security key was chosen during an activation instead of a password and its enrolment could not be started (the mechanism or role is off, or the authentication policy refuses it), so the activation was refused rather than finished with no way in. | HTTP 400 page |
 | `STS-PORTAL-0102` | An activation's security key step did not register a key — the enrolment had expired, the browser ran no ceremony, the RP ID did not fit, or the registration did not verify — and the step was drawn again. | HTTP 400 page |
 | `STS-PORTAL-0163` | A POST to /portal/gnap named a GNAP grant that is not one the signed-in person approved, or one with nothing live left to revoke (#432). | HTTP 400 page |
+| `STS-PORTAL-0243` | A POST to /portal/ciba answered a GNAP access request that is not waiting for the signed-in person: answered already, run out, or somebody else's (#432 phase 6). | HTTP 400 page |
+| `STS-PORTAL-0244` | A resource owner approved a GNAP access request on /portal/ciba with a session that does not meet the authentication level the rights need; the page offers to sign in again with it (#432 phase 6, RFC 9470). | HTTP 403 page |
 
 ## STS-LOGOUT
 

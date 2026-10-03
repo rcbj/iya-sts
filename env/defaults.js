@@ -135,7 +135,9 @@ var config = {
     continueAfterApproval: true,                                           // Keep approved grants continuable
     consentRequired: true,                                                 // Ask the resource owner
     rememberApprovals: true,                                               // Remember approvals
-    allowCrossUser: false,                                                 // Allow a different person to approve
+    ownerApproval: false,                                                  // Approval by an absent resource owner
+    ownerApprovalLifetimeS: 600,                                           // Time an absent owner has to answer
+    ownerApprovalMaxPending: 5,                                            // Requests one person may have waiting
     userCodeLength: 8,                                                     // User code length
     unknownAccessReferences: "accept",                                     // Unregistered access references
     introspection: true,                                                   // Offer token introspection

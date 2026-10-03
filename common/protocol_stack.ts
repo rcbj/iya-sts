@@ -1733,6 +1733,11 @@ class ProtocolStack {
     // #432: who may act for whom in GNAP — a library the grant engine reads.
     this.build('gnap/gnap_delegation', require('../gnap/gnap_delegation'),
                'GnapDelegation');
+    // #432 phase 6: who approves a grant and how strongly signed in — the
+    // step-up and approval by an absent owner; a library the grant engine,
+    // the approval page and the portal read.
+    this.build('gnap/gnap_approval', require('../gnap/gnap_approval'),
+               'GnapApproval');
     this.build('gnap/gnap_grants', require('../gnap/gnap_grants'),
                'GnapGrants');
     this.build('gnap/gnap_rs', require('../gnap/gnap_rs'), 'GnapRs');

@@ -345,7 +345,9 @@ definition per type:
 | `maxLifetimeS` | a token carrying it lives no longer |
 | `derivableFrom` | a derived token (RFC 9767 section 4) may add a right of this type when the original carries one of these |
 | `introspectionClaims` | the person's claims the owning resource server is told at `/gnap/introspect` |
-| `interaction`, `consentActions`, `acr` | recorded now; enforced by phase 6 of #432 |
+| `interaction` | `never`: issued with nobody asked, to any client acting as itself; `default`: a `gnapSkipInteraction` client may skip the page; `always`: the resource owner sees the page every time — no skip, no remembered approval |
+| `consentActions` | a right naming one of these actions (or no actions, which is every action) needs the resource owner on the page, as `always` does |
+| `acr` | the authentication level the approving session must meet; the approval page sends the person to sign in again with it first |
 
 **A right of a catalogued type that names no location is for its owning
 resource server**: the token is audienced to it and minted in its format.

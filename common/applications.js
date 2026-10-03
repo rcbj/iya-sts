@@ -1752,8 +1752,10 @@ const SCHEMA = {
             'be derived from (RFC 9767 section 4), `introspectionClaims` ' +
             'what this resource server is told about the person at ' +
             'introspection, and `limits` the JSON Schema (a subset) a ' +
-            'right\'s limits must meet. `interaction`, `consentActions` and ' +
-            '`acr` are enforced by phase 6 of #432. An undeclared type is ' +
+            'right\'s limits must meet. `interaction` (always, default, ' +
+            'never), `consentActions` and `acr` decide, for GNAP, whether ' +
+            'the resource owner is asked and how strongly signed in (#432 ' +
+            'phase 6). An undeclared type is ' +
             'refused invalid_authorization_details by RFC 9396 in every ' +
             'mode, and by GNAP in product mode.' },
     { name: 'oauthAuthorizationDetailsTypes', kind: 'multi',
@@ -8235,11 +8237,13 @@ function gnapMtlsTrustProblem(attribute, value) {
 //   privileges                     that common field (absent: any)
 //   required                       member names a right of this type must carry
 //   interaction                    `always`, `default` or `never`, and
-//   consentActions                 the actions that force consent — ENFORCED
-//                                  BY PHASE 6 of #432 (the next lane), which
-//                                  replaces gnapSkipInteraction's switch
+//   consentActions                 the actions that force consent — for
+//                                  GNAP, rules of the issuance policy (#432
+//                                  phase 6, `gnap/gnap_approval.ts`) that
+//                                  replaced gnapSkipInteraction's switch
 //   acr                            the authentication level a right of this
-//                                  type needs — ENFORCED BY PHASE 6 (step-up)
+//                                  type needs — GNAP's approval page steps
+//                                  the person up to it (#432 phase 6)
 //   bearer                         false: a token carrying the type must be
 //                                  sender-constrained (absent: no rule of its
 //                                  own, the client's and the realm's apply)

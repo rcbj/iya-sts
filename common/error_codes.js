@@ -14170,6 +14170,11 @@ const CODES = [
     summary: 'A person asked to change their address to something that is ' +
       'not an address this service can send to (#64, D5).',
     spec: 'HTTP 400 page' },
+  { code: 'STS-MAIL-0180',
+    summary: 'The notice telling a person that a GNAP grant waits for their ' +
+      'approval on the portal could not be queued; the request still waits ' +
+      'there (#432 phase 6).',
+    spec: 'log only' },
   { code: 'STS-GNAP-0001',
     summary: 'A GNAP key names a proofing method this authorization server ' +
       'does not implement, in string or object form.',
@@ -14477,7 +14482,8 @@ const CODES = [
     spec: 'HTTP 403 GNAP user_denied, at the next continuation' },
   { code: 'STS-GNAP-0121',
     summary: 'The person who approved a GNAP grant is not the user the ' +
-      'request named, and gnap.allowCrossUser is off.',
+      'request named, and approval by an absent owner (gnap.ownerApproval) ' +
+      'is off.',
     spec: 'HTTP 403 GNAP unknown_user, at the next continuation' },
   { code: 'STS-GNAP-0130',
     summary: 'A GNAP continuation URI and access token do not together ' +
@@ -15651,6 +15657,63 @@ const CODES = [
       'narrowed right its type no longer accepts (#432).',
     spec: 'RFC 9635 section 3.6 (request_denied, HTTP 403)' },
   // ===== DEVICE ============================================================
+  { code: 'STS-GNAP-0890',
+    summary: 'A GNAP access right whose type requires its resource owner on ' +
+      'the approval page (interaction: always, or a consent action) was ' +
+      'approved by skipping the page or by a remembered approval, and was ' +
+      'left out of its token at issuance (#432 phase 6).',
+    spec: 'audit only; the token is issued without the right' },
+  { code: 'STS-GNAP-0891',
+    summary: 'A GNAP access right whose type requires an authentication ' +
+      'level the approving session did not meet was left out of its token ' +
+      'at issuance (#432 phase 6, RFC 9470).',
+    spec: 'audit only; the token is issued without the right' },
+  { code: 'STS-GNAP-0892',
+    summary: 'A client trusted to skip interaction (gnapSkipInteraction) ' +
+      'asked for a right whose type requires its resource owner on the ' +
+      'approval page, and offered no way to interact (#432 phase 6).',
+    spec: 'RFC 9635 section 2.5 (invalid_interaction, HTTP 400)' },
+  { code: 'STS-GNAP-0893',
+    summary: 'A GNAP request that could otherwise have been issued without ' +
+      'interaction asked for a right needing an authentication level, which ' +
+      'no session met, and offered no way to interact (#432 phase 6).',
+    spec: 'RFC 9635 section 2.5 (invalid_interaction, HTTP 400)' },
+  { code: 'STS-GNAP-0894',
+    summary: 'A GNAP grant waiting for its absent resource owner on the ' +
+      'portal ran out (gnap.ownerApprovalLifetimeS) without an answer; it ' +
+      'is finalized as rejected (#432 phase 6).',
+    spec: 'RFC 9635 section 5 (invalid_continuation, HTTP 400)' },
+  { code: 'STS-GNAP-0895',
+    summary: 'A derived GNAP token asked for a right beyond the original ' +
+      'token of a type that requires its resource owner on the approval ' +
+      'page (#432 phase 6).',
+    spec: 'RFC 9767 section 4 (request_denied, HTTP 403)' },
+  { code: 'STS-GNAP-0896',
+    summary: 'A derived GNAP token asked for a right needing an ' +
+      'authentication level the session the original grant was approved on ' +
+      'did not meet (#432 phase 6, RFC 9470).',
+    spec: 'RFC 9767 section 4 (request_denied, HTTP 403)' },
+  { code: 'STS-GNAP-0897',
+    summary: 'A GNAP grant could not wait for its resource owner: they ' +
+      'already have gnap.ownerApprovalMaxPending requests waiting (#432 ' +
+      'phase 6).',
+    spec: 'RFC 9635 section 3.6 (request_denied, HTTP 403)' },
+  { code: 'STS-GNAP-0898',
+    summary: 'A GNAP grant could not wait for its resource owner: they are ' +
+      'homed in another cell than the one holding the client instance, ' +
+      'whose portal could never list it (#432 phase 6, #98).',
+    spec: 'RFC 9635 section 3.6 (request_denied, HTTP 403)' },
+  { code: 'STS-GNAP-0899',
+    summary: 'The person at a GNAP approval page was sent to sign in again ' +
+      'for the authentication level the rights need, and came back still ' +
+      'short of it; the request is denied (#432 phase 6, RFC 9470).',
+    spec: 'RFC 9635 section 3.6 (request_denied, HTTP 403), at the next ' +
+      'continuation' },
+  { code: 'STS-GNAP-0900',
+    summary: 'The mail notice for a GNAP grant waiting for its resource ' +
+      'owner could not be queued; the grant waits on the portal regardless ' +
+      '(#432 phase 6).',
+    spec: 'log only' },
   { code: 'STS-DEVICE-0001',
     summary: 'A device named an owner that is not a person or an application' +
       ' in the realm\'s directory, named no owner, or an owner kind ' +
@@ -18110,6 +18173,17 @@ const CODES = [
       'signed-in person approved, or one with nothing live left to revoke ' +
       '(#432).',
     spec: 'HTTP 400 page' },
+  { code: 'STS-PORTAL-0243',
+    summary: 'A POST to /portal/ciba answered a GNAP access request that is ' +
+      'not waiting for the signed-in person: answered already, run out, or ' +
+      'somebody else\'s (#432 phase 6).',
+    spec: 'HTTP 400 page' },
+  { code: 'STS-PORTAL-0244',
+    summary: 'A resource owner approved a GNAP access request on ' +
+      '/portal/ciba with a session that does not meet the authentication ' +
+      'level the rights need; the page offers to sign in again with it ' +
+      '(#432 phase 6, RFC 9470).',
+    spec: 'HTTP 403 page' },
   { code: 'STS-LOGOUT-0001',
     summary: 'A sign-out named somebody other than the caller while naming ' +
       'another person is closed (logout.anyUser off, or product ' +

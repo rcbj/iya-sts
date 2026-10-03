@@ -217,7 +217,9 @@ const VOCABULARY = Object.freeze({
     'urn:sts:xacml:gnap:client-has-allowed-access',
   GNAP_CLIENT_BEARER_REFUSED: 'urn:sts:xacml:gnap:client-bearer-refused',
   // ENVIRONMENT: who approved and how (`pending` before anybody has,
-  // `interaction`, `skipped`, `derived` or `remembered`), the session the
+  // `interaction`, `skipped`, `derived`, `remembered`, or — since #432
+  // phase 6 — `owner`, the resource owner on their portal while somebody
+  // else, or nobody, used the client), the session the
   // approval stands on (acr, amr), its risk (#62) and the registered device
   // (#164). UNDER NAMES OF THEIR OWN rather than the issuance's risk and
   // device attributes: the issuance's untargeted risk and device rules
