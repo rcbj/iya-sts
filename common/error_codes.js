@@ -15471,6 +15471,22 @@ const CODES = [
       'replaced, and its GNAP grants could not be ended with it (#432). ' +
       'Each is still refused at its next use (STS-GNAP-0731).',
     spec: 'none — a warning in the log' },
+  { code: 'STS-GNAP-0750',
+    summary: 'The biscuit library gave no usable revocation identifiers for ' +
+      'a token it had just minted, so the biscuit was not issued: one this ' +
+      'authorization server could never publish as revoked would be ' +
+      'accepted offline until it expired (#432).',
+    spec: 'none — the token is not issued; the grant answers without it' },
+  { code: 'STS-GNAP-0751',
+    summary: 'The revoked biscuits\' identifiers could not be listed at ' +
+      'GET /gnap/biscuit/revocations (#432).',
+    spec: 'HTTP 500' },
+  { code: 'STS-GNAP-0752',
+    summary: 'The revoked-biscuit list reached oauth2.maxRevokedJtis with ' +
+      'nothing expired in it, so its oldest unexpired revocations were ' +
+      'forgotten: those biscuits are accepted again by a resource server ' +
+      'that checks only the list, until they expire (#432).',
+    spec: 'none — a warning in the log' },
   { code: 'STS-GNAP-0770',
     summary: 'A GNAP client trusted to skip interaction ' +
       '(gnapSkipInteraction) presented a verified user assertion and ' +
@@ -15582,22 +15598,6 @@ const CODES = [
       'an interaction nor a delegation decision authorized; none was ' +
       'released (#432).',
     spec: 'none — the subject member is omitted (RFC 9635 section 3.4)' },
-  { code: 'STS-GNAP-0750',
-    summary: 'The biscuit library gave no usable revocation identifiers for ' +
-      'a token it had just minted, so the biscuit was not issued: one this ' +
-      'authorization server could never publish as revoked would be ' +
-      'accepted offline until it expired (#432).',
-    spec: 'none — the token is not issued; the grant answers without it' },
-  { code: 'STS-GNAP-0751',
-    summary: 'The revoked biscuits\' identifiers could not be listed at ' +
-      'GET /gnap/biscuit/revocations (#432).',
-    spec: 'HTTP 500' },
-  { code: 'STS-GNAP-0752',
-    summary: 'The revoked-biscuit list reached oauth2.maxRevokedJtis with ' +
-      'nothing expired in it, so its oldest unexpired revocations were ' +
-      'forgotten: those biscuits are accepted again by a resource server ' +
-      'that checks only the list, until they expire (#432).',
-    spec: 'none — a warning in the log' },
   // ===== DEVICE ============================================================
   { code: 'STS-DEVICE-0001',
     summary: 'A device named an owner that is not a person or an application' +
