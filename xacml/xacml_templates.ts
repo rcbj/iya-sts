@@ -197,6 +197,11 @@ const ISSUANCE_ATTRIBUTE = {
   SCOPE_GRANTED: 'urn:sts:xacml:scope-granted',
   SCOPE_CONSENTED: 'urn:sts:xacml:scope-consented',
   CONSENT_REQUIRED: 'urn:sts:xacml:consent-required',
+  // A TOKEN EXCHANGE (#108, in policy since #186), stage `exchange`: whether
+  // the subject token carries this scope, and whether it carries a `scope`
+  // claim at all — an ID Token or a WS-Trust JWT has no grant to compare.
+  SCOPE_IN_SUBJECT_TOKEN: 'urn:sts:xacml:scope-in-subject-token',
+  SUBJECT_TOKEN_HAS_SCOPE: 'urn:sts:xacml:subject-token-has-scope',
   // RFC 9396 AUTHORIZATION DETAILS (#305): one question per detail, action-id
   // `issue-authorization-detail`, the detail's TYPE as the resource-id; on
   // the resource, whether the client registered types at all and this one,
@@ -336,6 +341,80 @@ const TRANSFER_ATTRIBUTE = {
   // `serve-request`; `release` / `withhold` answer `release-attributes`. A
   // verdict outside these is read as the strict one.
   VERDICTS: ['hold', 'relay', 'serve', 'refuse', 'release', 'withhold']
+};
+
+// ---------------------------------------------------------------------------
+// WHO MAY ACT FOR WHOM, AND AS WHAT (#186). Two questions, asked by
+// `common/delegation_policy.ts` through `issuance_gate.checkExchange()` for
+// an RFC 8693 token exchange, a WS-Trust OnBehalfOf / ActAs and a Kerberos
+// S4U request — one policy for the three protocols:
+//
+//   * CHOOSE_ACTION picks the SEMANTICS (delegation or impersonation): the
+//     request's own choice, else the actor's default, else the subject's,
+//     else `delegation.defaultSemantics`. Four mutually exclusive Permit
+//     rules, so the precedence is a document an operator can change.
+//   * EXCHANGE_ACTION decides whether the act is allowed, from the facts
+//     `xacml_request.js`'s `exchange()` sends, and says what to issue.
+//
+// The answer carries OBLIGATION on a Permit as well as a Deny: VERDICT
+// (`allow` / `refuse`), REFUSAL (which rule, so each door speaks its own
+// protocol's error), ENFORCED (a Deny refuses in product and is recorded in
+// development — the policy computes it from the mode, except a may_act
+// mismatch, which the subject's own token says in every mode), SEMANTICS
+// (`self`, `delegation`, `impersonation`) and AUDIENCE (R, or S for a self
+// exchange that named none). A document that answers without it — an
+// override built before these rules — has not decided, and the built-in
+// policy is asked instead (the transfer question's arrangement).
+// ---------------------------------------------------------------------------
+/**
+ * The action-ids, attribute identifiers and obligations of the two exchange
+ * questions (#186).
+ */
+const EXCHANGE_ATTRIBUTE = {
+  CHOOSE_ACTION: 'choose-exchange-semantics',
+  EXCHANGE_ACTION: 'exchange-token',
+  // THE THIRD QUESTION: what RFC 8693 section 4.4's `may_act` on a token
+  // about the subject names. The built-in answer is the subject's own
+  // choice; a realm's policy may name another party, or none with a Deny.
+  MAY_ACT_ACTION: 'assign-may-act',
+  SUBJECT_DELEGATE: xacmlRequest.VOCABULARY.EXCHANGE_SUBJECT_DELEGATE,
+  SUBJECT_NOT_DELEGATED: xacmlRequest.VOCABULARY.EXCHANGE_SUBJECT_NOT_DELEGATED,
+  SUBJECT_GROUP: xacmlRequest.VOCABULARY.EXCHANGE_SUBJECT_GROUP,
+  ALLOWED_SEMANTICS: xacmlRequest.VOCABULARY.EXCHANGE_ALLOWED_SEMANTICS,
+  DEFAULT_SEMANTICS: xacmlRequest.VOCABULARY.EXCHANGE_DEFAULT_SEMANTICS,
+  ACTOR_KIND: xacmlRequest.VOCABULARY.EXCHANGE_ACTOR_KIND,
+  ACTOR_REGISTERED: xacmlRequest.VOCABULARY.EXCHANGE_ACTOR_REGISTERED,
+  ACTOR_DELEGATES_TO: xacmlRequest.VOCABULARY.EXCHANGE_ACTOR_DELEGATES_TO,
+  ACTOR_SUBJECT_GROUP: xacmlRequest.VOCABULARY.EXCHANGE_ACTOR_SUBJECT_GROUP,
+  SOURCE: xacmlRequest.VOCABULARY.EXCHANGE_SOURCE,
+  SOURCE_REQUIRED_ROLE: xacmlRequest.VOCABULARY.EXCHANGE_SOURCE_REQUIRED_ROLE,
+  SOURCE_DELEGATES_TO: xacmlRequest.VOCABULARY.EXCHANGE_SOURCE_DELEGATES_TO,
+  TARGET_COUNT: xacmlRequest.VOCABULARY.EXCHANGE_TARGET_COUNT,
+  TARGET_REGISTERED: xacmlRequest.VOCABULARY.EXCHANGE_TARGET_REGISTERED,
+  TARGET_REQUIRED_ROLE: xacmlRequest.VOCABULARY.EXCHANGE_TARGET_REQUIRED_ROLE,
+  TARGET_ACCEPTS: xacmlRequest.VOCABULARY.EXCHANGE_TARGET_ACCEPTS,
+  REQUESTED_SEMANTICS: xacmlRequest.VOCABULARY.EXCHANGE_REQUESTED_SEMANTICS,
+  SEMANTICS: xacmlRequest.VOCABULARY.EXCHANGE_SEMANTICS,
+  MAY_ACT_PRESENT: xacmlRequest.VOCABULARY.EXCHANGE_MAY_ACT_PRESENT,
+  MAY_ACT_NAMES_ACTOR: xacmlRequest.VOCABULARY.EXCHANGE_MAY_ACT_NAMES_ACTOR,
+  PROTECTED_GROUP: xacmlRequest.VOCABULARY.EXCHANGE_PROTECTED_GROUP,
+  // The realm's settings, as setting facts.
+  DEFAULT_SETTING: xacmlRequest.VOCABULARY.SETTING_PREFIX +
+                   'delegation.defaultSemantics',
+  ACTOR_ROLE_SETTING: xacmlRequest.VOCABULARY.SETTING_PREFIX +
+                      'delegation.actorRole',
+  CHOOSE_OBLIGATION: 'urn:sts:xacml:obligation:exchange-semantics',
+  MAY_ACT_OBLIGATION: 'urn:sts:xacml:obligation:may-act',
+  MAY_ACT_PARTY: 'urn:sts:xacml:exchange-may-act-party',
+  OBLIGATION: 'urn:sts:xacml:obligation:exchange',
+  VERDICT: 'urn:sts:xacml:exchange-verdict',
+  REFUSAL: 'urn:sts:xacml:exchange-refusal',
+  ENFORCED: 'urn:sts:xacml:exchange-enforced',
+  CHOSEN: 'urn:sts:xacml:exchange-chosen-semantics',
+  ISSUED_SEMANTICS: 'urn:sts:xacml:exchange-issued-semantics',
+  AUDIENCE: 'urn:sts:xacml:exchange-audience',
+  VERDICTS: ['allow', 'refuse'],
+  SEMANTICS_VALUES: ['delegation', 'impersonation']
 };
 
 const AUTHN_ATTRIBUTE = {
@@ -818,6 +897,20 @@ const TEMPLATES: TemplateRow[] = [
               'the cell then asks the BUILT-IN policy instead, so the ' +
               'strict default is never switched off by rebuilding this ' +
               'document.' },
+      { name: 'decideExchanges',
+        label: 'Decide who may act for whom (#186)',
+        dflt: 'yes', type: 'string',
+        help: 'yes or no. When yes, the policy answers the two questions ' +
+              'an RFC 8693 token exchange, a WS-Trust OnBehalfOf / ActAs ' +
+              'and a Kerberos S4U request ask: which semantics (the ' +
+              'request\'s choice, else the actor\'s default, else the ' +
+              'subject\'s, else delegation.defaultSemantics), and whether ' +
+              'the act is allowed — the subject\'s authority, the ' +
+              'delegation relationship between the two applications, the ' +
+              'protected subjects, the semantics each party allows and ' +
+              'may_act. No leaves the rules out — and the doors then ask ' +
+              'the BUILT-IN policy instead, so the rules are never switched ' +
+              'off by rebuilding this document.' },
       { name: 'allowTokenRoles',
         label: 'Also accept roles found in a presented token',
         dflt: 'yes', type: 'string',
@@ -922,6 +1015,7 @@ const TEMPLATES: TemplateRow[] = [
       const decideProtocols = B.yes(given.decideProtocols, true);
       const decideScopes = B.yes(given.decideScopes, true);
       const decideTransfers = B.yes(given.decideTransfers, true);
+      const decideExchanges = B.yes(given.decideExchanges, true);
       const deviceExempt = B.listOf(given.deviceExempt === undefined
         ? 'sts-admin-console, sts-user-portal' : given.deviceExempt)
         .filter(function (one: string): boolean {
@@ -1437,6 +1531,22 @@ const TEMPLATES: TemplateRow[] = [
            obligations: verdict(model.EFFECT.DENY, 'refuse',
                                 'STS-OAUTH-0155'),
            advice: [] }],
+        // #108, in policy since #186: an exchange may narrow what the
+        // subject token granted, never widen it — in product; development
+        // issues and the endpoint logs it.
+        [{ id: options.idBase + ':rule:exchange-widens-scope',
+           effect: model.EFFECT.DENY,
+           description: 'A token exchange asking for a scope the verified ' +
+                        'subject token does not carry, in product mode ' +
+                        '(RFC 8693 leaves the scope to the server; this ' +
+                        'one narrows and never widens).',
+           target: scopeTarget,
+           condition: and([atStage('exchange'), inProduct,
+             fact(R, IA.SUBJECT_TOKEN_HAS_SCOPE, true),
+             fact(R, IA.SCOPE_IN_SUBJECT_TOKEN, false)]),
+           obligations: verdict(model.EFFECT.DENY, 'refuse',
+                                'STS-OAUTH-0621'),
+           advice: [] }],
         // #303/#304: a scope its resource gates by role.
         [{
           id: options.idBase + ':rule:scope-not-authorized',
@@ -1601,6 +1711,292 @@ const TEMPLATES: TemplateRow[] = [
           obligations: transferVerdict(model.EFFECT.PERMIT, 'release'),
           advice: [] }] : [];
 
+      // -------------------------------------------------------------------
+      // WHO MAY ACT FOR WHOM (#186): the two exchange questions, each
+      // targeted at its action-id. See EXCHANGE_ATTRIBUTE. Every fact test
+      // is false over an empty bag, so an absent party never compares equal
+      // to another, and every untargeted rule above reads a fact these
+      // questions never carry.
+      // -------------------------------------------------------------------
+      const EX = EXCHANGE_ATTRIBUTE;
+      const I = model.CATEGORY.INTERMEDIARY_SUBJECT;
+      const S = model.CATEGORY.ACCESS_SUBJECT;
+      const A = model.CATEGORY.ACTION;
+      const bagOf = function (category: string, id: string): any {
+        log.debug("Entering bagOf().");
+        log.debug("Leaving bagOf().");
+        return B.designator(category, id, TYPE.STRING);
+      };
+      const shares = function (left: any, right: any): any {
+        log.debug("Entering shares().");
+        log.debug("Leaving shares().");
+        return B.apply(F3 + 'any-of-any', [
+          { kind: 'function', functionId: F1 + 'string-equal' }, left, right]);
+      };
+      const empty = function (bag: any): any {
+        log.debug("Entering empty().");
+        log.debug("Leaving empty().");
+        return B.apply(F1 + 'integer-equal', [
+          B.apply(F1 + 'string-bag-size', [bag]), B.value(TYPE.INTEGER, '0')]);
+      };
+      const present = function (bag: any): any {
+        log.debug("Entering present().");
+        log.debug("Leaving present().");
+        return not(empty(bag));
+      };
+      const or = function (args: any[]): any {
+        log.debug("Entering or().");
+        log.debug("Leaving or().");
+        return B.apply(F1 + 'or', args);
+      };
+      const countIs = function (op: string, n: string): any {
+        log.debug("Entering countIs().");
+        log.debug("Leaving countIs().");
+        return B.apply(F3 + 'any-of', [
+          { kind: 'function', functionId: F1 + op },
+          B.value(TYPE.INTEGER, n),
+          B.designator(R, EX.TARGET_COUNT, TYPE.INTEGER)]);
+      };
+      const subjectId = bagOf(S, model.ATTRIBUTE.SUBJECT_ID);
+      const actorId = bagOf(I, model.ATTRIBUTE.SUBJECT_ID);
+      const sourceId = bagOf(R, EX.SOURCE);
+      const targetId = bagOf(R, model.ATTRIBUTE.RESOURCE_ID);
+      const semanticsIs = function (value: string): any {
+        log.debug("Entering semanticsIs().");
+        log.debug("Leaving semanticsIs().");
+        return B.apply(F1 + 'string-is-in', [B.value(TYPE.STRING, value),
+                                             bagOf(A, EX.SEMANTICS)]);
+      };
+      // SELF: nobody is acted for — the actor IS the subject, or the actor
+      // is S and the token stays with S (R is S, or none was named).
+      const isSelf = or([shares(actorId, subjectId),
+        and([shares(actorId, sourceId),
+             or([shares(targetId, sourceId), countIs('integer-equal',
+                                                     '0')])])]);
+      const notSelf = not(isSelf);
+      // HAS AUTHORITY FOR an application: the subject's roles and the roles
+      // it requires share a member, or it requires none.
+      const authorityFor = function (requiredId: string): any {
+        log.debug("Entering authorityFor().");
+        log.debug("Leaving authorityFor().");
+        return or([empty(bagOf(R, requiredId)),
+                   shares(bagOf(S, ISSUANCE_ATTRIBUTE.ROLE),
+                          bagOf(R, requiredId))]);
+      };
+      // S DELEGATES TO R, from either side: R on S's appAllowedToDelegateTo,
+      // or S on R's appAllowedToActOnBehalfOf.
+      const sourceDelegatesToTarget = or([
+        shares(targetId, bagOf(R, EX.SOURCE_DELEGATES_TO)),
+        shares(sourceId, bagOf(R, EX.TARGET_ACCEPTS))]);
+      // An actor's EMPTY allowed set is delegation only; a subject's is both.
+      const actorAllows = function (value: string): any {
+        log.debug("Entering actorAllows().");
+        log.debug("Leaving actorAllows().");
+        const bag = bagOf(I, EX.ALLOWED_SEMANTICS);
+        return or([B.apply(F1 + 'string-is-in', [B.value(TYPE.STRING, value),
+                                                 bag]),
+                   value === 'delegation' ? empty(bag)
+                                          : B.value(TYPE.BOOLEAN, 'false')]);
+      };
+      const subjectAllows = function (value: string): any {
+        log.debug("Entering subjectAllows().");
+        log.debug("Leaving subjectAllows().");
+        const bag = bagOf(S, EX.ALLOWED_SEMANTICS);
+        return or([empty(bag), B.apply(F1 + 'string-is-in',
+                                       [B.value(TYPE.STRING, value), bag])]);
+      };
+      const exchangeTarget = function (action: string): any {
+        log.debug("Entering exchangeTarget().");
+        log.debug("Leaving exchangeTarget().");
+        return B.targetOf([[
+          B.match(F1 + 'string-equal', B.value(TYPE.STRING, action),
+                  B.designator(model.CATEGORY.ACTION,
+                               model.ATTRIBUTE.ACTION_ID, TYPE.STRING))]]);
+      };
+      const assignment = function (id: string, expression: any): any {
+        log.debug("Entering assignment().");
+        log.debug("Leaving assignment().");
+        return { attributeId: id, category: null, issuer: null,
+                 expression: expression };
+      };
+      // A refusal: in product only, unless `always` (may_act).
+      const refusal = function (kind: string, always: boolean): any[] {
+        log.debug("Entering refusal().");
+        log.debug("Leaving refusal().");
+        return [{ id: EX.OBLIGATION, on: model.EFFECT.DENY, assignments: [
+          assignment(EX.VERDICT, B.value(TYPE.STRING, 'refuse')),
+          assignment(EX.REFUSAL, B.value(TYPE.STRING, kind)),
+          assignment(EX.ENFORCED, always ? B.value(TYPE.BOOLEAN, 'true')
+                                         : inProduct)] }];
+      };
+      const exchangeDeny = function (name: string, kind: string,
+                                     description: string, condition: any,
+                                     always?: boolean): any {
+        log.debug("Entering exchangeDeny().");
+        log.debug("Leaving exchangeDeny().");
+        return { id: options.idBase + ':rule:exchange-' + name,
+                 effect: model.EFFECT.DENY, description: description,
+                 target: exchangeTarget(EX.EXCHANGE_ACTION),
+                 condition: condition,
+                 obligations: refusal(kind, !!always), advice: [] };
+      };
+      const allowed = function (semantics: any, audience: any): any[] {
+        log.debug("Entering allowed().");
+        log.debug("Leaving allowed().");
+        return [{ id: EX.OBLIGATION, on: model.EFFECT.PERMIT, assignments: [
+          assignment(EX.VERDICT, B.value(TYPE.STRING, 'allow')),
+          assignment(EX.ISSUED_SEMANTICS, semantics),
+          assignment(EX.AUDIENCE, audience)] }];
+      };
+      const chose = function (name: string, description: string,
+                              condition: any, from: any): any {
+        log.debug("Entering chose().");
+        log.debug("Leaving chose().");
+        return { id: options.idBase + ':rule:exchange-semantics-' + name,
+                 effect: model.EFFECT.PERMIT, description: description,
+                 target: exchangeTarget(EX.CHOOSE_ACTION),
+                 condition: condition,
+                 obligations: [{ id: EX.CHOOSE_OBLIGATION,
+                                 on: model.EFFECT.PERMIT,
+                                 assignments: [assignment(EX.CHOSEN, from)] }],
+                 advice: [] };
+      };
+      const requested = bagOf(A, EX.REQUESTED_SEMANTICS);
+      const actorDefault = bagOf(I, EX.DEFAULT_SEMANTICS);
+      const subjectDefault = bagOf(S, EX.DEFAULT_SEMANTICS);
+      const exchangeRules: any[] = decideExchanges ? [
+        // THE SEMANTICS, by precedence.
+        chose('requested', 'The semantics the request asked for (the ' +
+              'extension parameter, the WS-Trust element, the Kerberos ' +
+              'mechanism).', present(requested), requested),
+        chose('actor-default', 'Else the actor\'s default semantics.',
+              and([empty(requested), present(actorDefault)]), actorDefault),
+        chose('subject-default', 'Else the subject\'s default semantics.',
+              and([empty(requested), empty(actorDefault),
+                   present(subjectDefault)]), subjectDefault),
+        chose('realm-default', 'Else the realm\'s ' +
+              'delegation.defaultSemantics.',
+              and([empty(requested), empty(actorDefault),
+                   empty(subjectDefault)]),
+              bagOf(model.CATEGORY.ENVIRONMENT, EX.DEFAULT_SETTING)),
+        // THE ACT. The first Deny that applies is the refusal the door reads.
+        exchangeDeny('may-act', 'may-act', 'Refuse, in every mode, when the ' +
+          'subject token\'s may_act (RFC 8693 section 4.4) names somebody ' +
+          'other than this actor: the token itself says no.',
+          and([fact(env, EX.MAY_ACT_PRESENT, true),
+               not(fact(env, EX.MAY_ACT_NAMES_ACTOR, true))]), true),
+        exchangeDeny('several-targets', 'targets', 'Refuse a request naming ' +
+          'more than one audience: the issued token is for exactly one.',
+          countIs('integer-less-than', '1')),
+        exchangeDeny('unregistered-target', 'unregistered-target', 'Refuse a ' +
+          'target no application registers: there is no entry to read ' +
+          'roles or relationships from.',
+          and([countIs('integer-equal', '1'),
+               not(fact(R, EX.TARGET_REGISTERED, true))])),
+        exchangeDeny('no-target', 'no-target', 'Refuse a delegation or ' +
+          'impersonation that names no target; only a self exchange ' +
+          'defaults to the subject token\'s own audience.',
+          and([countIs('integer-equal', '0'), notSelf])),
+        exchangeDeny('protected-subject', 'subject', 'Refuse to act for a ' +
+          'protected subject: one whose entry says it is never delegated ' +
+          '(NOT_DELEGATED), or a member of a protected group ' +
+          '(delegation.protectedGroups, the console roster).',
+          and([notSelf, or([fact(S, EX.SUBJECT_NOT_DELEGATED, true),
+                            shares(bagOf(S, EX.SUBJECT_GROUP),
+                                   bagOf(env, EX.PROTECTED_GROUP))])])),
+        exchangeDeny('unknown-actor', 'intermediary', 'Refuse an actor with ' +
+          'no entry in this realm: its entry is where the permission to act ' +
+          'lives.',
+          and([notSelf, not(fact(I, EX.ACTOR_REGISTERED, true))])),
+        exchangeDeny('user-actor-role', 'intermediary', 'Refuse a PERSON as ' +
+          'the actor unless they hold the role delegation.actorRole names.',
+          and([notSelf, B.apply(F1 + 'string-is-in', [
+            B.value(TYPE.STRING, 'user'), bagOf(I, EX.ACTOR_KIND)]),
+               not(shares(bagOf(I, ISSUANCE_ATTRIBUTE.ROLE),
+                          bagOf(env, EX.ACTOR_ROLE_SETTING)))])),
+        exchangeDeny('semantics', 'semantics', 'Refuse semantics the actor ' +
+          'or the subject does not allow: an actor allows delegation only ' +
+          'unless its entry says otherwise; a subject allows both unless ' +
+          'its entry says otherwise.',
+          and([notSelf, or([
+            not(or([semanticsIs('delegation'), semanticsIs('impersonation')])),
+            and([semanticsIs('delegation'),
+                 not(and([actorAllows('delegation'),
+                          subjectAllows('delegation')]))]),
+            and([semanticsIs('impersonation'),
+                 not(and([actorAllows('impersonation'),
+                          subjectAllows('impersonation')]))])])])),
+        exchangeDeny('subject-group', 'subject', 'Refuse a subject outside ' +
+          'the groups the actor may act for (appDelegationSubjectGroup), ' +
+          'unless the subject named this actor in may_act.',
+          and([notSelf, present(bagOf(I, EX.ACTOR_SUBJECT_GROUP)),
+               not(fact(env, EX.MAY_ACT_NAMES_ACTOR, true)),
+               not(shares(bagOf(S, EX.SUBJECT_GROUP),
+                          bagOf(I, EX.ACTOR_SUBJECT_GROUP)))])),
+        exchangeDeny('authority', 'authority', 'Refuse when the subject has ' +
+          'no authority for the application the act stands on — S for a ' +
+          'delegation, R otherwise: it holds none of the roles that ' +
+          'application requires.',
+          or([and([notSelf, semanticsIs('delegation'),
+                   not(authorityFor(EX.SOURCE_REQUIRED_ROLE))]),
+              and([or([isSelf, semanticsIs('impersonation')]),
+                   countIs('integer-equal', '1'),
+                   not(authorityFor(EX.TARGET_REQUIRED_ROLE))])])),
+        exchangeDeny('delegation', 'target', 'Refuse a delegation unless S ' +
+          'delegates to R (appAllowedToDelegateTo on S, or ' +
+          'appAllowedToActOnBehalfOf on R) and the actor is S, is R, or is ' +
+          'one R accepts by name (appAllowedToActOnBehalfOf) — the last is ' +
+          'how a person or a third application acts.',
+          and([notSelf, semanticsIs('delegation'),
+               not(and([or([shares(actorId, sourceId),
+                            shares(actorId, targetId),
+                            shares(actorId, bagOf(R, EX.TARGET_ACCEPTS))]),
+                        sourceDelegatesToTarget]))])),
+        exchangeDeny('impersonation', 'target', 'Refuse an impersonation ' +
+          'unless the actor may reach R: R is the actor itself, or on the ' +
+          'actor\'s appAllowedToDelegateTo, or R accepts the actor ' +
+          '(appAllowedToActOnBehalfOf).',
+          and([notSelf, semanticsIs('impersonation'),
+               not(or([shares(actorId, targetId),
+                       shares(targetId, bagOf(I, EX.ACTOR_DELEGATES_TO)),
+                       shares(actorId, bagOf(R, EX.TARGET_ACCEPTS))]))])),
+        // THE ALLOWS — mutually exclusive, so one audience comes back.
+        { id: options.idBase + ':rule:exchange-self-default-audience',
+          effect: model.EFFECT.PERMIT,
+          description: 'A self exchange that named no target is for the ' +
+                       'subject token\'s own audience, S.',
+          target: exchangeTarget(EX.EXCHANGE_ACTION),
+          condition: and([isSelf, countIs('integer-equal', '0')]),
+          obligations: allowed(B.value(TYPE.STRING, 'self'), sourceId),
+          advice: [] },
+        { id: options.idBase + ':rule:exchange-self',
+          effect: model.EFFECT.PERMIT,
+          description: 'A self exchange: nobody is acted for.',
+          target: exchangeTarget(EX.EXCHANGE_ACTION),
+          condition: and([isSelf, countIs('integer-equal', '1')]),
+          obligations: allowed(B.value(TYPE.STRING, 'self'), targetId),
+          advice: [] },
+        { id: options.idBase + ':rule:exchange-allowed',
+          effect: model.EFFECT.PERMIT,
+          description: 'Issue for R, as the semantics chosen.',
+          target: exchangeTarget(EX.EXCHANGE_ACTION),
+          condition: notSelf,
+          obligations: allowed(bagOf(A, EX.SEMANTICS), targetId),
+          advice: [] },
+        // THE THIRD QUESTION: `may_act` on a token about the subject names
+        // the party the subject chose, and nobody when they chose none.
+        { id: options.idBase + ':rule:may-act-subject-choice',
+          effect: model.EFFECT.PERMIT,
+          description: 'RFC 8693 section 4.4: a token about the subject ' +
+                       'carries may_act naming the party the subject named ' +
+                       'as their delegate (stsMayAct, appMayAct).',
+          target: exchangeTarget(EX.MAY_ACT_ACTION),
+          condition: present(bagOf(S, EX.SUBJECT_DELEGATE)),
+          obligations: [{ id: EX.MAY_ACT_OBLIGATION, on: model.EFFECT.PERMIT,
+                          assignments: [assignment(EX.MAY_ACT_PARTY,
+                            bagOf(S, EX.SUBJECT_DELEGATE))] }],
+          advice: [] }] : [];
+
       log.debug('Leaving buildRoleIssuance(). ' + arms.length + ' arm(s), ' +
                 riskRules.length + ' risk rule(s), ' + deviceRules.length +
                 ' device rule(s), ' + protocolRules.length +
@@ -1677,9 +2073,20 @@ const TEMPLATES: TemplateRow[] = [
                           'request is refused only under a hard geofence; ' +
                           'and another cell\'s residents are released to a ' +
                           'reader here only on the same terms.'
+                        : '') +
+                     (decideExchanges
+                        ? ' AND WHO MAY ACT FOR WHOM (#186), at an RFC 8693 ' +
+                          'token exchange, a WS-Trust OnBehalfOf / ActAs and ' +
+                          'a Kerberos S4U request: the semantics by ' +
+                          'precedence, a protected subject never acted for, ' +
+                          'the semantics each party allows, the subject\'s ' +
+                          'authority, and the delegation relationship ' +
+                          'between the applications — the token is issued ' +
+                          'for the one audience asked for.'
                         : ''),
         combiningAlgId: decideRisk || refuseEmail || decideDevices ||
-                        decideProtocols || decideScopes || decideTransfers
+                        decideProtocols || decideScopes || decideTransfers ||
+                        decideExchanges
           ? model.RULE_ALG.ORDERED_DENY_OVERRIDES
           : model.RULE_ALG.DENY_UNLESS_PERMIT,
         // NO TARGET, and that is deliberate rather than an omission: this
@@ -1693,6 +2100,7 @@ const TEMPLATES: TemplateRow[] = [
         rules: deviceRules.concat(protocolRules).concat(riskRules)
           .concat(scopeRules)
           .concat(transferRules)
+          .concat(exchangeRules)
           .concat(decideRisk &&
                                                      protectedApp ? [{
           // THE ALARM (#226): a protected application, an elevated risk, and
@@ -2725,6 +3133,7 @@ class XacmlTemplates {
    * The transfer questions' action-ids and attribute identifiers (#98).
    */
   static readonly TRANSFER_ATTRIBUTE = TRANSFER_ATTRIBUTE;
+  static readonly EXCHANGE_ATTRIBUTE = EXCHANGE_ATTRIBUTE;
   /**
    * The risk-response action-ids.
    */
@@ -2899,6 +3308,7 @@ export = {
   DEVICE_ATTRIBUTE: XacmlTemplates.DEVICE_ATTRIBUTE,
   PROTOCOL_ATTRIBUTE: XacmlTemplates.PROTOCOL_ATTRIBUTE,
   TRANSFER_ATTRIBUTE: XacmlTemplates.TRANSFER_ATTRIBUTE,
+  EXCHANGE_ATTRIBUTE: XacmlTemplates.EXCHANGE_ATTRIBUTE,
   RISK_RESPONSE: XacmlTemplates.RISK_RESPONSE,
   SIGNAL_ATTRIBUTE: XacmlTemplates.SIGNAL_ATTRIBUTE,
   SIGNAL_RESPONSE: XacmlTemplates.SIGNAL_RESPONSE,

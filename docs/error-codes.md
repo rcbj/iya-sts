@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3957** of them, in **41** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3980** of them, in **41** subsystems.
 
 ## Where a code appears
 
@@ -63,14 +63,14 @@ is an ordinary outcome.
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 72
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 26
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 47
-* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 254
-* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 669
+* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 255
+* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 675
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 97
-* [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 21
+* [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 25
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 16
 * [Federation (`STS-FED`)](#sts-fed) — 141
 * [OpenID Federation (`STS-OIDFED`)](#sts-oidfed) — 67
-* [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 169
+* [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 177
 * [LDAP directory (`STS-LDAP`)](#sts-ldap) — 91
 * [Attribute sources (`STS-ATTR`)](#sts-attr) — 15
 * [SCIM 2.0 (`STS-SCIM`)](#sts-scim) — 77
@@ -82,9 +82,9 @@ is an ordinary outcome.
 * [Mail (`STS-MAIL`)](#sts-mail) — 39
 * [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 282
 * [Device register (`STS-DEVICE`)](#sts-device) — 45
-* [XACML and access policy (`STS-XACML`)](#sts-xacml) — 84
+* [XACML and access policy (`STS-XACML`)](#sts-xacml) — 87
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 34
-* [Admin console (`STS-ADMIN`)](#sts-admin) — 219
+* [Admin console (`STS-ADMIN`)](#sts-admin) — 220
 * [Management API (`STS-API`)](#sts-api) — 75
 * [User portal (`STS-PORTAL`)](#sts-portal) — 80
 * [Sign-out (`STS-LOGOUT`)](#sts-logout) — 7
@@ -1343,6 +1343,7 @@ Raised from: authn/, common/credentials.ts, common/totp.ts, common/backup_codes.
 | `STS-AUTHN-0292` | A realm held authn.maxSessions sign-on sessions when another was created, so the least recently used session was ended to make room (#345) — through the same end an expiry takes: its audit row (which carries this code), CAEP session-revoked and back-channel Logout Tokens. | none — audited; logged at most once a minute per process |
 | `STS-AUTHN-0293` | The directory's credential census threw (#352), so the users list's counts and second-factor filter asked each person's credentials one at a time instead — slower, and the same answer. | none — logged |
 | `STS-AUTHN-0294` | A passkey assertion was refused because the key's algorithm is insecure (SHA-1's RS1) and webauthn.insecureAlgorithms is off in this realm, or the service is in product mode. | none — the sign-in screen is drawn again |
+| `STS-AUTHN-0295` | A person's delegation semantics named something other than delegation or impersonation (#186). | none (a console or management API refusal, HTTP 400) |
 
 ## STS-OAUTH
 
@@ -1849,11 +1850,11 @@ Raised from: oauth-oidc/, common/person_assertions.js.
 | `STS-OAUTH-0615` | A refresh was refused because a consent its grant stood on — the person's own, or the application's global consent that the person had not given themselves — was withdrawn at or after the grant was made (#172). The refresh token's grant is revoked. | HTTP 400 {error: invalid_grant} |
 | `STS-OAUTH-0616` | A refresh of a grant made at the authorization endpoint was refused because no recorded consent covered one of its scopes when it was granted, while consent is required and oauth2.refreshRequiresConsent is on (#172). | HTTP 400 {error: invalid_grant} |
 | `STS-OAUTH-0617` | Withdrawing a consent could not revoke a refresh family by id; its members known on this node were revoked, and the refresh grant refuses any other at its first use (#172). | none — logged |
-| `STS-OAUTH-0618` | A token exchange was refused by the delegation policy (#108): the subject may not be delegated (stsNotDelegated, or a member of the console roster), the client has no application entry, is not trusted to impersonate (appTrustedToImpersonate), or may not act for this subject (appDelegationSubjectGroup), or no target was named. Product mode only; development records what would have been refused. | invalid_request (HTTP 400), RFC 8693 section 2.2.2 |
+| `STS-OAUTH-0618` | A token exchange was refused by the delegation policy (#108): the subject may not be delegated (stsNotDelegated, or a member of the console roster, a protected group), the actor has no entry or is a person without delegation.actorRole, or may not act for this subject (appDelegationSubjectGroup) — the issuance policy's rules since #186. Product mode only; development records what would have been refused. | invalid_request (HTTP 400), RFC 8693 section 2.2.2 |
 | `STS-OAUTH-0619` | A token exchange was refused because the delegation policy allows no target it names: neither appAllowedToDelegateTo on the client nor appAllowedToActOnBehalfOf on the target lists the other (#108). Product mode only. | invalid_target (HTTP 400), RFC 8693 section 2.2.2 |
 | `STS-OAUTH-0620` | A token exchange was refused because the verified subject_token carries a may_act claim naming a party other than the actor (the actor_token's subject, or the client when there is no actor_token). Held in every mode (#108). | invalid_request (HTTP 400), RFC 8693 sections 2.2.2 and 4.4 |
 | `STS-OAUTH-0621` | A token exchange asked for a scope wider than the verified subject_token's own scope claim, and product mode refuses an exchange that widens what the subject granted (#108). | invalid_scope (HTTP 400), RFC 6749 section 5.2 |
-| `STS-OAUTH-0622` | A token exchange the delegation attributes allowed was refused because the issuance policy answered Deny for action-id `delegate` — the deny-only XACML layer (#108). Product mode only. | invalid_request (HTTP 400), RFC 8693 section 2.2.2 |
+| `STS-OAUTH-0622` | A token exchange was refused because no issuance policy gave a verdict on it, or a realm's policy refused it with no rule this service names (#186). Product mode only. | invalid_request (HTTP 400), RFC 8693 section 2.2.2 |
 | `STS-OAUTH-0623` | A person's recorded identity verifications (OpenID Connect for Identity Assurance, #127) could not be read — the value on the entry is not a JSON list — or recording one after a wallet or certificate sign-in threw. Read as none; the sign-in stands. | none — verified_claims is omitted |
 | `STS-OAUTH-0624` | device_sso (OpenID Connect Native SSO, #130) was asked for by a client not enabled for it — oauthNativeSso TRUE and an oauthNativeSsoGroup on its entry. In every mode. | invalid_scope (HTTP 400, or at the redirect URI) |
 | `STS-OAUTH-0625` | A Native SSO grant could not store its device in ou=devices — no entry for the person, or the directory full — so no device_secret was issued; the rest of the token response stood (#130). | none — the response carries no device_secret |
@@ -2021,6 +2022,12 @@ Raised from: oauth-oidc/, common/person_assertions.js.
 | `STS-OAUTH-0787` | A realm's register of revoked token ids reached oauth2.maxRevokedJtis and none of its entries had expired, so the revocation whose token expires soonest was forgotten to make room (#345): that token, if it is still unexpired, is accepted again by a check that asks only this register. | none — logged, at most once a minute per process |
 | `STS-OAUTH-0788` | A person's identity verifications could not be sealed under a durable key-encryption key, so they were not written; or the sealed value on the entry will not open under this process's key and is read as none. | none (a refusal of the console or API write; verified_claims is omitted on a read) |
 | `STS-OAUTH-0789` | An authorization code was presented at the token endpoint a second time, and its first presentation redeemed nothing (it was refused, or is still being answered). A code is presented once whatever the outcome (#424) unless oauth2.codeReplayIdempotent relaxes it outside RFC 9700 mode. | 400 invalid_grant (RFC 6749 section 4.1.2); the flow starts over |
+| `STS-OAUTH-0790` | A token exchange was refused because the semantics chosen (delegation or impersonation) are not allowed by the actor's or the subject's entry (#186). | 400 invalid_request (RFC 8693 section 2.2.2) |
+| `STS-OAUTH-0791` | A token exchange was refused because the subject has no authority for the application the act stands on: it holds none of the roles that application requires (#186). | 400 invalid_request (RFC 8693 section 2.2.2) |
+| `STS-OAUTH-0792` | A token exchange named more than one audience or resource; an exchange is issued for exactly one (#186). | 400 invalid_target (RFC 8693 section 2.2.2) |
+| `STS-OAUTH-0793` | A token exchange named an audience or resource no application in the realm registers (#186). | 400 invalid_target (RFC 8693 section 2.2.2) |
+| `STS-OAUTH-0794` | A delegation or impersonation token exchange named no audience or resource; only a self exchange defaults to the subject token's own audience (#186). | 400 invalid_target (RFC 8693 section 2.2.2) |
+| `STS-OAUTH-0795` | A token exchange's exchange_semantics parameter was neither delegation nor impersonation, or was repeated (#186). | 400 invalid_request (RFC 6749 section 5.2) |
 
 ## STS-SAML
 
@@ -2153,10 +2160,14 @@ Raised from: ws-trust/.
 | `STS-WSTRUST-0015` | The STS endpoint threw an unexpected exception while handling a RequestSecurityToken. | SOAP 1.2 Fault soap:Sender (HTTP 500) |
 | `STS-WSTRUST-0016` | A token was issued but starting the browser sign-on session the exchange also starts threw; the RSTR is unaffected. | — |
 | `STS-WSTRUST-0017` | A JWT was refused because the directory holds no entry for the person, so there is no subject to issue it about. | SOAP Fault (HTTP 400) |
-| `STS-WSTRUST-0018` | An OnBehalfOf or ActAs request was refused by the delegation policy (#108): the subject may not be delegated, the requester is not trusted to impersonate or may not act for this subject, or no attribute allows the AppliesTo. Product mode only; development records what would have been refused. | SOAP Fault wst:RequestFailed (HTTP 500), WS-Trust 1.4 section 11 |
-| `STS-WSTRUST-0019` | An OnBehalfOf or ActAs request was refused because its requester authenticated as a PERSON (or as a name with no application entry): in product mode only an application entry may delegate (#108). | SOAP Fault wst:RequestFailed (HTTP 500), WS-Trust 1.4 section 11 |
-| `STS-WSTRUST-0020` | An OnBehalfOf or ActAs request the delegation attributes allowed was refused because the issuance policy answered Deny for action-id `delegate` (#108). Product mode only. | SOAP Fault wst:RequestFailed (HTTP 500), WS-Trust 1.4 section 11 |
+| `STS-WSTRUST-0018` | An OnBehalfOf or ActAs request was refused by the issuance policy (#186): the subject may not be delegated, the requester may not act for this subject, the subject token's may_act names somebody else, or no delegation relationship allows the AppliesTo. Product mode only; development records what would have been refused. | SOAP Fault wst:RequestFailed (HTTP 500), WS-Trust 1.4 section 11 |
+| `STS-WSTRUST-0019` | An OnBehalfOf or ActAs request was refused because its requester may not act for anybody here: it has no entry in this realm, or it is a person who does not hold the role delegation.actorRole names (#186). | SOAP Fault wst:RequestFailed (HTTP 500), WS-Trust 1.4 section 11 |
+| `STS-WSTRUST-0020` | An OnBehalfOf or ActAs request was refused because no issuance policy gave a verdict on it, or a realm's policy refused it with no rule this service names (#186). Product mode only. | SOAP Fault wst:RequestFailed (HTTP 500), WS-Trust 1.4 section 11 |
 | `STS-WSTRUST-0021` | A Cancel request in the WS-Trust 2004/04 namespace, which defines no Cancel binding (no CancelTarget, no RequestedTokenCancelled); it was added in 2005/02 (#188). | SOAP Fault wst:InvalidRequest (HTTP 500), in the request's trust namespace |
+| `STS-WSTRUST-0022` | An OnBehalfOf or ActAs request was refused because the semantics it asked for (impersonation or delegation) are not allowed by the requester's or the subject's entry (#186). | SOAP Fault wst:RequestFailed (WS-Trust 1.4 section 11) |
+| `STS-WSTRUST-0023` | An OnBehalfOf or ActAs request was refused because the subject has no authority for the application the act stands on (#186). | SOAP Fault wst:RequestFailed (WS-Trust 1.4 section 11) |
+| `STS-WSTRUST-0024` | An OnBehalfOf or ActAs request named no AppliesTo, or one no application registers, and is not a self request (#186). | SOAP Fault wst:RequestFailed (WS-Trust 1.4 section 11) |
+| `STS-WSTRUST-0025` | A request carried both <wst:OnBehalfOf> and <wst14:ActAs>, which ask for impersonation and delegation at once (#186). | SOAP Fault wst:InvalidRequest (WS-Trust 1.4 section 11) |
 
 ## STS-WSFED
 
@@ -2426,9 +2437,9 @@ Raised from: kerberos/.
 | `STS-KRB-0007` | An S4U2Proxy request set cname-in-addl-tkt but carried no additional ticket. | KDC_ERR_BADOPTION (13) |
 | `STS-KRB-0008` | An S4U2Proxy evidence ticket was addressed to a service other than the requester. | KDC_ERR_BADOPTION (13) |
 | `STS-KRB-0009` | An S4U2Proxy evidence ticket did not decrypt with the requester's long-term key. | KDC_ERR_BADOPTION (13) |
-| `STS-KRB-0010` | S4U2Proxy was refused: neither msDS-AllowedToDelegateTo on the requester nor msDS-AllowedToActOnBehalfOfOtherIdentity on the target permits the delegation. | KDC_ERR_BADOPTION (13) |
+| `STS-KRB-0010` | S4U2Proxy was refused: neither appAllowedToDelegateTo on the requester's entry nor appAllowedToActOnBehalfOf on the target's (msDS-AllowedToDelegateTo and msDS-AllowedToActOnBehalfOfOtherIdentity) permits the delegation. | KDC_ERR_BADOPTION (13) |
 | `STS-KRB-0011` | S4U2Proxy permitted only by resource-based delegation was refused because PA-PAC-OPTIONS with the resource-based bit was missing. | KDC_ERR_BADOPTION (13) |
-| `STS-KRB-0012` | Classic constrained delegation was refused because the evidence ticket is not forwardable. | KDC_ERR_BADOPTION (13) |
+| `STS-KRB-0012` | Classic constrained delegation was refused because the evidence ticket is not forwardable (the S4U2Self service does not allow impersonation, or the user is protected). | KDC_ERR_BADOPTION (13) |
 | `STS-KRB-0013` | An AS-REQ for an account that requires pre-authentication carried no PA-ENC-TIMESTAMP; the KDC answered with the pre-authentication methods it accepts. | KDC_ERR_PREAUTH_REQUIRED (25) |
 | `STS-KRB-0014` | The PA-ENC-TIMESTAMP, or the PA-ENC-TS-ENC inside it, was not well formed. | KDC_ERR_PREAUTH_FAILED (24) |
 | `STS-KRB-0015` | The PA-ENC-TIMESTAMP was encrypted with a different encryption type from the one the request negotiated. | KDC_ERR_PREAUTH_FAILED (24) |
@@ -2458,7 +2469,7 @@ Raised from: kerberos/.
 | `STS-KRB-0039` | The issuance policy refused a service ticket because the client does not hold a role the service requires. | KDC_ERR_POLICY (12) |
 | `STS-KRB-0040` | A TGS-REQ was refused because the service and the request share no encryption type. | KDC_ERR_ETYPE_NOSUPP (14) |
 | `STS-KRB-0041` | A FORWARDED request was refused because the presented ticket is not forwardable. | KDC_ERR_BADOPTION (13) |
-| `STS-KRB-0042` | A FORWARDED request was refused because the client account is flagged NOT_DELEGATED. | KDC_ERR_BADOPTION (13) |
+| `STS-KRB-0042` | A FORWARDED request was refused because the client is protected from delegation (stsNotDelegated or a protected group: NOT_DELEGATED, Protected Users). | KDC_ERR_BADOPTION (13) |
 | `STS-KRB-0043` | A RENEW request was refused because the ticket is not renewable. | KDC_ERR_BADOPTION (13) |
 | `STS-KRB-0044` | A RENEW request was refused because the renewable ticket carries no renew-till. | KDC_ERR_BADOPTION (13) |
 | `STS-KRB-0045` | A RENEW request was refused because the ticket's renew-till has passed. | KRB_AP_ERR_TKT_EXPIRED (32) |
@@ -2586,6 +2597,14 @@ Raised from: kerberos/.
 | `STS-KRB-0167` | A TGS-REQ's ticket or Authenticator carried AD-fx-fast-armor (71), which marks FAST armor that may not be used to obtain a ticket. | RFC 6113 section 5.4.1.1: KRB_ERR_GENERIC (60) |
 | `STS-KRB-0168` | A TGS-REQ's ticket or Authenticator carried AD-fx-fast-used (72) and the request was not armored with FAST. | RFC 6113 section 5.4.2: KRB_AP_ERR_MODIFIED (41) |
 | `STS-KRB-0169` | A user-to-user TGS-REQ (ENC-TKT-IN-SKEY) was refused: no additional ticket, not a TGT of this realm, it did not open or had expired, it was issued to another server than the one named, or its session key is an enctype the mode withholds. | RFC 4120 section 3.3.3: KDC_ERR_BADOPTION (13), KRB_AP_ERR_BAD_INTEGRITY (31), KRB_AP_ERR_TKT_EXPIRED (32), KDC_ERR_SERVER_NOMATCH (26), KDC_ERR_ETYPE_NOSUPP (14) |
+| `STS-KRB-0170` | An S4U2Self request's PA-S4U-X509-USER did not decode (#186). | [MS-SFU] 2.2.2: KDC_ERR_BADOPTION (13) |
+| `STS-KRB-0171` | An S4U2Self request's PA-S4U-X509-USER checksum did not verify under the TGT session key at key usage 26 (#186). | [MS-SFU] 2.2.2: KRB_AP_ERR_MODIFIED (41) |
+| `STS-KRB-0172` | An S4U2Self request's PA-S4U-X509-USER carried a nonce that is not the request body's (#186). | [MS-SFU] 2.2.2: KDC_ERR_BADOPTION (13) |
+| `STS-KRB-0173` | An S4U2Self request's PA-S4U-X509-USER certificate names nobody in this realm: not issued to a person by its certificate authority, revoked, or without clientAuth (#186). | [MS-SFU] 2.2.2: KDC_ERR_C_PRINCIPAL_UNKNOWN (6) |
+| `STS-KRB-0174` | An S4U2Self request's PA-S4U-X509-USER named one user and its certificate another (#186). | [MS-SFU] 2.2.2: KDC_ERR_CLIENT_NAME_MISMATCH (75) |
+| `STS-KRB-0175` | An S4U2Self request's PA-S4U-X509-USER carried neither a cname nor a certificate (#186). | [MS-SFU] 2.2.2: KDC_ERR_BADOPTION (13) |
+| `STS-KRB-0176` | S4U2Proxy was refused because the evidence ticket's PAC is missing, or its ticket or KDC signature does not verify with the krbtgt key: the ticket was altered after issue (CVE-2020-17049) or forged by the requester (#186). | [MS-SFU] 3.2.5.2.2, [MS-PAC] 2.8.3: KRB_AP_ERR_MODIFIED (41) |
+| `STS-KRB-0177` | S4U2Proxy was refused by the issuance policy's delegation rules: a protected user, the front end's subject groups or semantics, or the user's authority for it (#186). Refused in both modes. | KDC_ERR_BADOPTION (13) for the relationship, KDC_ERR_POLICY (12) otherwise |
 
 ## STS-LDAP
 
@@ -3790,6 +3809,9 @@ Raised from: xacml/, common/access_gate.ts, common/issuance_gate.js, common/role
 | `STS-XACML-0082` | A role write gave the role a member of a kind its member types exclude: a person or group on an applications-only role, or an application on a people-only one (#93). | none (a console or management API refusal, HTTP 400) |
 | `STS-XACML-0083` | A role write tried to restrict a console role (ADMIN_READ, ADMIN_WRITE) to one member type; it holds people and applications both (#93). | none (a console or management API refusal, HTTP 400) |
 | `STS-XACML-0084` | In product mode the issuance policy refused an issuance to an application through a protocol family it is not declared for (appAllowedProtocol): an ID Token to an application declared for OAuth 2.0 alone, a SAML assertion to one declared for OpenID Connect. | each protocol's own refusal (access_denied, a SAML Responder status, KDC_ERR_POLICY, a WS-Trust fault) |
+| `STS-XACML-0085` | No issuance policy, not even the built-in one, gave a verdict on who may act for whom (#186); the exchange was refused. | each protocol's own refusal |
+| `STS-XACML-0086` | The issuance gate's decider threw on an exchange question (#186); the built-in policy decided instead. | — |
+| `STS-XACML-0087` | No issuance policy, not even the built-in one, answered the may_act question for a subject who named a delegate (#186); the subject's own choice was put in the token. | — |
 
 ## STS-XPEP
 
@@ -4061,6 +4083,7 @@ Raised from: admin-ui/ (except pki_admin.js), admin-core/.
 | `STS-ADMIN-0838` | A person's update-fields named no attribute to change: `fields` was absent or empty and the form named no field. | HTTP 400 (console and API) |
 | `STS-ADMIN-0839` | A person's update-fields was refused one or more attributes, possibly after saving others; the reply names what was saved and each refusal. | HTTP 400 (console and API) |
 | `STS-ADMIN-0840` | A settings save ticked none of an ordered choice's values (webauthn.algorithms on /admin/webauthn): an empty list is refused rather than saved, because the setting would fall back to a default nobody chose. | none (a console refusal, drawn on the page) |
+| `STS-ADMIN-0841` | set-delegation-semantics was refused: a value is neither delegation nor impersonation, nobody has that name, or the entry could not be written (#186). | none (a console or management API refusal, HTTP 400) |
 
 ## STS-API
 
@@ -4386,7 +4409,7 @@ Raised from: common/applications.js, common/consent.ts, common/app_permissions.t
 | `STS-REG-0191` | A generic application edit tried to remove a value of oauthGlobalConsent. A global consent is withdrawn only through the consent register (revoke-global-consent), which also revokes what was issued under it and records when (#172). | HTTP 400 page / {ok: false} |
 | `STS-REG-0192` | A consent was withdrawn and its tokens revoked, but the withdrawal instant could not be written onto the person's or the application's entry, so a re-consent could revive a refresh token the revocation did not reach (#172). | none — logged |
 | `STS-REG-0193` | A write setting an application's override of a development-only setting — saml2SignAssertion, saml11SignAssertion or saml11SignResponse to FALSE, or saml2KeyTransportAlgorithm to rsa-1_5 — was refused because the realm is in product mode, where the value would be ignored (#181). | console: the page's error list; /admin-api: HTTP 400 { ok: false, errors } |
-| `STS-REG-0194` | A write of a delegation policy attribute was refused (#108): appTrustedToImpersonate that is not TRUE or FALSE, or an appDelegationSubjectGroup value that is not a DN. | console: the page's error list; /admin-api: HTTP 400 |
+| `STS-REG-0194` | A write of a delegation policy attribute was refused (#108): appNotDelegated that is not TRUE or FALSE, delegation semantics that are neither delegation nor impersonation (#186), or an appDelegationSubjectGroup value that is not a DN. | console: the page's error list; /admin-api: HTTP 400 |
 | `STS-REG-0195` | A write of gnapMtlsTrust on an application was refused: the value is neither pki nor pinned (#107). | console: the page's error list; /admin-api: HTTP 400 |
 | `STS-REG-0196` | A write of gnapMtlsTrust=pinned on an application was refused because the realm holds GNAP mutual TLS to a PKI (gnap.mtlsTrust resolves to pki); an entry may be stricter than the realm, never weaker (#107). | console: the page's error list; /admin-api: HTTP 400 |
 | `STS-REG-0197` | A registration's CIBA metadata was refused: an unknown backchannel_token_delivery_mode, no https notification endpoint for ping or push, a signing algorithm that is not asymmetric, or a user code parameter that is not a boolean (#131). | invalid_client_metadata (HTTP 400) |

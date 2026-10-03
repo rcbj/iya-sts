@@ -2044,14 +2044,15 @@ const REQUIREMENTS = [
                  'its answer is recorded on the act on /admin/delegation as ' +
                  '"would have been refused: ...", and an exchange may ask ' +
                  'for a scope wider than its subject_token\'s.',
-    product: 'The delegation attributes decide (appAllowedToDelegateTo, ' +
-             'appAllowedToActOnBehalfOf, appDelegationSubjectGroup, ' +
-             'appTrustedToImpersonate on application entries; ' +
-             'stsNotDelegated and the console roster on people), then the ' +
-             'issuance policy may Deny action-id `delegate`. A refusal is ' +
+    product: 'The issuance policy decides (#186), from the delegation ' +
+             'attributes (appAllowedToDelegateTo, appAllowedToActOnBehalfOf, ' +
+             'appDelegationSubjectGroup, appDelegationSemantics, ' +
+             'appNotDelegated on application entries; stsNotDelegated, ' +
+             'stsDelegationSemantics, delegation.protectedGroups and the ' +
+             'console roster for people). A refusal is ' +
              'invalid_request or invalid_target (RFC 8693 section 2.2.2) or ' +
-             'a wst:RequestFailed SOAP Fault (WS-Trust 1.4 section 11). Only ' +
-             'an application entry may delegate as a WS-Trust requester, and ' +
+             'a wst:RequestFailed SOAP Fault (WS-Trust 1.4 section 11). A ' +
+             'person acts only holding delegation.actorRole, and ' +
              'an exchange may not widen its subject_token\'s scope ' +
              '(invalid_scope).',
     where: 'common/delegation_policy.ts, oauth-oidc/oauth2.ts, ' +

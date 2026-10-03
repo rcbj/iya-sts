@@ -1164,21 +1164,18 @@ as an access token.
 An exchanged token is issued with the scope asked for, so without `openid` it
 gets 403 `insufficient_scope` at UserInfo: there is no end-user behind it.
 
-**Who may act for whom** is decided by the delegation policy (#108): the client,
-and the actor it names, must be allowed to reach every `audience` and `resource` — by
-`appAllowedToDelegateTo` on its own entry or `appAllowedToActOnBehalfOf` on the
-target's — an exchange with no `actor_token` needs `appTrustedToImpersonate`,
-the subject must be in one of the client's `appDelegationSubjectGroup` groups
-where it names any, and a person carrying `stsNotDelegated` or on the console
-roster is never delegated. The issuance policy may then Deny the action-id
-`delegate` ([XACML](xacml.md)). In **product** mode a refusal is `invalid_request`,
-or `invalid_target` for a target (RFC 8693 section 2.2.2), and a requested
-`scope` wider than the subject_token's is `invalid_scope`; in **development**
-the exchange is issued and `/admin/delegation` says what would have been
-refused. A client exchanging its own token needs nothing. The same attributes
-are edited on the application's page, through `POST
-/admin-api/applications/update`, and listed at `GET
-/admin-api/delegation/policy`.
+**Who may act for whom, and as what**, is decided by the issuance policy, with
+the same controls as WS-Trust and Kerberos — see
+[Delegation and impersonation](delegation.md). The actor is the
+`actor_token`'s subject, else the client; the subject_token's `aud` (else its
+`client_id`) is the application it was issued for; the one `audience` or
+`resource` is the target. This service's extension parameter
+`exchange_semantics=delegation|impersonation` asks for the semantics:
+delegation puts `act` on the token, impersonation does not. In **product**
+mode a refusal is `invalid_request`, or `invalid_target` for a target (RFC
+8693 section 2.2.2), and a requested `scope` wider than the subject_token's
+is `invalid_scope`; in **development** the exchange is issued and
+`/admin/delegation` says what would have been refused.
 
 **`may_act`** (section 4.4) is read in every mode: a subject_token whose
 `may_act` names somebody other than the actor (or the client, with no

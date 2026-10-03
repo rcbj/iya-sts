@@ -978,12 +978,18 @@ const MAX_TOKEN_ROWS = 250;
  * tokens.
  *
  * @param rows - the acts; every act when omitted
+ * @param options - `{ configured }`: the configured delegation pairs to draw
+ * beside the acts (#186), `[{ from, to, attribute, mechanism, setOn }]`
  * @returns `{ realm, issuer, nodes, edges, tokens, tokensLeftOff,
  *   maxTokenRows, acts, chains }`
  */
-function graph(rows) {
+function graph(rows, options) {
   log.debug("Entering graph().");
   const source = rows || list();
+  // #186: the CONFIGURED relationships, drawn beside the acts (rcbj's
+  // decision): `[{ from, to, attribute, mechanism, setOn }]`, application
+  // identifiers. Absent, the picture is of acts only, as it always was.
+  const configured = (options && options.configured) || [];
   const nodes = new Map();
   const edges = new Map();
   const tokens = [];
@@ -1197,6 +1203,48 @@ function graph(rows) {
       });
     }
   });
+
+  // THE CONFIGURED RELATIONSHIPS (#186): one line per pair an entry allows —
+  // appAllowedToDelegateTo on the source, appAllowedToActOnBehalfOf on the
+  // target — whether or not any act has used it, because "if the data says
+  // two parties are related, the picture draws it" (rcbj, 2026-08-26). The
+  // relation is `may-delegate`, drawn the way a configured permission's
+  // `may-reach` is: DASHED until an act has crossed it, solid after. The
+  // boxes are the acts' own (`nodeIdOf()` on the application), so a pair
+  // somebody used joins the line the act drew.
+  configured.forEach(function (pair) {
+    const from = nodeIdOf({ application: String(pair.from || '') });
+    const to = nodeIdOf({ application: String(pair.to || '') });
+    if (!from || !to || from === to) {
+      return;
+    }
+    nodeFor(from, { application: pair.from });
+    nodeFor(to, { application: pair.to });
+    edgeFor('configured | ' + pair.mechanism + ' | ' + from + ' > ' + to, {
+      from: from, to: to, fromRole: 'intermediary', toRole: 'target',
+      relation: 'may-delegate', skipped: [], chainKey: '',
+      protocol: '', type: '', typeLabel: '', mode: '', spec: '',
+      policed: false, subject: '', actor: '',
+      attribute: String(pair.attribute || ''),
+      mechanism: String(pair.mechanism || ''),
+      setOn: String(pair.setOn || ''),
+      used: false
+    });
+  });
+  if (configured.length) {
+    const crossed = {};
+    edges.forEach(function (edge) {
+      if (edge.relation !== 'may-delegate' && edge.relation !== 'issued' &&
+          edge.issued > 0) {
+        crossed[edge.from + ' > ' + edge.to] = true;
+      }
+    });
+    edges.forEach(function (edge) {
+      if (edge.relation === 'may-delegate') {
+        edge.used = !!crossed[edge.from + ' > ' + edge.to];
+      }
+    });
+  }
 
   const nodeList = Array.from(nodes.values()).map(function (node) {
     if (node.kind === 'sts') {

@@ -371,6 +371,7 @@ const USERS_ACTIONS = ['create', 'set-password', 'issue-activation',
                        'create-app-password', 'revoke-app-password',
                        // Who may act for them (#108, 2026-09-23).
                        'set-not-delegated', 'set-may-act',
+                       'set-delegation-semantics',
                        // Identity verifications (#127, 2026-09-23).
                        'record-verification', 'remove-verification',
                        // Self-issued subjects (#129, 2026-09-23).
@@ -434,6 +435,10 @@ const CREDENTIAL_ADMIN_ACTIONS = ['reset-password', 'issue-password-reset',
   // the `may_act` claim of their access tokens (RFC 8693 section 4.4).
   // `common/delegation_policy.ts` decides what both mean.
   'set-not-delegated', 'set-may-act',
+  // AND AS WHAT (#186): `set-delegation-semantics` writes the semantics the
+  // person allows (`semantics`: delegation and/or impersonation, a list or
+  // comma separated; empty clears) and their default (`default`).
+  'set-delegation-semantics',
   // IDENTITY VERIFICATIONS (#127, 2026-09-23): `record-verification` keeps
   // one — OpenID Connect for Identity Assurance's `verification` element, as
   // JSON or as the console's flat fields, and the `claims` it covered — and
@@ -2553,6 +2558,33 @@ class AdminActions {
                    'section 4.4), and an exchange of one by anybody else is ' +
                    'refused.'
                  : 'Nobody is named as acting for ' + who + ' now.' };
+    }
+
+    if (action === 'set-delegation-semantics') {
+      const result = credentials.setDelegationSemantics(who, body.semantics,
+                                                        body['default']);
+      audited('admin.delegation.semantics',
+              (result.ok ? 'set' : 'could not set') + ' the delegation ' +
+              'semantics ' + who + ' allows',
+              { semantics: result.ok ? result.semantics : body.semantics,
+                defaultSemantics: result.ok ? result.defaultSemantics
+                                            : body['default'],
+                errors: result.ok ? undefined : (result.errors || []) },
+              result.ok ? 'success' : 'failure');
+      if (!result.ok) {
+        log.debug("Leaving AdminActions.credentialAdminAction(). " +
+                  "set-delegation-semantics was refused.");
+        return this.refusedBy('STS-ADMIN-0841', result);
+      }
+      log.debug("Leaving AdminActions.credentialAdminAction(). " +
+                "set-delegation-semantics.");
+      return { ok: true, username: who, semantics: result.semantics,
+               defaultSemantics: result.defaultSemantics,
+               message: who + ' allows ' + (result.semantics.length
+                 ? result.semantics.join(' and ')
+                 : 'what the issuance policy allows by default') +
+                 (result.defaultSemantics ? ', and defaults to ' +
+                   result.defaultSemantics : '') + '.' };
     }
 
     if (action === 'record-verification') {

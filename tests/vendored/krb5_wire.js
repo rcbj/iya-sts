@@ -442,13 +442,21 @@ async function tgsExchange(transport, tgt, sname, realm, opts) {
   if (options.renew) {
     kdcOptions.push(msgs.KDC_OPTION.RENEW);
   }
+  // #186: S4U2Proxy (cname-in-addl-tkt with the evidence ticket) and a
+  // forwarded TGT.
+  (options.kdcOptions || []).forEach(function (one) {
+    if (kdcOptions.indexOf(one) < 0) {
+      kdcOptions.push(one);
+    }
+  });
   const body = msgs.encKdcReqBody({
     kdcOptions: kdcOptions,
     realm: realm || tgt.realm,
     sname: sname,
     till: new Date(Date.now() + 8 * 3600 * 1000),
     nonce: nonce,
-    etypes: options.etypes || ETYPES
+    etypes: options.etypes || ETYPES,
+    additionalTickets: options.additionalTickets || null
   });
   const subkey = options.subkeyEtype ? {
     etype: options.subkeyEtype,
@@ -475,9 +483,14 @@ async function tgsExchange(transport, tgt, sname, realm, opts) {
         kcrypto.KEY_USAGE.TGS_REQ_AUTH, authenticator)
     }
   });
+  // #186: padata beyond the PA-TGS-REQ — PA-FOR-USER, PA-S4U-X509-USER
+  // (which has to name this request's nonce, so it may be a function of it),
+  // PA-PAC-OPTIONS.
+  const extra = typeof options.padata === "function"
+    ? await options.padata(nonce) : (options.padata || []);
   const request = msgs.encKdcReq({
     msgType: msgs.MSG_TYPE.TGS_REQ,
-    padata: [{ type: msgs.PA_TYPE.TGS_REQ, value: apReq }],
+    padata: [{ type: msgs.PA_TYPE.TGS_REQ, value: apReq }].concat(extra),
     // The SAME bytes the checksum covered; `raw` is used verbatim.
     reqBody: { raw: body }
   });
@@ -510,8 +523,65 @@ async function tgsExchange(transport, tgt, sname, realm, opts) {
     nonceEchoed: part.nonce === nonce,
     endtime: part.endtime,
     authtime: part.authtime,
-    renewTill: part.renewTill
+    renewTill: part.renewTill,
+    // #186: what the reply's padata carried (PA-S4U-X509-USER's answer).
+    replyPadata: rep.padata || []
   };
+}
+
+// ---------------------------------------------------------------------------
+// S4U2SELF'S TWO PADATA ([MS-SFU] 2.2.1 and 2.2.2, #186), assembled here from
+// the specification rather than borrowed from the KDC: PA-FOR-USER's
+// checksum is HMAC-MD5 at key usage 17 over the S4UByteArray, whatever the
+// session key's etype; PA-S4U-X509-USER's is the TGT session key's own
+// checksum at key usage 26 over the S4UUserID's DER.
+// ---------------------------------------------------------------------------
+async function paForUser(tgt, userName, userRealm) {
+  log.debug("Entering paForUser(). " + userName + "@" + userRealm);
+  const name = { type: msgs.NAME_TYPE.PRINCIPAL, name: [userName] };
+  const bytes = prim.concat([Uint8Array.from([name.type & 0xff, 0, 0, 0]),
+    prim.utf8(userName), prim.utf8(userRealm), prim.utf8("Kerberos")]);
+  const arcfour = kcrypto.etypeById(23);
+  const checksum = await arcfour.checksum(tgt.sessionKey, 17, bytes);
+  log.debug("Leaving paForUser().");
+  return { type: msgs.PA_TYPE.FOR_USER, value: msgs.encPaForUser({
+    userName: name, userRealm: userRealm,
+    cksum: { type: arcfour.checksumType, checksum: checksum },
+    authPackage: "Kerberos" }) };
+}
+
+// `user`: { nonce, name (optional), realm, certificate (DER, optional),
+// replyKeyUsage (optional) }. `corrupt` flips the checksum's first byte.
+async function paS4uX509User(tgt, user, corrupt) {
+  log.debug("Entering paS4uX509User().");
+  const userId = asn1.encTaggedSequence([
+    { tag: 0, value: asn1.encInteger(user.nonce) },
+    { tag: 1, value: user.name ? msgs.encPrincipalName(
+      { type: msgs.NAME_TYPE.PRINCIPAL, name: [user.name] }) : null },
+    { tag: 2, value: asn1.encGeneralString(user.realm) },
+    { tag: 3, value: user.certificate
+      ? asn1.encOctetString(user.certificate) : null },
+    { tag: 4, value: user.replyKeyUsage ? asn1.encFlags([2]) : null }
+  ]);
+  const profile = kcrypto.etypeById(tgt.etype);
+  const checksum = await profile.checksum(tgt.sessionKey, 26, userId);
+  if (corrupt) {
+    checksum[0] ^= 0xff;
+  }
+  log.debug("Leaving paS4uX509User().");
+  return { type: msgs.PA_TYPE.S4U_X509_USER, value: asn1.encTaggedSequence([
+    { tag: 0, value: userId },
+    { tag: 1, value: msgs.encChecksum({ type: profile.checksumType,
+                                        checksum: checksum }) }]) };
+}
+
+// PA-PAC-OPTIONS with the resource-based constrained delegation bit
+// ([MS-SFU] 2.2.5).
+function paPacOptionsRbcd() {
+  log.debug("Entering paPacOptionsRbcd().");
+  log.debug("Leaving paPacOptionsRbcd().");
+  return { type: msgs.PA_TYPE.PAC_OPTIONS, value: msgs.encPaPacOptions(
+    [msgs.PAC_OPTION.RESOURCE_BASED_CONSTRAINED_DELEGATION]) };
 }
 
 // ---------------------------------------------------------------------------
@@ -1168,6 +1238,7 @@ async function ticketIndicators(ticket, serviceKey) {
 
 module.exports = {
   msgs: msgs,
+  kcrypto: kcrypto,
   spnego: spnego,
   ETYPES: ETYPES,
   WINDOWS_MECHS: WINDOWS_MECHS,
@@ -1175,6 +1246,10 @@ module.exports = {
   proxyTransport: proxyTransport,
   asExchange: asExchange,
   tgsExchange: tgsExchange,
+  // #186: S4U.
+  paForUser: paForUser,
+  paS4uX509User: paS4uX509User,
+  paPacOptionsRbcd: paPacOptionsRbcd,
   apRequest: apRequest,
   negTokenInit: negTokenInit,
   readNegotiate: readNegotiate,

@@ -1416,6 +1416,10 @@ const TOKEN_FORM = vz.looseObject({
   actor_token_type: vt.opt(vt.uri),
   requested_token_type: vt.opt(vt.uri),
   audience: vz.string().max(validation.CAP.URI).optional(),
+  // #186: this service's extension to RFC 8693 — the semantics the client
+  // asks for, `delegation` or `impersonation`. Checked in the branch, where
+  // a refusal can say why.
+  exchange_semantics: vz.string().max(32).optional(),
   // OpenID Connect Native SSO (#130): a device_secret the first app already
   // holds, presented with its authorization code so the same device is
   // bound to the new session (section 3.3).
@@ -3870,18 +3874,21 @@ class OAuth2Server {
     // second confirmation is added.
     const deviceId = self.deviceIdClaimFor(opts);
     if (deviceId) payload.device_id = deviceId;
-    // RFC 8693 SECTION 4.4's `may_act` (#108, 2026-09-23): the ONE party this
-    // person has named, on their own entry (`stsMayAct`), as authorized to act
-    // for them — from their explicit choice and never derived from an
-    // application's permissions. A token exchange presenting this token as its
-    // subject_token then honours it in every mode, and refuses any other
-    // actor. Not on a client_credentials token, which is about no person.
-    // Looked up by the `urn:uuid:` subject where the token has one — it names
-    // the entry exactly, and an exchanged WS-Trust JWT carries nothing else —
-    // and by the name otherwise.
-    const aboutWhom = /^urn:uuid:/i.test(String(payload.sub || ''))
-      ? String(payload.sub) : user.username;
-    if (opts.grant !== 'client_credentials' && aboutWhom) {
+    // RFC 8693 SECTION 4.4's `may_act` (#108; #186): the ONE party the
+    // subject has named, on their own entry (`stsMayAct` on a person,
+    // `appMayAct` on an application), as authorized to act for them — and
+    // the ISSUANCE POLICY says what the claim names (its built-in answer is
+    // that choice). A token exchange presenting this token as its
+    // subject_token then refuses any other actor, in every mode. Looked up
+    // by the `urn:uuid:` subject where the token has one — it names the
+    // entry exactly, and an exchanged WS-Trust JWT carries nothing else —
+    // by the client for a client_credentials token, which is about it, and
+    // by the name otherwise.
+    const aboutWhom = opts.grant === 'client_credentials'
+      ? String(payload.client_id || user.username || '')
+      : (/^urn:uuid:/i.test(String(payload.sub || ''))
+        ? String(payload.sub) : user.username);
+    if (aboutWhom) {
       const mayAct = this.deps.delegationPolicy.mayActClaimFor(aboutWhom);
       if (mayAct) payload.may_act = mayAct;
     }
@@ -14875,6 +14882,19 @@ class OAuth2Server {
           subject = {};
         }
       }
+      // WHO A VERIFIED TOKEN IS ABOUT, BY NAME (#186). A token this realm
+      // issued names a person by `sub` (`urn:uuid:<entryUUID>`) and does not
+      // always carry `username` — a WS-Trust JWT carries `name` instead — and
+      // with none the token issued below was about `mock-user`
+      // (`helpers.userFor()`'s default), and the policy judged a person
+      // nobody named. The name is read off the subject through the directory.
+      if (subjectVerified && subject && !subject.username &&
+          /^urn:uuid:/i.test(String(subject.sub || ''))) {
+        const named = String(self.deps.nameForSubject(subject.sub) || '');
+        if (named) {
+          subject = Object.assign({}, subject, { username: named });
+        }
+      }
       // A VERIFIED TOKEN MUST BE THE TYPE IT WAS DECLARED AS (#130). One this
       // realm cannot verify — development's token from anywhere — is held
       // only to the list of types, above: its shape is somebody else's.
@@ -15015,46 +15035,15 @@ class OAuth2Server {
       // `may_act` IS READ IN EVERY MODE (RFC 8693 section 4.4, #108). The
       // claim is the SUBJECT's statement of who may act for them, carried in
       // a token this realm signed; when it names somebody else, the token
-      // itself is saying no, and that is not a question a mode changes.
-      // Section 2.2.2: a subject_token "unacceptable based on policy" is
-      // invalid_request. Read only off a VERIFIED subject_token — a claim in a
-      // token nobody verified is not the subject's word.
+      // itself is saying no — and since #186 that is a rule of the issuance
+      // policy, enforced in every mode, with the two facts below. Read only
+      // off a VERIFIED subject_token: a claim in a token nobody verified is
+      // not the subject's word.
       // -----------------------------------------------------------------------
       const mayAct = subjectVerified && subject.may_act &&
         typeof subject.may_act === 'object' ? subject.may_act : null;
-      if (mayAct && !delegationPolicy.mayActNames(mayAct, actorIdentity)) {
-        log.info('oauth2: a token exchange by "' + client.client_id + '" ' +
-                 'was refused: the subject_token\'s may_act names ' +
-                 JSON.stringify(mayAct) + ' and the actor is "' +
-                 actorIdentity.sub + '".');
-        delegation.record({
-          protocol: 'OAuth 2.0',
-          type: actorClaims ? 'oauth-delegation' : 'oauth-impersonation',
-          // error-code: none — STS-OAUTH-0620 is marked on the response below
-          outcome: 'refused',
-          initial: { presented: subject.username || subject.sub || '',
-                     what: 'the subject of the token presented, whose ' +
-                           'may_act names somebody else' },
-          intermediary: { presented: actorClaims ? actorIdentity.sub : '',
-                          application: client.client_id,
-                          what: 'the party asking to act' },
-          target: { application: '', what: 'not reached' },
-          authorizedBy: 'refused: the subject_token\'s may_act (RFC 8693 ' +
-                        'section 4.4) names ' + String(mayAct.sub || '') +
-                        ', not this actor.',
-          reason: 'may_act names ' + String(mayAct.sub || '') +
-                  ' and the actor is ' + actorIdentity.sub,
-          consumed: [{ kind: 'subject_token',
-                       identifier: String(subject.jti || ''),
-                       note: 'signed by this service and verified' }],
-          produced: [], sessionId: ''
-        });
-        errorCodes.mark(res, 'STS-OAUTH-0620');
-        log.debug("Leaving OAuth2Server.tokenGrant().");
-        return self.oauthError(res, 400, 'invalid_request',
-                               'The subject_token\'s may_act does not name ' +
-                               'the party asking to act for it.');
-      }
+      const mayActNamesActor = !!mayAct &&
+        delegationPolicy.mayActNames(mayAct, actorIdentity);
       stats.recordAuthentication({
         presented: subject.username || subject.sub || 'urn:sts:exchanged',
         protocol: 'OAuth 2.0', method: 'token exchange (RFC 8693)',
@@ -15189,40 +15178,98 @@ class OAuth2Server {
                  'entry, to honour the ask.');
       }
       // -----------------------------------------------------------------------
-      // WHO MAY ACT FOR WHOM (#108, 2026-09-23) — `common/delegation_policy.ts`
-      // decides, from the attributes on the entries, whether this client (and
-      // the actor it names) may obtain a token about this subject for these
-      // targets. RFC 8693 section 5 leaves that policy to the authorization
-      // server and until this line there was none. Section 2.2.2 says how a
-      // refusal is spoken: a subject or actor "unacceptable based on policy"
-      // is invalid_request, a target the server will not issue for SHOULD be
-      // invalid_target.
+      // WHO MAY ACT FOR WHOM, AND AS WHAT (#186) — the issuance policy
+      // decides, through `common/delegation_policy.ts`, which gathers the
+      // facts: the subject, the actor (the actor_token's subject, else this
+      // client), S (the application the subject_token was issued for: its
+      // `aud`, else its `client_id` / `azp`) and R (the one target asked for).
+      // RFC 8693 section 5 leaves that policy to the authorization server.
+      // Section 2.2.2 says how a refusal is spoken: a subject or actor
+      // "unacceptable based on policy" is invalid_request, a target the server
+      // will not issue for SHOULD be invalid_target.
       //
-      // ENFORCED IN PRODUCT (`mode.authorizesDelegation()`); in development the
-      // same answer is written on the act's row as "would have been refused".
+      // THE SEMANTICS are the policy's choice too: this service's extension
+      // parameter `exchange_semantics` (delegation or impersonation), else the
+      // actor's default, else the subject's, else delegation.defaultSemantics.
+      // DELEGATION puts `act` on the token naming the actor; IMPERSONATION does
+      // not; a SELF exchange acts for nobody.
+      //
+      // ENFORCED IN PRODUCT — the policy's own answer says whether a refusal is
+      // enforced; in development it is written on the act's row as "would
+      // have been refused".
       // -----------------------------------------------------------------------
-      const subjectIsClient =
-        clientAliases.indexOf(String(subject.sub || '')) >= 0 &&
-        String(subject.client_id || client.client_id) === client.client_id;
-      const actorIsClient = !actorClaims ||
-        clientAliases.indexOf(String(actorClaims.sub || '')) >= 0;
-      const exchangeMode = actorClaims ? 'delegation' : 'impersonation';
+      const askedSemantics = bodyValues(req, body, 'exchange_semantics')
+        .map(function (one) { return String(one).trim().toLowerCase(); })
+        .filter(function (one) { return !!one; });
+      if (askedSemantics.length > 1 || (askedSemantics.length &&
+          ['delegation', 'impersonation'].indexOf(askedSemantics[0]) < 0)) {
+        errorCodes.mark(res, 'STS-OAUTH-0795');
+        log.debug("Leaving OAuth2Server.tokenGrant(). An unusable " +
+                  "exchange_semantics.");
+        return self.oauthError(res, 400, 'invalid_request',
+          'exchange_semantics is delegation or impersonation, sent once.');
+      }
+      // The subject as an entry names it: a client_credentials token is about
+      // its client, spelt the two ways such a token spells its own subject.
+      const subjectSub = String(subject.sub || '');
+      const subjectName = /^urn:sts:client:/.test(subjectSub)
+        ? subjectSub.slice('urn:sts:client:'.length)
+        : String(subject.username || subjectSub);
+      const subjectAudiences = (Array.isArray(subject.aud) ? subject.aud
+        : (subject.aud ? [subject.aud] : [])).map(String);
       const decision = delegationPolicy.decide({
-        protocol: 'OAuth 2.0', mode: exchangeMode,
-        intermediary: client.client_id,
-        subject: String(subject.username || subject.sub || ''),
+        protocol: 'OAuth 2.0',
+        requested: (askedSemantics[0] || '') as any,
+        actor: actorClaims
+          ? String(actorIdentity.aliases && actorIdentity.aliases[0] ||
+                   (/^urn:sts:client:/.test(String(actorClaims.sub || ''))
+                     ? String(actorClaims.sub).slice('urn:sts:client:'.length)
+                     : String(actorClaims.username || actorClaims.sub || '')))
+          : client.client_id,
+        subject: subjectName,
+        source: subjectAudiences.concat([String(subject.client_id || ''),
+                                         String(subject.azp || '')]),
         targets: exchangeAudiences, targetKind: 'audience',
-        mayActHonoured: !!mayAct,
-        self: subjectIsClient && actorIsClient
+        mayActPresent: !!mayAct, mayActNamesActor: mayActNamesActor
       });
+      // What the token says about the actor, as the semantics require. A
+      // prior `act` is kept under any new one, and kept on its own where the
+      // new act names nobody — laundering a delegation into an ordinary
+      // sign-in is the one thing an exchange must not do.
+      const issuedSemantics = decision.semantics ||
+        (actorClaims ? 'delegation' : 'impersonation');
+      if (issuedSemantics === 'delegation') {
+        act = (actorClaims ? { sub: actorClaims.sub }
+                           : { sub: client.client_id }) as Json;
+        if (priorAct) {
+          act.act = priorAct;
+        }
+      } else {
+        act = priorAct;
+      }
+      // THE AUDIENCE: the one target asked for — or, for a self exchange
+      // that named none, the subject_token's own.
+      const issuedAudiences = decision.allowed && !exchangeAudiences.length &&
+        decision.semantics === 'self' ? subjectAudiences : exchangeAudiences;
+      const exchangeType = issuedSemantics === 'impersonation'
+        ? 'oauth-impersonation' : 'oauth-delegation';
       const firstTarget = decision.targets[0] || { asked: '', application: '' };
       if (!decision.allowed && decision.enforced) {
-        const refusalCode = decision.refusal === 'target' ? 'STS-OAUTH-0619'
-          : (decision.refusal === 'xacml' ? 'STS-OAUTH-0622'
-                                          : 'STS-OAUTH-0618');
+        const REFUSAL_CODES: Record<string, string[]> = {
+          'may-act': ['STS-OAUTH-0620', 'invalid_request'],
+          'targets': ['STS-OAUTH-0792', 'invalid_target'],
+          'unregistered-target': ['STS-OAUTH-0793', 'invalid_target'],
+          'no-target': ['STS-OAUTH-0794', 'invalid_target'],
+          'target': ['STS-OAUTH-0619', 'invalid_target'],
+          'semantics': ['STS-OAUTH-0790', 'invalid_request'],
+          'authority': ['STS-OAUTH-0791', 'invalid_request'],
+          'policy': ['STS-OAUTH-0622', 'invalid_request']
+        };
+        const spoken = REFUSAL_CODES[decision.refusal] ||
+          ['STS-OAUTH-0618', 'invalid_request'];
         delegation.record({
           protocol: 'OAuth 2.0',
-          type: actorClaims ? 'oauth-delegation' : 'oauth-impersonation',
+          type: exchangeType,
           outcome: 'refused',
           initial: { presented: subject.username || subject.sub || '',
                      what: 'the subject of the token presented' },
@@ -15245,14 +15292,11 @@ class OAuth2Server {
                        note: 'signed by this service and verified' }],
           produced: [], sessionId: ''
         });
-        errorCodes.mark(res, refusalCode);
-        log.debug("Leaving OAuth2Server.tokenGrant(). The delegation policy " +
+        errorCodes.mark(res, spoken[0]);
+        log.debug("Leaving OAuth2Server.tokenGrant(). The issuance policy " +
                   "refused the exchange.");
-        // error-code: none — refusalCode (0618, 0619 or 0622) was marked above
-        return self.oauthError(res, 400,
-                               decision.refusal === 'target'
-                                 ? 'invalid_target' : 'invalid_request',
-                               decision.why);
+        // error-code: none — spoken[0] was marked above
+        return self.oauthError(res, 400, spoken[1], decision.why);
       }
       // -----------------------------------------------------------------------
       // AN EXCHANGE MAY NOT WIDEN WHAT THE SUBJECT GRANTED (#108). The scope
@@ -15268,31 +15312,58 @@ class OAuth2Server {
       // no `scope` claim — an ID Token — carries no grant to compare against,
       // and the client's declaration is then the only limit, as before.
       // -----------------------------------------------------------------------
-      if (subjectVerified && body.scope && subject.scope !== undefined &&
-          subject.scope !== null) {
+      // The rule is the ISSUANCE POLICY's since #186 (`exchange-widens-
+      // scope`, stage `exchange`): this side sends each requested scope with
+      // two facts — whether the subject_token has a `scope` claim at all,
+      // and whether it carries this one — and the policy refuses in product.
+      if (subjectVerified && body.scope) {
+        const hasScope = subject.scope !== undefined && subject.scope !== null;
         const granted = String(subject.scope || '').split(/\s+/)
           .filter(function (one) { return !!one; });
-        const wider = String(body.scope).split(/\s+/).filter(function (one) {
-          return !!one && granted.indexOf(one) < 0;
+        const askedScopes = String(body.scope).split(/\s+/)
+          .filter(function (one) { return !!one; });
+        const SA = scopeVerdicts.ATTRIBUTE;
+        const scopeAnswer = gate.checkScopes({
+          subject: { kind: 'application', name: client.client_id,
+                     authenticated: true },
+          client: client.client_id,
+          protocol: 'OAuth 2.0',
+          mode: mode.current(),
+          stage: 'exchange',
+          requested: askedScopes,
+          facts: askedScopes.map(function (one: string): Json {
+            return { scope: one, attributes: [
+              scopeVerdicts.resourceFact(SA.SUBJECT_TOKEN_HAS_SCOPE, hasScope),
+              scopeVerdicts.resourceFact(SA.SCOPE_IN_SUBJECT_TOKEN,
+                                         granted.indexOf(one) >= 0)] };
+          })
         });
-        if (wider.length) {
-          if (decision.enforced) {
-            log.info('oauth2: a token exchange by "' + client.client_id +
-                     '" asked for ' + wider.join(' ') + ', which the ' +
-                     'subject_token does not carry.');
-            errorCodes.mark(res, 'STS-OAUTH-0621');
-            log.debug("Leaving OAuth2Server.tokenGrant(). The exchange " +
-                      "would widen the subject's scope.");
-            return self.oauthError(res, 400, 'invalid_scope',
-                                   'The requested scope is wider than the ' +
-                                   'subject_token\'s (' + wider.join(' ') +
-                                   ' is not in it). An exchange may narrow ' +
-                                   'a scope, never widen it.');
-          }
+        const refusedScopes = (scopeAnswer.verdicts || [])
+          .filter(function (one: Json) { return one.verdict === 'refuse'; });
+        if (refusedScopes.length) {
+          const wider = refusedScopes.map(function (one: Json): string {
+            return String(one.scope);
+          });
+          log.info('oauth2: a token exchange by "' + client.client_id +
+                   '" asked for ' + wider.join(' ') + ', which the ' +
+                   'subject_token does not carry.');
+          errorCodes.mark(res, 'STS-OAUTH-0621');
+          log.debug("Leaving OAuth2Server.tokenGrant(). The exchange " +
+                    "would widen the subject's scope.");
+          return self.oauthError(res, 400, 'invalid_scope',
+                                 'The requested scope is wider than the ' +
+                                 'subject_token\'s (' + wider.join(' ') +
+                                 ' is not in it). An exchange may narrow ' +
+                                 'a scope, never widen it.');
+        }
+        const widened = hasScope ? askedScopes.filter(function (one) {
+          return granted.indexOf(one) < 0;
+        }) : [];
+        if (widened.length) {
           log.info('oauth2: a token exchange by "' + client.client_id +
                    '" widened the subject_token\'s scope by ' +
-                   wider.join(' ') + '; development allows it, product ' +
-                   'refuses it (STS-OAUTH-0621).');
+                   widened.join(' ') + '; the issuance policy allowed it ' +
+                   '(development; product refuses it, STS-OAUTH-0621).');
         }
       }
       const exchanged = await issue({
@@ -15302,7 +15373,7 @@ class OAuth2Server {
                             subject.sub ? { sub: subject.sub } : {}),
         client_id: client.client_id,
         scope: String(body.scope || subject.scope || ''),
-        audience: self.audienceClaim(exchangeAudiences), act: act,
+        audience: self.audienceClaim(issuedAudiences), act: act,
         // RFC 9396 on an exchange: the details asked for, as for a direct
         // grant. The audience rule is tokenSet()'s backstop, as the header
         // above says.
@@ -15330,7 +15401,7 @@ class OAuth2Server {
         // than `requestedResources` alone, because `aud` on the token being
         // minted is the union of both and the two must not come to describe
         // different resource servers.
-        resources: wantsRefresh ? exchangeAudiences : undefined,
+        resources: wantsRefresh ? issuedAudiences : undefined,
         grant: 'token exchange'
       });
       // RFC 8693 section 2.2.1: `issued_token_type` describes THE TOKEN IN THE
@@ -15400,7 +15471,7 @@ class OAuth2Server {
       // names one target; an exchange asking for several is drawn against the
       // one it named first, and the raw string is kept in the sentence beside
       // it either way.
-      const audience = String(exchangeAudiences[0] || '');
+      const audience = String(issuedAudiences[0] || '');
       // ---------------------------------------------------------------------
       // WHICH APPLICATION THAT AUDIENCE IS, when one has registered it.
       //
@@ -15434,7 +15505,7 @@ class OAuth2Server {
       }
       delegation.record({
         protocol: 'OAuth 2.0',
-        type: actorClaims ? 'oauth-delegation' : 'oauth-impersonation',
+        type: exchangeType,
         outcome: 'issued',
         initial: {
           presented: subject.username || subject.sub || 'urn:sts:exchanged',

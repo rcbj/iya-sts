@@ -117,9 +117,8 @@ const SUMMARY = 'return { demo: p.seedsDemoPrincipals, served: ' +
   'p.realmsServed(), service: p.serviceAccount(), krbtgt: ' +
   'p.krbtgtUnavailableReason(), etypes: p.KDC_ETYPES, all: ' +
   'p.all().map(function (x) { return { name: x.name.join("/") + "@" + ' +
-  'x.realm, password: x.password, salt: x.salt, okAsDelegate: ' +
-  'x.okAsDelegate, kvno: x.kvno, etypes: p.supportedEtypes(x), delegateTo: ' +
-  'x.allowedToDelegateTo, actOnBehalf: x.allowedToActOnBehalfOf }; }) };';
+  'x.realm, password: x.password, salt: x.salt, kvno: x.kvno, etypes: ' +
+  'p.supportedEtypes(x) }; }), seeds: p.delegationSeeds() };';
 
 function names(report) {
   log.debug("Entering names().");
@@ -193,13 +192,13 @@ function productModeHoldsNoFixtures(t) {
           web.salt === 'EXAMPLE.COMsvc-web',
           'the service account takes krb5.servicePassword and krb5.serviceSalt',
           JSON.stringify(web));
-  t.check(web.okAsDelegate === false,
-          'and is NOT flagged ok-as-delegate — that is advice to forward ' +
-          'TGTs, and a product deployment says so in its own KDC',
-          JSON.stringify(web));
-  t.check(configured.report.all.every(function (one) {
-    return !one.delegateTo.length && !one.actOnBehalf.length;
-  }), 'no delegation rule exists that nobody configured');
+  // DELEGATION IS THE ENTRIES' SINCE #186, and product seeds none of it: no
+  // ok-as-delegate (advice to forward TGTs, which a product deployment says
+  // on its own service's entry) and no rule nobody configured.
+  t.check(Array.isArray(configured.report.seeds) &&
+          configured.report.seeds.length === 0,
+          'and product seeds NO delegation: not ok-as-delegate, and no rule ' +
+          'nobody configured', JSON.stringify(configured.report.seeds));
   t.check(configured.report.all.every(function (one) {
     return !/-service-password$|machine-account-password/.test(one.password);
   }), 'and no literal fixture password is anywhere in the database');
@@ -238,15 +237,18 @@ function theServiceAccountFollowsTheSetting(t) {
 
   // At the defaults the configured account IS the fixture, field for field.
   const web = principals.find(['HTTP', 'web.example.com']);
+  const webSeed = principals.delegationSeeds().filter(function (one) {
+    return one.identifier === 'HTTP/web.example.com@' + principals.REALM;
+  })[0];
   t.check(!!web && web.password === 'service-account-password' &&
           web.salt === principals.REALM + 'HTTPweb' &&
-          web.okAsDelegate === true &&
+          !!webSeed && webSeed.fields.krb5TrustedForDelegation === 'TRUE' &&
           web.description === 'an HTTP service principal, flagged ' +
                               'ok-as-delegate',
           'at the default settings the account is exactly the fixture it ' +
-          'replaced',
+          'replaced, its ok-as-delegate a seed for its entry (#186)',
           JSON.stringify(web && { password: web.password, salt: web.salt,
-                                  okAsDelegate: web.okAsDelegate }));
+                                  seed: webSeed }));
   t.check(principals.serviceAccount().available === true,
           'and in development the acceptor has its key');
   log.debug("Leaving theServiceAccountFollowsTheSetting().");

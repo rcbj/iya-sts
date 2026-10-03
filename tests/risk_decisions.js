@@ -188,11 +188,24 @@ function childMain() {
          'native-sso-not-enabled-refused,native-sso-not-enabled-dropped,' +
          'protected-undeclared-refused,protected-undeclared-dropped,' +
          'undeclared-refused,undeclared-dropped,permission-not-granted,' +
+         'exchange-widens-scope,' +
          'scope-not-authorized,consent-outstanding,scope-kept,' +
          'detail-type-not-registered,detail-type-not-published,detail-kept,' +
          'transfer-hold-relayed,transfer-hold-kept,' +
          'transfer-serve-geofenced,transfer-serve-kept,' +
          'transfer-release-withheld,transfer-release-kept,' +
+         // The exchange rules (#186): the semantics, the refusals in order,
+         // the allows, and the may_act question.
+         'exchange-semantics-requested,exchange-semantics-actor-default,' +
+         'exchange-semantics-subject-default,' +
+         'exchange-semantics-realm-default,exchange-may-act,' +
+         'exchange-several-targets,exchange-unregistered-target,' +
+         'exchange-no-target,exchange-protected-subject,' +
+         'exchange-unknown-actor,exchange-user-actor-role,' +
+         'exchange-semantics,exchange-subject-group,exchange-authority,' +
+         'exchange-delegation,exchange-impersonation,' +
+         'exchange-self-default-audience,exchange-self,exchange-allowed,' +
+         'may-act-subject-choice,' +
          'risk-protected-alarm,holds-a-required-role' &&
          /ordered-deny-overrides$/.test(built.policy.combiningAlgId),
          'A1. the built-in issuance policy carries the two device rules ' +
@@ -201,13 +214,14 @@ function childMain() {
          ruleIds.join(',') + ' ' + (built.policy || {}).combiningAlgId);
     const rolesOnly = templates.build('role-issuance',
       { decideRisk: 'no', decideDevices: 'no', decideProtocols: 'no',
-        decideScopes: 'no', decideTransfers: 'no' },
+        decideScopes: 'no', decideTransfers: 'no', decideExchanges: 'no' },
       { name: 'role-issuance' });
     note(rolesOnly.ok && rolesOnly.policy.rules.length === 1 &&
          /deny-unless-permit$/.test(rolesOnly.policy.combiningAlgId),
          'A2. decideRisk: no (and decideDevices, decideProtocols, ' +
          'decideScopes and ' +
-         'decideTransfers: no, #164, #304 and #98) builds the ' +
+         'decideTransfers and decideExchanges: no, #164, #304, #98 and ' +
+         '#186) builds the ' +
          'roles-only document it was');
     const request = rolePep.buildRequest({
       application: CLIENT, kind: 'start-session',
@@ -509,9 +523,10 @@ function childMain() {
     const plain = pdp.evaluate(unprotectedPolicy.policy, consoleRequest, {});
     note(unprotectedPolicy.ok && plain.decision === 'Deny' &&
          // The three risk rules, the role rule, #164's two device rules,
-         // the thirteen scope and detail rules of #304 and #305, the
-         // six transfer rules of #98, and the protocol-declaration rule.
-         unprotectedPolicy.policy.rules.length === 26,
+         // the fourteen scope and detail rules of #304, #305 and #186, the
+         // six transfer rules of #98, the protocol-declaration rule, and
+         // the twenty exchange rules of #186.
+         unprotectedPolicy.policy.rules.length === 47,
          'I5. neverLockOut none puts the console under the three rules, ' +
          'and HIGH refuses it', plain.decision);
 

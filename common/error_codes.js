@@ -5461,6 +5461,10 @@ const CODES = [
       'is insecure (SHA-1\'s RS1) and webauthn.insecureAlgorithms is off in ' +
       'this realm, or the service is in product mode.',
     spec: 'none — the sign-in screen is drawn again' },
+  { code: 'STS-AUTHN-0295',
+    summary: 'A person\'s delegation semantics named something other than ' +
+      'delegation or impersonation (#186).',
+    spec: 'none (a console or management API refusal, HTTP 400)' },
   { code: 'STS-OAUTH-0001',
     summary: 'A JWT client assertion could not be read as a JWT (its header ' +
       'is not base64url JSON).',
@@ -7726,10 +7730,11 @@ const CODES = [
   { code: 'STS-OAUTH-0618',
     summary: 'A token exchange was refused by the delegation policy (#108): ' +
       'the subject may not be delegated (stsNotDelegated, or a member of the ' +
-      'console roster), the client has no application entry, is not trusted ' +
-      'to impersonate (appTrustedToImpersonate), or may not act for this ' +
-      'subject (appDelegationSubjectGroup), or no target was named. Product ' +
-      'mode only; development records what would have been refused.',
+      'console roster, a protected group), the actor has no entry or is a ' +
+      'person without delegation.actorRole, or may not act for this ' +
+      'subject (appDelegationSubjectGroup) — the issuance policy\'s rules ' +
+      'since #186. Product mode only; development records what would have ' +
+      'been refused.',
     spec: 'invalid_request (HTTP 400), RFC 8693 section 2.2.2' },
   { code: 'STS-OAUTH-0619',
     summary: 'A token exchange was refused because the delegation policy ' +
@@ -7749,9 +7754,9 @@ const CODES = [
       'exchange that widens what the subject granted (#108).',
     spec: 'invalid_scope (HTTP 400), RFC 6749 section 5.2' },
   { code: 'STS-OAUTH-0622',
-    summary: 'A token exchange the delegation attributes allowed was ' +
-      'refused because the issuance policy answered Deny for action-id ' +
-      '`delegate` — the deny-only XACML layer (#108). Product mode only.',
+    summary: 'A token exchange was refused because no issuance policy gave ' +
+      'a verdict on it, or a realm\'s policy refused it with no rule this ' +
+      'service names (#186). Product mode only.',
     spec: 'invalid_request (HTTP 400), RFC 8693 section 2.2.2' },
   { code: 'STS-OAUTH-0623',
     summary: 'A person\'s recorded identity verifications (OpenID Connect ' +
@@ -8520,6 +8525,33 @@ const CODES = [
       'whatever the outcome (#424) unless oauth2.codeReplayIdempotent ' +
       'relaxes it outside RFC 9700 mode.',
     spec: '400 invalid_grant (RFC 6749 section 4.1.2); the flow starts over' },
+  { code: 'STS-OAUTH-0790',
+    summary: 'A token exchange was refused because the semantics chosen ' +
+      '(delegation or impersonation) are not allowed by the actor\'s or the ' +
+      'subject\'s entry (#186).',
+    spec: '400 invalid_request (RFC 8693 section 2.2.2)' },
+  { code: 'STS-OAUTH-0791',
+    summary: 'A token exchange was refused because the subject has no ' +
+      'authority for the application the act stands on: it holds none of ' +
+      'the roles that application requires (#186).',
+    spec: '400 invalid_request (RFC 8693 section 2.2.2)' },
+  { code: 'STS-OAUTH-0792',
+    summary: 'A token exchange named more than one audience or resource; an ' +
+      'exchange is issued for exactly one (#186).',
+    spec: '400 invalid_target (RFC 8693 section 2.2.2)' },
+  { code: 'STS-OAUTH-0793',
+    summary: 'A token exchange named an audience or resource no application ' +
+      'in the realm registers (#186).',
+    spec: '400 invalid_target (RFC 8693 section 2.2.2)' },
+  { code: 'STS-OAUTH-0794',
+    summary: 'A delegation or impersonation token exchange named no audience ' +
+      'or resource; only a self exchange defaults to the subject token\'s ' +
+      'own audience (#186).',
+    spec: '400 invalid_target (RFC 8693 section 2.2.2)' },
+  { code: 'STS-OAUTH-0795',
+    summary: 'A token exchange\'s exchange_semantics parameter was neither ' +
+      'delegation nor impersonation, or was repeated (#186).',
+    spec: '400 invalid_request (RFC 6749 section 5.2)' },
   { code: 'STS-SAML-0001',
     summary: 'A SAML 2.0 sign-in resumed with a held-request id that is ' +
       'unknown or has expired (saml2.requestTtlMin), so there is no ' +
@@ -9071,22 +9103,22 @@ const CODES = [
       'person, so there is no subject to issue it about.',
     spec: 'SOAP Fault (HTTP 400)' },
   { code: 'STS-WSTRUST-0018',
-    summary: 'An OnBehalfOf or ActAs request was refused by the delegation ' +
-      'policy (#108): the subject may not be delegated, the requester is not ' +
-      'trusted to impersonate or may not act for this subject, or no ' +
-      'attribute allows the AppliesTo. Product mode only; development ' +
-      'records what would have been refused.',
+    summary: 'An OnBehalfOf or ActAs request was refused by the issuance ' +
+      'policy (#186): the subject may not be delegated, the requester may ' +
+      'not act for this subject, the subject token\'s may_act names ' +
+      'somebody else, or no delegation relationship allows the AppliesTo. ' +
+      'Product mode only; development records what would have been refused.',
     spec: 'SOAP Fault wst:RequestFailed (HTTP 500), WS-Trust 1.4 section 11' },
   { code: 'STS-WSTRUST-0019',
     summary: 'An OnBehalfOf or ActAs request was refused because its ' +
-      'requester authenticated as a PERSON (or as a name with no ' +
-      'application entry): in product mode only an application entry may ' +
-      'delegate (#108).',
+      'requester may not act for anybody here: it has no entry in this ' +
+      'realm, or it is a person who does not hold the role ' +
+      'delegation.actorRole names (#186).',
     spec: 'SOAP Fault wst:RequestFailed (HTTP 500), WS-Trust 1.4 section 11' },
   { code: 'STS-WSTRUST-0020',
-    summary: 'An OnBehalfOf or ActAs request the delegation attributes ' +
-      'allowed was refused because the issuance policy answered Deny for ' +
-      'action-id `delegate` (#108). Product mode only.',
+    summary: 'An OnBehalfOf or ActAs request was refused because no ' +
+      'issuance policy gave a verdict on it, or a realm\'s policy refused it ' +
+      'with no rule this service names (#186). Product mode only.',
     spec: 'SOAP Fault wst:RequestFailed (HTTP 500), WS-Trust 1.4 section 11' },
   { code: 'STS-WSTRUST-0021',
     summary: 'A Cancel request in the WS-Trust 2004/04 namespace, which ' +
@@ -9095,6 +9127,23 @@ const CODES = [
     spec: 'SOAP Fault wst:InvalidRequest (HTTP 500), in the request\'s ' +
       'trust namespace' },
   // ===== WSFED =============================================================
+  { code: 'STS-WSTRUST-0022',
+    summary: 'An OnBehalfOf or ActAs request was refused because the ' +
+      'semantics it asked for (impersonation or delegation) are not ' +
+      'allowed by the requester\'s or the subject\'s entry (#186).',
+    spec: 'SOAP Fault wst:RequestFailed (WS-Trust 1.4 section 11)' },
+  { code: 'STS-WSTRUST-0023',
+    summary: 'An OnBehalfOf or ActAs request was refused because the subject ' +
+      'has no authority for the application the act stands on (#186).',
+    spec: 'SOAP Fault wst:RequestFailed (WS-Trust 1.4 section 11)' },
+  { code: 'STS-WSTRUST-0024',
+    summary: 'An OnBehalfOf or ActAs request named no AppliesTo, or one no ' +
+      'application registers, and is not a self request (#186).',
+    spec: 'SOAP Fault wst:RequestFailed (WS-Trust 1.4 section 11)' },
+  { code: 'STS-WSTRUST-0025',
+    summary: 'A request carried both <wst:OnBehalfOf> and <wst14:ActAs>, ' +
+      'which ask for impersonation and delegation at once (#186).',
+    spec: 'SOAP Fault wst:InvalidRequest (WS-Trust 1.4 section 11)' },
   { code: 'STS-WSFED-0001',
     summary: 'A wsignin1.0 request carried wreqptr, which this service ' +
       'refuses to dereference (fetching a URL from a query parameter ' +
@@ -10172,9 +10221,10 @@ const CODES = [
       'requester\'s long-term key.',
     spec: 'KDC_ERR_BADOPTION (13)' },
   { code: 'STS-KRB-0010',
-    summary: 'S4U2Proxy was refused: neither msDS-AllowedToDelegateTo on the ' +
-      'requester nor msDS-AllowedToActOnBehalfOfOtherIdentity on the ' +
-      'target permits the delegation.',
+    summary: 'S4U2Proxy was refused: neither appAllowedToDelegateTo on the ' +
+      'requester\'s entry nor appAllowedToActOnBehalfOf on the target\'s ' +
+      '(msDS-AllowedToDelegateTo and msDS-AllowedToActOnBehalfOfOther' +
+      'Identity) permits the delegation.',
     spec: 'KDC_ERR_BADOPTION (13)' },
   { code: 'STS-KRB-0011',
     summary: 'S4U2Proxy permitted only by resource-based delegation was ' +
@@ -10183,7 +10233,8 @@ const CODES = [
     spec: 'KDC_ERR_BADOPTION (13)' },
   { code: 'STS-KRB-0012',
     summary: 'Classic constrained delegation was refused because the ' +
-      'evidence ticket is not forwardable.',
+      'evidence ticket is not forwardable (the S4U2Self service does not ' +
+      'allow impersonation, or the user is protected).',
     spec: 'KDC_ERR_BADOPTION (13)' },
   { code: 'STS-KRB-0013',
     summary: 'An AS-REQ for an account that requires pre-authentication ' +
@@ -10298,8 +10349,9 @@ const CODES = [
       'is not forwardable.',
     spec: 'KDC_ERR_BADOPTION (13)' },
   { code: 'STS-KRB-0042',
-    summary: 'A FORWARDED request was refused because the client account is ' +
-      'flagged NOT_DELEGATED.',
+    summary: 'A FORWARDED request was refused because the client is ' +
+      'protected from delegation (stsNotDelegated or a protected group: ' +
+      'NOT_DELEGATED, Protected Users).',
     spec: 'KDC_ERR_BADOPTION (13)' },
   { code: 'STS-KRB-0043',
     summary: 'A RENEW request was refused because the ticket is not ' +
@@ -10873,6 +10925,44 @@ const CODES = [
       'KRB_AP_ERR_BAD_INTEGRITY (31), KRB_AP_ERR_TKT_EXPIRED (32), ' +
       'KDC_ERR_SERVER_NOMATCH (26), KDC_ERR_ETYPE_NOSUPP (14)' },
   // ===== LDAP ==============================================================
+  { code: 'STS-KRB-0170',
+    summary: 'An S4U2Self request\'s PA-S4U-X509-USER did not decode ' +
+      '(#186).',
+    spec: '[MS-SFU] 2.2.2: KDC_ERR_BADOPTION (13)' },
+  { code: 'STS-KRB-0171',
+    summary: 'An S4U2Self request\'s PA-S4U-X509-USER checksum did not ' +
+      'verify under the TGT session key at key usage 26 (#186).',
+    spec: '[MS-SFU] 2.2.2: KRB_AP_ERR_MODIFIED (41)' },
+  { code: 'STS-KRB-0172',
+    summary: 'An S4U2Self request\'s PA-S4U-X509-USER carried a nonce that ' +
+      'is not the request body\'s (#186).',
+    spec: '[MS-SFU] 2.2.2: KDC_ERR_BADOPTION (13)' },
+  { code: 'STS-KRB-0173',
+    summary: 'An S4U2Self request\'s PA-S4U-X509-USER certificate names ' +
+      'nobody in this realm: not issued to a person by its certificate ' +
+      'authority, revoked, or without clientAuth (#186).',
+    spec: '[MS-SFU] 2.2.2: KDC_ERR_C_PRINCIPAL_UNKNOWN (6)' },
+  { code: 'STS-KRB-0174',
+    summary: 'An S4U2Self request\'s PA-S4U-X509-USER named one user and ' +
+      'its certificate another (#186).',
+    spec: '[MS-SFU] 2.2.2: KDC_ERR_CLIENT_NAME_MISMATCH (75)' },
+  { code: 'STS-KRB-0175',
+    summary: 'An S4U2Self request\'s PA-S4U-X509-USER carried neither a ' +
+      'cname nor a certificate (#186).',
+    spec: '[MS-SFU] 2.2.2: KDC_ERR_BADOPTION (13)' },
+  { code: 'STS-KRB-0176',
+    summary: 'S4U2Proxy was refused because the evidence ticket\'s PAC is ' +
+      'missing, or its ticket or KDC signature does not verify with the ' +
+      'krbtgt key: the ticket was altered after issue (CVE-2020-17049) or ' +
+      'forged by the requester (#186).',
+    spec: '[MS-SFU] 3.2.5.2.2, [MS-PAC] 2.8.3: KRB_AP_ERR_MODIFIED (41)' },
+  { code: 'STS-KRB-0177',
+    summary: 'S4U2Proxy was refused by the issuance policy\'s delegation ' +
+      'rules: a protected user, the front end\'s subject groups or ' +
+      'semantics, or the user\'s authority for it (#186). Refused in both ' +
+      'modes.',
+    spec: 'KDC_ERR_BADOPTION (13) for the relationship, KDC_ERR_POLICY (12) ' +
+      'otherwise' },
   { code: 'STS-LDAP-0001',
     summary: 'An LDAP simple bind presented the reserved password this ' +
       'service refuses in every protocol.',
@@ -15936,6 +16026,19 @@ const CODES = [
       'OAuth 2.0 alone, a SAML assertion to one declared for OpenID Connect.',
     spec: 'each protocol\'s own refusal (access_denied, a SAML Responder ' +
       'status, KDC_ERR_POLICY, a WS-Trust fault)' },
+  { code: 'STS-XACML-0085',
+    summary: 'No issuance policy, not even the built-in one, gave a verdict ' +
+      'on who may act for whom (#186); the exchange was refused.',
+    spec: 'each protocol\'s own refusal' },
+  { code: 'STS-XACML-0086',
+    summary: 'The issuance gate\'s decider threw on an exchange question ' +
+      '(#186); the built-in policy decided instead.',
+    spec: '' },
+  { code: 'STS-XACML-0087',
+    summary: 'No issuance policy, not even the built-in one, answered the ' +
+      'may_act question for a subject who named a delegate (#186); the ' +
+      'subject\'s own choice was put in the token.',
+    spec: '' },
   // ===== XPEP ==============================================================
   { code: 'STS-XPEP-0001',
     summary: 'The error-code registry could not be loaded from ./error_codes ' +
@@ -17033,6 +17136,11 @@ const CODES = [
       'rather than saved, because the setting would fall back to a default ' +
       'nobody chose.',
     spec: 'none (a console refusal, drawn on the page)' },
+  { code: 'STS-ADMIN-0841',
+    summary: 'set-delegation-semantics was refused: a value is neither ' +
+      'delegation nor impersonation, nobody has that name, or the entry ' +
+      'could not be written (#186).',
+    spec: 'none (a console or management API refusal, HTTP 400)' },
   { code: 'STS-API-0001',
     summary: 'A management API request carried no Bearer access token while ' +
       'adminApi.authRequired is on.',
@@ -18345,7 +18453,8 @@ const CODES = [
       '{ ok: false, errors }' },
   { code: 'STS-REG-0194',
     summary: 'A write of a delegation policy attribute was refused (#108): ' +
-      'appTrustedToImpersonate that is not TRUE or FALSE, or an ' +
+      'appNotDelegated that is not TRUE or FALSE, delegation semantics ' +
+      'that are neither delegation nor impersonation (#186), or an ' +
       'appDelegationSubjectGroup value that is not a DN.',
     spec: 'console: the page\'s error list; /admin-api: HTTP 400' },
   { code: 'STS-REG-0195',

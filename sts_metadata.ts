@@ -1206,11 +1206,14 @@ const SPECS: Spec[] = [
     coverage: 'partial: Issue, Renew, Validate and Cancel over SOAP 1.1 and ' +
               '1.2. Request signatures are not verified. OnBehalfOf and ' +
               'ActAs ' +
-              'are decided by a delegation policy (#108) — only an ' +
-              'application entry may delegate, appAllowedToDelegateTo or ' +
-              'appAllowedToActOnBehalfOf must allow the AppliesTo, ' +
-              'OnBehalfOf needs appTrustedToImpersonate — and refused with a ' +
-              'wst:RequestFailed fault (section 11) in product mode; ' +
+              'are decided by the issuance policy (#186, the rules the token ' +
+              'exchange and Kerberos S4U share) — OnBehalfOf asks for ' +
+              'impersonation and ActAs for delegation, the entries\' ' +
+              'delegation semantics must allow it, the AppliesTo must be a ' +
+              'registered application the delegation relationships allow, ' +
+              'and a person requester needs delegation.actorRole — and ' +
+              'refused with a wst:RequestFailed fault (section 11) in ' +
+              'product mode; both elements at once are wst:InvalidRequest; ' +
               'development records what would have been refused. In PRODUCT ' +
               'mode (2026-09-12) every ' +
               'operation needs a credential — a UsernameToken verified ' +
@@ -1726,11 +1729,14 @@ const SPECS: Spec[] = [
     where: 'IETF', url: 'https://www.rfc-editor.org/rfc/rfc8693',
     coverage: 'partial: the grant is accepted at the token endpoint and the ' +
               'subject token becomes the identity in the issued token. A ' +
-              'delegation policy decides who may act for whom (#108): the ' +
-              'client and actor against appAllowedToDelegateTo / ' +
-              'appAllowedToActOnBehalfOf, appTrustedToImpersonate for an ' +
-              'exchange with no actor_token, the subject\'s groups and ' +
-              'stsNotDelegated, and a deny-only issuance-policy layer — ' +
+              'the issuance policy decides who may act for whom and as what ' +
+              '(#186): the semantics by precedence (this service\'s ' +
+              'exchange_semantics parameter, the actor\'s and subject\'s ' +
+              'defaults, delegation.defaultSemantics), the semantics each ' +
+              'party allows, the subject\'s authority for the application, ' +
+              'appAllowedToDelegateTo / appAllowedToActOnBehalfOf between S ' +
+              'and R, protected subjects, may_act, and exactly one ' +
+              'registered audience — ' +
               'invalid_request or invalid_target (section 2.2.2) in product ' +
               'mode, recorded in development. `act` nests (section 4.1); ' +
               '`may_act` (section 4.4) is issued from the person\'s own ' +
@@ -6163,7 +6169,7 @@ const ENDPOINTS: EndpointEntry[] = [
           '— and, since #108, the same model for WS-Trust OnBehalfOf / ActAs ' +
           'and the RFC 8693 token exchange on application entries ' +
           '(appAllowedToDelegateTo, appAllowedToActOnBehalfOf, ' +
-          'appDelegationSubjectGroup, appTrustedToImpersonate) with the ' +
+          'appDelegationSubjectGroup, appDelegationSemantics) with the ' +
           'people carrying stsNotDelegated or stsMayAct, ENFORCED in product ' +
           'mode and recorded as "would have been refused" in development. ' +
           'The permission register beside them is policy this service was ' +
@@ -8450,7 +8456,7 @@ const ENDPOINTS: EndpointEntry[] = [
           'ActAs and the RFC 8693 token exchange, as JSON: Kerberos\'s model ' +
           'on application entries — appAllowedToDelegateTo on the ' +
           'intermediary, appAllowedToActOnBehalfOf on the target, ' +
-          'appDelegationSubjectGroup and appTrustedToImpersonate — and the ' +
+          'appDelegationSubjectGroup and appDelegationSemantics — and the ' +
           'people carrying stsNotDelegated or stsMayAct. Three paged lists. ' +
           'Read only; the attributes are edited through ' +
           '/admin-api/applications/update and /admin-api/users/set-not-' +

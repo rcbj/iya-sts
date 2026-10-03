@@ -1110,7 +1110,10 @@ var config = {
 
   // --- Delegation ------------------------------------------------------
   delegation: {
-    maxRecords: 2000  // Maximum delegation acts held
+    maxRecords: 2000,                  // Maximum delegation acts held
+    defaultSemantics: "delegation",    // Default semantics of an act
+    protectedGroups: "",               // Groups never acted for
+    actorRole: "DELEGATION_ACTOR"  // Role a person needs to act for somebody
   },
 
   // --- Logout ----------------------------------------------------------

@@ -255,7 +255,12 @@ const JOBS = [
     exclusive: true },
   { file: 'ldp_vc_issuance.js',          browser: false },
   { file: 'ldp_vc_refresh.js',           browser: false },
-  { file: 'oauth2_sts_endpoints.js',     browser: false },
+  // OURS SINCE 2026-10-03 (#186): rcbj's decision that iya-sts moves away
+  // from the parent's copies. Taken from the parent's then-current file and
+  // changed HERE to detect appAllowedToDelegateTo (appTrustedToImpersonate
+  // was merged into appDelegationSemantics). Porting back is decided case by
+  // case; the de-vendoring ticket carries the rest.
+  { file: 'oauth2_sts_endpoints.js',     browser: false, local: true },
   // THE GATE IN FRONT OF THAT API, as opposed to what is behind it
   // (2026-09-09). `sts_admin_api_operations.js` walks every documented
   // operation; this one asserts that none of them can be reached
@@ -877,6 +882,12 @@ const JOBS = [
   // SIGNED IN WITH by MIT `kinit -k -t` and by `krb5_wire.js` using the
   // keytab's key — against the KDC at the published address, in both modes.
   { file: 'sts_kerberos_keytab.js',      browser: false, local: true },
+  // #186 (2026-10-03): Kerberos S4U2Self, S4U2Proxy, forwarded TGTs and
+  // PA-S4U-X509-USER over TCP 88, decided by the one delegation policy — the
+  // job builds its own services (create-service) and people, so it runs in
+  // either mode. It replaces, here, the parent's in-process delegation jobs,
+  // which lose their fixture rules without a directory (kerberos/CLAUDE.md).
+  { file: 'sts_kerberos_delegation.js',  browser: false, local: true },
   // A KERBEROS SIGN-OUT OUTLIVES THE NEXT AS EXCHANGE (#111, 2026-09-23):
   // over TCP 88, a TGT from before a global sign-out refused
   // KDC_ERR_TGT_REVOKED, a new AS exchange straight after it accepted, the

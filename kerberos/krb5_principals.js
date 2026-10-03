@@ -1491,15 +1491,10 @@ function register(def) {
     requiresPreAuth: def.requiresPreAuth !== false,
     revoked: !!def.revoked,
     passwordExpired: !!def.passwordExpired,
-    okAsDelegate: !!def.okAsDelegate,
-    // Delegation, kept as two SEPARATE lists because they are configured on
-    // opposite accounts and conflating them would hide the only thing about
-    // RBCD worth knowing.
-    trustedToAuthenticateForDelegation:
-      !!def.trustedToAuthenticateForDelegation,
-    notDelegated: !!def.notDelegated,
-    allowedToDelegateTo: def.allowedToDelegateTo || [],
-    allowedToActOnBehalfOf: def.allowedToActOnBehalfOf || [],
+    // DELEGATION IS NOT HERE SINCE #186: ok-as-delegate, NOT_DELEGATED,
+    // protocol transition and the two msDS-* lists are the common controls
+    // on the directory's entries (`kerberos/krb5_delegation.ts`), and a
+    // fixture's rules are seeds for them (delegationSeeds()).
     description: def.description,
     // Whether findOrCreateUser() made this one at runtime rather than it being
     // configured. Reported by GET /krb5/principals, because a table that grows
@@ -3034,8 +3029,9 @@ function lookupUser(nameComponents, realm) {
 // signed out and never auto-created, so there is nothing a record would carry
 // that the application entry does not. It is built afresh per lookup over the
 // configured account where one exists — so a stored key for the acceptor's own
-// SPN keeps that account's `okAsDelegate`, delegation rules and PAC identity
-// and replaces only its KEY — and over a plain service shape where none does.
+// SPN keeps that account's PAC identity and replaces only its KEY — and over
+// a plain service shape where none does. (Its delegation was never the
+// record's to keep: since #186 it is the application entry's.)
 //
 // **THIS REALM'S OWN KRBTGT IS ASKED TOO, SINCE #169 (2026-09-23)**, through
 // the key source's `krbtgtKeys()` rather than `serviceKeys()`: the krbtgt key
@@ -3088,11 +3084,6 @@ function storedService(nameComponents, realm) {
     requiresPreAuth: true,
     revoked: false,
     passwordExpired: false,
-    okAsDelegate: false,
-    trustedToAuthenticateForDelegation: false,
-    notDelegated: false,
-    allowedToDelegateTo: [],
-    allowedToActOnBehalfOf: [],
     description: 'a service principal with a stored random key',
     autoCreated: false,
     pac: { rid: 1100, primaryGroupRid: RID.DOMAIN_COMPUTERS,
@@ -3706,141 +3697,133 @@ function etypeInfo2For(principal, requested) {
  */
 function delegationPolicy() {
   log.debug('Entering delegationPolicy().');
+  const ctx = current();
   const pairs = [];
   const accounts = [];
-  const all = Array.from(principals.values());
-
-  // Does this KDC know the principal an attribute names? A misspelt SPN in
-  // either list is the ordinary configuration mistake and it fails at TGS time
-  // with an error about authorization rather than about spelling, so the table
-  // says so here instead. Both lists hold bare SPNs with no realm — which is
-  // what the KDC compares against — so the account's own realm is what to look
-  // them up in.
-  const knows = function (spn, realm) {
-    log.debug("Entering knows().");
-    log.debug("Leaving knows().");
-    return !!find(String(spn || '').split('/'), realm);
+  // THE ENTRIES, since #186: a Kerberos service's delegation is the common
+  // controls on its application entry (identifier `SPN@REALM`), read here
+  // LAZILY — `common/applications.js` is no load-time dependency of the
+  // principal table. In a process with no directory the registry answers
+  // empty, and so does this.
+  const applications = require('../common/applications');
+  const valuesOf = function (row, attribute) {
+    log.debug("Entering valuesOf().");
+    const raw = row && row.fields ? row.fields[attribute] : undefined;
+    log.debug("Leaving valuesOf().");
+    return (Array.isArray(raw) ? raw : (raw === undefined || raw === null ||
+      raw === '' ? [] : [raw])).map(String).filter(Boolean);
   };
-
-  all.forEach(function (principal) {
-    const name = principal.name.join('/');
-
+  const flag = function (row, attribute) {
+    log.debug("Entering flag().");
+    log.debug("Leaving flag().");
+    return (valuesOf(row, attribute)[0] || '').toUpperCase() === 'TRUE';
+  };
+  const suffix = '@' + ctx.REALM;
+  const services = (applications.list() || []).filter(function (row) {
+    return row && String(row.identifier || '').endsWith(suffix) &&
+      /\//.test(String(row.identifier || ''));
+  });
+  const known = function (identifier) {
+    log.debug("Entering known().");
+    log.debug("Leaving known().");
+    return !!find(String(identifier).replace(/@[^@]*$/, '').split('/'),
+                  ctx.REALM);
+  };
+  services.forEach(function (row) {
+    const id = String(row.identifier);
+    const semantics = valuesOf(row, 'appDelegationSemantics')
+      .map(function (one) { return one.toLowerCase(); });
+    const impersonates = semantics.indexOf('impersonation') >= 0;
     // CLASSIC — the permission is on THIS account and names what it may reach.
-    (principal.allowedToDelegateTo || []).forEach(function (target) {
-      const targetPrincipal = find(String(target).split('/'), principal.realm);
+    valuesOf(row, 'appAllowedToDelegateTo').forEach(function (target) {
       const warnings = [];
-      if (!principal.trustedToAuthenticateForDelegation) {
-        warnings.push('This account is NOT trusted for protocol transition ' +
-          '(TRUSTED_TO_AUTHENTICATE_FOR_DELEGATION), so the ticket it gets ' +
+      if (!impersonates) {
+        warnings.push('This account does not allow IMPERSONATION ' +
+          '(appDelegationSemantics, which replaced ' +
+          'TRUSTED_TO_AUTHENTICATE_FOR_DELEGATION), so the ticket it gets ' +
           'back from S4U2Self is not FORWARDABLE — and classic constrained ' +
           'delegation requires forwardable evidence. S4U2Self will succeed ' +
           'and S4U2Proxy will then fail complaining about the evidence ' +
           'ticket, which is two steps from the attribute that caused it. ' +
-          'Resource-based delegation would not have needed either flag.');
+          'Resource-based delegation would not have needed it.');
       }
-      if (!targetPrincipal) {
-        warnings.push('This KDC has no principal called ' + target + ' in ' +
-          principal.realm + '. The attribute names a SERVICE and the SPN has ' +
-          'to match exactly; a ticket request for a name this KDC does not ' +
-          'know is refused before the authorization is ever consulted.');
+      if (!known(target)) {
+        warnings.push('This KDC has no principal called ' + target + '. ' +
+          'The attribute names a SERVICE by its identifier (SPN@REALM) and ' +
+          'has to match exactly; a ticket request for a name this KDC does ' +
+          'not know is refused before the policy is ever asked.');
       }
       pairs.push({
         mechanism: 'classic',
-        // The delegation store's own type id, so the observed table and this
-        // one can be read against each other without a lookup written twice.
         type: 'krb5-s4u2proxy-classic',
-        frontEnd: name + '@' + principal.realm,
-        target: target + '@' + principal.realm,
-        realm: principal.realm,
-        attribute: 'msDS-AllowedToDelegateTo',
-        // WHICH ACCOUNT the permission lives on. It is the whole difference
-        // between the two mechanisms and it is the column to read first.
-        setOn: name + '@' + principal.realm,
+        frontEnd: id,
+        target: /@/.test(target) ? target : target + suffix,
+        realm: ctx.REALM,
+        attribute: 'appAllowedToDelegateTo',
+        setOn: id,
         setOnRole: 'front end',
         requires: 'a FORWARDABLE evidence ticket, which S4U2Self only ' +
-                  'returns to an account flagged ' +
-                  'TRUSTED_TO_AUTHENTICATE_FOR_DELEGATION',
-        targetKnown: !!targetPrincipal,
+                  'returns to an account allowing impersonation ' +
+                  '(appDelegationSemantics)',
+        targetKnown: known(target),
         warning: warnings.join(' '),
-        note: principal.description || ''
+        note: String(row.description || '')
       });
     });
-
-    // RESOURCE-BASED — the permission is on THIS account and names who may act
-    // on its behalf, so the pair is built the other way round.
-    (principal.allowedToActOnBehalfOf || []).forEach(function (requester) {
-      const requesterPrincipal = find(String(requester).split('/'),
-                                      principal.realm);
+    // RESOURCE-BASED — the permission is on THIS account and names who may
+    // act on its behalf, so the pair is built the other way round.
+    valuesOf(row, 'appAllowedToActOnBehalfOf').forEach(function (requester) {
       const warnings = [];
-      if (!requesterPrincipal) {
-        warnings.push('This KDC has no principal called ' + requester + ' in ' +
-          principal.realm + '. Whoever the attribute meant to authorize ' +
-          'cannot present a ticket here under that name.');
+      if (/\//.test(requester) && !known(requester)) {
+        warnings.push('This KDC has no principal called ' + requester + '. ' +
+          'Whoever the attribute meant to authorize cannot present a ticket ' +
+          'here under that name.');
       }
-      // The PA-PAC-OPTIONS requirement is NOT a warning and used to be pushed
-      // here unconditionally, which meant every resource-based pair reported
-      // something missing for ever and the field could never say "nothing is".
-      // It is a property of the mechanism, so it belongs in `requires` — where
-      // it already was — and a warning that fires on every row is a warning
-      // nobody reads by the third one.
       pairs.push({
         mechanism: 'rbcd',
         type: 'krb5-s4u2proxy-rbcd',
-        frontEnd: requester + '@' + principal.realm,
-        target: name + '@' + principal.realm,
-        realm: principal.realm,
-        attribute: 'msDS-AllowedToActOnBehalfOfOtherIdentity',
-        setOn: name + '@' + principal.realm,
+        frontEnd: /@/.test(requester) ? requester : requester + suffix,
+        target: id,
+        realm: ctx.REALM,
+        attribute: 'appAllowedToActOnBehalfOf',
+        setOn: id,
         setOnRole: 'back end',
         requires: 'PA-PAC-OPTIONS with the resource-based bit. It needs NO ' +
                   'forwardable evidence and no flag on the front end, which ' +
                   'is why it is the easier path',
-        targetKnown: knows(name, principal.realm),
+        targetKnown: known(id),
         warning: warnings.join(' '),
-        note: principal.description || ''
+        note: String(row.description || '')
       });
     });
-
-    // The account-level flags. Reported whether or not a pair names the
-    // account, because two of the three are what STOP delegation rather than
-    // permit it, and an account that appears in no pair is precisely the one
-    // somebody is wondering about.
-    if (principal.notDelegated ||
-        principal.trustedToAuthenticateForDelegation ||
-        principal.okAsDelegate) {
+    const notDelegated = flag(row, 'appNotDelegated');
+    const okAsDelegate = flag(row, 'krb5TrustedForDelegation');
+    if (notDelegated || impersonates || okAsDelegate) {
       accounts.push({
-        principal: name + '@' + principal.realm,
-        realm: principal.realm,
-        notDelegated: !!principal.notDelegated,
-        trustedToAuthenticateForDelegation:
-          !!principal.trustedToAuthenticateForDelegation,
-        okAsDelegate: !!principal.okAsDelegate,
-        autoCreated: !!principal.autoCreated,
-        description: principal.description || '',
-        // What each flag DOES, said once here rather than in the page: these
-        // are the three sentences people get wrong, and the last of them is the
-        // one that is not a control at all.
+        principal: id,
+        realm: ctx.REALM,
+        notDelegated: notDelegated,
+        trustedToAuthenticateForDelegation: impersonates,
+        okAsDelegate: okAsDelegate,
+        autoCreated: false,
+        description: String(row.description || ''),
         effects: [
-          principal.notDelegated
-            ? 'NOT_DELEGATED — "sensitive and cannot be delegated". The KDC ' +
-              'refuses this account a forwardable ticket at all, so no ' +
-              'service anywhere can forward its TGT. It is the one control ' +
-              'that lives on the account being PROTECTED rather than on any ' +
-              'service, which is what makes it work no matter which service ' +
-              'the user visits.'
+          notDelegated
+            ? 'appNotDelegated — nobody may act for this account, in any ' +
+              'protocol, and the KDC gives it no forwardable ticket.'
             : '',
-          principal.trustedToAuthenticateForDelegation
-            ? 'TRUSTED_TO_AUTHENTICATE_FOR_DELEGATION — protocol transition. ' +
-              'This account gets a FORWARDABLE ticket out of S4U2Self, which ' +
-              'is what classic constrained delegation then needs as ' +
+          impersonates
+            ? 'appDelegationSemantics allows impersonation — protocol ' +
+              'transition. This account gets a FORWARDABLE ticket out of ' +
+              'S4U2Self, which classic constrained delegation then needs as ' +
               'evidence. Without it S4U2Self still works and simply returns ' +
               'a ticket that is not forwardable.'
             : '',
-          principal.okAsDelegate
-            ? 'ok-as-delegate — ADVICE TO THE CLIENT and not a control. The ' +
-              'flag on a service ticket tells the client this service may be ' +
-              'trusted with forwarded credentials; a client is free to ' +
-              'ignore it, and this KDC enforces nothing by it.'
+          okAsDelegate
+            ? 'krb5TrustedForDelegation — UNCONSTRAINED delegation. Its ' +
+              'tickets carry ok-as-delegate, ADVICE to a client that it may ' +
+              'forward its TGT here; a protected person\'s TGT is never ' +
+              'forwardable, so it never comes.'
             : ''
         ].filter(Boolean)
       });
@@ -3848,9 +3831,7 @@ function delegationPolicy() {
   });
 
   // Stable order, so two readings of the page put the rows in the same places:
-  // by target, then by front end. Not by insertion, which is the order the
-  // definitions happen to be written in and would change under an edit that
-  // changed nothing else.
+  // by target, then by front end.
   pairs.sort(function (a, b) {
     return a.target.localeCompare(b.target) ||
            a.frontEnd.localeCompare(b.frontEnd);
@@ -3862,6 +3843,78 @@ function delegationPolicy() {
   log.debug('Leaving delegationPolicy(). ' + pairs.length + ' pair(s), ' +
             accounts.length + ' account(s).');
   return { pairs: pairs, accounts: accounts };
+}
+
+// ---------------------------------------------------------------------------
+// THE FIXTURES' DELEGATION, AS SEEDS FOR THE ENTRIES (#186).
+//
+// Until #186 the fixture accounts carried their own msDS-* rules and the KDC
+// read them off this table. Delegation is the common controls on the
+// directory's entries now (rcbj: "entries only"), so in DEVELOPMENT — the
+// fixtures exist only there — each rule becomes a value a seed writes onto
+// the service's application entry, in the common vocabulary:
+//
+//   okAsDelegate                          krb5TrustedForDelegation TRUE
+//   trustedToAuthenticateForDelegation    appDelegationSemantics delegation,
+//                                         impersonation
+//   allowedToDelegateTo                   appAllowedToDelegateTo SPN@REALM
+//   allowedToActOnBehalfOf                appAllowedToActOnBehalfOf SPN@REALM
+//
+// Every fixture SERVICE is seeded, with or without rules: the policy refuses
+// a target no application registers. The person `sensitive` (NOT_DELEGATED)
+// is the directory's own demo seed.
+// `kerberos/krb5_delegation.ts` writes these when it is first asked in a
+// realm, filling only what an entry does not already hold.
+// ---------------------------------------------------------------------------
+/**
+ * Returns the development fixtures' delegation rules as seeds for the
+ * services' application entries, in the ambient realm; none in product.
+ *
+ * @returns `[{ identifier, fields }]`
+ */
+function delegationSeeds() {
+  log.debug('Entering delegationSeeds().');
+  const ctx = current();
+  if (!ctx.SEEDS_DEMO) {
+    log.debug('Leaving delegationSeeds(). Product: none.');
+    return [];
+  }
+  const defs = definitionsFor(ctx);
+  const service = configuredServiceDefinition(ctx);
+  const all = defs.fixtures.concat(service ? [service] : []);
+  const out = [];
+  const seen = {};
+  all.forEach(function (def) {
+    if (!def || def.type === 1 || !def.name || def.name[0] === 'krbtgt') {
+      return;
+    }
+    const identifier = def.name.join('/') + '@' + (def.realm || ctx.REALM);
+    const fields = {};
+    if (def.okAsDelegate) {
+      fields.krb5TrustedForDelegation = 'TRUE';
+    }
+    if (def.trustedToAuthenticateForDelegation) {
+      fields.appDelegationSemantics = ['delegation', 'impersonation'];
+    }
+    if ((def.allowedToDelegateTo || []).length) {
+      fields.appAllowedToDelegateTo = def.allowedToDelegateTo.map(
+        function (one) { return one + '@' + ctx.REALM; });
+    }
+    if ((def.allowedToActOnBehalfOf || []).length) {
+      fields.appAllowedToActOnBehalfOf = def.allowedToActOnBehalfOf.map(
+        function (one) { return one + '@' + ctx.REALM; });
+    }
+    // EVERY fixture service, rules or not: the policy refuses a target no
+    // application registers, so a back end with no rules of its own still
+    // needs its entry before anybody delegates to it.
+    if (!seen[identifier]) {
+      seen[identifier] = true;
+      out.push({ identifier: identifier, fields: fields,
+                 description: def.description || '' });
+    }
+  });
+  log.debug('Leaving delegationSeeds(). ' + out.length);
+  return out;
 }
 
 /**
@@ -3991,6 +4044,7 @@ module.exports = {
   publishedDefault: publishedDefault,
   find: find,
   delegationPolicy: delegationPolicy,
+  delegationSeeds: delegationSeeds,
   findOrCreateUser: findOrCreateUser,
   findOrCreateService: findOrCreateService,
   reservedUnknown: reservedUnknown,

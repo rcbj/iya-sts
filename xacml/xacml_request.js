@@ -111,7 +111,68 @@ const VOCABULARY = Object.freeze({
   // or `api` (a management-API call relayed with ?cell=).
   PURPOSE: 'urn:sts:xacml:purpose',
   // environment: the trust realm the question is asked in.
-  REALM: 'urn:sts:xacml:realm'
+  REALM: 'urn:sts:xacml:realm',
+  // THE FACTS OF AN EXCHANGE QUESTION (#186): who may act for whom, and as
+  // what, at an RFC 8693 token exchange, a WS-Trust OnBehalfOf / ActAs or a
+  // Kerberos S4U request — one vocabulary for the three, so one policy
+  // decides all of them. Gathered by `common/delegation_policy.ts`; nothing
+  // here decides. S is the application the subject token was issued for, R
+  // the one the new token is asked for, the actor the party acting (in the
+  // intermediary-subject category). Every party is named by its application
+  // identifier, or a person's subject, so the policy compares them itself.
+  //
+  // access-subject: the subject is protected by its own entry (Kerberos's
+  // NOT_DELEGATED, `stsNotDelegated` / `appNotDelegated`).
+  EXCHANGE_SUBJECT_NOT_DELEGATED:
+    'urn:sts:xacml:exchange:subject-not-delegated',
+  // access-subject: the subject's groups, each as its cn AND its normalised
+  // DN, so a protected group or an actor's subject group matches either way.
+  EXCHANGE_SUBJECT_GROUP: 'urn:sts:xacml:exchange:subject-group',
+  // access-subject / intermediary-subject: the semantics this party allows
+  // (`delegation`, `impersonation`), and its default. Absent is the policy's
+  // to read: the built-in rules read an actor's empty set as delegation
+  // only, a subject's as both.
+  EXCHANGE_ALLOWED_SEMANTICS: 'urn:sts:xacml:exchange:allowed-semantics',
+  EXCHANGE_DEFAULT_SEMANTICS: 'urn:sts:xacml:exchange:default-semantics',
+  // intermediary-subject: `user` or `application`; whether an entry backs it
+  // in this realm; the targets it may reach as somebody else
+  // (appAllowedToDelegateTo, resolved); the people it may act for
+  // (appDelegationSubjectGroup, normalised DNs).
+  EXCHANGE_ACTOR_KIND: 'urn:sts:xacml:exchange:actor-kind',
+  EXCHANGE_ACTOR_REGISTERED: 'urn:sts:xacml:exchange:actor-registered',
+  EXCHANGE_ACTOR_DELEGATES_TO: 'urn:sts:xacml:exchange:actor-delegates-to',
+  EXCHANGE_ACTOR_SUBJECT_GROUP: 'urn:sts:xacml:exchange:actor-subject-group',
+  // resource: S, and what it requires and delegates to.
+  EXCHANGE_SOURCE: 'urn:sts:xacml:exchange:source',
+  EXCHANGE_SOURCE_REQUIRED_ROLE:
+    'urn:sts:xacml:exchange:source-required-role',
+  EXCHANGE_SOURCE_DELEGATES_TO: 'urn:sts:xacml:exchange:source-delegates-to',
+  // resource: R — how many targets were asked for (an integer), whether R is
+  // a registered application, what it requires, and whom it accepts as an
+  // actor (appAllowedToActOnBehalfOf, resolved). R itself is resource-id.
+  EXCHANGE_TARGET_COUNT: 'urn:sts:xacml:exchange:target-count',
+  EXCHANGE_TARGET_REGISTERED: 'urn:sts:xacml:exchange:target-registered',
+  EXCHANGE_TARGET_REQUIRED_ROLE:
+    'urn:sts:xacml:exchange:target-required-role',
+  EXCHANGE_TARGET_ACCEPTS: 'urn:sts:xacml:exchange:target-accepts',
+  // action: the semantics the REQUEST asked for (the extension parameter,
+  // the WS-Trust element, the Kerberos mechanism), and the semantics the
+  // choosing question settled on.
+  EXCHANGE_REQUESTED_SEMANTICS:
+    'urn:sts:xacml:exchange:requested-semantics',
+  EXCHANGE_SEMANTICS: 'urn:sts:xacml:exchange:semantics',
+  // environment: the subject token carried may_act (RFC 8693 section 4.4),
+  // and whether it names this actor — an identity comparison the door makes.
+  EXCHANGE_MAY_ACT_PRESENT: 'urn:sts:xacml:exchange:may-act-present',
+  EXCHANGE_MAY_ACT_NAMES_ACTOR: 'urn:sts:xacml:exchange:may-act-names-actor',
+  // environment: the groups whose members are never acted for — the
+  // realm's `delegation.protectedGroups` and the console roster — as cn and
+  // normalised DN.
+  EXCHANGE_PROTECTED_GROUP: 'urn:sts:xacml:exchange:protected-group',
+  // #186: the party the subject NAMED as their delegate (`stsMayAct` on a
+  // person, `appMayAct` on an application), as the `may_act` claim would
+  // name it — the fact the `assign-may-act` question decides on.
+  EXCHANGE_SUBJECT_DELEGATE: 'urn:sts:xacml:exchange:subject-delegate'
 });
 
 // The principal types a request may name. Anything else is a person, which
@@ -340,6 +401,75 @@ class AuthorizationRequest {
     this.environment(VOCABULARY.REALM, one(given.realm));
     this.environment(VOCABULARY.PURPOSE, one(given.purpose));
     log.debug("Leaving AuthorizationRequest.transfer().");
+    return this;
+  }
+
+  // THE FACTS OF AN EXCHANGE QUESTION (#186). `facts` (each optional):
+  //   subject { id, kind, roles, notDelegated, groups, semantics,
+  //             defaultSemantics }
+  //   actor   { id, kind, registered, roles, semantics, defaultSemantics,
+  //             delegatesTo, subjectGroups }
+  //   source  { id, requiredRoles, delegatesTo }   (S; id '' when unknown)
+  //   target  { id, count, registered, requiredRoles, accepts }   (R)
+  //   requestedSemantics, semantics, mayActPresent, mayActNamesActor,
+  //   protectedGroups
+  // An unknown identifier is left out rather than sent as '', so no absent
+  // party can ever compare equal to another. Booleans are always sent.
+  exchange(facts) {
+    const given = facts || {};
+    const V = VOCABULARY;
+    const I = model.CATEGORY.INTERMEDIARY_SUBJECT;
+    const one = function (value) {
+      return value ? [String(value)] : [];
+    };
+    const list = function (values) {
+      return (values || []).map(String).filter(function (v) { return !!v; });
+    };
+    const subject = given.subject || {};
+    const actor = given.actor || {};
+    const source = given.source || {};
+    const target = given.target || {};
+    this.subject(model.ATTRIBUTE.SUBJECT_ID, one(subject.id));
+    this.subject(V.SUBJECT_KIND, [subject.kind === 'application'
+      ? 'application' : 'user']);
+    this.subject(V.ROLE, list(subject.roles));
+    this.subject(V.EXCHANGE_SUBJECT_NOT_DELEGATED, [!!subject.notDelegated],
+                 model.TYPE.BOOLEAN);
+    this.subject(V.EXCHANGE_SUBJECT_GROUP, list(subject.groups));
+    this.subject(V.EXCHANGE_ALLOWED_SEMANTICS, list(subject.semantics));
+    this.subject(V.EXCHANGE_DEFAULT_SEMANTICS, one(subject.defaultSemantics));
+    this.subject(V.EXCHANGE_SUBJECT_DELEGATE, list(subject.delegates));
+    this.attribute(I, model.ATTRIBUTE.SUBJECT_ID, one(actor.id));
+    this.attribute(I, V.EXCHANGE_ACTOR_KIND, [actor.kind === 'user'
+      ? 'user' : 'application']);
+    this.attribute(I, V.EXCHANGE_ACTOR_REGISTERED, [!!actor.registered],
+                   model.TYPE.BOOLEAN);
+    this.attribute(I, V.ROLE, list(actor.roles));
+    this.attribute(I, V.EXCHANGE_ALLOWED_SEMANTICS, list(actor.semantics));
+    this.attribute(I, V.EXCHANGE_DEFAULT_SEMANTICS,
+                   one(actor.defaultSemantics));
+    this.attribute(I, V.EXCHANGE_ACTOR_DELEGATES_TO, list(actor.delegatesTo));
+    this.attribute(I, V.EXCHANGE_ACTOR_SUBJECT_GROUP,
+                   list(actor.subjectGroups));
+    this.resource(model.ATTRIBUTE.RESOURCE_ID, one(target.id));
+    this.resource(V.EXCHANGE_TARGET_COUNT, [Number(target.count) || 0],
+                  model.TYPE.INTEGER);
+    this.resource(V.EXCHANGE_TARGET_REGISTERED, [!!target.registered],
+                  model.TYPE.BOOLEAN);
+    this.resource(V.EXCHANGE_TARGET_REQUIRED_ROLE, list(target.requiredRoles));
+    this.resource(V.EXCHANGE_TARGET_ACCEPTS, list(target.accepts));
+    this.resource(V.EXCHANGE_SOURCE, one(source.id));
+    this.resource(V.EXCHANGE_SOURCE_REQUIRED_ROLE,
+                  list(source.requiredRoles));
+    this.resource(V.EXCHANGE_SOURCE_DELEGATES_TO, list(source.delegatesTo));
+    this.action(V.EXCHANGE_REQUESTED_SEMANTICS,
+                one(given.requestedSemantics));
+    this.action(V.EXCHANGE_SEMANTICS, one(given.semantics));
+    this.environment(V.EXCHANGE_MAY_ACT_PRESENT, [!!given.mayActPresent],
+                     model.TYPE.BOOLEAN);
+    this.environment(V.EXCHANGE_MAY_ACT_NAMES_ACTOR,
+                     [!!given.mayActNamesActor], model.TYPE.BOOLEAN);
+    this.environment(V.EXCHANGE_PROTECTED_GROUP, list(given.protectedGroups));
     return this;
   }
 

@@ -1,0 +1,331 @@
+---
+title: Delegation and impersonation
+---
+
+# Delegation and impersonation
+
+Three of the protocols iya-sts speaks let one party obtain a token **about
+somebody else**:
+
+* the **OAuth 2.0 token exchange**
+  ([RFC 8693](https://www.rfc-editor.org/rfc/rfc8693));
+* **WS-Trust**'s `OnBehalfOf` and `ActAs`
+  ([1.3](https://docs.oasis-open.org/ws-sx/ws-trust/v1.3/ws-trust.html),
+  [1.4](https://docs.oasis-open.org/ws-sx/ws-trust/v1.4/ws-trust.html));
+* **Kerberos**' two Microsoft extensions, S4U2Self and S4U2Proxy
+  ([MS-SFU](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-sfu/)),
+  and a forwarded ticket-granting ticket.
+
+None of the three specifications says who may do this. RFC 8693 section 5
+leaves it to "the policy of the authorization server", and WS-Trust describes
+only what a requester *asks for*. Active Directory's answer for Kerberos is a
+handful of account attributes.
+
+iya-sts answers the question **once, for all three protocols**:
+
+* the same settings on the same directory entries;
+* the same two questions asked of the same
+  [XACML issuance policy](xacml.html);
+* the same record of every act, issued or refused, on Monitoring →
+  Delegation.
+
+This page describes that model, then what each protocol adds.
+
+## The four parties
+
+Every act names four parties. Each protocol finds them in its own message:
+
+| Party | What it is | OAuth 2.0 token exchange | WS-Trust | Kerberos |
+|---|---|---|---|---|
+| **Subject** | who the new token is about | the `subject_token`'s subject | the subject of the token inside `OnBehalfOf` / `ActAs` | the user named in S4U2Self (`PA-FOR-USER` or `PA-S4U-X509-USER`), or the client of S4U2Proxy's evidence ticket |
+| **Actor** | who is asking | the `actor_token`'s subject; without one, the authenticated client | the requester (whoever authenticated the RST) | S4U2Self: the service asking for a ticket to itself; S4U2Proxy: the front end presenting the evidence ticket |
+| **S** (source) | the application the subject's token was issued *for* | the `subject_token`'s `aud`, else its `client_id` / `azp` | the delegated assertion's `Audience` | the service the evidence ticket was issued for |
+| **R** (target) | the application the new token is *for* | the one `audience` or `resource` | the `AppliesTo` | the service named in the TGS-REQ |
+
+**Parties are entries in the directory.**
+* An application is named by its identifier, client ID or registered
+  audience, `AppliesTo` or service principal name.
+* A person is named by their username.
+
+Every target is resolved to the application that registered it before
+anything is compared. A target that no application registers is refused.
+
+## Delegation, impersonation, and acting for yourself
+
+An act has one of three **semantics**:
+
+* **Delegation.** The actor acts for the subject *visibly*.
+  * The issued token names the actor: RFC 8693's `act` claim, or a SAML 2.0
+    Delegation Restriction condition.
+  * Kerberos S4U2Proxy's ticket is the front end's request on the user's
+    behalf.
+  * `act` claims **nest**. A token that already carried an actor keeps it
+    under the new one (RFC 8693 section 4.1).
+* **Impersonation.** The actor obtains a token that is simply the subject's.
+  * Nothing in the token names the actor.
+  * A prior `act` is still kept. An exchange never turns a delegated token
+    into an ordinary one.
+* **Self.** The actor *is* the subject, or is S keeping the token for S.
+  * Nobody is acted for, and nothing beyond the protocol's own checks is
+    needed.
+  * A self exchange that names no target is for the subject token's own
+    audience.
+
+**The policy chooses the semantics**, by this precedence:
+
+1. what the **request** asks for:
+   * RFC 8693: this service's extension parameter
+     `exchange_semantics=delegation|impersonation`;
+   * WS-Trust: the element (`ActAs` is delegation, `OnBehalfOf` is
+     impersonation);
+   * Kerberos: the extension (S4U2Self is impersonation, S4U2Proxy is
+     delegation);
+2. the **actor's** default (`appDefaultDelegationSemantics`);
+3. the **subject's** default (`stsDefaultDelegationSemantics`);
+4. the realm's `delegation.defaultSemantics` (**delegation** unless set).
+
+A request may only ask for semantics that **both** the actor and the subject
+allow:
+* the actor's `appDelegationSemantics` — empty means delegation only;
+* the subject's `stsDelegationSemantics` — empty means either.
+
+## The common controls
+
+These are the same for all three protocols. They live on the directory
+entries, so they can be edited from the console, through `/admin-api`, or with
+an `ldapmodify`.
+
+**On an application entry** (Directory → Applications → the application):
+
+| Attribute | Set on | Meaning | Active Directory analogue |
+|---|---|---|---|
+| `appAllowedToDelegateTo` | S | Applications S may hand a subject on to. For an impersonation, the applications the *actor* may reach. | `msDS-AllowedToDelegateTo` |
+| `appAllowedToActOnBehalfOf` | R | Applications **and people** R accepts acting for others: resource-based delegation, set by the target's owner. | `msDS-AllowedToActOnBehalfOfOtherIdentity` |
+| `appDelegationSemantics` | the actor | Semantics it may use, `delegation` and/or `impersonation`. Empty means delegation only. | `TRUSTED_TO_AUTHENTICATE_FOR_DELEGATION` (impersonation) |
+| `appDefaultDelegationSemantics` | the actor | Its semantics when the request names none. | — |
+| `appDelegationSubjectGroup` | the actor | Groups, by DN, whose members it may act for. Empty means anybody not protected. | — |
+| `appNotDelegated` | an application as subject | Never acted for. | `NOT_DELEGATED` |
+| `appMayAct` | an application as subject | The DN of one party it names as its delegate: tokens about it carry `may_act` naming that party, as the issuance policy assigns it. | — |
+| `krb5TrustedForDelegation` | a Kerberos service | **Kerberos only, off by default.** Unconstrained delegation: it may receive and use a user's forwarded TGT. | `TRUSTED_FOR_DELEGATION` |
+| `appAllowedProtocol` | any application | Protocols the application is used with. The controls above apply to whichever of WS-Trust, OAuth 2.0 and Kerberos it lists; there are no per-protocol copies. | — |
+
+**On a person's entry** (Directory → People → the person, *Delegation*):
+
+| Attribute | Meaning |
+|---|---|
+| `stsNotDelegated` | Never acted for, by anybody (`NOT_DELEGATED`). |
+| `stsDelegationSemantics` | Semantics this person may be acted for with. Empty means either. |
+| `stsDefaultDelegationSemantics` | Their default, after the actor's. |
+| `stsMayAct` | One party this person names as their delegate. Their access tokens (and WS-Trust JWTs) carry RFC 8693 section 4.4's `may_act` claim naming it — the issuance policy's `assign-may-act` question assigns it, and a realm's policy may name another party or none. |
+
+**Realm settings** (Protocols → OAuth 2.0 → Delegation, and `GET
+/admin-api/config`):
+
+| Setting | Environment variable | Default | What it does |
+|---|---|---|---|
+| `delegation.defaultSemantics` | `STS_DELEGATION_DEFAULT_SEMANTICS` | `delegation` | The last word on semantics. |
+| `delegation.protectedGroups` | `STS_DELEGATION_PROTECTED_GROUPS` | (none) | Groups whose members are never acted for: Active Directory's *Protected Users*. The console's Admin Read and Admin Write rosters are always protected as well. |
+| `delegation.actorRole` | `STS_DELEGATION_ACTOR_ROLE` | `DELEGATION_ACTOR` | The role a **person** needs before they may act for anybody. An application needs no role. |
+| `delegation.maxRecords` | `DELEGATION_MAX_RECORDS` | `2000` | How many acts Monitoring → Delegation keeps. |
+
+All four are runtime settings, per realm. This table is a copy: the live
+values are on the console page and at `GET /admin-api/config`.
+
+## How an act is decided
+
+The issuance policy refuses in this order. The first refusal that applies is
+the one the client hears.
+
+1. **`may_act` names somebody else.** The subject's token carries `may_act`
+   (RFC 8693 section 4.4) and it does not name the actor. Refused **in every
+   mode**: the token itself says no.
+2. **More than one target.** A token is issued for exactly one.
+3. **The target is not registered.** No application in the realm registers it.
+4. **No target**, unless the act is self.
+5. **The subject is protected**: `stsNotDelegated` or `appNotDelegated`, a
+   member of a `delegation.protectedGroups` group, or on the console roster.
+6. **The actor is unknown**, or is a person without the role
+   `delegation.actorRole` names.
+7. **The semantics are not allowed** by the actor or the subject.
+8. **The subject is outside the actor's `appDelegationSubjectGroup`**, unless
+   the subject's `may_act` names the actor.
+9. **The subject has no authority.** It holds none of the roles the
+   application requires (`appRequiredRole`): S for a delegation, R otherwise.
+10. **The relationship does not hold.**
+    * **Delegation:** S must delegate to R (`appAllowedToDelegateTo` on S, or
+      `appAllowedToActOnBehalfOf` on R). In addition, the actor must be S, R,
+      or a party R accepts by name.
+    * **Impersonation:** the actor must reach R: R is the actor itself, R is
+      on the actor's `appAllowedToDelegateTo`, or R accepts the actor.
+
+Everything else is allowed, with the semantics chosen above and R as the
+audience.
+
+### Product and development mode
+
+**Product mode refuses.** **Development mode** asks the same questions,
+issues the token anyway, and writes on the act *"WOULD HAVE BEEN REFUSED in
+product: …"*, so a client under test still gets a working token and the
+operator sees what would break.
+
+Two refusals hold **in both modes**, because they are not policy but the
+request contradicting itself:
+* a `may_act` mismatch;
+* a WS-Trust request carrying both `OnBehalfOf` and `ActAs`.
+
+**The KDC refuses in both modes**, as it always has: in development its
+fixture accounts carry delegation settings (seeded onto their entries) so that
+every refusal and every success can be reached, and a KDC that issued a
+refused ticket would change what goes on the wire. The act on Monitoring →
+Delegation still says what refused it.
+
+### Writing your own rules
+
+The rules are rules of the issuance policy, so a realm can add its own. A
+realm's issuance policy (Directory → Policies → XACML) is asked **first**;
+the built-in policy answers whatever it says nothing about. To refuse more,
+write a Deny on action-id `exchange-token` with the obligation
+`urn:sts:xacml:obligation:exchange` (verdict `refuse`, refusal `policy`); the
+client then hears its protocol's policy refusal. The attributes a rule can
+test — the four parties, both semantics, `may_act`, the protocol and the
+mode — are listed in [XACML](xacml.html).
+
+## Per protocol
+
+### OAuth 2.0 token exchange (RFC 8693)
+
+* `grant_type=urn:ietf:params:oauth:grant-type:token-exchange`, with a
+  `subject_token` and optionally an `actor_token`. In product mode both must
+  be tokens this realm signed and has not revoked.
+* `exchange_semantics=delegation|impersonation` is this service's extension
+  for asking. Any other value, or the parameter sent twice, is
+  `invalid_request` in every mode.
+* **Delegation** puts `act: { sub: <actor> }` on the access token, nesting any
+  `act` the subject token carried. **Impersonation** issues a token about the
+  subject with no new `act`.
+* `may_act` is read off the verified subject token and compared with the
+  actor's `sub` (and `iss`, when the claim has one). It is *issued* on a
+  person's access tokens when their entry carries `stsMayAct`.
+* **The scope may narrow, never widen** — a rule of the issuance policy too
+  (`exchange-widens-scope`): in product, a scope outside the subject token's
+  `scope` is `invalid_scope`. A subject token with no `scope` claim (an ID
+  Token, a WS-Trust JWT) has nothing to compare against.
+* **Refusals** are spoken as RFC 8693 section 2.2.2 says:
+
+| Refusal | Error |
+|---|---|
+| no relationship; two targets; an unregistered target; no target | `invalid_target` |
+| the semantics; authority; a protected subject; an unknown actor; `may_act`; a realm policy | `invalid_request` |
+
+In development, two audiences are refused too, by RFC 9068 section 3: an
+access token for two resources is ambiguous.
+
+See [OAuth 2.0 and OpenID Connect](oauth-oidc.html) and
+[Configuring OAuth 2.0 grants](configure-oauth2-grants.html).
+
+### WS-Trust OnBehalfOf and ActAs
+
+* The **requester** is the actor; the token in the element is the subject's;
+  its `Audience` is S; the `AppliesTo` is R.
+* **`ActAs` asks for delegation** (WS-Trust 1.4 section 9.3). The issued token
+  names the requester after any party the delegated assertion already named:
+  * a **SAML 2.0** assertion carries the
+    [SAML V2.0 Condition for Delegation Restriction](https://docs.oasis-open.org/security/saml/Post2.0/sstc-saml-delegation-cs-01.html):
+    one `del:Delegate` per party, least to most recent, as that profile
+    orders them;
+  * a **JWT** (`TokenType` `urn:ietf:params:oauth:token-type:jwt`) carries the
+    same chain as nested `act` claims, the most recent outermost.
+* **`OnBehalfOf` asks for impersonation** (1.3 section 9.2). The token is the
+  subject's, and adds nobody to the chain; one the delegated assertion
+  already carried is kept.
+* **Both elements in one request** are refused with `wst:InvalidRequest`, in
+  every mode.
+* A request with **no `AppliesTo`** is refused unless it is a self one.
+* **Every policy refusal is a SOAP Fault carrying WS-Trust 1.4 section 11's
+  `wst:RequestFailed`**: the `faultcode` on SOAP 1.1, the `Subcode` on SOAP
+  1.2. The fault's reason says which rule refused.
+* `may_act` is not read here: the delegated token is always a SAML assertion,
+  which has no such claim. A **JWT** issued about a person who set
+  `stsMayAct` carries `may_act`, as an access token does.
+
+See [WS-Trust](ws-trust.html).
+
+### Kerberos (MS-SFU)
+
+Kerberos service accounts are applications here: the entry whose identifier
+is the service's `SPN@REALM`. Their delegation settings are the common ones
+above, not a second set kept by the KDC. In development the fixture services'
+rules (`HTTP/frontend` to `HTTP/backend`, the resource-based `HTTP/rbcd`, the
+`HTTP/notrusted` that may not impersonate, the trusted `HTTP/web`) are seeded
+onto their entries the first time the KDC is asked, filling only what an entry
+does not already hold, and the person `sensitive` carries `stsNotDelegated`.
+
+* **S4U2Self** (protocol transition) is **impersonation**:
+  * the service asks for a ticket to *itself* for a user, named by
+    `PA-FOR-USER` or by certificate with `PA-S4U-X509-USER`;
+  * the actor is that service, and it is R as well;
+  * it is never refused for want of a policy — a ticket to yourself is not
+    the privilege — but it is **forwardable** only when the policy allows the
+    impersonation: the service allows it (`appDelegationSemantics`, the job
+    of Active Directory's `TRUSTED_TO_AUTHENTICATE_FOR_DELEGATION`) and the
+    user is not protected;
+  * PA-S4U-X509-USER names the user by name, by a certificate this realm
+    issued to them (its TLS client or enrollment Issuing CA, `clientAuth`,
+    one `urn:sts:person:` name, not revoked), or both, which must agree. Its
+    checksum and the request's nonce are checked, and the reply carries it
+    back with a checksum of its own (key usage 27 when the client asks).
+* **S4U2Proxy** is **delegation**:
+  * the front end presents the user's evidence ticket and asks for a ticket to
+    the back end;
+  * the actor is the front end, which is S;
+  * **classic** constrained delegation is the front end's
+    `appAllowedToDelegateTo` naming the back end, and needs a forwardable
+    evidence ticket;
+  * **resource-based** constrained delegation (the request carries
+    `PA-PAC-OPTIONS` with the RBCD bit) is the back end's
+    `appAllowedToActOnBehalfOf` naming the front end.
+* **Protected users** (`delegation.protectedGroups`, `stsNotDelegated`) are
+  never the subject of S4U, and their tickets are not forwardable.
+* **The evidence ticket is not taken on trust.** It is encrypted in the
+  front end's own key, so the front end could set its forwardable flag
+  (CVE-2020-17049, *Bronze Bit*) or forge one for anybody. The KDC verifies
+  the PAC's ticket signature — which covers the flags — and its KDC
+  signature with the krbtgt key, and refuses an evidence ticket with no PAC.
+* **Unconstrained delegation** is `krb5TrustedForDelegation` on the service's
+  entry, off unless set: its tickets carry `ok-as-delegate`, which tells a
+  client it may forward its TGT there. The KDC is never told where a
+  forwarded TGT goes, so what it controls is the person: a protected
+  person's TGT is not forwardable, and a forwarding request presenting one is
+  refused.
+* **Refusals** are the KDC's own errors: `KDC_ERR_BADOPTION` for a
+  relationship that does not hold, `KRB_AP_ERR_MODIFIED` for evidence that
+  does not verify, `KDC_ERR_POLICY` for the rest of the policy.
+* Delegation across Kerberos realms and trusts is not yet decided by this
+  policy; see issue #430.
+
+See [Kerberos and SPNEGO](kerberos.html).
+
+## Watching it
+
+* **Monitoring → Delegation** (`/admin/delegation`) lists every act, issued or
+  refused, from all three protocols, with the four parties, the semantics, the
+  tokens consumed and produced, and the sentence saying what allowed or
+  refused it. Filter by protocol, semantics, outcome or any name. In
+  development, a refused act reads *WOULD HAVE BEEN REFUSED*.
+* **The picture** (`/admin/delegation/map`) draws the same acts as a diagram:
+  * a box per party and a line per relationship;
+  * chains across protocols join where they share an application;
+  * drill-downs per chain, per application and per person.
+* **Who may act for whom** (the page's *policy* section) lists the configured
+  relationships, actors with their semantics and subject groups, and
+  protected people and groups.
+* The same three are `GET /admin-api/delegation`,
+  `GET /admin-api/delegation/policy` and the map's `?format=json`.
+
+## Related
+
+* [XACML 3.0 and ALFA](xacml.html): the issuance policy these rules are part of.
+* [Applications](applications.html): where the application attributes are edited.
+* [What is not checked](what-is-not-checked.html): the development-mode behaviour.
+* [Error codes](error-codes.html): each refusal's `STS-OAUTH-`, `STS-WSTRUST-`
+  and `STS-KRB5-` code, recorded on the audit row and never sent.
