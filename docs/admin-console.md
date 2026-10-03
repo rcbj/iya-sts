@@ -827,23 +827,14 @@ delegation names the two accounts, the attributes and which was missing, at the
 moment the decision was made, with the same text the client was sent. It
 appears in no other list here, because nothing was accepted.
 
-**The policy tables are configuration rather than history** — *who MAY
-delegate to whom*:
-
-* **Kerberos**: `msDS-AllowedToDelegateTo` on the front-end account and
-  `msDS-AllowedToActOnBehalfOfOtherIdentity` on the back-end account, with
-  `NOT_DELEGATED` and `TRUSTED_TO_AUTHENTICATE_FOR_DELEGATION` beside them. It
-  answers *why would this be refused* before anybody has tried — including a
-  front end allowed to delegate but not trusted for protocol transition, whose
-  S4U2Self ticket is not forwardable, so S4U2Proxy fails complaining about the
-  evidence, two steps from the attribute that caused it.
-* **WS-Trust and RFC 8693** (#108): the same model on application entries —
-  `appAllowedToDelegateTo`, `appAllowedToActOnBehalfOf`,
-  `appDelegationSubjectGroup`, `appTrustedToImpersonate` — with people carrying
-  `stsNotDelegated` or `stsMayAct`. Enforced in product mode and recorded in
-  development; `may_act` is read in every mode. Also
-  `GET /admin-api/delegation/policy`, paged. See
-  [What is not checked](what-is-not-checked.md#delegation-is-decided-in-all-three-families).
+**The policy tables are configuration rather than history** — *who MAY act
+for whom, and as what*. The controls are the same for Kerberos, WS-Trust and
+RFC 8693 ([Delegation and impersonation](delegation.md)): the pairs
+(`appAllowedToDelegateTo` on the source, `appAllowedToActOnBehalfOf` on the
+target), the actors with their allowed and default semantics and subject
+groups, the people and applications that are never delegated, and the
+protected groups. They answer *why would this be refused* before anybody has
+tried. Also `GET /admin-api/delegation/policy`, paged.
 
 Every act says in its own column whether it was policed.
 

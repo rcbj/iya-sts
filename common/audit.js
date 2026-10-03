@@ -713,6 +713,9 @@ const ACTIONS = [
            'cleared it' },
   { action: 'admin.delegation.may-act', category: 'admin',
     label: 'An operator named or cleared the party who may act for somebody' },
+  { action: 'admin.delegation.semantics', category: 'admin',
+    label: 'An operator set the delegation semantics a person allows, or ' +
+           'their default (#186)' },
   { action: 'portal.delegation.may-act', category: 'authentication',
     label: 'A person named or cleared the party who may act for them' },
 

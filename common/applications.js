@@ -2646,15 +2646,35 @@ const SCHEMA = {
             'who is not protected — a person carrying stsNotDelegated, or a ' +
             'member of the console\'s Admin Read or Admin Write roster, is ' +
             'never delegated whatever this says.' },
-    { name: 'appTrustedToImpersonate', kind: 'single', from: 'by hand',
-      what: 'TRUE or FALSE, default FALSE: may this intermediary ' +
-            'IMPERSONATE — WS-Trust OnBehalfOf, or a token exchange with no ' +
-            'actor_token, whose result names the subject and nothing about ' +
-            'the intermediary — as well as DELEGATE (ActAs, or an exchange ' +
-            'with an actor_token, whose result carries `act`)? The analogue ' +
-            'of Kerberos\'s TRUSTED_TO_AUTHENTICATE_FOR_DELEGATION. A ' +
-            'subject_token whose may_act names this party is the one ' +
-            'exception: the subject asked for it.' },
+    // #186: THE SEMANTICS this application may use or be used with — one set
+    // for the three protocols, read as a fact by the exchange policy. It
+    // replaced appTrustedToImpersonate: impersonation in the set is that
+    // flag (and, at Kerberos, a forwardable S4U2Self ticket).
+    { name: 'appDelegationSemantics', kind: 'multi', from: 'by hand',
+      what: 'THE SEMANTICS this application allows: `delegation`, ' +
+            '`impersonation`, or both. As the ACTOR — the client of a token ' +
+            'exchange, the requester of a WS-Trust OnBehalfOf / ActAs, the ' +
+            'service of a Kerberos S4U request — it says what this ' +
+            'application may DO; empty is delegation only, so impersonating ' +
+            'somebody needs `impersonation` here (Kerberos\'s ' +
+            'TRUSTED_TO_AUTHENTICATE_FOR_DELEGATION). As the SUBJECT it says ' +
+            'what may be done AS it; empty is both. The issuance policy ' +
+            'decides; this is one of its facts.' },
+    { name: 'appDefaultDelegationSemantics', kind: 'single', from: 'by hand',
+      what: '`delegation` or `impersonation`: what an act this application ' +
+            'is part of is when the request does not say — the actor\'s ' +
+            'default first, then the subject\'s, then ' +
+            'delegation.defaultSemantics.' },
+    { name: 'appNotDelegated', kind: 'single', from: 'by hand',
+      what: 'TRUE or FALSE, default FALSE: nobody may act for this ' +
+            'application, in any protocol — NOT_DELEGATED, the ' +
+            'application\'s counterpart of a person\'s stsNotDelegated.' },
+    { name: 'appMayAct', kind: 'single', from: 'by hand',
+      what: 'The DN of ONE party — a person or another application — this ' +
+            'application names as its delegate: a token about it carries ' +
+            'RFC 8693 section 4.4\'s may_act naming that party, as the ' +
+            'issuance policy assigns it, and an exchange of that token by ' +
+            'anybody else is refused. A person\'s counterpart is stsMayAct.' },
 
     { name: 'appGroupsClaim', kind: 'single', from: 'by hand',
       overrides: 'groups.claim',
@@ -2897,6 +2917,17 @@ const SCHEMA = {
             'service commonly answers to several SPNs — HTTP/host and ' +
             'HTTP/host.example.com — and a real KDC holds them all against ' +
             'one account.' },
+    // #186: UNCONSTRAINED DELEGATION is Kerberos's alone, and OFF unless set.
+    { name: 'krb5TrustedForDelegation', kind: 'single', from: 'by hand',
+      what: 'TRUE or FALSE, default FALSE: this Kerberos service is TRUSTED ' +
+            'FOR DELEGATION — unconstrained (Active Directory\'s ' +
+            'TRUSTED_FOR_DELEGATION). Its service tickets carry ' +
+            'ok-as-delegate, which tells a client it may forward its TGT ' +
+            'here; whoever holds a forwarded TGT can act as that person ' +
+            'anywhere. A protected person\'s TGT is never forwardable, so it ' +
+            'is never forwarded however this is set. Constrained delegation ' +
+            '(appAllowedToDelegateTo, appAllowedToActOnBehalfOf) is the ' +
+            'safer alternative.' },
     // THE STORED SERVICE KEY (2026-09-12). Two rows, and the split between
     // them is the design: one is SECRET and one is not, so that every page
     // listing service principals can say what is held without opening a key.
@@ -3668,7 +3699,10 @@ const EDITABLE = {
   appAllowedToDelegateTo: 'multi',
   appAllowedToActOnBehalfOf: 'multi',
   appDelegationSubjectGroup: 'multi',
-  appTrustedToImpersonate: 'set',
+  appDelegationSemantics: 'multi',
+  appDefaultDelegationSemantics: 'set',
+  appNotDelegated: 'set',
+  appMayAct: 'set',
   // THE IDENTIFIER ATTRIBUTES, one per protocol family (see the PROTOCOLS
   // table). Every one of them is `multi` bar oauthTlsClientAuthSubjectDn below,
   // whose own row says why — an application answering to two client_ids or two
@@ -3828,6 +3862,7 @@ const EDITABLE = {
   wsfedRealm: 'multi',
   wstrustAppliesTo: 'multi',
   krb5ServicePrincipalName: 'multi',
+  krb5TrustedForDelegation: 'set',
   oid4vpClientId: 'multi',
   // The four that are ONLY ever declared — nothing in this service writes them.
   federationPartnerId: 'multi',
@@ -4652,7 +4687,8 @@ const BOOLEAN_ATTRIBUTES = [
   'oauthRequirePushedAuthorizationRequests',
   'oauthTlsClientCertificateBoundAccessTokens', 'oauthConfidential',
   'saml2EncryptAssertion', 'saml2EncryptLogoutNameId',
-  'oauthRevokeRefreshOnLogout', 'appTrustedToImpersonate', 'appGroupsClaim',
+  'oauthRevokeRefreshOnLogout', 'appNotDelegated', 'appGroupsClaim',
+  'krb5TrustedForDelegation',
   'saml2SignAssertion', 'saml2SignResponse', 'saml11SignAssertion',
   'saml11SignResponse', 'gnapBearerTokens', 'gnapSkipInteraction',
   'gnapScopedSignals', 'appFederationAutoRedirect',
@@ -5019,6 +5055,9 @@ const FIELD_EXAMPLES = {
   appAllowedToDelegateTo: 'api-backend',
   appAllowedToActOnBehalfOf: 'web-frontend',
   appDelegationSubjectGroup: 'cn=delegable,ou=groups,dc=example,dc=com',
+  appDelegationSemantics: 'delegation',
+  appDefaultDelegationSemantics: 'delegation',
+  appMayAct: 'uid=alice,ou=users,dc=example,dc=com',
   oauthClientId: 'my-web-app',
   oauthAudience: 'https://api.example.com',
   oauthClientSecret: 'press Generate Secret, or 32+ random characters',
@@ -7888,17 +7927,27 @@ function delegationAttributeProblem(attribute, value) {
     log.debug("Leaving delegationAttributeProblem(). A clear.");
     return '';
   }
-  if (attribute === 'appTrustedToImpersonate' &&
+  if ((attribute === 'appNotDelegated' ||
+       attribute === 'krb5TrustedForDelegation') &&
       ['TRUE', 'FALSE'].indexOf(text.toUpperCase()) < 0) {
     log.debug("Leaving delegationAttributeProblem(). Not a boolean.");
     return attribute + ': "' + text + '" is not TRUE or FALSE.';
   }
-  if (attribute === 'appDelegationSubjectGroup' &&
+  if ((attribute === 'appDelegationSemantics' ||
+       attribute === 'appDefaultDelegationSemantics') &&
+      ['delegation', 'impersonation'].indexOf(text.toLowerCase()) < 0) {
+    log.debug("Leaving delegationAttributeProblem(). Not a semantics.");
+    return attribute + ': "' + text + '" is not delegation or ' +
+           'impersonation.';
+  }
+  if ((attribute === 'appDelegationSubjectGroup' ||
+       attribute === 'appMayAct') &&
       !/^[A-Za-z][A-Za-z0-9-]*=[^,]+(,\s*[A-Za-z][A-Za-z0-9-]*=[^,]+)*$/
         .test(text)) {
     log.debug("Leaving delegationAttributeProblem(). Not a DN.");
-    return attribute + ': "' + text + '" is not a DN. Name the group by ' +
-           'its distinguished name, as /admin/groups shows it.';
+    return attribute + ': "' + text + '" is not a DN. Name the ' +
+           (attribute === 'appMayAct' ? 'delegate' : 'group') + ' by ' +
+           'its distinguished name.';
   }
   log.debug("Leaving delegationAttributeProblem(). Nothing refused.");
   return '';
@@ -9012,6 +9061,21 @@ function store() {
   }
   log.debug("Leaving store().");
   return null;
+}
+
+// Is there a registry at all? False in a process that never loaded the
+// directory (the parent project's in-process Kerberos jobs), where every
+// query answers empty — `kerberos/krb5_delegation.ts` waits for one before
+// writing the development fixtures' seeds (#186).
+/**
+ * Says whether the application registry has a store behind it.
+ *
+ * @returns true once the directory has installed itself
+ */
+function registryAvailable() {
+  log.debug("Entering registryAvailable().");
+  log.debug("Leaving registryAvailable().");
+  return !!directory;
 }
 
 function generalizedTime(when) {
@@ -15920,6 +15984,7 @@ module.exports = {
   // The audience lookup, exported for the token endpoint. See its header for
   // why it is a lookup and not a check.
   forAudience: forAudience,
+  registryAvailable: registryAvailable,
   // The client_id lookup beside it, exported for oauth2.js's audienceScopes().
   // Two lookups rather than one that tries both — see forClientId()'s header.
   forClientId: forClientId,

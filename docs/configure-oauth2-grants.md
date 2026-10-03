@@ -486,11 +486,12 @@ The settings are `oauth2.saml2BearerGrant`, `…RequireRegisteredIssuer` and
 
 ## Token exchange (RFC 8693)
 
-A client exchanges a token it holds for a token for another audience. With no
-`actor_token` the exchange is **impersonation**. With one it is
-**delegation**, and the result carries a nested `act` claim. Who may do either
-is decided by the **delegation policy** on the application entries. See
-[OAuth 2.0 and OpenID Connect → Token exchange](oauth-oidc.md) for the model.
+A client exchanges a token it holds for a token for another audience. The
+exchange is a **delegation** (the result carries a nested `act` claim naming
+the actor) or an **impersonation** (it does not), as the issuance policy
+chooses — the request may ask with `exchange_semantics`. Who may do either is
+decided by the same controls as WS-Trust and Kerberos: see
+[Delegation and impersonation](delegation.md) for the model.
 
 Taken from `sts_delegation_policy.js`.
 
@@ -513,16 +514,18 @@ api applications/create '{"identifier":"dp-mid","name":"dp-mid","protocols":["oa
 
 **The policy:**
 ```bash
-# dp-mid may obtain tokens for dp-back …
+# a token issued for dp-mid may be handed on to dp-back …
 api applications/add '{"application":"dp-mid","attribute":"appAllowedToDelegateTo","value":"dp-back"}'
-# … and may do so with no actor token (impersonation)
-api applications/set '{"application":"dp-mid","attribute":"appTrustedToImpersonate","value":"TRUE"}'
+# … and dp-mid may also impersonate, when the request asks for it
+api applications/add '{"application":"dp-mid","attribute":"appDelegationSemantics","value":"delegation"}'
+api applications/add '{"application":"dp-mid","attribute":"appDelegationSemantics","value":"impersonation"}'
 ```
 
-Three more attributes can take part:
-* `appAllowedToActOnBehalfOf`, on the **target**, lists the applications that may act toward it.
-* `appDelegationSubjectGroup`, on the intermediary, holds group DNs that limit whose tokens it may exchange.
-* The person's own flags: `POST /admin-api/users/set-not-delegated {"user","value":true}` and `POST /admin-api/users/set-may-act {"user","delegate":"<application DN>"}`.
+More controls can take part:
+* `appAllowedToActOnBehalfOf`, on the **target**, lists the applications (and people) that may act toward it.
+* `appDelegationSubjectGroup`, on the actor, holds group DNs that limit whose tokens it may exchange.
+* `appDefaultDelegationSemantics` and `appNotDelegated` on an application.
+* The person's own settings: `POST /admin-api/users/set-not-delegated {"user","value":true}`, `POST /admin-api/users/set-may-act {"user","delegate":"<application DN>"}` and `POST /admin-api/users/set-delegation-semantics {"user","semantics":["delegation"],"default":"delegation"}`.
 
 To read the whole policy back, use `GET /admin-api/delegation/policy`; in the
 console it is `/admin/delegation`.
@@ -534,7 +537,8 @@ POST /oauth2/token
   &client_id=dp-mid&client_secret=<secret>
   &subject_token=<token>&subject_token_type=urn:ietf:params:oauth:token-type:access_token
   &audience=https://dp-back.example&scope=api
-  [&actor_token=<dp-mid's client-credentials token>
+  [&exchange_semantics=delegation|impersonation]
+  [&actor_token=<a token about the actor>
    &actor_token_type=urn:ietf:params:oauth:token-type:access_token]
 ```
 

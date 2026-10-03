@@ -9710,11 +9710,17 @@ class AdminConsole {
     const self = this;
     log.debug("Entering AdminConsole.policyAccountRow().");
     const flags = [];
-    if (account.notDelegated) flags.push('NOT_DELEGATED');
-    if (account.trustedToAuthenticateForDelegation) {
-      flags.push('TRUSTED_TO_AUTHENTICATE_FOR_DELEGATION');
+    // The entry's attribute, then Active Directory's name for it (#186).
+    if (account.notDelegated) {
+      flags.push('appNotDelegated (NOT_DELEGATED)');
     }
-    if (account.okAsDelegate) flags.push('ok-as-delegate');
+    if (account.trustedToAuthenticateForDelegation) {
+      flags.push('appDelegationSemantics: impersonation ' +
+                 '(TRUSTED_TO_AUTHENTICATE_FOR_DELEGATION)');
+    }
+    if (account.okAsDelegate) {
+      flags.push('krb5TrustedForDelegation (ok-as-delegate)');
+    }
     log.debug("Leaving AdminConsole.policyAccountRow().");
     return '<tr>' +
       '<td class="who"><code>' + this.esc(account.principal) + '</code></td>' +
@@ -9795,8 +9801,14 @@ class AdminConsole {
     }).join('');
     const intermediaryRows = view.intermediaries.shown.map(function (row) {
       return '<tr><td class="who">' + appLink(row.application) + '</td>' +
-        '<td>' + (row.trustedToImpersonate
-          ? '<code>appTrustedToImpersonate</code> TRUE' : '&mdash;') +
+        '<td>' + (row.semantics && row.semantics.length
+          ? row.semantics.map(function (one: string) {
+            return self.esc(one);
+          }).join(', ') : 'delegation only (empty)') +
+        (row.defaultSemantics ? '<br><span class="state-none">default ' +
+          self.esc(row.defaultSemantics) + '</span>' : '') +
+        (row.notDelegated ? '<br><code>appNotDelegated</code> — never ' +
+          'acted for' : '') +
         '</td><td>' + (row.subjectGroups.length
           ? row.subjectGroups.map(function (dn) {
             return '<code>' + self.esc(dn) + '</code>';
@@ -9809,34 +9821,40 @@ class AdminConsole {
         (row.notDelegated ? '<code>stsNotDelegated</code> — nobody may act ' +
           'for them' : '&mdash;') + '</td><td>' +
         (row.mayAct ? '<code>' + self.esc(row.mayAct) + '</code>'
-                    : '&mdash;') + '</td></tr>';
+                    : '&mdash;') + '</td><td>' +
+        ((row.semantics && row.semantics.length) || row.defaultSemantics
+          ? self.esc((row.semantics || []).join(', ') || 'both') +
+            (row.defaultSemantics ? '; default ' +
+              self.esc(row.defaultSemantics) : '')
+          : '&mdash;') + '</td></tr>';
     }).join('');
     const register = view.register;
     log.debug("Leaving AdminConsole.delegationPolicySection().");
-    return '<h2 id="delegation-policy">Who may act for whom &mdash; WS-Trust ' +
-      'and token exchange</h2>' +
-      self.note('<strong>Kerberos\'s model, on application entries</strong> ' +
-      '(#108). A WS-Trust <code>OnBehalfOf</code> or <code>ActAs</code> and ' +
-      'an RFC 8693 token exchange are decided from four attributes: ' +
-      '<code>appAllowedToDelegateTo</code> on the INTERMEDIARY names the ' +
-      'targets it may reach as somebody else (the analogue of ' +
+    return '<h2 id="delegation-policy">Who may act for whom &mdash; WS-Trust, ' +
+      'token exchange and Kerberos</h2>' +
+      self.note('<strong>Decided by the issuance policy</strong> (#186), ' +
+      'from facts on the entries — one set of settings for the three ' +
+      'protocols. <code>appAllowedToDelegateTo</code> on an application ' +
+      'names the applications it delegates to (the analogue of ' +
       '<code>msDS-AllowedToDelegateTo</code>); ' +
       '<code>appAllowedToActOnBehalfOf</code> on the TARGET names the ' +
-      'intermediaries it accepts (the resource-based one); ' +
-      '<code>appDelegationSubjectGroup</code> narrows who the intermediary ' +
-      'may act for; and <code>appTrustedToImpersonate</code> lets it ' +
-      'IMPERSONATE — <code>OnBehalfOf</code>, or an exchange with no ' +
-      '<code>actor_token</code> — as well as delegate. Only an application ' +
-      'may be an intermediary. A person carrying ' +
-      '<code>stsNotDelegated</code>, or a member of ' +
+      'actors it accepts (the resource-based one); ' +
+      '<code>appDelegationSubjectGroup</code> narrows who an actor may act ' +
+      'for; and <code>appDelegationSemantics</code> says whether it may ' +
+      'IMPERSONATE as well as delegate (empty is delegation only), with ' +
+      '<code>appDefaultDelegationSemantics</code> the default. A person ' +
+      'acting needs the role <code>delegation.actorRole</code> names. A ' +
+      'person carrying <code>stsNotDelegated</code>, an application ' +
+      'carrying <code>appNotDelegated</code>, or a member of ' +
       (register.protectedGroups.length
         ? register.protectedGroups.map(function (one) {
           return '<code>' + self.esc(one) + '</code>';
         }).join(' or ')
         : 'a console roster') +
-      ', is never delegated. When the attributes allow, the issuance policy ' +
-      'is asked about action-id <code>delegate</code> and only a Deny ' +
-      'refuses. ' + (register.enforced
+      ', is never delegated. The rules are the issuance policy\'s ' +
+      '(action-ids <code>choose-exchange-semantics</code> and ' +
+      '<code>exchange-token</code>); a realm changes them in its own ' +
+      'policy. ' + (register.enforced
         ? '<strong>This realm is in product mode, so this is ' +
           'ENFORCED</strong>: ' +
           'a refusal is <code>wst:RequestFailed</code>, ' +
@@ -9844,8 +9862,8 @@ class AdminConsole {
         : '<strong>This realm is in development mode, so nothing is ' +
           'refused</strong>: the policy is asked and each act above says ' +
           'what WOULD have been refused in product.') +
-      ' Edit an application\'s four on its own page, and a person\'s two ' +
-      'on theirs. <code>GET /admin-api/delegation/policy</code> is this ' +
+      ' Edit an application\'s on its own page, and a person\'s on ' +
+      'theirs. <code>GET /admin-api/delegation/policy</code> is this ' +
       'section as JSON.') +
       pairsNav.head +
       '<table><tr><th>Mechanism</th><th>Intermediary (who acts)</th>' +
@@ -9858,10 +9876,11 @@ class AdminConsole {
         '.</td></tr>') + '</table>' + pairsNav.foot +
       '<h3>Intermediaries</h3>' +
       intermediariesNav.head +
-      '<table><tr><th>Application</th><th>May impersonate</th>' +
+      '<table><tr><th>Application</th><th>Semantics allowed</th>' +
       '<th>May act for</th></tr>' +
       (intermediaryRows || '<tr><td colspan="3">No application carries ' +
-        '<code>appTrustedToImpersonate</code> or a subject group.</td></tr>') +
+        'delegation semantics, appNotDelegated or a subject group.' +
+        '</td></tr>') +
       '</table>' + intermediariesNav.foot +
       '<h3>People</h3>' +
       self.note('<code>stsMayAct</code> is a person\'s own choice of the ' +
@@ -9870,8 +9889,9 @@ class AdminConsole {
       'of one by anybody else is refused in every mode.') +
       peopleNav.head +
       '<table><tr><th>Person</th><th>Cannot be delegated</th>' +
-      '<th>May act for them (stsMayAct)</th></tr>' +
-      (peopleRows || '<tr><td colspan="3">Nobody carries either flag.' +
+      '<th>May act for them (stsMayAct)</th><th>Semantics allowed</th>' +
+      '</tr>' +
+      (peopleRows || '<tr><td colspan="4">Nobody carries any of them.' +
         '</td></tr>') + '</table>' + peopleNav.foot;
   }
 
@@ -11336,6 +11356,16 @@ class AdminConsole {
               'forwarded ticket-granting ticket has no intermediary and ' +
               'cannot have one — the client gives it to whichever service it ' +
               'chooses and this KDC is never told which.' },
+      // #186: the configured pairs, beside the acts.
+      { art: swatch(line(C.indigo, '6 4'), 64),
+        what: '<strong>may delegate &mdash; a CONFIGURED relationship, ' +
+              'DASHED until an act has used it.</strong> One line per pair ' +
+              'an entry allows: <code>appAllowedToDelegateTo</code> on the ' +
+              'source (constrained) or <code>appAllowedToActOnBehalfOf</code> ' +
+              'on the target (resource-based) &mdash; the same controls for ' +
+              'the OAuth 2.0 token exchange, WS-Trust and Kerberos. Solid ' +
+              'once an act has crossed it. Drawn unless the acts are ' +
+              'narrowed by outcome, type or text.' },
       { art: swatch(line(C.red, '5 3'), 64),
         what: '<strong>Red is a chain nothing was ever issued on.</strong> ' +
               'The tooltip carries the KDC\'s own words for why, which is ' +
@@ -15417,7 +15447,29 @@ class AdminConsole {
            '<div class="formrow"><label>Delegate DN <input type="text" ' +
            'name="delegate" size="60" value="' +
            this.esc(facts.mayAct || '') + '" placeholder="uid=bob,ou=users,' +
-           '... or cn=app,ou=applications,..."></label></div>');
+           '... or cn=app,ou=applications,..."></label></div>') +
+      // AND AS WHAT (#186): the semantics this person allows, and their
+      // default — facts the exchange policy reads for WS-Trust, the token
+      // exchange and Kerberos alike. POST
+      // /admin-api/users/set-delegation-semantics is the same act.
+      form('set-delegation-semantics', 'Set the delegation semantics',
+           'Writes stsDelegationSemantics and ' +
+           'stsDefaultDelegationSemantics. Nothing ticked leaves it to the ' +
+           'policy: both are allowed for a subject, delegation only for an ' +
+           'actor.', false,
+           '<div class="formrow">' +
+           ['delegation', 'impersonation'].map(function (one) {
+             return '<label><input type="checkbox" name="semantics" value="' +
+               one + '"' + ((facts.semantics || []).indexOf(one) >= 0
+                 ? ' checked' : '') + '> ' + one + '</label> ';
+           }).join('') + '</div><div class="formrow"><label>Default ' +
+           '<select name="default">' +
+           ['', 'delegation', 'impersonation'].map(function (one) {
+             return '<option value="' + one + '"' +
+               (String(facts.defaultSemantics || '') === one
+                 ? ' selected' : '') + '>' + (one || 'none — the request ' +
+                 'or the realm decides') + '</option>';
+           }).join('') + '</select></label></div>');
     log.debug("Leaving AdminConsole.userCredentialControlsSection().");
     return heading + state + signalsNote + account + reset + passkeys + mfa +
       delegationBlock;
@@ -37298,36 +37350,34 @@ class AdminConsole {
         self.permissionsSection(req, permissions, listView, false) +
 
         '<h2>Who may delegate to whom &mdash; Kerberos</h2>' +
-        self.note('<strong>The SECOND configured register on this page, and ' +
-        'the older one.</strong> Until delegated permissions arrived this ' +
-        'was the only configuration here and this paragraph said so — ' +
-        '<em>this half is configuration rather than history, and it is ' +
-        'Kerberos only</em> — which is no longer true and is worth saying ' +
-        'rather than quietly editing. What IS still true is the sentence ' +
-        'underneath it: <strong>Kerberos is the one family here that polices ' +
-        'delegation IN THE ACT</strong>. The permissions above are policy ' +
-        'this service was configured with and refuses on in product mode, ' +
-        'and in development only when ' +
-        '<code>oauth2.delegatedPermissionsEnforced</code> is set; these two ' +
-        'attributes are a KDC decision that has always been made, on every ' +
-        'S4U request, whatever anything is set to. WS-Trust and the RFC ' +
-        '8693 token exchange are decided by the same model since #108 — ' +
-        'the section below — ENFORCED in product mode and, in development, ' +
-        'asked and recorded as what would have been refused. Every row says ' +
-        'which attribute allowed it, in the same column for all three ' +
-        'families.') +
-        self.note('The whole of the KDC\'s decision rests on two attributes ' +
-        'on two OPPOSITE accounts, which is why they are in one table with a ' +
-        'column saying which account carries the permission. Same messages, ' +
+        self.note('<strong>The KDC\'s view of the ONE delegation policy ' +
+        '(#186).</strong> Kerberos, WS-Trust and the RFC 8693 token ' +
+        'exchange are decided by the same issuance policy from the same ' +
+        'controls on the directory\'s entries — the section below lists ' +
+        'them for every protocol; this one lists the Kerberos services, ' +
+        'whose entries are named <code>SPN@REALM</code>. The KDC refuses ' +
+        'in BOTH modes, as it always has (in development the fixture ' +
+        'services\' rules are seeded onto their entries so every refusal ' +
+        'can be reached); WS-Trust and the token exchange are enforced in ' +
+        'product mode and, in development, recorded as what would have ' +
+        'been refused. Every row says what allowed it, in the same column ' +
+        'for all three families.') +
+        self.note('The relationship rests on two attributes on two OPPOSITE ' +
+        'entries — appAllowedToDelegateTo on the front end, ' +
+        'appAllowedToActOnBehalfOf on the back end — which is why they ' +
+        'are in one table with a column saying which entry carries the ' +
+        'permission. Same messages, ' +
         'same KDC options, opposite direction of trust — and the second one ' +
         'turns <em>I can write to this computer object</em> into <em>I can ' +
         'reach this service as anybody</em>.') +
         self.note('Each mechanism needs one thing BEYOND the attribute, and ' +
         'it is the same thing on every row of that kind, so it is here ' +
         'rather than in a column: <strong>classic</strong> needs a ' +
-        'FORWARDABLE evidence ticket, which S4U2Self returns only to an ' +
-        'account flagged ' +
-        '<code>TRUSTED_TO_AUTHENTICATE_FOR_DELEGATION</code>; ' +
+        'FORWARDABLE evidence ticket, which S4U2Self returns only where the ' +
+        'policy allows the impersonation — <code>impersonation</code> in the ' +
+        'service\'s <code>appDelegationSemantics</code> (Active ' +
+        'Directory\'s <code>TRUSTED_TO_AUTHENTICATE_FOR_DELEGATION</code>) ' +
+        'and a user who is not protected; ' +
         '<strong>resource-based</strong> needs <code>PA-PAC-OPTIONS</code> ' +
         '(padata type 167) carrying the resource-based bit, and [MS-SFU] ' +
         'requires a KDC to answer <code>KDC_ERR_BADOPTION</code> without it ' +

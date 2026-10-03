@@ -1422,30 +1422,81 @@ decider FROM THE CONSOLE, so a process that loaded the console and not
 present. A require the other way closes a cycle, because `xacml_admin.ts`
 requires `admin.js` for the page shell.
 
-### And one question that is DENY-ONLY: action-id `delegate` (#108, 2026-09-23)
+### Who may act for whom, and as what: three questions the policy ANSWERS (#186, 2026-10-03)
 
-`../common/delegation_policy.ts` decides who may act for whom at WS-Trust and
-RFC 8693 from attributes on the entries (rule 3az), and when they ALLOW an act
-it asks `issuance_gate.checkDelegation()`, which hands this PEP a question with
-`kind: 'delegate'` and `denyOnly: true`. `decideDenyOnly()` builds the usual
-request with no roles required, adds XACML 3.0's
-`subject-category:intermediary-subject` carrying the intermediary as its
-`subject-id` (the target is the `resource-id`, the subject the access
-subject's), `urn:sts:xacml:delegation-mode` on the action and
-`urn:sts:xacml:delegation-protocol` on the environment, and asks the SAME
-issuance policy.
+Until #186 this was a deny-only question, action-id `delegate`, asked after
+`../common/delegation_policy.ts` had decided from the attributes in code.
+rcbj's decision on #186 put the decision itself here. Every delegating act —
+an RFC 8693 token exchange, a WS-Trust `OnBehalfOf` / `ActAs`, and (phase 3)
+a Kerberos S4U request — asks the issuance policy two questions through
+`xacml_exchange_verdicts.js`, with the facts `delegation_policy.ts` gathers
+and `xacml_request.js`'s `exchange()` spells (the subject in access-subject,
+the actor in XACML 3.0's `intermediary-subject`, S and R in the resource, the
+requested and chosen semantics in the action, may_act and the protected groups
+in the environment, `urn:sts:xacml:exchange:*`):
 
-**ONLY AN EXPLICIT DENY REFUSES.** A Permit, a NotApplicable (the built-in
-`role-issuance` document says nothing about `delegate`) and an Indeterminate
-leave the attribute rule's answer standing, and so does a missing or disabled
-policy. That is the opposite of the issuance decision's fail-closed rule and
-it is deliberate: here the attributes ARE a policy, already evaluated, and the
-engine is only where an administrator writes something stricter — so the
-built-in document changes nothing and an operator's rule denying one
-intermediary, subject or target denies exactly that. A Deny is audited as
-`xacml.issuance.refused` (`STS-XACML-0039`) and counted like any other refusal.
-`delegate` is NOT a member of `ISSUANCE`/`KINDS`: delegating issues nothing of
-its own, and every reader of that list lists issuances.
+1. **`choose-exchange-semantics`** — four mutually exclusive Permit rules,
+   the precedence in order: the request, the actor's default, the subject's,
+   `delegation.defaultSemantics`. The obligation
+   `urn:sts:xacml:obligation:exchange-semantics` carries the choice.
+2. **`exchange-token`** — ordered Deny rules, each carrying the obligation
+   `urn:sts:xacml:obligation:exchange` with the verdict `refuse`, the REFUSAL
+   KIND and `enforced` (an Apply of `string-is-in('product', mode)`, except
+   may_act's, which is `true`): `may-act`, `targets`, `unregistered-target`,
+   `no-target`, `subject` (protected), `intermediary` (unknown, or a person
+   without `delegation.actorRole`), `semantics`, `subject` (the actor's
+   subject groups, unless may_act names it), `authority`, then `target` for
+   the delegation relationship and for the impersonation reach. Then three
+   mutually exclusive Permit rules carrying the verdict `allow`, the ISSUED
+   semantics (`self`, `delegation`, `impersonation`) and the audience (R, or
+   S for a self exchange that named none).
+
+3. **`assign-may-act`** — what RFC 8693 section 4.4's `may_act` on a token
+   about a subject names. The fact is the party the subject chose
+   (`urn:sts:xacml:exchange:subject-delegate`, from `stsMayAct` or
+   `appMayAct`); the built-in rule `may-act-subject-choice` assigns it
+   through the obligation `urn:sts:xacml:obligation:may-act`. A realm's
+   policy may assign another party, or none by answering with that
+   obligation and no party — a BARE Deny says nothing, so a risk or device
+   rule written for every action never drops a restriction the subject
+   chose. Where neither policy answers, the subject's own choice stands
+   (`STS-XACML-0087`): `may_act` restricts, so dropping it would widen.
+
+AND ONE PER-SCOPE RULE: **`exchange-widens-scope`**, at stage `exchange` of the
+per-scope question, refuses in product a scope the verified subject token
+does not carry (`STS-OAUTH-0621`), from two facts the token endpoint sends —
+whether the subject token has a `scope` claim, and whether it carries this
+one. An ID Token or a WS-Trust JWT has no grant to compare, and is not
+refused.
+
+**MUTATION-TESTED** (2026-10-03): each of the twenty exchange rules removed
+in turn is told apart by the matrix, except the two that answer other
+questions — `may-act-subject-choice` (held by `exchange_policy.js` section N)
+and `exchange-widens-scope` (`token_exchange_product.js` 7o).
+
+**THE ORDER IS THE ARGUMENT, AND THE COMBINING ALGORITHM KEEPS IT.** The
+document is ordered-deny-overrides: the first Deny wins, so the refusal a door
+speaks is the most fundamental one; on a Permit the obligations of every
+applicable Permit rule are collected, which is why the allows are mutually
+exclusive — two would send two audiences. `decideExchanges` (default yes) is
+the template parameter that leaves the rules out.
+
+**THE REALM'S OWN POLICY ASKS FIRST, THE BUILT-IN ONE ANSWERS WHERE IT DOES
+NOT** — `xacml_transfer_verdicts.js`'s pattern: `xacml_role_pep.ts`'s
+`decideExchange()` against the realm's issuance policy, falling back to the
+built-in `role-issuance` document where the answer carries no exchange
+obligation; `../common/issuance_gate.js`'s `checkExchange()`, in a process
+with no XACML family, against the built-in one alone. **Where neither answers
+— a defect — the act is REFUSED** (`STS-XACML-0085`): a broken engine must not
+become permission to act for somebody. A realm policy that Denies with the
+exchange obligation and the refusal `policy` is how an operator writes
+something stricter (`tests/delegation_policy.js` section I).
+
+**HELD TO AN ORACLE.** `../tests/exchange_policy.js` is a truth table and
+20,976 combinations against `../tests/tools/exchange_oracle.js`;
+`../tests/exchange_policy_exhaustive.js` runs all 2,488,320 (about six
+minutes). A rule changed here changes the oracle in the same commit, or both
+files fail.
 
 ### The registered device, and two rules that settings switch (#164 phase 6, 2026-09-26)
 

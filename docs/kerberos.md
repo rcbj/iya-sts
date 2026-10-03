@@ -61,24 +61,36 @@ whether each socket bound, and what is not implemented.
 
 All four ways Kerberos can act on somebody's behalf:
 [MS-SFU](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-sfu/)
-**S4U2Self** (protocol transition), **S4U2Proxy** under classic constrained
-delegation (`msDS-AllowedToDelegateTo` on the front end) and resource-based
-constrained delegation (`msDS-AllowedToActOnBehalfOfOtherIdentity` on the back
-end, which also needs `PA-PAC-OPTIONS`), and a **forwarded ticket-granting
-ticket**. The account flags `NOT_DELEGATED` and
-`TRUSTED_TO_AUTHENTICATE_FOR_DELEGATION` are honoured; `ok-as-delegate` is
-advice to the client, not a control.
+**S4U2Self** (protocol transition, by PA-FOR-USER or **PA-S4U-X509-USER**,
+which names the user by name or by certificate), **S4U2Proxy** under classic
+constrained delegation and resource-based constrained delegation (which also
+needs `PA-PAC-OPTIONS`), and a **forwarded ticket-granting ticket**.
 
-**Kerberos is the only family here that polices delegation.** A refusal names
-the attribute and its current value in the error's `e-text`. Every act —
-issued or refused — is recorded on `/admin/delegation`, which also publishes the
-policy: every permitted pair from both attributes in one list, and a warning for
-a front end with `msDS-AllowedToDelegateTo` but no
-`TRUSTED_TO_AUTHENTICATE_FOR_DELEGATION`, whose S4U2Self ticket is not
-forwardable. In development mode fixture accounts (including one,
-`HTTP/notrusted`, that produces exactly that failure) make both the refusals
-and the successes reachable; in product mode there are no rules until an
-operator writes one.
+**Who may do what is the one delegation policy (#186)** that also decides
+WS-Trust's `OnBehalfOf` / `ActAs` and the OAuth 2.0 token exchange, from the
+same controls on the same directory entries — see
+[Delegation and impersonation](delegation.md). A Kerberos service is the
+application entry whose identifier is its `SPN@REALM`:
+
+| Active Directory | Here, on the entry |
+|---|---|
+| `msDS-AllowedToDelegateTo` (front end) | `appAllowedToDelegateTo` |
+| `msDS-AllowedToActOnBehalfOfOtherIdentity` (back end) | `appAllowedToActOnBehalfOf` |
+| `TRUSTED_TO_AUTHENTICATE_FOR_DELEGATION` | `impersonation` in `appDelegationSemantics` |
+| `NOT_DELEGATED`, Protected Users | `stsNotDelegated` / `appNotDelegated`, `delegation.protectedGroups` |
+| `TRUSTED_FOR_DELEGATION` (unconstrained) | `krb5TrustedForDelegation`, off by default: `ok-as-delegate` on its tickets |
+
+A refusal names the attribute and its current value in the error's `e-text`,
+and **is enforced in both modes**. The KDC verifies an evidence ticket's PAC
+signatures with the krbtgt key before it believes the ticket's forwardable
+flag (CVE-2020-17049) or whom it names. Every act — issued or refused — is
+recorded on `/admin/delegation`, which also publishes the policy: every
+permitted pair in one list, and a warning for a front end allowed to delegate
+but not to impersonate, whose S4U2Self ticket is not forwardable. In
+development mode the fixture accounts' rules are seeded onto their entries
+(including `HTTP/notrusted`, which produces exactly that failure) so both the
+refusals and the successes are reachable; in product mode there are no rules
+until an operator writes one.
 
 ### The protected service
 
@@ -672,8 +684,8 @@ reading the source is worse than one that says so on the page.
 Among the configured accounts: `locked` (a disabled account), `expired` (a
 stale password), `aesonly` and `rc4only` (whose etype sets are chosen so that a
 negotiation can be made to fail on purpose, which is what RC4 being switched
-off looks like), `sensitive` (NOT_DELEGATED, the one control that stops
-unconstrained delegation), a computer account, and a set of service accounts
+off looks like), `sensitive` (NOT_DELEGATED — `stsNotDelegated` on its entry — the one control
+that stops unconstrained delegation), a computer account, and a set of service accounts
 wired for the delegation cases below. A debugger is judged on how it renders
 failure, and these are the failures a real deployment produces. So is the
 clock: `krb5.clockOffset` makes the KDC lie about its own time, because
@@ -721,24 +733,28 @@ asked for.
 
 The asymmetry between the two S4U2Proxy routes is the entire security story of
 resource-based constrained delegation, so both kinds of account exist here
-rather than one. Classic delegation is authorized by `msDS-AllowedToDelegateTo`
-on the **front-end** account, which only a domain admin can set; RBCD is
-authorized by `msDS-AllowedToActOnBehalfOfOtherIdentity` on the **back-end**
-account (`HTTP/rbcd.example.com`, naming `HTTP/frontend.example.com` as
-permitted to act on its behalf) — so whoever controls that object can turn "I
-can write to this computer account" into "I can reach this service as anybody".
-Same messages, same KDC options, opposite direction of trust.
+rather than one. Classic delegation is authorized by `appAllowedToDelegateTo`
+on the **front-end** entry (Active Directory's `msDS-AllowedToDelegateTo`,
+which only a domain admin can set); RBCD is authorized by
+`appAllowedToActOnBehalfOf` on the **back-end** entry
+(`HTTP/rbcd.example.com@EXAMPLE.COM`, naming `HTTP/frontend.example.com` as
+permitted to act on its behalf) — so whoever controls that entry can turn "I
+can write to this account" into "I can reach this service as anybody". Same
+messages, same KDC options, opposite direction of trust.
 
 Classic delegation additionally requires the evidence ticket to be forwardable,
-which S4U2Self grants only to an account holding
-TRUSTED_TO_AUTHENTICATE_FOR_DELEGATION. So `HTTP/frontend.example.com` and
-`HTTP/notrusted.example.com` differ in exactly that one attribute and nothing
-else, because the flag's absence is invisible where it is set: S4U2Self still
-succeeds and returns a ticket that simply is not forwardable, and classic
-S4U2Proxy then fails a step later complaining about the evidence. RBCD needs
-neither, but does need `PA-PAC-OPTIONS` with the RBCD bit, without which
-[MS-SFU] says a KDC MUST answer `KDC_ERR_BADOPTION` — an error mentioning
-nothing about padata, so it is refused here with an explanation.
+which S4U2Self grants only where the issuance policy allows the impersonation:
+the service allows it (`appDelegationSemantics`) and the user is not
+protected. So `HTTP/frontend.example.com` and `HTTP/notrusted.example.com`
+differ in exactly that one attribute and nothing else, because its absence is
+invisible where it is set: S4U2Self still succeeds and returns a ticket that
+simply is not forwardable, and classic S4U2Proxy then fails a step later
+complaining about the evidence. RBCD needs neither, but does need
+`PA-PAC-OPTIONS` with the RBCD bit, without which [MS-SFU] says a KDC MUST
+answer `KDC_ERR_BADOPTION` — an error mentioning nothing about padata, so it
+is refused here with an explanation. RBCD does not stop the policy, though: a
+protected user is refused (`KDC_ERR_POLICY`) even where no forwardable
+evidence was needed.
 
 ### A service that will not talk to you without a ticket
 

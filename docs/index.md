@@ -49,6 +49,8 @@ do ·
 and service provider ·
 [Management API](management-api.md): `/admin-api`, every console control
 reachable by a machine with an OAuth 2.0 access token ·
+[Delegation and impersonation](delegation.md): who may obtain a token about
+somebody else, the same controls for RFC 8693, WS-Trust and Kerberos ·
 configuration recipes, in the console and through the API, for each
 [OAuth 2.0 grant](configure-oauth2-grants.md),
 [OpenID Connect flow](configure-oidc-flows.md) and

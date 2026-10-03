@@ -6383,6 +6383,49 @@ class AdminApi {
             },
             responseDescription: 'The delegate as it now stands.' },
 
+          { action: 'set-delegation-semantics',
+            operationId: 'setUserDelegationSemantics',
+            summary: 'Set the delegation semantics a person allows',
+            description: 'Writes `stsDelegationSemantics` (the semantics the ' +
+                         'person allows: `delegation`, `impersonation`, or ' +
+                         'both; empty leaves it to the issuance policy, ' +
+                         'which reads an empty set as both for a subject ' +
+                         'and delegation only for an actor) and ' +
+                         '`stsDefaultDelegationSemantics` (what an act they ' +
+                         'are part of is when the request does not say). ' +
+                         'Read by the exchange policy at an RFC 8693 token ' +
+                         'exchange, a WS-Trust OnBehalfOf / ActAs and a ' +
+                         'Kerberos S4U request (#186).',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                user: { type: 'string',
+                        description:
+                          'The person, as /admin-api/users names them.' },
+                username: { type: 'string',
+                            description: 'Accepted for `user`.' },
+                semantics: {
+                  description: 'delegation and/or impersonation, as a list ' +
+                               'or comma separated; empty clears.',
+                  anyOf: [{ type: 'string' },
+                          { type: 'array',
+                            items: { type: 'string',
+                                     enum: ['delegation', 'impersonation'] } }]
+                },
+                'default': { type: 'string',
+                             enum: ['delegation', 'impersonation'],
+                             description: 'The default; left out, it is ' +
+                                          'cleared.' }
+              },
+              required: ['user'],
+              examples: [{ user: 'alice',
+                           semantics: ['delegation', 'impersonation'],
+                           'default': 'delegation' }],
+              additionalProperties: false
+            },
+            responseDescription: 'The semantics as they now stand.' },
+
           { action: 'answer-ciba-request',
             operationId: 'answerUserCibaRequest',
             summary: 'Approve or deny a CIBA request waiting for somebody ' +
@@ -18089,9 +18132,12 @@ class AdminApi {
                      'intermediaries it accepts;\n* ' +
                      '`appDelegationSubjectGroup` on the intermediary names ' +
                      'the groups of people it may act for (empty: anybody ' +
-                     'unprotected);\n* `appTrustedToImpersonate` TRUE lets ' +
-                     'it IMPERSONATE (OnBehalfOf, an exchange with no ' +
-                     'actor_token) as well as delegate.\n\n`pairs` has one ' +
+                     'unprotected);\n* `appDelegationSemantics` says ' +
+                     'whether it may IMPERSONATE as well as delegate (empty ' +
+                     'is delegation only), `appDefaultDelegationSemantics` ' +
+                     'its default, and `appNotDelegated` that nobody acts ' +
+                     'for it.\n\nThe issuance policy decides on these ' +
+                     'facts (#186). `pairs` has one ' +
                      'row per (intermediary, target, attribute); ' +
                      '`intermediaries` the applications carrying the flag ' +
                      'or a subject group; `people` those carrying ' +

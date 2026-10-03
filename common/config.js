@@ -13537,6 +13537,45 @@ const SETTINGS = [
                  'says so rather than implying the cap is all there ever ' +
                  'was. Lowering it takes effect on the next act and discards ' +
                  'the excess immediately.' },
+  // WHO MAY ACT FOR WHOM (#186): the three settings the exchange policy reads
+  // as facts, common to RFC 8693 token exchange, WS-Trust OnBehalfOf / ActAs
+  // and Kerberos S4U. The rules themselves are the issuance policy's
+  // (`xacml_templates.ts`, EXCHANGE_ATTRIBUTE); these only say what they read.
+  { key: 'delegation.defaultSemantics', group: 'Delegation',
+    label: 'Default semantics of an act',
+    env: 'STS_DELEGATION_DEFAULT_SEMANTICS', type: 'enum',
+    enumValues: ['delegation', 'impersonation'],
+    dflt: 'delegation', runtime: true,
+    description: 'What an act is when nothing else says: the request names ' +
+                 'no semantics (a token exchange without exchange_semantics), ' +
+                 'and neither the actor\'s entry nor the subject\'s carries a ' +
+                 'default. DELEGATION issues a token that names the actor ' +
+                 '(`act` in a JWT, the delegate in a SAML 2.0 assertion); ' +
+                 'IMPERSONATION issues one indistinguishable from the ' +
+                 'subject\'s own, and is allowed only to an actor whose ' +
+                 'entry allows it. WS-Trust and Kerberos always say which ' +
+                 'they ask for, so this reaches the token exchange alone.' },
+  { key: 'delegation.protectedGroups', group: 'Delegation',
+    label: 'Groups never acted for',
+    env: 'STS_DELEGATION_PROTECTED_GROUPS', type: 'csv', dflt: '',
+    runtime: true,
+    description: 'Directory groups, by cn or DN, whose members are never ' +
+                 'delegated or impersonated, in any protocol — the common ' +
+                 'form of Active Directory\'s Protected Users. The console\'s ' +
+                 'Admin Read and Admin Write rosters are always protected ' +
+                 'besides. A person or application can also be protected on ' +
+                 'its own entry (stsNotDelegated, appNotDelegated).' },
+  { key: 'delegation.actorRole', group: 'Delegation',
+    label: 'Role a person needs to act for somebody',
+    env: 'STS_DELEGATION_ACTOR_ROLE', type: 'string',
+    dflt: 'DELEGATION_ACTOR', runtime: true,
+    description: 'The configured role a PERSON must hold to be the actor of ' +
+                 'a delegation or an impersonation — the actor_token\'s ' +
+                 'subject at a token exchange, the requester of a WS-Trust ' +
+                 'OnBehalfOf / ActAs. An application acts through its entry\'s ' +
+                 'delegation attributes instead. Create the role on ' +
+                 'Directory > Roles and give it to the people or groups who ' +
+                 'may act.' },
 
   // --- Logout --------------------------------------------------------------
   //

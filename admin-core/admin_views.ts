@@ -3601,7 +3601,7 @@ class AdminViews {
    * @returns the view
    */
   delegationView(query) {
-    const { log, delegation, krb5Principals } = this.deps;
+    const { log, delegation, krb5Principals, delegationPolicy } = this.deps;
     log.debug("Entering AdminViews.delegationView().");
     const wantedType = String(query.type || '');
     const wantedMode = String(query.mode || '');
@@ -3656,7 +3656,30 @@ class AdminViews {
     // about which acts to pass it would be three answers that each looked right
     // alone. Of the matched acts rather than the paged ones — a diagram of one
     // page of a list is a diagram of the pagination.
-    const graph = delegation.graph(filtered);
+    // AND THE CONFIGURED RELATIONSHIPS (#186, rcbj's decision): every pair
+    // an entry allows, drawn DASHED until an act has used it — for all three
+    // protocols, whose controls are one set. Left out while the reader has
+    // narrowed the acts by outcome, type or text, which say nothing about a
+    // pair nobody has used; kept under a protocol filter, which they do not
+    // contradict.
+    let configured = [];
+    if (!wantedOutcome && !wantedType && !wantedText) {
+      try {
+        configured = (delegationPolicy.list().pairs || [])
+          .map(function (pair) {
+            return { from: pair.intermediary,
+                     to: pair.targetApplication || pair.target,
+                     attribute: pair.attribute, mechanism: pair.mechanism,
+                     setOn: pair.setOn };
+          });
+      } catch (e) {
+        log.debug("Caught in AdminViews.delegationView(): " +
+                  ((e && e.message) || e));
+        // The picture of the acts stands without them.
+        configured = [];
+      }
+    }
+    const graph = delegation.graph(filtered, { configured: configured });
     // EVERY APPLICATION AMONG THE MATCHED ACTS, in whatever role it played. It
     // follows the filter for the same reason `chains` does — a reader who has
     // narrowed to one person wants that person's applications — and there is
