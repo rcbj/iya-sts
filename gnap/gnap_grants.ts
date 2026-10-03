@@ -1951,10 +1951,11 @@ class GnapGrants {
           grant.subjectReleasedAt = nowSec();
           grant.subjectReleasedBy = authorizedBy;
         }
-      } else {
+      } else if (!grant.subjectReleasedAt) {
         // Asked and approved, but by nothing that may authorize it — never
         // reached by this file's own paths; the code says which grant if a
-        // new one ever does.
+        // new one ever does. (Already released and spent is the ordinary
+        // case of a later release, and says nothing.)
         log.warn(errorCodes.tag('STS-GNAP-0793') + 'gnap: grant ' + grant.id +
                  ' was to release subject information that neither an ' +
                  'interaction nor a delegation decision authorized; none ' +

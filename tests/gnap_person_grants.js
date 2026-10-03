@@ -99,13 +99,18 @@ function checkPairwise(t) {
     applications.createApplication({ identifier: id, kind: 'gnap-client',
                                      fields: {} });
   });
+  // The sector is written the way a sighting writes a field, not through
+  // the console's create: that door holds a sector URI to a registration's
+  // section 8.1 check (it is fetched), which is not what this tests.
   [C, D].forEach(function (id) {
-    const made = applications.createApplication({
-      identifier: id, kind: 'gnap-client',
-      fields: { oauthSectorIdentifierUri:
-                  'https://sector-' + SUFFIX + '.example/uris.json' } });
-    t.check(made && made.ok !== false, 'fixture: ' + id + ' registered with ' +
-            'a sector', made);
+    applications.createApplication({ identifier: id, kind: 'gnap-client',
+                                     fields: {} });
+    const sector = 'https://sector-' + SUFFIX + '.example/uris.json';
+    applications.seen({ identifier: id, kind: 'gnap-client', counts: false,
+                        fields: { oauthSectorIdentifierUri: sector } });
+    t.check(applications.clientConfigOf(id).sector_identifier_uri,
+            'fixture: ' + id + ' carries a sector',
+            applications.clientConfigOf(id).sector_identifier_uri);
   });
   const forA = subject.opaqueIdFor(alice, A);
   const forB = subject.opaqueIdFor(alice, B);
