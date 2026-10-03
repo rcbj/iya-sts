@@ -155,7 +155,8 @@ kinds: `gnap-client` or `gnap-resource-server`. The attributes:
 | `gnapInstanceId` | an instance identifier this entry answers to |
 | `gnapFinishUri` | the finish URIs a redirect or push may use |
 | `gnapInteractionStartModes` | narrows the start modes this client may use |
-| `gnapAllowedAccess` | the access types a resource server may register |
+| `gnapAllowedAccess` | the access types and references a client may request (read by the issuance policy's `gnap-right-not-listed` rule), or a resource server may register |
+| `oauthAuthorizationDetailsType` | the access types a resource server owns — the [catalogue](#access-types-and-the-issuance-policy) shared with RFC 9396 |
 | `gnapBearerTokens`, `gnapSkipInteraction` | per-client permissions. `gnapSkipInteraction` lets a client skip the approval page; it does **not** let it act for a person — see [acting for somebody else](#acting-for-somebody-else) |
 | `gnapAccessTokenFormat`, `gnapAccessTokenLifetimeS` | per-application overrides |
 | `gnapResourceServerUri` | the locations a resource server answers for |
@@ -248,7 +249,10 @@ nothing is asked, and no subject information is released.
 ### What a derived token carries
 
 * **No more access than the original.** A right the original token does not
-  cover is refused, in every mode.
+  cover is refused, in every mode — unless the [access-type
+  catalogue](#access-types-and-the-issuance-policy) declares its type
+  `derivableFrom` a type the original carries. Such a right is still put to
+  the issuance policy and to the delegation question for its resource server.
 * **The chain of who derived it**, as RFC 8693 section 4.1's `act`: the
   deriving resource server, with any earlier ones nested under it. Every
   format carries it, in the part only this authorization server can write:
@@ -263,6 +267,78 @@ nothing is asked, and no subject information is released.
   Introspection returns it as `act`, and rotation keeps it.
 * **At most `gnap.maxDerivationDepth` links** (2 by default). A derivation past
   it is refused in every mode.
+
+## Access types and the issuance policy
+
+### One catalogue for GNAP and RFC 9396
+
+An access right's `type` (RFC 9635 section 8) is declared by the resource
+server that owns it, in the same place OAuth's rich authorization requests
+read: the resource application's `oauthAuthorizationDetailsType`, edited on the
+application's **Access types** tab or through
+`POST /admin-api/applications/set-access-type` and `/remove-access-type`. One
+definition per type:
+
+```json
+{"type": "payment", "description": "Initiate and track a payment",
+ "actions": ["initiate", "status", "refund"],
+ "datatypes": ["card", "transfer"],
+ "required": ["actions"],
+ "bearer": false, "maxLifetimeS": 300,
+ "derivableFrom": ["account"],
+ "introspectionClaims": ["email"],
+ "limits": {"type": "object",
+            "properties": {"amount": {"type": "number", "minimum": 0}},
+            "required": ["amount"], "additionalProperties": false}}
+```
+
+| Member | What it does for GNAP |
+|---|---|
+| `actions`, `datatypes`, `privileges`, `locations` | the values a right may name; another is refused `invalid_request` (`STS-GNAP-0812`). `locations` beside the resource server's own `gnapResourceServerUri` and audiences |
+| `required` | members a right must carry (`STS-GNAP-0812`) |
+| `schema` | a JSON Schema the whole right must meet (`STS-GNAP-0812`) |
+| `limits` | the JSON Schema (a subset) a right's `limits` must meet (`STS-GNAP-0814`); a type declaring none refuses `limits` (`STS-GNAP-0813`) |
+| `bearer: false` | a bearer token carrying the type is refused (`STS-GNAP-0811`) |
+| `maxLifetimeS` | a token carrying it lives no longer |
+| `derivableFrom` | a derived token (RFC 9767 section 4) may add a right of this type when the original carries one of these |
+| `introspectionClaims` | the person's claims the owning resource server is told at `/gnap/introspect` |
+| `interaction`, `consentActions`, `acr` | recorded now; enforced by phase 6 of #432 |
+
+**A right of a catalogued type that names no location is for its owning
+resource server**: the token is audienced to it and minted in its format.
+
+**An uncatalogued type** is granted in development mode and refused
+`request_denied` in product mode (`STS-GNAP-0810`). A reference string is not
+a type: `gnap.unknownAccessReferences` still decides an unregistered one.
+
+### Each right is a question to the issuance policy
+
+Every access right is put to the issuance policy as its own XACML question,
+action-id `issue-gnap-right`, with the right, the token it is for (label,
+bearer flag, format, resource servers), the client and its registered class,
+who approved it and how (`pending`, `interaction`, `remembered`, `skipped`,
+`derived`), the session's `acr` and `amr`, its risk and registered device, and
+what the catalogue declares for its type. It is asked twice: when the grant is
+requested, modified or derived (a refusal answers the client) and when tokens
+are issued (a refusal leaves the right out of its token).
+
+The built-in policy refuses a bearer token the realm (`gnap.bearerTokens`) or
+the client (`gnapBearerTokens`) refuses (`invalid_flag`, `STS-GNAP-0111`), one
+of this service's protected scopes the client does not declare
+(`STS-GNAP-0719`), a right `gnapAllowedAccess` does not list or an unknown
+reference where the setting refuses one (`STS-GNAP-0112`), and the catalogue's
+rules above; it caps the token at the type's `maxLifetimeS` and keeps
+everything else. `gate.check()` still decides whether the token is issued at
+all.
+
+**A realm's own issuance policy** (`xacml.issuancePolicy`) may refuse a right
+with a code of its own or **narrow** it — take actions, locations, datatypes or
+privileges off — through the obligation `urn:sts:xacml:obligation:gnap-right`.
+A narrowing never widens: taking a value off a dimension the right left open
+subtracts it from the values the catalogue lists, and a narrowing that cannot
+be carried out that way, leaves nothing, or fails the catalogue again is a
+refusal (`STS-GNAP-0817`). **The approval page says what was narrowed** before
+the person was asked. [XACML](xacml.md) describes the obligation.
 
 ## The resource owner
 

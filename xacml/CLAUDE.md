@@ -1324,6 +1324,40 @@ decider the gate evaluates the built-in policy itself** (rcbj's decision on
 no route and no slot — which the issuance PEP and `issuance_gate.js` both ask
 through, so the rules hold in every process.
 
+**AND SINCE #432 (phase 3) EACH GNAP ACCESS RIGHT.** `gnap/gnap_rights.ts`
+asks one question per right, action-id `issue-gnap-right`, the right's type
+(or reference string) as the resource-id, with the facts `xacml_request.js`'s
+`gnapRight()` spells (`urn:sts:xacml:gnap:*`: the right's five fields, what
+the access-type catalogue declares for its type, the token, the client, the
+approver and how it approved, the session, risk and device), through
+`issuance_gate.checkGnapRights()`, `decideGnapRights()` here and
+`xacml_gnap_right_verdicts.ts` — the scope question's arrangement, a realm's
+policy first and the built-in one where it says nothing. Two things differ
+from the scope question, and each is there for a reason:
+
+* **`narrow` and a lifetime.** A right has dimensions, so the obligation
+  `urn:sts:xacml:obligation:gnap-right` may carry DROP values per dimension
+  and a maximum lifetime beside keep / narrow / refuse. Several Permit rules
+  may each carry it — the built-in `gnap-type-lifetime` and an operator's
+  narrowing rule — so the reader MERGES every obligation (refuse over narrow
+  over keep, drops unioned, the shortest lifetime). That is why the built-in
+  lifetime rule is a separate Permit and not a member of `gnap-right-kept`.
+* **The risk, device and session facts have names of their own**
+  (`urn:sts:xacml:gnap:risk-level` and the rest), because the document's risk
+  and device rules are untargeted: given their attributes, every per-right
+  question would trip them and answer with an obligation the right reader
+  does not know. A realm rule may still read the GNAP names.
+
+The built-in rules (`decideGnapRights`, default yes) are the code
+`gnap_grants.ts` used to run, in its order — bearer, protected scope,
+gnapAllowedAccess, unknown reference — then the catalogue's: uncatalogued in
+product (`inProduct`, the mode as a fact), a type's `bearer: false`, its
+`maxLifetimeS`. A verdict this reader does not know refuses
+(`STS-GNAP-0815`); no verdict at all is a defect and refuses
+(`STS-XACML-0168`, `STS-GNAP-0816`) — a right is never issued because the
+engine broke. `tests/gnap_catalogue.js` holds each rule through the policy
+and a realm's narrowing override.
+
 **AND SINCE #98 (D4, D11) WHERE A PERSON'S DATA MAY GO.** When the service is
 deployed as cells, three questions go to the same policy from
 `common/cell_transfer.ts` through `issuance_gate.checkTransfer()`:

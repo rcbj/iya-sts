@@ -98,6 +98,15 @@ interface GnapRightsDeps {
   store: Json;
 }
 
+// THE DEMONSTRATION RESOURCE SERVER'S TYPE (`gnap.ts`'s `/gnap/rs/resource`),
+// defined here so the route module and the catalogue read one spelling. It is
+// THIS SERVICE'S OWN API, so it is catalogued by this service — the way RFC
+// 9396's `openid_credential` is built in — while `gnap.demoResourceServer` is
+// on: product mode's uncatalogued rule would otherwise refuse the one API
+// every GNAP client here can be pointed at. It declares nothing beyond its
+// existence and owns no audience (a token for it is audienced as before).
+const DEMO_TYPE = 'urn:iya-sts:gnap:demo';
+
 // The array dimensions of a right (RFC 9635 section 8) a narrowing may take
 // values off, by the obligation's name for them.
 const DIMENSIONS = ['actions', 'locations', 'datatypes', 'privileges'];
@@ -175,6 +184,16 @@ class GnapRights {
   entryOf(right: Json): Json {
     const { log, catalogue } = this.deps;
     log.debug("Entering GnapRights.entryOf().");
+    if (right && typeof right === 'object' && right.type === DEMO_TYPE &&
+        this.deps.config.value('gnap.demoResourceServer') !== false) {
+      log.debug("Leaving GnapRights.entryOf(). The demonstration type.");
+      return { type: DEMO_TYPE, builtIn: true, identifier: '', clientId: '',
+               identifiers: [], actions: null, datatypes: null,
+               privileges: null, required: [], interaction: 'default',
+               consentActions: [], bearer: null, maxLifetimeS: null, acr: '',
+               derivableFrom: [], introspectionClaims: [], limits: null,
+               validateLimits: null, validate: null };
+    }
     const found = right && typeof right === 'object'
       ? catalogue.typeOf(right.type) : null;
     log.debug("Leaving GnapRights.entryOf(). " + !!found);
@@ -210,7 +229,7 @@ class GnapRights {
       const access = tokens[t].access || [];
       for (let r = 0; r < access.length; r++) {
         const entry = this.entryOf(access[r]);
-        if (!entry) {
+        if (!entry || entry.builtIn) {
           continue;
         }
         const found = catalogue.conformance(access[r], entry,
@@ -518,7 +537,8 @@ class GnapRights {
         if (!refused && verdict.verdict === 'narrow') {
           result = self.narrowed(right, verdict.drop);
           const entry = result ? self.entryOf(result) : null;
-          if (!result || (entry && self.deps.catalogue.conformance(result,
+          if (!result || (entry && !entry.builtIn &&
+              self.deps.catalogue.conformance(result,
               entry, 'the narrowed right').kind)) {
             refused = true;
             code = 'STS-GNAP-0817';
@@ -584,7 +604,7 @@ class GnapRights {
     const out: string[] = [];
     (access || []).forEach(function (right: Json): void {
       const entry = self.entryOf(right);
-      if (entry && out.indexOf(entry.identifier) < 0) {
+      if (entry && entry.identifier && out.indexOf(entry.identifier) < 0) {
         out.push(entry.identifier);
       }
     });
@@ -673,6 +693,7 @@ export = {
   installInstance: (instance: GnapRights): void => slot.install(instance),
   instanceOrigin: (): string => slot.origin(),
   STAGES: GnapRights.STAGES,
+  DEMO_TYPE: DEMO_TYPE,
   entryOf: slot.forward('entryOf'),
   conformanceRefusal: slot.forward('conformanceRefusal'),
   narrowed: slot.forward('narrowed'),

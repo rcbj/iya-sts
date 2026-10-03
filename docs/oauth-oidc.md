@@ -1361,6 +1361,24 @@ is also accepted inside a request object.
   granted the details it asks for. `oauth2.authorizationDetailsMaxEntries` caps
   the array.
 
+**The declarations are the access-type catalogue GNAP reads too** (#432). A
+JSON definition may also say, and each is enforced here:
+
+| Member | Effect on a rich authorization request |
+|---|---|
+| `actions`, `datatypes`, `privileges` | a detail naming another value is refused (`STS-OAUTH-0456`) |
+| `required` | a detail without one of these members is refused (`STS-OAUTH-0456`) |
+| `limits` | a JSON Schema (a subset: `type`, `properties`, `required`, `additionalProperties`, `items`, `enum`, `const`, bounds, `pattern`, `format`) the detail's `limits` must meet (`STS-OAUTH-0877`); a type declaring none refuses `limits` (`STS-OAUTH-0876`) |
+| `bearer: false` | the access token must be sender-constrained by DPoP or a client certificate (`STS-OAUTH-0878`) |
+| `maxLifetimeS` | the access token lives no longer than this |
+| `introspectionClaims` | the person's claims the declaring resource server is told at `/oauth2/introspect` (as top-level members), when it authenticates there; it then sees only the details of its own types |
+
+`derivableFrom` is GNAP's (RFC 9767 derivation). `interaction`,
+`consentActions` and `acr` are recorded and enforced by a later phase of #432.
+The resource application's page has an **Access types** tab that edits the
+catalogue, and `/admin-api/applications/set-access-type` and
+`/remove-access-type` do the same. See [GNAP](gnap.md#access-types-and-the-issuance-policy).
+
 **`openid_credential` and a subset of the claims.** OpenID4VCI 1.0 puts a
 wallet's claim selection in the `claims` member of an `openid_credential`
 detail (section 5.1.1), not in the Credential Request, so it is made when the

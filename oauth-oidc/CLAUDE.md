@@ -1812,6 +1812,39 @@ so must `admin-ui/admin.ts`.
    declared type's details. `tests/rfc9396_authorization_details.js` holds the
    rest.
 
+   **THE DECLARATION IS THE ACCESS-TYPE CATALOGUE SINCE #432 (phase 4,
+   2026-10-03)**, shared with GNAP, which reads it for access rights
+   (`gnap/CLAUDE.md`, *Each right a policy question*). A definition may now
+   carry `actions`, `datatypes`, `privileges`, `required`, `limits` (a JSON
+   Schema subset), `bearer`, `maxLifetimeS`, `derivableFrom`,
+   `introspectionClaims`, `interaction`, `consentActions` and `acr`;
+   `applications.js` owns the grammar. What RAR does with each:
+
+   * the values, `required` and the schema: `conformance()`, the one reading
+     both protocols ask, refusing 0456 (0457 for a location, unchanged);
+     `limits` refused on a type that declares no limits schema
+     (`STS-OAUTH-0876`) or failing it (`0877`);
+   * `bearer: false`: `tokenSet()` refuses an access token carrying the type
+     that is bound neither by DPoP nor a client certificate
+     (`invalid_authorization_details`, `STS-OAUTH-0878`) — there, because the
+     funnel is the first place the binding is known;
+   * `maxLifetimeS`: `accessToken()` caps `exp` beside FAPI's cap, so
+     `expires_in` reports it;
+   * `introspectionClaims`: `/oauth2/introspect` asks `introspectionView()`
+     for an AUTHENTICATED caller — one owning a type among the token's
+     details sees only its own types' details and the person's claims they
+     declare, added as top-level members never over one already there; a
+     caller owning none sees the token as before;
+   * `derivableFrom` is GNAP's (RFC 9767); `interaction`, `consentActions`
+     and `acr` are ENFORCED BY PHASE 6 of #432 (the next lane).
+
+   **AN UNKNOWN TYPE STAYS REFUSED IN EVERY MODE HERE**, unlike GNAP's
+   development mode (`mode.grantsUncataloguedAccess()`): RFC 9396 section 5
+   says MUST, and spec compliance is above development's convenience. The
+   console's Access types tab and `set-access-type` / `remove-access-type`
+   (`admin-core/admin_actions.ts`) write the attribute through
+   `updateApplication()`, the one door.
+
 3an. **`step_up.ts` IS RFC 9470, AND A SESSION IS NO LONGER AN ANSWER TO A
    REQUEST IT DOES NOT MEET (2026-09-13).** Asked for as *a couple of new query
    parameters on the authorization endpoint*; `acr_values` and `max_age` were

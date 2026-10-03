@@ -92,6 +92,7 @@ import errorCodes = require('../common/error_codes');
 import validation = require('../common/validation');
 import authorizationServers = require('../oauth-oidc/authorization_servers');
 import grants = require('./gnap_grants');
+import gnapRights = require('./gnap_rights');
 import rs = require('./gnap_rs');
 import tokens = require('./gnap_tokens');
 import zcap = require('./token_zcap');
@@ -161,7 +162,9 @@ const STATUS_FOR: Record<string, number> = {
 // ---------------------------------------------------------------------------
 // THE DEMONSTRATION RESOURCE SERVER'S NAMES — see `demoResource()`.
 // ---------------------------------------------------------------------------
-const DEMO_TYPE = 'urn:iya-sts:gnap:demo';
+// One spelling, the catalogue's (#432 phase 4): `gnap_rights.ts` builds it
+// in while the demonstration resource server is on.
+const DEMO_TYPE = gnapRights.DEMO_TYPE;
 const DEMO_REFERENCE = 'iya-sts-gnap-demo';
 
 /**

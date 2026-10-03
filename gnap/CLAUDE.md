@@ -50,6 +50,7 @@ Route-free libraries, each require-able from an in-process test:
 | `gnap_signals.ts` | CAEP emission and the SSF subject scope |
 | `gnap_revocation.ts` | what ends a grant from OUTSIDE the protocol (#432) — a sign-out, a disable, a deleted client or its key removed, a compromised device, a partner's signal — and the check at use; see *What ends a grant from outside the protocol* |
 | `gnap_delegation.ts` | who may act for whom (#432 phase 1): impersonation by assertion and RFC 9767 derivation asked of #186's delegation policy, recorded in the delegation register; the subset rule and its one extension point; the actor chain and its cap — see *Delegation* below |
+| `gnap_rights.ts` | each access right against the access-type catalogue and the issuance policy (#432 phases 3 and 4): well-formedness, the `issue-gnap-right` facts and verdicts, narrowing, "derivable from", the introspection view — see *Each right a policy question* below |
 | `gnap_grants.ts` | the engine: identifying a caller, creating, continuing, modifying and revoking grants, issuing, rotating and deriving tokens |
 | `gnap_rs.ts` | introspection, registration, and judging a presented token |
 | `gnap_console.ts` | the view and action layer both admin doors render (no route, no `res`, no markup) |
@@ -172,10 +173,11 @@ exchange, WS-Trust and the KDC do (`common/CLAUDE.md` rule 3az, `docs/delegation
 **A DERIVED TOKEN IS A SUBSET OF THE ORIGINAL** (rcbj's decision 3), in every
 mode (0513): the downstream-registered exception is gone, because it let any
 resource server a token reached mint access nobody approved.
-**`derivableBeyond()` is the ONE extension point**: #432 phase 4's access-type
-catalogue will make a right of a type declared "derivable from" a type the
-original carries derivable there, and nowhere else. It answers false until
-then — deliberately no placeholder that allows anything.
+**`derivableBeyond()` is the ONE extension point**, FILLED BY PHASE 4: a right
+of a type the access-type catalogue declares `derivableFrom` a type the
+original carries (`gnap_rights.ts`'s `derivable()`), and nothing else; such a
+right still goes to the issuance policy (approval `derived`) and to the
+delegation question for its resource server.
 
 **THE ACTOR CHAIN** is RFC 8693 section 4.1's `act` on the token MODEL
 (`gnap_access.ts`: `{ sub, act? }`, nothing else, at most 16 deep as input),
@@ -196,6 +198,71 @@ whoever it liked:
 Rotation and modification keep the chain (`grant.actorChain`, and the rotated
 model copies `act`), introspection returns it, and `gnap.maxDerivationDepth`
 (default 2: a three-tier call path) caps it in every mode (0782).
+
+## Each right a policy question, read against one catalogue (#432 phases 3 and 4, 2026-10-03)
+
+Until #432 the engine decided who may be granted what in code
+(`protectedAccessProblem()`, `accessProblem()` and an inline bearer check in
+`createGrant()` and `modifyGrant()`), and the issuance gate was asked "an
+access token for X" without ever seeing a right. Both halves are replaced;
+`gnap_rights.ts`'s header argues them, what a reader needs here:
+
+* **THE CATALOGUE IS RFC 9396'S, EXTENDED, NOT TWINNED.** An access right and
+  an authorization detail share their five common fields, and resource
+  applications already declared detail types (`oauthAuthorizationDetailsType`,
+  `oauth-oidc/CLAUDE.md` 3am). The grammar grew in `common/applications.js`
+  (`authorizationDetailsTypeOf()`'s block lists every member) and the family
+  scope gained `gnap`; `authorization_details.ts`'s `conformance()` is the ONE
+  reading both protocols ask. The declaring application OWNS the type: no
+  separate owner member, because a second name for the resource server would
+  be a second thing to get wrong. A right of a catalogued type that names no
+  location is audienced to its owner (`resourceServersFor()`); one that names
+  locations keeps the location reading, which the catalogue already holds to
+  the owner's addresses (its `gnapResourceServerUri` counts).
+* **WELL-FORMEDNESS IS NOT POLICY.** A right that does not meet its type
+  (`STS-GNAP-0812`, limits `0813`/`0814`) is `invalid_request` before any
+  question is asked — the 3bt line: RFC 9396's schema check stays in
+  `parse()` too.
+* **ONE QUESTION PER RIGHT, `issue-gnap-right`**, built by
+  `xacml_request.js`'s `gnapRight()` and asked through
+  `issuance_gate.checkGnapRights()` → `xacml_role_pep.ts`'s
+  `decideGnapRights()` → `xacml_gnap_right_verdicts.ts` — #304's scope
+  arrangement: the realm's policy first, the built-in one where it says
+  nothing, refuse where neither can answer (`STS-GNAP-0816`). The built-in
+  rules ARE the deleted code, in its order: bearer (`0111`, the realm's and
+  the client's), protected scopes (`0719`), gnapAllowedAccess and an unknown
+  reference (`0112`), then the catalogue's — an uncatalogued type in product
+  (`0810`; `mode.grantsUncataloguedAccess()` is the same question for the
+  pages that say which applies), `bearer: false` (`0811`), `maxLifetimeS` as
+  a lifetime obligation. **No copy stays in code**: a second authority would
+  be one a realm's policy could not override.
+* **TWO STAGES.** `request` (creation, modification, derivation): a refusal
+  answers the client, a narrowing changes what the approval page shows —
+  and the page lists it (`grant.narrowed`). `issue` (`release()`): the
+  approval facts exist now (`grant.approval`: `interaction`, `remembered`,
+  `skipped`, `derived`), so the right is asked again; a refusal DROPS it from
+  its token (audited) rather than answering a client that is not waiting,
+  and the lifetime caps the token in `issueTokens()`.
+* **RISK, DEVICE AND SESSION FACTS UNDER NAMES OF THEIR OWN**
+  (`urn:sts:xacml:gnap:risk-*`, `device-*`, `session-*`): the issuance
+  document's risk and device rules are UNTARGETED, so sending their
+  attributes would make every per-right question trip them and come back
+  with an obligation no right reader knows. They still decide the token as a
+  whole through `gate.check()`, which is unchanged.
+* **NARROWING NEVER WIDENS.** An absent dimension is unrestricted
+  (`gnap_access.ts`), so taking a value off one subtracts it from what the
+  catalogue lists; nothing listed, nothing left, a reference string, or a
+  narrowed right failing the catalogue again is `0817`.
+* **INTROSPECTION IS FILTERED PER RESOURCE SERVER** (RFC 9767 section 3.3):
+  a right of a type ANOTHER resource server owns is withheld, and the
+  person's claims this one's types declare (`introspectionClaims`, read
+  through `claim_attributes.requestedClaimsFor()`) are added as top-level
+  members. A name the response already carries — `status` among them — is
+  refused when the type is declared and never overwritten.
+* **ENFORCED IN PHASE 6 OF #432 (same ticket, next lane)**: `interaction`,
+  `consentActions` and `acr`. They are declared, shown and sent to the
+  policy as facts; nothing acts on them yet. Everything else declared is
+  enforced.
 
 ## Shared Signals
 
@@ -504,6 +571,7 @@ modification alike, separately from `gnap.maxPolls` (`too_many_attempts`,
 | 0730–0749 | what ends a grant from outside the protocol, and the check at use (#432) |
 | 0770–0789 | delegation (#432 phase 1): 0770–0775 impersonation by assertion, 0776–0781 derivation, one per refusal kind of the policy (relationship, protected subject, semantics, authority, may_act, a realm's policy); 0782 the depth cap |
 | 0790–0809 | #432 phase 7: the grant lifetime (0790, 0791), the per-person revoke (0792), subject information with no authorization (0793) |
+| 0810–0817 | #432 phases 3 and 4: an uncatalogued type in product (0810), a type refusing bearer (0811), a right not meeting its catalogue entry (0812) or its limits (0813, 0814), a verdict nobody knows (0815), no verdict at all (0816), narrowed to nothing (0817) |
 
 `tests/error_codes.js` carries `gnapError(res` and `interactionError(res` as
 failure patterns.
@@ -520,6 +588,8 @@ failure patterns.
 | `tests/outbound_tls.js`, `tests/vendored/sts_outbound_tls.js` | the push finish's transport policy beside SSF's, federation's and XACML's (#171) |
 | `tests/vendored/sts_gnap_rs.js` | RFC 9767: each token format verified by the job's OWN code, then each accepted, narrowed, rotated, revoked and expired at the demonstration RS; introspection, registration, derivation and (section 4b, #432) the actor chain on a derived token in each format, read by the job's own decoders under the signature or MAC it verifies, mutual TLS (in a realm set to `gnap.mtlsTrust=pinned`, since its certificate is self-signed) |
 | `tests/vendored/sts_gnap_signals.js` | a GNAP-owned stream, CAEP on revoke/modify, and the scope, against an unscoped control stream |
+| `tests/gnap_catalogue.js` | #432 phases 3 and 4 in process: the catalogue's grammar, the console's `set-access-type` / `remove-access-type`, RFC 9396 reading it (values, required, limits, lifetime, bearer, the introspection view), GNAP's conformance, each built-in rule through the policy in both modes, an issue-stage refusal dropping a right, narrowing through a realm's own policy, `derivableBeyond()`, GNAP introspection per resource server |
+| `tests/vendored/sts_gnap_catalogue.js` | the same over HTTP: a declared type accepted and its bearer, lifetime and limits rules, an undeclared one refused in product, a narrowed right, derivation into a `derivableFrom` type, introspection claims per resource server, and RAR at `/oauth2/token` and `/oauth2/introspect` |
 | `tests/gnap_person_grants.js` | #432 phase 7 in process: per-client opaque identifiers and references, subject released once on an authorization, the grant lifetime and the expiry job, finalization reasons, `too_fast`, self-declared display, one person's grants and who may revoke them |
 | `tests/gnap_cells.js` | #98 in process, the cell map, channel and routing index stubbed: stamped handles, each door's placement, a grant moved and forwarded, a pinned browser pulling a grant, single-cell mode unchanged |
 | `tests/gnap_revocation.js` | #432 in process with the whole stack: the sign-out families, a grant ending with its session, `/admin/sessions`, `revokeGrantsOf()` narrowed and whole (and never a global sign-out for a person holding nothing), a global sign-out, the check at use and the disable, the entry's key replaced and deleted, a compromised device. The partner's signal is `tests/ssf_transmitters.js` K |
