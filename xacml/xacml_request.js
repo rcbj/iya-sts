@@ -202,6 +202,28 @@ const VOCABULARY = Object.freeze({
   GNAP_TYPE_DERIVABLE_FROM: 'urn:sts:xacml:gnap:type-derivable-from',
   GNAP_TYPE_INTROSPECTION_CLAIM:
     'urn:sts:xacml:gnap:type-introspection-claim',
+  // THE RIGHT'S LIMITS AND WHO OWNS WHAT IT NAMES (#432 phase 5). The limits
+  // as the right carries them (`limits`, the JSON) and each member with a
+  // meaning decomposed (`common/access_limits.ts`): an amount (a double, in
+  // its currency), a count, the receivers, the repeating interval and the
+  // window's two ends. The owner of the right's identifier — from a
+  // registered resource set or the resource server's lookup — whether one is
+  // known, whether a declared lookup could not be answered, and, once an
+  // approver is known, whether the approver is that owner (or a member of
+  // that group). `owner-matches` is sent only with an approver.
+  GNAP_LIMITS: 'urn:sts:xacml:gnap:limits',
+  GNAP_LIMIT_AMOUNT: 'urn:sts:xacml:gnap:limit-amount',
+  GNAP_LIMIT_CURRENCY: 'urn:sts:xacml:gnap:limit-currency',
+  GNAP_LIMIT_COUNT: 'urn:sts:xacml:gnap:limit-count',
+  GNAP_LIMIT_RECEIVER: 'urn:sts:xacml:gnap:limit-receiver',
+  GNAP_LIMIT_INTERVAL: 'urn:sts:xacml:gnap:limit-interval',
+  GNAP_LIMIT_NOT_BEFORE: 'urn:sts:xacml:gnap:limit-not-before',
+  GNAP_LIMIT_NOT_AFTER: 'urn:sts:xacml:gnap:limit-not-after',
+  GNAP_OWNER_KNOWN: 'urn:sts:xacml:gnap:owner-known',
+  GNAP_OWNER: 'urn:sts:xacml:gnap:owner',
+  GNAP_OWNER_SOURCE: 'urn:sts:xacml:gnap:owner-source',
+  GNAP_OWNER_UNRESOLVED: 'urn:sts:xacml:gnap:owner-unresolved',
+  GNAP_OWNER_MATCHES: 'urn:sts:xacml:gnap:owner-matches',
   // ACTION: the token the right is to be issued in — its label, the bearer
   // flag, the format it would be minted in and the resource servers it is
   // for.
@@ -539,7 +561,10 @@ class AuthorizationRequest {
   // THE FACTS OF A GNAP ACCESS RIGHT (#432 phase 3). `facts` (each optional):
   //   right     { kind, type, actions, locations, datatypes, identifier,
   //               privileges, listed, referenceRegistered, protected,
-  //               protectedDeclared }
+  //               protectedDeclared, limits: { json, amount, currency,
+  //               count, receivers, interval, notBefore, notAfter } }
+  //   owner     { known, owner, source, unresolved, matches } (#432
+  //               phase 5)
   //   catalogue { catalogued, owner, bearer (null when undeclared),
   //               maxLifetimeS (null when undeclared), acr, interaction,
   //               consentActions, derivableFrom, introspectionClaims }
@@ -591,6 +616,25 @@ class AuthorizationRequest {
                   bool(right.referenceRegistered), B);
     this.resource(V.GNAP_PROTECTED, bool(right.protected), B);
     this.resource(V.GNAP_PROTECTED_DECLARED, bool(right.protectedDeclared), B);
+    const limits = right.limits || null;
+    if (limits) {
+      this.resource(V.GNAP_LIMITS, one(limits.json));
+      this.resource(V.GNAP_LIMIT_AMOUNT, typeof limits.amount === 'number'
+        ? [limits.amount] : [], model.TYPE.DOUBLE);
+      this.resource(V.GNAP_LIMIT_CURRENCY, one(limits.currency));
+      this.resource(V.GNAP_LIMIT_COUNT, typeof limits.count === 'number'
+        ? [limits.count] : [], model.TYPE.INTEGER);
+      this.resource(V.GNAP_LIMIT_RECEIVER, list(limits.receivers));
+      this.resource(V.GNAP_LIMIT_INTERVAL, one(limits.interval));
+      this.resource(V.GNAP_LIMIT_NOT_BEFORE, one(limits.notBefore));
+      this.resource(V.GNAP_LIMIT_NOT_AFTER, one(limits.notAfter));
+    }
+    const owner = given.owner || {};
+    this.resource(V.GNAP_OWNER_KNOWN, bool(owner.known), B);
+    this.resource(V.GNAP_OWNER, one(owner.owner));
+    this.resource(V.GNAP_OWNER_SOURCE, one(owner.source));
+    this.resource(V.GNAP_OWNER_UNRESOLVED, bool(owner.unresolved), B);
+    this.resource(V.GNAP_OWNER_MATCHES, bool(owner.matches), B);
     this.resource(V.GNAP_CATALOGUED, bool(catalogue.catalogued), B);
     this.resource(V.GNAP_TYPE_OWNER, one(catalogue.owner));
     this.resource(V.GNAP_TYPE_BEARER, bool(catalogue.bearer), B);

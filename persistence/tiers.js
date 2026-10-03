@@ -349,7 +349,7 @@ const CELL_MINTED = [
   'federation.unmapped', 'federation_sp.contexts',
   'gnap.approvers', 'gnap.continuations', 'gnap.grants', 'gnap.instances',
   'gnap.interactions', 'gnap.manageHandles', 'gnap.manageValues',
-  'gnap.movedGrants', 'gnap_monitor.counters', 'gnap.tokens',
+  'gnap.movedGrants', 'gnap_monitor.counters', 'gnap.spend', 'gnap.tokens',
   'gnap.tokenValues', 'gnap.userCodes', 'gnap.userRefs', 'krb5.principals',
   'ldap.clusterConnections', 'ldap.clusterSignOuts', 'mail.outbox',
   'mail.preferences', 'oauth2.attestationChallenges', 'oauth2.authzCodes',

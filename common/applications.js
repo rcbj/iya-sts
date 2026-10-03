@@ -3472,6 +3472,15 @@ const SCHEMA = {
             'whose locations start with one of these is audienced to this ' +
             'entry, and a token for it is minted with this resource ' +
             'server\'s format, JWE key and macaroon key.' },
+    { name: 'gnapOwnerLookupUri', kind: 'single', from: 'the console, or ' +
+        'by hand',
+      what: 'Where this resource server answers who owns a resource (#432 ' +
+            'phase 5): an https URL template holding {identifier} once, in ' +
+            'its path, e.g. https://rs.example.com/owners/{identifier}. The ' +
+            'authorization server fetches it with the identifier ' +
+            'percent-encoded into that segment and reads {"owner": "<DN>"} ' +
+            '(404: nobody owns it); the person approving a right naming the ' +
+            'identifier must be that person or a member of that group.' },
     { name: 'gnapJweKey', kind: 'single', from: 'the console, or by hand',
       what: 'This resource server\'s PUBLIC encryption key (a JWK) for ' +
             'jwt-encrypted tokens, so only this resource server can read ' +
@@ -3989,6 +3998,7 @@ const EDITABLE = {
   gnapAccessTokenFormat: 'set',
   gnapAccessTokenLifetimeS: 'set',
   gnapResourceServerUri: 'multi',
+  gnapOwnerLookupUri: 'set',
   gnapJweKey: 'set',
   gnapScopedSignals: 'set',
   oauthRedirectUri: 'multi',
@@ -5176,6 +5186,7 @@ const FIELD_EXAMPLES = {
   gnapAllowedAccess: 'photo-api',
   gnapAccessTokenLifetimeS: '600',
   gnapResourceServerUri: 'https://rs.example.com',
+  gnapOwnerLookupUri: 'https://rs.example.com/owners/{identifier}',
   gnapJweKey: '{"kty":"EC","crv":"P-256","use":"enc","x":"…","y":"…"}',
   oauthRedirectUri: 'https://app.example.com/callback',
   oauthPostLogoutRedirectUri: 'https://app.example.com/signed-out',
@@ -5584,6 +5595,57 @@ function resourceMetadataUrlProblem(value) {
   return '"' + text + '" is not an http or https URL, and ' +
          '`oauthResourceMetadataUrl` records where an RFC 9728 document was ' +
          'fetched from.';
+}
+
+// ---------------------------------------------------------------------------
+// A RESOURCE SERVER'S OWNER LOOKUP (#432 phase 5, `gnap/gnap_ownership.ts`).
+// The one outbound URL a GNAP client can influence, and only through the
+// identifier it puts in a right — so everything else about the URL is held
+// here, when an administrator writes it: https (the outbound policy then
+// verifies the certificate), a host, no user information, no query and no
+// fragment (nothing a caller's identifier could be spliced into beside the
+// path), and `{identifier}` exactly once, as a WHOLE path segment, so the
+// percent-encoded identifier can be nothing but that segment.
+// ---------------------------------------------------------------------------
+/**
+ * Says whether a `gnapOwnerLookupUri` template is refused.
+ *
+ * @param value - the template
+ * @returns the refusal sentence, or '' (also for an empty value)
+ */
+function ownerLookupUriProblem(value) {
+  log.debug("Entering ownerLookupUriProblem().");
+  const text = String(value == null ? '' : value).trim();
+  if (!text) {
+    log.debug("Leaving ownerLookupUriProblem(). Empty.");
+    return '';
+  }
+  const why = 'gnapOwnerLookupUri must be an https URL with a host, no ' +
+    'user information, query or fragment, and {identifier} exactly once ' +
+    'as a whole path segment (https://rs.example.com/owners/{identifier})';
+  if (text.split('{identifier}').length !== 2 ||
+      /[{}]/.test(text.replace('{identifier}', '')) ||
+      !/\/\{identifier\}(\/|$)/.test(text)) {
+    log.debug("Leaving ownerLookupUriProblem(). The placeholder.");
+    return why;
+  }
+  let parsed = null;
+  try {
+    parsed = new URL(text.replace('{identifier}', 'x'));
+  } catch (e) {
+    log.debug("Caught in ownerLookupUriProblem(): " +
+              ((e && e.message) || e));
+    parsed = null;
+  }
+  if (!parsed || parsed.protocol !== 'https:' || !parsed.hostname ||
+      parsed.username || parsed.password || parsed.search || parsed.hash ||
+      text.indexOf('?') >= 0 || text.indexOf('#') >= 0 ||
+      parsed.pathname.indexOf('/x') < 0) {
+    log.debug("Leaving ownerLookupUriProblem(). Not such a URL.");
+    return why;
+  }
+  log.debug("Leaving ownerLookupUriProblem().");
+  return '';
 }
 
 /**
@@ -8278,13 +8340,14 @@ const ACCESS_TYPE_INTERACTIONS = ['always', 'default', 'never'];
 // The members an introspection response already carries, which no type may
 // name as a claim to add beside them: RFC 7662 section 2.2's, RFC 9767
 // section 3.3's and the ones this service adds (`act`, `format`,
-// `instance_id`, `authorization_details`, `acr`, `device_id`).
+// `instance_id`, `authorization_details`, `acr`, `device_id`, and — #432
+// phase 5 — `grant_id`, the grant a token's limits are counted against).
 const INTROSPECTION_RESERVED = ['active', 'access', 'iss', 'sub', 'aud', 'exp',
                                 'iat', 'nbf', 'jti', 'flags', 'key', 'label',
                                 'act', 'instance_id', 'format', 'scope',
                                 'client_id', 'username', 'token_type', 'cnf',
                                 'authorization_details', 'acr', 'auth_time',
-                                'device_id', 'may_act', 'status'];
+                                'device_id', 'may_act', 'status', 'grant_id'];
 
 // The JSON Schema keywords a `limits` schema may use (#432 phase 4). A
 // SUBSET, because a limit is a number, a currency, a count, a receiver, an
@@ -9093,6 +9156,14 @@ function normaliseFields(value) {
       if (problem) {
         errors.push(problem);
         code = code || 'STS-REG-0011';
+        return;
+      }
+    }
+    if (name === 'gnapOwnerLookupUri') {
+      const problem = ownerLookupUriProblem(values[0]);
+      if (problem) {
+        errors.push(problem);
+        code = code || 'STS-REG-0334';
         return;
       }
     }
@@ -12078,6 +12149,13 @@ function updateApplication(identifier, change) {
       log.debug("Leaving updateApplication(). The home page is not a usable " +
                 "URL.");
       return errorCodes.mark({ ok: false, errors: [problem] }, 'STS-REG-0011');
+    }
+  }
+  if (attribute === 'gnapOwnerLookupUri' && mode === 'set' && value) {
+    const problem = ownerLookupUriProblem(value);
+    if (problem) {
+      log.debug("Leaving updateApplication(). Not a usable owner lookup.");
+      return errorCodes.mark({ ok: false, errors: [problem] }, 'STS-REG-0334');
     }
   }
   if (attribute === 'oauthPermissionBaseUri' && mode === 'set' && value) {
@@ -16193,6 +16271,7 @@ module.exports = {
   homePageOf: homePageOf,
   initiateLoginUriOf: initiateLoginUriOf,
   homePageProblem: homePageProblem,
+  ownerLookupUriProblem: ownerLookupUriProblem,
   // THE CORS ORIGINS (2026-09-13): the one entry's list, the entry a request
   // named, and the realm's union — the three questions `common/cors.js` asks.
   corsOriginsOf: corsOriginsOf,

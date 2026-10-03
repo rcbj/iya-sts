@@ -150,6 +150,8 @@ import gnapDelegation = require('./gnap_delegation');
 // phases 3 and 4): the facts, the verdicts and the access-type catalogue's
 // well-formedness. A library.
 import gnapRights = require('./gnap_rights');
+// Who owns an identifier (#432 phase 5), for the approval page's question.
+import ownership = require('./gnap_ownership');
 
 const PROTOCOL = 'GNAP';
 const STATE = store.STATE;
@@ -236,6 +238,7 @@ interface GnapGrantsDeps {
   mtls: typeof mtls;
   delegation: typeof gnapDelegation;
   rights: typeof gnapRights;
+  ownership: typeof ownership;
   // oauth2.js, required when it is needed and not before (it registers
   // routes, and was a lazy require before the conversion).
   loadOauth2(): typeof import('../oauth-oidc/oauth2');
@@ -1129,6 +1132,9 @@ class GnapGrants {
                       amr: ro.amr || (session && session.amr) || [] }
                   : null,
       risk: risk, device: device,
+      // What the owner lookups answered (#432 phase 5): filled by the caller
+      // from `rights.owners()` before the question is asked.
+      owners: {} as any,
       targetsOf: function targetsOf(access) {
         log.debug("Entering targetsOf().");
         log.debug("Leaving targetsOf().");
@@ -1145,7 +1151,7 @@ class GnapGrants {
   // The request stage (#432 phase 3): the catalogue's well-formedness, then
   // one policy question per right. A refusal, or the tokens as the policy
   // left them and what it narrowed.
-  private judgeRequested(req, grantish, app, tokens, approval) {
+  private async judgeRequested(req, grantish, app, tokens, approval) {
     const { log, rights } = this.deps;
     log.debug("Entering GnapGrants.judgeRequested().");
     const malformed = rights.conformanceRefusal(tokens);
@@ -1153,13 +1159,62 @@ class GnapGrants {
       log.debug("Leaving GnapGrants.judgeRequested(). Malformed.");
       return malformed;
     }
-    const judged = rights.judge(tokens,
-                                this.rightsContext(req, grantish, app,
-                                                   approval),
-                                rights.STAGES.REQUEST);
+    const ctx = this.rightsContext(req, grantish, app, approval);
+    // The owner lookups first (#432 phase 5): the question is synchronous.
+    ctx.owners = await rights.owners(tokens, ctx);
+    const judged = rights.judge(tokens, ctx, rights.STAGES.REQUEST);
     log.debug("Leaving GnapGrants.judgeRequested(). " +
               (judged.ok ? 'Judged.' : 'Refused.'));
     return judged;
+  }
+
+  // ---------------------------------------------------------------------------
+  // MAY THIS PERSON APPROVE WHAT IS ASKED? (#432 phase 5) — the approval
+  // page's question before it draws, and again before it records an
+  // approval. Only the rights whose identifier is OWNED by somebody else, or
+  // whose owner could not be looked up, are put to the issuance policy, as
+  // this person's `interaction` approval; the policy's built-in rule refuses
+  // them (STS-GNAP-0861, 0863) unless a realm's own allows. Every other right
+  // is the page's ordinary business and is not asked about here, so the page
+  // refuses for ownership and nothing else. The refusal, or null.
+  // ---------------------------------------------------------------------------
+  /**
+   * Says whether a person may approve the rights a grant asks for, as their
+   * resource owner (#432 phase 5).
+   *
+   * @param req - the request from the approval page
+   * @param grant - the grant
+   * @param username - the person signed in on the page
+   * @returns a promise of the policy's refusal, or null
+   */
+  async approverRefusal(req, grant, username) {
+    const { log, applications, rights, ownership } = this.deps;
+    log.debug("Entering GnapGrants.approverRefusal().");
+    const app = applications.get(grant.client.identifier) ||
+                { identifier: grant.client.identifier, fields: {} };
+    const ctx = this.rightsContext(req, Object.assign({}, grant, {
+      ro: { username: username, sessionId: null, amr: [], acr: '' } }),
+      app, 'interaction');
+    const asked = (grant.request && grant.request.tokens) || [];
+    ctx.owners = await rights.owners(asked, ctx);
+    const disputed = asked.map(function (token) {
+      return Object.assign({}, token, {
+        access: (token.access || []).filter(function (right) {
+          const facts = ownership.facts(right, ctx.targetsOf([right]),
+                                        username, ctx.owners);
+          return facts.unresolved || (facts.known && !facts.matches);
+        }) });
+    }).filter(function (token) {
+      return token.access.length > 0;
+    });
+    if (!disputed.length) {
+      log.debug("Leaving GnapGrants.approverRefusal(). Nothing disputed.");
+      return null;
+    }
+    const judged = rights.judge(disputed, ctx, rights.STAGES.REQUEST);
+    log.debug("Leaving GnapGrants.approverRefusal(). " +
+              (judged.ok ? 'The policy allows it.' : 'Refused.'));
+    return judged.ok ? null : judged;
   }
 
   // ---------------------------------------------------------------------------
@@ -1354,7 +1409,13 @@ class GnapGrants {
         // RFC 8693 section 4.1's `act` (#432): set on a DERIVED grant only,
         // naming the deriving resource server over the original token's
         // chain (`deriveToken()`). Every format carries it.
-        act: grant.actorChain || null
+        act: grant.actorChain || null,
+        // THE GRANT A RIGHT'S LIMITS ARE COUNTED AGAINST (#432 phase 5): a
+        // resource server keeps the running totals per grant (rcbj's
+        // decision 2), and one that verifies the token on its own needs to
+        // know which — this grant, the same across rotation, or for a
+        // derived token the original's (`deriveToken()`).
+        grant: grant.limitsGrant || grant.id
       };
       const rs = rsIds.length === 1 ? applications.get(rsIds[0]) : null;
       let jweKey = null;
@@ -1815,8 +1876,8 @@ class GnapGrants {
     // judged in `deriveToken()`, as the deriving resource server's request.
     let narrowedAtRequest = [];
     if (!asked.existingAccessToken) {
-      const judged = this.judgeRequested(req, { as: asId }, app,
-                                         asked.tokens, 'pending');
+      const judged = await this.judgeRequested(req, { as: asId }, app,
+                                               asked.tokens, 'pending');
       if (!judged.ok) {
         monitor.record(identifier, 'grant.refused',
                        { gnapError: judged.gnapError });
@@ -2029,9 +2090,12 @@ class GnapGrants {
     // a lifetime the policy states caps the token (`maxLifetimeS`).
     const app = this.deps.applications.get(grant.client.identifier) ||
                 { identifier: grant.client.identifier, fields: {} };
+    const issueCtx = this.rightsContext(req, grant, app,
+                                        grant.approval || 'pending');
+    issueCtx.owners = await this.deps.rights.owners(
+      grant.decision.tokens || [], issueCtx);
     const judged = this.deps.rights.judge(grant.decision.tokens || [],
-      this.rightsContext(req, grant, app, grant.approval || 'pending'),
-      this.deps.rights.STAGES.ISSUE);
+      issueCtx, this.deps.rights.STAGES.ISSUE);
     const requests = judged.tokens || [];
     if (judged.narrowed && judged.narrowed.length) {
       grant.narrowed = (grant.narrowed || []).concat(judged.narrowed);
@@ -2178,6 +2242,15 @@ class GnapGrants {
                           'more access than the token it is derived from ' +
                           '(RFC 9767 section 4).', 'request_denied', 403);
     }
+    // NOR MORE THAN ITS LIMITS (#432 phase 5): a derived right that drops
+    // or raises the original's limits is wider, though covered.
+    const raised = this.deps.rights.limitsRaised(existing.access, askedRights);
+    if (raised) {
+      log.debug("Leaving GnapGrants.deriveToken(). Raises a limit.");
+      return this.refusal('STS-GNAP-0868', 'a derived token must not carry ' +
+                          'more than the token it is derived from: ' + raised +
+                          ' (RFC 9767 section 4).', 'request_denied', 403);
+    }
     const chain = delegation.actorChainFor(app.identifier, existing.act);
     if (!chain.ok) {
       log.debug("Leaving GnapGrants.deriveToken(). The chain is too deep.");
@@ -2186,7 +2259,7 @@ class GnapGrants {
     // EACH DERIVED RIGHT IS JUDGED TOO (#432 phase 3), as the deriving
     // resource server's request, approval `derived`, about the original's
     // person: the catalogue's well-formedness, then the issuance policy.
-    const derivedJudged = this.judgeRequested(req,
+    const derivedJudged = await this.judgeRequested(req,
       { as: grant.as, ro: existing.username ? { username: existing.username,
                                                 amr: ['derived'] } : null },
       app, requested, 'derived');
@@ -2219,6 +2292,10 @@ class GnapGrants {
                                      null, authTime: existing.iat, amr:
                                      ['derived'], acr: null } : null;
     grant.derivedFrom = existing.jti;
+    // THE GRANT ITS LIMITS ARE COUNTED AGAINST (#432 phase 5): the
+    // original's, so a derivation is a way to spend the same budget from
+    // somewhere else and never a second one.
+    grant.limitsGrant = existing.grant || existing.grantId || null;
     grant.actorChain = chain.act;
     grant.approval = 'derived';
     grant.narrowed = derivedJudged.narrowed;
@@ -2785,7 +2862,7 @@ class GnapGrants {
     if (asked.tokens) {
       // THE REQUEST STAGE AGAIN (#432 phase 3): a modification asks for
       // rights afresh, so each is judged as at creation.
-      const judged = this.judgeRequested(req, grant,
+      const judged = await this.judgeRequested(req, grant,
         app || { identifier: grant.client.identifier, fields: {} },
         asked.tokens, 'pending');
       if (!judged.ok) {
@@ -2805,9 +2882,12 @@ class GnapGrants {
     const requested = grant.request.tokens.reduce(function (all, one) {
       return all.concat(one.access);
     }, []);
+    // A LIMIT DROPPED OR RAISED IS NOT WITHIN THE APPROVAL (#432 phase 5),
+    // though the matcher finds the right covered — `limitsRaised()` says why.
     const withinApproval = grant.state === STATE.APPROVED &&
         grant.ro !== undefined && accessRights.accessCovers(previouslyApproved,
-        requested) && !asked.subject;
+        requested) && !asked.subject &&
+        !this.deps.rights.limitsRaised(previouslyApproved, requested);
     grant.state = STATE.PROCESSING;
     if (withinApproval) {
       // Section 5.3's worked example: narrower access, no new consent.
@@ -3207,7 +3287,11 @@ class GnapGrants {
                     // The actor chain survives rotation (#432): a rotated
                     // derived token that dropped it would launder a
                     // delegation into a token nobody acted for.
-                    act: record.act || null };
+                    act: record.act || null,
+                    // And the grant its limits are counted against (#432
+                    // phase 5): a rotation that changed it would be a fresh
+                    // budget for the asking.
+                    grant: record.grant || record.grantId || null };
     let minted;
     try {
       const rs = record.rsIdentifiers && record.rsIdentifiers.length === 1
@@ -3405,6 +3489,7 @@ class GnapGrants {
       mtls: mtls,
       delegation: gnapDelegation,
       rights: gnapRights,
+      ownership: ownership,
       loadOauth2: function loadOauth2() {
         helpers.log.debug("Entering loadOauth2().");
         helpers.log.debug("Leaving loadOauth2().");
@@ -3482,6 +3567,7 @@ export = {
   continueGrant: slot.forward('continueGrant'),
   manageToken: slot.forward('manageToken'),
   decide: slot.forward('decide'),
+  approverRefusal: slot.forward('approverRefusal'),
   rememberedFor: slot.forward('rememberedFor'),
   finishInteraction: slot.forward('finishInteraction'),
   interactionHash: slot.forward('interactionHash'),

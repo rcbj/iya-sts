@@ -83,6 +83,20 @@
 //   flag(f)*                        label(l)?
 //   cnf_jkt(tp) | cnf_x5t(tp) | cnf_kid(ref) | bearer(true)
 //   actor(i, sub)*                  the actor chain, i = 0 the most recent
+//   grant(id)?                      the grant limits are counted against
+//   access_limit_amount(i, v, cur)  a right's limits (#432 phase 5), each
+//   access_limit_count(i, n)        member with a meaning decomposed:
+//   access_limit_receiver(i, r)*    the amount as a decimal STRING (Datalog
+//   access_limit_interval(i, text)  has no decimal and a float is not an
+//   access_limit_not_before(i, d)   amount), the count an integer, the
+//   access_limit_not_after(i, d)    window's ends dates
+//
+// The limits facts exist for a resource server's OWN attenuation block —
+// `check if access_limit_count($i, $n), $n <= 10` — and are authority facts
+// for `actor`'s reason below; the model's limits are read back from the
+// right's JSON in `access(i, json)`, as every other member is. `grant(id)`
+// is the grant a resource server keeps the running totals against (rcbj's
+// decision 2 on #432).
 //
 // `actor(i, sub)` (#432) is RFC 8693 section 4.1's `act` as Datalog: the
 // resource server that DERIVED this token (RFC 9767 section 4) at 0, each
@@ -160,6 +174,8 @@ import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
 import errorCodes = require('../common/error_codes');
 import gnapAccess = require('./gnap_access');
+// The limits vocabulary (#432 phase 5), for a right's limit facts.
+import AccessLimits = require('../common/access_limits');
 
 interface TokenBiscuitDeps {
   log: {
@@ -439,8 +455,44 @@ class TokenBiscuit {
   }
 
   // The facts and checks of the authority block (see the header).
+  // A right's limits as authority facts (#432 phase 5; the header). Only
+  // the members `common/access_limits.ts` gives a meaning, read as it reads
+  // them; another member is in the right's JSON and nowhere else.
+  private addLimitFacts(p: Program, i: number, limits: any): void {
+    const { log } = this.deps;
+    log.debug("Entering TokenBiscuit.addLimitFacts().");
+    if (!limits || typeof limits !== 'object') {
+      log.debug("Leaving TokenBiscuit.addLimitFacts(). None.");
+      return;
+    }
+    if (limits.amount && typeof limits.amount === 'object') {
+      p.add('access_limit_amount(?, ?, ?);',
+            [i, String(limits.amount.value), String(limits.amount.currency)]);
+    }
+    if (Number.isSafeInteger(limits.count)) {
+      p.add('access_limit_count(?, ?);', [i, limits.count]);
+    }
+    (AccessLimits.receiversOf(limits) || []).forEach(function (r: string) {
+      p.add('access_limit_receiver(?, ?);', [i, r]);
+    });
+    if (typeof limits.interval === 'string') {
+      p.add('access_limit_interval(?, ?);', [i, limits.interval]);
+    }
+    const window = limits.window || {};
+    const nb = AccessLimits.timeOf(window.notBefore);
+    const na = AccessLimits.timeOf(window.notAfter);
+    if (nb !== null) {
+      p.add('access_limit_not_before(?, ?);', [i, this.dateTerm(nb)]);
+    }
+    if (na !== null) {
+      p.add('access_limit_not_after(?, ?);', [i, this.dateTerm(na)]);
+    }
+    log.debug("Leaving TokenBiscuit.addLimitFacts().");
+  }
+
   private authorityProgram(model: any): Program {
     const { log, access } = this.deps;
+    const self = this;
     log.debug("Entering TokenBiscuit.authorityProgram().");
     const p = this.program();
     p.add('gnap_token(?);', [model.jti]);
@@ -481,6 +533,7 @@ class TokenBiscuit {
       if (right.identifier !== undefined) {
         p.add('access_identifier(?, ?);', [i, right.identifier]);
       }
+      self.addLimitFacts(p, i, right.limits);
     });
     model.flags.forEach(function (f) {
       p.add('flag(?);', [f]);
@@ -491,6 +544,9 @@ class TokenBiscuit {
     (access.actorChain(model.act) || []).forEach(function (sub, i) {
       p.add('actor(?, ?);', [i, sub]);
     });
+    if (model.grant) {
+      p.add('grant(?);', [model.grant]);
+    }
     if (!model.cnf) {
       p.add('bearer(true);');
     } else if (model.cnf.jkt) {
@@ -736,6 +792,7 @@ class TokenBiscuit {
     const sub = one('data($v) <- subject($v)');
     const client = one('data($v) <- client_instance($v)');
     const label = one('data($v) <- label($v)');
+    const grant = one('data($v) <- grant($v)');
     const audSet = this.query(bg, authorizer, 'data($v) <- audience($v)')
       .map(function (r) {
         return r[0];
@@ -808,7 +865,8 @@ class TokenBiscuit {
     const bindings = [jkt, x5t, kid].filter(function (v) {
       return v !== null;
     });
-    if ([jti, iss, iat, exp, nbf, sub, client, label, jkt, x5t, kid].some(
+    if ([jti, iss, iat, exp, nbf, sub, client, label, grant, jkt, x5t,
+         kid].some(
         function (v) {
           return v === undefined;
         }) ||
@@ -835,7 +893,8 @@ class TokenBiscuit {
       nbf: nbf === null ? null : this.seconds(nbf),
       exp: this.seconds(exp),
       label: label,
-      act: access.nestActors(actors)
+      act: access.nestActors(actors),
+      grant: grant
     };
     const valid = access.validateModel(model);
     if (!valid.ok) {
@@ -1058,7 +1117,7 @@ class TokenBiscuit {
       ],
       carries: ['jti', 'iss', 'sub', 'aud', 'instanceId', 'access', 'flags',
                 'cnf',
-                'iat', 'nbf', 'exp', 'label', 'act'],
+                'iat', 'nbf', 'exp', 'label', 'act', 'grant'],
       cannot: []
     };
     log.debug("Leaving TokenBiscuit.describe().");

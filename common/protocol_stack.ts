@@ -1725,6 +1725,10 @@ class ProtocolStack {
                'GnapSignals');
     this.build('gnap/gnap_revocation', require('../gnap/gnap_revocation'),
                'GnapRevocation');
+    // #432 phase 5: who owns the resource a right's identifier names — a
+    // library `gnap_rights` asks for the issue-gnap-right facts.
+    this.build('gnap/gnap_ownership', require('../gnap/gnap_ownership'),
+               'GnapOwnership');
     // #432 phases 3 and 4: each access right against the access-type
     // catalogue and the issuance policy — a library the delegation module
     // (its "derivable from") and the grant engine read.
@@ -1736,6 +1740,9 @@ class ProtocolStack {
     this.build('gnap/gnap_grants', require('../gnap/gnap_grants'),
                'GnapGrants');
     this.build('gnap/gnap_rs', require('../gnap/gnap_rs'), 'GnapRs');
+    // #432 phase 5: the demonstration resource server's running totals —
+    // a library the route module spends through.
+    this.build('gnap/gnap_spend', require('../gnap/gnap_spend'), 'GnapSpend');
     this.build('gnap/gnap_interact', require('../gnap/gnap_interact'),
                'GnapInteract');
     this.build('gnap/gnap_console', require('../gnap/gnap_console'),

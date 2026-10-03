@@ -70,6 +70,9 @@ import accessRights = require('./gnap_access');
 import revocation = require('./gnap_revocation');
 // The access-type catalogue's introspection view (#432 phase 4). A library.
 import gnapRights = require('./gnap_rights');
+// Who owns an identifier (#432 phase 5): a registration's owners are checked
+// against the directory.
+import ownership = require('./gnap_ownership');
 
 interface GnapRsDeps {
   config: typeof config;
@@ -89,6 +92,7 @@ interface GnapRsDeps {
   accessRights: typeof accessRights;
   revocation: typeof revocation;
   rights: typeof gnapRights;
+  ownership: typeof ownership;
 }
 
 // What `authenticate()` is told about the resource being asked for.
@@ -289,6 +293,16 @@ class GnapRs {
       answer.aud = record.aud.length === 1 ? record.aud[0] : record.aud;
     }
     answer.instance_id = record.instanceId;
+    // THE GRANT THE TOKEN SPENDS AGAINST (#432 phase 5): a right's `limits`
+    // (returned above, in `access`, as the token states them) are totals the
+    // RESOURCE SERVER keeps per grant (rcbj's decision 2), so it is told
+    // which grant — the same across a rotation, and for a DERIVED token the
+    // grant of the token it was derived from, so a derivation is not a
+    // second budget. RFC 7662 section 2.2 lets the response carry it; the
+    // registry names no member, and `grant_id` is RFC 9635's own word.
+    if (record.grant || record.grantId) {
+      answer.grant_id = record.grant || record.grantId;
+    }
     // RFC 9767 section 2.2: "The AS can return the token's format in an
     // introspection response". The registry names no member for it; `format`
     // is the obvious spelling and is what this AS uses.
@@ -383,15 +397,31 @@ class GnapRs {
                            denied[0].type) + '".',
                           'invalid_access');
     }
+    // THE OWNERS (#432 phase 5): each must be a person or a group in this
+    // realm's directory, or no person could ever be found to match it and
+    // every right naming the identifier would be refused for a typo.
+    const owners = asked.resourceOwners || null;
+    const ownerIds = owners ? Object.keys(owners) : [];
+    for (let i = 0; i < ownerIds.length; i++) {
+      if (!this.deps.ownership.ownerKind(owners[ownerIds[i]])) {
+        log.debug("Leaving GnapRs.register(). An owner names nobody.");
+        return this.refusal('STS-GNAP-0865', 'the owner of "' +
+                            ownerIds[i].slice(0, 80) + '" is not the DN of a ' +
+                            'person or a group in this realm\'s directory ' +
+                            '(resource_owners).', 'invalid_request');
+      }
+    }
     const canonical = grants.canonicalJson({ access: asked.access,
-                                             formats: formats });
+                                             formats: formats,
+                                             owners: owners });
     let row: any = store.resourceByCanonical(canonical, rs.identifier);
     if (!row) {
       row = store.putResource(store.mint(12), {
         canonical: canonical, rsIdentity: rs.identifier,
         rsIdentifier: rs.identifier,
         access: asked.access, tokenFormats: formats,
-        introspectionRequired: asked.introspectionRequired
+        introspectionRequired: asked.introspectionRequired,
+        resourceOwners: owners
       });
       monitor.record(rs.identifier, 'rs.registration', {});
     }
@@ -414,7 +444,8 @@ class GnapRs {
       outcome: 'success', actor: rs.identifier, target: rs.identifier,
       summary: 'A resource server registered a GNAP resource set',
       detail: { reference: row.reference, rights: asked.access.length,
-                formats: (formats || []).join(',') } });
+                formats: (formats || []).join(','),
+                owners: ownerIds.length } });
     log.debug("Leaving GnapRs.register(). reference=" + row.reference);
     return { ok: true, status: 200, body: response };
   }
@@ -687,7 +718,8 @@ class GnapRs {
       grants: grants,
       accessRights: accessRights,
       revocation: revocation,
-      rights: gnapRights
+      rights: gnapRights,
+      ownership: ownership
     };
   }
 }

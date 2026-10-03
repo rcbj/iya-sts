@@ -876,6 +876,15 @@ class GnapAccess {
       return bad('"act" must be null or a chain of { sub, act? } at most ' +
                  MAX_ACTOR_CHAIN + ' deep, each sub a non-empty string');
     }
+    // THE GRANT A RIGHT'S LIMITS ARE COUNTED AGAINST (#432 phase 5): a
+    // string the authorization server writes, or null for a model that
+    // names none (a token minted before there was one to name).
+    const grant = model.grant === undefined ? null : model.grant;
+    if (grant !== null && (!this.plainString(grant) || grant.length > 256)) {
+      log.debug("Leaving GnapAccess.validateModel().");
+      return bad('"grant" must be a non-empty string of at most 256 ' +
+                 'characters, or null');
+    }
     const out = {
       jti: model.jti,
       iss: model.iss,
@@ -889,7 +898,8 @@ class GnapAccess {
       nbf: nbf,
       exp: model.exp,
       label: model.label === undefined ? null : model.label,
-      act: this.nestActors(actors)
+      act: this.nestActors(actors),
+      grant: grant
     };
     log.debug("Leaving GnapAccess.validateModel(). Valid.");
     return { ok: true, model: out };

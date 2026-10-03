@@ -106,6 +106,8 @@ import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
 import realms = require('../common/realms');
 import cacheRegistry = require('../common/cache_registry');
+// The limits vocabulary (#432 phase 5): a static utility class, a leaf.
+import AccessLimits = require('../common/access_limits');
 // THE TWO AUTHORIZATION QUESTIONS ABOUT A DETAIL'S TYPE ARE THE ISSUANCE
 // POLICY'S (#305, part D of #88): whether the client registered types and
 // not this one (RFC 9396 section 10), and whether this authorization server
@@ -135,7 +137,10 @@ const CONFORMANCE_CODES: Record<string, string> = {
   definition: 'STS-OAUTH-0456',
   location: 'STS-OAUTH-0457',
   'limits-undeclared': 'STS-OAUTH-0876',
-  limits: 'STS-OAUTH-0877'
+  limits: 'STS-OAUTH-0877',
+  // #432 phase 5: a limit whose amount, count, receiver, interval or window
+  // is not one `common/access_limits.ts` can read.
+  'limits-value': 'STS-OAUTH-0916'
 };
 
 // Section 2.2's common data fields: four arrays of strings and one string.
@@ -398,6 +403,9 @@ class AuthorizationDetails {
   //   limits-undeclared   a `limits` member on a type that declares no limits
   //                       schema
   //   limits              a `limits` member its schema refuses
+  //   limits-value        a `limits` member whose amount, count, receiver,
+  //                       interval or window means nothing (#432 phase 5,
+  //                       `common/access_limits.ts`)
   //   location            a location the owning resource does not answer to
   // -------------------------------------------------------------------------
   /**
@@ -470,6 +478,19 @@ class AuthorizationDetails {
         return { kind: 'limits', problem: where + '.limits does not meet ' +
           'the limits schema of "' + definition.type + '": ' +
           this.schemaProblem(definition.validateLimits) };
+      }
+      // THE VOCABULARY (#432 phase 5): the schema says what SHAPE a limit
+      // has; `common/access_limits.ts` says what its five members with a
+      // meaning — amount, count, receiver, interval, window — must be for
+      // the approval page to lower them and a resource server to count
+      // against them. Asked of both protocols here, so a RAR detail and a
+      // GNAP right of one type are held to one reading.
+      const meaning = AccessLimits.problem(right.limits);
+      if (meaning) {
+        log.debug("Leaving AuthorizationDetails.conformance(). Limits " +
+                  "vocabulary.");
+        return { kind: 'limits-value', problem: where + '.limits is not a ' +
+          'limit this service can read: ' + meaning };
       }
     }
     const strangers = (Array.isArray(right.locations) ? right.locations : [])

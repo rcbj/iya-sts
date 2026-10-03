@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4029** of them, in **41** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4051** of them, in **41** subsystems.
 
 ## Where a code appears
 
@@ -54,7 +54,7 @@ is an ordinary outcome.
 * [Service core (`STS-CORE`)](#sts-core) — 81
 * [Worker pools (`STS-WORKER`)](#sts-worker) — 48
 * [Persistence and coordination (`STS-STORE`)](#sts-store) — 74
-* [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 28
+* [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 30
 * [Cells and residency (`STS-CELL`)](#sts-cell) — 87
 * [Scheduler (`STS-SCHED`)](#sts-sched) — 18
 * [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 95
@@ -64,7 +64,7 @@ is an ordinary outcome.
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 26
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 47
 * [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 255
-* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 683
+* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 684
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 97
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 25
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 16
@@ -80,7 +80,7 @@ is an ordinary outcome.
 * [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 118
 * [Risk scoring (`STS-RISK`)](#sts-risk) — 44
 * [Mail (`STS-MAIL`)](#sts-mail) — 39
-* [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 318
+* [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 336
 * [Device register (`STS-DEVICE`)](#sts-device) — 46
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 88
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 34
@@ -88,7 +88,7 @@ is an ordinary outcome.
 * [Management API (`STS-API`)](#sts-api) — 75
 * [User portal (`STS-PORTAL`)](#sts-portal) — 81
 * [Sign-out (`STS-LOGOUT`)](#sts-logout) — 7
-* [Registries (`STS-REG`)](#sts-reg) — 149
+* [Registries (`STS-REG`)](#sts-reg) — 150
 * [Protocol debugger (`STS-DBG`)](#sts-dbg) — 28
 
 ## STS-HTTP
@@ -402,6 +402,8 @@ Raised from: cluster/.
 | `STS-CLUSTER-0026` | Active-active mode was refused because global.publicBaseUrl is empty, so each node would name itself by the address it was reached on. | — |
 | `STS-CLUSTER-0040` | A cluster mode was configured with persistence.minted off, so nodes would not share sessions, pending sign-ins, codes or tokens; the service does not start. | — |
 | `STS-CLUSTER-0041` | Standing down from a lease early failed in the store; the lease expires on its own within one node lifetime, and this node does not renew it. | — |
+| `STS-CLUSTER-0162` | The store every node shares could not be asked to spend against a budget (a GNAP right's limits); the operation was refused (#432 phase 5). | — |
+| `STS-CLUSTER-0163` | A spend against a shared budget could not be refunded: the store could not be asked (#432 phase 5). | — |
 
 ## STS-CELL
 
@@ -2036,6 +2038,7 @@ Raised from: oauth-oidc/, common/person_assertions.js.
 | `STS-OAUTH-0876` | An authorization_details entry carried limits, and its type declares no limits schema in the access-type catalogue (#432). | 400 invalid_authorization_details (RFC 9396 section 5) |
 | `STS-OAUTH-0877` | An authorization_details entry's limits did not meet the limits schema its type declares (#432). | 400 invalid_authorization_details (RFC 9396 section 5) |
 | `STS-OAUTH-0878` | An access token would carry authorization_details of a type the access-type catalogue declares bearer: false, and the request presented neither a DPoP proof nor a client certificate (#432). | 400 invalid_authorization_details (RFC 9396 section 5) |
+| `STS-OAUTH-0916` | An authorization detail's limits are not ones this service can read: an amount, count, receiver, repeating interval or window that common/access_limits.ts gives no meaning (#432 phase 5). | 400 invalid_authorization_details (RFC 9396 section 5) |
 
 ## STS-SAML
 
@@ -3706,6 +3709,24 @@ Raised from: gnap/.
 | `STS-GNAP-0815` | The issuance policy answered a GNAP access right with a verdict this service does not know; the right was refused (#432). | RFC 9635 section 3.6 (request_denied, HTTP 403) |
 | `STS-GNAP-0816` | No issuance policy, not even the built-in one, gave a verdict on a GNAP access right; it was refused (#432). | RFC 9635 section 3.6 (request_denied, HTTP 403) |
 | `STS-GNAP-0817` | The issuance policy narrowed a GNAP access right to nothing it could still grant: a reference string, an unrestricted dimension the catalogue lists no values for, every value taken off, or a narrowed right its type no longer accepts (#432). | RFC 9635 section 3.6 (request_denied, HTTP 403) |
+| `STS-GNAP-0860` | A GNAP access right's limits are not ones this service can read: an amount, count, receiver, repeating interval or window that common/access_limits.ts gives no meaning (#432 phase 5). | RFC 9635 section 3.6 (invalid_request, HTTP 400) |
+| `STS-GNAP-0861` | A GNAP access right names an identifier whose owner (on a registered resource set, or by the resource server's lookup) is not the person the grant is for, nor a group they are a member of; the issuance policy refused it (#432 phase 5). | RFC 9635 section 3.6 (request_denied, HTTP 403) |
+| `STS-GNAP-0862` | The person on the GNAP approval page does not own a resource a requested right names, and the issuance policy would not let them approve it; the page refused (#432 phase 5). | RFC 9635 section 1.4 (the page answers 403) |
+| `STS-GNAP-0863` | A GNAP access right names an identifier whose resource server declares an owner lookup that could not be answered; the issuance policy refused it (#432 phase 5). | RFC 9635 section 3.6 (request_denied, HTTP 403) |
+| `STS-GNAP-0864` | A resource registration's resource_owners names an identifier no right in its access carries (#432 phase 5). | RFC 9767 section 3.4 (invalid_request, HTTP 400) |
+| `STS-GNAP-0865` | A resource registration's resource_owners names a DN that is not a person or a group in the realm's directory (#432 phase 5). | RFC 9767 section 3.4 (invalid_request, HTTP 400) |
+| `STS-GNAP-0866` | The GNAP approval page was sent limits that raise a right's limits rather than lower them, or that cannot be read (#432 phase 5). | RFC 9635 section 4 (the page answers 400) |
+| `STS-GNAP-0867` | Limits lowered on the GNAP approval page no longer meet the limits schema of the right's type (#432 phase 5). | RFC 9635 section 4 (the page answers 400) |
+| `STS-GNAP-0868` | A derived GNAP token would drop or raise a limit the original token's right carries (#432 phase 5). | RFC 9767 section 4 (request_denied, HTTP 403) |
+| `STS-GNAP-0869` | A resource server's owner lookup (gnapOwnerLookupUri) could not be answered: refused by the outbound policy, unreachable, or not {"owner": "<DN>"} (#432 phase 5). | — |
+| `STS-GNAP-0870` | A demonstration spend would pass the limits of the token's right for its grant and period (#432 phase 5). | RFC 6750 section 3.1 (insufficient_scope, HTTP 403) |
+| `STS-GNAP-0871` | A demonstration spend is outside the window or the repeating interval the token's limits allow (#432 phase 5). | RFC 6750 section 3.1 (insufficient_scope, HTTP 403) |
+| `STS-GNAP-0872` | A demonstration spend names a receiver the token's limits do not (#432 phase 5). | RFC 6750 section 3.1 (insufficient_scope, HTTP 403) |
+| `STS-GNAP-0873` | A demonstration spend states no amount, or one in another currency, where the token's limits count an amount (#432 phase 5). | RFC 6750 section 3.1 (insufficient_scope, HTTP 403) |
+| `STS-GNAP-0874` | A demonstration spend's body is not readable (#432 phase 5). | RFC 6750 section 3.1 (invalid_request, HTTP 400) |
+| `STS-GNAP-0875` | The running totals of a token's limits could not be read from the store every node shares; the demonstration spend was refused (#432 phase 5). | HTTP 503 |
+| `STS-GNAP-0876` | The demonstration operation failed after its spend was counted (asked to, with simulateFailure); the spend was refunded (#432 phase 5). | HTTP 502 |
+| `STS-GNAP-0877` | A demonstration spend could not be refunded: a new period had begun, or the store could not be asked (#432 phase 5). | — |
 
 ## STS-DEVICE
 
@@ -4478,6 +4499,7 @@ Raised from: common/applications.js, common/consent.ts, common/app_permissions.t
 | `STS-REG-0213` | A client secret could not be sealed, so it was not written: storing it in the clear where keys persist would put a working client credential in every directory dump. | none (a console or management API refusal, HTTP 400) |
 | `STS-REG-0294` | An access type was not declared on an application: no such application, or the definition built from the fields does not read (the access-type catalogue's grammar, #432). | none (a console or management API refusal, HTTP 400) |
 | `STS-REG-0295` | An access type could not be taken off an application: it declares no type of that name (#432). | none (a console or management API refusal, HTTP 400) |
+| `STS-REG-0334` | A gnapOwnerLookupUri is not an https URL template with a host, no user information, query or fragment, and {identifier} exactly once as a whole path segment (#432 phase 5). | none (a console or management API refusal, HTTP 400) |
 
 ## STS-DBG
 

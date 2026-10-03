@@ -82,6 +82,9 @@ import scopePolicy = require('../common/scope_policy');
 import InstanceSlot = require('../common/instance_slot');
 import catalogue = require('../oauth-oidc/authorization_details');
 import store = require('./gnap_store');
+// #432 phase 5: who owns an identifier, and what a limit means.
+import ownership = require('./gnap_ownership');
+import AccessLimits = require('../common/access_limits');
 
 type Json = any;
 
@@ -96,6 +99,7 @@ interface GnapRightsDeps {
   scopePolicy: Json;
   catalogue: Json;
   store: Json;
+  ownership: Json;
 }
 
 // THE DEMONSTRATION RESOURCE SERVER'S TYPE (`gnap.ts`'s `/gnap/rs/resource`),
@@ -106,6 +110,33 @@ interface GnapRightsDeps {
 // every GNAP client here can be pointed at. It declares nothing beyond its
 // existence and owns no audience (a token for it is audienced as before).
 const DEMO_TYPE = 'urn:iya-sts:gnap:demo';
+
+// THE DEMONSTRATION TYPE'S LIMITS (#432 phase 5): the five members
+// `common/access_limits.ts` gives a meaning to and nothing else, so the
+// demonstration resource server — the reference for what a resource server
+// does with a limit (rcbj's decision 2) — can be asked for every one of
+// them. Read through the catalogue's own grammar
+// (`applications.authorizationDetailsTypeOf()`), so it is compiled and held
+// to the limits subset exactly as an operator's would be.
+const DEMO_DEFINITION = JSON.stringify({
+  type: DEMO_TYPE,
+  limits: {
+    type: 'object',
+    properties: {
+      amount: { type: 'object',
+                properties: { value: { type: ['string', 'number'] },
+                              currency: { type: 'string' } },
+                required: ['value', 'currency'],
+                additionalProperties: false },
+      count: { type: 'integer', minimum: 0 },
+      receiver: { type: ['string', 'array'] },
+      interval: { type: 'string' },
+      window: { type: 'object' }
+    },
+    additionalProperties: false
+  }
+});
+let demoDefinition: Json = null;
 
 // The array dimensions of a right (RFC 9635 section 8) a narrowing may take
 // values off, by the obligation's name for them.
@@ -118,7 +149,8 @@ const ANSWERS: Record<string, { gnapError: string; status: number }> = {
   'STS-GNAP-0111': { gnapError: 'invalid_flag', status: 400 },
   'STS-GNAP-0812': { gnapError: 'invalid_request', status: 400 },
   'STS-GNAP-0813': { gnapError: 'invalid_request', status: 400 },
-  'STS-GNAP-0814': { gnapError: 'invalid_request', status: 400 }
+  'STS-GNAP-0814': { gnapError: 'invalid_request', status: 400 },
+  'STS-GNAP-0860': { gnapError: 'invalid_request', status: 400 }
 };
 
 // conformance()'s kinds, as this protocol's codes.
@@ -126,7 +158,8 @@ const CONFORMANCE_CODES: Record<string, string> = {
   definition: 'STS-GNAP-0812',
   location: 'STS-GNAP-0812',
   'limits-undeclared': 'STS-GNAP-0813',
-  limits: 'STS-GNAP-0814'
+  limits: 'STS-GNAP-0814',
+  'limits-value': 'STS-GNAP-0860'
 };
 
 /**
@@ -159,7 +192,7 @@ class GnapRights {
     return { log: helpers.log, config: config, errorCodes: errorCodes,
              mode: mode, audit: audit, applications: applications,
              gate: gate, scopePolicy: scopePolicy, catalogue: catalogue,
-             store: store };
+             store: store, ownership: ownership };
   }
 
   // The values of one attribute of an application entry, as strings.
@@ -187,12 +220,20 @@ class GnapRights {
     if (right && typeof right === 'object' && right.type === DEMO_TYPE &&
         this.deps.config.value('gnap.demoResourceServer') !== false) {
       log.debug("Leaving GnapRights.entryOf(). The demonstration type.");
+      if (!demoDefinition) {
+        demoDefinition = this.deps.applications
+          .authorizationDetailsTypeOf(DEMO_DEFINITION);
+      }
+      // `builtIn` keeps the owner rules out (no resource server declares
+      // it); the limits are checked like any catalogued type's.
       return { type: DEMO_TYPE, builtIn: true, identifier: '', clientId: '',
                identifiers: [], actions: null, datatypes: null,
                privileges: null, required: [], interaction: 'default',
                consentActions: [], bearer: null, maxLifetimeS: null, acr: '',
-               derivableFrom: [], introspectionClaims: [], limits: null,
-               validateLimits: null, validate: null };
+               derivableFrom: [], introspectionClaims: [],
+               limits: demoDefinition.limits,
+               validateLimits: demoDefinition.validateLimits,
+               validate: null };
     }
     const found = right && typeof right === 'object'
       ? catalogue.typeOf(right.type) : null;
@@ -229,10 +270,15 @@ class GnapRights {
       const access = tokens[t].access || [];
       for (let r = 0; r < access.length; r++) {
         const entry = this.entryOf(access[r]);
-        if (!entry || entry.builtIn) {
+        // A built-in type is held to its limits only (#432 phase 5): it
+        // declares nothing else, and no owner's locations.
+        if (!entry || (entry.builtIn && access[r].limits === undefined)) {
           continue;
         }
-        const found = catalogue.conformance(access[r], entry,
+        const asked = entry.builtIn
+          ? Object.assign({}, access[r], { locations: undefined })
+          : access[r];
+        const found = catalogue.conformance(asked, entry,
           'access_token' + (tokens.length > 1 ? '[' + t + ']' : '') +
           '.access[' + r + ']');
         if (found.kind) {
@@ -302,6 +348,14 @@ class GnapRights {
     const prot = this.protectedFacts(app, right);
     const session = ctx.session || null;
     const device = ctx.device || null;
+    // #432 phase 5: who owns the identifier the right names (with whether
+    // the approver is that owner, once an approver is known), and the
+    // right's limits — facts, so a realm's policy can be stricter than the
+    // built-in rule.
+    const owned = isRef ? { known: false } : this.deps.ownership.facts(
+      right, typeof ctx.targetsOf === 'function' ? ctx.targetsOf([right])
+                                                 : [],
+      ctx.approver || '', ctx.owners || {});
     const facts: Json = {
       right: isRef
         ? { id: name, kind: 'reference', listed: allowed.indexOf(name) >= 0,
@@ -311,7 +365,9 @@ class GnapRights {
             locations: right.locations, datatypes: right.datatypes,
             identifier: right.identifier, privileges: right.privileges,
             listed: allowed.indexOf(name) >= 0, protected: prot.protected,
-            protectedDeclared: prot.declared },
+            protectedDeclared: prot.declared,
+            limits: this.limitFacts(right.limits) },
+      owner: owned,
       catalogue: isRef ? {} : (entry
         ? { catalogued: true, owner: entry.identifier,
             bearer: typeof entry.bearer === 'boolean' ? entry.bearer : null,
@@ -346,6 +402,116 @@ class GnapRights {
     };
     log.debug("Leaving GnapRights.factsOf(). " + name);
     return facts;
+  }
+
+  // -------------------------------------------------------------------------
+  // A RIGHT'S LIMITS AS FACTS (#432 phase 5): each member with a meaning,
+  // decomposed so a rule can compare it, or null where there are none.
+  // -------------------------------------------------------------------------
+  private limitFacts(limits: Json): Json {
+    const { log } = this.deps;
+    log.debug("Entering GnapRights.limitFacts().");
+    if (!limits || typeof limits !== 'object') {
+      log.debug("Leaving GnapRights.limitFacts(). None.");
+      return null;
+    }
+    const units = limits.amount ? AccessLimits.units(limits.amount.value)
+                                : null;
+    log.debug("Leaving GnapRights.limitFacts().");
+    return {
+      json: JSON.stringify(limits),
+      amount: units === null ? null : Number(AccessLimits.decimal(units)),
+      currency: limits.amount ? String(limits.amount.currency || '') : '',
+      count: typeof limits.count === 'number' ? limits.count : null,
+      receivers: AccessLimits.receiversOf(limits) || [],
+      interval: typeof limits.interval === 'string' ? limits.interval : '',
+      notBefore: limits.window && limits.window.notBefore
+        ? String(limits.window.notBefore) : '',
+      notAfter: limits.window && limits.window.notAfter
+        ? String(limits.window.notAfter) : ''
+    };
+  }
+
+  // -------------------------------------------------------------------------
+  // THE OWNER LOOKUPS A SET OF TOKENS NEEDS (#432 phase 5), made before the
+  // synchronous question — `gnap_ownership.ts`'s `prefetch()`. Every caller
+  // of `judge()` awaits this first and passes what it answers as
+  // `ctx.owners`; a caller that does not is told every looked-up owner is
+  // unresolved, which the built-in policy refuses.
+  // -------------------------------------------------------------------------
+  /**
+   * Makes the owner lookups the rights of a set of tokens need.
+   *
+   * @param tokens - `[{ access }]`
+   * @param ctx - the judge context, whose `targetsOf` is used
+   * @returns a promise of the lookups, for `ctx.owners`
+   */
+  async owners(tokens: Json[], ctx: Json): Promise<Json> {
+    const { log, ownership } = this.deps;
+    log.debug("Entering GnapRights.owners().");
+    const found = await ownership.prefetch(tokens || [],
+      function (access: Json[]): string[] {
+        return typeof ctx.targetsOf === 'function' ? ctx.targetsOf(access)
+                                                    : [];
+      });
+    log.debug("Leaving GnapRights.owners().");
+    return found;
+  }
+
+  // -------------------------------------------------------------------------
+  // LIMITS THAT A LATER REQUEST WOULD RAISE (#432 phase 5): a modification
+  // within an earlier approval, and a derived token, ask for rights the
+  // matcher finds COVERED — and `gnap_access.ts`'s matcher reads `limits` as
+  // an API member that a requirement which does not name it is not asked
+  // about, so a right asked for WITHOUT its limits was covered by the right
+  // that carried them. That is the right reading at a resource server, and
+  // the wrong one here: no limit is the most of all. So each requested
+  // object right is compared with the granted rights of its type and
+  // identifier: where one of them carries no limits nothing is raised; else
+  // the request must carry limits no more than one of theirs.
+  // -------------------------------------------------------------------------
+  /**
+   * Finds a requested right whose limits are more than the granted rights of
+   * its type and identifier allow.
+   *
+   * @param granted - the granted rights
+   * @param requested - the rights asked for
+   * @returns the sentence naming the first, or ''
+   */
+  limitsRaised(granted: Json[], requested: Json[]): string {
+    const { log } = this.deps;
+    log.debug("Entering GnapRights.limitsRaised().");
+    const objects = (granted || []).filter(function (g: Json): boolean {
+      return !!g && typeof g === 'object';
+    });
+    for (let i = 0; i < (requested || []).length; i++) {
+      const r = requested[i];
+      if (!r || typeof r !== 'object') {
+        continue;
+      }
+      const same = objects.filter(function (g: Json): boolean {
+        return g.type === r.type && (g.identifier === undefined ||
+                                     g.identifier === r.identifier);
+      });
+      if (!same.length || same.some(function (g: Json): boolean {
+        return g.limits === undefined;
+      })) {
+        continue;
+      }
+      const reasons = same.map(function (g: Json): string {
+        return AccessLimits.raised(g.limits, r.limits);
+      });
+      if (reasons.every(function (why: string): boolean {
+        return !!why;
+      })) {
+        log.debug("Leaving GnapRights.limitsRaised(). " + r.type);
+        return 'the right "' + r.type + '"' + (r.identifier
+          ? ' for "' + r.identifier + '"' : '') + ' asks for more than ' +
+          'was granted: ' + reasons[0];
+      }
+    }
+    log.debug("Leaving GnapRights.limitsRaised(). None.");
+    return '';
   }
 
   // -------------------------------------------------------------------------
@@ -442,6 +608,18 @@ class GnapRights {
         out = 'a right of type "' + name + '" may be carried only by a ' +
           'key-bound token: the resource server that declares the type ' +
           'refuses a bearer token for it (RFC 9635 section 2.1.1).';
+        break;
+      case 'STS-GNAP-0861':
+        out = 'the right "' + name + '" names a resource "' +
+          String(right.identifier || '') + '" whose owner is not the ' +
+          'person this grant is for (RFC 9635 section 1.4: the resource ' +
+          'owner authorizes access to their own resource).';
+        break;
+      case 'STS-GNAP-0863':
+        out = 'the right "' + name + '" names a resource "' +
+          String(right.identifier || '') + '" whose resource server ' +
+          'declares an owner lookup that could not be answered, so who ' +
+          'owns it is not known.';
         break;
       case 'STS-GNAP-0817':
         out = 'the issuance policy narrowed the right "' + name + '" to ' +
@@ -698,6 +876,8 @@ export = {
   conformanceRefusal: slot.forward('conformanceRefusal'),
   narrowed: slot.forward('narrowed'),
   judge: slot.forward('judge'),
+  owners: slot.forward('owners'),
+  limitsRaised: slot.forward('limitsRaised'),
   ownersOf: slot.forward('ownersOf'),
   derivable: slot.forward('derivable'),
   introspection: slot.forward('introspection')

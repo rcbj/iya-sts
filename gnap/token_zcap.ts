@@ -264,7 +264,12 @@ const GNAP_CONTEXT = {
   // and a capability is only ever minted here. The chain is the AS's
   // statement of who acted, under the AS's signature, which is what a
   // resource server can rely on.
-  gnapActor: { '@id': 'gnap:act', '@type': '@json' }
+  gnapActor: { '@id': 'gnap:act', '@type': '@json' },
+  // THE GRANT A RIGHT'S LIMITS ARE COUNTED AGAINST (#432 phase 5), under
+  // the authorization server's proof for `gnapActor`'s reason: a value a
+  // holder could change would be a fresh budget for the asking. The limits
+  // themselves are in `gnapAccess`, each right as the model carries it.
+  gnapGrant: 'gnap:grant'
 };
 // The pinned `@context` of each kind of proof: ZCAP-LD's first ("the first
 // value is the zcapld context"), the proof's vocabulary second, the GNAP
@@ -278,7 +283,7 @@ const MEMBERS = ['@context', 'id', 'parentCapability', 'invocationTarget',
                  'gnapClient',
                  'gnapAccess', 'gnapFlags', 'gnapCnf', 'gnapLabel',
                  'gnapIssuedAt',
-                 'gnapNotBefore', 'gnapActor', 'proof'];
+                 'gnapNotBefore', 'gnapActor', 'gnapGrant', 'proof'];
 
 const VALUE_RE = /^[A-Za-z0-9_-]+$/;
 
@@ -944,6 +949,9 @@ class TokenZcap {
     if (model.act) {
       cap.gnapActor = model.act;
     }
+    if (model.grant) {
+      cap.gnapGrant = model.grant;
+    }
     log.debug("Leaving TokenZcap.capabilityFor().");
     return cap;
   }
@@ -1153,7 +1161,8 @@ class TokenZcap {
       nbf: doc.gnapNotBefore === undefined ? null : doc.gnapNotBefore,
       exp: Number.isNaN(exp) || exp % 1000 !== 0 ? undefined : exp / 1000,
       label: doc.gnapLabel === undefined ? null : doc.gnapLabel,
-      act: doc.gnapActor === undefined ? null : doc.gnapActor
+      act: doc.gnapActor === undefined ? null : doc.gnapActor,
+      grant: doc.gnapGrant === undefined ? null : doc.gnapGrant
     };
     const valid = access.validateModel(model);
     if (!valid.ok) {
@@ -1339,7 +1348,7 @@ class TokenZcap {
       ],
       carries: ['jti', 'iss', 'sub', 'aud', 'instanceId', 'access', 'flags',
                 'cnf',
-                'iat', 'nbf', 'exp', 'label', 'act'],
+                'iat', 'nbf', 'exp', 'label', 'act', 'grant'],
       cannot: []
     };
     log.debug("Leaving TokenZcap.describe().");

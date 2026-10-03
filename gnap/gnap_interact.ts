@@ -95,6 +95,10 @@ import store = require('./gnap_store');
 import grants = require('./gnap_grants');
 import monitor = require('./gnap_monitor');
 import gnapCells = require('./gnap_cells');
+// #432 phase 5: what a limit means, and the catalogue a lowered one must
+// still meet.
+import AccessLimits = require('../common/access_limits');
+import gnapRights = require('./gnap_rights');
 
 type Req = import('express').Request;
 type Res = import('express').Response;
@@ -115,6 +119,7 @@ interface GnapInteractDeps {
   store: typeof store;
   grants: typeof grants;
   monitor: typeof monitor;
+  rights: typeof gnapRights;
 }
 
 // The routes' own table of what an express app offers.
@@ -151,7 +156,10 @@ const PAGE_CSS =
   'span{display:block;color:#666;font-size:.9em;margin-top:3px}' +
   'img.logo{max-width:48px;max-height:48px;float:right;margin:0 0 6px 8px}' +
   'input.code{font-size:1.4em;letter-spacing:.2em;text-transform:uppercase;' +
-  'width:100%}';
+  'width:100%}' +
+  // #432 phase 5: a right's limits, under it.
+  'div.limits{margin:6px 0 0 24px;font-size:.9em}div.limits div{margin:3px 0}' +
+  'div.limits input{font-size:.95em}';
 
 /**
  * The pages a GNAP resource owner sees: the four start modes, sign-in through
@@ -382,6 +390,226 @@ class GnapInteract {
       '</span>';
   }
 
+  // =========================================================================
+  // #432 PHASE 5 ON THE APPROVAL PAGE: A RIGHT'S LIMITS, AND WHOSE RESOURCE IT
+  // IS. Kept in these functions, apart from the page's other business.
+  //
+  // THE LIMITS are drawn under the right they belong to, each member with a
+  // meaning (`common/access_limits.ts`) as a control holding the requested
+  // value, so the person can LOWER it — section 4 lets the resource owner
+  // limit the access they approve, and a limit is the finest-grained way to.
+  // A value the person did not change is sent back unchanged and kept
+  // byte for byte; a changed one must be LOWER (`AccessLimits.raised()`:
+  // STS-GNAP-0866) and the lowered limits must still meet the type's limits
+  // schema (0867). A member this service gives no meaning is shown and not
+  // editable. With script off (there is none here) every control is plain
+  // markup.
+  //
+  // THE OWNERSHIP CHECK runs before the page is drawn and again before an
+  // approval is recorded: `grants.approverRefusal()` puts the rights whose
+  // identifier somebody else owns to the issuance policy, and a refusal is
+  // the page's refusal (STS-GNAP-0862) — RFC 9635 section 1.4: only the
+  // resource owner authorizes access to their resource.
+  // =========================================================================
+
+  // The name of one limit control of right `r` of token `t`.
+  private static limitField(t: number, r: number, member: string): string {
+    helpers.log.debug("Entering GnapInteract.limitField().");
+    helpers.log.debug("Leaving GnapInteract.limitField().");
+    return 'lim_t' + t + 'r' + r + '_' + member;
+  }
+
+  // The controls of one right's limits, or '' for a right that carries none.
+  private limitsControls(right: any, t: number, r: number): string {
+    const { log, xmlEscape } = this.deps;
+    log.debug("Entering GnapInteract.limitsControls().");
+    if (!right || typeof right !== 'object' || !right.limits ||
+        typeof right.limits !== 'object') {
+      log.debug("Leaving GnapInteract.limitsControls(). None.");
+      return '';
+    }
+    const limits = right.limits;
+    const name = function (member: string): string {
+      log.debug("Entering name().");
+      log.debug("Leaving name().");
+      return GnapInteract.limitField(t, r, member);
+    };
+    const input = function (member: string, value: string,
+                            mode: string): string {
+      log.debug("Entering input().");
+      log.debug("Leaving input().");
+      return '<input name="' + name(member) + '" value="' +
+        xmlEscape(value) + '" inputmode="' + mode + '" size="24">';
+    };
+    const rows: string[] = [];
+    AccessLimits.rows(limits).forEach(function (row: any): void {
+      const v = limits[row.member];
+      let control = '';
+      if (row.member === 'amount' && v && typeof v === 'object') {
+        control = 'at most ' + input('amount', String(v.value), 'decimal') +
+          ' ' + xmlEscape(String(v.currency));
+      } else if (row.member === 'count') {
+        control = 'at most ' + input('count', String(v), 'numeric') +
+          ' operations';
+      } else if (row.member === 'receiver') {
+        control = 'only to ' + (AccessLimits.receiversOf(limits) || [])
+          .map(function (one: string): string {
+            return '<label><input type="checkbox" name="' +
+              name('receiver') + '" value="' + xmlEscape(one) +
+              '" checked> ' + xmlEscape(one) + '</label>';
+          }).join(' ');
+      } else if (row.member === 'interval') {
+        control = 'resetting on ' + input('interval', String(v), 'text') +
+          ' <span class="sub">(ISO 8601: R[n]/start/period; a longer ' +
+          'period or fewer repetitions is lower)</span>';
+      } else if (row.member === 'window' && v && typeof v === 'object') {
+        control = 'not before ' + input('notBefore', String(v.notBefore ||
+          ''), 'text') + ' and not after ' + input('notAfter',
+          String(v.notAfter || ''), 'text');
+      } else {
+        control = xmlEscape(row.label + ' ' + row.value) +
+          ' <span class="sub">(the API\'s own; it cannot be changed ' +
+          'here)</span>';
+      }
+      rows.push('<div>' + control + '</div>');
+    });
+    log.debug("Leaving GnapInteract.limitsControls().");
+    return '<div class="limits"><span>Limits — you may lower any of ' +
+      'them, never raise one:</span>' + rows.join('') + '</div>';
+  }
+
+  // -------------------------------------------------------------------------
+  // The ticked rights with the limits the person sent back: `{ ok: true,
+  // tokens }`, or `{ ok: false, code, why }`.
+  // -------------------------------------------------------------------------
+  private loweredTokens(req: Req, body: any, grant: any,
+                        tokens: any[]): any {
+    const { log, bodyValues, rights } = this.deps;
+    log.debug("Entering GnapInteract.loweredTokens().");
+    const out: any[] = [];
+    for (let t = 0; t < tokens.length; t++) {
+      const asked = grant.request.tokens[t] || { access: [] };
+      const access: any[] = [];
+      for (let k = 0; k < tokens[t].access.length; k++) {
+        const right = tokens[t].access[k];
+        const r = asked.access.indexOf(right);
+        if (!right || typeof right !== 'object' || !right.limits ||
+            typeof right.limits !== 'object' || r < 0) {
+          access.push(right);
+          continue;
+        }
+        const was = right.limits;
+        const proposed: any = JSON.parse(JSON.stringify(was));
+        const posted = function (member: string): any {
+          log.debug("Entering posted().");
+          const value = body[GnapInteract.limitField(t, r, member)];
+          log.debug("Leaving posted().");
+          return typeof value === 'string' ? value.trim() : undefined;
+        };
+        if (was.amount && typeof was.amount === 'object' &&
+            posted('amount') !== undefined &&
+            posted('amount') !== String(was.amount.value)) {
+          proposed.amount = { value: posted('amount'),
+                              currency: was.amount.currency };
+        }
+        if (was.count !== undefined && posted('count') !== undefined &&
+            posted('count') !== String(was.count)) {
+          proposed.count = /^\d{1,15}$/.test(posted('count'))
+            ? Number(posted('count')) : posted('count');
+        }
+        if (was.receiver !== undefined) {
+          const kept = bodyValues(req, body,
+                                  GnapInteract.limitField(t, r, 'receiver'));
+          const before = AccessLimits.receiversOf(was) || [];
+          if (kept.length !== before.length ||
+              kept.some(function (one: string): boolean {
+                return before.indexOf(one) < 0;
+              })) {
+            proposed.receiver = typeof was.receiver === 'string' &&
+              kept.length === 1 ? kept[0] : kept;
+            if (!kept.length) {
+              log.debug("Leaving GnapInteract.loweredTokens(). No receiver.");
+              return { ok: false, code: 'STS-GNAP-0866', why: 'Every ' +
+                'receiver of "' + right.type + '" was unticked; untick the ' +
+                'right itself to leave it out.' };
+            }
+          }
+        }
+        if (typeof was.interval === 'string' &&
+            posted('interval') !== undefined &&
+            posted('interval') !== was.interval) {
+          proposed.interval = posted('interval');
+        }
+        if (was.window && typeof was.window === 'object') {
+          ['notBefore', 'notAfter'].forEach(function (end: string): void {
+            const value = posted(end);
+            if (value !== undefined && value !== String(was.window[end] ||
+                                                         '')) {
+              proposed.window = Object.assign({}, proposed.window);
+              if (value) {
+                proposed.window[end] = value;
+              } else {
+                delete proposed.window[end];
+              }
+            }
+          });
+        }
+        const raised = AccessLimits.raised(was, proposed);
+        if (raised) {
+          log.debug("Leaving GnapInteract.loweredTokens(). Raised.");
+          return { ok: false, code: 'STS-GNAP-0866', why: 'The limits of "' +
+            right.type + '" may only be lowered here: ' + raised + '.' };
+        }
+        const next = Object.assign({}, right, { limits: proposed });
+        const malformed = rights.conformanceRefusal([{ access: [next] }]);
+        if (malformed) {
+          log.debug("Leaving GnapInteract.loweredTokens(). The schema.");
+          return { ok: false, code: 'STS-GNAP-0867', why: malformed.why };
+        }
+        access.push(next);
+      }
+      out.push(Object.assign({}, tokens[t], { access: access }));
+    }
+    log.debug("Leaving GnapInteract.loweredTokens().");
+    return { ok: true, tokens: out };
+  }
+
+  // The posted form without its limit controls, which the form's own schema
+  // does not describe and `loweredTokens()` reads.
+  private withoutLimitFields(body: any): any {
+    const { log } = this.deps;
+    log.debug("Entering GnapInteract.withoutLimitFields().");
+    const out: any = {};
+    Object.keys(body || {}).forEach(function (key: string): void {
+      if (!/^lim_t\d+r\d+_/.test(key)) {
+        out[key] = body[key];
+      }
+    });
+    log.debug("Leaving GnapInteract.withoutLimitFields().");
+    return out;
+  }
+
+  // -------------------------------------------------------------------------
+  // The ownership check: true when the page has refused (and answered).
+  // -------------------------------------------------------------------------
+  private async ownershipRefused(req: Req, res: Res, grant: any,
+                                 session: any): Promise<boolean> {
+    const { log, grants } = this.deps;
+    log.debug("Entering GnapInteract.ownershipRefused().");
+    const refused: any = await grants.approverRefusal(req, grant,
+                                                      session.user.username);
+    if (!refused) {
+      log.debug("Leaving GnapInteract.ownershipRefused(). The owner.");
+      return false;
+    }
+    this.interactionError(res, 'STS-GNAP-0862', 'You cannot approve this ' +
+      'request', 'It asks for access to a resource that is not yours to ' +
+      'give: ' + String(refused.why || '') + ' Only its owner can approve ' +
+      'it.');
+    log.debug("Leaving GnapInteract.ownershipRefused(). Refused.");
+    return true;
+  }
+
   private approvalPage(req: Req, res: Res, grant: any, session: any): void {
     const self = this;
     const { log, xmlEscape, websecurity } = this.deps;
@@ -416,7 +644,7 @@ class GnapInteract {
         rows += '<li><label><input type="checkbox" name="right" value="t' +
           t + 'r' + r +
           '" checked><span>' + self.describeRight(right) +
-          '</span></label></li>';
+          '</span></label>' + self.limitsControls(right, t, r) + '</li>';
       });
     });
     // WHAT THE ISSUANCE POLICY NARROWED BEFORE THIS PAGE WAS DRAWN (#432
@@ -771,9 +999,17 @@ class GnapInteract {
             });
         });
       }
-      self.approvalPage(req, res, grant, session);
-      log.debug("Leaving GET /gnap/approve. Page drawn.");
-      return undefined;
+      // #432 phase 5: the person must own what the rights name.
+      return self.ownershipRefused(req, res, grant, session)
+        .then(function (refused) {
+          if (refused) {
+            log.debug("Leaving GET /gnap/approve. Not the owner.");
+            return undefined;
+          }
+          self.approvalPage(req, res, grant, session);
+          log.debug("Leaving GET /gnap/approve. Page drawn.");
+          return undefined;
+        });
     }));
 
     app.post('/gnap/approve/:id', self.placed('POST /gnap/approve',
@@ -806,8 +1042,9 @@ class GnapInteract {
       // repeated values are read off the raw body and handed to the schema as
       // the array they are.
       const ticked = bodyValues(req, body, 'right');
-      const posted = validation.checkParsed(Object.assign({}, body,
-                                                          { right: ticked }),
+      const posted = validation.checkParsed(Object.assign(
+                                              self.withoutLimitFields(body),
+                                              { right: ticked }),
                                             'body',
                                             APPROVE_FORM);
       if (!posted.ok) {
@@ -825,8 +1062,23 @@ class GnapInteract {
       const anything = tokens.some(function (token) {
         return token.access.length;
       }) || posted.value.subject === 'yes';
+      // #432 phase 5: the limits as the person lowered them.
+      const lowered = approve ? self.loweredTokens(req, body, grant, tokens)
+                              : { ok: true, tokens: tokens };
+      if (!lowered.ok) {
+        log.debug("Leaving POST /gnap/approve. Limits refused.");
+        return self.interactionError(res, lowered.code, 'These limits ' +
+                                     'could not be accepted', lowered.why);
+      }
       let claimedDecision = null;
-      return self.claimDecision(res, grant).then(function (claimed) {
+      return (approve ? self.ownershipRefused(req, res, grant, session)
+                      : Promise.resolve(false)).then(function (refused) {
+        if (refused) {
+          log.debug("Leaving POST /gnap/approve. Not the owner.");
+          return null;
+        }
+        return self.claimDecision(res, grant);
+      }).then(function (claimed) {
         if (!claimed) {
           log.debug("Leaving POST /gnap/approve. Already answered.");
           return undefined;
@@ -834,7 +1086,7 @@ class GnapInteract {
         claimedDecision = claimed;
         return grants.decide(req, grant, session, {
           approve: approve && anything,
-          tokens: tokens,
+          tokens: lowered.tokens,
           subject: posted.value.subject === 'yes'
         }).then(function (finished) {
           log.debug("Leaving POST /gnap/approve. Decided.");
@@ -882,7 +1134,8 @@ class GnapInteract {
       authn: authn,
       store: store,
       grants: grants,
-      monitor: monitor
+      monitor: monitor,
+      rights: gnapRights
     };
   }
 }

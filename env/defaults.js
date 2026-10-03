@@ -151,6 +151,7 @@ var config = {
     jweEnc: "A256GCM",                                                     // jwt-encrypted content encryption
     accessTokenCertificateHeader: "x5u",                                   // JWT access token certificate header
     demoResourceServer: true,                                              // Run the demonstration resource server
+    ownerLookupCacheS: 60,                                                 // Owner lookup cache (seconds)
     caepEvents: true,                                                      // Emit CAEP for grants and tokens
     scopedSignals: true                                                    // Scope a GNAP web application's streams
   },

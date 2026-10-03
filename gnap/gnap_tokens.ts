@@ -396,6 +396,12 @@ class GnapTokens {
     if (model.act) {
       claims.act = model.act;
     }
+    // The grant a right's `limits` (in `access`, as the model holds them)
+    // are counted against (#432 phase 5) — the name introspection answers
+    // it under too.
+    if (model.grant) {
+      claims.grant_id = model.grant;
+    }
     Object.keys(claims).forEach(function (name) {
       if (claims[name] === undefined) {
         delete claims[name];
@@ -423,7 +429,8 @@ class GnapTokens {
       nbf: claims.nbf || null,
       exp: claims.exp || null,
       label: claims.label || null,
-      act: claims.act === undefined ? null : claims.act
+      act: claims.act === undefined ? null : claims.act,
+      grant: claims.grant_id === undefined ? null : claims.grant_id
     };
   }
 

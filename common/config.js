@@ -1674,6 +1674,17 @@ const SETTINGS = [
     description: 'GET/POST /gnap/rs/resource: judges a presented token in ' +
                  'any of the five formats and answers the RS-first challenge ' +
                  'of section 9.1.' },
+  { key: 'gnap.ownerLookupCacheS', group: 'GNAP', label: 'Owner lookup ' +
+      'cache (seconds)',
+    path: 'gnap.ownerLookupCacheS', env: 'STS_GNAP_OWNER_LOOKUP_CACHE_S',
+    type: 'int', dflt: 60, min: 0, max: 3600, runtime: true,
+    description: 'How long the owner a resource server\'s ' +
+                 'gnapOwnerLookupUri named for an identifier is held before ' +
+                 'it is asked again (#432 phase 5): a grant asks at its ' +
+                 'request, on its approval page and at issue. A failed ' +
+                 'lookup is never held. 0 asks every time; a longer one ' +
+                 'keeps a former owner able to approve for that long after ' +
+                 'the resource server says otherwise.' },
   { key: 'gnap.caepEvents', group: 'GNAP', label: 'Emit CAEP for grants and ' +
                                                   'tokens',
     path: 'gnap.caepEvents', env: 'STS_GNAP_CAEP_EVENTS', type: 'bool',

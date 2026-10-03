@@ -440,7 +440,10 @@ class GnapConsole {
         // formats) and the revoked biscuits' identifiers.
         accessTokenStatusList: base + '/status-lists/access-tokens',
         biscuitRevocations: base + '/gnap/biscuit/revocations',
-        demonstrationResourceServer: base + '/gnap/rs/resource'
+        demonstrationResourceServer: base + '/gnap/rs/resource',
+        // #432 phase 5: the demonstration operation that spends a right's
+        // limits, the reference for a resource server keeping the totals.
+        demonstrationSpend: base + '/gnap/rs/spend'
       },
       capabilities: grants.capabilities(req, null),
       authorizationServers: profiles,

@@ -1666,6 +1666,15 @@ const CODES = [
       'lease expires on its own within one node lifetime, and this node does ' +
       'not renew it.',
     spec: '' },
+  { code: 'STS-CLUSTER-0162',
+    summary: 'The store every node shares could not be asked to spend ' +
+      'against a budget (a GNAP right\'s limits); the operation was ' +
+      'refused (#432 phase 5).',
+    spec: '' },
+  { code: 'STS-CLUSTER-0163',
+    summary: 'A spend against a shared budget could not be refunded: the ' +
+      'store could not be asked (#432 phase 5).',
+    spec: '' },
   // ===== CELL ==============================================================
   { code: 'STS-CELL-0001',
     summary: 'The cell settings are inconsistent (an id without a ' +
@@ -8591,6 +8600,11 @@ const CODES = [
     summary: 'An access token would carry authorization_details of a type ' +
       'the access-type catalogue declares bearer: false, and the request ' +
       'presented neither a DPoP proof nor a client certificate (#432).',
+    spec: '400 invalid_authorization_details (RFC 9396 section 5)' },
+  { code: 'STS-OAUTH-0916',
+    summary: 'An authorization detail\'s limits are not ones this service ' +
+      'can read: an amount, count, receiver, repeating interval or window ' +
+      'that common/access_limits.ts gives no meaning (#432 phase 5).',
     spec: '400 invalid_authorization_details (RFC 9396 section 5)' },
   { code: 'STS-SAML-0001',
     summary: 'A SAML 2.0 sign-in resumed with a held-request id that is ' +
@@ -15650,6 +15664,86 @@ const CODES = [
       'the catalogue lists no values for, every value taken off, or a ' +
       'narrowed right its type no longer accepts (#432).',
     spec: 'RFC 9635 section 3.6 (request_denied, HTTP 403)' },
+  { code: 'STS-GNAP-0860',
+    summary: 'A GNAP access right\'s limits are not ones this service can ' +
+      'read: an amount, count, receiver, repeating interval or window that ' +
+      'common/access_limits.ts gives no meaning (#432 phase 5).',
+    spec: 'RFC 9635 section 3.6 (invalid_request, HTTP 400)' },
+  { code: 'STS-GNAP-0861',
+    summary: 'A GNAP access right names an identifier whose owner (on a ' +
+      'registered resource set, or by the resource server\'s lookup) is ' +
+      'not the person the grant is for, nor a group they are a member of; ' +
+      'the issuance policy refused it (#432 phase 5).',
+    spec: 'RFC 9635 section 3.6 (request_denied, HTTP 403)' },
+  { code: 'STS-GNAP-0862',
+    summary: 'The person on the GNAP approval page does not own a resource ' +
+      'a requested right names, and the issuance policy would not let them ' +
+      'approve it; the page refused (#432 phase 5).',
+    spec: 'RFC 9635 section 1.4 (the page answers 400)' },
+  { code: 'STS-GNAP-0863',
+    summary: 'A GNAP access right names an identifier whose resource server ' +
+      'declares an owner lookup that could not be answered; the issuance ' +
+      'policy refused it (#432 phase 5).',
+    spec: 'RFC 9635 section 3.6 (request_denied, HTTP 403)' },
+  { code: 'STS-GNAP-0864',
+    summary: 'A resource registration\'s resource_owners names an ' +
+      'identifier no right in its access carries (#432 phase 5).',
+    spec: 'RFC 9767 section 3.4 (invalid_request, HTTP 400)' },
+  { code: 'STS-GNAP-0865',
+    summary: 'A resource registration\'s resource_owners names a DN that is ' +
+      'not a person or a group in the realm\'s directory (#432 phase 5).',
+    spec: 'RFC 9767 section 3.4 (invalid_request, HTTP 400)' },
+  { code: 'STS-GNAP-0866',
+    summary: 'The GNAP approval page was sent limits that raise a right\'s ' +
+      'limits rather than lower them, or that cannot be read (#432 phase ' +
+      '5).',
+    spec: 'RFC 9635 section 4 (the page answers 400)' },
+  { code: 'STS-GNAP-0867',
+    summary: 'Limits lowered on the GNAP approval page no longer meet the ' +
+      'limits schema of the right\'s type (#432 phase 5).',
+    spec: 'RFC 9635 section 4 (the page answers 400)' },
+  { code: 'STS-GNAP-0868',
+    summary: 'A derived GNAP token would drop or raise a limit the original ' +
+      'token\'s right carries (#432 phase 5).',
+    spec: 'RFC 9767 section 4 (request_denied, HTTP 403)' },
+  { code: 'STS-GNAP-0869',
+    summary: 'A resource server\'s owner lookup (gnapOwnerLookupUri) could ' +
+      'not be answered: refused by the outbound policy, unreachable, or not ' +
+      '{"owner": "<DN>"} (#432 phase 5).',
+    spec: '' },
+  { code: 'STS-GNAP-0870',
+    summary: 'A demonstration spend would pass the limits of the token\'s ' +
+      'right for its grant and period (#432 phase 5).',
+    spec: 'RFC 6750 section 3.1 (insufficient_scope, HTTP 403)' },
+  { code: 'STS-GNAP-0871',
+    summary: 'A demonstration spend is outside the window or the repeating ' +
+      'interval the token\'s limits allow (#432 phase 5).',
+    spec: 'RFC 6750 section 3.1 (insufficient_scope, HTTP 403)' },
+  { code: 'STS-GNAP-0872',
+    summary: 'A demonstration spend names a receiver the token\'s limits do ' +
+      'not (#432 phase 5).',
+    spec: 'RFC 6750 section 3.1 (insufficient_scope, HTTP 403)' },
+  { code: 'STS-GNAP-0873',
+    summary: 'A demonstration spend states no amount, or one in another ' +
+      'currency, where the token\'s limits count an amount (#432 phase 5).',
+    spec: 'RFC 6750 section 3.1 (insufficient_scope, HTTP 403)' },
+  { code: 'STS-GNAP-0874',
+    summary: 'A demonstration spend\'s body is not readable (#432 phase 5).',
+    spec: 'RFC 6750 section 3.1 (invalid_request, HTTP 400)' },
+  { code: 'STS-GNAP-0875',
+    summary: 'The running totals of a token\'s limits could not be read from ' +
+      'the store every node shares; the demonstration spend was refused ' +
+      '(#432 phase 5).',
+    spec: 'HTTP 503' },
+  { code: 'STS-GNAP-0876',
+    summary: 'The demonstration operation failed after its spend was ' +
+      'counted (asked to, with simulateFailure); the spend was refunded ' +
+      '(#432 phase 5).',
+    spec: 'HTTP 502' },
+  { code: 'STS-GNAP-0877',
+    summary: 'A demonstration spend could not be refunded: a new period ' +
+      'had begun, or the store could not be asked (#432 phase 5).',
+    spec: '' },
   // ===== DEVICE ============================================================
   { code: 'STS-DEVICE-0001',
     summary: 'A device named an owner that is not a person or an application' +
@@ -18832,6 +18926,11 @@ const CODES = [
   { code: 'STS-REG-0295',
     summary: 'An access type could not be taken off an application: it ' +
       'declares no type of that name (#432).',
+    spec: 'none (a console or management API refusal, HTTP 400)' },
+  { code: 'STS-REG-0334',
+    summary: 'A gnapOwnerLookupUri is not an https URL template with a ' +
+      'host, no user information, query or fragment, and {identifier} ' +
+      'exactly once as a whole path segment (#432 phase 5).',
     spec: 'none (a console or management API refusal, HTTP 400)' },
   { code: 'STS-DBG-0001',
     summary: 'The debugger permission was asked for by somebody who may ' +

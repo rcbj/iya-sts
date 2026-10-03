@@ -1766,6 +1766,27 @@ const TEMPLATES: TemplateRow[] = [
           and([fact(GA, GV.GNAP_TOKEN_BEARER, true),
                fact(R, GV.GNAP_TYPE_BEARER, false)]),
           'STS-GNAP-0811'),
+        // #432 PHASE 5: THE RESOURCE OWNER. A right naming an identifier the
+        // resource server says somebody owns is granted only to that owner
+        // (or a member of that group) — RFC 9635 section 1.4 — at whichever
+        // stage the person is known: on the approval page, for a client
+        // that skips it with a verified assertion, for a derivation, and at
+        // issue. A realm's own policy may allow a delegate; this rule is
+        // what applies where it says nothing. And a resource server that
+        // declared an owner lookup and could not answer it has said the
+        // identifier HAS an owner: not knowing which is not permission.
+        gnapRefusal('gnap-owner-unresolved', 'A right naming an ' +
+          'identifier whose resource server declares an owner lookup ' +
+          '(gnapOwnerLookupUri) that could not be answered.',
+          fact(R, GV.GNAP_OWNER_UNRESOLVED, true),
+          'STS-GNAP-0863'),
+        gnapRefusal('gnap-owner-mismatch', 'A right naming an identifier ' +
+          'whose owner — on a registered resource set, or by the resource ' +
+          'server\'s lookup — is not the person the grant is for, nor a ' +
+          'group they are a member of.',
+          and([fact(R, GV.GNAP_OWNER_KNOWN, true),
+               fact(R, GV.GNAP_OWNER_MATCHES, false)]),
+          'STS-GNAP-0861'),
         { id: options.idBase + ':rule:gnap-type-lifetime',
           effect: model.EFFECT.PERMIT,
           description: 'A right of a type the catalogue declares a ' +

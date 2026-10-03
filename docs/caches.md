@@ -204,6 +204,7 @@ not use this cache: it decrypts the secret every time.
 | Debugger files | the embedded debugger's files with this service's address filled in | per process | until the file changes (400 entries) | — |
 | Fetched status lists | a Status List Token or Bitstring Status List credential a trusted foreign issuer published, fetched when one of its credentials was presented | per process | the list's own `ttl`, never past its `exp`, at most `oid4vp.statusListMaxCacheS` (3600); a failed fetch 30 seconds | `oid4vp.statusListMaxCacheS` |
 | Signed status lists | the last Status List Token and Bitstring Status List credential this process signed for each realm | per process | until the list changes, or half of `oid4vci.statusListTtlS`; 1,024 documents, oldest first | `oid4vci.statusListTtlS` |
+| GNAP resource owners | the owner a resource server's `gnapOwnerLookupUri` named for an identifier (#432) | per realm | the setting; 1,024 entries per realm, the oldest dropped; a failed lookup is never held | `gnap.ownerLookupCacheS` (60) |
 | Signed access-token status lists | the last access-token Status List Token this process signed for each realm (#432) | per process | until the list changes, or half of `oauth2.accessTokenStatusListTtlS`; 1,024 lists, oldest first | `oauth2.accessTokenStatusListTtlS` |
 
 **XACML policy parses are kept by content.** Each distinct policy text is a new
