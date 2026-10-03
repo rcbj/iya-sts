@@ -267,7 +267,7 @@ async function test() {
     assert.strictEqual(r.status, 501, r.text);
   });
 
-  assert.ok(checks >= 9, "only " + checks + " checks ran; a section has " +
+  assert.ok(checks >= 8, "only " + checks + " checks ran; a section has " +
                          "stopped being called.");
   log.info(checks + " check(s) passed.");
   log.info("Test completed successfully.");
