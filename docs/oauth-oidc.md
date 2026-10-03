@@ -1905,6 +1905,7 @@ on [OAuth security](oauth-security.md#configuration).
 
 | Setting | Environment variable | Default | Runtime? | What it does |
 |---|---|---|---|---|
+| `oauth2.tokenExchangeAudience` | `STS_OAUTH2_TOKEN_EXCHANGE_AUDIENCE` | `authorization-server` | yes | What an exchanged assertion may be addressed to: this authorization server, or also (`any-declared-relying-party`) a relying party registered here — token forwarding. See [Delegation](delegation.md#assertions-as-the-subject-or-the-actor). |
 | `oauth2.tokenExchangeRefreshToken` | `STS_OAUTH2_TOKEN_EXCHANGE_REFRESH_TOKEN` | `when-requested` | yes | Whether an RFC 8693 exchange returns a refresh token: `never`, `when-requested` or `always`. |
 | `oauth2.jwtBearerGrant` | `STS_OAUTH2_JWT_BEARER_GRANT` | `true` | yes | Offer and advertise the RFC 7523 JWT bearer grant. |
 | `oauth2.jwtBearerRequireRegisteredIssuer` | `STS_OAUTH2_JWT_BEARER_REQUIRE_REGISTERED_ISSUER` | `true` | yes | Refuse an RFC 7523 grant whose `iss` no application declares on `oauthAssertionIssuer`. |
