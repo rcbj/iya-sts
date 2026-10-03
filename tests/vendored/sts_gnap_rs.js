@@ -423,8 +423,14 @@ async function test() {
     identifier: RS_ID, kind: "gnap-resource-server", protocols: ["gnap"],
     fields: { gnapKey: JSON.stringify(rsKey.keyObject()),
               gnapJweKey: JSON.stringify(rsJweJwk),
-              gnapResourceServerUri: RS_URI } }, "registered the resource " +
-                                                 "server");
+              gnapResourceServerUri: RS_URI,
+              // The photos type is CATALOGUED (#432 phase 4): product mode
+              // refuses a type nobody declares. Owned here, answering at the
+              // downstream resource server's address too (section 4b).
+              oauthAuthorizationDetailsType: [JSON.stringify({
+                type: "https://rs.gnap.test/photos",
+                locations: ["https://rs2.gnap.test/api"] })] } },
+             "registered the resource server");
   const client = new gnap.Client({ key: gnap.newKey("ES256") });
 
   // =========================================================================

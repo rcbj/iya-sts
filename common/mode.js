@@ -1246,7 +1246,8 @@ function issuesThroughUndeclaredProtocols() {
 // the rest at the grant endpoint (STS-GNAP-0810). RFC 9396 is NOT behind this
 // predicate: section 5 makes an unknown authorization_details type a refusal
 // in every mode, and `authorization_details.ts` refuses it so. A reference
-// string (section 8.1) is a different question — `gnap.unknownAccessReferences`.
+// string (section 8.1) is a different question:
+// `gnap.unknownAccessReferences`.
 // The policy reads the realm's mode itself; this is the same question asked
 // for the pages that SAY which answer applies (the console's Access types tab).
 /**

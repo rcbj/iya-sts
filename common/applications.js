@@ -8237,7 +8237,7 @@ function gnapMtlsTrustProblem(attribute, value) {
 //   interaction                    `always`, `default` or `never`, and
 //   consentActions                 the actions that force consent — ENFORCED
 //                                  BY PHASE 6 of #432 (the next lane), which
-//                                  replaces gnapSkipInteraction's all-or-nothing
+//                                  replaces gnapSkipInteraction's switch
 //   acr                            the authentication level a right of this
 //                                  type needs — ENFORCED BY PHASE 6 (step-up)
 //   bearer                         false: a token carrying the type must be

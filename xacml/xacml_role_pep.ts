@@ -1293,8 +1293,8 @@ class XacmlRolePep {
     const { log, config, store, pip } = this.deps;
     log.debug('Entering XacmlRolePep.decideGnapRights().');
     const question = asked.gnapRightQuestion as Record<string, any>;
-    const loaded = config.value('xacml.enabled') === false ? null
-                                                           : this.issuancePolicy();
+    const loaded = config.value('xacml.enabled') === false
+      ? null : this.issuancePolicy();
     const verdicts = gnapRightVerdicts.decide(Object.assign({}, question, {
       policyName: this.issuancePolicyName()
     }), loaded && loaded.policy ? loaded : null, function (request: any): any {

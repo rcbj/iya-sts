@@ -171,9 +171,14 @@ async function test() {
   };
   await register(B, "gnap-resource-server", { gnapResourceServerUri: RS.b });
   await register(C, "gnap-resource-server", { gnapResourceServerUri: RS.c });
+  // TYPE is CATALOGUED (#432 phase 4) — product mode refuses a type nobody
+  // declares — owned by A and answering at B's and C's addresses, so every
+  // right below keeps the targets its locations name.
   await register(A, "gnap-resource-server",
                  { gnapResourceServerUri: RS.a,
-                   appAllowedToDelegateTo: [B] });
+                   appAllowedToDelegateTo: [B],
+                   oauthAuthorizationDetailsType: [JSON.stringify({
+                     type: TYPE, locations: [RS.b, RS.c] })] });
   await register(PLAIN, "gnap-client", { gnapSkipInteraction: "TRUE" });
   await register(IMP, "gnap-client",
                  { gnapSkipInteraction: "TRUE",
