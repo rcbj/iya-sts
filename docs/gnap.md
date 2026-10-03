@@ -200,7 +200,7 @@ kinds: `gnap-client` or `gnap-resource-server`. The attributes:
 | `gnapInteractionStartModes` | narrows the start modes this client may use |
 | `gnapAllowedAccess` | the access types and references a client may request (read by the issuance policy's `gnap-right-not-listed` rule), or a resource server may register |
 | `oauthAuthorizationDetailsType` | the access types a resource server owns — the [catalogue](#access-types-and-the-issuance-policy) shared with RFC 9396 |
-| `gnapBearerTokens`, `gnapSkipInteraction` | per-client permissions. `gnapSkipInteraction` lets a client skip the approval page; it does **not** let it act for a person — see [acting for somebody else](#acting-for-somebody-else) |
+| `gnapBearerTokens`, `gnapSkipInteraction` | per-client permissions. `gnapSkipInteraction` lets a client skip the approval page **where every requested right's access type allows it** (see [who must be asked](#who-must-be-asked-and-how-strongly-signed-in)); it does **not** let it act for a person — see [acting for somebody else](#acting-for-somebody-else) |
 | `gnapAccessTokenFormat`, `gnapAccessTokenLifetimeS` | per-application overrides |
 | `gnapResourceServerUri` | the locations a resource server answers for |
 | `gnapJweKey` | the public key `jwt-encrypted` tokens are encrypted to |
@@ -362,7 +362,7 @@ Every access right is put to the issuance policy as its own XACML question,
 action-id `issue-gnap-right`, with the right, the token it is for (label,
 bearer flag, format, resource servers), the client and its registered class,
 who approved it and how (`pending`, `interaction`, `remembered`, `skipped`,
-`derived`), the session's `acr` and `amr`, its risk and registered device, and
+`derived`, or `owner` — the resource owner on their portal), the session's `acr` and `amr`, its risk and registered device, and
 what the catalogue declares for its type. It is asked twice: when the grant is
 requested, modified or derived (a refusal answers the client) and when tokens
 are issued (a refusal leaves the right out of its token).
@@ -392,6 +392,49 @@ service** every other protocol here uses, and gets the same directory entry
 however they signed in. An approval is remembered in the consent register, so
 the same application asking the same person for the same rights is not asked
 again (`gnap.rememberApprovals`).
+
+### Who must be asked, and how strongly signed in
+
+The access type's `interaction`, `consentActions` and `acr` are rules of the
+issuance policy, and the grant engine does what they say:
+
+| The rights asked for | What happens |
+|---|---|
+| every right of a type declaring `interaction: never` | issued with nobody asked, to any client — acting as itself. A request that names a person or asks who they are still goes to that person |
+| `default` types (and references, and uncatalogued types in development) | a client with `gnapSkipInteraction` skips the approval page; any other goes to it |
+| any right of a type declaring `interaction: always`, or naming an action the type lists in `consentActions` (or naming no actions, which is every action) | the resource owner sees the approval page, every time. A client trusted to skip is sent there too, and is refused `invalid_interaction` if it offers no way to reach the person. **A remembered approval does not count**, and neither does `gnap.consentRequired` off |
+| any right of a type declaring an `acr` | the person's sign-in must meet every such level before the page is drawn; a session that does not is sent to sign in again — with a second factor or a security key, as the level needs and the realm's authentication policy allows — and refused `request_denied` if it comes back short. Nothing needing an `acr` is issued without such a session: not by skipping, and not by deriving from a token whose approval did not meet it |
+
+A realm's own issuance policy may make any of these stricter — `always` for
+a class of client, an `acr` for one action — because the most demanding
+answer wins. What the person achieved is recorded on the grant (`acr`), and
+each right is checked against it again when tokens are issued.
+
+### When the person asked is not the person here
+
+A request's `user` may name somebody who is not at the approval page — or a
+client may offer no interaction at all. Where the realm turns on
+**`gnap.ownerApproval`** (off by default), the grant then **waits for the
+person it names** (RFC 9635 sections 1.4 and 2.4):
+
+* it is listed on their portal under **Sign-in requests** (`/portal/ciba`),
+  with the application, each right (untick what you do not want to allow),
+  who was using the application when it asked, the sign-in level it needs
+  and when it runs out; they are told by mail as well (a notification they
+  may turn off — the request waits on the portal either way);
+* the client keeps polling its continuation; the `wait` it is told is long
+  enough that `gnap.maxPolls` polls cover `gnap.ownerApprovalLifetimeS`, and
+  polling sooner is `too_fast`;
+* approved, the client's next poll collects the tokens; denied, it is told
+  `user_denied`; not answered in time, it is told so and the grant is
+  finalized as **rejected**;
+* a person has at most `gnap.ownerApprovalMaxPending` such requests waiting,
+  and a name nobody here holds is `unknown_user`.
+
+Where it is off, a different person's approval is answered `unknown_user`, and
+a request offering no interaction that needs a person is refused.
+**`gnap.allowCrossUser`, which let whoever signed in approve a grant naming
+somebody else, no longer exists.**
 
 ### What a person sees: `/portal/gnap`
 

@@ -1444,6 +1444,25 @@ tokens are issued on that session, so its end revokes their refresh token. It
 is also CAEP's `session-presented`, via `OpenID Connect CIBA`. A denial
 honours nothing and sends nothing.
 
+**AND GNAP GRANTS WAITING FOR THEIR OWNER (#432 phase 6, 2026-10-03).** A
+GNAP request naming this person while somebody else was at the approval page,
+or offering no interaction (RFC 9635 sections 1.4 and 2.4, with
+`gnap.ownerApproval` on), is listed in an *Access requests* section below the
+CIBA requests. The page was chosen over a second approvals page because it IS
+the page where a person answers what a client asked while they were
+elsewhere; what is reused is its mechanism — the session is the identity, a
+form names a request (`gnap-approve` / `gnap-deny` with the request's own id,
+never a person), one answer, the step-up through the portal's sign-in with
+the acr values the rights need (`?gnapstepup=<id>`) — and NOT CIBA's store:
+the request is a GNAP grant held and continued by `gnap/`, and
+`gnap/gnap_approval.ts` lists and answers it, reached LAZILY (the portal is
+built at 8a, GNAP at 23d). Each right has the approval page's checkbox; the
+repeated `right` field is read off the raw body (`helpers.bodyValues()`), as
+the approval page reads it. A request not waiting for this person is
+`STS-PORTAL-0243`, an approval short of the rights' acr `STS-PORTAL-0244`.
+The person asking (whoever was at the page) is named on the card: an owner
+judging a request for their access needs to know who wants it.
+
 ## `/portal/claim-sources`: CONNECTED CLAIM SOURCES (#147, 2026-09-24)
 
 The setup phase of OpenID Connect Claims Aggregation, the person's own. Every
