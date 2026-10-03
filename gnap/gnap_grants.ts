@@ -112,6 +112,10 @@ import scopePolicy = require('../common/scope_policy');
 // The TLS client certificate on a connection, and who this realm issued it to
 // (#107). A library.
 import mtls = require('../oauth-oidc/mtls');
+// WHO MAY ACT FOR WHOM (#432 phase 1): #186's delegation policy asked for
+// impersonation by assertion and RFC 9767 derivation, the register they are
+// recorded in, and the derived token's actor chain. A library.
+import gnapDelegation = require('./gnap_delegation');
 
 const PROTOCOL = 'GNAP';
 const STATE = store.STATE;
@@ -182,6 +186,7 @@ interface GnapGrantsDeps {
   accessRights: typeof accessRights;
   scopePolicy: typeof scopePolicy;
   mtls: typeof mtls;
+  delegation: typeof gnapDelegation;
   // oauth2.js, required when it is needed and not before (it registers
   // routes, and was a lazy require before the conversion).
   loadOauth2(): typeof import('../oauth-oidc/oauth2');
@@ -1189,7 +1194,11 @@ class GnapGrants {
         iat: iat,
         nbf: iat,
         exp: iat + lifetime,
-        label: asked.label || null
+        label: asked.label || null,
+        // RFC 8693 section 4.1's `act` (#432): set on a DERIVED grant only,
+        // naming the deriving resource server over the original token's
+        // chain (`deriveToken()`). Every format carries it.
+        act: grant.actorChain || null
       };
       const rs = rsIds.length === 1 ? applications.get(rsIds[0]) : null;
       let jweKey = null;
@@ -1683,16 +1692,69 @@ class GnapGrants {
     // with the RO") gets tokens with no RO, when it asks for no subject
     // information; with a VERIFIED user assertion it gets them for that person
     // (section 2.4).
+    //
+    // THE SECOND IS IMPERSONATION, AND SINCE #432 IT IS ASKED (phase 1). Tokens
+    // for a person nobody asked are Kerberos's S4U2Self in GNAP: the flag on
+    // the client says it may skip the PAGE, not that it may act for anybody.
+    // So `gnap_delegation.ts` puts #186's question to the issuance policy —
+    // actor the client, subject the person, R each resource server the rights
+    // resolve to — and impersonation must be in the client's allowed semantics
+    // (`appDelegationSemantics`), the person not protected, inside the
+    // client's subject groups, holding R's roles, with R reachable by the
+    // client; a `may_act` in the assertion is honoured. Enforced in product,
+    // recorded "would have been refused" in development; recorded either way.
+    // The first case — the client acting as ITSELF — acts for nobody, asks
+    // nothing, and releases no subject.
     const trusted = this.field(app, 'gnapSkipInteraction') === 'TRUE' &&
                     !caller.created;
     if (trusted && (!asked.subject || resolved.verified)) {
-      grant.ro = resolved.verified ?
+      const forPerson = !!(resolved.verified && resolved.username);
+      let actQuestion = null;
+      let decided = null;
+      if (forPerson) {
+        const formats = ((asked.user && asked.user.assertions) || [])
+          .map(function (one) { return String(one.format || ''); })
+          .filter(function (one, i, all) {
+            return !!one && all.indexOf(one) === i;
+          }).join(', ');
+        actQuestion = {
+          act: 'impersonation', actor: app, subject: resolved.username,
+          targets: this.resourceServersFor(asked.tokens.reduce(
+            function (all, one) {
+              return all.concat(one.access);
+            }, [])),
+          mayAct: resolved.mayAct || null, format: formats,
+          consumed: { kind: 'user assertion', identifier: formats,
+                      note: 'signed by this realm and verified (RFC 9635 ' +
+                            'section 2.4)' },
+          grantId: grant.id };
+        decided = this.deps.delegation.decide(actQuestion);
+        if (!decided.ok) {
+          this.deps.delegation.record(actQuestion, decided.decided,
+                                      'refused', []);
+          grant.state = STATE.FINALIZED;
+          store.saveGrant(grant, 'refused: ' + decided.why);
+          monitor.record(identifier, 'grant.refused',
+                         { gnapError: decided.gnapError });
+          log.debug("Leaving GnapGrants.createGrant(). The delegation " +
+                    "policy refused the impersonation.");
+          return decided;
+        }
+      }
+      grant.ro = forPerson ?
                  { username: resolved.username, sessionId: null,
                                        authTime: nowSec(),
                                        amr: ['assertion'], acr: null } : null;
+      // A client acting as itself is nobody's delegate and is told nothing
+      // about anybody: no subject without a person.
       grant.decision = { approved: true, tokens: asked.tokens,
-                         subject: !!asked.subject };
+                         subject: forPerson && !!asked.subject };
+      const before = (grant.tokens || []).length;
       const released = await this.release(req, grant);
+      if (actQuestion) {
+        this.deps.delegation.record(actQuestion, decided.decided, 'issued',
+                                    (grant.tokens || []).slice(before));
+      }
       Object.assign(response, released);
       monitor.record(identifier, 'grant.immediate', {});
       log.debug("Leaving GnapGrants.createGrant(). Approved without " +
@@ -1777,9 +1839,29 @@ class GnapGrants {
 
   // ---------------------------------------------------------------------------
   // RFC 9767 SECTION 4: TOKEN DERIVATION.
+  //
+  // SINCE #432 (phase 1) A DERIVATION IS A DELEGATION, AND IS DECIDED AS ONE.
+  // It is Kerberos's S4U2Proxy in GNAP: the deriving resource server (actor
+  // and S) presents the person's token and asks for one to reach a downstream
+  // resource server (R) as them. `gnap_delegation.ts` asks #186's policy —
+  // the deriving RS must delegate to R (`appAllowedToDelegateTo` on it, or
+  // `appAllowedToActOnBehalfOf` on R), the person must not be protected and
+  // must hold S's roles — enforced in product, recorded in development. And
+  // three rules that are the format's, in every mode:
+  //
+  //   * THE DERIVED TOKEN IS A SUBSET of the original (rcbj's decision 3): the
+  //     exception for "rights registered for a downstream resource server"
+  //     is gone — it let any resource server a token reached mint access
+  //     nobody approved. `gnap_delegation.ts`'s `derivableBeyond()` is the
+  //     one place the access-type catalogue (phase 4) will widen it.
+  //   * IT CARRIES THE ACTOR CHAIN: RFC 8693 section 4.1's `act`, the deriving
+  //     resource server outermost over the original token's chain, in every
+  //     format (`grant.actorChain`, read by `issueTokens()` and kept by
+  //     rotation and modification).
+  //   * THE CHAIN IS CAPPED at `gnap.maxDerivationDepth` (STS-GNAP-0782).
   // ---------------------------------------------------------------------------
   private async deriveToken(req, grant, app, asked) {
-    const { log, nowSec, config, store, tokens, monitor, accessRights } =
+    const { log, nowSec, config, store, tokens, monitor, delegation } =
         this.deps;
     log.debug("Entering GnapGrants.deriveToken().");
     if (config.value('gnap.tokenDerivation') === false) {
@@ -1810,28 +1892,54 @@ class GnapGrants {
                           'token (RFC 9767 section 4).', 'request_denied', 403);
     }
     const requested = asked.tokens.length ? asked.tokens : [];
-    for (let i = 0; i < requested.length; i++) {
-      const covered = requested[i].access.every((right) => {
-        return accessRights.accessCovers(existing.access, [right]) ||
-               typeof right === 'string' &&
-          !!store.resourceByReference(right) && this.resourceServersFor(
-              [right]).length;
-      });
-      if (!covered) {
-        log.debug("Leaving GnapGrants.deriveToken(). Asks for more than the " +
-                  "existing token.");
-        return this.refusal('STS-GNAP-0513', 'a derived token must not carry ' +
-            'more access than the token it is derived from, except rights ' +
-                            'registered for a downstream resource server.',
-                            'request_denied', 403);
-      }
+    const askedRights = requested.reduce(function (all, one) {
+      return all.concat(one.access);
+    }, []);
+    const downstream = this.resourceServersFor(askedRights);
+    const widened = delegation.derivationWidens(existing.access, askedRights,
+                                                { rs: app.identifier,
+                                                  downstream: downstream });
+    if (widened !== null) {
+      log.debug("Leaving GnapGrants.deriveToken(). Asks for more than the " +
+                "existing token.");
+      return this.refusal('STS-GNAP-0513', 'a derived token must not carry ' +
+                          'more access than the token it is derived from ' +
+                          '(RFC 9767 section 4).', 'request_denied', 403);
+    }
+    const chain = delegation.actorChainFor(app.identifier, existing.act);
+    if (!chain.ok) {
+      log.debug("Leaving GnapGrants.deriveToken(). The chain is too deep.");
+      return chain;
+    }
+    // WHO THE DERIVED TOKEN IS ABOUT: the original's person, or — for a
+    // token a client was issued as itself — that client's application.
+    const actQuestion = {
+      act: 'derivation' as const, actor: app,
+      subject: existing.username || existing.instanceId,
+      targets: downstream, mayAct: null,
+      consumed: { kind: 'access_token', identifier: String(existing.jti),
+                  note: 'the existing_access_token, issued by this realm and ' +
+                        'active' },
+      grantId: grant.id };
+    const decided = delegation.decide(actQuestion);
+    if (!decided.ok) {
+      delegation.record(actQuestion, decided.decided, 'refused', []);
+      grant.state = STATE.FINALIZED;
+      store.saveGrant(grant, 'refused: ' + decided.why);
+      log.debug("Leaving GnapGrants.deriveToken(). The delegation policy " +
+                "refused it.");
+      return decided;
     }
     grant.ro = existing.username ? { username: existing.username, sessionId:
                                      null, authTime: existing.iat, amr:
                                      ['derived'], acr: null } : null;
     grant.derivedFrom = existing.jti;
+    grant.actorChain = chain.act;
     grant.decision = { approved: true, tokens: requested, subject: false };
+    const before = (grant.tokens || []).length;
     const body = await this.release(req, grant);
+    delegation.record(actQuestion, decided.decided, 'issued',
+                      (grant.tokens || []).slice(before));
     monitor.record(app.identifier, 'rs.derivation', {});
     log.debug("Leaving GnapGrants.deriveToken().");
     return { ok: true, status: 200, body: body, grant: grant };
@@ -2638,7 +2746,11 @@ class GnapGrants {
                     flags: record.flags,
                     cnf: cnf, iat: iat, nbf: iat, exp: iat +
                                                        lifetime,
-                    label: record.label };
+                    label: record.label,
+                    // The actor chain survives rotation (#432): a rotated
+                    // derived token that dropped it would launder a
+                    // delegation into a token nobody acted for.
+                    act: record.act || null };
     let minted;
     try {
       const rs = record.rsIdentifiers && record.rsIdentifiers.length === 1
@@ -2751,6 +2863,7 @@ class GnapGrants {
       accessRights: accessRights,
       scopePolicy: scopePolicy,
       mtls: mtls,
+      delegation: gnapDelegation,
       loadOauth2: function loadOauth2() {
         helpers.log.debug("Entering loadOauth2().");
         helpers.log.debug("Leaving loadOauth2().");

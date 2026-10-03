@@ -378,6 +378,11 @@ class GnapTokens {
     if (model.cnf) {
       claims.cnf = model.cnf;
     }
+    // RFC 8693 section 4.1's `act`, as the model holds it (#432): the
+    // resource server that derived this token, nesting each earlier one.
+    if (model.act) {
+      claims.act = model.act;
+    }
     Object.keys(claims).forEach(function (name) {
       if (claims[name] === undefined) {
         delete claims[name];
@@ -404,7 +409,8 @@ class GnapTokens {
       iat: claims.iat || null,
       nbf: claims.nbf || null,
       exp: claims.exp || null,
-      label: claims.label || null
+      label: claims.label || null,
+      act: claims.act === undefined ? null : claims.act
     };
   }
 

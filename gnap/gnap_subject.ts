@@ -81,6 +81,11 @@ interface Resolution {
   ok: boolean;
   username?: string | null;
   verified?: boolean;
+  // RFC 8693 section 4.4's `may_act`, off a VERIFIED assertion that carried
+  // one (#432): the subject's own statement of who may act for them, which
+  // the delegation policy reads when a client is issued tokens for them with
+  // nobody asked. Null when no verified assertion carried one.
+  mayAct?: any;
   errorCode?: string;
   why?: string;
   gnapError?: string;
@@ -437,11 +442,15 @@ class GnapSubject {
     }
     const named = [];
     let verified = false;
+    let mayAct = null;
     (user.assertions || []).forEach(function (assertion) {
       const name = self.usernameFromAssertion(assertion, context);
       if (name.ok) {
         named.push(name.username);
         verified = true;
+        if (!mayAct && name.mayAct) {
+          mayAct = name.mayAct;
+        }
       }
     });
     const assertionProblems = (user.assertions || []).length && !verified;
@@ -473,7 +482,8 @@ class GnapSubject {
     log.debug("Leaving GnapSubject.resolveUser(). username=" +
         (distinct[0] || '(none)') + ", " +
         "verified=" + verified);
-    return { ok: true, username: distinct[0] || null, verified: verified };
+    return { ok: true, username: distinct[0] || null, verified: verified,
+             mayAct: mayAct };
   }
 
   // The name a recorded user reference's person has NOW: through its subject
@@ -552,7 +562,8 @@ class GnapSubject {
   }
 
   private usernameFromAssertion(assertion: any,
-                                ctx: any): { ok: boolean; username?: string } {
+                                ctx: any): { ok: boolean; username?: string;
+                                             mayAct?: any } {
     const { log } = this;
     const { helpers, STS, stsCrypto, config } = this.deps;
     log.debug("Entering GnapSubject.usernameFromAssertion(). format=" +
@@ -590,7 +601,13 @@ class GnapSubject {
         helpers.nameForSubject(claims.sub);
       log.debug("Leaving GnapSubject.usernameFromAssertion(). id_token for " +
                 name);
-      return name ? { ok: true, username: this.normaliseName(name) } :
+      // RFC 8693 section 4.4's `may_act`, where this signed token carries
+      // one — read only here, after the signature verified (#432). A SAML
+      // assertion has no such claim (#186's WS-Trust decision).
+      const mayAct = claims.may_act && typeof claims.may_act === 'object' &&
+        !Array.isArray(claims.may_act) ? claims.may_act : null;
+      return name ? { ok: true, username: this.normaliseName(name),
+                      mayAct: mayAct } :
              { ok: false };
     }
     if (assertion.format === 'saml2') {

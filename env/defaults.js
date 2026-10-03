@@ -140,6 +140,7 @@ var config = {
     introspection: true,                                                   // Offer token introspection
     resourceRegistration: true,                                            // Offer resource set registration
     tokenDerivation: true,                                                 // Allow downstream token derivation
+    maxDerivationDepth: 2,                                                 // Deepest derivation chain
     pushFinish: true,                                                      // Deliver push interaction finishes
     pushAllowHttp: false,                                                  // Allow http:// for push
     pushSkipTlsVerification: false,                                        // Skip TLS verification for push (development only)
@@ -1110,10 +1111,10 @@ var config = {
 
   // --- Delegation ------------------------------------------------------
   delegation: {
-    maxRecords: 2000,                  // Maximum delegation acts held
-    defaultSemantics: "delegation",    // Default semantics of an act
-    protectedGroups: "",               // Groups never acted for
-    actorRole: "DELEGATION_ACTOR"  // Role a person needs to act for somebody
+    maxRecords: 2000,               // Maximum delegation acts held
+    defaultSemantics: "delegation", // Default semantics of an act
+    protectedGroups: "",            // Groups never acted for
+    actorRole: "DELEGATION_ACTOR"   // Role a person needs to act for somebody
   },
 
   // --- Logout ----------------------------------------------------------

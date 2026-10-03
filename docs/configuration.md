@@ -1403,6 +1403,7 @@ trust realm. [GNAP](gnap.md) says what each one changes on the wire.
 | `gnap.introspection` | `STS_GNAP_INTROSPECTION` | `true` | yes | RFC 9767 section 3.3. |
 | `gnap.resourceRegistration` | `STS_GNAP_RESOURCE_REGISTRATION` | `true` | yes | RFC 9767 section 3.4. |
 | `gnap.tokenDerivation` | `STS_GNAP_TOKEN_DERIVATION` | `true` | yes | RFC 9767 section 4: a resource server presents a token it was given as existing_access_token and receives a token for a downstream resource server. |
+| `gnap.maxDerivationDepth` | `STS_GNAP_MAX_DERIVATION_DEPTH` | `2` | yes | How many resource servers a derived token's actor chain (act) may name: each RFC 9767 section 4 derivation adds the deriving resource server, and a derivation past this depth is refused (request_denied) in every mode. |
 | `gnap.pushFinish` | `STS_GNAP_PUSH_FINISH` | `true` | yes | Section 4.2.2: an HTTP POST to a URI the CLIENT supplied. |
 | `gnap.pushAllowHttp` | `STS_GNAP_PUSH_ALLOW_HTTP` | `false` | yes | Push to a plain http finish URI: any host in development, loopback only in product (RFC 9635 section 2.5.2.1). |
 | `gnap.pushSkipTlsVerification` | `STS_GNAP_PUSH_SKIP_TLS_VERIFICATION` | `false` | yes | **Development only.** Push to an https URI without verifying its certificate. Product ignores it (`STS-GNAP-0720`) and refuses to set it (`STS-CORE-0103`). |

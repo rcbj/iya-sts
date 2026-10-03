@@ -78,6 +78,16 @@
 //   access_datatype(i, d) access_privilege(i, p) access_identifier(i, id)
 //   flag(f)*                        label(l)?
 //   cnf_jkt(tp) | cnf_x5t(tp) | cnf_kid(ref) | bearer(true)
+//   actor(i, sub)*                  the actor chain, i = 0 the most recent
+//
+// `actor(i, sub)` (#432) is RFC 8693 section 4.1's `act` as Datalog: the
+// resource server that DERIVED this token (RFC 9767 section 4) at 0, each
+// earlier deriver after it — so a resource server's own attenuation block
+// can reason about who acted (`check if actor(0, "rs-a")`). It is an
+// AUTHORITY fact for the reason every fact the model is read from is: a
+// block anybody holding the token may append is a block anybody may write
+// an actor into, and an authorizer query sees only the authority block and
+// its own facts (see readModel()).
 //
 // and its checks — so that the token carries its own rules and ANY biscuit
 // verifier enforces them, not only this one:
@@ -385,7 +395,7 @@ class TokenBiscuit {
 
   // The facts and checks of the authority block (see the header).
   private authorityProgram(model: any): Program {
-    const { log } = this.deps;
+    const { log, access } = this.deps;
     log.debug("Entering TokenBiscuit.authorityProgram().");
     const p = this.program();
     p.add('gnap_token(?);', [model.jti]);
@@ -427,6 +437,9 @@ class TokenBiscuit {
     if (model.label !== null) {
       p.add('label(?);', [model.label]);
     }
+    (access.actorChain(model.act) || []).forEach(function (sub, i) {
+      p.add('actor(?, ?);', [i, sub]);
+    });
     if (!model.cnf) {
       p.add('bearer(true);');
     } else if (model.cnf.jkt) {
@@ -678,6 +691,21 @@ class TokenBiscuit {
                             i + ' ' + 'is not JSON.');
       }
     }
+    const actorRows = this.query(bg, authorizer,
+                                 'data($i, $s) <- actor($i, $s)')
+      .sort(function (a, b) {
+        return a[0] - b[0];
+      });
+    const actors: string[] = [];
+    for (let i = 0; i < actorRows.length; i++) {
+      if (actorRows[i][0] !== i || typeof actorRows[i][1] !== 'string') {
+        log.debug("Leaving TokenBiscuit.readModel(). actor indices are not " +
+                  "0..n-1.");
+        return this.refusal('STS-GNAP-0323', 'the biscuit\'s actor facts ' +
+                            'are not numbered 0..n-1 with one actor each.');
+      }
+      actors.push(actorRows[i][1]);
+    }
     const jkt = one('data($v) <- cnf_jkt($v)');
     const x5t = one('data($v) <- cnf_x5t($v)');
     const kid = one('data($v) <- cnf_kid($v)');
@@ -712,7 +740,8 @@ class TokenBiscuit {
       cnf: cnf, iat: this.seconds(iat),
       nbf: nbf === null ? null : this.seconds(nbf),
       exp: this.seconds(exp),
-      label: label
+      label: label,
+      act: access.nestActors(actors)
     };
     const valid = access.validateModel(model);
     if (!valid.ok) {
@@ -935,7 +964,7 @@ class TokenBiscuit {
       ],
       carries: ['jti', 'iss', 'sub', 'aud', 'instanceId', 'access', 'flags',
                 'cnf',
-                'iat', 'nbf', 'exp', 'label'],
+                'iat', 'nbf', 'exp', 'label', 'act'],
       cannot: []
     };
     log.debug("Leaving TokenBiscuit.describe().");

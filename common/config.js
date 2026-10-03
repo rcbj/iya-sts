@@ -1560,6 +1560,21 @@ const SETTINGS = [
     description: 'RFC 9767 section 4: a resource server presents a token it ' +
                  'was given as existing_access_token and receives a token ' +
                  'for a downstream resource server.' },
+  // HOW FAR A TOKEN MAY TRAVEL FROM WHAT ITS PERSON APPROVED (#432 phase 1).
+  // Every derivation puts the deriving resource server on the token's actor
+  // chain (`act`, RFC 8693 section 4.1); this caps the chain. Two lets the
+  // resource server a client called reach one more, and that one a third —
+  // the common three-tier case — and stops there; 1 allows one hop only.
+  // A bound, in every mode (STS-GNAP-0782).
+  { key: 'gnap.maxDerivationDepth', group: 'GNAP', label: 'Deepest ' +
+                                                         'derivation chain',
+    path: 'gnap.maxDerivationDepth', env: 'STS_GNAP_MAX_DERIVATION_DEPTH',
+    type: 'int', dflt: 2, min: 1, max: 16,
+    runtime: true,
+    description: 'How many resource servers a derived token\'s actor chain ' +
+                 '(act) may name: each RFC 9767 section 4 derivation adds ' +
+                 'the deriving resource server, and a derivation past this ' +
+                 'depth is refused (request_denied) in every mode.' },
   { key: 'gnap.pushFinish', group: 'GNAP', label: 'Deliver push interaction ' +
                                                   'finishes',
     path: 'gnap.pushFinish', env: 'STS_GNAP_PUSH_FINISH', type: 'bool',

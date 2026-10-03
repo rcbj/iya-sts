@@ -93,7 +93,7 @@
 //                       when there are none (ZCAP reads absent as unrestricted
 //                       and forbids an empty array)
 //   gnapIssuer gnapSubject? gnapAudience gnapClient gnapAccess gnapFlags
-//   gnapCnf gnapLabel? gnapIssuedAt gnapNotBefore?
+//   gnapCnf gnapLabel? gnapIssuedAt gnapNotBefore? gnapActor?
 //   proof               Ed25519Signature2020, created = iat,
 //                       proofPurpose capabilityDelegation
 //
@@ -254,7 +254,17 @@ const GNAP_CONTEXT = {
   gnapCnf: 'gnap:cnf',
   gnapLabel: 'gnap:label',
   gnapIssuedAt: { '@id': 'gnap:iat', '@type': '@json' },
-  gnapNotBefore: { '@id': 'gnap:nbf', '@type': '@json' }
+  gnapNotBefore: { '@id': 'gnap:nbf', '@type': '@json' },
+  // THE ACTOR CHAIN (#432): RFC 8693 section 4.1's `act` — the resource
+  // server that DERIVED this token (RFC 9767 section 4) outermost — as
+  // `@json`, so it is signed and read as the JWT formats carry it. It is a
+  // member of the capability the authorization server signs, not a second
+  // ZCAP delegation: a delegation from the deriving resource server would be
+  // a proof made with ITS key, which this authorization server does not hold,
+  // and a capability is only ever minted here. The chain is the AS's
+  // statement of who acted, under the AS's signature, which is what a
+  // resource server can rely on.
+  gnapActor: { '@id': 'gnap:act', '@type': '@json' }
 };
 // The pinned `@context` of each kind of proof: ZCAP-LD's first ("the first
 // value is the zcapld context"), the proof's vocabulary second, the GNAP
@@ -268,7 +278,7 @@ const MEMBERS = ['@context', 'id', 'parentCapability', 'invocationTarget',
                  'gnapClient',
                  'gnapAccess', 'gnapFlags', 'gnapCnf', 'gnapLabel',
                  'gnapIssuedAt',
-                 'gnapNotBefore', 'proof'];
+                 'gnapNotBefore', 'gnapActor', 'proof'];
 
 const VALUE_RE = /^[A-Za-z0-9_-]+$/;
 
@@ -931,6 +941,9 @@ class TokenZcap {
     if (model.nbf !== null) {
       cap.gnapNotBefore = model.nbf;
     }
+    if (model.act) {
+      cap.gnapActor = model.act;
+    }
     log.debug("Leaving TokenZcap.capabilityFor().");
     return cap;
   }
@@ -1139,7 +1152,8 @@ class TokenZcap {
       iat: doc.gnapIssuedAt,
       nbf: doc.gnapNotBefore === undefined ? null : doc.gnapNotBefore,
       exp: Number.isNaN(exp) || exp % 1000 !== 0 ? undefined : exp / 1000,
-      label: doc.gnapLabel === undefined ? null : doc.gnapLabel
+      label: doc.gnapLabel === undefined ? null : doc.gnapLabel,
+      act: doc.gnapActor === undefined ? null : doc.gnapActor
     };
     const valid = access.validateModel(model);
     if (!valid.ok) {
@@ -1147,8 +1161,11 @@ class TokenZcap {
       return bad('they are not a valid token model (' + valid.why + ')');
     }
     const expected = this.capabilityFor(valid.model, suite);
+    // `gnapActor` is compared too (#432): the chain must be written exactly
+    // as the model nests it — no `null` member, no reordered nesting — so a
+    // capability says one thing about who acted, however it is read.
     const derived = ['id', 'parentCapability', 'invocationTarget',
-                     'controller', 'expires', 'allowedAction'];
+                     'controller', 'expires', 'allowedAction', 'gnapActor'];
     for (let i = 0; i < derived.length; i++) {
       const name = derived[i];
       if (access.canonicalJson(doc[name]) !== access.canonicalJson(
@@ -1322,7 +1339,7 @@ class TokenZcap {
       ],
       carries: ['jti', 'iss', 'sub', 'aud', 'instanceId', 'access', 'flags',
                 'cnf',
-                'iat', 'nbf', 'exp', 'label'],
+                'iat', 'nbf', 'exp', 'label', 'act'],
       cannot: []
     };
     log.debug("Leaving TokenZcap.describe().");

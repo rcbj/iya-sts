@@ -302,6 +302,7 @@ it then publishes is what its grant endpoint enforces.
 | `gnap.introspection` | `STS_GNAP_INTROSPECTION` | `true` | yes | RFC 9767 section 3.3 token introspection. |
 | `gnap.resourceRegistration` | `STS_GNAP_RESOURCE_REGISTRATION` | `true` | yes | RFC 9767 section 3.4 resource set registration. |
 | `gnap.tokenDerivation` | `STS_GNAP_TOKEN_DERIVATION` | `true` | yes | RFC 9767 section 4: a resource server exchanges a token it was given for one to a downstream resource server. |
+| `gnap.maxDerivationDepth` | `STS_GNAP_MAX_DERIVATION_DEPTH` | `2` | yes | How many resource servers a derived token's actor chain (`act`) may name. Each derivation adds the deriving resource server; one past this depth is refused in every mode. |
 | `gnap.pushFinish` | `STS_GNAP_PUSH_FINISH` | `true` | yes | The section 4.2.2 push finish; off makes no outbound request at all and stops advertising `push`. |
 | `gnap.pushAllowHttp` | `STS_GNAP_PUSH_ALLOW_HTTP` | `false` | yes | Allows a push to a plain `http` URI, logged as a warning: any host in development, a loopback address only in product (RFC 9635 section 2.5.2.1). |
 | `gnap.pushSkipTlsVerification` | `STS_GNAP_PUSH_SKIP_TLS_VERIFICATION` | `false` | yes | **Development only — a warning.** Pushes to an `https` URI whose certificate does not verify, logged on every push. Ignored in product mode, and refused on write there. |

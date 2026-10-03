@@ -114,8 +114,9 @@ const replication = require('../persistence/persistence_replication');
 // THE TWO AXES, AND WHY THE PROTOCOL-INDEPENDENT ONE IS `mode` RATHER THAN THE
 // TYPE.
 //
-// `type` is what the protocol calls it, and there are ten because the three
-// protocols between them define ten (eight until the two assertion grants).
+// `type` is what the protocol calls it, and there are twelve because the four
+// protocols between them define twelve (eight until the two assertion grants,
+// ten until GNAP's two, #432).
 // `mode` is the thing they share, and it is the axis worth filtering on:
 //
 //   **impersonation** — the credential that comes out names the INITIAL identity
@@ -158,7 +159,7 @@ const MODES = [
 /** The mode names, in `MODES`' order. */
 const MODE_IDS = MODES.map(function (one) { return one.mode; });
 
-// The ten, as the specifications name them. `spec` is cited on the page for
+// The twelve, as the specifications name them. `spec` is cited on the page for
 // the same reason /admin/sts-metadata cites one per endpoint: a table of
 // delegation mechanisms with no references is a table somebody has to take on
 // trust.
@@ -289,7 +290,38 @@ const TYPES = [
           'application entry as `oauthSamlAssertionIssuer` and the ' +
           'certificate registered there before any of it is believed. It is ' +
           'RFC 7523\'s sibling and NOT the same mechanism — the two profiles ' +
-          'hold separate key pairs, and neither can sign for the other.' }
+          'hold separate key pairs, and neither can sign for the other.' },
+
+  // -------------------------------------------------------------------------
+  // GNAP (#432 phase 1). The FOURTH protocol asking the same question, and
+  // asking it through the same policy (`gnap/gnap_delegation.ts`): GNAP's two
+  // ways of obtaining a token about somebody else are Kerberos's two S4U
+  // acts in another protocol's clothes, so they are two rows here and take
+  // their modes from the Kerberos rows they mirror.
+  //
+  //   * a client marked `gnapSkipInteraction` presenting a verified user
+  //     assertion is issued tokens FOR THAT PERSON with nobody asked — the
+  //     S4U2Self shape, impersonation: the token is the person's, and
+  //     nothing in it names the client as an actor;
+  //   * a resource server DERIVING a token for a downstream one (RFC 9767
+  //     section 4) is S4U2Proxy, delegation: the derived token carries the
+  //     deriving resource server in its `act` chain, in every format.
+  // -------------------------------------------------------------------------
+  { type: 'gnap-impersonation', protocol: 'GNAP', mode: 'impersonation',
+    label: 'GNAP grant by user assertion, without interaction',
+    spec: 'RFC 9635 §2.4, §2.3.3', policed: true,
+    what: 'A client trusted to skip interaction (gnapSkipInteraction) ' +
+          'presented a verified assertion about a person and was issued ' +
+          'tokens for them. The person was not asked: the assertion is the ' +
+          'whole of their part in it, and the token is theirs with no ' +
+          'record of the client in it.' },
+  { type: 'gnap-derivation', protocol: 'GNAP', mode: 'delegation',
+    label: 'GNAP token derivation (resource server to downstream)',
+    spec: 'RFC 9767 §4', policed: true,
+    what: 'A resource server presented a token it was handed and asked for ' +
+          'one to reach a downstream resource server as the same person. ' +
+          'The derived token carries no more access than the one it came ' +
+          'from, and names the deriving resource server in its act chain.' }
 ];
 
 /** The mechanism names, in `TYPES`' order. */
