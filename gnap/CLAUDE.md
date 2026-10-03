@@ -48,6 +48,7 @@ Route-free libraries, each require-able from an in-process test:
 | `gnap_http.ts` | the push finish, the only outbound request here, modelled on `ssf/ssf_http.ts` |
 | `gnap_monitor.ts` | per-application counters (`merge: 'own'`), the `xacml_monitor.js` model |
 | `gnap_signals.ts` | CAEP emission and the SSF subject scope |
+| `gnap_delegation.ts` | who may act for whom (#432 phase 1): impersonation by assertion and RFC 9767 derivation asked of #186's delegation policy, recorded in the delegation register; the subset rule and its one extension point; the actor chain and its cap — see *Delegation* below |
 | `gnap_grants.ts` | the engine: identifying a caller, creating, continuing, modifying and revoking grants, issuing, rotating and deriving tokens |
 | `gnap_rs.ts` | introspection, registration, and judging a presented token |
 | `gnap_console.ts` | the view and action layer both admin doors render (no route, no `res`, no markup) |
@@ -119,6 +120,81 @@ is ONE require in the require order — and three `register()` calls, `gnap`,
   continue to the discovery handler whatever it decides about the origin.
 * **`/:as/gnap` matches `/admin/gnap`.** Reserved first segments fall through
   (`RESERVED_AS_NAMES`); the console route is registered later and still wins.
+
+## Delegation: who may act for whom, through #186's policy (#432 phase 1, 2026-10-03)
+
+GNAP has two ways for a party to obtain a token about somebody else, and until
+#432 neither asked anybody: a `gnapSkipInteraction` client presenting a
+verified user assertion was issued tokens for that person on the flag alone,
+and a resource server deriving a token (RFC 9767 section 4) needed only to be
+in the original token's audience — and could then ADD any right registered for
+a downstream resource server. They are Kerberos's S4U2Self and S4U2Proxy in
+another protocol, so `gnap_delegation.ts` puts **#186's two questions** to the
+issuance policy through `common/delegation_policy.ts`, exactly as the token
+exchange, WS-Trust and the KDC do (`common/CLAUDE.md` rule 3az, `docs/delegation.md`).
+
+* **No GNAP setting decides who may act.** rcbj's #186 rule is one set of
+  controls on the entries for every protocol, and GNAP is a fourth protocol
+  asking the same question: `appDelegationSemantics` (impersonation must be in
+  the CLIENT's set — empty is delegation only), `appAllowedToDelegateTo`,
+  `appAllowedToActOnBehalfOf`, `appDelegationSubjectGroup`, `stsNotDelegated` /
+  `appNotDelegated`, `delegation.protectedGroups`, the console roster.
+  `gnapSkipInteraction` now means what its name says — the client may skip the
+  PAGE — and no longer means it may act for anybody.
+* **The parties.** Impersonation: actor the client, subject the person the
+  assertion names, no S (S4U2Self passes none), R each resource server the
+  rights resolve to (`resourceServersFor()`) — or the client itself where they
+  resolve to none, which still needs impersonation in its semantics because
+  the token is presentable. Derivation: actor and S the deriving resource
+  server, subject the original token's person (its client where it is about
+  nobody), R each downstream resource server — or the deriving one itself, a
+  narrowing the policy calls self. **One question per R**, because the policy
+  issues for exactly one; the first enforced refusal is the one the client
+  hears (request_denied, 0770–0781 by refusal kind).
+* **Enforced in product, recorded in development** — the policy's own
+  `enforced`, read nowhere else; a may_act mismatch in every mode. A `may_act`
+  in the presented ID Token is read only after its signature verified
+  (`gnap_subject.ts`), as #186 reads one off a verified subject_token; a SAML
+  assertion has none.
+* **`appAllowedProtocol` is honoured as #186 honours it**: the acting
+  application asks the issuance gate with GNAP's family in `issueTokens()`,
+  whose `protocol-not-declared` rule refuses in product. The target's
+  declaration is not read, as it is not for an RFC 8693 R.
+* **The client acting as ITSELF** (no person) is not delegation: it asks
+  nothing, and since #432 it explicitly releases no subject.
+* **Every act is a row** on `common/delegation.js`'s register (rule 3l), types
+  `gnap-impersonation` and `gnap-derivation`, protocol `GNAP` — one row per R,
+  refused rows only for the R that refused — so Monitoring → Delegation, its
+  filters and its map show GNAP beside the other three. Nothing on the page
+  needed changing: it draws whatever protocol a row names.
+
+**A DERIVED TOKEN IS A SUBSET OF THE ORIGINAL** (rcbj's decision 3), in every
+mode (0513): the downstream-registered exception is gone, because it let any
+resource server a token reached mint access nobody approved.
+**`derivableBeyond()` is the ONE extension point**: #432 phase 4's access-type
+catalogue will make a right of a type declared "derivable from" a type the
+original carries derivable there, and nowhere else. It answers false until
+then — deliberately no placeholder that allows anything.
+
+**THE ACTOR CHAIN** is RFC 8693 section 4.1's `act` on the token MODEL
+(`gnap_access.ts`: `{ sub, act? }`, nothing else, at most 16 deep as input),
+the deriving resource server outermost over the original's chain. Every
+derivation adds a link, a self one included — the deriving resource server
+still holds a token about the person that is not the person's client's.
+Each format carries it in its own vocabulary, and always where only the
+authorization server writes, because a chain a holder could append would name
+whoever it liked:
+
+| Format | Carried as |
+|---|---|
+| `jwt-signed`, `jwt-encrypted` | the `act` claim, as it is |
+| `macaroon` | `gnap:act=<b64url JSON>` in the AUTHORITY section, before the `gnap:access=` boundary; appended after it, refused (0316) |
+| `biscuit` | `actor(i, sub)` facts in the authority block, 0 the most recent; a resource server's own attenuation block can test them |
+| `zcap` | a `gnapActor` member (`@json` in the pinned GNAP context) of the capability the authorization server signs — not a second ZCAP delegation, which would need the deriving resource server's key |
+
+Rotation and modification keep the chain (`grant.actorChain`, and the rotated
+model copies `act`), introspection returns it, and `gnap.maxDerivationDepth`
+(default 2: a three-tier call path) caps it in every mode (0782).
 
 ## Shared Signals
 
@@ -236,6 +312,7 @@ hundred applications and compares every row with the per-application filters.
 | 0700–0709 | signals |
 | 0710–0719 | single-use values spent across the cluster (#46) |
 | 0720 | the push finish's transport: `gnap.pushSkipTlsVerification` ignored in product (#171) |
+| 0770–0789 | delegation (#432 phase 1): 0770–0775 impersonation by assertion, 0776–0781 derivation, one per refusal kind of the policy (relationship, protected subject, semantics, authority, may_act, a realm's policy); 0782 the depth cap |
 
 `tests/error_codes.js` carries `gnapError(res` and `interactionError(res` as
 failure patterns.
@@ -245,15 +322,17 @@ failure patterns.
 | File | What it holds |
 |---|---|
 | `tests/gnap_httpsig.js` | RFC 9421 / 9530 / 8941, including the Appendix B vectors |
-| `tests/gnap_token_formats.js` | one matrix over all five formats (the JWT two through an adapter), and attenuation for the three that attenuate |
+| `tests/gnap_token_formats.js` | one matrix over all five formats (the JWT two through an adapter), and attenuation for the three that attenuate; since #432 the full model carries a two-link `act` chain every format round-trips, an `act` appended to a macaroon by a holder is refused (0316), and the chain's grammar |
 | `tests/gnap_request.js` | which layer refuses what — the schemas, control characters, the walkers — RFC 7638's thumbprint and RFC 9635's two interaction hash vectors |
 | `tests/realm_isolation.js` | the GNAP stores are per realm and purged with it, and no module-scope Map |
 | `tests/vendored/sts_gnap_core.js` | the client instance's whole protocol over HTTP, every refusal by its error code. Its section 6 push listener presents a certificate from a CA the job makes at run time and sets `gnap.pushCaFile` to it (#171; skipped with no directory shared with the service), so the push is VERIFIED in both modes |
 | `tests/outbound_tls.js`, `tests/vendored/sts_outbound_tls.js` | the push finish's transport policy beside SSF's, federation's and XACML's (#171) |
-| `tests/vendored/sts_gnap_rs.js` | RFC 9767: each token format verified by the job's OWN code, then each accepted, narrowed, rotated, revoked and expired at the demonstration RS; introspection, registration, derivation, mutual TLS (in a realm set to `gnap.mtlsTrust=pinned`, since its certificate is self-signed) |
+| `tests/vendored/sts_gnap_rs.js` | RFC 9767: each token format verified by the job's OWN code, then each accepted, narrowed, rotated, revoked and expired at the demonstration RS; introspection, registration, derivation and (section 4b, #432) the actor chain on a derived token in each format, read by the job's own decoders under the signature or MAC it verifies, mutual TLS (in a realm set to `gnap.mtlsTrust=pinned`, since its certificate is self-signed) |
 | `tests/vendored/sts_gnap_signals.js` | a GNAP-owned stream, CAEP on revoke/modify, and the scope, against an unscoped control stream |
 | `tests/gnap_cells.js` | #98 in process, the cell map, channel and routing index stubbed: stamped handles, each door's placement, a grant moved and forwarded, a pinned browser pulling a grant, single-cell mode unchanged |
 | `tests/gnap_mtls_trust.js` | #107 in process over real handshakes: both trust models, revocation in both, 0277/0278, every binding refusal (0287–0292), rotation, the override and the product default |
+| `tests/gnap_delegation.js` | #432 phase 1 in process, in a child serving the whole stack, both modes: impersonation refused (0772), recorded "would have been refused", allowed; 0770 with no reach, R the client itself for unregistered rights; `stsNotDelegated` and `appDelegationSubjectGroup` (0771) with may_act standing in; may_act naming somebody else in every mode (0774); the client as itself releasing no subject; `appAllowedProtocol` at the gate; derivation refused (0776) and allowed, `act` on the token, the subset rule in both modes (0513), the depth cap (0782), the chain nesting and at introspection; `act` verified back from each of the five formats; the register, its summary and map |
+| `tests/vendored/sts_gnap_delegation.js` | the same over HTTP in whichever mode the service is in: product's refusals by their audited codes, development's rows, `act` on a derived token and at introspection, the cap, and `GET /admin-api/delegation` |
 | `tests/vendored/sts_gnap_mtls.js` | #107 against a running service: the same, with the realm's own certificates from the Credentials door and a foreign authority whose leaf names a CRL the job serves |
 
 The three jobs share `tests/vendored/gnap_client.js` (an independent client

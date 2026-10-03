@@ -72,7 +72,8 @@ Everything the two specifications define on the authorization server's side:
   proved by both keys.
 * **RFC 9767:** discovery, introspection, resource set registration, and
   **token derivation** — a resource server sends `existing_access_token` to the
-  grant endpoint and receives a downstream token with no more access.
+  grant endpoint and receives a downstream token with no more access, naming
+  it in an `act` chain (see [acting for somebody else](#acting-for-somebody-else)).
 * **Error responses:** every error code of RFC 9635 section 3.6, with
   `Cache-Control: no-store`.
 
@@ -153,7 +154,7 @@ kinds: `gnap-client` or `gnap-resource-server`. The attributes:
 | `gnapFinishUri` | the finish URIs a redirect or push may use |
 | `gnapInteractionStartModes` | narrows the start modes this client may use |
 | `gnapAllowedAccess` | the access types a resource server may register |
-| `gnapBearerTokens`, `gnapSkipInteraction` | per-client permissions |
+| `gnapBearerTokens`, `gnapSkipInteraction` | per-client permissions. `gnapSkipInteraction` lets a client skip the approval page; it does **not** let it act for a person — see [acting for somebody else](#acting-for-somebody-else) |
 | `gnapAccessTokenFormat`, `gnapAccessTokenLifetimeS` | per-application overrides |
 | `gnapResourceServerUri` | the locations a resource server answers for |
 | `gnapJweKey` | the public key `jwt-encrypted` tokens are encrypted to |
@@ -205,6 +206,61 @@ earlier is ignored.
 
 A certificate forwarded by a TLS-terminating proxy (RFC 9440 `Client-Cert`) is
 not read. Only this service's own socket counts.
+
+## Acting for somebody else
+
+GNAP has two ways for one party to obtain a token about somebody else, and
+both are decided by the same [delegation and impersonation](delegation.md)
+policy as the OAuth 2.0 token exchange, WS-Trust and Kerberos — with the same
+settings on the same directory entries. There are no GNAP-specific delegation
+settings.
+
+| GNAP act | Semantics | Actor | Subject | Target (R) |
+|---|---|---|---|---|
+| A client with `gnapSkipInteraction` presents a verified `id_token` or `saml2` assertion in `user` and gets tokens for that person, with nobody asked (RFC 9635 sections 2.3.3 and 2.4) | **impersonation** — like Kerberos S4U2Self | the client's application entry | the person the assertion names | each resource server the requested rights resolve to; the client itself when they name none |
+| A resource server sends `existing_access_token` and gets a token for a downstream resource server (RFC 9767 section 4) | **delegation** — like Kerberos S4U2Proxy | the deriving resource server | the person the original token is about | each downstream resource server; the deriving one itself when it only narrows |
+
+So, for example:
+
+* For **impersonation**, the client's `appDelegationSemantics` must include
+  `impersonation`, and each resource server must be the client itself, on its
+  `appAllowedToDelegateTo`, or accept it in `appAllowedToActOnBehalfOf`.
+* For **derivation**, the deriving resource server's `appAllowedToDelegateTo`
+  must name the downstream one, or the downstream one's
+  `appAllowedToActOnBehalfOf` must name it.
+* In both, the person must not be protected (`stsNotDelegated`, a
+  `delegation.protectedGroups` group, the console's rosters), must be in the
+  actor's `appDelegationSubjectGroup` if it has one, and must hold the roles
+  the application requires. A `may_act` claim in a presented ID Token must name
+  the client.
+
+**Product mode refuses** with `request_denied` (HTTP 403). **Development
+mode** issues the token and records that it *would have been refused*. A
+`may_act` naming somebody else is refused in both. Every act, issued or
+refused, is listed on **Monitoring → Delegation** and at `GET
+/admin-api/delegation` under protocol `GNAP`.
+
+A client that skips interaction **without** a user assertion acts for nobody:
+nothing is asked, and no subject information is released.
+
+### What a derived token carries
+
+* **No more access than the original.** A right the original token does not
+  cover is refused, in every mode.
+* **The chain of who derived it**, as RFC 8693 section 4.1's `act`: the
+  deriving resource server, with any earlier ones nested under it. Every
+  format carries it, in the part only this authorization server can write:
+
+  | Format | Where |
+  |---|---|
+  | `jwt-signed`, `jwt-encrypted` | the `act` claim |
+  | `macaroon` | a `gnap:act=` caveat before the `gnap:access=` caveat; one appended after it is refused |
+  | `biscuit` | `actor(0, "<resource server>")` facts in the authority block, 0 the most recent |
+  | `zcap` | the capability's `gnapActor` member, under its proof |
+
+  Introspection returns it as `act`, and rotation keeps it.
+* **At most `gnap.maxDerivationDepth` links** (2 by default). A derivation past
+  it is refused in every mode.
 
 ## The resource owner
 

@@ -9,7 +9,8 @@
 // GNAP RESOURCE SERVER CONNECTIONS (RFC 9767) AGAINST A RUNNING SERVICE: THE
 // FIVE TOKEN FORMATS, CHECKED BY CODE THAT IS NOT THE SERVICE'S; INTROSPECTION,
 // ACTIVE AND EVERY WAY OF BEING INACTIVE; RESOURCE SET REGISTRATION; TOKEN
-// DERIVATION; AND A KEY PROVED BY MUTUAL TLS.
+// DERIVATION AND THE ACTOR CHAIN A DERIVED TOKEN CARRIES IN EVERY FORMAT; AND
+// A KEY PROVED BY MUTUAL TLS.
 //
 // `sts_gnap_core.js` drives the client instance's half of RFC 9635. This is the
 // other party: a resource server with a key of its own, registered on an
@@ -936,6 +937,138 @@ async function test() {
     h.refused(r, "request_denied", "derivation switched off");
   });
   await h.setting("gnap.tokenDerivation", true);
+
+  // =========================================================================
+  // 4b. THE ACTOR CHAIN ON A DERIVED TOKEN, IN EVERY FORMAT, CHECKED HERE
+  // (#432 phase 1).
+  //
+  // A derived token names the resource server that derived it — RFC 8693
+  // section 4.1's `act` — and each format carries it in its own vocabulary:
+  // the claim in both JWT formats, a `gnap:act=` caveat in the macaroon's
+  // AUTHORITY section (before the `gnap:access=` boundary, where only the
+  // root key's holder writes), `actor(i, sub)` facts in the biscuit's
+  // authority block, and a `gnapActor` member of the zcap capability. Each is
+  // read by THIS file's decoders, under the signature or MAC this file
+  // verifies, so a chain the format does not protect would fail here.
+  //
+  // The derivation is to a SECOND resource server, so this resource server
+  // is given the relationship #186's policy asks for (appAllowedToDelegateTo)
+  // and the job passes in either mode; the refusal without it is
+  // `sts_gnap_delegation.js`'s.
+  // =========================================================================
+  log.info("=== 4b. the actor chain on a derived token ===");
+  const rs2Key = new gnap.Client({ key: gnap.newKey("ES256") });
+  const rs2Jwe = nodeCrypto.generateKeyPairSync("rsa", { modulusLength: 2048 });
+  const RS2_ID = "gnap-rs2-" + h.realm;
+  const RS2_URI = "https://rs2.gnap.test/api";
+  await h.ok(h.realmApi + "/applications/create", {
+    identifier: RS2_ID, kind: "gnap-resource-server", protocols: ["gnap"],
+    fields: { gnapKey: JSON.stringify(rs2Key.keyObject()),
+              gnapJweKey: JSON.stringify(Object.assign(
+                rs2Jwe.publicKey.export({ format: "jwk" }),
+                { alg: "RSA-OAEP-256", use: "enc" })),
+              gnapResourceServerUri: RS2_URI } },
+             "registered the downstream resource server");
+  await h.ok(h.realmApi + "/applications/add", {
+    application: RS_ID, attribute: "appAllowedToDelegateTo", value: RS2_ID },
+             "the resource server may delegate to the downstream one");
+  r = await rs2Key.send("POST", h.realmBase + "/gnap/resource", { json: {
+    access: [{ type: "https://rs.gnap.test/photos", actions: ["read"],
+               locations: [RS2_URI] }],
+    resource_server: { key: rs2Key.keyObject() } } });
+  check("the downstream resource server registers a set (which writes its " +
+        "macaroon root key)", function () {
+    assert.strictEqual(r.status, 200, r.text);
+  });
+  const rs2Entry = await h.apiGet(h.realmApi + "/applications?application=" +
+                                  encodeURIComponent(RS2_ID));
+  const rs2Values = rs2Entry.body.attributes.gnapMacaroonKey ||
+                    rs2Entry.body.attributes.gnapmacaroonkey;
+  const rs2MacaroonRoot = Buffer.from(rs2Values[0], "base64url");
+  const both = { type: "https://rs.gnap.test/photos", actions: ["read"],
+                 locations: [RS_URI, RS2_URI] };
+  const toRs2 = { type: "https://rs.gnap.test/photos", actions: ["read"],
+                  locations: [RS2_URI] };
+  const chained = await h.redirectGrant(client, OWNER,
+                                        { access_token: { access: [both] } });
+  const chainedValue = chained.released.access_token.value;
+  const rsJkt = jwkThumbprint(rsKey.key.publicJwk);
+  for (const format of FORMATS) {
+    await h.setting("gnap.accessTokenFormat", format);
+    r = await rsKey.send("POST", h.GRANT, { json: {
+      client: { key: rsKey.keyObject() }, existing_access_token: chainedValue,
+      access_token: { access: [toRs2] } } });
+    const value = r.json && r.json.access_token ? r.json.access_token.value
+                                                : "";
+    check(format + ": the resource server derives a token for the " +
+          "downstream one", function () {
+      assert.strictEqual(r.status, 200, r.text);
+      assert.ok(value, r.text);
+    });
+    if (format === "jwt-signed" || format === "jwt-encrypted") {
+      check(format + ": the JWS verifies here and its act names the " +
+            "deriving resource server (RFC 8693 section 4.1)", function () {
+        const jws = format === "jwt-signed" ? value
+          : openJwe(value, rs2Jwe.privateKey).plaintext;
+        const v = verifyJws(jws, jwks);
+        assert.deepStrictEqual(v.claims.act, { sub: RS_ID });
+        assert.strictEqual(v.claims.aud, RS2_ID);
+        assert.deepStrictEqual(v.claims.cnf, { jkt: rsJkt });
+      });
+    } else if (format === "macaroon") {
+      check("macaroon: a gnap:act= caveat in the AUTHORITY section names " +
+            "the deriving resource server, under an HMAC chain recomputed " +
+            "here from the downstream entry's root key", function () {
+        const decoded = decodeMacaroonV2(Buffer.from(value, "base64url"));
+        const caveats = decoded.caveats.map(function (c) {
+          return c.identifier.toString("utf8");
+        });
+        const at = caveats.findIndex(function (c) {
+          return c.indexOf("gnap:act=") === 0;
+        });
+        const boundary = caveats.findIndex(function (c) {
+          return c.indexOf("gnap:access=") === 0;
+        });
+        assert.ok(at >= 0 && at < boundary, caveats.join(" | "));
+        assert.deepStrictEqual(JSON.parse(Buffer.from(
+          caveats[at].slice("gnap:act=".length), "base64url")
+                                                .toString("utf8")),
+                               { sub: RS_ID });
+        assert.ok(macaroonSignature(rs2MacaroonRoot, decoded).equals(
+          decoded.signature), "the recomputed MAC matches");
+      });
+    } else if (format === "biscuit") {
+      check("biscuit: the authority block, whose signature verifies here, " +
+            "carries the actor fact naming the deriving resource server",
+            function () {
+        const v = verifyBiscuit(value, rootRaw);
+        assert.ok(v.signatureVerifies, "the authority signature");
+        const text = v.block.toString("latin1");
+        assert.ok(text.indexOf("actor") >= 0, "an actor fact");
+        assert.ok(text.indexOf(RS_ID) >= 0, "naming " + RS_ID);
+      });
+    } else if (format === "zcap") {
+      check("zcap: gnapActor names the deriving resource server, under the " +
+            "eddsa-jcs-2022 proof verified here — and a changed actor does " +
+            "not verify", function () {
+        const cap = JSON.parse(Buffer.from(value, "base64url")
+                                     .toString("utf8"));
+        assert.deepStrictEqual(cap.gnapActor, { sub: RS_ID });
+        const raw = Buffer.from(material.biscuit.jwk.x, "base64url");
+        assert.ok(verifyEddsaJcs(cap, raw), "the proof verifies");
+        const touched = JSON.parse(JSON.stringify(cap));
+        touched.gnapActor = { sub: "somebody-else" };
+        assert.ok(!verifyEddsaJcs(touched, raw), "a forged chain does not");
+      });
+    }
+    r = await introspect(rs2Key, value);
+    check(format + ": introspection by the downstream resource server " +
+          "returns the chain", function () {
+      assert.strictEqual(r.json.active, true, r.text);
+      assert.deepStrictEqual(r.json.act, { sub: RS_ID });
+    });
+  }
+  await h.setting("gnap.accessTokenFormat", "jwt-signed");
 
   // =========================================================================
   // 5. REVOCATION REACHES INTROSPECTION.
