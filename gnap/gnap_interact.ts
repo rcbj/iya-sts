@@ -1075,8 +1075,10 @@ class GnapInteract {
                               : { ok: true, tokens: tokens };
       if (!lowered.ok) {
         log.debug("Leaving POST /gnap/approve. Limits refused.");
-        return self.interactionError(res, lowered.code, 'These limits ' +
-                                     'could not be accepted', lowered.why);
+        return self.interactionError(res, lowered.code === 'STS-GNAP-0867'
+                                       ? 'STS-GNAP-0867' : 'STS-GNAP-0866',
+                                     'These limits could not be accepted',
+                                     lowered.why);
       }
       let claimedDecision = null;
       return (approve ? self.ownershipRefused(req, res, grant, session)

@@ -1352,7 +1352,16 @@ The built-in rules (`decideGnapRights`, default yes) are the code
 `gnap_grants.ts` used to run, in its order — bearer, protected scope,
 gnapAllowedAccess, unknown reference — then the catalogue's: uncatalogued in
 product (`inProduct`, the mode as a fact), a type's `bearer: false`, its
-`maxLifetimeS`. A verdict this reader does not know refuses
+`maxLifetimeS` — and, since phase 5, the resource OWNER's two: a right
+naming an identifier somebody else owns (`gnap-owner-mismatch`,
+`STS-GNAP-0861`, read off `owner-known` and `owner-matches`, the latter sent
+only once a person is known) and one whose owner lookup could not be
+answered (`gnap-owner-unresolved`, `0863`). The right's limits ride with the
+question too (`urn:sts:xacml:gnap:limits` and each member decomposed —
+`limit-amount` a double, `limit-count` an integer), for a realm that wants a
+rule on them; no built-in rule reads them, because a limit is stated and
+counted, not granted or refused (`gnap/CLAUDE.md`, *Ownership and limits*).
+A verdict this reader does not know refuses
 (`STS-GNAP-0815`); no verdict at all is a defect and refuses
 (`STS-XACML-0168`, `STS-GNAP-0816`) — a right is never issued because the
 engine broke. `tests/gnap_catalogue.js` holds each rule through the policy
