@@ -149,6 +149,9 @@ import softwareStatement = require('./software_statement');
 // it requires nothing that requires it back, and it deliberately does not
 // require `assertion_grant.js` either. Its header argues both.
 import samlAssertionGrant = require('./saml_assertion_grant');
+// #114: RFC 7523 / RFC 7522 / SAML 1.1 assertions from declared issuers as
+// RFC 8693 subject and actor tokens. A library over the two above.
+import exchangeAssertions = require('./exchange_assertions');
 // The mode. A LEAF (rule 3): registers nothing, requires only `config` (and
 // bunyan).
 import mode = require('../common/mode');
@@ -848,7 +851,10 @@ const EXCHANGE_TOKEN_TYPES = {
   'urn:ietf:params:oauth:token-type:access_token': 'access_token',
   'urn:ietf:params:oauth:token-type:refresh_token': 'refresh_token',
   'urn:ietf:params:oauth:token-type:id_token': 'id_token',
-  'urn:ietf:params:oauth:token-type:jwt': 'jwt'
+  'urn:ietf:params:oauth:token-type:jwt': 'jwt',
+  // #114: assertions from issuers this realm declared (RFC 8693 section 3).
+  'urn:ietf:params:oauth:token-type:saml2': 'saml2',
+  'urn:ietf:params:oauth:token-type:saml1': 'saml1'
 };
 const DEVICE_SECRET_TYPE = 'urn:openid:params:token-type:device-secret';
 const ID_TOKEN_TYPE = 'urn:ietf:params:oauth:token-type:id_token';
@@ -5763,6 +5769,121 @@ class OAuth2Server {
     const asked = request && request[member];
     log.debug("Leaving OAuth2Server.requestedClaimNames().");
     return asked ? Object.keys(asked) : [];
+  }
+
+  // What the act on /admin/delegation says a token exchange CONSUMED: the
+  // input's type and, for an assertion (#114), its format, the declared
+  // issuer and whether it was FORWARDED.
+  /**
+   * Describes one input of a token exchange for the act's `consumed` list.
+   *
+   * @param which - `subject_token` or `actor_token`
+   * @param assertion - `exchange_assertions.ts`'s verified result, or null
+   * @param identifier - the token's `jti` or the assertion's ID
+   * @param verified - whether this realm verified it
+   * @returns `{ kind, identifier, note }`
+   */
+  static consumedInput(which: string, assertion: Json, identifier: string,
+                       verified: boolean): Json {
+    helpers.log.debug("Entering OAuth2Server.consumedInput().");
+    let out: Json;
+    if (assertion) {
+      const label = assertion.format === 'jwt' ? 'RFC 7523 JWT assertion'
+        : (assertion.format === 'saml11' ? 'SAML 1.1 assertion'
+                                         : 'RFC 7522 SAML 2.0 assertion');
+      out = { kind: which + ' (' + label + ')', identifier: identifier,
+              note: 'from the declared issuer "' + assertion.issuer +
+                    '", verified' + (assertion.forwarded
+                      ? '; FORWARDED — addressed to "' + assertion.audience +
+                        '", a relying party registered here, rather than to ' +
+                        'this authorization server'
+                      : '') };
+    } else {
+      out = { kind: which, identifier: identifier,
+              note: verified ? 'signed by this service and verified'
+                             : 'NOT signed by this service; read without ' +
+                               'verifying' };
+    }
+    helpers.log.debug("Leaving OAuth2Server.consumedInput().");
+    return out;
+  }
+
+  // ---------------------------------------------------------------------------
+  // AN ASSERTION'S SUBJECT, AS THE TOKEN EXCHANGE READS A SUBJECT (#114).
+  //
+  // The person the verified assertion names, recorded and provisioned as the
+  // assertion grant records and provisions one (`provisionedPerson()`), in
+  // the shape the exchange reads a subject_token's claims in: `sub` and
+  // `username` from the directory; `iss` the declared issuer; and S — the
+  // application the token was issued FOR — as `aud` for a FORWARDED assertion
+  // (the relying party it was addressed to) and as `client_id` otherwise
+  // (an assertion addressed to this server was issued for whoever presents
+  // it). A JWT assertion's `scope`, `may_act` and `act` are read as a
+  // subject_token's are; a SAML one carries none of them.
+  // ---------------------------------------------------------------------------
+  /**
+   * Turns a verified exchange assertion into the subject (or actor) claims
+   * the token exchange reads, provisioning the person it names.
+   *
+   * @param checked - `exchange_assertions.ts`'s verified result
+   * @param client - the exchanging client
+   * @param which - `subject_token` or `actor_token`
+   * @returns the claims, or null where the directory holds nobody
+   */
+  assertionSubject(checked: Json, client: Json, which: string): Json {
+    const { log, stats } = this.deps;
+    log.debug("Entering OAuth2Server.assertionSubject(). " + which);
+    const label = checked.format === 'jwt' ? 'an RFC 7523 JWT assertion'
+      : (checked.format === 'saml11' ? 'a SAML 1.1 assertion'
+                                     : 'an RFC 7522 SAML 2.0 assertion');
+    stats.recordAuthentication({
+      presented: checked.subject,
+      protocol: 'OAuth 2.0',
+      method: 'RFC 8693 token exchange of ' + label + ' (' + which + ')',
+      client_id: client.client_id,
+      note: (checked.issuerKind === 'person'
+              ? 'This person asserted THEMSELVES, with a key this service ' +
+                'issued to them. '
+              : 'A declared issuer, "' + checked.issuer + '", asserted this ' +
+                'person. ') +
+            'The assertion was verified for real — signature, chain, ' +
+            'issuer, audience, expiry, and an identifier spent once — and ' +
+            'presented as the ' + which + ' of a token exchange' +
+            (checked.forwarded ? ', FORWARDED: it was addressed to ' +
+              checked.audience + ', a relying party registered here' : '') +
+            '. No password was checked and no browser was involved.'
+    });
+    const person = this.provisionedPerson(checked.subject);
+    if (!person) {
+      log.debug("Leaving OAuth2Server.assertionSubject(). Nobody.");
+      return null;
+    }
+    const claims = checked.format === 'jwt' ? (checked.claims || {}) : {};
+    const out: Json = {
+      sub: person.sub || checked.subject,
+      username: person.username || checked.subject,
+      iss: checked.issuer,
+      // The audience the assertion was addressed to, as a subject_token's
+      // `aud` names S — and what a self exchange then issues for.
+      aud: checked.forwarded ? [checked.audience] : [],
+      client_id: checked.forwarded ? '' : String(client.client_id || ''),
+      jti: checked.id,
+      // What the act on /admin/delegation says came in.
+      assertion: { format: checked.format, issuer: checked.issuer,
+                   forwarded: !!checked.forwarded, audience: checked.audience,
+                   id: checked.id }
+    };
+    if (typeof claims.scope === 'string') {
+      out.scope = claims.scope;
+    }
+    if (claims.may_act && typeof claims.may_act === 'object') {
+      out.may_act = claims.may_act;
+    }
+    if (claims.act && typeof claims.act === 'object') {
+      out.act = claims.act;
+    }
+    log.debug("Leaving OAuth2Server.assertionSubject(). " + out.username);
+    return out;
   }
 
   // ---------------------------------------------------------------------------
@@ -14852,8 +14973,69 @@ class OAuth2Server {
       // is asked here, as the refresh grant asks it, because a verified token
       // this realm has revoked is not one it will exchange either.
       const strictExchange = !mode.exchangesUnverifiedTokens();
+      // -----------------------------------------------------------------------
+      // AN ASSERTION FROM A DECLARED ISSUER (#114). A `saml2` or `saml1`
+      // subject_token, and a `jwt` one this realm did not sign, is verified
+      // as the assertion grant verifies one (`exchange_assertions.ts`), and
+      // its subject is the PERSON it names, provisioned as that grant
+      // provisions one. Refused in product when it does not verify;
+      // development falls through to its unverified read, as it always has.
+      // -----------------------------------------------------------------------
+      const subjectType = String(body.subject_token_type || '').trim();
+      const subjectIsSaml = subjectType === exchangeAssertions.TYPES.saml2 ||
+        subjectType === exchangeAssertions.TYPES.saml1;
+      let subjectAssertion: Json = null;
+      let ownSubject = false;
+      if (!subjectIsSaml) {
+        try {
+          subject = helpers.verifyOwnJws(subjectJws);
+          ownSubject = true;
+        } catch (e) {
+          log.debug("Caught in tokenGrant(): the subject_token is not this " +
+                    "realm's own: " + ((e && e.message) || e));
+          ownSubject = false;
+        }
+      }
+      if (!ownSubject && exchangeAssertions.isAssertionType(subjectType)) {
+        const checked = await exchangeAssertions.verify({
+          token: subjectToken, type: subjectType, base: base,
+          issuer: self.issuerOf(base), clientId: client.client_id,
+          clientSecret: (applications.clientConfigOf(client.client_id) || {})
+            .client_secret,
+          request: req
+        });
+        if (checked.ok) {
+          const fromAssertion = self.assertionSubject(checked, client,
+                                                      'subject_token');
+          if (!fromAssertion) {
+            errorCodes.mark(res, 'STS-OAUTH-0798');
+            log.debug("Leaving OAuth2Server.tokenGrant(). The assertion " +
+                      "names nobody.");
+            return self.oauthError(res, 400, 'invalid_request',
+              'The subject_token\'s assertion names "' + checked.subject +
+              '", who has no directory entry here, so there is nobody to ' +
+              'issue a token about; the person has to be provisioned first.');
+          }
+          subject = fromAssertion;
+          subjectAssertion = checked;
+          ownSubject = true;
+        } else if (strictExchange || subjectIsSaml) {
+          log.info('oauth2: a token exchange by "' + client.client_id +
+                   '" presented a ' + subjectType + ' subject_token that was ' +
+                   'refused: ' + checked.description);
+          errorCodes.mark(res, String(checked.errorCode || 'STS-OAUTH-0555'));
+          log.debug("Leaving OAuth2Server.tokenGrant(). The assertion was " +
+                    "refused.");
+          // error-code: none — the verifier's code was marked above
+          return self.oauthError(res, 400, 'invalid_request',
+                                 checked.description);
+        }
+      }
       try {
-        subject = helpers.verifyOwnJws(subjectJws);
+        if (!ownSubject) {
+          throw new Error('not a token this realm signed, nor an assertion ' +
+                          'from an issuer it declared');
+        }
       } catch (e) {
         log.debug("Caught in tokenGrant(): " + ((e && e.message) || e));
         if (strictExchange) {
@@ -14898,7 +15080,7 @@ class OAuth2Server {
       // A VERIFIED TOKEN MUST BE THE TYPE IT WAS DECLARED AS (#130). One this
       // realm cannot verify — development's token from anywhere — is held
       // only to the list of types, above: its shape is somebody else's.
-      const subjectKind = subjectVerified ?
+      const subjectKind = subjectVerified && !subjectAssertion ?
         self.ownTokenKind(subjectToken, subject) : '';
       const subjectMismatch = subjectKind &&
         self.kindProblem(String(body.subject_token_type).trim(), subjectKind,
@@ -14943,7 +15125,54 @@ class OAuth2Server {
       // — kept whole rather than as `act.sub` alone, because `may_act` below
       // compares its `iss` as well (RFC 8693 section 4.4).
       let actorClaims: Json = null;
-      if (body.actor_token) {
+      // #114: an actor_token that is an assertion from a declared issuer is
+      // verified as the subject_token's is, and the actor is the person it
+      // names; `act.sub` is then taken from the verified assertion.
+      const actorType = String(body.actor_token_type || '').trim();
+      let actorAssertion: Json = null;
+      if (body.actor_token && exchangeAssertions.isAssertionType(actorType)) {
+        let actorOwn = false;
+        if (actorType === exchangeAssertions.TYPES.jwt) {
+          try {
+            helpers.verifyOwnJws(String(body.actor_token));
+            actorOwn = true;
+          } catch (e) {
+            log.debug("Caught in tokenGrant(): the actor_token is not this " +
+                      "realm's own: " + ((e && e.message) || e));
+            actorOwn = false;
+          }
+        }
+        if (!actorOwn) {
+          const checkedActor = await exchangeAssertions.verify({
+            token: String(body.actor_token), type: actorType, base: base,
+            issuer: self.issuerOf(base), clientId: client.client_id,
+            clientSecret: (applications.clientConfigOf(client.client_id) ||
+                           {}).client_secret,
+            request: req
+          });
+          const actorFrom = checkedActor.ok
+            ? self.assertionSubject(checkedActor, client, 'actor_token')
+            : null;
+          if (actorFrom) {
+            actorAssertion = checkedActor;
+            actorClaims = actorFrom;
+            act = { sub: actorClaims.sub };
+          } else if (strictExchange || actorType !==
+                     exchangeAssertions.TYPES.jwt) {
+            errorCodes.mark(res, String(checkedActor.errorCode ||
+                                        'STS-OAUTH-0798'));
+            log.debug("Leaving OAuth2Server.tokenGrant(). The actor's " +
+                      "assertion was refused.");
+            // error-code: none — the verifier's code was marked above
+            return self.oauthError(res, 400, 'invalid_request',
+              checkedActor.ok
+                ? 'The actor_token\'s assertion names "' +
+                  checkedActor.subject + '", who has no directory entry here.'
+                : checkedActor.description);
+          }
+        }
+      }
+      if (body.actor_token && !actorAssertion) {
         // THE ACTOR IS VERIFIED BY THE SAME RULE, for the same reason: `act`
         // is the record, inside the token that comes out, of who acted on the
         // subject's behalf, and a name read out of an unverified token puts a
@@ -15044,18 +15273,23 @@ class OAuth2Server {
         typeof subject.may_act === 'object' ? subject.may_act : null;
       const mayActNamesActor = !!mayAct &&
         delegationPolicy.mayActNames(mayAct, actorIdentity);
-      stats.recordAuthentication({
-        presented: subject.username || subject.sub || 'urn:sts:exchanged',
-        protocol: 'OAuth 2.0', method: 'token exchange (RFC 8693)',
-        sub: subject.sub || '', client_id: client.client_id,
-        note: subjectVerified
-          ? 'The subject_token was signed by this service and verified, so ' +
-            'this subject was authenticated here — earlier, by whatever ' +
-            'grant produced that token.'
-          : 'The subject_token was NOT signed by this service. The name was ' +
-            'read out of it without verifying anything, so this is a subject ' +
-            'this service has been TOLD about rather than one it authenticated.'
-      });
+      // An assertion's subject was recorded where it was verified (#114,
+      // `assertionSubject()`), with what vouched for it.
+      if (!subjectAssertion) {
+        stats.recordAuthentication({
+          presented: subject.username || subject.sub || 'urn:sts:exchanged',
+          protocol: 'OAuth 2.0', method: 'token exchange (RFC 8693)',
+          sub: subject.sub || '', client_id: client.client_id,
+          note: subjectVerified
+            ? 'The subject_token was signed by this service and verified, ' +
+              'so this subject was authenticated here — earlier, by ' +
+              'whatever grant produced that token.'
+            : 'The subject_token was NOT signed by this service. The name ' +
+              'was read out of it without verifying anything, so this is a ' +
+              'subject this service has been TOLD about rather than one it ' +
+              'authenticated.'
+        });
+      }
       // -----------------------------------------------------------------------
       // WHAT THIS EXCHANGE IS FOR, WHICH RFC 8693 SECTION 2.1 SPELLS TWO WAYS.
       //
@@ -15287,9 +15521,10 @@ class OAuth2Server {
                       : 'unstated — neither audience nor resource was sent' },
           authorizedBy: delegationPolicy.rowText(decision),
           reason: decision.why,
-          consumed: [{ kind: 'subject_token',
-                       identifier: String(subject.jti || ''),
-                       note: 'signed by this service and verified' }],
+          consumed: [OAuth2Server.consumedInput('subject_token',
+                                                subjectAssertion,
+                                                String(subject.jti || ''),
+                                                subjectVerified)],
           produced: [], sessionId: ''
         });
         errorCodes.mark(res, spoken[0]);
@@ -15547,19 +15782,20 @@ class OAuth2Server {
         // Kerberos row names one — or, in development, what WOULD have
         // refused it. See `common/delegation_policy.ts`.
         authorizedBy: delegationPolicy.rowText(decision),
-        consumed: ([{
-          kind: 'subject_token',
-          identifier: String(subject.jti || ''),
-          note: subjectVerified
-            ? 'signed by this service and verified'
-            : 'NOT signed by this service; read without verifying'
-        }] as Json[]).concat(actorClaims ? [{
-          kind: 'actor_token',
-          identifier: String(actorClaims.jti || ''),
-          note: (strictExchange ? 'signed by this service and verified'
-                                : 'read without verifying') + ' — its ' +
-                '`sub` is what goes into the `act` claim'
-        }] : []),
+        consumed: ([OAuth2Server.consumedInput('subject_token',
+                                               subjectAssertion,
+                                               String(subject.jti || ''),
+                                               subjectVerified)] as Json[])
+          .concat(actorClaims ? [actorAssertion
+            ? OAuth2Server.consumedInput('actor_token', actorAssertion,
+                                         String(actorClaims.jti || ''), true)
+            : {
+              kind: 'actor_token',
+              identifier: String(actorClaims.jti || ''),
+              note: (strictExchange ? 'signed by this service and verified'
+                                    : 'read without verifying') + ' — its ' +
+                    '`sub` is what goes into the `act` claim'
+            }] : []),
         produced: [{
           kind: 'access_token',
           identifier: issuedJti,

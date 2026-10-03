@@ -4267,6 +4267,27 @@ const SETTINGS = [
   // `runtime: true` and settable on a realm, for `consentRequired`'s reason:
   // there is no listener and no key involved, so nothing here is decided when a
   // socket is bound.
+  // #114: what an RFC 7523 / RFC 7522 assertion EXCHANGED (RFC 8693) may be
+  // addressed to. Strict by default (rcbj, #114).
+  { key: 'oauth2.tokenExchangeAudience', group: 'OAuth 2.0 / OIDC',
+    label: 'Audience of an assertion exchanged',
+    env: 'STS_OAUTH2_TOKEN_EXCHANGE_AUDIENCE', type: 'enum',
+    enumValues: ['authorization-server', 'any-declared-relying-party'],
+    dflt: 'authorization-server', runtime: true,
+    description: 'What an RFC 7523 JWT or RFC 7522 / SAML 1.1 assertion ' +
+                 'presented as an RFC 8693 subject_token or actor_token may ' +
+                 'be addressed to. AUTHORIZATION-SERVER (the default) is the ' +
+                 'assertion grant\'s own rule: its audience names this token ' +
+                 'endpoint or issuer, and a SAML Recipient the token ' +
+                 'endpoint. ANY-DECLARED-RELYING-PARTY also accepts an ' +
+                 'audience naming an application registered in this realm ' +
+                 '(and, for SAML, a Recipient that is an assertion consumer ' +
+                 'service registered on the exchanging client) — TOKEN ' +
+                 'FORWARDING: a token issued to one relying party is traded ' +
+                 'for another, which the act on /admin/delegation records as ' +
+                 'such. WARNING: anybody who holds such a token — every ' +
+                 'relying party it was issued to — can then exchange it; ' +
+                 'turn it on only where that is the design.' },
   { key: 'oauth2.tokenExchangeRefreshToken', group: 'OAuth 2.0 / OIDC',
     label: 'Refresh token from a token exchange',
     env: 'STS_OAUTH2_TOKEN_EXCHANGE_REFRESH_TOKEN', type: 'enum',
