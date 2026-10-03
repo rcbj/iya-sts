@@ -7189,7 +7189,7 @@ configuration grid split by protocol.
 
 rcbj asked for `/admin/users?user=` to be organised the way an application's
 page now is. He chose:
-* seven tabs;
+* seven tabs (eight since #432 phase 7 added GNAP grants);
 * a typed grid with one sub-tab per group, each with its own Save;
 * the same grid on `/admin/users/new`.
 
@@ -7202,6 +7202,11 @@ page now is. He chose:
   `ucred-keys` and `ucred-kerberos`, each one of the four sections that were
   stacked.
 * **Federation links**.
+* **GNAP grants** (#432 phase 7, 2026-10-03): `userGnapGrantsSection()`,
+  the grants the person is the resource owner of with a Revoke each, drawn
+  from `gnapGrants` (`gnap/CLAUDE.md`, *Phase 7*). The Revoke posts to
+  `/admin/gnap`'s `revoke-grant` naming the person as well, and comes back
+  to `#gnap-grants`.
 * **Directory entry**: the LDAP object, and `userAttributesSection()`
   retitled *Change one attribute by name*.
 * **Sign out**: both buttons.

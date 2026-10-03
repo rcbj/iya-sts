@@ -495,6 +495,10 @@ interface AdminViewsDeps {
   // A federation partner's Shared Signals (#373), lazily: the receiver
   // registers a scheduler job when built.
   loadSignals: () => any;
+  // GNAP's view layer (#432 phase 7), lazily: GNAP is 23d in the require
+  // order and this file is loaded at 18, as `mgmt-api/admin_api.ts` reaches
+  // it. Optional, so a test building these views without it still draws.
+  loadGnapConsole?: () => any;
   fedLinks: typeof fedLinks;
   signals: typeof signals;
   spiffeRegistry: typeof spiffeRegistry;
@@ -596,6 +600,9 @@ class AdminViews {
       authorizationServers: authorizationServers,
       federation: federation,
       fedEncryption: fedEncryption,
+      loadGnapConsole: function () {
+        return require('../gnap/gnap_console');
+      },
       loadSignals: function () {
         return require('../ssf/ssf_transmitters');
       },
@@ -8418,6 +8425,29 @@ class AdminViews {
                           { name: 'federationLinks', noun: 'links' });
   }
 
+  // A person's GNAP grants (#432 phase 7), or an empty page where GNAP's view
+  // layer cannot be loaded in this process.
+  /**
+   * Returns the GNAP grants a person is the resource owner of, as
+   * `gnap/gnap_console.ts`'s `personGrantsView()` draws them.
+   *
+   * @param query - the request's query
+   * @param key - the person
+   * @returns `{ rows, paging, cells }`
+   */
+  gnapGrantsOf(query, key) {
+    const { log } = this.deps;
+    log.debug("Entering AdminViews.gnapGrantsOf().");
+    const loader = this.deps.loadGnapConsole;
+    if (!loader) {
+      log.debug("Leaving AdminViews.gnapGrantsOf(). No GNAP here.");
+      return { rows: [], paging: null, cells: null };
+    }
+    const view = loader().personGrantsView(key, query || {});
+    log.debug("Leaving AdminViews.gnapGrantsOf(). " + view.total + ".");
+    return { rows: view.rows, paging: view.paging, cells: view.cells };
+  }
+
   // `risk` is the person's current standing (#62), read by `riskFor()`
   // before this synchronous view runs and handed in, because a view reads
   // nothing off the request but its query.
@@ -8560,6 +8590,12 @@ class AdminViews {
     // attribute with the values it holds, and the schema's attributes that are
     // withheld with the door to use instead. Null where there is no entry.
     const attributeEditor = this.deps.personEditor.editorFor(key);
+    // THEIR GNAP GRANTS (#432 phase 7): every grant they are the resource
+    // owner of, with its rights, tokens and why it ended — the view
+    // `gnap/gnap_console.ts` draws for this page, the API and their own
+    // `/portal/gnap`. Revoked with POST /admin-api/gnap/revoke-grant naming
+    // the grant and this person.
+    const gnapGrants = this.gnapGrantsOf(req.query, key);
     log.debug("Leaving AdminViews.userDetailJson().");
     return {
       detail: detail, row: row, sessionRows: sessionRows, live: live,
@@ -8574,7 +8610,7 @@ class AdminViews {
       endedPage: endedPage, sessionlessPage: sessionlessPage, artifactPage:
                                                                 artifactPage,
       federationLinkPage: federationLinkPage, kerberos: kerberos,
-      attributeEditor: attributeEditor,
+      attributeEditor: attributeEditor, gnapGrants: gnapGrants,
       json: (function () {
       return {
           user: row,
@@ -8634,7 +8670,14 @@ class AdminViews {
           // What POST /admin-api/users/set-attribute, /add-attribute and
           // /remove-attribute may change on their entry (#228), and what
           // they hold now; null where the directory holds no entry for them.
-          attributeEditor: attributeEditor
+          attributeEditor: attributeEditor,
+          // The GNAP grants they are the resource owner of (#432 phase 7),
+          // paged as `gnapGrantsPage`; `cells` says what a multi-cell
+          // service's list leaves out. Revoked with POST
+          // /admin-api/gnap/revoke-grant { grant, user }.
+          gnapGrants: gnapGrants.rows,
+          gnapGrantsPaging: gnapGrants.paging,
+          gnapGrantsCells: gnapGrants.cells
       };
       }())
     };

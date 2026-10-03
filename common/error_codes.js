@@ -15397,6 +15397,26 @@ const CODES = [
       'finish verifies the client\'s certificate whatever it says. Logged ' +
       'once per process (#171).',
     spec: 'none — a warning in the log' },
+  { code: 'STS-GNAP-0790',
+    summary: 'A GNAP continuation or modification arrived after the grant\'s ' +
+      'own lifetime (gnap.grantLifetimeS) ended; the grant was finalized as ' +
+      'expired (#432).',
+    spec: 'RFC 9635 section 5 (invalid_continuation)' },
+  { code: 'STS-GNAP-0791',
+    summary: 'A GNAP access token rotation was refused because the grant ' +
+      'the token was issued under has reached the end of its lifetime ' +
+      '(gnap.grantLifetimeS) (#432).',
+    spec: 'RFC 9635 section 6.1 (invalid_rotation)' },
+  { code: 'STS-GNAP-0792',
+    summary: 'An administrator\'s revoke-grant (console or /admin-api) named ' +
+      'a person who is not the resource owner of the grant it named, so ' +
+      'nothing was revoked (#432).',
+    spec: 'HTTP 400 (API) or a 303 with error=' },
+  { code: 'STS-GNAP-0793',
+    summary: 'A GNAP grant was to release subject information that neither ' +
+      'an interaction nor a delegation decision authorized; none was ' +
+      'released (#432).',
+    spec: 'none — the subject member is omitted (RFC 9635 section 3.4)' },
   // ===== DEVICE ============================================================
   { code: 'STS-DEVICE-0001',
     summary: 'A device named an owner that is not a person or an application' +
@@ -17839,6 +17859,11 @@ const CODES = [
       'the enrolment had expired, the browser ran no ceremony, the RP ID ' +
       'did not fit, or the registration did not verify — and the step was ' +
       'drawn again.',
+    spec: 'HTTP 400 page' },
+  { code: 'STS-PORTAL-0163',
+    summary: 'A POST to /portal/gnap named a GNAP grant that is not one the ' +
+      'signed-in person approved, or one with nothing live left to revoke ' +
+      '(#432).',
     spec: 'HTTP 400 page' },
   { code: 'STS-LOGOUT-0001',
     summary: 'A sign-out named somebody other than the caller while naming ' +

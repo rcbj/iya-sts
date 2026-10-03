@@ -496,6 +496,12 @@ const NAV = [
       // taking it back. Drawn by `portal_consents.ts`.
       { path: BASE + '/consents', label: 'Consents',
         heading: 'What you have agreed applications may do' },
+      // GNAP GRANTS (#432 phase 7, 2026-10-03), beside Consents and for its
+      // reason: what this person has let applications do, with the one
+      // control that belongs there, revoking it. A page of its own rather
+      // than a section of Consents — `portal_gnap.ts`'s header argues it.
+      { path: BASE + '/gnap', label: 'GNAP grants',
+        heading: 'Access you have given through GNAP' },
       // EMAIL (#63, 2026-09-22): the address this service writes to, whether
       // it is verified, which messages may be declined, and what was sent.
       // Under *Your account* for Security activity's reason — it is what this
@@ -7162,6 +7168,8 @@ const portalKerberos = require('./portal_kerberos');
 const portalSignIns = require('./portal_sign_ins');
 // /portal/consents (#172), the same arrangement, registered after that.
 const portalConsents = require('./portal_consents');
+// /portal/gnap (#432 phase 7), the same arrangement, registered after that.
+const portalGnap = require('./portal_gnap');
 // /portal/delegate (#108), the same arrangement, registered after that.
 const portalDelegate = require('./portal_delegate');
 // /portal/email, /portal/verify-email and /portal/forgot-password (#63),
@@ -7239,6 +7247,19 @@ export = {
       audit: audit, errorCodes: errorCodes, config: config
     });
     portalConsents.register({
+      app: target, BASE: BASE, log: helpers.log,
+      esc: slot.forward('esc'),
+      shell: slot.forward('shell'),
+      send: slot.forward('send'),
+      requireSignIn: slot.forward('requireSignIn'),
+      refuseShape: slot.forward('refuseShape'),
+      innerCode: slot.forward('innerCode'),
+      baseUrlOf: helpers.baseUrlOf, parseBody: helpers.parseBody,
+      validation: validation, websecurity: websecurity,
+      accessGate: accessGate,
+      audit: audit, errorCodes: errorCodes, config: config
+    });
+    portalGnap.register({
       app: target, BASE: BASE, log: helpers.log,
       esc: slot.forward('esc'),
       shell: slot.forward('shell'),

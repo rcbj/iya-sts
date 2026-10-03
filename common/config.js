@@ -1319,6 +1319,23 @@ const SETTINGS = [
     description: 'The expires_in of every access token, and the exp of the ' +
                  'formats that carry one. A client application may override ' +
                  'it with its own gnapAccessTokenLifetimeS.' },
+  // THE GRANT'S OWN LIFETIME (#432 phase 7, 2026-10-03), separate from any
+  // token's. A DAY by default, oauth2.refreshTokenTtlS's figure, for its
+  // reason: rotation renews a token without the resource owner, and this is
+  // the point at which they are asked again. gnap/gnap_grants.ts argues it.
+  { key: 'gnap.grantLifetimeS', group: 'GNAP', label: 'Grant lifetime ' +
+      '(seconds)',
+    path: 'gnap.grantLifetimeS', env: 'STS_GNAP_GRANT_LIFETIME_S',
+    type: 'int',
+    dflt: 86400, min: 60, max: 31536000, runtime: true,
+    description: 'How long a grant lives, counted from its request and ' +
+                 'separate from the access token lifetime. Past it the ' +
+                 'grant can no longer be continued or modified (RFC 9635 ' +
+                 'section 5) and none of its tokens can be rotated (section ' +
+                 '6.1); no token issued under it is given an expiry later ' +
+                 'than it; and it is finalized as expired. Fixed on each ' +
+                 'grant when it is made. A longer one lets a client keep ' +
+                 'access by rotation for longer on one approval.' },
   { key: 'gnap.interactionLifetimeS', group: 'GNAP', label: 'Interaction ' +
       'lifetime (seconds)',
     path: 'gnap.interactionLifetimeS', env: 'STS_GNAP_INTERACTION_LIFETIME_S',

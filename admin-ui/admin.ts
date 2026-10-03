@@ -3161,7 +3161,8 @@ const APPLICATION_TAB_IDS = ['tab-overview', 'tab-config', 'tab-credentials',
 // seven tabs, the Attributes tab one sub-tab per field group (ufg-<group>,
 // each with its own Save) and the Credentials tab one per kind of credential.
 const USER_TAB_IDS = ['utab-overview', 'utab-activity', 'utab-attributes',
-  'utab-credentials', 'utab-federation', 'utab-entry', 'utab-signout'];
+  'utab-credentials', 'utab-federation', 'utab-gnap', 'utab-entry',
+  'utab-signout'];
 const USER_SUB_TAB_IDS = ['ucred-factors', 'ucred-password', 'ucred-keys',
   'ucred-kerberos'].concat(personEditor.FIELD_GROUPS.map(function (group) {
   return 'ufg-' + group.id;
@@ -14777,6 +14778,122 @@ class AdminConsole {
   }
 
   // ---------------------------------------------------------------------------
+  // THE PERSON'S GNAP GRANTS (#432 phase 7, 2026-10-03): every grant they are
+  // the resource owner of — approved at an interaction, or acted on through a
+  // verified assertion — with the rights it holds, the tokens issued under
+  // it, why it ended, and a Revoke for one with something live left. The
+  // facts are `gnap/gnap_console.ts`'s `personGrantsView()` through
+  // `admin_views.ts` (`gnapGrants` in /admin-api/users?user=), the same view
+  // the person's own /portal/gnap draws; Revoke posts to /admin/gnap's
+  // `revoke-grant` naming the person too, so a stale page cannot end a
+  // stranger's grant (STS-GNAP-0792), and lands back on this tab.
+  // ---------------------------------------------------------------------------
+  /**
+   * Draws a person's GNAP grants tab: each grant they are the resource owner
+   * of, its rights, tokens and finalization, and a Revoke (#432 phase 7).
+   *
+   * @param key - the person
+   * @param gnap - `{ rows, paging, cells }` from the view
+   * @param gate - the console gate's state for this request
+   * @param params - the page's query, for the paging links
+   * @returns the tab's HTML
+   */
+  userGnapGrantsSection(key, gnap, gate, params) {
+    const { log } = this.deps;
+    const self = this;
+    log.debug("Entering AdminConsole.userGnapGrantsSection().");
+    const view = gnap || { rows: [], paging: null, cells: null };
+    const when = function (seconds) {
+      log.debug("Entering when().");
+      log.debug("Leaving when().");
+      return seconds ? self.whenText(seconds * 1000) : '—';
+    };
+    const rightText = function (right) {
+      log.debug("Entering rightText().");
+      if (typeof right === 'string') {
+        log.debug("Leaving rightText(). A reference.");
+        return '<code>' + self.esc(right) + '</code>';
+      }
+      const parts = [];
+      ['actions', 'locations', 'datatypes', 'privileges'].forEach(
+          function (dimension) {
+        if (Array.isArray(right[dimension]) && right[dimension].length) {
+          parts.push(dimension + ': ' + right[dimension].join(', '));
+        }
+      });
+      if (right.identifier) {
+        parts.push('identifier: ' + right.identifier);
+      }
+      if (right.limits !== undefined) {
+        parts.push('limits: ' + JSON.stringify(right.limits));
+      }
+      log.debug("Leaving rightText().");
+      return '<code>' + self.esc(right.type || '') + '</code>' +
+        (parts.length ? ' <span class="sub">' + self.esc(parts.join('; ')) +
+                        '</span>' : '');
+    };
+    const heading = '<h2 id="gnap-grants">GNAP grants</h2>' +
+      this.note('Every GNAP (RFC 9635) grant this person is the resource ' +
+        'owner of: approved by them on the approval page, or acted on by a ' +
+        'trusted client presenting a verified assertion about them. ' +
+        '<strong>Revoke</strong> is the client\'s own section 5.4 act ' +
+        'performed for them: every token issued under the grant stops ' +
+        'working, the grant is finalized as <code>revoked</code> and CAEP ' +
+        '<code>session-revoked</code> is sent. The person can do the same ' +
+        'on their own <code>/portal/gnap</code>.') +
+      (view.cells && view.cells.multiCell
+        ? this.note('<strong>This cell only</strong> (' +
+                    this.esc(view.cells.cell) + '). ' +
+                    this.esc(view.cells.note))
+        : '');
+    if (!view.rows.length) {
+      log.debug("Leaving AdminConsole.userGnapGrantsSection(). None.");
+      return heading + this.note('This person is the resource owner of no ' +
+                                 'GNAP grant in this realm.');
+    }
+    const nav = view.paging
+      ? this.pageNavPair('/admin/users', params,
+                         Object.assign({}, view.paging,
+                                       { param: 'gnapGrantsPage' }))
+      : { head: '', foot: '' };
+    const rows = '<table><tr><th>Grant</th><th>Client</th><th>State</th>' +
+      '<th>Rights</th><th>Tokens</th><th>Lifetime ends</th><th></th></tr>' +
+      view.rows.map(function (row) {
+        const tokens = row.tokens.length
+          ? row.tokens.map(function (token) {
+              return self.esc((token.label ? token.label + ' · ' : '') +
+                              token.format + ' · ' + token.state) +
+                ' <span class="sub">until ' + self.esc(when(token.expiresAt)) +
+                '</span>';
+            }).join('<br>')
+          : '<span class="sub">none</span>';
+        const control = row.revocable && gate.write
+          ? '<form method="post" action="/admin/gnap">' +
+            '<input type="hidden" name="action" value="revoke-grant">' +
+            '<input type="hidden" name="grant" value="' + self.esc(row.id) +
+            '"><input type="hidden" name="user" value="' + self.esc(key) +
+            '"><button type="submit" class="danger">Revoke</button></form>'
+          : '';
+        return '<tr><td><code>' + self.esc(row.id) + '</code></td>' +
+          '<td><a href="/admin/applications?application=' +
+          encodeURIComponent(row.client || '') + '">' +
+          self.esc(row.clientName || row.client || '') + '</a></td>' +
+          '<td>' + self.esc(row.state) +
+          (row.finalization ? '<div class="sub">' +
+            self.esc(row.finalization.reason) + '</div>' : '') + '</td>' +
+          '<td>' + (row.rights.map(rightText).join('<br>') || '—') +
+          '<div class="sub">' + self.esc(row.rightsAre) + '</div></td>' +
+          '<td>' + tokens + '</td><td>' +
+          self.esc(when(row.grantExpiresAt)) + '</td><td>' + control +
+          '</td></tr>';
+      }).join('') + '</table>';
+    log.debug("Leaving AdminConsole.userGnapGrantsSection().");
+    return heading + nav.head + rows + nav.foot +
+      (gate.write ? '' : this.note('Revoking a grant needs <strong>Admin ' +
+                                   'Write</strong>.'));
+  }
+
+  // ---------------------------------------------------------------------------
   // THE PERSON'S KERBEROS ACCOUNT (#59, 2026-09-22): the principal, what this
   // realm's KDC holds for them — the PUBLIC half, never a key — and "Reset
   // password and download keytab".
@@ -15764,6 +15881,12 @@ class AdminConsole {
           html: this.userFederationLinksSection(key, view.federationLinkPage,
                                                 gateStateFor(req), back,
                                                 params) },
+        // The GNAP grants they are the resource owner of (#432 phase 7): a
+        // grant is access they gave an application, so it has a tab of its
+        // own beside the links, with a Revoke per grant.
+        { id: 'utab-gnap', label: 'GNAP grants',
+          html: this.userGnapGrantsSection(key, view.gnapGrants,
+                                           gateStateFor(req), params) },
         // Every attribute the entry holds, and the one-attribute forms the
         // Attributes tab replaced as the usual door (#228).
         { id: 'utab-entry', label: 'Directory entry',

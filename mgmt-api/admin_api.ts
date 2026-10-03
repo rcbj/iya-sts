@@ -5177,7 +5177,18 @@ class AdminApi {
           { name: 'federationLinks',
             description: 'The federation partners\' subjects linked to ' +
                          'this person (#109), each `{ link, relationship, ' +
-                         'issuer, subject, relationshipExists }`.' }
+                         'issuer, subject, relationshipExists }`.' },
+          { name: 'gnapGrants',
+            description: 'The GNAP grants this person is the resource ' +
+                         'owner of (#432): each with its state, why it was ' +
+                         'finalized (`finalization.reason`: issued, ' +
+                         'revoked, rejected, expired), its rights, the ' +
+                         'tokens issued under it (label, format, expiry, ' +
+                         'state — never a value) and whether it can still ' +
+                         'be revoked, which POST ' +
+                         '/admin-api/gnap/revoke-grant does with `user`. ' +
+                         '`gnapGrantsCells` says what a multi-cell ' +
+                         'service\'s list leaves out.' }
         ])),
         responseDescription: 'The list, or one identity.',
         responseSchema: { oneOf: [
@@ -12760,12 +12771,24 @@ class AdminApi {
                          'seen had it revoked the grant itself, and a CAEP ' +
                          'session-revoked is sent to every ' +
                          'stream that takes it. A grant already ' +
-                         'finalized is reported unchanged rather than refused.',
+                         'finalized is reported unchanged rather than ' +
+                         'refused — except one finalized as `issued`, whose ' +
+                         'tokens are still live and are revoked (#432). ' +
+                         'Naming `user` as well revokes it only if that ' +
+                         'person is its resource owner — the per-person ' +
+                         'door the GNAP grants tab of /admin/users uses, ' +
+                         'whose grants GET /admin-api/users?user= lists as ' +
+                         '`gnapGrants`.',
             requestBodyRequired: true,
             requestBody: {
               type: 'object',
               properties: { grant: { type: 'string', description: 'The grant ' +
-                  'identifier, from GET /admin-api/gnap.' } },
+                  'identifier, from GET /admin-api/gnap or the person\'s ' +
+                  '`gnapGrants`.' },
+                            user: { type: 'string', description: 'The ' +
+                  'person whose grant it must be (optional). A grant whose ' +
+                  'resource owner is somebody else is refused and nothing ' +
+                  'changes.' } },
               required: ['grant'],
               examples: [{ grant: 'no-such-grant-example' }],
               additionalProperties: false

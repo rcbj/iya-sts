@@ -5993,6 +5993,26 @@ const ENDPOINTS: EndpointEntry[] = [
           'form names only an application and a scope, checked against the ' +
           'person\'s own entry. Paged by application. Real submit buttons ' +
           'and no script.' },
+  { path: '/portal/gnap', group: 'User portal',
+    name: 'The GNAP grants you gave, and revoking one',
+    specs: ['rfc9635'],
+    effect: 'revokes one of the signed-in person\'s own GNAP grants and ' +
+            'every token issued under it',
+    what: 'NON-SPEC page for a spec behaviour (#432). Every GNAP grant the ' +
+          'signed-in person is the resource owner of — approved by them, ' +
+          'or acted on by a trusted client presenting a verified assertion ' +
+          'about them — with the access rights it holds (limits included), ' +
+          'the tokens issued under it (label, format, expiry, state; never ' +
+          'a value), its own lifetime and, once finalized, why: issued, ' +
+          'revoked, rejected or expired. Revoke is the client\'s RFC 9635 ' +
+          'section 5.4 act performed for them, through the one path the ' +
+          'client\'s DELETE and the console take: the tokens revoked, the ' +
+          'grant finalized as revoked, CAEP session-revoked sent. The ' +
+          'identity is the session\'s; the form names only a grant, ' +
+          'checked against the person\'s own. The same view as the ' +
+          'GNAP grants tab of /admin/users and gnapGrants in ' +
+          '/admin-api/users?user=. Under cells, this cell\'s grants, and ' +
+          'the page says so. Paged; real submit buttons and no script.' },
   { path: '/portal/signing-key', group: 'User portal',
     name: 'Your own RFC 7523 signing key',
     specs: ['rfc7521', 'rfc7523', 'rfc5280'],
