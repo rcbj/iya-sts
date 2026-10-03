@@ -551,12 +551,25 @@ async function test() {
     assert.strictEqual(back.get("iss"), issuer);
     assert.strictEqual(consent.shown, 0, "consent screens: " + consent.shown);
   });
-  const code = back.get("code");
-  let t = await token({ grant_type: "authorization_code", code: code,
+  let t = await token({ grant_type: "authorization_code",
+                        code: back.get("code"),
                         redirect_uri: REDIRECT, code_verifier: p.verifier });
   check("a token request with no binding is refused (5.3.2.1 item 4)",
         function () {
     assert.strictEqual(t.status, 400, t.raw.slice(0, 300));
+  });
+  // That refusal SPENT the code: a code is presented once, whatever the
+  // outcome (RFC 6749 section 4.1.2, #424). The bound request needs a
+  // fresh one, pushed and authorized again.
+  r = await push(params);
+  r = await follow(alice, await alice.go("GET", R + "/oauth2/authorize?" +
+    form({ client_id: client.client_id, request_uri: r.body.request_uri })),
+    ALICE, { shown: 0 });
+  const code = (paramsAt(r) || new URLSearchParams()).get("code");
+  check("the code a refused request presented is refused again, and a " +
+        "fresh authorization gives another", function () {
+    assert.ok(code && code !== back.get("code"),
+              r.status + " " + r.location);
   });
   t = await token({ grant_type: "authorization_code", code: code,
                     redirect_uri: REDIRECT, code_verifier: p.verifier }, true);

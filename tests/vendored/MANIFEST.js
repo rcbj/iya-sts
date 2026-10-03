@@ -367,8 +367,9 @@ const JOBS = [
     timeoutMs: 900000 },
   { file: 'sts_acme_lego.js',            browser: false, local: true,
     timeoutMs: 900000 },
+  // `exclusive` since #429: it turns TLS 1.2 on service-wide for its run.
   { file: 'sts_est_libest.js',           browser: false, local: true,
-    timeoutMs: 600000 },
+    timeoutMs: 600000, exclusive: true },
   { file: 'sts_scep_sscep.js',           browser: false, local: true,
     timeoutMs: 600000 },
   { file: 'sts_scep_micromdm.js',        browser: false, local: true,
