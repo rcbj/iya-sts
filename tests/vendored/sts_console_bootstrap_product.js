@@ -317,10 +317,15 @@ async function signInWithCertificate(commonName) {
   // THE ANCHOR IS APPLIED WITH `setSecureContext()` AND THE NEXT HANDSHAKE IS
   // JUDGED AGAINST IT, so a sign-in in the same tick can meet the old
   // context — retried, as `sts_global_logout.js` retries it, on a sign-in that
-  // did not happen rather than only on a thrown connection.
+  // did not happen rather than only on a thrown connection. IN `cluster` THE
+  // ANCHOR REACHES THE OTHER NODE THROUGH THE CHANGE LOG, and under the
+  // in-process lanes' load that took longer than the eight tries at 400 ms
+  // this loop used to allow (2026-10-04: presented, not verified, for all
+  // eight) — so it is a deadline, not a count.
   let session = "";
   let last = null;
-  for (let attempt = 0; attempt < 8 && !session; attempt += 1) {
+  const deadline = Date.now() + 20000;
+  while (!session && Date.now() < deadline) {
     try {
       last = await certificateRequest(pki, "/tls/sign-in", "");
       const found = last.cookies.map(function (one) {
