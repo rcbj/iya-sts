@@ -219,7 +219,9 @@ const CHANGE_ROWS_PER_STATEMENT = 5000;
  * The version of the schema this driver creates, recorded in `sts_schema`.
  */
 // 14 IS #222's: `sts_minted.key_sealed`, the name beside its digest.
-const SCHEMA_VERSION = 14;
+// 15 SINCE 2026-10-03, for `sts_cluster_budgets` (#432 phase 5): a budget
+// spent against a limit, one conditional upsert per spend.
+const SCHEMA_VERSION = 15;
 
 // THE DATABASE'S CLOCK, in the milliseconds every cluster table stores. See the
 // cluster block in SCHEMA_OBJECTS for why no process's own clock is used.
@@ -691,6 +693,29 @@ const SCHEMA_OBJECTS = [
   { name: 'sts_cluster_windows_expiry', statement:
   'CREATE INDEX IF NOT EXISTS sts_cluster_windows_expiry ON ' +
   'sts_cluster_windows (window_ends_at)' },
+  // `sts_cluster_budgets` — A BUDGET SPENT AGAINST A LIMIT (#432 phase 5,
+  // schema version 15): the running totals of a GNAP right's limits, kept per
+  // grant by the demonstration resource server. One `INSERT … ON CONFLICT DO
+  // UPDATE … WHERE the new totals are within the limits` under the primary
+  // key's row lock, so two nodes spending one budget at once cannot both pass
+  // it. `amount` is millionths; `key` a digest; `expires_at` the end of the
+  // grant, past which the row is purged. `cluster/cluster_counters.js`
+  // argues it.
+  { name: 'sts_cluster_budgets', statement:
+  'CREATE TABLE IF NOT EXISTS sts_cluster_budgets (' +
+  '  scope      text   NOT NULL,' +
+  '  realm      text   NOT NULL,' +
+  '  key        text   NOT NULL,' +
+  '  period     bigint NOT NULL,' +
+  '  amount     bigint NOT NULL,' +
+  '  count      bigint NOT NULL,' +
+  '  origin     text   NOT NULL DEFAULT \'\',' +
+  '  expires_at bigint NOT NULL,' +
+  '  updated_at bigint NOT NULL,' +
+  '  PRIMARY KEY (scope, realm, key))' },
+  { name: 'sts_cluster_budgets_expiry', statement:
+  'CREATE INDEX IF NOT EXISTS sts_cluster_budgets_expiry ON ' +
+  'sts_cluster_budgets (expires_at)' },
   // `sts_node_snapshots` — WHAT EACH NODE LAST SAID ABOUT ITSELF (#332,
   // schema version 11, 2026-09-28): the node's own Monitoring → Worker Pools
   // and → Node Health views, written by its front process's per-process
@@ -1711,6 +1736,27 @@ function create(options) {
   // re-arms (tests/no_periodic_timers.js).
   // -------------------------------------------------------------------------
   const MAINTENANCE_CONNECT_RETRIES = 4;
+  // How many of one maintenance pass's queries may be in flight at once.
+  const MAINTENANCE_CONCURRENCY = 2;
+
+  // `items` through `fn`, at most `width` at a time, the answers in order.
+  async function inTurns(items, width, fn) {
+    log.debug("Entering inTurns(). " + items.length);
+    const out = new Array(items.length);
+    let next = 0;
+    const lanes = [];
+    for (let lane = 0; lane < Math.max(1, width); lane++) {
+      lanes.push((async function () {
+        while (next < items.length) {
+          const at = next++;
+          out[at] = await fn(items[at], at);
+        }
+      })());
+    }
+    await Promise.all(lanes);
+    log.debug("Leaving inTurns().");
+    return out;
+  }
 
   function connectTimedOut(e) {
     log.debug("Entering connectTimedOut().");
@@ -2567,9 +2613,61 @@ function create(options) {
     };
   }
 
-  function withTransaction(fn) {
+  // ---------------------------------------------------------------------------
+  // A DEADLOCK IS RETRIED HERE, NOT ANSWERED (2026-10-02). PostgreSQL ends one
+  // of two transactions that wait on each other with SQLSTATE 40P01, rolls
+  // it back WHOLE, and expects the client to run it again; a serialization
+  // failure (40001) is the same contract. Until this, the error went to the
+  // caller: a flush was retried later while the request whose change was in it
+  // was answered 503 (#351) — in CI run 36986913696's cluster job that was the
+  // console's back-channel token request, during two nodes' builds of one new
+  // realm's certificate authorities, and `sts_node_health` failed on it. The
+  // transaction is run again from the start, on a fresh client, up to
+  // DEADLOCK_RETRIES times with a short random pause so the two do not meet
+  // again in step; every statement in it is built by `fn` from what it was
+  // handed, so the repeat writes what the first attempt would have.
+  // ---------------------------------------------------------------------------
+  const DEADLOCK_RETRIES = 3;
+
+  function retryableConflict(err) {
+    log.debug("Entering retryableConflict().");
+    const code = err && err.code;
+    log.debug("Leaving retryableConflict().");
+    return !(err && err.fenced) && (code === '40P01' || code === '40001');
+  }
+
+  async function withTransaction(fn) {
     log.debug('Entering withTransaction().');
-    log.debug("Leaving withTransaction().");
+    for (let attempt = 0; ; attempt++) {
+      try {
+        const out = await transactionOnce(fn);
+        log.debug("Leaving withTransaction().");
+        return out;
+      } catch (err) {
+        log.debug("Caught in withTransaction(): " +
+                  ((err && err.message) || err));
+        if (!retryableConflict(err) || attempt >= DEADLOCK_RETRIES) {
+          log.debug("Leaving withTransaction(). Failed.");
+          throw err;
+        }
+        log.info('persistence: a transaction met ' +
+                 (err.code === '40P01' ? 'a deadlock' :
+                  'a serialization failure') + ' and was rolled back by ' +
+                 'the database; running it again (attempt ' + (attempt + 2) +
+                 ' of ' + (DEADLOCK_RETRIES + 1) + ').');
+        await new Promise(function (resolve) {
+          // node's generator, as every random value here is (tests/
+          // random_values.js); a jitter needs no more, and asks no less.
+          setTimeout(resolve, 10 + nodeCrypto.randomInt(0, 40) *
+                              (attempt + 1));
+        });
+      }
+    }
+  }
+
+  function transactionOnce(fn) {
+    log.debug('Entering transactionOnce().');
+    log.debug("Leaving transactionOnce().");
     return pool.connect().then(function (client) {
       const unguard = guardClient(client, 'a transaction');
       // THE CHANGE ROWS THIS TRANSACTION RECORDS, held until COMMIT returns —
@@ -2589,7 +2687,7 @@ function create(options) {
           uncommittedRows.delete(client);
           unguard();
           client.release();
-          log.debug('Leaving withTransaction(). Committed.');
+          log.debug('Leaving transactionOnce(). Committed.');
           return result;
         });
       }).catch(function (err) {
@@ -2607,7 +2705,7 @@ function create(options) {
         }).then(function () {
           unguard();
           client.release(err);
-          log.debug('Leaving withTransaction(). Rolled back.');
+          log.debug('Leaving transactionOnce(). Rolled back.');
           if (err && err.fenced && typeof onFenced === 'function') {
             onFenced(err);
           } else if (err && err.fenced && err.reason === 'origin' &&
@@ -4924,6 +5022,79 @@ function create(options) {
       });
     },
 
+    // A BUDGET SPENT AGAINST A LIMIT (#432 phase 5). One statement: the
+    // SELECT proposes a row only when this spend alone is within the limits
+    // (so an absent row is never inserted over them); a row in the same
+    // period has the spend added, one in an older period is RESET to it,
+    // and either is written only when the totals it would hold are within
+    // the limits and the period is not older than the row's. Nothing
+    // returned is a refusal. `cluster/cluster_counters.js` reads it.
+    spendBudget: function (scope, realmId, key, period, amount, count,
+                           limitAmount, limitCount, expiresAtMs) {
+      log.debug("Entering spendBudget(). scope=" + scope);
+      const same = 'sts_cluster_budgets.period = EXCLUDED.period';
+      const newAmount = '(CASE WHEN ' + same + ' THEN ' +
+        'sts_cluster_budgets.amount + EXCLUDED.amount ELSE EXCLUDED.amount ' +
+        'END)';
+      const newCount = '(CASE WHEN ' + same + ' THEN ' +
+        'sts_cluster_budgets.count + EXCLUDED.count ELSE EXCLUDED.count END)';
+      log.debug("Leaving spendBudget().");
+      return pool.query(
+        'INSERT INTO sts_cluster_budgets (scope, realm, key, period, amount, ' +
+        'count, origin, expires_at, updated_at) SELECT $1, $2, $3, ' +
+        '$4::bigint, $5::bigint, $6::bigint, $9, $10::bigint, ' + DB_NOW +
+        ' WHERE ($7::bigint IS NULL OR $5::bigint <= $7::bigint) AND ' +
+        '($8::bigint IS NULL OR $6::bigint <= $8::bigint) ON CONFLICT ' +
+        '(scope, realm, key) DO UPDATE SET amount = ' + newAmount + ', ' +
+        'count = ' + newCount + ', period = EXCLUDED.period, origin = ' +
+        'EXCLUDED.origin, expires_at = GREATEST(sts_cluster_budgets.' +
+        'expires_at, EXCLUDED.expires_at), updated_at = EXCLUDED.updated_at ' +
+        'WHERE EXCLUDED.period >= sts_cluster_budgets.period AND ' +
+        '($7::bigint IS NULL OR ' + newAmount + ' <= $7::bigint) AND ' +
+        '($8::bigint IS NULL OR ' + newCount + ' <= $8::bigint) ' +
+        'RETURNING amount::text AS amount, count',
+        [String(scope), String(realmId || ''), String(key),
+         Math.floor(Number(period) || 0), String(amount),
+         Math.floor(Number(count) || 0),
+         limitAmount === null ? null : String(limitAmount),
+         limitCount === null ? null : Math.floor(Number(limitCount)),
+         processId, Math.floor(Number(expiresAtMs) || 0)]
+      ).then(function (r) {
+        const row = (r.rows || [])[0] || null;
+        return row ? { amount: String(row.amount), count: Number(row.count) }
+                   : null;
+      });
+    },
+
+    // A spend taken back, from the period it was made in, never below zero.
+    refundBudget: function (scope, realmId, key, period, amount, count) {
+      log.debug("Entering refundBudget(). scope=" + scope);
+      log.debug("Leaving refundBudget().");
+      return pool.query(
+        'UPDATE sts_cluster_budgets SET amount = amount - $5::bigint, ' +
+        'count = count - $6::bigint, updated_at = ' + DB_NOW + ' WHERE ' +
+        'scope = $1 AND realm = $2 AND key = $3 AND period = $4::bigint AND ' +
+        'amount >= $5::bigint AND count >= $6::bigint',
+        [String(scope), String(realmId || ''), String(key),
+         Math.floor(Number(period) || 0), String(amount),
+         Math.floor(Number(count) || 0)]
+      ).then(function (r) {
+        return (r.rowCount || 0) > 0;
+      });
+    },
+
+    // The rows of one scope and realm whose grant has ended.
+    purgeBudgets: function (scope, realmId) {
+      log.debug("Entering purgeBudgets(). scope=" + scope);
+      log.debug("Leaving purgeBudgets().");
+      return pool.query(
+        'DELETE FROM sts_cluster_budgets WHERE scope = $1 AND realm = $2 AND ' +
+        'expires_at <= ' + DB_NOW, [String(scope), String(realmId || '')]
+      ).then(function (r) {
+        return r.rowCount || 0;
+      });
+    },
+
     purgeWindows: function () {
       log.debug("Entering purgeWindows().");
       log.debug("Leaving purgeWindows().");
@@ -6266,11 +6437,18 @@ function create(options) {
     // pattern escapes it. `risk.address` values are in the risk tables and
     // are not counted: they are written and never read (see the risk store).
     // =====================================================================
+    // TWO AT A TIME, NOT ALL AT ONCE (2026-10-02). This was a Promise.all
+    // over every data key — one per realm and class, hundreds on a suite
+    // stack — so a count was hundreds of simultaneous full-table scans,
+    // which took every connection in the pool by itself: in single-node, CI
+    // runs 36986913696 and 36997679067, the re-encryption pass beside it waited
+    // out all its retries for a connection and failed (sts_data_keys). Two
+    // queries in flight leave the pool to the requests and the other passes.
     countSealed: function (dekIds) {
       log.debug("Entering countSealed().");
       const ids = (dekIds || []).map(String);
       log.debug("Leaving countSealed().");
-      return Promise.all(ids.map(function (id) {
+      return inTurns(ids, MAINTENANCE_CONCURRENCY, function (id) {
         const like = sealedLike(id);
         return maintenanceQuery('the data-key count',
           'SELECT ' +
@@ -6287,7 +6465,7 @@ function create(options) {
         ).then(function (r) {
           return { id: id, count: Number(((r.rows || [])[0] || {}).n) || 0 };
         });
-      })).then(function (rows) {
+      }).then(function (rows) {
         // AND THE DIRECTORY, walked: its entries are sealed blobs (#391
         // phase 6), and what is inside one is not visible to LIKE.
         return countDirectory(new Set(ids)).then(function (inDirectory) {

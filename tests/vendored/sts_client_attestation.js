@@ -499,6 +499,18 @@ async function test() {
     assert.strictEqual(r.status, 400, r.raw.slice(0, 300));
     assert.strictEqual(r.body.error, "invalid_grant");
   });
+  // That refusal SPENT the code in product mode: a code is presented once,
+  // whatever the outcome (RFC 6749 section 4.1.2, #424). The right
+  // instance redeems a fresh one, pushed and authorized again.
+  r = await postForm(parUrl, params, attested(k1));
+  r = await follow(alice, await alice.go("GET", R + "/oauth2/authorize?" +
+    form({ client_id: clientId, request_uri: r.body.request_uri })), ALICE);
+  const again = r.location && r.location.indexOf(REDIRECT) === 0
+    ? new URL(r.location).searchParams : null;
+  check("a fresh authorization gives another code", function () {
+    assert.ok(again && again.get("code"), r.status + " " + r.location);
+  });
+  redeem.code = again.get("code");
   const proof = attested(k1);
   r = await postForm(tokenUrl, redeem, proof);
   check("and by the instance it was pushed by, issued", function () {

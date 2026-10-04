@@ -110,8 +110,11 @@ async function run(t) {
       tree.scopes.filter(function (one) { return one.scope === REALM_B; })[0];
 
   t.equal(a.issuing.map(function (one) { return one.id; }).join(','),
-          'jose,xml,assertions,spiffe,pep-tls,acme,est,scep,tls-client',
-          'a REALM carries the nine use cases whose keys belong to a realm. ' +
+          'jose,xml,assertions,spiffe,pep-tls,realm-tls,acme,est,scep,' +
+          'tls-client',
+          'a REALM carries the ten use cases whose keys belong to a realm. ' +
+          'The tenth arrived 2026-10-02 (#99): the certificate a realm\'s ' +
+          'own front-end listener presents. ' +
           'The ninth arrived 2026-09-13 too: the TLS client certificates a ' +
           'person issues themselves on the user portal. ' +
           'The last three arrived 2026-09-13, one Issuing CA per enrollment ' +

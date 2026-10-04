@@ -495,6 +495,10 @@ interface AdminViewsDeps {
   // A federation partner's Shared Signals (#373), lazily: the receiver
   // registers a scheduler job when built.
   loadSignals: () => any;
+  // GNAP's view layer (#432 phase 7), lazily: GNAP is 23d in the require
+  // order and this file is loaded at 18, as `mgmt-api/admin_api.ts` reaches
+  // it. Optional, so a test building these views without it still draws.
+  loadGnapConsole?: () => any;
   fedLinks: typeof fedLinks;
   signals: typeof signals;
   spiffeRegistry: typeof spiffeRegistry;
@@ -596,6 +600,9 @@ class AdminViews {
       authorizationServers: authorizationServers,
       federation: federation,
       fedEncryption: fedEncryption,
+      loadGnapConsole: function () {
+        return require('../gnap/gnap_console');
+      },
       loadSignals: function () {
         return require('../ssf/ssf_transmitters');
       },
@@ -2291,10 +2298,29 @@ class AdminViews {
    * @returns the realm
    */
   realmJson(req, realm) {
-    const { log, stsKeysFor, realms } = this.deps;
+    const { log, stsKeysFor, realms, config } = this.deps;
     log.debug("Entering AdminViews.realmJson().");
     const prefix = realms.prefixOf(realm);
-    const base = this.realmRootUrl(req) + prefix;
+    // A REALM WITH A LISTENER OF ITS OWN (#99) is reached on its own base,
+    // whichever listener this page was read on.
+    const own = realms.run(realm, function () {
+      return {
+        port: Number(config.value('listener.port')) || 0,
+        publicBaseUrl: String(config.value('listener.publicBaseUrl') || '')
+          .trim().replace(/\/+$/, ''),
+        hostnames: [].concat(config.value('listener.hostnames') || []),
+        certificateFile: String(config.value('listener.certificateFile') ||
+                                '')
+      };
+    });
+    const base = (own.publicBaseUrl || this.realmRootUrl(req)) + prefix;
+    let bound: any[] = [];
+    try {
+      bound = require('../tls/realm_listeners').status(realm.id);
+    } catch (e) {
+      log.debug("Caught in AdminViews.realmJson(): " +
+                ((e && e.message) || e));
+    }
     log.debug("Leaving AdminViews.realmJson().");
     return {
       id: realm.id,
@@ -2312,6 +2338,18 @@ class AdminViews {
       retiring: realms.retiringState(realm),
       pathPrefix: prefix,
       baseUrl: base,
+      // ITS OWN LISTENER (#99): what the realm configured, and what THIS
+      // process holds — the listener is the front process's, so a page drawn
+      // by a request worker reports the configuration and no socket.
+      listener: {
+        configured: own.port > 0,
+        port: own.port,
+        publicBaseUrl: own.publicBaseUrl,
+        hostnames: own.hostnames,
+        certificateSource: own.port > 0
+          ? (own.certificateFile ? 'file' : 'issued') : '',
+        here: bound[0] || null
+      },
       // The kid of the realm's signing key. It is the one fact on this page
       // that PROVES the realms are separate rather than asserting it — two
       // realms showing one kid would be two names for one authorization server.
@@ -3570,7 +3608,7 @@ class AdminViews {
    * @returns the view
    */
   delegationView(query) {
-    const { log, delegation, krb5Principals } = this.deps;
+    const { log, delegation, krb5Principals, delegationPolicy } = this.deps;
     log.debug("Entering AdminViews.delegationView().");
     const wantedType = String(query.type || '');
     const wantedMode = String(query.mode || '');
@@ -3625,7 +3663,30 @@ class AdminViews {
     // about which acts to pass it would be three answers that each looked right
     // alone. Of the matched acts rather than the paged ones — a diagram of one
     // page of a list is a diagram of the pagination.
-    const graph = delegation.graph(filtered);
+    // AND THE CONFIGURED RELATIONSHIPS (#186, rcbj's decision): every pair
+    // an entry allows, drawn DASHED until an act has used it — for all three
+    // protocols, whose controls are one set. Left out while the reader has
+    // narrowed the acts by outcome, type or text, which say nothing about a
+    // pair nobody has used; kept under a protocol filter, which they do not
+    // contradict.
+    let configured = [];
+    if (!wantedOutcome && !wantedType && !wantedText) {
+      try {
+        configured = (delegationPolicy.list().pairs || [])
+          .map(function (pair) {
+            return { from: pair.intermediary,
+                     to: pair.targetApplication || pair.target,
+                     attribute: pair.attribute, mechanism: pair.mechanism,
+                     setOn: pair.setOn };
+          });
+      } catch (e) {
+        log.debug("Caught in AdminViews.delegationView(): " +
+                  ((e && e.message) || e));
+        // The picture of the acts stands without them.
+        configured = [];
+      }
+    }
+    const graph = delegation.graph(filtered, { configured: configured });
     // EVERY APPLICATION AMONG THE MATCHED ACTS, in whatever role it played. It
     // follows the filter for the same reason `chains` does — a reader who has
     // narrowed to one person wants that person's applications — and there is
@@ -8364,6 +8425,29 @@ class AdminViews {
                           { name: 'federationLinks', noun: 'links' });
   }
 
+  // A person's GNAP grants (#432 phase 7), or an empty page where GNAP's view
+  // layer cannot be loaded in this process.
+  /**
+   * Returns the GNAP grants a person is the resource owner of, as
+   * `gnap/gnap_console.ts`'s `personGrantsView()` draws them.
+   *
+   * @param query - the request's query
+   * @param key - the person
+   * @returns `{ rows, paging, cells }`
+   */
+  gnapGrantsOf(query, key) {
+    const { log } = this.deps;
+    log.debug("Entering AdminViews.gnapGrantsOf().");
+    const loader = this.deps.loadGnapConsole;
+    if (!loader) {
+      log.debug("Leaving AdminViews.gnapGrantsOf(). No GNAP here.");
+      return { rows: [], paging: null, cells: null };
+    }
+    const view = loader().personGrantsView(key, query || {});
+    log.debug("Leaving AdminViews.gnapGrantsOf(). " + view.total + ".");
+    return { rows: view.rows, paging: view.paging, cells: view.cells };
+  }
+
   // `risk` is the person's current standing (#62), read by `riskFor()`
   // before this synchronous view runs and handed in, because a view reads
   // nothing off the request but its query.
@@ -8506,6 +8590,12 @@ class AdminViews {
     // attribute with the values it holds, and the schema's attributes that are
     // withheld with the door to use instead. Null where there is no entry.
     const attributeEditor = this.deps.personEditor.editorFor(key);
+    // THEIR GNAP GRANTS (#432 phase 7): every grant they are the resource
+    // owner of, with its rights, tokens and why it ended — the view
+    // `gnap/gnap_console.ts` draws for this page, the API and their own
+    // `/portal/gnap`. Revoked with POST /admin-api/gnap/revoke-grant naming
+    // the grant and this person.
+    const gnapGrants = this.gnapGrantsOf(req.query, key);
     log.debug("Leaving AdminViews.userDetailJson().");
     return {
       detail: detail, row: row, sessionRows: sessionRows, live: live,
@@ -8520,7 +8610,7 @@ class AdminViews {
       endedPage: endedPage, sessionlessPage: sessionlessPage, artifactPage:
                                                                 artifactPage,
       federationLinkPage: federationLinkPage, kerberos: kerberos,
-      attributeEditor: attributeEditor,
+      attributeEditor: attributeEditor, gnapGrants: gnapGrants,
       json: (function () {
       return {
           user: row,
@@ -8580,7 +8670,14 @@ class AdminViews {
           // What POST /admin-api/users/set-attribute, /add-attribute and
           // /remove-attribute may change on their entry (#228), and what
           // they hold now; null where the directory holds no entry for them.
-          attributeEditor: attributeEditor
+          attributeEditor: attributeEditor,
+          // The GNAP grants they are the resource owner of (#432 phase 7),
+          // paged as `gnapGrantsPage`; `cells` says what a multi-cell
+          // service's list leaves out. Revoked with POST
+          // /admin-api/gnap/revoke-grant { grant, user }.
+          gnapGrants: gnapGrants.rows,
+          gnapGrantsPaging: gnapGrants.paging,
+          gnapGrantsCells: gnapGrants.cells
       };
       }())
     };

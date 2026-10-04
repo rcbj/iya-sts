@@ -380,6 +380,49 @@ variable "pki_listener_port" {
   default     = 80
 }
 
+# THE MAIN PORT'S CONNECTION AND SESSION POOLING (#406). Each is the setting
+# of the same name, so an environment changes it here rather than through
+# `extra_environment`; the defaults are the service's own.
+variable "http_keep_alive_timeout_s" {
+  description = <<-EOT
+    STS_HTTP_KEEP_ALIVE_TIMEOUT_S (http.keepAliveTimeoutS): how long every
+    HTTP listener keeps an idle HTTP/1.1 connection, unless a listener sets
+    its own on Server configuration -> Listeners. Keep it under the NLB's TCP
+    idle timeout (350 s).
+  EOT
+  type        = number
+  default     = 60
+}
+
+variable "tls_session_timeout_s" {
+  description = <<-EOT
+    STS_TLS_SESSION_TIMEOUT_S (tls.sessionTimeoutS): how long a TLS session
+    may be resumed on every TLS listener, unless a listener sets its own.
+  EOT
+  type        = number
+  default     = 60
+}
+
+variable "tls_main_port_shared_tickets" {
+  description = <<-EOT
+    STS_TLS_MAIN_PORT_SHARED_TICKETS (tls.mainPortSharedTickets): the main port
+    seals its session tickets under the key every node shares, so a session
+    resumes on whichever node the NLB picks.
+  EOT
+  type        = bool
+  default     = true
+}
+
+variable "tls_resumed_chain_wait_ms" {
+  description = <<-EOT
+    STS_TLS_RESUMED_CHAIN_WAIT_MS (tls.resumedChainWaitMs): how long a request
+    on a session resumed from another node waits for its client-certificate
+    chain to replicate.
+  EOT
+  type        = number
+  default     = 2000
+}
+
 variable "workers_request_count" {
   description = <<-EOT
     STS_WORKERS_REQUEST_COUNT on every node: request workers running the whole
@@ -472,3 +515,30 @@ variable "risk_upload_volume_iops" {
     error_message = "risk_upload_volume_iops is 3000 to 16000 (gp3's range)."
   }
 }
+
+# A TRUST REALM'S OWN LOAD BALANCER (#99): realm_listeners.tf.
+variable "realm_listeners" {
+  description = <<-EOT
+    The trust realms that have a front-end listener of their own, each behind
+    a network load balancer of its own (realm_listeners.tf, #99): the realm
+    id, the container port the service binds for it (the realm's
+    listener.port; not one of the published ports), the public host name, and
+    the Route 53 zone to write that name in ("" to write none). The realm's
+    own settings are set through /admin-api; the realm_listener_settings
+    output prints the calls.
+  EOT
+  type = list(object({
+    realm    = string
+    port     = number
+    hostname = string
+    zone     = string
+  }))
+  default = []
+}
+
+variable "realm_path_segment" {
+  description = "realms.pathSegment: the path segment realms are found under, for a realm listener's health check."
+  type        = string
+  default     = "realm"
+}
+

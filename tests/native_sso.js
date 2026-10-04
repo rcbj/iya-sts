@@ -183,9 +183,15 @@ function body(t) {
           problem({ subject_token_type: ACCESS, actor_token_type: ACCESS }) ===
             'STS-OAUTH-0626',
           '4a. the presence rules of section 2.1');
+  // saml2 and saml1 are supported since #114 (assertions from declared
+  // issuers); a type nobody defined is still not.
   t.check(problem({ subject_token_type:
-                    'urn:ietf:params:oauth:token-type:saml2' }) ===
+                    'urn:ietf:params:oauth:token-type:unknown' }) ===
             'STS-OAUTH-0627' &&
+          problem({ subject_token_type:
+                    'urn:ietf:params:oauth:token-type:saml2' }) === '' &&
+          problem({ subject_token_type:
+                    'urn:ietf:params:oauth:token-type:saml1' }) === '' &&
           problem({ subject_token_type: DEVICE }) === 'STS-OAUTH-0627' &&
           problem({ subject_token_type: ACCESS, actor_token: 'x',
                     actor_token_type: DEVICE }) === 'STS-OAUTH-0627' &&

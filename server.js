@@ -1028,6 +1028,42 @@ serviceState.start().then(function (both) {
 // Built rather than started above, because the two shapes differ only in this
 // one expression and writing the whole announcement twice is how the two
 // versions of it come to say different things.
+// A TRUST REALM'S OWN LISTENER (#99, 2026-10-02): an unbound HTTPS server
+// wired exactly as the main port below is — the client-certificate request
+// and the truststore, the TLS policy, the connection observer, the JA4
+// fingerprint and the PROXY protocol — but presenting the realm's own
+// certificate (`certificateOf` hands it to the truststore's re-application, so
+// a truststore change never swaps it for the main port's). Bound, rebound and
+// closed by `tls/realm_listeners.js` as the realm registry changes.
+// `common/app.js`'s `enterRealm` answers only that realm's paths on it.
+function realmListener(label, certificate, certificateOf, realmId) {
+  log.debug("Entering realmListener(). " + label);
+  // The realm's own policy (#423): its listener.* rows, inheriting the
+  // process's TLS settings unless set, and its own client authentication.
+  const policy = tlsServer.policyFor('realm', realmId);
+  const server = https.createServer(Object.assign({
+    cert: certificate.cert,
+    key: certificate.key,
+    // Its own truststore (#429): the realm's listener.trustAnchorsFile and
+    // listener.trustIssuedClientCertificates, else the service's.
+    ca: tlsServer.clientTruststoreOptions(policy).ca
+  // Its TLS session lifetime is in the policy (#429), its session cache
+  // attached when it registers below.
+  }, tlsServer.clientAuthOptions(policy.clientAuth),
+  tlsServer.protocolOptions(policy)), app);
+  // ITS OWN CONNECTION POOLING (#429): the realm's listener.keepAliveTimeoutS
+  // and the rest, inheriting the service's http.* rows; re-applied when
+  // they change.
+  tlsServer.registerHttpListener(server, 'realm', realmId);
+  tlsServer.trustClientCertificatesOn(server, label, certificateOf,
+                                      { kind: 'realm', realm: realmId });
+  tlsServer.observeConnectionsOn(server, label);
+  clientHello.install(server, { label: label });
+  proxyProtocol.install(server, { label: label, channel: 'http' });
+  log.debug("Leaving realmListener().");
+  return server;
+}
+
 function bind() {
 log.debug("Entering bind().");
 if (useHttps) {
@@ -1050,7 +1086,9 @@ if (useHttps) {
     // the remote XACML PEP arrived, because that caller's DN has to resolve to
     // a directory entry, a group and a role, and none of that may rest on a
     // certificate nobody issued.
-    ca: tlsServer.clientTruststoreOptions().ca,
+    // The main port's own truststore since #429: listenerMain.trustAnchorsFile
+    // and listenerMain.trustIssuedClientCertificates, else the service's.
+    ca: tlsServer.clientTruststoreOptions(tlsServer.policyFor('main')).ca,
     // RFC 8705 — certificate-bound access tokens. The token endpoint is on this
     // listener, so a certificate has to be ASKED FOR here or there is never one
     // to bind to. Asked for, never required — and since the 9443 listener was
@@ -1063,29 +1101,56 @@ if (useHttps) {
     // completed this handshake, not that a CA vouched for it. Requiring
     // verification would also make the feature unreachable, since the
     // truststore at /tls/trust starts empty by design.
-    requestCert: true,
-    rejectUnauthorized: false
+    //
+    // THE OPERATOR'S TO CHANGE SINCE #423, the default unchanged:
+    // tls.mainPortDisableOptionalClientCertificate asks for none, and
+    // tls.mainPortRequireClientCertificate requires one that verifies. The
+    // pair is applied again, with the truststore, whenever either moves.
+    ...tlsServer.clientAuthOptions(tlsServer.policyFor('main').clientAuth)
+    // HOW LONG A SESSION MAY BE RESUMED (#406; per listener and editable
+    // since #429): in the policy below, as `sessionTimeout`. A resumed
+    // session carries no CertificateRequest, so a browser holding a matching
+    // certificate does not ask its user again.
   // `tls.minVersion` and `tls.ciphers` (2026-09-12), from the module that
   // states them for every TLS listener — at creation as well as on every
   // truststore change, so the first handshake is held to the same floor as the
-  // hundredth.
-  }, tlsServer.protocolOptions()), app);
+  // hundredth. And the listeners' policy since #423: TLS 1.2 off or on, the
+  // TLS 1.3 suites chosen, post-quantum only.
+  }, tlsServer.protocolOptions(tlsServer.policyFor('main'))), app);
+  // HTTP CONNECTION POOLING ON THE MAIN PORT (#406, 2026-10-02). node keeps an
+  // idle HTTP/1.1 connection five seconds by default, so a person reading a
+  // page lost it and the next click made a new connection — a full TLS
+  // handshake, and a client-certificate prompt in a browser holding a
+  // matching certificate. Requests a client pipelines on one connection are
+  // answered in order, which node does on its own. The header timeout is kept
+  // above the keep-alive, so a client (or a balancer) reusing a connection at
+  // the last moment never meets one this end is already closing. Per
+  // listener and editable since #429: listenerMain.keepAliveTimeoutS and the
+  // rest, inheriting http.*, re-applied by tls_server.js when they change.
+  tlsServer.registerHttpListener(mainServer, 'main');
   // REGISTERED SO THAT A LATER `POST /tls/trust` REACHES THIS LISTENER TOO.
   // `tls_server.js` owns the anchors and applies them to every listener it
   // knows about; this is how the one it did not create becomes one of them. It
   // is a registration rather than a require in the other direction because
   // this file requires that module, not the other way round.
   tlsServer.trustClientCertificatesOn(mainServer,
-                                      'the main port (' + PORT + ')');
-  // NOT ONE SESSION-TICKET KEY WITH THE OTHER NODES, although LDAPS has one
-  // (tls/session_tickets.ts). This port asks for a client certificate, and a
-  // resumed session hands the server the LEAF alone:
-  // common/revocation_status.js walks it with the chain this PROCESS
-  // remembered from the full handshake. A ticket resumed on another node
-  // finds no chain there, and product mode's hard-fail refuses a certificate
-  // that verified (the remote PEP, every XACML caller, in the cluster mode).
-  // With a key per node the other node cannot open the ticket, so the client
-  // makes a full handshake and presents its chain.
+                                      'the main port (' + PORT + ')',
+                                      undefined, { kind: 'main' });
+  // ONE SESSION-TICKET KEY WITH THE OTHER NODES SINCE #406 (2026-10-02), as
+  // LDAPS has had (tls/session_tickets.ts). Until then this port kept a key
+  // per node: it asks for a client certificate, a resumed session hands the
+  // server the LEAF alone, and common/revocation_status.js walked it with the
+  // chain only THIS process remembered — so a ticket resumed on another node
+  // found no chain, and product mode's hard-fail refused a certificate that
+  // verified. The price was a full handshake on nearly every new connection
+  // behind a balancer, and a browser holding a matching certificate asking its
+  // user each time. The remembered chains are replicated now, with a bounded
+  // wait for one still on its way (`common/app.js`), so the key is shared;
+  // `tls.mainPortSharedTickets` puts the key per node back.
+  if (config.value('tls.mainPortSharedTickets') !== false) {
+    require('./tls/session_tickets').track(mainServer,
+                                           'the main port (' + PORT + ')');
+  }
   // AND SO THAT A CLIENT CERTIFICATE PRESENTED HERE IS WRITTEN DOWN
   // (2026-09-16). The sighting hung on the 8443 and 9443 listeners'
   // `secureConnection` until they were deleted, so the main port — where every
@@ -1119,6 +1184,10 @@ if (useHttps) {
   proxyProtocol.install(mainServer, { label: 'the main port (' + PORT + ')',
                                       channel: 'http' });
   mainServer.listen(PORT, HOST, announce);
+  // AND EVERY REALM THAT ASKS FOR A LISTENER OF ITS OWN (#99), bound beside
+  // the main port and kept in step with the realm registry from here on. A
+  // realm port that cannot bind is recorded, never fatal.
+  require('./tls/realm_listeners').start({ build: realmListener });
 } else {
   // `http.createServer(app)` rather than `app.listen()`, which is the same
   // thing with the server object hidden — and the PROXY protocol has to be

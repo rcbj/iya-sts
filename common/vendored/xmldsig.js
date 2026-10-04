@@ -31,6 +31,13 @@ var log = bunyan.createLogger({
 });
 
 var forge = require("node-forge");
+// RSA SIGNATURES ARE VERIFIED BY NODE'S OWN CRYPTO, NOT BY FORGE (2026-10-03).
+// node-forge up to 1.4.0, the latest release, accepts a PKCS#1 v1.5 signature
+// whose DigestInfo carries extra nested elements (GHSA, Dependabot alert 32),
+// and no fixed release exists. Forge still parses keys and certificates and
+// still signs; `nativeRsaVerify()` below is the one place an RSA signature is
+// checked, through OpenSSL, which parses the DigestInfo strictly.
+var nodeCrypto = require("crypto");
 
 // --- namespace / algorithm URIs --------------------------------------------
 var DS_NS = 'http://www.w3.org/2000/09/xmldsig#';
@@ -1086,9 +1093,11 @@ function verifyXmlSignature(xml, opts) {
       signatureValid = !!opts.verifier(forge.util.encodeUtf8(siCanon),
                                        signatureBytes, pqSpec, sigAlg);
     } else {
-      var md1 = spec.md();
-      md1.update(siCanon, 'utf8');
-      signatureValid = pub.verify(md1.digest().bytes(), signatureBytes);
+      // `spec.md()` only names the hash now; the octets are the UTF-8 of
+      // the canonical SignedInfo, as signEnveloped() hashed them.
+      signatureValid = nativeRsaVerify(spec.md().algorithm,
+                                       forge.util.encodeUtf8(siCanon),
+                                       signatureBytes, pub, false);
     }
   } catch (e) {
     // A verifier that THREW said something a caller can act on — a wrong
@@ -2342,6 +2351,25 @@ function defaultSign(octets, spec, opts) {
   return spec.pad === 'pss' ? pk.sign(md, pssFor(spec.hash)) : pk.sign(md);
 }
 
+// An RSA signature over `octets` (a binary string) checked by OpenSSL:
+// PKCS#1 v1.5, or PSS with MGF1 over the same hash and a salt of the digest's
+// length — what `pssFor()` signs with. `publicKey` is forge's, handed over as
+// a SubjectPublicKeyInfo.
+function nativeRsaVerify(hash, octets, signature, publicKey, pss) {
+  log.debug("Entering nativeRsaVerify().");
+  var key = { key: forge.pki.publicKeyToPem(publicKey) };
+  if (pss) {
+    key.padding = nodeCrypto.constants.RSA_PKCS1_PSS_PADDING;
+    key.saltLength = nodeCrypto.createHash(hash).digest().length;
+  } else {
+    key.padding = nodeCrypto.constants.RSA_PKCS1_PADDING;
+  }
+  var ok = nodeCrypto.verify(hash, Buffer.from(String(octets), 'binary'), key,
+                             Buffer.from(String(signature), 'binary'));
+  log.debug("Leaving nativeRsaVerify(). " + ok);
+  return ok;
+}
+
 function defaultVerify(octets, signature, spec, publicKey) {
   log.debug("Entering defaultVerify().");
   if (spec.family !== 'rsa') {
@@ -2354,12 +2382,9 @@ function defaultVerify(octets, signature, spec, publicKey) {
         : ''));
   }
   if (!publicKey) throw new Error('No RSA public key to verify with.');
-  var md = FORGE_MD[spec.hash].create();
-  md.update(octets);
   log.debug("Leaving defaultVerify().");
-  return spec.pad === 'pss'
-    ? publicKey.verify(md.digest().getBytes(), signature, pssFor(spec.hash))
-    : publicKey.verify(md.digest().getBytes(), signature);
+  return nativeRsaVerify(spec.hash, octets, signature, publicKey,
+                         spec.pad === 'pss');
 }
 
 // --- Building the Signature -------------------------------------------------

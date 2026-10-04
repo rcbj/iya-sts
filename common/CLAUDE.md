@@ -19,8 +19,8 @@ more than one family needs it, not because it felt general.
 | `used_assertions.js` | **EVERY RFC 7523 JWT AND RFC 7522 SAML ASSERTION ACCEPTED, SO NONE IS ACCEPTED TWICE, EVER (2026-09-13).** One history for client authentication and the grant, both profiles, per realm; persisted in every store with one and in BOTH modes; claimed atomically on postgres; spent only when the token request issues tokens. A LIBRARY (rule 3ae) with its own logger, installed by `persistence.js`. |
 | `signing_history.ts` | **EVERY SIGNING KEY A REALM HAS EVER HELD (2026-09-22, #42's follow-up)** — the record that outlives the key. `signing.retire` drops a retired key past its grace and its private half is gone; this keeps the metadata and the CERTIFICATE, so a signature captured months ago can still be read back. Append-only, never swept, and DERIVED from the key set rather than from the rotation events — see below. A LIBRARY over `realms` and `error_codes`, with `helpers` and `pki` reached lazily. |
 | `applications.js` | Every application this service has been asked about, stored in the directory under `ou=applications`. |
-| `delegation.js` | Who acted on whose behalf, through what, to reach what — eight mechanisms across three protocol families in ONE model. What HAPPENED. |
-| `delegation_policy.ts` | **WHO MAY ACT FOR WHOM AT WS-TRUST AND RFC 8693 (2026-09-23, #108)** — Kerberos's model on application entries (four attributes) and the person's `stsNotDelegated` and `stsMayAct`, decided at the act, enforced in product and recorded in development, with a deny-only XACML layer on top. Rule 3az, below. |
+| `delegation.js` | Who acted on whose behalf, through what, to reach what — twelve mechanisms across four protocol families (GNAP's two since #432) in ONE model. What HAPPENED. |
+| `delegation_policy.ts` | **WHO MAY ACT FOR WHOM, AND AS WHAT (#108; #186, 2026-10-03)** — the FACTS of a delegation or impersonation (the actor, the subject, S and R, read off the entries) for the issuance policy, which decides the semantics and the act; enforced in product and recorded in development. The settings are common to WS-Trust, RFC 8693, Kerberos and GNAP (#432). Rule 3az, below. |
 | `app_permissions.ts` | **Who MAY reach what, decided in advance** — delegated permissions between two OAuth application entries, in Microsoft Entra ID's shape. The CONFIGURED twin of the file above it, and never to be drawn as one register with it. |
 | `user_graph.ts` | ONE PERSON, END TO END: that register UNIONED with the issued one, so a picture can show every grant, flow, assertion, ticket and SVID in somebody's name beside every delegation naming them. |
 | `credential_graph.ts` | ONE CREDENTIAL, END TO END: where it came from — who held it, in whose name, to reach what — and every generation of exchange behind it, back to the issuance the line rests on. |
@@ -39,6 +39,8 @@ more than one family needs it, not because it felt general.
 | `tls_client_certificates.js` | **A PERSON'S — AND SINCE 2026-09-13 AN APPLICATION'S — TLS CLIENT CERTIFICATE, AND THE GATE THAT MAKES TRUSTING THE SERVICE ROOT SAFE (2026-09-13).** Issues a `clientAuth` leaf from the realm's `tls-client` Issuing CA through `pki.certify()` (so OCSP, the CRL and `/admin/pki`'s revocation pane know it), packages it as a password-protected PKCS#12 and PEM files through the vendored exporter, and revokes one only among the holder's own. **And `identityOf()`**, which every door that turns a verified client certificate into an identity asks — see *3ag* below. A LIBRARY: it registers nothing. |
 | `certificate_subject.js` | **RFC 8705 SECTION 2.1.2's FIVE CERTIFICATE SUBJECT PARAMETERS, READ AND COMPARED (2026-09-13)** — an RFC 4514 DN compared as a name (types, OIDs, escapes, caseIgnoreMatch, a multi-valued RDN in any order), the four subjectAltName kinds off node's `X509Certificate` (a host name without case, an IP by value, an email's domain without case, a URI exactly), and the grammar a registration may hold. `applications.js` asks it what may be written and `oauth-oidc/client_auth.js` whether a certificate matches. A LEAF over `helpers.js`. |
 | `realm_chooser.ts` | **WHICH REALM TO SIGN IN THROUGH (2026-09-14, #32).** A GET of exactly `/admin` or `/portal`, in the default realm, with no session and realms defined, asks which realm first — a list in development and a text box in product (`mode.listsRealmsBeforeSignIn()`) — and `?realm=<id>` redirects to that realm's surface, BUILT from the registry and never echoed. A LIBRARY both surfaces call from their own gate, so they cannot ask differently; `admin-ui/CLAUDE.md` 8d. |
+| `access_limits.ts` | **WHAT A RIGHT'S LIMITS MEAN (#432 phase 5, 2026-10-03).** A catalogue type's `limits` schema says a limit's shape; this static utility class says what its six meaningful members mean — `amount` with its `currency`, `count`, `receiver`, an ISO 8601 repeating `interval`, a `window` — to the three parties that must agree: `authorization_details.conformance()` (RFC 9396 and GNAP alike), the GNAP approval page that lets a person LOWER a limit (`raised()`, member by member; a shorter period is a raise), and the resource server counting against it (`periodAt()`, amounts in millionths as BigInt). A leaf: no route, no store. `gnap/CLAUDE.md`, *Ownership and limits*. |
+| `limits_form.ts` | **A LIMIT AS A FORM A PERSON CAN LOWER (#432 phase 5).** The controls under each right or detail carrying `limits`, and the reading back that accepts only lower values and values still meeting the type: one static utility class for GNAP's approval page, `/portal/ciba`'s absent-owner approvals and OAuth's consent screen, so the three cannot draw or judge a limit differently. In `common/` because two protocol directories read it. |
 | `account_state.ts` | **A DISABLED ACCOUNT — THE ONE PLACE ONE IS DISABLED, ENABLED AND ASKED ABOUT (2026-09-17).** `pwdAccountLockedTime` on the person's entry, written by the console's Disable button, `POST /admin-api/users/disable` and SCIM's `active: false` alike; a disable ENDS everything the person holds through the same global logout. A LIBRARY (rule 3at) that finds `logout/logout.ts` in `require.cache` and never requires it. |
 | `outbound_tls.ts` | **WHETHER AN OUTBOUND REQUEST MAY BE PLAIN HTTP, AND WHETHER THE CERTIFICATE OF WHOEVER ANSWERS IS VERIFIED (#171, 2026-09-23)** — one policy for GNAP's push finish, SSF push, federation's back channels (and every requester that borrows them) and the XACML nudge, each handing in its three settings and two codes. A static utility class. See *`outbound_tls.ts`* below. |
 | `lingering_close.js` | **AN ANSWER SENT BEFORE AN UPLOAD HAS ALL ARRIVED, CLOSED WITHOUT A RESET (2026-09-26).** `arm(req, res)` in place of `res.set('Connection', 'close')`: after the answer is flushed the socket half-closes and discards what the client is still sending (until it closes, 5 s idle or 30 s), instead of node's immediate destroy — which, with unread data in the buffer, sends a TCP RESET that throws away the answer the peer had not read. The risk upload routes and `request_pool.js`'s early-answer path use it, and **since 2026-09-27 `request_worker.ts` arms it for every dispatched request**: the front asks each for `Connection: close` (#77), so any early answer — a refusal, a 404, a sign-out with no session — closed a socket the front was still writing, and the answer was lost to `write EPIPE` and a 502 (`STS-WORKER-0030`; 17 in 2000 races measured, none armed). A LEAF over `config`. |
@@ -4422,80 +4424,114 @@ console (the application's page — the console's own gate is a session, which
 this does not touch) or by `ldapmodify`, since `/admin-api` then refuses its
 tokens; or delete the entry and restart.
 
-## 3az. `delegation_policy.ts`: who may act for whom at WS-Trust and RFC 8693 (#108, 2026-09-23)
+## 3az. `delegation_policy.ts`: who may act for whom, and as what (#108, 2026-09-23; #186, 2026-10-03)
 
-Until #108 the two delegating families other than Kerberos decided nothing about
-the act: a WS-Trust requester that could authenticate got a token about anybody
-for any `AppliesTo` through `OnBehalfOf` or `ActAs`, and any client could
-exchange any verified token (RFC 8693) for one about its subject addressed
-anywhere. The act was recorded (3l) with "authorized by nothing". This file is
-the policy.
+Until #108 WS-Trust and RFC 8693 decided nothing about the act; #108 gave them
+Kerberos's model as code with a deny-only XACML layer on top. **#186 MOVED THE
+DECISION INTO THE ISSUANCE POLICY** (rcbj: "as much of it as possible ...
+implemented in xacml policy"), and this file became what gathers the FACTS:
+`decide()` reads the entries, asks `issuance_gate.checkExchange()` — the PEP's
+`exchangeQuestion`, `xacml/xacml_exchange_verdicts.js` — and translates the
+answer for the doors. The rules are `xacml/xacml_templates.ts`'s exchange
+rules (`xacml/CLAUDE.md`); a realm's own issuance policy may decide first, and
+the built-in one answers where it does not.
 
-**KERBEROS'S MODEL, BY NAME, ON THE ENTRIES THAT ALREADY EXIST.** No new store
-and no new object class — `ou=applications` and the person's entry are the
-store, so an `ldapmodify` IS a policy change and rule 7 holds by construction
-(`/admin/applications/<id>` and `POST /admin-api/applications/update`):
+**THE FOUR PARTIES**, the same in every protocol:
 
-| Attribute | On | Kerberos analogue |
-|---|---|---|
-| `appAllowedToDelegateTo` | the INTERMEDIARY | `msDS-AllowedToDelegateTo` |
-| `appAllowedToActOnBehalfOf` | the TARGET | `msDS-AllowedToActOnBehalfOfOtherIdentity` |
-| `appDelegationSubjectGroup` | the intermediary | (none — the people it may act for, by group DN; empty is anybody unprotected) |
-| `appTrustedToImpersonate` | the intermediary, default FALSE | `TRUSTED_TO_AUTHENTICATE_FOR_DELEGATION` |
-| `stsNotDelegated` | the PERSON | `NOT_DELEGATED` |
-| `stsMayAct` | the PERSON | (none — RFC 8693 section 4.4's `may_act`, the person's own choice) |
+| | OAuth 2.0 token exchange | WS-Trust | Kerberos (#186 phase 3) |
+|---|---|---|---|
+| the ACTOR | the actor_token's subject, else the client | the requester | S4U2Self: the service; S4U2Proxy: S |
+| the SUBJECT | the subject_token's | the delegated token's | the impersonated principal |
+| S, what the subject's token was issued for | its `aud`, else `client_id` / `azp` | the delegated assertion's Audience | the evidence ticket's service |
+| R, the target | the one `audience` / `resource` | the `AppliesTo` | the requested service |
 
-**THE ORDER OF `decide()` IS THE ARGUMENT.** A self case (a client exchanging its
-own token acts for nobody) needs nothing. Then the SUBJECT, because a protected
-person is refused whoever asks — `stsNotDelegated`, or a member of the console's
-Admin Read / Admin Write roster, COMPUTED from `admin.readGroup` /
-`admin.writeGroup` at decision time rather than seeded, so a role granted later
-is covered. Then the INTERMEDIARY must be an application entry. Then
-IMPERSONATION (`OnBehalfOf`, an exchange with no `actor_token`) needs the flag.
-Then the subject groups. Then every TARGET — resolved to the application that
-registered it first (`forAudience()`/`forClientId()` for OAuth,
-`forAppliesTo()` for WS-Trust, then `get()`), and allowed by either attribute,
-the raw string included so an unregistered audience can be named without
-inventing an entry. None named is refused: a token about somebody else with no
-audience restriction is one no attribute describes. Last, THE DENY-ONLY XACML
-LAYER: `issuance_gate.checkDelegation()` asks the issuance policy about
-action-id `delegate` with the intermediary as XACML 3.0's intermediary-subject,
-and only an explicit Deny refuses (`xacml/CLAUDE.md`). The attribute model stays
-the readable one; the policy engine is where an administrator writes something
-stricter.
+**GNAP IS THE FOURTH PROTOCOL (#432 phase 1, 2026-10-03)** and asks the same
+two questions with the same settings — no GNAP setting decides who may act
+(`gnap/gnap_delegation.ts`, `gnap/CLAUDE.md` *Delegation*). Its two acts are
+the two S4U shapes: a `gnapSkipInteraction` client presenting a verified user
+assertion is impersonation (actor the client, subject the person, no S, R
+each resource server the rights resolve to — or the client itself, S4U2Self's
+ticket to yourself); a resource server DERIVING a token (RFC 9767 section 4)
+is delegation (actor and S the deriving resource server, R each downstream one
+— or itself, which the policy calls self). One question per R; `protocol` is
+`GNAP` and the register types are `gnap-impersonation` / `gnap-derivation`.
 
-**`may_act` STANDS IN FOR TWO QUESTIONS, NEVER THE THIRD.** A verified
-subject_token naming the actor answers *may this party act for this subject*
-(the groups) and *may it do so invisibly* (the flag) — the subject said so. It
-does not answer *where*, so the targets are still checked. A mismatch is the
-token endpoint's refusal in EVERY mode, not this file's: the token itself says
-no. `mayActClaimFor()` is the ISSUING half, from `stsMayAct` only (the owner's
-decision on #108) — a person by `urn:uuid:`, an application by its client_id.
+Parties are named by application identifier or username (`partyFacts()`,
+application first); a target is resolved to the application that registered
+it (`resolveTarget()`), and S's candidates are taken in order until one
+resolves.
 
-**MODE-FREE, AND `enforced` SAYS WHETHER A REFUSAL REFUSES**
-(`mode.authorizesDelegation()`). Both doors ask in both modes; development
-issues and `rowText()` puts "WOULD HAVE BEEN REFUSED in product: …" on the act,
-which is Kerberos's development fixtures' arrangement. `refusal` names the kind
-so each door speaks its own protocol: `target` is RFC 8693's `invalid_target`,
-the rest `invalid_request`; WS-Trust answers every one with
-`wst:RequestFailed`, and an `intermediary` refusal there is "only an application
-may delegate" (`STS-WSTRUST-0019`).
+**THE SEMANTICS ARE THE POLICY'S CHOICE** (action `choose-exchange-semantics`):
+the request (RFC 8693's extension `exchange_semantics`; WS-Trust's element,
+`OnBehalfOf` impersonation and `ActAs` delegation), else the actor's default,
+else the subject's, else `delegation.defaultSemantics` (delegation). DELEGATION
+issues a token whose `act` names the actor; IMPERSONATION does not; a SELF
+exchange — the actor is the subject, or is S and the token stays with S — acts
+for nobody.
+
+**THE SETTINGS ARE COMMON TO THE FOUR PROTOCOLS** (rcbj; GNAP since #432), on the entries —
+`ou=applications` and the person's entry are the store, so an `ldapmodify` IS
+a policy change and rule 7 holds by construction:
+
+| Attribute | On | What it says | Kerberos analogue |
+|---|---|---|---|
+| `appAllowedToDelegateTo` | S (or the actor, for impersonation) | the applications it may hand a subject to | `msDS-AllowedToDelegateTo` |
+| `appAllowedToActOnBehalfOf` | R | the applications — and people — it accepts acting for others | `msDS-AllowedToActOnBehalfOfOtherIdentity` |
+| `appDelegationSemantics`, `appDefaultDelegationSemantics` | an application | the semantics it allows (EMPTY is delegation only, as an actor) and its default. Replaced `appTrustedToImpersonate` | `TRUSTED_TO_AUTHENTICATE_FOR_DELEGATION` (impersonation) |
+| `stsDelegationSemantics`, `stsDefaultDelegationSemantics` | a person | the semantics they allow being acted for with (EMPTY is both) and their default | (none) |
+| `appDelegationSubjectGroup` | the actor | the people it may act for, by group DN; empty is anybody unprotected | (none) |
+| `stsNotDelegated`, `appNotDelegated` | a subject | never acted for | `NOT_DELEGATED` |
+| `stsMayAct` | a person | RFC 8693 section 4.4's `may_act` on their tokens | (none) |
+| `delegation.protectedGroups` (setting) | the realm | groups whose members are never acted for, beside the console roster | Protected Users |
+| `delegation.actorRole` (setting) | the realm | the role a PERSON needs to be an actor | (none) |
+| `delegation.defaultSemantics` (setting) | the realm | the last word on semantics | (none) |
+
+**THE ORDER OF THE REFUSALS IS THE POLICY'S RULE ORDER** (ordered
+deny-overrides; `xacml/CLAUDE.md` lists it): may_act naming somebody else
+(ENFORCED IN EVERY MODE — the token itself says no), several targets, an
+unregistered target, no target unless self, a protected subject, an actor
+nobody knows or a person without the role, semantics nobody allows, the
+actor's subject groups (a may_act naming the actor stands in for them),
+authority (the subject's roles against what S requires for a delegation, R
+otherwise), the delegation relationship (S delegates to R — its
+`appAllowedToDelegateTo` or R's `appAllowedToActOnBehalfOf` — AND the actor is
+S, R, or one R accepts by name), and the impersonation reach (R is the actor,
+on its `appAllowedToDelegateTo`, or accepts it).
+
+**`enforced` IS THE POLICY'S**, computed from the mode on each refusal's
+obligation: product refuses, development issues and `rowText()` puts "WOULD
+HAVE BEEN REFUSED in product: …" on the act. Do NOT read `decision.enforced`
+as "product mode" — it is false on every allow; the token endpoint's scope
+check made that mistake once. That check is the policy's too now: the
+per-scope question at stage `exchange` (`exchange-widens-scope`, refused in
+product with `STS-OAUTH-0621`), whose facts are whether the subject token has a
+`scope` claim and carries the scope asked for.
+`refusal` names the kind so each door speaks its own protocol (the codes are
+in `oauth-oidc/CLAUDE.md` and `ws-trust/CLAUDE.md`). Where not even the
+built-in policy answers, the act is REFUSED (`STS-XACML-0085`).
 
 **THE PERSON'S HALF IS `credentials.ts`'s**, through the directory slot it
 already has (`readDelegationFacts`, `writeNotDelegated`, `writeMayAct`,
-`delegationFlaggedPersons` on `ldap_server.js`'s side) — one read answers the
-two flags, the groups and the delegate resolved. `setMayAct()` refuses a DN that
-names nobody in the realm, or the person themselves (`STS-AUTHN-0227`).
+`writeDelegationSemantics`, `delegationFlaggedPersons` on `ldap_server.js`'s
+side). `setMayAct()` refuses a DN that names nobody in the realm, or the
+person themselves (`STS-AUTHN-0227`); `setDelegationSemantics()` a value that
+is neither semantics (`STS-AUTHN-0295`). `mayActClaimFor()` is the ISSUING
+half, from `stsMayAct` — a person by `urn:uuid:`, an application by its
+client_id.
 
 **A LIBRARY (rule 3), built by the composition root** beside `scope_policy`. It
-requires `applications`, `config`, `mode`, `credentials` and `issuance_gate` —
-libraries every caller already requires — and adds NO slot (rule 3e): the
-groups come through the credential store's directory rather than the
-`admin_stats` group resolver, which answers claims and is off when
-`groups.claim` is. `list()` is the register `/admin/delegation`'s section and
-`GET /admin-api/delegation/policy` page through `adminViews.delegationPolicyView()`.
-`tests/delegation_policy.js` is the truth table; `tests/token_exchange_product.js`
-and `tests/vendored/sts_delegation_policy.js` the doors.
+requires `applications`, `config`, `mode`, `credentials`, `roles` and
+`issuance_gate` and adds NO slot (rule 3e). `list()` is the register
+`/admin/delegation`'s section and `GET /admin-api/delegation/policy` page
+through `adminViews.delegationPolicyView()`.
+
+**THE TESTS, in three layers**: `tests/exchange_policy.js` holds the policy to
+a truth table and an independent oracle (`tests/tools/exchange_oracle.js`)
+over 20,976 combinations, `tests/exchange_policy_exhaustive.js` over all
+2,488,320 — the policy alone, no directory; `tests/delegation_policy.js`
+gathers the facts from real entries in both modes and drives WS-Trust's
+`handleRst()`; `tests/token_exchange_product.js` and the local job
+`tests/vendored/sts_delegation_policy.js` are every outcome at the doors.
 
 ## An OAuth client is not a person, and now it has somewhere to be
 
@@ -9829,6 +9865,30 @@ What this directory owns:
   device is marked COMPROMISED (`STS-DEVICE-0041`, CAEP and RISC through
   `setStatus()`). The next sign-in clears the cookie so the victim is not
   refused on it again.
+* **A COMPROMISE REACHES WHAT THE DEVICE'S KEYS WERE TRUSTED WITH (#432,
+  2026-10-03)**: `endGrantsBoundTo()` ends the GNAP grants whose client key's
+  JWK or SubjectPublicKeyInfo thumbprint is one of the device's keys
+  (`gnap/gnap_revocation.ts`, found in `require.cache` for `loadedAuthn()`'s
+  reason) and revokes the OAuth tokens DPoP-bound (`jkt`) to its JWK keys
+  and the ones bound by mutual TLS (`x5t#S256`) to a certificate one of its
+  `x509` keys holds — or to ANY certificate over one of its keys — whose
+  observer reports the grant each ends (#239). The mutual-TLS half was a
+  stated gap until `admin_stats.js` recorded the certificate binding beside
+  `jkt` (rcbj: close gaps, don't document them), and then a narrower one —
+  a certificate over the device's key that the register never held — until
+  it also recorded the KEY under the bound certificate (`x5tSpki`, its
+  SubjectPublicKeyInfo SHA-256, from `mtls.presentedKeyThumbprint()` via
+  `oauth2.ts`'s `issuanceContext()`). A GNAP client proving by mutual TLS is
+  matched the same two ways: the certificate's x5t#S256, and the key under
+  the certificate it proved with (`client.certSpki`, recorded on the grant).
+  `crypto.publicKeySpkiThumbprint()` is the key-side twin of
+  `certificateSpkiThumbprint()` that makes a GNAP key comparable with an
+  `x509` device key.
+* **AN APPLICATION ENTRY DELETED, OR ITS GNAP KEY REMOVED OR REPLACED, ENDS
+  ITS GNAP GRANTS (#432)**: `applications.js`'s `endGnapGrants()`, after
+  `deleteApplication()` and an `updateApplication()` of `gnapKey`,
+  `gnapKeyIdentity` or `gnapKeyReference` — `gnap/CLAUDE.md` has the rule.
+  There is no "disabled" application state to watch.
 * **ATTESTATION `bearer`** (a level below `self-asserted`). Such a device is
   never compliant (`STS-DEVICE-0039`) and never earns a lowering risk signal.
   Three signals raise risk instead (`risk/CLAUDE.md`).

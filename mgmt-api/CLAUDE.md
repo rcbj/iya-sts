@@ -1650,16 +1650,19 @@ The delegation policy for WS-Trust and RFC 8693 (`../common/CLAUDE.md`, rule
 3az) has three doors here, and rule 7 is kept by construction rather than by a
 new resource:
 
-* **The four application attributes** (`appAllowedToDelegateTo`,
-  `appAllowedToActOnBehalfOf`, `appDelegationSubjectGroup`,
-  `appTrustedToImpersonate`) are ordinary `EDITABLE` rows, so `POST
+* **The application attributes** (`appAllowedToDelegateTo`,
+  `appAllowedToActOnBehalfOf`, `appDelegationSemantics`,
+  `appDefaultDelegationSemantics`, `appDelegationSubjectGroup`,
+  `appNotDelegated`) are ordinary `EDITABLE` rows, so `POST
   /admin-api/applications/{add,set,remove,update}` edits them exactly as the
   application's console page does. `STS-REG-0194` refuses a flag that is not
-  TRUE or FALSE and a subject group that is not a DN.
-* **The person's two** are `POST /admin-api/users/set-not-delegated`
-  (`{ user, value }`, value defaulting to true) and `/set-may-act`
-  (`{ user, delegate }`, a DN; empty clears), through the same `usersAction()`
-  the person's console page posts — `STS-ADMIN-0805` and `0806`.
+  TRUE or FALSE, a semantics that is neither, and a subject group that is not
+  a DN.
+* **The person's three** are `POST /admin-api/users/set-not-delegated`
+  (`{ user, value }`, value defaulting to true), `/set-may-act`
+  (`{ user, delegate }`, a DN; empty clears) and `/set-delegation-semantics`
+  (`{ user, semantics, default }`; #186), through the same `usersAction()`
+  the person's console page posts — `STS-ADMIN-0805`, `0806` and `0841`.
 * **`GET /admin-api/delegation/policy`** is the read, answered by
   `adminViews.delegationPolicyView()` — the function the *Who may act for whom*
   section of `/admin/delegation` draws — three lists PAGED on parameters of

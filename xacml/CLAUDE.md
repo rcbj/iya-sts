@@ -43,7 +43,7 @@ and the nudge.
 | `xacml_admin.ts` | The five `/admin/xacml` console pages and their actions, and `/admin/xacml/monitor`'s body. |
 | `xacml_monitor.ts` | The decision and enforcement counters behind `/admin/xacml/monitor`. A LEAF. See *`/admin/xacml/monitor`* below. |
 | `xacml_access_pep.ts`, `xacml_role_pep.ts` | The two embedded PEPs that decide THIS service's own access and issuance. See *AND SINCE 2026-09-05 IT DECIDES THIS SERVICE'S OWN ISSUANCE* below. |
-| `xacml_risk_pep.ts`, `xacml_signal_pep.ts` | **The two embedded PEPs for REACTIONS (#62, 2026-09-22)**, each asking a built-in policy one question per reaction, where a Permit means do it. `risk-response` covers what a change of a person's risk leads to (`risk/CLAUDE.md`). `signal-response` covers whether this service's own console or portal ends its own sessions on a CAEP or RISC event it RECEIVED and verified (`ssf/CLAUDE.md`). Both are libraries, reached lazily and built at 23c. |
+| `xacml_risk_pep.ts`, `xacml_signal_pep.ts` | **The two embedded PEPs for REACTIONS (#62, 2026-09-22)**, each asking a built-in policy one question per reaction, where a Permit means do it. `risk-response` covers what a change of a person's risk leads to (`risk/CLAUDE.md`). `signal-response` covers whether this service's own console or portal ends its own sessions on a CAEP or RISC event it RECEIVED and verified, and what a federation partner's verified event does — since #432 including `signal-revoke-grants`, a person's GNAP and OAuth grants and tokens, behind `ssf.signalsRevokeGrants` (`ssf/CLAUDE.md`). Both are libraries, reached lazily and built at 23c. |
 | `conformance/` | The vendored OASIS suite. `PROVENANCE.md` is the argument, `MANIFEST.js` the drift check. **Not edited here, ever.** |
 
 Five tests, all in-process, no port, no container:
@@ -1324,6 +1324,62 @@ decider the gate evaluates the built-in policy itself** (rcbj's decision on
 no route and no slot — which the issuance PEP and `issuance_gate.js` both ask
 through, so the rules hold in every process.
 
+**AND SINCE #432 (phase 3) EACH GNAP ACCESS RIGHT.** `gnap/gnap_rights.ts`
+asks one question per right, action-id `issue-gnap-right`, the right's type
+(or reference string) as the resource-id, with the facts `xacml_request.js`'s
+`gnapRight()` spells (`urn:sts:xacml:gnap:*`: the right's five fields, what
+the access-type catalogue declares for its type, the token, the client, the
+approver and how it approved, the session, risk and device), through
+`issuance_gate.checkGnapRights()`, `decideGnapRights()` here and
+`xacml_gnap_right_verdicts.ts` — the scope question's arrangement, a realm's
+policy first and the built-in one where it says nothing. Two things differ
+from the scope question, and each is there for a reason:
+
+* **`narrow` and a lifetime.** A right has dimensions, so the obligation
+  `urn:sts:xacml:obligation:gnap-right` may carry DROP values per dimension
+  and a maximum lifetime beside keep / narrow / refuse. Several Permit rules
+  may each carry it — the built-in `gnap-type-lifetime` and an operator's
+  narrowing rule — so the reader MERGES every obligation (refuse over narrow
+  over keep, drops unioned, the shortest lifetime). That is why the built-in
+  lifetime rule is a separate Permit and not a member of `gnap-right-kept`.
+* **The risk, device and session facts have names of their own**
+  (`urn:sts:xacml:gnap:risk-level` and the rest), because the document's risk
+  and device rules are untargeted: given their attributes, every per-right
+  question would trip them and answer with an obligation the right reader
+  does not know. A realm rule may still read the GNAP names.
+
+The built-in rules (`decideGnapRights`, default yes) are the code
+`gnap_grants.ts` used to run, in its order — bearer, protected scope,
+gnapAllowedAccess, unknown reference — then the catalogue's: uncatalogued in
+product (`inProduct`, the mode as a fact), a type's `bearer: false`, its
+`maxLifetimeS` — and, since phase 5, the resource OWNER's two: a right
+naming an identifier somebody else owns (`gnap-owner-mismatch`,
+`STS-GNAP-0861`, read off `owner-known` and `owner-matches`, the latter sent
+only once a person is known) and one whose owner lookup could not be
+answered (`gnap-owner-unresolved`, `0863`). The right's limits ride with the
+question too (`urn:sts:xacml:gnap:limits` and each member decomposed —
+`limit-amount` a double, `limit-count` an integer), for a realm that wants a
+rule on them; no built-in rule reads them, because a limit is stated and
+counted, not granted or refused (`gnap/CLAUDE.md`, *Ownership and limits*).
+A verdict this reader does not know refuses
+(`STS-GNAP-0815`); no verdict at all is a defect and refuses
+(`STS-XACML-0168`, `STS-GNAP-0816`) — a right is never issued because the
+engine broke. `tests/gnap_catalogue.js` holds each rule through the policy
+and a realm's narrowing override.
+
+**WHO MUST BE ASKED, AND HOW STRONGLY (#432 phase 6).** Two more members of
+the same obligation, `urn:sts:xacml:gnap-right-interaction` (none, skippable,
+always) and `urn:sts:xacml:gnap-right-acr`, carried by four more built-in
+Permits — `gnap-type-interaction-never`, `-always`, `gnap-type-consent-action`
+(a right naming a listed consent action, or naming no actions, which is
+every action) and `gnap-type-acr`. They are Permits that keep the right and
+STATE A REQUIREMENT, merged like the lifetime: the most demanding
+interaction, every acr. So a realm tightens by adding a Permit with the
+obligation, and an interaction word the reader does not know reads as
+`always`. The grant engine does what they say (`gnap/CLAUDE.md`, *Phase 6*);
+the approval fact gained the value `owner`, the resource owner approving on
+their portal.
+
 **AND SINCE #98 (D4, D11) WHERE A PERSON'S DATA MAY GO.** When the service is
 deployed as cells, three questions go to the same policy from
 `common/cell_transfer.ts` through `issuance_gate.checkTransfer()`:
@@ -1422,30 +1478,81 @@ decider FROM THE CONSOLE, so a process that loaded the console and not
 present. A require the other way closes a cycle, because `xacml_admin.ts`
 requires `admin.js` for the page shell.
 
-### And one question that is DENY-ONLY: action-id `delegate` (#108, 2026-09-23)
+### Who may act for whom, and as what: three questions the policy ANSWERS (#186, 2026-10-03)
 
-`../common/delegation_policy.ts` decides who may act for whom at WS-Trust and
-RFC 8693 from attributes on the entries (rule 3az), and when they ALLOW an act
-it asks `issuance_gate.checkDelegation()`, which hands this PEP a question with
-`kind: 'delegate'` and `denyOnly: true`. `decideDenyOnly()` builds the usual
-request with no roles required, adds XACML 3.0's
-`subject-category:intermediary-subject` carrying the intermediary as its
-`subject-id` (the target is the `resource-id`, the subject the access
-subject's), `urn:sts:xacml:delegation-mode` on the action and
-`urn:sts:xacml:delegation-protocol` on the environment, and asks the SAME
-issuance policy.
+Until #186 this was a deny-only question, action-id `delegate`, asked after
+`../common/delegation_policy.ts` had decided from the attributes in code.
+rcbj's decision on #186 put the decision itself here. Every delegating act —
+an RFC 8693 token exchange, a WS-Trust `OnBehalfOf` / `ActAs`, and (phase 3)
+a Kerberos S4U request — asks the issuance policy two questions through
+`xacml_exchange_verdicts.js`, with the facts `delegation_policy.ts` gathers
+and `xacml_request.js`'s `exchange()` spells (the subject in access-subject,
+the actor in XACML 3.0's `intermediary-subject`, S and R in the resource, the
+requested and chosen semantics in the action, may_act and the protected groups
+in the environment, `urn:sts:xacml:exchange:*`):
 
-**ONLY AN EXPLICIT DENY REFUSES.** A Permit, a NotApplicable (the built-in
-`role-issuance` document says nothing about `delegate`) and an Indeterminate
-leave the attribute rule's answer standing, and so does a missing or disabled
-policy. That is the opposite of the issuance decision's fail-closed rule and
-it is deliberate: here the attributes ARE a policy, already evaluated, and the
-engine is only where an administrator writes something stricter — so the
-built-in document changes nothing and an operator's rule denying one
-intermediary, subject or target denies exactly that. A Deny is audited as
-`xacml.issuance.refused` (`STS-XACML-0039`) and counted like any other refusal.
-`delegate` is NOT a member of `ISSUANCE`/`KINDS`: delegating issues nothing of
-its own, and every reader of that list lists issuances.
+1. **`choose-exchange-semantics`** — four mutually exclusive Permit rules,
+   the precedence in order: the request, the actor's default, the subject's,
+   `delegation.defaultSemantics`. The obligation
+   `urn:sts:xacml:obligation:exchange-semantics` carries the choice.
+2. **`exchange-token`** — ordered Deny rules, each carrying the obligation
+   `urn:sts:xacml:obligation:exchange` with the verdict `refuse`, the REFUSAL
+   KIND and `enforced` (an Apply of `string-is-in('product', mode)`, except
+   may_act's, which is `true`): `may-act`, `targets`, `unregistered-target`,
+   `no-target`, `subject` (protected), `intermediary` (unknown, or a person
+   without `delegation.actorRole`), `semantics`, `subject` (the actor's
+   subject groups, unless may_act names it), `authority`, then `target` for
+   the delegation relationship and for the impersonation reach. Then three
+   mutually exclusive Permit rules carrying the verdict `allow`, the ISSUED
+   semantics (`self`, `delegation`, `impersonation`) and the audience (R, or
+   S for a self exchange that named none).
+
+3. **`assign-may-act`** — what RFC 8693 section 4.4's `may_act` on a token
+   about a subject names. The fact is the party the subject chose
+   (`urn:sts:xacml:exchange:subject-delegate`, from `stsMayAct` or
+   `appMayAct`); the built-in rule `may-act-subject-choice` assigns it
+   through the obligation `urn:sts:xacml:obligation:may-act`. A realm's
+   policy may assign another party, or none by answering with that
+   obligation and no party — a BARE Deny says nothing, so a risk or device
+   rule written for every action never drops a restriction the subject
+   chose. Where neither policy answers, the subject's own choice stands
+   (`STS-XACML-0087`): `may_act` restricts, so dropping it would widen.
+
+AND ONE PER-SCOPE RULE: **`exchange-widens-scope`**, at stage `exchange` of the
+per-scope question, refuses in product a scope the verified subject token
+does not carry (`STS-OAUTH-0621`), from two facts the token endpoint sends —
+whether the subject token has a `scope` claim, and whether it carries this
+one. An ID Token or a WS-Trust JWT has no grant to compare, and is not
+refused.
+
+**MUTATION-TESTED** (2026-10-03): each of the twenty exchange rules removed
+in turn is told apart by the matrix, except the two that answer other
+questions — `may-act-subject-choice` (held by `exchange_policy.js` section N)
+and `exchange-widens-scope` (`token_exchange_product.js` 7o).
+
+**THE ORDER IS THE ARGUMENT, AND THE COMBINING ALGORITHM KEEPS IT.** The
+document is ordered-deny-overrides: the first Deny wins, so the refusal a door
+speaks is the most fundamental one; on a Permit the obligations of every
+applicable Permit rule are collected, which is why the allows are mutually
+exclusive — two would send two audiences. `decideExchanges` (default yes) is
+the template parameter that leaves the rules out.
+
+**THE REALM'S OWN POLICY ASKS FIRST, THE BUILT-IN ONE ANSWERS WHERE IT DOES
+NOT** — `xacml_transfer_verdicts.js`'s pattern: `xacml_role_pep.ts`'s
+`decideExchange()` against the realm's issuance policy, falling back to the
+built-in `role-issuance` document where the answer carries no exchange
+obligation; `../common/issuance_gate.js`'s `checkExchange()`, in a process
+with no XACML family, against the built-in one alone. **Where neither answers
+— a defect — the act is REFUSED** (`STS-XACML-0085`): a broken engine must not
+become permission to act for somebody. A realm policy that Denies with the
+exchange obligation and the refusal `policy` is how an operator writes
+something stricter (`tests/delegation_policy.js` section I).
+
+**HELD TO AN ORACLE.** `../tests/exchange_policy.js` is a truth table and
+20,976 combinations against `../tests/tools/exchange_oracle.js`;
+`../tests/exchange_policy_exhaustive.js` runs all 2,488,320 (about six
+minutes). A rule changed here changes the oracle in the same commit, or both
+files fail.
 
 ### The registered device, and two rules that settings switch (#164 phase 6, 2026-09-26)
 

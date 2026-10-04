@@ -787,7 +787,14 @@ const SPECS: Spec[] = [
               'through existing_access_token, and every format in the ' +
               'section 5.2 token format registry — jwt-signed, ' +
               'jwt-encrypted, macaroon, biscuit and zcap — minted and ' +
-              'verified.' },
+              'verified. Section 6.3\'s resource server that checks a token ' +
+              'on its own sees a revocation (#432): the JWT formats carry a ' +
+              'Token Status List status claim, revoked biscuits\' ' +
+              'revocation identifiers are published (non-standard), and a ' +
+              'registered resource server may own a Shared Signals stream ' +
+              'that hears session-revoked for the tokens audienced to it. ' +
+              'Macaroon and zcap tokens have no such mechanism; introspection ' +
+              'is their path.' },
   { id: 'rfc9421', name: 'RFC 9421 — HTTP Message Signatures',
     where: 'IETF',
     url: 'https://www.rfc-editor.org/rfc/rfc9421',
@@ -1206,11 +1213,14 @@ const SPECS: Spec[] = [
     coverage: 'partial: Issue, Renew, Validate and Cancel over SOAP 1.1 and ' +
               '1.2. Request signatures are not verified. OnBehalfOf and ' +
               'ActAs ' +
-              'are decided by a delegation policy (#108) — only an ' +
-              'application entry may delegate, appAllowedToDelegateTo or ' +
-              'appAllowedToActOnBehalfOf must allow the AppliesTo, ' +
-              'OnBehalfOf needs appTrustedToImpersonate — and refused with a ' +
-              'wst:RequestFailed fault (section 11) in product mode; ' +
+              'are decided by the issuance policy (#186, the rules the token ' +
+              'exchange and Kerberos S4U share) — OnBehalfOf asks for ' +
+              'impersonation and ActAs for delegation, the entries\' ' +
+              'delegation semantics must allow it, the AppliesTo must be a ' +
+              'registered application the delegation relationships allow, ' +
+              'and a person requester needs delegation.actorRole — and ' +
+              'refused with a wst:RequestFailed fault (section 11) in ' +
+              'product mode; both elements at once are wst:InvalidRequest; ' +
               'development records what would have been refused. In PRODUCT ' +
               'mode (2026-09-12) every ' +
               'operation needs a credential — a UsernameToken verified ' +
@@ -1726,11 +1736,14 @@ const SPECS: Spec[] = [
     where: 'IETF', url: 'https://www.rfc-editor.org/rfc/rfc8693',
     coverage: 'partial: the grant is accepted at the token endpoint and the ' +
               'subject token becomes the identity in the issued token. A ' +
-              'delegation policy decides who may act for whom (#108): the ' +
-              'client and actor against appAllowedToDelegateTo / ' +
-              'appAllowedToActOnBehalfOf, appTrustedToImpersonate for an ' +
-              'exchange with no actor_token, the subject\'s groups and ' +
-              'stsNotDelegated, and a deny-only issuance-policy layer — ' +
+              'the issuance policy decides who may act for whom and as what ' +
+              '(#186): the semantics by precedence (this service\'s ' +
+              'exchange_semantics parameter, the actor\'s and subject\'s ' +
+              'defaults, delegation.defaultSemantics), the semantics each ' +
+              'party allows, the subject\'s authority for the application, ' +
+              'appAllowedToDelegateTo / appAllowedToActOnBehalfOf between S ' +
+              'and R, protected subjects, may_act, and exactly one ' +
+              'registered audience — ' +
               'invalid_request or invalid_target (section 2.2.2) in product ' +
               'mode, recorded in development. `act` nests (section 4.1); ' +
               '`may_act` (section 4.4) is issued from the person\'s own ' +
@@ -1894,7 +1907,9 @@ const SPECS: Spec[] = [
     coverage: 'full, in every mode: every access token carries typ at+jwt, ' +
               'the seven required claims, scope only when granted, ' +
               'preferred_username for a person and auth_time/amr/acr where ' +
-              'an authentication event is behind it. A scope naming two ' +
+              'an authentication event is behind it, and a ' +
+              'draft-ietf-oauth-status-list status claim naming its index in ' +
+              'the realm\'s access-token status list (#432). A scope naming two ' +
               'resources, or a resource the request did not address, is ' +
               'invalid_scope, and several resources with a scope tied to none ' +
               'of them is invalid_target (section 3); a token for an API ' +
@@ -2944,8 +2959,13 @@ const SPECS: Spec[] = [
               'endpoint, and the status claim in every SD-JWT VC and ' +
               'jwt_vc_json credential; the Verifier resolves a trusted ' +
               'foreign issuer\'s list and refuses when no statement can be ' +
-              'made. No historical resolution (501), no redirects followed, ' +
-              'no mdoc (none is issued).' },
+              'made. And a second list per realm for ACCESS TOKENS (#432): ' +
+              'one bit per token, every OAuth RFC 9068 access token and ' +
+              'every GNAP jwt-signed and jwt-encrypted token carrying its ' +
+              'status claim, advertised as status_list_aggregation_endpoint ' +
+              '(section 9.1) in the authorization server metadata. No ' +
+              'historical resolution (501), no redirects followed, no mdoc ' +
+              '(none is issued).' },
   { id: 'bitstring-status-list', name: 'W3C Bitstring Status List v1.0',
     where: 'W3C', url: 'https://www.w3.org/TR/vc-bitstring-status-list/',
     coverage: 'partial: revocation and suspension lists per realm, served ' +
@@ -3616,6 +3636,18 @@ const ENDPOINTS: EndpointEntry[] = [
           'and for zcap the controller document\'s URL and the one proof ' +
           'suite this realm signs and accepts. Macaroons are symmetric and ' +
           'never appear here. Served no-store.' },
+  { path: '/gnap/biscuit/revocations', group: 'GNAP',
+    name: 'Revoked biscuits',
+    specs: ['rfc9767', 'biscuit'],
+    what: 'NOT A SPECIFICATION ENDPOINT (#432): the revocation identifiers ' +
+          'of every revoked biscuit access token that has not yet expired, ' +
+          'as JSON { revocation_ids, ttl } — a biscuit\'s own answer to ' +
+          'revocation is a list its verifier checks a token\'s identifiers ' +
+          'against, and no document says where one is published. Named in ' +
+          'the RS-facing discovery document (biscuit_revocation_endpoint) ' +
+          'and on /gnap/keys. Macaroon and zcap tokens have no such ' +
+          'mechanism: introspection, or a short lifetime, is their path. ' +
+          'Cache-Control max-age is oauth2.accessTokenStatusListTtlS.' },
   { path: '/gnap/zcap/controller', group: 'GNAP', name: 'The ZCAP controller ' +
                                                         'document',
     specs: ['zcap-ld', 'di-jcs'],
@@ -3633,6 +3665,18 @@ const ENDPOINTS: EndpointEntry[] = [
           'section 9.1 WWW-Authenticate challenge naming the grant endpoint; ' +
           'with one it checks the format, the audience, the key binding and ' +
           'the access rights the way a resource server would. ' +
+          'gnap.demoResourceServer turns it off.' },
+  { path: '/gnap/rs/spend', group: 'GNAP', name: 'The demonstration ' +
+                                                 'resource server\'s spend',
+    specs: ['rfc9635', 'rfc9767'],
+    what: 'An operation that SPENDS against a right\'s limits (#432 phase ' +
+          '5): POST with an amount, currency and receiver, under a token ' +
+          'granting spend on the demonstration type. The resource server ' +
+          'keeps the running totals per grant — atomically across the ' +
+          'cluster, reset at each boundary of the limits\' repeating ' +
+          'interval, refunded when the operation fails — and refuses an ' +
+          'over-limit operation with 403 insufficient_scope. The reference ' +
+          'for what a resource server does with a limit. ' +
           'gnap.demoResourceServer turns it off.' },
   { path: '/admin/gnap', group: 'GNAP', name: 'The GNAP console page',
     specs: ['rfc9635', 'rfc9767'],
@@ -5987,6 +6031,26 @@ const ENDPOINTS: EndpointEntry[] = [
           'form names only an application and a scope, checked against the ' +
           'person\'s own entry. Paged by application. Real submit buttons ' +
           'and no script.' },
+  { path: '/portal/gnap', group: 'User portal',
+    name: 'The GNAP grants you gave, and revoking one',
+    specs: ['rfc9635'],
+    effect: 'revokes one of the signed-in person\'s own GNAP grants and ' +
+            'every token issued under it',
+    what: 'NON-SPEC page for a spec behaviour (#432). Every GNAP grant the ' +
+          'signed-in person is the resource owner of — approved by them, ' +
+          'or acted on by a trusted client presenting a verified assertion ' +
+          'about them — with the access rights it holds (limits included), ' +
+          'the tokens issued under it (label, format, expiry, state; never ' +
+          'a value), its own lifetime and, once finalized, why: issued, ' +
+          'revoked, rejected or expired. Revoke is the client\'s RFC 9635 ' +
+          'section 5.4 act performed for them, through the one path the ' +
+          'client\'s DELETE and the console take: the tokens revoked, the ' +
+          'grant finalized as revoked, CAEP session-revoked sent. The ' +
+          'identity is the session\'s; the form names only a grant, ' +
+          'checked against the person\'s own. The same view as the ' +
+          'GNAP grants tab of /admin/users and gnapGrants in ' +
+          '/admin-api/users?user=. Under cells, this cell\'s grants, and ' +
+          'the page says so. Paged; real submit buttons and no script.' },
   { path: '/portal/signing-key', group: 'User portal',
     name: 'Your own RFC 7523 signing key',
     specs: ['rfc7521', 'rfc7523', 'rfc5280'],
@@ -6163,7 +6227,7 @@ const ENDPOINTS: EndpointEntry[] = [
           '— and, since #108, the same model for WS-Trust OnBehalfOf / ActAs ' +
           'and the RFC 8693 token exchange on application entries ' +
           '(appAllowedToDelegateTo, appAllowedToActOnBehalfOf, ' +
-          'appDelegationSubjectGroup, appTrustedToImpersonate) with the ' +
+          'appDelegationSubjectGroup, appDelegationSemantics) with the ' +
           'people carrying stsNotDelegated or stsMayAct, ENFORCED in product ' +
           'mode and recorded as "would have been refused" in development. ' +
           'The permission register beside them is policy this service was ' +
@@ -7149,6 +7213,15 @@ const ENDPOINTS: EndpointEntry[] = [
           'the inter-cell channel, the Cells settings, and — with ?people= — ' +
           'another cell\'s residents where its release policy permits. Add ' +
           '?format=json.' },
+  { path: '/admin/listeners', group: 'Admin', name: 'Listeners',
+    specs: [],
+    what: 'NON-SPEC (#423). Every socket this service answers on and the ' +
+          'TLS policy each is held to — TLS 1.2 on or off, the TLS 1.3 ' +
+          'cipher suites in order, post-quantum only, the groups — and ' +
+          'whether it asks for a client certificate, requires one, or ' +
+          'neither; in a realm with a listener of its own, that listener. ' +
+          'The Listeners, TLS and Realm listener settings are drawn here. ' +
+          'Add ?format=json.' },
   { path: '/admin/mode', group: 'Admin', name: 'Mode',
     specs: [],
     what: 'NON-SPEC (#181). What global.mode changes and what is in force ' +
@@ -8441,7 +8514,7 @@ const ENDPOINTS: EndpointEntry[] = [
           'ActAs and the RFC 8693 token exchange, as JSON: Kerberos\'s model ' +
           'on application entries — appAllowedToDelegateTo on the ' +
           'intermediary, appAllowedToActOnBehalfOf on the target, ' +
-          'appDelegationSubjectGroup and appTrustedToImpersonate — and the ' +
+          'appDelegationSubjectGroup and appDelegationSemantics — and the ' +
           'people carrying stsNotDelegated or stsMayAct. Three paged lists. ' +
           'Read only; the attributes are edited through ' +
           '/admin-api/applications/update and /admin-api/users/set-not-' +
@@ -8740,6 +8813,13 @@ const ENDPOINTS: EndpointEntry[] = [
     specs: ['openapi'],
     what: 'NON-SPEC (#98 D11). A page of another cell\'s residents, ' +
           'answered by that cell only where its release policy permits.' },
+  { path: '/admin-api/listeners', group: 'Management API',
+    name: 'Listeners',
+    specs: ['openapi'],
+    what: 'NON-SPEC (#423). GET /admin/listeners over JSON: every listener ' +
+          'of the realm the call is in, or the realm\'s own, with its TLS ' +
+          'policy and client authentication, the process\'s policy and the ' +
+          'TLS listeners live on this node. It changes nothing.' },
   { path: '/admin-api/mode', group: 'Management API', name: 'Mode',
     specs: ['openapi'],
     what: 'NON-SPEC (#181). GET /admin/mode over JSON: the realm\'s mode, ' +
@@ -10581,6 +10661,27 @@ const ENDPOINTS: EndpointEntry[] = [
           'authenticate as a client in every mode and is refused 400 ' +
           'invalid_client otherwise; a JSON request must authenticate in ' +
           'product mode (401) and need not in development.' },
+  { path: '/status-lists/access-tokens', group: 'OAuth 2.0 / OIDC',
+    name: 'Access-token status list',
+    specs: ['token-status-list', 'rfc9068', 'rfc9767', 'rfc7519',
+            'rfc8392', 'rfc9052'],
+    what: 'The realm\'s ONE access-token Status List Token (#432): every ' +
+          'OAuth RFC 9068 access token and every GNAP jwt-signed and ' +
+          'jwt-encrypted token names an index in it ' +
+          '(status.status_list), so a resource server that checks a token ' +
+          'on its own sees it revoked. application/statuslist+jwt, or ' +
+          'application/statuslist+cwt by Accept; one bit per token over ' +
+          '1,048,576 indexes, the bit computed from the revocation register; ' +
+          'ttl oauth2.accessTokenStatusListTtlS, exp ' +
+          'oauth2.accessTokenStatusListLifetimeS, signed with the realm\'s ' +
+          'RS256 access-token key. ?time= answers 501.' },
+  { path: '/status-lists', group: 'OAuth 2.0 / OIDC',
+    name: 'Access-token Status List Aggregation',
+    specs: ['token-status-list'],
+    what: 'The status_lists this authorization server publishes (section ' +
+          '9): the access-token list. Named in the authorization server ' +
+          'metadata and GNAP\'s RS-facing discovery as ' +
+          'status_list_aggregation_endpoint.' },
   { path: '/oauth2/challenge', group: 'OAuth 2.0 / OIDC',
     name: 'Client attestation challenge endpoint',
     specs: ['oauth-attestation', 'rfc9449'],

@@ -24,6 +24,7 @@ somebody came for is below the fold of a page about something else.
 | `/portal/signals` | authenticated | **Security activity** — what this identity provider has said about the person over CAEP and RISC (2026-09-10) |
 | `/portal/sign-ins` | authenticated | **Recent sign-ins** — the person's own risk assessments of thirty days, each with "this was me" / "this wasn't me" (#62 P6, `portal_sign_ins.ts`; `risk/CLAUDE.md` argues what each answer moves) |
 | `/portal/consents` | authenticated | **Consents** — what the person agreed each application may ask for, and a Withdraw per scope and per application that revokes what was issued under it (#172, `portal_consents.ts`) |
+| `/portal/gnap` | authenticated | **GNAP grants** — the GNAP grants the person is the resource owner of, each with its rights, tokens and why it ended, and a Revoke (#432 phase 7, `portal_gnap.ts`) |
 | `/portal/signing-key` | authenticated | **Signing keys** — RFC 7523 and RFC 7522 key pairs and TLS client certificates (2026-09-12) |
 | `/portal/certificates` | authenticated | **Certificates** — ACME / SCEP enrollment credentials and the certificates issued (2026-09-13) |
 | `/portal/callback` | — | the OIDC redirect URI |
@@ -1275,6 +1276,38 @@ withdrawal does; four things are this page's:
   console's and the API's counterpart of *Withdraw everything for this
   application* is `revoke-application-consent` (rule 7).
 
+## `/portal/gnap`: THE ACCESS YOU GAVE THROUGH GNAP (2026-10-03, #432 phase 7)
+
+`portal_gnap.ts`, registered after `/portal/consents` through the same
+`register(context)`. Until it, only the client (RFC 9635 section 5.4) and an
+administrator could see or end a GNAP grant. Four things are this page's:
+
+* **A page of its own, not a section of Consents** — weighed and argued in its
+  header: a grant is a state machine with object-shaped rights, tokens, a
+  lifetime and a reason it ended, and its one control ends the whole grant;
+  the consent register holds GNAP's remembered approvals only as digests. Two
+  meanings of "withdraw" under one heading is what this navigation exists to
+  avoid. Under *Your account*, beside Consents, for Consents' reason.
+* **The same view as the console and the API**: `gnap/gnap_console.ts`'s
+  `personGrantsView()`, which the GNAP grants tab of `/admin/users` and
+  `gnapGrants` on `/admin-api/users?user=` also draw, so a person and an
+  administrator cannot see different things. Revoking is
+  `gnap_grants.ts`'s `revokeGrantBy()` through `revokeOwnGrant()` — the one
+  path the client's DELETE takes — so tokens, finalization and CAEP are the
+  same whoever ends it. The page says so above the cards.
+* **The identity is the session's.** The form names a GRANT, and
+  `revokeOwnGrant()` refuses one whose resource owner is not the signed-in
+  person, or one with nothing live left (`STS-PORTAL-0163`, 400) — the
+  `/portal/keys` credential id's arrangement. `manage-own`, CSRF on the POST,
+  and `gnap.grant.revoke` audited with the person as actor:
+  `tests/vendored/sts_gnap_core.js` section 15 asserts the ACTOR, this
+  directory's rule that only the audit row proves the write.
+* **Under cells (#98) it lists this cell's grants**, which is normally all of
+  them (a grant moves to its resource owner's home before approval), and says
+  so in a note when the service has several cells — never a partial list
+  presented as the whole. No script, twenty grants a page, no token value
+  ever drawn.
+
 ## `/portal/delegate`: WHO MAY ACT FOR YOU (2026-09-23, #108)
 
 RFC 8693 section 4.4's `may_act` "makes a statement that one party is
@@ -1410,6 +1443,35 @@ records the sign-on session it was made on (`facts.sessionId`), and the
 tokens are issued on that session, so its end revokes their refresh token. It
 is also CAEP's `session-presented`, via `OpenID Connect CIBA`. A denial
 honours nothing and sends nothing.
+
+**AND GNAP GRANTS WAITING FOR THEIR OWNER (#432 phase 6, 2026-10-03).** A
+GNAP request naming this person while somebody else was at the approval page,
+or offering no interaction (RFC 9635 sections 1.4 and 2.4, with
+`gnap.ownerApproval` on), is listed in an *Access requests* section below the
+CIBA requests. The page was chosen over a second approvals page because it IS
+the page where a person answers what a client asked while they were
+elsewhere; what is reused is its mechanism — the session is the identity, a
+form names a request (`gnap-approve` / `gnap-deny` with the request's own id,
+never a person), one answer, the step-up through the portal's sign-in with
+the acr values the rights need (`?gnapstepup=<id>`) — and NOT CIBA's store:
+the request is a GNAP grant held and continued by `gnap/`, and
+`gnap/gnap_approval.ts` lists and answers it, reached LAZILY (the portal is
+built at 8a, GNAP at 23d). Each right has the approval page's checkbox; the
+repeated `right` field is read off the raw body (`helpers.bodyValues()`), as
+the approval page reads it. A request not waiting for this person is
+`STS-PORTAL-0243`, an approval short of the rights' acr `STS-PORTAL-0244`.
+The person asking (whoever was at the page) is named on the card: an owner
+judging a request for their access needs to know who wants it.
+
+**AND THE OWNER CHECK AND THE LIMITS, AS ON THE APPROVAL PAGE (#432 phase
+5).** Each right's limits are drawn under it with the approval page's own
+controls (`common/limits_form.ts`, a static utility imported directly
+because it loads nothing of GNAP's engine), and the form's schema reads the
+post with them stripped off; `gnap_approval.answer()` is handed the request
+and a reader of the raw body, asks `grants.approverRefusal()` after the
+step-up (`STS-GNAP-0862`: a person named on a request is not thereby the
+owner of what it names) and reads the lowered limits back (`0866` raised,
+`0867` failing the type's schema), all before the answer is claimed.
 
 ## `/portal/claim-sources`: CONNECTED CLAIM SOURCES (#147, 2026-09-24)
 

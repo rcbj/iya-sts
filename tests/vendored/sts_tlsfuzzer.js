@@ -214,6 +214,57 @@ async function test() {
     log.info("  [not applicable] " + entry.script + ": " + entry.skip);
   });
   const made = await clientCertificates();
+  // TLS 1.2 ON FOR THE RUN (#429): every listener is TLS 1.3 only by default,
+  // and most of this plan probes TLS 1.2 behaviour. Turned on service-wide
+  // through /admin-api (a runtime setting, re-applied at the next
+  // handshake), waited for on both listeners — on every node behind a
+  // balancer — and reset in the `finally`. The job is `exclusive` in
+  // MANIFEST.js, so no other job runs while it is on.
+  await kit.setting(null, "tls.disableTls12", false);
+  try {
+    await twelveIsOn(where);
+    await runThePlan(where, made);
+  } finally {
+    await kit.post(kit.realmApi(null) + "/config/reset",
+                   { key: "tls.disableTls12" });
+  }
+  log.info("Test completed successfully.");
+  log.debug("Leaving test().");
+}
+
+// Until a TLS 1.2 handshake succeeds six times in a row on each listener
+// (a balancer alternates nodes, and each re-applies when the setting reaches
+// it), or thirty seconds.
+async function twelveIsOn(where) {
+  log.debug("Entering twelveIsOn().");
+  const once = function (port) {
+    return new Promise(function (resolve) {
+      const socket = tls.connect({ host: where.host, port: port,
+        servername: where.host, rejectUnauthorized: false,
+        maxVersion: "TLSv1.2" }, function () {
+        socket.destroy();
+        resolve(true);
+      });
+      socket.on("error", function (e) {
+        log.debug("Caught in twelveIsOn(): " + ((e && e.message) || e));
+        resolve(false);
+      });
+    });
+  };
+  const deadline = Date.now() + 30000;
+  for (const port of [where.main, where.ldaps]) {
+    let streak = 0;
+    while (streak < 6) {
+      streak = (await once(port)) ? streak + 1 : 0;
+      assert.ok(Date.now() < deadline, "TLS 1.2 was turned on and port " +
+                port + " still refuses it after thirty seconds");
+    }
+  }
+  log.debug("Leaving twelveIsOn().");
+}
+
+async function runThePlan(where, made) {
+  log.debug("Entering runThePlan().");
   const concurrency = Number(process.env.STS_TLSFUZZER_CONCURRENCY || 4);
   const report = function (r) {
     log.debug("Entering report(). " + r.script);
@@ -249,8 +300,7 @@ async function test() {
     "failed: " + bad.map(function (r) {
       return r.listener + " " + r.script;
     }).join(", "));
-  log.info("Test completed successfully.");
-  log.debug("Leaving test().");
+  log.debug("Leaving runThePlan().");
 }
 
 new Command()

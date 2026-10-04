@@ -325,6 +325,42 @@ function presentedThumbprint(req) {
   return thumbprintOf(peerCertificate(req));
 }
 
+// THE KEY UNDER THE CERTIFICATE (#432 follow-up): SHA-256 over the
+// presented certificate's SubjectPublicKeyInfo DER, base64url — what
+// `crypto.certificateSpkiThumbprint()` gives a device's x509 key. `x5t#S256`
+// names the CERTIFICATE, which changes when the same key is re-certified or
+// certified by another CA; this names the KEY, so a compromised device's
+// key finds a token bound to any certificate over it. The token register
+// records it beside `x5t`; nothing puts it in a token.
+/**
+ * Returns the SubjectPublicKeyInfo SHA-256 of the certificate this request
+ * arrived with.
+ *
+ * @param req - the request
+ * @returns the thumbprint, or '' for none (or a certificate that will not
+ *   parse)
+ */
+function presentedKeyThumbprint(req) {
+  log.debug("Entering presentedKeyThumbprint().");
+  const cert = peerCertificate(req);
+  if (!cert) {
+    log.debug("Leaving presentedKeyThumbprint(). No certificate.");
+    return '';
+  }
+  let out = '';
+  try {
+    out = stsCrypto.certificateSpkiThumbprint(cert.raw.toString('base64'));
+  } catch (e) {
+    // A certificate whose key cannot be read is matched by its x5t#S256
+    // alone.
+    log.debug("Caught in presentedKeyThumbprint(): " +
+              ((e && e.message) || e));
+    out = '';
+  }
+  log.debug("Leaving presentedKeyThumbprint().");
+  return out;
+}
+
 // RFC 8705 section 3: the confirmation claim to put on an issued token, or
 // undefined when there is nothing to bind to. Returned as the whole `cnf` value
 // so the caller does not have to know the member's name — and MERGED with a
@@ -619,6 +655,7 @@ module.exports = {
   issuedIdentityOf: issuedIdentityOf,
   thumbprintOf: thumbprintOf,
   presentedThumbprint: presentedThumbprint,
+  presentedKeyThumbprint: presentedKeyThumbprint,
   confirmationFor: confirmationFor,
   boundThumbprintOf: boundThumbprintOf,
   checkBinding: checkBinding,

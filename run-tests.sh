@@ -1429,20 +1429,42 @@ waitForStsHealthy()
 # /usr/src/sts/node_modules has bunyan; NODE_PATH is where node looks when
 # the walk finds nothing, so a checkout that has its own still uses it.
 # ---------------------------------------------------------------------------
+# **RETRIED, BECAUSE IN THE CLUSTER MODE THE BALANCER IS THE LAST THING UP**
+# (2026-10-02). `sts-lb` has no health check, so compose reports it started
+# the moment its process is, and the first mint went through it at once: CI
+# run 36997679067's cluster job got `connect ECONNREFUSED` from HAProxy with
+# both nodes healthy behind it, and the whole mode ran nothing. A refused or
+# reset CONNECTION is retried for up to a minute; any other failure (a 401, a
+# wrong secret) is the run's at once, as it always was.
 mintAdminApiToken()
 {
-  local token
-  if ! token="$(docker run --rm \
-       --network "${COMPOSE_PROJECT}_default" \
-       -v "${CURRENT_DIR}:/repo:ro" \
-       -e "STS_ADMIN_API_CLIENT_SECRET=${ADMIN_API_CLIENT_SECRET}" \
-       -e NODE_PATH=/usr/src/sts/node_modules \
-       -w /usr/src/sts \
-       "${STS_IMAGE}" \
-       node /repo/tests/tools/admin-api-token.js \
-         "$(serviceUrl)" \
-       2>&1)";
-  then
+  local token attempt minted=0
+  for attempt in $(seq 1 12); do
+    if token="$(docker run --rm \
+         --network "${COMPOSE_PROJECT}_default" \
+         -v "${CURRENT_DIR}:/repo:ro" \
+         -e "STS_ADMIN_API_CLIENT_SECRET=${ADMIN_API_CLIENT_SECRET}" \
+         -e NODE_PATH=/usr/src/sts/node_modules \
+         -w /usr/src/sts \
+         "${STS_IMAGE}" \
+         node /repo/tests/tools/admin-api-token.js \
+           "$(serviceUrl)" \
+         2>&1)"; then
+      minted=1
+      break
+    fi
+    case "${token}" in
+      *ECONNREFUSED*|*ECONNRESET*|*"socket hang up"*|*EHOSTUNREACH*)
+        echo "The /admin-api token request could not connect yet" \
+             "(attempt ${attempt} of 12); trying again in 5 s." >&2
+        sleep 5
+        ;;
+      *)
+        break
+        ;;
+    esac
+  done
+  if [ "${minted}" != 1 ]; then
     echo "" >&2
     echo "Could not obtain an access token for ${COMPOSE_PROJECT}'s" >&2
     echo "/admin-api:" >&2

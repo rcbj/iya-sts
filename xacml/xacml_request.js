@@ -111,7 +111,155 @@ const VOCABULARY = Object.freeze({
   // or `api` (a management-API call relayed with ?cell=).
   PURPOSE: 'urn:sts:xacml:purpose',
   // environment: the trust realm the question is asked in.
-  REALM: 'urn:sts:xacml:realm'
+  REALM: 'urn:sts:xacml:realm',
+  // THE FACTS OF AN EXCHANGE QUESTION (#186): who may act for whom, and as
+  // what, at an RFC 8693 token exchange, a WS-Trust OnBehalfOf / ActAs or a
+  // Kerberos S4U request — one vocabulary for the three, so one policy
+  // decides all of them. Gathered by `common/delegation_policy.ts`; nothing
+  // here decides. S is the application the subject token was issued for, R
+  // the one the new token is asked for, the actor the party acting (in the
+  // intermediary-subject category). Every party is named by its application
+  // identifier, or a person's subject, so the policy compares them itself.
+  //
+  // access-subject: the subject is protected by its own entry (Kerberos's
+  // NOT_DELEGATED, `stsNotDelegated` / `appNotDelegated`).
+  EXCHANGE_SUBJECT_NOT_DELEGATED:
+    'urn:sts:xacml:exchange:subject-not-delegated',
+  // access-subject: the subject's groups, each as its cn AND its normalised
+  // DN, so a protected group or an actor's subject group matches either way.
+  EXCHANGE_SUBJECT_GROUP: 'urn:sts:xacml:exchange:subject-group',
+  // access-subject / intermediary-subject: the semantics this party allows
+  // (`delegation`, `impersonation`), and its default. Absent is the policy's
+  // to read: the built-in rules read an actor's empty set as delegation
+  // only, a subject's as both.
+  EXCHANGE_ALLOWED_SEMANTICS: 'urn:sts:xacml:exchange:allowed-semantics',
+  EXCHANGE_DEFAULT_SEMANTICS: 'urn:sts:xacml:exchange:default-semantics',
+  // intermediary-subject: `user` or `application`; whether an entry backs it
+  // in this realm; the targets it may reach as somebody else
+  // (appAllowedToDelegateTo, resolved); the people it may act for
+  // (appDelegationSubjectGroup, normalised DNs).
+  EXCHANGE_ACTOR_KIND: 'urn:sts:xacml:exchange:actor-kind',
+  EXCHANGE_ACTOR_REGISTERED: 'urn:sts:xacml:exchange:actor-registered',
+  EXCHANGE_ACTOR_DELEGATES_TO: 'urn:sts:xacml:exchange:actor-delegates-to',
+  EXCHANGE_ACTOR_SUBJECT_GROUP: 'urn:sts:xacml:exchange:actor-subject-group',
+  // resource: S, and what it requires and delegates to.
+  EXCHANGE_SOURCE: 'urn:sts:xacml:exchange:source',
+  EXCHANGE_SOURCE_REQUIRED_ROLE:
+    'urn:sts:xacml:exchange:source-required-role',
+  EXCHANGE_SOURCE_DELEGATES_TO: 'urn:sts:xacml:exchange:source-delegates-to',
+  // resource: R — how many targets were asked for (an integer), whether R is
+  // a registered application, what it requires, and whom it accepts as an
+  // actor (appAllowedToActOnBehalfOf, resolved). R itself is resource-id.
+  EXCHANGE_TARGET_COUNT: 'urn:sts:xacml:exchange:target-count',
+  EXCHANGE_TARGET_REGISTERED: 'urn:sts:xacml:exchange:target-registered',
+  EXCHANGE_TARGET_REQUIRED_ROLE:
+    'urn:sts:xacml:exchange:target-required-role',
+  EXCHANGE_TARGET_ACCEPTS: 'urn:sts:xacml:exchange:target-accepts',
+  // action: the semantics the REQUEST asked for (the extension parameter,
+  // the WS-Trust element, the Kerberos mechanism), and the semantics the
+  // choosing question settled on.
+  EXCHANGE_REQUESTED_SEMANTICS:
+    'urn:sts:xacml:exchange:requested-semantics',
+  EXCHANGE_SEMANTICS: 'urn:sts:xacml:exchange:semantics',
+  // environment: the subject token carried may_act (RFC 8693 section 4.4),
+  // and whether it names this actor — an identity comparison the door makes.
+  EXCHANGE_MAY_ACT_PRESENT: 'urn:sts:xacml:exchange:may-act-present',
+  EXCHANGE_MAY_ACT_NAMES_ACTOR: 'urn:sts:xacml:exchange:may-act-names-actor',
+  // environment: the groups whose members are never acted for — the
+  // realm's `delegation.protectedGroups` and the console roster — as cn and
+  // normalised DN.
+  EXCHANGE_PROTECTED_GROUP: 'urn:sts:xacml:exchange:protected-group',
+  // #186: the party the subject NAMED as their delegate (`stsMayAct` on a
+  // person, `appMayAct` on an application), as the `may_act` claim would
+  // name it — the fact the `assign-may-act` question decides on.
+  EXCHANGE_SUBJECT_DELEGATE: 'urn:sts:xacml:exchange:subject-delegate',
+  // THE FACTS OF A GNAP ACCESS RIGHT (#432 phase 3): one question per right,
+  // action-id `issue-gnap-right`, the right's type (or its reference string)
+  // as the resource-id. Gathered by `gnap/gnap_rights.ts`; nothing here
+  // decides. RESOURCE: the right itself — `object` or `reference`, its five
+  // common fields (RFC 9635 section 8) — whether the access-type catalogue
+  // declares its type and what that entry declares, whether the client's
+  // gnapAllowedAccess lists it, whether a reference names a registered
+  // resource set, and whether it asks for one of this service's protected
+  // scopes (#110) the client's entry does not declare.
+  GNAP_RIGHT_KIND: 'urn:sts:xacml:gnap:right-kind',
+  GNAP_RIGHT_ACTION: 'urn:sts:xacml:gnap:right-action',
+  GNAP_RIGHT_LOCATION: 'urn:sts:xacml:gnap:right-location',
+  GNAP_RIGHT_DATATYPE: 'urn:sts:xacml:gnap:right-datatype',
+  GNAP_RIGHT_IDENTIFIER: 'urn:sts:xacml:gnap:right-identifier',
+  GNAP_RIGHT_PRIVILEGE: 'urn:sts:xacml:gnap:right-privilege',
+  GNAP_RIGHT_LISTED: 'urn:sts:xacml:gnap:right-listed',
+  GNAP_REFERENCE_REGISTERED: 'urn:sts:xacml:gnap:reference-registered',
+  GNAP_PROTECTED: 'urn:sts:xacml:gnap:protected',
+  GNAP_PROTECTED_DECLARED: 'urn:sts:xacml:gnap:protected-declared',
+  GNAP_CATALOGUED: 'urn:sts:xacml:gnap:catalogued',
+  GNAP_TYPE_OWNER: 'urn:sts:xacml:gnap:type-owner',
+  GNAP_TYPE_BEARER: 'urn:sts:xacml:gnap:type-bearer',
+  GNAP_TYPE_MAX_LIFETIME: 'urn:sts:xacml:gnap:type-max-lifetime',
+  GNAP_TYPE_ACR: 'urn:sts:xacml:gnap:type-acr',
+  GNAP_TYPE_INTERACTION: 'urn:sts:xacml:gnap:type-interaction',
+  GNAP_TYPE_CONSENT_ACTION: 'urn:sts:xacml:gnap:type-consent-action',
+  GNAP_TYPE_DERIVABLE_FROM: 'urn:sts:xacml:gnap:type-derivable-from',
+  GNAP_TYPE_INTROSPECTION_CLAIM:
+    'urn:sts:xacml:gnap:type-introspection-claim',
+  // THE RIGHT'S LIMITS AND WHO OWNS WHAT IT NAMES (#432 phase 5). The limits
+  // as the right carries them (`limits`, the JSON) and each member with a
+  // meaning decomposed (`common/access_limits.ts`): an amount (a double, in
+  // its currency), a count, the receivers, the repeating interval and the
+  // window's two ends. The owner of the right's identifier — from a
+  // registered resource set or the resource server's lookup — whether one is
+  // known, whether a declared lookup could not be answered, and, once an
+  // approver is known, whether the approver is that owner (or a member of
+  // that group). `owner-matches` is sent only with an approver.
+  GNAP_LIMITS: 'urn:sts:xacml:gnap:limits',
+  GNAP_LIMIT_AMOUNT: 'urn:sts:xacml:gnap:limit-amount',
+  GNAP_LIMIT_CURRENCY: 'urn:sts:xacml:gnap:limit-currency',
+  GNAP_LIMIT_COUNT: 'urn:sts:xacml:gnap:limit-count',
+  GNAP_LIMIT_RECEIVER: 'urn:sts:xacml:gnap:limit-receiver',
+  GNAP_LIMIT_INTERVAL: 'urn:sts:xacml:gnap:limit-interval',
+  GNAP_LIMIT_NOT_BEFORE: 'urn:sts:xacml:gnap:limit-not-before',
+  GNAP_LIMIT_NOT_AFTER: 'urn:sts:xacml:gnap:limit-not-after',
+  GNAP_OWNER_KNOWN: 'urn:sts:xacml:gnap:owner-known',
+  GNAP_OWNER: 'urn:sts:xacml:gnap:owner',
+  GNAP_OWNER_SOURCE: 'urn:sts:xacml:gnap:owner-source',
+  GNAP_OWNER_UNRESOLVED: 'urn:sts:xacml:gnap:owner-unresolved',
+  GNAP_OWNER_MATCHES: 'urn:sts:xacml:gnap:owner-matches',
+  // ACTION: the token the right is to be issued in — its label, the bearer
+  // flag, the format it would be minted in and the resource servers it is
+  // for.
+  GNAP_TOKEN_LABEL: 'urn:sts:xacml:gnap:token-label',
+  GNAP_TOKEN_BEARER: 'urn:sts:xacml:gnap:token-bearer',
+  GNAP_TOKEN_FORMAT: 'urn:sts:xacml:gnap:token-format',
+  GNAP_TOKEN_TARGET: 'urn:sts:xacml:gnap:token-target',
+  // ACCESS-SUBJECT: the client — its REGISTERED class (a declared class_id
+  // never raises trust, so it is never sent), whether its entry lists any
+  // gnapAllowedAccess, and whether it refuses bearer tokens.
+  GNAP_CLIENT_CLASS: 'urn:sts:xacml:gnap:client-class',
+  GNAP_CLIENT_HAS_ALLOWED_ACCESS:
+    'urn:sts:xacml:gnap:client-has-allowed-access',
+  GNAP_CLIENT_BEARER_REFUSED: 'urn:sts:xacml:gnap:client-bearer-refused',
+  // ENVIRONMENT: who approved and how (`pending` before anybody has,
+  // `interaction`, `skipped`, `derived`, `remembered`, or — since #432
+  // phase 6 — `owner`, the resource owner on their portal while somebody
+  // else, or nobody, used the client), the session the
+  // approval stands on (acr, amr), its risk (#62) and the registered device
+  // (#164). UNDER NAMES OF THEIR OWN rather than the issuance's risk and
+  // device attributes: the issuance's untargeted risk and device rules
+  // decide the TOKEN through `gate.check()`, which is still asked, and a
+  // right that carried their attributes would trip them on every
+  // per-right question and answer it with an obligation no right reader
+  // knows.
+  GNAP_APPROVER: 'urn:sts:xacml:gnap:approver',
+  GNAP_APPROVAL: 'urn:sts:xacml:gnap:approval',
+  GNAP_SESSION_ACR: 'urn:sts:xacml:gnap:session-acr',
+  GNAP_SESSION_AMR: 'urn:sts:xacml:gnap:session-amr',
+  GNAP_RISK_LEVEL: 'urn:sts:xacml:gnap:risk-level',
+  GNAP_RISK_SIGNAL: 'urn:sts:xacml:gnap:risk-signal',
+  GNAP_DEVICE_RECOGNIZED: 'urn:sts:xacml:gnap:device-recognized',
+  GNAP_DEVICE_STATUS: 'urn:sts:xacml:gnap:device-status',
+  GNAP_DEVICE_COMPLIANCE: 'urn:sts:xacml:gnap:device-compliance',
+  GNAP_DEVICE_ATTESTATION: 'urn:sts:xacml:gnap:device-attestation',
+  GNAP_DEVICE_OWNER_MATCHES: 'urn:sts:xacml:gnap:device-owner-matches'
 });
 
 // The principal types a request may name. Anything else is a person, which
@@ -340,6 +488,189 @@ class AuthorizationRequest {
     this.environment(VOCABULARY.REALM, one(given.realm));
     this.environment(VOCABULARY.PURPOSE, one(given.purpose));
     log.debug("Leaving AuthorizationRequest.transfer().");
+    return this;
+  }
+
+  // THE FACTS OF AN EXCHANGE QUESTION (#186). `facts` (each optional):
+  //   subject { id, kind, roles, notDelegated, groups, semantics,
+  //             defaultSemantics }
+  //   actor   { id, kind, registered, roles, semantics, defaultSemantics,
+  //             delegatesTo, subjectGroups }
+  //   source  { id, requiredRoles, delegatesTo }   (S; id '' when unknown)
+  //   target  { id, count, registered, requiredRoles, accepts }   (R)
+  //   requestedSemantics, semantics, mayActPresent, mayActNamesActor,
+  //   protectedGroups
+  // An unknown identifier is left out rather than sent as '', so no absent
+  // party can ever compare equal to another. Booleans are always sent.
+  exchange(facts) {
+    const given = facts || {};
+    const V = VOCABULARY;
+    const I = model.CATEGORY.INTERMEDIARY_SUBJECT;
+    const one = function (value) {
+      return value ? [String(value)] : [];
+    };
+    const list = function (values) {
+      return (values || []).map(String).filter(function (v) { return !!v; });
+    };
+    const subject = given.subject || {};
+    const actor = given.actor || {};
+    const source = given.source || {};
+    const target = given.target || {};
+    this.subject(model.ATTRIBUTE.SUBJECT_ID, one(subject.id));
+    this.subject(V.SUBJECT_KIND, [subject.kind === 'application'
+      ? 'application' : 'user']);
+    this.subject(V.ROLE, list(subject.roles));
+    this.subject(V.EXCHANGE_SUBJECT_NOT_DELEGATED, [!!subject.notDelegated],
+                 model.TYPE.BOOLEAN);
+    this.subject(V.EXCHANGE_SUBJECT_GROUP, list(subject.groups));
+    this.subject(V.EXCHANGE_ALLOWED_SEMANTICS, list(subject.semantics));
+    this.subject(V.EXCHANGE_DEFAULT_SEMANTICS, one(subject.defaultSemantics));
+    this.subject(V.EXCHANGE_SUBJECT_DELEGATE, list(subject.delegates));
+    this.attribute(I, model.ATTRIBUTE.SUBJECT_ID, one(actor.id));
+    this.attribute(I, V.EXCHANGE_ACTOR_KIND, [actor.kind === 'user'
+      ? 'user' : 'application']);
+    this.attribute(I, V.EXCHANGE_ACTOR_REGISTERED, [!!actor.registered],
+                   model.TYPE.BOOLEAN);
+    this.attribute(I, V.ROLE, list(actor.roles));
+    this.attribute(I, V.EXCHANGE_ALLOWED_SEMANTICS, list(actor.semantics));
+    this.attribute(I, V.EXCHANGE_DEFAULT_SEMANTICS,
+                   one(actor.defaultSemantics));
+    this.attribute(I, V.EXCHANGE_ACTOR_DELEGATES_TO, list(actor.delegatesTo));
+    this.attribute(I, V.EXCHANGE_ACTOR_SUBJECT_GROUP,
+                   list(actor.subjectGroups));
+    this.resource(model.ATTRIBUTE.RESOURCE_ID, one(target.id));
+    this.resource(V.EXCHANGE_TARGET_COUNT, [Number(target.count) || 0],
+                  model.TYPE.INTEGER);
+    this.resource(V.EXCHANGE_TARGET_REGISTERED, [!!target.registered],
+                  model.TYPE.BOOLEAN);
+    this.resource(V.EXCHANGE_TARGET_REQUIRED_ROLE, list(target.requiredRoles));
+    this.resource(V.EXCHANGE_TARGET_ACCEPTS, list(target.accepts));
+    this.resource(V.EXCHANGE_SOURCE, one(source.id));
+    this.resource(V.EXCHANGE_SOURCE_REQUIRED_ROLE,
+                  list(source.requiredRoles));
+    this.resource(V.EXCHANGE_SOURCE_DELEGATES_TO, list(source.delegatesTo));
+    this.action(V.EXCHANGE_REQUESTED_SEMANTICS,
+                one(given.requestedSemantics));
+    this.action(V.EXCHANGE_SEMANTICS, one(given.semantics));
+    this.environment(V.EXCHANGE_MAY_ACT_PRESENT, [!!given.mayActPresent],
+                     model.TYPE.BOOLEAN);
+    this.environment(V.EXCHANGE_MAY_ACT_NAMES_ACTOR,
+                     [!!given.mayActNamesActor], model.TYPE.BOOLEAN);
+    this.environment(V.EXCHANGE_PROTECTED_GROUP, list(given.protectedGroups));
+    return this;
+  }
+
+  // THE FACTS OF A GNAP ACCESS RIGHT (#432 phase 3). `facts` (each optional):
+  //   right     { kind, type, actions, locations, datatypes, identifier,
+  //               privileges, listed, referenceRegistered, protected,
+  //               protectedDeclared, limits: { json, amount, currency,
+  //               count, receivers, interval, notBefore, notAfter } }
+  //   owner     { known, owner, source, unresolved, matches } (#432
+  //               phase 5)
+  //   catalogue { catalogued, owner, bearer (null when undeclared),
+  //               maxLifetimeS (null when undeclared), acr, interaction,
+  //               consentActions, derivableFrom, introspectionClaims }
+  //   token     { label, bearer, format, targets }
+  //   client    { id, class, hasAllowedAccess, bearerRefused }
+  //   approver, approval
+  //   session   { acr, amr }, risk { level, signals },
+  //   device    { recognized, status, compliance, attestation, ownerMatches }
+  // A fact that is not known is left out rather than sent empty, so a rule
+  // reading it is inapplicable — `boolean-is-in` over an empty bag is false.
+  // The resource-id, principal, action-id, mode, stage and settings are the
+  // caller's, through the methods above.
+  gnapRight(facts) {
+    log.debug("Entering AuthorizationRequest.gnapRight().");
+    const given = facts || {};
+    const V = VOCABULARY;
+    const B = model.TYPE.BOOLEAN;
+    const one = function (value) {
+      log.debug("Entering one().");
+      log.debug("Leaving one().");
+      return value ? [String(value)] : [];
+    };
+    const list = function (values) {
+      log.debug("Entering list().");
+      log.debug("Leaving list().");
+      return (Array.isArray(values) ? values : []).map(String)
+        .filter(function (v) { return !!v; });
+    };
+    const bool = function (value) {
+      log.debug("Entering bool().");
+      log.debug("Leaving bool().");
+      return typeof value === 'boolean' ? [value] : [];
+    };
+    const right = given.right || {};
+    const catalogue = given.catalogue || {};
+    const token = given.token || {};
+    const client = given.client || {};
+    const session = given.session || {};
+    const risk = given.risk || {};
+    const device = given.device || {};
+    this.resource(V.GNAP_RIGHT_KIND, one(right.kind));
+    this.resource(V.GNAP_RIGHT_ACTION, list(right.actions));
+    this.resource(V.GNAP_RIGHT_LOCATION, list(right.locations));
+    this.resource(V.GNAP_RIGHT_DATATYPE, list(right.datatypes));
+    this.resource(V.GNAP_RIGHT_IDENTIFIER, one(right.identifier));
+    this.resource(V.GNAP_RIGHT_PRIVILEGE, list(right.privileges));
+    this.resource(V.GNAP_RIGHT_LISTED, bool(right.listed), B);
+    this.resource(V.GNAP_REFERENCE_REGISTERED,
+                  bool(right.referenceRegistered), B);
+    this.resource(V.GNAP_PROTECTED, bool(right.protected), B);
+    this.resource(V.GNAP_PROTECTED_DECLARED, bool(right.protectedDeclared), B);
+    const limits = right.limits || null;
+    if (limits) {
+      this.resource(V.GNAP_LIMITS, one(limits.json));
+      this.resource(V.GNAP_LIMIT_AMOUNT, typeof limits.amount === 'number'
+        ? [limits.amount] : [], model.TYPE.DOUBLE);
+      this.resource(V.GNAP_LIMIT_CURRENCY, one(limits.currency));
+      this.resource(V.GNAP_LIMIT_COUNT, typeof limits.count === 'number'
+        ? [limits.count] : [], model.TYPE.INTEGER);
+      this.resource(V.GNAP_LIMIT_RECEIVER, list(limits.receivers));
+      this.resource(V.GNAP_LIMIT_INTERVAL, one(limits.interval));
+      this.resource(V.GNAP_LIMIT_NOT_BEFORE, one(limits.notBefore));
+      this.resource(V.GNAP_LIMIT_NOT_AFTER, one(limits.notAfter));
+    }
+    const owner = given.owner || {};
+    this.resource(V.GNAP_OWNER_KNOWN, bool(owner.known), B);
+    this.resource(V.GNAP_OWNER, one(owner.owner));
+    this.resource(V.GNAP_OWNER_SOURCE, one(owner.source));
+    this.resource(V.GNAP_OWNER_UNRESOLVED, bool(owner.unresolved), B);
+    this.resource(V.GNAP_OWNER_MATCHES, bool(owner.matches), B);
+    this.resource(V.GNAP_CATALOGUED, bool(catalogue.catalogued), B);
+    this.resource(V.GNAP_TYPE_OWNER, one(catalogue.owner));
+    this.resource(V.GNAP_TYPE_BEARER, bool(catalogue.bearer), B);
+    this.resource(V.GNAP_TYPE_MAX_LIFETIME,
+                  typeof catalogue.maxLifetimeS === 'number'
+                    ? [catalogue.maxLifetimeS] : [], model.TYPE.INTEGER);
+    this.resource(V.GNAP_TYPE_ACR, one(catalogue.acr));
+    this.resource(V.GNAP_TYPE_INTERACTION, one(catalogue.interaction));
+    this.resource(V.GNAP_TYPE_CONSENT_ACTION, list(catalogue.consentActions));
+    this.resource(V.GNAP_TYPE_DERIVABLE_FROM, list(catalogue.derivableFrom));
+    this.resource(V.GNAP_TYPE_INTROSPECTION_CLAIM,
+                  list(catalogue.introspectionClaims));
+    this.action(V.GNAP_TOKEN_LABEL, one(token.label));
+    this.action(V.GNAP_TOKEN_BEARER, bool(token.bearer), B);
+    this.action(V.GNAP_TOKEN_FORMAT, one(token.format));
+    this.action(V.GNAP_TOKEN_TARGET, list(token.targets));
+    this.subject(V.CLIENT_ID, one(client.id));
+    this.subject(V.GNAP_CLIENT_CLASS, one(client.class));
+    this.subject(V.GNAP_CLIENT_HAS_ALLOWED_ACCESS,
+                 bool(client.hasAllowedAccess), B);
+    this.subject(V.GNAP_CLIENT_BEARER_REFUSED, bool(client.bearerRefused), B);
+    this.environment(V.GNAP_APPROVER, one(given.approver));
+    this.environment(V.GNAP_APPROVAL, one(given.approval));
+    this.environment(V.GNAP_SESSION_ACR, one(session.acr));
+    this.environment(V.GNAP_SESSION_AMR, list(session.amr));
+    this.environment(V.GNAP_RISK_LEVEL, one(risk.level));
+    this.environment(V.GNAP_RISK_SIGNAL, list(risk.signals));
+    this.environment(V.GNAP_DEVICE_RECOGNIZED, bool(device.recognized), B);
+    this.environment(V.GNAP_DEVICE_STATUS, one(device.status));
+    this.environment(V.GNAP_DEVICE_COMPLIANCE, one(device.compliance));
+    this.environment(V.GNAP_DEVICE_ATTESTATION, one(device.attestation));
+    this.environment(V.GNAP_DEVICE_OWNER_MATCHES, bool(device.ownerMatches),
+                     B);
+    log.debug("Leaving AuthorizationRequest.gnapRight().");
     return this;
   }
 

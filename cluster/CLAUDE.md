@@ -499,6 +499,24 @@ and the stored value is the highest ever given whatever order commits land in.
 * The entry keeps its copy and stays the FIRST check (no round trip for the
   ordinary repeat); the counter decides the race.
 
+### And a budget spent against a limit (#432 phase 5, 2026-10-03)
+
+`spendBudget()`, `refundBudget()` and `purgeBudgets()` are the fourth shape:
+spend `amount` and `count` only while this period's totals stay within the
+limits, reset at a new period, give a failed operation's spend back. A GNAP
+right's limits are kept per grant by the resource server (rcbj's decision 2
+on #432), and the demonstration resource server runs on every node, so a
+read-add-write through a replicated row would be last writer wins on a
+ledger. `sts_cluster_budgets` (schema version 15) and one upsert whose
+`SELECT` proposes a row only when the spend alone fits, and whose `DO UPDATE
+… WHERE` writes only totals within the limits and never for a period older
+than the row's; nothing returned is the refusal. Amounts are millionths as
+bigint. **No memory fallback** (`countInWindow()`'s rule): `sharesBudgets()`
+first, and `gnap/gnap_spend.ts` keeps its own persisted ledger on one
+process; a shared store that cannot be asked is `STS-CLUSTER-0162` and the
+operation refused. Capability `gnap.limits`. A row carries its grant's end,
+and `gnap.spend-purge` deletes it after.
+
 ### And a count inside a window: the rate limiter (2026-09-14)
 
 `countInWindow()`, `peekWindow()` and `clearWindow()` are the third shape: a
@@ -703,6 +721,8 @@ next beat. It is the one addition this feature made to `cluster.js`.
 | `oauth2.ephemeral-subjects-purge` | cluster, realm; hourly — removes each ephemeral subject mapping past the longest token or session of its authentication (#149) | `oauth-oidc/pairwise_subjects.ts` |
 | `oauth2.claim-sources-refresh` | cluster, realm; every minute — refreshes each person's Claims Provider token five minutes before it expires and drops link requests older than ten minutes (#147); off in a realm with no Claims Provider registered and no link request pending (#338) | `oauth-oidc/claims_providers.ts` |
 | `attribute-sources.refresh` | cluster, realm; every minute — for each attribute source whose scheduled interval is due (or asked for by Read everyone now), reads the next `attributeSources.refreshBatch` people after its cursor onto their entries (#94) | `attribute-sources/attribute_sources.ts` |
+| `gnap.grant-expiry` | cluster, realm; every five minutes — finalizes each GNAP grant whose interaction or grant lifetime (`gnap.grantLifetimeS`) ended with no request touching it, recording `expired` or `rejected` (#432 phase 7) | `gnap/gnap_grants.ts` |
+| `gnap.spend-purge` | cluster, realm; hourly — deletes the running totals the demonstration resource server keeps for a GNAP grant's limits once the grant has ended, in `sts_cluster_budgets` and in the ledger a store that cannot be shared keeps (#432 phase 5) | `gnap/gnap_spend.ts` |
 | `oauth2.grant-management-purge` | cluster, realm; hourly — removes each Grant Management grant past its last token's exp, and each token row past its own (#142) | `oauth-oidc/grant_management.ts` |
 | `oauth2.ciba-sweep` | cluster, service; `oauth2.cibaSweepS` | `oauth-oidc/ciba.ts` (#131): CIBA pings and pushes due, requests nobody answered expired |
 | `oauth2.device-code-sweep` | cluster, per realm, every 300 s | `oauth-oidc/device_authorization.ts` (#150): expired and answered RFC 8628 device codes removed |

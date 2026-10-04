@@ -477,6 +477,11 @@ class PkiService {
                                             why: httpListenError }) };
     }
     const server = http.createServer(this.revocationOnly.bind(this));
+    // ITS OWN CONNECTION POOLING (#429): listenerRevocation.keepAliveTimeoutS
+    // and the rest, inheriting http.*. Required here, at bind time:
+    // `tls/tls_server.js` is a JavaScript route module required at 20, after
+    // this one (17b), and a require at load would move its routes.
+    require('../tls/tls_server').registerHttpListener(server, 'revocation');
     proxyProtocol.install(server, {
       label: 'the plain-HTTP revocation listener (' + port + ')',
       channel: 'http' });

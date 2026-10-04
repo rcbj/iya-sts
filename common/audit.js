@@ -713,6 +713,9 @@ const ACTIONS = [
            'cleared it' },
   { action: 'admin.delegation.may-act', category: 'admin',
     label: 'An operator named or cleared the party who may act for somebody' },
+  { action: 'admin.delegation.semantics', category: 'admin',
+    label: 'An operator set the delegation semantics a person allows, or ' +
+           'their default (#186)' },
   { action: 'portal.delegation.may-act', category: 'authentication',
     label: 'A person named or cleared the party who may act for them' },
 
@@ -917,6 +920,16 @@ const ACTIONS = [
     label: 'A GNAP grant was approved and its tokens released' },
   { action: 'gnap.grant.revoke', category: 'protocol',
     label: 'A GNAP grant was revoked' },
+  { action: 'gnap.grant.owner-queued', category: 'protocol',
+    label: 'A GNAP grant waits for its absent resource owner\'s approval ' +
+           'on the portal (#432 phase 6)' },
+  { action: 'gnap.grant.forward', category: 'protocol',
+    label: 'The person at a GNAP approval page was not the user the ' +
+           'request named, and the grant was sent to that user\'s portal ' +
+           '(#432 phase 6)' },
+  { action: 'gnap.grant.finalize', category: 'protocol',
+    label: 'A GNAP grant was finalized, with the reason: issued, revoked, ' +
+           'rejected or expired' },
   { action: 'gnap.token.issue', category: 'protocol',
     label: 'A GNAP access token was issued' },
   { action: 'gnap.token.rotate', category: 'protocol',

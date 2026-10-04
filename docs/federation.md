@@ -470,7 +470,11 @@ event from a partner people sign in through ends **only the sessions that
 relationship started** for the person, and its `account-disabled` **blocks
 that partner's sign-ins** of the person until its `account-enabled` or an
 administrator lifts it. The person's local sign-in and every other partner
-keep working.
+keep working. Its `session-revoked`, `account-disabled`, `account-purged` and
+`credential-compromise` also **revoke the person's GNAP and OAuth grants and
+tokens** ([#432](https://github.com/rcbj/iya-sts/issues/432)) — for a
+`session-revoked`, those issued on the sessions it started — unless
+`ssf.signalsRevokeGrants` is off.
 
 A partner that signs nobody in is an **`ssf` relationship**
 ([#374](https://github.com/rcbj/iya-sts/issues/374)). It takes the Shared

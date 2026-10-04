@@ -18,6 +18,13 @@
 // cookie-jar browser, and every refusal is asserted by its GNAP ERROR CODE
 // (RFC 9635 section 3.6), never by its status alone.
 //
+// Since #432 phase 7 it also holds what a PERSON sees: section 7 refuses a
+// user reference presented by a client it was not given to and checks the
+// subject is released once; section 15 drives `/portal/gnap` (list, CSRF, a
+// stranger's grant refused, revoke, the audit actor) and the per-person
+// `/admin-api` operations (`gnapGrants` on /users?user=, revoke-grant with
+// `user`).
+//
 // Everything runs in a THROWAWAY TRUST REALM, with `gnap.continueWaitS` at zero
 // so no grant has to sleep its default five seconds; the job raises it for the
 // one section that asserts `too_fast` and sets it back to zero after. Realms
@@ -727,18 +734,55 @@ async function test() {
           assert.ok(/<(saml2?:)?Assertion\b/.test(xml) &&
                     xml.indexOf(OWNER) >= 0, xml.slice(0, 300));
         });
+  r = await es.send("POST", GRANT, { json: grantBody(es, { user: opaque }) });
+  check("the opaque identifier is usable as a user reference by the client " +
+        "it was given to (2.4.1)", function () {
+    assert.strictEqual(r.status, 200, r.text);
+  });
+  // PER CLIENT SINCE #432 PHASE 7: the identifier is the one THIS client was
+  // given, so another client presenting it is told what it would be told
+  // for a value never issued — a reference that resolved anywhere would be
+  // the correlation handle a per-client identifier exists to remove.
   const hinted = new gnap.Client({ key: gnap.newKey("ES256") });
   r = await hinted.send("POST", GRANT,
                         { json: grantBody(hinted, { user: opaque }) });
-  check("the opaque identifier is usable as a user reference (2.4.1)",
-        function () {
-    assert.strictEqual(r.status, 200, r.text);
+  check("…and is unknown_user from any other client (#432)", function () {
+    refused(r, "unknown_user", "another client's user reference");
   });
   r = await hinted.send("POST", GRANT,
                         { json: grantBody(hinted,
                                           { user: "not-a-reference" }) });
   check("an unknown user reference is unknown_user (2.4.1)", function () {
     refused(r, "unknown_user", "an unknown user reference");
+  });
+
+  // SUBJECT INFORMATION GOES OUT ONCE (#432 phase 7): what the person
+  // approved at the interaction released it, and nothing later in the
+  // grant's life sends it again.
+  cont = multi.released.continue;
+  r = await es.send("POST", cont.uri, { token: cont.access_token.value });
+  check("a continuation after approval does not release the subject again " +
+        "(#432)", function () {
+    assert.strictEqual(r.status, 200, r.text);
+    assert.ok(!r.json.subject, JSON.stringify(r.json).slice(0, 300));
+  });
+  r = await es.send("PATCH", r.json.continue.uri, {
+    token: r.json.continue.access_token.value,
+    json: { access_token: [{ label: "bound", access: readAccess() }] } });
+  check("nor does a modification within the earlier approval (#432)",
+        function () {
+    assert.strictEqual(r.status, 200, r.text);
+    assert.ok(r.json.access_token && !r.json.subject,
+              JSON.stringify(r.json).slice(0, 300));
+  });
+  const modified = Array.isArray(r.json.access_token)
+    ? r.json.access_token[0] : r.json.access_token;
+  r = await es.send("POST", modified.manage.uri,
+                    { token: modified.manage.access_token.value });
+  check("nor does a token rotation (#432)", function () {
+    assert.strictEqual(r.status, 200, r.text);
+    assert.ok(r.json.access_token && !r.json.subject,
+              JSON.stringify(r.json).slice(0, 300));
   });
 
   // =========================================================================
@@ -1070,6 +1114,123 @@ async function test() {
     refused(r, "invalid_continuation", "a continuation token in another realm");
   });
 
+  // =========================================================================
+  // 15. WHAT A PERSON SEES, AND WHO MAY END A GRANT (#432 phase 7).
+  // =========================================================================
+  log.info("=== 15. /portal/gnap and the per-person console operations ===");
+  const ownerGrant = await redirectGrant(es, OWNER);
+  const ownerGrantId = ownerGrant.pending.continue.uri.split("/").pop();
+  const strangerGrant = await redirectGrant(es, STRANGER);
+  const strangerGrantId = strangerGrant.pending.continue.uri.split("/").pop();
+  // The OWNER's browser, signed in to the realm, through the portal's own
+  // code flow.
+  const ownerBrowser = ownerGrant.browser;
+  const portalPage = async function (path) {
+    log.debug("Entering portalPage().");
+    let page = await ownerBrowser.go("GET", "/realm/" + REALM + path);
+    for (let hop = 0; hop < 8 && (page.status === 302 || page.status === 303);
+         hop++) {
+      page = await ownerBrowser.go("GET", page.location);
+    }
+    log.debug("Leaving portalPage().");
+    return page;
+  };
+  let page = await portalPage("/portal/gnap");
+  check("/portal/gnap lists the person's own grant with a Revoke form, and " +
+        "nobody else's, with no script", function () {
+    assert.strictEqual(page.status, 200, page.text.slice(0, 300));
+    assert.ok(page.text.indexOf(ownerGrantId) >= 0, "own grant not listed");
+    assert.ok(page.text.indexOf(strangerGrantId) < 0,
+              "another person's grant is listed");
+    assert.ok(/Revoke this grant/.test(page.text), "no Revoke form");
+    assert.ok(!/<script/i.test(page.text), "a script on the page");
+  });
+  const portalCsrf = h.csrfOf(page.text);
+  r = await ownerBrowser.go("POST", "/realm/" + REALM + "/portal/gnap",
+                            { grant: ownerGrantId });
+  check("a revoke without its CSRF token is refused 403", function () {
+    assert.strictEqual(r.status, 403, r.text.slice(0, 200));
+  });
+  r = await ownerBrowser.go("POST", "/realm/" + REALM + "/portal/gnap",
+                            { grant: strangerGrantId,
+                              csrf_token: portalCsrf });
+  check("a revoke naming another person's grant is refused 400 and changes " +
+        "nothing (STS-PORTAL-0163)", function () {
+    assert.strictEqual(r.status, 400, r.text.slice(0, 200));
+  });
+  r = await es.send("GET", RS,
+                    { token: strangerGrant.released.access_token.value });
+  check("…the other person's token still works", function () {
+    assert.strictEqual(r.status, 200, r.text);
+  });
+  r = await ownerBrowser.go("POST", "/realm/" + REALM + "/portal/gnap",
+                            { grant: ownerGrantId, csrf_token: portalCsrf });
+  check("revoking their own grant answers 303 back to the page", function () {
+    assert.strictEqual(r.status, 303, r.text.slice(0, 200));
+    assert.ok(/\/portal\/gnap\?/.test(r.location), r.location);
+  });
+  r = await es.send("GET", RS,
+                    { token: ownerGrant.released.access_token.value });
+  check("…and the grant's token is refused at the RS", function () {
+    assert.strictEqual(r.status, 401, r.text);
+  });
+  r = await es.send("POST", ownerGrant.released.continue.uri,
+                    { token: ownerGrant.released.continue.access_token.value });
+  check("…and the client can no longer continue it", function () {
+    refused(r, "invalid_continuation", "a grant its owner revoked");
+  });
+  const audited = await h.apiGet(realmApi + "/audit?per=200");
+  check("the revocation is audited with THE PERSON as its actor (only the " +
+        "audit row proves who the write was for)", function () {
+    const rows = (audited.body.events || []).filter(function (e) {
+      return e.action === "gnap.grant.revoke" &&
+             JSON.stringify(e.detail || "").indexOf(ownerGrantId) >= 0;
+    });
+    assert.ok(rows.length === 1, JSON.stringify(rows).slice(0, 300));
+    assert.strictEqual(rows[0].actor, OWNER);
+  });
+  let person = await h.apiGet(realmApi + "/users?user=" +
+                              encodeURIComponent(OWNER));
+  check("GET /admin-api/users?user= lists the person's GNAP grants with why " +
+        "each ended", function () {
+    const row = (person.body.gnapGrants || []).filter(function (one) {
+      return one.id === ownerGrantId;
+    })[0];
+    assert.ok(row, JSON.stringify(person.body.gnapGrants).slice(0, 300));
+    assert.strictEqual(row.finalization.reason, "revoked");
+    assert.strictEqual(row.revocable, false);
+    assert.ok(row.tokens.length >= 1 && row.tokens[0].state === "revoked",
+              JSON.stringify(row.tokens));
+    assert.ok(!(person.body.gnapGrants || []).some(function (one) {
+      return one.id === strangerGrantId;
+    }), "another person's grant is listed");
+  });
+  r = await h.apiPost(realmApi + "/gnap/revoke-grant",
+                      { grant: strangerGrantId, user: OWNER });
+  check("POST /admin-api/gnap/revoke-grant naming the wrong person is " +
+        "refused (STS-GNAP-0792)", function () {
+    assert.strictEqual(r.status, 400, r.raw.slice(0, 300));
+  });
+  r = await h.apiPost(realmApi + "/gnap/revoke-grant",
+                      { grant: strangerGrantId, user: STRANGER });
+  check("…and naming the grant's own resource owner revokes it", function () {
+    assert.strictEqual(r.status, 200, r.raw.slice(0, 300));
+  });
+  r = await es.send("GET", RS,
+                    { token: strangerGrant.released.access_token.value });
+  check("…and its token is refused at the RS", function () {
+    assert.strictEqual(r.status, 401, r.text);
+  });
+  person = await h.apiGet(realmApi + "/users?user=" +
+                          encodeURIComponent(STRANGER));
+  check("…and their page says revoked", function () {
+    const row = (person.body.gnapGrants || []).filter(function (one) {
+      return one.id === strangerGrantId;
+    })[0];
+    assert.ok(row && row.finalization.reason === "revoked",
+              JSON.stringify(row).slice(0, 300));
+  });
+
   assert.ok(h.checks >= 90, "only " + h.checks + " checks ran; a section has " +
                                                  "stopped being called.");
   log.info(h.checks + " check(s) passed.");
@@ -1084,8 +1245,9 @@ program
     "interaction start mode and finish method, the four key proofing " +
     "methods, continuation, modification, revocation, token rotation and key " +
     "rotation, subject assertions, key references, instance identifiers, " +
-    "authorization server profiles, too_fast, realm isolation, and the " +
-    "refusals of each.")
+    "authorization server profiles, too_fast, realm isolation, the " +
+    "person's own grants on /portal/gnap and per person on /admin-api, and " +
+    "the refusals of each.")
   .addOption(new Option("-u, --url <url>", "base url (unused: this test " +
                                            "needs no browser)"))
   .parse(process.argv);

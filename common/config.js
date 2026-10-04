@@ -769,6 +769,141 @@ const SETTINGS = [
                  'and what it makes of one a client presents, are the tls.* ' +
                  'settings, which the console draws on its own TLS page.' },
 
+  // A TRUST REALM'S OWN FRONT-END LISTENER (#99, 2026-10-02). A realm may be
+  // reached at a host of its own — `https://acme.example.com/realm/acme/...`,
+  // the path prefix still saying which realm — on a port of its own on every
+  // node, so that each realm can sit behind a load balancer of its own. The
+  // load balancer and the DNS records are the deployment's (Terraform here);
+  // the service binds the port and builds every URL of the realm on its base.
+  // `realmOnly`: these are read from the REALM'S OWN overrides and never from
+  // the process's environment or appconfig, because a value set for the
+  // process would otherwise be every realm's. common/realms.js's
+  // `listenerOverrideProblem()` holds the rules a set of them must meet.
+  { key: 'listener.port', group: 'Realm listener',
+    label: 'The realm\'s own HTTPS port',
+    type: 'int', dflt: 0, min: 0, max: 65535, runtime: false,
+    realmRuntime: true, realmOnly: true,
+    restartReason: 'it is a property of one trust realm and is set on that ' +
+                   'realm, where the listener is bound and closed at once',
+    description: 'A port on every node on which this realm is served by a ' +
+                 'listener of its own, so that it can sit behind a load ' +
+                 'balancer of its own. Requests on it are still told apart ' +
+                 'by the /realm/<id> path prefix, and only this realm\'s ' +
+                 'paths are answered there. 0, the default, means none: the ' +
+                 'realm is served on the main port only. Needs ' +
+                 'listener.publicBaseUrl. It may not be a port another realm ' +
+                 'or any of this service\'s own listeners uses.' },
+
+  { key: 'listener.publicBaseUrl', group: 'Realm listener',
+    label: 'The realm\'s public base URL',
+    type: 'string', dflt: '', runtime: false,
+    realmRuntime: true, realmOnly: true,
+    restartReason: 'it is a property of one trust realm and is set on that ' +
+                   'realm',
+    description: 'The scheme, host and port this realm is reached at — ' +
+                 'https://acme.example.com, with no path — which is what the ' +
+                 'realm\'s load balancer answers under. When set, every ' +
+                 'issuer, metadata URL, redirect and link the realm builds is ' +
+                 'on this base, with the /realm/<id> prefix after it, ' +
+                 'whichever listener a request arrived on. CHANGING IT ' +
+                 'CHANGES THE REALM\'S ISSUER: every client\'s discovery ' +
+                 'and every token it holds name the old one.' },
+
+  { key: 'listener.hostnames', group: 'Realm listener',
+    label: 'DNS names on the realm listener\'s certificate',
+    type: 'csv', dflt: '', runtime: false,
+    realmRuntime: true, realmOnly: true,
+    restartReason: 'it is a property of one trust realm and is set on that ' +
+                   'realm',
+    description: 'The DNS names the certificate on the realm\'s own ' +
+                 'listener carries, comma-separated. Empty means the host of ' +
+                 'listener.publicBaseUrl. Ignored when ' +
+                 'listener.certificateFile names a certificate.' },
+
+  { key: 'listener.certificateFile', group: 'Realm listener',
+    label: 'The realm listener\'s certificate file',
+    type: 'string', dflt: '', runtime: false,
+    realmRuntime: true, realmOnly: true,
+    restartReason: 'it is a property of one trust realm and is set on that ' +
+                   'realm',
+    description: 'A PEM file of the certificate, and the chain after it, ' +
+                 'the realm\'s listener presents — one from a public CA, ' +
+                 'which a browser trusts. Empty, the default, means a ' +
+                 'certificate this realm\'s own certificate authority issues ' +
+                 'for listener.hostnames and renews, which only a client ' +
+                 'trusting this service\'s Root accepts. Needs ' +
+                 'listener.privateKeyFile.' },
+
+  { key: 'listener.privateKeyFile', group: 'Realm listener',
+    label: 'The realm listener\'s private key file',
+    type: 'string', dflt: '', runtime: false,
+    realmRuntime: true, realmOnly: true,
+    restartReason: 'it is a property of one trust realm and is set on that ' +
+                   'realm',
+    description: 'A PEM file of the private key of ' +
+                 'listener.certificateFile. Both or neither.' },
+
+  // THE REALM LISTENER'S TLS POLICY AND CLIENT AUTHENTICATION (#423): what
+  // the Listeners rows above are for the process's listeners, for this
+  // realm's own. The policy rows INHERIT the process's unless set; the
+  // client-authentication pair is the listener's own, as the main port's is.
+  // Applied in place at the next handshake — the listener is not rebound.
+  { key: 'listener.disableTls12', group: 'Realm listener',
+    label: 'The realm listener: disable TLS 1.2',
+    type: 'enum', enumValues: ['inherit', 'on', 'off'], dflt: 'inherit',
+    runtime: false, realmRuntime: true, realmOnly: true,
+    restartReason: 'it is a property of one trust realm and is set on that ' +
+                   'realm',
+    description: 'Whether the realm\'s own listener negotiates TLS 1.3 ' +
+                 'only. inherit, the default, follows tls.disableTls12; on ' +
+                 'and off decide for this listener alone. Applied at the ' +
+                 'next handshake.' },
+  { key: 'listener.tls13CipherSuites', group: 'Realm listener',
+    label: 'The realm listener\'s TLS 1.3 cipher suites',
+    type: 'csv', dflt: '',
+    csvValues: ['TLS_AES_256_GCM_SHA384', 'TLS_CHACHA20_POLY1305_SHA256',
+                'TLS_AES_128_GCM_SHA256', 'TLS_AES_128_CCM_SHA256',
+                'TLS_AES_128_CCM_8_SHA256'],
+    ordered: true,
+    runtime: false, realmRuntime: true, realmOnly: true,
+    restartReason: 'it is a property of one trust realm and is set on that ' +
+                   'realm',
+    description: 'The TLS 1.3 cipher suites the realm\'s own listener ' +
+                 'accepts, in order of preference. Empty, the default, ' +
+                 'follows tls.tls13CipherSuites; reset it to go back. ' +
+                 'Applied at the next handshake.' },
+  { key: 'listener.pqcOnly', group: 'Realm listener',
+    label: 'The realm listener: post-quantum safe only',
+    type: 'enum', enumValues: ['inherit', 'on', 'off'], dflt: 'inherit',
+    runtime: false, realmRuntime: true, realmOnly: true,
+    restartReason: 'it is a property of one trust realm and is set on that ' +
+                   'realm',
+    description: 'Whether the realm\'s own listener accepts only TLS 1.3, ' +
+                 'the 256-bit suites and the ML-KEM groups — tls.pqcOnly, ' +
+                 'for this listener. inherit, the default, follows ' +
+                 'tls.pqcOnly. Applied at the next handshake.' },
+  { key: 'listener.disableOptionalClientCertificate',
+    group: 'Realm listener',
+    label: 'The realm listener: do not ask for a client certificate',
+    type: 'bool', dflt: false,
+    runtime: false, realmRuntime: true, realmOnly: true,
+    restartReason: 'it is a property of one trust realm and is set on that ' +
+                   'realm',
+    description: 'The realm\'s own listener sends no CertificateRequest. ' +
+                 'Off by default: it asks and requires none, as the main ' +
+                 'port does, so certificate-bound tokens and GET ' +
+                 '/tls/sign-in work there.' },
+  { key: 'listener.requireClientCertificate', group: 'Realm listener',
+    label: 'The realm listener: require a client certificate',
+    type: 'bool', dflt: false,
+    runtime: false, realmRuntime: true, realmOnly: true,
+    restartReason: 'it is a property of one trust realm and is set on that ' +
+                   'realm',
+    description: 'The realm\'s own listener refuses, at the handshake, every ' +
+                 'connection without a client certificate chaining to the ' +
+                 'client truststore. Wins over the toggle above. Off by ' +
+                 'default.' },
+
   // ---------------------------------------------------------------------
   // The scheme the port above answers on, and it is DERIVED (`derived: true`,
   // so the shipped env/*.js files do not carry it): its default is whatever
@@ -918,6 +1053,53 @@ const SETTINGS = [
   // the balancer, and no forwarded header can exist below TLS.
   // `common/proxy_protocol.ts` argues the three kinds of peer and where the
   // address is put.
+  // HTTP CONNECTION POOLING (#406's keep-alive, made per listener and
+  // editable by #429, 2026-10-02: rcbj, "expose HTTP Connection Pooling
+  // settings on each HTTP/HTTPS listener tab"). The service-wide values every
+  // HTTP listener inherits — the main port, the protocol debugger's, a realm's
+  // own and the plain-HTTP revocation listener — each of which has its own
+  // `listener<Id>.<name>` row (and a realm's, `listener.<name>`). RUNTIME:
+  // they are properties of the server, which node reads at each new
+  // connection, so `tls/tls_server.js` re-applies them when one changes.
+  { key: 'http.keepAliveTimeoutS', group: 'HTTP connections',
+    label: 'Idle connection kept for (s)',
+    env: 'STS_HTTP_KEEP_ALIVE_TIMEOUT_S', type: 'int', dflt: 60,
+    min: 1, max: 3600, runtime: true, perProcess: true,
+    description: 'How long, in seconds, an HTTP listener keeps an idle ' +
+                 'HTTP/1.1 connection open for the client\'s next request ' +
+                 '(node\'s own default is 5). A connection kept is a TLS ' +
+                 'handshake — and a client-certificate prompt — not repeated. ' +
+                 'Requests a client pipelines on one connection are answered ' +
+                 'in order. Behind a balancer, keep its idle timeout above ' +
+                 'this.' },
+  { key: 'http.headersTimeoutS', group: 'HTTP connections',
+    label: 'Request header timeout (s)',
+    env: 'STS_HTTP_HEADERS_TIMEOUT_S', type: 'int', dflt: 0,
+    min: 0, max: 3600, runtime: true, perProcess: true,
+    description: 'How long, in seconds, a client may take to send a ' +
+                 'request\'s headers before the connection is closed. 0, the ' +
+                 'default, is a second above the keep-alive timeout, so a ' +
+                 'client (or a balancer) reusing a connection at the last ' +
+                 'moment never meets one this end is closing; a value at or ' +
+                 'below the keep-alive timeout is raised to that.' },
+  { key: 'http.maxRequestsPerSocket', group: 'HTTP connections',
+    label: 'Requests per connection',
+    env: 'STS_HTTP_MAX_REQUESTS_PER_SOCKET', type: 'int', dflt: 0,
+    min: 0, max: 1000000, runtime: true, perProcess: true,
+    description: 'How many requests one keep-alive connection may carry ' +
+                 'before it is closed after its last answer. 0, the ' +
+                 'default, is no limit (node\'s own). A limit spreads ' +
+                 'long-lived clients across the nodes behind a balancer, at ' +
+                 'the cost of a new connection — and a handshake — each ' +
+                 'time it is reached.' },
+  { key: 'http.maxConnections', group: 'HTTP connections',
+    label: 'Open connections at most',
+    env: 'STS_HTTP_MAX_CONNECTIONS', type: 'int', dflt: 0,
+    min: 0, max: 1000000, runtime: true, perProcess: true,
+    description: 'How many connections an HTTP listener holds open at once; ' +
+                 'one more is closed as it arrives. 0, the default, is no ' +
+                 'limit (node\'s own).' },
+
   { key: 'global.proxyProtocol', group: 'Global',
     label: 'PROXY protocol on the TCP listeners',
     env: 'STS_PROXY_PROTOCOL', type: 'enum', enumValues: ['off', 'v2'],
@@ -1137,6 +1319,23 @@ const SETTINGS = [
     description: 'The expires_in of every access token, and the exp of the ' +
                  'formats that carry one. A client application may override ' +
                  'it with its own gnapAccessTokenLifetimeS.' },
+  // THE GRANT'S OWN LIFETIME (#432 phase 7, 2026-10-03), separate from any
+  // token's. A DAY by default, oauth2.refreshTokenTtlS's figure, for its
+  // reason: rotation renews a token without the resource owner, and this is
+  // the point at which they are asked again. gnap/gnap_grants.ts argues it.
+  { key: 'gnap.grantLifetimeS', group: 'GNAP', label: 'Grant lifetime ' +
+      '(seconds)',
+    path: 'gnap.grantLifetimeS', env: 'STS_GNAP_GRANT_LIFETIME_S',
+    type: 'int',
+    dflt: 86400, min: 60, max: 31536000, runtime: true,
+    description: 'How long a grant lives, counted from its request and ' +
+                 'separate from the access token lifetime. Past it the ' +
+                 'grant can no longer be continued or modified (RFC 9635 ' +
+                 'section 5) and none of its tokens can be rotated (section ' +
+                 '6.1); no token issued under it is given an expiry later ' +
+                 'than it; and it is finalized as expired. Fixed on each ' +
+                 'grant when it is made. A longer one lets a client keep ' +
+                 'access by rotation for longer on one approval.' },
   { key: 'gnap.interactionLifetimeS', group: 'GNAP', label: 'Interaction ' +
       'lifetime (seconds)',
     path: 'gnap.interactionLifetimeS', env: 'STS_GNAP_INTERACTION_LIFETIME_S',
@@ -1336,14 +1535,36 @@ const SETTINGS = [
     description: 'Write what a resource owner approved into the consent ' +
                  'register on their own entry (as gnap:<digest> values), so ' +
                  'the same rights are not asked for again.' },
-  { key: 'gnap.allowCrossUser', group: 'GNAP', label: 'Allow a different ' +
-                                                      'person to approve',
-    path: 'gnap.allowCrossUser', env: 'STS_GNAP_ALLOW_CROSS_USER', type: 'bool',
-    dflt: false,
-    runtime: true,
-    description: 'Section 2.4: when the request named a user and somebody ' +
-                 'else signs in, the AS SHOULD answer unknown_user. On lets ' +
-                 'whoever signs in approve.' },
+  // #432 PHASE 6: approval by an absent resource owner, which RETIRED
+  // `gnap.allowCrossUser` (whoever signed in could approve a grant naming
+  // somebody else) with no switch of that meaning left.
+  { key: 'gnap.ownerApproval', group: 'GNAP',
+    label: 'Approval by an absent resource owner',
+    path: 'gnap.ownerApproval', env: 'STS_GNAP_OWNER_APPROVAL', type: 'bool',
+    dflt: false, runtime: true,
+    description: 'RFC 9635 sections 1.4 and 2.4: when a request names a ' +
+                 'person who is not the one at the approval page, or offers ' +
+                 'no interaction at all, the grant waits for that person on ' +
+                 '/portal/ciba (with a mail notice) while the client polls. ' +
+                 'OFF by default: a new way in is something a realm turns ' +
+                 'on. Off, a request naming somebody else is answered ' +
+                 'unknown_user and one offering no interaction is refused.' },
+  { key: 'gnap.ownerApprovalLifetimeS', group: 'GNAP',
+    label: 'Time an absent owner has to answer',
+    path: 'gnap.ownerApprovalLifetimeS',
+    env: 'STS_GNAP_OWNER_APPROVAL_LIFETIME_S', type: 'int', dflt: 600,
+    min: 60, max: 86400, runtime: true,
+    description: 'Seconds a grant waits on its resource owner\'s portal ' +
+                 'before it is finalized as rejected. The client\'s wait ' +
+                 'between polls is stretched so gnap.maxPolls covers it.' },
+  { key: 'gnap.ownerApprovalMaxPending', group: 'GNAP',
+    label: 'Requests one person may have waiting',
+    path: 'gnap.ownerApprovalMaxPending',
+    env: 'STS_GNAP_OWNER_APPROVAL_MAX_PENDING', type: 'int', dflt: 5,
+    min: 1, max: 100, runtime: true,
+    description: 'The most grants that may wait for one person on their ' +
+                 'portal at once; more are refused request_denied, so a ' +
+                 'client cannot fill somebody\'s page.' },
   { key: 'gnap.userCodeLength', group: 'GNAP', label: 'User code length',
     path: 'gnap.userCodeLength', env: 'STS_GNAP_USER_CODE_LENGTH', type: 'int',
     dflt: 8, min: 6,
@@ -1378,6 +1599,21 @@ const SETTINGS = [
     description: 'RFC 9767 section 4: a resource server presents a token it ' +
                  'was given as existing_access_token and receives a token ' +
                  'for a downstream resource server.' },
+  // HOW FAR A TOKEN MAY TRAVEL FROM WHAT ITS PERSON APPROVED (#432 phase 1).
+  // Every derivation puts the deriving resource server on the token's actor
+  // chain (`act`, RFC 8693 section 4.1); this caps the chain. Two lets the
+  // resource server a client called reach one more, and that one a third —
+  // the common three-tier case — and stops there; 1 allows one hop only.
+  // A bound, in every mode (STS-GNAP-0782).
+  { key: 'gnap.maxDerivationDepth', group: 'GNAP', label: 'Deepest ' +
+                                                         'derivation chain',
+    path: 'gnap.maxDerivationDepth', env: 'STS_GNAP_MAX_DERIVATION_DEPTH',
+    type: 'int', dflt: 2, min: 1, max: 16,
+    runtime: true,
+    description: 'How many resource servers a derived token\'s actor chain ' +
+                 '(act) may name: each RFC 9767 section 4 derivation adds ' +
+                 'the deriving resource server, and a derivation past this ' +
+                 'depth is refused (request_denied) in every mode.' },
   { key: 'gnap.pushFinish', group: 'GNAP', label: 'Deliver push interaction ' +
                                                   'finishes',
     path: 'gnap.pushFinish', env: 'STS_GNAP_PUSH_FINISH', type: 'bool',
@@ -1460,6 +1696,17 @@ const SETTINGS = [
     description: 'GET/POST /gnap/rs/resource: judges a presented token in ' +
                  'any of the five formats and answers the RS-first challenge ' +
                  'of section 9.1.' },
+  { key: 'gnap.ownerLookupCacheS', group: 'GNAP', label: 'Owner lookup ' +
+      'cache (seconds)',
+    path: 'gnap.ownerLookupCacheS', env: 'STS_GNAP_OWNER_LOOKUP_CACHE_S',
+    type: 'int', dflt: 60, min: 0, max: 3600, runtime: true,
+    description: 'How long the owner a resource server\'s ' +
+                 'gnapOwnerLookupUri named for an identifier is held before ' +
+                 'it is asked again (#432 phase 5): a grant asks at its ' +
+                 'request, on its approval page and at issue. A failed ' +
+                 'lookup is never held. 0 asks every time; a longer one ' +
+                 'keeps a former owner able to approve for that long after ' +
+                 'the resource server says otherwise.' },
   { key: 'gnap.caepEvents', group: 'GNAP', label: 'Emit CAEP for grants and ' +
                                                   'tokens',
     path: 'gnap.caepEvents', env: 'STS_GNAP_CAEP_EVENTS', type: 'bool',
@@ -1474,8 +1721,11 @@ const SETTINGS = [
     runtime: true,
     description: 'A Shared Signals stream owned by a GNAP client application ' +
                  'with a finish URI carries events only about people who ' +
-                 'approved a grant to that application. gnapScopedSignals ' +
-                 'FALSE on the entry opts one application out.' },
+                 'approved a grant to that application; one owned by a GNAP ' +
+                 'resource server carries only session-revoked for the ' +
+                 'GNAP tokens and grants audienced to it (#432). ' +
+                 'gnapScopedSignals FALSE on the entry opts one application ' +
+                 'out.' },
 
   // --- XACML: the access policy (the rest of the group is further down) ----
   { key: 'xacml.enforceAccess', group: 'XACML',
@@ -4085,6 +4335,27 @@ const SETTINGS = [
   // `runtime: true` and settable on a realm, for `consentRequired`'s reason:
   // there is no listener and no key involved, so nothing here is decided when a
   // socket is bound.
+  // #114: what an RFC 7523 / RFC 7522 assertion EXCHANGED (RFC 8693) may be
+  // addressed to. Strict by default (rcbj, #114).
+  { key: 'oauth2.tokenExchangeAudience', group: 'OAuth 2.0 / OIDC',
+    label: 'Audience of an assertion exchanged',
+    env: 'STS_OAUTH2_TOKEN_EXCHANGE_AUDIENCE', type: 'enum',
+    enumValues: ['authorization-server', 'any-declared-relying-party'],
+    dflt: 'authorization-server', runtime: true,
+    description: 'What an RFC 7523 JWT or RFC 7522 / SAML 1.1 assertion ' +
+                 'presented as an RFC 8693 subject_token or actor_token may ' +
+                 'be addressed to. AUTHORIZATION-SERVER (the default) is the ' +
+                 'assertion grant\'s own rule: its audience names this token ' +
+                 'endpoint or issuer, and a SAML Recipient the token ' +
+                 'endpoint. ANY-DECLARED-RELYING-PARTY also accepts an ' +
+                 'audience naming an application registered in this realm ' +
+                 '(and, for SAML, a Recipient that is an assertion consumer ' +
+                 'service registered on the exchanging client) — TOKEN ' +
+                 'FORWARDING: a token issued to one relying party is traded ' +
+                 'for another, which the act on /admin/delegation records as ' +
+                 'such. WARNING: anybody who holds such a token — every ' +
+                 'relying party it was issued to — can then exchange it; ' +
+                 'turn it on only where that is the design.' },
   { key: 'oauth2.tokenExchangeRefreshToken', group: 'OAuth 2.0 / OIDC',
     label: 'Refresh token from a token exchange',
     env: 'STS_OAUTH2_TOKEN_EXCHANGE_REFRESH_TOKEN', type: 'enum',
@@ -4831,9 +5102,16 @@ const SETTINGS = [
   { key: 'oauth2.authorizationCodeTtlS', group: 'OAuth 2.0 / OIDC',
     label: 'Authorization code lifetime (s)',
     env: 'STS_OAUTH2_AUTHORIZATION_CODE_TTL_S', type: 'int', dflt: 300,
-    min: 30, max: 3600, runtime: true,
-    description: 'How long an authorization code may wait to be redeemed. ' +
-                 'RFC 6749 section 4.1.2 recommends at most ten minutes. It ' +
+    // AT MOST FIVE MINUTES (#424, rcbj: "an authorization code ... only be
+    // valid for five minutes"). It may be shorter; FAPI 2.0 caps it at 60.
+    min: 30, max: 300, runtime: true,
+    description: 'How long an authorization code may wait to be redeemed: ' +
+                 'at most five minutes (the default), and shorter if set. ' +
+                 'RFC 6749 section 4.1.2 recommends at most ten minutes; ' +
+                 'this service allows half that. FAPI 2.0 holds it to 60 ' +
+                 'seconds. A code is also presented ONCE: its first Token ' +
+                 'Request spends it, whatever that request\'s outcome ' +
+                 '(oauth2.codeReplayIdempotent relaxes that). It ' +
                  'is ALSO what RFC 9700 mode\'s transaction memory is ' +
                  'measured from — a PKCE challenge or nonce is remembered ' +
                  'for twice this — so the two cannot drift apart. A code ' +
@@ -4855,16 +5133,20 @@ const SETTINGS = [
     label: 'Answer a repeated code redemption with the same tokens',
     env: 'STS_OAUTH2_CODE_REPLAY_IDEMPOTENT', type: 'bool', dflt: false,
     runtime: true,
-    description: '**WEAKER THAN THE SPECIFICATION — leave it off.** With it ' +
-                 'on, an IDENTICAL repeat of a Token Request for a code ' +
-                 'already redeemed is answered with the tokens it already ' +
-                 'got, for the rest of the code\'s own lifetime. RFC 6749 ' +
-                 'section 4.1.2 says a code used twice MUST be refused, and ' +
-                 'off (the default) it is — and everything the first ' +
-                 'redemption bought is revoked (section 10.5). RFC 9700, ' +
-                 'OAuth 2.1 and FAPI mode ignore it. It exists for the ' +
-                 'parent project\'s development-mode job that still ' +
-                 'asserts the old courtesy (#187).' },
+    description: '**WEAKER THAN THE SPECIFICATION — leave it off.** Off ' +
+                 '(the default), an authorization code is presented ONCE: ' +
+                 'its first Token Request spends it whatever that ' +
+                 'request\'s outcome — a wrong code_verifier, a failed ' +
+                 'client authentication, anything — and a second ' +
+                 'presentation is refused, revoking whatever the first ' +
+                 'bought (RFC 6749 sections 4.1.2 and 10.5; #424). On, a ' +
+                 'refused request leaves the code redeemable so the client ' +
+                 'may fix it and try again, and an IDENTICAL repeat of a ' +
+                 'redemption is answered with the tokens it already got, for ' +
+                 'the rest of the code\'s lifetime. RFC 9700, OAuth 2.1, ' +
+                 'FAPI and product mode ignore it. It exists for the parent ' +
+                 'project\'s development-mode job that still asserts the ' +
+                 'old courtesy (#187).' },
 
   { key: 'oauth2.maxPendingTransactions', group: 'OAuth 2.0 / OIDC',
     label: 'RFC 9700: remembered transactions (per realm)',
@@ -6528,6 +6810,26 @@ const SETTINGS = [
                  'day by default; 0 deletes a record as soon as it expires.' },
 
   // #345: the revoked-jti register's size cap, per realm.
+  // --- the access-token status list (#432) -------------------------------
+  { key: 'oauth2.accessTokenStatusListTtlS', group: 'OAuth 2.0 / OIDC',
+    label: 'Access-token status list time to live (s)',
+    env: 'STS_OAUTH2_ACCESS_TOKEN_STATUS_LIST_TTL_S', type: 'int', dflt: 60,
+    min: 1, max: 86400, runtime: true,
+    description: 'The ttl the realm\'s access-token status list carries ' +
+                 '(draft-ietf-oauth-status-list section 5), and its HTTP ' +
+                 'max-age — and the revoked-biscuit list\'s: how long a ' +
+                 'resource server that checks OAuth RFC 9068 and GNAP JWT ' +
+                 'access tokens on its own may keep the list, and so how ' +
+                 'long a revocation can take to reach it.' },
+
+  { key: 'oauth2.accessTokenStatusListLifetimeS', group: 'OAuth 2.0 / OIDC',
+    label: 'Access-token status list lifetime (s)',
+    env: 'STS_OAUTH2_ACCESS_TOKEN_STATUS_LIST_LIFETIME_S', type: 'int',
+    dflt: 3600, min: 60, max: 86400, runtime: true,
+    description: 'How long after it is signed the access-token status list ' +
+                 'says it is valid (its exp). A resource server must not ' +
+                 'use a list past it.' },
+
   { key: 'oauth2.maxRevokedJtis', group: 'OAuth 2.0 / OIDC',
     label: 'Most revoked token ids kept per realm',
     env: 'STS_OAUTH2_MAX_REVOKED_JTIS', type: 'int', dflt: 100000,
@@ -8831,24 +9133,24 @@ const SETTINGS = [
   // every listener rather than a FAPI switch, because a cipher suite is a
   // property of the SOCKET and a profile is a property of a realm. A weaker
   // list stays settable; docs/tls.md says what that costs.
-  { key: 'tls.ciphers', group: 'TLS', label: 'TLS cipher list',
+  { key: 'tls.ciphers', group: 'TLS', label: 'TLS 1.2 cipher list',
     env: 'STS_TLS_CIPHERS', type: 'string',
-    dflt: 'TLS_AES_256_GCM_SHA384:TLS_AES_128_GCM_SHA256:' +
-          'TLS_CHACHA20_POLY1305_SHA256:ECDHE-ECDSA-AES128-GCM-SHA256:' +
+    dflt: 'ECDHE-ECDSA-AES128-GCM-SHA256:' +
           'ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:' +
           'ECDHE-RSA-AES256-GCM-SHA384',
     runtime: false,
     restartReason: 'the TLS contexts are built when the listeners are created',
-    description: 'An OpenSSL cipher list for the TLS 1.3 suites (TLS_ ' +
-                 'prefixed names) and the TLS 1.2 ones on the main port, ' +
-                 'LDAPS and the debugger\'s listener. The default is BCP ' +
-                 '195 (RFC 9325 section 4.2): the TLS 1.3 suites first, then ' +
-                 'only the four ECDHE AES-GCM suites for TLS 1.2 — what FAPI ' +
-                 '2.0 section 5.2.2 requires — and the server\'s order wins. ' +
-                 'Empty means node\'s own default list, which allows more ' +
-                 'than BCP 195 recommends. A list matching NO cipher stops ' +
-                 'the service at startup naming this setting, rather than ' +
-                 'leaving listeners that complete no handshake.' },
+    description: 'An OpenSSL cipher list for the TLS 1.2 suites on the main ' +
+                 'port, LDAPS and the debugger\'s listener (the TLS 1.3 ' +
+                 'suites are tls.tls13CipherSuites since #423, and a TLS_ ' +
+                 'name here is refused). The default is BCP 195 (RFC 9325 ' +
+                 'section 4.2): only the four ECDHE AES-GCM suites — what ' +
+                 'FAPI 2.0 section 5.2.2 requires — behind the TLS 1.3 ' +
+                 'suites, and the server\'s order wins. Empty means node\'s ' +
+                 'own default TLS 1.2 list, which allows more than BCP 195 ' +
+                 'recommends. Unused while tls.disableTls12 or tls.pqcOnly ' +
+                 'is on. A list matching NO cipher stops the service at ' +
+                 'startup naming this setting.' },
 
   // THE KEY-EXCHANGE GROUPS, POST-QUANTUM FIRST (#212, 2026-09-26). tlsfuzzer
   // found node's 'auto' — OpenSSL 3.5's own list — offering X25519MLKEM768
@@ -8922,6 +9224,170 @@ const SETTINGS = [
                  'handshake (STS-TLS-0035). A list that builds no TLS ' +
                  'context stops the service at startup.' },
 
+  // ---------------------------------------------------------------------
+  // THE LISTENERS' TLS POLICY AND CLIENT AUTHENTICATION (#423, 2026-10-02,
+  // rcbj: "For all TLS listeners, add a 'Disable TLS v1.2' flag ... choose
+  // exactly which TLS v1.3 cipher suites can be used ... a toggle to only
+  // allow PQC cipher suites ... Each TLS listener should have a toggle to
+  // disable optional client authentication ... another toggle to require
+  // client authentication at the TLS level").
+  //
+  // RUNTIME, unlike tls.minVersion and tls.ciphers beside them: an
+  // administrator chooses these on Server configuration -> Listeners, and
+  // `tls/tls_server.js` re-applies them to every listener it knows the moment
+  // one changes (`config.onOverridesChanged()`), at the next handshake. Per
+  // process, because a listener belongs to no realm; a realm's own listener
+  // has the `listener.*` rows below. tls/CLAUDE.md, "THE LISTENERS' POLICY".
+  // ---------------------------------------------------------------------
+  { key: 'tls.disableTls12', group: 'Listeners',
+    label: 'Disable TLS 1.2',
+    // ON BY DEFAULT SINCE #429 (rcbj, 2026-10-02: "I want TLS v1.3 to be the
+    // default for all TLS listeners"). A listener turns TLS 1.2 back on with
+    // its own listener<Id>.disableTls12, or the service with this row.
+    env: 'STS_TLS_DISABLE_TLS12', type: 'bool', dflt: true,
+    runtime: true, perProcess: true,
+    description: 'Every TLS listener — the main port, LDAPS, the protocol ' +
+                 'debugger\'s, the SPIFFE gRPC listeners and the channel ' +
+                 'between cells — negotiates TLS 1.3 only, whatever ' +
+                 'tls.minVersion says. ON by default (#429): every listener ' +
+                 'is TLS 1.3 unless TLS 1.2 is turned back on, here for ' +
+                 'every listener or on one listener\'s own row. WARNING: ' +
+                 'off lets a client negotiate TLS 1.2, which FAPI 2.0 and ' +
+                 'BCP 195 still allow but which has no post-quantum key ' +
+                 'exchange. ' +
+                 'A realm\'s own listener follows this unless its ' +
+                 'listener.disableTls12 says otherwise. Applied at the next ' +
+                 'handshake.' },
+
+  { key: 'tls.tls13CipherSuites', group: 'Listeners',
+    label: 'TLS 1.3 cipher suites',
+    env: 'STS_TLS_TLS13_CIPHER_SUITES', type: 'csv',
+    dflt: 'TLS_AES_256_GCM_SHA384,TLS_AES_128_GCM_SHA256,' +
+          'TLS_CHACHA20_POLY1305_SHA256',
+    runtime: true, perProcess: true,
+    // RFC 8446's five, in the order a list is drawn. A TLS 1.3 suite is the
+    // record protection alone — the AEAD and the hash — so what makes a
+    // suite safe against a quantum adversary is its KEY LENGTH (Grover's
+    // algorithm halves it): the two 256-bit suites keep 128 bits, the
+    // 128-bit ones 64. What stops a recorded session being decrypted later
+    // is the key exchange, which tls.pqcOnly restricts too.
+    csvValues: ['TLS_AES_256_GCM_SHA384', 'TLS_CHACHA20_POLY1305_SHA256',
+                'TLS_AES_128_GCM_SHA256', 'TLS_AES_128_CCM_SHA256',
+                'TLS_AES_128_CCM_8_SHA256'],
+    ordered: true,
+    csvValueNotes: {
+      TLS_AES_256_GCM_SHA384: 'AES-256-GCM · post-quantum safe (a 256-bit ' +
+        'key keeps 128 bits against Grover) · the only one CNSA 2.0 allows',
+      TLS_CHACHA20_POLY1305_SHA256: 'ChaCha20-Poly1305 · post-quantum safe ' +
+        '(256-bit key) · fast without AES hardware',
+      TLS_AES_128_GCM_SHA256: 'AES-128-GCM · NOT post-quantum safe (64 bits ' +
+        'against Grover) · the one suite every TLS 1.3 client must offer',
+      TLS_AES_128_CCM_SHA256: 'AES-128-CCM · NOT post-quantum safe · for ' +
+        'constrained devices; off in OpenSSL by default',
+      TLS_AES_128_CCM_8_SHA256: 'AES-128-CCM with an 8-byte tag · NOT ' +
+        'post-quantum safe and a short tag — RFC 8446 says not for general ' +
+        'use; only for a client that offers nothing else'
+    },
+    description: 'The TLS 1.3 cipher suites every TLS listener accepts, in ' +
+                 'order of preference (the server\'s order wins). Tick and ' +
+                 'number them on Server configuration -> Listeners. The ' +
+                 'default is OpenSSL\'s three: AES-256-GCM, AES-128-GCM and ' +
+                 'ChaCha20-Poly1305. AES-256-GCM and ChaCha20-Poly1305 are ' +
+                 'the post-quantum safe ones (256-bit keys); tls.pqcOnly ' +
+                 'keeps only those. At least one is required: a listener ' +
+                 'with none would complete no TLS 1.3 handshake. The TLS 1.2 ' +
+                 'suites are tls.ciphers. Applied at the next handshake.' },
+
+  { key: 'tls.pqcOnly', group: 'Listeners',
+    label: 'Post-quantum safe only',
+    env: 'STS_TLS_PQC_ONLY', type: 'bool', dflt: false,
+    runtime: true, perProcess: true,
+    description: 'Every TLS listener accepts only what a quantum adversary ' +
+                 'recording the session today could not decrypt later: TLS ' +
+                 '1.3 alone (no TLS 1.2 key exchange is post-quantum), only ' +
+                 'the 256-bit TLS 1.3 cipher suites chosen in ' +
+                 'tls.tls13CipherSuites, and only the ML-KEM key-exchange ' +
+                 'groups in tls.groups (the three hybrids — ' +
+                 'X25519MLKEM768, SecP256r1MLKEM768, SecP384r1MLKEM1024 — ' +
+                 'and pure MLKEM512/768/1024). A client that offers none of ' +
+                 'them is refused at the handshake. It does not restrict ' +
+                 'the signature algorithms: a handshake recorded today ' +
+                 'cannot be forged later, and few clients accept an ML-DSA ' +
+                 'certificate yet. Turning it on while the chosen suites or ' +
+                 'groups hold nothing post-quantum is refused. Off by ' +
+                 'default.' },
+
+  // CLIENT AUTHENTICATION, TWO TOGGLES PER LISTENER. "Require" wins over
+  // "disable optional": a listener that requires a certificate asks for one
+  // by definition. Read by `tls_server.js`'s `clientAuthOf()`.
+  { key: 'tls.mainPortDisableOptionalClientCertificate',
+    group: 'Listener: Main port',
+    label: 'Main port: do not ask for a client certificate',
+    env: 'STS_TLS_MAIN_DISABLE_OPTIONAL_CLIENT_CERT', type: 'bool',
+    dflt: false, runtime: true, perProcess: true,
+    description: 'The main HTTPS port sends no CertificateRequest, so no ' +
+                 'client certificate is ever presented there. Off by ' +
+                 'default: the port asks every connection for one and ' +
+                 'requires none, which is what RFC 8705 certificate-bound ' +
+                 'tokens and client authentication, GET /tls/sign-in, EST ' +
+                 'with a certificate and the remote XACML PEP need — on, ' +
+                 'all of those stop working here, and a browser holding a ' +
+                 'client certificate is no longer offered a choice of one.' },
+  { key: 'tls.mainPortRequireClientCertificate',
+    group: 'Listener: Main port',
+    label: 'Main port: require a client certificate',
+    env: 'STS_TLS_MAIN_REQUIRE_CLIENT_CERT', type: 'bool',
+    dflt: false, runtime: true, perProcess: true,
+    description: 'The main HTTPS port refuses, at the handshake, every ' +
+                 'connection that does not present a client certificate ' +
+                 'chaining to the client truststore (/admin/tls/trust, and ' +
+                 'the certificates this service issues to people and ' +
+                 'applications). Wins over the toggle above. Off by default: ' +
+                 'on, a browser without a certificate, discovery, JWKS and ' +
+                 'every public document on this port are refused, and so is ' +
+                 'a load balancer\'s or container\'s HTTPS health check.' },
+  { key: 'ldap.ldapsDisableOptionalClientCertificate',
+    group: 'Listener: LDAPS',
+    label: 'LDAPS: do not ask for a client certificate',
+    env: 'STS_LDAPS_DISABLE_OPTIONAL_CLIENT_CERT', type: 'bool',
+    dflt: true, runtime: true, perProcess: true,
+    description: 'LDAPS sends no CertificateRequest. ON by default, which is ' +
+                 'what LDAPS always did: a bind is how a directory client ' +
+                 'says who it is, and a certificate prompt in front of every ' +
+                 'client holding one is a surprise. Off asks every ' +
+                 'connection for a certificate and requires none; a ' +
+                 'certificate presented is verified against the client ' +
+                 'truststore but does not bind anybody (there is no SASL ' +
+                 'EXTERNAL here).' },
+  { key: 'ldap.ldapsRequireClientCertificate',
+    group: 'Listener: LDAPS',
+    label: 'LDAPS: require a client certificate',
+    env: 'STS_LDAPS_REQUIRE_CLIENT_CERT', type: 'bool',
+    dflt: false, runtime: true, perProcess: true,
+    description: 'LDAPS refuses, at the handshake, every connection that ' +
+                 'does not present a client certificate chaining to the ' +
+                 'client truststore — a second gate in front of the bind, ' +
+                 'which still decides who the connection is. Wins over the ' +
+                 'toggle above. Off by default.' },
+  { key: 'debugger.disableOptionalClientCertificate',
+    group: 'Listener: Protocol debugger',
+    label: 'Debugger: do not ask for a client certificate',
+    env: 'STS_DEBUGGER_DISABLE_OPTIONAL_CLIENT_CERT', type: 'bool',
+    dflt: false, runtime: true, perProcess: true,
+    description: 'The embedded protocol debugger\'s HTTPS listener sends no ' +
+                 'CertificateRequest. Off by default: it asks and requires ' +
+                 'none, as the main port does, so a certificate-bound ' +
+                 'access token can be presented there.' },
+  { key: 'debugger.requireClientCertificate',
+    group: 'Listener: Protocol debugger',
+    label: 'Debugger: require a client certificate',
+    env: 'STS_DEBUGGER_REQUIRE_CLIENT_CERT', type: 'bool',
+    dflt: false, runtime: true, perProcess: true,
+    description: 'The protocol debugger\'s listener refuses, at the ' +
+                 'handshake, every connection without a client certificate ' +
+                 'chaining to the client truststore. Wins over the toggle ' +
+                 'above. Off by default.' },
+
   // ONE SESSION-TICKET KEY FOR AN ACTIVE-ACTIVE CLUSTER (2026-09-27): a
   // ticket one node issued is sealed under a key the other node never saw,
   // so behind a balancer resumption worked about half the time.
@@ -8932,11 +9398,11 @@ const SETTINGS = [
     env: 'STS_TLS_SESSION_TICKET_ROTATION_S', type: 'int', dflt: 3600,
     min: 0, max: 604800, runtime: true, perProcess: true,
     description: 'In an active-active cluster, every node\'s LDAPS ' +
-                 'listener seals session tickets under one shared key, so a ' +
-                 'ticket one node issued resumes on another (the main port ' +
-                 'and the debugger\'s keep a key per node: they ask for a ' +
-                 'client certificate, and only the node that saw its chain ' +
-                 'can resume the session). This is how often, in seconds, ' +
+                 'listener and main port (unless tls.mainPortSharedTickets ' +
+                 'is off) seal session tickets under one shared key, so a ' +
+                 'ticket one node issued resumes on another (the ' +
+                 'debugger\'s listener keeps a key per node). This is how ' +
+                 'often, in seconds, ' +
                  'the tls.ticket-key-rotate job replaces it; the key it ' +
                  'replaces ' +
                  'is deleted, so a resumed session\'s secrets can be ' +
@@ -8947,6 +9413,73 @@ const SETTINGS = [
                  'active-active mode nothing is shared: one node answering ' +
                  'resumes on OpenSSL\'s own per-listener keys, which never ' +
                  'leave the process.' },
+
+  // THE MAIN PORT'S CONNECTIONS, POOLED (#406, 2026-10-02). The main port
+  // asks every full handshake for a client certificate, and a browser holding
+  // one that matches asks its user each time: with node's 5-second keep-alive
+  // and a ticket key per node, that was nearly every page click behind a
+  // balancer. A resumed session carries no CertificateRequest, so these keep
+  // a connection, and then a session, alive and resumable on any node.
+  { key: 'tls.mainPortSharedTickets', group: 'TLS',
+    label: 'Main port shares the cluster session-ticket key',
+    env: 'STS_TLS_MAIN_PORT_SHARED_TICKETS', type: 'bool', dflt: true,
+    runtime: false, perProcess: true,
+    restartReason: 'the main listener is tracked when it binds',
+    description: 'Whether the main port seals its TLS session tickets under ' +
+                 'the key every node shares in an active-active cluster ' +
+                 '(tls.sessionTicketRotationS), so a session one node made ' +
+                 'resumes on whichever node the balancer picks next and the ' +
+                 'browser is not asked for a client certificate again. The ' +
+                 'verified client-certificate chain a resumed session needs ' +
+                 'for its revocation check is replicated with it ' +
+                 '(tls.resumedChainWaitMs). Off keeps a key per node. ' +
+                 'Outside active-active mode nothing is shared either way.' },
+
+  // THE TLS SESSION CACHE (#429, 2026-10-02: rcbj, "expose the size and
+  // timeout of the TLS Session Cache as a parameter on each TLS listener
+  // tab as editable fields"). The service-wide values every TLS listener
+  // inherits; each has its own `listener<Id>.<name>` row. It replaced
+  // `tls.mainSessionTimeoutS` (#406), which was the main port's alone.
+  { key: 'tls.sessionTimeoutS', group: 'Listeners',
+    label: 'TLS session lifetime (s)',
+    env: 'STS_TLS_SESSION_TIMEOUT_S', type: 'int', dflt: 60,
+    min: 1, max: 86400, runtime: true, perProcess: true,
+    description: 'How long, in seconds, a TLS session may be resumed: the ' +
+                 'lifetime of a session ticket (TLS 1.3 and 1.2) and of an ' +
+                 'entry in the session cache. A resumed session skips the ' +
+                 'full handshake, and with it the client-certificate request ' +
+                 'a browser holding a matching certificate asks its user ' +
+                 'about. A longer value means fewer full handshakes and ' +
+                 'session secrets that matter for longer; the shared ticket ' +
+                 'key\'s rotation (tls.sessionTicketRotationS) still bounds ' +
+                 'it. Applied at the next handshake.' },
+  { key: 'tls.sessionCacheSize', group: 'Listeners',
+    label: 'TLS session cache size (sessions)',
+    env: 'STS_TLS_SESSION_CACHE_SIZE', type: 'int', dflt: 0,
+    min: 0, max: 1000000, runtime: true, perProcess: true,
+    description: 'How many TLS sessions a listener keeps in memory to ' +
+                 'resume by SESSION ID — a TLS 1.2 client resuming without ' +
+                 'a ticket; past it the oldest is forgotten. 0, the default, ' +
+                 'keeps none: node keeps no session cache of its own and ' +
+                 'resumes by tickets, which TLS 1.3 always uses and which ' +
+                 'need no server memory. The cache is per process, so ' +
+                 'behind a balancer a session ID resumes only on the node ' +
+                 'that made it (a ticket resumes anywhere, under the shared ' +
+                 'key). Not on the SPIFFE gRPC listeners, whose server ' +
+                 'grpc-js owns.' },
+
+  { key: 'tls.resumedChainWaitMs', group: 'TLS',
+    label: 'Wait for a resumed session\'s certificate chain (ms)',
+    env: 'STS_TLS_RESUMED_CHAIN_WAIT_MS', type: 'int', dflt: 2000,
+    min: 0, max: 30000, runtime: true, perProcess: true,
+    description: 'A resumed TLS session hands this service the client ' +
+                 'certificate alone; the chain its full handshake verified ' +
+                 'is replicated from the node that saw it. When a session ' +
+                 'resumes here before that chain has arrived, a request ' +
+                 'waits up to this many milliseconds for it, pulling the ' +
+                 'store meanwhile; after that it goes on without it, and a ' +
+                 'revocation check that needs the chain answers as it would ' +
+                 'for a chain it cannot build. 0 never waits.' },
 
   { key: 'tls.trustAnchorsFile', group: 'TLS',
     label: 'Client certificate trust anchors file',
@@ -10755,13 +11288,14 @@ const SETTINGS = [
     env: 'SCIM_AUTH_DISCOVERY', type: 'bool', dflt: false, runtime: true,
     description: 'Whether /ServiceProviderConfig, /ResourceTypes and ' +
                  '/Schemas need a credential as well. OFF by default, which ' +
-                 'is the bootstrapping argument /tls/trust already makes: ' +
-                 'the ServiceProviderConfig is where a client READS which ' +
-                 'authentication schemes exist, so requiring a credential to ' +
-                 'fetch it means a client must already know the answer to ' +
-                 'the question it is asking. RFC 7644 section 4 says nothing ' +
-                 'either way, so both are conforming and both are worth ' +
-                 'being able to try.' },
+                 'is what the specification asks: RFC 7643 section 5 says a ' +
+                 'service provider SHOULD make authenticationSchemes ' +
+                 'readable without prior authentication, because the ' +
+                 'ServiceProviderConfig is where a client READS which ' +
+                 'schemes exist. WARNING: on departs from that SHOULD — a ' +
+                 'client must then already know the answer to the question ' +
+                 'it is asking, learning the schemes only from the 401\'s ' +
+                 'challenges. RFC 7644 section 4 permits either.' },
 
   { key: 'scim.inventOnCreate', group: 'SCIM',
     label: 'Fill a provisioned person in (development mode)',
@@ -11849,6 +12383,27 @@ const SETTINGS = [
                  'sends (#373, #374). Development records what it would ' +
                  'have done and does nothing, unless this is on. An ' +
                  'unverified event is never acted on, whatever this says.' },
+
+  // #432, rcbj's decision 1 and "provide a flag to disable this behavior".
+  { key: 'ssf.signalsRevokeGrants', group: 'SSF',
+    label: 'A federation partner\'s signals revoke the person\'s grants and ' +
+           'tokens',
+    env: 'STS_SSF_SIGNALS_REVOKE_GRANTS', type: 'bool', dflt: true,
+    runtime: true,
+    description: 'On by default. A verified CAEP or RISC event from a ' +
+                 'federation partner that the signal-response policy ' +
+                 'answers with signal-revoke-grants (by default a sign-in ' +
+                 'partner\'s session-revoked, account-disabled, ' +
+                 'account-purged and credential-compromise) revokes every ' +
+                 'GNAP grant the person approved and every OAuth grant, ' +
+                 'token and authorization code held for them — for a ' +
+                 'session-revoked, only what was issued on the sessions ' +
+                 'that partner started. Off, the reaction is recorded as ' +
+                 'skipped and nothing is revoked; the other reactions ' +
+                 '(ending the partner\'s sessions, blocking its sign-ins) ' +
+                 'are unaffected. Development records what it would do ' +
+                 'unless ssf.actOnSignalsInDevelopment is on, and an ' +
+                 'unverified event is never acted on.' },
 
   { key: 'ssf.legacySubClaim', group: 'SSF',
     label: 'Also emit the deprecated `sub` claim (development only)',
@@ -13112,6 +13667,45 @@ const SETTINGS = [
                  'says so rather than implying the cap is all there ever ' +
                  'was. Lowering it takes effect on the next act and discards ' +
                  'the excess immediately.' },
+  // WHO MAY ACT FOR WHOM (#186): the three settings the exchange policy reads
+  // as facts, common to RFC 8693 token exchange, WS-Trust OnBehalfOf / ActAs
+  // and Kerberos S4U. The rules themselves are the issuance policy's
+  // (`xacml_templates.ts`, EXCHANGE_ATTRIBUTE); these only say what they read.
+  { key: 'delegation.defaultSemantics', group: 'Delegation',
+    label: 'Default semantics of an act',
+    env: 'STS_DELEGATION_DEFAULT_SEMANTICS', type: 'enum',
+    enumValues: ['delegation', 'impersonation'],
+    dflt: 'delegation', runtime: true,
+    description: 'What an act is when nothing else says: the request names ' +
+                 'no semantics (a token exchange without exchange_semantics), ' +
+                 'and neither the actor\'s entry nor the subject\'s carries a ' +
+                 'default. DELEGATION issues a token that names the actor ' +
+                 '(`act` in a JWT, the delegate in a SAML 2.0 assertion); ' +
+                 'IMPERSONATION issues one indistinguishable from the ' +
+                 'subject\'s own, and is allowed only to an actor whose ' +
+                 'entry allows it. WS-Trust and Kerberos always say which ' +
+                 'they ask for, so this reaches the token exchange alone.' },
+  { key: 'delegation.protectedGroups', group: 'Delegation',
+    label: 'Groups never acted for',
+    env: 'STS_DELEGATION_PROTECTED_GROUPS', type: 'csv', dflt: '',
+    runtime: true,
+    description: 'Directory groups, by cn or DN, whose members are never ' +
+                 'delegated or impersonated, in any protocol — the common ' +
+                 'form of Active Directory\'s Protected Users. The console\'s ' +
+                 'Admin Read and Admin Write rosters are always protected ' +
+                 'besides. A person or application can also be protected on ' +
+                 'its own entry (stsNotDelegated, appNotDelegated).' },
+  { key: 'delegation.actorRole', group: 'Delegation',
+    label: 'Role a person needs to act for somebody',
+    env: 'STS_DELEGATION_ACTOR_ROLE', type: 'string',
+    dflt: 'DELEGATION_ACTOR', runtime: true,
+    description: 'The configured role a PERSON must hold to be the actor of ' +
+                 'a delegation or an impersonation — the actor_token\'s ' +
+                 'subject at a token exchange, the requester of a WS-Trust ' +
+                 'OnBehalfOf / ActAs. An application acts through its entry\'s ' +
+                 'delegation attributes instead. Create the role on ' +
+                 'Directory > Roles and give it to the people or groups who ' +
+                 'may act.' },
 
   // --- Logout --------------------------------------------------------------
   //
@@ -15960,6 +16554,170 @@ const SETTINGS = [
                  'has an address.' }
 ];
 
+// ---------------------------------------------------------------------------
+// EVERY TLS SETTING PER LISTENER (#429, 2026-10-02, rcbj: "I want all of the
+// settings available on each tab ... on the Server Configuration->Listeners
+// page to be per listener").
+//
+// A row per (listener, setting), `listener<Id>.<name>`, GENERATED from the
+// two tables below rather than written out a hundred times: the same type and
+// bounds as the service-wide row it overrides, plus a way to say INHERIT —
+// `inherit` in an enum (a bool row becomes inherit/on/off), and the empty
+// string in a string or list row. An inherited value is the service-wide
+// row's, read at the moment it is asked (`tls_server.js`'s `policyFor()`), so
+// changing that row moves every listener that has not been told otherwise.
+// Per process, and restart-only exactly where the service-wide row is.
+//
+// What a listener does NOT get, and why: the cell channel is TLS 1.3 always,
+// so no floor, TLS 1.2 switch or TLS 1.2 cipher list; the SPIFFE listeners and
+// the cell channel verify clients against their own trust bundles (SPIFFE's,
+// the cells' Root), so no client truststore. A realm's own listener has its
+// rows as `listener.*` (realmOnly), above and below. The one TLS setting no
+// listener has is `tls.sessionTicketRotationS`: the rotation of the cluster's
+// shared ticket key is a scheduled job, not a property of a listener.
+// ---------------------------------------------------------------------------
+const TLS_LISTENERS = [
+  { id: 'main', label: 'Main port' },
+  { id: 'ldaps', label: 'LDAPS' },
+  { id: 'debugger', label: 'Protocol debugger' },
+  { id: 'spiffeServer', label: 'SPIRE Server API' },
+  { id: 'spiffeBroker', label: 'SPIFFE Broker API' },
+  { id: 'cell', label: 'Channel between cells' },
+  // Plain HTTP: no TLS row is generated for it, only its connection pooling.
+  { id: 'revocation', label: 'Revocation (plain HTTP)' }
+];
+
+// name → the service-wide row, and the listeners (and the realm's own) that
+// carry it.
+const PER_LISTENER_SETTINGS = [
+  { name: 'minVersion', base: 'tls.minVersion', realm: true,
+    listeners: ['main', 'ldaps', 'debugger', 'spiffeServer', 'spiffeBroker'] },
+  { name: 'disableTls12', base: 'tls.disableTls12', realm: false,
+    listeners: ['main', 'ldaps', 'debugger', 'spiffeServer', 'spiffeBroker'] },
+  { name: 'ciphers', base: 'tls.ciphers', realm: true,
+    listeners: ['main', 'ldaps', 'debugger', 'spiffeServer', 'spiffeBroker'] },
+  { name: 'tls13CipherSuites', base: 'tls.tls13CipherSuites', realm: false,
+    listeners: ['main', 'ldaps', 'debugger', 'spiffeServer', 'spiffeBroker',
+                'cell'] },
+  { name: 'pqcOnly', base: 'tls.pqcOnly', realm: false,
+    listeners: ['main', 'ldaps', 'debugger', 'spiffeServer', 'spiffeBroker',
+                'cell'] },
+  { name: 'groups', base: 'tls.groups', realm: true,
+    listeners: ['main', 'ldaps', 'debugger', 'spiffeServer', 'spiffeBroker',
+                'cell'] },
+  { name: 'signatureAlgorithms', base: 'tls.signatureAlgorithms', realm: true,
+    listeners: ['main', 'ldaps', 'debugger', 'spiffeServer', 'spiffeBroker',
+                'cell'] },
+  { name: 'trustAnchorsFile', base: 'tls.trustAnchorsFile', realm: true,
+    listeners: ['main', 'ldaps', 'debugger'] },
+  { name: 'trustIssuedClientCertificates',
+    base: 'tls.trustIssuedClientCertificates', realm: true,
+    listeners: ['main', 'ldaps', 'debugger'] },
+  // The TLS session cache: the lifetime on every TLS listener, the size
+  // where this service holds the server object to attach the cache to.
+  { name: 'sessionTimeoutS', base: 'tls.sessionTimeoutS', realm: true,
+    listeners: ['main', 'ldaps', 'debugger', 'spiffeServer', 'spiffeBroker',
+                'cell'] },
+  { name: 'sessionCacheSize', base: 'tls.sessionCacheSize', realm: true,
+    listeners: ['main', 'ldaps', 'debugger', 'cell'] },
+  // HTTP connection pooling, on every HTTP listener.
+  { name: 'keepAliveTimeoutS', base: 'http.keepAliveTimeoutS', realm: true,
+    listeners: ['main', 'debugger', 'revocation'] },
+  { name: 'headersTimeoutS', base: 'http.headersTimeoutS', realm: true,
+    listeners: ['main', 'debugger', 'revocation'] },
+  { name: 'maxRequestsPerSocket', base: 'http.maxRequestsPerSocket',
+    realm: true, listeners: ['main', 'debugger', 'revocation'] },
+  { name: 'maxConnections', base: 'http.maxConnections', realm: true,
+    listeners: ['main', 'debugger', 'revocation'] }
+];
+
+// One generated row. `owner` is a TLS_LISTENERS entry, or null for a realm's
+// own listener.
+function perListenerRow(spec, owner) {
+  const base = SETTINGS.filter(function (row) {
+    return row.key === spec.base;
+  })[0];
+  if (!base) {
+    throw new Error('config.js: per-listener row names no setting ' +
+                    spec.base);
+  }
+  // `listener<Id>.<name>`: two segments, as every key here has (the
+  // appconfig files nest one level), so `listenerMain.minVersion`.
+  const key = owner ? 'listener' + owner.id.charAt(0).toUpperCase() +
+                        owner.id.slice(1) + '.' + spec.name
+                    : 'listener.' + spec.name;
+  const label = (owner ? owner.label : 'The realm listener') + ': ' +
+    String(base.label || spec.name).replace(/^./, function (c) {
+      return c.toLowerCase();
+    });
+  /** @type {any} */
+  const row = { key: key, group: owner ? 'Listener: ' + owner.label
+                                       : 'Realm listener',
+                label: label, runtime: base.runtime };
+  if (base.type === 'bool') {
+    row.type = 'enum';
+    row.enumValues = ['inherit', 'on', 'off'];
+    row.dflt = 'inherit';
+  } else if (base.type === 'enum') {
+    row.type = 'enum';
+    row.enumValues = ['inherit'].concat(base.enumValues);
+    row.dflt = 'inherit';
+  } else if (base.type === 'int') {
+    // A number has no empty value, so INHERIT is -1, below every real
+    // value of these rows (whose least is 0).
+    row.type = 'int';
+    row.dflt = -1;
+    row.min = -1;
+    row.max = base.max;
+  } else {
+    row.type = base.type;
+    row.dflt = '';
+    ['csvValues', 'ordered', 'csvValueNotes'].forEach(function (name) {
+      if (base[name] !== undefined) {
+        row[name] = base[name];
+      }
+    });
+  }
+  if (owner) {
+    row.perProcess = true;
+    row.env = 'STS_LISTENER_' +
+      owner.id.replace(/[A-Z]/g, function (c) { return '_' + c; })
+        .toUpperCase() + '_' +
+      spec.name.replace(/[A-Z]/g, function (c) { return '_' + c; })
+        .toUpperCase();
+    if (!base.runtime) {
+      row.restartReason = base.restartReason ||
+        'the TLS contexts are built when the listeners are created';
+    }
+  } else {
+    row.runtime = false;
+    row.realmRuntime = true;
+    row.realmOnly = true;
+    row.restartReason = 'it is a property of one trust realm and is set on ' +
+                        'that realm';
+  }
+  row.description = 'For ' + (owner ? 'the ' + owner.label + ' listener'
+                                    : 'the realm\'s own listener') +
+    ' alone: ' + base.key + '. ' +
+    (row.type === 'enum' ? 'inherit, the default, follows ' + base.key
+      : row.type === 'int' ? '-1, the default, follows ' + base.key
+                           : 'Empty, the default, follows ' + base.key) +
+    '; anything else decides for this listener only. ' +
+    String(base.description || '');
+  return row;
+}
+
+PER_LISTENER_SETTINGS.forEach(function (spec) {
+  TLS_LISTENERS.forEach(function (owner) {
+    if (spec.listeners.indexOf(owner.id) >= 0) {
+      SETTINGS.push(perListenerRow(spec, owner));
+    }
+  });
+  if (spec.realm) {
+    SETTINGS.push(perListenerRow(spec, null));
+  }
+});
+
 // Indexed once. A linear scan per read would be invisible on a mock and the
 // index is one line, but `byKey` is also what makes an unknown key an error at
 // the point it is asked for rather than an undefined that travels.
@@ -15993,6 +16751,19 @@ SETTINGS.forEach(function (setting) {
  * anywhere stops the service starting.
  */
 const REPLACED_SETTINGS = [
+  // #429 (2026-10-02): the main port's two pooling rows became service-wide
+  // defaults every listener inherits, and editable. The keep-alive kept its
+  // environment variable, so only the old KEY is refused for it.
+  { key: 'tls.mainSessionTimeoutS', env: 'STS_TLS_MAIN_SESSION_TIMEOUT_S',
+    now: ['tls.sessionTimeoutS', 'listenerMain.sessionTimeoutS'],
+    why: ' It was removed on 2026-10-02 (#429): the TLS session lifetime is ' +
+         'tls.sessionTimeoutS (STS_TLS_SESSION_TIMEOUT_S) for every TLS ' +
+         'listener, and listenerMain.sessionTimeoutS for the main port alone.' },
+  { key: 'global.httpKeepAliveTimeoutS',
+    now: ['http.keepAliveTimeoutS', 'listenerMain.keepAliveTimeoutS'],
+    why: ' It was removed on 2026-10-02 (#429): the keep-alive is ' +
+         'http.keepAliveTimeoutS for every HTTP listener, and ' +
+         'listenerMain.keepAliveTimeoutS for the main port alone.' },
   { key: 'gnap.pushAllowInsecure', env: 'STS_GNAP_PUSH_ALLOW_INSECURE',
     now: ['gnap.pushAllowHttp', 'gnap.pushSkipTlsVerification',
           'gnap.pushCaFile'] },
@@ -16533,6 +17304,17 @@ function resolve(key) {
     log.debug("Leaving resolve().");
     return { raw: fromRealm, source: 'realm' };
   }
+  // A `realmOnly` row (#99) is the realm's own or its default: a value the
+  // process was given — an override, the environment, the operator's
+  // appconfig — would otherwise be every realm's. The generated defaults file
+  // is still its base layer, which is what the startup check asks for.
+  if (setting.realmOnly) {
+    const fromDefaults = dig(defaults, setting.path || setting.key);
+    log.debug("Leaving resolve(). Realm-only.");
+    return fromDefaults !== undefined
+      ? { raw: fromDefaults, source: 'defaults' }
+      : { raw: defaultOf(setting), source: 'default' };
+  }
   if (Object.prototype.hasOwnProperty.call(overrides, key)) {
     log.debug("Leaving resolve().");
     return { raw: overrides[key], source: 'override' };
@@ -16819,8 +17601,63 @@ function checkOverride(key, raw, forRealm) {
       (setting.env || 'its environment variable') + ' and restart.';
   }
   const problem = TYPES[setting.type].check(raw, setting);
+  if (problem) {
+    log.debug("Leaving checkOverride().");
+    return '"' + key + '" ' + problem + '.';
+  }
+  const ruled = writeRuleProblem(key, TYPES[setting.type].parse(raw, setting));
   log.debug("Leaving checkOverride().");
-  return problem ? '"' + key + '" ' + problem + '.' : null;
+  return ruled ? ruled.problem : null;
+}
+
+// ---------------------------------------------------------------------------
+// A RULE BETWEEN SETTINGS, OWNED BY THE MODULE THAT READS THEM (#423).
+//
+// A row's type checks one value. Some values are wrong only beside another
+// setting's — `tls.pqcOnly` turned on while `tls.tls13CipherSuites` holds no
+// post-quantum suite would leave every listener completing no TLS 1.3
+// handshake — and the module that knows why owns the rule, so it is handed
+// in rather than written here. A rule answers `{ problem, code }` for a write
+// it refuses and null otherwise; it is asked by `checkOverride()` (so every
+// door, the console's, the API's and a restored value's) after the type
+// check has passed, with the parsed value.
+// ---------------------------------------------------------------------------
+/** @type {Array<Function>} */
+const writeRules = [];
+
+/**
+ * Adds a rule every override is checked against.
+ *
+ * @param fn - `(key, parsed)` answering `{ problem, code }` or null
+ */
+function addWriteRule(fn) {
+  log.debug("Entering addWriteRule().");
+  if (typeof fn === 'function') {
+    writeRules.push(fn);
+  }
+  log.debug("Leaving addWriteRule(). " + writeRules.length);
+}
+
+// The first rule's refusal, or null. A rule that throws refuses nothing.
+function writeRuleProblem(key, parsed) {
+  log.debug("Entering writeRuleProblem(). key=" + key);
+  for (const rule of writeRules) {
+    let answer = null;
+    try {
+      answer = rule(key, parsed);
+    } catch (e) {
+      log.warn(errorCodes.tag('STS-CORE-0149') + 'config: a rule between ' +
+               'settings failed on ' + key + ' (' +
+               ((e && e.message) || e) + '); the write is not refused by ' +
+               'it.');
+    }
+    if (answer && answer.problem) {
+      log.debug("Leaving writeRuleProblem(). Refused.");
+      return answer;
+    }
+  }
+  log.debug("Leaving writeRuleProblem().");
+  return null;
 }
 
 // WHICH CONDITION checkOverride() REFUSED FOR, as an error code, or '' where it
@@ -16848,8 +17685,13 @@ function checkOverrideCode(key, raw, forRealm) {
     log.debug("Leaving checkOverrideCode().");
     return 'STS-CORE-0005';
   }
+  if (TYPES[setting.type].check(raw, setting)) {
+    log.debug("Leaving checkOverrideCode().");
+    return 'STS-CORE-0006';
+  }
+  const ruled = writeRuleProblem(key, TYPES[setting.type].parse(raw, setting));
   log.debug("Leaving checkOverrideCode().");
-  return TYPES[setting.type].check(raw, setting) ? 'STS-CORE-0006' : '';
+  return ruled ? ruled.code : '';
 }
 
 // ---------------------------------------------------------------------------
@@ -16923,6 +17765,52 @@ function announceClaimShape(key, before) {
  * @returns `{ ok: true, errors: [], key, realm }`, or `{ ok: false, errors }`
  *   carrying its code
  */
+// ---------------------------------------------------------------------------
+// WHO IS TOLD THAT AN OVERRIDE MOVED (#423, 2026-10-02).
+//
+// Most runtime settings are read where they are used, so a change needs
+// nobody told. A TLS listener cannot read its policy at every handshake: the
+// floor, the cipher suites and the groups are baked into its secure context,
+// and whether it asks for a client certificate is a property of the server.
+// So `tls/tls_server.js` asks to be told, and re-applies. The four doors an
+// override changes through — set, clear, clear-all and the replicated or
+// restored apply — each call this once, after the change is in force. A
+// listener that throws is logged and costs nobody else their call; it never
+// reaches the write it follows. A realm row's change is `realms.onChange()`'s.
+// ---------------------------------------------------------------------------
+/** @type {Array<Function>} */
+const overrideObservers = [];
+
+/**
+ * Asks to be called after any override is set, cleared or applied.
+ *
+ * @param fn - called with the keys that changed
+ */
+function onOverridesChanged(fn) {
+  log.debug("Entering onOverridesChanged().");
+  if (typeof fn === 'function') {
+    overrideObservers.push(fn);
+  }
+  log.debug("Leaving onOverridesChanged(). " + overrideObservers.length);
+}
+
+// Tells every observer; a throw is logged and goes no further. (Not
+// `overridesChanged()`, which is the store's notification, above.)
+function tellOverrideObservers(keys) {
+  log.debug("Entering tellOverrideObservers(). " + keys.length);
+  overrideObservers.forEach(function (fn) {
+    try {
+      fn(keys);
+    } catch (e) {
+      log.warn(errorCodes.tag('STS-CORE-0149') + 'config: a listener ' +
+               'for changed settings failed (' +
+               ((e && e.message) || e) + '); the change itself is in ' +
+               'force.');
+    }
+  });
+  log.debug("Leaving tellOverrideObservers().");
+}
+
 function setOverride(key, raw) {
   log.debug("Entering setOverride(). key=" + key);
   // WHICH REALM THIS WRITE LANDS IN IS DECIDED FIRST, BECAUSE THE CHECK
@@ -16989,6 +17877,7 @@ function setOverride(key, raw) {
   // value back reads the new one. See setOverrideStore() above.
   overridesChanged(realm ? realm.id : null);
   announceClaimShape(key, shape);
+  tellOverrideObservers([key]);
   log.debug("Leaving setOverride().");
   return { ok: true, errors: [], key: key, realm: realm ? realm.id : null };
 }
@@ -17044,6 +17933,7 @@ function clearOverride(key) {
   // start. A reset that does not survive a restart is worse than no reset.
   overridesChanged(realm ? realm.id : null);
   announceClaimShape(key, shape);
+  tellOverrideObservers([key]);
   log.debug("Leaving clearOverride().");
   return { ok: true, errors: [], key: key, realm: realm ? realm.id : null };
 }
@@ -17085,6 +17975,7 @@ function clearAllOverrides() {
   // being brought into line, and "nothing was cleared here" is not evidence
   // that nothing is written down over there.
   overridesChanged(realm ? realm.id : null);
+  tellOverrideObservers(keys);
   log.debug("Leaving clearAllOverrides(). " + keys.length + " cleared.");
   return { ok: true, errors: [], cleared: keys,
            realm: realm ? realm.id : null };
@@ -17204,6 +18095,9 @@ function applyPersistedOverrides(saved) {
   // every registered logger, and doing that per key would be n times the work
   // for the same answer.
   applyLogLevel();
+  tellOverrideObservers(applied.map(function (one) {
+    return typeof one === 'string' ? one : String((one && one.key) || '');
+  }));
   log.debug("Leaving applyPersistedOverrides(). " + applied.length +
             " applied.");
   return applied;
@@ -17759,6 +18653,9 @@ module.exports = {
   REPLACED_SETTINGS: REPLACED_SETTINGS,
   setOverride: setOverride,
   clearOverride: clearOverride,
+  // What a setting is for the PROCESS, the realm layer set aside (#99: a
+  // realm listener's port is checked against the process's own listeners).
+  processValue: processValue,
   clearAllOverrides: clearAllOverrides,
   setOverrideStore: setOverrideStore,
   persistableOverrides: persistableOverrides,
@@ -17767,5 +18664,9 @@ module.exports = {
   groups: groups,
   snapshot: snapshot,
   auditAppconfig: auditAppconfig,
-  isPerProcess: isPerProcess
+  isPerProcess: isPerProcess,
+  onOverridesChanged: onOverridesChanged,
+  TLS_LISTENERS: TLS_LISTENERS,
+  PER_LISTENER_SETTINGS: PER_LISTENER_SETTINGS,
+  addWriteRule: addWriteRule
 };

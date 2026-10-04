@@ -6246,6 +6246,12 @@ function anIntegerSettingWithAProtocolPage(config) {
       if (chosen || setting.editable !== true || setting.overridden) {
         return;
       }
+      // One a REALM may carry: the change is made under a realm prefix and
+      // its source is expected to move to `realm`. A per-process setting
+      // (#429's http.* rows, say) lands on the process and stays `override`.
+      if (setting.realmSettable === false) {
+        return;
+      }
       if (!Number.isInteger(setting.value) ||
           setting.value < 1 || setting.value > 100000) {
         return;

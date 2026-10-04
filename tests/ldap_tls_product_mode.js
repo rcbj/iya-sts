@@ -429,19 +429,23 @@ async function theProtocolPolicyIsApplied(t) {
   const defaults = tlsServer.protocolOptions();
   // BCP 195 SINCE #140: the TLS 1.3 suites first and RFC 9325's four
   // ECDHE AES-GCM suites for TLS 1.2, in the server's order.
+  // TLS 1.3 ONLY BY DEFAULT SINCE #429: the floor is TLSv1.3 and the list
+  // carries the three TLS 1.3 suites alone; with TLS 1.2 turned on, BCP
+  // 195's four TLS 1.2 suites follow them.
   const suites = String(defaults.ciphers || '').split(':');
-  t.check(defaults.minVersion === 'TLSv1.2' &&
-          defaults.honorCipherOrder === true &&
-          suites.slice(0, 3).every(function (one) {
-            return /^TLS_/.test(one);
-          }) &&
-          JSON.stringify(suites.slice(3).sort()) === JSON.stringify([
+  t.check(defaults.minVersion === 'TLSv1.3' &&
+          defaults.honorCipherOrder === true && suites.length === 3 &&
+          suites.every(function (one) { return /^TLS_/.test(one); }),
+          'the defaults are TLS 1.3 only, its suites in the server\'s order',
+          JSON.stringify(defaults));
+  const twelve = String(tlsServer.protocolOptions(Object.assign({},
+    tlsServer.policyFor(), { disableTls12: false })).ciphers).split(':');
+  t.check(JSON.stringify(twelve.slice(3).sort()) === JSON.stringify([
             'ECDHE-ECDSA-AES128-GCM-SHA256', 'ECDHE-ECDSA-AES256-GCM-SHA384',
             'ECDHE-RSA-AES128-GCM-SHA256', 'ECDHE-RSA-AES256-GCM-SHA384']),
-          'the defaults are TLSv1.2 as the floor and BCP 195\'s suites, TLS ' +
-          '1.3\'s first, in the server\'s order',
-          JSON.stringify(defaults));
-  t.equal(tlsServer.clientTruststoreOptions().minVersion, 'TLSv1.2',
+          'with TLS 1.2 on, BCP 195\'s four TLS 1.2 suites follow TLS ' +
+          '1.3\'s', JSON.stringify(twelve));
+  t.equal(tlsServer.clientTruststoreOptions().minVersion, 'TLSv1.3',
           'and they ride in the context every listener is built from and ' +
           're-keyed with');
 

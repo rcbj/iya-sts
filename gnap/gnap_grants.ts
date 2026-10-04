@@ -34,6 +34,33 @@
 //   finalized   revoked by the client (section 5.4), exhausted (too many polls,
 //               an interaction reference replayed), or expired. Never leaves.
 //
+// **EVERY FINALIZED GRANT RECORDS WHY (#432 phase 7, 2026-10-03)**, as
+// `grant.finalization = { reason, at, note }`, through `finalize()` and
+// nowhere else, with an audit row (`gnap.grant.finalize`). Four reasons:
+//
+//   issued    its tokens were released and nothing more can be asked of it —
+//             an approved grant whose response carries no continuation
+//             (`gnap.continueAfterApproval` off). Section 1.5's Approved ->
+//             Finalized edge. ITS TOKENS STAY LIVE: the one reason
+//             `gnap_rs.ts`'s liveProblem() and a rotation do not refuse.
+//   revoked   ended by an act — the client's DELETE (section 5.4), an
+//             administrator, the resource owner on /portal/gnap.
+//   rejected  refused: no way to interact, an interaction that could not
+//             start, too many polls, an interaction reference outside the
+//             pending state — and a grant that expires after its resource
+//             owner said no.
+//   expired   its interaction ran out, or its GRANT LIFETIME did.
+//
+// **THE GRANT HAS A LIFETIME OF ITS OWN (#432 phase 7)**,
+// `gnap.grantLifetimeS`, counted from its creation and separate from any
+// token's: past it the grant can no longer be continued, modified
+// (`STS-GNAP-0790`) or have a token rotated (`STS-GNAP-0791`), and no token
+// issued under it is given an `exp` past it. A rotation could otherwise
+// renew a grant's access for ever on the strength of one approval; the
+// lifetime is the point at which the resource owner is asked again. The
+// `gnap.grant-expiry` scheduler job records the expiry of a grant nobody
+// touches.
+//
 // ---------------------------------------------------------------------------
 // WHAT IS MODE-GATED, AND WHAT IS NOT.
 //
@@ -106,15 +133,47 @@ import transport = require('./gnap_http');
 import monitor = require('./gnap_monitor');
 import signals = require('./gnap_signals');
 import accessRights = require('./gnap_access');
+// WHAT ENDS A GRANT FROM OUTSIDE THE PROTOCOL, and the check at use (#432):
+// it requires nothing of this module, so this require closes no cycle.
+import revocation = require('./gnap_revocation');
 // WHICH CLIENTS MAY HOLD THIS SERVICE'S PROTECTED SCOPES (#110), the same
 // question the OAuth token endpoint asks. A library.
 import scopePolicy = require('../common/scope_policy');
 // The TLS client certificate on a connection, and who this realm issued it to
 // (#107). A library.
 import mtls = require('../oauth-oidc/mtls');
+// WHO MAY ACT FOR WHOM (#432 phase 1): #186's delegation policy asked for
+// impersonation by assertion and RFC 9767 derivation, the register they are
+// recorded in, and the derived token's actor chain. A library.
+import gnapDelegation = require('./gnap_delegation');
+// EACH ACCESS RIGHT A POLICY QUESTION, READ AGAINST ONE CATALOGUE (#432
+// phases 3 and 4): the facts, the verdicts and the access-type catalogue's
+// well-formedness. A library.
+import gnapRights = require('./gnap_rights');
+// Who owns an identifier (#432 phase 5), for the approval page's question.
+import ownership = require('./gnap_ownership');
+// WHO APPROVES, AND HOW STRONGLY SIGNED IN (#432 phase 6): the step-up an
+// approval needs and approval by an absent resource owner. A library; it
+// reaches this module back lazily, so the require closes no cycle.
+import gnapApproval = require('./gnap_approval');
 
 const PROTOCOL = 'GNAP';
 const STATE = store.STATE;
+
+// Why a grant was finalized (#432 phase 7) — the header's four.
+const FINALIZATION_REASONS = ['issued', 'revoked', 'rejected', 'expired'];
+
+// What authorizes releasing subject information (#432 phase 7): the resource
+// owner ticking the subject checkbox at an interaction, or a delegation
+// decision for a client acting for a person by assertion. releaseSubject()'s
+// header argues it.
+const SUBJECT_AUTHORIZATIONS = ['interaction', 'delegation'];
+// (An owner's approval on the portal, #432 phase 6, authorizes it as an
+// `interaction` does: the person saw the box and left it ticked.)
+
+// The expiry job (#432 phase 7): finalizes, and records the reason of, every
+// grant past its interaction or its grant lifetime that nobody has touched.
+const EXPIRY_JOB = 'gnap.grant-expiry';
 
 // Application kinds this family records (common/applications.js KINDS).
 const KIND_CLIENT = 'gnap-client';
@@ -180,11 +239,19 @@ interface GnapGrantsDeps {
   monitor: typeof monitor;
   signals: typeof signals;
   accessRights: typeof accessRights;
+  revocation: typeof revocation;
   scopePolicy: typeof scopePolicy;
   mtls: typeof mtls;
+  delegation: typeof gnapDelegation;
+  rights: typeof gnapRights;
+  ownership: typeof ownership;
+  approval: typeof gnapApproval;
   // oauth2.js, required when it is needed and not before (it registers
   // routes, and was a lazy require before the conversion).
   loadOauth2(): typeof import('../oauth-oidc/oauth2');
+  // The scheduler (#49), for the expiry job (#432 phase 7). Lazily, as every
+  // job owner reaches it.
+  scheduler(): any;
 }
 
 /**
@@ -218,6 +285,20 @@ class GnapGrants {
    * name by `/:as/gnap`.
    */
   static readonly RESERVED_AS_NAMES = RESERVED_AS_NAMES;
+  /**
+   * Why a grant may be finalized: `issued`, `revoked`, `rejected`,
+   * `expired` (#432 phase 7).
+   */
+  static readonly FINALIZATION_REASONS = FINALIZATION_REASONS;
+  /**
+   * What may authorize releasing subject information: `interaction` or
+   * `delegation` (#432 phase 7).
+   */
+  static readonly SUBJECT_AUTHORIZATIONS = SUBJECT_AUTHORIZATIONS;
+  /**
+   * The scheduler job that records the expiry of untouched grants.
+   */
+  static readonly EXPIRY_JOB = EXPIRY_JOB;
 
   /**
    * Builds the grant engine from the modules it reads.
@@ -235,6 +316,49 @@ class GnapGrants {
   private readonly referenceResolver = {
     resolveReference: (reference) => this.resolveKeyReference(reference)
   };
+
+  // -------------------------------------------------------------------------
+  // THE GRANT LIFETIME (#432 phase 7, the header). `gnap.grantLifetimeS` is
+  // read when a grant is made and fixed on it then, so changing the setting
+  // moves no grant already made.
+  // -------------------------------------------------------------------------
+  /**
+   * Returns when a grant made now expires: `gnap.grantLifetimeS` after it.
+   *
+   * @param createdAt - the grant's creation, epoch seconds
+   * @returns the expiry, epoch seconds
+   */
+  grantExpiryFrom(createdAt: number): number {
+    const { log, config } = this.deps;
+    log.debug("Entering GnapGrants.grantExpiryFrom().");
+    const lifetime = Number(config.value('gnap.grantLifetimeS'));
+    log.debug("Leaving GnapGrants.grantExpiryFrom().");
+    return createdAt + (lifetime > 0 ? lifetime : 86400);
+  }
+
+  /**
+   * Says whether a grant's own lifetime has ended (#432 phase 7).
+   *
+   * @param grant - the grant, or a token record carrying `grantExpiresAt`
+   * @returns true once its lifetime is over
+   */
+  grantLifetimeEnded(grant: any): boolean {
+    const { log, nowSec } = this.deps;
+    log.debug("Entering GnapGrants.grantLifetimeEnded().");
+    const until = Number(grant && grant.grantExpiresAt);
+    log.debug("Leaving GnapGrants.grantLifetimeEnded().");
+    return until > 0 && nowSec() >= until;
+  }
+
+  // A token's lifetime, cut short where it would outlive its grant.
+  private cappedLifetime(grant: any, iat: number, lifetime: number): number {
+    const { log } = this.deps;
+    log.debug("Entering GnapGrants.cappedLifetime().");
+    const until = Number(grant && grant.grantExpiresAt);
+    log.debug("Leaving GnapGrants.cappedLifetime().");
+    return until > 0 ? Math.max(1, Math.min(lifetime, until - iat))
+                     : lifetime;
+  }
 
   private refusal(code, why, gnapError?, status?) {
     const { log, errorCodes } = this.deps;
@@ -845,23 +969,24 @@ class GnapGrants {
       const identifier = 'gnap-' +
                          descriptor.identity.replace(/[^A-Za-z0-9_-]/g, '-')
                                             .slice(0, 48);
+      // ---------------------------------------------------------------------
+      // NOTHING THE CLIENT SAID ABOUT ITSELF IS WRITTEN ONTO THE ENTRY (#432
+      // phase 7, 2026-10-03). `class_id` and `display` (section 2.3) are
+      // SELF-DECLARED: any key can claim any name, logo, home page or class.
+      // They were copied into `gnapClassId`, `gnapDisplayUri`, `gnapLogoUri`
+      // and the entry's name here — and section 2.3 has "the pre-registered
+      // values ... take precedence", so the client's own claims became the
+      // REGISTERED values from its second request on, and the approval page
+      // drew them as the administrator's. The entry records the key and
+      // nothing else; what the client declares is read from each request
+      // and marked as declared (below).
+      // ---------------------------------------------------------------------
       const fields: Record<string, any> = { gnapKey:
                                             JSON.stringify(descriptor.value),
                                             gnapKeyIdentity:
                                             descriptor.identity };
-      if (member.classId) {
-        fields.gnapClassId = member.classId;
-      }
-      if (member.display && member.display.uri) {
-        fields.gnapDisplayUri = member.display.uri;
-      }
-      if (member.display && member.display.logoUri &&
-          member.display.logoUri.length < 2048) {
-        fields.gnapLogoUri = member.display.logoUri;
-      }
       applications.seen({ identifier: identifier, kind: kind, protocol:
-                          PROTOCOL, name: (member.display &&
-                                           member.display.name) || undefined,
+                          PROTOCOL,
                           counts: false, fields: fields, note:
           'Created on first sight of a proved GNAP key (development mode).' });
       app = applications.get(identifier);
@@ -881,15 +1006,55 @@ class GnapGrants {
     return { ok: true, app: app, descriptor: descriptor, proof: verified,
              instanceId: instanceId,
              created: created,
-            // Section 2.3: "the pre-registered values MUST take precedence".
-             display: {
-               name: app.name || (member.display && member.display.name) ||
-                   app.identifier, uri: this.field(app, 'gnapDisplayUri') ||
-                   (member.display && member.display.uri) || null, logoUri:
-                   this.field(app, 'gnapLogoUri') || (member.display &&
-                                                      member.display.logoUri) ||
-                   null }, classId: this.field(app, 'gnapClassId') ||
-                   member.classId || null };
+             display: this.displayOf(app, member),
+             classId: this.field(app, 'gnapClassId') || member.classId || null,
+             classIdDeclared: !this.field(app, 'gnapClassId') &&
+                              !!member.classId };
+  }
+
+  // -------------------------------------------------------------------------
+  // `class_id` AND `display` ARE SELF-DECLARED AND NEVER RAISE TRUST (#432
+  // phase 7, 2026-10-03).
+  //
+  // Section 2.3: "the pre-registered values MUST take precedence" — so a
+  // value an administrator put on the entry wins, and a value only the
+  // request carries is the CLIENT's claim about itself, which any key can
+  // make. Every member taken from the request is named in `declared`, and
+  // the approval page says so beside it rather than drawing it as this
+  // service's word. NOTHING DECIDES ON EITHER: no reader of `classId` or
+  // `display` grants, skips interaction, picks a token format or relaxes a
+  // check — `gnapSkipInteraction`, the access policy and the issuance gate
+  // read the ENTRY. Audited 2026-10-03 (`gnap/CLAUDE.md`); a reader added
+  // later that decides on one of them is a defect, and the in-process test
+  // (`tests/gnap_person_grants.js`) holds the auto-created entry to carrying
+  // none of them.
+  // -------------------------------------------------------------------------
+  private displayOf(app: any, member: any): any {
+    const { log } = this.deps;
+    log.debug("Entering GnapGrants.displayOf().");
+    const asked = member.display || {};
+    const declared: string[] = [];
+    const registeredName = app.name && app.name !== app.identifier
+      ? app.name : '';
+    let name = registeredName;
+    if (!name && asked.name) {
+      name = String(asked.name);
+      declared.push('name');
+    }
+    let uri = this.field(app, 'gnapDisplayUri');
+    if (!uri && asked.uri) {
+      uri = String(asked.uri);
+      declared.push('uri');
+    }
+    let logoUri = this.field(app, 'gnapLogoUri');
+    if (!logoUri && asked.logoUri && String(asked.logoUri).length < 2048) {
+      logoUri = String(asked.logoUri);
+      declared.push('logoUri');
+    }
+    log.debug("Leaving GnapGrants.displayOf(). declared=" +
+              declared.join(','));
+    return { name: name || app.identifier, uri: uri || null,
+             logoUri: logoUri || null, declared: declared };
   }
 
   // ---------------------------------------------------------------------------
@@ -939,88 +1104,124 @@ class GnapGrants {
   }
 
   // ---------------------------------------------------------------------------
-  // THIS SERVICE'S OWN PROTECTED SCOPES, AS GNAP ACCESS RIGHTS (#110,
-  // 2026-09-22). `ssf/ssf_auth.ts` accepts a GNAP token whose access names
-  // `ssf:read` / `ssf:write` — as a reference string, or an object of type
-  // `ssf` with those actions — so those rights are the Shared Signals scopes
-  // by another spelling, and they are held to the rule the OAuth token
-  // endpoint holds them to: issued only to a client whose application entry
-  // DECLARES them in `oauthAllowedScope`. The same attribute, deliberately:
-  // one declared vocabulary per application, whatever protocol it asks in.
-  // In every mode, as at the token endpoint. `gnapAllowedAccess` beside it is
-  // a narrowing an operator may add; this is not optional.
-  //
-  // '' when allowed, and the sentence to refuse with otherwise.
+  // WHAT A CLIENT MAY BE GRANTED IS THE ISSUANCE POLICY'S (#432 phase 3).
+  // `protectedAccessProblem()` (this service's protected scopes, #110) and
+  // `accessProblem()` (gnapAllowedAccess, an unknown reference) were here;
+  // with the bearer check they are now rules of the built-in issuance
+  // policy, asked one right at a time by `gnap_rights.ts`'s `judge()` —
+  // `rightsContext()` below is what this engine tells it. No copy of them
+  // stays: a second authority would be one an operator's policy could not
+  // override.
   // ---------------------------------------------------------------------------
-  private protectedAccessProblem(app, access) {
-    const { log, config, scopePolicy } = this.deps;
-    log.debug("Entering GnapGrants.protectedAccessProblem().");
-    const identifier = String((app && app.identifier) || '');
-    const read = String(config.value('ssf.authScopeRead') || 'ssf:read');
-    const write = String(config.value('ssf.authScopeWrite') || 'ssf:write');
-    const wanted: string[] = [];
-    (access || []).forEach(function (right) {
-      const name = typeof right === 'string' ? right :
-        String((right && right.type) || '');
-      if (scopePolicy.isProtected(name)) {
-        wanted.push(name);
-        return;
-      }
-      if (typeof right !== 'string' && name === 'ssf') {
-        const actions = Array.isArray(right.actions) && right.actions.length
-          ? right.actions.map(String) : ['read', 'write'];
-        if (actions.indexOf('read') >= 0) {
-          wanted.push(read);
-        }
-        if (actions.indexOf('write') >= 0) {
-          wanted.push(write);
-        }
-      }
-    });
-    const missing = wanted.filter(function (one, index) {
-      return wanted.indexOf(one) === index &&
-             !scopePolicy.declares(identifier, one);
-    });
-    if (missing.length) {
-      log.debug("Leaving GnapGrants.protectedAccessProblem(). Undeclared.");
-      return 'the access ' + missing.map(function (one) {
-        return '"' + one + '"';
-      }).join(', ') + ' is this service\'s own protected scope, and the ' +
-        'application "' + identifier + '" does not declare it in its ' +
-        'oauthAllowedScope — an administrator declares it on the ' +
-        'application (POST /admin-api/applications/add)';
+  private rightsContext(req, grantish, app, approval) {
+    const { log, authorizationServers, gate } = this.deps;
+    const self = this;
+    log.debug("Entering GnapGrants.rightsContext(). " + approval);
+    const grant = grantish || {};
+    const ro = grant.ro || null;
+    const session = ro ? this.sessionOfGrant(grant) : null;
+    const about = ro ? { kind: 'user', name: ro.username,
+                         authenticated: true } : null;
+    let risk = null;
+    let device = null;
+    if (about) {
+      risk = gate.riskFactsOf({ session: session, subject: about });
+      device = gate.deviceFactsOf({ session: session });
     }
-    log.debug("Leaving GnapGrants.protectedAccessProblem().");
-    return '';
+    const pseudo = { as: grant.as || authorizationServers.DEFAULT_ID,
+                     client: { identifier: app.identifier } };
+    log.debug("Leaving GnapGrants.rightsContext().");
+    return {
+      app: app,
+      approver: ro ? ro.username : '',
+      approval: approval,
+      session: ro ? { acr: ro.acr || (session && session.acr) || '',
+                      amr: ro.amr || (session && session.amr) || [] }
+                  : null,
+      risk: risk, device: device,
+      // What the owner lookups answered (#432 phase 5): filled by the caller
+      // from `rights.owners()` before the question is asked.
+      owners: {} as any,
+      targetsOf: function targetsOf(access) {
+        log.debug("Entering targetsOf().");
+        log.debug("Leaving targetsOf().");
+        return self.resourceServersFor(access);
+      },
+      formatOf: function formatOf(access, targets) {
+        log.debug("Entering formatOf().");
+        log.debug("Leaving formatOf().");
+        return self.chooseFormat(req, pseudo, access, targets) || '';
+      }
+    };
   }
 
-  // What a client may ask for (`gnapAllowedAccess`: types and reference
-  // strings; empty means anything) and what an unknown reference string does.
-  private accessProblem(app, access) {
-    const { log, config, store } = this.deps;
-    log.debug("Entering GnapGrants.accessProblem().");
-    const allowed = this.fieldValues(app, 'gnapAllowedAccess');
-    for (let i = 0; i < access.length; i++) {
-      const right = access[i];
-      const name = typeof right === 'string' ? right : right.type;
-      if (allowed.length && allowed.indexOf(name) < 0) {
-        log.debug("Leaving GnapGrants.accessProblem(). Not allowed for this " +
-                  "client.");
-        return 'the right "' + name + '" is not one this client instance may ' +
-                                      'request';
-      }
-      if (typeof right === 'string' && !store.resourceByReference(right) &&
-          String(config.value('gnap.unknownAccessReferences') ||
-                 'accept') === 'refuse' &&
-          allowed.indexOf(right) < 0) {
-        log.debug("Leaving GnapGrants.accessProblem(). Unknown reference " +
-                  "refused.");
-        return 'the access reference "' + right + '" names nothing ' +
-            'registered with this authorization server';
-      }
+  // The request stage (#432 phase 3): the catalogue's well-formedness, then
+  // one policy question per right. A refusal, or the tokens as the policy
+  // left them and what it narrowed.
+  private async judgeRequested(req, grantish, app, tokens, approval) {
+    const { log, rights } = this.deps;
+    log.debug("Entering GnapGrants.judgeRequested().");
+    const malformed = rights.conformanceRefusal(tokens);
+    if (malformed) {
+      log.debug("Leaving GnapGrants.judgeRequested(). Malformed.");
+      return malformed;
     }
-    log.debug("Leaving GnapGrants.accessProblem().");
-    return '';
+    const ctx = this.rightsContext(req, grantish, app, approval);
+    // The owner lookups first (#432 phase 5): the question is synchronous.
+    ctx.owners = await rights.owners(tokens, ctx);
+    const judged = rights.judge(tokens, ctx, rights.STAGES.REQUEST);
+    log.debug("Leaving GnapGrants.judgeRequested(). " +
+              (judged.ok ? 'Judged.' : 'Refused.'));
+    return judged;
+  }
+
+  // ---------------------------------------------------------------------------
+  // MAY THIS PERSON APPROVE WHAT IS ASKED? (#432 phase 5) — the approval
+  // page's question before it draws, and again before it records an
+  // approval. Only the rights whose identifier is OWNED by somebody else, or
+  // whose owner could not be looked up, are put to the issuance policy, as
+  // this person's `interaction` approval; the policy's built-in rule refuses
+  // them (STS-GNAP-0861, 0863) unless a realm's own allows. Every other right
+  // is the page's ordinary business and is not asked about here, so the page
+  // refuses for ownership and nothing else. The refusal, or null.
+  // ---------------------------------------------------------------------------
+  /**
+   * Says whether a person may approve the rights a grant asks for, as their
+   * resource owner (#432 phase 5).
+   *
+   * @param req - the request from the approval page
+   * @param grant - the grant
+   * @param username - the person signed in on the page
+   * @returns a promise of the policy's refusal, or null
+   */
+  async approverRefusal(req, grant, username) {
+    const { log, applications, rights, ownership } = this.deps;
+    log.debug("Entering GnapGrants.approverRefusal().");
+    const app = applications.get(grant.client.identifier) ||
+                { identifier: grant.client.identifier, fields: {} };
+    const ctx = this.rightsContext(req, Object.assign({}, grant, {
+      ro: { username: username, sessionId: null, amr: [], acr: '' } }),
+      app, 'interaction');
+    const asked = (grant.request && grant.request.tokens) || [];
+    ctx.owners = await rights.owners(asked, ctx);
+    const disputed = asked.map(function (token) {
+      return Object.assign({}, token, {
+        access: (token.access || []).filter(function (right) {
+          const facts = ownership.facts(right, ctx.targetsOf([right]),
+                                        username, ctx.owners);
+          return facts.unresolved || (facts.known && !facts.matches);
+        }) });
+    }).filter(function (token) {
+      return token.access.length > 0;
+    });
+    if (!disputed.length) {
+      log.debug("Leaving GnapGrants.approverRefusal(). Nothing disputed.");
+      return null;
+    }
+    const judged = rights.judge(disputed, ctx, rights.STAGES.REQUEST);
+    log.debug("Leaving GnapGrants.approverRefusal(). " +
+              (judged.ok ? 'The policy allows it.' : 'Refused.'));
+    return judged.ok ? null : judged;
   }
 
   // ---------------------------------------------------------------------------
@@ -1055,6 +1256,17 @@ class GnapGrants {
           }
         });
       });
+    });
+    // THE OWNER OF A CATALOGUED TYPE (#432 phase 4): a right of a type a
+    // resource server declares that names NO location is for that resource
+    // server — the API that defines it. One that names locations is for the
+    // resource servers they resolve to above, which the catalogue holds to
+    // the addresses its owner declares.
+    this.deps.rights.ownersOf((access || []).filter(function (right) {
+      return right && typeof right === 'object' &&
+             !(Array.isArray(right.locations) && right.locations.length);
+    })).forEach(function (owner) {
+      found[owner] = true;
     });
     log.debug("Leaving GnapGrants.resourceServersFor().");
     return Object.keys(found);
@@ -1158,8 +1370,19 @@ class GnapGrants {
         continue;
       }
       const iat = nowSec();
-      const lifetime = Number(applications.settingFor(grant.client.identifier,
-          'gnap.accessTokenLifetimeS', config)) || 3600;
+      // NO TOKEN OUTLIVES ITS GRANT (#432 phase 7): the token's lifetime,
+      // cut short at the grant's own expiry.
+      let lifetime = this.cappedLifetime(grant, iat,
+          Number(applications.settingFor(grant.client.identifier,
+                                         'gnap.accessTokenLifetimeS',
+                                         config)) || 3600);
+      // THE ISSUANCE POLICY'S LIFETIME for a right in this token (#432
+      // phase 3: the catalogue's maxLifetimeS, as the built-in policy
+      // states it), never lengthening what the grant allows.
+      if (typeof asked.maxLifetimeS === 'number' &&
+          asked.maxLifetimeS < lifetime) {
+        lifetime = asked.maxLifetimeS;
+      }
       const durable = !!config.value('gnap.durableTokens');
       const flags = [];
       if (asked.bearer) {
@@ -1189,7 +1412,17 @@ class GnapGrants {
         iat: iat,
         nbf: iat,
         exp: iat + lifetime,
-        label: asked.label || null
+        label: asked.label || null,
+        // RFC 8693 section 4.1's `act` (#432): set on a DERIVED grant only,
+        // naming the deriving resource server over the original token's
+        // chain (`deriveToken()`). Every format carries it.
+        act: grant.actorChain || null,
+        // THE GRANT A RIGHT'S LIMITS ARE COUNTED AGAINST (#432 phase 5): a
+        // resource server keeps the running totals per grant (rcbj's
+        // decision 2), and one that verifies the token on its own needs to
+        // know which — this grant, the same across rotation, or for a
+        // derived token the original's (`deriveToken()`).
+        grant: grant.limitsGrant || grant.id
       };
       const rs = rsIds.length === 1 ? applications.get(rsIds[0]) : null;
       let jweKey = null;
@@ -1225,7 +1458,15 @@ class GnapGrants {
         key: asked.bearer ? null : grant.client.key,
         proof: asked.bearer ? null :
                keyDescriptor.proof, revoked: false, createdAt: iat,
-        rsIdentifiers: rsIds, username: username
+        rsIdentifiers: rsIds, username: username,
+        // Kept on the token too, so a rotation is held to it after the
+        // finalized grant itself is pruned.
+        grantExpiresAt: grant.grantExpiresAt || null,
+        // #432: the JWT formats' index in the realm's access-token status
+        // list, and a biscuit's revocation identifiers — what the token's
+        // value says, kept because the store keeps only its digest.
+        statusIdx: minted.statusIdx === undefined ? null : minted.statusIdx,
+        revocationIds: minted.revocationIds || null
       }), minted.value);
       const response: Record<string, any> = { value: minted.value, access:
                                               asked.access, expires_in:
@@ -1303,6 +1544,37 @@ class GnapGrants {
     }
   }
 
+  // -------------------------------------------------------------------------
+  // SUBJECT INFORMATION IS RELEASED ONCE, AND ONLY ON AN AUTHORIZATION (#432
+  // phase 7, 2026-10-03).
+  //
+  // Section 3.4's sub_ids and assertions say WHO the resource owner is, and
+  // the only parties who can authorize telling a client that are the person
+  // and the policy that lets a client act for them. So `release()` releases
+  // subject information only when the grant carries
+  // `subjectAuthorizedBy`:
+  //
+  //   'interaction'  the resource owner left the "who you are" box ticked on
+  //                  the approval page (`decide()`);
+  //   'delegation'   a trusted client presented a verified assertion about
+  //                  the person and the delegation decision (#432 phase 1,
+  //                  `delegation_policy.ts`, S4U2Self's question) allowed it
+  //                  to act for them (`createGrant()`).
+  //
+  // **THE AUTHORIZATION IS SPENT BY THE RELEASE.** Once subject information
+  // has gone out the flag is cleared and the instant recorded
+  // (`subjectReleasedAt`, `subjectReleasedBy`), so nothing later in the
+  // grant's life sends it again: not a continuation after approval
+  // (`settle()` answers a continue member only), not a modification within
+  // the earlier approval (its decision carries `subject: false`), not a token
+  // rotation (`manageVerified()` mints a token and nothing else), and not a
+  // derivation (`deriveToken()`, `subject: false`). A modification that ASKS
+  // for subject information is not within the earlier approval
+  // (`modifyGrant()`), so it goes to a new interaction, whose decision
+  // authorizes the one release that follows it. A decision that asks for the
+  // subject without either authorization releases nothing and says so
+  // (`STS-GNAP-0793`).
+  // -------------------------------------------------------------------------
   private async releaseSubject(req, grant) {
     const { log, nowSec, gate, subject, monitor } = this.deps;
     log.debug("Entering GnapGrants.releaseSubject().");
@@ -1325,8 +1597,12 @@ class GnapGrants {
                          format);
     });
     const out: Record<string, any> = {};
-    const ids = subject.subIdsFor(grant.ro.username, formats, { issuer:
-        issuer });
+    // The CLIENT the identifiers are for (#432 phase 7): the opaque
+    // identifier is per client or sector, and `iss_sub` is the `sub` this
+    // client's ID Token carries.
+    const ids = subject.subIdsFor(grant.ro.username, formats, {
+      issuer: issuer, client: grant.client.identifier,
+      sessionId: grant.ro.sessionId || null });
     if (ids.length) {
       out.sub_ids = ids;
     }
@@ -1365,7 +1641,11 @@ class GnapGrants {
     const { log, nowSec, config, store } = this.deps;
     log.debug("Entering GnapGrants.continueMember().");
     const value = store.issueContinuation(grant);
-    const wait = Math.max(0, Number(config.value('gnap.continueWaitS')));
+    // A grant waiting for an absent owner (#432 phase 6) is polled at a
+    // pace that lets `gnap.maxPolls` cover the owner's whole time.
+    const ownerWait = this.deps.approval.waitFor(grant);
+    const wait = ownerWait !== null ? ownerWait
+      : Math.max(0, Number(config.value('gnap.continueWaitS')));
     grant.continueNotBefore = nowSec() + (Number.isFinite(wait) ? wait : 5);
     log.debug("Leaving GnapGrants.continueMember().");
     return { access_token: { value: value },
@@ -1555,6 +1835,68 @@ class GnapGrants {
   }
 
   // ---------------------------------------------------------------------------
+  // MAY THIS REQUEST BE ISSUED WITH NOBODY ON THE PAGE? (#432 phase 6)
+  //
+  // `requirement` is what the issuance policy's verdicts said the rights
+  // need (`gnap_rights.ts`): the most demanding interaction among them and
+  // every acr. `gnapSkipInteraction` now means "may skip where every
+  // requested right's type allows it":
+  //
+  //   always     nobody skips — the person sees the page (STS-GNAP-0892
+  //              when a trusted client then offers no way to reach them);
+  //   skippable  a trusted client skips, as before #432;
+  //   none       every right is of a `never` type: issued with nobody
+  //              asked, from any client, but only as ITSELF — a request
+  //              naming a person or asking who they are is about that
+  //              person, which only a trusted client's delegation decision
+  //              or the person can authorize.
+  //
+  // And a right that needs an authentication level is never issued with no
+  // session to meet it (STS-GNAP-0893): the request goes to the page, which
+  // steps the person up, or — offering no interaction — is refused. An
+  // assertion's own `acr` is not taken as that session: it is a statement
+  // about a sign-in somewhere else, at some earlier time, presented by the
+  // client that wants the token.
+  // ---------------------------------------------------------------------------
+  private skipVerdict(trusted: boolean, asked: any, resolved: any,
+                      requirement: any): any {
+    const { log } = this.deps;
+    log.debug("Entering GnapGrants.skipVerdict(). interaction=" +
+              requirement.interaction);
+    const always: string[] = Array.isArray(requirement.always)
+      ? requirement.always : [];
+    if (requirement.interaction === 'always') {
+      log.debug("Leaving GnapGrants.skipVerdict(). A type asks for its " +
+                "owner.");
+      return { skip: false, forPerson: false, code: 'STS-GNAP-0892',
+               why: 'a right of type ' + always.map(function (one) {
+                 return '"' + one + '"';
+               }).join(', ') + ' needs its resource owner on the approval ' +
+               'page, by its access type or a consent action' };
+    }
+    let skip = false;
+    let forPerson = false;
+    if (trusted && (!asked.subject || resolved.verified)) {
+      skip = true;
+      forPerson = !!(resolved.verified && resolved.username);
+    } else if (requirement.interaction === 'none' && !asked.user &&
+               !asked.subject) {
+      skip = true;
+    }
+    const acrs: string[] = Array.isArray(requirement.acr) ? requirement.acr
+                                                          : [];
+    if (skip && acrs.length) {
+      log.debug("Leaving GnapGrants.skipVerdict(). An acr is needed.");
+      return { skip: false, forPerson: false, code: 'STS-GNAP-0893',
+               why: 'a right needs authentication level ' + acrs.join(' ') +
+                    ', which only a session the resource owner signs in ' +
+                    'with can meet' };
+    }
+    log.debug("Leaving GnapGrants.skipVerdict(). skip=" + skip);
+    return { skip: skip, forPerson: forPerson, code: '', why: '' };
+  }
+
+  // ---------------------------------------------------------------------------
   // A NEW GRANT REQUEST (section 2). Answers `{ status, body }` or a refusal.
   // ---------------------------------------------------------------------------
   /**
@@ -1600,33 +1942,36 @@ class GnapGrants {
     const app = caller.app;
     const identifier = app.identifier;
     monitor.record(identifier, 'grant.requested', {});
-    for (let i = 0; i < asked.tokens.length; i++) {
-      if (asked.tokens[i].bearer &&
-          (config.value('gnap.bearerTokens') === false ||
-          this.field(app, 'gnapBearerTokens') === 'FALSE')) {
-        log.debug("Leaving GnapGrants.createGrant(). Bearer not allowed.");
-        return this.refusal('STS-GNAP-0111', 'this client instance may not ' +
-            'be issued bearer tokens (RFC 9635 section 2.1.1).',
-                            'invalid_flag');
+    // EACH RIGHT, BEFORE ANYBODY IS ASKED (#432 phases 3 and 4): the
+    // catalogue's well-formedness, then the issuance policy's verdict per
+    // right — the bearer flag, the protected scopes, gnapAllowedAccess, an
+    // unknown reference, an uncatalogued type in product. A derivation is
+    // judged in `deriveToken()`, as the deriving resource server's request.
+    let narrowedAtRequest = [];
+    // What the rights need of their approval (#432 phase 6): who must be
+    // asked and how strongly signed in, from the policy's verdicts.
+    let requirement: any = { interaction: 'skippable', acr: [], always: [],
+                             byRight: {} };
+    if (!asked.existingAccessToken) {
+      const judged = await this.judgeRequested(req, { as: asId }, app,
+                                               asked.tokens, 'pending');
+      if (!judged.ok) {
+        monitor.record(identifier, 'grant.refused',
+                       { gnapError: judged.gnapError });
+        log.debug("Leaving GnapGrants.createGrant(). A right was refused.");
+        return judged;
       }
-      const withheld = this.protectedAccessProblem(app,
-                                                   asked.tokens[i].access);
-      if (withheld) {
-        log.debug("Leaving GnapGrants.createGrant(). A protected scope.");
-        return this.refusal('STS-GNAP-0719', withheld + '.', 'request_denied',
-                            403);
-      }
-      const problem = this.accessProblem(app, asked.tokens[i].access);
-      if (problem) {
-        log.debug("Leaving GnapGrants.createGrant(). Access refused.");
-        return this.refusal('STS-GNAP-0112', problem + '.', 'request_denied',
-                            403);
-      }
+      asked.tokens = judged.tokens;
+      narrowedAtRequest = judged.narrowed;
+      requirement = judged.requirement;
     }
     const oauth2 = this.deps.loadOauth2();
     const resolved = subject.resolveUser(asked.user, {
       issuer: oauth2.issuerOf(this.realmBase(req)),
-      oauthIssuer: oauth2.issuerOf(this.realmBase(req))
+      oauthIssuer: oauth2.issuerOf(this.realmBase(req)),
+      // A user reference resolves only for the client it was issued to
+      // (#432 phase 7, gnap_subject.ts).
+      client: identifier
     });
     if (!resolved.ok) {
       log.debug("Leaving GnapGrants.createGrant(). User refused.");
@@ -1640,7 +1985,14 @@ class GnapGrants {
                 key: caller.descriptor.value,
                 keyIdentity: caller.descriptor.identity,
                 proof: caller.descriptor.proof.method,
-                display: caller.display, classId: caller.classId },
+                // THE KEY UNDER A MUTUAL-TLS CLIENT'S CERTIFICATE (#432
+                // follow-up): a `cert#S256` key names only a certificate, so
+                // the key it was proved with is recorded here, for a
+                // compromised device's key to find it.
+                certSpki: caller.descriptor.proof.method === 'mtls'
+                  ? this.deps.mtls.presentedKeyThumbprint(req) : '',
+                display: caller.display, classId: caller.classId,
+                classIdDeclared: caller.classIdDeclared },
       request: { tokens: asked.tokens, multiple: asked.multiple,
                  subject: asked.subject,
                  interact: asked.interact },
@@ -1649,7 +2001,25 @@ class GnapGrants {
       ro: null,
       decision: null,
       delivered: false,
-      polls: 0
+      polls: 0,
+      // The grant's own lifetime (#432 phase 7, the header).
+      grantExpiresAt: this.grantExpiryFrom(nowSec()),
+      // What authorizes releasing subject information, set by an interaction
+      // or a delegation decision and spent by the release (releaseSubject()).
+      subjectAuthorizedBy: null,
+      finalization: null,
+      // How the grant was approved, for the issuance policy's per-right
+      // question (#432 phase 3): pending until it is, then interaction,
+      // remembered, skipped or derived.
+      approval: 'pending',
+      // What the issuance policy narrowed before the approval page was
+      // drawn, which the page says (#432 phase 3).
+      narrowed: narrowedAtRequest,
+      // Who must be asked and how strongly signed in (#432 phase 6).
+      requirement: requirement,
+      // A grant waiting for its absent resource owner on the portal (#432
+      // phase 6, `gnap_approval.ts`): null until it does.
+      ownerApproval: null
     });
     store.saveGrant(grant,
                     'requested by ' + identifier + ' (' +
@@ -1683,16 +2053,92 @@ class GnapGrants {
     // with the RO") gets tokens with no RO, when it asks for no subject
     // information; with a VERIFIED user assertion it gets them for that person
     // (section 2.4).
+    //
+    // THE SECOND IS IMPERSONATION, AND SINCE #432 IT IS ASKED (phase 1). Tokens
+    // for a person nobody asked are Kerberos's S4U2Self in GNAP: the flag on
+    // the client says it may skip the PAGE, not that it may act for anybody.
+    // So `gnap_delegation.ts` puts #186's question to the issuance policy —
+    // actor the client, subject the person, R each resource server the rights
+    // resolve to — and impersonation must be in the client's allowed semantics
+    // (`appDelegationSemantics`), the person not protected, inside the
+    // client's subject groups, holding R's roles, with R reachable by the
+    // client; a `may_act` in the assertion is honoured. Enforced in product,
+    // recorded "would have been refused" in development; recorded either way.
+    // The first case — the client acting as ITSELF — acts for nobody, asks
+    // nothing, and releases no subject.
+    //
+    // SINCE #432 PHASE 6 THE FLAG IS NOT ALL OR NOTHING. `skipVerdict()`
+    // holds it to what every requested right's type allows: a client
+    // trusted to skip may skip only where each right is `skippable`; a
+    // right of an `always` type, or naming a consent action, needs its
+    // owner on the page whoever asks; a request of `never` rights alone
+    // needs nobody, from any client, acting as itself; and a right that
+    // needs an authentication level cannot be issued with no session to
+    // meet it.
     const trusted = this.field(app, 'gnapSkipInteraction') === 'TRUE' &&
                     !caller.created;
-    if (trusted && (!asked.subject || resolved.verified)) {
-      grant.ro = resolved.verified ?
+    const skip = this.skipVerdict(trusted, asked, resolved, requirement);
+    if (skip.skip) {
+      const forPerson = skip.forPerson;
+      let actQuestion = null;
+      let decided = null;
+      if (forPerson) {
+        const formats = ((asked.user && asked.user.assertions) || [])
+          .map(function (one) { return String(one.format || ''); })
+          .filter(function (one, i, all) {
+            return !!one && all.indexOf(one) === i;
+          }).join(', ');
+        actQuestion = {
+          act: 'impersonation', actor: app, subject: resolved.username,
+          targets: this.resourceServersFor(asked.tokens.reduce(
+            function (all, one) {
+              return all.concat(one.access);
+            }, [])),
+          mayAct: resolved.mayAct || null, format: formats,
+          consumed: { kind: 'user assertion', identifier: formats,
+                      note: 'signed by this realm and verified (RFC 9635 ' +
+                            'section 2.4)' },
+          grantId: grant.id };
+        decided = this.deps.delegation.decide(actQuestion);
+        if (!decided.ok) {
+          this.deps.delegation.record(actQuestion, decided.decided,
+                                      'refused', []);
+          grant.state = STATE.FINALIZED;
+          store.saveGrant(grant, 'refused: ' + decided.why);
+          monitor.record(identifier, 'grant.refused',
+                         { gnapError: decided.gnapError });
+          log.debug("Leaving GnapGrants.createGrant(). The delegation " +
+                    "policy refused the impersonation.");
+          return decided;
+        }
+      }
+      grant.ro = forPerson ?
                  { username: resolved.username, sessionId: null,
                                        authTime: nowSec(),
                                        amr: ['assertion'], acr: null } : null;
+      grant.approval = 'skipped';
+      // A client acting as itself is nobody's delegate and is told nothing
+      // about anybody: no subject without a person.
       grant.decision = { approved: true, tokens: asked.tokens,
-                         subject: !!asked.subject };
+                         subject: forPerson && !!asked.subject };
+      // SUBJECT INFORMATION WITHOUT AN INTERACTION IS A DELEGATION (#432
+      // phase 7). The only way here with subject information asked for is a
+      // trusted client presenting a VERIFIED assertion about a person — an
+      // act for that person with nobody asked, put before the delegation
+      // policy above (phase 1, S4U2Self's question). An enforced refusal has
+      // already returned, so reaching here means the policy allowed it — or,
+      // in development, recorded that product would have refused it and
+      // issued anyway. The flag names that decision; release() releases
+      // nothing without one of the two (releaseSubject()'s header). A client
+      // acting as itself has no person and no decision: null.
+      grant.subjectAuthorizedBy = forPerson && asked.subject
+        ? 'delegation' : null;
+      const before = (grant.tokens || []).length;
       const released = await this.release(req, grant);
+      if (actQuestion) {
+        this.deps.delegation.record(actQuestion, decided.decided, 'issued',
+                                    (grant.tokens || []).slice(before));
+      }
       Object.assign(response, released);
       monitor.record(identifier, 'grant.immediate', {});
       log.debug("Leaving GnapGrants.createGrant(). Approved without " +
@@ -1700,21 +2146,40 @@ class GnapGrants {
       return { ok: true, status: 200, body: response, grant: grant };
     }
     if (!asked.interact) {
-      grant.state = STATE.FINALIZED;
-      store.saveGrant(grant, 'refused: interaction required and the client ' +
-                             'offers none');
+      // APPROVAL BY AN ABSENT RESOURCE OWNER (#432 phase 6, RFC 9635
+      // section 1.4): the request names a person and offers no way to reach
+      // them through the client, so it waits on their portal.
+      if (resolved.username && this.deps.approval.available()) {
+        const queued = await this.deps.approval.queue(grant,
+          resolved.username, { via: 'no interaction offered' });
+        if (!queued.ok) {
+          this.finalize(grant, 'refused: ' + queued.why, 'rejected');
+          monitor.record(identifier, 'grant.refused',
+                         { gnapError: queued.gnapError });
+          log.debug("Leaving GnapGrants.createGrant(). Not queued.");
+          return queued;
+        }
+        response.continue = this.continueMember(req, grant);
+        store.saveGrant(grant, 'waiting for its resource owner');
+        log.debug("Leaving GnapGrants.createGrant(). Waiting for the owner.");
+        return { ok: true, status: 200, body: response, grant: grant };
+      }
+      this.finalize(grant, 'refused: interaction required and the client ' +
+                           'offers none', 'rejected');
       monitor.record(identifier, 'grant.refused',
                      { gnapError: 'invalid_interaction' });
       log.debug("Leaving GnapGrants.createGrant(). Interaction needed, none " +
                 "offered.");
-      return this.refusal('STS-GNAP-0113', 'this request needs the resource ' +
-          'owner\'s approval and the client offered no way to interact (RFC ' +
-                          '9635 section 2.5).', 'invalid_interaction');
+      // WHY a trusted client could not skip (#432 phase 6) is its own code.
+      return this.refusal(trusted && skip.code ? skip.code : 'STS-GNAP-0113',
+          'this request needs the resource owner\'s approval' +
+          (trusted && skip.why ? ' (' + skip.why + ')' : '') +
+          ' and the client offered no way to interact (RFC 9635 section ' +
+          '2.5).', 'invalid_interaction');
     }
     const started = this.startInteraction(req, grant, app, asked.interact);
     if (!started.ok) {
-      grant.state = STATE.FINALIZED;
-      store.saveGrant(grant, 'refused: ' + started.why);
+      this.finalize(grant, 'refused: ' + started.why, 'rejected');
       monitor.record(identifier, 'grant.refused',
                      { gnapError: started.gnapError });
       log.debug("Leaving GnapGrants.createGrant(). Interaction refused.");
@@ -1729,10 +2194,26 @@ class GnapGrants {
 
   // Tokens and subject information for a grant whose decision is approved.
   private async release(req, grant) {
-    const { log, config, audit, store, monitor, accessRights } = this.deps;
+    const { log, nowSec, config, errorCodes, audit, store, monitor,
+            accessRights } = this.deps;
     log.debug("Entering GnapGrants.release(). grant=" + grant.id);
     const out: Record<string, any> = {};
-    const requests = grant.decision.tokens || [];
+    // THE ISSUE STAGE (#432 phase 3): every approved right asked again, now
+    // that who approved it, how, and on what session are known. A refused
+    // right is left out of its token (audited), a narrowed one narrowed, and
+    // a lifetime the policy states caps the token (`maxLifetimeS`).
+    const app = this.deps.applications.get(grant.client.identifier) ||
+                { identifier: grant.client.identifier, fields: {} };
+    const issueCtx = this.rightsContext(req, grant, app,
+                                        grant.approval || 'pending');
+    issueCtx.owners = await this.deps.rights.owners(
+      grant.decision.tokens || [], issueCtx);
+    const judged = this.deps.rights.judge(grant.decision.tokens || [],
+      issueCtx, this.deps.rights.STAGES.ISSUE);
+    const requests = judged.tokens || [];
+    if (judged.narrowed && judged.narrowed.length) {
+      grant.narrowed = (grant.narrowed || []).concat(judged.narrowed);
+    }
     if (requests.length) {
       const issued = await this.issueTokens(req, grant, requests,
                                             grant.request.multiple);
@@ -1741,10 +2222,26 @@ class GnapGrants {
       }
     }
     if (grant.decision.subject) {
-      const released = await this.releaseSubject(req, grant);
-      if (released && (released.sub_ids || released.assertions)) {
-        out.subject = released;
+      const authorizedBy = String(grant.subjectAuthorizedBy || '');
+      if (SUBJECT_AUTHORIZATIONS.indexOf(authorizedBy) >= 0) {
+        const released = await this.releaseSubject(req, grant);
+        if (released && (released.sub_ids || released.assertions)) {
+          out.subject = released;
+          grant.subjectReleasedAt = nowSec();
+          grant.subjectReleasedBy = authorizedBy;
+        }
+      } else if (!grant.subjectReleasedAt) {
+        // Asked and approved, but by nothing that may authorize it — never
+        // reached by this file's own paths; the code says which grant if a
+        // new one ever does. (Already released and spent is the ordinary
+        // case of a later release, and says nothing.)
+        log.warn(errorCodes.tag('STS-GNAP-0793') + 'gnap: grant ' + grant.id +
+                 ' was to release subject information that neither an ' +
+                 'interaction nor a delegation decision authorized; none ' +
+                 'was released.');
       }
+      // SPENT, released or not: the next release needs a new authorization.
+      grant.subjectAuthorizedBy = null;
     }
     grant.state = STATE.APPROVED;
     grant.delivered = true;
@@ -1756,12 +2253,18 @@ class GnapGrants {
       : requests.reduce(function (all, one) {
         return all.concat(one.access);
       }, grant.approvedAccess || []);
-    if (config.value('gnap.continueAfterApproval') !== false) {
+    const continuable = config.value('gnap.continueAfterApproval') !== false;
+    if (continuable) {
       out.continue = this.continueMember(req, grant);
-    } else {
-      store.dropContinuation(grant);
     }
     store.saveGrant(grant, 'approved and released');
+    if (!continuable) {
+      // Section 1.5's Approved -> Finalized: the tokens are out and nothing
+      // more can be asked of this grant. FINALIZED AS `issued`, whose tokens
+      // stay live (the header).
+      this.finalize(grant, 'released with no continuation offered',
+                    'issued');
+    }
     monitor.record(grant.client.identifier, 'grant.approved', {});
     audit.audit({ action: 'gnap.grant.approve', category: 'protocol', protocol:
                   PROTOCOL, channel: 'http', outcome: 'success', actor:
@@ -1777,9 +2280,29 @@ class GnapGrants {
 
   // ---------------------------------------------------------------------------
   // RFC 9767 SECTION 4: TOKEN DERIVATION.
+  //
+  // SINCE #432 (phase 1) A DERIVATION IS A DELEGATION, AND IS DECIDED AS ONE.
+  // It is Kerberos's S4U2Proxy in GNAP: the deriving resource server (actor
+  // and S) presents the person's token and asks for one to reach a downstream
+  // resource server (R) as them. `gnap_delegation.ts` asks #186's policy —
+  // the deriving RS must delegate to R (`appAllowedToDelegateTo` on it, or
+  // `appAllowedToActOnBehalfOf` on R), the person must not be protected and
+  // must hold S's roles — enforced in product, recorded in development. And
+  // three rules that are the format's, in every mode:
+  //
+  //   * THE DERIVED TOKEN IS A SUBSET of the original (rcbj's decision 3): the
+  //     exception for "rights registered for a downstream resource server"
+  //     is gone — it let any resource server a token reached mint access
+  //     nobody approved. `gnap_delegation.ts`'s `derivableBeyond()` is the
+  //     one place the access-type catalogue (phase 4) will widen it.
+  //   * IT CARRIES THE ACTOR CHAIN: RFC 8693 section 4.1's `act`, the deriving
+  //     resource server outermost over the original token's chain, in every
+  //     format (`grant.actorChain`, read by `issueTokens()` and kept by
+  //     rotation and modification).
+  //   * THE CHAIN IS CAPPED at `gnap.maxDerivationDepth` (STS-GNAP-0782).
   // ---------------------------------------------------------------------------
   private async deriveToken(req, grant, app, asked) {
-    const { log, nowSec, config, store, tokens, monitor, accessRights } =
+    const { log, nowSec, config, store, tokens, monitor, delegation } =
         this.deps;
     log.debug("Entering GnapGrants.deriveToken().");
     if (config.value('gnap.tokenDerivation') === false) {
@@ -1797,6 +2320,15 @@ class GnapGrants {
           'active at this authorization server (RFC 9767 section 4).',
                           'invalid_request');
     }
+    // Nor one whose resource owner is disabled or whose client is gone
+    // (#432): a derived token would carry the person on past the end.
+    const ended = this.deps.revocation.tokenProblem(existing);
+    if (ended) {
+      log.debug("Leaving GnapGrants.deriveToken(). " + ended.why);
+      return this.refusal('STS-GNAP-0733', 'the existing access token is not ' +
+          'active at this authorization server: ' + ended.why + ' (RFC 9767 ' +
+          'section 4).', 'invalid_request');
+    }
     const rsNames = [app.identifier].concat(this.fieldValues(app,
         'gnapResourceServerUri'));
     const forThisRs = !existing.aud.length || existing.aud.some(function (aud) {
@@ -1810,28 +2342,127 @@ class GnapGrants {
                           'token (RFC 9767 section 4).', 'request_denied', 403);
     }
     const requested = asked.tokens.length ? asked.tokens : [];
-    for (let i = 0; i < requested.length; i++) {
-      const covered = requested[i].access.every((right) => {
-        return accessRights.accessCovers(existing.access, [right]) ||
-               typeof right === 'string' &&
-          !!store.resourceByReference(right) && this.resourceServersFor(
-              [right]).length;
-      });
-      if (!covered) {
-        log.debug("Leaving GnapGrants.deriveToken(). Asks for more than the " +
-                  "existing token.");
-        return this.refusal('STS-GNAP-0513', 'a derived token must not carry ' +
-            'more access than the token it is derived from, except rights ' +
-                            'registered for a downstream resource server.',
-                            'request_denied', 403);
-      }
+    const askedRights = requested.reduce(function (all, one) {
+      return all.concat(one.access);
+    }, []);
+    const downstream = this.resourceServersFor(askedRights);
+    const widened = delegation.derivationWidens(existing.access, askedRights,
+                                                { rs: app.identifier,
+                                                  downstream: downstream });
+    if (widened !== null) {
+      log.debug("Leaving GnapGrants.deriveToken(). Asks for more than the " +
+                "existing token.");
+      return this.refusal('STS-GNAP-0513', 'a derived token must not carry ' +
+                          'more access than the token it is derived from ' +
+                          '(RFC 9767 section 4).', 'request_denied', 403);
     }
+    // NOR MORE THAN ITS LIMITS (#432 phase 5): a derived right that drops
+    // or raises the original's limits is wider, though covered.
+    const raised = this.deps.rights.limitsRaised(existing.access, askedRights);
+    if (raised) {
+      log.debug("Leaving GnapGrants.deriveToken(). Raises a limit.");
+      return this.refusal('STS-GNAP-0868', 'a derived token must not carry ' +
+                          'more than the token it is derived from: ' + raised +
+                          ' (RFC 9767 section 4).', 'request_denied', 403);
+    }
+    const chain = delegation.actorChainFor(app.identifier, existing.act);
+    if (!chain.ok) {
+      log.debug("Leaving GnapGrants.deriveToken(). The chain is too deep.");
+      return chain;
+    }
+    // EACH DERIVED RIGHT IS JUDGED TOO (#432 phase 3), as the deriving
+    // resource server's request, approval `derived`, about the original's
+    // person: the catalogue's well-formedness, then the issuance policy.
+    const derivedJudged = await this.judgeRequested(req,
+      { as: grant.as, ro: existing.username ? { username: existing.username,
+                                                amr: ['derived'] } : null },
+      app, requested, 'derived');
+    if (!derivedJudged.ok) {
+      grant.state = STATE.FINALIZED;
+      store.saveGrant(grant, 'refused: ' + derivedJudged.why);
+      log.debug("Leaving GnapGrants.deriveToken(). A right was refused.");
+      return derivedJudged;
+    }
+    // WHAT THE DERIVED RIGHTS NEED OF THEIR APPROVAL (#432 phase 6). A right
+    // the original covers was approved on the original's page and inherits
+    // that; one it does not — a catalogued `derivableFrom` type, the one
+    // way past the subset rule — was never shown to anybody, so a type that
+    // needs its owner on the page cannot be derived (STS-GNAP-0895). And an
+    // acr is held to the session the ORIGINAL grant was approved on: a
+    // derivation adds a party, never a sign-in (STS-GNAP-0896).
+    const needs = derivedJudged.requirement || { always: [], acr: [] };
+    const beyond = (derivedJudged.tokens || []).reduce(function (all, one) {
+      return all.concat(one.access);
+    }, []).filter((right) => {
+      return !this.deps.accessRights.accessCovers(existing.access, [right]);
+    });
+    const unseen = beyond.filter(function (right) {
+      return typeof right !== 'string' &&
+        (needs.always || []).indexOf(right.type) >= 0;
+    });
+    if (unseen.length) {
+      grant.state = STATE.FINALIZED;
+      store.saveGrant(grant, 'refused: a derived right needs its owner');
+      log.debug("Leaving GnapGrants.deriveToken(). A type needs its owner.");
+      return this.refusal('STS-GNAP-0895', 'a right of type "' +
+        unseen[0].type + '" needs its resource owner on the approval page, ' +
+        'and a derived token adds it without anybody having seen it (RFC ' +
+        '9767 section 4).', 'request_denied', 403);
+    }
+    const original = existing.grantId ? store.getGrant(existing.grantId)
+                                      : null;
+    const originalRo = original && original.ro ? original.ro : {};
+    const unmetAcr = this.deps.rights.unmetAcr(needs.acr || [],
+                                               { acr: originalRo.acr,
+                                                 amr: originalRo.amr });
+    if (unmetAcr.length) {
+      grant.state = STATE.FINALIZED;
+      store.saveGrant(grant, 'refused: an acr the original did not meet');
+      log.debug("Leaving GnapGrants.deriveToken(). An acr is not met.");
+      return this.refusal('STS-GNAP-0896', 'a derived right needs ' +
+        'authentication level ' + unmetAcr.join(' ') + ', which the session ' +
+        'the original token was approved on did not meet (RFC 9767 section ' +
+        '4, RFC 9470).', 'request_denied', 403);
+    }
+    // WHO THE DERIVED TOKEN IS ABOUT: the original's person, or — for a
+    // token a client was issued as itself — that client's application.
+    const actQuestion = {
+      act: 'derivation' as const, actor: app,
+      subject: existing.username || existing.instanceId,
+      targets: downstream, mayAct: null,
+      consumed: { kind: 'access_token', identifier: String(existing.jti),
+                  note: 'the existing_access_token, issued by this realm and ' +
+                        'active' },
+      grantId: grant.id };
+    const decided = delegation.decide(actQuestion);
+    if (!decided.ok) {
+      delegation.record(actQuestion, decided.decided, 'refused', []);
+      grant.state = STATE.FINALIZED;
+      store.saveGrant(grant, 'refused: ' + decided.why);
+      log.debug("Leaving GnapGrants.deriveToken(). The delegation policy " +
+                "refused it.");
+      return decided;
+    }
+    // The original's acr carried over (#432 phase 6), so the issue stage
+    // holds each right to the session the original was approved on.
     grant.ro = existing.username ? { username: existing.username, sessionId:
                                      null, authTime: existing.iat, amr:
-                                     ['derived'], acr: null } : null;
+                                     ['derived'],
+                                     acr: originalRo.acr || null } : null;
     grant.derivedFrom = existing.jti;
-    grant.decision = { approved: true, tokens: requested, subject: false };
+    // THE GRANT ITS LIMITS ARE COUNTED AGAINST (#432 phase 5): the
+    // original's, so a derivation is a way to spend the same budget from
+    // somewhere else and never a second one.
+    grant.limitsGrant = existing.grant || existing.grantId || null;
+    grant.actorChain = chain.act;
+    grant.approval = 'derived';
+    grant.narrowed = derivedJudged.narrowed;
+    grant.decision = { approved: true, tokens: derivedJudged.tokens,
+                       subject: false };
+    const before = (grant.tokens || []).length;
     const body = await this.release(req, grant);
+    delegation.record(actQuestion, decided.decided, 'issued',
+                      (grant.tokens || []).slice(before));
     monitor.record(app.identifier, 'rs.derivation', {});
     log.debug("Leaving GnapGrants.deriveToken().");
     return { ok: true, status: 200, body: body, grant: grant };
@@ -1866,15 +2497,27 @@ class GnapGrants {
     const interaction = grant.interaction;
     interaction.decided = true;
     const username = subject.normaliseName(session.user.username);
-    if (selection.approve && grant.userHint && grant.userHint !== username &&
-        config.value('gnap.allowCrossUser') !== true) {
+    // Nothing about who the person is may go out unless THIS decision says
+    // so (releaseSubject()'s header): cleared first, set below only by an
+    // approval with the subject box ticked.
+    grant.subjectAuthorizedBy = null;
+    if (selection.approve && grant.userHint && grant.userHint !== username) {
       // Section 2.4: "If the identified end user does not match the RO present
       // at the AS ... the AS SHOULD reject the request with an unknown_user
       // error." Recorded as the decision, so the continuation says it.
+      // `gnap.allowCrossUser`, which let whoever signed in approve instead,
+      // is RETIRED (#432 phase 6): where approval by an absent owner is on,
+      // the page never asks a different person — `forwardToOwner()` puts
+      // the grant on the named owner's portal first — and where it is off
+      // the answer is this one.
       grant.decision = { approved: false, error: 'unknown_user' };
     } else if (selection.approve) {
       grant.decision = { approved: true, tokens: selection.tokens,
                          subject: !!selection.subject };
+      // How (#432 phase 3): a decision the approval page drew, or one a
+      // remembered approval made without drawing it (`gnap_interact.ts`).
+      grant.approval = selection.remembered ? 'remembered' : 'interaction';
+      grant.subjectAuthorizedBy = selection.subject ? 'interaction' : null;
       grant.ro = { username: username, sessionId: session.id,
                    authTime: session.authTime,
                    amr: session.amr, acr: session.acr };
@@ -1932,6 +2575,15 @@ class GnapGrants {
   rememberedFor(grant, username) {
     const { log, config, consent } = this.deps;
     log.debug("Entering GnapGrants.rememberedFor().");
+    // A RIGHT WHOSE TYPE SAYS `always` (#432 phase 6) is approved on the page
+    // every time: no remembered approval stands in for it, and neither does
+    // `gnap.consentRequired` off — the type's declaration is the more
+    // specific decision, and "always" that a setting could turn off would
+    // be a word, not a rule. The person sees the page again.
+    if (grant.requirement && grant.requirement.interaction === 'always') {
+      log.debug("Leaving GnapGrants.rememberedFor(). A type asks every time.");
+      return false;
+    }
     if (config.value('gnap.consentRequired') === false) {
       log.debug("Leaving GnapGrants.rememberedFor().");
       return true;
@@ -1956,6 +2608,152 @@ class GnapGrants {
            all.every(function (digest) {
       return held.indexOf(digest) >= 0;
     });
+  }
+
+  // -------------------------------------------------------------------------
+  // #432 PHASE 6: THE THREE WAYS AN APPROVAL ENDS OTHER THAN ON THE PAGE.
+  // -------------------------------------------------------------------------
+  /**
+   * The person at the approval page is not the user the request named:
+   * where approval by an absent owner is on, the grant goes to the named
+   * owner's portal instead of being decided here, and the interaction is
+   * finished so the client continues and polls (RFC 9635 sections 1.4 and
+   * 2.4). Null where it does not apply — the person is the one named, or
+   * the setting is off and the page answers `unknown_user` as before.
+   *
+   * @param req - the request to the approval page
+   * @param grant - the grant
+   * @param session - the person at the page
+   * @returns `{ finished }` (the finish method's answer, `owner: true`), a
+   *   refusal recorded as the decision, or null
+   */
+  async forwardToOwner(req, grant, session) {
+    const { log, store, subject, audit } = this.deps;
+    log.debug("Entering GnapGrants.forwardToOwner().");
+    const present = subject.normaliseName(session.user.username);
+    if (!grant.userHint || grant.userHint === present ||
+        !this.deps.approval.available()) {
+      log.debug("Leaving GnapGrants.forwardToOwner(). Not another person's.");
+      return null;
+    }
+    grant.interaction.decided = true;
+    const queued = await this.deps.approval.queue(grant, grant.userHint, {
+      requestedBy: present, via: 'another person at the approval page' });
+    if (!queued.ok) {
+      // Recorded as the decision, so the client hears it at its next
+      // continuation, and the finish method is still enacted.
+      grant.decision = { approved: false, error: queued.gnapError,
+                         code: this.deps.errorCodes.codeOf(queued) || '',
+                         why: queued.why };
+    }
+    audit.audit({ action: 'gnap.grant.forward', category: 'protocol',
+                  protocol: PROTOCOL, channel: 'http',
+                  outcome: queued.ok ? 'success' : 'refused',
+                  errorCode: queued.ok ? undefined
+                    : this.deps.errorCodes.codeOf(queued),
+                  actor: present, target: grant.client.identifier,
+                  summary: 'The person at a GNAP approval page was not the ' +
+                           'user the request named; the grant was sent to ' +
+                           'that user\'s portal',
+                  detail: { grant: grant.id, queued: !!queued.ok } });
+    const finished = await this.finishInteraction(req, grant);
+    store.saveGrant(grant, queued.ok ? 'sent to its resource owner'
+                                     : 'not sent to its resource owner');
+    log.debug("Leaving GnapGrants.forwardToOwner(). queued=" + !!queued.ok);
+    return { finished: Object.assign({ owner: !!queued.ok }, finished),
+             queued: !!queued.ok };
+  }
+
+  /**
+   * The approval page asked the person to sign in again for the
+   * authentication level the rights need, and the sign-in that came back
+   * still does not meet it: the request is answered `request_denied`
+   * (STS-GNAP-0899), recorded as the decision, and the finish method is
+   * enacted — RFC 9470's "one sign-in, then refuse" in GNAP's vocabulary.
+   *
+   * @param req - the request to the approval page
+   * @param grant - the grant
+   * @param session - the session that came back
+   * @param missing - the acr values it does not meet
+   * @returns the finish method's answer
+   */
+  async refuseUnmetStepUp(req, grant, session, missing) {
+    const { log, store, audit, monitor, subject } = this.deps;
+    log.debug("Entering GnapGrants.refuseUnmetStepUp().");
+    grant.interaction.decided = true;
+    grant.decision = { approved: false, error: 'request_denied',
+                       code: 'STS-GNAP-0899',
+                       why: 'the approval needed authentication level ' +
+                            (missing || []).join(' ') + ', which the ' +
+                            'resource owner\'s sign-in did not meet (RFC ' +
+                            '9470).' };
+    const username = subject.normaliseName(session.user.username);
+    grant.ro = { username: username, sessionId: session.id,
+                 authTime: session.authTime, amr: session.amr,
+                 acr: session.acr };
+    monitor.record(grant.client.identifier, 'grant.denied',
+                   { gnapError: 'request_denied' });
+    audit.failure('STS-GNAP-0899', { protocol: PROTOCOL, channel: 'http',
+      actor: username, target: grant.client.identifier,
+      summary: 'A GNAP approval needed a stronger sign-in than the resource ' +
+               'owner completed',
+      detail: { grant: grant.id, missing: (missing || []).join(' '),
+                acr: String(session.acr || '') } });
+    const finished = await this.finishInteraction(req, grant);
+    store.saveGrant(grant, 'refused: the step-up was not met');
+    log.debug("Leaving GnapGrants.refuseUnmetStepUp().");
+    return finished;
+  }
+
+  /**
+   * Records the resource owner's answer given on the portal to a grant that
+   * waited for them (`gnap_approval.ts`): the same decision the approval
+   * page records, `approval: 'owner'`, with no finish method — the client
+   * is polling. The caller has held the session to the step-up and claimed
+   * the answer once across the cluster.
+   *
+   * @param grant - the grant
+   * @param session - the owner's sign-on session
+   * @param selection - `{ approve, tokens, subject }`, the rights left ticked
+   */
+  decideAsOwner(grant, session, selection) {
+    const { log, store, audit, monitor, signals, subject } = this.deps;
+    log.debug("Entering GnapGrants.decideAsOwner(). grant=" + grant.id);
+    const username = subject.normaliseName(session.user.username);
+    grant.ownerApproval.answered = true;
+    grant.ownerApproval.answeredAt = this.deps.nowSec();
+    grant.subjectAuthorizedBy = null;
+    grant.ro = { username: username, sessionId: session.id,
+                 authTime: session.authTime, amr: session.amr,
+                 acr: session.acr };
+    if (selection.approve) {
+      grant.decision = { approved: true, tokens: selection.tokens,
+                         subject: !!selection.subject };
+      grant.approval = 'owner';
+      grant.subjectAuthorizedBy = selection.subject ? 'interaction' : null;
+      signals.noteApprover(grant.client.identifier, username);
+    } else {
+      grant.decision = { approved: false, error: 'user_denied' };
+    }
+    // The wait was stretched for the owner; the client may now collect.
+    grant.continueNotBefore = 0;
+    monitor.record(grant.client.identifier,
+                   grant.decision.approved ? 'grant.approved' : 'grant.denied',
+                   { gnapError: grant.decision.error });
+    audit.audit({ action: grant.decision.approved ? 'gnap.grant.consent' :
+                  'gnap.grant.deny', category: 'protocol', protocol: PROTOCOL,
+                  channel: 'portal', outcome: grant.decision.approved ?
+                  'success' : 'refused', errorCode: grant.decision.approved ?
+                  undefined : 'STS-GNAP-0120', actor: username,
+                  target: grant.client.identifier,
+                  summary: grant.decision.approved
+                    ? 'A resource owner approved a GNAP grant on the portal'
+                    : 'A resource owner did not approve a GNAP grant on the ' +
+                      'portal',
+                  detail: { grant: grant.id, via: 'portal' } });
+    store.saveGrant(grant, 'resource owner ' + (grant.decision.approved
+      ? 'approved' : 'did not approve') + ' on the portal');
+    log.debug("Leaving GnapGrants.decideAsOwner().");
   }
 
   // Section 4.2: create the interaction reference, compute the hash, and follow
@@ -2032,6 +2830,20 @@ class GnapGrants {
                           'and cannot be continued.', 'invalid_continuation',
                           400);
     }
+    // ITS RESOURCE OWNER DISABLED, OR ITS CLIENT'S ENTRY GONE OR NO LONGER
+    // NAMING ITS KEY (#432): refused at use, whatever door made the change
+    // and on a node it has not reached yet. Nothing is written here — the act
+    // that disabled the person or changed the entry ends the grant. A DELETE
+    // is the client revoking it (section 5.4), which is never refused for
+    // this.
+    const ended = req.method === 'DELETE' ? null
+      : this.deps.revocation.grantProblem(grant);
+    if (ended) {
+      log.debug("Leaving GnapGrants.continuationCaller(). " + ended.why);
+      return this.refusal(ended.code, 'this grant can no longer be ' +
+                          'continued: ' + ended.why + '.',
+                          'invalid_continuation', 400);
+    }
     const body = proof.readBody(req);
     if (!body.ok) {
       log.debug("Leaving GnapGrants.continuationCaller(). Body refused.");
@@ -2068,13 +2880,51 @@ class GnapGrants {
            grant.expiresAt < nowSec();
   }
 
-  private finalize(grant, note) {
-    const { log, store } = this.deps;
-    log.debug("Entering GnapGrants.finalize().");
+  // THE ONE PLACE A GRANT IS FINALIZED (#432 phase 7): the state, the
+  // reason (`FINALIZATION_REASONS`, the header), the continuation dropped,
+  // the history note and the audit row, together — so no path can finalize
+  // a grant without saying why.
+  /**
+   * Finalizes a grant, recording why (#432 phase 7): `issued`, `revoked`,
+   * `rejected` or `expired`, with the transition on its history and an audit
+   * row.
+   *
+   * @param grant - the grant
+   * @param note - the transition, as its history records it
+   * @param reason - one of `FINALIZATION_REASONS`
+   * @param actor - who finalized it, for the audit row; the client otherwise
+   */
+  finalize(grant, note, reason, actor?) {
+    const { log, nowSec, audit, store } = this.deps;
+    log.debug("Entering GnapGrants.finalize(). reason=" + reason);
+    const why = FINALIZATION_REASONS.indexOf(reason) >= 0 ? reason
+      : (grant.delivered ? 'issued' : 'rejected');
     grant.state = STATE.FINALIZED;
+    grant.finalization = { reason: why, at: nowSec(),
+                           note: String(note || '').slice(0, 200) };
     store.dropContinuation(grant);
-    store.saveGrant(grant, note);
+    store.saveGrant(grant, note + ' (finalized: ' + why + ')');
+    audit.audit({ action: 'gnap.grant.finalize', category: 'protocol',
+                  protocol: PROTOCOL, channel: 'http', outcome: 'success',
+                  actor: actor || (grant.client && grant.client.identifier),
+                  target: grant.client && grant.client.identifier,
+                  summary: 'A GNAP grant was finalized: ' + why,
+                  detail: { grant: grant.id, reason: why,
+                            note: String(note || '').slice(0, 200),
+                            resourceOwner: grant.ro ? grant.ro.username :
+                                           '' } });
     log.debug("Leaving GnapGrants.finalize().");
+  }
+
+  // Why an untouched grant that ran out is finalized: `rejected` when the
+  // last thing its resource owner said was no, `expired` otherwise.
+  private expiryReason(grant) {
+    const { log } = this.deps;
+    log.debug("Entering GnapGrants.expiryReason().");
+    log.debug("Leaving GnapGrants.expiryReason().");
+    // An owner asked on the portal who never said yes (#432 phase 6) is a
+    // rejection, as a no is.
+    return grant.lastDenial || grant.ownerApproval ? 'rejected' : 'expired';
   }
 
   // ---------------------------------------------------------------------------
@@ -2147,7 +2997,15 @@ class GnapGrants {
     const grant = caller.grant;
     const identifier = grant.client.identifier;
     if (this.expired(grant)) {
-      this.finalize(grant, 'expired');
+      this.finalize(grant, 'expired', this.expiryReason(grant));
+      if (grant.ownerApproval && !grant.ownerApproval.answered) {
+        log.debug("Leaving GnapGrants.continueAccepted(). The owner did not " +
+                  "answer in time.");
+        return this.refusal('STS-GNAP-0894', 'the resource owner did not ' +
+          'answer this request on their portal in time ' +
+          '(gnap.ownerApprovalLifetimeS); it is finalized as rejected (RFC ' +
+          '9635 section 1.4).', 'invalid_continuation');
+      }
       log.debug("Leaving GnapGrants.continueAccepted(). Expired.");
       return this.refusal('STS-GNAP-0132', 'this grant request expired ' +
                           'before it was approved.', 'invalid_continuation');
@@ -2155,6 +3013,18 @@ class GnapGrants {
     if (req.method === 'DELETE') {
       log.debug("Leaving GnapGrants.continueAccepted().");
       return this.revokeGrant(req, grant);
+    }
+    // THE GRANT'S OWN LIFETIME (#432 phase 7): past it nothing continues or
+    // modifies the grant — only the DELETE above, which ends it anyway.
+    if (this.grantLifetimeEnded(grant)) {
+      this.finalize(grant, 'the grant lifetime ended', 'expired');
+      monitor.record(identifier, 'grant.refused',
+                     { gnapError: 'invalid_continuation' });
+      log.debug("Leaving GnapGrants.continueAccepted(). Lifetime ended.");
+      return this.refusal('STS-GNAP-0790', 'this grant\'s lifetime ' +
+          '(gnap.grantLifetimeS) has ended, so it can no longer be ' +
+          'continued or modified; make a new grant request (RFC 9635 ' +
+          'section 5).', 'invalid_continuation');
     }
     if (grant.continueNotBefore && nowSec() < grant.continueNotBefore) {
       monitor.record(identifier, 'continue.too_fast', { gnapError:
@@ -2182,7 +3052,7 @@ class GnapGrants {
       if (grant.state !== STATE.PENDING || !interaction) {
         // Section 5.1: MUST return too_many_attempts, SHOULD finalize.
         this.finalize(grant, 'interaction reference presented outside the ' +
-                      'pending state');
+                      'pending state', 'rejected');
         monitor.record(identifier, 'grant.refused',
                        { gnapError: 'too_many_attempts' });
         log.debug("Leaving GnapGrants.continueAccepted(). interact_ref when " +
@@ -2231,7 +3101,7 @@ class GnapGrants {
     grant.polls = (grant.polls || 0) + 1;
     const maxPolls = Number(config.value('gnap.maxPolls')) || 60;
     if (grant.state === STATE.PENDING && grant.polls > maxPolls) {
-      this.finalize(grant, 'too many polls');
+      this.finalize(grant, 'too many polls', 'rejected');
       log.debug("Leaving GnapGrants.continueAccepted(). Too many polls.");
       return this.refusal('STS-GNAP-0136',
                           'the client polled more than ' + maxPolls + ' ' +
@@ -2277,17 +3147,28 @@ class GnapGrants {
     }
     if (!grant.decision.approved) {
       const code = grant.decision.error || 'user_denied';
+      const lastDecision = grant.decision;
+      // Remembered so that a grant left to run out after a no is finalized
+      // as `rejected` rather than `expired` (expiryReason()).
+      grant.lastDenial = code;
       grant.decision = null;
       grant.interaction = null;
       const keepGoing = { continue: this.continueMember(req, grant) };
       store.saveGrant(grant, 'told the client: ' + code);
       log.debug("Leaving GnapGrants.settle(). " + code);
-      return Object.assign(this.refusal(code === 'unknown_user' ?
-                                        'STS-GNAP-0121' : 'STS-GNAP-0120',
+      // A decision may carry its own code (#432 phase 6: a step-up the
+      // person could not meet is `request_denied`, STS-GNAP-0899).
+      const decidedCode = String(lastDecision.code || '');
+      return Object.assign(this.refusal(decidedCode ||
+                                        (code === 'unknown_user' ?
+                                        'STS-GNAP-0121' : 'STS-GNAP-0120'),
                                         code === 'unknown_user' ?
           'the person who signed in is not the user the request named (RFC ' +
                                         '9635 section 2.4).' :
-          'the resource owner did not approve the request.', code, 403), {
+          (lastDecision.why
+            ? String(lastDecision.why)
+            : 'the resource owner did not approve the request.'),
+          code, 403), {
           extra: keepGoing });
     }
     const body = await this.release(req, grant);
@@ -2314,21 +3195,17 @@ class GnapGrants {
     const asked = parsed.request;
     const app = applications.get(grant.client.identifier);
     if (asked.tokens) {
-      for (let i = 0; i < asked.tokens.length; i++) {
-        const withheld = this.protectedAccessProblem(app,
-                                                     asked.tokens[i].access);
-        if (withheld) {
-          log.debug("Leaving GnapGrants.modifyGrant(). A protected scope.");
-          return this.refusal('STS-GNAP-0719', withheld + '.',
-                              'request_denied', 403);
-        }
-        const problem = this.accessProblem(app, asked.tokens[i].access);
-        if (problem) {
-          log.debug("Leaving GnapGrants.modifyGrant(). Access refused.");
-          return this.refusal('STS-GNAP-0112', problem + '.', 'request_denied',
-                              403);
-        }
+      // THE REQUEST STAGE AGAIN (#432 phase 3): a modification asks for
+      // rights afresh, so each is judged as at creation.
+      const judged = await this.judgeRequested(req, grant,
+        app || { identifier: grant.client.identifier, fields: {} },
+        asked.tokens, 'pending');
+      if (!judged.ok) {
+        log.debug("Leaving GnapGrants.modifyGrant(). A right was refused.");
+        return judged;
       }
+      asked.tokens = judged.tokens;
+      grant.narrowed = judged.narrowed;
       grant.request.tokens = asked.tokens;
       grant.request.multiple = asked.multiple;
     }
@@ -2340,9 +3217,12 @@ class GnapGrants {
     const requested = grant.request.tokens.reduce(function (all, one) {
       return all.concat(one.access);
     }, []);
+    // A LIMIT DROPPED OR RAISED IS NOT WITHIN THE APPROVAL (#432 phase 5),
+    // though the matcher finds the right covered — `limitsRaised()` says why.
     const withinApproval = grant.state === STATE.APPROVED &&
         grant.ro !== undefined && accessRights.accessCovers(previouslyApproved,
-        requested) && !asked.subject;
+        requested) && !asked.subject &&
+        !this.deps.rights.limitsRaised(previouslyApproved, requested);
     grant.state = STATE.PROCESSING;
     if (withinApproval) {
       // Section 5.3's worked example: narrower access, no new consent.
@@ -2394,40 +3274,116 @@ class GnapGrants {
    * @param why - the reason recorded
    */
   revokeTokens(grant, why) {
-    const { log, nowSec, stats, store } = this.deps;
+    const { log, revocation } = this.deps;
     log.debug("Entering GnapGrants.revokeTokens().");
-    (grant.tokens || []).forEach(function (jti) {
-      const record = store.tokenByJti(jti);
-      if (record && !record.revoked) {
-        record.revoked = true;
-        record.revokedAt = nowSec();
-        record.revokedWhy = why;
-        store.dropManagement(record);
-        store.saveToken(record);
-        if (/^jwt/.test(record.format)) {
-          stats.revoke(record.jti, 'GNAP: ' + why, undefined, record.exp);
-        }
-      }
-    });
+    // ONE WAY TO REVOKE A GRANT'S TOKENS (#432): `gnap_revocation.ts` holds
+    // it, because a sign-out, a deleted client and a received signal end
+    // grants there and must revoke exactly what the client's own section
+    // 5.4 revocation does.
+    revocation.revokeTokens(grant, why);
     log.debug("Leaving GnapGrants.revokeTokens().");
   }
 
   // Section 5.4.
   private revokeGrant(req, grant) {
-    const { log, audit, monitor, signals } = this.deps;
+    const { log } = this.deps;
     log.debug("Entering GnapGrants.revokeGrant().");
-    this.revokeTokens(grant, 'grant revoked by the client instance');
-    this.finalize(grant, 'revoked by the client instance');
-    monitor.record(grant.client.identifier, 'grant.revoked', {});
-    audit.audit({ action: 'gnap.grant.revoke', category: 'protocol',
-      protocol: PROTOCOL,
-      channel: 'http', outcome: 'success', actor: grant.client.identifier,
-      target: grant.client.identifier, summary: 'A GNAP grant was revoked by ' +
-                                                'its client instance',
-      detail: { grant: grant.id, tokens: (grant.tokens || []).length } });
-    signals.grantRevoked(req, grant, 'The client instance revoked the grant.');
+    this.revokeGrantBy(grant, { by: 'client', actor: grant.client.identifier,
+                                via: 'continuation', req: req });
     log.debug("Leaving GnapGrants.revokeGrant().");
     return { ok: true, status: 204, body: null };
+  }
+
+  /**
+   * Says whether a grant can still be revoked: not finalized, or finalized
+   * as `issued` with its tokens live (#432 phase 7).
+   *
+   * @param grant - the grant
+   * @returns true when a revocation would change something
+   */
+  revocable(grant: any): boolean {
+    const { log } = this.deps;
+    log.debug("Entering GnapGrants.revocable().");
+    log.debug("Leaving GnapGrants.revocable().");
+    return !!grant && (grant.state !== STATE.FINALIZED ||
+      !!(grant.finalization && grant.finalization.reason === 'issued'));
+  }
+
+  // -------------------------------------------------------------------------
+  // REVOKING A GRANT, BY WHOEVER MAY (#432 phase 7). Section 5.4's act — the
+  // tokens revoked, the grant finalized as `revoked`, CAEP `session-revoked`
+  // sent (`gnap_signals.ts`) — in ONE function, which the client's DELETE,
+  // the console and `/admin-api` (`gnap_console.ts`) and the person's own
+  // `/portal/gnap` all call, so what the client sees next is the same
+  // whoever ended it. `by` is who: `client`, `administrator` or `person`
+  // (the resource owner); it goes onto the history, the audit row and the
+  // CAEP reason. A grant finalized for any reason but `issued` is left alone
+  // and answered false — there is nothing live left to revoke.
+  // -------------------------------------------------------------------------
+  /**
+   * Revokes a grant (section 5.4): its tokens revoked, the grant finalized as
+   * `revoked`, CAEP `session-revoked` sent — the one path for the client, an
+   * administrator and the resource owner.
+   *
+   * @param grant - the grant
+   * @param context - `{ by, actor, via, req, why, initiatingEntity, action }`:
+   *   `client`, `administrator`, `person` or `system` (an act from outside
+   *   the protocol, `gnap_revocation.ts`, which states `why`), who acted,
+   *   through which door, the request, CAEP's initiating entity and the
+   *   audit action
+   * @returns true when it was revoked, false when nothing live was left
+   */
+  revokeGrantBy(grant: any, context: any): boolean {
+    const { log, audit, monitor, signals } = this.deps;
+    const ctx = context || {};
+    const by = String(ctx.by || 'client');
+    log.debug("Entering GnapGrants.revokeGrantBy(). by=" + by);
+    if (!this.revocable(grant)) {
+      log.debug("Leaving GnapGrants.revokeGrantBy(). Nothing live.");
+      return false;
+    }
+    // `system` is an act from outside the protocol (`gnap_revocation.ts`: a
+    // sign-out, a deleted client, a compromised device, a received signal),
+    // which states its own reason; the other three are named here.
+    const who = by === 'administrator' ? 'an administrator'
+      : (by === 'person' ? 'its resource owner'
+        : (by === 'system' ? '' : 'the client instance'));
+    const why = by === 'system' ? String(ctx.why || 'revoked')
+      : 'revoked by ' + who;
+    const actor = String(ctx.actor || grant.client.identifier);
+    // CAEP section 2's initiating entity: the caller's where it says one,
+    // `admin` for an administrator and `user` for the resource owner; the
+    // client's own revocation states none, as before.
+    const entity = ctx.initiatingEntity ? String(ctx.initiatingEntity)
+      : (by === 'administrator' ? 'admin'
+        : (by === 'person' ? 'user' : (by === 'system' ? 'system' :
+                                       undefined)));
+    this.revokeTokens(grant, by === 'system' ? why : 'grant ' + why);
+    this.finalize(grant, why +
+                  (by === 'client' || !ctx.actor ? '' : ' (' + actor + ')'),
+                  'revoked', actor);
+    monitor.record(grant.client.identifier, 'grant.revoked', {});
+    audit.audit({ action: String(ctx.action || 'gnap.grant.revoke'),
+      category: 'protocol', protocol: PROTOCOL,
+      channel: ctx.via === 'portal' ? 'portal'
+        : (by === 'system' ? 'internal' : 'http'),
+      outcome: 'success', actor: actor,
+      target: grant.client.identifier,
+      summary: 'A GNAP grant was ' + why,
+      detail: { grant: grant.id, by: by, via: String(ctx.via || ''),
+                tokens: (grant.tokens || []).length,
+                initiatingEntity: String(entity || '') } });
+    try {
+      signals.grantRevoked(ctx.req || null, grant,
+                           'The grant was ' + why + '.', entity);
+    } catch (e) {
+      log.debug("Caught in GnapGrants.revokeGrantBy(): " +
+                ((e && e.message) || e));
+      // The revocation is done; a signal that could not be started is logged
+      // by gnap_signals itself and must not undo the answer.
+    }
+    log.debug("Leaving GnapGrants.revokeGrantBy().");
+    return true;
   }
 
   // ---------------------------------------------------------------------------
@@ -2565,7 +3521,15 @@ class GnapGrants {
       log.debug("Leaving GnapGrants.manageVerified(). Revoked.");
       return { ok: true, status: 204, body: null };
     }
-    // POST: rotation, optionally with a new key.
+    // POST: rotation, optionally with a new key. A token whose resource owner
+    // is disabled, or whose client's entry is gone or no longer names its
+    // key, is not rotated (#432) — revoking it, above, is still allowed.
+    const ended = this.deps.revocation.tokenProblem(record);
+    if (ended) {
+      log.debug("Leaving GnapGrants.manageVerified(). " + ended.why);
+      return this.refusal('STS-GNAP-0732', 'this access token cannot be ' +
+                          'rotated: ' + ended.why + '.', 'invalid_rotation');
+    }
     const parsed = request.parseRotation(body.json, body.hadContent);
     if (!parsed.ok) {
       log.debug("Leaving GnapGrants.manageVerified(). Rotation body refused.");
@@ -2623,14 +3587,30 @@ class GnapGrants {
       return this.refusal('STS-GNAP-0153', 'a revoked access token cannot be ' +
                           'rotated.', 'invalid_rotation');
     }
-    if (grant && grant.state === STATE.FINALIZED) {
+    // A grant finalized as `issued` keeps its tokens, and they rotate (#432
+    // phase 7); every other finalized grant's tokens are over.
+    if (grant && grant.state === STATE.FINALIZED && !this.revocable(grant)) {
       log.debug("Leaving GnapGrants.manageVerified(). The grant is finalized.");
       return this.refusal('STS-GNAP-0154', 'the grant this token belongs to ' +
                           'is finalized.', 'invalid_rotation');
     }
+    // THE GRANT'S OWN LIFETIME (#432 phase 7): a rotation would renew the
+    // grant's access past the point its resource owner is to be asked again.
+    // The token record carries it too, for a grant already pruned.
+    if (this.grantLifetimeEnded(grant || record)) {
+      if (grant && grant.state !== STATE.FINALIZED) {
+        this.finalize(grant, 'the grant lifetime ended', 'expired');
+      }
+      log.debug("Leaving GnapGrants.manageVerified(). Lifetime ended.");
+      return this.refusal('STS-GNAP-0791', 'the grant this token was issued ' +
+          'under has reached the end of its lifetime (gnap.grantLifetimeS), ' +
+          'so the token cannot be rotated; make a new grant request (RFC ' +
+          '9635 section 6.1).', 'invalid_rotation');
+    }
     const iat = nowSec();
-    const lifetime = Math.max(1, (record.exp || iat) - (record.iat || iat)) ||
-      (Number(config.value('gnap.accessTokenLifetimeS')) || 3600);
+    const lifetime = this.cappedLifetime(grant || record, iat,
+      Math.max(1, (record.exp || iat) - (record.iat || iat)) ||
+      (Number(config.value('gnap.accessTokenLifetimeS')) || 3600));
     const cnf = newDescriptor ? keys.confirmationOf(newDescriptor) : record.cnf;
     const model = { jti: store.handle(16), iss: record.iss, sub: record.sub,
                     aud: record.aud,
@@ -2638,7 +3618,15 @@ class GnapGrants {
                     flags: record.flags,
                     cnf: cnf, iat: iat, nbf: iat, exp: iat +
                                                        lifetime,
-                    label: record.label };
+                    label: record.label,
+                    // The actor chain survives rotation (#432): a rotated
+                    // derived token that dropped it would launder a
+                    // delegation into a token nobody acted for.
+                    act: record.act || null,
+                    // And the grant its limits are counted against (#432
+                    // phase 5): a rotation that changed it would be a fresh
+                    // budget for the asking.
+                    grant: record.grant || record.grantId || null };
     let minted;
     try {
       const rs = record.rsIdentifiers && record.rsIdentifiers.length === 1
@@ -2662,7 +3650,10 @@ class GnapGrants {
       key: newDescriptor ? newDescriptor.value : record.key, proof:
           newDescriptor ? newDescriptor.proof : record.proof, rotatedFrom:
           record.jti, revoked: false, createdAt: iat, manageHandle: null,
-          manageHash: null }), minted.value);
+          manageHash: null,
+          // The NEW value's (#432), never the rotated one's copied above.
+          statusIdx: minted.statusIdx === undefined ? null : minted.statusIdx,
+          revocationIds: minted.revocationIds || null }), minted.value);
     // Section 6.1: "the AS MUST invalidate the current access token value".
     record.revoked = true;
     record.revokedAt = iat;
@@ -2679,9 +3670,20 @@ class GnapGrants {
       grant.tokens = (grant.tokens || []).concat([next.jti]);
       if (newDescriptor) {
         // Section 6.1.1: the grant's key follows the token's most recent
-        // rotation.
+        // rotation. THE KEY IT CAME FROM IS KEPT (#432): the entry names the
+        // key the grant began with, and a rotated grant is the same client's
+        // — `gnap_revocation.ts` reads the lineage so a rotation is never
+        // mistaken for the entry's key being removed.
+        const before = this.deps.revocation.keyIdentityOf(grant.client.key);
+        if (before) {
+          grant.client.keyLineage = (grant.client.keyLineage || [])
+            .concat([before]).slice(-20);
+        }
         grant.client.key = newDescriptor.value;
         grant.client.keyIdentity = newDescriptor.identity;
+        grant.client.certSpki = newDescriptor.proof &&
+          newDescriptor.proof.method === 'mtls'
+          ? this.deps.mtls.presentedKeyThumbprint(req) : '';
       }
       store.saveGrant(grant,
                       newDescriptor ? 'token key rotated' : 'token rotated');
@@ -2711,6 +3713,74 @@ class GnapGrants {
     }
     log.debug("Leaving GnapGrants.manageVerified(). Rotated.");
     return { ok: true, status: 200, body: { access_token: response } };
+  }
+
+  // -------------------------------------------------------------------------
+  // THE EXPIRY JOB (#432 phase 7). A grant past its interaction or its grant
+  // lifetime is refused by the next request that touches it, which finalizes
+  // it then (continueAccepted(), manageVerified()); this records the end of
+  // one NOBODY touches, so the console, the portal and the audit log say
+  // `expired` (or `rejected`) about it rather than showing it approved or
+  // pending for ever. A cluster job per realm (#49: anything periodic is a
+  // scheduler job); the opportunistic prune in `gnap_store.ts` still deletes
+  // the rows later, as it did.
+  // -------------------------------------------------------------------------
+  /**
+   * Finalizes every grant in the ambient realm past its interaction or its
+   * grant lifetime, recording why. The `gnap.grant-expiry` job's body.
+   *
+   * @returns `{ summary }` for the scheduler
+   */
+  expireGrants(): any {
+    const { log, store } = this.deps;
+    log.debug("Entering GnapGrants.expireGrants().");
+    let ended = 0;
+    store.listGrants().forEach((grant) => {
+      if (grant.state === STATE.FINALIZED) {
+        return;
+      }
+      if (this.expired(grant)) {
+        this.finalize(grant, 'the interaction expired',
+                      this.expiryReason(grant), 'scheduler');
+        ended += 1;
+      } else if (this.grantLifetimeEnded(grant)) {
+        this.finalize(grant, 'the grant lifetime ended', 'expired',
+                      'scheduler');
+        ended += 1;
+      }
+    });
+    log.debug("Leaving GnapGrants.expireGrants(). " + ended + ".");
+    return { summary: ended + ' GNAP grant(s) finalized as expired' };
+  }
+
+  /**
+   * Registers the expiry job on the scheduler, once.
+   */
+  scheduleJobs(): void {
+    const { log, scheduler } = this.deps;
+    const self = this;
+    log.debug("Entering GnapGrants.scheduleJobs().");
+    const s = scheduler();
+    if (s.job(EXPIRY_JOB)) {
+      log.debug("Leaving GnapGrants.scheduleJobs(). Registered.");
+      return;
+    }
+    s.register({
+      id: EXPIRY_JOB,
+      title: 'GNAP: expired grants',
+      describe: 'Finalizes each GNAP grant whose interaction or grant ' +
+                'lifetime (gnap.grantLifetimeS) has ended and that no ' +
+                'request has touched since, recording why (#432).',
+      owner: 'gnap/gnap_grants.ts',
+      kind: 'cluster', scope: 'realm', everyMs: function (): number {
+        return 300000;
+      },
+      manual: true,
+      run: function (): any {
+        return self.expireGrants();
+      }
+    });
+    log.debug("Leaving GnapGrants.scheduleJobs(). On the scheduler.");
   }
 
   // What the composition root passes (#50, R2): the real modules, as the
@@ -2749,12 +3819,22 @@ class GnapGrants {
       monitor: monitor,
       signals: signals,
       accessRights: accessRights,
+      revocation: revocation,
       scopePolicy: scopePolicy,
       mtls: mtls,
+      delegation: gnapDelegation,
+      rights: gnapRights,
+      ownership: ownership,
+      approval: gnapApproval,
       loadOauth2: function loadOauth2() {
         helpers.log.debug("Entering loadOauth2().");
         helpers.log.debug("Leaving loadOauth2().");
         return require('../oauth-oidc/oauth2');
+      },
+      scheduler: function scheduler() {
+        helpers.log.debug("Entering scheduler().");
+        helpers.log.debug("Leaving scheduler().");
+        return require('../cluster/scheduler');
       }
     };
   }
@@ -2771,7 +3851,11 @@ class GnapGrants {
 const slot = new InstanceSlot<GnapGrants>(
   'gnap/gnap_grants',
   () => new GnapGrants(GnapGrants.defaultDeps()),
-  null,
+  // The wire step registers the expiry job (#432 phase 7), as
+  // `pairwise_subjects.ts`'s registers its purge.
+  function (instance: GnapGrants): void {
+    instance.scheduleJobs();
+  },
   helpers.log);
 
 // Standalone, build the default now, as loading this module always did.
@@ -2802,6 +3886,9 @@ export = {
   KIND_RS: GnapGrants.KIND_RS,
   GNAP_MEMBERS: GnapGrants.GNAP_MEMBERS,
   RESERVED_AS_NAMES: GnapGrants.RESERVED_AS_NAMES,
+  FINALIZATION_REASONS: GnapGrants.FINALIZATION_REASONS,
+  SUBJECT_AUTHORIZATIONS: GnapGrants.SUBJECT_AUTHORIZATIONS,
+  EXPIRY_JOB: GnapGrants.EXPIRY_JOB,
   capabilities: slot.forward('capabilities'),
   capabilityList: slot.forward('capabilityList'),
   defaultCapabilities: slot.forward('defaultCapabilities'),
@@ -2816,12 +3903,22 @@ export = {
   continueGrant: slot.forward('continueGrant'),
   manageToken: slot.forward('manageToken'),
   decide: slot.forward('decide'),
+  approverRefusal: slot.forward('approverRefusal'),
   rememberedFor: slot.forward('rememberedFor'),
+  forwardToOwner: slot.forward('forwardToOwner'),
+  refuseUnmetStepUp: slot.forward('refuseUnmetStepUp'),
+  decideAsOwner: slot.forward('decideAsOwner'),
   finishInteraction: slot.forward('finishInteraction'),
   interactionHash: slot.forward('interactionHash'),
   normaliseUserCode: slot.forward('normaliseUserCode'),
   digestTokenOf: slot.forward('digestTokenOf'),
   canonicalJson: slot.forward('canonicalJson'),
   resourceServersFor: slot.forward('resourceServersFor'),
-  revokeTokens: slot.forward('revokeTokens')
+  revokeTokens: slot.forward('revokeTokens'),
+  revokeGrantBy: slot.forward('revokeGrantBy'),
+  revocable: slot.forward('revocable'),
+  finalize: slot.forward('finalize'),
+  grantLifetimeEnded: slot.forward('grantLifetimeEnded'),
+  grantExpiryFrom: slot.forward('grantExpiryFrom'),
+  expireGrants: slot.forward('expireGrants')
 };

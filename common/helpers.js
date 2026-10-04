@@ -7151,9 +7151,16 @@ function forwardedFrom(req) {
  *
  * @returns the pinned base, or '' when none is set
  */
+// A REALM WITH A LISTENER OF ITS OWN (#99, 2026-10-02) is built on its own
+// base: `listener.publicBaseUrl` is read in the ambient realm (it is
+// `realmOnly`, so only that realm's own value is ever seen) and wins over
+// `global.publicBaseUrl`. Every URL a realm builds goes through here — 529
+// calls of `baseUrlOf()` — background jobs with no request included, so one
+// line moves them all; the `/realm/<id>` prefix still follows the base.
 function pinnedBaseUrl() {
   log.debug("Entering pinnedBaseUrl().");
-  const raw = String(config.value('global.publicBaseUrl') || '').trim();
+  const own = String(config.value('listener.publicBaseUrl') || '').trim();
+  const raw = own || String(config.value('global.publicBaseUrl') || '').trim();
   log.debug("Leaving pinnedBaseUrl().");
   return raw ? raw.replace(/\/+$/, '') : '';
 }

@@ -812,11 +812,16 @@ async function makeWorld(mode) {
   await createApplication(realm, w.rp11, ["saml11"], {
     samlEntityId: [w.rp11], samlAssertionConsumerService: [w.acs11],
     samlSigningCertificate: signing });
+  // #186: the delegated assertion was issued for the AppliesTo, so S and R
+  // are both the relying party — which accepts the requester as an actor
+  // and lists itself, so that S delegates to R.
   await createApplication(realm, w.wsRp, ["wsfed", "wstrust"], {
     wsfedRealm: [w.wsRp], wsfedReplyUrl: [w.wsReply],
-    wstrustAppliesTo: [w.wsRp] });
+    wstrustAppliesTo: [w.wsRp],
+    appAllowedToActOnBehalfOf: [w.requester, w.wsRp] });
   await createApplication(realm, w.requester, ["wstrust"], {
-    appTrustedToImpersonate: "TRUE", appAllowedToDelegateTo: [w.wsRp] });
+    appDelegationSemantics: ["delegation", "impersonation"],
+    appAllowedToDelegateTo: [w.wsRp] });
   log.debug("Leaving makeWorld().");
   return w;
 }

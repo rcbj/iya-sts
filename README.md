@@ -32,6 +32,38 @@ protocol's documentation page before relying on it.
 **The documentation is at [`docs/`](docs/index.md)** (published as a GitHub
 Pages site): configuration, architecture, and a page per protocol family.
 
+## iya-sts — Flexible, Secure Identity Integration for the AI Era
+
+Identity infrastructure shouldn't become the bottleneck for the next generation of applications.
+
+iya-sts is flexible, security-focused Identity Integration software designed to connect modern applications, services, workloads, and AI agents to the identity protocols and authorization systems they already use.
+
+Built around open standards rather than a single identity ecosystem, iya-sts brings together authentication, federation, token services, authorization, delegation, and identity integration in one extensible platform.
+
+From traditional enterprise applications to cloud workloads and emerging AI-agent architectures, iya-sts is designed for the messy reality of modern identity: multiple protocols, multiple trust domains, multiple identity types, and increasingly complex relationships between users, applications, services, and agents.
+
+### Built for integration
+
+iya-sts works across the identity landscape rather than forcing everything into one proprietary model. Its protocol-oriented architecture supports technologies including OAuth 2.0, OpenID Connect, SAML, WS-Trust, WS-Federation, Kerberos, SCIM, XACML, WebAuthn, and modern verifiable-credential and workload-identity technologies.
+
+### Built for the AI era
+
+AI systems introduce a new identity problem: software increasingly acts on behalf of people, applications, and other agents.
+
+That requires more than simply authenticating a user.
+
+It requires understanding who is acting, on whose behalf, what authority was delegated, what resources can be accessed, and how that authority can be constrained and enforced.
+
+iya-sts provides an identity foundation for those relationships—bringing traditional enterprise identity concepts into architectures where humans, applications, workloads, and AI agents all participate.
+
+### Standards first. Integration focused.
+
+iya-sts is built around open identity and security standards, making it useful as an integration layer between systems that were never designed to speak the same identity language.
+
+One identity layer. Multiple protocols. Multiple trust relationships. Modern applications and AI agents.
+
+iya-sts is built for organizations that don't want to replace their entire identity infrastructure just to build what's next.
+
 ## Architecture
 
 [![iya-sts architecture](docs/iya-sts-architecture.jpeg)](docs/iya-sts-architecture.jpeg)

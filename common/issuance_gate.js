@@ -434,82 +434,101 @@ function protocolFactsOf(asked) {
 // alone. Synchronous, as `check()` must be.
 // ---------------------------------------------------------------------------
 // ---------------------------------------------------------------------------
-// THE DELEGATION QUESTION (#108, 2026-09-23): action-id `delegate`, asked by
-// `common/delegation_policy.ts` AFTER its attribute rule has allowed a
-// WS-Trust OnBehalfOf / ActAs or an RFC 8693 exchange.
+// WHO MAY ACT FOR WHOM (#186): the two exchange questions an RFC 8693 token
+// exchange, a WS-Trust OnBehalfOf / ActAs and a Kerberos S4U request ask —
+// `choose-exchange-semantics` and `exchange-token` — with the facts
+// `common/delegation_policy.ts` gathers. It replaced #108's deny-only
+// `delegate` question: the attribute rule that question sat on top of is now
+// the policy's own rules, and the attributes are only its facts.
 //
-// **DENY-ONLY, AND THAT IS THE WHOLE DIFFERENCE FROM `check()`.** The
-// attributes on the entries are the policy and stay readable on their own —
-// Kerberos's model — and this is an administrator's layer ON TOP of them: a
-// Permit, a NotApplicable and an Indeterminate all leave the attribute rule's
-// answer standing, and only an explicit Deny refuses. So the built-in issuance
-// policy, which says nothing about `delegate`, changes nothing, and an
-// operator who writes a rule denying one intermediary, one subject or one
-// target gets exactly that and no more.
+// `request`: `{ facts, mode, protocol, realm, settings }`, as
+// `xacml/xacml_exchange_verdicts.js` takes it. The answer is that library's:
+// `{ verdict, refusal, enforced, semantics, chosen, audience, decidedBy }`.
 //
-// NOT A MEMBER OF `ISSUANCE`: delegating is not an issuance of its own — the
-// token the act produces is still issued through the ordinary site and asked
-// about there — and every reader of `KINDS` lists issuances.
+// **WITH NO DECIDER THE BUILT-IN POLICY STILL DECIDES**, the transfer
+// question's arrangement: a process with no XACML family asks the built-in
+// document through the library, and a decider that THROWS is a defect and the
+// built-in document is asked the same way (STS-XACML-0086). A process that
+// cannot load the engine at all REFUSES (STS-XACML-0085): acting for somebody
+// is never the answer to a defect.
 //
-// `delegation`: { intermediary, subject, target, mode, protocol }.
+// NOT MEMBERS OF `ISSUANCE`: acting for somebody issues nothing of its own —
+// the token the act produces is still issued through the ordinary site.
 // ---------------------------------------------------------------------------
 /**
- * The `action-id` of the delegation question: `delegate`. Not a member of
+ * The action-ids of the two exchange questions (#186). Not members of
  * `ISSUANCE`.
  */
-const DELEGATE = 'delegate';
+const EXCHANGE = {
+  CHOOSE: 'choose-exchange-semantics',
+  EXCHANGE: 'exchange-token'
+};
+
+function builtInExchangeVerdict(asked, why) {
+  log.debug('Entering builtInExchangeVerdict().');
+  let out;
+  try {
+    const verdicts = require('../xacml/xacml_exchange_verdicts');
+    out = verdicts.decide(asked, null, {});
+  } catch (error) {
+    log.error(errorCodes.tag('STS-XACML-0085') + 'issuance_gate: the ' +
+              'built-in issuance policy could not be evaluated for an ' +
+              'exchange; it is refused. ' +
+              ((error && error.message) || error));
+    out = { verdict: 'refuse', refusal: 'policy', enforced: true,
+            semantics: '', chosen: '', audience: '', decidedBy: 'none' };
+  }
+  log.debug('Leaving builtInExchangeVerdict(). ' + out.verdict);
+  return Object.assign({ why: why }, out);
+}
 
 /**
- * Puts a delegation the attribute rule already allowed to the embedded PEP,
- * which may only deny it.
+ * Puts the two exchange questions (#186) to the issuance policy, with the
+ * facts `common/delegation_policy.ts` gathered.
  *
- * Only an explicit Deny refuses; a Permit, NotApplicable, Indeterminate, no
- * decider or a decider that throws all leave the attribute rule's answer
- * standing.
+ * Never throws and never returns a promise. With no decider, or a decider
+ * that throws or answers no verdict, the built-in policy decides.
  *
- * @param delegation - `{ intermediary, subject, target, mode, protocol }`
- * @returns the same shape as `check()`
+ * @param request - `{ facts, mode, protocol, realm, settings }`
+ * @returns `{ verdict, refusal, enforced, semantics, chosen, audience,
+ *   decidedBy, why }`
  */
-function checkDelegation(delegation) {
-  log.debug('Entering checkDelegation().');
-  const asked = delegation || {};
+function checkExchange(request) {
+  log.debug('Entering checkExchange().');
+  const asked = Object.assign({}, request || {});
   if (!decider) {
-    log.debug('Leaving checkDelegation(). No decider is installed.');
-    return allow('The XACML role subsystem is not loaded in this process, ' +
-                 'so the delegation is not put to it.');
+    log.debug('Leaving checkExchange(). No decider: the built-in policy.');
+    return builtInExchangeVerdict(asked, 'No XACML family is loaded in this ' +
+                                  'process; the built-in policy decided.');
   }
   let answer;
   try {
     answer = decider({
-      kind: DELEGATE,
-      denyOnly: true,
-      application: String(asked.target || ''),
-      subject: { kind: 'user', name: String(asked.subject || ''),
-                 authenticated: true },
+      kind: EXCHANGE.EXCHANGE,
+      application: '',
+      subject: { kind: 'user', name: '', authenticated: true },
       claims: null,
       risk: null,
       rolesWaived: true,
-      delegation: {
-        intermediary: String(asked.intermediary || ''),
-        subject: String(asked.subject || ''),
-        target: String(asked.target || ''),
-        mode: String(asked.mode || ''),
-        protocol: String(asked.protocol || '')
-      }
+      exchangeQuestion: asked
     });
   } catch (error) {
-    log.error(errorCodes.tag('STS-XACML-0052') +
-              'issuance_gate: the decider threw on a delegation question and ' +
-              'the attribute rule\'s answer stands; this is a defect in the ' +
+    log.error(errorCodes.tag('STS-XACML-0086') +
+              'issuance_gate: the decider threw on an exchange question; the ' +
+              'built-in policy decides instead. This is a defect in the ' +
               'embedded PEP rather than a decision. ' + error.message);
-    log.debug("Leaving checkDelegation().");
-    return allow('The embedded PEP threw, which is a defect rather than a ' +
-                 'decision: ' + error.message);
+    log.debug('Leaving checkExchange(). The decider threw.');
+    return builtInExchangeVerdict(asked, 'The embedded PEP threw: ' +
+                                  error.message);
   }
-  const result = answer || allow('The embedded PEP answered nothing.');
-  log.debug('Leaving checkDelegation(). ' + (result.allowed ? 'Allowed.'
-    : 'DENIED: ' + result.why));
-  return result;
+  const exchange = answer && answer.exchange;
+  if (!exchange || !exchange.verdict) {
+    log.debug('Leaving checkExchange(). The PEP answered no verdict.');
+    return builtInExchangeVerdict(asked, 'The embedded PEP answered no ' +
+                                  'exchange verdict.');
+  }
+  log.debug('Leaving checkExchange(). ' + exchange.verdict);
+  return Object.assign({ why: answer.why || '' }, exchange);
 }
 
 // ---------------------------------------------------------------------------
@@ -599,6 +618,100 @@ function checkScopes(request) {
 }
 
 // ---------------------------------------------------------------------------
+// THE PER-RIGHT GNAP QUESTION (#432 phase 3): which access rights a GNAP
+// grant issues, narrowed how, in a token that lives how long. `request` is
+// the question `xacml/xacml_gnap_right_verdicts.ts` asks — `{ subject,
+// protocol, mode, stage, settings, rights: [gnapRight() facts] }` — the
+// FACTS, gathered by `gnap/gnap_rights.ts`; this answers `{ verdicts: [{ id,
+// verdict, code, drop, maxLifetimeS, decidedBy }] }`, verdict `keep`,
+// `narrow` or `refuse`. The scope question's arrangement exactly: with no
+// decider, or one that throws or answers nothing, the built-in policy decides
+// through the same library. Not a member of `ISSUANCE`, for the scope
+// question's reason: it decides WHAT is in a token whose issuance
+// `check()` still decides.
+// ---------------------------------------------------------------------------
+function builtInGnapRightVerdicts(asked, why) {
+  log.debug('Entering builtInGnapRightVerdicts().');
+  let verdicts;
+  try {
+    verdicts = require('../xacml/xacml_gnap_right_verdicts')
+      .decide(asked, null, {});
+  } catch (error) {
+    // THE ENGINE ITSELF COULD NOT BE LOADED OR RUN — a defect, and a right
+    // is not issued because the engine broke.
+    log.error(errorCodes.tag('STS-XACML-0168') + 'issuance_gate: the ' +
+              'built-in issuance policy could not be evaluated for the GNAP ' +
+              'right question; every right is refused. ' +
+              ((error && error.message) || error));
+    verdicts = (asked.rights || []).map(function (one) {
+      return { id: String((one && one.right && one.right.id) || ''),
+               verdict: 'refuse', code: 'STS-GNAP-0816',
+               drop: { actions: [], locations: [], datatypes: [],
+                       privileges: [] },
+               maxLifetimeS: null, decidedBy: 'none' };
+    });
+  }
+  log.debug('Leaving builtInGnapRightVerdicts().');
+  return { verdicts: verdicts, why: why, policy: 'built-in' };
+}
+
+/**
+ * Puts the per-right GNAP question (#432 phase 3) to the issuance policy,
+ * with the facts `gnap/gnap_rights.ts` gathered.
+ *
+ * Never throws and never returns a promise. With no decider, or a decider
+ * that throws or answers no verdicts, the built-in policy decides.
+ *
+ * @param request - `{ subject, protocol, mode, stage, settings, rights }`
+ * @returns `{ verdicts, why, policy }`
+ */
+function checkGnapRights(request) {
+  log.debug('Entering checkGnapRights().');
+  const asked = Object.assign({}, request || {});
+  asked.rights = Array.isArray(asked.rights) ? asked.rights : [];
+  if (!asked.rights.length) {
+    log.debug('Leaving checkGnapRights(). Nothing asked.');
+    return { verdicts: [], why: '' };
+  }
+  if (!decider) {
+    log.debug('Leaving checkGnapRights(). No decider: the built-in policy.');
+    return builtInGnapRightVerdicts(asked, 'No XACML family is loaded in ' +
+                                    'this process; the built-in policy ' +
+                                    'decided.');
+  }
+  let answer;
+  try {
+    answer = decider({
+      kind: 'issue-gnap-right',
+      application: '',
+      subject: asked.subject || {},
+      protocol: asked.protocol || 'GNAP',
+      claims: null,
+      risk: null,
+      rolesWaived: true,
+      gnapRightQuestion: asked
+    });
+  } catch (error) {
+    log.error(errorCodes.tag('STS-XACML-0052') +
+              'issuance_gate: the decider threw on the GNAP right question; ' +
+              'the built-in policy decides instead. This is a defect in the ' +
+              'embedded PEP rather than a decision. ' + error.message);
+    log.debug('Leaving checkGnapRights(). The decider threw.');
+    return builtInGnapRightVerdicts(asked, 'The embedded PEP threw: ' +
+                                    error.message);
+  }
+  const verdicts = answer && Array.isArray(answer.gnapRights)
+    ? answer.gnapRights : null;
+  if (!verdicts) {
+    log.debug('Leaving checkGnapRights(). The PEP answered no verdicts.');
+    return builtInGnapRightVerdicts(asked, 'The embedded PEP answered no ' +
+                                    'verdicts.');
+  }
+  log.debug('Leaving checkGnapRights(). ' + verdicts.length + ' verdict(s).');
+  return { verdicts: verdicts, why: '', policy: answer.policy || '' };
+}
+
+// ---------------------------------------------------------------------------
 // THE TRANSFER QUESTIONS (#98 D4, the design's section 6): action-ids
 // `hold-session`, `serve-request` and `release-attributes`, asked by
 // `common/cell_transfer.ts` when the service is deployed as cells.
@@ -608,7 +721,7 @@ function checkScopes(request) {
 // `release-attributes` (#98 D11): may residents' personal data be RELEASED
 // to a reader at a cell in another jurisdiction?
 //
-// **NOT MEMBERS OF `ISSUANCE`**, for `DELEGATE`'s reason and the scope
+// **NOT MEMBERS OF `ISSUANCE`**, for `EXCHANGE`'s reason and the scope
 // question's: neither issues anything — holding a session somewhere is a
 // question about WHERE a session already decided on lives, and serving a
 // request or releasing a directory listing is not an issuance at all — and
@@ -882,12 +995,16 @@ module.exports = {
   deciderInstalled: deciderInstalled,
   check: check,
   checkScopes: checkScopes,
+  checkGnapRights: checkGnapRights,
   PROTOCOL_OF_KIND: PROTOCOL_OF_KIND,
   FAMILIES_OF_KIND: FAMILIES_OF_KIND,
   deviceFactsOf: deviceFactsOf,
   deviceRequirementOf: deviceRequirementOf,
-  DELEGATE: DELEGATE,
-  checkDelegation: checkDelegation,
+  // #432 phase 3: the GNAP right question gathers the same risk facts a
+  // token's issuance is decided on.
+  riskFactsOf: riskFactsOf,
+  EXCHANGE: EXCHANGE,
+  checkExchange: checkExchange,
   TRANSFER: TRANSFER,
   checkTransfer: checkTransfer,
   strictTransferReading: strictTransferReading

@@ -249,11 +249,18 @@ const JOBS = [
   // one. A mode that is not what it says would otherwise be reported green by
   // every job after it. Its header argues why it is local and why it is first.
   { file: 'sts_cluster_alternation.js',  browser: false, local: true },
+  { file: 'sts_main_port_pooling.js',    browser: false, local: true },
+  { file: 'sts_realm_listener.js',       browser: false, local: true },
   { file: 'admin_api.js',                browser: false, local: true,
     exclusive: true },
   { file: 'ldp_vc_issuance.js',          browser: false },
   { file: 'ldp_vc_refresh.js',           browser: false },
-  { file: 'oauth2_sts_endpoints.js',     browser: false },
+  // OURS SINCE 2026-10-03 (#186): rcbj's decision that iya-sts moves away
+  // from the parent's copies. Taken from the parent's then-current file and
+  // changed HERE to detect appAllowedToDelegateTo (appTrustedToImpersonate
+  // was merged into appDelegationSemantics). Porting back is decided case by
+  // case; the de-vendoring ticket carries the rest.
+  { file: 'oauth2_sts_endpoints.js',     browser: false, local: true },
   // THE GATE IN FRONT OF THAT API, as opposed to what is behind it
   // (2026-09-09). `sts_admin_api_operations.js` walks every documented
   // operation; this one asserts that none of them can be reached
@@ -310,6 +317,13 @@ const JOBS = [
   // nested act and the policy resource. `local: true`: the policy is ours.
   // Its realm is left standing.
   { file: 'sts_delegation_policy.js',    browser: false, local: true },
+  // ASSERTIONS AS RFC 8693 SUBJECT AND ACTOR TOKENS (#114, 2026-10-03): an
+  // RFC 7523 JWT, an RFC 7522 SAML 2.0 and a SAML 1.1 assertion from issuers
+  // declared through /admin-api, exchanged; the replay history shared with
+  // the jwt-bearer grant; oauth2.tokenExchangeAudience's two rules and the
+  // SAML Recipient under forwarding. `local: true`: the feature is ours. Its
+  // realm is left standing.
+  { file: 'sts_token_exchange_assertions.js', browser: false, local: true },
   { file: 'sts_dpop.js',                 browser: false },
   // GNAP (2026-09-12). `local: true` on the second of tests/CLAUDE.md's
   // reasons: GNAP exists in this repository and nowhere else, so there is no
@@ -321,12 +335,37 @@ const JOBS = [
   { file: 'sts_gnap_core.js',            browser: false, local: true },
   { file: 'sts_gnap_rs.js',              browser: false, local: true },
   { file: 'sts_gnap_signals.js',         browser: false, local: true },
+  // #432: the access-token status list from OAuth's side — an RFC 9068
+  // token's status claim, the list fetched, verified and read by the job's
+  // own code, and the bit set by RFC 7009 revocation. `local: true` on the
+  // second question: asserted over HTTP, so written here. GNAP's half is
+  // `sts_gnap_rs.js` section 8.
+  { file: 'sts_access_token_status.js',  browser: false, local: true },
   // #107: a key proved by mutual TLS under the pinned and PKI trust models,
   // revocation in both, the binding to an application entry, rotation at the
   // authority, the per-client override and the product default. Presents
   // client certificates on the main port; the foreign leaf names a CRL this
   // job serves (test_crl_host.js).
   { file: 'sts_gnap_mtls.js',            browser: false, local: true },
+  // #432 phase 1: GNAP impersonation by user assertion and RFC 9767
+  // derivation asked of #186's delegation policy, in whichever mode the
+  // service is in — product's refusals by their audited codes, development's
+  // "would have been refused" — the act chain on a derived token, the depth
+  // cap, and the acts on /admin-api/delegation. A throwaway realm left behind.
+  { file: 'sts_gnap_delegation.js',      browser: false, local: true },
+  { file: 'sts_gnap_catalogue.js',       browser: false, local: true },
+  // #432 phase 5: an identifier's owner from a registered resource set
+  // (a non-owner refused on the approval page, a group member approving),
+  // a limit lowered on the page and read off the token by the job, and the
+  // demonstration resource server spending to the limit, refunding a failed
+  // operation and refusing past it. A throwaway realm left behind.
+  { file: 'sts_gnap_limits.js',          browser: false, local: true },
+  // #432 phase 6: per-type interaction (never, always, a consent action)
+  // against a client trusted to skip, a remembered approval not standing in
+  // for always, the step-up an mfa type demands and its refusal, and
+  // approval by an absent owner on /portal/ciba while the client polls. A
+  // throwaway realm left behind.
+  { file: 'sts_gnap_interaction.js',     browser: false, local: true },
   // CERTIFICATE ENROLLMENT (2026-09-13): ACME, EST and SCEP, each driven by an
   // independent client written from its RFC with no code from acme/, est/ or
   // scep/, each in a throwaway realm it leaves behind.
@@ -353,8 +392,9 @@ const JOBS = [
     timeoutMs: 900000 },
   { file: 'sts_acme_lego.js',            browser: false, local: true,
     timeoutMs: 900000 },
+  // `exclusive` since #429: it turns TLS 1.2 on service-wide for its run.
   { file: 'sts_est_libest.js',           browser: false, local: true,
-    timeoutMs: 600000 },
+    timeoutMs: 600000, exclusive: true },
   { file: 'sts_scep_sscep.js',           browser: false, local: true,
     timeoutMs: 600000 },
   { file: 'sts_scep_micromdm.js',        browser: false, local: true,
@@ -875,6 +915,12 @@ const JOBS = [
   // SIGNED IN WITH by MIT `kinit -k -t` and by `krb5_wire.js` using the
   // keytab's key — against the KDC at the published address, in both modes.
   { file: 'sts_kerberos_keytab.js',      browser: false, local: true },
+  // #186 (2026-10-03): Kerberos S4U2Self, S4U2Proxy, forwarded TGTs and
+  // PA-S4U-X509-USER over TCP 88, decided by the one delegation policy — the
+  // job builds its own services (create-service) and people, so it runs in
+  // either mode. It replaces, here, the parent's in-process delegation jobs,
+  // which lose their fixture rules without a directory (kerberos/CLAUDE.md).
+  { file: 'sts_kerberos_delegation.js',  browser: false, local: true },
   // A KERBEROS SIGN-OUT OUTLIVES THE NEXT AS EXCHANGE (#111, 2026-09-23):
   // over TCP 88, a TGT from before a global sign-out refused
   // KDC_ERR_TGT_REVOKED, a new AS exchange straight after it accepted, the
@@ -971,8 +1017,11 @@ const JOBS = [
   // tests/tlsfuzzer/sts_adapter.py; every failure fixed or a documented
   // exception in tlsfuzzer_kit.js. `local: true`: this repository's TLS
   // listeners and their policy (tls/tls_server.js).
+  // EXCLUSIVE SINCE #429: it turns TLS 1.2 on service-wide for its run
+  // (every listener is TLS 1.3 only by default), which no other job may
+  // see half-way through.
   { file: 'sts_tlsfuzzer.js',            browser: false, local: true,
-    timeoutMs: 2700000 },
+    timeoutMs: 2700000, exclusive: true },
   // THE W3C VERIFIABLE CREDENTIALS AND DID TEST SUITES (#194-#199,
   // 2026-09-26): each Working Group suite, pinned and installed in the tests
   // image by tests/vc-suites/fetch-suites.sh, run against the VC-API test

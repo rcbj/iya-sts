@@ -351,6 +351,19 @@ const USE_CASES = [
           'Issued to a REGISTERED PEP from /admin/xacml/peps or POST ' +
           '/admin-api/xacml/issue-pep-certificate; the private key is ' +
           'handed over once and this service keeps no copy.' },
+  // **A TRUST REALM'S OWN FRONT-END LISTENER (#99, 2026-10-02).** REALM-scoped
+  // for `pep-tls`'s reason: the listener answers one realm, so the authority
+  // vouching for its front door is that realm's. Issued by
+  // `tls/realm_listeners.js` through `issueTlsServerKeyPair()`, one slot per
+  // node — each node presents a key of its own, and a slot per node keeps one
+  // node's issuance from superseding (and revoking) another's.
+  { id: 'realm-tls', scope: 'realm', label: 'Realm listeners',
+    cn: 'Realm Listener TLS Issuing CA',
+    what: 'The certificates a trust realm\'s own HTTPS listener presents ' +
+          '(listener.port) when no operator certificate is configured, for ' +
+          'listener.hostnames. REALM-scoped because the listener answers ' +
+          'that realm alone. One per node; the private key never leaves ' +
+          'the node that serves it.' },
   // **THE THREE ENROLLMENT PROTOCOLS (2026-09-13).** One Issuing CA per
   // protocol rather than one for all three, for the reason `jose` and `xml`
   // are two: a relying party that trusts what ACME issued has said nothing

@@ -2358,6 +2358,10 @@ const OWN_NAMES = [
   // they have named as their delegate, whose `sub` becomes the `may_act` claim
   // of their access tokens. See `common/delegation_policy.ts`.
   'stsNotDelegated', 'stsMayAct',
+  // AND AS WHAT (#186): the semantics others may use as this person — and
+  // they may use as an actor — and the default when a request says none.
+  // See `common/delegation_policy.ts`.
+  'stsDelegationSemantics', 'stsDefaultDelegationSemantics',
   // THE MAIL CHANNEL'S ADDRESS VERIFICATION (#63, 2026-09-22) — see
   // readPersonFlags(): the address a person proved they receive mail at, and
   // the pending link's hash, expiry and the address it was sent to.
@@ -3712,6 +3716,23 @@ function seed() {
         description: 'Seeded, not authenticated.'
       }, { origin: 'seed' });
     });
+    // THE KERBEROS FIXTURE `sensitive` (#186): Active Directory's
+    // "account is sensitive and cannot be delegated" is stsNotDelegated on
+    // the person, the one control every protocol reads — the KDC gives this
+    // person no forwardable ticket and no service may act for them. It was
+    // a field on the KDC's own principal table until #186 moved delegation
+    // onto the entries.
+    putEntry('uid=sensitive,' + usersDn(), {
+      objectClass: ['top', 'person', 'organizationalPerson', 'inetOrgPerson'],
+      uid: 'sensitive',
+      cn: 'Sensitive Account',
+      sn: 'Account',
+      displayName: 'Sensitive Account',
+      mail: realms.inventedMailOf('sensitive'),
+      stsNotDelegated: 'TRUE',
+      description: 'Seeded, not authenticated: flagged never to be ' +
+        'delegated (stsNotDelegated), as the KDC\'s sensitive account.'
+    }, { origin: 'seed' });
     putEntry('cn=developers,' + groupsDn(), {
       objectClass: ['top', 'groupOfNames'],
       cn: 'developers',
@@ -10801,6 +10822,12 @@ if (typeof credentials.setDirectory === 'function') {
       log.debug("Leaving writeMayAct().");
       return writePersonFlag(key, 'stsMayAct', value ? String(value) : '');
     },
+    // #186: the semantics this person allows, and their default.
+    writeDelegationSemantics: function (key, allowed, dflt) {
+      log.debug("Entering writeDelegationSemantics().");
+      log.debug("Leaving writeDelegationSemantics().");
+      return writeDelegationSemantics(key, allowed, dflt);
+    },
     // Every person in the realm carrying either flag, for the policy table on
     // /admin/delegation. One walk of the people, reading two attributes.
     delegationFlaggedPersons: function () {
@@ -10812,14 +10839,24 @@ if (typeof credentials.setDirectory === 'function') {
       // entry carrying one pays for `isPersonEntry()`'s DN normalising. Same
       // rows, same walk order. In a windowed worker only the holders of one
       // of the two are visited (#349).
-      eachHolderOfAny(['stsnotdelegated', 'stsmayact'], function (entry) {
+      // #186: and the two semantics attributes, so a person who allows
+      // impersonation, or carries a default, is on the policy table too.
+      eachHolderOfAny(['stsnotdelegated', 'stsmayact',
+                       'stsdelegationsemantics',
+                       'stsdefaultdelegationsemantics'], function (entry) {
         const a = entry.attributes;
         const notDelegated =
           String((a.stsnotdelegated || [])[0] || '').toUpperCase() === 'TRUE';
         const mayAct = String((a.stsmayact || [])[0] || '');
-        if ((notDelegated || mayAct) && isPersonEntry(entry)) {
+        const semantics = (a.stsdelegationsemantics || []).map(String);
+        const defaultSemantics =
+          String((a.stsdefaultdelegationsemantics || [])[0] || '');
+        if ((notDelegated || mayAct || semantics.length || defaultSemantics) &&
+            isPersonEntry(entry)) {
           out.push({ username: usernameOfEntry(entry), dn: entry.dn,
-                     notDelegated: notDelegated, mayAct: mayAct });
+                     notDelegated: notDelegated, mayAct: mayAct,
+                     semantics: semantics,
+                     defaultSemantics: defaultSemantics });
         }
       });
       log.debug("Leaving delegationFlaggedPersons(). " + out.length);
@@ -11796,8 +11833,9 @@ function readDelegationFacts(key) {
   const stored = located.stored;
   if (!stored) {
     log.debug('Leaving readDelegationFacts(). No entry.');
-    return { found: false, person: false, dn: '', username: '',
-             notDelegated: false, mayAct: '', delegate: null, groups: [] };
+    return { found: false, person: false, dn: '', username: '', sub: '',
+             notDelegated: false, mayAct: '', delegate: null, groups: [],
+             semantics: [], defaultSemantics: '' };
   }
   const flags = readPersonFlags(stored.dn);
   const mayAct = flags ? flags.mayAct : '';
@@ -11817,11 +11855,54 @@ function readDelegationFacts(key) {
   log.debug('Leaving readDelegationFacts().');
   return { found: true, person: isPersonEntry(stored), dn: stored.dn,
            username: isPersonEntry(stored) ? usernameOfEntry(stored) : '',
+           // #186: the person's own subject, for a may_act naming them.
+           sub: isPersonEntry(stored) ? 'urn:uuid:' + entryUuidOf(stored) : '',
            notDelegated: !!(flags && flags.notDelegated), mayAct: mayAct,
            delegate: delegate,
            groups: (membership.groups || []).map(function (one) {
              return { dn: one.dn, cn: one.cn };
-           }) };
+           }),
+           // #186: the semantics this person allows, and their default.
+           semantics: (stored.attributes.stsdelegationsemantics || [])
+             .map(String),
+           defaultSemantics: String((stored.attributes
+             .stsdefaultdelegationsemantics || [''])[0] || '') };
+}
+
+// ---------------------------------------------------------------------------
+// THE SEMANTICS OF A PERSON (#186): the allowed set (`delegation`,
+// `impersonation`, either or both; empty is both for a subject and delegation
+// only for an actor — the policy reads the absence) and the default. Written
+// IN PLACE, the two attributes and nothing else, as writePersonFlag() does;
+// `common/credentials.ts` has checked the values.
+// ---------------------------------------------------------------------------
+function writeDelegationSemantics(key, allowed, dflt) {
+  log.debug('Entering writeDelegationSemantics(). key=' + key);
+  const stored = locateEntry(String(key || '')).stored;
+  if (!stored) {
+    log.warn(errorCodes.tag('STS-LDAP-0078') + 'ldap: "' + key + '" has no ' +
+             'entry in this realm, so its delegation semantics were not ' +
+             'written.');
+    log.debug('Leaving writeDelegationSemantics(). No entry.');
+    return false;
+  }
+  const list = (allowed || []).map(String).filter(function (one) {
+    return !!one;
+  });
+  if (list.length) {
+    stored.attributes.stsdelegationsemantics = list;
+  } else {
+    delete stored.attributes.stsdelegationsemantics;
+  }
+  if (dflt) {
+    stored.attributes.stsdefaultdelegationsemantics = [String(dflt)];
+  } else {
+    delete stored.attributes.stsdefaultdelegationsemantics;
+  }
+  stored.attributes.modifytimestamp = [generalizedTime()];
+  touchDirectory(stored.dn);
+  log.debug('Leaving writeDelegationSemantics().');
+  return true;
 }
 
 const PERSON_FLAGS = ['pwdReset', 'stsBootstrapAdministrator',
@@ -12117,7 +12198,18 @@ function tlsProtocolOptions() {
   log.debug("Entering tlsProtocolOptions().");
   log.debug("Leaving tlsProtocolOptions().");
   return typeof tlsServer.protocolOptions === 'function'
-    ? tlsServer.protocolOptions() : {};
+    ? tlsServer.protocolOptions(ldapsPolicy()) : {};
+}
+
+// LDAPS's own policy (#423): the listeners' TLS settings, and its own client
+// authentication pair — ldap.ldapsDisableOptionalClientCertificate (ON by
+// default, which is what LDAPS always did: no CertificateRequest) and
+// ldap.ldapsRequireClientCertificate.
+function ldapsPolicy() {
+  log.debug("Entering ldapsPolicy().");
+  log.debug("Leaving ldapsPolicy().");
+  return typeof tlsServer.policyFor === 'function'
+    ? tlsServer.policyFor('ldaps') : undefined;
 }
 
 // Where both sockets bind: `global.host`, which every other listener here
@@ -12159,7 +12251,8 @@ function rekeyLdaps(why) {
       cert: (current.chainPem && current.chainPem.length)
         ? [current.certPem].concat(current.chainPem).join('')
         : current.certPem,
-      key: current.privateKeyPem
+      key: current.privateKeyPem,
+      ca: tlsServer.clientTruststoreOptions(ldapsPolicy()).ca
     }, tlsProtocolOptions()));
   } catch (e) {
     // The listener still has the context it had, so this is a certificate
@@ -12195,13 +12288,30 @@ if (serverCertificate && serverCertificate.certPem &&
   // hands this whole object to `tls.createServer()`, so LDAPS takes the same
   // protocol floor and cipher list as the main port rather than
   // node's defaults behind their back.
+  //
+  // WHETHER IT ASKS FOR ONE IS THE OPERATOR'S SINCE #423, with today's
+  // answer — it does not — the default: ldapsPolicy()'s client
+  // authentication, and the truststore it verifies one against. Registered
+  // with tls_server.js so that a truststore change, and a change to either
+  // toggle or the TLS policy, reaches this listener at the next handshake.
   secureServer = ldap.createServer(Object.assign({
     log: log,
     routeAnonymousBinds: true,
     encodeErrorMessage: true,
     certificate: serverCertificate.certPem,
-    key: serverCertificate.privateKeyPem
-  }, tlsProtocolOptions()));
+    key: serverCertificate.privateKeyPem,
+    ca: tlsServer.clientTruststoreOptions(ldapsPolicy()).ca
+  }, tlsProtocolOptions(),
+  tlsServer.clientAuthOptions(ldapsPolicy().clientAuth)));
+  tlsServer.trustClientCertificatesOn(secureServer.server,
+    'LDAPS (' + LDAPS_PORT + ')', function () {
+      return { key: serverCertificate.privateKeyPem,
+               cert: (serverCertificate.chainPem &&
+                      serverCertificate.chainPem.length)
+                 ? [serverCertificate.certPem]
+                   .concat(serverCertificate.chainPem).join('')
+                 : serverCertificate.certPem };
+    }, { kind: 'ldaps' });
   // A ticket another node issued resumes here too, in an active-active
   // cluster (tls/session_tickets.ts); outside one this changes nothing.
   sessionTickets.track(secureServer.server, 'LDAPS (' + LDAPS_PORT + ')');

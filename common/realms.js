@@ -1757,9 +1757,159 @@ function kerberosOverrideProblem(id, after, before) {
 
 // The same, as the `{ ok:false, errors }` answer every door here returns, or
 // null when there is nothing to refuse.
+// ---------------------------------------------------------------------------
+// A REALM'S OWN LISTENER (#99, 2026-10-02): the rules a realm's `listener.*`
+// overrides must meet, taken together. The realm is still told apart by its
+// path prefix; what the settings give it is a port of its own on every node
+// and a public base its URLs are built on, so a load balancer of its own can
+// stand in front of it.
+//
+//   * the default realm has no listener of its own — it IS the main port;
+//   * a port needs a public base, an https origin with no path;
+//   * a port is no other realm's and none of this process's own listeners';
+//   (an operator's certificate and its key are set one at a time, so the
+//   pair is held at bind time by tls/realm_listeners.js, STS-TLS-0040);
+//   * not while this service runs as several cells: a cell's public name and
+//     a realm's would both claim the browser (#98), and that is a follow-up.
+// ---------------------------------------------------------------------------
+// The process's own listeners, by setting: a realm port may be none of them.
+const PROCESS_PORT_SETTINGS = [
+  'global.port', 'pki.httpPort', 'debugger.port', 'krb5.kdcPort',
+  'krb5.servicePort', 'ldap.port', 'ldap.tlsPort', 'spiffe.workloadPort',
+  'spiffe.serverPort', 'spiffe.brokerPort', 'cells.port'
+];
+
+function ownListenerPort(overrides) {
+  log.debug("Entering ownListenerPort().");
+  const raw = overrides && overrides['listener.port'];
+  const n = Number(raw);
+  log.debug("Leaving ownListenerPort().");
+  return Number.isInteger(n) && n > 0 ? n : 0;
+}
+
+/**
+ * The rules a realm's `listener.*` overrides must meet, taken together.
+ *
+ * @param id - the realm id
+ * @param after - the realm's overrides as they would be
+ * @returns `{ code, message }`, or null when they are acceptable
+ */
+function listenerOverrideProblem(id, after) {
+  log.debug("Entering listenerOverrideProblem(). id=" + id);
+  const o = after || {};
+  const keys = Object.keys(o).filter(function (k) {
+    return k.indexOf('listener.') === 0 && String(o[k] || '') !== '' &&
+      !(k === 'listener.port' && Number(o[k]) === 0);
+  });
+  if (!keys.length) {
+    log.debug("Leaving listenerOverrideProblem(). None set.");
+    return null;
+  }
+  if (id === DEFAULT_ID) {
+    log.debug("Leaving listenerOverrideProblem(). The default realm.");
+    return { code: 'STS-CORE-0145',
+             message: 'The default realm has no listener of its own: it is ' +
+               'served on the main port (global.port) under ' +
+               'global.publicBaseUrl. ' + keys.join(', ') + ' can only be ' +
+               'set on another realm.' };
+  }
+  const base = String(o['listener.publicBaseUrl'] || '').trim();
+  let parsed = null;
+  if (base) {
+    try {
+      parsed = new URL(base);
+    } catch (e) {
+      log.debug("Caught in listenerOverrideProblem(): " + e.message);
+    }
+    if (!parsed || parsed.protocol !== 'https:' || parsed.username ||
+        parsed.password || (parsed.pathname && parsed.pathname !== '/') ||
+        parsed.search || parsed.hash) {
+      log.debug("Leaving listenerOverrideProblem(). A bad base.");
+      return { code: 'STS-CORE-0146',
+               message: 'listener.publicBaseUrl on realm "' + id + '" must ' +
+                 'be an https origin with no path, query or user — ' +
+                 'https://acme.example.com or https://acme.example.com:8443 ' +
+                 '— and "' + base + '" is not. The realm\'s /realm/' + id +
+                 ' prefix is added after it.' };
+    }
+  }
+  const port = ownListenerPort(o);
+  if (port && !base) {
+    log.debug("Leaving listenerOverrideProblem(). A port and no base.");
+    return { code: 'STS-CORE-0146',
+             message: 'listener.port on realm "' + id + '" needs ' +
+               'listener.publicBaseUrl: the address its load balancer ' +
+               'answers under, which every URL the realm builds is on.' };
+  }
+  if (port) {
+    const taken = PROCESS_PORT_SETTINGS.filter(function (key) {
+      let v = 0;
+      try {
+        v = Number(config.processValue(key));
+      } catch (e) {
+        log.debug("Caught in listenerOverrideProblem(): " + e.message);
+      }
+      return v === port;
+    });
+    realms.forEach(function (other) {
+      if (other.id !== id && ownListenerPort(other.overrides) === port) {
+        taken.push('realm "' + other.id + '"');
+      }
+    });
+    if (taken.length) {
+      log.debug("Leaving listenerOverrideProblem(). The port is taken.");
+      return { code: 'STS-CORE-0147',
+               message: 'listener.port ' + port + ' on realm "' + id + '" is ' +
+                 'already used by ' + taken.join(', ') + '. Every node binds ' +
+                 'every realm\'s port, so each must be its own.' };
+    }
+  }
+  // THE LISTENER'S OWN POST-QUANTUM ONLY (#423) needs a 256-bit TLS 1.3 suite
+  // in the list it will use — its own, or the process's it inherits — or the
+  // listener would refuse every client. tls/tls_server.js holds the same rule
+  // for the process's settings.
+  if (String(o['listener.pqcOnly'] || '') === 'on') {
+    const own = String(o['listener.tls13CipherSuites'] || '').trim();
+    const suites = (own || String(config.processValue(
+      'tls.tls13CipherSuites') || '')).split(',').map(function (one) {
+      return one.trim();
+    });
+    if (suites.indexOf('TLS_AES_256_GCM_SHA384') < 0 &&
+        suites.indexOf('TLS_CHACHA20_POLY1305_SHA256') < 0) {
+      log.debug("Leaving listenerOverrideProblem(). No post-quantum suite.");
+      return { code: 'STS-TLS-0043',
+               message: 'listener.pqcOnly on realm "' + id + '" needs a ' +
+                 '256-bit TLS 1.3 suite (TLS_AES_256_GCM_SHA384 or ' +
+                 'TLS_CHACHA20_POLY1305_SHA256) in ' +
+                 (own ? 'listener.tls13CipherSuites'
+                      : 'tls.tls13CipherSuites, which it inherits') +
+                 ', and there is none.' };
+    }
+  }
+  let multiCell = false;
+  try {
+    multiCell = !!require('./cells').isMulti();
+  } catch (e) {
+    log.debug("Caught in listenerOverrideProblem(): " + e.message);
+  }
+  if (port && multiCell) {
+    log.debug("Leaving listenerOverrideProblem(). Several cells.");
+    return { code: 'STS-CORE-0148',
+             message: 'A realm listener (listener.port on realm "' + id +
+               '") is not supported while this service runs as several ' +
+               'cells: a cell\'s public name and the realm\'s would both ' +
+               'claim the browser. It is a follow-up of #99.' };
+  }
+  log.debug("Leaving listenerOverrideProblem().");
+  return null;
+}
+
 function refusedForKerberos(id, after, before) {
   log.debug("Entering refusedForKerberos().");
-  const problem = kerberosOverrideProblem(id, after, before);
+  // AND THE REALM LISTENER'S RULES (#99), asked at the same four doors for the
+  // same reason: a set of overrides is accepted or refused WHOLE.
+  const problem = kerberosOverrideProblem(id, after, before) ||
+    listenerOverrideProblem(id, after);
   log.debug("Leaving refusedForKerberos().");
   return problem
     ? errorCodes.mark({ ok: false, errors: [problem.message] }, problem.code)

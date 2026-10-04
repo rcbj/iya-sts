@@ -2786,6 +2786,16 @@ const SECTIONS = [
       // CELLS (#98, 2026-09-28), beside Cluster: one service deployed as
       // several cells in several jurisdictions. Drawn by
       // `admin-ui/cells_admin.ts`.
+      // LISTENERS (#423, 2026-10-02), beside Cells: every socket, its TLS
+      // policy and client authentication, a realm's own listener, and their
+      // settings. Drawn by `admin-ui/listeners_admin.ts`.
+      { path: '/admin/listeners', label: 'Listeners',
+        blurb: 'Every socket this service answers on and what each is held ' +
+               'to: TLS 1.2 on or off, the TLS 1.3 cipher suites in order, ' +
+               'post-quantum only, the key-exchange groups, and whether it ' +
+               'asks for a client certificate, requires one, or neither. In ' +
+               'a realm with a listener of its own, that listener and its ' +
+               'settings; otherwise the default listeners it is served on.' },
       { path: '/admin/cells', label: 'Cells',
         blurb: 'One service deployed as several cells, each a copy of the ' +
                'whole stack in one legal jurisdiction: which cell this is, ' +
@@ -3151,7 +3161,8 @@ const APPLICATION_TAB_IDS = ['tab-overview', 'tab-config', 'tab-credentials',
 // seven tabs, the Attributes tab one sub-tab per field group (ufg-<group>,
 // each with its own Save) and the Credentials tab one per kind of credential.
 const USER_TAB_IDS = ['utab-overview', 'utab-activity', 'utab-attributes',
-  'utab-credentials', 'utab-federation', 'utab-entry', 'utab-signout'];
+  'utab-credentials', 'utab-federation', 'utab-gnap', 'utab-entry',
+  'utab-signout'];
 const USER_SUB_TAB_IDS = ['ucred-factors', 'ucred-password', 'ucred-keys',
   'ucred-kerberos'].concat(personEditor.FIELD_GROUPS.map(function (group) {
   return 'ufg-' + group.id;
@@ -8686,6 +8697,15 @@ class AdminConsole {
           'There is no per-session link: a ticket carries no identifier this ' +
           'service keeps a handle on.') + '">the ticket table</a></td>';
     }
+    if (row.family === 'gnap') {
+      // A GNAP GRANT (#432): its tokens are in GNAP's own store, listed with
+      // the grant on Protocols → GNAP.
+      log.debug("Leaving AdminConsole.sessionCredentialsCell().");
+      return '<td><a href="' + this.esc('/admin/gnap' +
+        queryWith({ state: 'approved' }, {})) +
+        '" title="' + this.esc('The grants this authorization server holds, ' +
+          'with the tokens each issued') + '">the grant list</a></td>';
+    }
     log.debug("Leaving AdminConsole.sessionCredentialsCell().");
     return '<td class="sub" title="' +
            this.esc('A Bind issues no credential. It sets the authorization ' +
@@ -9700,11 +9720,17 @@ class AdminConsole {
     const self = this;
     log.debug("Entering AdminConsole.policyAccountRow().");
     const flags = [];
-    if (account.notDelegated) flags.push('NOT_DELEGATED');
-    if (account.trustedToAuthenticateForDelegation) {
-      flags.push('TRUSTED_TO_AUTHENTICATE_FOR_DELEGATION');
+    // The entry's attribute, then Active Directory's name for it (#186).
+    if (account.notDelegated) {
+      flags.push('appNotDelegated (NOT_DELEGATED)');
     }
-    if (account.okAsDelegate) flags.push('ok-as-delegate');
+    if (account.trustedToAuthenticateForDelegation) {
+      flags.push('appDelegationSemantics: impersonation ' +
+                 '(TRUSTED_TO_AUTHENTICATE_FOR_DELEGATION)');
+    }
+    if (account.okAsDelegate) {
+      flags.push('krb5TrustedForDelegation (ok-as-delegate)');
+    }
     log.debug("Leaving AdminConsole.policyAccountRow().");
     return '<tr>' +
       '<td class="who"><code>' + this.esc(account.principal) + '</code></td>' +
@@ -9785,8 +9811,14 @@ class AdminConsole {
     }).join('');
     const intermediaryRows = view.intermediaries.shown.map(function (row) {
       return '<tr><td class="who">' + appLink(row.application) + '</td>' +
-        '<td>' + (row.trustedToImpersonate
-          ? '<code>appTrustedToImpersonate</code> TRUE' : '&mdash;') +
+        '<td>' + (row.semantics && row.semantics.length
+          ? row.semantics.map(function (one: string) {
+            return self.esc(one);
+          }).join(', ') : 'delegation only (empty)') +
+        (row.defaultSemantics ? '<br><span class="state-none">default ' +
+          self.esc(row.defaultSemantics) + '</span>' : '') +
+        (row.notDelegated ? '<br><code>appNotDelegated</code> — never ' +
+          'acted for' : '') +
         '</td><td>' + (row.subjectGroups.length
           ? row.subjectGroups.map(function (dn) {
             return '<code>' + self.esc(dn) + '</code>';
@@ -9799,34 +9831,40 @@ class AdminConsole {
         (row.notDelegated ? '<code>stsNotDelegated</code> — nobody may act ' +
           'for them' : '&mdash;') + '</td><td>' +
         (row.mayAct ? '<code>' + self.esc(row.mayAct) + '</code>'
-                    : '&mdash;') + '</td></tr>';
+                    : '&mdash;') + '</td><td>' +
+        ((row.semantics && row.semantics.length) || row.defaultSemantics
+          ? self.esc((row.semantics || []).join(', ') || 'both') +
+            (row.defaultSemantics ? '; default ' +
+              self.esc(row.defaultSemantics) : '')
+          : '&mdash;') + '</td></tr>';
     }).join('');
     const register = view.register;
     log.debug("Leaving AdminConsole.delegationPolicySection().");
-    return '<h2 id="delegation-policy">Who may act for whom &mdash; WS-Trust ' +
-      'and token exchange</h2>' +
-      self.note('<strong>Kerberos\'s model, on application entries</strong> ' +
-      '(#108). A WS-Trust <code>OnBehalfOf</code> or <code>ActAs</code> and ' +
-      'an RFC 8693 token exchange are decided from four attributes: ' +
-      '<code>appAllowedToDelegateTo</code> on the INTERMEDIARY names the ' +
-      'targets it may reach as somebody else (the analogue of ' +
+    return '<h2 id="delegation-policy">Who may act for whom &mdash; WS-Trust, ' +
+      'token exchange and Kerberos</h2>' +
+      self.note('<strong>Decided by the issuance policy</strong> (#186), ' +
+      'from facts on the entries — one set of settings for the three ' +
+      'protocols. <code>appAllowedToDelegateTo</code> on an application ' +
+      'names the applications it delegates to (the analogue of ' +
       '<code>msDS-AllowedToDelegateTo</code>); ' +
       '<code>appAllowedToActOnBehalfOf</code> on the TARGET names the ' +
-      'intermediaries it accepts (the resource-based one); ' +
-      '<code>appDelegationSubjectGroup</code> narrows who the intermediary ' +
-      'may act for; and <code>appTrustedToImpersonate</code> lets it ' +
-      'IMPERSONATE — <code>OnBehalfOf</code>, or an exchange with no ' +
-      '<code>actor_token</code> — as well as delegate. Only an application ' +
-      'may be an intermediary. A person carrying ' +
-      '<code>stsNotDelegated</code>, or a member of ' +
+      'actors it accepts (the resource-based one); ' +
+      '<code>appDelegationSubjectGroup</code> narrows who an actor may act ' +
+      'for; and <code>appDelegationSemantics</code> says whether it may ' +
+      'IMPERSONATE as well as delegate (empty is delegation only), with ' +
+      '<code>appDefaultDelegationSemantics</code> the default. A person ' +
+      'acting needs the role <code>delegation.actorRole</code> names. A ' +
+      'person carrying <code>stsNotDelegated</code>, an application ' +
+      'carrying <code>appNotDelegated</code>, or a member of ' +
       (register.protectedGroups.length
         ? register.protectedGroups.map(function (one) {
           return '<code>' + self.esc(one) + '</code>';
         }).join(' or ')
         : 'a console roster') +
-      ', is never delegated. When the attributes allow, the issuance policy ' +
-      'is asked about action-id <code>delegate</code> and only a Deny ' +
-      'refuses. ' + (register.enforced
+      ', is never delegated. The rules are the issuance policy\'s ' +
+      '(action-ids <code>choose-exchange-semantics</code> and ' +
+      '<code>exchange-token</code>); a realm changes them in its own ' +
+      'policy. ' + (register.enforced
         ? '<strong>This realm is in product mode, so this is ' +
           'ENFORCED</strong>: ' +
           'a refusal is <code>wst:RequestFailed</code>, ' +
@@ -9834,8 +9872,8 @@ class AdminConsole {
         : '<strong>This realm is in development mode, so nothing is ' +
           'refused</strong>: the policy is asked and each act above says ' +
           'what WOULD have been refused in product.') +
-      ' Edit an application\'s four on its own page, and a person\'s two ' +
-      'on theirs. <code>GET /admin-api/delegation/policy</code> is this ' +
+      ' Edit an application\'s on its own page, and a person\'s on ' +
+      'theirs. <code>GET /admin-api/delegation/policy</code> is this ' +
       'section as JSON.') +
       pairsNav.head +
       '<table><tr><th>Mechanism</th><th>Intermediary (who acts)</th>' +
@@ -9848,10 +9886,11 @@ class AdminConsole {
         '.</td></tr>') + '</table>' + pairsNav.foot +
       '<h3>Intermediaries</h3>' +
       intermediariesNav.head +
-      '<table><tr><th>Application</th><th>May impersonate</th>' +
+      '<table><tr><th>Application</th><th>Semantics allowed</th>' +
       '<th>May act for</th></tr>' +
       (intermediaryRows || '<tr><td colspan="3">No application carries ' +
-        '<code>appTrustedToImpersonate</code> or a subject group.</td></tr>') +
+        'delegation semantics, appNotDelegated or a subject group.' +
+        '</td></tr>') +
       '</table>' + intermediariesNav.foot +
       '<h3>People</h3>' +
       self.note('<code>stsMayAct</code> is a person\'s own choice of the ' +
@@ -9860,8 +9899,9 @@ class AdminConsole {
       'of one by anybody else is refused in every mode.') +
       peopleNav.head +
       '<table><tr><th>Person</th><th>Cannot be delegated</th>' +
-      '<th>May act for them (stsMayAct)</th></tr>' +
-      (peopleRows || '<tr><td colspan="3">Nobody carries either flag.' +
+      '<th>May act for them (stsMayAct)</th><th>Semantics allowed</th>' +
+      '</tr>' +
+      (peopleRows || '<tr><td colspan="4">Nobody carries any of them.' +
         '</td></tr>') + '</table>' + peopleNav.foot;
   }
 
@@ -11326,6 +11366,16 @@ class AdminConsole {
               'forwarded ticket-granting ticket has no intermediary and ' +
               'cannot have one — the client gives it to whichever service it ' +
               'chooses and this KDC is never told which.' },
+      // #186: the configured pairs, beside the acts.
+      { art: swatch(line(C.indigo, '6 4'), 64),
+        what: '<strong>may delegate &mdash; a CONFIGURED relationship, ' +
+              'DASHED until an act has used it.</strong> One line per pair ' +
+              'an entry allows: <code>appAllowedToDelegateTo</code> on the ' +
+              'source (constrained) or <code>appAllowedToActOnBehalfOf</code> ' +
+              'on the target (resource-based) &mdash; the same controls for ' +
+              'the OAuth 2.0 token exchange, WS-Trust and Kerberos. Solid ' +
+              'once an act has crossed it. Drawn unless the acts are ' +
+              'narrowed by outcome, type or text.' },
       { art: swatch(line(C.red, '5 3'), 64),
         what: '<strong>Red is a chain nothing was ever issued on.</strong> ' +
               'The tooltip carries the KDC\'s own words for why, which is ' +
@@ -14737,6 +14787,122 @@ class AdminConsole {
   }
 
   // ---------------------------------------------------------------------------
+  // THE PERSON'S GNAP GRANTS (#432 phase 7, 2026-10-03): every grant they are
+  // the resource owner of — approved at an interaction, or acted on through a
+  // verified assertion — with the rights it holds, the tokens issued under
+  // it, why it ended, and a Revoke for one with something live left. The
+  // facts are `gnap/gnap_console.ts`'s `personGrantsView()` through
+  // `admin_views.ts` (`gnapGrants` in /admin-api/users?user=), the same view
+  // the person's own /portal/gnap draws; Revoke posts to /admin/gnap's
+  // `revoke-grant` naming the person too, so a stale page cannot end a
+  // stranger's grant (STS-GNAP-0792), and lands back on this tab.
+  // ---------------------------------------------------------------------------
+  /**
+   * Draws a person's GNAP grants tab: each grant they are the resource owner
+   * of, its rights, tokens and finalization, and a Revoke (#432 phase 7).
+   *
+   * @param key - the person
+   * @param gnap - `{ rows, paging, cells }` from the view
+   * @param gate - the console gate's state for this request
+   * @param params - the page's query, for the paging links
+   * @returns the tab's HTML
+   */
+  userGnapGrantsSection(key, gnap, gate, params) {
+    const { log } = this.deps;
+    const self = this;
+    log.debug("Entering AdminConsole.userGnapGrantsSection().");
+    const view = gnap || { rows: [], paging: null, cells: null };
+    const when = function (seconds) {
+      log.debug("Entering when().");
+      log.debug("Leaving when().");
+      return seconds ? self.whenText(seconds * 1000) : '—';
+    };
+    const rightText = function (right) {
+      log.debug("Entering rightText().");
+      if (typeof right === 'string') {
+        log.debug("Leaving rightText(). A reference.");
+        return '<code>' + self.esc(right) + '</code>';
+      }
+      const parts = [];
+      ['actions', 'locations', 'datatypes', 'privileges'].forEach(
+          function (dimension) {
+        if (Array.isArray(right[dimension]) && right[dimension].length) {
+          parts.push(dimension + ': ' + right[dimension].join(', '));
+        }
+      });
+      if (right.identifier) {
+        parts.push('identifier: ' + right.identifier);
+      }
+      if (right.limits !== undefined) {
+        parts.push('limits: ' + JSON.stringify(right.limits));
+      }
+      log.debug("Leaving rightText().");
+      return '<code>' + self.esc(right.type || '') + '</code>' +
+        (parts.length ? ' <span class="sub">' + self.esc(parts.join('; ')) +
+                        '</span>' : '');
+    };
+    const heading = '<h2 id="gnap-grants">GNAP grants</h2>' +
+      this.note('Every GNAP (RFC 9635) grant this person is the resource ' +
+        'owner of: approved by them on the approval page, or acted on by a ' +
+        'trusted client presenting a verified assertion about them. ' +
+        '<strong>Revoke</strong> is the client\'s own section 5.4 act ' +
+        'performed for them: every token issued under the grant stops ' +
+        'working, the grant is finalized as <code>revoked</code> and CAEP ' +
+        '<code>session-revoked</code> is sent. The person can do the same ' +
+        'on their own <code>/portal/gnap</code>.') +
+      (view.cells && view.cells.multiCell
+        ? this.note('<strong>This cell only</strong> (' +
+                    this.esc(view.cells.cell) + '). ' +
+                    this.esc(view.cells.note))
+        : '');
+    if (!view.rows.length) {
+      log.debug("Leaving AdminConsole.userGnapGrantsSection(). None.");
+      return heading + this.note('This person is the resource owner of no ' +
+                                 'GNAP grant in this realm.');
+    }
+    const nav = view.paging
+      ? this.pageNavPair('/admin/users', params,
+                         Object.assign({}, view.paging,
+                                       { param: 'gnapGrantsPage' }))
+      : { head: '', foot: '' };
+    const rows = '<table><tr><th>Grant</th><th>Client</th><th>State</th>' +
+      '<th>Rights</th><th>Tokens</th><th>Lifetime ends</th><th></th></tr>' +
+      view.rows.map(function (row) {
+        const tokens = row.tokens.length
+          ? row.tokens.map(function (token) {
+              return self.esc((token.label ? token.label + ' · ' : '') +
+                              token.format + ' · ' + token.state) +
+                ' <span class="sub">until ' + self.esc(when(token.expiresAt)) +
+                '</span>';
+            }).join('<br>')
+          : '<span class="sub">none</span>';
+        const control = row.revocable && gate.write
+          ? '<form method="post" action="/admin/gnap">' +
+            '<input type="hidden" name="action" value="revoke-grant">' +
+            '<input type="hidden" name="grant" value="' + self.esc(row.id) +
+            '"><input type="hidden" name="user" value="' + self.esc(key) +
+            '"><button type="submit" class="danger">Revoke</button></form>'
+          : '';
+        return '<tr><td><code>' + self.esc(row.id) + '</code></td>' +
+          '<td><a href="/admin/applications?application=' +
+          encodeURIComponent(row.client || '') + '">' +
+          self.esc(row.clientName || row.client || '') + '</a></td>' +
+          '<td>' + self.esc(row.state) +
+          (row.finalization ? '<div class="sub">' +
+            self.esc(row.finalization.reason) + '</div>' : '') + '</td>' +
+          '<td>' + (row.rights.map(rightText).join('<br>') || '—') +
+          '<div class="sub">' + self.esc(row.rightsAre) + '</div></td>' +
+          '<td>' + tokens + '</td><td>' +
+          self.esc(when(row.grantExpiresAt)) + '</td><td>' + control +
+          '</td></tr>';
+      }).join('') + '</table>';
+    log.debug("Leaving AdminConsole.userGnapGrantsSection().");
+    return heading + nav.head + rows + nav.foot +
+      (gate.write ? '' : this.note('Revoking a grant needs <strong>Admin ' +
+                                   'Write</strong>.'));
+  }
+
+  // ---------------------------------------------------------------------------
   // THE PERSON'S KERBEROS ACCOUNT (#59, 2026-09-22): the principal, what this
   // realm's KDC holds for them — the PUBLIC half, never a key — and "Reset
   // password and download keytab".
@@ -15407,7 +15573,29 @@ class AdminConsole {
            '<div class="formrow"><label>Delegate DN <input type="text" ' +
            'name="delegate" size="60" value="' +
            this.esc(facts.mayAct || '') + '" placeholder="uid=bob,ou=users,' +
-           '... or cn=app,ou=applications,..."></label></div>');
+           '... or cn=app,ou=applications,..."></label></div>') +
+      // AND AS WHAT (#186): the semantics this person allows, and their
+      // default — facts the exchange policy reads for WS-Trust, the token
+      // exchange and Kerberos alike. POST
+      // /admin-api/users/set-delegation-semantics is the same act.
+      form('set-delegation-semantics', 'Set the delegation semantics',
+           'Writes stsDelegationSemantics and ' +
+           'stsDefaultDelegationSemantics. Nothing ticked leaves it to the ' +
+           'policy: both are allowed for a subject, delegation only for an ' +
+           'actor.', false,
+           '<div class="formrow">' +
+           ['delegation', 'impersonation'].map(function (one) {
+             return '<label><input type="checkbox" name="semantics" value="' +
+               one + '"' + ((facts.semantics || []).indexOf(one) >= 0
+                 ? ' checked' : '') + '> ' + one + '</label> ';
+           }).join('') + '</div><div class="formrow"><label>Default ' +
+           '<select name="default">' +
+           ['', 'delegation', 'impersonation'].map(function (one) {
+             return '<option value="' + one + '"' +
+               (String(facts.defaultSemantics || '') === one
+                 ? ' selected' : '') + '>' + (one || 'none — the request ' +
+                 'or the realm decides') + '</option>';
+           }).join('') + '</select></label></div>');
     log.debug("Leaving AdminConsole.userCredentialControlsSection().");
     return heading + state + signalsNote + account + reset + passkeys + mfa +
       delegationBlock;
@@ -15702,6 +15890,12 @@ class AdminConsole {
           html: this.userFederationLinksSection(key, view.federationLinkPage,
                                                 gateStateFor(req), back,
                                                 params) },
+        // The GNAP grants they are the resource owner of (#432 phase 7): a
+        // grant is access they gave an application, so it has a tab of its
+        // own beside the links, with a Revoke per grant.
+        { id: 'utab-gnap', label: 'GNAP grants',
+          html: this.userGnapGrantsSection(key, view.gnapGrants,
+                                           gateStateFor(req), params) },
         // Every attribute the entry holds, and the one-attribute forms the
         // Attributes tab replaced as the usual door (#228).
         { id: 'utab-entry', label: 'Directory entry',
@@ -18085,7 +18279,11 @@ class AdminConsole {
     const made = result.ok && result.application
       ? String(result.application.identifier || '') : '';
     const claimAction = String(body.action || '') === 'set-custom-claim' ||
-      String(body.action || '') === 'remove-custom-claim';
+      String(body.action || '') === 'remove-custom-claim' ||
+      // The Access types tab (#432 phase 4) comes back to itself the same
+      // way, refused or not.
+      String(body.action || '') === 'set-access-type' ||
+      String(body.action || '') === 'remove-access-type';
     // A claim action comes back to its section whether it was refused or
     // not (2026-10-01): the refusal is about one row, and the reader is
     // still working on that application.
@@ -18108,8 +18306,10 @@ class AdminConsole {
                 ? (String(body.from || '') === 'credentials'
                   ? '#credentials-did' : '#cfg-did')
                 : (claimAction
-                  ? (['saml2', 'saml11'].indexOf(String(body.set || '')) >= 0
-                    ? '#cfg-saml-attributes' : '#cfg-oauth-claims')
+                  ? (/-access-type$/.test(String(body.action || ''))
+                    ? '#tab-access-types'
+                    : (['saml2', 'saml11'].indexOf(String(body.set || '')) >= 0
+                      ? '#cfg-saml-attributes' : '#cfg-oauth-claims'))
                   : '')))))
       : '/admin/applications' + queryWith(listView, {});
     this.respondToAction(req, res, back, result);
@@ -19506,6 +19706,158 @@ class AdminConsole {
   // (`STS-REG-0150`) and the normalisation are there, and
   // `POST /admin-api/applications/add|remove` reaches the same function.
   // ---------------------------------------------------------------------------
+  // -------------------------------------------------------------------------
+  // THE ACCESS TYPES TAB (#432 phase 4): every type this application declares
+  // in the access-type catalogue — `oauthAuthorizationDetailsType`, one
+  // definition per value — with what each declares, a form that declares or
+  // replaces one from named fields, and a Remove per type. Both post to
+  // `/admin/applications` (`set-access-type`, `remove-access-type`), the
+  // actions `/admin-api/applications/{action}` takes too (rule 7).
+  // -------------------------------------------------------------------------
+  /**
+   * Draws an application's Access types tab: the catalogue entries it owns,
+   * and the forms that declare, replace and remove one.
+   *
+   * @param row - the application
+   * @param carryBack - the hidden field that returns to the list's view
+   * @returns the tab's HTML
+   */
+  applicationAccessTypesSection(row, carryBack) {
+    const { log, applications, mode } = this.deps;
+    const self = this;
+    log.debug("Entering AdminConsole.applicationAccessTypesSection().");
+    const held = [].concat((row.fields &&
+                            row.fields.oauthAuthorizationDetailsType) || [])
+      .map(function (one) { return String(one); })
+      .filter(function (one) { return one !== ''; });
+    const listed = function (values) {
+      log.debug("Entering listed().");
+      log.debug("Leaving listed().");
+      return values && values.length
+        ? values.map(function (one) {
+          return '<code>' + self.esc(one) + '</code>';
+        }).join(', ') : '<span class="state-none">any</span>';
+    };
+    const rows = held.map(function (stored) {
+      const d = applications.authorizationDetailsTypeOf(stored);
+      if (d.problem) {
+        return '<tr><td colspan="3"><span class="state-revoked">unusable' +
+          '</span> <code>' + self.esc(stored.slice(0, 200)) + '</code> ' +
+          '&mdash; ' + self.esc(d.problem) + '</td></tr>';
+      }
+      const facts = [
+        ['Actions', listed(d.actions)],
+        ['Datatypes', listed(d.datatypes)],
+        ['Privileges', listed(d.privileges)],
+        ['Locations', d.locations.length ? listed(d.locations)
+          : '<span class="state-none">this application\'s own addresses' +
+            '</span>'],
+        ['Required members', d.required.length ? listed(d.required)
+          : '<span class="state-none">none</span>'],
+        ['Bearer token', d.bearer === false ? 'refused' : (d.bearer === true
+          ? 'allowed' : '<span class="state-none">no rule of its own</span>')],
+        ['Maximum token lifetime', d.maxLifetimeS ? d.maxLifetimeS + ' s'
+          : '<span class="state-none">none</span>'],
+        ['Derivable from', d.derivableFrom.length ? listed(d.derivableFrom)
+          : '<span class="state-none">nothing</span>'],
+        ['Introspection claims', d.introspectionClaims.length
+          ? listed(d.introspectionClaims)
+          : '<span class="state-none">none</span>'],
+        ['Limits schema', d.limits ? '<code>' +
+          self.esc(JSON.stringify(d.limits)) + '</code>'
+          : '<span class="state-none">none: limits are refused</span>'],
+        ['Interaction (phase 6)', self.esc(d.interaction) +
+          (d.consentActions.length ? '; consent forced by ' +
+            listed(d.consentActions) : '')],
+        ['Authentication level (phase 6)', d.acr
+          ? '<code>' + self.esc(d.acr) + '</code>'
+          : '<span class="state-none">none</span>']
+      ].map(function (pair) {
+        return '<div><strong>' + pair[0] + ':</strong> ' + pair[1] + '</div>';
+      }).join('');
+      return '<tr><td><code>' + self.esc(d.type) + '</code>' +
+        (d.description ? '<div class="sub">' + self.esc(d.description) +
+                         '</div>' : '') + '</td><td>' + facts + '</td><td>' +
+        '<form method="post" action="/admin/applications" class="inline">' +
+        carryBack + '<input type="hidden" name="action" ' +
+        'value="remove-access-type"><input type="hidden" name="application" ' +
+        'value="' + self.esc(row.identifier) + '"><input type="hidden" ' +
+        'name="type" value="' + self.esc(d.type) + '"><button type="submit" ' +
+        'class="secondary">Remove</button></form></td></tr>';
+    }).join('');
+    const box = function (id, label, help, rowsN?) {
+      log.debug("Entering box().");
+      log.debug("Leaving box().");
+      return '<div class="formrow"><label for="at-' + id + '">' + label +
+        '</label>' + (rowsN
+          ? '<textarea id="at-' + id + '" name="' + id + '" rows="' + rowsN +
+            '" cols="48"></textarea>'
+          : '<input type="text" id="at-' + id + '" name="' + id +
+            '" size="40">') +
+        '<span class="sub">' + help + '</span></div>';
+    };
+    log.debug("Leaving AdminConsole.applicationAccessTypesSection(). " +
+              held.length + " type(s).");
+    return '<h2>Access types this resource server owns</h2>' +
+      '<p>The <strong>access-type catalogue</strong>: each type here is read ' +
+      'by RFC 9396 <code>authorization_details</code> at the OAuth endpoints ' +
+      'and by GNAP access rights alike, and a token carrying one is for this ' +
+      'application. They are this entry\'s ' +
+      '<code>oauthAuthorizationDetailsType</code>.</p>' +
+      this.note('A type no application declares is refused by RFC 9396 in ' +
+      'every mode, and by GNAP ' +
+      (mode.grantsUncataloguedAccess()
+        ? 'only in product mode &mdash; this realm is in development mode, ' +
+          'where it is granted as asked'
+        : 'in this realm, which is in product mode') +
+      ' (the issuance policy\'s <code>gnap-type-not-catalogued</code> ' +
+      'rule). For GNAP, interaction (always, default, never) and the ' +
+      'actions that force consent decide whether the resource owner must ' +
+      'see the approval page, and the authentication level is what their ' +
+      'session must meet before it is drawn (#432 phase 6).') +
+      '<table><tr><th>Type</th><th>What it declares</th><th></th></tr>' +
+      (rows || '<tr><td colspan="3"><span class="state-none">None.</span>' +
+       '</td></tr>') + '</table>' +
+      '<h3>Declare or replace a type</h3>' +
+      '<form method="post" action="/admin/applications">' + carryBack +
+      '<input type="hidden" name="action" value="set-access-type">' +
+      '<input type="hidden" name="application" value="' +
+      this.esc(row.identifier) + '">' +
+      box('type', 'Type', 'Required. A type of the same name is replaced.') +
+      box('description', 'Description', 'Shown on the consent and approval ' +
+          'pages.') +
+      box('actions', 'Actions', 'One per line; empty allows any.', 3) +
+      box('datatypes', 'Datatypes', 'One per line; empty allows any.', 2) +
+      box('privileges', 'Privileges', 'One per line; empty allows any.', 2) +
+      box('locations', 'Locations', 'One absolute URI per line, beside this ' +
+          'application\'s own addresses.', 2) +
+      box('requiredMembers', 'Required members', 'Member names a right ' +
+          'must carry, one per line.', 2) +
+      box('bearer', 'Bearer token', '<code>false</code> refuses a bearer ' +
+          'token carrying the type; empty sets no rule of its own.') +
+      box('maxLifetimeS', 'Maximum token lifetime (s)', 'A token carrying ' +
+          'the type lives no longer.') +
+      box('derivableFrom', 'Derivable from', 'Types a right of this one may ' +
+          'be derived from at RFC 9767 section 4, one per line.', 2) +
+      box('introspectionClaims', 'Introspection claims', 'The person\'s ' +
+          'claims this resource server is told at introspection, one per ' +
+          'line.', 2) +
+      box('schema', 'Schema', 'A JSON Schema every right of the type must ' +
+          'meet.', 4) +
+      box('limits', 'Limits schema', 'A JSON Schema (a subset: type, ' +
+          'properties, required, bounds, enum, pattern, format) a ' +
+          'right\'s <code>limits</code> must meet; none refuses limits.', 4) +
+      box('interaction', 'Interaction (phase 6)', '<code>always</code>, ' +
+          '<code>default</code> or <code>never</code>.') +
+      box('consentActions', 'Actions forcing consent (phase 6)', 'One per ' +
+          'line.', 2) +
+      box('acr', 'Authentication level (phase 6)', 'One acr value.') +
+      '<div class="formrow"><button type="submit">Save the type</button>' +
+      '</div></form>' +
+      this.note('A definition that does not read is refused with the reason ' +
+      '(<code>STS-REG-0294</code>), and the type already declared stays.');
+  }
+
   /**
    * Draws an application's CORS origins (`appCorsOrigin`), one row each with
    * a Remove button that posts the value as stored, and a form to add one.
@@ -21322,6 +21674,12 @@ class AdminConsole {
                                                           'credentials')) },
       { id: 'tab-origins', label: 'Browser origins',
         html: this.applicationCorsSection(row, carryBack) },
+      // THE ACCESS-TYPE CATALOGUE (#432 phase 4): the types this
+      // application, as a resource server, owns — read by RFC 9396 and GNAP
+      // alike, so drawn for either.
+      { id: 'tab-access-types', label: 'Access types',
+        html: forFamilies(OAUTH.concat(['gnap']),
+          this.applicationAccessTypesSection(row, carryBack)) },
       { id: 'tab-signals', label: 'Shared Signals',
         html: forFamilies(['ssf'], this.applicationSignalsSection(view,
           carryBack, this.mayWrite(req))) },
@@ -27512,14 +27870,18 @@ class AdminConsole {
    * group the page owns.
    *
    * @param path - the page's path
+   * @param only - optional; the names of the groups to draw, for a page that
+   *   puts each of its groups on a tab of its own (/admin/listeners, #423)
    * @returns the block as HTML, or an empty string when the page owns no
-   *   settings group
+   *   settings group (or none of `only`)
    */
-  configFormsFor(path) {
+  configFormsFor(path, only?) {
     const { log, persistence } = this.deps;
     const self = this;
     log.debug("Entering AdminConsole.configFormsFor(). path=" + path);
-    const groups = this.settingsGroupsFor(path);
+    const groups = this.settingsGroupsFor(path).filter(function (group) {
+      return !Array.isArray(only) || only.indexOf(group.group) >= 0;
+    });
     if (!groups.length) {
       log.debug("Leaving AdminConsole.configFormsFor(). No settings live on " +
                 path + ".");
@@ -37284,36 +37646,34 @@ class AdminConsole {
         self.permissionsSection(req, permissions, listView, false) +
 
         '<h2>Who may delegate to whom &mdash; Kerberos</h2>' +
-        self.note('<strong>The SECOND configured register on this page, and ' +
-        'the older one.</strong> Until delegated permissions arrived this ' +
-        'was the only configuration here and this paragraph said so — ' +
-        '<em>this half is configuration rather than history, and it is ' +
-        'Kerberos only</em> — which is no longer true and is worth saying ' +
-        'rather than quietly editing. What IS still true is the sentence ' +
-        'underneath it: <strong>Kerberos is the one family here that polices ' +
-        'delegation IN THE ACT</strong>. The permissions above are policy ' +
-        'this service was configured with and refuses on in product mode, ' +
-        'and in development only when ' +
-        '<code>oauth2.delegatedPermissionsEnforced</code> is set; these two ' +
-        'attributes are a KDC decision that has always been made, on every ' +
-        'S4U request, whatever anything is set to. WS-Trust and the RFC ' +
-        '8693 token exchange are decided by the same model since #108 — ' +
-        'the section below — ENFORCED in product mode and, in development, ' +
-        'asked and recorded as what would have been refused. Every row says ' +
-        'which attribute allowed it, in the same column for all three ' +
-        'families.') +
-        self.note('The whole of the KDC\'s decision rests on two attributes ' +
-        'on two OPPOSITE accounts, which is why they are in one table with a ' +
-        'column saying which account carries the permission. Same messages, ' +
+        self.note('<strong>The KDC\'s view of the ONE delegation policy ' +
+        '(#186).</strong> Kerberos, WS-Trust and the RFC 8693 token ' +
+        'exchange are decided by the same issuance policy from the same ' +
+        'controls on the directory\'s entries — the section below lists ' +
+        'them for every protocol; this one lists the Kerberos services, ' +
+        'whose entries are named <code>SPN@REALM</code>. The KDC refuses ' +
+        'in BOTH modes, as it always has (in development the fixture ' +
+        'services\' rules are seeded onto their entries so every refusal ' +
+        'can be reached); WS-Trust and the token exchange are enforced in ' +
+        'product mode and, in development, recorded as what would have ' +
+        'been refused. Every row says what allowed it, in the same column ' +
+        'for all three families.') +
+        self.note('The relationship rests on two attributes on two OPPOSITE ' +
+        'entries — appAllowedToDelegateTo on the front end, ' +
+        'appAllowedToActOnBehalfOf on the back end — which is why they ' +
+        'are in one table with a column saying which entry carries the ' +
+        'permission. Same messages, ' +
         'same KDC options, opposite direction of trust — and the second one ' +
         'turns <em>I can write to this computer object</em> into <em>I can ' +
         'reach this service as anybody</em>.') +
         self.note('Each mechanism needs one thing BEYOND the attribute, and ' +
         'it is the same thing on every row of that kind, so it is here ' +
         'rather than in a column: <strong>classic</strong> needs a ' +
-        'FORWARDABLE evidence ticket, which S4U2Self returns only to an ' +
-        'account flagged ' +
-        '<code>TRUSTED_TO_AUTHENTICATE_FOR_DELEGATION</code>; ' +
+        'FORWARDABLE evidence ticket, which S4U2Self returns only where the ' +
+        'policy allows the impersonation — <code>impersonation</code> in the ' +
+        'service\'s <code>appDelegationSemantics</code> (Active ' +
+        'Directory\'s <code>TRUSTED_TO_AUTHENTICATE_FOR_DELEGATION</code>) ' +
+        'and a user who is not protected; ' +
         '<strong>resource-based</strong> needs <code>PA-PAC-OPTIONS</code> ' +
         '(padata type 167) carrying the resource-based bit, and [MS-SFU] ' +
         'requires a KDC to answer <code>KDC_ERR_BADOPTION</code> without it ' +
@@ -46532,7 +46892,28 @@ const SETTING_HOMES = [
   { group: 'OAuth 2.0 / OIDC per-client', pages: ['/admin/token-lifetimes'] },
   { group: 'WS-Trust', pages: ['/admin/wstrust'] },
   { group: 'WS-Federation', pages: ['/admin/wsfed'] },
-  { group: 'TLS', pages: ['/admin/tls'] },
+  // THE LISTENERS PAGE (#423, rcbj: "Put all the listener configuration,
+  // including TLS on its own page under Server Settings->Listeners"): the
+  // TLS group moved here from /admin/tls, which keeps the truststore and the
+  // certificate, and so did the realm listener's rows (#99).
+  { group: 'Listeners', pages: ['/admin/listeners'] },
+  // ONE GROUP PER TLS LISTENER (#429): its own rows, generated in
+  // common/config.js, and its client-certificate pair.
+  { group: 'Listener: Main port', pages: ['/admin/listeners'] },
+  { group: 'Listener: LDAPS', pages: ['/admin/listeners'] },
+  { group: 'Listener: Protocol debugger', pages: ['/admin/listeners'] },
+  { group: 'Listener: SPIRE Server API', pages: ['/admin/listeners'] },
+  { group: 'Listener: SPIFFE Broker API', pages: ['/admin/listeners'] },
+  { group: 'Listener: Channel between cells', pages: ['/admin/listeners'] },
+  { group: 'Listener: Revocation (plain HTTP)', pages: ['/admin/listeners'] },
+  // HTTP connection pooling's service-wide defaults (#429), on the
+  // Service-wide defaults tab beside the TLS ones.
+  { group: 'HTTP connections', pages: ['/admin/listeners'] },
+  { group: 'TLS', pages: ['/admin/listeners'] },
+  // A trust realm's own listener (#99): realm-only settings, edited on the
+  // Listeners page read inside a realm (#423); the default realm refuses
+  // them (STS-CORE-0145).
+  { group: 'Realm listener', pages: ['/admin/listeners'] },
   { group: 'OID4VCI', pages: ['/admin/oid4vci'] },
   { group: 'OID4VP', pages: ['/admin/oid4vp'] },
   { group: 'Kerberos', pages: ['/admin/kerberos'] },
@@ -49017,7 +49398,14 @@ const PROTOCOL_SETTINGS_PAGES = [
           'the one every other protocol answers on; what this page ' +
           'configures is the certificate that port and LDAPS 636 present, ' +
           'and what this service makes of a certificate a CLIENT presents.',
-    also: ['<strong>A verified client certificate IS a login since ' +
+    also: ['<strong>What each listener does at the handshake is on <a ' +
+           'href="/admin/listeners">Listeners</a> since #423</strong>: TLS ' +
+           '1.2 on or off, the TLS 1.3 cipher suites, post-quantum only, ' +
+           'and whether a listener asks for a client certificate, requires ' +
+           'one, or neither — a required one is verified against the ' +
+           'truststore on this page. The TLS settings that were drawn here ' +
+           'are drawn there.',
+           '<strong>A verified client certificate IS a login since ' +
            '2026-09-05, and it is now <a href="/tls/sign-in">GET ' +
            '/tls/sign-in</a> on the main port.</strong> Presenting a ' +
            'certificate is the CLIENT\'s decision here — this port asks for ' +
@@ -49170,6 +49558,9 @@ const consoleExports = {
   // settings renderer and a second redirect-or-JSON rule, and two of either is
   // how a console starts behaving differently on different pages.
   configFormsFor: slot.forward('configFormsFor'),
+  // The tab panels an application's page is drawn in, for a page drawn
+  // elsewhere that wants the same tabs (/admin/listeners, #423).
+  tabbedPanels: slot.forward('tabbedPanels'),
   setXacmlPages: slot.forward('setXacmlPages'),
   xacmlActionNames: slot.forward('xacmlActionNames'),
   // The JSON counterpart of the block above, so that a page drawn

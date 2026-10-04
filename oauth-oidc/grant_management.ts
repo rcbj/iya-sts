@@ -694,10 +694,13 @@ class GrantManagement {
    * @param grantId - the grant id
    * @param actor - who revoked it
    * @param via - the door it was revoked through
+   * @param entity - CAEP's initiating entity, where the door states one (a
+   *   sign-out, a received signal — #432); by default `user` for the
+   *   client's DELETE and `admin` for every other door
    * @returns `{ ok: true, revoked }`, or `{ ok: false }` for a grant this realm
    *   does not hold
    */
-  revoke(grantId: string, actor: string, via: string): Json {
+  revoke(grantId: string, actor: string, via: string, entity?: string): Json {
     const { log } = this.deps;
     log.debug("Entering GrantManagement.revoke().");
     const held = grants.get(String(grantId));
@@ -712,7 +715,7 @@ class GrantManagement {
     const revoked = this.revokeIssued(held.id, function (): boolean {
       return true;
     }, 'grant revoked (' + via + ')',
-    { initiatingEntity: via === 'client' ? 'user' : 'admin' });
+    { initiatingEntity: entity || (via === 'client' ? 'user' : 'admin') });
     try {
       this.deps.audit().record({
         category: via === 'client' ? 'oauth' : 'admin',

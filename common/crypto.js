@@ -7481,6 +7481,32 @@ function certificateSpkiThumbprint(certificate) {
 }
 
 // ---------------------------------------------------------------------------
+// THE SAME DIGEST FROM A KEY RATHER THAN A CERTIFICATE (#432, 2026-10-03):
+// SHA-256 over the key's SubjectPublicKeyInfo DER, base64url — so a GNAP
+// client key presented as a JWK or inside a certificate can be matched to a
+// device's x509 key, whose thumbprint `certificateSpkiThumbprint()` gave it.
+// node's own SPKI export, because the key is already a KeyObject here; a key
+// node cannot export throws, and the caller matches by what it has left.
+// ---------------------------------------------------------------------------
+/**
+ * Returns the SHA-256 of a public key's SubjectPublicKeyInfo DER, base64url —
+ * the digest `certificateSpkiThumbprint()` gives the key in a certificate.
+ *
+ * @param publicKey - a node KeyObject (public, or private to take its public
+ *   half)
+ * @returns the thumbprint
+ * @throws Error for a key node cannot export as SPKI
+ */
+function publicKeySpkiThumbprint(publicKey) {
+  log.debug("Entering publicKeySpkiThumbprint().");
+  const key = publicKey && publicKey.type === 'private'
+    ? nodeCrypto.createPublicKey(publicKey) : publicKey;
+  const der = key.export({ type: 'spki', format: 'der' });
+  log.debug("Leaving publicKeySpkiThumbprint().");
+  return nodeCrypto.createHash('sha256').update(der).digest('base64url');
+}
+
+// ---------------------------------------------------------------------------
 // COMPARE TWO SECRETS WITHOUT LEAKING THEIR LENGTH OR THEIR PREFIX.
 //
 // `crypto.timingSafeEqual()` THROWS when the two buffers differ in length,
@@ -11343,6 +11369,7 @@ module.exports = {
   generateSigningJwkPair: generateSigningJwkPair,
   certificateThumbprint: certificateThumbprint,
   certificateSpkiThumbprint: certificateSpkiThumbprint,
+  publicKeySpkiThumbprint: publicKeySpkiThumbprint,
   constantTimeEquals: constantTimeEquals,
   // --- one-time passwords (RFC 4226 section 5.3) ---
   // The primitive only. The time step, the skew window, the replay guard and

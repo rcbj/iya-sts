@@ -301,6 +301,14 @@ const GLOBAL_MINTED = {
   // One list per realm, published by every cell: a credential issued in one
   // cell and revoked in another must show revoked everywhere.
   'vc_status.entries': 'the status list bits every cell publishes',
+  // The same argument for access tokens (#432): one list per realm, and a
+  // token revoked in one cell must read INVALID in every cell's copy. A row
+  // is an index, a jti and an expiry — nobody's data.
+  'access_token_status.entries': 'the access-token status list every cell ' +
+    'publishes',
+  // The revocation identifiers of revoked biscuit tokens (#432), which a
+  // resource server reads from whichever cell it reaches.
+  'gnap.biscuitRevocations': 'revoked biscuit tokens\' revocation ids',
   // A revocation reaches every cell, or a token revoked in one is live in
   // the next (#98 §5).
   'admin_stats.revokedJtis': 'revoked token ids',
@@ -341,7 +349,7 @@ const CELL_MINTED = [
   'federation.unmapped', 'federation_sp.contexts',
   'gnap.approvers', 'gnap.continuations', 'gnap.grants', 'gnap.instances',
   'gnap.interactions', 'gnap.manageHandles', 'gnap.manageValues',
-  'gnap.movedGrants', 'gnap_monitor.counters', 'gnap.tokens',
+  'gnap.movedGrants', 'gnap_monitor.counters', 'gnap.spend', 'gnap.tokens',
   'gnap.tokenValues', 'gnap.userCodes', 'gnap.userRefs', 'krb5.principals',
   'ldap.clusterConnections', 'ldap.clusterSignOuts', 'mail.outbox',
   'mail.preferences', 'oauth2.attestationChallenges', 'oauth2.authzCodes',
@@ -364,6 +372,7 @@ const CELL_MINTED = [
   'ssf_dead_letter_report.sweeps', 'ssf.relationshipInbox', 'ssf.relationshipLocks',
   'ssf_receivers.inbox', 'ssf_streams.deadLetters', 'ssf_streams.queued',
   'ssf_streams.received', 'ssf_streams.streams', 'tls.listenerAnnounced',
+  'tls.presentedChains',
   'tls.sessionTicketKey', 'vc_api.issued', 'vc_issued.credentials',
   'vc_issuer.lastCredentialRequest', 'vc_issuer.notificationIds',
   'vc_issuer.vciNonces', 'vc_offers.credentialOffers',

@@ -407,6 +407,10 @@ class ProtocolStack {
     this.build('portal/portal_consents',
                require('../portal/portal_consents'),
                'PortalConsents');
+    // #432 phase 7: /portal/gnap, the person's own GNAP grants.
+    this.build('portal/portal_gnap',
+               require('../portal/portal_gnap'),
+               'PortalGnap');
     this.build('portal/portal_delegate',
                require('../portal/portal_delegate'),
                'PortalDelegate');
@@ -552,6 +556,19 @@ class ProtocolStack {
     this.register(app, require('../oauth-oidc/oauth2'), 'oauth-oidc/oauth2');
     this.register(app, require('../oauth-oidc/grant_management'),
                   'oauth-oidc/grant_management');
+    // THE ACCESS-TOKEN STATUS LIST (#432): one per realm, for OAuth's RFC 9068
+    // tokens and GNAP's two JWT formats. `oauth2` and `gnap/gnap_tokens.ts`
+    // require it and allocate through it at mint time; built and registered
+    // here, beside the authorization server, because its two routes
+    // (/status-lists, /status-lists/access-tokens) collide with nothing and
+    // its metadata member is `oauth2`'s. It requires the status-list codec,
+    // built further down with the credential lists — a library whose facades
+    // are called only at request time.
+    this.build('oauth-oidc/access_token_status',
+               require('../oauth-oidc/access_token_status'),
+               'AccessTokenStatus');
+    this.register(app, require('../oauth-oidc/access_token_status'),
+                  'oauth-oidc/access_token_status');
     // WS-Federation's passive requestor profile. It must come AFTER authn.js
     // and the order is a dependency and not a preference: it signs users in to
     // the session that service owns (startSession/sessionOf), so that single
@@ -1157,6 +1174,18 @@ class ProtocolStack {
                'ModeAdmin');
     this.register(app, require('../admin-ui/mode_admin'),
                   'admin-ui/mode_admin');
+    // 18k-iii. LISTENERS (#423, 2026-10-02). `/admin/listeners` — every
+    // socket, the TLS policy and client authentication each is held to, a
+    // realm's own listener, and the Listeners, TLS and Realm listener
+    // settings. 18a's placement and 18a's reason: the console's shell and
+    // libraries already loaded, `tls/tls_server` (20) and
+    // `tls/realm_listeners` reached lazily when the page is drawn, and
+    // `mgmt-api/admin_api` requires it. Its paths are in NEVER_DISPATCHED.
+    require('../admin-ui/listeners_admin');
+    this.build('admin-ui/listeners_admin',
+               require('../admin-ui/listeners_admin'), 'ListenersAdmin');
+    this.register(app, require('../admin-ui/listeners_admin'),
+                  'admin-ui/listeners_admin');
     // 18k-ii. CELLS (#98, 2026-09-28). `/admin/cells` — the cell map, the
     // store's tiers, the channel, the Cells settings and another cell's
     // residents. 18a's placement and 18a's reason: the console's shell and
@@ -1694,9 +1723,31 @@ class ProtocolStack {
                'GnapMonitor');
     this.build('gnap/gnap_signals', require('../gnap/gnap_signals'),
                'GnapSignals');
+    this.build('gnap/gnap_revocation', require('../gnap/gnap_revocation'),
+               'GnapRevocation');
+    // #432 phase 5: who owns the resource a right's identifier names — a
+    // library `gnap_rights` asks for the issue-gnap-right facts.
+    this.build('gnap/gnap_ownership', require('../gnap/gnap_ownership'),
+               'GnapOwnership');
+    // #432 phases 3 and 4: each access right against the access-type
+    // catalogue and the issuance policy — a library the delegation module
+    // (its "derivable from") and the grant engine read.
+    this.build('gnap/gnap_rights', require('../gnap/gnap_rights'),
+               'GnapRights');
+    // #432: who may act for whom in GNAP — a library the grant engine reads.
+    this.build('gnap/gnap_delegation', require('../gnap/gnap_delegation'),
+               'GnapDelegation');
+    // #432 phase 6: who approves a grant and how strongly signed in — the
+    // step-up and approval by an absent owner; a library the grant engine,
+    // the approval page and the portal read.
+    this.build('gnap/gnap_approval', require('../gnap/gnap_approval'),
+               'GnapApproval');
     this.build('gnap/gnap_grants', require('../gnap/gnap_grants'),
                'GnapGrants');
     this.build('gnap/gnap_rs', require('../gnap/gnap_rs'), 'GnapRs');
+    // #432 phase 5: the demonstration resource server's running totals —
+    // a library the route module spends through.
+    this.build('gnap/gnap_spend', require('../gnap/gnap_spend'), 'GnapSpend');
     this.build('gnap/gnap_interact', require('../gnap/gnap_interact'),
                'GnapInteract');
     this.build('gnap/gnap_console', require('../gnap/gnap_console'),

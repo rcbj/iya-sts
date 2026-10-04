@@ -36,7 +36,13 @@
 //           unknown type refused at the push;
 //        g. openid_credential unchanged: no forced consent, identifiers added;
 //        h. registration, RFC 7592 read-back, the console's writes, and the
-//           RFC 9728 import's plan.
+//           RFC 9728 import's plan;
+//        i. a catalogue type's acr (#432 phase 6): granted where the session
+//           meets it with the ID Token's acr, every type's required (a
+//           second type needing more sends the session to sign in again),
+//           refused unmet_authentication_requirements on the way back even
+//           with acr_values met, and a grant with no person refused at the
+//           token endpoint.
 //
 // **THE CHILD** is `tests/rfc9068_access_tokens.js`'s reason: the protocol
 // stack registers every route on the shared app and builds a CA.
@@ -876,6 +882,42 @@ function childMain() {
          'out the built-in type, a bad name and one already declared',
          JSON.stringify(plan.detailsTypeLines) + ' ' +
          JSON.stringify(plan.warnings));
+
+    // --- i. a type's acr, every one required (#432 phase 6) ----------------
+    ['{"type":"r96-one","acr":"1"}', '{"type":"r96-strong","acr":"mfa"}']
+      .forEach(function (value) {
+        applications.updateApplication('r96-shop', {
+          attribute: 'oauthAuthorizationDetailsType', mode: 'add',
+          value: value });
+      });
+    flow = await drive(await authorize({
+      authorization_details: JSON.stringify([{ type: 'r96-one' }]) }));
+    r = await token({ grant_type: 'authorization_code',
+      code: flow.query.get('code'), redirect_uri: REDIRECT });
+    note(r.status === 200 && payloadOf(r.json.id_token).acr === '1',
+         '3aq. a type needing acr 1 is granted on a password session, and ' +
+         'the ID Token carries the acr met', r.text.slice(0, 300));
+    r = await authorize({ authorization_details: JSON.stringify([
+      { type: 'r96-one' }, { type: 'r96-strong' }]) }, '', true);
+    note(r.status === 302 &&
+         /\/authn\/login/.test(String(r.headers.location || '')),
+         '3ar. a type needing mfa sends the same session to sign in again ' +
+         '— every type\'s acr is required, not any of them',
+         String(r.headers.location || ''));
+    r = await authorize({ authorization_details: JSON.stringify([
+      { type: 'r96-strong' }]), acr_values: '1',
+                          step_up_honoured: '1' }, '', true);
+    note(/error=unmet_authentication_requirements/.test(
+           String(r.headers.location || '')),
+         '3as. back from that sign-in still short of it, the request is ' +
+         'refused unmet_authentication_requirements — acr_values met does ' +
+         'not stand in for a type\'s acr', String(r.headers.location || ''));
+    r = await token({ grant_type: 'client_credentials', scope: 'payments',
+      authorization_details: JSON.stringify([{ type: 'r96-one' }]) });
+    note(r.status === 400 && r.json.error === 'invalid_authorization_details' &&
+         /authentication level 1/.test(r.json.error_description || ''),
+         '3at. a grant with no person behind it meets no type\'s acr ' +
+         '(STS-OAUTH-0937)', r.text.slice(0, 300));
 
     server.close();
     require('fs').writeFileSync(OUT, JSON.stringify(findings));

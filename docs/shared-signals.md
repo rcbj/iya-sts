@@ -475,6 +475,14 @@ default:
 | signs people in | `account-enabled` | lift that block |
 | `ssf` only | anything about a person | recorded, nothing more. A global sign-out and an account lock exist for an operator's policy to permit |
 | either | `device-compliance-change` | set the device's compliance |
+| signs people in | `session-revoked`, `account-disabled`, `account-purged`, `credential-compromise` | **revoke the person's grants and tokens** (#432): every GNAP grant they approved, and every OAuth grant (Grant Management), access and refresh token and unredeemed authorization code held for them. A `session-revoked` reaches only what was issued on the sessions this relationship started. Sessions are left to the rows above. Turned off with `ssf.signalsRevokeGrants` |
+
+`ssf.signalsRevokeGrants` is **on** by default. Turning it off records the
+reaction as *skipped* and revokes nothing — so an account the partner reports
+compromised keeps every grant and token it gave clients here until somebody
+revokes them by hand; turn it off only where the partner's signals are not
+trusted that far, and prefer narrowing `partnerRevokeGrantEvents` in the
+`signal-response` policy instead.
 
 An administrator can lift a block with *Unblock* on the relationship's page
 (`POST /admin-api/federation/signals-unblock`). Every arrival from every
@@ -609,7 +617,7 @@ types from what a stream may ask for.
 | `ssf.actOnSignalsInDevelopment` | `STS_SSF_ACT_ON_SIGNALS_IN_DEVELOPMENT` | `false` | yes | The console and portal end their own sessions on a received signal in development too; product always does. |
 | `ssf.legacySubClaim` | `STS_SSF_LEGACY_SUB_CLAIM` | `false` | yes | Deliberate defect, development only: adds the deprecated `sub` claim beside `sub_id`. |
 | `ssf.breakSetSignature` | `STS_SSF_BREAK_SET_SIGNATURE` | `false` | yes | Deliberate defect, development only: changes one character of every SET's signature. |
-| `gnap.scopedSignals` | `STS_GNAP_SCOPED_SIGNALS` | `true` | yes | A stream owned by a GNAP application only hears about people who approved a grant to it. |
+| `gnap.scopedSignals` | `STS_GNAP_SCOPED_SIGNALS` | `true` | yes | A stream owned by a GNAP application only hears about people who approved a grant to it. A stream owned by a GNAP resource server hears only `session-revoked` for the GNAP tokens and grants audienced to it (#432). |
 
 ### CAEP (`caep.*`)
 

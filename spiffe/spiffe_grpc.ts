@@ -986,6 +986,60 @@ class SpiffeGrpc {
     };
   }
 
+  // ---------------------------------------------------------------------------
+  // A CALLER WHOSE AUTHORITY HAS NOT REACHED THIS PROCESS YET (2026-10-02). A
+  // federated bundle written through /admin-api is stored by whichever
+  // process answered that request and reaches the process holding the gRPC
+  // sockets on the next pull of the change log; an SVID presented in that gap
+  // was refused as signed by nobody (STS-SPIFFE-0024) — `sts_spiffe_broker` in
+  // single-node, CI run 36986913696, presenting under a trust domain it had
+  // federated a moment before. So that one refusal waits for the store ONCE,
+  // bounded, and the call is prepared again; every other answer, and that one
+  // when the bundle still is not there, stands as it was.
+  // ---------------------------------------------------------------------------
+  /**
+   * Prepares a call, waiting for the store once when the presented SVID's
+   * authority is unknown here, and hands the result to `then`.
+   *
+   * @param call - the gRPC call
+   * @param surface - the surface
+   * @param method - the method
+   * @param then - called with what `prepareCall()` answered
+   * @returns nothing
+   */
+  prepareAfterCatchUp(call, surface, method, then) {
+    const { log } = this.deps;
+    const self = this;
+    log.debug('Entering SpiffeGrpc.prepareAfterCatchUp().');
+    const first = this.prepareCall(call, surface, method);
+    const late = first.refusal &&
+      ((first.caller && first.caller.refusalCode === 'STS-SPIFFE-0024') ||
+       first.errorCode === 'STS-SPIFFE-0024');
+    if (!late) {
+      log.debug('Leaving SpiffeGrpc.prepareAfterCatchUp(). As it was.');
+      then(first);
+      return;
+    }
+    let persistence = null;
+    try {
+      persistence = require('../persistence/persistence');
+    } catch (e) {
+      log.debug('Caught in SpiffeGrpc.prepareAfterCatchUp(): ' +
+                ((e && e.message) || e));
+    }
+    const pull = persistence && typeof persistence.syncNow === 'function'
+      ? Promise.resolve(persistence.syncNow()) : Promise.resolve();
+    Promise.race([pull, new Promise(function (resolve) {
+      setTimeout(resolve, 3000);
+    })]).catch(function (e) {
+      log.debug('Caught in SpiffeGrpc.prepareAfterCatchUp(): ' +
+                ((e && e.message) || e));
+    }).then(function () {
+      log.debug('Leaving SpiffeGrpc.prepareAfterCatchUp(). Caught up.');
+      then(self.prepareCall(call, surface, method));
+    });
+  }
+
   /**
    * Prepares a call on any surface: SPIFFE turned on, the security header, the
    * caller built and authorized, and the attested peer revalidated.
@@ -1502,47 +1556,52 @@ class SpiffeGrpc {
     log.debug("Leaving SpiffeGrpc.unary().");
     return this.fromCaller(function (call, callback) {
       log.debug('Entering the ' + method + ' handler.');
-      const prepared = self.prepareCall(call, surface, method);
-      if (prepared.refusal) {
-        self.recordCall(surface, method, false,
-                        { refused: prepared.refusal.message },
-                        prepared.caller, prepared.errorCode);
-        log.debug('Leaving the ' + method + ' handler. Refused.');
-        callback(self.errorToStatus(prepared.refusal, method));
-        return;
-      }
-      Promise.resolve()
-        .then(function () { return self.dispatchUnary(surface, method, call); })
-        .then(function (answer) {
-          if (!answer || !answer.dispatched) {
-            // NOT DISPATCHED: no pool, this method not named in
-            // `workers.dispatch`, or no worker to take it. All three mean the
-            // front process does the work, which is what
-            // `workers.requestCount = 0` means and is a supported configuration
-            // rather than a degraded one.
-            return handler(call);
-          }
-          if (answer.result && answer.result.ok) {
-            return answer.result.reply;
-          }
-          if (answer.result && answer.result.errorCode) {
-            errorCodes.mark(call, answer.result.errorCode);
-          }
-          throw self.errorFromResult(answer.result);
-        })
-        .then(function (reply) {
-          self.recordCall(surface, method, true, {}, prepared.caller);
-          callback(null, reply || {});
-          log.debug('Leaving the ' + method + ' handler.');
-        })
-        .catch(function (err) {
-          const status = self.errorToStatus(err, method);
-          self.recordCall(surface, method, false, { status: status.code },
-                          prepared.caller,
-                          self.failureCodeOf(call, err));
-          callback(status);
-          log.debug('Leaving the ' + method + ' handler. ' + status.details);
-        });
+      self.prepareAfterCatchUp(call, surface, method,
+                               function (prepared) {
+        if (prepared.refusal) {
+          self.recordCall(surface, method, false,
+                          { refused: prepared.refusal.message },
+                          prepared.caller, prepared.errorCode);
+          log.debug('Leaving the ' + method + ' handler. Refused.');
+          callback(self.errorToStatus(prepared.refusal, method));
+          return;
+        }
+        Promise.resolve()
+          .then(function () {
+            return self.dispatchUnary(surface, method, call);
+          })
+          .then(function (answer) {
+            if (!answer || !answer.dispatched) {
+              // NOT DISPATCHED: no pool, this method not named in
+              // `workers.dispatch`, or no worker to take it. All three mean the
+              // front process does the work, which is what
+              // `workers.requestCount = 0` means and is a supported
+              // configuration
+              // rather than a degraded one.
+              return handler(call);
+            }
+            if (answer.result && answer.result.ok) {
+              return answer.result.reply;
+            }
+            if (answer.result && answer.result.errorCode) {
+              errorCodes.mark(call, answer.result.errorCode);
+            }
+            throw self.errorFromResult(answer.result);
+          })
+          .then(function (reply) {
+            self.recordCall(surface, method, true, {}, prepared.caller);
+            callback(null, reply || {});
+            log.debug('Leaving the ' + method + ' handler.');
+          })
+          .catch(function (err) {
+            const status = self.errorToStatus(err, method);
+            self.recordCall(surface, method, false, { status: status.code },
+                            prepared.caller,
+                            self.failureCodeOf(call, err));
+            callback(status);
+            log.debug('Leaving the ' + method + ' handler. ' + status.details);
+          });
+      });
     });
   }
 
@@ -1684,76 +1743,78 @@ class SpiffeGrpc {
     log.debug("Leaving SpiffeGrpc.serverStream().");
     return this.fromCaller(function (call) {
       log.debug('Entering the ' + method + ' stream handler.');
-      const prepared = self.prepareCall(call, surface, method);
-      if (prepared.refusal) {
-        self.recordCall(surface, method, false,
-                        { refused: prepared.refusal.message },
-                        prepared.caller, prepared.errorCode);
-        call.emit('error', self.errorToStatus(prepared.refusal, method));
-        log.debug('Leaving the ' + method + ' stream handler. Refused.');
-        return;
-      }
-      let open = true;
-      // `cancelled` fires when the peer goes away. Without this listener a
-      // rotation timer would go on writing to a dead stream, which grpc-js
-      // reports as an unhandled error on the server.
-      call.on('cancelled', function () {
-        open = false;
-        log.debug('spiffe: the ' + method +
-                  ' stream was cancelled by the client.');
-      });
-      call.on('error', function (err) {
-        open = false;
-        log.debug('spiffe: the ' + method + ' stream ended with ' +
-                  err.message);
-      });
-      Promise.resolve()
-        .then(function () {
-          return handler(call, function push(message) {
-            log.debug("Entering push().");
-            // The push callback a handler uses to send a later message — an
-            // SVID that rotated, a bundle that changed. Guarded on `open`,
-            // because the handler holds it across time and the client may be
-            // long gone.
-            if (!open) {
-              log.debug("Leaving push().");
-              return false;
-            }
-            call.write(message);
-            log.debug("Leaving push().");
-            return true;
-          }, function end(err) {
-            log.debug("Entering end().");
-            // A handler ENDING the stream with a status — the Broker API's
-            // "the workload has stopped" (#170): no later message is sent
-            // for it, and the broker is told why.
-            if (!open) {
-              log.debug("Leaving end(). Already closed.");
-              return;
-            }
-            open = false;
-            call.emit('error', self.errorToStatus(err, method));
-            log.debug("Leaving end().");
-          });
-        })
-        .then(function (first) {
-          if (first && open) call.write(first);
-          self.recordCall(surface, method, true, { streaming: true },
-                          prepared.caller);
-          log.debug('Leaving the ' + method + ' stream handler. The stream ' +
-                    'stays open; a Workload API client treats it ending as a ' +
-                    'fault.');
-        })
-        .catch(function (err) {
-          const status = self.errorToStatus(err, method);
-          self.recordCall(surface, method, false, { status: status.code },
-                          prepared.caller,
-                          self.failureCodeOf(call, err));
+      self.prepareAfterCatchUp(call, surface, method,
+                               function (prepared) {
+        if (prepared.refusal) {
+          self.recordCall(surface, method, false,
+                          { refused: prepared.refusal.message },
+                          prepared.caller, prepared.errorCode);
+          call.emit('error', self.errorToStatus(prepared.refusal, method));
+          log.debug('Leaving the ' + method + ' stream handler. Refused.');
+          return;
+        }
+        let open = true;
+        // `cancelled` fires when the peer goes away. Without this listener a
+        // rotation timer would go on writing to a dead stream, which grpc-js
+        // reports as an unhandled error on the server.
+        call.on('cancelled', function () {
           open = false;
-          call.emit('error', status);
-          log.debug('Leaving the ' + method + ' stream handler. ' +
-                    status.details);
+          log.debug('spiffe: the ' + method +
+                    ' stream was cancelled by the client.');
         });
+        call.on('error', function (err) {
+          open = false;
+          log.debug('spiffe: the ' + method + ' stream ended with ' +
+                    err.message);
+        });
+        Promise.resolve()
+          .then(function () {
+            return handler(call, function push(message) {
+              log.debug("Entering push().");
+              // The push callback a handler uses to send a later message — an
+              // SVID that rotated, a bundle that changed. Guarded on `open`,
+              // because the handler holds it across time and the client may be
+              // long gone.
+              if (!open) {
+                log.debug("Leaving push().");
+                return false;
+              }
+              call.write(message);
+              log.debug("Leaving push().");
+              return true;
+            }, function end(err) {
+              log.debug("Entering end().");
+              // A handler ENDING the stream with a status — the Broker API's
+              // "the workload has stopped" (#170): no later message is sent
+              // for it, and the broker is told why.
+              if (!open) {
+                log.debug("Leaving end(). Already closed.");
+                return;
+              }
+              open = false;
+              call.emit('error', self.errorToStatus(err, method));
+              log.debug("Leaving end().");
+            });
+          })
+          .then(function (first) {
+            if (first && open) call.write(first);
+            self.recordCall(surface, method, true, { streaming: true },
+                            prepared.caller);
+            log.debug('Leaving the ' + method + ' stream handler. The ' +
+                      'stream stays open; a Workload API client treats it ' +
+                      'ending as a fault.');
+          })
+          .catch(function (err) {
+            const status = self.errorToStatus(err, method);
+            self.recordCall(surface, method, false, { status: status.code },
+                            prepared.caller,
+                            self.failureCodeOf(call, err));
+            open = false;
+            call.emit('error', status);
+            log.debug('Leaving the ' + method + ' stream handler. ' +
+                      status.details);
+          });
+      });
     });
   }
 
@@ -1791,133 +1852,136 @@ class SpiffeGrpc {
     log.debug("Leaving SpiffeGrpc.bidiStream().");
     return this.fromCaller(function (call) {
       log.debug('Entering the ' + method + ' bidi handler.');
-      const prepared = self.prepareCall(call, surface, method);
-      if (prepared.refusal) {
-        self.recordCall(surface, method, false,
-                        { refused: prepared.refusal.message },
-                        prepared.caller, prepared.errorCode);
-        call.emit('error', self.errorToStatus(prepared.refusal, method));
-        log.debug('Leaving the ' + method + ' bidi handler. Refused.');
-        return;
-      }
-      const inFlight = new Set();
-      let failed = false;
-      let clientEnded = false;
-      let finished = false;
-      // The one outstanding challenge, if any: { resolve, reject, timer }.
-      let waiting = null;
-      function conversationError(reason, message) {
-        log.debug("Entering conversationError().");
-        const err: any = new Error(message);
-        err.conversation = reason;
-        log.debug("Leaving conversationError().");
-        return err;
-      }
-      function failWaiting(reason, message) {
-        log.debug("Entering failWaiting().");
-        if (!waiting) {
-          log.debug("Leaving failWaiting(). Nothing outstanding.");
+      self.prepareAfterCatchUp(call, surface, method,
+                               function (prepared) {
+        if (prepared.refusal) {
+          self.recordCall(surface, method, false,
+                          { refused: prepared.refusal.message },
+                          prepared.caller, prepared.errorCode);
+          call.emit('error', self.errorToStatus(prepared.refusal, method));
+          log.debug('Leaving the ' + method + ' bidi handler. Refused.');
           return;
         }
-        const w = waiting;
-        waiting = null;
-        clearTimeout(w.timer);
-        w.reject(conversationError(reason, message));
-        log.debug("Leaving failWaiting().");
-      }
-      function finish() {
-        log.debug("Entering finish().");
-        if (finished || !clientEnded || inFlight.size) {
-          log.debug("Leaving finish(). Not yet.");
-          return;
+        const inFlight = new Set();
+        let failed = false;
+        let clientEnded = false;
+        let finished = false;
+        // The one outstanding challenge, if any: { resolve, reject, timer }.
+        let waiting = null;
+        function conversationError(reason, message) {
+          log.debug("Entering conversationError().");
+          const err: any = new Error(message);
+          err.conversation = reason;
+          log.debug("Leaving conversationError().");
+          return err;
         }
-        finished = true;
-        if (!failed) {
-          self.recordCall(surface, method, true, { streaming: true },
-                          prepared.caller);
-          call.end();
-        }
-        log.debug('Leaving finish(). The ' + method + ' bidi stream is ' +
-                  'ended.');
-      }
-      const conversation = {
-        // Write `message` and resolve with the client's next message. At most
-        // one at a time: an attestor is a sequence, and two challenges
-        // outstanding at once would leave the next message's meaning to a
-        // race.
-        challenge: function (message, timeoutMs) {
-          log.debug("Entering challenge().");
-          if (waiting) {
-            log.debug("Leaving challenge(). One is already outstanding.");
-            return Promise.reject(conversationError('busy',
-              'A challenge is already outstanding on this stream.'));
+        function failWaiting(reason, message) {
+          log.debug("Entering failWaiting().");
+          if (!waiting) {
+            log.debug("Leaving failWaiting(). Nothing outstanding.");
+            return;
           }
-          if (clientEnded || failed) {
-            log.debug("Leaving challenge(). The stream is closing.");
-            return Promise.reject(conversationError('ended',
-              'The client ended the stream before it could be challenged.'));
-          }
-          log.debug("Leaving challenge().");
-          return new Promise(function (resolve, reject) {
-            waiting = {
-              resolve: resolve, reject: reject,
-              timer: setTimeout(function () {
-                failWaiting('timeout', 'No challenge response arrived within ' +
-                            Math.round(timeoutMs / 1000) + ' second(s).');
-              }, timeoutMs)
-            };
-            call.write(message);
-          });
-        }
-      };
-      call.on('data', function (request) {
-        if (waiting) {
-          // The answer to the outstanding challenge, and not a new request.
           const w = waiting;
           waiting = null;
           clearTimeout(w.timer);
-          w.resolve(request);
-          return;
+          w.reject(conversationError(reason, message));
+          log.debug("Leaving failWaiting().");
         }
-        const running = Promise.resolve()
-          .then(function () { return handler(request, call, conversation); })
-          .then(function (reply) {
-            if (reply && !failed) call.write(reply);
-          })
-          .catch(function (err) {
-            log.debug("Caught in the " + method + " bidi handler: " +
-                      ((err && err.message) || err));
-            if (failed) {
-              return;
+        function finish() {
+          log.debug("Entering finish().");
+          if (finished || !clientEnded || inFlight.size) {
+            log.debug("Leaving finish(). Not yet.");
+            return;
+          }
+          finished = true;
+          if (!failed) {
+            self.recordCall(surface, method, true, { streaming: true },
+                            prepared.caller);
+            call.end();
+          }
+          log.debug('Leaving finish(). The ' + method + ' bidi stream is ' +
+                    'ended.');
+        }
+        const conversation = {
+          // Write `message` and resolve with the client's next message. At most
+          // one at a time: an attestor is a sequence, and two challenges
+          // outstanding at once would leave the next message's meaning to a
+          // race.
+          challenge: function (message, timeoutMs) {
+            log.debug("Entering challenge().");
+            if (waiting) {
+              log.debug("Leaving challenge(). One is already outstanding.");
+              return Promise.reject(conversationError('busy',
+                'A challenge is already outstanding on this stream.'));
             }
-            failed = true;
-            failWaiting('ended', 'The stream failed.');
-            const status = self.errorToStatus(err, method);
-            self.recordCall(surface, method, false, { status: status.code },
-                            prepared.caller, self.failureCodeOf(call, err));
-            call.emit('error', status);
-          })
-          .then(function () {
-            inFlight.delete(running);
-            finish();
-          });
-        inFlight.add(running);
-      });
-      call.on('end', function () {
-        clientEnded = true;
-        failWaiting('ended', 'The client ended the stream with a challenge ' +
-                    'outstanding.');
-        finish();
-        log.debug('Leaving the ' + method +
-                  ' bidi handler. The client ended it.');
-      });
-      call.on('cancelled', function () {
-        failWaiting('cancelled', 'The client cancelled the stream.');
-      });
-      call.on('error', function (err) {
-        failWaiting('ended', 'The stream ended with ' + err.message);
-        log.debug('spiffe: the ' + method + ' bidi stream ended with ' +
-                  err.message);
+            if (clientEnded || failed) {
+              log.debug("Leaving challenge(). The stream is closing.");
+              return Promise.reject(conversationError('ended',
+                'The client ended the stream before it could be challenged.'));
+            }
+            log.debug("Leaving challenge().");
+            return new Promise(function (resolve, reject) {
+              waiting = {
+                resolve: resolve, reject: reject,
+                timer: setTimeout(function () {
+                  failWaiting('timeout', 'No challenge response arrived ' +
+                              'within ' + Math.round(timeoutMs / 1000) +
+                              ' second(s).');
+                }, timeoutMs)
+              };
+              call.write(message);
+            });
+          }
+        };
+        call.on('data', function (request) {
+          if (waiting) {
+            // The answer to the outstanding challenge, and not a new request.
+            const w = waiting;
+            waiting = null;
+            clearTimeout(w.timer);
+            w.resolve(request);
+            return;
+          }
+          const running = Promise.resolve()
+            .then(function () { return handler(request, call, conversation); })
+            .then(function (reply) {
+              if (reply && !failed) call.write(reply);
+            })
+            .catch(function (err) {
+              log.debug("Caught in the " + method + " bidi handler: " +
+                        ((err && err.message) || err));
+              if (failed) {
+                return;
+              }
+              failed = true;
+              failWaiting('ended', 'The stream failed.');
+              const status = self.errorToStatus(err, method);
+              self.recordCall(surface, method, false, { status: status.code },
+                              prepared.caller, self.failureCodeOf(call, err));
+              call.emit('error', status);
+            })
+            .then(function () {
+              inFlight.delete(running);
+              finish();
+            });
+          inFlight.add(running);
+        });
+        call.on('end', function () {
+          clientEnded = true;
+          failWaiting('ended', 'The client ended the stream with a challenge ' +
+                      'outstanding.');
+          finish();
+          log.debug('Leaving the ' + method +
+                    ' bidi handler. The client ended it.');
+        });
+        call.on('cancelled', function () {
+          failWaiting('cancelled', 'The client cancelled the stream.');
+        });
+        call.on('error', function (err) {
+          failWaiting('ended', 'The stream ended with ' + err.message);
+          log.debug('spiffe: the ' + method + ' bidi stream ended with ' +
+                    err.message);
+        });
       });
     });
   }
@@ -2343,6 +2407,29 @@ class SpiffeGrpc {
    * @param surface - names the listener in the log
    * @returns the credentials
    */
+  /**
+   * The listeners' TLS policy (#423) as secure-context options for a SPIFFE
+   * listener: the floor, the suites, the groups and no renegotiation, with
+   * SPIFFE's own signature list.
+   *
+   * @param kind - `spiffeServer` or `spiffeBroker` (#429)
+   * @returns the options
+   */
+  static policyContextOptions(kind?: string): any {
+    helpers.log.debug('Entering SpiffeGrpc.policyContextOptions().');
+    const tlsServer = require('../tls/tls_server');
+    const policy = tlsServer.policyFor(kind || 'spiffeServer');
+    const options = tlsServer.protocolOptions(policy);
+    // SPIFFE's own signature list, unless the listener names one of its own
+    // (#429, listenerSpiffe*.signatureAlgorithms).
+    const own = tlsServer.listenerOwnValue(kind || 'spiffeServer',
+                                           'signatureAlgorithms');
+    options.sigalgs = own !== undefined ? String(own)
+                                        : SpiffeGrpc.POLICY_SIGALGS;
+    helpers.log.debug('Leaving SpiffeGrpc.policyContextOptions().');
+    return options;
+  }
+
   async svidServerCredentials(surface: string) {
     const { log, ca, spiffeId, config, grpc, errorCodes } = this.deps;
     log.debug('Entering SpiffeGrpc.svidServerCredentials(). ' + surface);
@@ -2420,6 +2507,28 @@ class SpiffeGrpc {
       // refusal. tls/CLAUDE.md has the rule.
       credentials._getConstructorOptions().sigalgs =
         SpiffeGrpc.POLICY_SIGALGS;
+      // THE LISTENERS' POLICY (#423): TLS 1.2 off or on, the TLS 1.3 suites
+      // chosen, post-quantum only — at the first handshake, and re-applied
+      // through grpc-js's own `updateSecureContextOptions()` whenever a
+      // setting moves. Client authentication is the protocol's here (the
+      // SPIRE Server API must accept an agent with no SVID yet, the Broker
+      // API requires one), so it has no toggle.
+      // Each gRPC surface is a listener of its own since #429.
+      const kind = /Broker/.test(surface) ? 'spiffeBroker' : 'spiffeServer';
+      Object.assign(credentials._getConstructorOptions(),
+                    SpiffeGrpc.policyContextOptions(kind));
+      // `any`: grpc-js declares updateSecureContextOptions() protected, and
+      // refreshServerApiCredentials() below already calls it from outside.
+      const held: any = credentials;
+      held.stsUnregisterPolicy = require('../tls/tls_server')
+        .registerPolicyApplier('SPIFFE ' + surface + ' (' +
+                               ca.trustDomain() + ')', kind,
+          function () {
+            held.updateSecureContextOptions(Object.assign({},
+              held._getSecureContextOptions(),
+              SpiffeGrpc.policyContextOptions(kind)));
+          });
+      held.stsPolicyKind = kind;
     } catch (e) {
       log.error(errorCodes.tag('STS-SPIFFE-0012') +
                 'spiffe: the ' + surface + ' ' +
@@ -2472,13 +2581,15 @@ class SpiffeGrpc {
     const identity = spiffeId.serverId(ca.trustDomain());
     const svid = await ca.mintX509Svid(identity,
       { ttl: config.value('spiffe.caTtl') });
-    credentials.updateSecureContextOptions({
+    credentials.updateSecureContextOptions(Object.assign({
       ca: Buffer.from(ca.state().trustAnchors.map(function (anchor) {
         return anchor.certificatePem;
       }).join('\n'), 'utf8'),
       cert: [Buffer.from(svid.chainPem.join('\n'), 'utf8')],
       key: [Buffer.from(svid.privateKeyPem, 'utf8')]
-    });
+    // The listeners' policy (#423) goes with every new context: a context
+    // without it is node's defaults until the next setting change.
+    }, SpiffeGrpc.policyContextOptions(credentials.stsPolicyKind)));
     log.info('spiffe: the SPIRE Server API TCP listener took a new ' +
              'certificate as ' + identity + ' (serial ' + svid.serialHex +
              ') under the replaced Root.');

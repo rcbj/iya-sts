@@ -157,6 +157,21 @@ function enterRealm(req, res, next) {
   log.debug("Entering enterRealm().");
   const pathname = String(req.url || '').split('?')[0];
   const match = realms.matchPath(pathname);
+  // A REALM'S OWN LISTENER ANSWERS THAT REALM AND NOTHING ELSE (#99,
+  // 2026-10-02). `tls/realm_listeners.js` marks every socket it accepts with
+  // its realm; a path that is not under that realm's prefix — another
+  // realm's, or the default realm's unprefixed one — is not served there,
+  // so a realm's host and load balancer front that realm alone. The main port
+  // carries no mark and serves every realm as it always has.
+  const own = req.socket && req.socket.stsRealmListener;
+  if (own && !(match && match.realm && match.realm.id === own)) {
+    require('./error_codes').mark(res, 'STS-TLS-0041');
+    res.status(404).type('text/plain')
+      .send('Not found: this listener serves realm "' + own + '" only, ' +
+            'under ' + realms.prefixOf(realms.get(own) || undefined) + '.');
+    log.debug("Leaving enterRealm(). Off this realm's listener.");
+    return;
+  }
 
   // Not in a realm — including a path that opens with the realm SEGMENT and an
   // id nobody defined. That case deliberately falls through to Express's own
@@ -409,6 +424,28 @@ realms.reserve(function () {
 // reason the pool is: it is a library of the front process's edge.
 // ---------------------------------------------------------------------------
 app.use(require('./cell_placement').middleware());
+
+// ---------------------------------------------------------------------------
+// AND BETWEEN THE TWO, THE CHAIN OF A SESSION RESUMED FROM ANOTHER NODE
+// (#406, 2026-10-02). The main port shares the cluster's session-ticket key,
+// so a TLS session made on one node resumes on another — and a resumed
+// session hands over the client certificate without its chain, which is
+// replicated from the node that saw it. This waits for it, bounded by
+// `tls.resumedChainWaitMs`, before the request is answered here or handed to
+// a worker (whose copy of the chain the pool builds from this process's).
+// `common/revocation_status.js` argues it; it calls next() at once for every
+// connection that is not a resumed one holding a verified certificate, which
+// is every browser that declined to send one. Required at the first request,
+// so this file's own load order does not change.
+// ---------------------------------------------------------------------------
+let resumedChainWait = null;
+// A HOT PATH: every request passes it, so no Entering/Leaving pair.
+app.use(function awaitResumedChainLazily(req, res, next) {
+  if (!resumedChainWait) {
+    resumedChainWait = require('./revocation_status').resumedChainMiddleware();
+  }
+  resumedChainWait(req, res, next);
+});
 
 app.use(requestPool.middleware({ enterRealm: enterRealm }));
 

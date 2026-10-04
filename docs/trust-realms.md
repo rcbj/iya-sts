@@ -356,6 +356,45 @@ development trust. A realm administrator manages their realm's Kerberos —
 principals, keytabs and the settings the database is built from — and those five
 settings stay service-wide.
 
+### Optionally separated — a front-end listener of its own (#99)
+
+A realm can be reached at a host name and load balancer of its own, on a
+port of its own on every node. **The `/realm/<id>` prefix still decides the
+realm**; what changes is the scheme, host and port every URL the realm builds
+is on — `https://acme.example.com/realm/acme/...` instead of
+`https://idp.example.com/realm/acme/...`. Five settings, set **on the realm**
+(`POST /admin-api/realms/set`, or the TLS page read inside the realm); none can
+be set for the default realm or the whole process:
+
+| Setting | Default | What it does |
+|---|---|---|
+| `listener.port` | `0` | The realm's own HTTPS port on every node. `0` means none. It may not be another realm's port or one of this service's own listeners'. |
+| `listener.publicBaseUrl` | *(empty)* | The realm's base, `https://acme.example.com[:port]`, no path — what its load balancer answers under. **Required with a port.** Every issuer, metadata URL, redirect and link the realm builds is on it, background jobs included. **Changing it changes the realm's issuer.** |
+| `listener.hostnames` | *(the base's host)* | The DNS names on the certificate the listener presents. |
+| `listener.certificateFile` | *(empty)* | A PEM certificate (and chain) for the listener — a public CA's, for a browser-facing realm. Empty: the realm's own `realm-tls` Issuing CA issues one per node and renews it, trusted only by a client that trusts this service's Root. |
+| `listener.privateKeyFile` | *(empty)* | Its key. Both or neither — with one alone the listener is not bound (`STS-TLS-0040`). |
+
+What the realm's listener does:
+
+* it is built like the main port — it asks for a client certificate and
+  requires none, under the same truststore, TLS policy and PROXY protocol;
+* **it answers only that realm's paths**: the default realm's and every other
+  realm's are 404 there (`STS-TLS-0041`), so a realm's host fronts that realm
+  alone. The main port still serves the realm under its prefix;
+* it is bound, rebound and closed at once when the realm is created, changed or
+  removed, on every node; a listener that cannot bind is recorded with its
+  reason (`STS-TLS-0039`, `STS-TLS-0040`) and shown in `GET /admin-api/realms`
+  (`listener`) — the service keeps running;
+* the realm's console and portal sign-in callback on its base is registered on
+  their clients in every mode, because an administrator configured it.
+
+The load balancer and DNS record in front of it are the deployment's: on AWS,
+`var.realm_listeners` in `deploy/aws/environment` makes a network load
+balancer per realm (`realm_listeners.tf`), and its `realm_listener_settings`
+output prints the `/admin-api` calls that match. **Not yet:** a realm listener
+in a service running as several cells (`STS-CORE-0148`), and LDAPS, the KDC or
+SPIFFE ports per realm by this mechanism.
+
 ### Not separated — the TLS certificate and client certificates
 
 The certificate a handshake presents, and the client certificate it carries. A

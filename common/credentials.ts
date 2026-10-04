@@ -7640,6 +7640,73 @@ class Credentials {
     return { ok: true, username: name, mayAct: dn };
   }
 
+  // #186: the semantics a person allows — `delegation`, `impersonation`, both,
+  // or none (an empty set, which the exchange policy reads as both for a
+  // subject and as delegation only for an actor) — and their default.
+  /**
+   * Writes the delegation semantics a person allows, and their default.
+   *
+   * @param username - the person
+   * @param allowed - `delegation` and/or `impersonation`; empty clears
+   * @param dflt - `delegation`, `impersonation`, or empty to clear
+   * @returns `{ ok: true, username, semantics, defaultSemantics }`, or a
+   *   refusal for a value that is neither
+   */
+  setDelegationSemantics(username, allowed, dflt) {
+    const { log, errorCodes } = this.deps;
+    const directory = this.directory;
+    const coded = this.coded.bind(this);
+    log.debug("Entering Credentials.setDelegationSemantics().");
+    const name = String(username || '').trim();
+    const KNOWN = ['delegation', 'impersonation'];
+    const list = (Array.isArray(allowed) ? allowed
+      : String(allowed || '').split(/[\s,]+/))
+      .map(function (one) { return String(one).trim().toLowerCase(); })
+      .filter(function (one, i, all) {
+        return !!one && all.indexOf(one) === i;
+      });
+    const chosen = String(dflt || '').trim().toLowerCase();
+    if (!name || !directory ||
+        typeof directory.writeDelegationSemantics !== 'function') {
+      log.debug("Leaving Credentials.setDelegationSemantics(). No store.");
+      return coded('STS-AUTHN-0226', { ok: false, errors: ['No credential ' +
+                                   'store is installed.'] });
+    }
+    const unknown = list.concat(chosen ? [chosen] : []).filter(function (one) {
+      return KNOWN.indexOf(one) < 0;
+    });
+    if (unknown.length) {
+      log.debug("Leaving Credentials.setDelegationSemantics(). Unknown.");
+      return coded('STS-AUTHN-0295', { ok: false, errors: ['"' +
+          unknown[0] + '" is not delegation or impersonation.'] });
+    }
+    if (!this.entryExists(name)) {
+      log.debug("Leaving Credentials.setDelegationSemantics(). Nobody.");
+      return coded('STS-AUTHN-0061', { ok: false, errors: ['There is nobody ' +
+          'called "' + name + '" in this realm\'s directory.'] });
+    }
+    let written = false;
+    try {
+      written = !!directory.writeDelegationSemantics(name, list, chosen);
+    } catch (e) {
+      log.error(errorCodes.tag('STS-AUTHN-0226') + 'credentials: the ' +
+                'delegation semantics of ' + name + ' could not be written: ' +
+                e.message);
+      written = false;
+    }
+    if (!written) {
+      log.debug("Leaving Credentials.setDelegationSemantics(). Not written.");
+      return coded('STS-AUTHN-0226', { ok: false, errors: ['The delegation ' +
+          'semantics could not be written onto ' + name + '\'s entry.'] });
+    }
+    log.info('credentials: ' + name + ' allows ' +
+             (list.length ? list.join(' and ') : 'the policy\'s default') +
+             (chosen ? ', defaulting to ' + chosen : '') + ' (#186).');
+    log.debug("Leaving Credentials.setDelegationSemantics(). Written.");
+    return { ok: true, username: name, semantics: list,
+             defaultSemantics: chosen };
+  }
+
   // ---------------------------------------------------------------------------
   // A DISABLED ACCOUNT (2026-09-17, #36 follow-up).
   //
@@ -8085,6 +8152,7 @@ export = {
   delegationFlaggedPersons: slot.forward('delegationFlaggedPersons'),
   setNotDelegated: slot.forward('setNotDelegated'),
   setMayAct: slot.forward('setMayAct'),
+  setDelegationSemantics: slot.forward('setDelegationSemantics'),
   removePrimaryKeys: slot.forward('removePrimaryKeys'),
   removeSecondFactors: slot.forward('removeSecondFactors'),
   // SEVERAL NODES AGAINST ONE STORE (2026-09-14, #46) — each is argued above
