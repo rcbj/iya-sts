@@ -50,6 +50,7 @@ import EstPage = require('../est/web_est');
 import GeolocationPage = require('./web_geolocation');
 import GnapPage = require('../gnap/web_gnap');
 import GrantsPage = require('../oauth-oidc/web_grants');
+import GroupsPage = require('./web_groups');
 import KerberosPrincipalsPage =
   require('../kerberos/web_kerberos_principals');
 import ListenersPage = require('./web_listeners');
@@ -196,6 +197,10 @@ const PAGES: WebPage[] = [
     } },
   { path: '/admin/grants', title: 'Grants', operation: '/admin-api/grants',
     render: GrantsPage.render },
+  { path: '/admin/groups', title: 'Groups', operation: '/admin-api/groups',
+    render: function (view: Json, ctx?: Json): string {
+      return GroupsPage.body(ctx || WebKit.context(), view);
+    } },
   { path: '/admin/kerberos/principals', title: 'Kerberos principals',
     operation: '/admin-api/kerberos/principals',
     render: function (view: Json, ctx?: Json): string {

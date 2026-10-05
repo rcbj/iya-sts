@@ -830,6 +830,7 @@ import PoliciesPage = require('./web_policies');
 import SignalsPage = require('../ssf/web_signals');
 import ErrorCodesPage = require('./web_error_codes');
 import RolesPage = require('./web_roles');
+import GroupsPage = require('./web_groups');
 import KerberosPrincipalsPage = require('../kerberos/web_kerberos_principals');
 import TlsTrustPage = require('../tls/web_tls_trust');
 import SsfDeadLettersPage = require('../ssf/web_ssf_dead_letters');
@@ -11201,40 +11202,9 @@ class AdminConsole {
   directoryListenerWarning(info, subject) {
     const { log } = this.deps;
     log.debug("Entering AdminConsole.directoryListenerWarning().");
-    if (!info.listening && !info.ldapsListening) {
-      log.debug("Leaving AdminConsole.directoryListenerWarning().");
-      return this.warn('<strong>The directory\'s listeners are not ' +
-        'up</strong> — ' +
-        this.esc(info.listenError || 'it never bound') + '. ' + subject.upper +
-        ' ' +
-        subject.verb +
-        ' in this process\'s store and ' + subject.verb + ' what an LDAP ' +
-        'client WOULD read; right now no client can connect, most likely ' +
-        'because TCP ' + this.esc(info.port) +
-        ' was already taken. This page is HTTP and answers either way.');
-    }
-    if (!info.listening) {
-      log.debug("Leaving AdminConsole.directoryListenerWarning().");
-      return this.warn('<strong>The directory\'s plain listener is not ' +
-        'up</strong> — ' +
-        this.esc(info.listenError || 'it never bound') + ' — but ' +
-          '<strong>LDAPS on ' +
-        this.esc(info.ldapsPort) + ' is</strong>, so ' + subject.lower + ' ' +
-        subject.verb +
-        ' reachable over TLS. TCP ' + this.esc(info.port) + ' was most ' +
-                                                            'likely already ' +
-                                                                'taken.');
-    }
-    if (info.ldapsPort && !info.ldapsListening) {
-      log.debug("Leaving AdminConsole.directoryListenerWarning().");
-      return this.warn('The plain listener on ' + this.esc(info.port) + ' is ' +
-        'up; <strong>LDAPS is not</strong>. That affects how ' + subject.lower +
-        ' ' +
-        'can be reached, not ' +
-        'whether ' + subject.pronoun + ' ' + subject.verb + ' there.');
-    }
+    // Drawn by `web_groups.ts` (#446).
     log.debug("Leaving AdminConsole.directoryListenerWarning().");
-    return '';
+    return GroupsPage.directoryListenerWarning(info, subject);
   }
 
   // Every attribute of one entry, operational ones included, as the table both
@@ -11664,7 +11634,7 @@ class AdminConsole {
     // Said on every branch, including the ones with an entry: the entry can be
     // there and the socket down, and a reader who trusts this page to mean "an
     // LDAP client can fetch this" needs to know which.
-    const listener = this.directoryListenerWarning(info, ENTRY_SUBJECT);
+    const listener = this.directoryListenerWarning(info, GroupsPage.ENTRY_SUBJECT);
     const alsoNamed = info.alsoNamed.length
       ? this.note(info.alsoNamed.length + ' other entr' +
         (info.alsoNamed.length === 1 ? 'y names' : 'ies name') + ' this uid: ' +
@@ -15884,8 +15854,9 @@ class AdminConsole {
   groupLabel(group) {
     const { log } = this.deps;
     log.debug("Entering AdminConsole.groupLabel().");
+    // Drawn by `web_groups.ts` (#446).
     log.debug("Leaving AdminConsole.groupLabel().");
-    return group.cn || '(no cn)';
+    return GroupsPage.groupLabel(group);
   }
 
   /**
@@ -15897,16 +15868,9 @@ class AdminConsole {
   groupRuleCell(rule) {
     const { log } = this.deps;
     log.debug("Entering AdminConsole.groupRuleCell().");
-    const rendered = GROUP_RULES[rule];
-    if (!rendered) {
-      log.debug("Leaving AdminConsole.groupRuleCell().");
-      return '<span class="state-none">' + this.esc(rule || 'unstated') +
-             '</span>';
-    }
+    // Drawn by `web_groups.ts` (#446).
     log.debug("Leaving AdminConsole.groupRuleCell().");
-    return '<span title="' + this.esc(rendered.title) + '">' +
-           this.esc(rendered.label) +
-           '</span>';
+    return GroupsPage.groupRuleCell(rule);
   }
 
   // A member's link. To the group page when the member is itself a group, so
@@ -16005,177 +15969,18 @@ class AdminConsole {
    * @returns the page body as HTML (`inner`) and its JSON view (`json`)
    */
   groupsListPage(req) {
-    const { log, adminViews, queryWith } = this.deps;
-    const self = this;
+    const { log, adminViews } = this.deps;
     log.debug("Entering AdminConsole.groupsListPage().");
-    const view = adminViews.groupsListJson(req);
-    const info = view.info;
-    const wantedText = view.wantedText;
-    const needle = view.needle;
-    const filtered = view.filtered;
-    const paging = view.paging;
-    const shown = view.shown;
-    const filterParams = view.filterParams;
-    const totalMembers = view.totalMembers;
-    const totalDangling = view.totalDangling;
-    const nav = this.pageNavPair('/admin/groups', filterParams, paging);
-
-    const listView = this.listViewOf('/admin/groups', req.query);
-    const rows = shown.map(function (group) {
-      // The link carries the list AS IT IS BEING VIEWED, which is what lets the
-      // trail on the other side come back to this page of this filter rather
-      // than to the top of everything. See listViewOf().
-      const href = '/admin/groups' + queryWith(listView, { group: group.dn });
-      return '<tr><td><a href="' + self.esc(href) + '">' +
-             self.esc(self.groupLabel(group)) +
-        '</a></td><td ' +
-        'class="who"><code>' + self.esc(group.dn) + '</code></td>' +
-        '<td>' + self.groupRuleCell(group.rule) + '</td>' +
-        '<td class="num">' + group.memberCount + '</td>' +
-        '<td class="num">' + (group.presentCount
-          ? '<span class="state-valid">' + group.presentCount + '</span>'
-          : '<span class="state-none">0</span>') + '</td>' +
-        '<td class="num">' + (group.danglingCount
-          ? '<span class="state-revoked" title="Membership values naming an ' +
-            'entry this directory does not hold. Deleting a user does not ' +
-            'remove it from the groups that list it — referential integrity ' +
-            'is a directory feature and not a protocol rule, and this ' +
-            'directory deliberately does not have it.">' + group.danglingCount +
-            '</span>'
-          : '<span class="state-none">0</span>') + '</td>' +
-        '<td class="num">' + (group.claimedCount
-          ? '<span class="state-expired" title="Entries whose own memberOf ' +
-            'names this group and which this group does not list back. ' +
-            'Nothing here maintains memberOf, so a client that writes it ' +
-            'creates exactly this disagreement.">' + group.claimedCount +
-            '</span>'
-          : '<span class="state-none">0</span>') + '</td>' +
-        '<td class="num">' + group.attributeCount + '</td>' +
-        '<td>' + self.esc(group.origin) + '</td>' +
-        '<td><code>' + self.esc(group.modifiedAt) + '</code></td></tr>';
-    }).join('');
-
-
+    const json = adminViews.groupsListJson(req).json;
+    // Drawn by `web_groups.ts` (#446).
     const inner = this.messagesOf(req) +
-      this.directoryListenerWarning(info, GROUPS_SUBJECT) +
-      '<div class="tiles">' +
-      this.tile(info.groupCount, 'Groups') +
-      this.tile(totalMembers, 'Membership values') +
-      this.tile(totalDangling, 'Dangling') +
-      this.tile(info.entryCount, 'Entries in the directory') +
-      '</div><form method="get" action="/admin/groups"><div ' +
-      'class="formrow"><label for="q">Group</label><input type="text" id="q" ' +
-      'name="q" value="' + this.esc(wantedText) +
-      '" ' +
-      'size="28" placeholder="part of a cn or a DN"><label for="per">Per ' +
-      'page</label><select id="per" ' +
-      'name="per">' + this.perPageOptions(paging.perPage) +
-      '</select><button ' +
-      'type="submit">Filter</button>' +
-      (wantedText ? ' <a href="/admin/groups">clear</a>' : '') +
-      '</div></form>' +
-      nav.head +
-      '<table><tr><th>Group</th><th>DN</th><th>Counted because</th><th ' +
-      'class="num">Members</th><th class="num">Resolve</th><th ' +
-      'class="num">Dangling</th><th class="num">Claimed</th><th ' +
-      'class="num">Attributes</th><th>Came from</th><th>Last ' +
-      'modified</th></tr>' +
-      (rows || '<tr><td colspan="10">No group matches. ' +
-               (wantedText ? 'The filter above may be hiding some.' : 'This ' +
-                'directory holds none — the two it seeds can be deleted ' +
-                'through the protocol like any other entry.') +
-               '</td></tr>') + '</table>' +
-      nav.foot +
-      this.note('A group is an entry that sits under <code>' +
-                this.esc(info.groupsDn) +
-      '</code>, or that carries one of the group object classes ' +
-      '(<code>groupOfNames</code>, <code>groupOfUniqueNames</code>, ' +
-      '<code>posixGroup</code>, <code>groupOfURLs</code>) wherever it sits ' +
-      '&mdash; either rule is enough, and the column above says which one ' +
-      'caught each. Both are applied because this directory is ' +
-      '<strong>schemaless</strong>: nothing stops a client adding a ' +
-      '<code>groupOfNames</code> under <code>' + this.esc(info.usersDn) +
-      '</code>, or an entry with no <code>objectClass</code> at all under ' +
-      'the groups container, and a page that applied only one rule would ' +
-      'answer for one of those and quietly lose the other.') +
-      this.note('<strong>Members</strong> counts the values of ' +
-      '<code>member</code>, <code>uniqueMember</code> and ' +
-      '<code>memberUid</code> together; <strong>Resolve</strong> is how many ' +
-      'of them name an entry this directory actually holds and ' +
-      '<strong>Dangling</strong> is the rest. The two are shown apart ' +
-      'because a group whose seven members resolve to five is this directory ' +
-      'doing exactly what it says it does &mdash; deleting a user leaves its ' +
-      'DN in every group that listed it &mdash; and one combined number ' +
-      'would report that as seven members with nothing wrong. ' +
-      '<strong>Claimed</strong> is the disagreement in the other direction: ' +
-      'entries whose own <code>memberOf</code> names the group while the ' +
-      'group does not list them back.') +
-      // THE GROUP CLAIM'S FOUR SETTINGS ARE HERE, and this is the one placement
-      // in SETTING_HOMES that is a judgement rather than an obvious fact. They
-      // decide what an OAuth2/OIDC token and a SAML assertion carry, so they
-      // could be argued onto either protocol's page; they are here because the
-      // question they answer — "why is this group not in my token" — occurs to
-      // somebody while they are looking at the membership table above, and
-      // because what the claim NAMES is a directory group, which is what this
-      // page is about.
-      // ---------------------------------------------------------------------
-      // THE ONE CONTROL ON THIS LIST, AND IT ARRIVED ON 2026-09-06 (rule 7's
-      // mirror is POST /admin-api/groups/create). Below the table rather than
-      // above it, because the question this page is usually open to answer is
-      // "what is in this directory" and a create form at the top would answer a
-      // different one first.
-      //
-      // A REAL BUTTON AND NO SCRIPT, like every other form on this console:
-      // `script-src 'none'` is the service-wide policy and this page is not one
-      // of the seven exceptions.
-      // ---------------------------------------------------------------------
-      (groupWriter
-        ? '<h2>Create a group</h2>' +
-          '<form method="post" action="/admin/groups">' +
-          '<input type="hidden" name="action" value="create">' +
-          '<input type="hidden" name="back" value="' +
-          this.esc(queryWith(listView, {})) + '">' +
-          '<div class="formrow">' +
-          '<label for="newgroup">cn</label>' +
-          '<input type="text" id="newgroup" name="group" size="28" required ' +
-          'placeholder="developers">' +
-          '<label for="newnote">Description</label>' +
-          '<input type="text" id="newnote" name="note" size="40" ' +
-          'placeholder="what this group is for">' +
-          '</div><div class="formrow">' +
-          '<label for="newmembers">Members</label>' +
-          '<textarea id="newmembers" name="members" rows="3" cols="60" ' +
-          'placeholder="alice&#10;bob&#10;cn=another-group,' +
-          this.esc(info.groupsDn) + '"></textarea>' +
-          '<button type="submit">Create</button>' +
-          '</div></form>' +
-          this.note('It goes to <code>cn=&lt;what you typed&gt;,' +
-          this.esc(info.groupsDn) + '</code> as a <code>groupOfNames</code>, ' +
-          'so it is counted here by <em>both</em> rules. <strong>Members are ' +
-          'one per line or comma-separated</strong>, and each may be a user ' +
-          'name or any DN — a group can hold another group, and no user name ' +
-          'names one. A name with no entry behind it is written as a ' +
-          '<strong>dangling</strong> member rather than refused: this ' +
-          'directory does no referential integrity in either direction, and ' +
-          'refusing here would make the state the Dangling column reports ' +
-          'impossible to produce from this page. Leaving the box empty ' +
-          'creates a group with no members, which RFC 4519 says a real ' +
-          'directory would refuse and this schemaless one does not.')
-        : this.note('<strong>No group can be created from here.</strong> The ' +
-          'list above is read through one slot and the writes through ' +
-          'another, and this process has only the first — a build without ' +
-          '<code>ldap_server.js</code>\'s group writer. An ' +
-          '<code>ldapadd</code> and <code>POST /scim/v2/Groups</code> are ' +
-          'unaffected.')) +
-      this.configFormsFor('/admin/groups') +
-      GROUPS_CAVEAT + GROUPS_LINKS;
-
-    log.debug("Leaving AdminConsole.groupsListPage(). " + shown.length + " " +
-      "row(s) drawn of " +
-              info.groupCount + " group(s).");
+      GroupsPage.body(this.renderContext(req),
+        JSON.parse(JSON.stringify(json)));
+    log.debug("Leaving AdminConsole.groupsListPage(). " + json.shown + " " +
+      "row(s) drawn of " + json.groupCount + " group(s).");
     return {
       inner: inner,
-      json: view.json
+      json: json
     };
   }
 
@@ -16229,7 +16034,7 @@ class AdminConsole {
       log.debug("Leaving AdminConsole.groupDetailPage(). Not a group.");
       return {
         inner: this.messagesOf(req) +
-               this.directoryListenerWarning(info, GROUP_SUBJECT) +
+               this.directoryListenerWarning(info, GroupsPage.GROUP_SUBJECT) +
           this.note(because) + back,
         json: view.json
       };
@@ -16303,7 +16108,7 @@ class AdminConsole {
       : '';
 
     const inner = this.messagesOf(req) +
-      this.directoryListenerWarning(info, GROUP_SUBJECT) +
+      this.directoryListenerWarning(info, GroupsPage.GROUP_SUBJECT) +
       '<h2>' + this.esc(this.groupLabel(group)) +
       '</h2><table><tr><th>DN</th><th>Counted ' +
       'as a group because</th><th>Came from</th><th>Created</th><th>Last ' +
@@ -16415,7 +16220,10 @@ class AdminConsole {
       '<strong>schemaless</strong>: no <code>objectClass</code> is enforced ' +
       'and no value is checked against a syntax, so an attribute a real ' +
       'directory would refuse is here because something wrote it.') +
-      GROUPS_CAVEAT + back + GROUPS_LINKS;
+      GroupsPage.groupsCaveat({
+        read: config.value('admin.readGroup'),
+        write: config.value('admin.writeGroup') }) +
+      back + GroupsPage.groupsLinks();
 
     log.debug("Leaving AdminConsole.groupDetailPage(). " +
               memberPage.shown.length + " of " +
@@ -38200,18 +38008,7 @@ const CHOOSER_HITS = adminViews.CHOOSER_HITS;
 // and one group in full.
 // ---------------------------------------------------------------------------
 
-// What a section is showing, in the four grammatical forms the listener warning
-// needs. A warning about sockets has to name the thing the reader came for —
-// the whole point of it is the gap between "this service holds it" and "an LDAP
-// client can fetch it" — and that sentence needs a noun that agrees with
-// itself.
-const ENTRY_SUBJECT = { upper: 'The entry below', lower: 'the entry below',
-                        verb: 'is', pronoun: 'it' };
-const GROUPS_SUBJECT = { upper: 'The groups below', lower: 'the groups below',
-                         verb: 'are', pronoun: 'they' };
-const GROUP_SUBJECT = { upper: 'The group below', lower: 'the group below',
-                        verb: 'is', pronoun: 'it' };
-
+// The subjects a listener warning names are `web_groups.ts`'s (#446).
 let directoryReader = null;
 
 // The groups pages read through their own slot, installed the same way and by
@@ -38452,89 +38249,8 @@ const PERSON_KEY_SOURCE_SENTENCES = {
             'provenance attribute.'
 };
 
-// Why this entry counted as a group, in words. The rule is ldap_server.js's;
-// this is only its three values spelled out, and it is on the page because
-// "developers is a group" is uninteresting next to "this entry is a group
-// because somebody put it under ou=groups and it carries no group objectClass
-// at all".
-const GROUP_RULES = {
-  both: { label: 'placement + objectClass',
-          title: 'It is under ou=groups AND carries a group objectClass. ' +
-                 'This is what a group written the conventional way looks ' +
-                 'like.' },
-  placement: { label: 'placement only',
-               title: 'It is under ou=groups but carries no group ' +
-                      'objectClass. This directory is schemaless, so nothing ' +
-                      'refused the add — it is listed here because of where ' +
-                      'it sits.' },
-  objectClass: { label: 'objectClass only',
-                 title: 'It carries a group objectClass but sits outside ' +
-                        'ou=groups. Nothing here requires a group to live ' +
-                        'under the groups container.' }
-};
-
-// What this directory's groups are and are not, said on both pages. Repeated
-// rather than shown once on the list, for the reason the open-console banner is
-// repeated: the page somebody arrives at directly is exactly the one that needs
-// it. It used to say the two halves as one sentence — nothing reads a group AND
-// no token carries one — and the second half stopped being true when the groups
-// claim was added. They are split now, in that order, because the one a reader
-// most needs is still the first: CARRYING a fact and ACTING on it are different
-// claims, and this is the same line this service already draws between an
-// identity being recorded and an identity being authenticated.
-let GROUPS_CAVEAT: string;
-WIRE_STEPS.push(function (instance: AdminConsole): void {
-  GROUPS_CAVEAT =
-    instance.note('<strong>A group here grants nothing, with exactly ' +
-    'two exceptions and they are named below.</strong> No <em>endpoint</em> ' +
-    'in this service checks a group, and nothing in any protocol decides ' +
-    'anything on one. Adding somebody to <code>cn=directory-admins</code> ' +
-    'changes what a directory client sees, and what a token <em>says</em>, ' +
-    'and changes nothing at all about what that token can DO &mdash; on a ' +
-    'service that ' +
-    'authenticates nobody, it could hardly be otherwise.') +
-    // THE EXCEPTION, said HERE and not only on the page that owns it. A reader
-    // meeting this caveat on the groups page and then finding cn=admin-write in
-    // the table above it would be entitled to conclude that one of the two was
-    // lying. The general claim is still the one that matters — it is true of
-    // every group but these two, and true of these two everywhere except one
-    // console — so it is qualified rather than dropped.
-    instance.note('<strong>The two exceptions are <code>' +
-    instance.esc(config.value('admin.readGroup')) + '</code> and <code>' +
-    instance.esc(config.value('admin.writeGroup')) + '</code>, which ' +
-    'decide who may use THIS CONSOLE</strong> &mdash; see <a ' +
-    'href="/admin/rbac">Admin roles</a>, where they are granted and taken ' +
-    'away. They are ordinary groups and appear in the table above like any ' +
-    'other, deliberately: the alternative was a membership store of the ' +
-    'console\'s own that an <code>ldapmodify</code> could not see. Even ' +
-    'those two grant nothing outside <code>/admin</code> &mdash; no token, ' +
-    'assertion, ticket, PAC or credential is changed by being in one, and ' +
-    'every protocol endpoint answers a member exactly as it answers anybody ' +
-    'else.') +
-    instance.note('<strong>A token can now carry one.</strong> With ' +
-    '<code>groups.claim</code> on &mdash; it is on by default &mdash; every ' +
-    'OAuth 2.0 access token, OIDC ID Token, SAML 2.0 assertion and SAML 1.1 ' +
-    'assertion this service issues carries a claim naming the groups its ' +
-    'subject is in, read from these entries at the moment it is minted. ' +
-    'Somebody in no group gets no claim at all rather than an empty list. ' +
-    'What it is called, whether each value is a <code>cn</code> or a whole ' +
-    'DN, and whether a person\'s own <code>memberOf</code> counts are the ' +
-    'four settings at the foot of this page; <a href="/admin/claims">the ' +
-    'claims page</a> shows what it would say about one person. No Kerberos ' +
-    'PAC and no ' +
-    'WS-Federation-specific token carries a group either way.');
-});
-
-let GROUPS_LINKS: string;
-WIRE_STEPS.push(function (instance: AdminConsole): void {
-  GROUPS_LINKS =
-    instance.note('<a href="/admin/ldap/service">What this directory ' +
-    'is</a> &middot; <a href="/admin/ldap/directory">every entry in it</a> ' +
-    '&middot; <a href="/admin/ldap/directory?format=json">the same as ' +
-    'JSON</a> &middot; <a href="/admin/users">the people who have ' +
-    'authenticated ' +
-    'here</a>.');
-});
+// The rule cell, the caveat and the links both groups pages carry are
+// `web_groups.ts`'s (#446).
 
 // ---------------------------------------------------------------------------
 // GET /admin/applications

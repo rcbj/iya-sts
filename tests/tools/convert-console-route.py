@@ -119,8 +119,16 @@ def dedent(text, n):
 
 
 # --- the route --------------------------------------------------------------
-m = re.search(r"app\.get\((['\"])%s\1, function \(req, res\) \{\n" %
-              re.escape(route), src)
+# `method:NAME` names a console method `NAME(req)` that builds a page's
+# `{ inner, json }` rather than a route: its `const json = ...;` is the view
+# line and its last `return {` ends what is drawn, `inner` being the markup.
+METHOD = route.startswith('method:')
+if METHOD:
+    m = re.search(r"^  (?:private )?%s\(req\)(?:: [^{]*)? \{\n" %
+                  re.escape(route[len('method:'):]), src, re.M)
+else:
+    m = re.search(r"app\.get\((['\"])%s\1, function \(req, res\) \{\n" %
+                  re.escape(route), src)
 assert m, ('no such route', route)
 body_start = m.end()
 body_end = scan_to_close(src, body_start, '{', '}') - 1
@@ -163,13 +171,20 @@ def split_args(args_text):
 # THE LAST `respond()` IS THE PAGE'S. An earlier one is an early answer — a
 # branch that draws something else and returns — and becomes `return
 # <html>;` in the renderer, provided it answers the same view, title and tab.
-assert body.count('self.respond(') >= 1, 'no respond() call'
-r = body.rindex('self.respond(')
-r_line = body.rindex('\n', 0, r) + 1
-indent = r - r_line
-r_end = scan_to_close(body, r + len('self.respond('), '(', ')')
-assert body[r_end] == ';'
-args = split_args(body[r + len('self.respond('):r_end - 1])
+if METHOD:
+    r = body.rindex('    return {')
+    r_line = r
+    indent = 4
+    r_end = None
+    args = ['req', 'res', 'json', "''", "''", 'inner']
+else:
+    assert body.count('self.respond(') >= 1, 'no respond() call'
+    r = body.rindex('self.respond(')
+    r_line = body.rindex('\n', 0, r) + 1
+    indent = r - r_line
+    r_end = scan_to_close(body, r + len('self.respond('), '(', ')')
+    assert body[r_end] == ';'
+    args = split_args(body[r + len('self.respond('):r_end - 1])
 assert args[0] == 'req' and args[1] == 'res', args[:2]
 view_name = args[2]
 assert re.match(r'^[A-Za-z_]\w*$', view_name), view_name
@@ -196,8 +211,8 @@ while 'self.respond(' in code:
 # draws its answer. Wherever the moved code puts it in its markup (an early
 # answer too), it is taken out and put in front of the renderer's call.
 messages = False
-if re.search(r'self\.messagesOf\(req\)\s*\+\s*', code):
-    code = re.sub(r'self\.messagesOf\(req\)\s*\+\s*', '', code)
+if re.search(r'(?:self|this)\.messagesOf\(req\)\s*\+\s*', code):
+    code = re.sub(r'(?:self|this)\.messagesOf\(req\)\s*\+\s*', '', code)
     messages = True
 elif re.match(r'^self\.messagesOf\(req\)\s*\+\s*', html_expr):
     html_expr = re.sub(r'^self\.messagesOf\(req\)\s*\+\s*', '', html_expr)
@@ -476,7 +491,15 @@ call = (head + ' ' * (indent + 2) +
         (page_class, method) + ' ' * (indent + 4) +
         'JSON.parse(JSON.stringify(%s)))%s);' %
         (view_name, (', ' + up) if up else ''))
-new_body = body[:vm.end()] + call + body[r_end + 1:]
+if METHOD:
+    new_body = (body[:vm.end()] + '    // Drawn by `%s` (#446).\n' %
+                os.path.basename(web_file) + '    const inner = ' +
+                ('this.messagesOf(req) +\n      ' if messages else '') +
+                '%s.%s(this.renderContext(req),\n' % (page_class, method) +
+                '        JSON.parse(JSON.stringify(json)));\n' +
+                body[r_line:])
+else:
+    new_body = body[:vm.end()] + call + body[r_end + 1:]
 src = src[:body_start] + new_body + src[body_end:]
 lines = src.split('\n')
 for name in reversed(helpers):

@@ -6707,7 +6707,6 @@ class AdminViews {
   groupsListJson(req) {
     const { log } = this.deps;
     log.debug("Entering AdminViews.groupsListJson().");
-    log.debug("Entering groupsListPage().");
     const info = groupReader('');
     const wantedText = String(req.query.q || '').trim();
     const needle = wantedText.toLowerCase();
@@ -6731,6 +6730,7 @@ class AdminViews {
     const totalDangling = info.groups.reduce(function (n, g) {
       return n + g.danglingCount;
     }, 0);
+    const pagingJson = this.pagingJson(paging);
     log.debug("Leaving AdminViews.groupsListJson().");
     return {
       info: info, wantedText: wantedText, needle: needle, filtered: filtered,
@@ -6754,6 +6754,12 @@ class AdminViews {
           port: info.port, listening: info.listening, listenError:
                                                         info.listenError,
           ldapsPort: info.ldapsPort, ldapsListening: info.ldapsListening,
+          // WHAT THE PAGE DRAWS AND THIS ANSWER DID NOT CARRY (#446): the
+          // paging control's own object, the directory's size for the fourth
+          // tile, and the two console groups the caveat names.
+          paging: pagingJson, entryCount: info.entryCount,
+          adminGroups: { read: config.value('admin.readGroup'),
+                         write: config.value('admin.writeGroup') },
           groups: shown
       };
       }())
