@@ -50,8 +50,37 @@ function errorCodes() {
   };
 }
 
+// The settings table (`common/config.js`'s SETTINGS) and the keys it
+// refuses by name because they were replaced (REPLACED_SETTINGS). A row is
+// data except for the four `derived` defaults, which are FUNCTIONS of other
+// settings: those export `dflt: null` and `derivedDefault: true`, and
+// `sts-core::settings` computes them in Rust (a function cannot be data).
+// Loading config.js needs its npm dependencies, so this export runs where
+// they are installed — the tests image, or a checkout after `npm install`.
+function settings() {
+  const config = require(path.join(ROOT, 'common', 'config.js'));
+  return {
+    settings: config.SETTINGS.map(function (row) {
+      const out = {};
+      Object.keys(row).forEach(function (key) {
+        if (typeof row[key] === 'function') {
+          out[key] = null;
+          if (key === 'dflt') {
+            out.derivedDefault = true;
+          }
+          return;
+        }
+        out[key] = row[key];
+      });
+      return out;
+    }),
+    replaced: config.REPLACED_SETTINGS
+  };
+}
+
 const EXPORTS = [
-  { file: 'error_codes.json', build: errorCodes }
+  { file: 'error_codes.json', build: errorCodes },
+  { file: 'settings.json', build: settings }
 ];
 
 // The text each export should hold.
