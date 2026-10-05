@@ -1737,6 +1737,49 @@ class WebKit {
       control + '</div>';
   }
 
+  // A FIELD GRID: the typed rows under their groups' headings (#446). It was
+  // the console's `fieldGrid()`, which still types the rows and calls this.
+  /**
+   * Draws a field grid: each group's cells under its heading.
+   *
+   * @param typed - the rows, typed for their controls
+   * @param groups - the field groups, in drawing order (`id`, `label`)
+   * @param values - the grid's values by attribute
+   * @param options - `fieldGridCell()`'s options, `protocols` among them
+   * @returns the grid as HTML
+   */
+  static fieldGridOf(typed, groups, values, options) {
+    return groups.map(function (group) {
+      const mine = typed.filter(function (row) {
+        return row.group === group.id;
+      });
+      if (!mine.length) {
+        return '';
+      }
+      const cells = mine.map(function (row) {
+        return WebKit.fieldGridCell(row, values, options);
+      });
+      // THE GROUP CARRIES THE UNION OF ITS CELLS' FAMILIES, or none when any
+      // cell is unconditional, so a
+      // group whose every cell is hidden leaves no bare heading behind.
+      const always = cells.some(function (cell) {
+        return cell.indexOf('<div class="fg-cell">') === 0;
+      });
+      const families = [];
+      mine.forEach(function (row) {
+        row.families.forEach(function (one) {
+          if (families.indexOf(one) < 0) {
+            families.push(one);
+          }
+        });
+      });
+      return '<div class="fg-group' + (always ? '' : ' ' +
+        WebKit.esc(WebKit.familyClasses(families))) + '"><h3>' +
+        WebKit.esc(group.label) + '</h3><div class="fg">' + cells.join('') +
+        '</div></div>';
+    }).join('');
+  }
+
   /**
    * Reads the grid's values out of a posted form, keeping every list box —
    * an empty one included — in box order, and applies a "+" or a delete.
@@ -1805,6 +1848,17 @@ class WebKit {
       'name="deliver" value="mail" checked> mail ' + WebKit.esc(what) +
       ' to the address on their entry, and do not show it to me</label>' +
       '</div>';
+  }
+
+  /**
+   * Wraps the messages a pressed button came back with in the strip that
+   * stays at the top of the window, so they are seen wherever the page lands.
+   *
+   * @param html - the messages as HTML
+   * @returns the strip, or '' for no messages
+   */
+  static flash(html) {
+    return html ? '<div class="flash" role="status">' + html + '</div>' : '';
   }
 
   // A query's VIEW parameters — every one but the three that are not part

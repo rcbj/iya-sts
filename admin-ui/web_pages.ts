@@ -144,6 +144,12 @@ const PAGES: WebPage[] = [
     render: function (view: Json, ctx?: Json): string {
       return ApplicationsPage.body(ctx || WebKit.context(), view);
     } },
+  { path: '/admin/applications/new', title: 'New application',
+    operation: '/admin-api/applications/new',
+    render: function (view: Json, ctx?: Json): string {
+      return ApplicationsPage.newApplicationBody(ctx || WebKit.context(),
+                                                 view);
+    } },
   { path: '/admin/attribute-sources', title: 'Attribute sources',
     operation: '/admin-api/attribute-sources',
     render: AttributeSourcesPage.render },

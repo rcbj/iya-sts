@@ -6565,6 +6565,7 @@ class AdminConsole {
                        '</div>' : ''));
   }
 
+  // The kit's (#446), where its reasoning went with it.
   /**
    * Wraps the messages a pressed button came back with in the strip that
    * stays at the top of the window, so they are seen wherever the page lands.
@@ -6576,7 +6577,7 @@ class AdminConsole {
     const { log } = this.deps;
     log.debug("Entering AdminConsole.flash().");
     log.debug("Leaving AdminConsole.flash().");
-    return html ? '<div class="flash" role="status">' + html + '</div>' : '';
+    return WebKit.flash(html);
   }
 
   /**
@@ -18679,37 +18680,12 @@ class AdminConsole {
    * @returns the row with `type`, and `choices`, `described` where they apply
    */
   gridFieldTyped(row) {
-    const { log, configSettingFor, config } = this.deps;
+    const { log, adminViews } = this.deps;
     log.debug("Entering AdminConsole.gridFieldTyped().");
-    if (!row.overrides) {
-      // A closed set of its own (applications.attributeChoices()): one value
-      // is chosen from them, a list is ticked from them.
-      if (row.choices && row.choices.length && row.type === 'string') {
-        log.debug("Leaving AdminConsole.gridFieldTyped(). A closed set.");
-        return Object.assign({}, row, { type: 'enum' });
-      }
-      log.debug("Leaving AdminConsole.gridFieldTyped(). Not an override.");
-      return row;
-    }
-    const setting = configSettingFor(row.overrides);
-    if (!setting) {
-      log.debug("Leaving AdminConsole.gridFieldTyped(). Unknown setting.");
-      return row;
-    }
-    const described = config.describe(setting);
-    const typed = Object.assign({}, row, { described: described });
-    if (described.type === 'bool') {
-      typed.type = 'boolean';
-    } else if (described.type === 'enum') {
-      typed.type = 'enum';
-      typed.choices = (described.enumValues || []).filter(function (one) {
-        return one !== '';
-      });
-    } else if (described.type === 'int') {
-      typed.type = 'int';
-    }
+    // `admin_views.ts`'s `typedField()` since #446: the new-application
+    // form's answer carries its fields typed, by the same function.
     log.debug("Leaving AdminConsole.gridFieldTyped().");
-    return typed;
+    return adminViews.typedField(row);
   }
 
   // The kit's (#446), where its reasoning went with it.
@@ -18762,79 +18738,14 @@ class AdminConsole {
     log.debug("Entering AdminConsole.fieldGrid(). " + rows.length +
               " field(s).");
     const typed = rows.map(function (row) { return self.gridFieldTyped(row); });
-    const html = applications.FIELD_GROUPS.map(function (group) {
-      const mine = typed.filter(function (row) {
-        return row.group === group.id;
-      });
-      if (!mine.length) {
-        return '';
-      }
-      const cells = mine.map(function (row) {
-        return self.fieldGridCell(row, values, options);
-      });
-      // THE GROUP CARRIES THE UNION OF ITS CELLS' FAMILIES, or none when any
-      // cell is unconditional, so a
-      // group whose every cell is hidden leaves no bare heading behind.
-      const always = cells.some(function (cell) {
-        return cell.indexOf('<div class="fg-cell">') === 0;
-      });
-      const families = [];
-      mine.forEach(function (row) {
-        row.families.forEach(function (one) {
-          if (families.indexOf(one) < 0) {
-            families.push(one);
-          }
-        });
-      });
-      return '<div class="fg-group' + (always ? '' : ' ' +
-        self.esc(self.familyClasses(families))) + '"><h3>' +
-        self.esc(group.label) + '</h3><div class="fg">' + cells.join('') +
-        '</div></div>';
-    }).join('');
     log.debug("Leaving AdminConsole.fieldGrid().");
-    return html;
+    // Drawn by the kit's `fieldGridOf()` (#446), told the groups and the
+    // protocol families a cell's labels are named from.
+    return WebKit.fieldGridOf(typed, applications.FIELD_GROUPS, values,
+      Object.assign({ protocols: applications.PROTOCOLS }, options));
   }
 
-  /**
-   * The fields `/admin/applications/new` draws in a view: `simple` is the
-   * set the page has always offered (the declarations, the per-application
-   * setting overrides and where SAML encryption gets its key), `advanced`
-   * every field.
-   *
-   * @param view - `simple` or `advanced`
-   * @param omit - attributes another part of the page draws
-   * @returns the rows
-   */
-  newApplicationFields(view, omit) {
-    const { log, applications } = this.deps;
-    log.debug("Entering AdminConsole.newApplicationFields(). view=" + view);
-    const skip = omit || [];
-    const keySource = SAML_KEY_SOURCE_FIELDS.map(function (one) {
-      return one.attribute;
-    });
-    const rows = applications.applicationFields().filter(function (row) {
-      if (skip.indexOf(row.attribute) >= 0) {
-        return false;
-      }
-      return view === 'advanced' || row.declaration || !!row.overrides ||
-        keySource.indexOf(row.attribute) >= 0;
-    });
-    log.debug("Leaving AdminConsole.newApplicationFields(). " + rows.length +
-              " field(s).");
-    return rows;
-  }
-
-  // One protocol family as a row of the checkbox table. `kind` is what the
-  // registry WOULD record this application as when a protocol of that family
-  // finally recognises the identifier — shown rather than written, because a
-  // declaration is not a sighting (see createApplication()) — and a family with
-  // no kind at all is marked, because the alternative is a reader wondering for
-  // the third time why the LDAP row never fills that column in. `checked` is
-  // the one argument this row did not have until the RFC 9728 import: a
-  // document describes an OAuth protected resource, so OAuth 2.0 comes ticked,
-  // and a refused create redraws the boxes the reader had ticked. It is a
-  // separate argument and not `Array.prototype.map`'s index, which a bare
-  // `.map(protocolChoiceRow)` would have passed as a truthy number.
+  // Drawn by `web_applications.ts` (#446).
   /**
    * Draws one protocol family as a checkbox row of the new-application
    * form, with the kind it would be recorded as.
@@ -18847,27 +18758,8 @@ class AdminConsole {
   protocolChoiceRow(row, checked) {
     const { log } = this.deps;
     log.debug("Entering AdminConsole.protocolChoiceRow().");
-    const kindCell = row.kind
-      ? '<code>' + this.esc(row.kind) + '</code>'
-      : '<span class="state-none">none &mdash; this service records no ' +
-        'application identifier in that family</span>';
     log.debug("Leaving AdminConsole.protocolChoiceRow().");
-    // The family's own sentence appears TWICE and neither is the only copy: as
-    // a tooltip on the checkbox's label, where somebody deciding whether to
-    // tick it is already pointing, and folded in the last column, where it can
-    // be read from a keyboard and on a touch screen. See tip() for why nothing
-    // is ever said only in a title attribute.
-    return '<tr><td><input type="checkbox" id="proto-' + this.esc(row.id) +
-           '" ' +
-      'name="protocol" value="' + this.esc(row.id) + '"' +
-      (checked === true ? ' checked' : '') + this.tip(row.what) + '></td>' +
-      '<td><label for="proto-' + this.esc(row.id) + '"' + this.tip(row.what) +
-      '>' +
-      this.esc(row.label) + '</label></td>' +
-      '<td><code>' + this.esc((row.families || [row.id]).join(', ')) +
-      '</code></td>' +
-      '<td>' + kindCell + '</td>' +
-      '<td class="why">' + this.note(this.esc(row.what)) + '</td></tr>';
+    return ApplicationsPage.protocolChoiceRow(row, checked);
   }
 
   // The kit's (#446), where its reasoning went with it.
@@ -18886,75 +18778,24 @@ class AdminConsole {
   }
 
 
-  // The form that gives the document. The checkbox shows the three sources; it
-  // has no name, so it is never posted, and it is ticked whenever a document is
-  // on the page or was just refused, so the reader is not left hunting for the
-  // form their error is about.
+  // Drawn by `web_applications.ts` (#446).
   /**
    * Draws the form that loads OAuth 2.0 Protected Resource Metadata
    * (RFC 9728) to configure the new application from.
    *
    * @param state - the page state, for the last input and any load error
+   * @param facts - the answer's `resourceMetadataImport`: the well-known
+   *   path and what this mode accepts and dials
    * @returns the section as HTML
    */
-  resourceMetadataLoadSection(state) {
-    const { log, resourceMetadata, mode } = this.deps;
+  resourceMetadataLoadSection(state, facts) {
+    const { log } = this.deps;
     log.debug("Entering AdminConsole.resourceMetadataLoadSection().");
-    const given = (state && state.loadInput) || {};
-    const open = !!(state && (state.loaded || state.loadError));
     log.debug("Leaving AdminConsole.resourceMetadataLoadSection().");
-    return '<h2>Configure it from OAuth 2.0 Protected Resource Metadata ' +
-      '(RFC 9728)</h2>' +
-      this.note('A protected resource publishes a JSON document describing ' +
-      'itself &mdash; at <code>' + this.esc(resourceMetadata.WELL_KNOWN) +
-      '</code> under its own host. Give this page that document and it fills ' +
-      'in the form below: the <code>resource</code> becomes the default ' +
-      'NAME, the permission base URI (<code>oauthPermissionBaseUri</code>) ' +
-      'and the AUDIENCE of tokens issued for it ' +
-      '(<code>oauthAudience</code>); <code>scopes_supported</code> becomes ' +
-      'the permissions it exposes; a client_id is generated at random; and ' +
-      'OAuth 2.0 is ticked. Nothing is created until you press Create, and ' +
-      'every value can be changed first.') +
-      '<form method="post" action="/admin/applications/new" ' +
-      'enctype="multipart/form-data" class="prm-load">' +
-      '<input type="hidden" name="action" value="load-resource-metadata">' +
-      '<input type="checkbox" id="prm-use" class="prm-use"' +
-      (open ? ' checked' : '') + '> <label for="prm-use"><strong>Use a ' +
-      'protected resource metadata document</strong></label>' +
-      '<div class="prm-source">' +
-      this.note('Give it ONE way. A document fetched from a URL is held to ' +
-      'RFC 9728 section 3.3 &mdash; its <code>resource</code> must be the ' +
-      'identifier the well-known URL was built from &mdash; which ' +
-      (mode.acceptsNonconformingResourceMetadata()
-        ? 'this development-mode service reports and does not refuse'
-        : 'this product-mode service refuses') + '. The fetch follows the ' +
-      'federation outbound policy: no redirects, a size cap, a timeout, ' +
-      'https with the certificate verified (plain http and a skipped ' +
-      'check only in development mode)' +
-      (mode.dialsInternalAddresses()
-        ? '.'
-        : ', and never to a loopback, private or link-local address.')) +
-      '<div class="formrow"><label for="prm-document">Paste it</label>' +
-      '<textarea id="prm-document" name="document" rows="8" cols="60" ' +
-      'placeholder="{&quot;resource&quot;: ' +
-      '&quot;https://api.example.com&quot;, ' +
-      '&quot;scopes_supported&quot;: [&quot;read&quot;]}">' +
-      this.esc(String(given.document || '')) + '</textarea></div>' +
-      '<div class="formrow"><label for="prm-file">or upload it</label>' +
-      '<input type="file" id="prm-file" name="file" ' +
-      'accept="application/json,.json"></div>' +
-      '<div class="formrow"><label for="prm-url">or fetch it from</label>' +
-      '<input type="text" id="prm-url" name="url" size="60" value="' +
-      this.esc(String(given.url || '')) + '" ' +
-        'placeholder="https://api.example.com' +
-      this.esc(resourceMetadata.WELL_KNOWN) + '"></div>' +
-      '<div class="formrow"><button type="submit">Load the document</button>' +
-      '</div></div></form>';
+    return ApplicationsPage.resourceMetadataLoadSection(state, facts);
   }
 
-  // What the third tab's boxes hold: the plan's defaults, or — on a redraw
-  // after a refused create — what the reader had typed. A key present in the
-  // posted body is what they typed, including an emptied box.
+  // Drawn by `web_applications.ts` (#446).
   /**
    * Returns what the imported metadata's editable fields hold: the plan's
    * defaults, or what was typed when a refused create is redrawn.
@@ -18966,40 +18807,11 @@ class AdminConsole {
   resourceMetadataValues(loaded, draft) {
     const { log } = this.deps;
     log.debug("Entering AdminConsole.resourceMetadataValues().");
-    const plan = loaded.plan;
-    const posted = draft || null;
-    const pick = function (key, fallback) {
-      log.debug("Entering pick().");
-      log.debug("Leaving pick().");
-      return posted && Object.prototype.hasOwnProperty.call(posted, key)
-        ? String(posted[key]) : fallback;
-    };
-    const members = {};
-    loaded.members.forEach(function (row) {
-      if (!row.known || row.type === 'jwt') {
-        return;
-      }
-      const fallback = Array.isArray(row.value) ? row.value.join('\n')
-                                                : String(row.value);
-      members[row.member] = pick('metadata.' + row.member, fallback);
-    });
     log.debug("Leaving AdminConsole.resourceMetadataValues().");
-    return {
-      identifier: pick('identifier', plan.identifier),
-      name: pick('name', plan.name),
-      clientId: pick('field.oauthClientId', plan.clientId),
-      baseUri: pick('field.oauthPermissionBaseUri', plan.baseUri),
-      audience: pick('field.oauthAudience', plan.audience),
-      permissions: pick('field.oauthPermission',
-                        plan.permissionLines.join('\n')),
-      detailsTypes: pick('field.oauthAuthorizationDetailsType',
-                         (plan.detailsTypeLines || []).join('\n')),
-      url: pick('field.oauthResourceMetadataUrl', loaded.url),
-      members: members
-    };
+    return ApplicationsPage.resourceMetadataValues(loaded, draft);
   }
 
-  // One JSON value, readable in a table cell.
+  // Drawn by `web_applications.ts` (#446).
   /**
    * Draws one JSON value readably in a table cell.
    *
@@ -19008,23 +18820,12 @@ class AdminConsole {
    */
   resourceMetadataValueCell(value) {
     const { log } = this.deps;
-    const self = this;
     log.debug("Entering AdminConsole.resourceMetadataValueCell().");
     log.debug("Leaving AdminConsole.resourceMetadataValueCell().");
-    if (Array.isArray(value)) {
-      return value.map(function (one) {
-        return '<code>' + self.esc(typeof one === 'string' ? one :
-                                   JSON.stringify(one)) + '</code>';
-      }).join('<br>') || '<span class="state-none">(empty)</span>';
-    }
-    return '<code>' + this.esc(typeof value === 'string' ? value :
-                               JSON.stringify(value)) + '</code>';
+    return ApplicationsPage.resourceMetadataValueCell(value);
   }
 
-  // The banners above the tabs: the authorization-server comparison, section
-  // 3.3, and every warning the reading produced. ABOVE the tabs rather than on
-  // one of them, because a reader on the raw JSON tab must not miss that none
-  // of the authorization servers is this realm's.
+  // Drawn by `web_applications.ts` (#446).
   /**
    * Draws the banners above the metadata tabs: how the authorization servers
    * compare with this realm's, section 3.3, and every reading warning.
@@ -19034,66 +18835,12 @@ class AdminConsole {
    */
   resourceMetadataBanners(loaded) {
     const { log } = this.deps;
-    const self = this;
     log.debug("Entering AdminConsole.resourceMetadataBanners().");
-    const servers = loaded.authorizationServers;
-    let html = '';
-    if (!servers.listed) {
-      html += this.note('<strong>The document names no authorization ' +
-        'server.</strong> <code>authorization_servers</code> is optional, so ' +
-        'there is nothing to compare with this realm\'s.');
-    } else if (servers.allMatched) {
-      html += '<div class="ok"><strong>Every authorization server it names ' +
-        'is one this trust realm publishes</strong> &mdash; ' +
-        servers.rows.map(function (row) {
-          return '<code>' + self.esc(row.issuer) + '</code> is <code>' +
-                 self.esc(row.authorizationServer) + '</code>';
-        }).join(', ') + '.</div>';
-    } else {
-      const unmatched = servers.rows.filter(function (row) {
-        return !row.matched;
-      });
-      // NOT warn(), which folds prose longer than a line behind its opening
-      // sentence: the issuers that did not match ARE this banner, and a fold
-      // would put them where a reader skimming for the colour does not look.
-      html += '<div class="warn"><strong>' + unmatched.length + ' of the ' +
-        servers.listed +
-        ' authorization server(s) this document names ' +
-        (unmatched.length === 1 ? 'is' : 'are') + ' not one this trust realm ' +
-        'publishes:</strong> ' + unmatched.map(function (row) {
-          return '<code>' + self.esc(row.issuer) + '</code>';
-        }).join(', ') + '. The resource expects tokens from ' +
-        (unmatched.length === 1 ? 'an issuer' : 'issuers') + ' this service ' +
-        'is not, at the address this page was reached on. You can still ' +
-        'create the application; a token this realm issues for it will carry ' +
-        'an <code>iss</code> the resource was not told to trust. This realm ' +
-        'publishes ' + servers.realm.map(function (row) {
-          return '<code>' + self.esc(row.issuer) + '</code>';
-        }).join(', ') + '.</div>';
-    }
-    const check = loaded.resourceCheck;
-    if (check.checked && check.matches) {
-      html += '<div class="ok"><strong>RFC 9728 section 3.3:</strong> ' +
-              this.esc(check.why) + '</div>';
-    } else if (!check.checked) {
-      html += this.note('<strong>RFC 9728 section 3.3 was not ' +
-        'checked.</strong> ' +
-                        this.esc(check.why));
-    }
-    if (loaded.warnings.length) {
-      html += '<div class="warn"><strong>' + loaded.warnings.length +
-        ' thing(s) to know before creating it:</strong><ul>' +
-        loaded.warnings.map(function (one) {
-          return '<li>' + self.esc(one) + '</li>';
-        }).join('') + '</ul></div>';
-    }
     log.debug("Leaving AdminConsole.resourceMetadataBanners().");
-    return html;
+    return ApplicationsPage.resourceMetadataBanners(loaded);
   }
 
-  // THE THREE TABS. `tab` picks which one is open: the raw JSON on a fresh
-  // load, and the editable fields when a refused create is redrawn, because
-  // those are what the refusal is about.
+  // Drawn by `web_applications.ts` (#446).
   /**
    * Draws the loaded metadata as three tabs (the raw JSON, its members and
    * the editable fields), without a script.
@@ -19105,218 +18852,25 @@ class AdminConsole {
    */
   resourceMetadataPane(loaded, draft, tab) {
     const { log } = this.deps;
-    const self = this;
     log.debug("Entering AdminConsole.resourceMetadataPane().");
-    const values = this.resourceMetadataValues(loaded, draft);
-    const open = tab || 'json';
-    const radio = function (id) {
-      log.debug("Entering radio().");
-      log.debug("Leaving radio().");
-      return '<input type="radio" name="prm-tab" id="prm-tab-' + id + '" ' +
-             'form="prm-tabs-not-a-form"' + (open === id ? ' checked' : '') +
-             '>';
-    };
-    const source = loaded.source === 'url'
-      ? 'fetched from <code>' + this.esc(loaded.url) + '</code>'
-      : (loaded.source === 'upload'
-        ? 'uploaded' +
-          (loaded.filename ? ' as <code>' + this.esc(loaded.filename) +
-                        '</code>' : '')
-        : 'pasted');
-
-    const matchOf = {};
-    loaded.authorizationServers.rows.forEach(function (row) {
-      matchOf[row.issuer] = row;
-    });
-    const tableRows = loaded.members.map(function (row) {
-      let value = self.resourceMetadataValueCell(row.value);
-      if (row.member === 'authorization_servers' && Array.isArray(row.value)) {
-        value = row.value.map(function (issuer) {
-          const match = matchOf[issuer];
-          return '<code>' + self.esc(issuer) + '</code> ' +
-                 (match && match.matched
-            ? '<span class="state-valid">matches this realm\'s <code>' +
-              self.esc(match.authorizationServer) + '</code></span>'
-            : '<span class="state-expired">not an authorization server of ' +
-              'this realm</span>');
-        }).join('<br>');
-      }
-      return '<tr><td><code>' + self.esc(row.member) + '</code></td><td>' +
-             value +
-        '</td><td>' + (row.known ? self.esc(row.type)
-                                 : '<span class="state-none">extension' +
-                                   '</span>') +
-        '</td><td class="why">' + self.esc(row.maps || '') + '</td>' +
-        '<td class="why">' + self.note(self.esc(row.what)) + '</td></tr>';
-    }).join('');
-    const permissionRows = loaded.plan.permissions.map(function (one) {
-      return '<tr><td><code>' + self.esc(one.scope) + '</code></td><td><code>' +
-        self.esc(one.name) + '</code></td><td><code>' + self.esc(one.id) +
-        '</code></td><td>' + (one.problem
-          ? '<span class="state-expired">not usable</span>'
-          : (one.duplicate
-            ? '<span class="state-none">a duplicate</span>'
-            : (one.sameAsAdvertised
-              ? '<span class="state-valid">the scope as advertised</span>'
-              : '<span class="state-none">a client asks for the identifier, ' +
-                'not the scope</span>'))) + '</td></tr>';
-    }).join('');
-    const signed = loaded.signedMetadata
-      ? '<h3>signed_metadata, decoded and not verified</h3>' +
-        this.note('Shown so it can be read. This service holds no key for ' +
-        'the resource to verify it with, and none of its claims were ' +
-        'applied.') +
-        '<pre><code>' + this.esc(JSON.stringify({
-          header: loaded.signedMetadata.header,
-          claims: loaded.signedMetadata.claims
-        }, null, 2)) + '</code></pre>'
-      : '';
-
-    const memberRows = loaded.members.filter(function (row) {
-      return row.known && row.type !== 'jwt';
-    }).map(function (row) {
-      const id = 'prm-member-' + row.member.replace(/[^A-Za-z0-9_-]/g, '_');
-      const name = 'metadata.' + row.member;
-      const current = values.members[row.member];
-      let control = '';
-      if (row.type === 'bool') {
-        control = '<select id="' + self.esc(id) + '" name="' + self.esc(name) +
-                  '">' +
-          ['true', 'false', ''].map(function (option) {
-            return '<option value="' + option + '"' +
-              (current === option ? ' selected' : '') + '>' +
-              (option || '(remove the member)') + '</option>';
-          }).join('') + '</select>';
-      } else if (row.type === 'string-list' || row.type === 'uri-list') {
-        control = '<textarea id="' + self.esc(id) + '" name="' +
-                  self.esc(name) + '" ' +
-          'rows="3" cols="50" placeholder="one per line; empty removes the ' +
-          'member">' + self.esc(current) + '</textarea>';
-      } else {
-        control = '<input type="text" id="' + self.esc(id) + '" name="' +
-          self.esc(name) + '" size="50" value="' + self.esc(current) + '" ' +
-          'placeholder="empty removes the member">';
-      }
-      return '<tr><td><label for="' + self.esc(id) + '"><code>' +
-             self.esc(row.member) +
-        '</code></label></td><td>' + control + '</td><td class="why">' +
-        self.note(self.esc(row.what)) + '</td></tr>';
-    }).join('');
-
-    const field = function (id, name, label, value, what, multi?) {
-      log.debug("Entering field().");
-      log.debug("Leaving field().");
-      return '<tr><td><label for="' + id + '">' + label + '</label></td><td>' +
-        (multi
-          ? '<textarea id="' + id + '" name="' + self.esc(name) +
-            '" rows="4" cols="50">' + self.esc(value) + '</textarea>'
-          : '<input type="text" id="' + id + '" name="' + self.esc(name) +
-            '" size="50" value="' + self.esc(value) + '">') +
-        '</td><td class="why">' + self.note(what) + '</td></tr>';
-    };
-
-    const html = this.resourceMetadataBanners(loaded) +
-      '<div class="prm-tabs">' +
-      radio('json') + radio('table') + radio('fields') +
-      '<div class="prm-tablist" role="tablist">' +
-      '<label for="prm-tab-json">Raw JSON</label>' +
-      '<label for="prm-tab-table">Table of values</label>' +
-      '<label for="prm-tab-fields">Editable fields</label></div>' +
-
-      '<div class="prm-panel prm-panel-json">' +
-      '<p class="sub">The document as it was read, ' + source + '.</p>' +
-      '<pre><code>' + this.esc(loaded.pretty) + '</code></pre></div>' +
-
-      '<div class="prm-panel prm-panel-table">' +
-      '<table><tr><th>Member</th><th>Value</th><th>Type</th>' +
-      '<th>Used for</th><th>What it is</th></tr>' + tableRows + '</table>' +
-      '<h3>The scopes, as permissions</h3>' +
-      (permissionRows
-        ? '<table><tr><th>Scope</th><th>Permission</th>' +
-          '<th>Identifier a client asks for</th><th></th></tr>' +
-          permissionRows + '</table>'
-        : this.note('The document names no <code>scopes_supported</code>, so ' +
-                    'the application is created exposing no permissions.')) +
-      '<h3>This trust realm\'s authorization servers</h3>' +
-      '<table><tr><th>Authorization server</th><th>Issuer</th></tr>' +
-      loaded.authorizationServers.realm.map(function (row) {
-        return '<tr><td><code>' + self.esc(row.id) + '</code></td><td><code>' +
-               self.esc(row.issuer) + '</code></td></tr>';
-      }).join('') + '</table>' + signed + '</div>' +
-
-      '<div class="prm-panel prm-panel-fields">' +
-      this.note('These are fields of the form below, whichever tab is ' +
-      'showing: edit them here and press <strong>Create the ' +
-      'application</strong> at the foot of the page. Everything else on the ' +
-      'page below still applies.') +
-      '<input type="hidden" name="metadata" value="' +
-      this.esc(loaded.compact) +
-      '">' +
-      '<input type="hidden" name="metadataSource" value="' +
-      this.esc(loaded.source) + '">' +
-      '<input type="hidden" name="metadataFilename" value="' +
-      this.esc(loaded.filename) + '">' +
-      '<table><tr><th>Setting</th><th>Value</th><th>Where it came from</th>' +
-      '</tr>' +
-      field('prm-identifier', 'identifier', 'Identifier', values.identifier,
-            'The key this registry files the entry under. It defaults to the ' +
-            'generated client_id, which is what a protocol sighting would ' +
-            'file an OAuth client under.') +
-      field('prm-name', 'name', 'Name', values.name,
-            'What pages call it &mdash; the document\'s ' +
-            '<code>resource</code>.') +
-      field('prm-client-id', 'field.oauthClientId',
-            '<code>oauthClientId</code>', values.clientId,
-            'Generated at random, in the shape a dynamic client registration ' +
-            'mints.') +
-      field('prm-base', 'field.oauthPermissionBaseUri',
-            '<code>oauthPermissionBaseUri</code>', values.baseUri,
-            'The document\'s <code>resource</code>. A permission is this ' +
-            'followed by its name.') +
-      field('prm-audience', 'field.oauthAudience',
-            '<code>oauthAudience</code>', values.audience,
-            'The document\'s <code>resource</code>: the audience a token for ' +
-            'this application carries. One per line.', true) +
-      field('prm-permissions', 'field.oauthPermission',
-            '<code>oauthPermission</code>', values.permissions,
-            'One per line, <code>name</code> or ' +
-            '<code>name|description</code>, from ' +
-            '<code>scopes_supported</code> with the resource prefix taken ' +
-            'off. A scope that cannot be a permission is left out.', true) +
-      field('prm-details-types', 'field.oauthAuthorizationDetailsType',
-            '<code>oauthAuthorizationDetailsType</code>', values.detailsTypes,
-            'One per line, from <code>authorization_details_types_supported' +
-            '</code> (RFC 9396): the types a rich authorization request may ' +
-            'name for this API. A line may be a JSON definition with a ' +
-            '<code>schema</code>; <code>openid_credential</code> and a type ' +
-            'another application declares are left out.', true) +
-      (values.url
-        ? field('prm-url-field', 'field.oauthResourceMetadataUrl',
-                '<code>oauthResourceMetadataUrl</code>', values.url,
-                'Where the document was fetched from. Recorded, never ' +
-                'fetched again.')
-        : '') +
-      '</table>' +
-      '<h3>The document\'s members</h3>' +
-      this.note('What the document said, editable. The document stored on ' +
-      'the entry as <code>oauthResourceMetadata</code> is the one you loaded ' +
-      'with these edits applied; an emptied box removes that member. ' +
-      (loaded.extensions.length
-        ? 'Its ' + loaded.extensions.length + ' extension member(s) &mdash; ' +
-          loaded.extensions.map(function (one) {
-            return '<code>' + self.esc(one) + '</code>';
-          }).join(', ') + ' &mdash; are kept as they were. '
-        : '') +
-      'Changing a member here does not change the settings above: the name, ' +
-      'base URI and audience were filled in from <code>resource</code> when ' +
-      'the document was loaded.') +
-      (memberRows
-        ? '<table><tr><th>Member</th><th>Value</th><th>What it is</th></tr>' +
-          memberRows + '</table>'
-        : '') +
-      '</div></div>';
     log.debug("Leaving AdminConsole.resourceMetadataPane().");
-    return html;
+    return ApplicationsPage.resourceMetadataPane(loaded, draft, tab);
+  }
+
+  // Drawn by `web_applications.ts` (#446).
+  /**
+   * Picks the fields the new-application form draws in a view.
+   *
+   * @param json - the form's answer, whose `fields` are every field, typed
+   * @param view - `simple` or `advanced`
+   * @param omit - attributes to leave out
+   * @returns the rows
+   */
+  newApplicationFieldRows(json, view, omit) {
+    const { log } = this.deps;
+    log.debug("Entering AdminConsole.newApplicationFieldRows().");
+    log.debug("Leaving AdminConsole.newApplicationFieldRows().");
+    return ApplicationsPage.newApplicationFieldRows(json, view, omit);
   }
 
   /**
@@ -19330,222 +18884,26 @@ class AdminConsole {
    * @returns the page body as HTML (`inner`) and its JSON view (`json`)
    */
   newApplicationPage(req, state) {
-    const { log, adminViews, realms, applications } = this.deps;
-    const self = this;
+    const { log, adminViews } = this.deps;
     log.debug("Entering AdminConsole.newApplicationPage().");
-    const given = state || {};
-    const loaded = given.loaded || null;
-    // THE FORM AS IT WAS POSTED, on a redraw from one of this page's own
-    // round trips — a refused create, or Generate Secret — so that no box
-    // comes back empty. Absent on a plain GET.
-    const draft = given.draft || null;
-    // WHICH FIELDS: the simplified view by default, the advanced one when the
-    // switch, a redraw or `?view=advanced` says so.
-    const view = (given.view || (req.query && req.query.view)) === 'advanced'
-      ? 'advanced' : 'simple';
-    const drafted = function (name) {
-      const value = draft ? draft[name] : undefined;
-      return value == null ? '' : String(value);
-    };
-    // WHAT THIS PAGE SHOWS IS WHAT /admin-api ANSWERS (2026-09-12). These four
-    // facts used to be computed here and again, in the same shape, in the json
-    // half at the bottom of this function; they come off ONE call now, so the
-    // vocabulary this form offers cannot drift from the one that document
-    // publishes. admin-core/admin_views.ts carries the rest of the argument.
-    const json = adminViews.newApplicationJson(req);
-    const container = json.container;
-    const max = json.max;
-    const held = json.applicationCount;
-    const realm = realms.current();
-    if (!container) {
-      log.debug("Leaving AdminConsole.newApplicationPage(). There is no " +
-                "directory.");
-      return {
-        inner: this.messagesOf(req) +
-          '<p class="warn"><strong>There is no embedded directory loaded in ' +
-          'this process</strong>, so there is no ' +
-          '<code>ou=applications</code> container to create an entry in and ' +
-          'this form is not drawn. The applications registry has no store of ' +
-          'its own on purpose &mdash; the directory IS the registry &mdash; ' +
-          'so this is a build without <code>ldap/ldap_server.js</code> ' +
-          'rather than a fault.</p>' + APPLICATIONS_LINKS,
-        json: json
-      };
-    }
-
-    // The identifier and the name, as the form draws them with no document
-    // loaded. With one loaded they are on the pane's third tab instead, and
-    // drawing them here as well would post each name twice.
-    const calledSection =
-      '<h2>What it is called</h2><div class="formrow"><label ' +
-      'for="identifier">Identifier</label><input type="text" id="identifier" ' +
-      'name="identifier" size="42" required placeholder="e.g. my-web-app or ' +
-      'https://sp.example.com/saml/metadata"' +
-      this.tip('The key every protocol presents for this application: a ' +
-               'client_id, wtrealm, AppliesTo, SAML entityID or Kerberos ' +
-               'SPN. At most 512 characters, no line break.') +
-      ' value="' + this.esc(drafted('identifier')) + '"></div>' +
-      this.note('THE KEY, exactly as the protocol will present it. At most ' +
-      '512 characters, and no line break: an entry whose <code>cn</code> ' +
-      'would be longer than 64 characters is filed under <code>app-&lt;12 ' +
-      'hex&gt;</code> instead, and <code>appIdentifier</code> is the ' +
-      'attribute to search on either way.') +
-      '<div class="formrow"><label for="newname">Name</label><input ' +
-      'type="text" id="newname" name="name" size="24" ' +
-      'placeholder="e.g. My Web App (optional)"' +
-      this.tip('What pages call it. With none, the identifier is the name.') +
-      ' value="' + this.esc(drafted('name')) + '"></div>' +
-      this.note('The name is what pages call it; with none given the ' +
-      'identifier is the name, because inventing a friendly name for an ' +
-      'opaque id would be inventing a fact.') +
-      this.note('<strong>There is no <em>Kind</em> to choose and that is ' +
-      'deliberate.</strong> It used to be a select here, and it asked the ' +
-      'same question the protocol families below do in a vocabulary that ' +
-      'does not line up with theirs &mdash; eight kinds against fourteen ' +
-      'families, five of which have no kind at all. It is also the wrong ' +
-      'side of the line this registry draws: a family is DECLARED and a kind ' +
-      'is DERIVED, written when a protocol actually recognises the ' +
-      'identifier, so choosing one here was a form asserting a sighting that ' +
-      'had not happened. Tick the families instead; the kinds fill ' +
-      'themselves in as this application is used.');
-    // The families ticked: the ones a refused create had ticked, or OAuth 2.0
-    // for a document describing an OAuth protected resource.
-    const ticked = given.protocols ||
-                   (loaded ? loaded.plan.protocols : []);
-
-    const inner = this.flash(this.messagesOf(req) +
-      (given.error && given.error.length
-        ? '<div class="warn"><strong>' +
-          this.esc(given.errorTitle || 'That was refused.') + '</strong><ul>' +
-          given.error.map(function (one) {
-            return '<li>' + self.esc(one) + '</li>';
-          }).join('') + '</ul></div>'
-        : '') +
-      (loaded ? '<div class="ok">' + this.esc(loaded.message) + '</div>' : '') +
-      (given.notice ? '<div class="ok">' + this.esc(given.notice) + '</div>' :
-       '')) +
-      '<div class="tiles">' +
-      this.tile(held, 'In the registry') +
-      this.tile(applications.PROTOCOLS.length, 'Protocol families') +
-      this.tile(applications.KINDS.length, 'Kinds') +
-      '</div>' +
-      this.note('<strong>The entry lands in this realm\'s directory, at ' +
-        '<code>' +
-      this.esc(container) + '</code></strong>' +
-      (max ? ', which holds at most ' + this.esc(String(max)) +
-      ' application(s)' : '') + '. The console shows one trust realm at a ' +
-      'time and this form writes the one it is showing &mdash; ' +
-      '<strong>' + this.esc(realm ? realm.name : 'Default') +
-      '</strong> &mdash; because the realm is taken from the path this ' +
-      'request arrived on. Applications are NOT shared between realms: an ' +
-      '<code>ldapsearch</code> with that base DN is the same entry this ' +
-      'creates, and another realm\'s registry has never heard of it.') +
-      this.note('<strong>This is not a second door onto the ' +
-      'registry.</strong> The form below posts to ' +
-      '<code>/admin/applications</code> with <code>action=create</code> ' +
-      '&mdash; the same action the list page\'s own <em>Add an ' +
-      'application</em> row posts, calling the same function in ' +
-      '<code>applications.js</code> that a protocol endpoint and an ' +
-      '<code>ldapmodify</code> reach. Two forms over one function are two ' +
-      'doors; there is one store behind them and nothing caches it.') +
-
-      this.resourceMetadataLoadSection(given) +
-
-      // EVERY POST OF THIS FORM COMES BACK HERE (2026-09-30), so a refused
-      // create redraws this page with every box kept rather than 303ing to the
-      // list with a message; the create itself is the same action.
-      '<form method="post" action="/admin/applications/new" class="newapp">' +
-      '<input type="hidden" name="action" value="create">' +
-      '<input type="hidden" name="view" value="' + this.esc(view) + '">' +
-      // THE DEFAULT BUTTON. Enter in a text box submits with the FIRST submit
-      // button in the form, and since 2026-09-18 that would otherwise be
-      // Generate Secret, halfway down — so a person who pressed Enter in the
-      // Identifier would get a secret instead of an application. This one is
-      // first, creates, and is off-screen and out of the tab order; the
-      // visible Create button at the foot does the same thing.
-      '<button type="submit" class="default-submit" tabindex="-1" ' +
-      'aria-hidden="true">Create the application</button>' +
-      (loaded
-        ? '<h2>The protected resource metadata that was loaded</h2>' +
-          this.resourceMetadataPane(loaded, given.draft, given.tab) +
-          '<h2>What it is called</h2>' +
-          this.note('<strong>The identifier, the name and the client_id are ' +
-          'on the <em>Editable fields</em> tab above</strong>, filled in ' +
-          'from the document: the name is its <code>resource</code> and the ' +
-          'identifier is the client_id generated for it.')
-        : calledSection) +
-
-      '<h2>Protocol families it is declared for</h2>' +
-      this.note('Tick as many as apply. The list is CLOSED &mdash; a value ' +
-      'that is not one of these is refused rather than recorded, because a ' +
-      'typo that silently became a new family is how one application comes ' +
-      'to be declared for two spellings of one thing.') +
-      '<table><tr><th>For</th><th>Family</th><th>Value</th>' +
-      '<th>Recorded as, when it turns up</th><th>What it means</th></tr>' +
-      applications.FAMILY_CHOICES.map(function (row) {
-        return self.protocolChoiceRow(row, row.families.some(function (id) {
-          return ticked.indexOf(id) >= 0;
-        }));
-      }).join('') +
-      '</table>' +
-
-      // THE FIELD GRID (2026-09-30): the simplified view is the fields this
-      // page has always offered — the declarations, the per-application
-      // setting overrides and where SAML 2.0 encryption gets its key — and
-      // the advanced view is every field an application has. Both are one
-      // grid, typed, shown for the families ticked; the switch is a submit
-      // button, so whatever has been typed is carried into the other view.
-      '<h2>' + (view === 'advanced' ? 'Every field' : 'Its fields') +
-      '</h2>' +
-      '<div class="formrow fg-view"><span class="sub">' +
-      (view === 'advanced'
-        ? 'Advanced view: every field an application has, for the families ' +
-          'ticked.'
-        : 'Simplified view: the fields most applications need.') +
-      '</span><button type="submit" class="secondary" name="switchview" ' +
-      'value="' + (view === 'advanced' ? 'simple' : 'advanced') +
-      '" formaction="/admin/applications/new" formnovalidate' +
-      this.tip('Draw the other view of this form. Nothing is created, and ' +
-               'everything typed so far is kept.') + '>' +
-      (view === 'advanced' ? 'Show the simplified view'
-        : 'Show every field (advanced view)') + '</button></div>' +
-      // THE PROMPT THAT STANDS IN FOR THE HIDDEN FIELDS. It is inside the form
-      // so the `:has()` rule that hides it can reach it, and it is always in
-      // the markup: a browser without `:has()` shows it beside every field,
-      // where it reads as a description of the page rather than as a broken
-      // instruction.
-      '<div class="pf-hint">Most fields depend on which families you tick ' +
-      'above &mdash; a field appears when the protocol it belongs to is ' +
-      'selected, so an OAuth client is not asked for a SAML entityID. Tick a ' +
-      'family to see its fields. <strong>If you can see them all ' +
-      'already</strong>, this browser does not support the ' +
-      '<code>:has()</code> selector and the form is showing everything ' +
-      '&mdash; nothing you type is affected either way, because the server ' +
-      'reads what was posted and not what was visible.</div>' +
-      this.fieldGrid(this.newApplicationFields(view,
-                       loaded ? RESOURCE_METADATA_OWNED : []),
-                     draft ? this.gridValuesFromDraft(draft) : {},
-                     { redraw: '/admin/applications/new',
-                       generateSecret: '/admin/applications/new' }) +
-
-      '<div class="formrow"><button type="submit">Create the ' +
-      'application</button>' +
-      this.note('It is created with zero counters and a description saying ' +
-      'it was made by hand, so it cannot be mistaken for one that turned up ' +
-      'once and never came back. You land on its entry.') + '</div></form>' +
-
-      NEW_APPLICATION_NOTES + this.applicationsCaveat() + APPLICATIONS_LINKS;
-
-    log.debug("Leaving AdminConsole.newApplicationPage(). " +
-              applications.PROTOCOLS.length +
-              " protocol family/families offered.");
+    const loadedHere = (state && state.loaded) || null;
+    // WHAT WAS POSTED rides on the view the page is drawn from (#446), never
+    // on the answer: GET /admin-api/applications/new has no posted form.
+    const answer = adminViews.newApplicationJson(req);
+    const json = Object.assign({ state: state || null }, answer);
+    // Drawn by `web_applications.ts` (#446).
+    const inner = this.messagesOf(req) +
+      ApplicationsPage.newApplicationBody(this.renderContext(req),
+        JSON.parse(JSON.stringify(json)));
+    log.debug("Leaving AdminConsole.newApplicationPage().");
     return {
       inner: inner,
       // The loaded document and what it was read as, beside the vocabulary the
       // GET answers — `load-resource-metadata`'s reply, which is what an API
       // caller of that action gets.
-      json: loaded ? Object.assign({}, json, { resourceMetadata: loaded }) :
-            json
+      json: loadedHere
+        ? Object.assign({}, answer, { resourceMetadata: loadedHere })
+        : answer
     };
   }
 
@@ -31729,92 +31087,11 @@ const KEY_SOURCE_SENTENCES = {
             'here &mdash; written by hand, or by a build older than the ' +
             'provenance attribute.'
 };
-// THE THREE ATTRIBUTES THAT SAY WHERE A SERVICE PROVIDER'S KEY COMES FROM.
-//
-// They are not setting overrides — nothing in config.js corresponds to them —
-// so they are not in `overridableSettings()` and would otherwise appear on no
-// form at all. They are conditional on SAML 2.0 like everything else in that
-// family.
-//
-// `samlSpMetadata` is a TEXTAREA and the other two are inputs, which is the
-// same shape rule the field grid follows: a document is not something
-// anybody types on one line, and offering a single-line box for one invites a
-// paste that loses its newlines.
-const SAML_KEY_SOURCE_FIELDS = [
-  { attribute: 'samlSpMetadataUrl', label: 'Metadata URL',
-    what: 'Where this service provider publishes its metadata. Nothing is ' +
-          'fetched until you press Refresh on the entry — an assertion never ' +
-          'waits on somebody else\'s web server.' },
-  { attribute: 'samlEncryptionCertificate', label: 'Encryption certificate',
-    what: 'The certificate an assertion is encrypted to, base64 or PEM. ' +
-          'Consuming the metadata writes this; set it by hand for a service ' +
-          'provider whose metadata cannot be reached. With none here a ' +
-          'registered signing certificate is used, then (development only) ' +
-          'the one a signed AuthnRequest carried.' },
-  { attribute: 'samlSpMetadata', label: 'Metadata document', multi: true,
-    what: 'The metadata itself. Pasted here, it is CONSUMED when the ' +
-          'application is created — endpoints, signing and encryption ' +
-          'certificates, NameIDFormats — exactly as a refresh would, which ' +
-          'is the way to configure an air-gapped service provider, or one ' +
-          'behind a proxy this service cannot dial.' }
-];
+// The three attributes that say where a service provider's key comes from
+// are `admin_views.ts`'s `SAML_KEY_SOURCE_FIELDS` (#446).
 
-let NEW_APPLICATION_NOTES: string;
-WIRE_STEPS.push(function (instance: AdminConsole): void {
-  NEW_APPLICATION_NOTES =
-    instance.note('<strong>Declaring a protocol family grants nothing, ' +
-    'and in product mode it refuses the rest.</strong> The issuance ' +
-    'policy refuses, in product mode, an issuance through a family the ' +
-    'application is not declared for: an application declared for SAML 2.0 ' +
-    'alone is refused an access token at <code>/oauth2/token</code>. In ' +
-    'development the declaration is a RECORD OF INTENT &mdash; what this ' +
-    'application is FOR &mdash; and refuses nothing, and an application ' +
-    'declared for nothing at all is refused nothing in either mode. The ' +
-    'configuration that ' +
-    'DOES take effect is the attributes underneath: give the entry its ' +
-    'redirect URIs, its grant types and its secret from <a ' +
-    'href="/admin/applications">Applications</a>, and ' +
-    'RFC 9700 mode judges the next request against them.') +
-    instance.note('<strong>The families are DECLARED; ' +
-    '<code>appProtocol</code> is what HAPPENED.</strong> Those two ' +
-    'attributes sit next to each other on the entry and must not be read as ' +
-    'one thing. This form writes the first; the second is accumulated by the ' +
-    'protocol endpoints as they accept this identifier and is not editable ' +
-    'here, for the reason every derived attribute on that page is not ' +
-    '&mdash; a form that could rewrite it would make this console lie about ' +
-    'the service\'s own behaviour, in a way indistinguishable from the ' +
-    'recording being broken. The Applications drill-down shows both side by ' +
-    'side, and says ' +
-    'which of the declared families the entry has actually been recorded in.') +
-    instance.note('<strong>One entry per identifier, whatever protocol ' +
-    'brought it.</strong> The key is the identifier exactly as it arrives ' +
-    '&mdash; not lower-cased and not namespaced by protocol &mdash; so this ' +
-    'is refused if the registry already holds one under that name, and an ' +
-    'application that appears under one name in two protocols is one entry ' +
-    'with two kinds. Change what an existing one holds rather than creating ' +
-    'it ' +
-    'again.') +
-    // WHETHER an application entry survives a restart is a property of the
-    // whole service rather than of this page, which is why this note is
-    // computed here rather than asserted: an application IS a directory
-    // entry, so it persists exactly when the directory does.
-    (persistence.status().persistsDirectory
-      ? '<div class="ok"><strong>This entry will survive a restart.</strong> ' +
-        'An application here is a directory entry under ' +
-        '<code>ou=applications</code>, and this process is running with ' +
-        '<code>persistence.mode=' +
-        instance.esc(persistence.status().mode) + '</code> ' +
-        '— so it is written down along with every other application, person, ' +
-        'group, federation relationship and SPIFFE registration. That is a ' +
-        'property of the whole service and not of this page; see <a ' +
-        'href="/admin/persistence">Persistence</a>.</div>'
-      : instance.note('<strong>Nothing here is persisted on this ' +
-        'process.</strong> The entry is gone on restart, along with every ' +
-        'other application, person and group in the directory. That is a ' +
-        'property of the whole service and not of this page, and it is ' +
-        'changeable: <a href="/admin/persistence">Persistence</a> writes the ' +
-        'directory down, and is off by default.'));
-});
+// The notes at the foot of New application are `web_applications.ts`'s
+// `newApplicationNotes()`.
 
 // ---------------------------------------------------------------------------
 // CONFIGURE AN APPLICATION FROM ITS RFC 9728 METADATA (2026-09-13).

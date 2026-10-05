@@ -267,11 +267,16 @@ function run(t) {
           '8. fieldExample() is what the rows carry');
 
   // --- 5. The console's simplified view reads `declaration` ---------------
-  const source = fs.readFileSync(path.join(__dirname, '..', 'admin-ui',
-                                           'admin.ts'), 'utf8');
-  t.check(/view === 'advanced' \|\| row\.declaration \|\| !!row\.overrides/
-            .test(source),
-          '5. newApplicationFields() draws every declaration in the ' +
+  // The answer of GET /admin-api/applications/new marks each field `inSimple`
+  // since #446, and the page draws a field in the simplified view by that
+  // mark alone; a declaration is one of the three things that set it.
+  const views = fs.readFileSync(path.join(__dirname, '..', 'admin-core',
+                                          'admin_views.ts'), 'utf8');
+  const page = fs.readFileSync(path.join(__dirname, '..', 'admin-ui',
+                                         'web_applications.ts'), 'utf8');
+  t.check(/inSimple: !!row\.declaration \|\| !!row\.overrides/.test(views) &&
+          /view === 'advanced' \|\| row\.inSimple/.test(page),
+          '5. the new-application form draws every declaration in the ' +
           'simplified view');
   log.debug("Leaving run().");
 }

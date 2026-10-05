@@ -185,6 +185,8 @@ import krb5PersonKeys = require('../kerberos/krb5_person_keys');
 // change, with what the entry holds. A library whose directory arrives
 // through its own slot, so this require loads no route module.
 import personEditor = require('../ldap/person_editor');
+// RFC 9728's well-known path, which the new-application form names (#446).
+import resourceMetadata = require('../oauth-oidc/protected_resource_metadata');
 import oauth2 = require('../oauth-oidc/oauth2');
 // The recent back-channel logout deliveries (2026-09-17, #36), which the
 // sign-out page lists so a delivery queued as `pending` can be seen to have
@@ -365,6 +367,38 @@ const MAX_ROWS = 300;
  * What a create that names no credential gets, from `admin_actions.ts`.
  */
 const DEFAULT_CREDENTIAL = adminActions.DEFAULT_CREDENTIAL;
+
+// THE THREE ATTRIBUTES THAT SAY WHERE A SERVICE PROVIDER'S KEY COMES FROM.
+//
+// They were the console's until #446, when the new-application form's
+// answer began saying which fields its simplified view offers. They are not
+// setting overrides — nothing in config.js corresponds to them —
+// so they are not in `overridableSettings()` and would otherwise appear on no
+// form at all. They are conditional on SAML 2.0 like everything else in that
+// family.
+//
+// `samlSpMetadata` is a TEXTAREA and the other two are inputs, which is the
+// same shape rule the field grid follows: a document is not something
+// anybody types on one line, and offering a single-line box for one invites a
+// paste that loses its newlines.
+const SAML_KEY_SOURCE_FIELDS = [
+  { attribute: 'samlSpMetadataUrl', label: 'Metadata URL',
+    what: 'Where this service provider publishes its metadata. Nothing is ' +
+          'fetched until you press Refresh on the entry — an assertion never ' +
+          'waits on somebody else\'s web server.' },
+  { attribute: 'samlEncryptionCertificate', label: 'Encryption certificate',
+    what: 'The certificate an assertion is encrypted to, base64 or PEM. ' +
+          'Consuming the metadata writes this; set it by hand for a service ' +
+          'provider whose metadata cannot be reached. With none here a ' +
+          'registered signing certificate is used, then (development only) ' +
+          'the one a signed AuthnRequest carried.' },
+  { attribute: 'samlSpMetadata', label: 'Metadata document', multi: true,
+    what: 'The metadata itself. Pasted here, it is CONSUMED when the ' +
+          'application is created — endpoints, signing and encryption ' +
+          'certificates, NameIDFormats — exactly as a refresh would, which ' +
+          'is the way to configure an air-gapped service provider, or one ' +
+          'behind a proxy this service cannot dial.' }
+];
 
 /**
  * The credential choices the new-user form offers, each with what it means.
@@ -5805,6 +5839,50 @@ class AdminViews {
     return spiffeRegistry.selectorText(selector);
   }
 
+  // A FIELD GRID ROW TYPED for the control it is drawn as (#446): a setting
+  // override takes its setting's type and choices from config.js's
+  // description, and a field with a closed set of its own is a choice. It
+  // was the console's `gridFieldTyped()`, which still delegates here.
+  /**
+   * Types one field grid row for the control it is drawn as.
+   *
+   * @param row - the field, as `applications.applicationFields()` lists it
+   * @returns the row, typed
+   */
+  typedField(row) {
+    const { log, configSettingFor } = this.deps;
+    log.debug("Entering AdminViews.typedField().");
+    if (!row.overrides) {
+      // A closed set of its own (applications.attributeChoices()): one value
+      // is chosen from them, a list is ticked from them.
+      if (row.choices && row.choices.length && row.type === 'string') {
+        log.debug("Leaving AdminViews.typedField(). A closed set.");
+        return Object.assign({}, row, { type: 'enum' });
+      }
+      log.debug("Leaving AdminViews.typedField(). Not an override.");
+      return row;
+    }
+    const setting = configSettingFor(row.overrides);
+    if (!setting) {
+      log.debug("Leaving AdminViews.typedField(). Unknown setting.");
+      return row;
+    }
+    const described = config.describe(setting);
+    const typed = Object.assign({}, row, { described: described });
+    if (described.type === 'bool') {
+      typed.type = 'boolean';
+    } else if (described.type === 'enum') {
+      typed.type = 'enum';
+      typed.choices = (described.enumValues || []).filter(function (one) {
+        return one !== '';
+      });
+    } else if (described.type === 'int') {
+      typed.type = 'int';
+    }
+    log.debug("Leaving AdminViews.typedField().");
+    return typed;
+  }
+
   // ---------------------------------------------------------------------------
   // THE NEW-APPLICATION FORM'S ANSWER (2026-09-12), and the first view whose
   // computation was SPLIT rather than moved.
@@ -5826,7 +5904,8 @@ class AdminViews {
    * @returns the JSON
    */
   newApplicationJson(req) {
-    const { log, realms, applications } = this.deps;
+    const { log, realms, applications, mode } = this.deps;
+    const self = this;
     log.debug("Entering AdminViews.newApplicationJson().");
     const container = applications.containerDn ? applications.containerDn() :
                       null;
@@ -5872,6 +5951,30 @@ class AdminViews {
         // document cannot offer a field the form has never heard of, nor the
         // other way round.
         declarations: applications.declarationAttributes(),
+        // WHAT THE FORM DRAWS (#446): every field its grid can draw, typed
+        // as the grid types it and saying whether the simplified view offers
+        // it, the groups they are drawn under, the protocol families' choices,
+        // the attributes one box holds whole, and what the RFC 9728 import
+        // section says about this mode.
+        fields: applications.applicationFields().map(function (row) {
+          return Object.assign({}, self.typedField(row), {
+            inSimple: !!row.declaration || !!row.overrides ||
+              SAML_KEY_SOURCE_FIELDS.some(function (one) {
+                return one.attribute === row.attribute;
+              })
+          });
+        }),
+        fieldGroups: applications.FIELD_GROUPS,
+        familyChoices: applications.FAMILY_CHOICES,
+        longTextAttributes: applications.LONG_TEXT_ATTRIBUTES || [],
+        persistence: { persistsDirectory:
+                         !!persistence.status().persistsDirectory,
+                       mode: persistence.status().mode },
+        resourceMetadataImport: {
+          wellKnown: resourceMetadata.WELL_KNOWN,
+          acceptsNonconforming: mode.acceptsNonconformingResourceMetadata(),
+          dialsInternalAddresses: mode.dialsInternalAddresses()
+        },
         editable: applications.editableAttributes().map(function (row) {
           // `families` where the attribute has one, and ABSENT where it does
           // not, so that a caller reading this document to learn what it may
@@ -10455,6 +10558,7 @@ export = {
   CREDENTIAL_CHOICES: CREDENTIAL_CHOICES,
   newUserContainer: slot.forward('newUserContainer'),
   newUserJson: slot.forward('newUserJson'),
+  typedField: slot.forward('typedField'),
   newApplicationJson: slot.forward('newApplicationJson'),
   spiffeSelectorText: slot.forward('spiffeSelectorText'),
   setSpiffeReader: slot.forward('setSpiffeReader'),
