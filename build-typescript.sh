@@ -159,10 +159,23 @@ if [ -f "$BUNDLE_ENTRY" ]; then
   # renderer, the shell and the form table in one file. `console.bundle.js`
   # above stays, the renderers alone under a global, because that is what
   # `tests/console_web_bundle.js` compares this process's pages with.
+  #
+  # **MINIFIED (rcbj, 2026-10-05)**, because it is the one generated file a
+  # browser downloads: whitespace and syntax compacted and local names
+  # shortened (`--minify`): 1.89 MB to 1.47 MB (461 KB to 420 KB gzipped)
+  # on 2026-10-05 — most of it is the pages' own prose, which minifying
+  # cannot shorten. The renderers are string-building functions and nothing
+  # reads a function's or a class's name, so shortening them changes nothing
+  # a page does. No source map: one would carry the sources' comments, which
+  # the shipped image strips (#365).
+  # `console.bundle.js` above is NOT minified: no browser loads it, and the
+  # tests that do are easier to read a failure out of in its own shape.
+  # The stylesheet (`/admin/console.css`) needs no step: `stylesheet()`
+  # writes it as one line with no whitespace or comments to remove.
   CONSOLE_ENTRY=admin-ui/web_console.ts
   CONSOLE_OUT=admin-ui/console.js
   "$ESBUILD" "$CONSOLE_ENTRY" --bundle --platform=browser --format=iife \
-    --target=es2022 --charset=ascii --legal-comments=none \
+    --target=es2022 --charset=ascii --legal-comments=none --minify \
     --log-level=warning --banner:js="$BUNDLE_BANNER" --outfile="$CONSOLE_OUT"
   if [ ! -s "$CONSOLE_OUT" ]; then
     echo "build-typescript.sh: esbuild wrote no $CONSOLE_OUT" >&2
