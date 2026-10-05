@@ -18,7 +18,9 @@ pub mod driver;
 pub mod ldif;
 pub mod ldif_driver;
 pub mod memory;
+pub mod merge;
 pub mod model;
+pub mod shadow;
 
 pub use driver::{Driver, StoreError, StoreFuture, StoreResult};
 pub use model::{DirectoryChange, StoredEntry};

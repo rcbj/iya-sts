@@ -2298,6 +2298,75 @@ async function ldifVectors() {
            parsed: parsed, reread: reread };
 }
 
+// THE THREE-WAY MERGE (`persistence/directory_merge.js`): every combination
+// of base, mine and theirs drawn from a pool of entries built to reach each
+// branch — one entry and two (by entryUUID), a seeded entry with no
+// entryUUID, single-valued credentials, `member` and an unlisted attribute
+// that is a list only by count, the timestamps, origins — plus
+// `mergeValues()` and `canonicalJson()` alone.
+function mergeVectors() {
+  const merge = require(path.join(ROOT, 'persistence', 'directory_merge.js'));
+  const e = function (uuid, attrs, extra) {
+    const a = Object.assign({}, attrs);
+    if (uuid) {
+      a.entryuuid = [uuid];
+    }
+    return Object.assign({ dn: 'cn=g,dc=x', attributes: a,
+                           createdAt: '20260101000000Z',
+                           modifiedAt: '20260101000000Z' }, extra || {});
+  };
+  const U1 = 'AAAA-1';
+  const U2 = 'bbbb-2';
+  const pool = [
+    null,
+    e(U1, { objectclass: ['top', 'groupOfNames'], member: ['a'],
+            cn: ['g'] }),
+    e(U1, { objectclass: ['top', 'groupOfNames'], member: ['a', 'b'],
+            cn: ['g'], modifytimestamp: ['20260103000000Z'] },
+      { modifiedAt: '20260103000000Z' }),
+    e('aaaa-1', { objectclass: ['top', 'groupOfNames'], member: ['c'],
+                  cn: ['g2'], userpassword: ['p1'],
+                  modifytimestamp: ['20260102000000Z'] },
+      { modifiedAt: '20260102000000Z', origin: 'scim' }),
+    e(U1, { objectclass: ['top'], cn: ['g'], userpassword: ['p2'],
+            mail: ['x@y', 'z@y'], createtimestamp: ['20250101000000Z'] }),
+    e(U2, { objectclass: ['top', 'person'], cn: ['h'], sn: ['s'],
+            member: ['a', 'd'] }, { origin: 'seed', createdAt: '' }),
+    e(U2, { objectclass: ['top', 'person'], cn: ['h'], mail: ['z@y'],
+            userpassword: ['p3'] }, { modifiedAt: null }),
+    e('', { objectclass: ['top', 'groupOfNames'], member: ['e'],
+            cn: ['g'] }),
+    e(U1, { objectclass: ['top', 'groupOfNames'], cn: ['g'],
+            mail: ['x@y'], member: [] })
+  ];
+  const cases = [];
+  pool.forEach(function (base, bi) {
+    pool.forEach(function (mine, mi) {
+      pool.forEach(function (theirs, ti) {
+        cases.push({ base: bi, mine: mi, theirs: ti,
+                     result: merge.mergeEntry(base, mine, theirs) });
+      });
+    });
+  });
+  const lists = [undefined, [], ['a'], ['a', 'b'], ['b', 'c'], ['c', 'a', 'd']];
+  const values = [];
+  lists.forEach(function (b) {
+    lists.forEach(function (m) {
+      lists.forEach(function (t) {
+        values.push({ base: b === undefined ? null : b,
+                      mine: m === undefined ? null : m,
+                      theirs: t === undefined ? null : t,
+                      merged: merge.mergeValues(b, m, t) || null });
+      });
+    });
+  });
+  return { pool: pool, cases: cases, values: values,
+           canonical: pool.map(function (one) {
+             return merge.canonicalJson(one);
+           }),
+           single: merge.SINGLE, multi: merge.MULTI };
+}
+
 const VECTORS = [{ file: 'jws-node.json', build: jws },
                  { file: 'jwe-node.json', build: jwe },
                  { file: 'c14n-node.json', build: c14n },
@@ -2313,7 +2382,8 @@ const VECTORS = [{ file: 'jws-node.json', build: jws },
                  { file: 'limbo-node.json', build: limbo },
                  { file: 'foreign-node.json', build: foreign },
                  { file: 'realms-node.json', build: realmsVectors },
-                 { file: 'ldif-node.json', build: ldifVectors }];
+                 { file: 'ldif-node.json', build: ldifVectors },
+                 { file: 'merge-node.json', build: mergeVectors }];
 
 if (require.main === module) {
   fs.mkdirSync(OUT, { recursive: true });

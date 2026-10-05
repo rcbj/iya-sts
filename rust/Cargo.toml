@@ -51,7 +51,7 @@ serde_json = { version = "1", features = ["preserve_order"] }
 tokio = { version = "1", features = ["full"] }
 tokio-openssl = "0.6"
 tracing-subscriber = { version = "0.3", features = ["registry"] }
-indexmap = "2.14"
+indexmap = { version = "2.14", features = ["serde"] }
 num-bigint = "0.5"
 num-traits = "0.2"
 regex = "1.13"
