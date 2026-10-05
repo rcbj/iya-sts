@@ -2863,6 +2863,91 @@ async function realmLifecycleVectors() {
            steps: steps, before: before, after: after };
 }
 
+// THE HTTP LAYER (`common/app.js`): the real express app, with a few probe
+// routes registered after its middleware, asked over HTTP. What is recorded
+// is what the Rust layer owns — the realm prefix stripped and put back on
+// links and redirects, the security headers, a page's own CSP kept or
+// replaced, the one framed page, and the 404 an unrouted path answers — and
+// the two CSP builders on their own.
+async function httpVectors() {
+  const app = require(path.join(ROOT, 'common', 'app.js'));
+  const realms = require(path.join(ROOT, 'common', 'realms.js'));
+  const http = require('http');
+  realms.create({ id: 'acme' });
+  app.get('/probe/html', function (req, res) {
+    res.type('html').send('<a href="/x">x</a> <form action="/y?q=1"></form>' +
+                          ' <img src="//cdn.example/z"> <a href="rel">r</a>');
+  });
+  app.get('/probe/redirect', function (req, res) {
+    res.redirect('/oauth2/authorize?x=1');
+  });
+  app.get('/probe/own-csp', function (req, res) {
+    res.setHeader('Content-Security-Policy', "default-src 'none'");
+    res.type('text').send('mine');
+  });
+  app.get('/probe/relaxed', function (req, res) {
+    res.setHeader('Content-Security-Policy', app.contentSecurityPolicy({
+      'script-src': "'self'", 'frame-ancestors': '*', 'base-uri': null,
+      'connect-src': "'self'" }));
+    res.type('text').send('relaxed');
+  });
+  app.get('/probe/framed', function (req, res) {
+    res.setHeader('Content-Security-Policy',
+                  app.framedContentSecurityPolicy(
+                    ['https://rp.example', 'javascript:x', 'http://a:8080']));
+    res.removeHeader('X-Frame-Options');
+    res.type('html').send('<p>framed</p>');
+  });
+  app.get('/probe/realm', function (req, res) {
+    res.type('text').send('realm=' + realms.currentId());
+  });
+  const server = http.createServer(app);
+  await new Promise(function (resolve) {
+    server.listen(0, '127.0.0.1', resolve);
+  });
+  const port = server.address().port;
+  const paths = ['/probe/html', '/realm/acme/probe/html', '/probe/redirect',
+                 '/realm/acme/probe/redirect', '/probe/own-csp',
+                 '/probe/relaxed', '/probe/framed', '/probe/realm',
+                 '/realm/acme/probe/realm?x=1', '/nope', '/realm/nope/x',
+                 '/realm/acme/nope', '/probe/<script>'];
+  const answers = [];
+  for (const p of paths) {
+    const got = await new Promise(function (resolve, reject) {
+      http.get({ host: '127.0.0.1', port: port, path: p }, function (res) {
+        let body = '';
+        res.setEncoding('utf8');
+        res.on('data', function (c) { body += c; });
+        res.on('end', function () {
+          const h = {};
+          ['content-type', 'content-security-policy', 'x-frame-options',
+           'x-content-type-options', 'referrer-policy', 'location']
+            .forEach(function (k) {
+              h[k] = res.headers[k] === undefined ? null : res.headers[k];
+            });
+          resolve({ path: p, status: res.statusCode, headers: h,
+                    body: body });
+        });
+      }).on('error', reject);
+    });
+    answers.push(got);
+  }
+  server.close();
+  const builds = [{}, { 'script-src': "'self'" },
+                  { 'frame-ancestors': '*', 'base-uri': '*' },
+                  { 'img-src': null, 'connect-src': "'self' https://x" }];
+  return {
+    answers: answers,
+    csp: builds.map(function (o) {
+      return { overrides: o, value: app.contentSecurityPolicy(o) };
+    }),
+    framed: [[], ['https://a.example', 'https://b.example:8443'],
+             ['*', 'data:', 'https://ok.example/path']].map(function (o) {
+      return { origins: o, value: app.framedContentSecurityPolicy(o) };
+    })
+  };
+}
+
 const VECTORS = [{ file: 'jws-node.json', build: jws },
                  { file: 'jwe-node.json', build: jwe },
                  { file: 'c14n-node.json', build: c14n },
@@ -2884,7 +2969,8 @@ const VECTORS = [{ file: 'jws-node.json', build: jws },
                  { file: 'scheduler-history-node.json',
                    build: schedulerHistoryVectors },
                  { file: 'realm-lifecycle-node.json',
-                   build: realmLifecycleVectors }];
+                   build: realmLifecycleVectors },
+                 { file: 'http-node.json', build: httpVectors }];
 
 if (require.main === module) {
   fs.mkdirSync(OUT, { recursive: true });

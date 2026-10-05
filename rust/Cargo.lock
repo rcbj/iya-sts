@@ -1394,6 +1394,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "sts-http"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "hyper",
+ "regex",
+ "serde_json",
+ "sts-core",
+ "tokio",
+ "tower",
+ "tracing",
+]
+
+[[package]]
 name = "sts-pki"
 version = "0.1.0"
 dependencies = [
