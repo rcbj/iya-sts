@@ -7312,6 +7312,7 @@ module always was, and imports the kit by its relative path.
 | `web_node_health.ts` | The body of `/admin/node-health`. It was `NodeHealthAdmin`'s nine drawing methods; it carries its own `MIB` and `round1()`, which the view's module has too, because it may not require that module. |
 | `web_settings.ts` | **The Settings block of every page that owns settings** — `forms()`, `section()`, `row()`, `orderedChoiceControl()`, `sourceNote()`, `sharedNote()` — from the `settings` member of that page's operation. Not a page: `web_pages.ts` carries it as `StsConsole.settings`. See *The settings block*, below. |
 | `web_pqc_badge.ts` | The post-quantum icon, its sentence and its legend, drawn from a classification a view carries (`kind`, `label`, `standard`). `pqc_badge.ts`'s `badge()` and `legend()`, and `common/pqc_support.ts`'s `sentence()`, call it; `badgeFor()`, which classifies a certificate, stays on the server. |
+| `web_certificate_dialog.ts` | The certificate details dialog and the link that opens it, drawn from `certificate_views.detailsView()`, which carries the key's classification as `pqc` since #446. `certificate_dialog.ts` keeps `requested()`, which reads a request, and calls this for the rest. |
 | `web_pages.ts` | The table of converted pages (path, title, operation, renderer), and the ENTRY of the browser bundle. |
 
 **A FORM IN A RENDERER IS STILL A FORM.** `web_grants.ts` draws
