@@ -70,6 +70,7 @@ import OAuth2MonitorPage = require('../oauth-oidc/web_oauth2_monitor');
 import RiskPage = require('./web_risk');
 import RolesPage = require('./web_roles');
 import SamlAssertionsPage = require('./web_saml_assertions');
+import SamlPage = require('../saml/web_saml');
 import SchedulerPage = require('./web_scheduler');
 import ScimPage = require('../scim/web_scim');
 import ScepPage = require('../scep/web_scep');
@@ -297,6 +298,20 @@ const PAGES: WebPage[] = [
     compose: { preview: '/admin-api/roles/preview' },
     render: function (view: Json, ctx?: Json): string {
       return RolesPage.body(ctx || WebKit.context(), view);
+    } },
+  { path: '/admin/saml2', title: 'SAML 2.0', operation: '/admin-api/saml2',
+    drill: {
+      param: 'sp',
+      sample: function (list: Json): string | null {
+        const rows = list.serviceProviders || [];
+        return rows[0] ? rows[0].identifier : null;
+      },
+      render: function (view: Json, ctx?: Json): string {
+        return SamlPage.saml2Detail(ctx || WebKit.context(), view);
+      }
+    },
+    render: function (view: Json, ctx?: Json): string {
+      return SamlPage.saml2Body(ctx || WebKit.context(), view);
     } },
   { path: '/admin/saml-assertions', title: 'SAML assertions',
     operation: '/admin-api/saml-assertions',

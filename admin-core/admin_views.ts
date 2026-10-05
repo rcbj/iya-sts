@@ -6073,7 +6073,6 @@ class AdminViews {
     const { log, baseUrlOf, saml2, spMetadata } = this.deps;
     const self = this;
     log.debug("Entering AdminViews.saml2ListJson().");
-    log.debug("Entering saml2ListPage().");
     const base = baseUrlOf(req);
     const all = this.saml2ServiceProviders();
     const needle = String(req.query.q || '').trim().toLowerCase();
@@ -6141,7 +6140,10 @@ class AdminViews {
           artifactsAwaitingResolution: saml2.artifactCount(),
           requestsHeldForSignIn: saml2.pendingRequestCount(),
           mdqRefused: refused.shown,
-          mdqRefusedPaging: refused.paging
+          mdqRefusedPaging: refused.paging,
+          // The kind the applications page files these entries under, for
+          // the page's link to them (#446).
+          kind: SAML2_SP_KIND
       };
       }())
     };
@@ -6159,7 +6161,6 @@ class AdminViews {
     const self = this;
     log.debug("Entering AdminViews.saml2DetailJson(). identifier=" +
               identifier);
-    log.debug("Entering saml2DetailPage(). sp=" + identifier);
     const base = baseUrlOf(req);
     const facts = this.saml2Facts(base, identifier);
     const row = applications.get(identifier);
@@ -6191,7 +6192,11 @@ class AdminViews {
             String(fields.samlObservedSigningCertificate || ''),
           signedRequestsRequired: requestSignature.requiresSignedRequests(
             fields),
-          metadata: self.consumedMetadataOf(fields, identifier)
+          metadata: self.consumedMetadataOf(fields, identifier),
+          // Whether the identity provider names itself per service
+          // provider, which the page's first row explains (#446).
+          perApplicationEntityId:
+            !!config.value('saml2.perApplicationEntityId')
       });
       }())
     };

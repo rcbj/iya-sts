@@ -338,6 +338,19 @@ function childMain() {
     servers.setMember('webcheck', 'code_challenge_methods_supported',
                       '["S256"]');
     servers.removeMember('webcheck', 'request_uri_parameter_supported');
+    // And a SAML 2.0 service provider, for its identity provider's
+    // drill-down.
+    const applications = require(ROOT_DIR + '/common/applications');
+    const seeded = applications.createApplication({
+      identifier: 'https://sp.webcheck.example/saml2',
+      kind: 'saml2-service-provider', protocol: 'SAML 2.0',
+      note: 'drawn by the bundle check',
+      // What it may do and nothing it has done: an entry is refused one
+      // carrying a field the protocol endpoints accumulate.
+      fields: { samlEntityId: 'https://sp.webcheck.example/saml2' }
+    });
+    note(seeded && seeded.ok, 'D-seed. the service provider is made',
+         JSON.stringify((seeded && seeded.errors) || []));
     const unviewed = [];
     const differing = [];
     const drilled = [];
@@ -364,9 +377,9 @@ function childMain() {
       // THE DRILL-DOWN, twice: of an item the list named, when it named
       // one, and of one that is not there — the answer a link drawn a
       // moment ago gets once somebody deleted what it names.
-      drilled.push(page.path);
-      const items = [page.drill.sample(view), 'cn=not-there-' + i]
-        .filter(Boolean);
+      const sampled = page.drill.sample(view);
+      drilled.push(page.path + (sampled ? '' : ' (nothing to sample)'));
+      const items = [sampled, 'cn=not-there-' + i].filter(Boolean);
       for (let k = 0; k < items.length; k++) {
         const query = { per: '10' };
         query[page.drill.param] = items[k];
@@ -397,7 +410,8 @@ function childMain() {
          'D1. every converted page drawn by the bundle is, to the byte, ' +
          'what this process draws from the same view (' +
          WebPages.PAGES.length + ' page(s), and the drill-downs of ' +
-         drilled.length + ')', differing.join(', '));
+         drilled.length + ')', differing.join(', ') ||
+         'drill-downs: ' + drilled.join(', '));
     const report = mode.report();
     const here = WebPages.render('/admin/mode',
                                  JSON.parse(JSON.stringify(report)));
