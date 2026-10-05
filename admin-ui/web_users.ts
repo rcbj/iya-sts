@@ -1983,9 +1983,13 @@ class UsersPage {
           '<input type="hidden" name="back" value="' + kit.esc(back) + '">' +
           '<div class="formrow"><label>Name <input type="text" name="name" ' +
           'maxlength="64" required></label></div><div class="formrow">' +
+          // ONE NAME FOR THE COLUMN, a value per door (#446): the static
+          // console sends this form as JSON, where a repeated name is the
+          // operation's `doors` list. (The portal's server-read form keeps
+          // `door_<door>` — a form parser there keeps the last of a name.)
           ['ldap', 'wstrust', 'scim', 'ssf', 'est'].map(function (door) {
-            return '<label><input type="checkbox" name="door_' + door +
-                   '" value="on"> ' + kit.esc(door) + '</label> ';
+            return '<label><input type="checkbox" name="doors" value="' +
+                   kit.esc(door) + '"> ' + kit.esc(door) + '</label> ';
           }).join('') + '</div><div class="formrow"><button type="submit" ' +
           'title="' + kit.esc('Generates an app password for this person, ' +
             'scoped to the doors ticked, and shows it to you ONCE.') +

@@ -640,6 +640,13 @@ function childMain() {
     // the schema does not name, or a value of a type it does not take, is a
     // form the static console could not send. A missing REQUIRED value is
     // not counted: a form drawn empty is filled in by its reader.
+    //
+    // AND FILLED IN (F1c, 2026-10-05): the same forms with every checkbox
+    // ticked and every empty box typed in. Drawn empty, a form hid three
+    // defects from F1 and F1b — the combined `vc` protocol choice
+    // applications/create refused, and the new-user and new-application
+    // field grids a closed schema dropped — because an unticked box sends
+    // nothing and an empty one is an absent value.
     const ConsoleRuntime = require(ROOT_DIR + '/admin-ui/web_runtime');
     const specModule = require(ROOT_DIR + '/mgmt-api/admin_api_spec');
     const shaper = new ConsoleRuntime({ location: { pathname: '/admin' } });
@@ -658,7 +665,10 @@ function childMain() {
                        action: entry.route ? action : '',
                        owns: !!entry.handlerOwnsBody } : null;
     };
-    const fieldsOfForm = function (form, action) {
+    // `filled`: the form as a reader who ticked every box and typed in
+    // every empty one would send it (F1c), where the default is the form as
+    // drawn.
+    const fieldsOfForm = function (form, action, filled) {
       const fields = {};
       const add = function (name, value) {
         if (Object.prototype.hasOwnProperty.call(fields, name)) {
@@ -675,15 +685,18 @@ function childMain() {
         const type = ((/\btype="([^"]*)"/i.exec(tag) || [])[1] || 'text')
           .toLowerCase();
         const value = (/\bvalue="([^"]*)"/i.exec(tag) || [])[1];
+        const typed = type === 'text' || type === 'email' ||
+                      type === 'url' || type === 'tel';
         if (name && name !== 'action' && type !== 'submit' &&
             type !== 'file' &&
             ((type !== 'checkbox' && type !== 'radio') ||
-             /\bchecked\b/i.test(tag))) {
-          add(name, value === undefined ? (type === 'checkbox' ? 'on' : '')
-                                        : value.replace(/&amp;/g, '&')
-                                                .replace(/&quot;/g, '"')
-                                                .replace(/&lt;/g, '<')
-                                                .replace(/&gt;/g, '>'));
+             /\bchecked\b/i.test(tag) || (filled && type === 'checkbox'))) {
+          add(name, filled && typed && !value ? 'filled'
+            : value === undefined ? (type === 'checkbox' ? 'on' : '')
+                                  : value.replace(/&amp;/g, '&')
+                                          .replace(/&quot;/g, '"')
+                                          .replace(/&lt;/g, '<')
+                                          .replace(/&gt;/g, '>'));
         }
         m = inputs.exec(form);
       }
@@ -721,6 +734,8 @@ function childMain() {
       '/admin-api/applications/create': ['view']
     };
     const droppedFields = {};
+    const droppedFilled = {};
+    const refusedChoicesPosted = {};
     let bodies = 0;
     for (let i = 0; i < drawnPages.length; i++) {
       const one = drawnPages[i];
@@ -767,6 +782,48 @@ function childMain() {
               const key = operation + ': ' + name.replace(/\.\d+$/, '.N');
               droppedFields[key] = droppedFields[key] || one.path;
             });
+            // FILLED IN (F1c): every checkbox ticked and every empty box
+            // typed in. A box is dropped only where the schema does not
+            // name it, and a ticked box is refused only where its value is
+            // not in the member's enum — the two ways a form drawn empty
+            // hides a control its operation cannot take.
+            const full = fieldsOfForm(form, action, true);
+            const fullShaped = shaper.shapeFields(full,
+              await shaper.requestSchema(operation));
+            Object.keys(full).forEach(function (name) {
+              if (name === 'action' || CONSOLE_ONLY.indexOf(name) >= 0 ||
+                  (CONSOLE_ONLY_AT[operation] || []).indexOf(name) >= 0 ||
+                  Object.prototype.hasOwnProperty.call(fullShaped, name) ||
+                  Object.prototype.hasOwnProperty.call(fullShaped,
+                                                       name + 's')) {
+                return;
+              }
+              if (![].concat(full[name]).some(function (v) {
+                return String(v) !== '';
+              })) {
+                return;
+              }
+              const key = operation + ': ' + name.replace(/\.\d+$/, '.N');
+              droppedFilled[key] = droppedFilled[key] || one.path;
+            });
+            delete fullShaped.action;
+            const fullChecked = adminApi.checkRequestBody({
+              __adminApiRoute: route.route,
+              params: { action: route.action },
+              body: JSON.stringify(fullShaped),
+              headers: { 'content-type': 'application/json' } });
+            (fullChecked.errors || []).filter(function (e) {
+              // `common/closed_sets.ts`'s sentence names the values the
+              // set accepts; ajv's own wording is kept for a schema it words.
+              // A box typed in is not a choice the form offers: a confirm
+              // word, a country code, are the reader's to type right.
+              return / it accepts: |allowed values|must be equal to one of/i
+                .test(e) && !/ is "filled"/.test(e);
+            }).forEach(function (e) {
+              const key = operation + ': ' + e;
+              refusedChoicesPosted[key] = refusedChoicesPosted[key] ||
+                                          one.path;
+            });
             const checked = adminApi.checkRequestBody({
               __adminApiRoute: route.route,
               params: { action: route.action },
@@ -789,6 +846,17 @@ function childMain() {
          Object.keys(droppedFields).length + ' dropped: ' +
          Object.keys(droppedFields).map(function (k) {
            return k + ' (on ' + droppedFields[k] + ')';
+         }).join('; '));
+    note(Object.keys(droppedFilled).length === 0 &&
+         Object.keys(refusedChoicesPosted).length === 0,
+         'F1c. and a form filled in — every box ticked, every empty one ' +
+         'typed in — loses nothing and offers no choice its operation refuses',
+         Object.keys(droppedFilled).length + ' dropped: ' +
+         Object.keys(droppedFilled).map(function (k) {
+           return k + ' (on ' + droppedFilled[k] + ')';
+         }).join('; ') + '; ' + Object.keys(refusedChoicesPosted).length +
+         ' refused: ' + Object.keys(refusedChoicesPosted).map(function (k) {
+           return k + ' (on ' + refusedChoicesPosted[k] + ')';
          }).join('; '));
     // AND EVERY GET FORM'S CHOICES ARE VALUES ITS OPERATION TAKES (#446):
     // a filter's <select> offers values, and since the cutover each is sent

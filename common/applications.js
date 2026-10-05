@@ -5086,6 +5086,14 @@ function familiesOfChoices(values) {
   return out;
 }
 
+// WHAT A CREATE MAY NAME (#446): every family id, and every combined choice
+// the console's checkbox column posts — the static console sends that form
+// to `/admin-api/applications/create` as it is, and the request schema's
+// enum is checked before `familiesOfChoices()` expands it there.
+const CHOICE_IDS = PROTOCOL_IDS.concat(COMBINED_CHOICES.map(function (one) {
+  return one.id;
+}));
+
 // ---------------------------------------------------------------------------
 // AN EXAMPLE OF A VALID VALUE FOR EVERY FIELD A PERSON TYPES INTO (rcbj,
 // 2026-10-01): the console draws it as the box's placeholder — grey, gone as
@@ -16449,6 +16457,7 @@ module.exports = {
   applicationFields: applicationFields,
   FIELD_GROUPS: FIELD_GROUPS,
   FAMILY_CHOICES: FAMILY_CHOICES,
+  CHOICE_IDS: CHOICE_IDS,
   fieldExample: fieldExample,
   familiesOfChoices: familiesOfChoices,
   BOOLEAN_ATTRIBUTES: BOOLEAN_ATTRIBUTES,

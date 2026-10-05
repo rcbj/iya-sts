@@ -5982,6 +5982,10 @@ class AdminApi {
                                          'refused 400. Ignored in ' +
                                          'single-cell mode.' }
               },
+              // THE NEW-USER FORM'S BOXES (#446): the static console sends
+              // /admin/users/new's field grid here as it is, and
+              // `userFieldsFrom()` merges them over `attributes`.
+              patternProperties: FIELD_GRID_PATTERN,
               required: ['username'],
               examples: [{ username: 'rcbj' },
                          { username: 'dana', invent: false,
@@ -11993,7 +11997,7 @@ class AdminApi {
                                      'not happened. Prefer `protocols`.' },
                 protocols: {
                   type: 'array',
-                  items: { type: 'string', enum: applications.PROTOCOL_IDS },
+                  items: { type: 'string', enum: applications.CHOICE_IDS },
                   description: 'THE PROTOCOL FAMILIES THIS APPLICATION IS ' +
                                'DECLARED FOR, as ids from the closed ' +
                                'vocabulary GET /admin-api/applications/new ' +
@@ -12017,7 +12021,10 @@ class AdminApi {
                                'instead, which is how the console\'s ' +
                                'checkbox column posts it, and a single ' +
                                'string may carry several separated by ' +
-                               'spaces or commas.' },
+                               'spaces or commas.\n\nA COMBINED CHOICE ' +
+                               'the console draws as one checkbox stands for ' +
+                               'its families: `vc` declares `oid4vci` and ' +
+                               '`oid4vp`.' },
                 fields: {
                   type: 'object', additionalProperties: true,
                   description: 'THE ATTRIBUTES THE ENTRY IS CREATED WITH, ' +
@@ -12060,6 +12067,10 @@ class AdminApi {
                                'at all is a record.\n\n' +
                                this.familyScopeNote() }
               },
+              // THE NEW-APPLICATION FORM'S BOXES (#446): the static console
+              // sends /admin/applications/new's field grid here as it is,
+              // and `applicationFieldsFrom()` merges them over `fields`.
+              patternProperties: FIELD_GRID_PATTERN,
               required: ['identifier'],
               examples: [{ identifier: 'urn:example:crm', name: 'CRM',
                            protocols: ['wsfed', 'saml11'],
@@ -13698,7 +13709,16 @@ class AdminApi {
                                        'this editor offers; anything else is ' +
                                        'refused rather than ' +
                                        'written. THE SINGLE ' +
-                                       'MOST CONSEQUENTIAL LINE IN A POLICY.' }
+                                       'MOST CONSEQUENTIAL LINE IN A POLICY.' },
+                maxDelegationDepth: { type: 'string',
+                          description: 'The document\'s ' +
+                                       '<MaxDelegationDepth>: a ' +
+                                       'non-negative integer, or empty for ' +
+                                       'none.' },
+                xpathVersion: { type: 'string',
+                          description: 'The document\'s ' +
+                                       '<XPathVersion> in its defaults, ' +
+                                       'a URI; empty removes it.' }
               },
               required: ['policy'],
               examples: [{
