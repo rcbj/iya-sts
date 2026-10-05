@@ -28,7 +28,11 @@
 //      transport;
 //   5. anonymous PKINIT: the unsigned AuthPack, the anonymous TGT, the KDC's
 //      contribution to its session key (PA-PKINIT-KX), and the TGS refusing
-//      to sell anything for it.
+//      to sell anything for it;
+//   6. in a PRODUCT-MODE CHILD: a person who must hold a second factor is
+//      refused on the password alone and admitted by certificate, and a
+//      person with no Kerberos keys at all is admitted by certificate and
+//      told to sign in once when they bring a password.
 //
 // WHY IN PROCESS (tests/CLAUDE.md's first question): the vectors need chosen
 // inputs, and what the KDC wrote INTO a TGT is sealed under the krbtgt key,
@@ -145,8 +149,15 @@ function spnegoReadsPkinit(t) {
 // ---------------------------------------------------------------------------
 // 4 and 5. AS-REQs THROUGH THE KDC, WITH A CLIENT WRITTEN HERE.
 // ---------------------------------------------------------------------------
-async function throughTheKdc(t) {
-  log.debug("Entering throughTheKdc().");
+// ---------------------------------------------------------------------------
+// THE CLIENT, written here: an EST enrolment for a person, and an AS-REQ with
+// PA-PK-AS-REQ (or, with `o.password`, PA-ENC-TIMESTAMP) whose reply it
+// opens itself — the Diffie-Hellman, RFC 8636's KDF, the enc-part — and
+// whose TGT it opens with the krbtgt key to read what the KDC wrote in it.
+// One copy, for the development run here and the product child below.
+// ---------------------------------------------------------------------------
+function makeClient() {
+  log.debug("Entering makeClient().");
   const pki = require('../common/pki');
   const realms = require('../common/realms');
   const cryptoLib = require('../common/crypto');
@@ -160,23 +171,7 @@ async function throughTheKdc(t) {
   const kcrypto = require('../kerberos/krb5_crypto.js');
   const asn1 = require('../kerberos/krb5_asn1.js');
   const codec = require('../kerberos/krb5_pkinit_codec');
-  if (!pki.hasRoot()) {
-    await pki.start({});
-  }
-  await pki.ensureScope(realms.currentId());
-  t.check(!!principals.pkinitProvider(), 'the key source carries the PKINIT ' +
-          'provider');
-  if (!principals.pkinitProvider()) {
-    log.debug("Leaving throughTheKdc(). No provider.");
-    return;
-  }
   const REALM = principals.REALM;
-  const ALICE = 'pkalice' + RUN;
-  const BOB = 'pkbob' + RUN;
-  [ALICE, BOB].forEach(function (who) {
-    ldap.createUser(who, { invent: false, attributes: {
-      mail: who + '@example.com' } });
-  });
   const enrol = async function (who) {
     log.debug("Entering enrol().");
     const pair = await keyMaterial.generateKeyPair('ec-p256');
@@ -191,13 +186,6 @@ async function throughTheKdc(t) {
     return { ok: !!issued.ok, why: JSON.stringify(issued.errors || ''),
              pair: pair, record: issued.record };
   };
-  const alice = await enrol(ALICE);
-  t.check(alice.ok, 'a smart-card logon certificate is enrolled for ' +
-          ALICE + ' over EST', alice.why);
-  if (!alice.ok) {
-    log.debug("Leaving throughTheKdc(). No certificate.");
-    return;
-  }
   const derOf = function (pem) {
     log.debug("Entering derOf().");
     log.debug("Leaving derOf().");
@@ -220,7 +208,17 @@ async function throughTheKdc(t) {
     const raw = msgs.encKdcReqBody(body);
     const padata = [];
     let ecdh = null;
-    if (!opts.bare) {
+    let passwordKey = null;
+    if (opts.password) {
+      passwordKey = await kcrypto.etypeById(18).stringToKey(opts.password,
+        Buffer.from(REALM + who, 'utf8'), null);
+      const now = new Date();
+      padata.push({ type: msgs.PA_TYPE.ENC_TIMESTAMP,
+        value: msgs.encEncryptedData({ etype: 18,
+          cipher: await kcrypto.etypeById(18).encrypt(passwordKey,
+            kcrypto.KEY_USAGE.AS_REQ_PA_ENC_TIMESTAMP,
+            msgs.encPaEncTsEnc(now, now.getMilliseconds() * 1000)) }) });
+    } else if (!opts.bare) {
       const curve = opts.dh === 'modp2' ? null : 'prime256v1';
       let spki;
       if (curve) {
@@ -279,6 +277,14 @@ async function throughTheKdc(t) {
                token: token ? token.value : null };
     }
     const rep = msgs.readKdcRep(reply);
+    if (passwordKey) {
+      const plain = msgs.readEncKdcRepPart(await kcrypto.etypeById(18)
+        .decrypt(passwordKey, kcrypto.KEY_USAGE.AS_REP_ENCPART,
+                 rep.encPart.cipher));
+      log.debug("Leaving asReq(). AS-REP to a password.");
+      return { ok: true, rep: rep, enc: plain,
+               flags: msgs.ticketFlagNames(plain.flags), indicators: [] };
+    }
     const pkRep = (rep.padata || []).filter(function (p) {
       return p.type === codec.PA.PK_AS_REP;
     })[0];
@@ -347,6 +353,42 @@ async function throughTheKdc(t) {
              kxOk: kxOk, crealm: rep.crealm, sessionKey: enc && enc.key };
   };
 
+  log.debug("Leaving makeClient().");
+  return { pki: pki, realms: realms, ldap: ldap, core: core,
+           principals: principals, kdc: kdc, msgs: msgs, kcrypto: kcrypto,
+           asn1: asn1, codec: codec, enrol: enrol, asReq: asReq,
+           REALM: REALM };
+}
+
+async function throughTheKdc(t) {
+  log.debug("Entering throughTheKdc().");
+  const c = makeClient();
+  const { pki, realms, ldap, core, principals, kdc, msgs, kcrypto, asn1,
+          codec, enrol, asReq } = c;
+  if (!pki.hasRoot()) {
+    await pki.start({});
+  }
+  await pki.ensureScope(realms.currentId());
+  t.check(!!principals.pkinitProvider(), 'the key source carries the PKINIT ' +
+          'provider');
+  if (!principals.pkinitProvider()) {
+    log.debug("Leaving throughTheKdc(). No provider.");
+    return;
+  }
+  const REALM = principals.REALM;
+  const ALICE = 'pkalice' + RUN;
+  const BOB = 'pkbob' + RUN;
+  [ALICE, BOB].forEach(function (who) {
+    ldap.createUser(who, { invent: false, attributes: {
+      mail: who + '@example.com' } });
+  });
+  const alice = await enrol(ALICE);
+  t.check(alice.ok, 'a smart-card logon certificate is enrolled for ' +
+          ALICE + ' over EST', alice.why);
+  if (!alice.ok) {
+    log.debug("Leaving throughTheKdc(). No certificate.");
+    return;
+  }
   t.log.info('=== 4. PKINIT through the KDC ===');
   const first = await asReq(ALICE, alice, { bare: true });
   t.check(!first.ok && first.code === 25 &&
@@ -454,7 +496,149 @@ async function throughTheKdc(t) {
   log.debug("Leaving throughTheKdc().");
 }
 
+// ---------------------------------------------------------------------------
+// 6. PRODUCT MODE, IN A CHILD PROCESS — where PKINIT is for. A person who must
+// hold a second factor is refused a ticket on the password alone (#173) and
+// gets one with a certificate; a person with NO Kerberos keys (never signed
+// in with a password) gets one with a certificate, and with a password is
+// told to sign in once, as before. The child requires this file and calls the function
+// below: the product KDC's principal database is built at require time in the
+// mode the process starts in, as `kerberos_fast_otp.js` explains.
+// ---------------------------------------------------------------------------
+async function productScenario() {
+  log.debug("Entering productScenario().");
+  const out = {};
+  const keystore = require('../common/keystore');
+  keystore.reset();
+  keystore.setStore({
+    loadKeys: function () { return Promise.resolve([]); },
+    saveKeys: function () { return Promise.resolve(); },
+    deleteKeys: function () { return Promise.resolve(); }
+  });
+  await keystore.start();
+  const c = makeClient();
+  if (!c.pki.hasRoot()) {
+    await c.pki.start({});
+  }
+  await c.pki.ensureScope(c.realms.currentId());
+  const credentials = require('../common/credentials');
+  const personKeys = require('../kerberos/krb5_person_keys');
+  out.product = require('../common/mode').isProduct();
+  const P = 'pkmfa' + RUN;
+  const K = 'pknokeys' + RUN;
+  const PW = 'Correct-Horse-Battery-9!';
+  [P, K].forEach(function (who) {
+    c.ldap.createUser(who, { invent: false, attributes: {
+      mail: who + '@example.com' } });
+  });
+  credentials.setPassword(P, PW);
+  out.required = credentials.setMfaRequired(P, true).ok;
+  await personKeys.idle();
+  const brief = function (r) {
+    log.debug("Entering brief().");
+    log.debug("Leaving brief().");
+    return { ok: r.ok, code: r.code, eText: r.eText,
+             indicators: r.indicators, flags: r.flags };
+  };
+  const certP = await c.enrol(P);
+  const certK = await c.enrol(K);
+  out.enrolled = certP.ok && certK.ok;
+  const first = await c.asReq(P, certP, { bare: true });
+  out.passwordAlone = brief(await c.asReq(P, null, { password: PW }));
+  out.pkinitMfa = brief(await c.asReq(P, certP, { token: first.token }));
+  out.pkinitKeyless = brief(await c.asReq(K, certK, { token: first.token }));
+  out.passwordKeyless = brief(await c.asReq(K, null,
+                                            { password: 'Any-Password-1!' }));
+  log.debug("Leaving productScenario().");
+  return out;
+}
+
+function inAProductChild(t) {
+  log.debug("Entering inAProductChild().");
+  const fs = require('fs');
+  const os = require('os');
+  const path = require('path');
+  const childProcess = require('child_process');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'krb5-pkinit-'));
+  // A key-encryption key made HERE, at run time, and removed with the
+  // directory — no key material lives in the repository.
+  const kekFile = path.join(dir, 'kek');
+  fs.writeFileSync(kekFile, nodeCrypto.randomBytes(32).toString('base64'),
+                   { encoding: 'utf8', mode: 0o600 });
+  const outFile = path.join(dir, 'report.json');
+  const clean = {};
+  Object.keys(process.env).forEach(function (key) {
+    if (!/^(KRB5_|STS_|LDAP_|CONFIG_FILE$)/.test(key)) {
+      clean[key] = process.env[key];
+    }
+  });
+  const script = 'delete process.env.CONFIG_FILE;' +
+    'require(' + JSON.stringify(__filename) + ').productScenario()' +
+    '.then(function (r) { require("fs").writeFileSync(process.env.KP_OUT, ' +
+    'JSON.stringify(r)); process.exit(0); }).catch(function (e) { ' +
+    'require("fs").writeFileSync(process.env.KP_OUT, JSON.stringify({ ' +
+    'crashed: e.stack || e.message })); process.exit(0); });';
+  const run = childProcess.spawnSync(process.execPath, ['-e', script], {
+    env: Object.assign(clean, {
+      LOG_LEVEL: 'fatal', KP_OUT: outFile, STS_MODE: 'product',
+      KRB5_KRBTGT_PASSWORD: 'pkinit-' +
+                            nodeCrypto.randomBytes(12).toString('hex'),
+      STS_KEYS_SOURCE: 'persisted', STS_KEYS_KEK_PROVIDER: 'file',
+      STS_KEYS_KEK_FILE: kekFile
+    }),
+    encoding: 'utf8', timeout: 240000
+  });
+  let report = null;
+  try {
+    report = JSON.parse(fs.readFileSync(outFile, 'utf8'));
+  } catch (e) {
+    log.debug("Caught in inAProductChild(): " + ((e && e.message) || e));
+    // No report: the child died before writing one. The check below says so.
+    report = null;
+  }
+  try {
+    fs.rmSync(dir, { recursive: true, force: true });
+  } catch (e) {
+    // Best effort: a temporary directory left behind is litter.
+    log.debug("Caught in inAProductChild(): " + ((e && e.message) || e));
+  }
+  t.check(report !== null && !report.crashed, 'the product-mode child ran to ' +
+          'the end', 'exit ' + run.status + ' ' + (report && report.crashed) +
+          ' ' + String(run.stderr || '').slice(0, 800));
+  log.debug("Leaving inAProductChild().");
+  return report && !report.crashed ? report : null;
+}
+
+function inProduct(t) {
+  log.debug("Entering inProduct().");
+  t.log.info('=== 6. product mode: a second factor, and no keys at all ===');
+  const r = inAProductChild(t);
+  if (!r) {
+    log.debug("Leaving inProduct(). No report.");
+    return;
+  }
+  t.check(r.product && r.required && r.enrolled, 'the child is in product ' +
+          'mode, the person must hold a second factor, both certificates are ' +
+          'enrolled', JSON.stringify(r));
+  t.check(!r.passwordAlone.ok && r.passwordAlone.code === 12,
+          'the password alone, for a person who must hold a second factor, ' +
+          'is KDC_ERR_POLICY (#173)', JSON.stringify(r.passwordAlone));
+  t.check(r.pkinitMfa.ok &&
+          (r.pkinitMfa.indicators || []).indexOf('pkinit') !== -1,
+          'the same person with a certificate gets a TGT carrying pkinit — ' +
+          'what #179 is for', JSON.stringify(r.pkinitMfa));
+  t.check(r.pkinitKeyless.ok, 'a person with NO Kerberos keys gets a TGT ' +
+          'with a certificate', JSON.stringify(r.pkinitKeyless));
+  t.check(!r.passwordKeyless.ok && r.passwordKeyless.code === 6 &&
+          /no Kerberos keys yet/.test(String(r.passwordKeyless.eText)),
+          'and a password from them is still refused with the sentence that ' +
+          'says to sign in once (STS-KRB-0104), as before PKINIT',
+          JSON.stringify(r.passwordKeyless));
+  log.debug("Leaving inProduct().");
+}
+
 module.exports = {
+  productScenario: productScenario,
   name: 'kerberos_pkinit',
   describe: 'PKINIT (RFC 4556, 8070, 8636, 5349): a certificate as the ' +
             'Kerberos pre-authentication, and anonymous PKINIT (RFC 8062) ' +
@@ -465,6 +649,7 @@ module.exports = {
     theCodec(t);
     spnegoReadsPkinit(t);
     await throughTheKdc(t);
+    inProduct(t);
     log.debug("Leaving run().");
   }
 };

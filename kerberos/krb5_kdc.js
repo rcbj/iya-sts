@@ -1976,8 +1976,8 @@ async function answerAnonymousAsReq(request, fast, pkinit) {
   const refuse = function (code, errorCode, eText, eData) {
     log.debug('Entering refuse().');
     log.debug('Leaving refuse().');
+    // error-code: none — each caller below names its own code
     return errorReply(code, {
-      // error-code: none — each caller below names its own code
       errorCode: errorCode, crealm: body.realm, cname: body.cname,
       sname: body.sname, eText: eText, eData: eData || null
     });
@@ -2193,7 +2193,27 @@ async function answerAsReq(request, fast) {
       eText: 'the account is disabled'
     });
   }
-  const lookup = principals.lookupUser(body.cname.name, asRealm);
+  let lookup = principals.lookupUser(body.cname.name, asRealm);
+  // A PERSON WITH NO KERBEROS KEYS YET (#179): with PKINIT on, a certificate
+  // is a way in that needs no key — krb5_principals.js's
+  // certificatePerson(). A request that brings a PASSWORD keeps the refusal
+  // that tells it to sign in once (STS-KRB-0104), which is the useful
+  // sentence for somebody typing one; a bare one is answered with the
+  // methods, PKINIT among them, so `kinit -X` can go on.
+  const passwordPadata = (request.padata || []).some(function (pa) {
+    return pa.type === msgs.PA_TYPE.ENC_TIMESTAMP ||
+           pa.type === msgs.PA_TYPE.ENCRYPTED_CHALLENGE ||
+           pa.type === PA_OTP_REQUEST;
+  });
+  if (!lookup.principal && lookup.refusal && !passwordPadata &&
+      lookup.refusal.errorCode === 'STS-KRB-0104' && pkinit &&
+      pkinit.enabled() &&
+      typeof principals.certificatePerson === 'function') {
+    const keyless = principals.certificatePerson(body.cname.name, asRealm);
+    if (keyless) {
+      lookup = { principal: keyless, refusal: null };
+    }
+  }
   const client = lookup.principal;
   if (!client && lookup.refusal) {
     log.debug("Leaving answerAsReq().");

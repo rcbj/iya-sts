@@ -110,9 +110,11 @@ async function run(t) {
       tree.scopes.filter(function (one) { return one.scope === REALM_B; })[0];
 
   t.equal(a.issuing.map(function (one) { return one.id; }).join(','),
-          'jose,xml,assertions,spiffe,pep-tls,realm-tls,acme,est,scep,' +
+          'jose,xml,assertions,spiffe,pep-tls,realm-tls,kdc,acme,est,scep,' +
           'tls-client',
-          'a REALM carries the ten use cases whose keys belong to a realm. ' +
+          'a REALM carries the eleven use cases whose keys belong to a realm. ' +
+          'The eleventh arrived 2026-10-05 (#179): the certificate the ' +
+          'realm\'s KDC signs its PKINIT replies with. ' +
           'The tenth arrived 2026-10-02 (#99): the certificate a realm\'s ' +
           'own front-end listener presents. ' +
           'The ninth arrived 2026-09-13 too: the TLS client certificates a ' +

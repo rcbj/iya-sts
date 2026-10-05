@@ -2928,10 +2928,89 @@ function directoryUser(name) {
   }
   withKeyCache(record);
   record.keys = new Map(answer.keys);
+  // Keyed now, so not the keyless record certificatePerson() made (#179).
+  record.keyless = false;
   noteKeyed(record);
   attachRetained(record, answer);
   log.debug('Leaving directoryUser(). kvno ' + record.kvno + '.');
   return { principal: record, refusal: null };
+}
+
+// ---------------------------------------------------------------------------
+// A PERSON WITH NO KERBEROS KEYS YET, FOR PKINIT (#179, 2026-10-05).
+//
+// `directoryUser()` refuses a person whose keys were never derived — nobody
+// has typed their password at a door that derives them — or were derived
+// from a password they no longer have, and the refusal tells them to sign in
+// once. That is right for a password, and wrong for a CERTIFICATE: PKINIT
+// needs no long-term key at all (the reply key is agreed by Diffie-Hellman),
+// and a person whose only credential is a smart card may never sign in with
+// a password anywhere. So the KDC asks this, for those two states only, when
+// PKINIT is on: the same registered record a keyed person gets — the PAC, the
+// sign-out instant, everything the TGS reads — with NO keys and `keyless`
+// set. The KDC asks only for a request that brings no password: one that
+// does keeps the "sign in once" refusal, the useful sentence for somebody
+// typing one. Any other state (unknown, off, unreadable) is refused as
+// before. Null when the name is not a directory person's.
+// ---------------------------------------------------------------------------
+/**
+ * Returns a directory person whose Kerberos keys are absent or stale as a
+ * keyless principal, for PKINIT; null otherwise.
+ *
+ * @param nameComponents - the client name
+ * @param realm - the Kerberos realm
+ * @returns the principal, `keyless` set, or null
+ */
+function certificatePerson(nameComponents, realm) {
+  log.debug('Entering certificatePerson().');
+  if (!keySource || !personShaped(nameComponents, realm)) {
+    log.debug('Leaving certificatePerson(). Not a directory person.');
+    return null;
+  }
+  const name = String(nameComponents[0]);
+  let answer = null;
+  try {
+    answer = keySource.personKeys(name) || {};
+  } catch (e) {
+    log.debug('Caught in certificatePerson(): ' + ((e && e.message) || e));
+    answer = { state: 'unreadable' };
+  }
+  if (answer.state !== 'none' && answer.state !== 'stale') {
+    log.debug('Leaving certificatePerson(). State ' + answer.state + '.');
+    return null;
+  }
+  const REALM = current().REALM;
+  const key = name + '@' + REALM;
+  let record = principals.get(key);
+  if (!record) {
+    record = register({
+      name: [name],
+      type: 1,
+      realm: REALM,
+      salt: REALM + name,
+      etypes: offeredEtypes(current()),
+      directoryKeys: true,
+      description: 'a person in the directory with no Kerberos keys, ' +
+                   'authenticated by a certificate (PKINIT)',
+      pac: {
+        rid: autoRidFor([name], REALM),
+        groups: [RID.DOMAIN_USERS],
+        userAccountControl: UAC.NORMAL_ACCOUNT,
+        // S-1-18-1 would say a password logon; this one was a certificate,
+        // which is what S-1-18-1's sibling for a key-trust logon is not
+        // either, so the authentication-authority SID is left out.
+        extraSids: ['S-1-5-11']
+      }
+    });
+    principals.set(key, record);
+  }
+  withKeyCache(record);
+  record.keys = new Map();
+  record.keyless = true;
+  log.info('krb5: ' + key + ' has no Kerberos keys (' + answer.state + '); ' +
+           'it may authenticate with a certificate (PKINIT) and nothing else.');
+  log.debug('Leaving certificatePerson().');
+  return record;
 }
 
 // ---------------------------------------------------------------------------
@@ -4026,6 +4105,7 @@ module.exports = {
   personSecondFactor: personSecondFactor,
   preauthProvider: preauthProvider,
   pkinitProvider: pkinitProvider,
+  certificatePerson: certificatePerson,
   // Previous key versions (see PREVIOUS KEY VERSIONS).
   retainedKeyFor: retainedKeyFor,
   retainedKvnosOf: retainedKvnosOf,
