@@ -112,19 +112,43 @@ pub fn context(n: u8, constructed: bool, content: &[u8]) -> Vec<u8> {
     tlv(0x80 | if constructed { 0x20 } else { 0 } | n, content)
 }
 
-/// One element read: its tag, its content, and what followed it.
+/// One element read: its first tag octet, its class, form and number, its
+/// content, the whole encoding, and what followed it.
 #[derive(Clone, Copy, Debug)]
 pub struct Element<'a> {
+    /// The identifier's first octet (the whole tag for numbers below 31).
     pub tag: u8,
+    /// 0 universal, 1 application, 2 context-specific, 3 private.
+    pub class: u8,
+    pub constructed: bool,
+    pub number: u32,
     pub content: &'a [u8],
+    /// The element's own encoding, tag and length included.
+    pub raw: &'a [u8],
     pub rest: &'a [u8],
 }
 
-/// Reads one DER element (definite lengths only).
+impl Element<'_> {
+    /// A context-specific `[n]`.
+    pub fn is_context(&self, n: u32) -> bool {
+        self.class == 2 && self.number == n
+    }
+}
+
+/// Reads one DER element (definite lengths; tag numbers of any size).
 pub fn read(input: &[u8]) -> Option<Element<'_>> {
-    let (&tag, after) = input.split_first()?;
-    if tag & 0x1f == 0x1f {
-        return None; // high tag numbers are in none of these shapes
+    let (&tag, mut after) = input.split_first()?;
+    let mut number = u32::from(tag & 0x1f);
+    if number == 0x1f {
+        number = 0;
+        loop {
+            let (&b, next) = after.split_first()?;
+            after = next;
+            number = number.checked_mul(128)? | u32::from(b & 0x7f);
+            if b & 0x80 == 0 {
+                break;
+            }
+        }
     }
     let (&first, mut after) = after.split_first()?;
     let len = if first < 0x80 {
@@ -144,11 +168,29 @@ pub fn read(input: &[u8]) -> Option<Element<'_>> {
     if after.len() < len {
         return None;
     }
+    let header = input.len() - after.len();
     Some(Element {
         tag,
+        class: tag >> 6,
+        constructed: tag & 0x20 != 0,
+        number,
         content: &after[..len],
+        raw: &input[..header + len],
         rest: &after[len..],
     })
+}
+
+/// A DER INTEGER's content as an i64, two's complement; `None` when it
+/// does not fit.
+pub fn integer_value(content: &[u8]) -> Option<i64> {
+    if content.is_empty() || content.len() > 8 {
+        return None;
+    }
+    let mut v: i64 = if content[0] & 0x80 != 0 { -1 } else { 0 };
+    for &b in content {
+        v = (v << 8) | i64::from(b);
+    }
+    Some(v)
 }
 
 /// The elements inside a constructed element's content.
@@ -216,5 +258,15 @@ mod tests {
         assert_eq!(read(&big).unwrap().content.len(), 300);
         assert_eq!(small_integer(0), [2, 1, 0]);
         assert_eq!(small_integer(128), [2, 2, 0, 128]);
+        assert_eq!(integer_value(&[0xff]), Some(-1));
+        assert_eq!(integer_value(&[0, 0x80]), Some(128));
+    }
+
+    #[test]
+    fn high_tag_numbers() {
+        // [702] EXPLICIT INTEGER 1: bf 85 3e 03 02 01 01
+        let e = read(&[0xbf, 0x85, 0x3e, 0x03, 0x02, 0x01, 0x01]).unwrap();
+        assert!(e.is_context(702) && e.constructed);
+        assert_eq!(e.content, &[2, 1, 1]);
     }
 }
