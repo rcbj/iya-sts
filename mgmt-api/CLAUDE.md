@@ -172,6 +172,16 @@ difference. They share one response schema, `PageSettings`, which is also what
 the `settings` member of `/admin-api/saml2`, `/admin-api/saml11`,
 `/admin-api/scim` and the rest now carries — one shape a caller learns once.
 
+**THAT SHAPE GAINED `context` AND `sharedWith` (#446, 2026-10-05)**, which
+is everything the console's Settings block said that was not in it: the two
+appconfig file names the `appconfig` and `defaults` sources mean
+(`context.configFile`, null when none was named, and `context.defaultsFile`
+— `GET /admin-api/config`'s members of the same names), whether a value set
+here survives a restart (`context.persistsAppconfig`,
+`context.persistenceMode`), and, by group, the other console pages that draw
+the same group. The block is drawn from this member alone now
+(`admin-ui/web_settings.ts`); `admin-ui/CLAUDE.md`, *The settings block*.
+
 **Two of the paths are not the obvious ones**, and the collision is worth
 knowing before somebody "fixes" them: `/admin-api/oid4vci-settings` and
 `/admin-api/oid4vp-settings`, because `/admin-api/credential-claims` and

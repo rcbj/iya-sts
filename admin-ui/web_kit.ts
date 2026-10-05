@@ -721,6 +721,22 @@ class WebKit {
       foot: '<div class="pagenav">' + inner
     };
   }
+
+  // A list of names, each in its own <code>. Written as a function because the
+  // obvious one-liner — join with the markup and escape the result — escapes
+  // the markup too, and the page then shows the tags it was supposed to render.
+  // It did.
+  /**
+   * Draws a list of names, each in its own `<code>`, joined with commas.
+   *
+   * @param names - the names to draw
+   * @returns the list as HTML
+   */
+  static codeList(names) {
+    return names.map(function (name) { return '<code>' + WebKit.esc(name) +
+                                       '</code>'; })
+                .join(', ');
+  }
 }
 
 export = WebKit;

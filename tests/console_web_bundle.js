@@ -33,6 +33,12 @@
 //      of the report.
 //   E. THE TABLE IS TRUE. Every converted page is a page of the console, and
 //      names a management API operation that exists.
+//   F. THE SETTINGS BLOCK IS ONE BLOCK. On every page `SETTING_HOMES` names,
+//      with two overrides in force, what the console draws is to the byte
+//      what `web_settings.ts` draws — in this process and in the bundle —
+//      from that page's `settings` member passed through JSON: nothing the
+//      block says comes from anywhere but the answer a browser would be
+//      given. Both persistence notes are drawn from the block's `context`.
 // ===========================================================================
 
 const fs = require('fs');
@@ -323,6 +329,88 @@ function childMain() {
          'E. every converted page is a page of the console and names a ' +
          'management API operation that exists', untrue.join(', ') + ' ' +
          operations.length + ' operation(s)');
+
+    // --- F. the settings block is one block ----------------------------------
+    const config = require(ROOT_DIR + '/common/config');
+    const SettingsForms = require(ROOT_DIR + '/admin-ui/web_settings');
+    // Two overrides, so the Reset buttons, the bold Source and the
+    // "runtime override in force" note are all drawn somewhere.
+    const overrideProblems = [
+      config.setOverride('oauth2.consentRequired', 'false'),
+      config.setOverride('totp.window', '0')
+    ].filter(function (answer) { return !answer || answer.ok === false; });
+    const settingPages = [];
+    admin.settingHomes().forEach(function (row) {
+      row.pages.forEach(function (page) {
+        if (settingPages.indexOf(page) < 0) {
+          settingPages.push(page);
+        }
+      });
+    });
+    const blockDiffers = [];
+    let drawn = 0;
+    let resets = 0;
+    let sharedNotes = 0;
+    let orderedChoices = 0;
+    settingPages.forEach(function (page) {
+      const theirs = admin.configFormsFor(page);
+      const block = JSON.parse(JSON.stringify(admin.configSettingsJson(page)));
+      const mine = SettingsForms.forms(block, page);
+      const bundled = StsConsole && StsConsole.settings
+        ? StsConsole.settings.forms(block, page) : null;
+      if (mine !== theirs || mine !== bundled) {
+        blockDiffers.push(page + ' (' + String(theirs).length + ', ' +
+                          String(mine).length + ', ' +
+                          String(bundled).length + ')');
+      }
+      drawn += mine ? 1 : 0;
+      resets += mine.split('formaction="/admin/config?reset=').length - 1;
+      sharedNotes += mine.indexOf('These are the same settings') >= 0 ? 1 : 0;
+      orderedChoices += mine.indexOf('class="cfg-ordered"') >= 0 ? 1 : 0;
+      // A page that draws a subset: each group alone, as /admin/listeners
+      // draws its tabs.
+      block.groups.forEach(function (group) {
+        if (admin.configFormsFor(page, [group.group]) !==
+            SettingsForms.forms(block, page, [group.group])) {
+          blockDiffers.push(page + ' [' + group.group + ']');
+        }
+      });
+    });
+    note(overrideProblems.length === 0 && settingPages.length >= 20 &&
+         drawn === settingPages.length && blockDiffers.length === 0,
+         'F1. on every page that owns settings, the console\'s block is to ' +
+         'the byte what web_settings.ts and the bundle draw from the ' +
+         'page\'s settings member (' + settingPages.length + ' page(s))',
+         blockDiffers.slice(0, 6).join('; ') + ' ' +
+         JSON.stringify(overrideProblems));
+    note(resets >= 2 && sharedNotes >= 2 && orderedChoices >= 1,
+         'F2. and what was compared includes a Reset per override, the ' +
+         'note on a group two pages share, and an ordered choice',
+         resets + ' reset(s), ' + sharedNotes + ' shared note(s), ' +
+         orderedChoices + ' ordered choice(s)');
+    const sample = JSON.parse(JSON.stringify(
+      admin.configSettingsJson('/admin/oauth2')));
+    const kept = SettingsForms.forms(Object.assign({}, sample, {
+      context: Object.assign({}, sample.context, {
+        persistsAppconfig: true, persistenceMode: 'postgres',
+        configFile: 'env/<mine>.js' }) }), '/admin/oauth2');
+    const lost = SettingsForms.forms(Object.assign({}, sample, {
+      context: Object.assign({}, sample.context, {
+        persistsAppconfig: false, configFile: null }) }), '/admin/oauth2');
+    note(sample.context && typeof sample.context.defaultsFile === 'string' &&
+         kept.indexOf('Changes here SURVIVE A RESTART') > 0 &&
+         kept.indexOf('<code>persistence.mode=postgres</code>') > 0 &&
+         kept.indexOf('<code>env/&lt;mine&gt;.js</code>') > 0 &&
+         kept.indexOf('gone on restart') < 0 &&
+         lost.indexOf('are in memory and are gone on restart') > 0 &&
+         lost.indexOf('<code>env/local.js</code>') > 0 &&
+         lost.indexOf('SURVIVE A RESTART') < 0 &&
+         SettingsForms.forms({ groups: [] }, '/admin/x') === '',
+         'F3. the persistence note is drawn from the block\'s context, ' +
+         'either way, and a page with no group draws nothing',
+         JSON.stringify(sample.context));
+    config.clearOverride('oauth2.consentRequired');
+    config.clearOverride('totp.window');
 
     require('fs').writeFileSync(OUT, JSON.stringify(findings));
     process.exit(0);

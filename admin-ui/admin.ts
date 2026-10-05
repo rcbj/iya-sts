@@ -777,6 +777,7 @@ import delegationMap = require('./delegation_map');
 // file's methods of those names are delegates. Pure, requires nothing of
 // this service but `common/html`'s kind of leaf, so it cannot join a cycle.
 import WebKit = require('./web_kit');
+import SettingsForms = require('./web_settings');
 // ONE PERSON, END TO END: the same picture drawn of everything this service has
 // done in one identity's name — the delegation acts naming them AND the
 // ordinary OAuth 2.0, OIDC, SAML, Kerberos and SPIFFE issuance that no
@@ -3546,10 +3547,8 @@ class AdminConsole {
     return xmlEscape(v == null ? '' : String(v));
   }
 
-  // A list of names, each in its own <code>. Written as a function because the
-  // obvious one-liner — join with the markup and escape the result — escapes
-  // the markup too, and the page then shows the tags it was supposed to render.
-  // It did.
+  // A list of names, each in its own <code>. The kit's (#446): the settings
+  // block a browser draws needs it too, and its comment went with it.
   /**
    * Draws a list of names, each in its own `<code>`, joined with commas.
    *
@@ -3558,12 +3557,9 @@ class AdminConsole {
    */
   codeList(names) {
     const { log } = this.deps;
-    const self = this;
     log.debug("Entering AdminConsole.codeList().");
     log.debug("Leaving AdminConsole.codeList().");
-    return names.map(function (name) { return '<code>' + self.esc(name) +
-                                       '</code>'; })
-                .join(', ');
+    return WebKit.codeList(names);
   }
 
   // The list AS THE READER LEFT IT, picked out of a query by that table.
@@ -27034,24 +27030,11 @@ class AdminConsole {
   // page that is an exception.
   // ---------------------------------------------------------------------------
 
-  // The five sources, as a phrase a reader can act on. `env-legacy` is its own
-  // case rather than being folded into `env`, because the variable it names is
-  // not the one the rest of the row talks about — being told the value comes
-  // from "the environment" while STS_SAML_ISSUER is unset is the kind of true
-  // answer that costs twenty minutes.
-  //
-  // `defaults` is a case for exactly the same reason. The appconfig layer is
-  // TWO files unioned — env/defaults.js, and whatever CONFIG_FILE names over it
-  // — and telling somebody a value comes from "the appconfig file" when their
-  // file does not mention it would send them to edit a line that is not there.
-  // So the two halves of that layer are named separately and each names its own
-  // file.
-  //
-  // The last line is now unreachable for anything but a `derived` setting:
-  // config.js refuses to start when a non-derived setting has no value in
-  // either file and no environment variable. It stays because the three derived
-  // ones DO resolve through their `dflt`, which is a function of a neighbour
-  // rather than a literal anybody could have written in a file.
+  // The five sources, as a phrase a reader can act on. `web_settings.ts`
+  // words them since #446, with the reasoning for each case; this names the
+  // two files it is told, which are the settings block's `context` members of
+  // the same names. Kept as a method because the token-lifetime and SAML
+  // assertion rows draw a Source column of their own.
   /**
    * Words where a setting's value came from: a runtime override, an
    * environment variable, the legacy variable, the appconfig file, the
@@ -27063,28 +27046,11 @@ class AdminConsole {
   sourceNote(setting) {
     const { log, config } = this.deps;
     log.debug("Entering AdminConsole.sourceNote().");
-    if (setting.source === 'override') {
-      log.debug("Leaving AdminConsole.sourceNote().");
-      return 'set here, in memory only';
-    }
-    if (setting.source === 'env') {
-      log.debug("Leaving AdminConsole.sourceNote().");
-      return 'from ' + setting.env;
-    }
-    if (setting.source === 'env-legacy') {
-      log.debug("Leaving AdminConsole.sourceNote().");
-      return 'from ' + setting.legacyEnv + ' (the legacy variable)';
-    }
-    if (setting.source === 'appconfig') {
-      log.debug("Leaving AdminConsole.sourceNote().");
-      return 'from ' + (process.env.CONFIG_FILE || 'the appconfig file');
-    }
-    if (setting.source === 'defaults') {
-      log.debug("Leaving AdminConsole.sourceNote().");
-      return 'from ' + config.DEFAULTS_FILE + ' (the default appconfig file)';
-    }
     log.debug("Leaving AdminConsole.sourceNote().");
-    return 'derived from another setting';
+    return SettingsForms.sourceNote(setting, {
+      configFile: process.env.CONFIG_FILE || null,
+      defaultsFile: config.DEFAULTS_FILE
+    });
   }
 
   // ---------------------------------------------------------------------------
@@ -27170,6 +27136,7 @@ class AdminConsole {
    */
   configSettingsJson(path) {
     const { log } = this.deps;
+    const self = this;
     log.debug("Entering AdminConsole.configSettingsJson(). path=" + path);
     const groups = this.settingsGroupsFor(path);
     const all = groups.reduce(function (rows, group) {
@@ -27186,7 +27153,22 @@ class AdminConsole {
       // Where a caller POSTs a change. Named rather than left to be inferred:
       // these settings are edited through the configuration resource wherever
       // they are DRAWN, which is the whole of why there is no second store.
-      setWith: 'POST /admin-api/config/set-many'
+      setWith: 'POST /admin-api/config/set-many',
+      // WHAT THE BLOCK'S PROSE SAYS ABOUT THIS PROCESS (#446): the two files
+      // the Source column names and whether an override survives a restart.
+      // A page drawn in a browser has no process to ask, so the block
+      // carries what its own notes state. `configFile` and `defaultsFile`
+      // are `GET /admin-api/config`'s members of those names.
+      context: this.settingsContext(),
+      // The other pages each group is also drawn on, by group; a group
+      // drawn here alone has no member.
+      sharedWith: groups.reduce(function (map, group) {
+        const others = self.sharedSettingPages(group.group, path);
+        if (others.length) {
+          map[group.group] = others;
+        }
+        return map;
+      }, {})
     };
     log.debug("Leaving AdminConsole.configSettingsJson(). " +
               json.settingCount + " " +
@@ -27194,39 +27176,53 @@ class AdminConsole {
     return json;
   }
 
-  // The other pages a group of these settings is also drawn on, as a sentence,
-  // or '' when there are none. Only `SAML` has any today; the sentence is
-  // derived so that a second shared group cannot arrive without being
-  // announced.
+  // What a settings block states about the process it was answered by. One
+  // function, so the block on every page and the whole table on
+  // /admin/config cannot name two files.
   /**
-   * Words the note that a settings group is also drawn on other pages,
-   * linking to each.
+   * Reports the appconfig file names and the persistence facts a settings
+   * block's prose states.
+   *
+   * @returns `{ configFile, defaultsFile, persistsAppconfig,
+   *   persistenceMode }`; `configFile` is null when CONFIG_FILE is unset
+   */
+  settingsContext() {
+    const { log, config, persistence } = this.deps;
+    log.debug("Entering AdminConsole.settingsContext().");
+    const status = persistence.status();
+    log.debug("Leaving AdminConsole.settingsContext().");
+    return {
+      configFile: process.env.CONFIG_FILE || null,
+      defaultsFile: config.DEFAULTS_FILE,
+      persistsAppconfig: !!status.persistsAppconfig,
+      persistenceMode: String(status.mode)
+    };
+  }
+
+  // The other pages a group of these settings is also drawn on, each with
+  // its label off NAV, or none. `web_settings.ts` words the sentence.
+  /**
+   * Lists the other console pages a settings group is drawn on.
    *
    * @param groupName - the group's name
    * @param path - the page it is being drawn on
-   * @returns the sentence as HTML, or an empty string when no other page
-   *   draws the group
+   * @returns the other pages, each `{ path, label }`; empty when no other
+   *   page draws the group
    */
-  sharedSettingNote(groupName, path) {
+  sharedSettingPages(groupName, path) {
     const { log } = this.deps;
     const self = this;
-    log.debug("Entering AdminConsole.sharedSettingNote().");
+    log.debug("Entering AdminConsole.sharedSettingPages().");
     const row = this.settingHomeRowOf(groupName);
     if (!row || row.pages.length < 2) {
-      log.debug("Leaving AdminConsole.sharedSettingNote().");
-      return '';
+      log.debug("Leaving AdminConsole.sharedSettingPages().");
+      return [];
     }
-    const others =
-      row.pages.filter(function (other) { return other !== path; });
-    log.debug("Leaving AdminConsole.sharedSettingNote().");
-    return '<strong>These are the same settings ' +
-      others.map(function (other) {
-        return '<a href="' + self.esc(other) + '">' +
-               self.esc(self.labelOfPath(other)) + '</a>';
-      }).join(' and ') + ' draws.</strong> One setting, shown in both places ' +
-      'because it governs both: a value saved here is saved there. Nothing ' +
-      'is copied — both forms post to the same action against the same ' +
-      'override map.';
+    log.debug("Leaving AdminConsole.sharedSettingPages().");
+    return row.pages.filter(function (other) { return other !== path; })
+      .map(function (other) {
+        return { path: other, label: self.labelOfPath(other) };
+      });
   }
 
   // A page's own label, off NAV, so a cross-reference cannot name a tab that
@@ -27246,7 +27242,19 @@ class AdminConsole {
     return item ? item.label : path;
   }
 
-  // The block itself.
+  // The block itself — DRAWN BY `web_settings.ts` SINCE #446, from the page's
+  // settings member PASSED THROUGH JSON: what this console draws is what a
+  // browser handed the management API's answer draws, and nothing the block
+  // says can come from this process by another road.
+  // `tests/console_web_bundle.js` (F) compared the two renderers on every
+  // settings page before this method became a call, and holds the bundle to
+  // the same bytes now.
+  //
+  // THE THREE METHODS COMMENTS THROUGHOUT THIS FILE CITE WENT WITH IT, each
+  // with its reasoning: `configSection()` is `SettingsForms.section()`,
+  // `configRow()` is `SettingsForms.row()` — the `formaction` Reset and the
+  // description-as-tooltip arguments are above it there — and
+  // `orderedChoiceControl()` kept its name.
   /**
    * Draws the Settings block a console page carries: the lead notes on
    * persistence, restart-only rows and overrides, then one section form per
@@ -27259,128 +27267,12 @@ class AdminConsole {
    *   settings group (or none of `only`)
    */
   configFormsFor(path, only?) {
-    const { log, persistence } = this.deps;
-    const self = this;
+    const { log } = this.deps;
     log.debug("Entering AdminConsole.configFormsFor(). path=" + path);
-    const groups = this.settingsGroupsFor(path).filter(function (group) {
-      return !Array.isArray(only) || only.indexOf(group.group) >= 0;
-    });
-    if (!groups.length) {
-      log.debug("Leaving AdminConsole.configFormsFor(). No settings live on " +
-                path + ".");
-      return '';
-    }
-
-    const all = groups.reduce(function (rows, group) {
-      return rows.concat(group.settings);
-    }, []);
-    const fixed =
-        all.filter(function (setting) { return !setting.editable; }).length;
-    const overridden =
-        all.filter(function (setting) { return setting.overridden; })
-                          .map(function (setting) { return setting.key; });
-    const configFile = process.env.CONFIG_FILE || 'env/local.js';
-
-    const shared = groups.map(function (group) {
-      return self.sharedSettingNote(group.group, path);
-    }).filter(Boolean).map(function (text) { return self.note(text); })
-      .join('');
-
-    const inner = '<h2>Settings</h2>' +
-
-      this.note('The appconfig rows that decide what this family does, on ' +
-      'the page for the family rather than on <a ' +
-      'href="/admin/config">Configuration</a>. They are the same settings, ' +
-      'written through the same function against the same override map — ' +
-      'this is a second DOOR onto them and not a second place they live, ' +
-      'which is the rule <a href="/admin/token-lifetimes">Token ' +
-      'lifetimes</a> was the first page here to apply. The <em>Source</em> ' +
-      'column says where each value came from: a runtime override set on a ' +
-      'page like this one, an environment variable, the appconfig file this ' +
-      'process was started with, or the default appconfig file under it.') +
-
-      shared +
-
-      // ---------------------------------------------------------------------
-      // THIS PARAGRAPH USED TO BE ONE SENTENCE AND IT WAS TRUE FOR THE WHOLE
-      // LIFE OF THIS SERVICE UNTIL 2026-08-27.
-      //
-      // "Changes here are in memory and are gone on restart" is now true only
-      // in the default mode, and it is drawn on EVERY settings page in this
-      // console — so leaving it would have made the most-repeated sentence in
-      // the console the wrong one, on a service whose premise is that the prose
-      // is more trustworthy than the code.
-      //
-      // Both branches are written out rather than one being patched with a
-      // clause, because they are different advice: with no persistent store the
-      // reader is told to edit the appconfig file, and with one they are told
-      // that this IS the durable door and where the value went.
-      //
-      // WHAT DID NOT CHANGE is the reason nothing here rewrites the appconfig
-      // FILE, which is the same in both modes and is worth keeping said: a
-      // service that edited a file checked into a repository would leave a
-      // test's forgotten change behind permanently. The durable overrides go to
-      // the persistent store instead, which is a place nothing is checked in
-      // from.
-      // ---------------------------------------------------------------------
-      (persistence.status().persistsAppconfig
-        ? '<div class="ok"><strong>Changes here SURVIVE A RESTART.</strong> ' +
-          'This process is running with <code>persistence.mode=' +
-          this.esc(persistence.status().mode) + '</code>, so a value set ' +
-          'here is written to the persistent store and applied again the ' +
-          'next time this service starts. It is still a runtime override ' +
-          'rather than a new layer — the same setting, the same override ' +
-          'map, put back through the same function — so <em>Reset</em> still ' +
-          'means "fall back to the file or the environment variable", and ' +
-          'the reset is written down too. Nothing rewrites ' +
-          '<code>' + this.esc(configFile) + '</code>, ' +
-          'deliberately: a service that edited a file checked into a ' +
-          'repository would leave a test\'s forgotten change behind ' +
-          'permanently. See <a href="/admin/persistence">Persistence</a>.</div>'
-        : this.warn('<strong>Changes here are in memory and are gone on ' +
-          'restart.</strong> Nothing writes to the appconfig file, ' +
-          'deliberately: a service that edited a file checked into a ' +
-          'repository would leave a test\'s forgotten change behind ' +
-          'permanently. To make something stick, put it in ' +
-          '<code>' + this.esc(configFile) + '</code>, in ' +
-          'the setting\'s environment variable, or turn on a persistent ' +
-          'store — see <a href="/admin/persistence">Persistence</a>, which ' +
-          'is off by default.')) +
-
-      (fixed
-        ? this.warn('<strong>' + this.esc(String(fixed)) + ' of these ' +
-          this.esc(String(all.length)) + ' cannot be changed while this ' +
-          'service runs.</strong> They are shown with their inputs disabled ' +
-          'and the reason beside each, rather than hidden: they were ' +
-          'consumed by the time this service was listening — a bound socket, ' +
-          'a certificate\'s names, the Kerberos principal database and its ' +
-          'long-term keys, the directory\'s base DN — and accepting a change ' +
-          'to one would do nothing and read as having worked.')
-        : '') +
-
-      (overridden.length
-        ? '<div class="ok">' + this.esc(String(overridden.length)) + ' of ' +
-          'these has a runtime override in ' +
-          'force: ' + this.codeList(overridden) + '. Each ' +
-          'row\'s Reset puts it back to the value its file or environment ' +
-          'variable gives it.</div>'
-        : '') +
-
-      groups.map(function (group) { return self.configSection(group, path); })
-            .join('') +
-
-      this.note('<a href="/admin/config">Configuration</a> holds the whole ' +
-      'table — every setting this service has, whichever page edits it — and ' +
-      'the rows that belong to no protocol. The same settings over JSON are ' +
-      'at <code>' + this.esc(path) + '?format=json</code> and ' +
-      '<code>GET /admin-api/config</code>; the four actions are ' +
-      '<code>POST /admin-api/config/set</code>, <code>/set-many</code>, ' +
-      '<code>/reset</code> and <code>/reset-all</code>.');
-
-    log.debug("Leaving AdminConsole.configFormsFor(). " + all.length + " " +
-      "setting(s) in " +
-              groups.length + " group(s).");
-    return inner;
+    const block = JSON.parse(JSON.stringify(this.configSettingsJson(path)));
+    log.debug("Leaving AdminConsole.configFormsFor(). " +
+              block.settingCount + " setting(s) on " + path + ".");
+    return SettingsForms.forms(block, path, only);
   }
 
   // WHERE A SAVE GOES BACK TO. Every settings form posts to /admin/config
@@ -27409,75 +27301,6 @@ class AdminConsole {
     });
     log.debug("Leaving AdminConsole.configReturnTo().");
     return known ? asked : '/admin/config';
-  }
-
-  // ---------------------------------------------------------------------------
-  // AN ORDERED CHOICE FROM A CLOSED LIST (2026-10-01, rcbj: "explicitly
-  // choose, by checkboxes, which webauthn / ctap algorithms are requested and
-  // an order of preference"). A `csv` row marked `ordered` (only
-  // `webauthn.algorithms` today) is drawn as a table: one row per value, a
-  // checkbox that says whether it is requested and a number that says where
-  // it comes in the preference order, with the value's own note beside it.
-  // Chosen values are drawn first, in their current order, numbered 1 to N;
-  // the rest follow in the list's own order, numbered on from N + 1, so
-  // ticking one puts it last unless its number is changed.
-  //
-  // NO SCRIPT, for this console's reason: drag-and-drop or Up and Down
-  // buttons would need a script or a round trip per move, and a number per
-  // row is a whole re-ordering in one save. The fields are
-  // `<key>.pick.<value>` and `<key>.rank.<value>`, with `<key>.ordered`
-  // beside them so a save that ticks nothing is told apart from a form that
-  // does not hold this row; `foldOrderedChoices()` turns them back into the
-  // setting's one comma-separated value before the save is checked.
-  // ---------------------------------------------------------------------------
-  /**
-   * Draws an ordered choice from a closed list as a table of checkboxes and
-   * order numbers.
-   *
-   * @param setting - the described setting (`ordered`, `csvValues`)
-   * @param id - the id the row's label points at, given to the first box
-   * @returns the control as HTML
-   */
-  orderedChoiceControl(setting, id) {
-    const { log } = this.deps;
-    const self = this;
-    log.debug("Entering AdminConsole.orderedChoiceControl().");
-    const chosen = String(setting.text || '').split(',')
-      .map(function (one) { return one.trim(); })
-      .filter(function (one) {
-        return one !== '' && setting.csvValues.indexOf(one) >= 0;
-      });
-    const rest = setting.csvValues.filter(function (one) {
-      return chosen.indexOf(one) < 0;
-    });
-    const notes = setting.csvValueNotes || {};
-    const off = setting.editable ? '' : ' disabled';
-    const key = String(setting.key);
-    const rows = chosen.concat(rest).map(function (value, n) {
-      const picked = chosen.indexOf(value) >= 0;
-      return '<tr><td><input type="checkbox" name="' +
-        self.esc(key + '.pick.' + value) + '" value="1"' +
-        (n === 0 ? ' id="' + self.esc(id) + '"' : '') +
-        (picked ? ' checked' : '') + off + ' aria-label="' +
-        self.esc('Request ' + value) + '"></td>' +
-        '<td><input type="number" name="' +
-        self.esc(key + '.rank.' + value) + '" value="' + (n + 1) +
-        '" min="1" max="' + setting.csvValues.length + '" step="1" ' +
-        'style="width:4.5em"' + off + ' aria-label="' +
-        self.esc('Preference of ' + value) + '"></td>' +
-        '<td><code>' + self.esc(value) + '</code></td>' +
-        '<td class="sub">' + self.esc(notes[value] || '') + '</td></tr>';
-    }).join('');
-    log.debug("Leaving AdminConsole.orderedChoiceControl(). " +
-              chosen.length + " chosen.");
-    return '<input type="hidden" name="' + this.esc(key + '.ordered') +
-      '" value="1">' +
-      '<table class="cfg-ordered"><tr><th>Request</th><th>Order</th>' +
-      '<th>Value</th><th></th></tr>' + rows + '</table>' +
-      this.note('Tick what is requested and number it: <strong>1 is the ' +
-        'most preferred</strong>, and an authenticator uses the first it ' +
-        'supports. A number on an unticked row is ignored; two rows with ' +
-        'the same number keep the order they are drawn in.');
   }
 
   // THE FOLD, for a form that drew `orderedChoiceControl()`: the ticked
@@ -27534,172 +27357,6 @@ class AdminConsole {
     log.debug("Leaving AdminConsole.foldOrderedChoices(). " +
               markers.length + " folded.");
     return refusal;
-  }
-
-  /**
-   * Draws one setting as a table row: its key with the description as a
-   * tooltip, its control, its source and, when overridden, a Reset button.
-   *
-   * A restart-only setting is drawn with its control disabled and the
-   * reason beside it.
-   *
-   * @param setting - the described setting
-   * @param from - the page the row is drawn on; not read by the row itself
-   * @returns the table row as HTML
-   */
-  configRow(setting, from) {
-    const { log } = this.deps;
-    const self = this;
-    log.debug("Entering AdminConsole.configRow().");
-    const id = 'cfg-' + setting.key.replace(/\./g, '-');
-    // The control carries the description as a tooltip, at the length a tooltip
-    // holds. See the comment above the return.
-    const hint = this.tip(setting.description, Infinity);
-    // AN ORDERED CHOICE (2026-10-01) is a checkbox and an order number per
-    // value — `orderedChoiceControl()` — rather than a text box.
-    const input = setting.type === 'csv' && setting.ordered &&
-                  Array.isArray(setting.csvValues)
-      ? this.orderedChoiceControl(setting, id)
-      : setting.type === 'enum'
-      ? '<select name="' + this.esc(setting.key) + '" id="' + this.esc(id) +
-        '"' + hint +
-        (setting.editable ? '' : ' disabled') + '>' +
-        setting.enumValues.map(function (option) {
-          // An enum whose set holds the empty string (#86 made
-          // `pki.signatureAlgorithm` one) draws it as what it means rather
-          // than as a blank line.
-          return '<option value="' + self.esc(option) + '"' +
-            (option === setting.text ? ' selected' : '') + '>' +
-            self.esc(option === '' ? '(empty — the default)' : option) +
-                 '</option>';
-        }).join('') + '</select>'
-      : (setting.type === 'bool'
-        ? '<select name="' + this.esc(setting.key) + '" id="' + this.esc(id) +
-          '"' + hint +
-          (setting.editable ? '' : ' disabled') + '>' +
-          ['true', 'false'].map(function (option) {
-            return '<option value="' + option + '"' +
-              (option === setting.text ? ' selected' : '') + '>' + option +
-                   '</option>';
-          }).join('') + '</select>'
-        : '<input type="text" name="' + this.esc(setting.key) + '" id="' +
-          this.esc(id) +
-          '"' +
-          hint + ' size="34" value="' + this.esc(setting.text) + '"' +
-          (setting.editable ? '' : ' disabled') + '>');
-
-    // THE RESET BUTTON IS A `formaction`, AND IT USED TO BE A NESTED `<form>`
-    // THAT NO BROWSER EVER CREATED. This row is inside the section's form, and
-    // the HTML parser DROPS a `<form>` start tag inside another form — the
-    // element is never created and its children are adopted by the outer form.
-    // So the row's `action=reset` and `key` hidden inputs became fields of the
-    // SECTION's form, `parseBody()` takes the last value of a repeated name,
-    // and the section's Save button therefore performed a RESET of the last
-    // overridden key instead of saving. Nothing failed: the page reloaded with
-    // a cheerful message about the thing it had just done instead of the thing
-    // it was asked to do. It was found by dumping the parsed DOM rather than by
-    // reading the markup, which is the only way this class of defect is ever
-    // found.
-    //
-    // `formaction` is the fix and it needs no script: the button submits the
-    // same form to a different URL, and the key rides in that URL where it
-    // cannot be confused with a field. THE KEY IS IN THE QUERY STRING AND NOT
-    // IN A HIDDEN INPUT for exactly that reason.
-    //
-    // It also fixes what pressing ENTER in a text box does. A form with no
-    // hidden `action` and two named submit buttons would submit the FIRST one
-    // on Enter — a Reset — so the hidden `action=set-many` stays and the
-    // buttons carry no name at all: Enter posts to the form's own action and
-    // saves.
-    //
-    // `form-action` is deliberately absent from this service's CSP (see
-    // `common/app.js`), so nothing here is relaxed to allow it.
-    const reset = setting.overridden
-      ? '<button class="secondary" formaction="/admin/config?reset=' +
-        this.esc(encodeURIComponent(setting.key)) + '">Reset</button>'
-      : '';
-
-    const provenance = setting.overridden
-      ? '<strong>' + this.esc(this.sourceNote(setting)) + '</strong>'
-      : this.esc(this.sourceNote(setting));
-
-    // Named `restart` and not `note`, which it was until the folds arrived: a
-    // local called `note` shadows the helper of that name for the whole
-    // function, and the row then fails to render with `Cannot access 'note'
-    // before initialization` — at request time, on one page, which is the
-    // slowest possible way to find out.
-    const restart = setting.editable
-      ? ''
-      : this.note('<strong>Restart to apply:</strong> ' +
-        this.esc(setting.restartReason) + '.');
-
-    log.debug("Leaving AdminConsole.configRow().");
-    // THE DESCRIPTION IS THE TOOLTIP AND THERE IS NO LONGER A FOLD
-    // (2026-09-05).
-    //
-    // It was a fold with the setting's short label as its summary, and the
-    // input carried a 190-character teaser of the same text. That was the right
-    // shape while a tooltip was a PREVIEW of something the reader could go and
-    // read — but it meant 152 summary lines on /admin/config and a summary line
-    // per setting on every protocol page's Settings block, which is the bulk of
-    // what was left visible after the 2026-08-26 folds.
-    //
-    // Both the key's label and the control now carry the WHOLE description as a
-    // title, and nothing is drawn under them. **This is the one place in this
-    // console where something is said only in a tooltip**, and it is deliberate
-    // rather than an oversight — see the paragraph in `admin-ui/CLAUDE.md` that
-    // used to say the opposite. What pays for it is that a setting's
-    // description is also on `/admin/config`'s own JSON view, in
-    // `GET /admin-api/config`, and in docs/configuration.md's table, so the
-    // text has three other doors that a keyboard or a screen reader can
-    // reach. A field whose prose has NO other door does not get this
-    // treatment.
-    return '<tr>' +
-      '<td><label for="' + this.esc(id) + '"' +
-      this.tip(setting.description, Infinity) +
-      '><code>' + this.esc(setting.key) + '</code></label>' +
-      restart + '</td>' +
-      '<td>' + input + '</td>' +
-      '<td>' + provenance + '</td>' +
-      '<td>' + reset + '</td></tr>';
-  }
-
-  /**
-   * Draws one settings group as a form that posts every row at once
-   * (set-many) to /admin/config, with a Save button when any row is
-   * editable.
-   *
-   * @param group - the described settings group
-   * @param from - optional; the page to return to after a save
-   * @returns the heading and form as HTML
-   */
-  configSection(group, from) {
-    const { log } = this.deps;
-    const self = this;
-    log.debug("Entering AdminConsole.configSection(). group=" + group.group);
-    const rows = group.settings.map(function (setting) {
-      return self.configRow(setting, from);
-    }).join('');
-    const anyEditable = group.settings.some(function (
-        setting) { return setting.editable; });
-    const save = anyEditable
-      ? '<p><button>Save ' + this.esc(group.group) + '</button> ' +
-        '<span class="note">Applies to the next token, assertion, ticket or ' +
-        'search — nothing already issued changes.</span></p>'
-      : this.note('Every setting in this section is read at startup, so ' +
-        'there is nothing here to save. Change them in ' +
-        this.esc(process.env.CONFIG_FILE || 'the appconfig file') + ' or in ' +
-        'the environment and restart.');
-    log.debug("Leaving AdminConsole.configSection(). " + group.settings.length +
-              " setting(s).");
-    return '<h3>' + this.esc(group.group) + '</h3>' +
-      '<form method="post" action="/admin/config">' +
-      '<input type="hidden" name="action" value="set-many">' +
-      '<input type="hidden" name="from" value="' +
-      this.esc(from || '/admin/config') +
-      '"><table><tr><th>Setting</th><th>Value</th><th>Source</th><th></th>' +
-      '</tr>' +
-      rows + '</table>' + save + '</form>';
   }
 
   // The whole table, plus WHERE EACH GROUP IS EDITED. The snapshot is untouched

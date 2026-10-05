@@ -34,6 +34,7 @@ import GrantsPage = require('../oauth-oidc/web_grants');
 import ModePage = require('./web_mode');
 import NodeHealthPage = require('./web_node_health');
 import SecretsPage = require('./web_secrets');
+import SettingsForms = require('./web_settings');
 import SsfTransmittersPage = require('../ssf/web_ssf_transmitters');
 import WorkerPoolsPage = require('./web_worker_pools');
 
@@ -83,6 +84,12 @@ class WebPages {
    * The rendering kit, for the runtime that draws the shell around a page.
    */
   static readonly kit = WebKit;
+
+  /**
+   * The Settings block every page that owns settings draws, from the
+   * `settings` member of that page's operation.
+   */
+  static readonly settings = SettingsForms;
 
   /**
    * Finds the converted page at a console path.

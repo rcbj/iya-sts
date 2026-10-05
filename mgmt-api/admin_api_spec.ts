@@ -896,6 +896,49 @@ const SETTINGS_BLOCK = openObject(
       description: 'The operation that writes them, named rather than left ' +
                    'to be inferred: one store, one action, however many ' +
                    'pages draw the door.'
+    },
+    // WHAT THE BLOCK'S PROSE STATES ABOUT THE PROCESS (#446): a console
+    // drawn in a browser has no process to ask.
+    context: openObject(
+      'What a console drawing these settings says about the process that ' +
+      'answered: which files the `appconfig` and `defaults` sources name, ' +
+      'and whether a value set here survives a restart.',
+      {
+        configFile: {
+          type: ['string', 'null'],
+          description: 'The appconfig file this process was started with ' +
+                       '(CONFIG_FILE), or null when none was named. GET ' +
+                       '/config\'s member of the same name.'
+        },
+        defaultsFile: {
+          type: 'string',
+          description: 'The default appconfig file every other is a layer ' +
+                       'over.'
+        },
+        persistsAppconfig: {
+          type: 'boolean',
+          description: 'Whether a runtime override is written to the ' +
+                       'persistent store and applied again at the next ' +
+                       'start.'
+        },
+        persistenceMode: {
+          type: 'string',
+          description: 'The `persistence.mode` in force.'
+        }
+      }),
+    sharedWith: {
+      type: 'object',
+      description: 'By group name: the other console pages that draw the ' +
+                   'same group, each with its path and its label. A group ' +
+                   'drawn on this page alone has no member. One setting ' +
+                   'shown in two places is still one setting.',
+      additionalProperties: {
+        type: 'array',
+        items: openObject('Another page this group is drawn on.', {
+          path: { type: 'string' },
+          label: { type: 'string' }
+        })
+      }
     }
   });
 

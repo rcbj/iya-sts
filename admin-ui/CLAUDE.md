@@ -7282,7 +7282,7 @@ module always was, and imports the kit by its relative path.
 
 | File | What it is |
 |---|---|
-| `web_kit.ts` | The rendering kit: `esc()`, `tile()`, the prose helpers `note()`, `warn()`, `tip()`, `foldOf()` and what they stand on, and `whenText()`, `shortened()`, `clipped()`, `clippedValues()` and `pageNavPair()`, all moved VERBATIM out of `AdminConsole`; and `queryWith()`, which is `admin-core/admin_views.ts`'s written out. The methods of those names in `admin.ts` are delegates. |
+| `web_kit.ts` | The rendering kit: `esc()`, `tile()`, the prose helpers `note()`, `warn()`, `tip()`, `foldOf()` and what they stand on, and `whenText()`, `shortened()`, `clipped()`, `clippedValues()` `pageNavPair()` and `codeList()`, all moved VERBATIM out of `AdminConsole`; and `queryWith()`, which is `admin-core/admin_views.ts`'s written out. The methods of those names in `admin.ts` are delegates. |
 | `web_mode.ts` | The body of `/admin/mode`, from `GET /admin-api/mode`'s answer. It was `ModeAdmin.html()`. |
 | `web_worker_pools.ts` | The body of `/admin/worker-pools`. It was `WorkerPoolsAdmin`'s four drawing methods. |
 | `web_database.ts` | The body of `/admin/database`, and the table of its `SECTIONS`, which `database_admin.ts` now reads from here: the table is what the page is drawn from, and this module may not require that one. |
@@ -7290,6 +7290,7 @@ module always was, and imports the kit by its relative path.
 | `../oauth-oidc/web_grants.ts` | The body of `/admin/grants`, its Revoke form included. |
 | `../ssf/web_ssf_transmitters.ts` | The body of `/admin/ssf/transmitters`. |
 | `web_node_health.ts` | The body of `/admin/node-health`. It was `NodeHealthAdmin`'s nine drawing methods; it carries its own `MIB` and `round1()`, which the view's module has too, because it may not require that module. |
+| `web_settings.ts` | **The Settings block of every page that owns settings** — `forms()`, `section()`, `row()`, `orderedChoiceControl()`, `sourceNote()`, `sharedNote()` — from the `settings` member of that page's operation. Not a page: `web_pages.ts` carries it as `StsConsole.settings`. See *The settings block*, below. |
 | `web_pages.ts` | The table of converted pages (path, title, operation, renderer), and the ENTRY of the browser bundle. |
 
 **A FORM IN A RENDERER IS STILL A FORM.** `web_grants.ts` draws
@@ -7368,12 +7369,53 @@ carries both now (`admin-core/admin_views.ts`), so a renderer hands the kit
 `view.paging` and draws what the console drew — which
 `tests/console_web_bundle.js` holds, page by page of a list of 431 rows.
 
+### The settings block
+
+`configFormsFor(path)` is what forty-seven pages draw their settings with,
+and fifteen page modules outside `admin.ts` call it. **It is drawn by
+`web_settings.ts` now**, from the page's `settings` member —
+`configSettingsJson(path)`, which every one of those pages' operations
+already answered — passed through JSON. `AdminConsole.configFormsFor()` is
+that call; `configSection()`, `configRow()` and `orderedChoiceControl()`,
+which had no other caller, are `SettingsForms.section()`, `.row()` and
+`.orderedChoiceControl()` there with their comments (the `formaction` Reset,
+the description as the tooltip), and comments here that cite the old names
+mean those. `sourceNote()` stays as a method, because the token-lifetime and
+SAML assertion rows draw a Source column of their own.
+
+**THE BLOCK SAID THREE THINGS ABOUT THE PROCESS, AND THEY ARE IN THE VIEW
+NOW**, because a browser has no process:
+
+* `settings.context.configFile` and `.defaultsFile` — the files the Source
+  column and two notes name. `GET /admin-api/config` already answered both
+  under those names; `configFile` is null when `CONFIG_FILE` is unset.
+* `settings.context.persistsAppconfig` and `.persistenceMode` — which of the
+  two persistence notes is true.
+* `settings.sharedWith` — by group, the other pages that draw it
+  (`sharedSettingPages()`: `SETTING_HOMES` and NAV's labels). The sentence
+  is `SettingsForms.sharedNote()`'s.
+
+`settingsContext()` is the one function that answers the first two, so a
+block and the whole table cannot name two files.
+
+**THE TWO FALLBACKS FOR AN UNNAMED APPCONFIG FILE WERE NOT RECONCILED.** The
+lead says `env/local.js` and the Source column says "the appconfig file",
+as they did. This was a move, checked by bytes; making them agree is a
+change to the console and would be made as one.
+
+**HOW THE MOVE WAS CHECKED**: with the old methods still in place,
+`tests/console_web_bundle.js` (F) drew every settings page both ways — two
+overrides in force, each group alone as `/admin/listeners` draws them — and
+the two were equal on all forty-seven before `configFormsFor()` became a
+call. The same check stays, and holds the bundle to those bytes.
+
 **WHICH PAGES ARE NEXT IS DECIDED BY THE KIT.** Of the page modules outside
 `admin.ts`, two more need nothing the kit lacks: `claims_providers_admin`,
 whose renderer takes a callback address the view does not carry yet, and
 `provider_commands_admin`, which draws two pages. The helpers the others
-wait on, by how many page modules call them: `configFormsFor` (the settings
-forms), the rest of the paging furniture (`perPageForm`, `perPageOptions`,
-`sectionSearchForm`), `upTo` and `messagesOf` (which belong to the shell).
-`pageNavPair` and `clipped` are in the kit.
+wait on, by how many page modules call them: the rest of the paging
+furniture (`perPageForm`, `perPageOptions`, `sectionSearchForm`), `upTo`
+and `messagesOf` (which belong to the shell). `pageNavPair`, `clipped` and
+the settings block are done. **A page that draws a settings block has it as
+`view.settings`** and calls `SettingsForms.forms(view.settings, PAGE)`.
 
