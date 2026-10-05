@@ -141,6 +141,8 @@ pub struct Persistence {
     /// The keystore's data keys, started when the store opens and before
     /// anything sealed is restored; none until then.
     data_keys: Mutex<Arc<crate::keystore::DataKeys>>,
+    /// The realms' signing key sets, where keys persist.
+    key_sets: Mutex<Option<Arc<crate::key_sets::KeySets>>>,
     /// The declared stores whose writes are minted state, once attached.
     handles: Mutex<Option<Arc<sts_core::realm_store::StoreHandles>>>,
     /// Minted persistence, built when the store opens and it applies.
@@ -173,6 +175,7 @@ impl Persistence {
             flush_lock: tokio::sync::Mutex::new(()),
             replication: Mutex::new(None),
             data_keys: Mutex::new(crate::keystore::DataKeys::none()),
+            key_sets: Mutex::new(None),
             handles: Mutex::new(None),
             minted: Mutex::new(None),
             me: me.clone(),
@@ -787,6 +790,14 @@ impl Persistence {
         Ok(restored)
     }
 
+    /// The realms' key sets: `None` where keys do not persist.
+    pub fn key_sets(&self) -> Option<Arc<crate::key_sets::KeySets>> {
+        self.key_sets
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+    }
+
     /// The keystore's data keys: none before [`Persistence::start`].
     pub fn data_keys(&self) -> Arc<crate::keystore::DataKeys> {
         self.data_keys
@@ -896,6 +907,21 @@ impl Persistence {
             self.driver.clone(),
         )
         .await?;
+        // EVERY STORED KEY SET IS CHECKED HERE, before anything binds: the
+        // wrong key-encryption key stops the start rather than the first
+        // signature (STS-KEYS-0029).
+        if keys.stores_deks() {
+            if let Some(driver) = self.driver.clone() {
+                let sets = crate::key_sets::KeySets::new(driver, keys.clone());
+                let read = sets.load().await?;
+                tracing::info!(
+                    "keystore: {} realm key set(s) read from the store and checked; they are held sealed.",
+                    read
+                );
+                *self.key_sets.lock().unwrap_or_else(PoisonError::into_inner) =
+                    Some(sets);
+            }
+        }
         *self
             .data_keys
             .lock()

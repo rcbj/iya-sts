@@ -352,7 +352,7 @@ async fn data_keys_on_postgres() {
         );
         return;
     };
-    raw_exec(&url, "DELETE FROM sts_keys WHERE realm LIKE 'dek:%'")
+    raw_exec(&url, "DELETE FROM sts_keys")
         .await
         .unwrap();
     let kek = b"a test key-encryption key, never a real one".to_vec();

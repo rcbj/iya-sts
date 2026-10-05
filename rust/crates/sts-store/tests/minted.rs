@@ -146,6 +146,9 @@ async fn minted_state_on_postgres() {
         return;
     };
     raw(&url, "DELETE FROM sts_minted WHERE handle LIKE 'test.%'").await;
+    // Key rows another test left sealed under data keys it then cleared
+    // would (rightly) stop a product start.
+    raw(&url, "DELETE FROM sts_keys").await;
     let kek = kek_file();
     let a = proc(&url, &kek);
     let b = proc(&url, &kek);

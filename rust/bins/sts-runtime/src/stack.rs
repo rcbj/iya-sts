@@ -318,6 +318,26 @@ impl Stack {
     /// starts the scheduler. Before any listener binds.
     pub async fn start(&self) -> Result<(), String> {
         self.persistence.start().await?;
+        // THE DEFAULT REALM'S KEY SET, made on the first start of a store
+        // that keeps keys and stored before anything is served; a set
+        // another process stored first is the one kept.
+        if let Some(sets) = self.persistence.key_sets() {
+            if sets.open("").is_none() {
+                let made = sts_store::key_sets::generate_key_set(
+                    sts_core::time::now_ms_f64() as i64,
+                )?;
+                let saved = sets.save("", &made).await?;
+                tracing::info!(
+                    "keystore: the default realm had no key set; {}.",
+                    match saved {
+                        sts_store::key_sets::Saved::Written =>
+                            "one was made and stored",
+                        sts_store::key_sets::Saved::Kept(_) =>
+                            "another process stored one first, and it is kept",
+                    }
+                );
+            }
+        }
         if let Some(node) = &self.node {
             node.join().await?;
         }
