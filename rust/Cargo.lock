@@ -1708,8 +1708,10 @@ dependencies = [
  "base64 0.23.1",
  "openssl",
  "serde_json",
+ "sts-cluster",
  "sts-core",
  "sts-crypto",
+ "tokio",
  "tracing",
  "url",
 ]

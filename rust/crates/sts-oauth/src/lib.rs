@@ -13,11 +13,13 @@
 //! * [`revocation`] — the revoked-token register every resource server
 //!   asks.
 //! * [`dpop`] — RFC 9449's proof check, its stores behind a trait, and
-//!   [`dpop_stores`] — the nonces and the replay history behind it.
+//!   [`dpop_stores`] — the nonces and the replay history behind it, and
+//!   [`dpop_reservation`] — the cluster's reservation of a proof's jti.
 
 #![forbid(unsafe_code)]
 
 pub mod dpop;
+pub mod dpop_reservation;
 pub mod dpop_stores;
 pub mod jwt_access_token;
 pub mod mtls;
