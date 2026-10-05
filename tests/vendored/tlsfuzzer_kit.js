@@ -223,6 +223,15 @@ const WHY = {
     "a busy host the close can reach the client first. Seen on the " +
     "debugger listener with the suite's other lanes running, for the " +
     "SHA-224 probe (2026-09-26) and the SHA-1 one (2026-09-27)" },
+  compression48Busy: { why: "openssl", reason: "the probe claims 48 " +
+    "compression methods in a TLS 1.2 hello; the debugger listener refuses " +
+    "it, with decode_error on a quiet service (all 7930 probes of the " +
+    "script pass alone, 2026-10-05) and with handshake_failure twice in a " +
+    "full suite run (cluster 2026-10-03, memory 2026-10-05). Refused either " +
+    "way; why the alert differs under load is NOT established — plain " +
+    "OpenSSL and a node server with this listener's options both send " +
+    "decode_error. The script runs with -n 0 so the probe is asked every " +
+    "run rather than when sampled" },
   levelZeroAlert: { why: "tool", reason: "the script's closing alert is " +
     "built with the DESCRIPTION as its level (AlertGenerator(" +
     "close_notify)), so it is sent with level 0; the directory keeps the " +
@@ -493,7 +502,11 @@ const PLAN = [
   { script: "test-interleaved-CKE-with-CCS.py" },
   { script: "test-invalid-cipher-suites.py" },
   { script: "test-invalid-client-hello.py" },
-  { script: "test-invalid-client-hello-w-record-overflow.py" },
+  { script: "test-invalid-client-hello-w-record-overflow.py",
+    args: ["-n", "0"],
+    exceptions: [ex("compression methods len fuzz to 48 w/ext",
+                    "handshake_failure", "compression48Busy",
+                    { on: ["debugger"] })] },
   { script: "test-invalid-compression-methods.py" },
   { script: "test-invalid-content-type.py" },
   { script: "test-invalid-server-name-extension.py",
