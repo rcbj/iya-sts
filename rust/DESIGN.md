@@ -446,7 +446,7 @@ the vectors are checked in.
 
 | # | Decision | Recommendation |
 |---|---|---|
-| **D1** | **Kerberos.** Eight codec files are locked copies of the parent project's `common/krb5/`, and the parent's tests COPY `krb5_kdc`, `krb5_service`, `spnego` and their closure from this repository. A Rust KDC breaks that closure. | Keep the JavaScript files in the tree, unchanged, as the parent's test fixtures, and as the **oracle** for the Rust `sts-kerberos` crate's tests. The parent's COPY closure stops being the running service, and `kerberos/CLAUDE.md` says so. Needs a decision on the parent's side too |
+| **D1** | **Kerberos.** Eight codec files are locked copies of the parent project's `common/krb5/`, and the parent's tests COPY `krb5_kdc`, `krb5_service`, `spnego` and their closure from this repository. | **DECIDED by the owner, 2026-10-05: the files may be modified and DECOUPLED from the parent project.** The Kerberos phase ports them to `sts-kerberos` and the parent's COPY closure is retired. Interoperability is proved against a real Windows domain controller by the owner's existing compatibility tests, as well as by the protocol suite |
 | **D2** | **The store during the migration.** Coexistence needs postgres (section 3.1). | Accept it. The `memory` and `ldif` modes come to Rust at the flip |
 | **D3** | **The logging rule.** `#[tracing::instrument]` instead of hand-written Entering/Leaving lines. | Accept it. The log has the same content and nobody can forget the Leaving line |
 | **D4** | **One copy of the tables.** Move settings, error codes and appconfig data to JSON read by both implementations. | Accept it. Two hand-kept copies of a 4,101-row table would drift in a week |
@@ -496,7 +496,7 @@ The order follows dependency: nothing is ported before what it calls.
 | **5** | `sts-directory`: the directory and LDAP on 389/636. | Almost everything reads the directory; it moves before the big families |
 | **6** | `sts-authn` (the session), `sts-oauth`, `logout`. | The centre of the service. The largest phase, and likely split |
 | **7** | SAML 2.0 and 1.1, WS-Trust, WS-Federation, federation. | The XML families, on the XML-DSig port |
-| **8** | OID4VC, GNAP, SPIFFE, Kerberos (after D1), risk, attribute sources, mail, cells. | |
+| **8** | OID4VC, GNAP, SPIFFE, Kerberos (decoupled from the parent project, D1), risk, attribute sources, mail, cells. | |
 | **9** | **The flip**: Rust owns every socket; the `memory` and `ldif` stores; Node becomes the surfaces process behind the runtime; the in-process `tests/*.js` that remain are retired. | |
 
 Phase sizes are not equal. Phase 6 alone is larger than phases 1–4 together.
