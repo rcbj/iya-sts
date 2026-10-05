@@ -3255,7 +3255,9 @@ class AdminViews {
         // because one is built out of the other. What DID change under it is
         // the paging: a page is now a whole number of sets, so this array is
         // between `perPage` and three times it rather than exactly `perPage`.
-        issued: shownRecords
+        issued: shownRecords,
+        // The paging the page draws its pager from (#446).
+        paging: this.pagingJson(paging)
       }
     };
   }

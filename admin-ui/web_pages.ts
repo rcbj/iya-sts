@@ -76,6 +76,7 @@ import SsfPage = require('../ssf/web_ssf');
 import SsfTransmittersPage = require('../ssf/web_ssf_transmitters');
 import TlsTrustPage = require('../tls/web_tls_trust');
 import TokenLifetimesPage = require('./web_token_lifetimes');
+import TokensPage = require('./web_tokens');
 import VcStatusPage = require('./web_vc_status');
 import XacmlPage = require('../xacml/web_xacml');
 import WorkerPoolsPage = require('./web_worker_pools');
@@ -286,6 +287,11 @@ const PAGES: WebPage[] = [
     operation: '/admin-api/token-lifetimes',
     render: function (view: Json, ctx?: Json): string {
       return TokenLifetimesPage.body(ctx || WebKit.context(), view);
+    } },
+  { path: '/admin/tokens', title: 'Tokens',
+    operation: '/admin-api/tokens',
+    render: function (view: Json, ctx?: Json): string {
+      return TokensPage.body(ctx || WebKit.context(), view);
     } },
   { path: '/admin/vc-status', title: 'Credential status',
     operation: '/admin-api/vc-status', render: VcStatusPage.render },

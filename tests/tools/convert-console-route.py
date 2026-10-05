@@ -355,11 +355,38 @@ if not kit_rel.startswith('.'):
     kit_rel = './' + kit_rel
 COPY = [c for c in os.environ.get('COPY_CONSTS', '').split(',') if c]
 copied = []
+def statement_end(text, i):
+    """Index just past the `;` ending the statement that starts at `i`,
+    skipping strings, brackets and comments."""
+    depth = 0
+    quote = None
+    while True:
+        c = text[i]
+        if quote:
+            if c == '\\':
+                i += 1
+            elif c == quote:
+                quote = None
+        elif c in '\'"`':
+            quote = c
+        elif c == '/' and text[i + 1] == '/':
+            i = text.index('\n', i)
+            continue
+        elif c in '([{':
+            depth += 1
+        elif c in ')]}':
+            depth -= 1
+        elif c == ';' and depth == 0:
+            return i + 1
+        i += 1
+
+
 for const in COPY:
     cm = re.search(r'((?:^(?://|/\*\*| \*)[^\n]*\n)*)^const %s(?::[^=\n]*)?'
-                   r'\s*=\s[^;]*;\n' % re.escape(const), src, re.M)
+                   r'\s*=' % re.escape(const), src, re.M)
     assert cm, ('no such constant', const)
-    copied.append(cm.group(0))
+    end = statement_end(src, cm.end())
+    copied.append(src[cm.start():end] + '\n')
 
 
 def wrap(prefix, text):
