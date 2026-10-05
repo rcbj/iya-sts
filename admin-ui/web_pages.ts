@@ -307,6 +307,18 @@ const PAGES: WebPage[] = [
     } },
   { path: '/admin/realms', title: 'Trust realms',
     operation: '/admin-api/realms',
+    // The drill-down picks its row out of the list's answer: there is no
+    // GET operation for one realm, and every row is that realm whole.
+    drill: {
+      param: 'realm',
+      sample: function (list: Json): string | null {
+        const rows = list.realms || [];
+        return rows[0] ? rows[0].id : null;
+      },
+      render: function (view: Json, ctx?: Json): string {
+        return RealmsPage.detail(ctx || WebKit.context(), view);
+      }
+    },
     render: function (view: Json, ctx?: Json): string {
       return RealmsPage.body(ctx || WebKit.context(), view);
     } },

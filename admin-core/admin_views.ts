@@ -2505,6 +2505,7 @@ class AdminViews {
     out.settings = configSettingsJson('/admin/realms');
     out.defaultDomain = realms.domainOf(realms.DEFAULT_ID);
     out.count = realms.count();
+    out.currentName = realms.current().name;
     // Whether a realm defined here comes back after a restart, which the
     // caveat says — it was read once, when the console was wired.
     const store = persistence.status();

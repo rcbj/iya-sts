@@ -22483,143 +22483,27 @@ class AdminConsole {
    *   missing set when no such realm is defined
    */
   realmDetailPage(req, wanted) {
-    const { log, realms, realmJson, queryWith } = this.deps;
-    const self = this;
+    const { log, realms, realmJson } = this.deps;
     log.debug("Entering AdminConsole.realmDetailPage(). realm=" + wanted);
-    const realm = realms.get(wanted);
-    if (!realm) {
-      log.debug("Leaving AdminConsole.realmDetailPage(). No such realm.");
-      return { missing: true, json: { error: 'no_such_realm', realm: wanted },
-               inner: '<div class="err">No realm called <code>' +
-                      this.esc(wanted) +
-                      '</code> is defined. <a href="/admin/realms">The ' +
-                      'list</a> is what there is.</div>' };
-    }
-    const json = realmJson(req, realm);
-    const listView = this.listViewOf('/admin/realms', req.query);
-    const carryBack = '<input type="hidden" name="back" value="' +
-      this.esc(queryWith(listView, {})) + '">';
-    const inRealm = realms.currentId() === realm.id;
-
-    const settingRows = json.settings.length
-      ? json.settings.map(function (row) {
-          return '<tr><td><code>' + self.esc(row.key) + '</code></td>' +
-                 '<td>' + self.esc(row.label) + '</td>' +
-                 '<td><code>' + self.esc(row.value) + '</code></td>' +
-                 '<td><form method="post" action="/admin/realms" ' +
-                 'class="inline">' +
-                 carryBack + '<input type="hidden" name="action" ' +
-                 'value="unset"><input type="hidden" name="id" value="' +
-                 self.esc(realm.id) + '">' +
-                 '<input type="hidden" name="key" value="' + self.esc(row.key) +
-                 '"><button type="submit" ' +
-                 'class="secondary">Unset</button></form></td></tr>';
-        }).join('')
-      : '<tr><td colspan="4" class="none">Nothing. This realm is configured ' +
-        'exactly as the process is — which is a realm that differs only in ' +
-        'its key, its sessions and what it has issued.</td></tr>';
-
-    const endpointRows = Object.keys(json.endpoints).map(function (name) {
-      return '<tr><td>' + self.esc(name) + '</td><td class="who"><a href="' +
-             self.esc(json.endpoints[name]) + '"><code>' +
-             self.esc(json.endpoints[name]) +
-             '</code></a></td></tr>';
-    }).join('');
-
-    const inner =
-      '<p class="sub">' + this.esc(realm.name) +
-      (realm.builtin ? ' — the built-in realm' : '') + '</p>' +
-      (realm.description ? '<p class="lead">' + this.esc(realm.description) +
-       '</p>' :
-       '') +
-
-      (json.retiring ? this.retiringNotice(json, carryBack, realms.currentId())
-                     : '') +
-      (inRealm
-        ? '<div class="ok">You are reading this console ' +
-          '<strong>inside</strong> this realm. Every settings form in this ' +
-          'console writes here.</div>'
-        : this.warn('You are reading this console in the <strong>' +
-          this.esc(realms.current().name) + '</strong> realm. The switcher ' +
-          'on the left moves to this one; until then a settings form writes ' +
-          'to the realm you are in, not to this one.')) +
-
-      '<h2>Its domain</h2>' +
-      this.note('<code>' + this.esc(json.domain) + '</code>' +
-      (realm.builtin ? ', from <code>global.domain</code>' : '') +
-      ', fixed ' + (realm.builtin ? 'until a restart with another value'
-                                  : 'since the realm was created') +
-      '. Its directory is the tree at <code>' + this.esc(json.baseDn) +
-      '</code>, a naming context of its own on the shared LDAP socket, and ' +
-      'the names it invents — Kerberos realm, SPIFFE trust domain, entity ' +
-      'IDs, the address a development-mode person is given — are built from ' +
-      'it; the ones seeded when it was created are among its settings ' +
-      'below.') +
-      '<h2>Where it answers</h2>' +
-      this.note('Path prefix <code>' +
-                this.esc(json.pathPrefix || '(none — this is ' +
-      'the default realm)') + '</code>. Every HTTP endpoint this service has ' +
-      'is under it, unchanged: what is <code>/oauth2/token</code> in the ' +
-      'default realm is ' +
-      '<code>' + this.esc(json.pathPrefix) + '/oauth2/token</code> here.') +
-      '<table><tr><th>Document</th><th>URL</th></tr>' + endpointRows +
-      '</table>' +
-      this.note('The signing key is <code>' + this.esc(json.kid) + '</code>, ' +
-      'generated for this realm and held only in memory. A token minted here ' +
-      'does not verify against any other realm\'s JWKS, which is what makes ' +
-      'two realms two authorization servers rather than one served twice.') +
-
-      '<h2>What this realm sets</h2>' +
-      this.note('Every setting in <a href="/admin/config">this service\'s ' +
-      'table</a> can be set per realm, above whatever the process as a whole ' +
-      'is configured with and below nothing. The two exceptions are ' +
-      '<code>realms.enabled</code> and <code>realms.pathSegment</code>: a ' +
-      'realm that could switch realms off, or move the prefix it was found ' +
-      'under, would be doing it half way through the request that found it.') +
-      '<table><tr><th>Key</th><th>Setting</th><th>Value</th><th></th></tr>' +
-      settingRows + '</table>' +
-      '<form method="post" action="/admin/realms">' + carryBack +
-      '<input type="hidden" name="action" value="set">' +
-      '<input type="hidden" name="id" value="' + this.esc(realm.id) +
-      '"><div class="formrow"><label for="skey">Key</label><input ' +
-      'type="text" id="skey" name="key" size="30" ' +
-      'placeholder="saml2.entityId" required><label ' +
-      'for="sval">Value</label><input type="text" id="sval" name="value" ' +
-      'size="30"><button type="submit">Set it ' +
-      'here</button></div></form><h2>Name and description</h2><form ' +
-      'method="post" action="/admin/realms">' + carryBack +
-      '<input type="hidden" name="action" value="update">' +
-      '<input type="hidden" name="id" value="' + this.esc(realm.id) + '">' +
-      '<div class="formrow"><label for="uname">Name</label>' +
-      '<input type="text" id="uname" name="name" size="22" value="' +
-      this.esc(realm.name) + '"><label ' +
-      'for="udesc">Description</label><input type="text" id="udesc" ' +
-      'name="description" size="46" value="' +
-      this.esc(realm.description) + '">' +
-      '<button type="submit">Save</button></div></form>' +
-
-      (realm.builtin
-        ? '<h2>It cannot be removed</h2>' +
-          this.note('Every URL this service published before trust realms ' +
-          'existed is a URL in this realm, so removing it would remove the ' +
-          'service. There is deliberately no button.')
-        : '<h2>Remove it</h2>' +
-          this.note('<strong>Everything it holds goes with it</strong> — its ' +
-          'sessions, its authorization codes, its tokens, its offers, its ' +
-          'service providers, its statistics, its audit log and its signing ' +
-          'key. That is deliberate rather than thorough: a realm re-created ' +
-          'with the same id inheriting the last one\'s sessions would be the ' +
-          'single most surprising thing a re-created realm could do. Nothing ' +
-          'is removed from the shared directory, because nothing there ' +
-          'belongs to a realm.') +
-          '<form method="post" action="/admin/realms">' + carryBack +
-          '<input type="hidden" name="action" value="remove">' +
-          '<input type="hidden" name="id" value="' + this.esc(realm.id) + '">' +
-          '<button type="submit" class="danger">Remove ' + this.esc(realm.id) +
-          '</button></form>');
-
+    const found = realms.get(wanted);
+    const one = found ? realmJson(req, found) : null;
+    // THE DRILL-DOWN IS DRAWN FROM THE LIST'S SHAPE (#446): there is no GET
+    // operation for one realm, and every row of `GET /admin-api/realms` is
+    // this realm's `realmJson()` already, so the page picks its row by
+    // `?realm=` out of a list. This process hands it a list of the one realm
+    // rather than build every realm's row — reading a row mints that realm's
+    // signing key, which the API makes off the event loop first.
+    const json = { realms: one ? [one] : [], current: realms.currentId(),
+                   currentName: realms.current().name };
+    // Drawn by `web_realms.ts` (#446).
+    const inner = RealmsPage.detail(this.renderContext(req),
+        JSON.parse(JSON.stringify(json)));
     log.debug("Leaving AdminConsole.realmDetailPage().");
-    return { json: json, inner: inner };
+    return {
+      missing: !one,
+      json: one || { error: 'no_such_realm', realm: wanted },
+      inner: inner
+    };
   }
 
   // Drawn by `web_realms.ts` (#446).

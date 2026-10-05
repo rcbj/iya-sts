@@ -312,6 +312,168 @@ class RealmsPage {
           'registry and each realm\'s directory down. The ' +
           'KEYS are regenerated on every start either way.')));
   }
+
+  /**
+   * Draws the page's body from its view.
+   *
+   * @param ctx - the render context (`WebKit.context()`)
+   * @param json - the answer of the page's management API operation
+   * @returns the body as HTML
+   */
+  static detail(ctx, json) {
+    const wantedId = kit.queryOne(ctx.query, 'realm').trim();
+    const realm = json.realms.filter(function (row) {
+      return row.id === wantedId;
+    })[0] || null;
+    let inner;
+    if (!realm) {
+      inner = '<div class="err">No realm called <code>' +
+              kit.esc(wantedId) +
+              '</code> is defined. <a href="/admin/realms">The ' +
+              'list</a> is what there is.</div>';
+    } else {
+      const row = realm;
+      const listView = kit.listViewOf('/admin/realms', ctx.query);
+      const carryBack = '<input type="hidden" name="back" value="' +
+        kit.esc(kit.queryWith(listView, {})) + '">';
+      const inRealm = json.current === realm.id;
+
+      const settingRows = row.settings.length
+        ? row.settings.map(function (row) {
+            return '<tr><td><code>' + kit.esc(row.key) + '</code></td>' +
+                   '<td>' + kit.esc(row.label) + '</td>' +
+                   '<td><code>' + kit.esc(row.value) + '</code></td>' +
+                   '<td><form method="post" action="/admin/realms" ' +
+                   'class="inline">' +
+                   carryBack + '<input type="hidden" name="action" ' +
+                   'value="unset"><input type="hidden" name="id" value="' +
+                   kit.esc(realm.id) + '">' +
+                   '<input type="hidden" name="key" value="' +
+                     kit.esc(row.key) +
+                   '"><button type="submit" ' +
+                   'class="secondary">Unset</button></form></td></tr>';
+          }).join('')
+        : '<tr><td colspan="4" class="none">Nothing. This realm is ' +
+          'configured ' +
+          'exactly as the process is — which is a realm that differs only in ' +
+          'its key, its sessions and what it has issued.</td></tr>';
+
+      const endpointRows = Object.keys(row.endpoints).map(function (name) {
+        return '<tr><td>' + kit.esc(name) + '</td><td class="who"><a href="' +
+               kit.esc(row.endpoints[name]) + '"><code>' +
+               kit.esc(row.endpoints[name]) +
+               '</code></a></td></tr>';
+      }).join('');
+
+      inner =
+        '<p class="sub">' + kit.esc(realm.name) +
+        (realm.builtin ? ' — the built-in realm' : '') + '</p>' +
+        (realm.description ? '<p class="lead">' + kit.esc(realm.description) +
+         '</p>' :
+         '') +
+
+        (row.retiring ? RealmsPage.retiringNotice(row, carryBack, json.current)
+                       : '') +
+        (inRealm
+          ? '<div class="ok">You are reading this console ' +
+            '<strong>inside</strong> this realm. Every settings form in this ' +
+            'console writes here.</div>'
+          : kit.warn('You are reading this console in the <strong>' +
+            kit.esc(json.currentName) + '</strong> realm. The switcher ' +
+            'on the left moves to this one; until then a settings form ' +
+              'writes ' +
+            'to the realm you are in, not to this one.')) +
+
+        '<h2>Its domain</h2>' +
+        kit.note('<code>' + kit.esc(row.domain) + '</code>' +
+        (realm.builtin ? ', from <code>global.domain</code>' : '') +
+        ', fixed ' + (realm.builtin ? 'until a restart with another value'
+                                    : 'since the realm was created') +
+        '. Its directory is the tree at <code>' + kit.esc(row.baseDn) +
+        '</code>, a naming context of its own on the shared LDAP socket, and ' +
+        'the names it invents — Kerberos realm, SPIFFE trust domain, entity ' +
+        'IDs, the address a development-mode person is given — are built ' +
+          'from ' +
+        'it; the ones seeded when it was created are among its settings ' +
+        'below.') +
+        '<h2>Where it answers</h2>' +
+        kit.note('Path prefix <code>' +
+                  kit.esc(row.pathPrefix || '(none — this is ' +
+        'the default realm)') +
+          '</code>. Every HTTP endpoint this service has ' +
+        'is under it, unchanged: what is <code>/oauth2/token</code> in the ' +
+        'default realm is ' +
+        '<code>' + kit.esc(row.pathPrefix) + '/oauth2/token</code> here.') +
+        '<table><tr><th>Document</th><th>URL</th></tr>' + endpointRows +
+        '</table>' +
+        kit.note('The signing key is <code>' + kit.esc(row.kid) + '</code>, ' +
+        'generated for this realm and held only in memory. A token minted ' +
+          'here ' +
+        'does not verify against any other realm\'s JWKS, which is what ' +
+          'makes ' +
+        'two realms two authorization servers rather than one served twice.') +
+
+        '<h2>What this realm sets</h2>' +
+        kit.note('Every setting in <a href="/admin/config">this service\'s ' +
+        'table</a> can be set per realm, above whatever the process as a ' +
+          'whole ' +
+        'is configured with and below nothing. The two exceptions are ' +
+        '<code>realms.enabled</code> and <code>realms.pathSegment</code>: a ' +
+        'realm that could switch realms off, or move the prefix it was found ' +
+        'under, would be doing it half way through the request that ' +
+        'found it.') +
+        '<table><tr><th>Key</th><th>Setting</th><th>Value</th><th></th></tr>' +
+        settingRows + '</table>' +
+        '<form method="post" action="/admin/realms">' + carryBack +
+        '<input type="hidden" name="action" value="set">' +
+        '<input type="hidden" name="id" value="' + kit.esc(realm.id) +
+        '"><div class="formrow"><label for="skey">Key</label><input ' +
+        'type="text" id="skey" name="key" size="30" ' +
+        'placeholder="saml2.entityId" required><label ' +
+        'for="sval">Value</label><input type="text" id="sval" name="value" ' +
+        'size="30"><button type="submit">Set it ' +
+        'here</button></div></form><h2>Name and description</h2><form ' +
+        'method="post" action="/admin/realms">' + carryBack +
+        '<input type="hidden" name="action" value="update">' +
+        '<input type="hidden" name="id" value="' + kit.esc(realm.id) + '">' +
+        '<div class="formrow"><label for="uname">Name</label>' +
+        '<input type="text" id="uname" name="name" size="22" value="' +
+        kit.esc(realm.name) + '"><label ' +
+        'for="udesc">Description</label><input type="text" id="udesc" ' +
+        'name="description" size="46" value="' +
+        kit.esc(realm.description) + '">' +
+        '<button type="submit">Save</button></div></form>' +
+
+        (realm.builtin
+          ? '<h2>It cannot be removed</h2>' +
+            kit.note('Every URL this service published before trust realms ' +
+            'existed is a URL in this realm, so removing it would remove the ' +
+            'service. There is deliberately no button.')
+          : '<h2>Remove it</h2>' +
+            kit.note('<strong>Everything it holds goes with it</strong> — ' +
+              'its ' +
+            'sessions, its authorization codes, its tokens, its offers, its ' +
+            'service providers, its statistics, its audit log and its ' +
+              'signing ' +
+            'key. That is deliberate rather than thorough: a realm ' +
+              're-created ' +
+            'with the same id inheriting the last one\'s sessions would be ' +
+              'the ' +
+            'single most surprising thing a re-created realm could do. ' +
+              'Nothing ' +
+            'is removed from the shared directory, because nothing there ' +
+            'belongs to a realm.') +
+            '<form method="post" action="/admin/realms">' + carryBack +
+            '<input type="hidden" name="action" value="remove">' +
+            '<input type="hidden" name="id" value="' + kit.esc(realm.id) +
+              '">' +
+            '<button type="submit" class="danger">Remove ' + kit.esc(realm.id) +
+            '</button></form>');
+
+    }
+
+    return inner;
+  }
 }
 
 export = RealmsPage;
