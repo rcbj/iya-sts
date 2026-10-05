@@ -887,6 +887,194 @@ class TokensPage {
     if (state === 'revoked') return 'state-revoked';
     return 'state-none';
   }
+
+  /**
+   * Draws the page's body from its view.
+   *
+   * @param ctx - the render context (`WebKit.context()`)
+   * @param json - the answer of the page's management API operation
+   * @returns the body as HTML
+   */
+  static setBody(ctx, json) {
+    const set = json.set;
+    const listView = kit.listViewOf('/admin/tokens', ctx.query);
+    const upHref = '/admin/tokens' + kit.queryWith(listView, {});
+    const back = kit.note('<a class="btn" href="' + kit.esc(upHref) +
+      '">&larr; Back to the tokens table</a>');
+
+    if (!set) {
+      const inner = back +
+        kit.note('<strong>' + kit.esc(json.why) + '</strong> This ' +
+        'page draws the credentials that came back in ONE reply, and the ' +
+        'way to it is the link in the last column of <a ' +
+        'href="' + kit.esc(upHref) + '">the tokens ' +
+        'table</a> on any row that shows more than one. A row showing a ' +
+        'single credential links to that credential\'s own lineage ' +
+        'instead, because for one credential this page would be a click ' +
+        'that added nothing.');
+      return inner;
+    }
+
+    // Where a member's own button sends the browser: back HERE, with the list
+    // view the reader arrived through, so revoking one credential of three
+    // does not land them on page 1 of everything. `from=set` is read as an
+    // ENUM by backTo() and never as a path — the same rule the users page's
+    // buttons follow, and what keeps a `back` field from becoming an open
+    // redirect.
+    const backRow = kit.queryWith(Object.assign({}, listView,
+      { id: set.setKey }),
+                              { from: 'set' });
+    const memberRows = set.members.map(function (record) {
+      return TokensPage.issuedRow(record, backRow, listView);
+    }).join('');
+
+    // The grant, spelled as the console spells it everywhere else. Empty for
+    // anything minted where nothing states how — which cannot happen for a
+    // GROUP, since only the two OAuth issuance sites group, but can for a set
+    // of one.
+    const grantText = set.grant || 'not stated';
+
+    const inner = back +
+      kit.note('<strong>' + (set.grouped
+        ? kit.esc(set.size + ' credentials came back in one reply') +
+          ', from the <code>' + kit.esc(grantText) + '</code> grant.'
+        : 'One credential, issued on its own.') +
+      '</strong> This is that reply, member by member — each with its own ' +
+      'identifier, its own expiry and its own button, which is what the ' +
+      'tokens table drew before it started grouping. The columns mean what ' +
+      '<a href="' + kit.esc(upHref) + '">its legend</a> says they mean.') +
+
+      '<h2>The issuance</h2>' +
+      '<table>' +
+      '<tr><th>Set</th><td><code>' + kit.esc(set.setId || set.setKey) +
+      '</code>' +
+        (set.setId
+          ? ' <span class="state-none">— this service\'s own handle on the ' +
+            'reply. It is in no token, no client ever sees it, and it is ' +
+            'not a claim: it exists so that a console page can say which ' +
+            'credentials arrived together, which nothing in the protocol ' +
+            'records.</span>'
+          : ' <span class="state-none">— a set of one has no issuance id, ' +
+            'so this is the row\'s own handle in the issued ' +
+            'register.</span>') + '</td></tr><tr><th>Contents</th><td>' +
+      kit.esc(set.kinds.join(' ' +
+                '+ ')) + '</td></tr><tr><th>State</th><td>' +
+                kit.esc(set.state) +
+        (set.state === 'mixed'
+          ? ' <span class="state-none">— ' +
+            kit.esc(Object.keys(set.states).map(function (state) {
+              return set.states[state] + ' ' + state;
+            }).join(', ')) +
+            '. The ordinary case rather than a fault: an access token and ' +
+            'the refresh token issued with it have very different ' +
+            'lifetimes.</span>'
+          : '') + '</td></tr>' +
+      '<tr><th>Grant</th><td>' + kit.esc(grantText) + '</td></tr>' +
+      '<tr><th>User</th><td>' + TokensPage.userCell(set.members[0]) +
+        '</td></tr>' +
+      '<tr><th>Subject</th><td>' + TokensPage.subjectCell(set.members[0]) +
+      '</td></tr><tr><th>Client</th><td>' +
+        TokensPage.partyCell(set.members[0]) +
+      '</td></tr><tr><th>Session</th><td>' + (set.sessionId
+        ? '<a href="' + kit.esc('/admin/tokens' +
+            kit.queryWith({ session: set.sessionId }, {})) + '"><code>' +
+          kit.esc(set.sessionId) + '</code></a>' +
+          (set.sessionAuthenticated ? ''
+            : ' <span class="state-revoked">— nobody had authenticated on ' +
+              'that session when this was issued.</span>')
+        : '<span class="state-none">none — this was issued with no browser ' +
+          'sign-on session behind it, which is true of both direct grants, ' +
+          'a pre-authorized code, every token exchange, and every ' +
+          'assertion and ticket. A fact about the credential rather than a ' +
+          'gap in the recording.</span>') +
+          '</td></tr><tr><th>Issued</th><td>' +
+      kit.esc(kit.whenText(set.issuedAt)) +
+      '</td></tr><tr><th>Expires</th><td>' +
+      TokensPage.setExpiryCell(set) + '</td></tr></table>' +
+
+      (set.grouped && set.revocableCount
+        ? '<h2>Invalidate the whole set</h2>' +
+          kit.note('One act rather than one click per credential, and it ' +
+          'writes nowhere new: each member goes through the same ' +
+          'revocation <code>/oauth2/revoke</code> performs, one at a time. ' +
+          'What it saves is the mistake of revoking two of three and ' +
+          'believing the grant is dead — a refresh token left behind mints ' +
+          'a new access token, which is the whole reason a reply is worth ' +
+          'being one row. ' +
+          (set.size > set.revocableCount
+            ? 'Only ' + set.revocableCount + ' of the ' + set.size + ' can ' +
+              'be revoked; the rest are left alone.'
+            : 'All ' + set.size + ' can be revoked.')) +
+          '<div class="formrow">' +
+          '<form method="post" action="/admin/tokens" class="inline">' +
+            '<input type="hidden" name="action" value="revoke-set">' +
+            '<input type="hidden" name="set" value="' + kit.esc(set.setKey) +
+            '"><input type="hidden" name="back" value="' + kit.esc(backRow) +
+            '"><button class="danger">Revoke this set</button></form> ' +
+          '<form method="post" action="/admin/tokens" class="inline">' +
+            '<input type="hidden" name="action" value="restore-set">' +
+            '<input type="hidden" name="set" value="' + kit.esc(set.setKey) +
+            '"><input type="hidden" name="back" value="' + kit.esc(backRow) +
+            '"><button class="secondary">Restore this set</button></form>' +
+          '</div>' +
+          kit.note('Restore is <strong>NON-SPEC</strong> and no real ' +
+          'authorization server can offer it — a resource server may ' +
+          'already have cached the refusal. It is here because getting ' +
+          'back to a working token otherwise means restarting this service.')
+        : '') +
+
+      '<h2>' + (set.grouped ? 'The ' + set.size + ' credentials' : 'The ' +
+          'credential') +
+      '</h2><table><tr><th>Kind</th><th>State</th><th>User</th><th>Subject' +
+      '</th>' +
+      '<th>Client, audience or service</th><th>Detail</th><th>Presented ' +
+      'as</th><th>Issued</th><th>Expires</th><th>jti or ' +
+      'ID</th><th></th></tr>' +
+      memberRows + '</table>' +
+      kit.note('In the order they were minted. Every identifier is a link ' +
+      'to where that credential came from — who it was issued to, in whose ' +
+      'name, to reach what, and every generation behind it if a token ' +
+      'exchange or a refresh produced it. <strong>That lineage is a ' +
+      'different relation from this page</strong>: this is what arrived ' +
+      '<em>together</em>, and that is what one credential descends ' +
+      '<em>from</em>. Refreshing this set produces a new set beside it, ' +
+      'not a fourth member of it, and the lineage is what joins the two.') +
+      (set.grouped
+        ? kit.note('<strong>The Detail column will disagree with itself ' +
+          'here, and that is by design.</strong> An access token\'s ' +
+          '<code>scope</code> is what that token can do; the refresh token ' +
+          'beside it carries what was <em>authorized</em>, which is wider ' +
+          'whenever a scope became the audience — see the tokens page. A ' +
+          'set that reported one scope would be hiding the one place the ' +
+          'two halves of a grant deliberately differ.')
+        : '');
+
+    return inner;
+  }
+
+  /**
+   * Draws one row of the tokens table for a single credential.
+   *
+   * @param record - an issued-credential row from admin_stats
+   * @param backRow - the list state its form posts as `back`
+   * @param listView - the list state carried into its identifier link
+   * @returns a <tr> as HTML
+   */
+  static issuedRow(record, backRow, listView) {
+    return '<tr><td>' + kit.esc(record.kind) + '</td>' +
+      '<td class="' + TokensPage.stateClass(record.state) + '">' +
+      kit.esc(record.state) +
+      '</td><td>' + TokensPage.userCell(record) + '</td><td>' +
+      TokensPage.subjectCell(record) +
+      '</td><td>' + TokensPage.partyCell(record) + '</td><td>' +
+      TokensPage.detailCell(record) +
+      '</td><td>' + TokensPage.presentedCell(record) + '</td><td>' +
+      kit.esc(kit.whenText(record.issuedAt)) + '</td><td>' +
+      kit.esc(record.expiresAtMs ? kit.whenText(record.expiresAtMs) : '—') +
+      '</td><td>' +
+      TokensPage.identifierCell(record, listView) + '</td><td>' +
+      TokensPage.actionCell(record, backRow) + '</td></tr>';
+  }
 }
 
 export = TokensPage;
