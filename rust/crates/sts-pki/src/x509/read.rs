@@ -15,6 +15,7 @@ use chrono::{DateTime, Utc};
 use openssl::bn::BigNum;
 use openssl::ecdsa::EcdsaSig;
 use openssl::hash::{hash, MessageDigest};
+use openssl::nid::Nid;
 use openssl::pkey::PKey;
 use openssl::rsa::Padding;
 use openssl::sign::{RsaPssSaltlen, Verifier};
@@ -266,6 +267,20 @@ pub fn verify_bytes(
                 v.verify_oneshot(signature, data)?
             }
             SigKind::Ec { hash } => {
+                // Web Crypto's three curves and no other: pkijs verifies
+                // there, so a P-192 or secp256k1 certificate signature is
+                // refused as it is in Node (x509-limbo
+                // `webpki::forbidden-p192-root`).
+                let curve =
+                    key.ec_key().ok().and_then(|k| k.group().curve_name());
+                if !matches!(
+                    curve,
+                    Some(
+                        Nid::X9_62_PRIME256V1 | Nid::SECP384R1 | Nid::SECP521R1
+                    )
+                ) {
+                    return Ok(false);
+                }
                 let mut v = Verifier::new(hash.digest(), &key)?;
                 v.verify_oneshot(&minimal_ecdsa_signature(signature), data)?
             }
