@@ -897,7 +897,13 @@ const JOBS = [
   { file: 'sts_fapi_http_signatures.js', browser: false, local: true },
   { file: 'sts_roles.js',              browser: false, local: true },
   { file: 'sts_roles_builtin.js',        browser: false, local: true },
-  { file: 'sts_saml11.js',               browser: false },
+  // OWNED HERE SINCE 2026-10-05, TEMPORARILY (rcbj): rcbj/iya-sts#160 made the
+  // SAML 1.1 responder answer only its own SourceID and send the empty
+  // response for any artifact it does not hand over, and the parent's copy
+  // still resolved a relying party's artifact at the unscoped responder and
+  // expected Requester for a replay. Fixed here first; it goes back to the
+  // parent with rcbj/id-proto-debugger#353, and this flag comes off then.
+  { file: 'sts_saml11.js',               browser: false, local: true },
   // OWNED HERE SINCE 2026-09-21, when it was a byte-identical copy of the
   // parent's: its no-certificate case had to stop registering a signing
   // certificate in development (the service encrypts to one, so the in-clear

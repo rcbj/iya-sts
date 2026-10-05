@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+// SPDX-License-Identifier: BUSL-1.1
+
 'use strict';
 //
 // File: tests/sts_saml11.js
@@ -833,7 +836,22 @@ async function main() {
   const requestId = '_req' + Date.now();
   const resolveBody = samlRequest('<samlp:AssertionArtifact>' + artifact +
                                   '</samlp:AssertionArtifact>', requestId);
+  // A RESPONDER ANSWERS ONLY FOR ITS OWN SourceID (rcbj/iya-sts#160,
+  // saml-bindings-1.1 section 4.1.1.6). This artifact's SourceID is the SHA-1
+  // of the relying party's SCOPED providerID (checked above), so it belongs to
+  // /saml11/responder/{rp}. The unscoped responder answers it with the empty
+  // response — Success, no assertion, no StatusMessage — and leaves it
+  // UNSPENT, which the scoped resolution below then shows.
+  const artSlug = scopedEntityId.slice(unscopedEntityId.length + 1);
+  const scopedResponder = '/saml11/responder/' + encodeURIComponent(artSlug);
   res = await request('POST', '/saml11/responder', resolveBody, XML);
+  doc = parse(res.body);
+  check('the UNSCOPED responder answers a relying party\'s artifact with the ' +
+        'empty response', res.status === 200 &&
+        statusOf(doc) === 'samlp:Success' && !byLocal(doc, 'Assertion') &&
+        !byLocal(doc, 'StatusMessage'),
+        res.status + ' ' + statusOf(doc));
+  res = await request('POST', scopedResponder, resolveBody, XML);
   check('the responder answers 200', res.status === 200, 'status ' + res.status);
   check('the answer is a SOAP envelope', /soap:Envelope/i.test(res.body));
   doc = parse(res.body);
@@ -858,16 +876,19 @@ async function main() {
   check('the artifact-borne assertion\'s signature verifies', sig.ok,
         sig.present ? sig.why : 'unsigned');
 
-  // Trap 4.
-  res = await request('POST', '/saml11/responder', resolveBody, XML);
+  // Trap 4. Resolvable exactly once (section 3.2.3) — and since #160 an
+  // artifact this responder does not hand over, a spent one included, is the
+  // empty response: Success with no assertion and no StatusMessage, rather
+  // than a Requester refusal that tells a caller which artifacts existed.
+  res = await request('POST', scopedResponder, resolveBody, XML);
   doc = parse(res.body);
-  check('resolving the same artifact a second time is REFUSED',
-        statusOf(doc) === 'samlp:Requester', statusOf(doc));
-  check('the refusal explains the one-shot rule rather than saying "not found"',
-        /one-shot/i.test(textOf(doc, 'StatusMessage')), textOf(doc, 'StatusMessage'));
-  check('the refusal still names the SOAP request',
+  check('resolving the same artifact a second time hands over NOTHING',
+        statusOf(doc) === 'samlp:Success' && !byLocal(doc, 'Assertion'),
+        statusOf(doc));
+  check('the empty response carries no StatusMessage',
+        !byLocal(doc, 'StatusMessage'), textOf(doc, 'StatusMessage'));
+  check('the empty response still names the SOAP request',
         byLocal(doc, 'Response').getAttribute('InResponseTo') === requestId);
-  check('no assertion comes back with the refusal', !byLocal(doc, 'Assertion'));
 
   // -------------------------------------------------------------------------
   heading('the SAML responder: the other three request types');
