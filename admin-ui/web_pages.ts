@@ -72,6 +72,7 @@ import SettingsForms = require('./web_settings');
 import SignalsPage = require('../ssf/web_signals');
 import SsfPage = require('../ssf/web_ssf');
 import SsfTransmittersPage = require('../ssf/web_ssf_transmitters');
+import TlsTrustPage = require('../tls/web_tls_trust');
 import TokenLifetimesPage = require('./web_token_lifetimes');
 import VcStatusPage = require('./web_vc_status');
 import XacmlPage = require('../xacml/web_xacml');
@@ -264,6 +265,11 @@ const PAGES: WebPage[] = [
   { path: '/admin/ssf/transmitters', title: 'Signals from partners',
     operation: '/admin-api/ssf/transmitters',
     render: SsfTransmittersPage.render },
+  { path: '/admin/tls/trust', title: 'Client-certificate truststore',
+    operation: '/admin-api/tls/trust',
+    render: function (view: Json, ctx?: Json): string {
+      return TlsTrustPage.body(ctx || WebKit.context(), view);
+    } },
   { path: '/admin/token-lifetimes', title: 'Token lifetimes',
     operation: '/admin-api/token-lifetimes',
     render: function (view: Json, ctx?: Json): string {

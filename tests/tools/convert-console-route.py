@@ -125,46 +125,51 @@ assert m, ('no such route', route)
 body_start = m.end()
 body_end = scan_to_close(src, body_start, '{', '}') - 1
 body = src[body_start:body_end]
-assert body.count('self.respond(') == 1, ('respond() calls', body.count(
-    'self.respond('))
-r = body.index('self.respond(')
+def split_args(args_text):
+    """The arguments of a call, split at depth 0."""
+    out = []
+    depth = 0
+    quote = None
+    cur = ''
+    i = 0
+    while i < len(args_text):
+        c = args_text[i]
+        if quote:
+            cur += c
+            if c == '\\':
+                cur += args_text[i + 1]
+                i += 1
+            elif c == quote:
+                quote = None
+        elif c in '\'"`':
+            quote = c
+            cur += c
+        elif c in '([{':
+            depth += 1
+            cur += c
+        elif c in ')]}':
+            depth -= 1
+            cur += c
+        elif c == ',' and depth == 0:
+            out.append(cur)
+            cur = ''
+        else:
+            cur += c
+        i += 1
+    out.append(cur)
+    return [x.strip() for x in out]
+
+
+# THE LAST `respond()` IS THE PAGE'S. An earlier one is an early answer — a
+# branch that draws something else and returns — and becomes `return
+# <html>;` in the renderer, provided it answers the same view, title and tab.
+assert body.count('self.respond(') >= 1, 'no respond() call'
+r = body.rindex('self.respond(')
 r_line = body.rindex('\n', 0, r) + 1
 indent = r - r_line
 r_end = scan_to_close(body, r + len('self.respond('), '(', ')')
 assert body[r_end] == ';'
-args_text = body[r + len('self.respond('):r_end - 1]
-# split the arguments at depth 0
-args = []
-depth = 0
-quote = None
-cur = ''
-i = 0
-while i < len(args_text):
-    c = args_text[i]
-    if quote:
-        cur += c
-        if c == '\\':
-            cur += args_text[i + 1]
-            i += 1
-        elif c == quote:
-            quote = None
-    elif c in '\'"`':
-        quote = c
-        cur += c
-    elif c in '([{':
-        depth += 1
-        cur += c
-    elif c in ')]}':
-        depth -= 1
-        cur += c
-    elif c == ',' and depth == 0:
-        args.append(cur)
-        cur = ''
-    else:
-        cur += c
-    i += 1
-args.append(cur)
-args = [a.strip() for a in args]
+args = split_args(body[r + len('self.respond('):r_end - 1])
 assert args[0] == 'req' and args[1] == 'res', args[:2]
 view_name = args[2]
 assert re.match(r'^[A-Za-z_]\w*$', view_name), view_name
@@ -174,14 +179,25 @@ vm = re.search(r'^([ \t]*)const %s = [^;]*;\n' % re.escape(view_name), body,
                re.M)
 assert vm and vm.end() <= r_line, ('no view line', view_name)
 code = body[vm.end():r_line]
+while 'self.respond(' in code:
+    e0 = code.index('self.respond(')
+    e_end = scan_to_close(code, e0 + len('self.respond('), '(', ')')
+    assert code[e_end] == ';'
+    eargs = split_args(code[e0 + len('self.respond('):e_end - 1])
+    assert eargs[:5] == args[:5], ('an early respond() answers something '
+                                   'else', eargs[:5], args[:5])
+    rest = code[e_end + 1:]
+    # the `return;` that ends the early branch, after any logging
+    mret = re.match(r'(\s*(?:log\.debug\((?:[^;]|\n)*?\);\s*)*)return;', rest)
+    assert mret, 'an early respond() not followed by return;'
+    code = (code[:e0] + 'return ' + eargs[5] + ';' + rest[mret.end():])
 # THE NOTICE BANNER STAYS IN THE ROUTE: `messagesOf(req)` draws what a
 # redirect brought back, and in the browser the runtime that sent the act
-# draws its answer. Where the moved code starts its markup with it, it is
-# taken out and put in front of the renderer's call instead.
+# draws its answer. Wherever the moved code puts it in its markup (an early
+# answer too), it is taken out and put in front of the renderer's call.
 messages = False
-mm = re.search(r'self\.messagesOf\(req\)\s*\+\s*', code)
-if mm:
-    code = code[:mm.start()] + code[mm.end():]
+if re.search(r'self\.messagesOf\(req\)\s*\+\s*', code):
+    code = re.sub(r'self\.messagesOf\(req\)\s*\+\s*', '', code)
     messages = True
 elif re.match(r'^self\.messagesOf\(req\)\s*\+\s*', html_expr):
     html_expr = re.sub(r'^self\.messagesOf\(req\)\s*\+\s*', '', html_expr)
@@ -419,8 +435,13 @@ for n, l in enumerate(web.split('\n')):
 open(web_path, 'w').write(web)
 
 # --- the source: the route, and a delegate per moved helper -----------------
-call = (' ' * indent + 'self.respond(req, res, %s, %s, %s,\n' %
-        (view_name, args[3], args[4]) + ' ' * (indent + 2) +
+head = ' ' * indent + 'self.respond(req, res, %s, %s, %s,\n' % (
+    view_name, args[3], args[4])
+if len(head) > 81:
+    head = (' ' * indent + 'self.respond(req, res, %s, %s,\n' %
+            (view_name, args[3]) + ' ' * (indent + len('self.respond(')) +
+            '%s,\n' % args[4])
+call = (head + ' ' * (indent + 2) +
         '// Drawn by `%s` (#446).\n' % os.path.basename(web_file) +
         ' ' * (indent + 2) + ('self.messagesOf(req) +\n' + ' ' * (indent + 2)
                               if messages else '') +

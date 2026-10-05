@@ -7318,6 +7318,7 @@ module always was, and imports the kit by its relative path.
 | `web_error_codes.ts` | The body of `/admin/error-codes`, which drew from the view's server-side half (`wantedSubsystem`, `shown`, a paging object) until #446 and now from the JSON the API answers: `filter`, `codes`, `subsystems`, `unregisteredSeen`, and `paging`, added. |
 | `web_roles.ts` | The body of `/admin/roles`. The page and `GET /admin-api/roles` answer one view since #446 (`admin_views.rolesView(query)`: the register first, then `paging`, `shownRoles`, `applicationChoices`, the two menus and the settings), where the API answered the register alone. **The preview is composed in**: it is `GET /admin-api/roles/preview`, an operation of its own by design, and the page table's `compose` names it — the first page whose view is two answers. |
 | `../kerberos/web_kerberos_principals.ts` | The body of `/admin/kerberos/principals`, drawn inside its route until #446; its write controls follow the render context's `write`, where it read the gate's state. It is outside the parent project's locked Kerberos files. |
+| `../tls/web_tls_trust.ts` | The body of `/admin/tls/trust`, its "not installed" answer included — the first route with an early `respond()`, which the route tool turns into an early return. |
 | `web_vc_status.ts` | The body of `/admin/vc-status`; its Suspend, Reinstate and Revoke buttons are drawn only when `ctx.write` says so, and its paging is drawn from the view's `rowsPaging`. |
 | `../attribute-sources/web_attribute_sources.ts` | The body of `/admin/attribute-sources`. Its operation answered the register WITHOUT the page's `settings` until #446; both now answer `attributeSourcesView()`. |
 | `../debugger/web_debugger.ts` | The body of `/admin/debugger` — **the first page whose Settings block comes out of its own view** (`SettingsForms.forms(json.settings, PAGE_PATH)`). |
@@ -7393,7 +7394,7 @@ the view.
 
 **NOT BUILT YET**: the runtime that signs in (authorization code, PKCE, a
 non-extractable DPoP key), fetches, routes and draws the shell; the static
-route that serves it; and every page but the sixty above.
+route that serves it; and every page but the sixty-one above.
 
 **THE PAGING CONTROL IS DRAWN FROM THE PAGING A CALLER RECEIVES.**
 `pageNavPair(path, params, pg)` read two members of the console's own paging
