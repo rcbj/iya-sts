@@ -1358,6 +1358,7 @@ dependencies = [
  "openssl",
  "serde_json",
  "sts-core",
+ "tokio",
  "tracing",
 ]
 
