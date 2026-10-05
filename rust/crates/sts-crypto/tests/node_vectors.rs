@@ -4,12 +4,17 @@
 //! THE RUST HALF OF THE PARITY PROOF (rust/DESIGN.md sections 6 and 10.2).
 //!
 //! Every vector the Node service wrote (`tests/tools/crypto-vectors.js`,
-//! `vectors/*-node.json`) must verify here — and where the scheme is
+//! `*-node.json`) must verify or decrypt here — and where the scheme is
 //! deterministic, Rust's signature over the same input must be the same
-//! bytes. With `STS_WRITE_VECTORS=1` this also writes `vectors/*-rust.json`:
-//! a key Rust generated and a token Rust signed, per algorithm, which
-//! `tests/rust_crypto_vectors.js` verifies in Node. Both files are
-//! committed, so neither proof needs the other runtime.
+//! bytes. With `STS_WRITE_VECTORS=1` this also writes `*-rust.json` beside
+//! them — keys Rust generated, tokens Rust signed and JWEs Rust encrypted —
+//! which `tests/rust_crypto_vectors.js` checks in Node.
+//!
+//! The directory is `STS_CRYPTO_VECTORS`, and it is NEVER COMMITTED: the
+//! vectors carry private keys, and this repository commits no key material.
+//! With it unset this test says so and passes.
+
+#![allow(clippy::unwrap_used)] // a test file
 
 use std::path::PathBuf;
 
@@ -21,16 +26,25 @@ use sts_crypto::jws::{
 use sts_crypto::jws_alg::{id_token_half_hash, ALGS};
 use sts_crypto::keys::{JwsKey, KeyPolicy};
 
-fn vectors(name: &str) -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("vectors")
-        .join(name)
+fn vectors(name: &str) -> Option<PathBuf> {
+    let dir = std::env::var("STS_CRYPTO_VECTORS").ok()?;
+    Some(PathBuf::from(dir).join(name))
+}
+
+fn read(name: &str) -> Option<Vec<Json>> {
+    let Some(path) = vectors(name) else {
+        eprintln!("STS_CRYPTO_VECTORS is not set: {} is not checked", name);
+        return None;
+    };
+    let text = std::fs::read_to_string(path).unwrap();
+    Some(serde_json::from_str(&text).unwrap())
 }
 
 #[test]
 fn every_node_jws_verifies_here() {
-    let text = std::fs::read_to_string(vectors("jws-node.json")).unwrap();
-    let rows: Vec<Json> = serde_json::from_str(&text).unwrap();
+    let Some(rows) = read("jws-node.json") else {
+        return;
+    };
     assert_eq!(rows.len(), ALGS.len(), "one vector per algorithm");
     for row in &rows {
         let alg = row["alg"].as_str().unwrap();
@@ -111,11 +125,11 @@ fn write_the_rust_vectors_when_asked() {
         };
         out.push(json!({ "alg": row.name, "jwk": jwk, "token": token }));
     }
-    std::fs::write(
-        vectors("jws-rust.json"),
-        serde_json::to_string_pretty(&out).unwrap() + "\n",
-    )
-    .unwrap();
+    let Some(path) = vectors("jws-rust.json") else {
+        return;
+    };
+    std::fs::write(path, serde_json::to_string_pretty(&out).unwrap() + "\n")
+        .unwrap();
 }
 
 fn jwe_private(
@@ -130,8 +144,9 @@ fn jwe_private(
 #[test]
 fn every_node_jwe_decrypts_here() {
     use sts_crypto::jwe::{decrypt_compact, DecryptOptions};
-    let text = std::fs::read_to_string(vectors("jwe-node.json")).unwrap();
-    let rows: Vec<Json> = serde_json::from_str(&text).unwrap();
+    let Some(rows) = read("jwe-node.json") else {
+        return;
+    };
     assert!(rows.len() >= sts_crypto::jwe::algs().len());
     for row in &rows {
         let alg = row["alg"].as_str().unwrap();
@@ -234,9 +249,9 @@ fn write_the_rust_jwe_vectors_when_asked() {
         .unwrap());
         out.push(row);
     }
-    std::fs::write(
-        vectors("jwe-rust.json"),
-        serde_json::to_string_pretty(&out).unwrap() + "\n",
-    )
-    .unwrap();
+    let Some(path) = vectors("jwe-rust.json") else {
+        return;
+    };
+    std::fs::write(path, serde_json::to_string_pretty(&out).unwrap() + "\n")
+        .unwrap();
 }
