@@ -34,6 +34,7 @@ import AttributeSourcesPage =
 import CachesPage = require('./web_caches');
 import DatabasePage = require('./web_database');
 import DebuggerPage = require('../debugger/web_debugger');
+import GeolocationPage = require('./web_geolocation');
 import GrantsPage = require('../oauth-oidc/web_grants');
 import ListenersPage = require('./web_listeners');
 import MailPage = require('./web_mail');
@@ -70,6 +71,8 @@ const PAGES: WebPage[] = [
     operation: '/admin-api/database', render: DatabasePage.render },
   { path: '/admin/debugger', title: 'Protocol debugger',
     operation: '/admin-api/debugger', render: DebuggerPage.render },
+  { path: '/admin/geolocation', title: 'Geolocation',
+    operation: '/admin-api/geolocation', render: GeolocationPage.render },
   { path: '/admin/grants', title: 'Grants', operation: '/admin-api/grants',
     render: GrantsPage.render },
   { path: '/admin/listeners', title: 'Listeners',

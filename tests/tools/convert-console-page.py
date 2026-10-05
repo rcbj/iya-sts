@@ -90,7 +90,7 @@ def strip_logs(text):
     out = []
     i = 0
     while True:
-        m = re.search(r'(^|\n)([ \t]*)log\.debug\(', text[i:])
+        m = re.search(r'(^|\n)([ \t]*)(?:helpers\.)?log\.debug\(', text[i:])
         if not m:
             out.append(text[i:])
             break
@@ -131,7 +131,7 @@ copied = []
 # by its bare name. The new file says the same of the kit's, so no moved
 # line changes.
 for const in COPY:
-    m = re.search(r'((?:^(?://|/\*\*| \*)[^\n]*\n)*)^const %s = [^;]*;\n'
+    m = re.search(r'((?:^(?://|/\*\*| \*)[^\n]*\n)*)^const %s(?::[^=\n]*)? = [^;]*;\n'
                   % re.escape(const), '\n'.join(lines), re.M)
     assert m, ('no such constant', const)
     copied.append(m.group(0))
@@ -215,9 +215,12 @@ entry_sig = lines[[sp for sp in spans if sp[3] == entry][0][1]]
 m = re.match(r'^  (?:private |static )?\w+\((.*)\)(?:: \w+)? \{$', entry_sig)
 assert m, entry_sig
 ENTRY_PARAMS = [one.split(':')[0].strip() for one in m.group(1).split(',')]
-assert ENTRY_PARAMS in (['json'], ['req', 'json']), ENTRY_PARAMS
-if ENTRY_PARAMS == ['req', 'json']:
-    ENTRY_PARAMS = ['ctx', 'json']
+# The entry takes the view, under whatever name, and optionally the request
+# first. `VIEW_NAME` is that name, for the delegate left behind.
+assert len(ENTRY_PARAMS) == 1 or (len(ENTRY_PARAMS) == 2 and
+                                  ENTRY_PARAMS[0] == 'req'), ENTRY_PARAMS
+VIEW_NAME = ENTRY_PARAMS[-1]
+ENTRY_PARAMS = ['ctx', 'json'] if len(ENTRY_PARAMS) == 2 else ['json']
 import textwrap
 def wrap(prefix, text):
     return '\n'.join(prefix + l for l in textwrap.wrap(
@@ -310,11 +313,11 @@ for doc, start, end, name in sorted(spans, reverse=True):
             sig] + ([
             "    const { log } = this.deps;",
             "    log.debug(\"Entering %s.%s().\");" % (src_class, entry),
-            "    const drawn = %s.render(JSON.parse(JSON.stringify(json)));" % page_class,
+            "    const drawn = %s.render(JSON.parse(JSON.stringify(%s)));" % (page_class, VIEW_NAME),
             ] if ENTRY_PARAMS == ['json'] else [
             "    const { log, admin } = this.deps;",
             "    log.debug(\"Entering %s.%s().\");" % (src_class, entry),
-            "    const drawn = %s.render(JSON.parse(JSON.stringify(json))," % page_class,
+            "    const drawn = %s.render(JSON.parse(JSON.stringify(%s))," % (page_class, VIEW_NAME),
             "      admin.renderContext(req));",
             ]) + [
             "    log.debug(\"Leaving %s.%s().\");" % (src_class, entry),
