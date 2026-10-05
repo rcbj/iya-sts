@@ -1697,13 +1697,16 @@ class CryptoMetadata {
         } },
 
       { name: 'Kerberos',
-        signs: 'Nothing, in the public-key sense — THIS IS THE ONE FAMILY ' +
-               'HERE WITH NO ASYMMETRIC CRYPTOGRAPHY IN IT AT ALL. Integrity ' +
+        signs: 'A PKINIT reply (#179): the KDCDHKeyInfo, in a CMS ' +
+               'SignedData with SHA-256, by the realm\'s KDC certificate ' +
+               '(ECDSA by default). Otherwise nothing in the public-key ' +
+               'sense. Integrity ' +
                'comes from a keyed checksum (HMAC-SHA1-96, HMAC-SHA-256-128, ' +
                'HMAC-SHA-384-192 or HMAC-MD5) under a key derived from the ' +
                'long-term key for that message\'s key usage number.',
-        verifies: 'Pre-authentication, every AP-REQ authenticator, and the ' +
-                  'checksums above. THIS IS THE ONE DOOR IN THIS SERVICE ' +
+        verifies: 'Pre-authentication — PKINIT\'s signed AuthPack and ' +
+                  'its certificate path among it — every AP-REQ ' +
+                  'authenticator, and the checksums above. THIS IS THE ONE DOOR IN THIS SERVICE ' +
                   'THAT REALLY VERIFIES A CREDENTIAL, and it is not a policy ' +
                   'choice: in Kerberos the password IS the key, so a KDC ' +
                   'that accepted anything would still have to pick a key the ' +
@@ -1719,9 +1722,11 @@ class CryptoMetadata {
                 '8009) for string-to-key; MD4 (the NT hash) for RC4-HMAC, ' +
                 'which is unsalted and is why salt discovery matters only ' +
                 'for AES.',
-        whatItDoesNot: 'No PKINIT, so no certificate ever enters a Kerberos ' +
-                       'exchange here. DES and 3DES are DECODE-ONLY — named ' +
-                       'so a capture renders honestly, never performed.',
+        whatItDoesNot: 'No RSA key transport in PKINIT (the reply key is ' +
+                       'always agreed by Diffie-Hellman), and no ' +
+                       'post-quantum PKINIT, which nothing standardises. ' +
+                       'DES and 3DES are DECODE-ONLY — named so a capture ' +
+                       'renders honestly, never performed.',
         envelopes: ['krb5', 'gssapi'],
         algorithms: function () {
           log.debug("Entering algorithms().");

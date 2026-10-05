@@ -13940,7 +13940,9 @@ function pkinitVerifySignedData(signed, certDer) {
 // ---------------------------------------------------------------------------
 /**
  * Writes a CMS ContentInfo holding a SignedData over `content`, signed with
- * SHA-256 by an RSA or EC key, carrying the given certificates.
+ * SHA-256 by an RSA or EC key, carrying the given certificates — or, with no
+ * `privateKey`, RFC 8062's unsigned SignedData, with no signer and no
+ * certificate.
  *
  * @param opts - `contentType` (an OID), `content` (bytes), `signerCertDer`,
  *   `chainDers` (more certificates, the Root left out) and `privateKey`
@@ -13949,6 +13951,20 @@ function pkinitVerifySignedData(signed, certDer) {
  */
 function pkinitSignedData(opts) {
   log.debug("Entering pkinitSignedData(). " + opts.contentType);
+  const content = Buffer.from(opts.content);
+  const sha256 = pkinitTlv(0x30, [pkinitOidDer('2.16.840.1.101.3.4.2.1')]);
+  if (!opts.privateKey) {
+    // RFC 8062 section 4.1.1's anonymous AuthPack: "the signerInfos field of
+    // the SignedData ... is empty, and the certificates field is absent".
+    log.debug("Leaving pkinitSignedData(). Unsigned.");
+    return pkinitTlv(0x30, [pkinitOidDer(PKINIT_OID.signedData),
+      pkinitTlv(0xa0, [pkinitTlv(0x30, [
+        pkinitUnsignedIntegerDer([3]),
+        pkinitSetOf([sha256]),
+        pkinitTlv(0x30, [pkinitOidDer(opts.contentType),
+                         pkinitTlv(0xa0, [pkinitTlv(0x04, content)])]),
+        pkinitTlv(0x31, [])])])]);
+  }
   const key = nodeCrypto.createPrivateKey(opts.privateKey);
   const kind = key.asymmetricKeyType;
   if (kind !== 'rsa' && kind !== 'ec') {
@@ -13956,8 +13972,6 @@ function pkinitSignedData(opts) {
     // error-code: none — a programming error; the KDC key is RSA or EC
     throw new Error('pkinit: a KDC signs with RSA or EC, not ' + kind);
   }
-  const content = Buffer.from(opts.content);
-  const sha256 = pkinitTlv(0x30, [pkinitOidDer('2.16.840.1.101.3.4.2.1')]);
   const signatureAlg = kind === 'rsa'
     ? pkinitTlv(0x30, [pkinitOidDer('1.2.840.113549.1.1.1'),
                        Buffer.from([0x05, 0x00])])

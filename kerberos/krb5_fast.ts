@@ -30,8 +30,9 @@
 //     "ticketarmor") — `common/crypto.js`, section 9. The TGT is the one the
 //     client HOST got with its own keytab (a service principal created at
 //     /admin/kerberos/principals), which is what makes the armor authenticate
-//     the KDC to the client. Anonymous PKINIT (section 5.4.1.1's second and
-//     third ways) is not implemented, and neither is PKINIT at all (#179).
+//     the KDC to the client. An ANONYMOUS PKINIT TGT (RFC 8062,
+//     `krb5_pkinit.ts`, #179) is such a TGT too, for a client with no host
+//     keytab, and armors exactly as a host's does.
 //   * Section 5.4.2 — the request: the armored KrbFastReq's req-body and padata
 //     REPLACE the outer ones, the req-checksum binds the two, and a critical
 //     FAST option this KDC does not implement (hide-client-names is the one
@@ -1458,8 +1459,9 @@ class Krb5Fast {
         ? 'KDC_ERR_POLICY (12), after the password verified'
         : null,
       otpIndicator: OTP_INDICATOR,
-      notImplemented: ['anonymous PKINIT armor', 'PKINIT (#179)',
-                       'FAST in the TGS exchange', 'hide-client-names',
+      // PKINIT and anonymous PKINIT armor are krb5_pkinit.ts's (#179); FAST
+      // in the TGS exchange and hide-client-names came with #204.
+      notImplemented: ['RFC 6113 authentication sets',
                        'hashed OTP values (must-encrypt-nonce)']
     };
   }

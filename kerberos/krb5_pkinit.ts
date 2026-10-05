@@ -626,11 +626,19 @@ class Krb5Pkinit {
     const others = signed.certificates.filter(function (one: Buffer) {
       return one !== leaf;
     });
-    const intermediates = others.concat(pki.chainPemFor(realmId).map(
-      function (pem: string) {
-        return Buffer.from(String(pem).replace(/-----[^-]+-----/g, '')
-                                      .replace(/\s+/g, ''), 'base64');
-      }));
+    // THE REALM'S OWN AUTHORITIES as intermediates, beside whatever the
+    // client sent: MIT's `kinit -X X509_user_identity=FILE:` sends the leaf
+    // alone, and the KDC holds the rest — each identity Issuing CA and the
+    // realm's Intermediate (`pki.describeIssuer()`, Root excluded).
+    const held: Buffer[] = [];
+    this.identityCas().forEach(function (ca: string) {
+      const issuer = pki.describeIssuer(realmId, ca);
+      ((issuer && issuer.chainPem) || []).forEach(function (pem: string) {
+        held.push(Buffer.from(String(pem).replace(/-----[^-]+-----/g, '')
+                                         .replace(/\s+/g, ''), 'base64'));
+      });
+    });
+    const intermediates = others.concat(held);
     const anchors = anchorsPem.map(function (pem: string) {
       return pki.certificateFromDer(Buffer.from(String(pem)
         .replace(/-----[^-]+-----/g, '').replace(/\s+/g, ''), 'base64'));
