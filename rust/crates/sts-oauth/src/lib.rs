@@ -10,8 +10,10 @@
 //!   arrives with the token endpoint.
 //! * [`mtls`] — RFC 8705 section 3.1: a certificate-bound token held to
 //!   the connection's certificate.
+//! * [`dpop`] — RFC 9449's proof check, its stores behind a trait.
 
 #![forbid(unsafe_code)]
 
+pub mod dpop;
 pub mod jwt_access_token;
 pub mod mtls;
