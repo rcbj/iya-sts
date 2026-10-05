@@ -7,7 +7,9 @@
 [workspace]
 resolver = "2"
 members = [
+  "crates/sts-core",
   "crates/sts-xacml",
+  "bins/xacml-pep",
 ]
 
 [workspace.package]
@@ -20,7 +22,22 @@ publish = false
 # `workspace = true` — so two crates cannot quietly disagree about which
 # release of a library the service runs.
 [workspace.dependencies]
+sts-core = { path = "crates/sts-core" }
+sts-xacml = { path = "crates/sts-xacml" }
+axum = "0.8"
 base64 = "0.23"
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+hyper = { version = "1", features = ["server", "http1", "http2"] }
+hyper-util = { version = "0.1", features = ["server", "server-auto", "tokio", "service"] }
+# OpenSSL 3.5+ built from source, so every machine and image has the same
+# library and the post-quantum algorithms (rust/DESIGN.md section 6, D5).
+openssl = { version = "0.10", features = ["vendored"] }
+reqwest = { version = "0.12", default-features = false, features = ["native-tls-vendored", "json"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+tokio = { version = "1", features = ["full"] }
+tokio-openssl = "0.6"
+tracing-subscriber = { version = "0.3", features = ["registry"] }
 indexmap = "2.14"
 num-bigint = "0.5"
 num-traits = "0.2"
