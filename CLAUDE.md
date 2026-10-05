@@ -821,7 +821,7 @@ a row in the table, a `mark()` / `errorCode:` / `tag()` where the failure is
 detected, and `node common/error_codes.js --docs`. `tests/error_codes.js` fails
 otherwise. A code is never renumbered or reused. `common/CLAUDE.md` argues the
 design. **Since #444 the Rust crates build a constant per code from an export
-of the table** (`rust/crates/sts-core/data/error_codes.json`), so a new or
+of the table** (`rust/crates/sts-core/tables/error_codes.json`), so a new or
 changed row also needs `node tests/tools/export-rust-tables.js`;
 `tests/rust_tables.js` fails until the export matches.
 

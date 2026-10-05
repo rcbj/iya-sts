@@ -3,7 +3,7 @@
 
 //! Every way this service can fail or refuse has a code,
 //! `STS-<SUBSYSTEM>-<NNNN>`, in ONE table — `common/error_codes.js` until the
-//! cutover, exported to `data/error_codes.json` (rust/DESIGN.md section 4.4).
+//! cutover, exported to `tables/error_codes.json` (rust/DESIGN.md section 4.4).
 //! **A code is an operator's name and is RECORDED, NEVER SENT**: it goes at
 //! the front of a log line ([`crate::log::tag`]) and on an audit row, never
 //! in a response.

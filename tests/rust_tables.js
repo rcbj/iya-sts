@@ -9,7 +9,7 @@
 // ---------------------------------------------------------------------------
 // THE RUST CRATES' COPY OF THIS SERVICE'S TABLES IS THE TABLES (#444).
 //
-// `sts-core` builds its error codes from `rust/crates/sts-core/data/`, a JSON
+// `sts-core` builds its error codes from `rust/crates/sts-core/tables/`, a JSON
 // export of `common/error_codes.js` that `tests/tools/export-rust-tables.js`
 // writes. The JavaScript is the one that is edited until the cutover, so the
 // export is a second copy, and a second copy is a chance to drift: a code
