@@ -26,7 +26,8 @@
 //! * **It never holds the thread**: a run past its time limit is recorded as
 //!   failed and fenced out, and the scheduler does not wait on it.
 //!
-//! The history purge (#338) and the page's view of a run are later pieces.
+//! The run history's bound is `history`'s; what the page and the API read
+//! is `report`'s.
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -43,6 +44,11 @@ use crate::schedule::{
     compare_rows, run_id_for, span, BoxFuture, JobSpec, Kind, RunContext,
     Schedules, Scope, Slot, FINAL, LEADER_LEASE, QUIET_RECORD_MS, RUN_SCOPE,
 };
+
+mod history;
+mod report;
+
+pub use history::Purged;
 
 /// The store's key for the leader's own row.
 pub const LEADER_KEY: &str = "leader";
@@ -66,6 +72,11 @@ pub trait Cluster: Send + Sync {
     fn lead(&self, lease: &str, handler: Arc<dyn LeaseHandler>);
     /// Gives a held lease up, so another node takes it.
     fn step_down(&self, lease: &str) -> BoxFuture<'_, Result<(), String>>;
+    /// A lease as the cluster knows it: `{ holder, token, acquiredAt,
+    /// expiresAt }`, or `None`.
+    fn lease(&self, _name: &str) -> BoxFuture<'_, Option<Json>> {
+        Box::pin(async { None })
+    }
 }
 
 /// A claim taken: the database's time it was taken at, and what releases it.
@@ -103,6 +114,13 @@ pub trait RunRows: Send + Sync {
     fn set(&self, realm: &str, key: &str, row: Json);
     /// Every row of a realm, in the store's order.
     fn rows(&self, realm: &str) -> Vec<Json>;
+    /// Removes a row (journalled like any other write).
+    fn delete(&self, realm: &str, key: &str);
+    /// Resolves once what this process journalled is written down; the
+    /// history purge waits on it between batches.
+    fn settle(&self) -> BoxFuture<'_, ()> {
+        Box::pin(async {})
+    }
 }
 
 /// The realms a realm job runs in, and the realm a run is entered in.
@@ -128,6 +146,10 @@ pub trait Audit: Send + Sync {
 pub trait Clock: Send + Sync {
     fn now(&self) -> f64;
     fn db_now(&self) -> BoxFuture<'_, Result<f64, String>>;
+    /// Whose clock `db_now()` reads, for the report.
+    fn source(&self) -> &'static str {
+        "this process"
+    }
 }
 
 /// What the scheduler stands on.
@@ -303,6 +325,21 @@ impl Scheduler {
 
     pub fn job_ids(&self) -> Vec<String> {
         self.schedules().job_ids()
+    }
+
+    /// For tests: lead without campaigning, writing nothing and starting no
+    /// timer (Node's tests set `leading` the same way).
+    #[doc(hidden)]
+    pub fn assume_leadership_for_tests(&self) {
+        let mut st = self.state();
+        st.started = Started::Front;
+        st.leading = true;
+    }
+
+    /// When a run-store row is past every bound the history keeps, for the
+    /// store's expiry hook ([`Schedules::expiry_of`]).
+    pub fn expiry_of(&self, row: &Json) -> Option<f64> {
+        self.schedules().expiry_of(row)
     }
 
     pub fn is_leading(&self) -> bool {

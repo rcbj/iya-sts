@@ -2556,6 +2556,221 @@ function schedulerVectors() {
                       90061000, -5].map(S.span) };
 }
 
+// THE SCHEDULER'S HISTORY AND REPORT (`cluster/scheduler.ts`, #338 and the
+// status /admin/scheduler draws): the TypeScript Scheduler over a store the
+// vectors carry — runs finished, running and queued, old and new, process
+// rows, commands, the leader's row, rows of a realm that is gone — asked
+// for its purge plan, its status (whole and confined to a realm), recent
+// runs by filter, a run by id, and then made to purge in small batches.
+async function schedulerHistoryVectors() {
+  const S = require(path.join(ROOT, 'cluster', 'scheduler.js')).Scheduler;
+  const bunyan = require('bunyan');
+  const H = 3600000;
+  const now = Date.UTC(2026, 9, 5, 12, 0, 0);
+  const settings = { 'scheduler.enabled': true, 'scheduler.tickS': 15,
+                     'scheduler.disabledJobs': ['x.off', 'nobody.here'],
+                     'scheduler.maxConcurrentRuns': 4,
+                     'scheduler.runTimeoutS': 300,
+                     'scheduler.runHistoryCount': 2,
+                     'scheduler.runHistoryHours': 1 };
+  const realmIds = ['default', 'acme'];
+  const store = new Map(realmIds.concat(['gone']).map(function (r) {
+    return [r, new Map()];
+  }));
+  const settles = [];
+  const sched = new S({
+    log: bunyan.createLogger({ name: 'vectors', level: 'fatal' }),
+    config: { value: function (k) { return settings[k]; } },
+    realms: { list: function () {
+      return realmIds.map(function (id) { return { id: id }; });
+    }, run: function (r, fn) { return fn(); },
+    get: function (id) {
+      return realmIds.indexOf(id) >= 0 ? { id: id } : null;
+    }, DEFAULT_ID: 'default' },
+    errorCodes: require(path.join(ROOT, 'common', 'error_codes.js')),
+    audit: { record: function () {} },
+    cluster: { enabled: function () { return true; },
+               nodeId: function () { return 'n1'; },
+               nodeName: function () { return 'node-one'; },
+               state: function () {
+                 return Promise.resolve({ leases: [{ name: 'ops.scheduler',
+                   holder: 'node-n1', token: 12, acquiredAt: now - H,
+                   expiresAt: now + 30000 }] });
+               } },
+    claims: {},
+    store: { realmMap: function (id) {
+      if (!store.has(id)) {
+        store.set(id, new Map());
+      }
+      return store.get(id);
+    } },
+    dbNow: function () { return Promise.resolve(now); },
+    now: function () { return now; },
+    setTimer: function () { return null; }, clearTimer: function () {},
+    cronPrev: S.cronPrev, cronNext: S.cronNext,
+    settle: function () {
+      settles.push(Array.from(store.get('default').keys()).length);
+      return Promise.resolve(null);
+    },
+    host: 'h1', pid: 41, isRequestWorker: function () { return false; }
+  });
+  const descriptors = [
+    { id: 'a.every', everyMs: 10 * 60000 },
+    { id: 'a.realm', everyMs: 30 * 60000, scope: 'realm' },
+    { id: 'a.night', cron: '0 3 * * *' },
+    { id: 'a.manual', manualOnly: true },
+    { id: 'p.pull', everyMs: 1000, kind: 'per-process', quiet: true },
+    { id: 'p.sweep', everyMs: 0, kind: 'per-process' },
+    { id: 'x.off', everyMs: 60000 }
+  ];
+  descriptors.forEach(function (d) {
+    const spec = { id: d.id, title: 'T ' + d.id, describe: 'D', owner: 'O',
+                   run: function () { return null; } };
+    ['kind', 'scope', 'quiet', 'cron', 'manualOnly'].forEach(function (k) {
+      if (d[k] !== undefined) {
+        spec[k] = d[k];
+      }
+    });
+    if (d.everyMs !== undefined) {
+      spec.everyMs = function () { return d.everyMs; };
+    }
+    sched.register(spec);
+  });
+  sched.leading = true;
+  const rows = [];
+  const put = function (realm, row) {
+    rows.push({ realm: realm, row: row });
+  };
+  // a.every: five finished in the default realm, ended 10 min apart.
+  for (let i = 0; i < 5; i++) {
+    put('default', { runId: 'e' + i, kind: 'run', jobId: 'a.every',
+                     realm: 'default', trigger: 'schedule',
+                     state: i === 3 ? 'failed' : 'succeeded', attempt: 1,
+                     fenceAt: now - (i + 1) * 40 * 60000 - 5,
+                     startedAt: now - (i + 1) * 40 * 60000,
+                     endedAt: now - (i + 1) * 40 * 60000 + 900,
+                     durationMs: 900, result: 'ok ' + i,
+                     errorCode: i === 3 ? 'STS-SCHED-0001' : '',
+                     why: i === 3 ? 'no luck' : '', node: 'n1', pid: 41,
+                     updatedAt: now - (i + 1) * 40 * 60000 + 900 });
+  }
+  // The current slot of a.every is running; a manual run queued.
+  put('default', { runId: sched.runIdFor(sched.job('a.every'), 'default',
+                                          Math.floor(now / 600000)),
+                   kind: 'run', jobId: 'a.every', realm: 'default',
+                   trigger: 'schedule', state: 'running', attempt: 1,
+                   fenceAt: now - 1000, startedAt: now - 1000,
+                   dueAt: now - (now % 600000), node: 'n1', pid: 41,
+                   updatedAt: now - 1000 });
+  put('default', { runId: 'm-queued', kind: 'run', jobId: 'a.manual',
+                   realm: 'default', trigger: 'manual', state: 'queued',
+                   params: { x: 1 }, requestedBy: 'alice',
+                   requestedVia: '/admin/scheduler', queuedAt: now - 2000,
+                   attempt: 0, fenceAt: 0, updatedAt: now - 2000 });
+  // a.realm in acme: old, three of them; one abandoned.
+  ['r0', 'r1', 'r2'].forEach(function (id, i) {
+    put('acme', { runId: id, kind: 'run', jobId: 'a.realm', realm: 'acme',
+                  trigger: 'schedule',
+                  state: i === 2 ? 'abandoned' : 'succeeded',
+                  abandonedOf: i === 2 ? 'r1' : undefined,
+                  startedAt: now - (i + 2) * H, endedAt: now - (i + 2) * H,
+                  attempt: i + 1, fenceAt: 0,
+                  updatedAt: now - (i + 2) * H });
+  });
+  // a.night: one, three days ago, and a pinned one older still.
+  put('default', { runId: 'night1', kind: 'run', jobId: 'a.night',
+                   realm: 'default', trigger: 'schedule', state: 'succeeded',
+                   startedAt: now - 72 * H, endedAt: now - 72 * H,
+                   updatedAt: now - 72 * H });
+  // A job nobody registers any more.
+  put('default', { runId: 'old1', kind: 'run', jobId: 'gone.job',
+                   realm: 'default', state: 'succeeded',
+                   endedAt: now - 5 * H, updatedAt: now - 5 * H });
+  put('default', { runId: 'old2', kind: 'run', jobId: 'gone.job',
+                   realm: 'default', state: 'succeeded',
+                   endedAt: now - 10 * 60000, updatedAt: now - 10 * 60000 });
+  // Process rows: current, stale, and of a removed realm.
+  put('default', { runId: 'process|p.pull|default|n1|41', kind: 'process',
+                   jobId: 'p.pull', realm: 'default', state: 'succeeded',
+                   nodeName: 'node-one', pid: 41, startedAt: now - 500,
+                   endedAt: now - 400, nextAt: now + 600, slot: 7,
+                   updatedAt: now - 400 });
+  put('default', { runId: 'process|p.pull|default|n2|9', kind: 'process',
+                   jobId: 'p.pull', realm: 'default', state: 'failed',
+                   errorCode: 'STS-SCHED-0015', why: 'boom',
+                   nodeName: 'node-two', pid: 9, worker: true,
+                   startedAt: now - 3 * H, endedAt: now - 3 * H,
+                   updatedAt: now - 3 * H });
+  put('default', { runId: 'process|p.pull|gone|n1|41', kind: 'process',
+                   jobId: 'p.pull', realm: 'gone', state: 'succeeded',
+                   endedAt: now - 1000, updatedAt: now - 1000 });
+  // Commands: one queued, one old and obeyed, one recent and obeyed.
+  put('default', { runId: 'command|q', kind: 'command',
+                   command: 'step-down', state: 'queued',
+                   requestedBy: 'bob', queuedAt: now - 3000,
+                   leaderAtRequest: { node: 'n1', pid: 41, token: 12 },
+                   updatedAt: now - 3000 });
+  put('default', { runId: 'command|old', kind: 'command',
+                   command: 'step-down', state: 'succeeded',
+                   queuedAt: now - 6 * H, endedAt: now - 6 * H,
+                   obeyedBy: { node: 'n1' }, updatedAt: now - 6 * H });
+  put('default', { runId: 'command|new', kind: 'command',
+                   command: 'step-down', state: 'succeeded',
+                   queuedAt: now - 60000, endedAt: now - 59000,
+                   updatedAt: now - 59000 });
+  // The leader.
+  put('default', { runId: 'leader', kind: 'leader', node: 'n1',
+                   nodeName: 'node-one', host: 'h1', pid: 41, token: 12,
+                   since: now - H, lastTickAt: now - 5000, event: 'tick',
+                   clustered: true, updatedAt: now - 5000 });
+  // A finished run in the default realm's partition naming a removed realm.
+  put('default', { runId: 'orphan', kind: 'run', jobId: 'a.realm',
+                   realm: 'gone', state: 'succeeded', endedAt: now - 1000,
+                   updatedAt: now - 1000 });
+  rows.forEach(function (one) {
+    store.get(one.realm).set(one.row.runId, JSON.parse(JSON.stringify(
+      one.row)));
+  });
+  const keysOf = function (list) {
+    return list.map(function (one) { return one.realm + '|' + one.key; });
+  };
+  const plan = sched.historyPlan(now);
+  const status = await sched.status({});
+  const acme = await sched.status({ realm: 'acme' });
+  const queries = [{}, { job: 'a.every' }, { outcome: 'failed' },
+                   { realm: 'acme' }, { realm: 'acme', job: 'a.every' }];
+  const recent = queries.map(function (q) {
+    return { query: q, runs: sched.recentRuns(q, now).map(function (r) {
+      return r.runId;
+    }) };
+  });
+  const found = ['e1', 'process|p.pull|default|n1|41', 'leader', 'nope']
+    .map(function (id) { return sched.findRun(id); });
+  const expiries = rows.map(function (one) {
+    return sched.expiryOf(one.row);
+  });
+  const purged = await sched.purgeHistory({ batch: 3, maxBatches: 2,
+                                            at: now });
+  const remaining = {};
+  store.forEach(function (m, realm) {
+    remaining[realm] = Array.from(m.keys());
+  });
+  const pinned = [];
+  store.forEach(function (m, realm) {
+    m.forEach(function (r) {
+      if (r.keepUntil) {
+        pinned.push(realm + '|' + r.runId + '|' + r.keepUntil);
+      }
+    });
+  });
+  return { now: now, settings: settings, descriptors: descriptors,
+           realms: realmIds, rows: rows,
+           plan: { deletes: keysOf(plan.deletes), pins: keysOf(plan.pins) },
+           status: status, acme: acme, recent: recent, found: found,
+           expiries: expiries, purged: purged, remaining: remaining,
+           pinned: pinned, settles: settles };
+}
+
 const VECTORS = [{ file: 'jws-node.json', build: jws },
                  { file: 'jwe-node.json', build: jwe },
                  { file: 'c14n-node.json', build: c14n },
@@ -2573,7 +2788,9 @@ const VECTORS = [{ file: 'jws-node.json', build: jws },
                  { file: 'realms-node.json', build: realmsVectors },
                  { file: 'ldif-node.json', build: ldifVectors },
                  { file: 'merge-node.json', build: mergeVectors },
-                 { file: 'scheduler-node.json', build: schedulerVectors }];
+                 { file: 'scheduler-node.json', build: schedulerVectors },
+                 { file: 'scheduler-history-node.json',
+                   build: schedulerHistoryVectors }];
 
 if (require.main === module) {
   fs.mkdirSync(OUT, { recursive: true });
