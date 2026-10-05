@@ -7302,6 +7302,7 @@ module always was, and imports the kit by its relative path.
 | `web_cells.ts` | The body of `/admin/cells`. `GET /admin-api/cells` takes `people` and `after` since #446 and answers the residents drill-down as `people`, as the page's JSON always did: the page and the operation answer `cellsPageView()`. |
 | `web_encryption.ts` | The body of `/admin/encryption`; the data keys' paging is drawn from `dataKeys.paging` (the page read a paging object JSON never carried) and their Rotate controls only when `ctx.write` says so. |
 | `web_risk.ts` | The bodies of `/admin/risk` (`render()`) and `/admin/risk-scoring` (`metricsHtml()`), sharing the timeline, the bars and the dates. Since #446 each row naming a person carries `userHref`, the realm-prefixed link the page used to build with `realms.href()`; the Risk view carries `settings` unless the reader is a realm's own administrator, and its paging is `assessmentsPaging` and `subjectsPaging` rather than two objects JSON never carried; the scoring view carries the score `bands`. `LEVEL_COLOURS` is the renderer's. |
+| `web_devices.ts` | The device register's three pages: `/admin/devices` (`render()`: the list or one device), `/admin/device-registration` (`registrationHtml()`) and `/admin/devices/monitor` (`monitorHtml()`). The drill-down draws its selects from the view's `vocabulary` and the monitor its legend from `complianceSources` (added in #446), where they read the register's constants; the list's paging is `devicesPaging`. |
 | `web_vc_status.ts` | The body of `/admin/vc-status`; its Suspend, Reinstate and Revoke buttons are drawn only when `ctx.write` says so, and its paging is drawn from the view's `rowsPaging`. |
 | `../attribute-sources/web_attribute_sources.ts` | The body of `/admin/attribute-sources`. Its operation answered the register WITHOUT the page's `settings` until #446; both now answer `attributeSourcesView()`. |
 | `../debugger/web_debugger.ts` | The body of `/admin/debugger` — **the first page whose Settings block comes out of its own view** (`SettingsForms.forms(json.settings, PAGE_PATH)`). |
@@ -7375,7 +7376,7 @@ the view.
 
 **NOT BUILT YET**: the runtime that signs in (authorization code, PKCE, a
 non-extractable DPoP key), fetches, routes and draws the shell; the static
-route that serves it; and every page but the twenty-five above.
+route that serves it; and every page but the twenty-eight above.
 
 **THE PAGING CONTROL IS DRAWN FROM THE PAGING A CALLER RECEIVES.**
 `pageNavPair(path, params, pg)` read two members of the console's own paging

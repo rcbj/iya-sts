@@ -37,6 +37,7 @@ import ClaimsProvidersPage =
   require('../oauth-oidc/web_claims_providers');
 import DatabasePage = require('./web_database');
 import DebuggerPage = require('../debugger/web_debugger');
+import DevicesPage = require('./web_devices');
 import EncryptionPage = require('./web_encryption');
 import GeolocationPage = require('./web_geolocation');
 import GrantsPage = require('../oauth-oidc/web_grants');
@@ -91,6 +92,18 @@ const PAGES: WebPage[] = [
     render: function (view: Json, ctx?: Json): string {
       return ProviderCommandsPage.deliveriesBody(ctx || WebKit.context(),
                                                  view);
+    } },
+  { path: '/admin/device-registration', title: 'Device registration',
+    operation: '/admin-api/device-registration',
+    render: function (view: Json): string {
+      return DevicesPage.registrationHtml(view);
+    } },
+  { path: '/admin/devices', title: 'Devices',
+    operation: '/admin-api/devices', render: DevicesPage.render },
+  { path: '/admin/devices/monitor', title: 'Devices (monitoring)',
+    operation: '/admin-api/devices/monitor',
+    render: function (view: Json): string {
+      return DevicesPage.monitorHtml(view);
     } },
   { path: '/admin/encryption', title: 'Encryption',
     operation: '/admin-api/encryption', render: EncryptionPage.render },

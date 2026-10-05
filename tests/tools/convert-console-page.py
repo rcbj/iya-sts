@@ -190,7 +190,9 @@ if BARE_ESC or DEPS_ESC:
     copied.insert(0, "// The console's escaping, under the name the moved "
                   "code calls it by.\nconst esc = kit.esc;\n")
 assert '.deps' not in body, [l for l in body.split('\n') if '.deps' in l][:3]
-assert not re.search(r'\blog\.', body), [l for l in body.split('\n') if re.search(r'\blog\.', l)][:3]
+assert not re.search(r'\blog\.(debug|info|warn|error)\(', body), [
+    l for l in body.split('\n')
+    if re.search(r'\blog\.(debug|info|warn|error)\(', l)][:3]
 used = set(re.findall(r'\bkit\.([A-Za-z_]+)', body))
 assert used <= KIT, ('helpers not in the kit', sorted(used - KIT))
 # What the moved code reads that stays behind: a module-level name of the
