@@ -464,6 +464,17 @@ impl Shadow {
         self.realms.get(id)
     }
 
+    /// The realms whose rows the shadow holds.
+    pub fn realm_ids(&self) -> Vec<String> {
+        self.realms.keys().cloned().collect()
+    }
+
+    /// Forgets a realm: its row and its directory.
+    pub fn forget_realm(&mut self, id: &str) {
+        self.realms.shift_remove(id);
+        self.directory.shift_remove(id);
+    }
+
     /// Records a realm row as the store holds it.
     pub fn set_realm(&mut self, id: &str, row: Json) {
         self.realms.insert(id.to_string(), row);

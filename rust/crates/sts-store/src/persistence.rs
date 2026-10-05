@@ -43,7 +43,7 @@ use sts_core::realm_lifecycle::RealmLifecycle;
 use sts_core::settings::Settings;
 use tokio::sync::oneshot;
 
-use crate::driver::Driver;
+use crate::driver::{Driver, StoreResult};
 use crate::model::{DirectoryChange, StoredEntry};
 use crate::shadow::{EntryLookup, Shadow, Snapshot, Walk};
 
@@ -122,6 +122,9 @@ struct State {
     failures: u64,
     last_error: String,
     restored: Restored,
+    /// The change-log position read before the store was, when this store
+    /// coordinates.
+    change_from: Option<i64>,
 }
 
 /// The persistence of one process.
@@ -134,6 +137,7 @@ pub struct Persistence {
     state: Mutex<State>,
     shadow: Mutex<Shadow>,
     flush_lock: tokio::sync::Mutex<()>,
+    replication: Mutex<Option<Arc<crate::replication::Replication>>>,
     me: Weak<Persistence>,
 }
 
@@ -160,6 +164,7 @@ impl Persistence {
             state: Mutex::new(State::default()),
             shadow: Mutex::new(Shadow::new()),
             flush_lock: tokio::sync::Mutex::new(()),
+            replication: Mutex::new(None),
             me: me.clone(),
         });
         let weak = Arc::downgrade(&me);
@@ -706,6 +711,24 @@ impl Persistence {
                     st.realms_dirty = self.persists_realms();
                     st.config_dirty = false;
                 }
+                let from = self.state().change_from;
+                if let (Some(from), Some(me)) = (from, self.me.upgrade()) {
+                    let applier: Arc<dyn crate::replication::Applier> = me;
+                    *self
+                        .replication
+                        .lock()
+                        .unwrap_or_else(PoisonError::into_inner) =
+                        Some(crate::replication::Replication::new(
+                            driver.clone(),
+                            Arc::downgrade(&applier),
+                            from,
+                        ));
+                    tracing::info!(
+                        "persistence: coordinating with other processes against this store, from change {}. The \
+                         change log is the contract; it is pulled by the persistence.change-log-pull job.",
+                        from
+                    );
+                }
                 tracing::info!(
                     "persistence: {} store open; restored {} directory entry/entries, {} defined realm(s) and {} \
                      appconfig override(s).",
@@ -738,6 +761,16 @@ impl Persistence {
     async fn restore(&self, driver: &dyn Driver) -> Result<Restored, String> {
         let mut restored = Restored::default();
         driver.open().await.map_err(|e| e.to_string())?;
+        // The change log's position BEFORE anything is read: a change
+        // committed while this start reads is in the log after it.
+        if let Some(log) = driver
+            .change_log()
+            .filter(|_| self.flag("persistence.coordinate"))
+        {
+            let from =
+                log.latest_change_seq().await.map_err(|e| e.to_string())?;
+            self.state().change_from = Some(from);
+        }
         let saved = if self.persists_appconfig() {
             driver.load_overrides().await.map_err(|e| e.to_string())?
         } else {
@@ -888,6 +921,275 @@ impl Persistence {
         }
     }
 
+    /// Whether this process coordinates through a change log.
+    pub fn coordinates(&self) -> bool {
+        self.replication
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .is_some()
+    }
+
+    /// Pulls and applies what other processes committed since the last
+    /// pull: the `persistence.change-log-pull` job's work.
+    pub async fn pull_changes(&self) -> Result<i64, String> {
+        let replication = self
+            .replication
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone();
+        match replication {
+            Some(r) => r.pull().await,
+            None => Ok(0),
+        }
+    }
+
+    fn quietly<R>(&self, f: impl FnOnce() -> R) -> R {
+        let was = std::mem::replace(&mut self.state().restoring, true);
+        let out = f();
+        self.state().restoring = was;
+        out
+    }
+
+    /// Another process's change to one entry: the stored entry, unless this
+    /// process holds a change of its own to it not yet written, which is
+    /// merged with it and written by the next flush.
+    async fn apply_directory_change(
+        &self,
+        driver: &dyn Driver,
+        realm: &str,
+        key: &str,
+    ) -> StoreResult<()> {
+        let Some(log) = driver.change_log() else {
+            return Ok(());
+        };
+        let _flush = self.flush_lock.lock().await;
+        let theirs = log.read_entry(realm, key).await?;
+        let base = self.shadow().entry(realm, key).map(str::to_string);
+        let live = self.directory.entry_at(realm, key);
+        let live_json = live
+            .as_ref()
+            .map(|e| crate::merge::entry_json(e).to_string());
+        let pending = live_json != base;
+        let mut keep: Option<Option<StoredEntry>> = None;
+        if pending {
+            let base_entry = base
+                .as_deref()
+                .and_then(|b| serde_json::from_str::<Json>(b).ok())
+                .and_then(|b| crate::merge::entry_of_json(&b));
+            let verdict = crate::merge::merge_entry(
+                base_entry.as_ref(),
+                live.as_ref(),
+                theirs.as_ref(),
+            );
+            keep = match (&live, verdict.outcome) {
+                // A local delete not yet written: it stands.
+                (None, _) => Some(None),
+                (
+                    _,
+                    crate::merge::Outcome::Mine | crate::merge::Outcome::Merged,
+                ) => Some(verdict.entry),
+                _ => None,
+            };
+        }
+        self.quietly(|| match (&keep, &theirs) {
+            (Some(None), _) => {}
+            (Some(Some(entry)), _) => {
+                self.directory.apply_entry(realm, key, Some(entry.clone()))
+            }
+            (None, None) => self.directory.apply_entry(realm, key, None),
+            (None, Some(entry)) => {
+                self.directory.apply_entry(realm, key, Some(entry.clone()))
+            }
+        });
+        {
+            let mut shadow = self.shadow();
+            match (&theirs, &keep) {
+                (None, _) => shadow.forget_entry(realm, key),
+                (Some(entry), Some(_)) => shadow.set_entry(
+                    realm,
+                    key,
+                    crate::merge::canonical_json(entry),
+                ),
+                (Some(_), None) => {
+                    if let Some(stored) = self.directory.entry_at(realm, key) {
+                        shadow.set_entry(
+                            realm,
+                            key,
+                            crate::merge::entry_json(&stored).to_string(),
+                        );
+                    }
+                }
+            }
+        }
+        if matches!(keep, Some(Some(_))) {
+            drop(_flush);
+            self.directory_changed(Some(key));
+        }
+        Ok(())
+    }
+
+    /// Another process changed the realm registry: the stored rows, with
+    /// this process's unwritten changes on top; a realm another node
+    /// removed is removed here.
+    async fn apply_realms_change(
+        &self,
+        driver: &dyn Driver,
+    ) -> StoreResult<()> {
+        if !self.persists_realms() {
+            return Ok(());
+        }
+        let _flush = self.flush_lock.lock().await;
+        let stored = driver.load_realms().await?.unwrap_or_default();
+        let removed: Vec<String> =
+            self.state().removed_here.iter().cloned().collect();
+        let pending =
+            self.shadow().realms_delta(&self.lifecycle.rows(), &removed);
+        let known = self.shadow().realm_ids();
+        let stored_ids: Vec<String> = stored
+            .iter()
+            .filter_map(|r| {
+                r.get("id").and_then(Json::as_str).map(str::to_string)
+            })
+            .collect();
+        let gone: Vec<String> = known
+            .iter()
+            .filter(|id| {
+                !stored_ids.contains(id)
+                    && self.lifecycle.registry().get(id).is_some()
+            })
+            .cloned()
+            .collect();
+        self.quietly(|| {
+            for row in &stored {
+                let id = row.get("id").and_then(Json::as_str).unwrap_or("");
+                if removed.iter().any(|r| r == id) {
+                    continue;
+                }
+                let mine = pending
+                    .upserts
+                    .iter()
+                    .find(|c| c.row.get("id").and_then(Json::as_str) == Some(id))
+                    .filter(|_| known.iter().any(|k| k == id));
+                let mut merged = row.clone();
+                if let Some(mine) = mine {
+                    let mut overrides = row.get("overrides").and_then(Json::as_object).cloned().unwrap_or_default();
+                    for k in &mine.cleared {
+                        overrides.shift_remove(k);
+                    }
+                    for (k, v) in &mine.set {
+                        overrides.insert(k.clone(), v.clone());
+                    }
+                    merged["overrides"] = Json::Object(overrides);
+                    if mine.name {
+                        merged["name"] = mine.row["name"].clone();
+                    }
+                    if mine.description {
+                        merged["description"] = mine.row["description"].clone();
+                    }
+                }
+                self.restore_realm_replicated(&merged);
+            }
+            for id in &gone {
+                tracing::info!("persistence: the \"{}\" realm was removed by another node; removing it here.", id);
+                if let Err(e) = self.lifecycle.remove(id) {
+                    tracing::warn!("persistence: \"{}\" could not be removed here: {:?}", id, e.sentences);
+                }
+            }
+        });
+        {
+            let mut shadow = self.shadow();
+            for row in &stored {
+                let id = row.get("id").and_then(Json::as_str).unwrap_or("");
+                shadow.set_realm(
+                    id,
+                    json!({ "name": row.get("name"), "description": row.get("description"),
+                            "overrides": row.get("overrides").cloned().unwrap_or_else(|| json!({})),
+                            "retiringSince": row.get("retiringSince").filter(|v| v.as_f64().is_some_and(|n| n > 0.0)) }),
+                );
+            }
+            for id in &gone {
+                shadow.forget_realm(id);
+            }
+        }
+        if !pending.upserts.is_empty() {
+            drop(_flush);
+            self.realms_changed();
+        }
+        Ok(())
+    }
+
+    fn restore_realm_replicated(&self, row: &Json) {
+        let text = |k: &str| {
+            row.get(k).and_then(Json::as_str).unwrap_or("").to_string()
+        };
+        let id = text("id");
+        if self.lifecycle.registry().get(&id).is_none() {
+            self.restore_realm(row);
+            return;
+        }
+        let overrides = row
+            .get("overrides")
+            .and_then(Json::as_object)
+            .cloned()
+            .unwrap_or_default();
+        let retiring = row
+            .get("retiringSince")
+            .and_then(Json::as_f64)
+            .filter(|n| *n > 0.0);
+        if let Err(e) = self.lifecycle.update(
+            &id,
+            Some(&text("name")),
+            Some(&text("description")),
+            Some(&overrides),
+            None,
+            true,
+            retiring,
+        ) {
+            tracing::warn!("persistence: another node's change to \"{}\" was not applied: {:?}", id, e.sentences);
+        }
+    }
+
+    /// Another process changed the runtime overrides: the stored ones, with
+    /// this process's unwritten changes on top.
+    async fn apply_appconfig_change(
+        &self,
+        driver: &dyn Driver,
+    ) -> StoreResult<()> {
+        if !self.persists_appconfig() {
+            return Ok(());
+        }
+        let _flush = self.flush_lock.lock().await;
+        let saved = driver.load_overrides().await?.unwrap_or_default();
+        let pending = self
+            .shadow()
+            .appconfig_delta(&self.settings.runtime_overrides());
+        let mut wanted = saved.clone();
+        for k in &pending.cleared {
+            wanted.shift_remove(k);
+        }
+        for (k, v) in &pending.set {
+            wanted.insert(k.clone(), v.clone());
+        }
+        self.quietly(|| {
+            for key in self.settings.runtime_overrides().keys() {
+                if !wanted.contains_key(key) {
+                    self.settings.clear_override(key);
+                }
+            }
+            for (key, raw) in &wanted {
+                if let Err(r) = self.settings.set_override(key, raw.clone()) {
+                    tracing::warn!("persistence: another node's override {} was not applied: {}", key, r.problem);
+                }
+            }
+        });
+        self.shadow().set_appconfig(saved);
+        if !pending.is_empty() {
+            drop(_flush);
+            self.config_changed(None);
+        }
+        Ok(())
+    }
+
     /// Writes what is pending and closes the store, for a clean shutdown.
     pub async fn stop(&self) -> Result<(), String> {
         let flushed = self.flush().await;
@@ -978,5 +1280,34 @@ impl LiveDirectory for MemoryDirectory {
                 rows.shift_remove(key);
             }
         }
+    }
+}
+
+impl crate::replication::Applier for Persistence {
+    fn apply<'a>(
+        &'a self,
+        row: &'a crate::driver::ChangeRow,
+    ) -> crate::driver::StoreFuture<'a, ()> {
+        Box::pin(async move {
+            let Some(driver) = self.driver.clone() else {
+                return Ok(());
+            };
+            match row.kind.as_str() {
+                "directory" => {
+                    self.apply_directory_change(
+                        driver.as_ref(),
+                        &row.realm,
+                        &row.key,
+                    )
+                    .await
+                }
+                "realms" => self.apply_realms_change(driver.as_ref()).await,
+                "appconfig" => {
+                    self.apply_appconfig_change(driver.as_ref()).await
+                }
+                // Minted rows and the rest arrive with their stores.
+                _ => Ok(()),
+            }
+        })
     }
 }

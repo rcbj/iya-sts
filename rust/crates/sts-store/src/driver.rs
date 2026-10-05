@@ -51,8 +51,46 @@ pub type StoreFuture<'a, T> =
 /// Realm id to its entries, as `loadDirectory()` answers.
 pub type Directory = BTreeMap<String, Vec<StoredEntry>>;
 
+/// One row of the change log: what kind of thing changed, where, and which
+/// process committed it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ChangeRow {
+    pub seq: i64,
+    pub origin: String,
+    /// `directory`, `realms`, `appconfig`.
+    pub kind: String,
+    pub realm: String,
+    pub key: String,
+}
+
+/// The change log several processes coordinate through: STATE, not
+/// sockets. A store that has one answers [`Driver::change_log`].
+pub trait ChangeLog: Send + Sync {
+    /// This process's name in the log's `origin` column.
+    fn origin(&self) -> String;
+    fn latest_change_seq(&self) -> StoreFuture<'_, i64>;
+    fn changes_since(
+        &self,
+        after: i64,
+        limit: i64,
+    ) -> StoreFuture<'_, Vec<ChangeRow>>;
+    /// The rows at these sequence numbers that are visible now.
+    fn changes_at(&self, seqs: Vec<i64>) -> StoreFuture<'_, Vec<ChangeRow>>;
+    /// One directory entry as the store holds it now.
+    fn read_entry<'a>(
+        &'a self,
+        realm: &'a str,
+        key: &'a str,
+    ) -> StoreFuture<'a, Option<StoredEntry>>;
+}
+
 /// The contract every store implements.
 pub trait Driver: Send + Sync {
+    /// The change log, for a store several processes share.
+    fn change_log(&self) -> Option<&dyn ChangeLog> {
+        None
+    }
+
     /// `memory`, `ldif` or `postgres`.
     fn name(&self) -> &'static str;
     /// Opens the store. A failure here is FATAL to the service, where every
