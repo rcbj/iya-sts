@@ -261,6 +261,66 @@ async fn key_sets_are_nodes() {
         .unwrap_or_else(|e| panic!("{}: {}", one.alg, e));
     }
 
+    // The hierarchy Node built over it: the certificate published for the
+    // signing key, and its chain, are Node's; the leaf holds the set's key
+    // and each certificate is signed by the next.
+    if let Some(published) =
+        v["durable"].get("published").filter(|p| !p.is_null())
+    {
+        let kid = set.kid().unwrap();
+        let (cert, chain) = sets
+            .published_certificate_for("", "jose", "RS256", &kid)
+            .expect("Node certified the signing key");
+        assert_eq!(Some(cert.as_str()), published["certB64"].as_str());
+        let node_chain: Vec<String> = published["chainPem"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|p| {
+                p.as_str()
+                    .unwrap()
+                    .lines()
+                    .filter(|l| !l.starts_with("-----"))
+                    .collect::<String>()
+            })
+            .collect();
+        assert_eq!(chain, node_chain);
+        let jwks = sts_store::key_sets::jwks_document(
+            &set,
+            Some((cert.clone(), chain.clone())),
+        )
+        .unwrap();
+        let x5c: Vec<&str> = jwks["keys"][0]["x5c"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|c| c.as_str().unwrap())
+            .collect();
+        assert_eq!(x5c.len(), 1 + chain.len());
+        assert_eq!(
+            jwks["keys"][0]["kid"],
+            json!(kid),
+            "the kid stays the set's"
+        );
+        let certs: Vec<openssl::x509::X509> = x5c
+            .iter()
+            .map(|c| {
+                openssl::x509::X509::from_der(
+                    &base64::engine::general_purpose::STANDARD
+                        .decode(c)
+                        .unwrap(),
+                )
+                .unwrap()
+            })
+            .collect();
+        assert!(certs[0].public_key().unwrap().public_eq(&private));
+        for pair in certs.windows(2) {
+            assert!(pair[0].verify(&pair[1].public_key().unwrap()).unwrap());
+        }
+    } else {
+        eprintln!("keystore-node.json has no hierarchy: regenerate it");
+    }
+
     // A save of the same generation keeps what is stored; a newer one is
     // written, and another process reads it back whole.
     let mut newer = set.blob.clone();
@@ -354,7 +414,7 @@ async fn a_made_key_set_is_whole() {
         .starts_with("sts-rt-secret-"));
     // The JWKS: the RSA key first, no alg, its certificate in x5c; the
     // curve keys; the request object encryption keys last.
-    let jwks = jwks_document(&set).unwrap();
+    let jwks = jwks_document(&set, None).unwrap();
     let list = jwks["keys"].as_array().unwrap();
     assert_eq!(list.len(), 9);
     assert_eq!(list[0]["kid"], json!(set.kid()));
@@ -431,7 +491,7 @@ async fn a_made_key_set_is_whole() {
         PathBuf::from(&out).join("expected.json"),
         json!({ "kid": set.kid(), "curveKids": curves.iter().map(|c| c.public_jwk["kid"].clone()).collect::<Vec<_>>(),
                 "vciKid": blob["vciRequestEncKey"]["publicJwk"]["kid"],
-                "jwks": sts_store::key_sets::jwks_document(&set).unwrap(),
+                "jwks": sts_store::key_sets::jwks_document(&set, None).unwrap(),
                 "tokens": tokens }).to_string(),
     )
     .unwrap();

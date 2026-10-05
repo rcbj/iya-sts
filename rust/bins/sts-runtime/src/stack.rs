@@ -82,15 +82,18 @@ async fn jwks(persistence: Weak<Persistence>) -> axum::response::Response {
     use axum::response::IntoResponse;
     let realm = sts_core::realm::current_id();
     let sets = persistence.upgrade().and_then(|p| p.key_sets());
-    let set = match sets {
-        Some(sets) => sets.open_or_make(&realm).await,
+    let built = match sets {
+        Some(sets) => sets.open_or_make(&realm).await.and_then(|set| {
+            let published = set.kid().and_then(|kid| {
+                sets.published_certificate_for(&realm, "jose", "RS256", &kid)
+            });
+            sts_store::key_sets::jwks_document(&set, published)
+        }),
         None => Err("no key set is held for this realm".to_string()),
-    };
-    let built = set
-        .and_then(|set| sts_store::key_sets::jwks_document(&set))
-        .and_then(|doc| {
-            serde_json::to_string_pretty(&doc).map_err(|e| e.to_string())
-        });
+    }
+    .and_then(|doc| {
+        serde_json::to_string_pretty(&doc).map_err(|e| e.to_string())
+    });
     match built {
         Ok(body) => (
             StatusCode::OK,
