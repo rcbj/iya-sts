@@ -35,21 +35,15 @@ use openssl::hash::MessageDigest;
 use openssl::md::Md;
 use openssl::pkey::PKey;
 use openssl::pkey_ctx::{HkdfMode, PkeyCtx};
-use openssl::rand::rand_bytes;
 use openssl::sign::Signer;
 use openssl::symm::{decrypt_aead, encrypt_aead, Cipher, Crypter, Mode};
 use sts_core::errors::codes;
 
 use crate::error::{CryptoError, CryptoResult};
+use crate::random::random_bytes as random;
 
 fn err(message: impl Into<String>) -> CryptoError {
     CryptoError::new(message)
-}
-
-fn random(n: usize) -> CryptoResult<Vec<u8>> {
-    let mut out = vec![0u8; n];
-    rand_bytes(&mut out)?;
-    Ok(out)
 }
 
 fn hmac(
