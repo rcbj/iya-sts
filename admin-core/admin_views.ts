@@ -2154,7 +2154,11 @@ class AdminViews {
       // other way to ask "what would this token carry", and a second walk of
       // the directory would be a preview that can disagree with the token.
       groups: Object.assign(groupClaims.state(),
-                            { preview: groupClaims.groupsOf(user) })
+                            { preview: groupClaims.groupsOf(user) }),
+      // The federation partners whose release list holds anything back
+      // (#94), which each set's section warns about; per claim, it is the
+      // set's `withheldFrom`.
+      withholding: withheld
     };
     log.debug("Leaving AdminViews.claimSetsJson(). " + json.sets.length +
               " set(s).");
@@ -4648,12 +4652,17 @@ class AdminViews {
    * @returns the JSON
    */
   userinfoClaimsJson(previewUser, raw) {
-    const { log, stats } = this.deps;
+    const { log, stats, userFor } = this.deps;
     log.debug("Entering AdminViews.userinfoClaimsJson(). previewUser=" +
               previewUser);
     const json = Object.assign(
       { reservedJwtClaims: stats.RESERVED_JWT_CLAIMS,
-        claimsRequest: this.claimsRequestJson(previewUser, raw) },
+        claimsRequest: this.claimsRequestJson(previewUser, raw),
+        // The request as it was typed, which the preview form echoes, and
+        // the address the sign-in invents for this person, which a note
+        // contrasts with the directory's (#446).
+        request: raw || '',
+        inventedEmail: userFor(previewUser || 'alice').email },
       this.claimSetsJson(stats.USERINFO_CLAIM_SET_IDS, previewUser));
     log.debug("Leaving AdminViews.userinfoClaimsJson(). " + json.sets.length +
               " set(s).");

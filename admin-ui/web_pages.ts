@@ -38,6 +38,7 @@ import AttributeSourcesPage =
 import CachesPage = require('./web_caches');
 import CaepRiscPage = require('../ssf/web_caep_risc');
 import CellsPage = require('./web_cells');
+import ClaimsPage = require('./web_claims');
 import ConfigPage = require('./web_config');
 import ConsentPage = require('../oauth-oidc/web_consent');
 import ClaimsProvidersPage =
@@ -189,6 +190,11 @@ const PAGES: WebPage[] = [
     render: ClaimsProvidersPage.render },
   { path: '/admin/commands', title: 'OpenID Provider Commands',
     operation: '/admin-api/commands', render: ProviderCommandsPage.render },
+  { path: '/admin/claims', title: 'Custom claims',
+    operation: '/admin-api/claims',
+    render: function (view: Json, ctx?: Json): string {
+      return ClaimsPage.claimsBody(ctx || WebKit.context(), view);
+    } },
   { path: '/admin/config', title: 'Configuration',
     operation: '/admin-api/config',
     render: function (view: Json, ctx?: Json): string {
@@ -408,6 +414,11 @@ const PAGES: WebPage[] = [
     render: function (view: Json, ctx?: Json): string {
       return SamlPage.saml11Body(ctx || WebKit.context(), view);
     } },
+  { path: '/admin/saml-attributes', title: 'Custom SAML attributes',
+    operation: '/admin-api/saml-attributes',
+    render: function (view: Json, ctx?: Json): string {
+      return ClaimsPage.samlAttributesBody(ctx || WebKit.context(), view);
+    } },
   { path: '/admin/saml-assertions', title: 'SAML assertions',
     operation: '/admin-api/saml-assertions',
     render: function (view: Json, ctx?: Json): string {
@@ -522,6 +533,11 @@ const PAGES: WebPage[] = [
     operation: '/admin-api/used-assertions',
     render: function (view: Json, ctx?: Json): string {
       return UsedAssertionsPage.body(ctx || WebKit.context(), view);
+    } },
+  { path: '/admin/userinfo-claims', title: 'UserInfo claims',
+    operation: '/admin-api/userinfo-claims',
+    render: function (view: Json, ctx?: Json): string {
+      return ClaimsPage.userinfoClaimsBody(ctx || WebKit.context(), view);
     } },
   { path: '/admin/users', title: 'Users', operation: '/admin-api/users',
     render: function (view: Json, ctx?: Json): string {
