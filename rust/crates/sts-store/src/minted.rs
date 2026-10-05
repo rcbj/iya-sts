@@ -38,7 +38,7 @@ use sts_core::settings::Settings;
 
 use crate::driver::{
     ChangeRow, Driver, MintedDecided, MintedFilter, MintedMerge, MintedRow,
-    MintedWrite,
+    MintedWrite, PurgeKind,
 };
 use crate::keystore::DataKeys;
 
@@ -46,6 +46,11 @@ use crate::keystore::DataKeys;
 const NAME_LABEL: &str = "minted-key";
 /// What a row's BODY is sealed under.
 const BODY_LABEL: &str = "minted-rows";
+const EXPIRY_PURGE_BATCH: i64 = 5000;
+const EXPIRY_PURGE_MAX_BATCHES: usize = 20;
+/// A realm another node is creating writes its minted rows and its registry
+/// row in two transactions; an hour is far longer than the gap.
+const ORPHAN_GRACE_MS: i64 = 60 * 60 * 1000;
 
 type Journal = BTreeMap<String, BTreeMap<String, BTreeSet<String>>>;
 
@@ -729,6 +734,117 @@ impl Minted {
         };
         self.apply_locally(&h, &change.realm, &key, Some(value));
         Ok(true)
+    }
+
+    fn retention_ms(&self) -> i64 {
+        self.settings
+            .value_of("persistence.mintedRetention")
+            .as_int()
+            .max(0)
+    }
+
+    /// Whether the tombstone sweep has anything to do here, or why not.
+    pub fn tombstone_sweep_off(&self) -> String {
+        if !self.driver.mints() {
+            "this store keeps no tombstones".to_string()
+        } else if self.retention_ms() == 0 {
+            "the minted-row retention is 0".to_string()
+        } else {
+            String::new()
+        }
+    }
+
+    /// `persistence.tombstone-purge`: the tombstones of ended rows older than
+    /// `persistence.mintedRetention`.
+    pub async fn sweep_tombstones(&self, now_ms: i64) -> Result<u64, String> {
+        let removed = self
+            .driver
+            .purge_tombstones(now_ms - self.retention_ms())
+            .await
+            .map_err(|e| {
+                tracing::warn!(
+                    "{}persistence: sweeping expired tombstones failed: {}.",
+                    tag(codes::STS_STORE_0055),
+                    e
+                );
+                e.to_string()
+            })?;
+        if removed > 0 {
+            tracing::info!(
+                "persistence: {} expired tombstone(s) of ended minted rows swept.",
+                removed
+            );
+        }
+        Ok(removed)
+    }
+
+    /// One kind, batch after batch until one comes back short or the bound
+    /// is reached: `(removed, more)`.
+    async fn purge_kind(&self, kind: PurgeKind) -> Result<(u64, bool), String> {
+        let mut removed = 0;
+        for _ in 0..EXPIRY_PURGE_MAX_BATCHES {
+            let n = self
+                .driver
+                .purge_expired_minted(kind.clone(), EXPIRY_PURGE_BATCH)
+                .await
+                .map_err(|e| e.to_string())?;
+            removed += n;
+            if (n as i64) < EXPIRY_PURGE_BATCH {
+                return Ok((removed, false));
+            }
+        }
+        Ok((removed, true))
+    }
+
+    /// `persistence.minted-expiry-purge` (#333): the rows no restore will
+    /// read again — expired, of a realm no longer defined (written over an
+    /// hour ago), a short-lived store's stale row — in bounded batches.
+    pub async fn purge_expired(&self, now_ms: i64) -> Result<Json, String> {
+        let run = async {
+            let (expired, m1) =
+                self.purge_kind(PurgeKind::Expired { now_ms }).await?;
+            let (orphaned, m2) = self
+                .purge_kind(PurgeKind::Orphan {
+                    default_realm: realm::DEFAULT_ID.to_string(),
+                    before_ms: now_ms - ORPHAN_GRACE_MS,
+                })
+                .await?;
+            let retention = self.retention_ms();
+            let (stale, m3) = if retention > 0 {
+                self.purge_kind(PurgeKind::Stale {
+                    handles: self.restore_filter(now_ms).age_handles,
+                    before_ms: now_ms - retention,
+                })
+                .await?
+            } else {
+                (0, false)
+            };
+            Ok::<_, String>((expired, orphaned, stale, m1 || m2 || m3))
+        };
+        let (expired, orphaned, stale, more) = run.await.map_err(|e| {
+            tracing::warn!(
+                "{}persistence: purging expired minted rows failed: {}. A start skips them anyway; the next run \
+                 tries again.",
+                tag(codes::STS_STORE_0065),
+                e
+            );
+            e
+        })?;
+        let total = expired + orphaned + stale;
+        if total > 0 {
+            tracing::info!(
+                "persistence: {} minted row(s) purged from the store — {} expired, {} of realms no longer defined, \
+                 {} short-lived and older than persistence.mintedRetention{}.",
+                total,
+                expired,
+                orphaned,
+                stale,
+                if more { "; more remain for the next run" } else { "" }
+            );
+        }
+        Ok(
+            json!({ "expired": expired, "orphaned": orphaned, "stale": stale, "more": more }),
+        )
     }
 
     /// Writes what is journalled and stops journalling.
