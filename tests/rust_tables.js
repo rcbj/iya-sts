@@ -9,8 +9,9 @@
 // ---------------------------------------------------------------------------
 // THE RUST CRATES' COPY OF THIS SERVICE'S TABLES IS THE TABLES (#444).
 //
-// `sts-core` builds its error codes from `rust/crates/sts-core/tables/`, a JSON
-// export of `common/error_codes.js` that `tests/tools/export-rust-tables.js`
+// `sts-core` builds its error codes and its settings from
+// `rust/crates/sts-core/tables/`, JSON exports of `common/error_codes.js` and
+// `common/config.js`'s SETTINGS that `tests/tools/export-rust-tables.js`
 // writes. The JavaScript is the one that is edited until the cutover, so the
 // export is a second copy, and a second copy is a chance to drift: a code
 // added to the table and not exported would be one the Rust runtime cannot
@@ -41,7 +42,7 @@ function run(t) {
 
 module.exports = {
   name: 'rust_tables',
-  describe: 'the Rust crates\' JSON exports of the error-code table are ' +
-            'current',
+  describe: 'the Rust crates\' JSON exports of the error-code and settings ' +
+            'tables are current',
   run: run
 };
