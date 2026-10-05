@@ -82,6 +82,8 @@ import TlsTrustPage = require('../tls/web_tls_trust');
 import TokenLifetimesPage = require('./web_token_lifetimes');
 import TokensPage = require('./web_tokens');
 import VcStatusPage = require('./web_vc_status');
+import VcVerifierConfigPage =
+  require('../oid4vc/web_vc_verifier_config');
 import XacmlPage = require('../xacml/web_xacml');
 import WorkerPoolsPage = require('./web_worker_pools');
 
@@ -379,6 +381,11 @@ const PAGES: WebPage[] = [
     operation: '/admin-api/wsfed', render: ProtocolSettingsPage.render },
   { path: '/admin/tls', title: 'TLS / mutual TLS',
     operation: '/admin-api/tls', render: ProtocolSettingsPage.render },
+  { path: '/admin/vc-verifier-config', title: 'Verifier request',
+    operation: '/admin-api/verifier-request',
+    render: function (view: Json, ctx?: Json): string {
+      return VcVerifierConfigPage.body(ctx || WebKit.context(), view);
+    } },
   { path: '/admin/worker-pools', title: 'Worker pools',
     operation: '/admin-api/worker-pools', render: WorkerPoolsPage.render }
 ];

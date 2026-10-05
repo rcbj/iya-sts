@@ -2298,7 +2298,9 @@ class AdminViews {
                  identifier: item.identifier,
                  selectiveDisclosure: item.selectiveDisclosure,
                  holderBinding: item.holderBinding,
-                 configurations: item.configs };
+                 configurations: item.configs,
+                 // The page's wording of each (#446).
+                 identifierText: item.identifierText, what: item.what };
       }),
       ldpOmitted: vpConfig.ldpOmitted(),
       catalogue: vpConfig.REQUESTABLE.map(function (row) {
@@ -2311,7 +2313,15 @@ class AdminViews {
                  requested: vpConfig.isRequested(row.claim),
                  issued: vpConfig.carriedNow(row.claim) };
       }),
-      dcqlQuery: vpConfig.dcqlQuery(format)
+      dcqlQuery: vpConfig.dcqlQuery(format),
+      // What is asked for and not in the catalogue, with each one's DCQL
+      // path (#446): the page lists them under the table.
+      extras: vpConfig.requestedRows().filter(function (row) {
+        return !row.inCatalogue;
+      }).map(function (row) {
+        return { claim: row.claim,
+                 paths: vpConfig.dcqlPathsFor(format, row.claim) };
+      })
     };
     log.debug("Leaving AdminViews.vpConfigJson(). Asking for " +
               json.requested.length +

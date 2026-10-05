@@ -7326,6 +7326,7 @@ module always was, and imports the kit by its relative path.
 | `../logout/web_sessions.ts` | The body of `/admin/sessions` and its row and cell helpers, drawn from the JSON `GET /admin-api/sessions` answers since #446. That JSON gained the protocol filter's `protocols`, `paging`, `unauthenticatedKept` (the setting the page states), and the fields each unauthenticated row is drawn with; its relative times are measured from the view's own `at`. |
 | `web_protocol_settings.ts` | The thirteen pages `PROTOCOL_SETTINGS_PAGES` generates, drawn from the JSON their operations answer, which carries the lead and warnings as markup (`leadHtml`, `alsoHtml`) beside their plain text since #446. **Six have a status block**: TOTP's, recovery codes', WebAuthn's and Kerberos pre-authentication's are drawn here from the view's `status` (`STATUS`, by page; WebAuthn's JSON gained the FIDO metadata snapshot its attestation rows read, and Kerberos' block builds its JSON — the krbtgt key's state included — before drawing from it); Persistence's is drawn here too. **The cluster's is still drawn by the console** and handed in as `statusHtml`, and that page stays out of the page table. |
 | `web_config.ts` | The body of `/admin/config`, drawn from `configJson()` (which `GET /admin-api/config` answers) since #446: where each group is drawn comes from its `homes`, the warning from `homeProblems`, and its form from `settings`, added. |
+| `../oid4vc/web_vc_verifier_config.ts` | The body of `/admin/vc-verifier-config` and its five helpers, which read the verifier's configuration module while drawing until #446; they read the view now, which gained each format's wording and the requested claims outside the catalogue (`extras`, with their DCQL paths). |
 | `web_vc_status.ts` | The body of `/admin/vc-status`; its Suspend, Reinstate and Revoke buttons are drawn only when `ctx.write` says so, and its paging is drawn from the view's `rowsPaging`. |
 | `../attribute-sources/web_attribute_sources.ts` | The body of `/admin/attribute-sources`. Its operation answered the register WITHOUT the page's `settings` until #446; both now answer `attributeSourcesView()`. |
 | `../debugger/web_debugger.ts` | The body of `/admin/debugger` — **the first page whose Settings block comes out of its own view** (`SettingsForms.forms(json.settings, PAGE_PATH)`). |
@@ -7401,7 +7402,7 @@ the view.
 
 **NOT BUILT YET**: the runtime that signs in (authorization code, PKCE, a
 non-extractable DPoP key), fetches, routes and draws the shell; the static
-route that serves it; and every page but the eighty-one above.
+route that serves it; and every page but the eighty-two above.
 
 **THE PAGING CONTROL IS DRAWN FROM THE PAGING A CALLER RECEIVES.**
 `pageNavPair(path, params, pg)` read two members of the console's own paging

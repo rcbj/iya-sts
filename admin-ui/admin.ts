@@ -838,6 +838,7 @@ import TokensPage = require('./web_tokens');
 import ConsentPage = require('../oauth-oidc/web_consent');
 import SessionsPage = require('../logout/web_sessions');
 import ConfigPage = require('./web_config');
+import VcVerifierConfigPage = require('../oid4vc/web_vc_verifier_config');
 
 // REQUIRED FOR THE ORDER THEY WERE ALWAYS REQUIRED IN, AND READ NOWHERE HERE
 // (#50). TypeScript drops an `import … = require()` whose name nothing reads,
@@ -24732,48 +24733,22 @@ class AdminConsole {
         : '');
   }
 
-  // Whether the ISSUER currently mints the claim this Verifier is asking for.
-  // The two pages are separate settings on purpose (see the header), so the
-  // disagreement is a state to report rather than one to prevent — and
-  // reporting it is what stops "the wallet disclosed nothing" being
-  // investigated as a wallet bug.
+  // Drawn by `web_vc_verifier_config.ts` (#446).
   /**
    * Draws the "Issued now" cell: whether this service's issuer currently
    * mints the claim the Verifier asks for, wholly, partly or not at all.
    *
-   * @param claimName - the requested claim's name
+   * @param carried - the catalogue row's `issued` (`carriedNow()`)
    * @returns the table cell as HTML
    */
-  vpIssuedCell(claimName) {
-    const { log, vpConfig } = this.deps;
+  vpIssuedCell(carried) {
+    const { log } = this.deps;
     log.debug("Entering AdminConsole.vpIssuedCell().");
-    const carried = vpConfig.carriedNow(claimName);
-    if (!carried.known) {
-      log.debug("Leaving AdminConsole.vpIssuedCell().");
-      return '<td><span class="state-none">not a claim this service ' +
-             'issues</span></td>';
-    }
-    if (!carried.carried.length) {
-      log.debug("Leaving AdminConsole.vpIssuedCell().");
-      return '<td><span class="state-expired">no — not selected on ' +
-             '<a href="/admin/vc">/admin/vc</a></span></td>';
-    }
-    if (carried.missing.length) {
-      log.debug("Leaving AdminConsole.vpIssuedCell().");
-      return '<td><span class="state-expired">partly — ' +
-             this.codeList(carried.missing) +
-             ' not selected</span></td>';
-    }
     log.debug("Leaving AdminConsole.vpIssuedCell().");
-    return '<td><span class="state-valid">yes</span></td>';
+    return VcVerifierConfigPage.vpIssuedCell(carried);
   }
 
-  // One catalogue row. The DCQL path column is shown for the format the next
-  // unqualified request will use, because a path is not a property of the
-  // claim: the same claim is ["given_name"], ["credentialSubject","given_name"]
-  // or ["credentialSubject","birthDate"] depending on what is being asked for,
-  // and a column that picked one silently would be wrong two-thirds of the
-  // time.
+  // Drawn by `web_vc_verifier_config.ts` (#446).
   /**
    * Draws one Verifier catalogue row: its checkbox, attributes, DCQL paths
    * for the format, ldp_vc terms and whether the issuer carries it.
@@ -24783,79 +24758,29 @@ class AdminConsole {
    * @returns the table row as HTML
    */
   vpClaimRow(row, format) {
-    const { log, vpConfig } = this.deps;
-    const self = this;
+    const { log } = this.deps;
     log.debug("Entering AdminConsole.vpClaimRow().");
-    const on = vpConfig.isRequested(row.claim);
-    const paths = vpConfig.dcqlPathsFor(format, row.claim);
-    const attributes = row.members.map(function (member) {
-      return '<code>' + self.esc(member.ldap) + '</code> <span ' +
-        'class="state-none">(' +
-             self.esc(member.schema) + ')</span>';
-    }).join('<br>');
     log.debug("Leaving AdminConsole.vpClaimRow().");
-    return '<tr><td><input type="checkbox" name="claim" value="' +
-      this.esc(row.claim) + '"' +
-      (on ? ' checked' : '') + '></td>' +
-      '<td><code>' + this.esc(row.claim) + '</code>' +
-      (row.nested ?
-       '<br><span class="state-none">one object, ' + row.members.length +
-                    ' attributes</span>' : '') + '</td>' +
-      '<td>' + this.esc(row.label) + '</td>' +
-      '<td>' + attributes + '</td>' +
-      '<td>' + (paths.length
-        ? paths.map(function (path) {
-          return '<code>' + self.esc(JSON.stringify(path)) + '</code>';
-        }).join('<br>')
-        : '<span class="state-expired">cannot be asked for in this ' +
-          'format</span>') + '</td><td>' +
-          (row.ldpTerms.length ? this.codeList(row.ldpTerms)
-                                    : '<span class="state-none">—</span>') +
-      '</td>' +
-      this.vpIssuedCell(row.claim) + '</tr>';
+    return VcVerifierConfigPage.vpClaimRow(row, format);
   }
 
-  // The claims being asked for that are NOT in the catalogue. Rendered as
-  // ticked checkboxes in the same form rather than as a separate list with its
-  // own Save, because a form that dropped them the moment somebody saved the
-  // table above would silently undo a deliberate configuration.
+  // Drawn by `web_vc_verifier_config.ts` (#446).
   /**
    * Draws the claims asked for that are not in the catalogue, as ticked
    * checkboxes inside the selection form so a save keeps them.
    *
    * @param format - the credential format the DCQL paths are shown for
+   * @param extras - the view's `extras`
    * @returns the heading, note and table as HTML, or an empty string
    */
-  vpExtraRows(format) {
-    const { log, vpConfig } = this.deps;
-    const self = this;
+  vpExtraRows(format, extras) {
+    const { log } = this.deps;
     log.debug("Entering AdminConsole.vpExtraRows().");
-    const extras = vpConfig.requestedRows()
-                           .filter(function (row) { return !row.inCatalogue; });
-    if (!extras.length) {
-      log.debug("Leaving AdminConsole.vpExtraRows().");
-      return '';
-    }
     log.debug("Leaving AdminConsole.vpExtraRows().");
-    return '<h3>Asked for, and not in the catalogue</h3>' +
-      this.note('Nothing this service issues carries these, which is what ' +
-      'makes them worth asking for: it is the only way to see what a wallet ' +
-      'does with a request it cannot satisfy, and what this Verifier says ' +
-      'when it checks. They are ticked below so that saving the table above ' +
-      'keeps them — untick one to stop asking for it.') +
-      '<table><tr><th>In</th><th>Claim</th><th>DCQL path (' + this.esc(format) +
-      ')</th></tr>' +
-      extras.map(function (row) {
-        const paths = vpConfig.dcqlPathsFor(format, row.claim);
-        return '<tr><td><input type="checkbox" name="claim" value="' +
-          self.esc(row.claim) + '" ' +
-          'checked></td><td><code>' + self.esc(row.claim) + '</code></td>' +
-          '<td>' + paths.map(function (path) {
-            return '<code>' + self.esc(JSON.stringify(path)) + '</code>';
-          }).join('<br>') + '</td></tr>';
-      }).join('') + '</table>';
+    return VcVerifierConfigPage.vpExtraRows(format, extras);
   }
 
+  // Drawn by `web_vc_verifier_config.ts` (#446).
   /**
    * Draws the Verifier's claim selection form, the extra claims, the note on
    * claims dropped from an ldp_vc query, and the add and defaults forms.
@@ -24863,116 +24788,29 @@ class AdminConsole {
    * A saved selection applies to the next Authorization Request, not to one
    * already in flight.
    *
-   * @param format - the credential format the DCQL paths are shown for
+   * @param json - the page's view (`vpConfigJson()`)
    * @returns the forms and notes as HTML
    */
-  vpClaimsSection(format) {
-    const { log, vpConfig } = this.deps;
-    const self = this;
-    log.debug("Entering AdminConsole.vpClaimsSection(). format=" + format);
-    const rows = vpConfig.REQUESTABLE.map(function (
-        row) { return self.vpClaimRow(row, format); }).join('');
-    const omitted = format === 'ldp_vc' ? vpConfig.ldpOmitted() : [];
-    log.debug("Leaving AdminConsole.vpClaimsSection(). " +
-              vpConfig.REQUESTABLE.length + " " +
-        "row(s).");
-    return '<form method="post" action="/admin/vc-verifier-config"><input ' +
-      'type="hidden" name="action" value="select"><table><tr><th>Ask</th><th>' +
-      'Claim</th><th>Label</th><th>LDAP attribute (defined by)</th><th>DCQL ' +
-      'path (' + this.esc(format) + ')</th><th>ldp_vc term</th>' +
-      '<th>Issued now</th></tr>' + rows + '</table>' +
-      this.vpExtraRows(format) +
-      '<div class="formrow"><button>Save this request</button>' +
-      this.note('It applies to the next Authorization Request. One already ' +
-      'in flight keeps the claims it was built with — a Verifier that judged ' +
-      'a presentation against a list changed after it asked would refuse a ' +
-      'wallet for answering the question it was really ' +
-      'asked.') + '</div></form>' +
-      (omitted.length
-        ? this.note('<strong>' + this.codeList(omitted) + '</strong> ' +
-          (omitted.length === 1 ? 'is asked for and is' :
-           'are asked for and are') +
-          ' dropped from an <code>ldp_vc</code> query. That format is signed ' +
-          'over canonicalized JSON-LD, so only terms the vendored context ' +
-          'defines can be named at all, and asking under a name it does not ' +
-          'define would fail canonicalization rather than return less. The ' +
-          'two JOSE-secured formats ask for all of them.')
-        : '') +
-      '<div class="formrow"><form method="post" ' +
-      'action="/admin/vc-verifier-config" class="inline"><input ' +
-      'type="hidden" name="action" value="add"><label for="claim">Also ask ' +
-      'for a claim that is not in the catalogue</label><input type="text" ' +
-      'id="claim" name="claim" size="24" ' +
-      'placeholder="drivers_licence_number"><button ' +
-      'class="secondary">Add</button></form> <form method="post" ' +
-      'action="/admin/vc-verifier-config" class="inline"><input ' +
-      'type="hidden" name="action" value="defaults"><button ' +
-      'class="secondary">Back to what this process started ' +
-      'with</button></form></div>';
+  vpClaimsSection(json) {
+    const { log } = this.deps;
+    log.debug("Entering AdminConsole.vpClaimsSection().");
+    log.debug("Leaving AdminConsole.vpClaimsSection().");
+    return VcVerifierConfigPage.vpClaimsSection(json);
   }
 
-  // The credential types a wallet may submit, and which one an unqualified
-  // request asks for. One request is for ONE of them: a presentation cannot
-  // convert between formats, so a wallet holding a jwt_vc_json credential has
-  // nothing to answer a dc+sd-jwt query with — and the honest outcome is that
-  // it says so rather than that this page pretends the choice does not matter.
+  // Drawn by `web_vc_verifier_config.ts` (#446).
   /**
    * Draws the form that chooses which credential format an unqualified
    * presentation request asks for, with what each format is.
    *
-   * @param format - the current default format
+   * @param json - the page's view (`vpConfigJson()`)
    * @returns the form and notes as HTML
    */
-  vpFormatsSection(format) {
-    const { log, vpConfig } = this.deps;
-    const self = this;
-    log.debug("Entering AdminConsole.vpFormatsSection(). format=" + format);
-    const rows = vpConfig.FORMATS.map(function (item) {
-      const configs = item.configs.map(function (id) {
-        return '<code>' + self.esc(id) + '</code>';
-      }).join('<br>');
-      return '<tr><td><input type="radio" name="format" value="' +
-             self.esc(item.id) +
-        '"' +
-        (item.id === format ? ' checked' : '') + '></td>' +
-        '<td><code>' + self.esc(item.id) + '</code><br>' +
-        self.esc(item.label) + '</td>' +
-        '<td><code>' + self.esc(item.identifiedBy) + '</code><br><code>' +
-        self.esc(item.identifierText) + '</code></td>' +
-        '<td>' + self.esc(item.selectiveDisclosure) + '</td>' +
-        '<td>' + self.esc(item.holderBinding) + '</td>' +
-        '<td>' + configs + '</td>' +
-        '<td><a href="' + self.esc('/oid4vp/verifier?format=' +
-                                   encodeURIComponent(item.id)) +
-        '">Present one</a></td></tr>';
-    }).join('');
-    log.debug("Leaving AdminConsole.vpFormatsSection(). " +
-              vpConfig.FORMATS.length + " " +
-        "row(s).");
-    return '<form method="post" action="/admin/vc-verifier-config"><input ' +
-      'type="hidden" name="action" ' +
-      'value="format"><table><tr><th>Default</th><th>Format</th><th>' +
-      'Identified ' +
-      'in DCQL by</th><th>Selective disclosure</th><th>Holder ' +
-      'binding</th><th>Issued here as</th><th></th></tr>' +
-      rows + '</table>' +
-      '<div class="formrow"><button>Ask for this one by default</button>' +
-      this.note('The default is what <code>/oid4vp/start</code> asks for ' +
-      'when the link that reached it names no format. The bar door\'s three ' +
-      'format buttons name one explicitly, so they are unaffected — a button ' +
-      'saying "present an SD-JWT VC" that asked for something else would be ' +
-      'lying in the one place a reader is most likely to trust it.') +
-      '</div></form>' +
-      this.note(vpConfig.FORMATS.map(function (item) {
-        return '<strong>' + self.esc(item.id) + '</strong> — ' +
-               self.esc(item.what);
-      }).join('<br><br>')) +
-      this.note('The identifying values are not settable here. They are what ' +
-      'this service\'s own issuer mints (<code>vc_configs.js</code>), and a ' +
-      'Verifier asking for a <code>vct</code> nobody here issues would be a ' +
-      'request no wallet in this stack could ever satisfy — a negative worth ' +
-      'having, but one that belongs to the issuer\'s configuration rather ' +
-      'than to a text box on this page.');
+  vpFormatsSection(json) {
+    const { log } = this.deps;
+    log.debug("Entering AdminConsole.vpFormatsSection().");
+    log.debug("Leaving AdminConsole.vpFormatsSection().");
+    return VcVerifierConfigPage.vpFormatsSection(json);
   }
 
   // HOW a family is separated, in the words the row itself carries. This used
@@ -36212,80 +36050,14 @@ class AdminConsole {
 
     app.get('/admin/vc-verifier-config', function (req, res) {
       log.debug("Entering the admin verifier-request page.");
-      const format = vpConfig.defaultFormatId();
-      const requested = vpConfig.requestedClaims();
-      const query = vpConfig.dcqlQuery(format);
-
-      const inner = self.messagesOf(req) +
-        self.note('What the mock Verifier at <a ' +
-        'href="/oid4vp/verifier">/oid4vp/verifier</a> — the pages call it ' +
-        '<em>The Bar Door</em> — asks a wallet for, and in which credential ' +
-        'format. It reaches the wire as the <code>dcql_query</code> of the ' +
-        'next OID4VP Authorization Request, and it is what the Verifier then ' +
-        'checks the presentation against: a claim asked for and not ' +
-        'presented fails the <em>Requested claims</em> check by name.') +
-
-        self.note('The claims are the same catalogue <a ' +
-        'href="/admin/vc">/admin/vc</a> fills a credential from, grouped ' +
-        'into <strong>claims</strong> rather than listed as attribute types. ' +
-        'A credential carries one Disclosure per top-level claim, so ' +
-        '<code>address</code> is one unit of disclosure however many LDAP ' +
-        'attributes feed it — asking for it gets the street, the locality, ' +
-        'the region, the postal code and the country together, and a page ' +
-        'offering six address checkboxes would be offering a choice that ' +
-        'does not exist on the wire.') +
-
-        self.warn('<strong>This asks; it does not admit anybody.</strong> A ' +
-        'presentation made to this door starts no session, issues no token ' +
-        'and grants no access — the door says yes and that is the whole of ' +
-        'it. Signing in with a wallet is a different door, <code>' +
-        '/authn/wallet</code>, which asks for a credential this realm ' +
-        'issued with a request of its own and is not configured here ' +
-        '(<a href="/admin/oid4vp">OpenID4VP</a> has its switch). The two ' +
-        'settings are also deliberately separate: this page decides what is ' +
-        'ASKED FOR and <a href="/admin/vc">/admin/vc</a> decides what is ' +
-        'ISSUED, so that asking for a claim the issuer does not mint stays ' +
-        'reachable. That is the negative worth testing, and one page setting ' +
-        'both would make it impossible to reach.') +
-
-        '<h2>The claims</h2>' +
-        (requested.length
-          ? self.note('Asking for ' + requested.length + ': ' +
-                      self.codeList(requested) +
-                      '.')
-          : self.warn('<strong>No claim is selected, and that is a real ' +
-            'request rather than an empty form.</strong> DCQL reads an ' +
-            'absent <code>claims</code> member as the WHOLE credential, so ' +
-            'the query below carries none and the wallet is being asked for ' +
-            'everything — the opposite of what selective disclosure is for, ' +
-            'which is exactly why it is worth being able to ask for it.')) +
-        self.vpClaimsSection(format) +
-
-        '<h2>The credential types that can be submitted</h2>' +
-        self.vpFormatsSection(format) +
-
-        '<h2>The query this builds</h2>' +
-        self.note('Built by the function that builds the real one, not by a ' +
-        'second walk of the table above — a preview that agreed with this ' +
-        'page and disagreed with the request would be worse than no preview. ' +
-        'It is the <code>dcql_query</code> parameter of the next ' +
-        'Authorization Request, by value or inside the signed Request ' +
-        'Object.') +
-        '<textarea readonly spellcheck="false">' +
-        self.esc(JSON.stringify(query, null, 2)) + '</textarea><h2>What ' +
-        'this page does not change</h2>' +
-        self.note('Not what the issuer mints — that is <a ' +
-        'href="/admin/vc">/admin/vc</a>, and the <em>Issued now</em> column ' +
-        'above is this page reporting on that one. Not a request already in ' +
-        'flight, which keeps the claims it was built with. Not the ' +
-        '<code>vct</code> or the type array a credential is identified by. ' +
-        'And not what a verified presentation is worth: nothing here turns ' +
-        'one into a credential of any kind, and nothing here decides whether ' +
-        'one signs anybody in — that is <code>/authn/wallet</code>\'s ' +
-        'question, asked only of a credential this realm issued.');
-
-      self.respond(req, res, vpConfigJson(), 'Verifier request',
-                   '/admin/vc-verifier-config', inner);
+      // What `GET /admin-api/vc-verifier-config` answers (#446).
+      const json = vpConfigJson();
+      self.respond(req, res, json, 'Verifier request',
+                   '/admin/vc-verifier-config',
+        // Drawn by `web_vc_verifier_config.ts` (#446).
+        self.messagesOf(req) +
+        VcVerifierConfigPage.body(self.renderContext(req),
+          JSON.parse(JSON.stringify(json))));
       log.debug("Leaving the admin verifier-request page.");
     });
 
