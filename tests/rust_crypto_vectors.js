@@ -109,7 +109,32 @@ function run(t) {
   if (fs.existsSync(path.join(VECTORS, 'xmldsig-rust.json'))) {
     xmlSignatures(t, read('xmldsig-rust.json'));
   }
+  if (fs.existsSync(path.join(VECTORS, 'xmlenc-rust.json')) &&
+      fs.existsSync(path.join(VECTORS, 'xmlenc-node.json'))) {
+    xmlEncryption(t, read('xmlenc-rust.json'), read('xmlenc-node.json'));
+  }
   log.debug("Leaving run().");
+}
+
+// XML ENCRYPTION: every element Rust encrypted — an RSA recipient in each
+// cipher and key transport, an EC one in each curve, key wrap and cipher —
+// decrypts with crypto.decryptElement() to the plaintext it was given, with
+// the recipient key Node generated (xmlenc-node.json).
+/**
+ * @param {any} t - the runner's check collector
+ * @param {any} vectors - xmlenc-rust.json
+ * @param {any} node - xmlenc-node.json, for the recipients' keys
+ */
+function xmlEncryption(t, vectors, node) {
+  log.debug("Entering xmlEncryption().");
+  vectors.cases.forEach(function (row) {
+    const opened = crypto.decryptElement(row.xml,
+      node.recipients[row.recipient].privateKeyPem, {});
+    t.check(!!opened.ok && opened.xml === row.plain,
+            row.name + ': an element Rust encrypted decrypts in Node',
+            opened.why || '');
+  });
+  log.debug("Leaving xmlEncryption().");
 }
 
 // XML SIGNATURE: every document Rust signed, in each of the ten methods
@@ -154,7 +179,7 @@ module.exports = {
   name: 'rust_crypto_vectors',
   describe: 'what the Rust sts-crypto crate signed verifies, and what it ' +
             'encrypted decrypts, in the Node service — every JWS and JWE ' +
-            'algorithm, and every XML signature method this service signs ' +
-            'with',
+            'algorithm, every XML signature method this service signs ' +
+            'with, and every XML Encryption cipher, transport and agreement',
   run: run
 };
