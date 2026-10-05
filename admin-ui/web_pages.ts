@@ -49,6 +49,7 @@ import MailPage = require('./web_mail');
 import MailOutboxPage = require('./web_mail_outbox');
 import ModePage = require('./web_mode');
 import NodeHealthPage = require('./web_node_health');
+import PkiPage = require('./web_pki');
 import OidfedPage = require('../oidfed/web_oidfed');
 import ProviderCommandsPage =
   require('../oauth-oidc/web_provider_commands');
@@ -150,6 +151,8 @@ const PAGES: WebPage[] = [
   { path: '/admin/oauth2/monitor', title: 'OAuth 2.0 / OIDC activity',
     operation: '/admin-api/oauth2/monitor',
     render: OAuth2MonitorPage.render },
+  { path: '/admin/pki', title: 'PKI', operation: '/admin-api/pki',
+    render: PkiPage.render },
   { path: '/admin/risk', title: 'Risk', operation: '/admin-api/risk',
     render: RiskPage.render },
   { path: '/admin/risk-scoring', title: 'Risk scoring',

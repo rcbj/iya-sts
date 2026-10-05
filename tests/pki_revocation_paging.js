@@ -230,17 +230,20 @@ async function run(t) {
       one.orphansPaging.perPage === PER && one.issued.length <= PER;
   }), 'a `per` above five is held to five on every list');
 
+  // The list view is the page's renderer's since #446 (`admin-ui/web_pki.ts`).
+  const PkiPage = require('../admin-ui/web_pki');
   t.log.info('=== D. the pane and the way back ===');
   const query = { 'ca-default-jose-issuedPage': '2', personsPage: '4',
                   'ca-bogus': '7', 'evil-issuedPage': '2' };
-  const view = admin['keyPairListView'](query);
+  const view = PkiPage.keyPairListView(query);
   t.check(view['ca-default-jose-issuedPage'] === '2' &&
           view.personsPage === '4' && !('ca-bogus' in view) &&
           !('evil-issuedPage' in view),
           'the list view carries the authority lists\' parameters and no ' +
           'name this file does not write', JSON.stringify(view));
   const json = { revocation: admin['revocationModel'](query) };
-  const html = admin['revocationPane'](json, view);
+  // Drawn by the renderer from the model passed through JSON (#446).
+  const html = PkiPage.revocationPane(JSON.parse(JSON.stringify(json)), view);
   const revokeForms =
     (html.match(/name="action" value="revoke-certificate"/g) || []).length;
   const releaseForms = (html.match(/name="action" value="release-hold"/g) ||
@@ -311,10 +314,11 @@ async function run(t) {
   })[0].issued[0].serialHex, hex(4321), 'a serial finds its certificate');
   const nothing = { revocation: admin['revocationModel'](
     { 'ca-default-jose-issuedq': 'no such thing' }) };
-  const nothingView = admin['keyPairListView'](
+  const nothingView = PkiPage.keyPairListView(
     { 'ca-default-jose-issuedq': 'no such thing',
       'ca-default-jose-issuedPage': '4', personsPage: '2' });
-  const nothingHtml = admin['revocationPane'](nothing, nothingView);
+  const nothingHtml = PkiPage.revocationPane(
+    JSON.parse(JSON.stringify(nothing)), nothingView);
   t.check(nothingHtml.indexOf('matches the search above') >= 0,
           'a search that matches nothing says so');
   const form = (nothingHtml.match(
@@ -325,7 +329,7 @@ async function run(t) {
           form.indexOf('name="ca-default-jose-issuedPage"') < 0,
           'the box re-shows its term, carries the other lists\' state and ' +
           'starts its own list at page 1', form);
-  t.check(admin['keyPairListView'](
+  t.check(PkiPage.keyPairListView(
     { 'ca-default-jose-issuedq': 'x'.repeat(201) })[
     'ca-default-jose-issuedq'] === undefined,
           'a search longer than any field is not carried');

@@ -132,7 +132,7 @@ copied = []
 # by its bare name. The new file says the same of the kit's, so no moved
 # line changes.
 for const in COPY:
-    m = re.search(r'((?:^(?://|/\*\*| \*)[^\n]*\n)*)^const %s(?::[^=\n]*)? = [^;]*;\n'
+    m = re.search(r'((?:^(?://|/\*\*| \*)[^\n]*\n)*)^const %s(?::[^=\n]*)?\s*=\s[^;]*;\n'
                   % re.escape(const), '\n'.join(lines), re.M)
     assert m, ('no such constant', const)
     copied.append(m.group(0))
@@ -158,7 +158,7 @@ for doc, start, end, name in spans:
                    block, flags=re.M)
     # THE REQUEST BECOMES THE RENDER CONTEXT.
     block = block.replace('admin.mayWrite(req)', 'ctx.write')
-    block = re.sub(r'\breq: Req\b', 'ctx: Json', block)
+    block = re.sub(r'\breq: (?:Req|Json)\b', 'ctx: Json', block)
     block = re.sub(r'\breq\.query\b', 'ctx.query', block)
     code = '\n'.join(l for l in block.split('\n')
                      if not re.match(r'^\s*(//|\*|/\*)', l))
