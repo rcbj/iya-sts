@@ -608,3 +608,51 @@ pub fn generate_key_set(now_ms: i64) -> Result<Json, String> {
         "generations": null,
     }))
 }
+
+/// `/oauth2/jwks` over one realm's set (`sendJwks()`), in Node's order:
+///
+/// * **the RSA key FIRST, and it must stay first** — everything signed by
+///   default is RS256 with it, and readers take `keys[0]`; no `alg` member,
+///   since the one key signs the whole RSA family, and `x5c` the chain from
+///   its leaf (a self-signed leaf alone, while no hierarchy is built);
+/// * then every curve key, and the post-quantum keys the set holds;
+/// * the request object encryption keys LAST, `use: "enc"`.
+///
+/// Not here yet: the standby generations, the signer groups, the pinned
+/// keys and the KEM keys, none of which a set made by this runtime holds;
+/// and `keys.kidFormat: jwk-thumbprint-uri`'s second entries.
+pub fn jwks_document(set: &KeySet) -> Result<Json, String> {
+    let cert_b64 = set.cert_b64().ok_or("the key set holds no certificate")?;
+    let der = STANDARD.decode(cert_b64).map_err(|e| e.to_string())?;
+    let cert = ossl(openssl::x509::X509::from_der(&der))?;
+    let public = ossl(cert.public_key())?;
+    let rsa = ossl(public.rsa())?;
+    let mut keys = vec![json!({
+        "kty": "RSA", "use": "sig", "kid": kid_of(cert_b64),
+        "n": b64u(&rsa.n().to_vec()), "e": b64u(&rsa.e().to_vec()),
+        "x5c": [cert_b64],
+    })];
+    for member in ["extraKeys", "pqKeys"] {
+        for one in set
+            .blob
+            .get(member)
+            .and_then(Json::as_array)
+            .into_iter()
+            .flatten()
+        {
+            if let Some(jwk) = one.get("publicJwk").filter(|j| j.is_object()) {
+                keys.push(jwk.clone());
+            }
+        }
+    }
+    for kind in ["rsa", "ec"] {
+        if let Some(jwk) = set
+            .blob
+            .pointer(&format!("/requestObjectEncKeys/{}/publicJwk", kind))
+            .filter(|j| j.is_object())
+        {
+            keys.push(jwk.clone());
+        }
+    }
+    Ok(json!({ "keys": keys }))
+}
