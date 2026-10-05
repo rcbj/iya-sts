@@ -323,6 +323,11 @@ const PAGES: WebPage[] = [
     render: function (view: Json, ctx?: Json): string {
       return EstPage.monitorBody(ctx || WebKit.context(), view);
     } },
+  { path: '/admin/federation/map', title: 'Federation — the picture',
+    operation: '/admin-api/federation/map',
+    render: function (view: Json, ctx?: Json): string {
+      return FederationPage.map(ctx || WebKit.context(), view);
+    } },
   { path: '/admin/federation', title: 'Federation',
     operation: '/admin-api/federation',
     drill: {

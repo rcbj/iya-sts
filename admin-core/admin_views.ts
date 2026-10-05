@@ -167,6 +167,10 @@ import userGraph = require('../common/user_graph');
 // ONE CREDENTIAL'S LINEAGE (#446), for `/admin/tokens/credential`. A
 // library in `common/` that registers no route.
 import credentialGraph = require('../common/credential_graph');
+// THE FEDERATION PICTURE (#446): the graph and its renderer, libraries that
+// register no route.
+import federationGraph = require('../federation/federation_graph');
+import federationDiagram = require('../admin-ui/federation_diagram');
 import authnPolicy = require('../common/authn_policy');
 // Four more with the second batch: the audit log the audit view pages, the
 // delegation register the delegation view reads, the Kerberos principal
@@ -527,6 +531,8 @@ interface AdminViewsDeps {
   delegationMap: typeof delegationMap;
   userGraph: typeof userGraph;
   credentialGraph: typeof credentialGraph;
+  federationGraph: typeof federationGraph;
+  federationDiagram: typeof federationDiagram;
   delegationPolicy: typeof delegationPolicy;
   krb5Principals: typeof krb5Principals;
   krb5PersonKeys: typeof krb5PersonKeys;
@@ -637,6 +643,8 @@ class AdminViews {
       delegationMap: delegationMap,
       userGraph: userGraph,
       credentialGraph: credentialGraph,
+      federationGraph: federationGraph,
+      federationDiagram: federationDiagram,
       delegationPolicy: delegationPolicy,
       krb5Principals: krb5Principals,
       krb5PersonKeys: krb5PersonKeys,
@@ -5099,6 +5107,251 @@ class AdminViews {
     model.facts = this.delegationFacts({ acts: model.acts,
                                          chains: model.chainPage.shown });
     log.debug("Leaving AdminViews.delegationPageModel().");
+    return model;
+  }
+
+  // Moved here from the console (#446), as `delegationMapKey()` was.
+  // THE KEY, drawn by the same render() the picture is, so that a legend cannot
+  // come to describe a diagram this service no longer draws. Every swatch is a
+  // one-node, one-edge graph put through the real code path — which is the
+  // delegation page's rule and is worth the few extra bytes: a legend
+  // hand-drawn out of the same colour constants would still go stale the day a
+  // shape changed.
+  /**
+   * Draws the federation picture's key, each swatch rendered by the same
+   * code as the picture so the legend cannot drift from it.
+   *
+   * @returns the key's boxes and lines tables as HTML
+   */
+  federationMapKey() {
+    const { log, federationDiagram } = this.deps;
+    const self = this;
+    log.debug("Entering AdminViews.federationMapKey().");
+    const shapes = [
+      { kind: 'sts', label: 'This service',
+        realm: 'default', realmName: 'this realm',
+        what: 'The trust realm you are looking at. Every line on the picture ' +
+              'starts or ends here, because every relationship is between ' +
+              'this realm and somebody else.' },
+      { kind: 'application', label: 'an application',
+        what: 'An application registered HERE whose people are authenticated ' +
+              'somewhere else. What points it at a partner is ' +
+              '<code>appFederationRelationship</code> on its entry under ' +
+              '<code>ou=applications</code>.' },
+      { kind: 'partner-sp', label: 'a partner',
+        what: 'A FOREIGN SERVICE PROVIDER. It asks this service to ' +
+              'authenticate somebody. Dashed, because it is not this service ' +
+              'and nothing here can see inside it.' },
+      { kind: 'partner-idp', label: 'a partner',
+        what: 'A FOREIGN IDENTITY PROVIDER. It authenticates the person and ' +
+              'this service consumes what it issues. Dashed for the same ' +
+              'reason — and a hexagon rather than a rectangle because it is ' +
+              'an identity service, which is what this service is too.' }
+    ];
+    const shapeRows = shapes.map(function (one) {
+      const drawn = federationDiagram.render(
+        { nodes: [Object.assign({ id: 'k', relationships: [] }, one)],
+          edges: [] },
+        { links: false, id: 'key-' + one.kind, label: one.label });
+      return '<tr><td>' + drawn.svg + '</td><td>' + one.what + '</td></tr>';
+    }).join('');
+
+    // THE LINES, AND THE FOUR STATES ARE THE LIST PAGE'S FOUR. Each is drawn by
+    // handing render() a relationship in that state, so the colour in the key
+    // is the colour edgeLook() will actually choose rather than a second
+    // opinion about it.
+    const states = [
+      { what: '<strong>Ready</strong> — enabled and fully configured. It ' +
+              'will work.',
+        row: { id: 'ready', protocolLabel: 'SAML 2.0', enabled: true,
+               ready: true,
+               usable: true, missing: [], applicationCount: 0,
+               authentications: 0,
+               users: 0, releases: [], lastError: '', mechanismLabel: '' } },
+      { what: '<strong>Disabled</strong> — which is how every relationship ' +
+              'starts. This is the ordinary state of something somebody has ' +
+              'not finished setting up, not a fault.',
+        row: { id: 'disabled', protocolLabel: 'SAML 2.0', enabled: false,
+               ready: true,
+               usable: false, missing: [], applicationCount: 0, authentications:
+                                                                  0,
+               users: 0, releases: [], lastError: '', mechanismLabel: '' } },
+      { what: '<strong>Enabled and NOT configured</strong> — the loud one, ' +
+              'and it earns being the only red on this page: it will REFUSE ' +
+              'at the moment somebody tries to use it, and it looks finished ' +
+              'from every angle except this one.',
+        row: { id: 'half', protocolLabel: 'SAML 2.0', enabled: true,
+               ready: false,
+               usable: false, missing: ['fedSigningCertificate'],
+               applicationCount: 0, authentications: 0, users: 0, releases: [],
+               lastError: '', mechanismLabel: '' } },
+      { what: '<strong>A broker that cannot broker</strong> — the ' +
+              'relationship is fine and the relationship it authenticates ' +
+              'THROUGH is not, so the person meets the sign-in screen ' +
+              'instead of the partner. That screen checks no password, which ' +
+              'is why this is worth a colour of its own: it is the only ' +
+              'failure here that produces a working sign-in.',
+        row: { id: 'broker', protocolLabel: 'OpenID Connect', enabled: true,
+               ready: true, usable: true, missing: [], applicationCount: 0,
+               authentications: 0, users: 0, releases: [], lastError: '',
+               mechanismLabel: 'Another federation relationship',
+               brokersTo: 'somewhere', brokerUsable: false,
+               brokerProblem: 'it is disabled' } }
+    ];
+    const stateRows = states.map(function (one, i) {
+      const drawn = federationDiagram.render({
+        nodes: [{ id: 'a', kind: 'application', label: 'from',
+                  relationships: [] },
+                { id: 'b', kind: 'sts', label: 'to', realm: '',
+                  realmName: '' }],
+        edges: [{ id: 'e', from: 'a', to: 'b',
+                  relation: one.row.brokersTo ? 'asks' : 'signs-in',
+                  relationship: one.row.id, row: one.row, use: null }]
+      }, { links: false, id: 'key-state-' + i, label: 'a line' });
+      // Only the line is wanted, not the two boxes it needs in order to exist,
+      // so the swatch is the label panel's own words. It is drawn rather than
+      // written because these four colours are the whole content of the key.
+      return '<tr><td><svg xmlns="http://www.w3.org/2000/svg" width="120" ' +
+        'height="26" viewBox="0 0 120 26" role="img"><title>' +
+        WebKit.esc(WebKit.plainTextOf(one.what)) + '</title>' +
+        drawn.svg.replace(/^[\s\S]*?<defs>/, '<defs>')
+                 .replace(/<rect[\s\S]*$/, '') +
+        '</svg></td><td>' + one.what + '</td></tr>';
+    }).join('');
+
+    log.debug("Leaving AdminViews.federationMapKey().");
+    return '<h3>The boxes</h3>' +
+      '<table><tr><th>Drawn as</th><th>What it is</th></tr>' + shapeRows +
+      '</table><h3>The ' +
+      'lines</h3>' +
+      WebKit.note('<strong>An arrow is a REQUEST and not an ' +
+      'assertion</strong>, which is the one thing about this picture that ' +
+      'looks backwards until it is said. Everything on the left arrives ' +
+      'wanting somebody signed in; everything on the right is asked to do ' +
+      'the signing in. So an identity-provider-side relationship — where ' +
+      'this service ASSERTS to the partner — points INWARD, because what the ' +
+      'partner did was ask. Drawn the other way an identity broker is two ' +
+      'arrows leaving the same box with nothing joining them; drawn this way ' +
+      'it is one straight line through the middle, which is what a bridge ' +
+      'is.') +
+      '<table><tr><th>Colour</th><th>What it means</th></tr>' + stateRows +
+      '</table>';
+  }
+  // What every box is called, where it links, and nothing about its shape — the
+  // shape is `federation_diagram.js`'s and is decided from the node's kind,
+  // which is the one thing a caller must not be able to override. See lookOf()
+  // there.
+  /**
+   * Decides where each box of the federation picture links: an application
+   * to the applications register, a partner to its first relationship.
+   *
+   * @param graph - the federation graph
+   * @returns `looks`, keyed by node id, and `resolve`, a node's look
+   */
+  federationMapLooks(graph) {
+    const { log } = this.deps;
+    log.debug("Entering AdminViews.federationMapLooks().");
+    const looks = {};
+    graph.nodes.forEach(function (node) {
+      if (node.kind === 'sts') {
+        looks[node.id] = {};
+        return;
+      }
+      if (node.kind === 'application') {
+        // An application box goes to the APPLICATIONS registry and not to the
+        // relationship, because the thing somebody clicks it to change is
+        // `appFederationRelationship`, which lives on that entry. The
+        // relationship is one click away on the line's own label.
+        looks[node.id] = {
+          href: '/admin/applications' +
+                WebKit.queryWith({}, { application: node.label })
+        };
+        return;
+      }
+      // BOTH PARTNER SHAPES GO TO THE RELATIONSHIP, and where a partner has
+      // more than one they go to the FIRST — which is a real limitation rather
+      // than a choice, and it is the delegation picture's own: an SVG anchor
+      // wraps one shape and can have one href. The table under the picture
+      // lists every relationship a partner has, which is where a reader with
+      // two goes.
+      looks[node.id] = {
+        href: '/admin/federation' +
+              WebKit.queryWith({},
+                { relationship: node.relationships[0] || '' })
+      };
+    });
+    log.debug("Leaving AdminViews.federationMapLooks(). " +
+              graph.nodes.length +
+              " box(es).");
+    return {
+      looks: looks,
+      resolve: function (node) {
+        log.debug("Entering resolve().");
+        log.debug("Leaving resolve().");
+        return looks[node.id];
+      }
+    };
+  }
+  // ---------------------------------------------------------------------------
+  // THE FEDERATION PICTURE, AS ONE ANSWER (#446).
+  //
+  // `/admin/federation/map`: one trust realm's federation relationships,
+  // filtered by role, protocol and text (`federationGraph.graph()`), drawn
+  // on the server. The page's own JSON, with the vocabulary its filter
+  // offers, the drawing, its size, and the key — markup drawn by the
+  // diagram's own renderer, as `delegationMapKey()` is.
+  // ---------------------------------------------------------------------------
+  /**
+   * Builds `/admin/federation/map`'s answer.
+   *
+   * @param query - the page's query: `role`, `protocol`, `q`
+   * @param options - `links` (true by default): false draws the document
+   *   with no links in it, as `?format=svg` answers
+   * @returns the realm's relationships, the graph and the drawing
+   */
+  federationMapModel(query, options?) {
+    const { log, federation, federationGraph, federationDiagram } = this.deps;
+    log.debug("Entering AdminViews.federationMapModel().");
+    const q = query || {};
+    const wanted = {
+      role: String(q.role || '').trim(),
+      protocol: String(q.protocol || '').trim(),
+      q: String(q.q || '').trim()
+    };
+    const graph = federationGraph.graph(wanted);
+    const look = this.federationMapLooks(graph);
+    const label = 'Federation relationships in the trust realm "' +
+      graph.realm.id + '", as a diagram';
+    const drawn = federationDiagram.render(graph, {
+      resolve: look.resolve, links: !(options && options.links === false),
+      id: 'fedmap', label: label
+    });
+    const model: any = {
+      realm: graph.realm, counts: graph.counts, filter: wanted,
+      empty: graph.empty, filtered: graph.filtered,
+      relationships: graph.relationships,
+      nodes: graph.nodes.map(function (node) {
+        return { id: node.id, kind: node.kind, label: node.label,
+                 relationships: node.relationships || [] };
+      }),
+      edges: graph.edges.map(function (edge) {
+        return { id: edge.id, from: edge.from, to: edge.to,
+                 relation: edge.relation,
+                 relationship: edge.relationship,
+                 brokeredTo: edge.brokeredTo || '',
+                 use: edge.use || null };
+      }),
+      drawing: { width: drawn.width, height: drawn.height,
+                 failed: drawn.failed || null },
+      label: label, svg: drawn.svg
+    };
+    if (!(options && options.links === false)) {
+      model.roles = federation.ROLES;
+      model.protocols = federation.PROTOCOLS;
+      model.mapKey = this.federationMapKey();
+    }
+    log.debug("Leaving AdminViews.federationMapModel(). " +
+              graph.relationships.length + " relationship(s).");
     return model;
   }
 
@@ -12078,6 +12331,9 @@ export = {
   delegationLooks: slot.forward('delegationLooks'),
   delegationMapModel: slot.forward('delegationMapModel'),
   delegationMapKey: slot.forward('delegationMapKey'),
+  federationMapModel: slot.forward('federationMapModel'),
+  federationMapKey: slot.forward('federationMapKey'),
+  federationMapLooks: slot.forward('federationMapLooks'),
   delegationPageModel: slot.forward('delegationPageModel'),
   delegationClusterModel: slot.forward('delegationClusterModel'),
   delegationAllowedModel: slot.forward('delegationAllowedModel'),

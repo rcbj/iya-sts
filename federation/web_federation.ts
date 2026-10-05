@@ -1051,6 +1051,347 @@ class FederationPage {
     }
     return !!dflt;
   }
+
+  // ---------------------------------------------------------------------------
+  // /admin/federation/map, FROM `GET /admin-api/federation/map` (#446): one
+  // realm's relationships drawn (laid out on the server), filtered, with
+  // the relationships, the applications behind them and the key in words.
+  // ---------------------------------------------------------------------------
+  /**
+   * Draws `/admin/federation/map` from its answer.
+   *
+   * @param ctx - the render context (`WebKit.context()`)
+   * @param json - the answer of `GET /admin-api/federation/map`
+   * @returns the body as HTML
+   */
+  static map(ctx: Json, json: Json): string {
+    const filter = json.filter || {};
+    const wanted = { role: filter.role || '', protocol: filter.protocol || '',
+                     q: filter.q || '' };
+    const filtering = !!(wanted.role || wanted.protocol ||
+                         wanted.q);
+
+    // The filter, and it is the list page's own plus a protocol select —
+    // because narrowing the picture and narrowing the table under it has to
+    // be ONE control. It carries no `page`: this view has no paging, and a
+    // page number carried into a view with none is a parameter that does
+    // nothing and comes back with the reader on the next hop.
+    const roleOptions = ['<option value="">any role</option>'].concat(
+      json.roles.map(function (one) {
+        return '<option value="' + kit.esc(one.role) + '"' +
+          (one.role === wanted.role ? ' selected' : '') + '>' +
+          kit.esc(one.short) + '</option>';
+      })).join('');
+    const protocolOptions = ['<option value="">any protocol</option>'].concat(
+      json.protocols.map(function (one) {
+        return '<option value="' + kit.esc(one.protocol) + '"' +
+          (one.protocol === wanted.protocol ? ' selected' : '') + '>' +
+          kit.esc(one.label) + '</option>';
+      })).join('');
+
+    // Every application on the picture, once, with which relationships it
+    // uses and what has crossed each. It is the per-application half laid out
+    // flat, because the picture can carry three lines on a label and this is
+    // the place the fourth fact goes.
+    const useRows = [];
+    json.relationships.forEach(function (row) {
+      row.applications.forEach(function (use) {
+        useRows.push({ row: row, use: use });
+      });
+    });
+    useRows.sort(function (a, b) {
+      if (b.use.authentications !== a.use.authentications) {
+        return b.use.authentications - a.use.authentications;
+      }
+      return a.use.application < b.use.application ? -1
+           : a.use.application > b.use.application ? 1 : 0;
+    });
+
+    return (
+      '<div class="tiles">' +
+      kit.tile(json.counts.relationships, 'Relationships drawn') +
+      kit.tile(json.counts.applications, 'Applications behind them') +
+      kit.tile(json.counts.partners, 'Foreign partners') +
+      kit.tile(json.counts.authentications, 'Federated sign-ins') +
+      '</div>' +
+
+      kit.note('<strong>This is one trust realm.</strong> The federation ' +
+      'register is per realm — an id that names a relationship in another ' +
+      'realm names nothing here — so this picture is of <code>' +
+      kit.esc(json.realm.id) +
+      '</code> and of nothing else. The realm switcher at the top of the ' +
+      'page is how you get to another one, and the realm is drawn on the ' +
+      'hexagon so that a saved copy of this document still says which ' +
+      'realm it is of.') +
+
+      kit.note('<strong>Left asks, right authenticates.</strong> ' +
+      'Everything on the left of the hexagon arrives wanting somebody ' +
+      'signed in — an application here, or a foreign service provider. ' +
+      'Everything on the right is a party this service asks to do the ' +
+      'signing in. An identity-provider-side relationship therefore points ' +
+      'INWARD even though this service asserts outward, because the arrow ' +
+      'is the request; and an identity BROKER, which is both at once, is ' +
+      'then a single straight line through the middle instead of two ' +
+      'arrows leaving the same box.') +
+
+      '<form method="get" action="/admin/federation/map"><div ' +
+      'class="formrow"><label for="q">Relationship</label>' +
+      '<input type="text" id="q" name="q" value="' + kit.esc(wanted.q) +
+      '" size="24" placeholder="id, name, partner or application">' +
+      '<label for="role">Role</label><select id="role" name="role">' +
+      roleOptions + '</select><label ' +
+      'for="protocol">Protocol</label><select id="protocol" ' +
+      'name="protocol">' +
+      protocolOptions + '</select>' +
+      '<button type="submit">Filter</button>' +
+      (filtering ? ' <a href="/admin/federation/map">clear</a>' : '') +
+      '</div></form>' +
+
+      (json.relationships.length
+        ? FederationPage.mapDrawing(json, wanted)
+        : kit.note(json.empty
+            ? '<strong>This realm federates with nobody, so there is ' +
+              'nothing to draw.</strong> A relationship is created on <a ' +
+              'href="/admin/federation">the federation page</a> and does ' +
+              'nothing until it is enabled, which is a second deliberate ' +
+              'act. Federation is the one feature in this service that ' +
+              'must be configured before it will do anything at all.'
+            : '<strong>No relationship matches this filter.</strong> The ' +
+              'register is not empty — <a ' +
+              'href="/admin/federation/map">clear the filter</a> to see ' +
+              'the rest.')) +
+
+      '<h2>The relationships</h2>' +
+      kit.note('The same rows <a href="/admin/federation">the list ' +
+      'page</a> shows, plus the two columns that are facts about TWO ' +
+      'registers rather than about one entry: how many applications are ' +
+      'configured to use a partner, and what the identity-provider side ' +
+      'does about authenticating somebody. Neither has anywhere to live on ' +
+      'a relationship\'s own entry.') +
+      '<table><tr><th>Relationship</th><th>This service ' +
+      'is</th><th>Protocol</th><th>Partner</th><th>State</th><th ' +
+      'class="num">Applications</th><th class="num">People</th><th ' +
+      'class="num">Sign-ins</th><th>Authentication method</th></tr>' +
+      (json.relationships.map(FederationPage.federationMapRow).join('') ||
+        '<tr><td colspan="9">Nothing to show.</td></tr>') +
+      '</table>' +
+
+      '<h2>Applications, per relationship</h2>' +
+      kit.note('<strong>One row per application and relationship, which ' +
+      'is the pair the counts on this page are of.</strong> ' +
+      '<code>fedAuthentications</code> on a relationship answers "how much ' +
+      'has crossed this partner"; this answers "how much has crossed it ' +
+      'for each of the applications behind it", which is a different ' +
+      'question the moment a second application names the same partner. A ' +
+      'pair is counted only where this service is CONFIGURED for it — the ' +
+      'application entry names the relationship, or an ' +
+      'identity-provider-side relationship brokers to it — and the check ' +
+      'is made against the live register when the sign-in completes rather ' +
+      'than trusted from the request that started it.') +
+      '<table><tr><th>Application</th><th>Relationship</th><th>Partner</th>' +
+      '<th class="num">People</th><th class="num">Sign-ins</th>' +
+      '<th>Configured by</th><th>Last</th></tr>' +
+      (useRows.map(function (one) {
+        const use = one.use;
+        const row = one.row;
+        return '<tr><td><a href="' +
+          kit.esc('/admin/applications' +
+                   kit.queryWith({}, { application: use.application })) +
+          '">' + kit.esc(use.application) + '</a></td>' +
+          '<td><a href="' +
+          kit.esc('/admin/federation' +
+                   kit.queryWith({}, { relationship: row.id })) +
+          '">' +
+          kit.esc(row.id) + '</a></td>' +
+          '<td class="who">' + kit.esc(row.peer || '') + '</td>' +
+          '<td class="num">' + use.users + '</td>' +
+          '<td class="num">' + use.authentications + '</td>' +
+          '<td>' + (use.configured
+            ? (use.source === 'broker'
+                ? 'the relationship <a href="' +
+                  kit.esc('/admin/federation' +
+                           kit.queryWith({}, { relationship: use.via })) +
+                  '">' + kit.esc(use.via) + '</a>, which brokers to it'
+                : 'its own <code>appFederationRelationship</code>')
+            : '<span class="bad">nothing, any more</span>' +
+              '<span class="sub">These sign-ins happened and are kept ' +
+              'rather than dropped, so the relationship\'s own totals ' +
+              'still add up. Something named this pair when they happened ' +
+              'and no longer does.</span>') + '</td>' +
+          '<td>' + (use.lastSeen
+            ? kit.esc(use.lastSeen) +
+              (use.lastUser ?
+               '<span class="sub">' + kit.esc(use.lastUser) + '</span>' : '')
+            : '<span class="state-none">never used</span>') + '</td></tr>';
+      }).join('') ||
+        '<tr><td colspan="7">No application is configured to authenticate ' +
+        'through any relationship in this realm, and none has ever done ' +
+        'so. That is <code>appFederationRelationship</code> on an entry ' +
+        'under <code>ou=applications</code>, which is written by nobody — ' +
+        'no protocol presents it and no sighting derives it.</td></tr>') +
+      (json.relationships.filter(function (r) { return r.unattributed; })
+        .length
+        ? kit.note('<strong>Some sign-ins belong to no row above, and ' +
+          'that is not a fault.</strong> A relationship\'s own total ' +
+          'counts every credential that crossed it; the rows above count ' +
+          'only the ones that named an application this service is ' +
+          'configured for. Three ordinary things make the difference: the ' +
+          'partner buttons at the foot of the sign-in screen belong to no ' +
+          'application, <code>/federation/login/{id}</code> needs no ' +
+          'configuration at all to reach, and a sign-in naming an ' +
+          'application that does not point here is refused a row and ' +
+          'logged. The difference is named rather than left to be noticed ' +
+          '— this is a page about counting, and a column that does not add ' +
+          'up is worse than one that explains itself.') +
+          '<table><tr><th>Relationship</th><th class="num">Sign-ins</th>' +
+          '<th class="num">Attributed</th>' +
+          '<th class="num">Belonging to no application</th></tr>' +
+          json.relationships.filter(function (r) { return r.unattributed; })
+            .map(function (r) {
+              return '<tr><td><a href="' +
+                kit.esc('/admin/federation' +
+                         kit.queryWith({}, { relationship: r.id })) +
+                '">' + kit.esc(r.id) + '</a></td>' +
+                '<td class="num">' + r.authentications + '</td>' +
+                '<td class="num">' + r.attributed + '</td>' +
+                '<td class="num">' + r.unattributed + '</td></tr>';
+            }).join('') + '</table>'
+        : '') +
+
+      '<h2>The key</h2>' +
+      kit.note('The shapes and the colours are drawn by the same ' +
+      '<code>render()</code> the picture is, so a legend cannot come to ' +
+      'describe a diagram this service no longer draws.') +
+      json.mapKey);
+  }
+
+  /**
+   * Draws the federation picture from its answer, with the links to its SVG
+   * and JSON forms.
+   *
+   * @param json - the answer: `svg` and `drawing`
+   * @param params - the page's filter, carried into the two links
+   * @returns the drawing and its note as HTML
+   */
+  static mapDrawing(json: Json, params: Json): string {
+    const drawn = json.drawing || {};
+    return '<div class="diagram">' + json.svg + '</div>' +
+      kit.note(drawn.width + '&times;' + drawn.height + ' &mdash; ' +
+      '<a href="' +
+      kit.esc('/admin/federation/map' +
+              kit.queryWith(params, { format: 'svg' })) +
+      '">the document on its own</a> (SVG, no links in it), or ' +
+      '<a href="' +
+      kit.esc('/admin/federation/map' +
+              kit.queryWith(params, { format: 'json' })) +
+      '">the graph as JSON</a>. It does not pan or zoom: it is generated on ' +
+      'the server and arrives as markup, which is what keeps this console ' +
+      'free of scripts. The SVG document does zoom.' +
+      (drawn.failed ? ' <span class="state-revoked">The layout failed: ' +
+        kit.esc(drawn.failed) + '</span>' : ''));
+  }
+
+  // One relationship's row in the table under the picture. It carries the two
+  // numbers the picture was asked for and the ones a label had no room for, and
+  // its first cell links back to the drill-down that configures it.
+  /**
+   * Draws one relationship's row of the table under the federation picture:
+   * its state, application count, sign-in counts and how it authenticates.
+   *
+   * @param row - the relationship's row in the graph
+   * @returns the row as HTML
+   */
+  static federationMapRow(row) {
+    const state = row.usable
+      ? '<span class="ok">ready</span>'
+      : !row.enabled
+          ? '<span class="off">disabled</span>'
+          : '<span class="bad">ENABLED, not configured</span>';
+    return '<tr><td><a href="' +
+      kit.esc('/admin/federation' +
+              kit.queryWith({}, { relationship: row.id })) +
+      '">' +
+      kit.esc(row.id) + '</a>' +
+      (row.name !== row.id ? '<span class="sub">' + kit.esc(row.name) +
+       '</span>' :
+       '') +
+      '</td>' +
+      '<td>' + kit.esc(row.roleLabel) + '</td>' +
+      '<td>' + kit.esc(row.protocolLabel) +
+        (row.signsIn !== false && row.signalsEnabled
+          ? '<span class="sub">and its Shared Signals</span>' : '') +
+        '</td>' +
+      '<td class="who">' + kit.esc(row.peer || row.application || '') +
+        (!row.peer && !row.application
+          ? '<span class="sub">nothing named yet</span>' : '') + '</td>' +
+      '<td>' + state + '</td>' +
+      // THE ANSWER TO "HOW MANY APPLICATIONS", and a dash where the question
+      // does not apply rather than a zero: an identity-provider-side
+      // relationship names exactly one application by construction, so `0`
+      // there would be false and `1` would be a number nobody needs.
+      '<td class="num">' + (row.role === 'service-provider'
+        ? row.applicationCount
+        : '<span class="state-none" title="An identity-provider-side ' +
+          'relationship names exactly one application, in fedApplication. ' +
+          'There is no count to make.">&mdash;</span>') + '</td>' +
+      // ---------------------------------------------------------------------
+      // THE TWO COUNTS, AND A BARE `0` IS REFUSED ON THE IDENTITY-PROVIDER
+      // SIDE.
+      //
+      // `fedAuthentications` there is not a number that happens to be low: it
+      // is a number NOTHING WRITES. What it counts is assertions CONSUMED and
+      // that side issues them, which `federation/CLAUDE.md` states as a
+      // deliberate non-goal. So printing it would assert that nobody has ever
+      // signed in for this partner, in the same column that means exactly that
+      // two rows up.
+      //
+      // Where the relationship BROKERS, there is a real number and it belongs
+      // to the pair — the sign-ins happened and were counted against the
+      // relationship they went through — so `brokeredUse` is printed instead,
+      // marked as belonging to the onward relationship rather than to this one.
+      // ---------------------------------------------------------------------
+      (row.role === 'identity-provider'
+        ? (row.brokeredUse
+            ? '<td class="num">' + row.brokeredUse.users +
+              '<span class="sub">via ' + kit.esc(row.brokersTo) +
+              '</span></td><td class="num">' + row.brokeredUse.authentications +
+              '<span class="sub">via ' + kit.esc(row.brokersTo) +
+              '</span></td>'
+            : '<td class="num"><span class="state-none" title="Nothing ' +
+              'counts sign-ins on this side. What fedAuthentications counts ' +
+              'is assertions CONSUMED, and an identity-provider-side ' +
+              'relationship issues them — so the figure would be zero ' +
+              'however busy the partner was.">&mdash;</span></td>' +
+              '<td class="num"><span class="state-none" title="Nothing ' +
+              'counts sign-ins on this side. What fedAuthentications counts ' +
+              'is assertions CONSUMED, and an identity-provider-side ' +
+              'relationship issues them — so the figure would be zero ' +
+              'however busy the partner was.">&mdash;</span></td>')
+        : '<td class="num">' + row.users + '</td>' +
+          '<td class="num">' + row.authentications + '</td>') +
+      // THE AUTHENTICATION METHOD, WHICH IS THE IDENTITY-PROVIDER SIDE'S
+      // COLUMN. An unset mechanism is printed as what it MEANS rather than left
+      // blank: it is the sign-in screen, which is a decision and the commonest
+      // one.
+      '<td>' + (row.role === 'identity-provider'
+        ? (row.brokersTo
+            ? 'through <a href="' +
+              kit.esc('/admin/federation' +
+                       kit.queryWith({}, { relationship: row.brokersTo })) +
+              '">' + kit.esc(row.brokersTo) + '</a>' +
+              (row.brokerUsable ? ''
+                : '<span class="sub bad">' + kit.esc(row.brokerProblem ||
+                    'that relationship is not usable, so the sign-in screen ' +
+                    'is drawn instead') + '</span>')
+            : kit.esc(row.mechanismLabel) +
+              (row.mechanismKnown ? ''
+                : '<span class="sub bad">not a mechanism this service ' +
+                  'has</span>'))
+        : '<span class="state-none" title="The authentication happens at the ' +
+          'PARTNER on a service-provider-side relationship, so there is ' +
+          'nothing here to configure.">&mdash;</span>') + '</td>' +
+      '</tr>';
+  }
 }
 
 export = FederationPage;

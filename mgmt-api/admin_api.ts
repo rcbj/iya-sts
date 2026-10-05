@@ -18496,6 +18496,53 @@ class AdminApi {
           log.debug("Leaving the management API delegation map endpoint.");
         } },
 
+      // THE FEDERATION PICTURE (#446): the console page had no operation,
+      // having no form; see `AdminViews.federationMapModel()`.
+      { method: 'GET', path: BASE + '/federation/map', tag: 'Federation',
+        operationId: 'getFederationMap',
+        summary: 'This realm\'s federation relationships, drawn',
+        description: 'Every federation relationship of the trust realm, ' +
+                     'filtered by `role`, `protocol` and text, as a graph ' +
+                     '— the partners, this service and the applications ' +
+                     'behind each relationship — with the relationships ' +
+                     'and their sign-ins, the drawing (`svg`, laid out on ' +
+                     'the server, with its links), its size, the filter\'s ' +
+                     'vocabulary and the key.\n\nWith `format=svg` the ' +
+                     'answer is the SVG document alone, with no links in ' +
+                     'it, as `image/svg+xml`.',
+        mirrors: 'GET /admin/federation/map',
+        parameters: [
+          { name: 'role', in: 'query', required: false,
+            schema: { type: 'string' },
+            description: 'Only relationships in this role.' },
+          { name: 'protocol', in: 'query', required: false,
+            schema: { type: 'string' },
+            description: 'Only relationships in this protocol.' },
+          { name: 'q', in: 'query', required: false,
+            schema: { type: 'string' },
+            description: 'Text anywhere in a relationship.' },
+          { name: 'format', in: 'query', required: false,
+            schema: { type: 'string', enum: ['json', 'svg'] },
+            description: '`svg` answers the drawing alone, as a document ' +
+                         'with no links in it. `json`, the default, ' +
+                         'answers everything.' }
+        ],
+        responseDescription: 'The relationships, the graph and the drawing.',
+        handler: function (req, res) {
+          log.debug("Entering the management API federation map endpoint.");
+          if (String((req.query || {}).format || '') === 'svg') {
+            const bare = adminViews.federationMapModel(req.query,
+                                                       { links: false });
+            res.status(200).set('Cache-Control', 'no-store')
+               .type('image/svg+xml').send(bare.svg);
+            log.debug("Leaving the management API federation map endpoint. " +
+                      "Answered SVG.");
+            return;
+          }
+          self.sendJson(res, 200, adminViews.federationMapModel(req.query));
+          log.debug("Leaving the management API federation map endpoint.");
+        } },
+
       // ONE GROUP OF APPLICATIONS, DRAWN (#446): the console page had no
       // operation, having no form; see `AdminViews.delegationClusterModel()`.
       { method: 'GET', path: BASE + '/delegation/cluster', tag: 'Delegation',
