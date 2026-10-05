@@ -16,6 +16,7 @@
 
 pub mod codec;
 pub mod driver;
+pub mod fan_in;
 pub mod keystore;
 pub mod ldif;
 pub mod ldif_driver;

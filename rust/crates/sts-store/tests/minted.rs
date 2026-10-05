@@ -29,6 +29,7 @@ struct Proc {
     persistence: Arc<Persistence>,
     sessions: RealmMap<Json>,
     carts: RealmMap<Json>,
+    counts: RealmMap<Json>,
 }
 
 /// The same key the data-key test in `postgres.rs` uses: the two share the
@@ -96,6 +97,15 @@ fn proc(url: &str, kek: &str) -> Proc {
             ..StoreSpec::persisted("test.carts")
         },
     );
+    // Each process counts its own: the others' arrive in the fan-in.
+    let counts = RealmMap::new(
+        &lifecycle,
+        &handles,
+        StoreSpec {
+            merge: sts_core::realm_store::Merge::Own,
+            ..StoreSpec::persisted("test.counts")
+        },
+    );
     let persistence = Persistence::new(
         StoreMode::Postgres,
         Some(Arc::new(PostgresDriver::new(url, false, 4).unwrap())),
@@ -108,6 +118,7 @@ fn proc(url: &str, kek: &str) -> Proc {
         persistence,
         sessions,
         carts,
+        counts,
     }
 }
 
@@ -195,6 +206,29 @@ async fn minted_state_on_postgres() {
         json!(["apple", "fig", "pear"])
     );
 
+    // A counter each counts its own of: the other's is in the fan-in, never
+    // in the store.
+    a.counts.set("GET /x", json!(3));
+    b.counts.set("GET /x", json!(4));
+    a.persistence.flush().await.unwrap();
+    b.persistence.flush().await.unwrap();
+    a.persistence.pull_changes().await.unwrap();
+    b.persistence.pull_changes().await.unwrap();
+    assert_eq!(a.counts.get("GET /x"), Some(json!(3)));
+    let fan_in = a.persistence.minted().unwrap().fan_in().clone();
+    assert_eq!(
+        fan_in.remote_rows("test.counts", Some("default"), "GET /x"),
+        vec![json!(4)]
+    );
+    assert_eq!(
+        b.persistence.minted().unwrap().fan_in().remote_rows(
+            "test.counts",
+            Some("default"),
+            "GET /x"
+        ),
+        vec![json!(3)]
+    );
+
     // A third process restores what is live, and not what expired.
     a.sessions
         .set("sid-2", json!({ "sub": "bob", "expiresAt": far }));
@@ -229,6 +263,13 @@ async fn minted_state_on_postgres() {
     assert_eq!(purged["more"], false);
     assert_eq!(minted.tombstone_sweep_off(), "");
     assert!(minted.sweep_tombstones(far).await.unwrap() >= 1);
+    // Both counters came back, each as the other process's contribution.
+    let mut restored =
+        minted
+            .fan_in()
+            .remote_rows("test.counts", Some("default"), "GET /x");
+    restored.sort_by_key(|v| v.to_string());
+    assert_eq!(restored, vec![json!(3), json!(4)]);
     let left = raw(
         &url,
         "SELECT key FROM sts_minted WHERE handle = 'test.sessions'",
