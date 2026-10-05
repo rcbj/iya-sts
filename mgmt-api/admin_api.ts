@@ -2378,6 +2378,30 @@ class AdminApi {
           log.debug("Leaving the management API index.");
         } },
 
+      // THE SERVICE METADATA PAGE (#446): what `/admin/sts-metadata` is
+      // drawn from. LAZILY REQUIRED, like the explorer: `sts_metadata.ts` is
+      // built last of all because it reads the router, so a require of it
+      // here at load would run before the routes it lists exist.
+      { method: 'GET', path: BASE + '/sts-metadata', tag: 'Service',
+        operationId: 'getStsMetadata',
+        summary: 'Every protocol, endpoint and specification this serves',
+        description: 'Every protocol family, every endpoint the running ' +
+                     'router registers (read from the router on each ' +
+                     'request, so it cannot claim an endpoint that is not ' +
+                     'there or miss one that is), every specification, and ' +
+                     'the drift between the router and the descriptions — ' +
+                     'with the authorization servers this process has ' +
+                     'served. The same answer as the page\'s ' +
+                     '`?format=json`.',
+        mirrors: 'GET /admin/sts-metadata',
+        responseDescription: 'The metadata.',
+        handler: function (req, res) {
+          log.debug("Entering the management API metadata endpoint.");
+          self.sendJson(res, 200,
+                        require('../sts_metadata').pageJson(baseUrlOf(req)));
+          log.debug("Leaving the management API metadata endpoint.");
+        } },
+
       { method: 'GET', path: BASE + '/openapi.json', tag: 'Service',
         operationId: 'getOpenApi',
         summary: 'The OpenAPI 3.1 document for this API',

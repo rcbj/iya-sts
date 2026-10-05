@@ -501,6 +501,25 @@ function childMain() {
         }
       }
     }
+    // THE DRIFT CHECK, IN PROCESS (#446): `/admin/sts-metadata`'s answer
+    // reports a route registered and undescribed, and a description of a
+    // route that is not registered. Every page converted here owes its
+    // operation a row there, and the protocol job that fails on the drift
+    // runs only against a container; this is the same check, here.
+    const metaPage = WebPages.PAGES.filter(function (page) {
+      return page.path === '/admin/sts-metadata';
+    })[0];
+    const meta = metaPage ? await viewOf(metaPage, {}).catch(function () {
+      return null;
+    }) : null;
+    note(!!meta && meta.undocumentedPaths.length === 0 &&
+         meta.stalePaths.length === 0,
+         'D-drift. no route is registered and undescribed, and no ' +
+         'description ' +
+         'names a route that is not registered',
+         meta ? JSON.stringify({ undocumented: meta.undocumentedPaths,
+                                 stale: meta.stalePaths }).slice(0, 600)
+              : 'no metadata answer');
     note(unviewed.length === 0,
          'D0. the operation of every converted page answers a view, ' +
          'called as a handler', unviewed.join('; '));
