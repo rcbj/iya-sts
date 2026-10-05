@@ -14,6 +14,7 @@
 
 #![forbid(unsafe_code)]
 
+pub mod codec;
 pub mod driver;
 pub mod ldif;
 pub mod ldif_driver;
@@ -21,7 +22,11 @@ pub mod memory;
 pub mod merge;
 pub mod model;
 pub mod persistence;
+pub mod postgres;
 pub mod shadow;
 
 pub use driver::{Driver, StoreError, StoreFuture, StoreResult};
-pub use model::{DirectoryChange, StoredEntry};
+pub use model::{
+    DirectoryChange, DirectoryDelete, DirectoryOutcome, DirectoryUpsert,
+    StoredEntry,
+};

@@ -65,13 +65,34 @@ pub trait Driver: Send + Sync {
     fn load_realms(&self) -> StoreFuture<'_, Option<Vec<Json>>>;
     /// The runtime appconfig overrides.
     fn load_overrides(&self) -> StoreFuture<'_, Option<Map<String, Json>>>;
+    /// Writes a flush of the directory, and answers what the store decided
+    /// for rows another node had changed meanwhile (a snapshot driver
+    /// decides nothing and answers none).
     fn save_directory<'a>(
         &'a self,
         change: &'a DirectoryChange,
-    ) -> StoreFuture<'a, ()>;
+    ) -> StoreFuture<'a, Vec<crate::model::DirectoryOutcome>>;
     fn save_realms<'a>(&'a self, rows: &'a [Json]) -> StoreFuture<'a, ()>;
     fn save_overrides<'a>(
         &'a self,
         overrides: &'a Map<String, Json>,
     ) -> StoreFuture<'a, ()>;
+    /// The realm registry written as the changes the delta names, so two
+    /// nodes changing different settings of one realm do not overwrite each
+    /// other. A snapshot driver writes the whole registry.
+    fn save_realms_delta<'a>(
+        &'a self,
+        rows: &'a [Json],
+        _delta: &'a crate::shadow::RealmsDelta,
+    ) -> StoreFuture<'a, ()> {
+        self.save_realms(rows)
+    }
+    /// The overrides written as the keys the delta sets and clears.
+    fn save_overrides_delta<'a>(
+        &'a self,
+        overrides: &'a Map<String, Json>,
+        _delta: &'a crate::shadow::AppconfigDelta,
+    ) -> StoreFuture<'a, ()> {
+        self.save_overrides(overrides)
+    }
 }

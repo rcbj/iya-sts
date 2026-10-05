@@ -72,6 +72,18 @@ impl LiveDirectory for Dir {
             .collect();
         self.0.lock().unwrap().insert(realm.to_string(), rows);
     }
+    fn apply_entry(&self, realm: &str, key: &str, entry: Option<StoredEntry>) {
+        let mut realms = self.0.lock().unwrap();
+        let rows = realms.entry(realm.to_string()).or_default();
+        match entry {
+            Some(e) => {
+                rows.insert(key.to_string(), e);
+            }
+            None => {
+                rows.shift_remove(key);
+            }
+        }
+    }
 }
 
 impl Dir {
@@ -120,7 +132,7 @@ impl Driver for Flaky {
     fn save_directory<'a>(
         &'a self,
         change: &'a DirectoryChange,
-    ) -> StoreFuture<'a, ()> {
+    ) -> StoreFuture<'a, Vec<sts_store::DirectoryOutcome>> {
         if self.failing.load(Ordering::SeqCst) {
             return Box::pin(async {
                 Err(StoreError::new("the disk is full".to_string()))

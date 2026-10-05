@@ -16,6 +16,7 @@
 use std::sync::{Arc, OnceLock, Weak};
 
 use serde_json::Value as Json;
+use sts_cluster::membership::ClusterNode;
 use sts_cluster::schedule::{compare_rows, Schedules};
 use sts_cluster::scheduler::{Deps, Scheduler};
 use sts_core::errors::codes;
@@ -27,6 +28,7 @@ use sts_core::realm_store::{RealmMap, StoreHandles, StoreSpec};
 use sts_core::settings::Settings;
 use sts_store::ldif_driver::LdifDriver;
 use sts_store::persistence::{MemoryDirectory, Persistence, StoreMode};
+use sts_store::postgres::PostgresDriver;
 use sts_store::Driver;
 
 use crate::solo::{LocalClaims, LocalClock, LogAudit, RunStore, SoloCluster};
@@ -43,6 +45,17 @@ pub struct Stack {
     pub directory: Arc<MemoryDirectory>,
     pub persistence: Arc<Persistence>,
     pub scheduler: Arc<Scheduler>,
+    /// This node of a clustered service; `None` for one process.
+    pub node: Option<Arc<ClusterNode>>,
+}
+
+/// A node id for this process: random, as Node's is per start.
+fn node_id() -> String {
+    let mut buf = [0u8; 8];
+    if openssl::rand::rand_bytes(&mut buf).is_err() {
+        tracing::error!("runtime: no random bytes for the node id");
+    }
+    buf.iter().map(|b| format!("{:02x}", b)).collect()
 }
 
 /// `persistence.mode` as this runtime can serve it, or why not.
@@ -50,11 +63,7 @@ fn store_mode(settings: &Settings) -> Result<StoreMode, String> {
     match settings.value_of("persistence.mode").as_str() {
         "memory" => Ok(StoreMode::Memory),
         "ldif" => Ok(StoreMode::Ldif),
-        "postgres" => Err(format!(
-            "{}persistence.mode is \"postgres\", and the Rust runtime has no postgres driver yet (#444, phase 3). \
-             Use memory or ldif with this runtime, or the Node runtime.",
-            tag(codes::STS_STORE_0003)
-        )),
+        "postgres" => Ok(StoreMode::Postgres),
         other => Err(format!(
             "{}persistence: \"{}\" is not a mode this module knows (memory, ldif, postgres).",
             tag(codes::STS_STORE_0003),
@@ -80,7 +89,23 @@ impl Stack {
         let directory = Arc::new(MemoryDirectory::default());
 
         let chosen = store_mode(&settings)?;
+        let postgres: Option<Arc<PostgresDriver>> = match chosen {
+            StoreMode::Postgres => Some(Arc::new(
+                PostgresDriver::new(
+                    settings.value_of("persistence.databaseUrl").as_str(),
+                    settings
+                        .value_of("persistence.databaseTlsRejectUnauthorized")
+                        .as_bool(),
+                    10,
+                )
+                .map_err(|e| e.to_string())?,
+            )),
+            _ => None,
+        };
         let driver: Option<Arc<dyn Driver>> = match chosen {
+            StoreMode::Postgres => {
+                postgres.clone().map(|p| p as Arc<dyn Driver>)
+            }
             StoreMode::Ldif => {
                 let dir = settings
                     .value_of("persistence.dataDir")
@@ -127,15 +152,47 @@ impl Stack {
         let runs = RealmMap::new(&lifecycle, &handles, spec);
         let host = std::env::var("HOSTNAME")
             .unwrap_or_else(|_| "localhost".to_string());
+        // Several nodes share a postgres store; anything else is one
+        // process, which leads at once.
+        let clustered = postgres.is_some()
+            && settings.value_of("cluster.mode").as_str() != "off";
+        let node: Option<Arc<ClusterNode>> =
+            postgres.as_ref().filter(|_| clustered).map(|p| {
+                let name =
+                    settings.value_of("cluster.nodeName").as_str().to_string();
+                ClusterNode::new(
+                    p.clone(),
+                    &node_id(),
+                    if name.is_empty() { &host } else { &name },
+                    settings.value_of("cluster.heartbeatMs").as_int() as f64,
+                    settings.value_of("cluster.nodeTtlMs").as_int() as f64,
+                    Arc::new(|code: &'static str, why: String| {
+                        tracing::error!("{}cluster: {}", tag(code), why);
+                        std::process::exit(1);
+                    }),
+                )
+            });
+        let (cluster, claims, clock): (
+            Arc<dyn sts_cluster::scheduler::Cluster>,
+            Arc<dyn sts_cluster::scheduler::Claims>,
+            Arc<dyn sts_cluster::scheduler::Clock>,
+        ) = match &node {
+            Some(n) => (n.clone(), n.clone(), n.clone()),
+            None => (
+                Arc::new(SoloCluster { host: host.clone() }),
+                Arc::new(LocalClaims::default()),
+                Arc::new(LocalClock),
+            ),
+        };
         let scheduler = Scheduler::new(
             Schedules::new(settings.clone()),
             Deps {
-                cluster: Arc::new(SoloCluster { host: host.clone() }),
-                claims: Arc::new(LocalClaims::default()),
+                cluster,
+                claims,
                 rows: Arc::new(RunStore { rows: runs }),
                 realms: registry.clone(),
                 audit: Arc::new(LogAudit),
-                clock: Arc::new(LocalClock),
+                clock,
                 host,
                 pid: std::process::id(),
                 thread: None,
@@ -155,6 +212,7 @@ impl Stack {
             directory,
             persistence,
             scheduler,
+            node,
         })
     }
 
@@ -162,6 +220,9 @@ impl Stack {
     /// starts the scheduler. Before any listener binds.
     pub async fn start(&self) -> Result<(), String> {
         self.persistence.start().await?;
+        if let Some(node) = &self.node {
+            node.join().await?;
+        }
         self.scheduler.start(false);
         Ok(())
     }
@@ -174,6 +235,11 @@ impl Stack {
     /// Writes what is pending and closes the store.
     pub async fn stop(&self) {
         self.scheduler.stop();
+        if let Some(node) = &self.node {
+            if let Err(e) = node.leave().await {
+                tracing::warn!("runtime: leaving the cluster failed: {}", e);
+            }
+        }
         if let Err(e) = self.persistence.stop().await {
             tracing::error!(
                 "{}runtime: the store could not be closed cleanly: {}",
@@ -226,15 +292,12 @@ mod tests {
     }
 
     #[test]
-    fn postgres_is_refused_until_it_is_ported() {
+    fn an_unknown_store_is_refused() {
         let err = Stack::build(settings(
-            json!({ "persistence": { "mode": "postgres" } }),
+            json!({ "persistence": { "mode": "tape" } }),
         ))
         .err()
         .unwrap();
-        assert!(
-            err.contains("STS-STORE-0003")
-                && err.contains("no postgres driver yet")
-        );
+        assert!(err.contains("STS-STORE-0003"));
     }
 }

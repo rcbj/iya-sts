@@ -227,7 +227,7 @@ impl Driver for LdifDriver {
     fn save_directory<'a>(
         &'a self,
         change: &'a DirectoryChange,
-    ) -> StoreFuture<'a, ()> {
+    ) -> StoreFuture<'a, Vec<crate::model::DirectoryOutcome>> {
         Box::pin(async move {
             for id in &change.removed_realms {
                 match fs::remove_file(self.realm_file(id)?) {
@@ -256,7 +256,7 @@ impl Driver for LdifDriver {
                     id
                 );
             }
-            Ok(())
+            Ok(Vec::new())
         })
     }
 
