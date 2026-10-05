@@ -31,6 +31,7 @@ use openssl::sha::sha256;
 use serde_json::Value as Json;
 use sts_core::errors::codes;
 use sts_core::log::tag;
+use sts_crypto::keys::JwsKey;
 use sts_crypto::secrets::dek_id_of;
 
 use crate::driver::{Driver, KeyMerge};
@@ -564,6 +565,10 @@ fn b64u(bytes: &[u8]) -> String {
     URL_SAFE_NO_PAD.encode(bytes)
 }
 
+/// RFC 9278's prefix (`stsCrypto.JWK_THUMBPRINT_URI_PREFIX`).
+pub const THUMBPRINT_URI_PREFIX: &str =
+    "urn:ietf:params:oauth:jwk-thumbprint:sha-256:";
+
 /// RFC 7638's thumbprint (`jwkThumbprint()`), base64url, truncated.
 pub fn jwk_thumbprint(jwk: &Json, truncate: usize) -> String {
     let members: &[&str] = match jwk.get("kty").and_then(Json::as_str) {
@@ -939,6 +944,206 @@ impl KeySet {
         let key = sts_crypto::keys::JwsKey::from_pem(&found.private_key_pem)
             .map_err(|e| e.to_string())?;
         Ok((key, kid))
+    }
+
+    /// `standbyOf()` filtered by `standbyLive()`: a `next` key, and a
+    /// retired one still within its grace, of one unit (`jose:RS256`,
+    /// `jose:ES256:P-256`), `next` first and then the most recently retired.
+    fn live_standby(&self, unit: &str, now_ms: f64) -> Vec<(String, String)> {
+        let mut out: Vec<&Json> = self
+            .blob
+            .pointer("/generations/standby")
+            .and_then(Json::as_array)
+            .into_iter()
+            .flatten()
+            .filter(|one| one.get("unit").and_then(Json::as_str) == Some(unit))
+            .filter(|one| {
+                let until = one
+                    .get("retiredUntil")
+                    .and_then(Json::as_f64)
+                    .unwrap_or(0.0);
+                one.get("role").and_then(Json::as_str) != Some("retired")
+                    || until <= 0.0
+                    || until > now_ms
+            })
+            .collect();
+        out.sort_by(|a, b| {
+            let next = |one: &Json| {
+                if one.get("role").and_then(Json::as_str) == Some("next") {
+                    0
+                } else {
+                    1
+                }
+            };
+            let retired = |one: &Json| {
+                one.get("retiredAt").and_then(Json::as_f64).unwrap_or(0.0)
+            };
+            next(a).cmp(&next(b)).then(
+                retired(b)
+                    .partial_cmp(&retired(a))
+                    .unwrap_or(std::cmp::Ordering::Equal),
+            )
+        });
+        out.into_iter()
+            .filter_map(|one| {
+                Some((
+                    one.get("kid")?.as_str()?.to_string(),
+                    one.get("certPem")?.as_str()?.to_string(),
+                ))
+            })
+            .collect()
+    }
+
+    /// `ownRsaCertificates('jose')`: the set's RSA key, then its live
+    /// standby generations.
+    fn own_rsa_candidates(&self, now_ms: f64) -> Vec<(String, JwsKey)> {
+        let mut out = Vec::new();
+        if let (Some(kid), Some(der)) = (self.kid(), self.cert_b64()) {
+            let pem = format!(
+                "-----BEGIN CERTIFICATE-----\n{}\n-----END CERTIFICATE-----\n",
+                der
+            );
+            if let Ok(key) = JwsKey::from_pem(&pem) {
+                out.push((kid, key));
+            }
+        }
+        for (kid, pem) in self.live_standby("jose:RS256", now_ms) {
+            if let Ok(key) = JwsKey::from_pem(&pem) {
+                out.push((kid, key));
+            }
+        }
+        out
+    }
+
+    /// `ownCandidatesFor()`: the keys a token this realm signed under `alg`
+    /// may verify against, current first. None for an HMAC or a
+    /// post-quantum alg, whose tokens this realm does not sign with its own
+    /// keys.
+    ///
+    /// Not here yet: the signer groups' keys (#68) and the pinned keys
+    /// (#263), which no set this runtime makes holds; a Node set holding
+    /// them verifies here only what its per-algorithm keys signed.
+    fn own_candidates_for(
+        &self,
+        alg: &str,
+        eddsa_curve: &str,
+        now_ms: f64,
+    ) -> Vec<(String, JwsKey)> {
+        use sts_crypto::jws_alg::{Family, JwsAlg};
+        let Some(row) = JwsAlg::by_name(alg) else {
+            return Vec::new();
+        };
+        if row.is_post_quantum() || matches!(row.family, Family::Hmac(_)) {
+            return Vec::new();
+        }
+        if matches!(row.family, Family::Rsa(_) | Family::RsaPss(_)) {
+            return self.own_rsa_candidates(now_ms);
+        }
+        let wanted = if eddsa_curve.is_empty() {
+            "Ed25519"
+        } else {
+            eddsa_curve
+        };
+        let mut out = Vec::new();
+        for one in self.curve_keys() {
+            let crv = one.public_jwk.get("crv").and_then(Json::as_str);
+            if one.alg != alg
+                || (alg == "EdDSA" && crv.unwrap_or("Ed25519") != wanted)
+            {
+                continue;
+            }
+            let Some(kid) = one.public_jwk.get("kid").and_then(Json::as_str)
+            else {
+                continue;
+            };
+            if let Ok(key) = JwsKey::from_jwk(&one.public_jwk) {
+                out.push((kid.to_string(), key));
+            }
+            // `certificateSlotOf()`: the alg, and the curve where it has one.
+            let slot = match crv {
+                Some(c)
+                    if one.public_jwk.get("kty").and_then(Json::as_str)
+                        != Some("AKP") =>
+                {
+                    format!("{}:{}", one.alg, c)
+                }
+                _ => one.alg.clone(),
+            };
+            for (kid, pem) in
+                self.live_standby(&format!("jose:{}", slot), now_ms)
+            {
+                if let Ok(key) = JwsKey::from_pem(&pem) {
+                    out.push((kid, key));
+                }
+            }
+        }
+        out
+    }
+
+    /// `verifyOwnJws()`: a JWT this realm signed, verified against each key
+    /// it may have been signed with — so a token signed before a rotation
+    /// still verifies — and its claims checked. A token naming one of the
+    /// keys by `kid`, under either spelling (`jose_kid.js`'s `names()`: the
+    /// internal kid, or its RFC 9278 thumbprint URI), is tried against that
+    /// key alone, so an expired token's error is its own and not another
+    /// key's "invalid signature". With no `algorithms`, the token's own alg
+    /// where this realm holds a key for it (`ownVerifyOptions()`). When none
+    /// verifies, the first candidate's error.
+    pub fn verify_own_jws(
+        &self,
+        token: &str,
+        algorithms: Option<&[&str]>,
+        checks: &sts_crypto::jws::ClaimChecks,
+        policy: sts_crypto::keys::KeyPolicy,
+        eddsa_curve: &str,
+        now_ms: f64,
+    ) -> Result<Json, sts_crypto::jws::JwtError> {
+        let header = token
+            .split('.')
+            .next()
+            .and_then(|h| URL_SAFE_NO_PAD.decode(h.trim_end_matches('=')).ok())
+            .and_then(|b| serde_json::from_slice::<Json>(&b).ok())
+            .unwrap_or(Json::Null);
+        let alg = header.get("alg").and_then(Json::as_str).unwrap_or("");
+        let by_alg = self.own_candidates_for(alg, eddsa_curve, now_ms);
+        let own_alg = !by_alg.is_empty();
+        let mut candidates = if own_alg {
+            by_alg
+        } else {
+            self.own_rsa_candidates(now_ms)
+        };
+        if let Some(named) = header.get("kid").and_then(Json::as_str) {
+            let names = |kid: &str, key: &JwsKey| {
+                kid == named
+                    || named.strip_prefix(THUMBPRINT_URI_PREFIX).is_some_and(|t| {
+                        matches!(key.public_jwk(), Ok(Some(jwk)) if jwk_thumbprint(&jwk, usize::MAX) == t)
+                    })
+            };
+            if candidates.iter().any(|(kid, key)| names(kid, key)) {
+                candidates.retain(|(kid, key)| names(kid, key));
+            }
+        }
+        let own = [alg];
+        let algorithms =
+            algorithms.or(if own_alg { Some(&own[..]) } else { None });
+        let mut first = None;
+        for (_, key) in &candidates {
+            match sts_crypto::jws::verify_jws(
+                token, key, algorithms, checks, policy,
+            ) {
+                Ok(claims) => return Ok(claims),
+                Err(e) => {
+                    first.get_or_insert(e);
+                }
+            }
+        }
+        Err(first.unwrap_or_else(|| {
+            sts_crypto::jws::JwtError::Signature(
+                sts_crypto::error::CryptoError::new(
+                    "no key of this realm could verify the token",
+                ),
+            )
+        }))
     }
 
     /// `signJwt()` over this set: the payload signed as a compact JWS under
