@@ -882,7 +882,52 @@ class WebPages {
     if (page.drill && context.query && context.query[page.drill.param]) {
       return page.drill.render(view, context);
     }
-    return page.render(view, context);
+    return WebPages.withEndpoints(page.render(view, context), view);
+  }
+
+  // THE ENDPOINTS OF THIS REALM ON A PROTOCOLS PAGE (2026-10-01), drawn by
+  // the server-rendered console from the `protocolEndpoints` member its
+  // answer carries (`admin-core/protocol_endpoints.ts`) and, since #446,
+  // here: every URL with a Copy button the runtime reveals, the methods or
+  // transport beside it, and whether it is registered and listening. A
+  // drill-down is about one thing and goes without it. Placed before the
+  // page's first heading — after the lead notes that say what the page is —
+  // or at the foot of a page with none.
+  /**
+   * Adds the Endpoints section to a page whose answer lists its endpoints.
+   *
+   * @param html - the page as drawn
+   * @param view - the page's answer
+   * @returns the page with the section, or as it was
+   */
+  static withEndpoints(html: string, view: Json): string {
+    const rows = view && Array.isArray(view.protocolEndpoints)
+      ? view.protocolEndpoints : null;
+    if (!rows) {
+      return html;
+    }
+    const esc = WebKit.esc;
+    const body = rows.length ? rows.map(function (row: Json): string {
+      const methods = Array.isArray(row.methods) ? row.methods : [];
+      const how = methods.length ? methods.join(', ')
+                                 : String(row.transport || '');
+      return '<tr><th>' + esc(row.name) + '</th><td><code>' + esc(row.url) +
+        '</code>' + WebKit.copyButton(row.url) +
+        (how ? ' <span class="sub">' + esc(how) + '</span>' : '') +
+        (row.registered === false
+          ? ' <span class="sub">— not registered in this process</span>'
+          : '') +
+        (row.listening === false ? ' <span class="sub">— not listening</span>'
+                                 : '') + '</td></tr>';
+    }).join('') : '<tr><td class="sub">None in this realm right now — ' +
+                  'nothing of this kind is configured or listening ' +
+                  'here.</td></tr>';
+    const section = '<h2>Endpoints</h2><table class="kv">' + body +
+                    '</table>';
+    const text = String(html || '');
+    const at = text.indexOf('<h2');
+    return at < 0 ? text + section
+                  : text.slice(0, at) + section + text.slice(at);
   }
 }
 

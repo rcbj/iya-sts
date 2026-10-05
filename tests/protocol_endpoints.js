@@ -252,12 +252,24 @@ function childMain() {
          'status ' + plain.status);
 
     // --- F. the document the console is in ---------------------------------
-    // The Endpoints section and its Copy buttons were drawn by the console's
-    // server-side `endpointsSection()` through `respond()`, which went with
-    // the server-rendered console (#446). No `web_` renderer draws
-    // `protocolEndpoints` yet, so the static console does not show that
-    // section: OPEN, recorded on #446. Until it does, what is held here is
-    // the document the console's one script is served in.
+    // THE SECTION AS THE STATIC CONSOLE DRAWS IT (#446): `WebPages.render()`
+    // adds it from the `protocolEndpoints` member of the page's answer,
+    // where the server-rendered console's `endpointsSection()` did — every
+    // URL with a hidden Copy button the runtime reveals, before the page's
+    // first heading.
+    const drawn = await require(ROOT_DIR + '/tests/tools/console_page.js')
+      .consolePage(ROOT_DIR).draw('/admin/saml2', {});
+    const endpointsAt = drawn.html.indexOf('<h2>Endpoints</h2>');
+    note(drawn.status === 200 && Array.isArray(drawn.json.protocolEndpoints) &&
+         drawn.json.protocolEndpoints.length > 0 && endpointsAt >= 0 &&
+         endpointsAt <= drawn.html.indexOf('<h2') &&
+         drawn.json.protocolEndpoints.every(function (row) {
+           return drawn.html.indexOf('data-copy="' + row.url
+             .replace(/&/g, '&amp;') + '"') >= 0;
+         }),
+         'E1. /admin/saml2 draws its Endpoints section first, each URL with ' +
+         'its Copy button', drawn.status + ' ' + endpointsAt);
+    // And the document the console's one script is served in.
     const shell = await new Promise(function (resolve, reject) {
       http.get({ host: '127.0.0.1', port: port, path: '/admin/saml2' },
         function (r) {

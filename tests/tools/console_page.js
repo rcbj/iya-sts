@@ -118,6 +118,17 @@ function consolePage(root) {
           return this;
         }
       };
+      // THE ROUTE WRAPPER'S ONE STEP a handler relies on: a GET that mirrors
+      // exactly one Protocols page answers that page's endpoints as well
+      // (`admin_api.ts` sets `res.locals.protocolEndpoints` before calling
+      // the handler), which the page draws as its Endpoints section.
+      if (method === 'GET') {
+        const mirrored = /^GET (\/admin\S*)$/.exec(String(entry.mirrors || ''));
+        const endpoints = require(root + '/admin-core/protocol_endpoints');
+        if (mirrored && endpoints.pages().indexOf(mirrored[1]) >= 0) {
+          res.locals.protocolEndpoints = endpoints.forPage(req, mirrored[1]);
+        }
+      }
       Promise.resolve().then(function () {
         return entry.handler(req, res);
       }).catch(reject);
