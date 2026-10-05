@@ -196,11 +196,14 @@ async fn minted_state_on_postgres() {
     a.carts.set("c", json!({ "items": ["apple", "fig"] }));
     a.persistence.flush().await.unwrap();
     b.persistence.flush().await.unwrap();
+    // Whichever wrote second merged (a write delay of 0 lets a background
+    // flush land first), so each side converges once it has pulled.
+    a.persistence.pull_changes().await.unwrap();
+    b.persistence.pull_changes().await.unwrap();
     assert_eq!(
         b.carts.get("c").unwrap()["items"],
         json!(["apple", "fig", "pear"])
     );
-    a.persistence.pull_changes().await.unwrap();
     assert_eq!(
         a.carts.get("c").unwrap()["items"],
         json!(["apple", "fig", "pear"])
