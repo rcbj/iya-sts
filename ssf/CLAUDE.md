@@ -2392,7 +2392,10 @@ naming that request-less issuer — at the top or as a complex subject's
 member — under the stream's `iss`; `coversSubject()` asks every emitter's
 candidate filter with it, and `transmitNow()` sends it. A partner's subject
 and one already under the stream's issuer are untouched.
-`tests/ssf_subject_issuer.js`.
+`tests/ssf_subject_issuer.js` holds it in process, with the published issuer
+set on the stream by hand; `tests/vendored/sts_ssf_subject_issuer.js` over the
+wire, with the issuer DISCOVERED at the URL the suite reaches, which is where
+the mismatch happens (every local mode and an AWS target).
 
 ## A RENAMED ACCOUNT KEEPS ITS RISC ROW (2026-09-14)
 
