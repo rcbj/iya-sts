@@ -162,6 +162,15 @@ async fn minted_state_on_postgres() {
     a.persistence.flush().await.unwrap();
     b.persistence.pull_changes().await.unwrap();
     assert_eq!(b.sessions.get("sid-1").unwrap()["sub"], "alice");
+    // Both rows were read ahead, in one round trip for the page.
+    assert!(
+        b.persistence.status()["minted"]["prefetchHits"]
+            .as_u64()
+            .unwrap()
+            >= 2,
+        "{}",
+        b.persistence.status()
+    );
 
     // In the table: no name, no subject.
     let rows = raw(

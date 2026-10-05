@@ -23,10 +23,8 @@
 //! * **A `merge: own` store's row another process wrote** (a counter, the
 //!   audit ring) is never put into this process's store: it goes to the
 //!   fan-in (`fan_in.rs`), which the reporting code sums.
-//!
-//! Not here yet: a page prefetch for the applier.
 
-use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
@@ -55,6 +53,10 @@ const EXPIRY_PURGE_MAX_BATCHES: usize = 20;
 /// row in two transactions; an hour is far longer than the gap.
 const ORPHAN_GRACE_MS: i64 = 60 * 60 * 1000;
 
+/// A page read ahead: `(handle, realm, key)` to the row, or `None` for
+/// one that is gone.
+type Page = HashMap<(String, String, String), Option<MintedRow>>;
+
 type Journal = BTreeMap<String, BTreeMap<String, BTreeSet<String>>>;
 
 #[derive(Default)]
@@ -73,6 +75,7 @@ struct State {
     dropped_unreadable: u64,
     dropped_unknown: u64,
     foreign_own: u64,
+    prefetch_hits: u64,
     last_error: String,
     warned: HashSet<String>,
 }
@@ -91,6 +94,7 @@ pub struct Minted {
     state: Mutex<State>,
     flushing: tokio::sync::Mutex<()>,
     fan_in: Arc<FanIn>,
+    prefetched: Mutex<Option<Page>>,
     scheduler: Mutex<Option<Arc<dyn Fn() + Send + Sync>>>,
 }
 
@@ -148,6 +152,7 @@ impl Minted {
             state: Mutex::new(State::default()),
             flushing: tokio::sync::Mutex::new(()),
             fan_in: Arc::new(FanIn::default()),
+            prefetched: Mutex::new(None),
             scheduler: Mutex::new(None),
         })
     }
@@ -672,29 +677,108 @@ impl Minted {
 
     /// `applyChange()`: one minted row another process committed, read and
     /// put into its store — or removed, when it is gone (a delete).
+    /// A change-log key's `(handle, name)`: base64url of the handle, '.',
+    /// and the name sealed (it holds '$', which base64url does not) or in
+    /// base64url.
+    fn parse_change(keys: &DataKeys, key: &str) -> Option<(String, String)> {
+        let at = key.find('.')?;
+        let half = &key[at + 1..];
+        let name = if half.contains('$') {
+            keys.open(half, NAME_LABEL)?
+        } else {
+            unb64(half)?
+        };
+        Some((unb64(&key[..at])?, name))
+    }
+
+    /// `prefetch()`: every minted row a page of changes names, read in ONE
+    /// round trip before any is applied — minted changes are most of the
+    /// log, and one query each made a catch-up seconds long. The page's
+    /// working set, never a cache: [`Minted::end_prefetch`] clears it, since
+    /// a row held past its page is one this process believes without being
+    /// told it is still there. A failed read leaves the applier reading per
+    /// row, as it would without this.
+    pub async fn prefetch(
+        &self,
+        keys: &DataKeys,
+        changes: &[&ChangeRow],
+    ) -> usize {
+        let mut refs: Vec<(String, String, String)> = Vec::new();
+        for change in changes {
+            if change.kind != "minted" && change.kind != "minted-own" {
+                continue;
+            }
+            let Some((handle, name)) = Minted::parse_change(keys, &change.key)
+            else {
+                continue;
+            };
+            let column =
+                Minted::key_column_of(keys, &handle, &change.realm, &name);
+            let reference = (handle, change.realm.clone(), column);
+            if !refs.contains(&reference) {
+                refs.push(reference);
+            }
+        }
+        if refs.is_empty() {
+            return 0;
+        }
+        let asked = refs.len();
+        match self.driver.read_minted_many(refs.clone()).await {
+            Ok(rows) => {
+                // Every reference asked is answered: found, or gone (a
+                // delete), which the applier must not read again for.
+                let mut page: HashMap<
+                    (String, String, String),
+                    Option<MintedRow>,
+                > = refs.into_iter().map(|r| (r, None)).collect();
+                for row in rows {
+                    let reference = (
+                        row.handle.clone(),
+                        row.realm.clone(),
+                        row.key.clone(),
+                    );
+                    page.insert(reference, Some(row));
+                }
+                *self
+                    .prefetched
+                    .lock()
+                    .unwrap_or_else(PoisonError::into_inner) = Some(page);
+                asked
+            }
+            Err(e) => {
+                tracing::warn!(
+                    "persistence: a page of minted changes could not be read in one round trip ({}); each is read \
+                     on its own.",
+                    e
+                );
+                0
+            }
+        }
+    }
+
+    /// Clears the page [`Minted::prefetch`] read.
+    pub fn end_prefetch(&self) {
+        *self
+            .prefetched
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner) = None;
+    }
+
     pub async fn apply_change(
         &self,
         keys: &DataKeys,
         change: &ChangeRow,
     ) -> Result<bool, String> {
-        let Some(at) = change.key.find('.') else {
+        if !change.key.contains('.') {
             tracing::error!(
                 "{}persistence: a minted change names \"{}\", which carries no handle. Skipped.",
                 tag(codes::STS_STORE_0014),
                 change.key
             );
             return Ok(false);
-        };
-        let half = &change.key[at + 1..];
-        let parsed = unb64(&change.key[..at]).and_then(|handle| {
-            let name = if half.contains('$') {
-                keys.open(half, NAME_LABEL)?
-            } else {
-                unb64(half)?
-            };
-            Some((handle, name))
-        });
-        let Some((handle, name)) = parsed else {
+        }
+        let Some((handle, name)) = Minted::parse_change(keys, &change.key)
+        else {
             tracing::error!(
                 "{}persistence: a minted change names \"{}\", which is not the shape the change log is written \
                  in. Skipped.",
@@ -712,16 +796,27 @@ impl Minted {
             && !origin.is_empty()
             && origin != self.origin;
         let column = Minted::key_column_of(keys, &handle, &change.realm, &name);
-        let rows = self
-            .driver
-            .read_minted_many(vec![(
-                handle.clone(),
-                change.realm.clone(),
-                column,
-            )])
-            .await
-            .map_err(|e| e.to_string())?;
-        let Some(row) = rows.into_iter().next() else {
+        let reference = (handle.clone(), change.realm.clone(), column);
+        let held = self
+            .prefetched
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .as_ref()
+            .and_then(|page| page.get(&reference).cloned());
+        let row = match held {
+            Some(row) => {
+                self.state().prefetch_hits += 1;
+                row
+            }
+            None => self
+                .driver
+                .read_minted_many(vec![reference])
+                .await
+                .map_err(|e| e.to_string())?
+                .into_iter()
+                .next(),
+        };
+        let Some(row) = row else {
             if foreign {
                 self.fan_in.contribute(
                     &handle,
@@ -895,7 +990,7 @@ impl Minted {
                 "generation": st.generation, "committed": st.committed, "writes": st.writes,
                 "rowsWritten": st.rows_written, "rowsDeleted": st.rows_deleted, "failures": st.failures,
                 "restored": st.restored, "droppedUnreadable": st.dropped_unreadable,
-                "droppedUnknown": st.dropped_unknown, "contributedOnRestore": st.foreign_own,
+                "droppedUnknown": st.dropped_unknown, "contributedOnRestore": st.foreign_own, "prefetchHits": st.prefetch_hits,
                 "otherProcesses": self.fan_in.origins().len(),
                 "lastError": st.last_error })
     }
