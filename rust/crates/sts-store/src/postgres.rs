@@ -41,7 +41,10 @@ use sts_core::log::tag;
 use tokio_postgres::Row;
 
 use crate::codec;
-use crate::driver::{Directory, Driver, StoreError, StoreFuture, StoreResult};
+use crate::driver::{
+    ChangeLog, ChangeRow, Directory, Driver, StoreError, StoreFuture,
+    StoreResult,
+};
 use crate::merge::{merge_entry, Outcome};
 use crate::model::{
     DirectoryChange, DirectoryOutcome, DirectoryUpsert, StoredEntry,
@@ -72,7 +75,16 @@ fn err(e: impl std::fmt::Display) -> StoreError {
 /// The postgres store.
 pub struct PostgresDriver {
     pool: Pool,
+    /// This process's name in the change log.
+    origin: String,
 }
+
+/// The channel a commit's NOTIFY goes out on, so another process pulls at
+/// once; the poll is the contract, the nudge only makes it prompt.
+const CHANNEL: &str = "sts_ldap_change";
+
+/// Change-log rows per INSERT statement.
+const CHANGE_ROWS_PER_STATEMENT: usize = 500;
 
 impl PostgresDriver {
     /// A pool of at most `pool_max` connections to `url`, over TLS.
@@ -105,7 +117,47 @@ impl PostgresDriver {
             .max_size(pool_max.max(2))
             .build()
             .map_err(err)?;
-        Ok(PostgresDriver { pool })
+        let mut id = [0u8; 9];
+        openssl::rand::rand_bytes(&mut id).map_err(err)?;
+        let origin = format!(
+            "rs-{}-{}",
+            std::process::id(),
+            id.iter().map(|b| format!("{:02x}", b)).collect::<String>()
+        );
+        Ok(PostgresDriver { pool, origin })
+    }
+
+    /// Records what a transaction changed in the change log, and nudges the
+    /// other processes (`recordChanges()`): `(kind, realm, key)` rows.
+    async fn record_changes(
+        &self,
+        tx: &deadpool_postgres::Transaction<'_>,
+        rows: &[(&str, &str, &str)],
+    ) -> StoreResult<()> {
+        if rows.is_empty() {
+            return Ok(());
+        }
+        for chunk in rows.chunks(CHANGE_ROWS_PER_STATEMENT) {
+            let kinds: Vec<&str> = chunk.iter().map(|r| r.0).collect();
+            let realms: Vec<&str> = chunk.iter().map(|r| r.1).collect();
+            let keys: Vec<&str> = chunk.iter().map(|r| r.2).collect();
+            tx.execute(
+                "INSERT INTO sts_changes (origin, kind, realm, key) SELECT $1, k, r, y FROM unnest($2::text[], \
+                 $3::text[], $4::text[]) WITH ORDINALITY AS u(k, r, y, n) ORDER BY n",
+                &[&self.origin, &kinds, &realms, &keys],
+            )
+            .await
+            .map_err(err)?;
+        }
+        let mut kinds: Vec<&str> = rows.iter().map(|r| r.0).collect();
+        kinds.dedup();
+        let payload =
+            json!({ "from": self.origin, "kinds": kinds, "rows": rows.len() })
+                .to_string();
+        tx.execute("SELECT pg_notify($1, $2)", &[&CHANNEL, &payload])
+            .await
+            .map_err(err)?;
+        Ok(())
     }
 
     async fn client(&self) -> StoreResult<deadpool_postgres::Object> {
@@ -243,6 +295,10 @@ impl PostgresDriver {
 impl Driver for PostgresDriver {
     fn name(&self) -> &'static str {
         "postgres"
+    }
+
+    fn change_log(&self) -> Option<&dyn ChangeLog> {
+        Some(self)
     }
 
     fn open(&self) -> StoreFuture<'_, ()> {
@@ -435,6 +491,29 @@ impl Driver for PostgresDriver {
                     .await
                     .map_err(err)?;
             }
+            let decided_elsewhere = |realm: &str, key: &str| {
+                outcomes.iter().any(|o: &DirectoryOutcome| {
+                    o.realm == realm
+                        && o.key == key
+                        && matches!(
+                            o.outcome,
+                            Outcome::Theirs | Outcome::Deleted
+                        )
+                })
+            };
+            let mut moved: Vec<(&str, &str, &str)> = change
+                .upserts
+                .iter()
+                .filter(|u| !decided_elsewhere(&u.realm, &u.key))
+                .map(|u| ("directory", u.realm.as_str(), u.key.as_str()))
+                .collect();
+            moved.extend(
+                change
+                    .deletes
+                    .iter()
+                    .map(|d| ("directory", d.realm.as_str(), d.key.as_str())),
+            );
+            self.record_changes(&tx, &moved).await?;
             for realm in &change.removed_realms {
                 for table in ["sts_ldap_entries", "sts_minted"] {
                     tx.execute(
@@ -558,6 +637,9 @@ impl PostgresDriver {
             .await
             .map_err(err)?;
         }
+        if !delta.upserts.is_empty() || !delta.removed.is_empty() {
+            self.record_changes(&tx, &[("realms", "", "")]).await?;
+        }
         tx.commit().await.map_err(err)
     }
 
@@ -580,6 +662,9 @@ impl PostgresDriver {
             )
             .await
             .map_err(err)?;
+        }
+        if !delta.set.is_empty() || !delta.cleared.is_empty() {
+            self.record_changes(&tx, &[("appconfig", "", "")]).await?;
         }
         tx.commit().await.map_err(err)
     }
@@ -834,3 +919,93 @@ impl ClusterStore for PostgresDriver {
 
 /// A shared handle to the driver, as both the store and the cluster's.
 pub type SharedPostgres = Arc<PostgresDriver>;
+
+fn change_row(r: &Row) -> ChangeRow {
+    ChangeRow {
+        seq: r.get("seq"),
+        origin: r.get("origin"),
+        kind: r.get("kind"),
+        realm: r.get("realm"),
+        key: r.get("key"),
+    }
+}
+
+impl ChangeLog for PostgresDriver {
+    fn origin(&self) -> String {
+        self.origin.clone()
+    }
+
+    fn latest_change_seq(&self) -> StoreFuture<'_, i64> {
+        Box::pin(async move {
+            let row = self
+                .client()
+                .await?
+                .query_one("SELECT COALESCE(MAX(seq), 0)::bigint AS seq FROM sts_changes", &[])
+                .await
+                .map_err(err)?;
+            Ok(row.get("seq"))
+        })
+    }
+
+    fn changes_since(
+        &self,
+        after: i64,
+        limit: i64,
+    ) -> StoreFuture<'_, Vec<ChangeRow>> {
+        Box::pin(async move {
+            let rows = self
+                .client()
+                .await?
+                .query(
+                    "SELECT seq, origin, kind, realm, key FROM sts_changes WHERE seq > $1 ORDER BY seq ASC LIMIT $2",
+                    &[&after, &limit],
+                )
+                .await
+                .map_err(err)?;
+            Ok(rows.iter().map(change_row).collect())
+        })
+    }
+
+    fn changes_at(&self, seqs: Vec<i64>) -> StoreFuture<'_, Vec<ChangeRow>> {
+        Box::pin(async move {
+            let rows = self
+                .client()
+                .await?
+                .query(
+                    "SELECT seq, origin, kind, realm, key FROM sts_changes WHERE seq = ANY($1) ORDER BY seq",
+                    &[&seqs],
+                )
+                .await
+                .map_err(err)?;
+            Ok(rows.iter().map(change_row).collect())
+        })
+    }
+
+    fn read_entry<'a>(
+        &'a self,
+        realm: &'a str,
+        key: &'a str,
+    ) -> StoreFuture<'a, Option<StoredEntry>> {
+        Box::pin(async move {
+            let row = self
+                .client()
+                .await?
+                .query_opt(
+                    &format!("SELECT {} FROM sts_ldap_entries WHERE realm = $1 AND dn_key = $2", ENTRY_COLUMNS),
+                    &[&realm, &key],
+                )
+                .await
+                .map_err(err)?;
+            match row {
+                None => Ok(None),
+                Some(r) => PostgresDriver::entry_of(&r).map(Some).ok_or_else(|| {
+                    StoreError::new(format!(
+                        "{}the directory entry {} is sealed and does not open in this process",
+                        tag(codes::STS_STORE_0072),
+                        key
+                    ))
+                }),
+            }
+        })
+    }
+}

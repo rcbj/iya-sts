@@ -203,6 +203,44 @@ impl Stack {
             return Err("the scheduler was built twice".to_string());
         }
         scheduler.register_history_job()?;
+        // Applies, in this process, what every other process committed to
+        // the change log since this one last looked: per process, recorded
+        // quietly, on persistence.pollInterval.
+        let mut pull = sts_cluster::schedule::JobSpec::new(
+            "persistence.change-log-pull",
+            "Change-log pull",
+            "Applies, in this process, what every other process has committed to the change log since this one \
+             last looked. The change log is the contract.",
+            "persistence/persistence_replication.js",
+            sts_cluster::schedule::Schedule::Every({
+                let settings = settings.clone();
+                Arc::new(move || {
+                    (settings.value_of("persistence.pollInterval").as_int() as f64).max(250.0)
+                })
+            }),
+        );
+        pull.kind = sts_cluster::schedule::Kind::PerProcess;
+        pull.quiet = true;
+        let watched = Arc::downgrade(&persistence);
+        pull.off = Some(Arc::new(move |_realm: &str| {
+            Ok(match watched.upgrade() {
+                Some(p) if p.coordinates() => String::new(),
+                _ => "this process's store does not coordinate".to_string(),
+            })
+        }));
+        let puller = Arc::downgrade(&persistence);
+        pull.run = Some(Arc::new(move |_ctx| {
+            let puller = puller.clone();
+            Box::pin(async move {
+                match puller.upgrade() {
+                    Some(p) => p.pull_changes().await.map(
+                        |applied| serde_json::json!({ "applied": applied }),
+                    ),
+                    None => Ok(Json::Null),
+                }
+            })
+        }));
+        scheduler.register(pull)?;
         Ok(Stack {
             settings,
             mode,

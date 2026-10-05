@@ -23,6 +23,7 @@ pub mod merge;
 pub mod model;
 pub mod persistence;
 pub mod postgres;
+pub mod replication;
 pub mod shadow;
 
 pub use driver::{Driver, StoreError, StoreFuture, StoreResult};

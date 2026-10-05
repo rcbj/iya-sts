@@ -236,6 +236,88 @@ async fn the_postgres_store() {
     assert!(!raw.release_claim("s", "", "k", "r2").await.unwrap());
     assert!(raw.release_claim("s", "", "k", "r1").await.unwrap());
     assert!(raw.now().await.unwrap() > 1.7e12);
+    // Coordination through the change log: what A commits, B applies on
+    // its next pull — an entry, a realm's setting, a process override, a
+    // realm removed — and A's own rows are nothing to A.
+    assert!(a.persistence.coordinates() && b.persistence.coordinates());
+    b.persistence.pull_changes().await.unwrap();
+    a.persistence.pull_changes().await.unwrap();
+    a.dir.put(
+        "default",
+        entry(
+            "uid=dora,dc=example,dc=com",
+            &[("uid", &["dora"]), ("entryUUID", &["U-9"])],
+        ),
+    );
+    a.persistence
+        .directory_changed(Some("uid=dora,dc=example,dc=com"));
+    a.lifecycle
+        .set_override("acme", "saml11.providerId", json!("urn:a11"))
+        .unwrap();
+    a.settings
+        .set_override("wstrust.issuer", json!("urn:wst"))
+        .unwrap();
+    a.persistence.config_changed(None);
+    flush(&a).await;
+    assert!(b
+        .dir
+        .entry_at("default", "uid=dora,dc=example,dc=com")
+        .is_none());
+    b.persistence.pull_changes().await.unwrap();
+    assert_eq!(
+        b.dir
+            .entry_at("default", "uid=dora,dc=example,dc=com")
+            .unwrap()
+            .attributes["uid"],
+        vec!["dora"]
+    );
+    assert_eq!(
+        b.lifecycle.overrides("acme").unwrap()["saml11.providerId"],
+        "urn:a11"
+    );
+    assert_eq!(b.settings.value_of("wstrust.issuer").as_str(), "urn:wst");
+    // B's own unwritten change to the group meets A's committed one.
+    let mut on_b = b.dir.entry_at("default", key).unwrap();
+    on_b.attributes.insert(
+        "member".into(),
+        vec![
+            "uid=a".into(),
+            "uid=b".into(),
+            "uid=c".into(),
+            "uid=e".into(),
+        ],
+    );
+    b.dir.put("default", on_b);
+    let mut on_a = a.dir.entry_at("default", key).unwrap();
+    on_a.attributes.insert(
+        "member".into(),
+        vec![
+            "uid=a".into(),
+            "uid=b".into(),
+            "uid=c".into(),
+            "uid=d".into(),
+        ],
+    );
+    a.dir.put("default", on_a);
+    a.persistence.directory_changed(Some(key));
+    flush(&a).await;
+    b.persistence.pull_changes().await.unwrap();
+    assert_eq!(
+        b.dir.entry_at("default", key).unwrap().attributes["member"],
+        vec!["uid=a", "uid=b", "uid=c", "uid=d", "uid=e"],
+        "B kept its own member and took A's"
+    );
+    flush(&b).await;
+    a.persistence.pull_changes().await.unwrap();
+    assert_eq!(
+        a.dir.entry_at("default", key).unwrap().attributes["member"],
+        vec!["uid=a", "uid=b", "uid=c", "uid=d", "uid=e"]
+    );
+    // A realm removed on A is removed on B.
+    a.lifecycle.remove("acme").unwrap();
+    flush(&a).await;
+    b.persistence.pull_changes().await.unwrap();
+    assert!(b.lifecycle.registry().get("acme").is_none());
     a.persistence.stop().await.unwrap();
     b.persistence.stop().await.unwrap();
 }
