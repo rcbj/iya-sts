@@ -2378,6 +2378,25 @@ is a warning, never a refusal), so nothing there changed.
 `tests/credential_signals.js` holds every row in process;
 `tests/vendored/sts_credential_signals.js` the ones a wire can reach.
 
+## A SUBJECT IS NAMED UNDER THE STREAM'S ISSUER (#154, 2026-10-05)
+
+The doors that raise an event with no request in hand — `/admin-api`'s
+set-password, disable and enable, and the automatic CAEP and RISC emissions —
+named the person `iss_sub` under `issuerFor(null)`, this process's own
+address, while each SET's `iss` is the stream's: the issuer its receiver
+discovered. Behind a published port or a proxy the two differ, so a receiver
+refused the subject, and a stream that had ADDED the person under the
+discovered issuer was never a candidate (`subjectKey()` is the pair).
+`ssf.ts`'s `subjectUnderStreamIssuer()` re-issues, per stream, an `iss_sub`
+naming that request-less issuer — at the top or as a complex subject's
+member — under the stream's `iss`; `coversSubject()` asks every emitter's
+candidate filter with it, and `transmitNow()` sends it. A partner's subject
+and one already under the stream's issuer are untouched.
+`tests/ssf_subject_issuer.js` holds it in process, with the published issuer
+set on the stream by hand; `tests/vendored/sts_ssf_subject_issuer.js` over the
+wire, with the issuer DISCOVERED at the URL the suite reaches, which is where
+the mismatch happens (every local mode and an AWS target).
+
 ## A RENAMED ACCOUNT KEEPS ITS RISC ROW (2026-09-14)
 
 The RISC register is keyed by the account's name, and a rename reaches `observe()` as an

@@ -410,6 +410,14 @@ const JOBS = [
   // attribute is this repository's own and the assertion spans an /admin-api
   // write and a protocol delivery.
   { file: 'sts_ssf_allowed_events.js',   browser: false, local: true },
+  // THE SUBJECT'S ISSUER IS THE ONE THE RECEIVER DISCOVERED (#154,
+  // 2026-10-05): an administrator's set-password, disable and enable send
+  // CAEP and RISC events whose iss_sub names the person under the SET's own
+  // iss, read from the realm's SSF configuration at the URL the suite
+  // reaches — on a stream about everybody and on one that added the person
+  // under that issuer. `local: true`: this repository's own transmitter, in
+  // a throwaway realm it leaves behind.
+  { file: 'sts_ssf_subject_issuer.js',   browser: false, local: true },
   // SSF 1.0 FINAL OVER THE WIRE (#144, 2026-09-22): stream ownership (another
   // receiver's stream is a 404 on all ten endpoints), a Transmitter-Supplied
   // aud, the RFC 9493 names and the final complex subject, the inserted-path

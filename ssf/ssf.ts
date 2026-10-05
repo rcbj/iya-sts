@@ -598,6 +598,89 @@ class SharedSignals {
     return this.deps.helpers.randomId(16);
   }
 
+  // -------------------------------------------------------------------------
+  // THE SUBJECT'S ISSUER IS THE ONE THE RECEIVER DISCOVERED (#154).
+  //
+  // A person is named `iss_sub`, and a receiver matches that pair against
+  // the issuer it discovered — the issuer of the person's ID Tokens, which is
+  // the stream's `iss` and the SET's. The doors that raise an event with no
+  // request in hand (an administrator's password change, disable and enable
+  // through /admin-api, the RISC and CAEP automatic emissions) named the
+  // person under `issuerFor(null)`: this process's own address, which behind
+  // a published port or a proxy is an address no receiver discovered. The
+  // receiver then refused the event as naming an unknown subject — a failure
+  // that looks like a bad subject rather than a misconfigured transmitter —
+  // and a stream that had ADDED the person under the discovered issuer was
+  // not even sent it, the stream's subject key being the pair.
+  //
+  // So, per stream: an `iss_sub` naming THAT request-less issuer — at the
+  // top, or as a complex subject's member — is re-issued under the stream's
+  // `iss`. Nothing else is touched: a federation partner's subject keeps its
+  // partner's issuer, and one already named under the stream's is as it was.
+  // -------------------------------------------------------------------------
+  /**
+   * Names a subject this transmitter built under its request-less issuer
+   * under the stream's issuer instead (#154).
+   *
+   * @param record - the stream
+   * @param subject - the event's subject
+   * @returns the subject, re-issued where it named the request-less issuer
+   */
+  subjectUnderStreamIssuer(record: Json, subject: Json): Json {
+    const { log } = this.deps;
+    log.debug('Entering SharedSignals.subjectUnderStreamIssuer().');
+    const streamIss = String((record && record.iss) || '');
+    const ownIss = this.issuerFor(null);
+    if (!subject || typeof subject !== 'object' || !streamIss ||
+        streamIss === ownIss) {
+      log.debug('Leaving SharedSignals.subjectUnderStreamIssuer(). ' +
+                'Nothing to re-issue.');
+      return subject;
+    }
+    let changed = 0;
+    const reissue = function (one: Json): Json {
+      if (one && typeof one === 'object' && one.format === 'iss_sub' &&
+          one.iss === ownIss) {
+        changed += 1;
+        return Object.assign({}, one, { iss: streamIss });
+      }
+      return one;
+    };
+    let out = reissue(subject);
+    if (out && out.format === 'complex') {
+      const copy: Json = Object.assign({}, out);
+      Object.keys(copy).forEach(function (member) {
+        if (member !== 'format') {
+          copy[member] = reissue(copy[member]);
+        }
+      });
+      out = copy;
+    }
+    log.debug('Leaving SharedSignals.subjectUnderStreamIssuer(). ' + changed +
+              ' member(s) re-issued.');
+    return changed ? out : subject;
+  }
+
+  /**
+   * Whether a stream covers a subject, asked under the stream's issuer
+   * (#154). Every emitter chooses its candidate streams with this BEFORE it
+   * transmits, so a stream that added the person under the issuer it
+   * discovered is a candidate at all — `transmitNow()` re-issuing the
+   * subject would come too late for a stream never handed the event.
+   *
+   * @param record - the stream
+   * @param subject - the event's subject
+   * @returns true when the stream covers it
+   */
+  coversSubject(record: Json, subject: Json): boolean {
+    const { log, streams } = this.deps;
+    log.debug('Entering SharedSignals.coversSubject().');
+    const covered = streams.streamCoversSubject(record,
+      this.subjectUnderStreamIssuer(record, subject));
+    log.debug('Leaving SharedSignals.coversSubject(). ' + covered);
+    return covered;
+  }
+
   // THE SUBJECT AS THIS RECEIVER KNOWS THE PERSON (#149). A stream's owner
   // is a client, and a client registered for pairwise or ephemeral subjects
   // was never told the person's public `sub`: an event naming it would name
@@ -730,7 +813,15 @@ class SharedSignals {
             errorCodes } = this.deps;
     const { iso } = this.deps.helpers;
     log.debug('Entering SharedSignals.transmitNow(). ' + record.stream_id);
-    const asked = options || {};
+    // #154: a subject this transmitter named under its request-less issuer is
+    // named under the STREAM's — before the coverage check, whose key is the
+    // issuer and the subject together. See subjectUnderStreamIssuer().
+    const given = options || {};
+    const asked = given.subject
+      ? Object.assign({}, given,
+                      { subject: this.subjectUnderStreamIssuer(record,
+                                                               given.subject) })
+      : given;
     const uri = String(asked.uri || '');
     // SSF'S OWN TWO EVENTS ARE ABOUT THE PIPE, AND THE SPECIFICATION LETS THE
     // TRANSMITTER SEND THEM WHETHER OR NOT THEY WERE AGREED (#144): a
@@ -3661,7 +3752,7 @@ class SharedSignals {
     }
     const candidates = streams.listStreams().filter((record) => {
       return streams.deliversEvent(record, due.uri) &&
-             streams.streamCoversSubject(record, due.subject);
+             this.coversSubject(record, due.subject);
     });
     if (!candidates.length) {
       // SAID ONCE, AT INFO, AND IT IS THE MOST USEFUL LINE THIS FEATURE
@@ -4038,7 +4129,7 @@ class SharedSignals {
     const subject = options.subject;
     const candidates = streams.listStreams().filter((record) => {
       return streams.deliversEvent(record, uri) &&
-             (!subject || streams.streamCoversSubject(record, subject));
+             (!subject || this.coversSubject(record, subject));
     });
     if (!candidates.length) {
       // The same line caepAutoEmit() says, for the same reason: "nothing
@@ -4366,7 +4457,7 @@ class SharedSignals {
     const subject = caep.subjectFor(known);
     const candidates = streams.listStreams().filter((record) => {
       return streams.deliversEvent(record, uri) &&
-             streams.streamCoversSubject(record, subject);
+             this.coversSubject(record, subject);
     });
     audit.audit({ action: 'caep.event.emit', category: 'signals',
       protocol: 'CAEP', channel: 'http', target: sessionId,
@@ -4940,7 +5031,7 @@ class SharedSignals {
     log.debug('Entering SharedSignals.sendOneRiscEvent(). ' + due.uri);
     const candidates = streams.listStreams().filter((record) => {
       return streams.deliversEvent(record, due.uri) &&
-             streams.streamCoversSubject(record, due.subject);
+             this.coversSubject(record, due.subject);
     });
     const type = due.uri.slice(events.RISC_PREFIX.length);
     if (!candidates.length) {
@@ -5214,7 +5305,7 @@ class SharedSignals {
       sub: helpersSubjectFor(username) || username } });
     const candidates = streams.listStreams().filter((record) => {
       return streams.deliversEvent(record, uri) &&
-             streams.streamCoversSubject(record, subject);
+             this.coversSubject(record, subject);
     });
     audit.audit({ action: 'caep.event.auto', category: 'signals',
       protocol: 'CAEP', channel: 'http', target: username,
@@ -5630,7 +5721,7 @@ class SharedSignals {
     }
     const candidates = streams.listStreams().filter((record) => {
       return streams.deliversEvent(record, uri) &&
-             streams.streamCoversSubject(record, subject);
+             this.coversSubject(record, subject);
     });
     audit.audit({ action: 'risc.event.emit', category: 'signals',
       protocol: 'RISC', channel: 'http', target: accountId,
