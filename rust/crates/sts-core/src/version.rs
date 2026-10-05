@@ -12,6 +12,7 @@
 //! process starting**: an unreadable `VERSION` is 0.0, a corrupt stamp is a
 //! computed record.
 
+use crate::errors::codes;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -60,7 +61,7 @@ fn read_major_minor(root: &Path) -> (String, String) {
             if !raw.is_empty() {
                 tracing::error!(
                     "{}[version] ignoring malformed {}: \"{}\" (want M.N)",
-                    crate::log::tag("STS-CORE-0039"),
+                    crate::log::tag(codes::STS_CORE_0039),
                     file.display(),
                     raw
                 );
@@ -72,7 +73,7 @@ fn read_major_minor(root: &Path) -> (String, String) {
     }
     tracing::error!(
         "{}[version] no readable {}; falling back to 0.0",
-        crate::log::tag("STS-CORE-0040"),
+        crate::log::tag(codes::STS_CORE_0040),
         VERSION_FILE
     );
     ("0".into(), "0".into())
@@ -125,7 +126,7 @@ pub fn stamp(dir: &Path) -> VersionInfo {
     if let Err(error) = written {
         tracing::error!(
             "{}[version] could not write {}: {}",
-            crate::log::tag("STS-CORE-0041"),
+            crate::log::tag(codes::STS_CORE_0041),
             dir.join(STAMP_FILE).display(),
             error
         );

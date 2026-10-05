@@ -22,6 +22,7 @@
 use std::net::IpAddr;
 use std::sync::{Arc, Mutex, MutexGuard, RwLock};
 use std::time::Duration;
+use sts_core::errors::{codes, ErrorCode};
 
 use chrono::{DateTime, Utc};
 use openssl::asn1::{Asn1Time, Asn1TimeRef};
@@ -215,7 +216,7 @@ impl HttpsListener {
     /// A problem, logged once per distinct sentence and always recorded.
     /// `waiting` is the ordinary state before a certificate exists, which
     /// is information rather than an error.
-    fn problem(&self, code: &str, sentence: String, waiting: bool) {
+    fn problem(&self, code: ErrorCode, sentence: String, waiting: bool) {
         let mut status = self.status();
         status.last_problem = Some(sentence.clone());
         if sentence != status.last_logged_problem {
@@ -243,7 +244,7 @@ impl HttpsListener {
         }
         if self.cert_path.is_empty() || self.key_path.is_empty() {
             self.problem(
-                "STS-XPEP-0029",
+                codes::STS_XPEP_0029,
                 format!(
                 "only {} is set, so there is no HTTPS listener. Both halves \
                  of the pair are needed.",
@@ -280,7 +281,7 @@ impl HttpsListener {
                         error
                     )
                 };
-                self.problem("STS-XPEP-0030", sentence, missing);
+                self.problem(codes::STS_XPEP_0030, sentence, missing);
                 return false;
             }
         };
@@ -297,7 +298,7 @@ impl HttpsListener {
             Err(error) => {
                 let listening = self.status().listening;
                 self.problem(
-                    "STS-XPEP-0030",
+                    codes::STS_XPEP_0030,
                     format!(
                         "the HTTPS certificate and key were not used: {}. {}",
                         error,
@@ -321,7 +322,7 @@ impl HttpsListener {
                  listener with an expired certificate is easier to diagnose \
                  than one that is not there — and every client that checks \
                  will refuse the handshake.",
-                tag("STS-XPEP-0032"),
+                tag(codes::STS_XPEP_0032),
                 served["serialHex"],
                 served["validFrom"],
                 served["validTo"]
@@ -371,7 +372,7 @@ impl HttpsListener {
     pub fn mark_bind_failed(&self, error: &str) {
         self.status().listening = false;
         self.problem(
-            "STS-XPEP-0031",
+            codes::STS_XPEP_0031,
             format!(
             "the HTTPS listener could not listen on {}: {}. Plain HTTP and \
              enforcement are unaffected.", self.port, error),

@@ -26,6 +26,7 @@ use std::path::Path;
 use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
+use sts_core::errors::codes;
 
 use hyper_util::rt::{TokioExecutor, TokioIo};
 use hyper_util::server::conn::auto::Builder;
@@ -102,7 +103,7 @@ fn install_fault_handler() {
         tracing::error!(
             "{}xacml-pep: an unexpected error (panic) was contained; the PEP \
              carries on. Seen {} time(s). {}",
-            tag("STS-XPEP-0033"),
+            tag(codes::STS_XPEP_0033),
             count,
             signature
         );
@@ -116,7 +117,7 @@ async fn serve_http(pep: Arc<Pep>, port: u16) {
             tracing::error!(
                 "{}xacml-pep: could not start: cannot listen on \
                              {}: {}",
-                tag("STS-XPEP-0013"),
+                tag(codes::STS_XPEP_0013),
                 port,
                 error
             );
@@ -245,7 +246,7 @@ async fn start(options: Options, info: version::VersionInfo) {
         Err(error) => {
             tracing::error!(
                 "{}xacml-pep: could not start: {}",
-                tag("STS-XPEP-0013"),
+                tag(codes::STS_XPEP_0013),
                 error
             );
             std::process::exit(1);
@@ -386,7 +387,7 @@ fn main() {
         Err(error) => {
             tracing::error!(
                 "{}xacml-pep: could not start: {}",
-                tag("STS-XPEP-0013"),
+                tag(codes::STS_XPEP_0013),
                 error
             );
             std::process::exit(1);

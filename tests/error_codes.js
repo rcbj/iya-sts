@@ -362,6 +362,14 @@ function scan(options) {
     // between a `mark()` and the call it describes would push the code out of
     // the window. So the windows are counted over the other lines, and a
     // line's number is still its real one.
+    // A Rust source names a code as the CONSTANT `sts_core::build.rs`
+    // generates from the table (`codes::STS_XPEP_0013`), which a code missing
+    // from the table cannot even compile against; it is read here in the
+    // table's own spelling, so a use is counted wherever it is written.
+    if (/\.rs$/.test(rel)) {
+      text = text.replace(/\bSTS_([A-Z][A-Z0-9]{1,9})_([0-9]{4})\b/g,
+                          'STS-$1-$2');
+    }
     const all = text.split('\n');
     const lineNumbers = [];
     const lines = [];

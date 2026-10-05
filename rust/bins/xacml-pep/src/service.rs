@@ -14,6 +14,7 @@
 //! ```
 
 use std::sync::{Arc, Mutex};
+use sts_core::errors::codes;
 
 use axum::body::Body;
 use axum::http::{header, HeaderValue, Method, Request, Response, StatusCode};
@@ -151,7 +152,7 @@ impl Pep {
                     None => {
                         tracing::info!(
                             "{}xacml-pep: no such CRL: {}",
-                            tag("STS-XPEP-0009"),
+                            tag(codes::STS_XPEP_0009),
                             path
                         );
                         json_response(
@@ -178,7 +179,7 @@ impl Pep {
                     tracing::warn!(
                         "{}xacml-pep: the nudged pull failed. The scheduled \
                          poll will try again.",
-                        tag("STS-XPEP-0010")
+                        tag(codes::STS_XPEP_0010)
                     );
                 }
             });
@@ -189,7 +190,7 @@ impl Pep {
         }
         tracing::info!(
             "{}xacml-pep: no such endpoint: {} {}",
-            tag("STS-XPEP-0009"),
+            tag(codes::STS_XPEP_0009),
             method,
             path
         );
@@ -223,7 +224,7 @@ impl Pep {
                 "{}xacml-pep: a decision was asked for and this PEP holds no \
                  root policy, so it is NotApplicable and the {} bias settles \
                  it.",
-                tag("STS-XPEP-0005"),
+                tag(codes::STS_XPEP_0005),
                 self.options.bias.as_str()
             );
             return Answer {
@@ -314,7 +315,7 @@ impl Pep {
             tracing::warn!(
                 "{}xacml-pep: the engine answered Indeterminate ({}{}), so \
                  the {} bias settles it.",
-                tag("STS-XPEP-0006"),
+                tag(codes::STS_XPEP_0006),
                 response.status.code.uri(),
                 response
                     .status
