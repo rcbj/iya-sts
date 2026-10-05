@@ -13,7 +13,7 @@ same commit that changes the decision it records.
 | `/admin-api` and its OpenAPI document | Node (`mgmt-api/`) | **Rust**, same contract |
 | The scheduler, every scheduled job, every cache, the store, the cluster | Node | **Rust**, in the runtime process |
 | Remote XACML PEP (`xacml-pep/`) | Node container | **Rust**, `xacml-pep` binary, same container contract |
-| Admin console `/admin`, user portal `/portal` | Node, in the service process, calling ~73 modules in process | **Node/TypeScript, a separate process**, talking to the runtime **only through the management API** |
+| Admin console `/admin`, user portal `/portal` | Node, in the service process, calling ~73 modules in process | **TypeScript single-page applications**, compiled to static files when the image is built, **served by the runtime**, talking to it **only through the management API** (owner, 2026-10-05). No Node process at runtime |
 | Embedded debugger (`debugger/`) | Parent project's build output served by Node | **Unchanged.** It is another project's artifact. The runtime starts it as a child process, as today. |
 | `tests/vendored/` (the protocol half of the suite) | Runs against a URL | **Unchanged.** It is the oracle for equivalent behaviour. |
 
@@ -28,7 +28,7 @@ same commit that changes the decision it records.
 ### Size
 
 About 400,000 lines of non-test service code, plus 386,000 lines of tests. The
-largest parts are `common/` (226k), `admin-ui/` (83k, which stays Node),
+largest parts are `common/` (226k), `admin-ui/` (83k, which becomes a TypeScript SPA),
 `oauth-oidc/` (66k), and `xacml/`, `gnap/`, `spiffe/`, `mgmt-api/` and
 `kerberos/` at 27k–30k each. The conversion cannot be one change. It is a
 sequence of phases, each of which leaves a service that passes the suite
@@ -37,40 +37,55 @@ sequence of phases, each of which leaves a service that passes the suite
 ## 2. The end state
 
 ```
-                       :8081 HTTPS (and realm listeners, 88, 389/636, gRPC, 8082, 8446)
+              :8081 HTTPS (and realm listeners, 88, 389/636, gRPC, 8082, 8446)
                                         │
-                     ┌──────────────────▼───────────────────┐
-                     │              sts-runtime (Rust)       │
-                     │  listeners · TLS · realm layer · CSP  │
-                     │  every protocol family                │
-                     │  /admin-api  /account-api             │
-                     │  scheduler · caches · store · cluster │
-                     └───────┬──────────────────────▲────────┘
-       /admin/*, /portal/*   │ reverse proxy         │ /admin-api, /account-api
-       (loopback, UDS)       │                       │ (bearer token of the person)
-                     ┌───────▼──────────────────────┴────────┐
-                     │      sts-surfaces (Node/TypeScript)    │
-                     │  console pages · portal pages · HTML   │
-                     │  OIDC relying party of the runtime     │
-                     └────────────────────────────────────────┘
+         ┌──────────────────────────────▼──────────────────────────────┐
+         │                     sts-runtime (Rust)                       │
+         │  listeners · TLS · realm layer · CSP · every protocol family │
+         │  /admin-api  /account-api  · scheduler · caches · store      │
+         │  /admin/*, /portal/*  ── the two SPAs' static files          │
+         │  the SPAs' backend-for-frontend: OIDC client, token holder   │
+         └──────────────────────────────▲──────────────────────────────┘
+                                        │ same origin, session cookie
+                     ┌──────────────────┴──────────────────┐
+                     │  browser: console SPA · portal SPA   │
+                     │  (TypeScript, built at image build)  │
+                     └──────────────────────────────────────┘
 ```
 
-* **The runtime owns every socket.** The console and portal stay on the SAME
-  ORIGIN as today: the runtime proxies `/admin/*` (not `/admin-api`) and
-  `/portal/*` to the surfaces process over a Unix socket. Same origin is what
-  keeps the cookies, the OIDC redirect URIs, the CSP rules and the suite's URLs
-  unchanged.
-* **The runtime re-checks `frame-ancestors` on every response it sends,
-  including proxied ones.** This keeps the root `CLAUDE.md` CSP rule (*the
-  policy is re-checked when the response is flushed*) true however the page
-  was produced.
-* **The surfaces process holds no store.** It holds its relying-party sessions
-  and renders HTML. Everything it shows comes from an API response, and
-  everything it changes goes through an API call.
-* **The surfaces process cannot be a confused deputy.** It calls the API with
-  the **signed-in person's** access token, never a client credential of its
-  own (section 5.2). So the roles the API enforces are the person's, as they
-  are on the console today.
+* **One process.** The console and portal are TypeScript single-page
+  applications, compiled when the image is built into static files the
+  runtime serves at `/admin/` and `/portal/` (owner, 2026-10-05). There is no
+  Node process at runtime. The paths, the origin and the cookies stay as they
+  are today, so the OIDC redirect URIs and the suite's URLs do not move.
+* **The SPAs talk to the runtime only through the management API**
+  (`/admin-api`, `/account-api`, section 5). Everything they show comes from
+  an API response, and everything they change goes through an API call.
+* **The tokens never reach the browser (decision D9).** The runtime is the
+  SPAs' backend-for-frontend, as the IETF's *OAuth 2.0 for Browser-Based
+  Applications* recommends: the console and portal stay confidential OIDC
+  clients of the runtime's own authorization server, as today
+  (`private_key_jwt`, PKCE), the runtime holds the person's access and
+  refresh tokens server-side against an `HttpOnly`, `SameSite`, `Secure`
+  session cookie, and an API call from the SPA carries that cookie and is
+  answered with the PERSON's token's authority — never a credential of the
+  console's own. So the roles the API enforces are the person's, as they are
+  on the console today, and a script injected into the page has no token to
+  steal. A cookie-carried call that changes state also carries a CSRF token.
+* **The SPAs run script, and nothing else here does (decision D10).** Every
+  page of this service works without JavaScript today (`script-src 'none'`,
+  thirteen argued exceptions). A single-page application cannot, so `/admin/`
+  and `/portal/` get `script-src 'self'` — the SPA's own bundled files, never
+  `'unsafe-inline'` and never another origin — and `frame-ancestors` and
+  `base-uri` stay as everywhere. This is a deliberate REVERSAL of the
+  works-without-script rule for those two surfaces, written down in the root
+  `CLAUDE.md` when the SPAs land; every other surface keeps `script-src
+  'none'`.
+* **The runtime re-checks `frame-ancestors` on every response**, as `app.js`
+  does today when a response is flushed.
+* **The server-drawn pictures** (delegation map, federation diagram,
+  geography map) are drawn by the SPA from API data, or served by the API as
+  SVG, decided in the phase that moves each.
 
 ## 3. Getting there: a replacement, not a migration
 
@@ -108,7 +123,7 @@ whose jobs depend on them can pass.
 ### 3.2 The cutover
 
 Phase 9 switches `Dockerfile`, the compose files and CI to the Rust runtime
-plus the Node surfaces process, deletes the Node runtime and its in-process
+with the two SPAs built into it, deletes the Node runtime and its in-process
 tests, and from then on the full suite runs against Rust in every mode.
 
 ## 4. The organisation of the code
@@ -282,8 +297,9 @@ actions take `(body, actor)` and are shared with the API.
 1. **The console calls `/admin-api` with the signed-in operator's access
    token.** The console is already an OIDC relying party of this service
    (`common/oidc_rp.ts`). Its authorization request adds the `admin:read` /
-   `admin:write` scopes and the API's audience. The token it gets is the one it
-   presents, refreshed with the relying-party session and ended with it.
+   `admin:write` scopes and the API's audience. The backend-for-frontend
+   (section 2, D9) holds that token and presents it on the SPA's behalf,
+   refreshed with the relying-party session and ended with it.
    **The API's gate is unchanged**: held roles ∩ carried scopes, checked at
    every call, so a role revoked after minting stops working at once. The
    audit `actor` becomes the token's subject. **This is the same security
@@ -300,16 +316,14 @@ actions take `(body, actor)` and are shared with the API.
    opt-out and the wider sign-out. **The token-spending pages (activation
    link, reset link, forgot-password, verify-email) stay unauthenticated
    operations that spend a single-use secret**, exactly as the pages do today.
-3. **Every view moves to Rust as JSON; every page stays in Node as HTML.** The
-   test for a view is that its JSON carries everything the page shows. The
-   delegation, federation and geography drawings keep being laid out by the
-   server, in Node, from API data.
+3. **Every view moves to Rust as JSON; every page is drawn by the SPA.** The
+   test for a view is that its JSON carries everything the page shows.
 4. **The console's gate is an API operation**: `GET /admin-api/me` answers
    which roles the person holds, which realm they are confined to
    (`admin_scope`) and which pages they may reach.
 5. **The SSF push receiver `/portal/signals/receive` moves into the runtime.**
    It is a protocol endpoint, not a page.
-6. **The console's self-description stays in Node** (`SETTING_HOMES`, the page
+6. **The console's self-description is the SPA's** (`SETTING_HOMES`, the page
    list), and the settings schema it draws from is served by `/admin-api`
    (section 4.4).
 7. **Rule 7 is unchanged and gains a twin**: a portal control has an
@@ -319,9 +333,11 @@ actions take `(body, actor)` and are shared with the API.
    `utoipa` from the same declarations, must equal it, except for the
    operations a phase adds.
 
-These changes to the console and portal are made against the Rust runtime's
-API, family by family, as each family's operations land there; the surfaces
-process is a pure API client from its first commit.
+The SPAs are written against the Rust runtime's API, family by family, as
+each family's operations land there; they are pure API clients from their
+first commit. The suite's Selenium jobs (`sts_admin_console.js`,
+`sts_xacml_editor.js`) are adapted to pages drawn in the browser, and the
+rule-7 parity jobs keep walking the console's page list.
 
 ## 6. Cryptography: every option, mapped
 
@@ -436,6 +452,8 @@ the vectors are checked in.
 | **D6** | **The in-process half of the suite** (`tests/*.js`, about 150k lines) does not run against Rust. | Rewrite each file as Rust tests in the phase that moves what it tests, and delete it from `tests/` in that commit, with `tests/CLAUDE.md`'s table updated |
 | **D7** | **`/account-api`** as a second API rather than more `/admin-api` operations. | Accept it. A person acting on their own entry is a different authority from an operator acting on anyone's, and one API holding both would put that difference in a parameter |
 | **D8** | **The embedded debugger** stays the parent project's Node build, run as a child process. | Accept it |
+| **D9** | **Where the SPAs' tokens live.** | **DECIDED by the owner, 2026-10-05: a backend-for-frontend in the runtime** — the tokens stay server-side behind a session cookie (section 2) |
+| **D10** | **Script on the console and portal.** | **DECIDED by the owner, 2026-10-05: `script-src 'self'` on `/admin/` and `/portal/` only**, reversing the works-without-script rule for those two surfaces (section 2) |
 
 ## 10. How each phase is proved
 
@@ -476,7 +494,7 @@ The order follows dependency: nothing is ported before what it calls.
 | **6** | `sts-authn` (the session), `sts-oauth`, `logout`. | The centre of the service. The largest phase, and likely split |
 | **7** | SAML 2.0 and 1.1, WS-Trust, WS-Federation, federation. | The XML families, on the XML-DSig port |
 | **8** | OID4VC, GNAP, SPIFFE, Kerberos (decoupled from the parent project, D1), risk, attribute sources, mail, cells. | |
-| **9** | **The cutover** (section 3.2): the Rust image and the Node surfaces process replace the Node service in the Dockerfile, compose files and CI; the Node runtime and its in-process tests are deleted. | |
+| **9** | **The cutover** (section 3.2): the Rust image, with the console and portal SPAs built into it, replaces the Node service in the Dockerfile, compose files and CI; the Node runtime and its in-process tests are deleted. | |
 
 Phase sizes are not equal. Phase 6 alone is larger than phases 1–4 together.
 **Each phase is estimated before it starts, against the credit available
