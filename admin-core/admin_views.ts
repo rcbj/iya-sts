@@ -4457,6 +4457,61 @@ class AdminViews {
   }
 
   // ---------------------------------------------------------------------------
+  // ONE RELATIONSHIP, DRAWN ALONE, AS ONE ANSWER (#446).
+  //
+  // `/admin/delegation/chain?chain=` had no operation — it has no form —
+  // and draws what only this process knows: what each box is, where it
+  // goes, the drawing. The answer is the page's own JSON (the chain, its
+  // acts, the graph) with the looks, the drawing, the key and the facts its
+  // cells ask, as `delegationMapModel()` answers the whole picture. A key no
+  // act is held under is `found: false`, which is not an error: the store is
+  // capped and an old link coming back empty is the ordinary outcome.
+  // ---------------------------------------------------------------------------
+  /**
+   * Builds one delegation relationship as one answer.
+   *
+   * @param query - the page's query: `chain`, the chain's key
+   * @param options - `links` (true by default): false draws the document
+   *   with no links in it, as `?format=svg` answers
+   * @returns the chain, its acts and graph, and the drawing
+   */
+  delegationChainModel(query, options?) {
+    const { log, delegation, delegationMap } = this.deps;
+    log.debug("Entering AdminViews.delegationChainModel().");
+    const wanted = String((query || {}).chain || '');
+    const all = delegation.list();
+    const acts = delegation.actsOfChain(all, wanted);
+    // chainList() over the acts of ONE chain returns exactly one row, and it
+    // is that function's answer rather than a shape built here.
+    const chain = delegation.chainList(acts)[0] || null;
+    const graph = delegation.graph(acts);
+    const look = this.delegationLooks(graph, this.knownUserKeys());
+    const label = chain
+      ? 'One delegation relationship: ' + chain.typeLabel
+      : 'A delegation relationship that is no longer held';
+    const drawn = delegationMap.render(graph, {
+      resolve: look.resolve, labelOf: look.labelOf,
+      links: !(options && options.links === false), id: 'delmap', label: label
+    });
+    const summary = delegation.summary();
+    const model: any = {
+      chain: chain, chainKey: wanted, found: !!chain,
+      acts: acts, graph: graph,
+      held: summary.held, maxRecords: summary.maxRecords,
+      drawing: { width: drawn.width, height: drawn.height,
+                 failed: drawn.failed || null },
+      looks: look.looks, label: label, svg: drawn.svg
+    };
+    if (!(options && options.links === false)) {
+      model.mapKey = this.delegationMapKey();
+      model.facts = this.delegationFacts(model);
+    }
+    log.debug("Leaving AdminViews.delegationChainModel(). " + acts.length +
+              " act(s).");
+    return model;
+  }
+
+  // ---------------------------------------------------------------------------
   // A DELEGATION CHOOSER'S PANE, SEARCHED AND PAGED HERE (#446).
   //
   // The console drew both choosers from the whole catalogue — every
@@ -11432,6 +11487,7 @@ export = {
   delegationLooks: slot.forward('delegationLooks'),
   delegationMapModel: slot.forward('delegationMapModel'),
   delegationMapKey: slot.forward('delegationMapKey'),
+  delegationChainModel: slot.forward('delegationChainModel'),
   delegationChooser: slot.forward('delegationChooser'),
   delegationFacts: slot.forward('delegationFacts'),
   delegationPolicyView: slot.forward('delegationPolicyView'),

@@ -378,6 +378,27 @@ function childMain() {
          'D-seed. the service provider and the relying party are made',
          JSON.stringify([(seeded && seeded.errors) || [],
                          (seeded11 && seeded11.errors) || []]));
+    // A DELEGATION ACT, so the pictures are drawn with something in them —
+    // a chain, an application in two roles, a person — and not only as the
+    // page that says nothing has been delegated yet (#446).
+    const delegationReg = require(ROOT_DIR + '/common/delegation');
+    const dKind = delegationReg.TYPES[0];
+    const dAct = delegationReg.record({
+      protocol: dKind.protocol, type: dKind.type,
+      outcome: delegationReg.OUTCOMES[0],
+      initial: { presented: 'webcheck-alice' },
+      intermediary: { presented: 'webcheck-front',
+                      application: 'webcheck-front' },
+      target: { presented: 'webcheck-api', application: 'webcheck-api' },
+      authorizedBy: 'the bundle check', note: 'recorded by the bundle check' });
+    note(!!(dAct && dAct.chainKey), 'D-seed-delegation. an act is recorded',
+         JSON.stringify(dAct || null).slice(0, 200));
+    // THE QUERIES A PAGE IS ALSO DRAWN WITH, beside its bare one: a page
+    // whose interesting half needs a parameter no list of its own names.
+    const EXAMPLES = {
+      '/admin/delegation/chain': { chain: dAct ? dAct.chainKey : '' }
+    };
+    const exampled = [];
     const unviewed = [];
     const differing = [];
     const drilled = [];
@@ -420,6 +441,26 @@ function childMain() {
           }
         }
       }
+      if (EXAMPLES[page.path]) {
+        const query = Object.assign({ per: '10' }, EXAMPLES[page.path]);
+        const label = page.path + ' (example)';
+        const one = await viewOf(page, query).catch(function (e) {
+          unviewed.push(label + ': ' + String((e && e.message) || e));
+          return null;
+        });
+        if (one) {
+          const ectx = WebKit.context(query, true);
+          const a = WebPages.render(page.path, one, ectx);
+          const b = StsConsole ? StsConsole.render(page.path, one, ectx)
+                               : null;
+          if (typeof a !== 'string' || a.length < 100 || a !== b ||
+              a === mine) {
+            differing.push(label + ' (' + String(a).length + ' against ' +
+                           String(b).length + ')');
+          }
+          exampled.push(page.path);
+        }
+      }
       if (!page.drill) {
         continue;
       }
@@ -459,8 +500,10 @@ function childMain() {
          'D1. every converted page drawn by the bundle is, to the byte, ' +
          'what this process draws from the same view (' +
          WebPages.PAGES.length + ' page(s), and the drill-downs of ' +
-         drilled.length + ')', differing.join(', ') ||
-         'drill-downs: ' + drilled.join(', '));
+         drilled.length + ', and ' + exampled.length + ' example(s))',
+         differing.join(', ') ||
+         'drill-downs: ' + drilled.join(', ') + '; examples: ' +
+         exampled.join(', '));
     const report = mode.report();
     const here = WebPages.render('/admin/mode',
                                  JSON.parse(JSON.stringify(report)));

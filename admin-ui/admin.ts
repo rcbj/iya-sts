@@ -21008,223 +21008,26 @@ class AdminConsole {
     // -------------------------------------------------------------------------
     app.get('/admin/delegation/chain', function (req, res) {
       log.debug("Entering the admin delegation chain page.");
-      const wanted = String(req.query.chain || '');
-      const known = knownUserKeys();
-      const all = delegation.list();
-      const acts = delegation.actsOfChain(all, wanted);
-      // chainList() over the acts of ONE chain returns exactly one row, and it
-      // is that function's answer rather than a shape built here — the counts,
-      // the first and last times and the rule about which explanation wins are
-      // all decisions it makes, and a second copy of them would drift.
-      const chain = delegation.chainList(acts)[0] || null;
-      const graph = delegation.graph(acts);
-      const look = self.delegationLooks(graph, known);
-      const labelOf = look.labelOf;
-      const drawingLabel = chain
-        ? 'One delegation relationship: ' + chain.typeLabel
-        : 'A delegation relationship that is no longer held';
-
       if (String(req.query.format || '') === 'svg') {
-        self.sendDelegationSvg(res, graph, look, drawingLabel);
+        const bare = adminViews.delegationChainModel(req.query,
+                                                     { links: false });
+        res.set('Cache-Control', 'no-store').type('image/svg+xml')
+           .send(bare.svg);
         log.debug("Leaving the admin delegation chain page. Answered SVG.");
         return;
       }
-
       const listView = self.listViewOf('/admin/delegation', req.query);
       const up = self.upTo('/admin/delegation', 'One relationship', listView);
-      const back = self.note('<a class="btn" href="' + self.esc(up.href) +
-        '">&larr; Back to the delegation table</a>');
-
-      const json: Record<string, any> = {
-        chain: chain, chainKey: wanted, found: !!chain,
-        acts: acts, graph: graph,
-        held: delegation.summary().held
-      };
-
-      if (!chain) {
-        const inner = self.messagesOf(req) + back +
-          (wanted
-            ? self.note('<strong>No act held here belongs to that ' +
-              'relationship.</strong> <code>' + self.esc(wanted) + '</code> ' +
-              'names a chain this page can describe only while at least one ' +
-              'of its acts is still held, and this store is CAPPED — it ' +
-              'keeps at most ' +
-              self.esc(delegation.summary().maxRecords) + ' acts and drops ' +
-              'the oldest first. So an old link coming back empty is the ' +
-              'ordinary outcome rather than a mistake, and so is a link from ' +
-              'a service that has restarted since: nothing here is ' +
-              'persisted. Raise <code>delegation.maxRecords</code> on <a ' +
-              'href="/admin/delegation-settings">Protocols &rsaquo; ' +
-              'Delegation</a> if this keeps happening to something you need.')
-            : self.note('<strong>Name a relationship.</strong> This page ' +
-              'draws ONE of them, and the way to it is a link on ' +
-              '<a href="' + self.esc(up.href) +
-              '">the delegation table</a> — every row of both tables there ' +
-              'has one, because the key that identifies a chain is ' +
-              '<em>(mechanism, initial identity, intermediary, target)</em> ' +
-              'and is not something worth typing.')) +
-          self.note('<a href="/admin/delegation/map">The whole picture</a> ' +
-          'is everything that is still held, drawn together.');
-        self.respond(req, res, json, 'Delegation — one relationship',
-                     '/admin/delegation',
-                     inner, up);
-        log.debug("Leaving the admin delegation chain page. Nothing under " +
-                  "that key.");
-        return;
-      }
-
-      const parties = graph.nodes.filter(function (node) {
-        return node.kind !== 'sts';
-      });
-      const picture = self.delegationDrawing(graph, look,
-                                             '/admin/delegation/chain',
-                                             Object.assign({}, listView,
-                                                           { chain: wanted }),
-                                             drawingLabel);
-      json.drawing = { width: picture.drawn.width, height: picture.drawn.height,
-                       failed: picture.drawn.failed || null };
-
-      // The chain as ONE SENTENCE, above everything. It is the row the reader
-      // clicked, said in words: the table gave them four columns and this page
-      // has to open by confirming it is describing the same four, or a reader
-      // who followed the wrong link finds out three tables later.
-      const sentence =
-        self.note('<strong>' +
-        self.esc(chain.initial.presented || chain.initial.application ||
-                 'somebody nobody named') +
-        '</strong> — ' +
-        (chain.intermediary.presented || chain.intermediary.application
-          ? 'acted for by <strong>' +
-            self.esc(chain.intermediary.presented ||
-                     chain.intermediary.application) +
-            '</strong>'
-          : '<span class="state-none">with no intermediary this service was ' +
-            'ever told the name of</span>') +
-        ' — reaching <strong>' +
-        self.esc(chain.target.application || chain.target.presented ||
-                 'nothing in particular') +
-        '</strong>, by <code>' + self.esc(chain.type) + '</code> (' +
-        self.esc(chain.typeLabel) + ', ' + self.esc(chain.protocol) + '). ' +
-        'It is an ' + self.modeCell(chain.mode) + ' and it has happened ' +
-        self.esc(chain.acts) + ' time(s) — first ' +
-        self.esc(self.whenText(chain.firstAt)) +
-        ', last ' + self.esc(self.whenText(chain.lastAt)) + '.');
-
-      const inner = self.messagesOf(req) + back +
-        '<div class="tiles">' +
-          self.tile(chain.acts, 'acts on it') +
-          self.tile(chain.issued, 'issued') +
-          self.tile(chain.refused, 'refused') +
-          self.tile(graph.tokens.length, 'credentials issued') +
-          self.tile(parties.length, 'parties') +
-          self.tile(graph.edges.filter(function (e) {
-            return e.relation !== 'issued';
-          }).length,
-                    'lines') +
-        '</div>' +
-
-        sentence +
-
-        self.note('<strong>This is one row of ' +
-        '<a href="' + self.esc(up.href) +
-        '">the chains table</a> drawn on its ' +
-        'own</strong> , with everything else in the service left out. A ' +
-        'chain is <em>(mechanism, initial identity, intermediary, ' +
-        'target)</em> and the OUTCOME is deliberately not part of it, so a ' +
-        'relationship refused nine times and then fixed is this one page ' +
-        'rather than two that never meet — which is why the acts below can ' +
-        'be red and green at once. <a href="/admin/delegation/map">The whole ' +
-        'picture</a> is every relationship at once, where this one\'s ' +
-        'parties are shared with the others they take part in.') +
-
-        (graph.acts
-          ? picture.html
-          : self.note('There is nothing to draw.')) +
-
-        '<h2>The key</h2>' +
-        self.note('The shapes are drawn by the same functions the picture ' +
-        'uses, so a legend cannot come to describe a diagram this service no ' +
-        'longer draws.') +
-        self.delegationMapKey() +
-
-        '<h2>The parties</h2>' +
-        self.note('Up to three boxes — the layers of the architecture — with ' +
-        'both of a party\'s links where it has two. <strong>A box here can ' +
-        'carry more acts than this relationship has</strong> only if it ' +
-        'played two roles in one of them, which is what S4U2Self is: the ' +
-        'requester asks for a ticket to itself, so it is the intermediary ' +
-        'AND the target.') +
-        '<table><tr><th>Label</th><th>Drawn as</th><th>Identity</th>' +
-        '<th>Roles it played</th><th>Acts</th><th>Protocols</th></tr>' +
-        (parties.map(function (node) {
-          return self.delegationNodeRow(node, known, look.looks[node.id]);
-        }).join('') || '<tr><td colspan="6">No parties.</td></tr>') +
-          '</table>' +
-
-        '<h2>The relationships</h2>' +
-        self.note('A chain has three parties and therefore up to TWO lines, ' +
-        'and they are different claims: <em>acts for</em> is the DELEGATION ' +
-        'relationship — who is acting on whose behalf — and <em>reaches</em> ' +
-        'is the TRUST relationship, what the credential is FOR. The grey ' +
-        'line from the hexagon is neither: it is this service handing a ' +
-        'credential to whoever asked for one.') +
-        '<table><tr><th>From</th><th>To</th><th>Relationship</th><th>' +
-        'Mechanism</th><th>Kind</th><th>Acts</th><th>What came ' +
-        'out</th><th>Authorized by / why not</th></tr>' +
-        (graph.edges.map(function (edge) {
-          return self.delegationEdgeRow(edge, labelOf);
-        }).join('') || '<tr><td colspan="8">No relationships.</td></tr>') +
-        '</table>' +
-
-        '<h2>What was issued on it</h2>' +
-        self.note('<strong>Every credential that came out of this ' +
-        'relationship</strong>, newest first. <strong>NO CREDENTIAL IS EVER ' +
-        'HERE, only its kind and its identifier</strong> — the rule the ' +
-        'audit log follows, and one that applies here for one more reason: a ' +
-        'delegation act is precisely the request that carries two ' +
-        'credentials at once. A REFUSED act produced nothing by definition, ' +
-        'which is why ' + graph.tokens.length +
-        ' credential(s) sit under ' + chain.acts + ' act(s).') +
-        '<table><tr><th class="num">#</th><th>When</th><th>Credential</th>' +
-        '<th>Subject</th><th>Actor</th><th>Target</th><th>Mechanism</th></tr>' +
-        (graph.tokens.map(function (token) {
-          return self.delegationTokenRow(token, labelOf);
-        }).join('') || '<tr><td colspan="7">Nothing was issued on this ' +
-          'relationship. A page of red acts and an empty table here is a ' +
-          'consistent state rather than a broken one.</td></tr>') + '</table>' +
-
-        '<h2>Every act on it</h2>' +
-        self.note('The same rows <a href="' + self.esc(up.href) +
-                  '">the delegation ' +
-        'table</a> holds, narrowed to this ' +
-        'relationship and not paged — there are ' +
-        self.esc(acts.length) + ' of them and the cap on the whole store is ' +
-        self.esc(delegation.summary().maxRecords) + '. This is where the ' +
-        'TIMES are: the picture has them taken out, because four acts a ' +
-        'second apart between the same three parties are one line.') +
-        '<table><tr><th class="num">#</th><th>When</th><th>Mechanism</th>' +
-        '<th>Kind</th><th>Outcome</th><th>Initial identity</th>' +
-        '<th>Intermediary</th><th>Target</th><th>Authorized by / why not</th>' +
-        '<th>Credentials</th></tr>' +
-        acts.map(function (row) {
-          // No `chain` link on this table: every row on it belongs to the chain
-          // being drawn, so the link would point at the page it is on.
-          return self.delegationRow(row, known, { chainLink: false });
-        }).join('') + '</table>' +
-
-        self.note('<code>?format=json</code> carries this chain, its acts ' +
-        'and the graph behind the picture; <code>?format=svg</code> is the ' +
-        'document alone, with no links in it. There is no form on this page ' +
-        'and therefore no operation on <code>/admin-api</code> — everything ' +
-        'here is an observation, and the acts are in <code>GET ' +
-        '/admin-api/delegation</code> where a caller can filter them.');
-
+      // The same model `GET /admin-api/delegation/chain` answers.
+      const json = adminViews.delegationChainModel(req.query);
       self.respond(req, res, json, 'Delegation — one relationship',
                    '/admin/delegation',
-                   inner, up);
-      log.debug("Leaving the admin delegation chain page. " + acts.length +
-                " " +
-          "act(s).");
+                   // Drawn by `web_delegation.ts` (#446).
+                   self.messagesOf(req) +
+                   DelegationPage.chain(self.renderContext(req),
+                     JSON.parse(JSON.stringify(json))), up);
+      log.debug("Leaving the admin delegation chain page. " +
+                json.acts.length + " act(s).");
     });
 
     // -------------------------------------------------------------------------

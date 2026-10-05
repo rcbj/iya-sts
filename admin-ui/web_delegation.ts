@@ -2398,6 +2398,201 @@ class DelegationPage {
       'the document alone.');
 
   }
+
+  // ---------------------------------------------------------------------------
+  // /admin/delegation/chain, FROM `GET /admin-api/delegation/chain` (#446).
+  //
+  // One relationship drawn alone: the sentence that says which, the drawing,
+  // the key, its parties, lines, credentials and every act on it — or, for
+  // a key no act is held under, which of the two reasons that is.
+  // ---------------------------------------------------------------------------
+  /**
+   * Draws `/admin/delegation/chain` from its answer.
+   *
+   * @param ctx - the render context (`WebKit.context()`)
+   * @param json - the answer of `GET /admin-api/delegation/chain`
+   * @returns the body as HTML
+   */
+  static chain(ctx: Json, json: Json): string {
+    const listView = kit.listViewOf('/admin/delegation', ctx.query);
+    const upHref = '/admin/delegation' + kit.queryWith(listView, {});
+    const back = kit.note('<a class="btn" href="' + kit.esc(upHref) +
+      '">&larr; Back to the delegation table</a>');
+    const chain = json.chain;
+    const labelOf = function (id) {
+      return json.looks[id] ? json.looks[id].label : id;
+    };
+    if (!chain) {
+      return back +
+        (json.chainKey
+          ? kit.note('<strong>No act held here belongs to that ' +
+            'relationship.</strong> <code>' + kit.esc(json.chainKey) +
+            '</code> ' +
+            'names a chain this page can describe only while at least one ' +
+            'of its acts is still held, and this store is CAPPED — it ' +
+            'keeps at most ' +
+            kit.esc(json.maxRecords) + ' acts and drops ' +
+            'the oldest first. So an old link coming back empty is the ' +
+            'ordinary outcome rather than a mistake, and so is a link from ' +
+            'a service that has restarted since: nothing here is ' +
+            'persisted. Raise <code>delegation.maxRecords</code> on <a ' +
+            'href="/admin/delegation-settings">Protocols &rsaquo; ' +
+            'Delegation</a> if this keeps happening to something you need.')
+          : kit.note('<strong>Name a relationship.</strong> This page ' +
+            'draws ONE of them, and the way to it is a link on ' +
+            '<a href="' + kit.esc(upHref) +
+            '">the delegation table</a> — every row of both tables there ' +
+            'has one, because the key that identifies a chain is ' +
+            '<em>(mechanism, initial identity, intermediary, target)</em> ' +
+            'and is not something worth typing.')) +
+        kit.note('<a href="/admin/delegation/map">The whole picture</a> ' +
+        'is everything that is still held, drawn together.');
+    }
+    const parties = json.graph.nodes.filter(function (node) {
+      return node.kind !== 'sts';
+    });
+
+    // The chain as ONE SENTENCE, above everything. It is the row the reader
+    // clicked, said in words: the table gave them four columns and this page
+    // has to open by confirming it is describing the same four, or a reader
+    // who followed the wrong link finds out three tables later.
+    const sentence =
+      kit.note('<strong>' +
+      kit.esc(chain.initial.presented || chain.initial.application ||
+               'somebody nobody named') +
+      '</strong> — ' +
+      (chain.intermediary.presented || chain.intermediary.application
+        ? 'acted for by <strong>' +
+          kit.esc(chain.intermediary.presented ||
+                   chain.intermediary.application) +
+          '</strong>'
+        : '<span class="state-none">with no intermediary this service was ' +
+          'ever told the name of</span>') +
+      ' — reaching <strong>' +
+      kit.esc(chain.target.application || chain.target.presented ||
+               'nothing in particular') +
+      '</strong>, by <code>' + kit.esc(chain.type) + '</code> (' +
+      kit.esc(chain.typeLabel) + ', ' + kit.esc(chain.protocol) + '). ' +
+      'It is an ' + DelegationPage.modeCell(chain.mode) +
+      ' and it has happened ' +
+      kit.esc(chain.acts) + ' time(s) — first ' +
+      kit.esc(kit.whenText(chain.firstAt)) +
+      ', last ' + kit.esc(kit.whenText(chain.lastAt)) + '.');
+
+    return back +
+      '<div class="tiles">' +
+        kit.tile(chain.acts, 'acts on it') +
+        kit.tile(chain.issued, 'issued') +
+        kit.tile(chain.refused, 'refused') +
+        kit.tile(json.graph.tokens.length, 'credentials issued') +
+        kit.tile(parties.length, 'parties') +
+        kit.tile(json.graph.edges.filter(function (e) {
+          return e.relation !== 'issued';
+        }).length,
+                  'lines') +
+      '</div>' +
+
+      sentence +
+
+      kit.note('<strong>This is one row of ' +
+      '<a href="' + kit.esc(upHref) +
+      '">the chains table</a> drawn on its ' +
+      'own</strong> , with everything else in the service left out. A ' +
+      'chain is <em>(mechanism, initial identity, intermediary, ' +
+      'target)</em> and the OUTCOME is deliberately not part of it, so a ' +
+      'relationship refused nine times and then fixed is this one page ' +
+      'rather than two that never meet — which is why the acts below can ' +
+      'be red and green at once. <a href="/admin/delegation/map">The whole ' +
+      'picture</a> is every relationship at once, where this one\'s ' +
+      'parties are shared with the others they take part in.') +
+
+      (json.graph.acts
+        ? DelegationPage.drawing(json, '/admin/delegation/chain',
+          Object.assign({}, listView, { chain: json.chainKey }))
+        : kit.note('There is nothing to draw.')) +
+
+      '<h2>The key</h2>' +
+      kit.note('The shapes are drawn by the same functions the picture ' +
+      'uses, so a legend cannot come to describe a diagram this service no ' +
+      'longer draws.') +
+      json.mapKey +
+
+      '<h2>The parties</h2>' +
+      kit.note('Up to three boxes — the layers of the architecture — with ' +
+      'both of a party\'s links where it has two. <strong>A box here can ' +
+      'carry more acts than this relationship has</strong> only if it ' +
+      'played two roles in one of them, which is what S4U2Self is: the ' +
+      'requester asks for a ticket to itself, so it is the intermediary ' +
+      'AND the target.') +
+      '<table><tr><th>Label</th><th>Drawn as</th><th>Identity</th>' +
+      '<th>Roles it played</th><th>Acts</th><th>Protocols</th></tr>' +
+      (parties.map(function (node) {
+        return DelegationPage.delegationNodeRow(node, json.facts,
+                                               json.looks[node.id]);
+      }).join('') || '<tr><td colspan="6">No parties.</td></tr>') +
+        '</table>' +
+
+      '<h2>The relationships</h2>' +
+      kit.note('A chain has three parties and therefore up to TWO lines, ' +
+      'and they are different claims: <em>acts for</em> is the DELEGATION ' +
+      'relationship — who is acting on whose behalf — and <em>reaches</em> ' +
+      'is the TRUST relationship, what the credential is FOR. The grey ' +
+      'line from the hexagon is neither: it is this service handing a ' +
+      'credential to whoever asked for one.') +
+      '<table><tr><th>From</th><th>To</th><th>Relationship</th><th>' +
+      'Mechanism</th><th>Kind</th><th>Acts</th><th>What came ' +
+      'out</th><th>Authorized by / why not</th></tr>' +
+      (json.graph.edges.map(function (edge) {
+        return DelegationPage.delegationEdgeRow(edge, labelOf);
+      }).join('') || '<tr><td colspan="8">No relationships.</td></tr>') +
+      '</table>' +
+
+      '<h2>What was issued on it</h2>' +
+      kit.note('<strong>Every credential that came out of this ' +
+      'relationship</strong>, newest first. <strong>NO CREDENTIAL IS EVER ' +
+      'HERE, only its kind and its identifier</strong> — the rule the ' +
+      'audit log follows, and one that applies here for one more reason: a ' +
+      'delegation act is precisely the request that carries two ' +
+      'credentials at once. A REFUSED act produced nothing by definition, ' +
+      'which is why ' + json.graph.tokens.length +
+      ' credential(s) sit under ' + chain.acts + ' act(s).') +
+      '<table><tr><th class="num">#</th><th>When</th><th>Credential</th>' +
+      '<th>Subject</th><th>Actor</th><th>Target</th><th>Mechanism</th></tr>' +
+      (json.graph.tokens.map(function (token) {
+        return DelegationPage.delegationTokenRow(token, labelOf);
+      }).join('') || '<tr><td colspan="7">Nothing was issued on this ' +
+        'relationship. A page of red acts and an empty table here is a ' +
+        'consistent state rather than a broken one.</td></tr>') + '</table>' +
+
+      '<h2>Every act on it</h2>' +
+      kit.note('The same rows <a href="' + kit.esc(upHref) +
+                '">the delegation ' +
+      'table</a> holds, narrowed to this ' +
+      'relationship and not paged — there are ' +
+      kit.esc(json.acts.length) +
+      ' of them and the cap on the whole store is ' +
+      kit.esc(json.maxRecords) + '. This is where the ' +
+      'TIMES are: the picture has them taken out, because four acts a ' +
+      'second apart between the same three parties are one line.') +
+      '<table><tr><th class="num">#</th><th>When</th><th>Mechanism</th>' +
+      '<th>Kind</th><th>Outcome</th><th>Initial identity</th>' +
+      '<th>Intermediary</th><th>Target</th><th>Authorized by / why not</th>' +
+      '<th>Credentials</th></tr>' +
+      json.acts.map(function (row) {
+        // No `chain` link on this table: every row on it belongs to the chain
+        // being drawn, so the link would point at the page it is on.
+        return DelegationPage.delegationRow(row, json.facts,
+                                         { chainLink: false });
+      }).join('') + '</table>' +
+
+      kit.note('<code>?format=json</code> carries this chain, its acts ' +
+      'and the graph behind the picture; <code>?format=svg</code> is the ' +
+      'document alone, with no links in it. There is no form on this page ' +
+      'and therefore no operation on <code>/admin-api</code> — everything ' +
+      'here is an observation, and the acts are in <code>GET ' +
+      '/admin-api/delegation</code> where a caller can filter them.');
+
+  }
 }
 
 export = DelegationPage;

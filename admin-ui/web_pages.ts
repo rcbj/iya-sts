@@ -226,6 +226,11 @@ const PAGES: WebPage[] = [
     } },
   { path: '/admin/crypto-metadata', title: 'Cryptography',
     operation: '/admin-api/crypto', render: CryptoMetadataPage.render },
+  { path: '/admin/delegation/chain', title: 'Delegation — one relationship',
+    operation: '/admin-api/delegation/chain',
+    render: function (view: Json, ctx?: Json): string {
+      return DelegationPage.chain(ctx || WebKit.context(), view);
+    } },
   { path: '/admin/delegation/map', title: 'Delegation — the picture',
     operation: '/admin-api/delegation/map',
     render: function (view: Json, ctx?: Json): string {

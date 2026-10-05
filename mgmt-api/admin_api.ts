@@ -18440,6 +18440,52 @@ class AdminApi {
           log.debug("Leaving the management API delegation map endpoint.");
         } },
 
+      // ONE RELATIONSHIP, DRAWN ALONE (#446): the console page had no
+      // operation, having no form; see `AdminViews.delegationChainModel()`.
+      { method: 'GET', path: BASE + '/delegation/chain', tag: 'Delegation',
+        operationId: 'getDelegationChain',
+        summary: 'One delegation relationship: its acts, graph and drawing',
+        description: 'One chain — (mechanism, initial identity, ' +
+                     'intermediary, target) — named by its `chain` key, as ' +
+                     '`GET /admin-api/delegation` lists them in `chains`. ' +
+                     'The answer is the chain, every act on it (not ' +
+                     'paged), the graph of those acts and, as for ' +
+                     '`/delegation/map`, `looks`, the drawing (`svg`, laid ' +
+                     'out on the server, with its links) and its size.' +
+                     '\n\n**A KEY NO ACT IS HELD UNDER IS NOT AN ERROR**: ' +
+                     'the store is capped and drops the oldest, so the ' +
+                     'answer is `found: false` with `maxRecords`.\n\nWith ' +
+                     '`format=svg` the answer is the SVG document alone, ' +
+                     'with no links in it, as `image/svg+xml`.',
+        mirrors: 'GET /admin/delegation/chain',
+        parameters: [
+          { name: 'chain', in: 'query', required: false,
+            schema: { type: 'string' },
+            description: 'The chain\'s key, `chainKey` on a chain of ' +
+                         '`GET /admin-api/delegation`.' },
+          { name: 'format', in: 'query', required: false,
+            schema: { type: 'string', enum: ['json', 'svg'] },
+            description: '`svg` answers the drawing alone, as a document ' +
+                         'with no links in it. `json`, the default, ' +
+                         'answers everything.' }
+        ],
+        responseDescription: 'The chain, its acts, the graph, every node\'s ' +
+                             'look and the drawing.',
+        handler: function (req, res) {
+          log.debug("Entering the management API delegation chain endpoint.");
+          if (String((req.query || {}).format || '') === 'svg') {
+            const bare = adminViews.delegationChainModel(req.query,
+                                                         { links: false });
+            res.status(200).set('Cache-Control', 'no-store')
+               .type('image/svg+xml').send(bare.svg);
+            log.debug("Leaving the management API delegation chain " +
+                      "endpoint. Answered SVG.");
+            return;
+          }
+          self.sendJson(res, 200, adminViews.delegationChainModel(req.query));
+          log.debug("Leaving the management API delegation chain endpoint.");
+        } },
+
       // THE WS-TRUST AND TOKEN-EXCHANGE DELEGATION POLICY (#108, 2026-09-23)
       // — the configured half of those two families, as the Kerberos one is
       // `policy` on the acts above. READ ONLY here, like the console section
