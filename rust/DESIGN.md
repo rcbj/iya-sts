@@ -1,6 +1,6 @@
 # The Rust runtime — design (#444)
 
-**Status: PROPOSED, 2026-10-05. Nothing in this directory is built, shipped or
+**Status: PROPOSED, 2026-10-05; decisions D1–D4 settled the same day. Nothing in this directory is built, shipped or
 tested yet.** This is phase 0 of [#444](https://github.com/rcbj/iya-sts/issues/444):
 the design the conversion is held to. Every later phase updates this file in the
 same commit that changes the decision it records.
@@ -72,58 +72,44 @@ sequence of phases, each of which leaves a service that passes the suite
   own (section 5.2). So the roles the API enforces are the person's, as they
   are on the console today.
 
-## 3. Getting there: one service throughout
+## 3. Getting there: a replacement, not a migration
 
-Converting everything at once and then switching over would leave the suite red
-for months. Instead, the runtime grows family by family **beside** the Node
-service, and the suite passes at the end of every phase.
+**The owner's decision, 2026-10-05: no installation survives the transition.
+Nobody runs this service yet, and the conversion should finish quickly.** That
+removes the hardest constraint a migration has, and this section is shaped by
+its absence:
 
-### 3.1 Two processes, one store
+* **No coexistence.** The Rust runtime does not join the Node cluster, and
+  Node does not dispatch to it. The two are separate images. The Node service
+  stays on `develop`, working, until the cutover, and is then deleted.
+* **No data compatibility.** Nothing written by Node has to be read by Rust.
+  The postgres schema, the minted-state rows, the LDAP entry encoding and the
+  sealed-value formats belong to the Rust runtime and may change wherever a
+  better design calls for it. `postgres/schema.sql` is the starting point, not
+  a contract.
+* **What IS still a contract**: everything a client, an operator or the
+  console sees — every URL, port, protocol message, setting key, environment
+  variable, error code and `/admin-api` operation. That is what the protocol
+  suite tests, and it is why the suite stays the oracle.
 
-The Node service can already run as several processes that share one postgres
-store, coordinated through the `sts_changes` change log, leases, fencing tokens
-and atomic claims (`persistence/CLAUDE.md`, `cluster/CLAUDE.md`). **The Rust
-runtime joins that cluster as a member.** It speaks the same schema
-(`postgres/schema.sql`, `SCHEMA_VERSION` 15), writes inside the same fenced
-transactions, appends to the same change log and pulls from it. State is then
-shared the way it is already shared between Node nodes. No new mechanism is
-invented for the coexistence.
+### 3.1 How progress is measured
 
-**The consequences:**
+The protocol suite (`tests/vendored/`) drives a service over HTTP, raw TCP and
+gRPC at a URL. **Each phase runs the suite against the Rust image**, and a
+phase is done when the jobs for the families it moved pass there. The jobs not
+yet ported fail against the Rust image, and the number passing is the progress
+report. The Node image keeps passing every job on `develop` until the cutover.
 
-* **Coexistence needs the postgres store.** The `single-node` and `cluster`
-  suite modes run on it already. The `memory` mode (and `ldif`) comes to the
-  Rust runtime when the runtime holds the whole service, because "dispatch
-  without coordination is refused" (root `CLAUDE.md`) applies to two
-  implementations as much as to two Node processes.
-* **Every persisted format becomes a contract between two implementations**:
-  the JSON of each `sts_minted` row, each `realms.map({persist})` handle, the
-  LDAP entry encoding in `sts_ldap_entries`, and the sealed-value formats
-  (`$aesgcm$2$`, `$aessiv$`, `$dekwrap$1$`, `$scrypt$`). Each format a phase
-  touches gets a golden fixture written by Node and read by Rust, and the
-  reverse (section 10.2).
-* **Scheduled jobs are already claimed per run** (`cluster/scheduler.ts`). A job
-  moves to Rust in the phase that moves its owning family, and is unregistered
-  from Node in the same commit. A job is never registered in both.
+About 175 of the suite's files set up their realms, users and settings through
+`/admin-api` before they test anything. So the management API's realm, user,
+application and settings operations come early (phase 3), before the families
+whose jobs depend on them can pass.
 
-### 3.2 Who answers a request during the migration
+### 3.2 The cutover
 
-**Node stays at the front until the flip** (phase 9). Its request pool already
-forwards requests to workers over Unix sockets. It carries the facts a worker
-cannot see on the socket in headers it already defines:
-`x-sts-peer-certificate`, `x-sts-peer-authorized`, `x-forwarded-for` and
-`x-forwarded-proto` (`common/request_pool.js`). **A converted prefix is
-dispatched to the Rust runtime as one more upstream**, and the Rust HTTP layer
-reads those headers only from that socket, never from a TCP peer.
-
-The alternative, putting Rust in front from day one, would mean re-implementing
-the main port's TLS, the PROXY protocol, JA4 and the realm listeners before any
-protocol is converted. That is cost with no family moved. **The flip happens
-once most traffic is Rust's**, and from then on the arrangement is reversed:
-Rust at the front, Node behind it for `/admin` and `/portal` only.
-
-Raw sockets (88, 389/636, gRPC) move when their family moves. A socket has one
-owner, so on that day the port is bound by Rust and no longer by Node.
+Phase 9 switches `Dockerfile`, the compose files and CI to the Rust runtime
+plus the Node surfaces process, deletes the Node runtime and its in-process
+tests, and from then on the full suite runs against Rust in every mode.
 
 ## 4. The organisation of the code
 
@@ -226,15 +212,15 @@ declared through the one constructor.
 ### 4.4 The three registries, and what is not a registry
 
 * **Settings** (`sts-core::Settings`). The ~1,100 rows of `common/config.js`
-  are the ONE table. Phase 1 moves the table's DATA (key, type, default, bounds,
-  description, which layers apply) to `common/settings.json`, read by both
-  implementations. Node's `config.js` keeps the default functions and the
-  coercion and reads the rows from there. The five-level resolution is
-  unchanged: realm override, runtime override, environment, appconfig file,
-  defaults.
+  are the ONE table, and it moves into the runtime (`sts-core/settings/`, a
+  data file per settings group, compiled in). The console reads each row's
+  description, type and bounds through `/admin-api`, so there is still one
+  copy. The five-level resolution is unchanged: realm override, runtime
+  override, environment, appconfig file, defaults.
 * **Error codes** (`sts-core::ErrorCode`). The same move for the 4,101 rows of
-  `common/error_codes.js`, to `common/error_codes.json`. `build.rs` generates a
-  Rust `const` per code, so a code that is not in the table does not compile.
+  `common/error_codes.js`, into a data file in `sts-core` from which `build.rs`
+  generates a Rust `const` per code (so a code that is not in the table does
+  not compile) and `docs/error-codes.md` is generated.
   The rule is unchanged: a code is recorded, never sent.
 * **Mode** (`sts-core::Mode`). The ~80 predicates of `common/mode.js`, each a
   method named for its QUESTION, and the `REQUIREMENTS` table that describes
@@ -324,7 +310,7 @@ actions take `(body, actor)` and are shared with the API.
 5. **The SSF push receiver `/portal/signals/receive` moves into the runtime.**
    It is a protocol endpoint, not a page.
 6. **The console's self-description stays in Node** (`SETTING_HOMES`, the page
-   list), and the settings schema it draws from is `common/settings.json`
+   list), and the settings schema it draws from is served by `/admin-api`
    (section 4.4).
 7. **Rule 7 is unchanged and gains a twin**: a portal control has an
    `/account-api` operation in the same commit.
@@ -333,10 +319,9 @@ actions take `(body, actor)` and are shared with the API.
    `utoipa` from the same declarations, must equal it, except for the
    operations a phase adds.
 
-These changes to the console and portal are **made in the Node code first,
-against the Node API, one family at a time**. When the flip comes, the
-surfaces process is already a pure API client, and nothing about it changes
-on that day.
+These changes to the console and portal are made against the Rust runtime's
+API, family by family, as each family's operations land there; the surfaces
+process is a pure API client from its first commit.
 
 ## 6. Cryptography: every option, mapped
 
@@ -427,12 +412,9 @@ the vectors are checked in.
 
 * **Every URL, every port, every setting key and every environment variable.**
   `env/` keeps working unchanged against the Rust runtime.
-* **The appconfig files.** They stay the one copy. Phase 1 decides how the
-  Rust runtime reads `env/*.js` layers: generate a JSON form at image build
-  time, or move them to JSON for both implementations, as decision D4 does
-  for the tables.
-* **The postgres schema.** New tables are added the way they are now, with
-  `SCHEMA_VERSION` bumped, readable by both implementations while both run.
+* **The appconfig layers' content.** `env/*.js` become `env/*.json` (they
+  are data), read by the Rust runtime; the Node runtime keeps its `.js` copies
+  until the cutover deletes it.
 * **The error-code table and every code in it.** The 57 suite files that
   assert codes keep asserting them.
 * **The protocol suite.** Phases add Rust tests. They never edit a
@@ -447,9 +429,9 @@ the vectors are checked in.
 | # | Decision | Recommendation |
 |---|---|---|
 | **D1** | **Kerberos.** Eight codec files are locked copies of the parent project's `common/krb5/`, and the parent's tests COPY `krb5_kdc`, `krb5_service`, `spnego` and their closure from this repository. | **DECIDED by the owner, 2026-10-05: the files may be modified and DECOUPLED from the parent project.** The Kerberos phase ports them to `sts-kerberos` and the parent's COPY closure is retired. Interoperability is proved against a real Windows domain controller by the owner's existing compatibility tests, as well as by the protocol suite |
-| **D2** | **The store during the migration.** Coexistence needs postgres (section 3.1). | Accept it. The `memory` and `ldif` modes come to Rust at the flip |
-| **D3** | **The logging rule.** `#[tracing::instrument]` instead of hand-written Entering/Leaving lines. | Accept it. The log has the same content and nobody can forget the Leaving line |
-| **D4** | **One copy of the tables.** Move settings, error codes and appconfig data to JSON read by both implementations. | Accept it. Two hand-kept copies of a 4,101-row table would drift in a week |
+| **D2** | ~~The store during the migration.~~ | **Moot (owner, 2026-10-05)**: no installation survives, so there is no coexistence and no store shared between the two implementations (section 3) |
+| **D3** | **The logging rule.** `#[tracing::instrument]` instead of hand-written Entering/Leaving lines. | **DECIDED by the owner, 2026-10-05, on one condition: the END RESULT of logging and tracing stays intact** — the same bunyan JSON lines, levels and fields, an entry and an exit line per named function at `debug`, error codes at the front of a line. `sts-core`'s logging layer formats `instrument`'s span events as `Entering NAME().` / `Leaving NAME().`, and a test holds it |
+| **D4** | ~~One copy of the tables shared by both implementations.~~ | **Moot (owner, 2026-10-05)**: with no coexistence, the settings and error-code tables simply move into the runtime, and the console reads settings descriptions through `/admin-api` (section 4.4) |
 | **D5** | **OpenSSL as the primary crypto provider.** | Accept it (section 6) |
 | **D6** | **The in-process half of the suite** (`tests/*.js`, about 150k lines) does not run against Rust. | Rewrite each file as Rust tests in the phase that moves what it tests, and delete it from `tests/` in that commit, with `tests/CLAUDE.md`'s table updated |
 | **D7** | **`/account-api`** as a second API rather than more `/admin-api` operations. | Accept it. A person acting on their own entry is a different authority from an operator acting on anyone's, and one API holding both would put that difference in a parameter |
@@ -459,16 +441,13 @@ the vectors are checked in.
 
 ### 10.1 The suite, in every mode it runs today
 
-A phase is finished when `./run-tests.sh` passes in the modes that phase
-supports (at least `single-node` and `cluster` during coexistence, all four at
-the end), with the same job count, and the same jobs, as on `develop` before
-the phase.
+A phase is finished when the suite jobs for the families it moved pass
+against the Rust image (section 3.1). After the cutover, `./run-tests.sh`
+passes in all four modes with the same job count as the Node service had.
 
 ### 10.2 Differential tests, new
 
 * **Crypto vectors**: every row of section 6, both directions (section 6).
-* **Persisted formats**: for every `persist` handle a phase touches, a row
-  written by Node and read by Rust, and the reverse.
 * **The OpenAPI contract**: the document matches the snapshot (section 5.2).
 * **Shadow traffic, optional**: for a family whose behaviour is hard to
   enumerate (SAML, WS-*), the suite's recorded requests are replayed against
@@ -489,15 +468,15 @@ The order follows dependency: nothing is ported before what it calls.
 | Phase | What moves | Why here |
 |---|---|---|
 | **0** | This document | |
-| **1** | **The workspace and its conventions; `sts-core` (settings, error codes and mode read from the shared JSON); `sts-xacml` (the engine, held to the vendored OASIS suite, 454/455 today); the `xacml-pep` binary replacing the Node container.** | The PEP is the one component that can be replaced END TO END with no coexistence machinery: it is already a separate container with an HTTP contract (`/xacml/pep/*`, `POST /xacml/pip`, mTLS), and `tests/vendored/sts_xacml_remote_pep.js` already holds that container to it. It proves the conventions on something real, and the engine crate is reused by the runtime in phase 6 |
-| **2** | `sts-crypto`, complete, with the vector tests. `sts-pki`. | Every family depends on them. Nothing in production calls them yet |
-| **3** | `sts-store` (postgres), `sts-cluster` (membership, leases, fencing, claims, `Scheduler`), `sts-cache`, `sts-http`, the `sts-runtime` binary joining the Node cluster as a member and serving the prefixes it is dispatched (none yet). Node's request pool learns the Rust upstream. | The coexistence machinery, proved with no family moved |
+| **1** | **The workspace and its conventions; `sts-xacml` (the engine, held to the vendored OASIS suite, 454/455 today); the `xacml-pep` binary replacing the Node container.** | The PEP is the one component that can be replaced END TO END with no coexistence machinery: it is already a separate container with an HTTP contract (`/xacml/pep/*`, `POST /xacml/pip`, mTLS), and `tests/vendored/sts_xacml_remote_pep.js` already holds that container to it. It proves the conventions on something real, and the engine crate is reused by the runtime in phase 6 |
+| **2** | `sts-core` (settings, error codes, mode, logging), `sts-crypto` complete with the vector tests, `sts-pki`. | Every family depends on them. Nothing in production calls them yet |
+| **3** | `sts-store` (memory, ldif, postgres), `sts-cluster` (membership, leases, fencing, claims, `Scheduler`), `sts-cache`, `sts-http`, the `sts-runtime` binary and image, realms, and the `/admin-api` operations every suite job sets itself up with (realms, users, groups, applications, settings). | Every later phase's suite jobs stand on these |
 | **4** | First families, the self-contained ones: `pki` (revocation and `/crypto/metadata`), `oidfed`, `ssf`, `scim`, `xacml` (the PDP side), the enrollment trio. Each with its jobs, caches and `/admin-api` operations. The console and portal pages of each family switch to API calls in Node in the same phase. | Small surfaces, few session interactions |
 | **5** | `sts-directory`: the directory and LDAP on 389/636. | Almost everything reads the directory; it moves before the big families |
 | **6** | `sts-authn` (the session), `sts-oauth`, `logout`. | The centre of the service. The largest phase, and likely split |
 | **7** | SAML 2.0 and 1.1, WS-Trust, WS-Federation, federation. | The XML families, on the XML-DSig port |
 | **8** | OID4VC, GNAP, SPIFFE, Kerberos (decoupled from the parent project, D1), risk, attribute sources, mail, cells. | |
-| **9** | **The flip**: Rust owns every socket; the `memory` and `ldif` stores; Node becomes the surfaces process behind the runtime; the in-process `tests/*.js` that remain are retired. | |
+| **9** | **The cutover** (section 3.2): the Rust image and the Node surfaces process replace the Node service in the Dockerfile, compose files and CI; the Node runtime and its in-process tests are deleted. | |
 
 Phase sizes are not equal. Phase 6 alone is larger than phases 1–4 together.
 **Each phase is estimated before it starts, against the credit available

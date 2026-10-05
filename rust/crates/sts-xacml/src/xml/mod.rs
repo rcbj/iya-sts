@@ -23,5 +23,6 @@ mod reader;
 
 pub use reader::{
     parse_policy, parse_policy_unchecked, parse_request, parse_response,
+    read_request,
     ExpectedResponse, ExpectedResult,
 };

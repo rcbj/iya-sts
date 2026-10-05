@@ -28,6 +28,7 @@
 //! assert_eq!(response.decision.as_str(), "Permit");
 //! ```
 
+pub mod builder;
 pub mod combining;
 pub mod datatypes;
 pub mod functions;
