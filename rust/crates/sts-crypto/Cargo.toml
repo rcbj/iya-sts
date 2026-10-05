@@ -1,0 +1,23 @@
+# SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+# SPDX-License-Identifier: BUSL-1.1
+
+[package]
+name = "sts-crypto"
+version = "0.1.0"
+description = "Every signing, encryption and key algorithm the service offers, over OpenSSL. No I/O."
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+base64.workspace = true
+foreign-types.workspace = true
+openssl.workspace = true
+openssl-sys.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+
+[lints]
+workspace = true

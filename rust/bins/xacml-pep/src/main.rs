@@ -12,6 +12,8 @@
 //! or curl in it): it asks `GET /healthcheck` on `PEP_PORT` and exits 0 on
 //! a 200.
 
+#![forbid(unsafe_code)]
+
 mod enforce;
 mod listener;
 mod options;

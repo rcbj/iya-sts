@@ -28,6 +28,8 @@
 //! assert_eq!(response.decision.as_str(), "Permit");
 //! ```
 
+#![forbid(unsafe_code)]
+
 pub mod builder;
 pub mod combining;
 pub mod datatypes;

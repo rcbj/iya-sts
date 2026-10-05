@@ -5,6 +5,8 @@
 //! error codes, the settings and the mode. Crypto and PKI are phase 2's next
 //! (rust/DESIGN.md section 11).
 
+#![forbid(unsafe_code)]
+
 pub mod errors;
 pub mod log;
 pub mod mode;
