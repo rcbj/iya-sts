@@ -141,7 +141,8 @@ pub struct Persistence {
     /// The keystore's data keys, started when the store opens and before
     /// anything sealed is restored; none until then.
     data_keys: Mutex<Arc<crate::keystore::DataKeys>>,
-    /// The realms' signing key sets, where keys persist.
+    /// The realms' signing key sets: in memory, made per start, until the
+    /// store opens with keys that persist.
     key_sets: Mutex<Option<Arc<crate::key_sets::KeySets>>>,
     /// The declared stores whose writes are minted state, once attached.
     handles: Mutex<Option<Arc<sts_core::realm_store::StoreHandles>>>,
@@ -175,7 +176,7 @@ impl Persistence {
             flush_lock: tokio::sync::Mutex::new(()),
             replication: Mutex::new(None),
             data_keys: Mutex::new(crate::keystore::DataKeys::none()),
-            key_sets: Mutex::new(None),
+            key_sets: Mutex::new(Some(crate::key_sets::KeySets::ephemeral())),
             handles: Mutex::new(None),
             minted: Mutex::new(None),
             me: me.clone(),
@@ -790,7 +791,8 @@ impl Persistence {
         Ok(restored)
     }
 
-    /// The realms' key sets: `None` where keys do not persist.
+    /// The realms' key sets: stored where keys persist, in memory where they
+    /// do not.
     pub fn key_sets(&self) -> Option<Arc<crate::key_sets::KeySets>> {
         self.key_sets
             .lock()

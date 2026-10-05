@@ -145,18 +145,78 @@ pub enum Saved {
 
 /// Every realm's key set, held sealed.
 pub struct KeySets {
-    driver: Arc<dyn Driver>,
+    /// `None` where keys do not persist (development): the sets are then
+    /// held in memory, made per start, as Node's are.
+    driver: Option<Arc<dyn Driver>>,
     keys: Arc<DataKeys>,
     sealed: Mutex<BTreeMap<String, String>>,
+    plain: Mutex<BTreeMap<String, Json>>,
+    /// One set made at a time, so a burst of first requests makes one.
+    making: tokio::sync::Mutex<()>,
 }
 
 impl KeySets {
     pub fn new(driver: Arc<dyn Driver>, keys: Arc<DataKeys>) -> Arc<KeySets> {
         Arc::new(KeySets {
-            driver,
+            driver: Some(driver),
             keys,
             sealed: Mutex::new(BTreeMap::new()),
+            plain: Mutex::new(BTreeMap::new()),
+            making: tokio::sync::Mutex::new(()),
         })
+    }
+
+    /// Sets held in memory only: development, where a key regenerated per
+    /// start is what makes two instances of this service impossible to
+    /// confuse.
+    pub fn ephemeral() -> Arc<KeySets> {
+        Arc::new(KeySets {
+            driver: None,
+            keys: DataKeys::none(),
+            sealed: Mutex::new(BTreeMap::new()),
+            plain: Mutex::new(BTreeMap::new()),
+            making: tokio::sync::Mutex::new(()),
+        })
+    }
+
+    /// Whether the sets are written to the store.
+    pub fn durable(&self) -> bool {
+        self.driver.is_some()
+    }
+
+    fn plain(&self) -> MutexGuard<'_, BTreeMap<String, Json>> {
+        self.plain.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// `stsKeysFor()`: the realm's set, made on first use where there is
+    /// none — off the async threads, since an RSA key is a tenth of a second
+    /// — and stored; a set another process stored first is the one used.
+    pub async fn open_or_make(&self, realm: &str) -> Result<KeySet, String> {
+        if let Some(set) = self.open(realm) {
+            return Ok(set);
+        }
+        let _one = self.making.lock().await;
+        if let Some(set) = self.open(realm) {
+            return Ok(set);
+        }
+        let now = sts_core::time::now_ms_f64() as i64;
+        let made = tokio::task::spawn_blocking(move || generate_key_set(now))
+            .await
+            .map_err(|e| e.to_string())??;
+        match self.save(realm, &made).await? {
+            Saved::Written => {
+                tracing::info!(
+                    "keystore: the \"{}\" realm had no key set; one was made{}.",
+                    dek_realm(realm),
+                    if self.durable() { " and stored" } else { " for this run" }
+                );
+                Ok(KeySet {
+                    realm: dek_realm(realm),
+                    blob: made,
+                })
+            }
+            Saved::Kept(theirs) => Ok(*theirs),
+        }
     }
 
     fn held(&self) -> MutexGuard<'_, BTreeMap<String, String>> {
@@ -199,7 +259,10 @@ impl KeySets {
     /// Reads every stored key set, checks that each opens, and holds them
     /// sealed. Fatal when one will not open. Answers how many were read.
     pub async fn load(&self) -> Result<usize, String> {
-        let rows = self.driver.load_keys().await.map_err(|e| {
+        let Some(driver) = self.driver.clone() else {
+            return Ok(0);
+        };
+        let rows = driver.load_keys().await.map_err(|e| {
             format!(
                 "{}the stored key material could not be read: {}",
                 tag(codes::STS_KEYS_0028),
@@ -222,13 +285,20 @@ impl KeySets {
 
     /// The realms holding a set (`default` for the default realm).
     pub fn realms(&self) -> Vec<String> {
-        self.held().keys().cloned().collect()
+        let mut all: Vec<String> = self.held().keys().cloned().collect();
+        all.extend(self.plain().keys().cloned());
+        all.sort();
+        all.dedup();
+        all
     }
 
     /// One realm's set, opened now and not kept; `None` where there is none
     /// or it will not open (said, with its code).
     pub fn open(&self, realm: &str) -> Option<KeySet> {
         let id = dek_realm(realm);
+        if let Some(blob) = self.plain().get(&id).cloned() {
+            return Some(KeySet { realm: id, blob });
+        }
         let cipher = self.held().get(&id).cloned()?;
         match self.open_row(&id, &cipher) {
             Ok(blob) => Some(KeySet { realm: id, blob }),
@@ -247,6 +317,20 @@ impl KeySets {
         blob: &Json,
     ) -> Result<Saved, String> {
         let id = dek_realm(realm);
+        let Some(driver) = self.driver.clone() else {
+            // In memory: a newer set replaces, an older one is not taken.
+            let mut plain = self.plain();
+            if let Some(held) = plain.get(&id) {
+                if generation_of(held) >= generation_of(blob) {
+                    return Ok(Saved::Kept(Box::new(KeySet {
+                        realm: id,
+                        blob: held.clone(),
+                    })));
+                }
+            }
+            plain.insert(id, blob.clone());
+            return Ok(Saved::Written);
+        };
         let offered = generation_of(blob);
         let cipher = self
             .keys
@@ -255,7 +339,7 @@ impl KeySets {
         // The data key first: nothing is stored before the key it was
         // sealed under.
         self.keys.settle().await;
-        let stored = if self.driver.merges_keys() {
+        let stored = if driver.merges_keys() {
             // THE OTHER PROCESSES' DATA KEYS FIRST (`writeAfterDeks()`): the
             // stored set may be sealed under one made a moment ago, and a set
             // that will not open here is never taken for an older one. A
@@ -289,8 +373,7 @@ impl KeySets {
                         Ok(Some(mine))
                     }
                 });
-                outcome = self
-                    .driver
+                outcome = driver
                     .merge_keys(&id, merge)
                     .await
                     .map_err(|e| e.to_string());
@@ -301,7 +384,7 @@ impl KeySets {
             }
             outcome?.unwrap_or(cipher.clone())
         } else {
-            self.driver
+            driver
                 .save_keys(&id, &cipher)
                 .await
                 .map_err(|e| e.to_string())?;

@@ -74,18 +74,19 @@ fn store_mode(settings: &Settings) -> Result<StoreMode, String> {
 
 /// `GET /oauth2/jwks`: the ambient realm's published keys, served
 /// `no-store` like every document that carries a key, pretty-printed as
-/// Node's `JSON.stringify(…, null, 2)`. A realm with no set held — in
-/// development, where this runtime makes none yet — is answered 500 with
+/// Node's `JSON.stringify(…, null, 2)`. A realm's set is made on its first
+/// use; one that cannot be read or made is answered 500 with
 /// `STS-OAUTH-0184`, Node's answer when the JWKS cannot be built.
-fn jwks(persistence: Weak<Persistence>) -> axum::response::Response {
+async fn jwks(persistence: Weak<Persistence>) -> axum::response::Response {
     use axum::http::{header, StatusCode};
     use axum::response::IntoResponse;
     let realm = sts_core::realm::current_id();
-    let built = persistence
-        .upgrade()
-        .and_then(|p| p.key_sets())
-        .and_then(|sets| sets.open(&realm))
-        .ok_or_else(|| "no key set is held for this realm".to_string())
+    let sets = persistence.upgrade().and_then(|p| p.key_sets());
+    let set = match sets {
+        Some(sets) => sets.open_or_make(&realm).await,
+        None => Err("no key set is held for this realm".to_string()),
+    };
+    let built = set
         .and_then(|set| sts_store::key_sets::jwks_document(&set))
         .and_then(|doc| {
             serde_json::to_string_pretty(&doc).map_err(|e| e.to_string())
@@ -365,25 +366,12 @@ impl Stack {
     /// starts the scheduler. Before any listener binds.
     pub async fn start(&self) -> Result<(), String> {
         self.persistence.start().await?;
-        // THE DEFAULT REALM'S KEY SET, made on the first start of a store
-        // that keeps keys and stored before anything is served; a set
-        // another process stored first is the one kept.
+        // THE DEFAULT REALM'S KEY SET, before anything is served: read
+        // from the store, or made on its first start and stored (a set
+        // another process stored first is the one kept) — or, where keys do
+        // not persist, made for this run.
         if let Some(sets) = self.persistence.key_sets() {
-            if sets.open("").is_none() {
-                let made = sts_store::key_sets::generate_key_set(
-                    sts_core::time::now_ms_f64() as i64,
-                )?;
-                let saved = sets.save("", &made).await?;
-                tracing::info!(
-                    "keystore: the default realm had no key set; {}.",
-                    match saved {
-                        sts_store::key_sets::Saved::Written =>
-                            "one was made and stored",
-                        sts_store::key_sets::Saved::Kept(_) =>
-                            "another process stored one first, and it is kept",
-                    }
-                );
-            }
+            sets.open_or_make("").await?;
         }
         if let Some(node) = &self.node {
             node.join().await?;
@@ -399,7 +387,7 @@ impl Stack {
             "/oauth2/jwks",
             axum::routing::get(move || {
                 let persistence = persistence.clone();
-                async move { jwks(persistence) }
+                async move { jwks(persistence).await }
             }),
         );
         sts_http::layered(routes, self.registry.clone())
@@ -464,20 +452,41 @@ mod tests {
         stack.stop().await;
     }
 
+    async fn jwks_of(stack: &Stack, path: &str) -> (u16, Json) {
+        let response = stack
+            .router()
+            .oneshot(Request::get(path).body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        let status = response.status().as_u16();
+        assert_eq!(response.headers()["cache-control"], "no-store");
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        (status, serde_json::from_slice(&body).unwrap())
+    }
+
     #[tokio::test]
-    async fn the_jwks_without_a_held_set_is_nodes_failure() {
+    async fn development_serves_a_jwks_per_realm_made_for_the_run() {
         let stack = Stack::build(settings(
             json!({ "persistence": { "mode": "memory" } }),
         ))
         .unwrap();
         stack.start().await.unwrap();
-        let response = stack
-            .router()
-            .oneshot(Request::get("/oauth2/jwks").body(Body::empty()).unwrap())
-            .await
+        stack
+            .lifecycle
+            .create("acme", "", "", "", &serde_json::Map::new(), false)
             .unwrap();
-        assert_eq!(response.status(), 500);
-        assert_eq!(sts_http::code_of(&response), Some(codes::STS_OAUTH_0184));
+        let (status, default) = jwks_of(&stack, "/oauth2/jwks").await;
+        assert_eq!(status, 200);
+        assert_eq!(default["keys"][0]["kty"], "RSA");
+        assert_eq!(default["keys"].as_array().unwrap().len(), 9);
+        let (status, acme) = jwks_of(&stack, "/realm/acme/oauth2/jwks").await;
+        assert_eq!(status, 200);
+        assert_ne!(acme["keys"][0]["kid"], default["keys"][0]["kid"]);
+        // The same set on the next fetch.
+        let (_, again) = jwks_of(&stack, "/realm/acme/oauth2/jwks").await;
+        assert_eq!(again, acme);
         stack.stop().await;
     }
 
