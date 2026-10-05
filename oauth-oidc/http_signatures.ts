@@ -217,13 +217,30 @@ class HttpSignatures {
   }
 
   // The request content as received, for RFC 9530. `app.js` keeps the bytes
-  // beside the decoded string for exactly this (`req.rawBody`).
+  // beside the decoded string for exactly this (`req.rawBody`). The binary
+  // types its raw parser takes leave the bytes in `req.body` instead.
   private bodyOf(req: Json): Buffer {
     const { log } = this.deps;
     log.debug("Entering HttpSignatures.bodyOf().");
     const raw = req && req.rawBody;
     log.debug("Leaving HttpSignatures.bodyOf().");
-    return Buffer.isBuffer(raw) ? raw : Buffer.alloc(0);
+    return Buffer.isBuffer(raw) ? raw
+      : (req && Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0));
+  }
+
+  // Does the request carry content? Read off the framing as well as the
+  // bytes, so a body this process holds no bytes for still requires a
+  // covered Content-Digest, and fails it, rather than being treated as
+  // absent. That is the fail-closed reading of section 5.3.1.2's "when the
+  // request contains a request body".
+  private declaresBody(req: Json, body: Buffer): boolean {
+    const { log } = this.deps;
+    log.debug("Entering HttpSignatures.declaresBody().");
+    const headers = (req && req.headers) || {};
+    const declared = Number(headers['content-length'] || 0) > 0 ||
+                     headers['transfer-encoding'] !== undefined;
+    log.debug("Leaving HttpSignatures.declaresBody().");
+    return body.length > 0 || declared;
   }
 
   // Is there any signature tagged fapi-2-request? A Signature-Input that does
@@ -327,7 +344,7 @@ class HttpSignatures {
           '(FAPI 2.0 HTTP Signatures section 5.3.1.2).');
       }
       const body = this.bodyOf(req);
-      const hasBody = body.length > 0;
+      const hasBody = this.declaresBody(req, body);
       if (hasBody) {
         const digest = stsCrypto.verifyContentDigest(
           req.headers['content-digest'], body,

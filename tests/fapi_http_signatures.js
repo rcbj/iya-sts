@@ -241,6 +241,14 @@ function requests(t) {
   refusedWith(t, ask(off, request(fixture, { sign: true, body: '{"a":1}',
     method: 'POST', badDigest: true })), 'STS-KEYS-0111',
               'a Content-Digest that does not match the body');
+  // A body the framing declares and this process holds no bytes for: the
+  // digest is still required, and fails, rather than the body being taken
+  // for absent.
+  const framed = request(fixture, { sign: true, method: 'POST',
+    components: ['@method', '@target-uri', 'authorization'] });
+  framed.req.headers['content-length'] = '7';
+  refusedWith(t, ask(off, framed), 'STS-KEYS-0108',
+              'a declared body with no bytes and no Content-Digest');
   refusedWith(t, ask(off, request(fixture, { sign: true,
                                              created: NOW - 61 })),
               'STS-KEYS-0147', 'a signature created 61 s ago (the draft\'s ' +
