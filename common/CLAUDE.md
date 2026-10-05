@@ -6494,6 +6494,46 @@ had recently put there. The two-node revocation probe read one beginning `SELECT
 seq, origin, realm, key FROM sts_changes`. Pinned in
 `tests/cluster_key_pki_agreement.js` section 12.
 
+### THE PROCESS BRANCH IS ONE AUTHORITY FOR THE CLUSTER (#162, 2026-10-05)
+
+`/pki/ocsp/process/tls` answered `unknown` through the load balancer for the
+other node's listener certificate. rcbj's decisions on #162:
+
+1. **One process CA for the cluster.** `pki:*process` is a shared row like a
+   realm's, and every node's listener certificate is recorded in it, so any
+   node answers OCSP and serves the CRL for any node's certificate. **No node
+   address is ever published** (a certificate, a distribution point, an AIA,
+   metadata): naming the node in the OCSP address was refused outright, not
+   traded off.
+2. **Each node keeps its own listener key.** It generates the key and is
+   issued its certificate from the shared CA; only the record and the serial
+   are shared.
+3. **Any node may sign**, under the merge rules above: issued serials and
+   revocations are unions, tiers first writer wins, the build claimed once.
+4. **One code path**: a single node is a cluster of one. Development keeps the
+   in-memory branch regenerated per start.
+
+Most of this was already true when the decision was made — the row is shared
+and merged, and `pki_merge.js` keeps a displaced `tls:server` slot's serial in
+`issuedKeyPairs`, so the register holds every node's listener. What was left
+was WHEN a node reads it. Two halves close that:
+
+* **The writer**: `service_state.ts` awaits `keystore.pkiSettled(PROCESS_SCOPE)`
+  after `pki.start()` where the row merges, so a node's listener record is in
+  the store before the node serves that certificate.
+* **The reader**: `pki_revocation.js`'s `answerOcsp()` asks the store once
+  (`pki.refreshScope()`, through `catchUpWithTheStore()`) before answering
+  `unknown` for want of a record. Concurrent questions about one scope share
+  the read in flight, because the responder is anonymous and every serial
+  nobody issued takes this path. Where the row is not merged it reads nothing.
+
+The `tls:server` slot itself still holds one node's record, first writer
+wins; the others' serials are `displaced` records in `issuedKeyPairs`. That
+is all the responder and the CRL need. A record per node would be a slot
+named for a node, which decision 1 rules out. `tests/ocsp_cluster_catch_up.js`
+holds the reader's half; `sts_pki_distribution_points` in the `cluster` mode
+is the end-to-end check, and it still asks the address the certificate names.
+
 ### A BRANCH IN ONE ACT, OR NONE
 
 A trust chain is only worth anything WHOLE — and since the shape changed that

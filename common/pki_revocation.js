@@ -1575,6 +1575,63 @@ function nonceSize(extension) {
   return bytes.byteLength;
 }
 
+// ---------------------------------------------------------------------------
+// **A SERIAL THIS NODE HAS NO RECORD OF IS ASKED OF THE STORE BEFORE IT IS
+// CALLED `unknown` (#162, 2026-10-05).**
+//
+// The process branch is ONE authority for the cluster (rcbj's decision on
+// #162): its row is shared, every node signs its own listener certificate
+// under the one TLS Issuing CA with a key it made itself, and the merge keeps
+// every serial (`pki_merge.js` — a slot is first writer wins and the serial it
+// displaced goes to `issuedKeyPairs`). So the register is right. What was not
+// is WHEN a node reads it: the row another node wrote reaches this one on the
+// change log, `persistence.pollInterval` later, and the listener certificate
+// names the SERVICE's address, so a balancer may hand the question to a node
+// that has not caught up. Seconds after a cluster started, that node answered
+// `unknown` about the other node's listener — correct for what it held, and
+// wrong for the authority (`sts_pki_distribution_points`, cluster mode).
+//
+// No node's own address is ever the answer (rcbj, #162: nothing published
+// names a node). Every node answers for every node's certificate, from the
+// row the store holds: where this node would say `unknown` for want of a
+// record, it lands its own writes of the row and takes the store's, ONCE per
+// request, and answers again. `pki.refreshScope()` does nothing where the row
+// is not merged — development, a single process, nothing to catch up with.
+//
+// **COALESCED PER SCOPE.** The responder is anonymous, and every serial
+// nobody issued takes this path, so concurrent questions share the read in
+// flight: at most one read of one row per scope at a time, whatever arrives.
+// ---------------------------------------------------------------------------
+const storeReadsInFlight = new Map();
+
+function catchUpWithTheStore(scopeId) {
+  log.debug("Entering catchUpWithTheStore(). scope=" + scopeId);
+  const id = String(scopeId);
+  if (typeof pki.refreshScope !== 'function') {
+    log.debug("Leaving catchUpWithTheStore(). No refresh in this pki.");
+    return Promise.resolve(null);
+  }
+  if (storeReadsInFlight.has(id)) {
+    log.debug("Leaving catchUpWithTheStore(). Sharing the read in flight.");
+    return storeReadsInFlight.get(id);
+  }
+  const reading = Promise.resolve().then(function () {
+    return pki.refreshScope(id);
+  }).then(function (answer) {
+    storeReadsInFlight.delete(id);
+    return answer;
+  }, function (e) {
+    // The store could not be read. What this node holds is still an answer
+    // RFC 6960 allows (`unknown`), so it is given rather than an error.
+    log.debug("Caught in catchUpWithTheStore(): " + ((e && e.message) || e));
+    storeReadsInFlight.delete(id);
+    return null;
+  });
+  storeReadsInFlight.set(id, reading);
+  log.debug("Leaving catchUpWithTheStore(). Reading the row.");
+  return reading;
+}
+
 /**
  * Answers an OCSP request (RFC 6960) for one authority, signed by the CA
  * itself.
@@ -1638,6 +1695,8 @@ async function answerOcsp(scopeId, caId, requestDer) {
   const now = wholeSeconds(Date.now());
   const responses = [];
   const reported = [];
+  // Whether this request has already asked the store (#162, above).
+  let caughtUp = false;
   for (let i = 0; i < wanted.length; i++) {
     const certId = wanted[i].reqCert;
     const single = new pkijs.SingleResponse();
@@ -1657,6 +1716,13 @@ async function answerOcsp(scopeId, caId, requestDer) {
                       why: 'another issuer' });
       responses.push(single);
       continue;
+    }
+    // NO RECORD HERE YET: ask the store once before saying `unknown` — it may
+    // be another node's listener, written a moment ago (#162, above).
+    if (!caughtUp && !isRevoked(scopeId, caId, serial) &&
+        !issuedHere(scopeId, caId, serial)) {
+      caughtUp = true;
+      await catchUpWithTheStore(scopeId);
     }
     const revoked = isRevoked(scopeId, caId, serial);
     if (revoked) {

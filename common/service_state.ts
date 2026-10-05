@@ -317,8 +317,34 @@ class ServiceState {
           }
         })
             .then(function (pkiResult) {
-          return { started: started, keys: keys, minted: mintedResult,
-                   coordinating: coordinating, pki: pkiResult };
+          // -------------------------------------------------------------------
+          // **AND THE LISTENER'S CERTIFICATE IS IN THE STORE BEFORE IT IS
+          // SERVED (#162, 2026-10-05).** `pki.start()` certifies this
+          // process's listener under the ONE process branch every node
+          // shares, and queues the row's write. The certificate names the
+          // SERVICE's OCSP address, so the moment this node serves it a
+          // relying party may ask ANY node about it — and the answering node
+          // can only find the serial in the store once this write has landed
+          // (`pki_revocation.js`'s `catchUpWithTheStore()` is the reader's
+          // half). Where the row is not merged there is nobody else to tell,
+          // and this resolves at once.
+          // -------------------------------------------------------------------
+          const merges = typeof keystore.mergesPkiRows === 'function' &&
+                         keystore.mergesPkiRows();
+          const landed = merges && typeof keystore.pkiSettled === 'function'
+            ? Promise.resolve(keystore.pkiSettled(pki.PROCESS_SCOPE))
+              .catch(function (e: any) {
+                // The write's own failure is the keystore's to report and
+                // retry; the start carries on, as it does for a PKI failure.
+                log.debug("Caught in ServiceState.start(): " +
+                          ((e && e.message) || e));
+                return null;
+              })
+            : Promise.resolve(null);
+          return landed.then(function () {
+            return { started: started, keys: keys, minted: mintedResult,
+                     coordinating: coordinating, pki: pkiResult };
+          });
         });
         });
       });
