@@ -191,6 +191,11 @@ impl RunRows for Node {
     fn rows(&self, realm: &str) -> Vec<Json> {
         self.world.rows_of(realm)
     }
+    fn delete(&self, realm: &str, key: &str) {
+        if let Some(m) = self.world.rows.lock().unwrap().get_mut(realm) {
+            m.shift_remove(key);
+        }
+    }
 }
 
 impl Realms for Node {

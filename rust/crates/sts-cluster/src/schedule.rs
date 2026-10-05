@@ -469,8 +469,12 @@ impl Schedules {
         self.jobs.get(id)
     }
 
+    /// Every job's id, sorted (`Array.prototype.sort`: by UTF-16 code
+    /// unit, which for these ASCII ids is byte order).
     pub fn job_ids(&self) -> Vec<String> {
-        self.jobs.keys().cloned().collect()
+        let mut ids: Vec<String> = self.jobs.keys().cloned().collect();
+        ids.sort();
+        ids
     }
 
     pub fn jobs(&self) -> impl Iterator<Item = &JobSpec> {
@@ -492,6 +496,16 @@ impl Schedules {
             n = n.min((pool - 1.0).max(1.0));
         }
         n
+    }
+
+    /// A setting as a number, for the report.
+    pub fn setting_number(&self, key: &str) -> f64 {
+        self.settings.number(key)
+    }
+
+    /// A setting as a flag, for the report.
+    pub fn setting_flag(&self, key: &str) -> bool {
+        self.settings.flag(key)
     }
 
     pub fn tick_ms(&self) -> f64 {
