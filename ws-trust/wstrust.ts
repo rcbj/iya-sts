@@ -499,14 +499,16 @@ class WsTrust {
       '<soap:Body>' + bodyInner + '</soap:Body></soap:Envelope>';
   }
 
-  // `trustFault` (#108): one of WS-Trust 1.4 section 11's fault codes —
-  // `RequestFailed` is the only one sent today — and `trustNs` the trust
-  // namespace to qualify it with, which is the request's own. Section 11:
-  // "The tables below are defined in terms of SOAP 1.1. For SOAP 1.2, the
-  // Fault/Code/Value is env:Sender ... and the Fault/Code/Subcode/Value is
-  // the faultcode below." So on 1.1 it REPLACES `soap:Client` as the
-  // faultcode, and on 1.2 it is the Subcode under `soap:Sender`. Without it
-  // the fault is the generic one every other refusal here still sends.
+  // `trustFault` (#108, every refusal since #183): one of WS-Trust 1.4
+  // section 11's fault codes, and `trustNs` the trust namespace to qualify it
+  // with, which is the request's own. Section 11: "The tables below are
+  // defined in terms of SOAP 1.1. For SOAP 1.2, the Fault/Code/Value is
+  // env:Sender ... and the Fault/Code/Subcode/Value is the faultcode below."
+  // So on 1.1 it REPLACES `soap:Client` as the faultcode, and on 1.2 it is
+  // the Subcode under `soap:Sender`. Every refusal here names one at the
+  // place it refuses — `ws-trust/CLAUDE.md` has the table, and why each —
+  // and a call without one is the generic Client/Sender fault no refusal
+  // sends any more.
   /**
    * Builds a SOAP Fault for the request's SOAP version, qualified with a
    * WS-Trust 1.4 section 11 fault code when one is given.
@@ -544,6 +546,36 @@ class WsTrust {
       '</soap:Body></soap:Envelope>';
   }
 
+  // THE ONE FAULT THAT IS NOT A REFUSAL (#183): this service failing, which
+  // section 11 has no code for — every one of its codes is a Sender fault,
+  // something wrong with the REQUEST. SOAP 1.1 section 4.4.1 calls this
+  // `Server` and SOAP 1.2 Part 1 section 5.4.6 `Receiver`, "the message
+  // could not be processed for reasons attributable to the processing of the
+  // message rather than to the contents of the message itself".
+  /**
+   * Builds the SOAP Fault for a failure of this service rather than of the
+   * request: `soap:Server` on SOAP 1.1, `soap:Receiver` on SOAP 1.2.
+   *
+   * @param version - the SOAP version, `1.1` or `1.2`
+   * @param reason - the fault's reason
+   * @returns the SOAP envelope
+   */
+  // error-code: none — the definition of the helper, not a call to it
+  receiverFault(version, reason) {
+    const { log, xmlEscape } = this.deps;
+    log.debug("Entering WsTrust.receiverFault(). version=" + version);
+    const body = version === '1.1'
+      ? '<soap:Fault><faultcode>soap:Server</faultcode><faultstring>' +
+        xmlEscape(reason) + '</faultstring></soap:Fault>'
+      : '<soap:Fault><soap:Code><soap:Value>soap:Receiver</soap:Value>' +
+        '</soap:Code><soap:Reason><soap:Text xml:lang="en">' +
+        xmlEscape(reason) + '</soap:Text></soap:Reason></soap:Fault>';
+    log.debug("Leaving WsTrust.receiverFault().");
+    return '<?xml version="1.0" encoding="UTF-8"?>' +
+      '<soap:Envelope xmlns:soap="' + this.soapNsFor(version) + '">' +
+      '<soap:Body>' + body + '</soap:Body></soap:Envelope>';
+  }
+
   // --- request handling ------------------------------------------------------
   private detectSoapVersion(doc, contentType) {
     const { log } = this.deps;
@@ -560,6 +592,16 @@ class WsTrust {
     }
     log.debug("Leaving WsTrust.detectSoapVersion().");
     return /text\/xml/i.test(contentType || '') ? '1.1' : '1.2';
+  }
+
+  // The request's own trust namespace, for a fault raised before
+  // handleRst() has read it (#183); 1.3's when there is none.
+  private trustNsOf(doc): string {
+    const { log, firstByLocal } = this.deps;
+    log.debug("Entering WsTrust.trustNsOf().");
+    const rst = doc ? firstByLocal(doc, 'RequestSecurityToken') : null;
+    log.debug("Leaving WsTrust.trustNsOf().");
+    return (rst && rst.namespaceURI) || WST_NS;
   }
 
   // Is `node` inside one of them?
@@ -670,7 +712,9 @@ class WsTrust {
    *
    * @param assertion - the assertion element
    * @param what - what it was presented as, for the refusal
-   * @returns `{ ok, subject }`, or `{ ok: false, errorCode, … }`
+   * @returns `{ ok, subject }`, or `{ ok: false, errorCode, … }` — with
+   * `trustFault: 'ExpiredData'` on an expired one, the one refusal here whose
+   * section 11 code does not depend on the seat it was presented in
    */
   checkedAssertion(assertion, what) {
     const { stsCrypto, config, log, STS, firstByLocal } = this.deps;
@@ -711,6 +755,7 @@ class WsTrust {
     if (!isNaN(notOnOrAfter) && notOnOrAfter + skewMs <= now) {
       log.debug("Leaving WsTrust.checkedAssertion(). Expired.");
       return { ok: false, errorCode: 'STS-WSTRUST-0006',
+               trustFault: 'ExpiredData',
                reason: 'The ' + what + ' expired at ' +
                  conditions.getAttribute('NotOnOrAfter') + '.' };
     }
@@ -729,6 +774,13 @@ class WsTrust {
   // The requester's own credential, read from that scope. It returns null when
   // nothing was presented, which is a different answer from a credential that
   // was presented and refused.
+  //
+  // EVERY REFUSAL HERE IS `wst:FailedAuthentication` (#183) — section 11's
+  // "Authentication failed", which is what each of them is: the requester's
+  // credential was incomplete, wrong, or an assertion that did not verify —
+  // except an EXPIRED assertion, which is `wst:ExpiredData`, "The request
+  // data is out-of-date", the more exact of the two. The same fault for a
+  // wrong password and an unknown user is the enumeration rule below.
   private requesterCredential(doc) {
     const { credentials, mode, log, firstByLocal, textByLocal } = this.deps;
     log.debug("Entering WsTrust.requesterCredential().");
@@ -741,6 +793,7 @@ class WsTrust {
         log.debug("Leaving WsTrust.requesterCredential(). Incomplete " +
                   "UsernameToken.");
         return { ok: false, errorCode: 'STS-WSTRUST-0002',
+                 trustFault: 'FailedAuthentication',
                  reason: 'UsernameToken requires a username and password.' };
       }
       // THE CREDENTIAL (2026-09-06). One call, both modes — `credentials.js`
@@ -765,6 +818,7 @@ class WsTrust {
         log.debug("Leaving WsTrust.requesterCredential(). The credential was " +
                   "refused.");
         return { ok: false, errorCode: 'STS-WSTRUST-0003',
+                 trustFault: 'FailedAuthentication',
                  reason: 'Authentication failed for user ' + user + '.' };
       }
       log.debug("Leaving WsTrust.requesterCredential(). A UsernameToken " +
@@ -797,7 +851,8 @@ class WsTrust {
           log.debug("Leaving WsTrust.requesterCredential(). The assertion " +
                     "was refused.");
           return { ok: false, reason: checked.reason,
-                   errorCode: checked.errorCode };
+                   errorCode: checked.errorCode,
+                   trustFault: checked.trustFault || 'FailedAuthentication' };
         }
         log.debug("Leaving WsTrust.requesterCredential(). A verified SAML " +
                   "assertion for " +
@@ -911,6 +966,7 @@ class WsTrust {
                   "to delegate with.");
         return { subject: '', element: element, tokenId: '',
                  errorCode: 'STS-WSTRUST-0008',
+                 trustFault: 'InvalidRequest',
                  refused: 'The <wst:' + element + '> carries no SAML ' +
                           'assertion. In product mode a delegated subject ' +
                           'must be carried in an assertion this security ' +
@@ -922,9 +978,14 @@ class WsTrust {
       if (!checked.ok) {
         log.debug("Leaving WsTrust.delegatedSubject(). Product: the " +
                   "delegated token was refused.");
+        // The requester authenticated; what is wrong is a token the
+        // REQUEST carries, so `wst:InvalidRequest` rather than
+        // FailedAuthentication — and `wst:ExpiredData` for an expired one
+        // (#183).
         return { subject: '', element: element, tokenId: '',
                  refused: checked.reason,
-                 errorCode: checked.errorCode };
+                 errorCode: checked.errorCode,
+                 trustFault: checked.trustFault || 'InvalidRequest' };
       }
       log.debug("Leaving WsTrust.delegatedSubject(). Product: " +
                 checked.subject + " via " + element + ".");
@@ -1017,7 +1078,8 @@ class WsTrust {
     if (credential && !credential.ok) {
       log.debug("Leaving WsTrust.authenticate(). The credential was refused.");
       return { ok: false, reason: credential.reason,
-               errorCode: credential.errorCode };
+               errorCode: credential.errorCode,
+               trustFault: credential.trustFault };
     }
     if (credential) {
       stats.recordAuthentication({
@@ -1030,7 +1092,8 @@ class WsTrust {
       log.debug("Leaving WsTrust.authenticate(). The delegated token was " +
                 "refused.");
       return { ok: false, reason: delegatedBy.refused,
-               errorCode: delegatedBy.errorCode };
+               errorCode: delegatedBy.errorCode,
+               trustFault: delegatedBy.trustFault };
     }
     const delegated = delegatedBy.subject;
     // PRODUCT: A DELEGATION NEEDS A REQUESTER. Development issues a token about
@@ -1042,6 +1105,7 @@ class WsTrust {
       log.debug("Leaving WsTrust.authenticate(). Product: a delegation with " +
                 "no requester credential.");
       return { ok: false, errorCode: 'STS-WSTRUST-0009',
+               trustFault: 'FailedAuthentication',
                reason: 'This request delegates (<wst:' + delegatedBy.element +
                        '>) and presents no credential of its own. In product ' +
                        'mode the requester must authenticate — a WS-Security ' +
@@ -1050,19 +1114,14 @@ class WsTrust {
                        'else is issued to it.' };
     }
     if (delegated) {
-      // Recorded, with what it is said plainly: the subject named in an
-      // OnBehalfOf presented no credential of their own here. Something else
-      // asked for a token about them, and this service — which checks nothing —
-      // agreed. The users page prints the method, so the row is not mistaken
-      // for a sign-in.
-      stats.recordAuthentication({
-        presented: delegated, protocol: 'WS-Trust',
-        method: 'OnBehalfOf / ActAs (delegated)',
-        note: 'The requester named this subject; the subject presented ' +
-              'nothing. Whether the requester may act for them is the ' +
-              'delegation policy\'s question, asked when the token is ' +
-              'issued and enforced in product mode (#108).'
-      });
+      // THE DELEGATED SUBJECT IS NOT RECORDED HERE (#183). It used to be,
+      // on this line, which is above the delegation policy — so a refused
+      // OnBehalfOf or ActAs still put its subject on /admin/users as
+      // somebody seen, for an act the policy had said no to.
+      // handleRst() records them once the policy has allowed the act (see
+      // recordDelegatedSubject()); the requester's own row, above, stays
+      // here, because the requester DID authenticate whatever is decided
+      // after.
       log.debug("Leaving WsTrust.authenticate(). Delegated request " +
                 "(OnBehalfOf/ActAs).");
       // `delegation` carries what /admin/delegation needs and nothing else
@@ -1108,6 +1167,7 @@ class WsTrust {
       log.debug("Leaving WsTrust.authenticate(). Product: no credential was " +
                 "presented.");
       return { ok: false, errorCode: 'STS-WSTRUST-0010',
+               trustFault: 'FailedAuthentication',
                reason: 'No credential was presented. In product mode every ' +
                        'WS-Trust operation requires one in the wsse:Security ' +
                        'header — a WS-Security UsernameToken verified ' +
@@ -1157,6 +1217,33 @@ class WsTrust {
     return authnContext.AC_UNSPECIFIED;
   }
 
+  // THE DELEGATED SUBJECT ON /admin/users (#183), once the delegation policy
+  // has allowed the act — or, in development, said only that it WOULD have
+  // refused it. With what it is said plainly: the subject named in an
+  // OnBehalfOf presented no credential of their own here; something else
+  // asked for a token about them. The users page prints the method, so the
+  // row is not mistaken for a sign-in.
+  //
+  // It still goes ahead of the role gate and the JWT-subject check, because
+  // in development this funnel is what grows their directory entry
+  // (`ldap.autocreateUsers`) and both of those read it. Product creates
+  // nobody here, so in product the order only decides whether a refusal
+  // leaves a row — and the delegation policy's, the one this was about,
+  // no longer does.
+  private recordDelegatedSubject(subject: string): void {
+    const { stats, log } = this.deps;
+    log.debug("Entering WsTrust.recordDelegatedSubject().");
+    stats.recordAuthentication({
+      presented: subject, protocol: 'WS-Trust',
+      method: 'OnBehalfOf / ActAs (delegated)',
+      note: 'The requester named this subject; the subject presented ' +
+            'nothing. The delegation policy allowed the requester to act ' +
+            'for them, or — in development — said it would have refused ' +
+            'and was not enforced (#108, #186).'
+    });
+    log.debug("Leaving WsTrust.recordDelegatedSubject().");
+  }
+
   /**
    * Handles one RequestSecurityToken: parses the SOAP body, authenticates the
    * requester, decides delegation and issuance, and answers the RSTR or a SOAP
@@ -1195,10 +1282,13 @@ class WsTrust {
     if (!read.ok) {
       log.debug("Leaving WsTrust.handleRst(). The request is not well-formed " +
                 "XML.");
+      // `wst:InvalidRequest`, "The request was invalid or malformed" (#183),
+      // qualified with 1.3's namespace: there is no document to read the
+      // request's own off.
       return { status: 400, errorCode: 'STS-WSTRUST-0001',
                version: this.detectSoapVersion(null, contentType),
                body: this.soapFault(this.detectSoapVersion(null, contentType),
-                               read.detail) };
+                               read.detail, 'InvalidRequest', WST_NS) };
     }
     const doc = read.value;
     const version = this.detectSoapVersion(doc, contentType);
@@ -1273,7 +1363,9 @@ class WsTrust {
       // error-code: none — the code was decided where authenticate() refused, and rides out on auth.errorCode
       return { status: 500, version: version, errorCode: auth.errorCode,
                body: this.soapFault(version,
-                               auth.reason || 'Authentication failed.') };
+                               auth.reason || 'Authentication failed.',
+                               auth.trustFault || 'FailedAuthentication',
+                               trustNs) };
     }
 
     if (op === 'validate') {
@@ -1320,6 +1412,111 @@ class WsTrust {
       return { status: 200, version: version,
                body: this.envelope(version, trustNs + '/RSTR/CancelFinal',
                                    rstr) };
+    }
+
+    // -------------------------------------------------------------------------
+    // WHO MAY ACT FOR WHOM, AND AS WHAT (#186). WS-Trust puts no authorization
+    // on `OnBehalfOf` (1.3 section 9.2) or `ActAs` (1.4 section 9.3) — "a real
+    // STS decides this from policy that has no place in the message" — and
+    // the issuance policy is that policy, the same rules the RFC 8693 token
+    // exchange and Kerberos S4U are decided by, through
+    // `common/delegation_policy.ts`. The ELEMENT is the request's choice of
+    // semantics: OnBehalfOf asks for IMPERSONATION, ActAs for DELEGATION, and
+    // the entries' allowed semantics still decide. The actor is the
+    // REQUESTER; S is the delegated assertion's audience; R the AppliesTo.
+    // A person may be the requester when they hold delegation.actorRole.
+    //
+    // A REQUEST CARRYING BOTH ELEMENTS asks for two contradictory things and is
+    // refused in every mode (wst:InvalidRequest).
+    //
+    // ENFORCED IN PRODUCT — the policy's answer says whether a refusal is
+    // enforced — as a SOAP Fault with WS-Trust 1.4 section 11's
+    // `wst:RequestFailed`; development issues and writes "would have been
+    // refused" on the act's row. Here rather than in authenticate(), because
+    // this is the only place that knows the AppliesTo, which is the TARGET.
+    //
+    // AND AHEAD OF THE ROLE GATE AND THE JWT-SUBJECT CHECK SINCE #183, so
+    // that the delegated subject is recorded on /admin/users only once it
+    // has been allowed (recordDelegatedSubject()), and still before those two
+    // read the entry that record may create. Validate and Cancel have
+    // returned above: neither issues anything about anybody, so neither asks.
+    // -------------------------------------------------------------------------
+    let delegationDecision = null;
+    if (auth.delegation && auth.delegation.both) {
+      const why = 'The request carries both <wst:OnBehalfOf> (impersonation) ' +
+        'and <wst14:ActAs> (delegation); send one.';
+      log.info('wstrust: refused a request carrying both OnBehalfOf and ' +
+               'ActAs.');
+      log.debug("Leaving the RST handler. Both delegation elements.");
+      return { status: 500, version: version, errorCode: 'STS-WSTRUST-0025',
+               body: this.soapFault(version, why, 'InvalidRequest',
+                                    trustNs) };
+    }
+    if (auth.delegation) {
+      const via = auth.delegation.element;
+      const requester = String(auth.delegation.requester || '');
+      delegationDecision = delegationPolicy.decide({
+        protocol: 'WS-Trust',
+        requested: via === 'ActAs' ? 'delegation' : 'impersonation',
+        actor: requester,
+        subject: String(auth.subject || ''),
+        source: auth.delegation.audiences || [],
+        targets: audience ? [audience] : [],
+        targetKind: 'appliesTo'
+      });
+      if (!delegationDecision.allowed && delegationDecision.enforced) {
+        const CODES = {
+          'intermediary': 'STS-WSTRUST-0019',
+          'policy': 'STS-WSTRUST-0020',
+          'semantics': 'STS-WSTRUST-0022',
+          'authority': 'STS-WSTRUST-0023',
+          'no-target': 'STS-WSTRUST-0024',
+          'unregistered-target': 'STS-WSTRUST-0024',
+          'targets': 'STS-WSTRUST-0024'
+        };
+        const code = CODES[delegationDecision.refusal] || 'STS-WSTRUST-0018';
+        const why = delegationDecision.why;
+        const refusedTarget = delegationDecision.targets[0] ||
+          { asked: '', application: '' };
+        delegation.record({
+          protocol: 'WS-Trust',
+          type: via === 'ActAs' ? 'wstrust-actas' : 'wstrust-onbehalfof',
+          outcome: 'refused',
+          initial: { presented: auth.subject,
+                     what: 'the subject named in <wst:' + via + '>' },
+          intermediary: { presented: requester,
+                          application: delegationDecision.intermediary,
+                          what: 'the requester, authenticated by ' +
+                                String(auth.delegation.requesterMethod ||
+                                       'nothing') },
+          target: { application: refusedTarget.application ||
+                                 refusedTarget.asked,
+                    what: audience
+                      ? 'the AppliesTo "' + audience + '"'
+                      : 'unstated — the RST carried no AppliesTo' },
+          authorizedBy: 'refused by the issuance policy: ' + why,
+          reason: why,
+          consumed: auth.delegation.tokenId
+            ? [{ kind: 'delegated token',
+                 identifier: auth.delegation.tokenId,
+                 note: 'the token inside <wst:' + via + '>' }]
+            : [],
+          produced: []
+        });
+        log.info('wstrust: the issuance policy refused <wst:' + via +
+                 '> by "' + requester + '" for "' + String(auth.subject) +
+                 '" to "' + audience + '": ' + why);
+        log.debug("Leaving the RST handler. The issuance policy refused " +
+                  "it.");
+        // error-code: none — `code` rides out on the answer
+        return { status: 500, version: version, errorCode: code,
+                 body: this.soapFault(version, why, 'RequestFailed',
+                                      trustNs) };
+      }
+    }
+
+    if (auth.delegation) {
+      this.recordDelegatedSubject(String(auth.subject || ''));
     }
 
     // Issue / Renew both mint (or re-mint) a token, for whoever authenticate()
@@ -1377,11 +1574,14 @@ class WsTrust {
       log.info('wstrust: the issuance policy refused a token for "' +
                String(subject) + '" to "' + audience + '". ' + roleAnswer.why);
       log.debug("Leaving the RST handler. The issuance policy refused it.");
-      // A realm being removed (#262) is its own code.
+      // A realm being removed (#262) is its own code. Both are
+      // `wst:RequestFailed` (#183): the request was understood and the
+      // requester authenticated, and the policy said no.
       return { status: 403, version: version,
                errorCode: roleAnswer.retiring ? 'STS-CORE-0121'
                                               : 'STS-WSTRUST-0011',
-               body: this.soapFault(version, roleAnswer.why) };
+               body: this.soapFault(version, roleAnswer.why, 'RequestFailed',
+                                    trustNs) };
     }
 
     const tokenType = (tokenTypeReq === JWT_TOKEN_TYPE) ? JWT_TOKEN_TYPE :
@@ -1399,103 +1599,8 @@ class WsTrust {
                body: this.soapFault(version, 'There is no directory entry ' +
                                              'for "' +
                                String(subject) + '", so no JWT can be issued ' +
-                               'about them.') };
+                               'about them.', 'RequestFailed', trustNs) };
     }
-    // -------------------------------------------------------------------------
-    // WHO MAY ACT FOR WHOM, AND AS WHAT (#186). WS-Trust puts no authorization
-    // on `OnBehalfOf` (1.3 section 9.2) or `ActAs` (1.4 section 9.3) — "a real
-    // STS decides this from policy that has no place in the message" — and
-    // the issuance policy is that policy, the same rules the RFC 8693 token
-    // exchange and Kerberos S4U are decided by, through
-    // `common/delegation_policy.ts`. The ELEMENT is the request's choice of
-    // semantics: OnBehalfOf asks for IMPERSONATION, ActAs for DELEGATION, and
-    // the entries' allowed semantics still decide. The actor is the
-    // REQUESTER; S is the delegated assertion's audience; R the AppliesTo.
-    // A person may be the requester when they hold delegation.actorRole.
-    //
-    // A REQUEST CARRYING BOTH ELEMENTS asks for two contradictory things and is
-    // refused in every mode (wst:InvalidRequest).
-    //
-    // ENFORCED IN PRODUCT — the policy's answer says whether a refusal is
-    // enforced — as a SOAP Fault with WS-Trust 1.4 section 11's
-    // `wst:RequestFailed`; development issues and writes "would have been
-    // refused" on the act's row. Here rather than in authenticate(), because
-    // this is the only place that knows the AppliesTo, which is the TARGET.
-    // -------------------------------------------------------------------------
-    let delegationDecision = null;
-    if (auth.delegation && auth.delegation.both) {
-      const why = 'The request carries both <wst:OnBehalfOf> (impersonation) ' +
-        'and <wst14:ActAs> (delegation); send one.';
-      log.info('wstrust: refused a request carrying both OnBehalfOf and ' +
-               'ActAs.');
-      log.debug("Leaving the RST handler. Both delegation elements.");
-      return { status: 500, version: version, errorCode: 'STS-WSTRUST-0025',
-               body: this.soapFault(version, why, 'InvalidRequest',
-                                    trustNs) };
-    }
-    if (auth.delegation) {
-      const via = auth.delegation.element;
-      const requester = String(auth.delegation.requester || '');
-      delegationDecision = delegationPolicy.decide({
-        protocol: 'WS-Trust',
-        requested: via === 'ActAs' ? 'delegation' : 'impersonation',
-        actor: requester,
-        subject: String(subject || ''),
-        source: auth.delegation.audiences || [],
-        targets: audience ? [audience] : [],
-        targetKind: 'appliesTo'
-      });
-      if (!delegationDecision.allowed && delegationDecision.enforced) {
-        const CODES = {
-          'intermediary': 'STS-WSTRUST-0019',
-          'policy': 'STS-WSTRUST-0020',
-          'semantics': 'STS-WSTRUST-0022',
-          'authority': 'STS-WSTRUST-0023',
-          'no-target': 'STS-WSTRUST-0024',
-          'unregistered-target': 'STS-WSTRUST-0024',
-          'targets': 'STS-WSTRUST-0024'
-        };
-        const code = CODES[delegationDecision.refusal] || 'STS-WSTRUST-0018';
-        const why = delegationDecision.why;
-        const refusedTarget = delegationDecision.targets[0] ||
-          { asked: '', application: '' };
-        delegation.record({
-          protocol: 'WS-Trust',
-          type: via === 'ActAs' ? 'wstrust-actas' : 'wstrust-onbehalfof',
-          outcome: 'refused',
-          initial: { presented: subject,
-                     what: 'the subject named in <wst:' + via + '>' },
-          intermediary: { presented: requester,
-                          application: delegationDecision.intermediary,
-                          what: 'the requester, authenticated by ' +
-                                String(auth.delegation.requesterMethod ||
-                                       'nothing') },
-          target: { application: refusedTarget.application ||
-                                 refusedTarget.asked,
-                    what: audience
-                      ? 'the AppliesTo "' + audience + '"'
-                      : 'unstated — the RST carried no AppliesTo' },
-          authorizedBy: 'refused by the issuance policy: ' + why,
-          reason: why,
-          consumed: auth.delegation.tokenId
-            ? [{ kind: 'delegated token',
-                 identifier: auth.delegation.tokenId,
-                 note: 'the token inside <wst:' + via + '>' }]
-            : [],
-          produced: []
-        });
-        log.info('wstrust: the issuance policy refused <wst:' + via +
-                 '> by "' + requester + '" for "' + String(subject) +
-                 '" to "' + audience + '": ' + why);
-        log.debug("Leaving the RST handler. The issuance policy refused " +
-                  "it.");
-        // error-code: none — `code` rides out on the answer
-        return { status: 500, version: version, errorCode: code,
-                 body: this.soapFault(version, why, 'RequestFailed',
-                                      trustNs) };
-      }
-    }
-
     // #186: WHO ACTED, carried into the token. A delegation (ActAs) adds the
     // requester after whoever the delegated assertion already named; an
     // impersonation keeps that chain and adds nobody — a prior delegation is
@@ -1563,6 +1668,9 @@ class WsTrust {
                    failure + '.');
           log.debug("Leaving WsTrust.handleRst(). Encryption was required " +
                     "and did not happen.");
+          // No recipient certificate is the REQUEST lacking what it asked
+          // to be answered with, `wst:InvalidRequest`; a certificate that
+          // could not be encrypted to is `wst:RequestFailed` (#183).
           return { status: 500, version: version,
                    errorCode: recipB64 ? 'STS-WSTRUST-0013'
                                        : 'STS-WSTRUST-0012',
@@ -1570,7 +1678,9 @@ class WsTrust {
                                    'Encryption was requested and ' + failure +
                                             '. In product mode the assertion ' +
                                             'is not returned in clear ' +
-                                            'instead.') };
+                                            'instead.',
+                                   recipB64 ? 'RequestFailed'
+                                            : 'InvalidRequest', trustNs) };
         }
         log.error(errorCodes.tag(recipB64 ? 'STS-WSTRUST-0013' :
                                  'STS-WSTRUST-0012') +
@@ -2016,7 +2126,8 @@ class WsTrust {
                    'service, which ' + (got.code === 'STS-CELL-0125'
                      ? 'could not be reached'
                      : 'did not release what a token about them needs') +
-                   ', so no token is issued about them.'));
+                   ', so no token is issued about them.', 'RequestFailed',
+                   self.trustNsOf(doc)));
               return undefined;
             }
             return cellAttributes.withPerson(realmId, got.projection,
@@ -2184,9 +2295,15 @@ class WsTrust {
     } catch (e) {
       log.error(errorCodes.tag('STS-WSTRUST-0015') + 'STS error: ' +
                 (e && e.stack ? e.stack : e));
+      // A failure of this service, not a refusal: soap:Receiver (soap:Server
+      // on 1.1), in the version the request was sent in — it was always
+      // SOAP 1.2 until #183. See receiverFault().
+      const failedVersion = this.detectSoapVersion(null, contentType);
       errorCodes.mark(res, 'STS-WSTRUST-0015');
-      res.status(500).type('application/soap+xml; charset=utf-8')
-         .send(this.soapFault('1.2',
+      res.status(500)
+         .type(failedVersion === '1.1' ? 'text/xml; charset=utf-8'
+                                       : 'application/soap+xml; charset=utf-8')
+         .send(this.receiverFault(failedVersion,
                          'STS error: ' +
                          (e && e.message ? e.message : String(e))));
       log.debug("Leaving the WS-Trust STS endpoint. It failed.");

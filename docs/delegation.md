@@ -326,7 +326,10 @@ refused in both modes: there is no unverified reading of XML to fall back on.
 * A request with **no `AppliesTo`** is refused unless it is a self one.
 * **Every policy refusal is a SOAP Fault carrying WS-Trust 1.4 section 11's
   `wst:RequestFailed`**: the `faultcode` on SOAP 1.1, the `Subcode` on SOAP
-  1.2. The fault's reason says which rule refused.
+  1.2. The fault's reason says which rule refused. A refused act is on
+  `/admin/delegation`; its subject is not added to `/admin/users`, which lists
+  a delegated subject only once the policy has allowed the act (or, in
+  development, recorded that it would have refused it).
 * `may_act` is not read here: the delegated token is always a SAML assertion,
   which has no such claim. A **JWT** issued about a person who set
   `stsMayAct` carries `may_act`, as an access token does.

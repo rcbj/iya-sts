@@ -104,10 +104,8 @@ is what the policy reads (`partyFacts()` asks the registry first).
 `no-target`).
 
 **A REFUSAL IS WS-TRUST 1.4 SECTION 11's `wst:RequestFailed`** ("The specified
-request failed"). `soapFault()` takes the fault code as an optional third
-argument and the request's own trust namespace as the fourth: on SOAP 1.1 it
-REPLACES `soap:Client` as the `faultcode`, and on SOAP 1.2 it is the `Subcode`
-under `soap:Sender` — section 11's own mapping. The codes by refusal kind:
+request failed") — see *Every refusal names its section 11 fault code*, below,
+for how `soapFault()` places it. The codes by refusal kind:
 `intermediary` `STS-WSTRUST-0019`, a realm policy's `policy` `0020`,
 `semantics` `0022`, `authority` `0023`, the target kinds (`target`,
 `targets`, `unregistered-target`, `no-target`) `0024`, the rest (a protected
@@ -119,14 +117,66 @@ with `outcome: refused` before the fault is answered, so it is on
 `/admin/delegation` — the only list a refusal is in. A requester delegating
 about ITSELF acts for nobody and needs nothing.
 
-**THE ORDER COST ONE THING, AND IT IS STATED RATHER THAN FIXED.**
-`authenticate()` records the delegated subject's `recordAuthentication()` row
-before the policy is asked, so a refused delegation still leaves that row on
-`/admin/users`. Moving the policy into `authenticate()` would need the
-`AppliesTo`, which the "authenticate ABOVE the branch" rule below keeps out of
-it.
+**A REFUSED DELEGATION LEAVES NO `/admin/users` ROW (#183, 2026-10-05).**
+`authenticate()` used to record the delegated subject's `recordAuthentication()`
+row before the policy was asked, so a refused `OnBehalfOf` / `ActAs` still
+listed its subject as seen. `authenticate()` now records only the REQUESTER (who
+did authenticate, whatever is decided after), and `handleRst()` records the
+delegated subject in `recordDelegatedSubject()` once the decision has allowed
+the act or not enforced its refusal. The policy was not moved into
+`authenticate()`, which the "authenticate ABOVE the branch" rule below keeps
+away from the `AppliesTo`. **The delegation decision moved instead: it is
+asked AHEAD of the role gate and the JWT-subject check** (both elements,
+`STS-WSTRUST-0025`, with it), because in development the record is what grows
+the subject's directory entry (`ldap.autocreateUsers`), and those two checks
+read that entry. Product creates nobody there. The cost: in development, a
+subject this request is the first to name is decided before their entry
+exists — an unknown party, where it used to be a freshly invented entry with
+no delegation attributes. Development enforces only a `may_act` mismatch, and a
+subject with no entry yet has no `stsMayAct` to mismatch; and the decision is
+about who the directory says they are, not about an entry the request invented.
+Validate and Cancel return before the decision, so a delegated subject named in
+either is not recorded at all.
 
 ---
+
+## Every refusal names its section 11 fault code (#183, 2026-10-05)
+
+WS-Trust 1.4 section 11 defines the fault codes an STS returns, "in terms of
+SOAP 1.1. For SOAP 1.2, the Fault/Code/Value is env:Sender ... and the
+Fault/Code/Subcode/Value is the faultcode below." `soapFault()` takes the code
+as its third argument and the request's own trust namespace as its fourth: on
+SOAP 1.1 it REPLACES `soap:Client` as the `faultcode`, and on SOAP 1.2 it is the
+`Subcode` under `soap:Sender`. Until #183 only the delegation refusals (#108)
+and the 2004/04 Cancel (#188) named one; every other refusal was the generic
+fault. Each refusal names its code at the place it refuses:
+
+| Code | Refusals | Why that one |
+|---|---|---|
+| `InvalidRequest` | `0001` (not well-formed, qualified with 1.3's namespace: there is no document to read the request's own off), `0008` and a delegated token's `0004` / `0005` / `0007` (the token inside `OnBehalfOf` / `ActAs`), `0012` (`?encrypt=1` with no recipient certificate), `0021`, `0025` | the REQUEST carries, or lacks, something that makes it unanswerable. A delegated token that does not verify is not FailedAuthentication: the requester did authenticate |
+| `FailedAuthentication` | `0002`, `0003`, the requester's own `0004` / `0005` / `0007`, `0009`, `0010` | the requester did not authenticate. One fault for a wrong password and an unknown user, the enumeration rule `requesterCredential()` states |
+| `ExpiredData` | `0006`, in either seat | "The request data is out-of-date" is the more exact answer for an expired assertion than FailedAuthentication or InvalidRequest. `checkedAssertion()` returns it; the seat supplies the code for its other refusals |
+| `RequestFailed` | `0011` and `STS-CORE-0121` (the role gate), `0013` (encryption to the certificate failed), `0017` (a JWT about nobody), `0018`–`0024` (the delegation policy), `STS-CELL-0124` / `0125` (a delegated subject's home cell) | the request was understood and authenticated, and could not be done |
+
+**Not used, and why**: `InvalidSecurityToken` is "Security token has been
+revoked" in 1.4's table, and nothing here checks revocation of a presented
+token; `AuthenticationBadElements` is about digest elements, and request
+signatures are not verified (`docs/ws-trust.md`, *Not implemented*);
+`InvalidTimeRange` would refuse a `wst:Lifetime`, which is CLAMPED instead
+(section 4.1 makes it a request the STS decides); `BadRequest`, `InvalidScope`,
+`RenewNeeded` and `UnableToRenew` have no refusal here that they describe
+better than the codes above — an unknown RequestType is issued, an `AppliesTo`
+nobody registered is the policy's to refuse, and a Renew re-issues whatever
+token it is handed.
+
+**`0015` IS NOT A REFUSAL**, and it is not a section 11 code: every one of
+those is a Sender fault. An exception in the endpoint is `receiverFault()`'s
+`soap:Receiver` (SOAP 1.2 Part 1 section 5.4.6) or `soap:Server` (SOAP 1.1
+section 4.4.1), in the version the request was sent in — it was always a SOAP
+1.2 envelope until #183. `0014` is a `wst:Status` in a 200, not a fault.
+
+`tests/wstrust_fault_codes.js` asks every refusal above on both SOAP versions,
+the namespace and the receiver fault included.
 
 ## Two rules about where a credential is read, and both were learnt the hard way
 
@@ -227,6 +277,10 @@ any other) speaks. The job validates against a copy with that one string
 changed (`tests/tools/fetch-xml-schemas.sh`).
 
 ## What is tested, and what is not
+
+`tests/wstrust_fault_codes.js` (#183) holds every refusal's section 11 code on
+both SOAP versions, the receiver fault, and the `/admin/users` row of a
+refused and an allowed delegation, in process in both modes.
 
 The parent project has `tests/wstrust.js` and
 `tests/wstrust_schema_validate.js`, which drive the DEBUGGER's client side

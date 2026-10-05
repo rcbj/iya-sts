@@ -151,10 +151,29 @@ development and refused in product.
 
 Request signatures are not verified; `Validate` reports whether a token is
 **present**, not whether it verifies; `Cancel` recalls nothing already issued;
-refusals other than the delegation policy's send a generic SOAP Fault rather
-than one of section 11's `wst:` codes; and a SAML assertion presented as a
-credential is trusted only when **this** STS signed it — there is no register
-of foreign issuers.
+and a SAML assertion presented as a credential is trusted only when **this**
+STS signed it — there is no register of foreign issuers.
+
+### Faults
+
+Every refusal is a SOAP Fault carrying one of WS-Trust 1.4 section 11's fault
+codes, in the request's own trust namespace: on SOAP 1.1 it is the
+`faultcode`, and on SOAP 1.2 it is the `Subcode` under `soap:Sender`.
+
+| Refusal | Fault code |
+|---|---|
+| The body is not well-formed XML | `wst:InvalidRequest` |
+| The requester's credential is incomplete, wrong, or an assertion that does not verify, is not yet valid or names nobody; no credential at all (product); a delegation with no requester credential (product) | `wst:FailedAuthentication` |
+| An assertion, as the credential or inside `OnBehalfOf` / `ActAs`, that has expired | `wst:ExpiredData` |
+| The token inside `OnBehalfOf` / `ActAs` is not an assertion, or does not verify, is not yet valid or names nobody (product) | `wst:InvalidRequest` |
+| Both `OnBehalfOf` and `ActAs`; `Cancel` in WS-Trust 2004/04; `?encrypt=1` with no recipient certificate (product) | `wst:InvalidRequest` |
+| The issuance policy refuses the token or the delegation; a JWT about somebody the directory does not hold; `?encrypt=1` to a certificate that cannot be used (product); a delegation about a person in another cell that cannot be fetched | `wst:RequestFailed` |
+
+A failure of the service itself, not of the request, is `soap:Receiver` (SOAP
+1.2) or `soap:Server` (SOAP 1.1), with no `wst:` code. `Validate` with no token
+to validate is not a fault: it answers `wst:Status` `invalid`. The fault never
+says whether a username or a password was wrong. Each refusal's error code is
+in [Error codes](error-codes.md).
 
 ## Development and product mode
 

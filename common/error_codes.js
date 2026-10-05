@@ -9461,65 +9461,79 @@ const CODES = [
   { code: 'STS-WSTRUST-0001',
     summary: 'The RequestSecurityToken body is not well-formed XML (or is ' +
       'empty), so no operation could be read from it.',
-    spec: 'SOAP Fault soap:Sender / soap:Client (HTTP 400)' },
+    spec: 'SOAP Fault wst:InvalidRequest (HTTP 400), WS-Trust 1.4 ' +
+      'section 11' },
   { code: 'STS-WSTRUST-0002',
     summary: 'A WS-Security UsernameToken was presented without a username ' +
       'or without a password.',
-    spec: 'SOAP Fault soap:Sender / soap:Client (HTTP 500)' },
+    spec: 'SOAP Fault wst:FailedAuthentication (HTTP 500), WS-Trust ' +
+      '1.4 section 11' },
   { code: 'STS-WSTRUST-0003',
     summary: 'A WS-Security UsernameToken\'s password was refused by the ' +
       'credential verifier (the reserved string in development, the ' +
       'stored userPassword in product). The fault does not say ' +
       'whether the user or the password was wrong.',
-    spec: 'SOAP Fault soap:Sender / soap:Client (HTTP 500)' },
+    spec: 'SOAP Fault wst:FailedAuthentication (HTTP 500), WS-Trust ' +
+      '1.4 section 11' },
   { code: 'STS-WSTRUST-0004',
     summary: 'Product mode: a SAML assertion presented as the requester\'s ' +
       'credential or inside OnBehalfOf/ActAs does not verify against ' +
       'this STS\'s own signing certificate.',
-    spec: 'SOAP Fault soap:Sender / soap:Client (HTTP 500)' },
+    spec: 'SOAP Fault wst:FailedAuthentication as the requester\'s ' +
+      'credential, wst:InvalidRequest inside OnBehalfOf/ActAs (HTTP 500), ' +
+      'WS-Trust 1.4 section 11' },
   { code: 'STS-WSTRUST-0005',
     summary: 'Product mode: a SAML assertion presented to the STS is not yet ' +
       'valid (its Conditions NotBefore is in the future beyond the ' +
       'clock skew).',
-    spec: 'SOAP Fault soap:Sender / soap:Client (HTTP 500)' },
+    spec: 'SOAP Fault wst:FailedAuthentication as the requester\'s ' +
+      'credential, wst:InvalidRequest inside OnBehalfOf/ActAs (HTTP 500), ' +
+      'WS-Trust 1.4 section 11' },
   { code: 'STS-WSTRUST-0006',
     summary: 'Product mode: a SAML assertion presented to the STS has ' +
       'expired (its Conditions NotOnOrAfter has passed beyond the ' +
       'clock skew).',
-    spec: 'SOAP Fault soap:Sender / soap:Client (HTTP 500)' },
+    spec: 'SOAP Fault wst:ExpiredData (HTTP 500), WS-Trust 1.4 section ' +
+      '11' },
   { code: 'STS-WSTRUST-0007',
     summary: 'Product mode: a SAML assertion presented to the STS carries no ' +
       'NameID, so it names nobody.',
-    spec: 'SOAP Fault soap:Sender / soap:Client (HTTP 500)' },
+    spec: 'SOAP Fault wst:FailedAuthentication as the requester\'s ' +
+      'credential, wst:InvalidRequest inside OnBehalfOf/ActAs (HTTP 500), ' +
+      'WS-Trust 1.4 section 11' },
   { code: 'STS-WSTRUST-0008',
     summary: 'Product mode: a wst:OnBehalfOf or wst14:ActAs element carries ' +
       'no SAML assertion, so the delegated subject is only a name.',
-    spec: 'SOAP Fault soap:Sender / soap:Client (HTTP 500)' },
+    spec: 'SOAP Fault wst:InvalidRequest (HTTP 500), WS-Trust 1.4 ' +
+      'section 11' },
   { code: 'STS-WSTRUST-0009',
     summary: 'Product mode: a request delegates (OnBehalfOf/ActAs) but ' +
       'presents no credential of its own for the requester.',
-    spec: 'SOAP Fault soap:Sender / soap:Client (HTTP 500)' },
+    spec: 'SOAP Fault wst:FailedAuthentication (HTTP 500), WS-Trust ' +
+      '1.4 section 11' },
   { code: 'STS-WSTRUST-0010',
     summary: 'Product mode: a WS-Trust request presented no credential at ' +
       'all in its security header.',
-    spec: 'SOAP Fault soap:Sender / soap:Client (HTTP 500)' },
+    spec: 'SOAP Fault wst:FailedAuthentication (HTTP 500), WS-Trust ' +
+      '1.4 section 11' },
   { code: 'STS-WSTRUST-0011',
     summary: 'The issuance policy (the role gate) refused a token for this ' +
       'subject to this AppliesTo.',
-    spec: 'SOAP Fault soap:Sender / soap:Client (HTTP 403)' },
+    spec: 'SOAP Fault wst:RequestFailed (HTTP 403), WS-Trust 1.4 ' +
+      'section 11' },
   { code: 'STS-WSTRUST-0012',
     summary: '?encrypt=1 was requested but the request carries no recipient ' +
       'X509Certificate to encrypt the assertion to. Product mode ' +
       'refuses; development returns the assertion in clear and logs ' +
       'this.',
-    spec: 'SOAP Fault soap:Sender / soap:Client (HTTP 500) in product; ' +
-      'none in development' },
+    spec: 'SOAP Fault wst:InvalidRequest (HTTP 500) in product; none ' +
+      'in development' },
   { code: 'STS-WSTRUST-0013',
     summary: '?encrypt=1 was requested and encrypting the assertion to the ' +
       'request\'s certificate failed. Product mode refuses; ' +
       'development returns the assertion in clear and logs this.',
-    spec: 'SOAP Fault soap:Sender / soap:Client (HTTP 500) in product; ' +
-      'none in development' },
+    spec: 'SOAP Fault wst:RequestFailed (HTTP 500) in product; none ' +
+      'in development' },
   { code: 'STS-WSTRUST-0014',
     summary: 'A Validate request carried no token in its ValidateTarget, so ' +
       'it was answered with a status of invalid.',
@@ -9527,7 +9541,8 @@ const CODES = [
   { code: 'STS-WSTRUST-0015',
     summary: 'The STS endpoint threw an unexpected exception while handling ' +
       'a RequestSecurityToken.',
-    spec: 'SOAP 1.2 Fault soap:Sender (HTTP 500)' },
+    spec: 'SOAP Fault soap:Receiver (SOAP 1.2) / soap:Server (SOAP ' +
+      '1.1), in the request\'s SOAP version (HTTP 500)' },
   { code: 'STS-WSTRUST-0016',
     summary: 'A token was issued but starting the browser sign-on session ' +
       'the exchange also starts threw; the RSTR is unaffected.',
@@ -9535,7 +9550,8 @@ const CODES = [
   { code: 'STS-WSTRUST-0017',
     summary: 'A JWT was refused because the directory holds no entry for the ' +
       'person, so there is no subject to issue it about.',
-    spec: 'SOAP Fault (HTTP 400)' },
+    spec: 'SOAP Fault wst:RequestFailed (HTTP 400), WS-Trust 1.4 ' +
+      'section 11' },
   { code: 'STS-WSTRUST-0018',
     summary: 'An OnBehalfOf or ActAs request was refused by the issuance ' +
       'policy (#186): the subject may not be delegated, the requester may ' +
