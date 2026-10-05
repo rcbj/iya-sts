@@ -405,12 +405,118 @@ function pause(ms) {
 
 async function open(driver, url) {
   log.debug("Entering open(). url=" + url);
+  // THE CONSOLE IS A STATIC APPLICATION SINCE #446: every /admin path answers
+  // one document, and the page is drawn by its script from the page's
+  // /admin-api operation, after a sign-in in the browser. A document loaded
+  // under `/realm/<id>/admin` signs in at THAT realm, where this run's
+  // account — a service administrator, signed in at the default realm — has
+  // no sign-on session; it reaches the realm's console the way the console
+  // offers it, through the realm switcher, which keeps its token.
+  const inRealm = base + "/realm/" + REALM + "/admin";
+  if (url === inRealm || url.indexOf(inRealm + "/") === 0 ||
+      url.indexOf(inRealm + "?") === 0) {
+    await throughTheSwitcher(driver, url.slice((base + "/realm/" +
+                                                 REALM).length));
+    log.debug("Leaving open(). Through the switcher.");
+    return;
+  }
   await driver.get(url);
-  await driver.wait(async function () {
-    return (await driver.executeScript("return document.readyState;")) ===
-           "complete";
-  }, 15000, "the page never finished loading: " + url);
+  await waitForDrawn(driver, url);
   log.debug("Leaving open().");
+}
+
+// THE PAGE IS DRAWN (#446): the console's frame is in place and the shell's
+// "Signing in…" placeholder is gone, on a path that is not the callback. A
+// browser somewhere off /admin — the sign-in screen — has arrived somewhere a
+// person acts, and that is answered too.
+async function waitForDrawn(driver, what) {
+  log.debug("Entering waitForDrawn().");
+  await driver.wait(async function () {
+    const now = await driver.executeScript(`
+      if (document.readyState !== 'complete') { return ''; }
+      const path = location.pathname;
+      if (!/\\/admin(\\/|$)/.test(path)) { return 'elsewhere'; }
+      if (document.contentType !== 'text/html') { return 'elsewhere'; }
+      if (/\\/admin\\/callback$/.test(path)) { return ''; }
+      const lede = document.querySelector('p.lede');
+      if (lede && /^Signing in/.test(lede.textContent)) { return ''; }
+      return document.querySelector('.pagehead') ? 'drawn' : '';
+    `).catch(function (e) {
+      // A document torn down under the probe: asked again.
+      log.debug("Caught in waitForDrawn(): " + ((e && e.message) || e));
+      return '';
+    });
+    return now || false;
+  }, 20000, "the console never drew " + (what || "the page"));
+  log.debug("Leaving waitForDrawn().");
+}
+
+// A page of this job's realm, reached from a signed-in page of the default
+// realm through the shell's realm switcher (see open()). `path` is the
+// console path with its query.
+async function throughTheSwitcher(driver, path) {
+  log.debug("Entering throughTheSwitcher(). path=" + path);
+  // THE SWITCHER IS DRAWN FROM THE SHELL ANSWER THE PAGE LOADED WITH (#446),
+  // so a realm made since is offered only once a page is loaded again.
+  // AND FROM THE DEFAULT REALM'S PAGE: the switcher on a page already
+  // under a realm prefix posts to the default root's /admin/realm-switch,
+  // which the console does not take as its own there (reported with #446).
+  const offered = await driver.executeScript(`
+    if (/^\\/realm\\//.test(location.pathname)) { return false; }
+    const wanted = arguments[0];
+    const pick = document.querySelector('form.realmpick select[name=realm]');
+    return !!pick && Array.from(pick.options).some(function (o) {
+      return o.value === wanted;
+    });
+  `, REALM).catch(function (e) {
+    log.debug("Caught looking for the switcher: " + ((e && e.message) || e));
+    return false;
+  });
+  if (!offered) {
+    await driver.get(root("/admin?realm=default"));
+    await waitForDrawn(driver, "the console's front page");
+  }
+  const leaving = await driver.findElement(By.css(".shell"));
+  const switched = await driver.executeScript(`
+    const f = document.querySelector('form.realmpick');
+    if (!f) { return 'no switcher on ' + location.href; }
+    const pick = f.querySelector('select[name=realm]');
+    pick.value = arguments[0];
+    if (pick.value !== arguments[0]) {
+      return 'the switcher does not offer ' + arguments[0];
+    }
+    f.querySelector('input[name=to]').value = arguments[1];
+    f.querySelector('button').click();
+    return '';
+  `, REALM, path);
+  assert.strictEqual(switched, "", "switching to " + REALM + ": " + switched);
+  await replaced(driver, leaving, "the switch to " + REALM);
+  await waitForDrawn(driver, path);
+  log.debug("Leaving throughTheSwitcher().");
+}
+
+// THE ELEMENT'S PAGE HAS BEEN REPLACED: a navigation, or the console drawing
+// in place (#446), which replaces everything inside <body>. Not
+// `until.stalenessOf()`: a probe that lands while Chrome tears a document
+// down answers "Node with given id does not belong to the document", which
+// means the same thing here.
+async function replaced(driver, element, what) {
+  log.debug("Entering replaced().");
+  await driver.wait(async function () {
+    try {
+      await element.isEnabled();
+      return false;
+    } catch (e) {
+      log.debug("Caught in replaced(): " + ((e && e.message) || e));
+      if ((e && e.name === "StaleElementReferenceError") ||
+          /does not belong to the document|No node with given id/
+            .test(String(e && e.message))) {
+        return true;
+      }
+      throw e;
+    }
+  }, 15000, what + " never replaced the page it was pressed on");
+  log.debug("Leaving replaced().");
 }
 
 // Everything this file asserts about a drawn page, taken in ONE script so that
@@ -618,15 +724,10 @@ async function submitForm(driver, index, values) {
     }
   }, 15000, "form " + index + " was submitted and the page it was on was " +
             "never replaced");
-  await driver.wait(async function () {
-    return (await driver.executeScript("return document.readyState;")) ===
-           "complete";
-  }, 15000, "the page never finished loading after form " + index +
-            " was submitted");
-  // The console redirects a POST to the page it came from; a short settle keeps
-  // the survey below from reading the document mid-navigation. It is not a
-  // sleep standing in for a wait — readyState is the wait.
-  await pause(40);
+  // AND DRAWN AGAIN (#446): the console sends the form to its /admin-api
+  // operation and draws the page it came from in place, with the answer's
+  // `?notice=` or `?error=` on its URL.
+  await waitForDrawn(driver, "the page after form " + index);
   log.debug("Leaving submitForm().");
 }
 
@@ -719,6 +820,9 @@ async function signIn(driver, username) {
             "screen. The mock checks no password, so this is a name that was " +
             "typed and a button that was pressed; if it did not open the " +
             "console, the screen is broken rather than the credential.");
+  // Back through the authorization endpoint and the console's callback to a
+  // drawn page: the console signs in in the browser since #446.
+  await waitForDrawn(driver, "the console after signing in");
   log.debug("Leaving signIn(). Signed in.");
   return true;
 }
@@ -799,7 +903,9 @@ async function theTreeIsDrawn(driver) {
       ["policy", "rule", "target", "anyOf", "allOf", "match"],
       "the RBAC template is a policy holding rules, each with a target " +
       "holding clauses, alternatives and matches — and the editor draws one " +
-      "row per element. It drew " + JSON.stringify(kinds));
+      "row per element. It drew " + JSON.stringify(kinds) + " at " +
+      page.url + " (" + page.title + "): " +
+      String(page.bodyText).replace(/\s+/g, " ").slice(0, 400));
     assert.ok(kinds.filter(function (k) { return k === "rule"; }).length === 2,
       "the template makes two rules (admin-anything and staff-limited); the " +
       "page shows " + kinds.filter(function (k) {
