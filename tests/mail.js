@@ -1232,8 +1232,14 @@ async function consolePages(t) {
       configFormsFor: function () {
         return '<form id="settings"></form>';
       },
+      // The settings block the page is drawn from (#446: the page's
+      // renderer draws it from the view, so the view carries one group).
       configSettingsJson: function () {
-        return [];
+        return { groups: [{ group: 'Mail settings', settings: [] }],
+                 context: {} };
+      },
+      renderContext: function (req) {
+        return { query: (req && req.query) || {}, write: true };
       },
       pageNavPair: function () {
         return { head: '', foot: '' };
@@ -1283,7 +1289,7 @@ async function consolePages(t) {
     const settings = get('/admin/mail');
     t.check(settings && /capture/.test(settings.html) &&
             /Send a test message/.test(settings.html) &&
-            /id="settings"/.test(settings.html) &&
+            /<h3>Mail settings<\/h3>/.test(settings.html) &&
             settings.html.indexOf('password-reset') >= 0,
             '13a. /admin/mail draws the transport, the test form, the ' +
             'messages and the settings', settings && settings.html.slice(0, 300));

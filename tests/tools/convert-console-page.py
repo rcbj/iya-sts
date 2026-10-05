@@ -181,6 +181,7 @@ for doc, start, end, name in spans:
     # class for `this`. The kit is imported as `kit`, shorter than `admin`,
     # so no line the move touches grows.
     block = re.sub(r'\badmin\.', 'kit.', block)
+    block = re.sub(r'\.bind\(admin\)', '.bind(kit)', block)
     blocks.append(block)
 body = '\n\n'.join(blocks)
 if BARE_ESC or DEPS_ESC:

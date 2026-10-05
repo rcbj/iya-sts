@@ -36,6 +36,8 @@ import DatabasePage = require('./web_database');
 import DebuggerPage = require('../debugger/web_debugger');
 import GrantsPage = require('../oauth-oidc/web_grants');
 import ListenersPage = require('./web_listeners');
+import MailPage = require('./web_mail');
+import MailOutboxPage = require('./web_mail_outbox');
 import ModePage = require('./web_mode');
 import NodeHealthPage = require('./web_node_health');
 import OAuth2MonitorPage = require('../oauth-oidc/web_oauth2_monitor');
@@ -72,6 +74,10 @@ const PAGES: WebPage[] = [
     render: GrantsPage.render },
   { path: '/admin/listeners', title: 'Listeners',
     operation: '/admin-api/listeners', render: ListenersPage.render },
+  { path: '/admin/mail', title: 'Mail', operation: '/admin-api/mail',
+    render: MailPage.render },
+  { path: '/admin/mail/outbox', title: 'Mail outbox',
+    operation: '/admin-api/mail/outbox', render: MailOutboxPage.render },
   { path: '/admin/mode', title: 'Mode', operation: '/admin-api/mode',
     render: ModePage.render },
   { path: '/admin/node-health', title: 'Node health',
