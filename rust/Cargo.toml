@@ -28,6 +28,7 @@ sts-crypto = { path = "crates/sts-crypto" }
 sts-xacml = { path = "crates/sts-xacml" }
 axum = "0.8"
 base64 = "0.23"
+flate2 = "1"
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
 hyper = { version = "1", features = ["server", "http1", "http2"] }
 hyper-util = { version = "0.1", features = ["server", "server-auto", "tokio", "service"] }

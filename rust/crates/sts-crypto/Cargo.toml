@@ -12,6 +12,7 @@ publish.workspace = true
 
 [dependencies]
 base64.workspace = true
+flate2.workspace = true
 foreign-types.workspace = true
 openssl.workspace = true
 openssl-sys.workspace = true

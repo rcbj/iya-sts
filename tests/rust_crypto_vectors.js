@@ -20,6 +20,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const nodeCrypto = require('crypto');
 const bunyan = require('bunyan');
 const crypto = require('../common/crypto');
 
@@ -68,12 +69,40 @@ function run(t) {
             row.alg + ': a token Rust signed with a key Rust generated ' +
             'verifies in Node', why);
   });
+  const jwes = read('jwe-rust.json');
+  t.check(jwes.length >= crypto.JWE_ALGS.length,
+          'there is a Rust JWE vector for every alg Node speaks',
+          jwes.length + ' / ' + crypto.JWE_ALGS.length);
+  jwes.forEach(function (row) {
+    const options = {};
+    if (row.secret) {
+      options.secret = Buffer.from(row.secret, 'base64url');
+    }
+    if (row.privatePem) {
+      options.privateKey = nodeCrypto.createPrivateKey(row.privatePem);
+    }
+    if (row.privateJwk) {
+      options.privateJwk = row.privateJwk;
+    }
+    let opened = null;
+    let why = '';
+    try {
+      opened = crypto.decryptJweCompact(row.compact, options);
+    } catch (e) {
+      log.debug("Caught in run(): " + ((e && e.message) || e));
+      why = (e && e.message) || String(e);
+    }
+    t.check(!!opened && opened.plaintext === '{"sub":"alice"}',
+            row.alg + ' ' + row.enc + ': a JWE Rust encrypted decrypts in ' +
+            'Node', why);
+  });
   log.debug("Leaving run().");
 }
 
 module.exports = {
   name: 'rust_crypto_vectors',
-  describe: 'what the Rust sts-crypto crate signed verifies in the Node ' +
-            'service, for every JWS algorithm',
+  describe: 'what the Rust sts-crypto crate signed verifies, and what it ' +
+            'encrypted decrypts, in the Node service — every JWS and JWE ' +
+            'algorithm',
   run: run
 };
