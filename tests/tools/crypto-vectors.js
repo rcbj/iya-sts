@@ -761,12 +761,103 @@ function secrets() {
            credentials: credentials };
 }
 
+// KERBEROS, SESSION STATE AND DKIM: all deterministic, so Rust must
+// produce the same bytes — n-fold at every size, the PRF and PRF+ for every
+// enctype, KRB-FX-CF2 across enctypes, `session_state` with a given salt,
+// and DKIM signatures in both algorithms over messages whose
+// canonicalization is the hard part (folding, tabs, 0xA0, bare LF, empty
+// and trailing-blank bodies, a repeated header).
+function kerberosAndDkim() {
+  const sizes = { 17: 16, 18: 32, 19: 16, 20: 32, 23: 16 };
+  const nfold = [];
+  ['', 'a', 'kerberos', 'Rough Consensus', 'éè'].forEach(function (s) {
+    [7, 8, 16, 21, 24, 32].forEach(function (n) {
+      if (!s) {
+        return;
+      }
+      nfold.push({ input: Buffer.from(s, 'utf8').toString('base64'), bytes: n,
+                   out: crypto.krb5Nfold(Buffer.from(s, 'utf8'), n)
+                     .toString('base64') });
+    });
+  });
+  const prf = [];
+  const cf2 = [];
+  Object.keys(sizes).forEach(function (etype) {
+    const key = nodeCrypto.randomBytes(sizes[etype]);
+    [Buffer.alloc(0), Buffer.from('prf'), nodeCrypto.randomBytes(33)]
+      .forEach(function (input) {
+        prf.push({ etype: Number(etype), key: key.toString('base64'),
+                   input: input.toString('base64'),
+                   out: Buffer.from(crypto.krb5Prf(Number(etype), key, input))
+                     .toString('base64'),
+                   plus: Buffer.from(crypto.krb5PrfPlus(Number(etype), key,
+                                                        input, 77))
+                     .toString('base64') });
+      });
+    Object.keys(sizes).forEach(function (other) {
+      const k2 = nodeCrypto.randomBytes(sizes[other]);
+      const out = crypto.krbFxCf2({ etype: Number(etype), key: key },
+                                  { etype: Number(other), key: k2 },
+                                  'armorkey', 'ticketarmor');
+      cf2.push({ etype1: Number(etype), key1: key.toString('base64'),
+                 etype2: Number(other), key2: k2.toString('base64'),
+                 out: Buffer.from(out.key).toString('base64') });
+    });
+  });
+  const sessionStates = [['client', 'https://rp.example', 'bs', 'salt1'],
+                         ['cé', 'https://x.example:8443', '', 'Zz']]
+    .map(function (r) {
+      return { args: r, out: crypto.sessionStateHash(r[0], r[1], r[2],
+                                                     r[3]) };
+    });
+  const rsa = nodeCrypto.generateKeyPairSync('rsa', { modulusLength: 2048 });
+  const ed = nodeCrypto.generateKeyPairSync('ed25519');
+  const keys = {
+    rsa: { privateKeyPem: rsa.privateKey.export({ type: 'pkcs8',
+                                                  format: 'pem' }),
+           publicKeyPem: rsa.publicKey.export({ type: 'spki',
+                                                format: 'pem' }) },
+    ed25519: { privateKeyPem: ed.privateKey.export({ type: 'pkcs8',
+                                                     format: 'pem' }),
+               publicKeyPem: ed.publicKey.export({ type: 'spki',
+                                                   format: 'pem' }) }
+  };
+  const messages = [
+    'From: Iya <noreply@example.com>\r\nTo: a@b.example\r\n' +
+      'Subject:  Hello\r\n\tthere \r\nDate: Mon, 5 Oct 2026 06:00:00 +0000' +
+      '\r\n\r\nBody  line \r\n\r\n\r\n',
+    'from: x@example.com\nsubject: bare LF\n\nline\twith\ttabs\nend',
+    'From: a@example.com\r\nTo: one@x.example\r\nTo: two@x.example\r\n' +
+      'Subject:  nbsp \r\n\r\n',
+    'From: a@example.com\r\nMessage-ID: <1@x>\r\nReferences: <0@x>\r\n ' +
+      '<9@x>\r\n\r\n \r\n\t\r\nlast'
+  ];
+  const dkim = [];
+  messages.forEach(function (m, i) {
+    ['rsa-sha256', 'ed25519-sha256'].forEach(function (alg) {
+      const key = alg === 'rsa-sha256' ? keys.rsa : keys.ed25519;
+      const field = crypto.dkimSign(Buffer.from(m, 'binary'), {
+        privateKeyPem: key.privateKeyPem, selector: 's2026',
+        domain: 'mail.example.com', algorithm: alg, timestamp: 1791100000 });
+      const signed = field + '\r\n' + m;
+      dkim.push({ name: 'message ' + i + ' ' + alg, algorithm: alg,
+                  message: Buffer.from(m, 'binary').toString('base64'),
+                  field: field,
+                  verified: crypto.dkimVerify(Buffer.from(signed, 'binary'),
+                                              key.publicKeyPem) });
+    });
+  });
+  return { nfold: nfold, prf: prf, cf2: cf2, sessionStates: sessionStates,
+           dkimKeys: keys, dkim: dkim };
+}
+
 const VECTORS = [{ file: 'jws-node.json', build: jws },
                  { file: 'jwe-node.json', build: jwe },
                  { file: 'c14n-node.json', build: c14n },
                  { file: 'xmldsig-node.json', build: xmldsig },
                  { file: 'xmlenc-node.json', build: xmlenc },
-                 { file: 'secrets-node.json', build: secrets }];
+                 { file: 'secrets-node.json', build: secrets },
+                 { file: 'krb5-dkim-node.json', build: kerberosAndDkim }];
 
 if (require.main === module) {
   fs.mkdirSync(OUT, { recursive: true });

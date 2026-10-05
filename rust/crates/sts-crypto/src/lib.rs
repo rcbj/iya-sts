@@ -9,13 +9,16 @@
 #![deny(unsafe_code)]
 
 pub mod b64;
+pub mod dkim;
 pub mod error;
 pub mod hpke;
 pub mod jwe;
 pub mod jws;
 pub mod jws_alg;
 pub mod keys;
+pub mod krb5_prf;
 pub mod pq;
+pub mod random;
 pub mod secrets;
 pub mod xmldsig;
 pub mod xmlenc;
