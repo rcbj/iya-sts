@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: BUSL-1.1
 
 //! The XACML 3.0 engine — model, datatypes, function library, combining
-//! algorithms, PDP, static validation and the XML reader — with no I/O. A
+//! algorithms, PDP, static validation, the XML reader and writer and the JSON Profile — with no I/O. A
 //! port of the eight engine files in `xacml/` (#444, phase 1).
 //!
 //! It is shared by the runtime's PDP and by the remote PEP container, as the
