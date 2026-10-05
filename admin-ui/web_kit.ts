@@ -1737,6 +1737,54 @@ class WebKit {
       control + '</div>';
   }
 
+  // A STRING AS BASE64 OF ITS UTF-8 BYTES (#446), for a `data:` link a page
+  // draws — a certificate to download. Node's Buffer is not in a browser and
+  // `btoa` takes Latin-1, so the bytes are made here: the same answer as
+  // `Buffer.from(text, 'utf8').toString('base64')`, which the console drew
+  // with.
+  /**
+   * Encodes a string's UTF-8 bytes as base64.
+   *
+   * @param text - the string
+   * @returns the base64, padded
+   */
+  static base64Utf8(text) {
+    const bytes = [];
+    const s = String(text);
+    for (let i = 0; i < s.length; i++) {
+      let code = s.charCodeAt(i);
+      if (code >= 0xd800 && code <= 0xdbff && i + 1 < s.length) {
+        const low = s.charCodeAt(i + 1);
+        if (low >= 0xdc00 && low <= 0xdfff) {
+          code = 0x10000 + ((code - 0xd800) << 10) + (low - 0xdc00);
+          i++;
+        }
+      }
+      if (code < 0x80) {
+        bytes.push(code);
+      } else if (code < 0x800) {
+        bytes.push(0xc0 | (code >> 6), 0x80 | (code & 63));
+      } else if (code < 0x10000) {
+        bytes.push(0xe0 | (code >> 12), 0x80 | ((code >> 6) & 63),
+                   0x80 | (code & 63));
+      } else {
+        bytes.push(0xf0 | (code >> 18), 0x80 | ((code >> 12) & 63),
+                   0x80 | ((code >> 6) & 63), 0x80 | (code & 63));
+      }
+    }
+    const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz' +
+                     '0123456789+/';
+    let out = '';
+    for (let j = 0; j < bytes.length; j += 3) {
+      const n = (bytes[j] << 16) | ((bytes[j + 1] || 0) << 8) |
+                (bytes[j + 2] || 0);
+      out += alphabet[(n >> 18) & 63] + alphabet[(n >> 12) & 63] +
+        (j + 1 < bytes.length ? alphabet[(n >> 6) & 63] : '=') +
+        (j + 2 < bytes.length ? alphabet[n & 63] : '=');
+    }
+    return out;
+  }
+
   // A FIELD GRID: the typed rows under their groups' headings (#446). It was
   // the console's `fieldGrid()`, which still types the rows and calls this.
   /**

@@ -15151,221 +15151,46 @@ class AdminConsole {
     log.debug("Leaving the admin applications action endpoint.");
   }
 
-  // ---------------------------------------------------------------------------
-  // THE APPLICATION'S DID, ON ITS CONFIGURATION TAB (2026-10-01): the DID this
-  // service advertises for it, the document's address (a link, so a reader can
-  // see exactly what a resolver gets), whether it resolves yet, and the
-  // *Generate a key pair* form. The form posts `generate-did-key` to
-  // /admin/applications and is answered by a page carrying the private key
-  // once; it is drawn for Admin Write only, like every write on the page.
-  // ---------------------------------------------------------------------------
+  // Drawn by `web_applications.ts` (#446).
   /**
    * Draws the DID block on an application's Decentralized Identifier
    * configuration tab: its DID, its document, and the key-pair form.
    *
-   * @param req - the request, whose base URL names the DID
+   * @param ctx - the render context (`WebKit.context()`)
    * @param row - the application's view
    * @param carryBack - the hidden `back` field the page's forms carry
    * @param where - `config` (the DID tab) or `credentials` (the
    *   Credentials tab), which the Generate form returns to
    * @returns the HTML
    */
-  applicationDidPanel(req, row, carryBack, where?) {
-    const { log, baseUrlOf } = this.deps;
+  applicationDidPanel(ctx, row, carryBack, where?) {
+    const { log } = this.deps;
     log.debug("Entering AdminConsole.applicationDidPanel().");
-    const self = this;
-    const vcDid = require('../oid4vc/vc_did');
-    const base = baseUrlOf(req);
-    const identifier = String(row.identifier || '');
-    const did = vcDid.applicationDid(base, identifier);
-    const url = base + '/applications/' + encodeURIComponent(identifier) +
-                '/did.json';
-    const answer = vcDid.applicationDidDocument(base, identifier);
-    const canWrite = this.mayWrite(req);
-    const algorithms = ['ES256', 'ES384', 'EdDSA'];
-    const anchor = where === 'credentials' ? '#credentials-did' : '#cfg-did';
-    // THE KEY PAIRS THE DOCUMENT PUBLISHES, one row each: the verification
-    // method, the key's type and algorithm, and its thumbprint. Only public
-    // halves exist here; the private halves were handed out when generated.
-    const keys = answer.ok ? answer.document.verificationMethod : [];
-    // Which published keys have a private half kept here, by kid: the ones
-    // Generate made. Only that a half is kept is drawn, never the half.
-    let keptKids = [];
-    try {
-      keptKids = JSON.parse(String((row.fields || {}).didPrivateKeys || '[]'))
-        .map(function (one) { return String(one && one.kid || ''); });
-    } catch (e) {
-      log.debug("Caught in AdminConsole.applicationDidPanel(): " +
-                ((e && e.message) || e));
-      keptKids = [];
-    }
-    const keyTable = keys.length
-      ? '<table><tr><th>Verification method</th><th>Key</th>' +
-        '<th>Algorithm</th><th>Private half</th></tr>' +
-        keys.map(function (m) {
-          const jwk = m.publicKeyJwk || {};
-          const kid = m.id.slice(did.length + 1);
-          return '<tr><td><code>' + self.esc('#' + kid) +
-            '</code></td><td>' + self.esc(String(jwk.kty || '') +
-              (jwk.crv ? ' ' + jwk.crv : '')) + '</td><td>' +
-            self.esc(String(jwk.alg || '—')) + '</td><td>' +
-            (keptKids.indexOf(kid) >= 0
-              ? '<span class="state-valid">kept here, sealed</span>'
-              : '<span class="state-none">not here</span>') + '</td></tr>';
-        }).join('') + '</table>' +
-        this.note('A key Generate made has its private half kept here, ' +
-        'sealed under the key-encryption key, so this service can sign the ' +
-        'Domain Linkage Credentials below. A key added to ' +
-        '<code>didPublicKeyJwk</code> by hand has only its public half here. ' +
-        'To change a key, generate a new one with <em>replace</em> ticked.')
-      : '<p class="sub">No key pair yet.</p>';
-    // THE DOMAIN LINKAGE, one per LinkedDomains origin (2026-10-01): a
-    // download of the DID Configuration resource to host at
-    // https://<origin>/.well-known/did-configuration.json, signed on request
-    // with a kept key. A POST, because signing is an act; Admin Write.
-    const origins = answer.ok ? (answer.document.service || [])
-      .filter(function (one) { return one.type === 'LinkedDomains'; })
-      .map(function (one) { return String(one.serviceEndpoint); }) : [];
-    const linkage = '<h4>Domain linkage</h4>' + (origins.length
-      ? '<table><tr><th>Origin</th><th>Host the file at</th><th></th></tr>' +
-        origins.map(function (origin) {
-          const at = origin.replace(/\/+$/, '') +
-                     '/.well-known/did-configuration.json';
-          return '<tr><td><code>' + self.esc(origin) + '</code></td><td>' +
-            '<code>' + self.esc(at) + '</code></td><td>' + (canWrite
-              ? '<form method="post" action="/admin/applications' + anchor +
-                '" class="inline">' + carryBack +
-                '<input type="hidden" name="action" ' +
-                'value="sign-domain-linkage"><input type="hidden" ' +
-                'name="application" value="' + self.esc(identifier) + '">' +
-                '<input type="hidden" name="origin" value="' +
-                self.esc(origin) + '"><input type="hidden" name="from" ' +
-                'value="' + (where === 'credentials' ? 'credentials'
-                                                     : 'config') + '">' +
-                '<button type="submit" class="secondary"' +
-                self.tip('Sign a Domain Linkage Credential for this origin ' +
-                         'with a kept DID key, and download the ' +
-                         'did-configuration.json to host at the address ' +
-                         'beside it.') +
-                '>Download did-configuration.json</button></form>'
-              : '') + '</td></tr>';
-        }).join('') + '</table>' +
-        this.note('The DIF Well-Known DID Configuration: the file proves the ' +
-        'DID and the origin are one party. It carries one Domain Linkage ' +
-        'Credential, self-issued by the DID and signed with its key, and is ' +
-        'good for <code>oid4vci.domainLinkageLifetimeS</code> (a year by ' +
-        'default); download a new one before it expires.')
-      : '<p class="sub">No LinkedDomains service yet: add one to ' +
-        '<code>didService</code>, such as ' +
-        '<code>LinkedDomains|https://app.example.com</code>, to link the DID ' +
-        'to an origin.</p>');
-    const html = '<table><tr><th>DID</th><td><code>' + this.esc(did) +
-      '</code></td></tr><tr><th>Document</th><td><a href="' + this.esc(url) +
-      '"><code>' + this.esc(url) + '</code></a><div class="sub">' +
-      (answer.ok
-        ? '<span class="state-valid">advertised</span>, ' +
-          answer.document.verificationMethod.length + ' key(s)'
-        : '<span class="state-none">not advertised yet</span>: ' +
-          this.esc(answer.why)) +
-      '</div></td></tr></table>' +
-      this.note('<code>did:web</code> under this realm&rsquo;s address: a ' +
-      'resolver turns the DID into the document&rsquo;s address above and ' +
-      'fetches it from this service. The document publishes the keys, ' +
-      'services and other names below. The DID follows the address this ' +
-      'console is reached on; pin <code>global.publicBaseUrl</code> so it ' +
-      'does not change with the host name.') + keyTable + linkage +
-      (canWrite
-        ? '<form method="post" action="/admin/applications' + anchor +
-          '">' + carryBack +
-          '<input type="hidden" name="action" value="generate-did-key">' +
-          '<input type="hidden" name="from" value="' +
-          (where === 'credentials' ? 'credentials' : 'config') + '">' +
-          '<input type="hidden" name="application" value="' +
-          this.esc(identifier) + '"><div class="formrow">' +
-          '<span>Generate a key pair:</span> ' +
-          algorithms.map(function (alg, index) {
-            return '<label' + self.tip({
-              ES256: 'ECDSA on P-256 with SHA-256: the default, and what ' +
-                     'most DID resolvers and wallets expect.',
-              ES384: 'ECDSA on P-384 with SHA-384.',
-              EdDSA: 'Ed25519. Compact, and widely supported by DID tooling.'
-            }[alg]) + '><input type="radio" name="algorithm" value="' +
-              alg + '"' + (index === 0 ? ' checked' : '') + '> ' + alg +
-              '</label>';
-          }).join(' ') +
-          ' <label' + this.tip('Take the keys already in the document off ' +
-            'first, so the new key is the only one.') + '><input ' +
-          'type="checkbox" name="replace" value="yes"> replace the keys ' +
-          'there</label> <button type="submit"' +
-          this.tip('Make a key pair, add its public key to the DID document ' +
-                   'and show the private key once.') +
-          '>Generate</button></div>' +
-          '</form>' +
-          this.note('The public key is added to the document. The private ' +
-          'key is shown once on the next page, and kept here sealed so this ' +
-          'service can sign the Domain Linkage Credentials.')
-        : '');
     log.debug("Leaving AdminConsole.applicationDidPanel().");
-    return html;
+    return ApplicationsPage.applicationDidPanel(ctx, row, carryBack, where);
   }
 
-  // AN APPLICATION'S TOKEN LIFETIMES (rcbj, 2026-10-01): the realm's Token
-  // lifetimes page, for one application, at the head of its OAuth / OpenID
-  // Connect configuration tab. The four overrides were already fields on
-  // that tab (`oauthAccessTokenTtlS` and three more); this draws the value
-  // IN FORCE for each, where it came from, and the realm page's warnings
-  // over the application's own values. Clock skew stays realm-wide.
+  // Drawn by `web_applications.ts` (#446).
   /**
    * Draws the token lifetimes in force for an application, with the realm
    * page's warnings.
    *
-   * @param row - the application's view
+   * @param json - the application's answer, with its `page`
    * @returns the markup
    */
-  applicationTokenLifetimesSection(row) {
-    const { log, adminViews } = this.deps;
-    const self = this;
+  applicationTokenLifetimesSection(json) {
+    const { log } = this.deps;
     log.debug("Entering AdminConsole.applicationTokenLifetimesSection().");
-    const state = adminViews.applicationTokenLifetimesState(row);
-    const byKey = {};
-    state.rows.forEach(function (one) { byKey[one.setting] = one; });
-    const html = '<h3 id="cfg-oauth-lifetimes">Token lifetimes</h3>' +
-      '<table><tr><th>Token</th><th>In force</th><th>From</th>' +
-      '<th>The realm\'s</th><th>Override</th></tr>' +
-      state.rows.map(function (one) {
-        return '<tr><td>' + self.esc(one.label) + '</td><td>' +
-          self.esc(self.humanSeconds(one.value)) + '</td><td>' +
-          (one.source === 'application'
-            ? '<span class="state-valid">this application</span>'
-            : '<span class="state-none">the realm</span>') + '</td><td>' +
-          self.esc(self.humanSeconds(one.realmValue)) + '</td><td>' +
-          '<code>' + self.esc(one.attribute) + '</code></td></tr>';
-      }).join('') + '</table>' +
-      this.tokenLifetimeWarnings({
-        access: byKey['oauth2.accessTokenTtlS'].value,
-        refresh: byKey['oauth2.refreshTokenTtlS'].value,
-        skew: state.skew }) +
-      this.note('Set an override in the field of that name below and press ' +
-        'Save; empty it to take the realm\'s value again (Protocols → ' +
-        'OAuth2 / OIDC → Token lifetimes). The clock skew, ' +
-        this.esc(this.humanSeconds(state.skew)) + ', is the realm\'s for ' +
-        'every application.');
     log.debug("Leaving AdminConsole.applicationTokenLifetimesSection().");
-    return html;
+    return ApplicationsPage.applicationTokenLifetimesSection(json);
   }
 
-  // AN APPLICATION'S OWN CUSTOM CLAIMS OR SAML ATTRIBUTES (rcbj,
-  // 2026-10-01): the realm's Custom claims, UserInfo claims and Custom SAML
-  // attributes pages, for one application, on its configuration tabs. Each
-  // set shows the rows IN FORCE for it — the realm's, and its own, which are
-  // added and win by name — with a Remove on its own rows and a form to set
-  // one. Both post to `/admin/applications` (`set-custom-claim`,
-  // `remove-custom-claim`), mirrored at `/admin-api/applications/<action>`.
+  // Drawn by `web_applications.ts` (#446).
   /**
    * Draws an application's own claim sets beside the realm's, with the
    * controls that set and remove its own rows.
    *
-   * @param req - the request
+   * @param ctx - the render context (`WebKit.context()`)
    * @param row - the application's view
    * @param carryBack - the hidden `back` field
    * @param setIds - which of the five sets to draw
@@ -15373,367 +15198,32 @@ class AdminConsole {
    * @param title - the section's heading
    * @returns the markup
    */
-  applicationClaimsSection(req, row, carryBack, setIds, anchor, title) {
-    const { log, adminViews } = this.deps;
-    const self = this;
+  applicationClaimsSection(ctx, row, carryBack, setIds, anchor, title) {
+    const { log } = this.deps;
     log.debug("Entering AdminConsole.applicationClaimsSection().");
-    const canWrite = this.mayWrite(req);
-    const id = String(row.identifier || '');
-    const sets = adminViews.applicationClaimsState(row).sets
-      .filter(function (one) { return setIds.indexOf(one.id) >= 0; });
-    if (!sets.length) {
-      log.debug("Leaving AdminConsole.applicationClaimsSection(). None " +
-                "declared.");
-      return '';
-    }
-    const formOpen = function (action, setId) {
-      return '<form method="post" action="/admin/applications#' + anchor +
-        '" class="inline">' + carryBack +
-        '<input type="hidden" name="action" value="' + action + '">' +
-        '<input type="hidden" name="application" value="' + self.esc(id) +
-        '"><input type="hidden" name="set" value="' + self.esc(setId) + '">';
-    };
-    const html = '<h3 id="' + this.esc(anchor) + '">' + this.esc(title) +
-      '</h3>' +
-      this.note('The realm\'s claims are issued to this application, and its ' +
-        'own are added to them; where both name the same claim, this ' +
-        'application\'s value is the one issued. A row is a typed value, ' +
-        'whose <code>${…}</code> placeholders are expanded as on the ' +
-          'realm\'s ' +
-        'page, or a directory attribute of the person. ' +
-        'The realm\'s rows are edited on the realm\'s page under Protocols.') +
-      sets.map(function (set) {
-        const isSaml = set.id === 'saml2' || set.id === 'saml11';
-        const rows = set.effective.length
-          ? set.effective.map(function (claim) {
-            const what = claim.attribute
-              ? 'attribute <code>' + self.esc(claim.attribute) + '</code>' +
-                (claim.multi ? ', every value' : '') +
-                (claim.type ? ', ' + self.esc(claim.type) : '')
-              : '<code>' + self.esc(claim.value) + '</code>';
-            const extra = claim.nameFormat
-              ? ' <span class="sub">' + self.esc(claim.nameFormat) + '</span>'
-              : (claim.namespace ? ' <span class="sub">' +
-                self.esc(claim.namespace) + '</span>' : '');
-            return '<tr><td><code>' + self.esc(claim.name) + '</code>' +
-              extra + '</td><td>' + what + '</td><td>' +
-              (claim.source === 'application'
-                ? '<span class="state-valid">this application</span>' +
-                  (claim.replacesRealm ? ' <span class="sub">(replaces the ' +
-                    'realm\'s)</span>' : '')
-                : '<span class="state-none">the realm</span>') + '</td><td>' +
-              (canWrite && claim.source === 'application'
-                ? formOpen('remove-custom-claim', set.id) +
-                  '<input type="hidden" name="name" value="' +
-                  self.esc(claim.name) + '"><button type="submit" ' +
-                  'class="secondary"' + self.tip('Take this application\'s ' +
-                    'row off. The realm\'s row of the same name, if there is ' +
-                    'one, is issued again.') + '>Remove</button></form>'
-                : '') + '</td></tr>';
-          }).join('')
-          : '<tr><td colspan="4" class="sub">No claims: neither the realm ' +
-            'nor this application configures any.</td></tr>';
-        const typeSelect = isSaml ? '' : ' <label' + self.tip('The JSON type ' +
-            'each value of a directory attribute becomes. A typed value is ' +
-            'issued as written.') + '>Type <select name="type">' +
-          ['string', 'number', 'boolean', 'json'].map(function (t) {
-            return '<option value="' + t + '">' + t + '</option>';
-          }).join('') + '</select></label>';
-        const samlExtra = set.id === 'saml2'
-          ? ' <label' + self.tip('The SAML 2.0 NameFormat of the attribute, ' +
-              'such as urn:oasis:names:tc:SAML:2.0:attrname-format:uri. ' +
-              'Empty leaves it unspecified.') + '>NameFormat <input ' +
-            'type="text" name="nameFormat" placeholder="urn:oasis:names:tc:' +
-            'SAML:2.0:attrname-format:uri"></label>'
-          : (set.id === 'saml11'
-            ? ' <label' + self.tip('The SAML 1.1 AttributeNamespace. Empty ' +
-                'gives the identity claims namespace.') + '>Namespace <input ' +
-              'type="text" name="namespace" placeholder="http://schemas.' +
-              'xmlsoap.org/ws/2005/05/identity/claims"></label>'
-            : '');
-        return '<h4>' + self.esc(set.label) + '</h4>' +
-          '<table><tr><th>Name</th><th>Value</th><th>From</th><th></th></tr>' +
-          rows + '</table>' + (canWrite
-            ? formOpen('set-custom-claim', set.id) + '<div class="formrow">' +
-              '<label' + self.tip('The claim or attribute name. Setting a ' +
-                'name this application already has replaces its row; a name ' +
-                'the realm has is replaced for this application.') + '>Name ' +
-              '<input type="text" name="name" required placeholder="' +
-              (isSaml ? 'department' : 'tenant') + '"></label> ' +
-              '<label' + self.tip('A typed value, with ${placeholders}. ' +
-                'Leave it empty and name an attribute instead to take the ' +
-                'value from the person\'s directory entry.') + '>Value ' +
-              '<input type="text" name="value" placeholder="' +
-              (isSaml ? '${subject}' : '${username}') + '">' +
-              '</label> <label' + self.tip('A directory attribute of the ' +
-                'person, such as departmentNumber. Takes the place of the ' +
-                'value.') + '>or attribute <input type="text" ' +
-              'name="attribute" placeholder="departmentNumber"></label> ' +
-              '<label' + self.tip('Issue every value of the attribute, not ' +
-                'only the first.') + '><input type="checkbox" name="multi" ' +
-              'value="yes"> every value</label>' + typeSelect + samlExtra +
-              ' <button type="submit"' + self.tip('Set this row on the ' +
-                'application. It is added to the realm\'s ' + set.label +
-                ' and wins by name.') + '>Set</button></div></form>'
-            : '');
-      }).join('');
-    log.debug("Leaving AdminConsole.applicationClaimsSection(). " +
-              sets.length + " set(s).");
-    return html;
+    log.debug("Leaving AdminConsole.applicationClaimsSection().");
+    return ApplicationsPage.applicationClaimsSection(ctx, row, carryBack,
+      setIds, anchor, title);
   }
 
-  // AN APPLICATION'S CERTIFICATES OVER ACME, EST AND SCEP (rcbj,
-  // 2026-10-01): generation and tracking on the application's own page, on
-  // its Credentials tab and on its Certificate enrollment configuration
-  // tab, for an application declared for any of the three. It DRAWS
-  // `adminViews.applicationEnrollmentState()` and POSTS to the three
-  // protocols' own console actions (`/admin/acme`, `/admin/est`,
-  // `/admin/scep`) — moving a form is not moving an action, so every control
-  // keeps its `/admin-api` mirror (rule 7) — each carrying `from=application`,
-  // `where` and the application, which `enrollmentReturnTo()` turns back into
-  // this page. Nothing here reads a secret: an EAB HMAC key, a challenge and
-  // a server-generated private key are shown once on the page the action
-  // answers with, which links back here.
+  // Drawn by `web_applications.ts` (#446).
   /**
    * Draws an application's certificate enrollment: the rules in force, its
    * certificates with a Revoke each, its EAB keys and SCEP challenges, the
    * three generation forms and its host names.
    *
-   * @param req - the request
+   * @param ctx - the render context (`WebKit.context()`)
    * @param row - the application's view
    * @param carryBack - the hidden `back` field
    * @param where - `credentials` or `config`, which tab it is drawn on
    * @returns the markup
    */
-  applicationEnrollmentPanel(req, row, carryBack, where) {
-    const { log, adminViews, pageParamsOf } = this.deps;
-    const self = this;
+  applicationEnrollmentPanel(ctx, row, carryBack, where) {
+    const { log } = this.deps;
     log.debug("Entering AdminConsole.applicationEnrollmentPanel().");
-    // TWO COPIES ON ONE PAGE, TWO PAGERS (2026-10-01). The panel is drawn on
-    // the Credentials tab and on the Certificate enrollment sub-tab, and a
-    // pager's links carry `#list-<param>`, the id of the pager above its
-    // list — which opens the tab holding it. With one paging name both
-    // copies had that id, and a next page from the Credentials tab landed on
-    // the Configuration tab's copy. Each copy pages on a name of its own.
-    const state = adminViews.applicationEnrollmentState(req, row,
-      where === 'credentials' ? 'enrolled' : 'enrolledConfig');
-    if (!state.families.length) {
-      log.debug("Leaving AdminConsole.applicationEnrollmentPanel(). Not " +
-                "declared for any of the three.");
-      return '<p class="sub">Tick ACME, EST or SCEP on the Protocol ' +
-        'families tab to issue this application certificates.</p>';
-    }
-    const id = String(row.identifier || '');
-    const canWrite = this.mayWrite(req);
-    const tab = where === 'credentials' ? 'credentials' : 'config';
-    const anchor = tab === 'credentials' ? '#credentials-enroll'
-                                         : '#cfg-enroll';
-    const source = function (one) {
-      return one === 'application'
-        ? ' <span class="sub">(this application)</span>'
-        : ' <span class="sub">(the realm)</span>';
-    };
-    // Every form here opens the same way: the protocol's action, the
-    // application named as the entry, and where to come back to.
-    const formOpen = function (family, action, extra?) {
-      return '<form method="post" action="/admin/' + family + anchor +
-        '" class="inline">' + carryBack +
-        '<input type="hidden" name="action" value="' + self.esc(action) +
-        '"><input type="hidden" name="from" value="application">' +
-        '<input type="hidden" name="where" value="' + tab + '">' +
-        '<input type="hidden" name="application" value="' + self.esc(id) +
-        '">' + (extra || '');
-    };
-    const entryFields = '<input type="hidden" name="kind" ' +
-      'value="application"><input type="hidden" name="identifier" value="' +
-      this.esc(id) + '">';
-    const profileSelect = function (rule) {
-      return '<select name="profile">' + rule.allowedProfiles.map(
-        function (one) {
-          return '<option value="' + self.esc(one) + '"' +
-            (one === rule.defaultProfile ? ' selected' : '') + '>' +
-            self.esc(one) + '</option>';
-        }).join('') + '</select>';
-    };
-    // THE RULES IN FORCE, so a reader sees what an override changed.
-    const rulesTable = '<table><tr><th>Protocol</th><th>Profiles it may be ' +
-      'issued</th><th>Default</th><th>Lifetime</th></tr>' +
-      state.rules.map(function (rule) {
-        return '<tr><td>' + self.esc(rule.label) + '</td><td>' +
-          rule.allowedProfiles.map(function (one) {
-            return '<code>' + self.esc(one) + '</code>';
-          }).join(' ') + source(rule.allowedProfilesSource) + '</td><td>' +
-          '<code>' + self.esc(rule.defaultProfile) + '</code>' +
-          source(rule.defaultProfileSource) + '</td><td>' +
-          rule.certificateLifetimeDays + ' days' +
-          source(rule.certificateLifetimeSource) + '</td></tr>';
-      }).join('') + '</table><p class="sub">Certificates it may hold ' +
-      '(ACME, EST and SCEP together): ' + state.cap.value +
-      source(state.cap.source) + '.' + (state.est
-        ? ' EST: client id and secret ' +
-          (state.est.basicAuthentication.on ? 'accepted' : 'refused') +
-          source(state.est.basicAuthentication.source) + ', certificate ' +
-          (state.est.certificateAuthentication.on ? 'accepted' : 'refused') +
-          source(state.est.certificateAuthentication.source) +
-          ', server-generated keys ' +
-          (state.est.serverKeyGeneration.on ? 'allowed' : 'refused') +
-          source(state.est.serverKeyGeneration.source) + '.'
-        : '') + ' The overrides are on the Certificate enrollment ' +
-      'configuration tab; a value set there replaces the realm\'s.</p>';
-    // THE CERTIFICATES IT WAS ISSUED, newest first, paged.
-    const nav = this.pageNavPair('/admin/applications',
-      Object.assign({}, pageParamsOf(req.query), { application: id }),
-      state.paged.paging);
-    const serialField = { acme: 'serial', est: 'serialHex', scep: 'serial' };
-    const certificateRows = state.paged.shown.length
-      ? state.paged.shown.map(function (one) {
-        const family = String(one.family || '');
-        const download = one.certificatePem
-          ? '<a download="' + self.esc(one.serialHex) + '.pem" href="' +
-            self.esc('data:application/x-pem-file;base64,' +
-              Buffer.from(String(one.certificatePem), 'utf8')
-                .toString('base64')) + '"' +
-            self.tip('Download the certificate (PEM). No private key is ' +
-                     'here.') + '>PEM</a>'
-          : '';
-        const revoke = canWrite && one.status === 'valid' &&
-          serialField[family]
-          ? formOpen(family, 'revoke-certificate',
-              '<input type="hidden" name="' + serialField[family] +
-              '" value="' + self.esc(one.serialHex) + '">') +
-            '<button type="submit" class="secondary"' +
-            self.tip('Revoke this certificate: its serial goes on the ' +
-                     'Issuing CA\'s CRL and its OCSP responder answers ' +
-                     'revoked.') + '>Revoke</button></form>'
-          : '';
-        return '<tr><td>' + self.esc(String(family).toUpperCase()) +
-          '</td><td><code>' + self.esc(one.profile || '') + '</code></td>' +
-          '<td><code>' + self.esc(one.serialHex || '') + '</code></td><td>' +
-          (one.names || []).map(function (n) {
-            return '<code>' + self.esc(n) + '</code>';
-          }).join('<br>') + '</td><td>' + self.esc(one.issuedAt || '') +
-          '</td><td>' + self.esc(one.notAfter || '') + '</td><td>' +
-          '<span class="state-' + (one.status === 'valid' ? 'valid'
-                                                           : 'none') + '">' +
-          self.esc(one.status || '') + '</span></td><td>' + download + ' ' +
-          revoke + '</td></tr>';
-      }).join('')
-      : '<tr><td colspan="8" class="sub">No certificate has been issued ' +
-        'to this application over ACME, EST or SCEP.</td></tr>';
-    const certificates = '<h4>Certificates issued to it</h4>' + nav.head +
-      '<table><tr><th>Protocol</th><th>Profile</th><th>Serial</th>' +
-      '<th>Names</th><th>Issued</th><th>Expires</th><th>Status</th>' +
-      '<th></th></tr>' + certificateRows + '</table>' + nav.foot;
-    // GENERATION, per declared protocol.
-    let generation = '';
-    if (state.families.indexOf('acme') >= 0) {
-      const eabRows = state.eabKeys.length
-        ? state.eabKeys.map(function (k) {
-          return '<tr><td><code>' + self.esc(k.kid) + '</code></td><td>' +
-            self.esc(k.createdAt || '') + '</td><td>' +
-            self.esc(k.expiresAt || '') + '</td><td>' + self.esc(k.status) +
-            (k.boundAccount ? ' <span class="sub">account ' +
-              self.esc(k.boundAccount) + '</span>' : '') + '</td><td>' +
-            (canWrite && !k.boundAccount
-              ? formOpen('acme', 'delete-eab', '<input type="hidden" ' +
-                  'name="kid" value="' + self.esc(k.kid) + '">') +
-                '<button type="submit" class="secondary">Delete</button>' +
-                '</form>'
-              : '') + '</td></tr>';
-        }).join('')
-        : '<tr><td colspan="5" class="sub">None.</td></tr>';
-      generation += '<h4>ACME: External Account Binding keys</h4>' +
-        '<table><tr><th>Key id</th><th>Created</th><th>Unused until</th>' +
-        '<th>Status</th><th></th></tr>' + eabRows + '</table>' +
-        (canWrite
-          ? formOpen('acme', 'create-eab', entryFields) +
-            '<button type="submit"' + this.tip('Make an EAB key bound to ' +
-              'this application. The HMAC key is shown once on the next ' +
-              'page; give it and the key id to the ACME client, which ' +
-              'binds one account to this application for life.') +
-            '>Create an EAB key</button></form>'
-          : '');
-    }
-    if (state.families.indexOf('est') >= 0) {
-      const rule = state.rules.filter(function (one) {
-        return one.family === 'est';
-      })[0];
-      generation += '<h4>EST: a certificate with a server-generated key</h4>' +
-        (canWrite && state.est.serverKeyGeneration.on
-          ? formOpen('est', 'issue-server-key', entryFields) +
-            '<label>Profile ' + profileSelect(rule) + '</label> ' +
-            '<label>Key <select name="keyAlg">' +
-            state.keyAlgorithms.map(function (alg) {
-              return '<option value="' + self.esc(alg) + '"' +
-                (alg === 'ec-p256' ? ' selected' : '') + '>' +
-                self.esc(alg) + '</option>';
-            }).join('') + '</select></label> ' +
-            '<button type="submit"' + this.tip('Generate a key pair here, ' +
-              'issue this application a certificate for it from the EST ' +
-              'Issuing CA, and show the private key once. A sealed copy is ' +
-              'kept on the entry.') + '>Issue</button></form>'
-          : '<p class="sub">' + (state.est.serverKeyGeneration.on
-            ? 'Needs Admin Write.'
-            : 'Server-generated keys are turned off for this application.') +
-            '</p>') +
-        '<p class="sub">An EST client authenticates as this application ' +
-        'with its client id and secret (Basic) or a certificate this realm ' +
-        'issued it.</p>';
-    }
-    if (state.families.indexOf('scep') >= 0) {
-      const rule = state.rules.filter(function (one) {
-        return one.family === 'scep';
-      })[0];
-      const challengeRows = state.challenges.length
-        ? state.challenges.map(function (c) {
-          return '<tr><td><code>' + self.esc(c.id) + '</code></td><td>' +
-            '<code>' + self.esc(c.profile || '') + '</code></td><td>' +
-            self.esc(c.createdAt || '') + '</td><td>' +
-            self.esc(c.expiresAt || '') + '</td><td>' + self.esc(c.status) +
-            '</td><td>' + (canWrite && c.status === 'unused'
-              ? formOpen('scep', 'delete-challenge', '<input type="hidden" ' +
-                  'name="id" value="' + self.esc(c.id) + '">') +
-                '<button type="submit" class="secondary">Delete</button>' +
-                '</form>'
-              : '') + '</td></tr>';
-        }).join('')
-        : '<tr><td colspan="6" class="sub">None.</td></tr>';
-      generation += '<h4>SCEP: challenge passwords</h4>' +
-        '<table><tr><th>Id</th><th>Profile</th><th>Created</th>' +
-        '<th>Expires</th><th>Status</th><th></th></tr>' + challengeRows +
-        '</table>' + (canWrite
-          ? formOpen('scep', 'create-challenge', entryFields) +
-            '<label>Profile ' + profileSelect(rule) + '</label> ' +
-            '<button type="submit"' + this.tip('Make a one-time challenge ' +
-              'password for this application and profile. It is shown once ' +
-              'on the next page, with the SCEP URL and an sscep example.') +
-            '>Create a challenge</button></form>'
-          : '');
-    }
-    // THE HOST NAMES, shared by the three: a server certificate names only a
-    // host registered here.
-    const hostFamily = state.families[0];
-    const hostRows = state.hostNames.length
-      ? state.hostNames.map(function (h) {
-        return '<li><code>' + self.esc(h) + '</code> ' + (canWrite
-          ? formOpen(hostFamily, 'remove-host-name', entryFields +
-              '<input type="hidden" name="hostName" value="' + self.esc(h) +
-              '">') + '<button type="submit" class="secondary">Remove' +
-            '</button></form>'
-          : '') + '</li>';
-      }).join('')
-      : '<li class="sub">None.</li>';
-    const hosts = '<h4>Host names</h4><ul>' + hostRows + '</ul>' + (canWrite
-      ? formOpen(hostFamily, 'add-host-name', entryFields) +
-        '<input type="text" name="hostName" placeholder="web1.example.com"' +
-        this.tip('A DNS name or IP address this application may be issued a ' +
-                 'server certificate for, over ACME, EST or SCEP.') + '> ' +
-        '<button type="submit">Add</button></form>'
-      : '') + '<p class="sub">A dNSName or iPAddress is issued only when ' +
-      'it is registered here; one registration serves all three ' +
-      'protocols.</p>';
     log.debug("Leaving AdminConsole.applicationEnrollmentPanel().");
-    return rulesTable + certificates + generation + hosts;
+    return ApplicationsPage.applicationEnrollmentPanel(ctx, row, carryBack,
+      where);
   }
 
   // Where a form posted from an application's enrollment panel to
@@ -15762,6 +15252,32 @@ class AdminConsole {
     return this.applicationReturnTo(body, id,
       String(body.where || '') === 'config' ? '#cfg-enroll'
                                             : '#credentials-enroll');
+  }
+
+  // The page answering a reveal (#446): the application's own, drawn with
+  // the value in its flash, never cached and never on a URL.
+  /**
+   * Answers a revealed credential with the application's page, the value
+   * shown on it once.
+   *
+   * @param req - the request
+   * @param res - the response
+   * @param body - the posted form
+   * @param result - `reveal-secret`'s answer
+   */
+  answerRevealedSecret(req, res, body, result) {
+    const { log } = this.deps;
+    log.debug("Entering AdminConsole.answerRevealedSecret().");
+    const identifier = String(body.application || '');
+    const detail = this.applicationDetailPage(req, identifier, {
+      revealed: { secret: result.secret, value: result.value } });
+    res.set('Cache-Control', 'no-store');
+    this.respond(req, res, detail.json, 'Application ' + identifier,
+                 '/admin/applications', detail.inner,
+                 this.upTo('/admin/applications', identifier,
+                           this.listViewFromBack('/admin/applications',
+                                                 body.back)));
+    log.debug("Leaving AdminConsole.answerRevealedSecret().");
   }
 
   // The one-time answer to *Generate a key pair*: the private key, as a JWK
@@ -15923,9 +15439,7 @@ class AdminConsole {
     log.debug("Leaving AdminConsole.answerIssuedTlsClientCertificate().");
   }
 
-  // One value off an application view's fields, whichever shape it is in. The
-  // registry hands `multi` attributes back as arrays and `single` ones as
-  // strings, and a page that assumed either would be wrong for half the schema.
+  // Drawn by `web_applications.ts` (#446).
   /**
    * Returns the first value of one attribute of an application view,
    * whether the registry holds it as an array or a string.
@@ -15937,58 +15451,26 @@ class AdminConsole {
   firstFieldValue(row, attribute) {
     const { log } = this.deps;
     log.debug("Entering AdminConsole.firstFieldValue().");
-    const value = (row && row.fields && row.fields[attribute]);
-    const one = Array.isArray(value) ? value[0] : value;
     log.debug("Leaving AdminConsole.firstFieldValue().");
-    return String(one == null ? '' : one).trim();
+    return ApplicationsPage.firstFieldValue(row, attribute);
   }
 
-  // The two selects the edit forms offer, built from applications.js's EDITABLE
-  // table so that a form cannot offer a field the action would refuse — the
-  // same reason the audit page's filters are built from the audit vocabulary.
-  //
-  // `row` IS THE ENTRY BEING EDITED, and it is here because that rule acquired
-  // a second half on 2026-09-01. An attribute whose SCHEMA row carries
-  // `families` may only be written onto an entry declared for one of them —
-  // `oauthTokenExchangeRefreshToken` and, since 2026-09-12, `ssfAllowedEvents`
-  // — and `updateApplication()` refuses it. Offering it in this select on a
-  // SAML-only application would be exactly the drift this function exists to
-  // prevent: a control that looks like a control and answers with a refusal.
-  // Both halves come off the same SCHEMA member, so a second family-scoped
-  // attribute needs nothing here.
-  //
-  // The entry is optional: `editableOptions(mode, selected)` with no entry
-  // offers everything, which is what a caller with no application in hand
-  // should get.
+  // Drawn by `web_applications.ts` (#446).
   /**
    * Draws the options of an edit form's attribute select from the
    * registry's EDITABLE table, leaving out family-scoped attributes the
    * entry is not declared for.
    *
-   * @param mode - which editable set to offer
+   * @param attributes - the attributes offered, from the answer's
+   *   `page.editable`
    * @param selected - the attribute to mark selected
-   * @param row - optional; the entry being edited, without which every
-   *   attribute is offered
    * @returns the option elements as HTML
    */
-  editableOptions(mode, selected, row?) {
-    const { log, applications } = this.deps;
-    const self = this;
+  editableOptions(attributes, selected) {
+    const { log } = this.deps;
     log.debug("Entering AdminConsole.editableOptions().");
-    const declared = row ? applications.declaredFamiliesOf(row) : null;
     log.debug("Leaving AdminConsole.editableOptions().");
-    return applications.editableAttributes(mode).filter(function (attribute) {
-      if (!declared) {
-        return true;
-      }
-      return !applications.familyRefusal(attribute.name, declared,
-                                         (row && row.identifier) || '');
-    }).map(function (attribute) {
-      return '<option value="' + self.esc(attribute.name) + '"' +
-        (attribute.name === selected ? ' selected' : '') + '>' +
-             self.esc(attribute.name) +
-        (attribute.sensitive ? ' (credential)' : '') + '</option>';
-    }).join('');
+    return ApplicationsPage.editableOptions(attributes, selected);
   }
 
   // What one attribute of an application entry IS, as the drill-down's third
@@ -16018,67 +15500,14 @@ class AdminConsole {
    * @returns an object with `text` and, for a schema attribute, `sensitive`
    */
   applicationAttributeNote(name, operational) {
-    const { log, applications } = this.deps;
+    const { log, adminViews } = this.deps;
     log.debug("Entering AdminConsole.applicationAttributeNote().");
-    const lower = String(name).toLowerCase();
-    const spec = applications.SCHEMA.attributes.filter(function (one) {
-      return one.name.toLowerCase() === lower;
-    })[0];
-    if (spec) {
-      log.debug("Leaving AdminConsole.applicationAttributeNote().");
-      return { text: spec.what, sensitive: !!spec.sensitive };
-    }
-    if (lower === 'entrydn') {
-      log.debug("Leaving AdminConsole.applicationAttributeNote().");
-      return { text: 'WHERE THE ENTRY IS. RFC 5020, and the directory ' +
-                     'synthesises it rather than storing it: the DN is the ' +
-                     'key the entry is held under, so a stored copy would be ' +
-                     'a second definition of the same fact and the one that ' +
-                     'goes stale the moment the entry is renamed. It is the ' +
-                     'name an ldapsearch filter matches this by, which is ' +
-                     'why the dump calls it the same thing.' };
-    }
-    if (lower === 'createtimestamp' || lower === 'modifytimestamp') {
-      log.debug("Leaving AdminConsole.applicationAttributeNote().");
-      return { text: 'The directory\'s own, not the registry\'s: when this ' +
-                     'ENTRY was ' +
-                     (lower === 'createtimestamp' ? 'created' :
-                      'last written') +
-                     '. Different from appFirstSeen and appLastSeen one row ' +
-                     'up, which are when the APPLICATION was seen — an ' +
-                     'ldapmodify moves this one and not those.' };
-    }
-    if (lower === 'objectclass') {
-      log.debug("Leaving AdminConsole.applicationAttributeNote().");
-      return { text: 'The classes this entry claims, from the registry\'s ' +
-                     'vocabulary: ' +
-                     applications.SCHEMA.objectClasses.map(function (one) {
-                       return one.name;
-                     }).join(', ') + '. A VOCABULARY and not a constraint — ' +
-                     'node-ldapjs has no schema subsystem and this directory ' +
-                     'is schemaless on purpose, so nothing rejects an entry ' +
-                     'for disobeying it.' };
-    }
-    if (operational) {
-      log.debug("Leaving AdminConsole.applicationAttributeNote().");
-      // An operational attribute this function has no sentence for, which means
-      // ldap_server.js's OPERATIONAL list grew and this one did not. Saying so
-      // is better than the "written by hand" answer below, which would be
-      // flatly wrong about an attribute the directory sets itself.
-      return { text: 'An operational attribute the directory sets. A search ' +
-                     'returns it only when it is asked for by name (RFC 4511 ' +
-                     'section 4.5.1.8); this dump is not a search, so it is ' +
-                     'here. This page has nothing more specific to say about ' +
-                     'it.' };
-    }
+    // `admin_views.ts`'s since #446: the application's answer carries each
+    // attribute's note, made by the same function.
     log.debug("Leaving AdminConsole.applicationAttributeNote().");
-    return { text: 'Not in the published schema and not one the directory ' +
-                   'sets — written by hand into this entry, which nothing ' +
-                   'here prevents and which is what a schemaless directory ' +
-                   'means. The registry\'s own writes REPLACE the entry, so ' +
-                   'a value here survives only until the next time this ' +
-                   'application is seen.' };
+    return adminViews.applicationAttributeNote(name, operational);
   }
+
 
   // Drawn by `web_applications.ts` (#446).
   /**
@@ -16131,235 +15560,26 @@ class AdminConsole {
     };
   }
 
-  // ---------------------------------------------------------------------------
-  // THE APPLICATION'S FIELD GRID (2026-09-30): the protocol families it is
-  // declared for, as a row of checkboxes, and every field of
-  // `applications.applicationFields()` the page can edit, typed, shown for the
-  // families ticked — one form, saved by `update-fields`.
-  //
-  // **It posts to `/admin/applications/edit`, not to `/admin/applications`**,
-  // because a refused save has to come back to THIS page with every box as
-  // the reader left it, and the list page's 303 cannot carry a form. The same
-  // route redraws for "+" and delete. `present` names every field drawn, so a
-  // field emptied on the page is cleared; `protocolsPresent` says the
-  // checkbox column was drawn, so unticking every box means "none".
-  //
-  // **It leaves out what has a control of its own**: credentials (the
-  // Credentials section regenerates, issues and uploads them, and a secret
-  // re-posted by every save is a secret in every request body) and what
-  // `applications.applicationFields()` already leaves out.
-  // ---------------------------------------------------------------------------
+  // Drawn by `web_applications.ts` (#446).
   /**
    * Draws an application's field grid: its declared families and every
    * editable field for them, in one form saved by `update-fields`.
    *
-   * @param req - the request
+   * @param ctx - the render context (`WebKit.context()`)
    * @param row - the application's view
    * @param carryBack - the hidden `back` field
    * @param state - optional; a redraw: `draft`, the posted form
    * @returns the section as HTML
    */
-  applicationFieldsSection(req, row, carryBack, state?) {
-    const { log, applications } = this.deps;
-    const self = this;
+  applicationFieldsSection(ctx, row, carryBack, state?) {
+    const { log } = this.deps;
     log.debug("Entering AdminConsole.applicationFieldsSection().");
-    const draft = state && state.draft ? state.draft : null;
-    const rows = applications.applicationFields().filter(function (one) {
-      return !one.sensitive;
-    });
-    const names = rows.map(function (one) { return one.attribute; });
-    // WHAT THE ENTRY HOLDS, WITH WHAT WAS POSTED LAID OVER IT. A redraw is of
-    // one sub-tab's form, so only the attributes that form named (`present`)
-    // are taken from the post; every other group shows the entry.
-    const values = this.gridValuesFromEntry(row.fields, names);
-    if (draft) {
-      const posted = this.gridValuesFromDraft(draft);
-      String(draft.present || '').split(/[\s,]+/).forEach(function (name) {
-        if (name && Object.prototype.hasOwnProperty.call(values, name)) {
-          values[name] = posted[name] || [];
-        }
-      });
-    }
-    const declared = draft && draft.protocolsPresent
-      ? applications.familiesOfChoices(this.listField(req, draft, 'protocol'))
-      : [].concat(row.allowedProtocols || []);
-    // A FIELD IS SHOWN when it belongs to every family or to a family this
-    // application is declared for, and to no other (rcbj, 2026-10-01): a
-    // value an undeclared family's field still holds is inert — product mode
-    // refuses that family's requests — and stays visible on the Directory
-    // entry tab. Decided here rather than by the create page's `:has()`
-    // rules, because each group is a form of its own and the family
-    // checkboxes are in another.
-    const shown = rows.filter(function (one) {
-      return one.everyFamily || one.families.some(function (f) {
-        return declared.indexOf(f) >= 0;
-      });
-    });
-    const groups = applications.FIELD_GROUPS.filter(function (group) {
-      return shown.some(function (one) { return one.group === group.id; });
-    });
-    const saveButton = function (label) {
-      return '<div class="formrow"><button type="submit"' +
-        self.tip('Write this tab to the application. Nothing on the other ' +
-                 'tabs changes, and a refused value is shown with what was ' +
-                 'typed kept.') + '>' + self.esc(label) + '</button></div>';
-    };
-    const formOpen = function (group, present, extra?) {
-      return '<form method="post" action="/admin/applications/edit#cfg-' +
-        self.esc(group) + '" class="appgrid">' + carryBack +
-        '<input type="hidden" name="action" value="update-fields">' +
-        '<input type="hidden" name="application" value="' +
-        self.esc(row.identifier) + '">' +
-        '<input type="hidden" name="group" value="' + self.esc(group) + '">' +
-        (present ? '<input type="hidden" name="present" value="' +
-                   self.esc(present.join(' ')) + '">' : '') + (extra || '') +
-        // THE DEFAULT BUTTON, first in the form, for the reason the create
-        // form has one: Enter in a box presses the first submit button,
-        // which would otherwise be a "+" or a delete.
-        '<button type="submit" class="default-submit" tabindex="-1" ' +
-        'aria-hidden="true">Save</button>';
-    };
-    const familiesPanel = '<div class="subpanel first" id="cfg-families">' +
-      '<h3>Protocol families it is declared for</h3>' +
-      this.note('Tick the families this application speaks and press Save. ' +
-      'A family ticked here adds its tab of fields beside this one, and its ' +
-      'tab goes when it is unticked. In product mode a request through a ' +
-      'family that is not ticked is refused.') +
-      formOpen('families', null,
-               '<input type="hidden" name="protocolsPresent" value="1">') +
-      '<div class="fg-protos" role="group" ' +
-      'aria-label="Protocol families it is declared for">' +
-      // One box per CHOICE: OpenID4VCI and OpenID4VP are one, Verifiable
-      // Credentials, ticked when either is declared and declaring both.
-      applications.FAMILY_CHOICES.map(function (choice) {
-        const on = choice.families.some(function (family) {
-          return declared.indexOf(family) >= 0;
-        });
-        return '<label class="fg-proto"' + self.tip(choice.what) + '>' +
-          '<input type="checkbox" name="protocol" value="' +
-          self.esc(choice.id) + '"' + (on ? ' checked' : '') + '>' +
-          self.esc(choice.label) + '</label>';
-      }).join('') + '</div>' + saveButton('Save the families') + '</form>' +
-      '</div>';
-    const groupPanels = groups.map(function (group) {
-      const mine = shown.filter(function (one) {
-        return one.group === group.id;
-      });
-      return '<div class="subpanel" id="cfg-' + self.esc(group.id) + '">' +
-        (group.id === 'did'
-          ? self.applicationDidPanel(req, row, carryBack, 'config') : '') +
-        (group.id === 'enroll'
-          ? self.applicationEnrollmentPanel(req, row, carryBack, 'config')
-          : '') +
-        // The realm's Token lifetimes, Custom claims and UserInfo claims
-        // pages, and its Custom SAML attributes page, for this application
-        // (2026-10-01): sections at the head of the tab they belong to.
-        (group.id === 'oauth'
-          ? self.applicationTokenLifetimesSection(row) +
-            self.applicationClaimsSection(req, row, carryBack,
-              ['access_token', 'id_token', 'userinfo'], 'cfg-oauth-claims',
-              'Custom claims')
-          : '') +
-        (group.id === 'saml'
-          ? self.applicationClaimsSection(req, row, carryBack,
-              ['saml2', 'saml11'], 'cfg-saml-attributes',
-              'Custom SAML attributes')
-          : '') +
-        formOpen(group.id, mine.map(function (one) {
-          return one.attribute;
-        })) +
-        self.fieldGrid(mine, values, { redraw: '/admin/applications/edit',
-                                       showSet: true }) +
-        saveButton('Save ' + group.label) + '</form></div>';
-    }).join('');
-    const bar = '<nav class="tabbar subbar" aria-label="Configuration">' +
-      '<a class="first" href="#cfg-families">Protocol families</a>' +
-      groups.map(function (group) {
-        return '<a href="#cfg-' + self.esc(group.id) + '">' +
-          self.esc(group.label) + '</a>';
-      }).join('') + '</nav>';
-    log.debug("Leaving AdminConsole.applicationFieldsSection(). " +
-              shown.length + " field(s) in " + groups.length + " group(s).");
-    return '<h2 id="fields">Its configuration</h2>' +
-      this.note('One tab per protocol, each with its own Save, beside the ' +
-      'families this application is declared for. <strong>Save</strong> ' +
-      'writes what changed on that tab and nothing else: a single value is ' +
-      'set, and an empty one is cleared; a list has the values taken out ' +
-      'removed and the values put in added. A list shows one box per value, ' +
-      'with + to add one and the bin to delete one; every box that is there ' +
-      'must hold a value. A field with a fixed set of values offers them to ' +
-      'choose from. These write the same entry an <code>ldapmodify</code> ' +
-      'writes, and RFC 9700 mode reads it on the very next request.') +
-      '<div class="subtabs">' + bar + familiesPanel + groupPanels + '</div>';
+    log.debug("Leaving AdminConsole.applicationFieldsSection().");
+    return ApplicationsPage.applicationFieldsSection(ctx, row, carryBack,
+      state);
   }
 
-  // THE TWO PROTOCOL LISTS AN APPLICATION ENTRY CARRIES, SIDE BY SIDE.
-  //
-  // `appAllowedProtocol` is DECLARED — ticked on /admin/applications/new, or
-  // added here — and what the entry has been RECORDED as is derived from its
-  // KINDS. Both are in the attribute table below like everything else; this
-  // section exists because comparing them is the whole question a reader has,
-  // and the comparison cannot be made by eye: one list holds ids (`oauth2`) and
-  // the entry's own `Protocols` row holds the prose labels /admin/users spells
-  // protocols with (`OAuth 2.0 / OIDC`).
-  //
-  // **THE MATCH IS ON KINDS AND NOT ON THOSE LABELS**, which is the one thing
-  // to know before editing this. Matching on labels is what this was written as
-  // and it was wrong: a FEDERATION partner's sighting is recorded under
-  // whichever protocol its relationship speaks, so by label every ordinary
-  // OAuth client read as a federation partner. applications.js's
-  // `protocolIdsForKinds()` is the translation and its header carries the
-  // argument; a second copy of that map in this file would be a second answer
-  // to "has this family been seen".
-  //
-  // **A family with no kind at all is marked**, and that is the row this
-  // section is really for. LDAP, SCIM, SPIFFE, mutual TLS and OpenID4VCI record
-  // no application identifier anywhere in this service, so nothing will EVER
-  // record one — a bare "no" beside them would read as an application that has
-  // not been used, when it means the question cannot be answered here.
-  //
-  // **"Recorded" IS NOT "HAS AUTHENTICATED"**, and the column is named for what
-  // it actually reads. A kind is usually written when a protocol recognises the
-  // identifier, but createApplication() takes one, so a hand-made entry can
-  // carry a kind and no authentications at all. The page says so rather than
-  // letting a reader take the column for evidence of traffic; the
-  // Authentications tile is the figure that is.
-  //
-  // Only the families that are declared or recorded are listed. Sixteen rows of
-  // "no, no" on every drill-down would be a table nobody reads, and the ones
-  // that say nothing are exactly the ones with nothing to say.
-  // ---------------------------------------------------------------------------
-  // THE CORS ORIGINS ON AN APPLICATION'S PAGE (2026-09-18).
-  //
-  // `appCorsOrigin` configures CORS on every endpoint this service publishes
-  // (`common/cors.js`), and it is a LIST — so it is edited the way this
-  // console edits every other list a person maintains by hand (the claims on
-  // /admin/claims, the trust anchors on /admin/tls): one row per value, a
-  // Remove button ON the row, and one box beneath to add another. The generic
-  // Set / Add to / Remove from controls further down reach the same attribute
-  // and still do; they make a person retype a value to remove it, which for
-  // an origin is exactly the string most likely to be mistyped.
-  //
-  // **THE REMOVE BUTTON POSTS THE VALUE AS STORED, NOT AS NORMALISED.** A
-  // write through this service stores the normalised origin, but an
-  // `ldapmodify` stores what it was given, and `updateApplication()` removes
-  // the value as typed or, failing that, its normalised spelling. Posting the
-  // normalised form of a value that was stored in mixed case would match
-  // neither, and the button would do nothing while looking as if it worked.
-  //
-  // THIS PAGE DOES NOT DECIDE ANYTHING: both forms post `add` and `remove` to
-  // /admin/applications, which is `updateApplication()` — the origin check
-  // (`STS-REG-0150`) and the normalisation are there, and
-  // `POST /admin-api/applications/add|remove` reaches the same function.
-  // ---------------------------------------------------------------------------
-  // -------------------------------------------------------------------------
-  // THE ACCESS TYPES TAB (#432 phase 4): every type this application declares
-  // in the access-type catalogue — `oauthAuthorizationDetailsType`, one
-  // definition per value — with what each declares, a form that declares or
-  // replaces one from named fields, and a Remove per type. Both post to
-  // `/admin/applications` (`set-access-type`, `remove-access-type`), the
-  // actions `/admin-api/applications/{action}` takes too (rule 7).
-  // -------------------------------------------------------------------------
+  // Drawn by `web_applications.ts` (#446).
   /**
    * Draws an application's Access types tab: the catalogue entries it owns,
    * and the forms that declare, replace and remove one.
@@ -16369,141 +15589,13 @@ class AdminConsole {
    * @returns the tab's HTML
    */
   applicationAccessTypesSection(row, carryBack) {
-    const { log, applications, mode } = this.deps;
-    const self = this;
+    const { log } = this.deps;
     log.debug("Entering AdminConsole.applicationAccessTypesSection().");
-    const held = [].concat((row.fields &&
-                            row.fields.oauthAuthorizationDetailsType) || [])
-      .map(function (one) { return String(one); })
-      .filter(function (one) { return one !== ''; });
-    const listed = function (values) {
-      log.debug("Entering listed().");
-      log.debug("Leaving listed().");
-      return values && values.length
-        ? values.map(function (one) {
-          return '<code>' + self.esc(one) + '</code>';
-        }).join(', ') : '<span class="state-none">any</span>';
-    };
-    const rows = held.map(function (stored) {
-      const d = applications.authorizationDetailsTypeOf(stored);
-      if (d.problem) {
-        return '<tr><td colspan="3"><span class="state-revoked">unusable' +
-          '</span> <code>' + self.esc(stored.slice(0, 200)) + '</code> ' +
-          '&mdash; ' + self.esc(d.problem) + '</td></tr>';
-      }
-      const facts = [
-        ['Actions', listed(d.actions)],
-        ['Datatypes', listed(d.datatypes)],
-        ['Privileges', listed(d.privileges)],
-        ['Locations', d.locations.length ? listed(d.locations)
-          : '<span class="state-none">this application\'s own addresses' +
-            '</span>'],
-        ['Required members', d.required.length ? listed(d.required)
-          : '<span class="state-none">none</span>'],
-        ['Bearer token', d.bearer === false ? 'refused' : (d.bearer === true
-          ? 'allowed' : '<span class="state-none">no rule of its own</span>')],
-        ['Maximum token lifetime', d.maxLifetimeS ? d.maxLifetimeS + ' s'
-          : '<span class="state-none">none</span>'],
-        ['Derivable from', d.derivableFrom.length ? listed(d.derivableFrom)
-          : '<span class="state-none">nothing</span>'],
-        ['Introspection claims', d.introspectionClaims.length
-          ? listed(d.introspectionClaims)
-          : '<span class="state-none">none</span>'],
-        ['Limits schema', d.limits ? '<code>' +
-          self.esc(JSON.stringify(d.limits)) + '</code>'
-          : '<span class="state-none">none: limits are refused</span>'],
-        ['Interaction (phase 6)', self.esc(d.interaction) +
-          (d.consentActions.length ? '; consent forced by ' +
-            listed(d.consentActions) : '')],
-        ['Authentication level (phase 6)', d.acr
-          ? '<code>' + self.esc(d.acr) + '</code>'
-          : '<span class="state-none">none</span>']
-      ].map(function (pair) {
-        return '<div><strong>' + pair[0] + ':</strong> ' + pair[1] + '</div>';
-      }).join('');
-      return '<tr><td><code>' + self.esc(d.type) + '</code>' +
-        (d.description ? '<div class="sub">' + self.esc(d.description) +
-                         '</div>' : '') + '</td><td>' + facts + '</td><td>' +
-        '<form method="post" action="/admin/applications" class="inline">' +
-        carryBack + '<input type="hidden" name="action" ' +
-        'value="remove-access-type"><input type="hidden" name="application" ' +
-        'value="' + self.esc(row.identifier) + '"><input type="hidden" ' +
-        'name="type" value="' + self.esc(d.type) + '"><button type="submit" ' +
-        'class="secondary">Remove</button></form></td></tr>';
-    }).join('');
-    const box = function (id, label, help, rowsN?) {
-      log.debug("Entering box().");
-      log.debug("Leaving box().");
-      return '<div class="formrow"><label for="at-' + id + '">' + label +
-        '</label>' + (rowsN
-          ? '<textarea id="at-' + id + '" name="' + id + '" rows="' + rowsN +
-            '" cols="48"></textarea>'
-          : '<input type="text" id="at-' + id + '" name="' + id +
-            '" size="40">') +
-        '<span class="sub">' + help + '</span></div>';
-    };
-    log.debug("Leaving AdminConsole.applicationAccessTypesSection(). " +
-              held.length + " type(s).");
-    return '<h2>Access types this resource server owns</h2>' +
-      '<p>The <strong>access-type catalogue</strong>: each type here is read ' +
-      'by RFC 9396 <code>authorization_details</code> at the OAuth endpoints ' +
-      'and by GNAP access rights alike, and a token carrying one is for this ' +
-      'application. They are this entry\'s ' +
-      '<code>oauthAuthorizationDetailsType</code>.</p>' +
-      this.note('A type no application declares is refused by RFC 9396 in ' +
-      'every mode, and by GNAP ' +
-      (mode.grantsUncataloguedAccess()
-        ? 'only in product mode &mdash; this realm is in development mode, ' +
-          'where it is granted as asked'
-        : 'in this realm, which is in product mode') +
-      ' (the issuance policy\'s <code>gnap-type-not-catalogued</code> ' +
-      'rule). For GNAP, interaction (always, default, never) and the ' +
-      'actions that force consent decide whether the resource owner must ' +
-      'see the approval page, and the authentication level is what their ' +
-      'session must meet before it is drawn (#432 phase 6).') +
-      '<table><tr><th>Type</th><th>What it declares</th><th></th></tr>' +
-      (rows || '<tr><td colspan="3"><span class="state-none">None.</span>' +
-       '</td></tr>') + '</table>' +
-      '<h3>Declare or replace a type</h3>' +
-      '<form method="post" action="/admin/applications">' + carryBack +
-      '<input type="hidden" name="action" value="set-access-type">' +
-      '<input type="hidden" name="application" value="' +
-      this.esc(row.identifier) + '">' +
-      box('type', 'Type', 'Required. A type of the same name is replaced.') +
-      box('description', 'Description', 'Shown on the consent and approval ' +
-          'pages.') +
-      box('actions', 'Actions', 'One per line; empty allows any.', 3) +
-      box('datatypes', 'Datatypes', 'One per line; empty allows any.', 2) +
-      box('privileges', 'Privileges', 'One per line; empty allows any.', 2) +
-      box('locations', 'Locations', 'One absolute URI per line, beside this ' +
-          'application\'s own addresses.', 2) +
-      box('requiredMembers', 'Required members', 'Member names a right ' +
-          'must carry, one per line.', 2) +
-      box('bearer', 'Bearer token', '<code>false</code> refuses a bearer ' +
-          'token carrying the type; empty sets no rule of its own.') +
-      box('maxLifetimeS', 'Maximum token lifetime (s)', 'A token carrying ' +
-          'the type lives no longer.') +
-      box('derivableFrom', 'Derivable from', 'Types a right of this one may ' +
-          'be derived from at RFC 9767 section 4, one per line.', 2) +
-      box('introspectionClaims', 'Introspection claims', 'The person\'s ' +
-          'claims this resource server is told at introspection, one per ' +
-          'line.', 2) +
-      box('schema', 'Schema', 'A JSON Schema every right of the type must ' +
-          'meet.', 4) +
-      box('limits', 'Limits schema', 'A JSON Schema (a subset: type, ' +
-          'properties, required, bounds, enum, pattern, format) a ' +
-          'right\'s <code>limits</code> must meet; none refuses limits.', 4) +
-      box('interaction', 'Interaction (phase 6)', '<code>always</code>, ' +
-          '<code>default</code> or <code>never</code>.') +
-      box('consentActions', 'Actions forcing consent (phase 6)', 'One per ' +
-          'line.', 2) +
-      box('acr', 'Authentication level (phase 6)', 'One acr value.') +
-      '<div class="formrow"><button type="submit">Save the type</button>' +
-      '</div></form>' +
-      this.note('A definition that does not read is refused with the reason ' +
-      '(<code>STS-REG-0294</code>), and the type already declared stays.');
+    log.debug("Leaving AdminConsole.applicationAccessTypesSection().");
+    return ApplicationsPage.applicationAccessTypesSection(row, carryBack);
   }
 
+  // Drawn by `web_applications.ts` (#446).
   /**
    * Draws an application's CORS origins (`appCorsOrigin`), one row each with
    * a Remove button that posts the value as stored, and a form to add one.
@@ -16513,73 +15605,13 @@ class AdminConsole {
    * @returns the section as HTML
    */
   applicationCorsSection(row, carryBack) {
-    const { log, applications } = this.deps;
-    const self = this;
+    const { log } = this.deps;
     log.debug("Entering AdminConsole.applicationCorsSection().");
-    const held = [].concat((row.fields && row.fields.appCorsOrigin) || [])
-      .map(function (one) { return String(one); })
-      .filter(function (one) { return one !== ''; });
-    const rows = held.map(function (stored) {
-      // A value an `ldapmodify` wrote in another spelling is shown with the
-      // origin a browser would actually send, because that is the string the
-      // Origin header is compared against — and a reader wondering why a
-      // listed origin is refused needs to see the two side by side. Asked of
-      // the registry's own reader one value at a time, so this is the
-      // normalisation `common/cors.js` compares against and not a copy of it.
-      const canonical = applications.corsOriginsOf(
-        { appCorsOrigin: [stored] })[0] || '';
-      const differs = canonical && canonical !== stored;
-      return '<tr><td><code>' + self.esc(stored) + '</code>' +
-        (differs ? '<br><span class="sub">matched as <code>' +
-                   self.esc(canonical) + '</code></span>' : '') +
-        '</td><td><form method="post" action="/admin/applications" ' +
-        'class="inline">' + carryBack +
-        '<input type="hidden" name="action" value="remove">' +
-        '<input type="hidden" name="application" value="' +
-        self.esc(row.identifier) + '">' +
-        '<input type="hidden" name="attribute" value="appCorsOrigin">' +
-        '<input type="hidden" name="value" value="' + self.esc(stored) + '">' +
-        '<button type="submit" class="secondary" title="' +
-        self.esc('A page on ' + stored + ' stops being able to read this ' +
-                 'service\'s answers for this application on its next ' +
-                 'request.') + '">Remove</button></form></td></tr>';
-    }).join('');
-    log.debug("Leaving AdminConsole.applicationCorsSection(). " +
-              held.length + " origin(s).");
-    return '<h2>Web origins allowed to call it (CORS)</h2>' +
-      '<p><strong>These origins configure CORS on every published protocol ' +
-      'endpoint of this service</strong> for this application &mdash; a ' +
-      'browser page on one of them may read the answers to requests that ' +
-      'name this application as their client, whatever the protocol. They ' +
-      'are this entry\'s <code>appCorsOrigin</code>.</p>' +
-      this.note('A request that names NO client &mdash; discovery, a JWKS, a ' +
-      'DID document, a CORS preflight &mdash; is answered for an origin ' +
-      'listed on ANY application in this realm, so an origin added here ' +
-      'also lets that page read those. Empty allows no third-party origin, ' +
-      'in both modes; this service\'s own origins and ' +
-      '<code>global.corsOrigins</code> never need listing.') +
-      '<table><tr><th>Origin</th><th></th></tr>' +
-      (rows || '<tr><td colspan="2"><span class="state-none">None &mdash; ' +
-       'no page on another origin may read this service\'s answers for ' +
-       'this application.</span></td></tr>') +
-      '</table>' +
-      '<form method="post" action="/admin/applications">' + carryBack +
-      '<div class="formrow">' +
-      '<input type="hidden" name="action" value="add">' +
-      '<input type="hidden" name="application" value="' +
-      this.esc(row.identifier) + '">' +
-      '<input type="hidden" name="attribute" value="appCorsOrigin">' +
-      '<label for="add-cors-origin">Add an origin</label>' +
-      '<input type="text" id="add-cors-origin" name="value" size="42" ' +
-      'required placeholder="https://app.example.com">' +
-      '<button type="submit">Add</button></div></form>' +
-      this.note('One exact origin &mdash; a scheme, a host and an optional ' +
-      'port, with no path and no wildcard. It is stored normalised, so ' +
-      '<code>HTTPS://App.Example.com:443</code> is kept as ' +
-      '<code>https://app.example.com</code>, and one that is not an origin ' +
-      'is refused with the reason (<code>STS-REG-0150</code>).');
+    log.debug("Leaving AdminConsole.applicationCorsSection().");
+    return ApplicationsPage.applicationCorsSection(row, carryBack);
   }
 
+  // Drawn by `web_applications.ts` (#446).
   /**
    * Draws the protocol families an application is declared for beside the
    * ones recorded from its kinds, listing only families that are either.
@@ -16588,76 +15620,13 @@ class AdminConsole {
    * @returns the section as HTML
    */
   protocolFamilySection(row) {
-    const { log, applications } = this.deps;
-    const self = this;
+    const { log } = this.deps;
     log.debug("Entering AdminConsole.protocolFamilySection().");
-    const declared = row.allowedProtocols || [];
-    const seen = row.recordedProtocols || [];
-    const shown = applications.PROTOCOL_IDS.filter(function (id) {
-      return declared.indexOf(id) >= 0 || seen.indexOf(id) >= 0;
-    });
-
-    const rows = shown.map(function (id) {
-      const meta = applications.protocolRow(id) ||
-                   { label: id, kinds: [], kind: '' };
-      const isDeclared = declared.indexOf(id) >= 0;
-      const isSeen = seen.indexOf(id) >= 0;
-      const seenCell = isSeen
-        ? '<span class="state-valid">yes</span>'
-        : ((meta.kinds || []).length
-            ? '<span class="state-none">no</span>'
-            : '<span class="state-none" title="This service records no ' +
-              'application identifier in that family, so no entry will ever ' +
-              'carry a kind for it.">never recorded here</span>');
-      return '<tr><td>' + self.esc(meta.label) + '</td><td><code>' +
-             self.esc(id) +
-        '</code></td><td>' + (isDeclared ? '<span ' +
-          'class="state-valid">yes</span>'
-                             : '<span class="state-none">no</span>') + '</td>' +
-        '<td>' + seenCell + '</td></tr>';
-    }).join('');
-
-    log.debug("Leaving AdminConsole.protocolFamilySection(). " + shown.length +
-              " row(s).");
-    return '<h2>Protocol families</h2>' +
-      this.note('<strong>Declared</strong> is ' +
-      '<code>appAllowedProtocol</code> &mdash; what somebody said this ' +
-      'application is FOR, on <a href="/admin/applications/new">New ' +
-      'application</a> or through the Add and Remove forms below. ' +
-      '<strong>Recorded</strong> is read off the KINDS in the table above, ' +
-      'and not off the protocol labels beside them, because a federation ' +
-      'partner is recorded under the protocol its relationship speaks and by ' +
-      'label would be indistinguishable from an ordinary client.') +
-      this.note('<strong>Recorded is not the same as "has ' +
-      'authenticated".</strong> A kind is usually written when a protocol ' +
-      'recognises the identifier &mdash; but a create takes one too, so an ' +
-      'entry made by hand can be recorded in a family it has never connected ' +
-      'in. The <em>Authentications</em> count above is the figure that ' +
-      'answers whether anything has actually happened. <strong>And neither ' +
-      'column grants anything:</strong> a family declared and not recorded ' +
-      'is usually an application that has not connected yet, one recorded ' +
-      'and never declared is the ordinary case, and nothing asks a protocol ' +
-      'to check either &mdash; a mock that refused a protocol would remove a ' +
-      'test case rather than add one.') +
-      '<table><tr><th>Family</th><th>Value</th><th>Declared</th><th>' +
-      'Recorded</th></tr>' +
-      (rows || '<tr><td colspan="4">Neither list has anything on it. Nothing ' +
-               'has been declared for this application and it carries no ' +
-               'kind &mdash; which for an entry created by hand with no kind ' +
-               'chosen is the state it is created in.</td></tr>') +
-      '</table>';
+    log.debug("Leaving AdminConsole.protocolFamilySection().");
+    return ApplicationsPage.protocolFamilySection(row);
   }
 
-  // ---------------------------------------------------------------------------
-  // APPLICATION PERMISSIONS (#93): the roles this application holds AS
-  // ITSELF, which its client_credentials tokens carry — beside the delegated
-  // permissions above, which it holds on a PERSON's behalf. One store, the
-  // role entry: the forms post to /admin/roles as add-member and
-  // remove-member with `kind=application`, the same act as on that page and
-  // audited the same (`roles.grant`, `roles.revoke`); granting here is the
-  // administrator's consent, and there is no second step. `from` and `client`
-  // bring the browser back to this section.
-  // ---------------------------------------------------------------------------
+  // Drawn by `web_applications.ts` (#446).
   /**
    * Draws an application's application permissions: the roles it holds as
    * itself, each with Remove, and a form to grant another.
@@ -16671,67 +15640,12 @@ class AdminConsole {
    */
   applicationRolesSection(row, state, carryBack) {
     const { log } = this.deps;
-    const self = this;
-    log.debug("Entering AdminConsole.applicationRolesSection(). " +
-              "identifier=" + row.identifier);
-    const identifier = row.identifier;
-    const hidden = function (action, role) {
-      return carryBack +
-        '<input type="hidden" name="action" value="' + action + '">' +
-        '<input type="hidden" name="from" value="/admin/applications">' +
-        '<input type="hidden" name="client" value="' + self.esc(identifier) +
-        '"><input type="hidden" name="kind" value="application">' +
-        '<input type="hidden" name="member" value="' + self.esc(identifier) +
-        '">' + (role === null ? '' : '<input type="hidden" name="role" ' +
-        'value="' + self.esc(role) + '">');
-    };
-    const rows = (state.held || []).map(function (one) {
-      return '<tr><td><a href="/admin/roles#roles"><code>' +
-        self.esc(one.name) + '</code></a>' +
-        (one.displayName ? '<br><span class="sub">' +
-          self.esc(one.displayName) + '</span>' : '') + '</td>' +
-        '<td>' + (one.application
-          ? 'a token for <code>' + self.esc(one.application) + '</code>, as ' +
-            '<code>' + self.esc(one.carriedAs) + '</code>'
-          : 'every token, as <code>' + self.esc(one.carriedAs) + '</code>') +
-        '</td><td>' + (one.permissions.length
-          ? one.permissions.map(function (permission) {
-              return '<div><code>' + self.esc(permission) + '</code></div>';
-            }).join('')
-          : '<span class="state-none">none</span>') + '</td>' +
-        '<td><form method="post" action="/admin/roles">' +
-        hidden('remove-member', one.name) +
-        '<button type="submit" class="danger">Remove</button></form></td>' +
-        '</tr>';
-    }).join('');
-    const options = (state.offerable || []).map(function (name) {
-      return '<option value="' + self.esc(name) + '">' + self.esc(name) +
-             '</option>';
-    }).join('');
+    log.debug("Entering AdminConsole.applicationRolesSection().");
     log.debug("Leaving AdminConsole.applicationRolesSection().");
-    return '<h3 id="app-roles">Application permissions</h3>' +
-      this.note('The roles <code>' + this.esc(identifier) + '</code> holds ' +
-        '<strong>as itself</strong>, which its client_credentials tokens ' +
-        'carry in the roles claim: a realm-wide role in every token, and an ' +
-        'application\'s own role only in a token for that application. ' +
-        'Delegated permissions, above, are what it holds on a person\'s ' +
-        'behalf. Granting a role here is the administrator\'s consent; it ' +
-        'is the same act as adding this application to the role on ' +
-        '<a href="/admin/roles">Roles</a>.') +
-      '<table><thead><tr><th>Role</th><th>Carried in</th><th>Authorizes' +
-      '</th><th></th></tr></thead><tbody>' +
-      (rows || '<tr><td colspan="4"><span class="state-none">It holds no ' +
-               'role.</span></td></tr>') + '</tbody></table>' +
-      (options
-        ? '<form method="post" action="/admin/roles"><div class="formrow">' +
-          hidden('add-member', null) +
-          '<label>Grant <select name="role">' + options + '</select>' +
-          '</label><button type="submit">Grant</button></div></form>'
-        : '<p class="sub">No role admits an application that it does not ' +
-          'already hold. Make one on <a href="/admin/roles#create">Roles' +
-          '</a>.</p>');
+    return ApplicationsPage.applicationRolesSection(row, state, carryBack);
   }
 
+  // Drawn by `web_applications.ts` (#446).
   /**
    * Draws an application's delegated permissions, both halves: those it
    * holds, with Revoke, and a form to grant it another; and — for this
@@ -16741,479 +15655,35 @@ class AdminConsole {
    *
    * The forms post to `/admin/delegation-settings`.
    *
-   * @param req - the request, whose query carries the paging
+   * @param ctx - the render context (`WebKit.context()`)
    * @param row - the application's registry view
    * @param carryBack - the hidden `back` field every form carries
    * @returns the section as HTML
    */
-  applicationPermissionsSection(req, row, carryBack) {
-    const { log, applicationPermissionsState, pageParamsOf,
-            queryWith } = this.deps;
-    const self = this;
-    log.debug("Entering AdminConsole.applicationPermissionsSection(). " +
-      "identifier=" +
-              row.identifier);
-    const identifier = row.identifier;
-    const state = applicationPermissionsState(req.query, identifier);
-    const register = state.register;
-    const held = state.held;
-    const exposes = state.exposes;
-    const offerable = state.offerable;
-    const heldPage = state.heldPage;
-    const exposedPage = state.exposedPage;
-    const navParams = pageParamsOf(req.query);
-    const heldNav = this.pageNavPair('/admin/applications', navParams,
-                                     heldPage.paging);
-    const exposedNav = this.pageNavPair('/admin/applications', navParams,
-                                        exposedPage.paging);
-    const grantedOutPage = state.grantedOutPage;
-    const grantedNav = this.pageNavPair('/admin/applications', navParams,
-                                        grantedOutPage.paging);
-    const baseUri = this.firstFieldValue(row, 'oauthPermissionBaseUri') || '';
-    // THE RESOURCE HALF'S HIDDEN FIELDS (2026-10-01). `resource` is this
-    // entry, so no form on this tab can configure another application's
-    // permissions; `page` brings the reader back here even when the action
-    // names a different `client` (permissionsReturnTo()).
-    const resourceHidden = function (action) {
-      log.debug("Entering resourceHidden().");
-      log.debug("Leaving resourceHidden().");
-      return carryBack +
-        '<input type="hidden" name="action" value="' + action + '">' +
-        '<input type="hidden" name="from" value="/admin/applications">' +
-        '<input type="hidden" name="page" value="' + self.esc(identifier) +
-        '"><input type="hidden" name="resource" value="' +
-        self.esc(identifier) + '">';
-    };
-    // Its own permissions that a client could ask for — those with an
-    // identifier — and every other application to grant them to.
-    const grantOwnOptions = exposes.filter(function (one) {
-      return !!one.id;
-    }).map(function (one) {
-      return '<option value="' + self.esc(one.id) + '">' + self.esc(one.id) +
-             '</option>';
-    }).join('');
-    // WHO TO GRANT IT TO: A SEARCH, NOT A <select> (2026-10-01, rcbj). A
-    // registry can hold thousands of applications, and a dropdown of every
-    // one of them is a control whose size is the registry's. It is
-    // chooserPane() — the same twenty-at-a-time pane, the same clamped
-    // offset — and, as on /admin/caep, a result is a LINK back to this page
-    // with `grantto` naming the pick, which the grant form below then
-    // carries as a hidden `client`. Its three names (`granttoq`,
-    // `granttofrom`, `grantto`) are this pane's own: `q` is the application
-    // list's search, carried in the page's query, and `grantq` is the
-    // register's on the delegation pages.
-    const grantCarry = pageParamsOf(req.query);
-    delete grantCarry.grantto;
-    const grantEntries = state.clients.map(function (one) {
-      return {
-        key: one.identifier,
-        names: [one.identifier, one.name],
-        label: one.name !== one.identifier
-          ? one.name + ' — ' + one.identifier : one.identifier,
-        href: '/admin/applications' + queryWith(grantCarry,
-          { application: identifier, grantto: one.identifier }) +
-          '#find-granttoq'
-      };
-    });
-    // THE PICK, honoured only when it is still an application this page
-    // offers — another application in the registry, never this one. A
-    // hand-written `grantto` naming anything else draws no form at all.
-    const picked = String(pageParamsOf(req.query).grantto || '').trim();
-    const grantTo = state.clients.filter(function (one) {
-      return one.identifier === picked;
-    })[0] || null;
-    const grantChooser = !state.clients.length ? '' : this.chooserPane({
-      here: { path: '/admin/applications', query: req.query },
-      param: 'granttoq', fromParam: 'granttofrom',
-      label: 'Grant to',
-      placeholder: 'part of an application name or identifier',
-      entries: grantEntries, selectedKey: grantTo ? grantTo.identifier : '',
-      nothing: 'No other application in this registry has a name or ' +
-        'identifier containing that.'
-    });
-    const grantedRows = grantedOutPage.shown.map(function (one) {
-      return '<tr><td><a href="' + self.esc('/admin/applications' +
-          queryWith(self.listViewOf('/admin/applications', req.query),
-                    { application: one.client })) + '">' +
-        self.esc(one.clientName) + '</a></td>' +
-        '<td><code>' + self.esc(one.permissionName) + '</code></td>' +
-        '<td><code>' + self.esc(one.permissionId) + '</code></td>' +
-        '<td><code>aud: ' + self.esc(one.baseUri) + '</code><br>' +
-        '<code>scope: ' + self.esc(one.permissionName) + '</code></td>' +
-        '<td>' + (one.asked
-          ? '<span class="state-valid">asked for</span>'
-          : '<span class="state-none">never asked for</span>') + '</td>' +
-        '<td><form method="post" action="/admin/delegation-settings">' +
-          carryBack + '<div class="formrow">' +
-          '<input type="hidden" name="action" value="revoke-permission">' +
-          '<input type="hidden" name="from" value="/admin/applications">' +
-          '<input type="hidden" name="page" value="' + self.esc(identifier) +
-          '"><input type="hidden" name="client" value="' +
-          self.esc(one.client) + '"><input type="hidden" ' +
-          'name="permission" value="' + self.esc(one.permissionId) + '">' +
-          '<button type="submit" class="danger">Revoke</button>' +
-          '</div></form></td></tr>';
-    }).join('');
-    const options = offerable.map(function (one) {
-      return '<option value="' + self.esc(one.id) + '">' + self.esc(one.id) +
-             ' — exposed by ' + self.esc(one.resourceName) + '</option>';
-    }).join('');
-
-    const heldRows = heldPage.shown.map(function (one) {
-      return '<tr>' +
-        '<td>' + (one.resource
-          ? '<a href="' + self.esc('/admin/applications' +
-              queryWith(self.listViewOf('/admin/applications', req.query),
-                        { application: one.resource })) + '">' +
-            self.esc(one.resourceName) + '</a>'
-          : '<span class="state-revoked" title="No application in this ' +
-            'registry defines this permission — a deleted resource, a ' +
-            'permission removed from under the grant, or an ldapmodify. Both ' +
-            'console doors refuse to create one.">dangling</span>') + '</td>' +
-        '<td>' + (one.permissionName
-          ? '<code>' + self.esc(one.permissionName) + '</code>' +
-            (one.description
-              ? '<br><span class="state-none">' + self.esc(one.description) +
-                '</span>'
-              : '')
-          : '<span class="state-none">&mdash;</span>') + '</td>' +
-        '<td><code>' + self.esc(one.permissionId) + '</code></td>' +
-        '<td>' + (one.baseUri
-          ? '<code>aud: ' + self.esc(one.baseUri) + '</code><br>' +
-            '<code>scope: ' + self.esc(one.permissionName) + '</code>'
-          : '<span class="state-none">nothing &mdash; the permission does ' +
-            'not resolve, so this scope is treated as an ordinary one</span>') +
-        '</td><td>' + (one.asked
-          ? '<span class="state-valid" title="This entry\'s oauthScope ' +
-            'records having asked for this scope. Evidence rather than ' +
-            'proof: it records what was requested, not what was ' +
-            'issued.">asked for</span>'
-          : '<span class="state-none" title="It has never asked for this ' +
-            'one. A configured grant nobody has needed is exactly what this ' +
-            'register is here to show.">never asked for</span>') + '</td>' +
-        // THE ROW BUTTON POSTS TO /admin/delegation-settings TOO, for the
-        // reason the header gives — and it needs no `client` select either,
-        // because the row IS the pair.
-        '<td><form method="post" action="/admin/delegation-settings">' +
-          carryBack +
-          '<div class="formrow">' +
-          '<input type="hidden" name="action" value="revoke-permission">' +
-          '<input type="hidden" name="from" value="/admin/applications">' +
-          '<input type="hidden" name="client" value="' + self.esc(identifier) +
-          '"><input type="hidden" name="permission" value="' +
-            self.esc(one.permissionId) + '">' +
-          '<button type="submit" class="danger">Revoke</button>' +
-          '</div></form></td>' +
-        '</tr>';
-    }).join('');
-
-    const exposedRows = exposedPage.shown.map(function (one) {
-      return '<tr><td><code>' + self.esc(one.name) + '</code>' +
-        (one.description
-          ? '<br><span class="state-none">' + self.esc(one.description) +
-            '</span>' :
-         '') +
-        '</td><td>' + (one.id
-          ? '<code>' + self.esc(one.id) + '</code>'
-          : '<span class="state-revoked" title="This application has no ' +
-            'oauthPermissionBaseUri, and a permission is named by its base ' +
-            'URI followed by its name — so no client can ever ask for this ' +
-            'one. Set the base below and it resolves.">no ' +
-            'identifier &mdash; this application has no base ' +
-            'URI</span>') + '</td>' +
-        '<td class="num">' + (one.grantedTo.length
-          ? '<span class="state-valid">' + one.grantedTo.length + '</span>'
-          : '<span class="state-none" title="Nothing holds it. That is the ' +
-            'ordinary state of a permission that has just been defined — ' +
-            'defining one grants it to nobody.">0</span>') + '</td>' +
-        '<td class="who">' + (one.grantedTo.length
-          ? one.grantedTo.map(function (who) {
-              return self.esc(who.name) + (who.asked ? '' :
-                ' <span class="state-none" title="Granted and never asked ' +
-                'for.">(unused)</span>');
-            }).join('<br>')
-          : '<span class="state-none">&mdash;</span>') + '</td>' +
-        // REMOVE, for this application's own permission (2026-10-01). It
-        // does not revoke the grants naming it; they become dangling, as on
-        // the register.
-        '<td><form method="post" action="/admin/delegation-settings">' +
-        resourceHidden('remove-permission') +
-        '<input type="hidden" name="name" value="' + self.esc(one.name) +
-        '"><button type="submit" class="danger">Remove</button></form>' +
-        '</td></tr>';
-    }).join('');
-
-    log.debug("Leaving AdminConsole.applicationPermissionsSection(). " +
-              held.length +
-              " held (" + heldPage.shown.length + " drawn), " + exposes.length +
-              " exposed (" + exposedPage.shown.length + " drawn), " +
-              offerable.length + " offerable.");
-    return '<h2 id="permissions">Delegated permissions</h2>' +
-
-      this.note('<strong>Which OTHER applications\' APIs this one may reach, ' +
-      'on behalf of whoever is signed in.</strong> The model is Microsoft ' +
-      'Entra ID\'s: a RESOURCE application is given a base URI and exposes ' +
-      'named permissions on it, and a CLIENT application is granted some of ' +
-      'them. The grant lands on the CLIENT\'s entry — this one — as a value ' +
-      'of <code>oauthDelegatedPermission</code>, because the client is the ' +
-      'party that will name the permission in a <code>scope</code>. <a ' +
-      'href="/admin/delegation-settings#allowed">Protocols &rsaquo; ' +
-      'Delegation</a> is the whole register across every application, and ' +
-      '<a href="/admin/delegation/allowed">its picture</a> draws it; this is ' +
-      'the one entry\'s part of it, where one half of every pair is settled ' +
-      'by the page rather than chosen out of a list.') +
-
-      this.note('<strong>Then it asks for one as an ordinary OAuth ' +
-      'scope.</strong> <code>scope=openid https://example.com/write</code> ' +
-      'produces an access token audienced to ' +
-      '<code>https://example.com/</code> carrying <code>scope: openid ' +
-      'write</code> — the base becomes the <code>aud</code> and the name ' +
-      'becomes the scope, which is what a resource server wants: check the ' +
-      'audience once, then read bare permission names. <strong>In product ' +
-      'mode an ungranted permission is refused; in development it REFUSES ' +
-      'nothing by default.</strong> With ' +
-      '<code>oauth2.delegatedPermissionsEnforced</code> off — which it is ' +
-      'unless somebody turned it on, on <a href="/admin/oauth2">OAuth 2.0 ' +
-      '/ OIDC settings</a> — an ' +
-      'ungranted permission is honoured exactly as a granted one is and ' +
-      'merely recorded as ungranted.') +
-
-      '<h3>What it holds</h3>' +
-      heldNav.head +
-      '<table><tr><th>Resource &mdash; what is ' +
-      'reached</th><th>Permission</th><th>Identifier</th><th>What the access ' +
-      'token will say</th><th>Ever asked for?</th><th></th></tr>' +
-      (heldRows || '<tr><td colspan="6">It holds none. That is the ordinary ' +
-        'state of an application nobody has granted anything to, and it ' +
-        'changes nothing about what this service will issue it &mdash; until ' +
-        '<code>oauth2.delegatedPermissionsEnforced</code> is set, an ' +
-        'ungranted scope is honoured exactly as a granted one is.</td></tr>') +
-      '</table>' +
-      heldNav.foot +
-
-      '<h3>Grant it a permission</h3>' +
-      (options
-        ? this.note('The select offers every permission this service knows ' +
-          'about EXCEPT the ones this application exposes itself and the ' +
-          'ones it already holds. Its own are left out because a token ' +
-          'audienced to the application that asked for it is what an ID ' +
-          'Token already is, and <code>app_permissions.js</code> refuses ' +
-          'that grant however it arrives; the ones it holds are left out ' +
-          'because granting a value an entry already carries writes nothing.') +
-          '<form method="post" action="/admin/delegation-settings">' +
-          carryBack + '<div class="formrow">' +
-            '<input type="hidden" name="action" value="grant-permission">' +
-            // WHERE TO GO AFTERWARDS. Not a URL — a NAME, checked against a
-            // table in permissionsReturnTo() and spent by rebuilding the path
-            // from `client`. A redirect target taken out of a request body is
-            // an open redirect, and one carrying a newline is a header
-            // injection.
-            '<input type="hidden" name="from" value="/admin/applications">' +
-            '<input type="hidden" name="client" value="' +
-            this.esc(identifier) +
-          '"><label ' +
-            'for="grant-permission">Permission</label><select ' +
-            'id="grant-permission" name="permission">' + options +
-              '</select>' +
-            '<button type="submit">Grant it</button>' +
-          '</div></form>'
-        : this.note('<strong>There is nothing to offer it.</strong> ' +
-          (register.permissions.length
-            ? 'Every permission defined here is either one this application ' +
-              'exposes itself, one it already holds, or one with no ' +
-              'identifier for a client to ask for.'
-            : 'No application in this registry exposes an API yet. A ' +
-              'permission must be DEFINED before it can be GRANTED, which is ' +
-              'the one ordering rule this feature has.') +
-          ' Another application exposes one on its own Permissions tab, ' +
-          'or on <a href="/admin/delegation-settings#allowed">Protocols ' +
-          '&rsaquo; Delegation</a>, and it appears here.')) +
-
-      '<h3 id="permissions-exposed">What it exposes</h3>' +
-      this.note('<strong>The RESOURCE half, configured here for this ' +
-      'application only</strong> (2026-10-01): its base URI, the ' +
-      'permissions it defines on it, and which OTHER applications hold ' +
-      'them. Everything below is <code>oauthPermissionBaseUri</code> and ' +
-      '<code>oauthPermission</code> on this entry, and ' +
-      '<code>oauthDelegatedPermission</code> on each client\'s. <a ' +
-      'href="/admin/delegation-settings#allowed">Protocols &rsaquo; ' +
-      'Delegation</a> is the same register across every application.') +
-      exposedNav.head +
-      '<table><tr><th>Permission</th><th>Identifier &mdash; what a client ' +
-      'sends</th><th>Held by</th><th>Which applications</th><th></th></tr>' +
-      (exposedRows || '<tr><td colspan="5">It exposes none. Give it a base ' +
-        'URI and define a permission on it, below.</td></tr>') +
-      '</table>' +
-      exposedNav.foot +
-
-      '<h4>Expose an API</h4>' +
-      this.note('The base URI is one answer per application and every ' +
-      'permission it exposes hangs off it' +
-      (baseUri
-        ? ' &mdash; this one\'s is <code>' + this.esc(baseUri) + '</code>.'
-        : '. <strong>This one has none</strong>, so no client can ask for ' +
-          'a permission it defines until it is set.') +
-      ' A trailing separator is added where there is none; clearing it ' +
-      'leaves the permissions with no identifier.') +
-      '<form method="post" action="/admin/delegation-settings">' +
-      resourceHidden('set-permission-base') +
-      '<div class="formrow"><label for="app-baseUri">Base URI</label>' +
-      '<input type="text" id="app-baseUri" name="baseUri" size="34" ' +
-      'value="' + this.esc(baseUri) + '" ' +
-      'placeholder="https://example.com/"><button type="submit">Set the ' +
-      'base URI</button></div></form>' +
-
-      '<h4>Define a permission</h4>' +
-      this.note('The name ends up on the token\'s <code>scope</code> ' +
-      'claim, so it must be a legal OAuth scope token (RFC 6749 section ' +
-      '3.3) and not contain <code>|</code>. It is defined on THIS ' +
-      'application; to define one on another, open that application.') +
-      '<form method="post" action="/admin/delegation-settings">' +
-      resourceHidden('define-permission') +
-      '<div class="formrow"><label for="app-perm-name">Name</label>' +
-      '<input type="text" id="app-perm-name" name="name" size="18" ' +
-      'placeholder="write"><label for="app-perm-description">Description' +
-      '</label><input type="text" id="app-perm-description" ' +
-      'name="description" size="34" placeholder="Change widgets on ' +
-      'somebody\'s behalf"><button type="submit">Define it</button>' +
-      '</div></form>' +
-
-      '<h4 id="permissions-granted">Grants &mdash; the delegation ' +
-      'relationships</h4>' +
-      this.note('<strong>Which other applications hold this one\'s ' +
-      'permissions</strong>, one row per (client, permission). Granting ' +
-      'here offers only permissions <code>' + this.esc(identifier) +
-      '</code> exposes, to any application but itself, found by a search ' +
-      'rather than a list of every one; the grant still ' +
-      'lands on the CLIENT\'s entry, so it reads back on that ' +
-      'application\'s own tab as something it holds.') +
-      grantedNav.head +
-      '<table><tr><th>Client &mdash; who may ask</th><th>Permission</th>' +
-      '<th>Identifier</th><th>What the access token will say</th>' +
-      '<th>Ever asked for?</th><th></th></tr>' +
-      (grantedRows || '<tr><td colspan="6">No other application holds ' +
-        'one of its permissions.</td></tr>') +
-      '</table>' +
-      grantedNav.foot +
-      (grantOwnOptions && state.clients.length
-        ? grantChooser +
-          (grantTo
-            ? '<form method="post" action="/admin/delegation-settings">' +
-              resourceHidden('grant-permission') +
-              '<input type="hidden" name="client" value="' +
-              this.esc(grantTo.identifier) + '">' +
-              '<div class="formrow"><span>Grant <strong>' +
-              this.esc(grantTo.name !== grantTo.identifier
-                ? grantTo.name + ' — ' + grantTo.identifier
-                : grantTo.identifier) +
-              '</strong></span><label for="grant-own-permission">the ' +
-              'permission</label><select id="grant-own-permission" ' +
-              'name="permission">' + grantOwnOptions + '</select>' +
-              '<button type="submit">Grant it</button></div></form>'
-            : this.note('Search for the application above and pick it; ' +
-              'the grant form appears here with it chosen.'))
-        : this.note(grantOwnOptions
-          ? 'There is no other application in this registry to grant one ' +
-            'to.'
-          : 'There is nothing of its own to grant yet: define a ' +
-            'permission above, with a base URI set, and it can be granted ' +
-            'here.'));
+  applicationPermissionsSection(ctx, row, carryBack) {
+    const { log } = this.deps;
+    log.debug("Entering AdminConsole.applicationPermissionsSection().");
+    log.debug("Leaving AdminConsole.applicationPermissionsSection().");
+    return ApplicationsPage.applicationPermissionsSection(ctx, row, carryBack);
   }
 
-  // ---------------------------------------------------------------------------
-  // RETURN ADDRESSES A DEVELOPMENT-MODE REQUEST PUT ON THIS ENTRY (2026-09-12).
-  //
-  // A SAML ACS URL, a SAML 1.1 `shire`, a WS-Federation `wreply` or this
-  // service's own learnt callback, written by a sighting and marked OBSERVED on
-  // `appReturnAddressObserved`. Product mode refuses a marked address until it
-  // is confirmed — `applications.returnAddressesOf()` is the rule — and this is
-  // where an operator decides which way each one goes, BEFORE switching a realm
-  // to product rather than after its first refused sign-in.
-  //
-  // **TWO FORMS PER ROW AND NOT ONE WITH TWO BUTTONS.** Two submit buttons in
-  // one form would both have to be named `action`, and `form.elements.action`
-  // is then a RadioNodeList whose `.value` is empty — which is how
-  // `tests/vendored/sts_admin_console.js` finds a form, so the pair would read
-  // as controls that reach nothing (the trap `/admin/users/new` met). Each form
-  // names its verb in one hidden field, so it does one thing however submitted.
-  //
-  // Drawn only as markup here; the rows and their paging are
-  // `adminViews.applicationDetailJson()`'s, so the table and
-  // `GET /admin-api/applications?application=` are one computation.
-  // ---------------------------------------------------------------------------
+  // Drawn by `web_applications.ts` (#446).
   /**
    * Draws the return addresses a development-mode request put on the entry,
    * each with Confirm and Discard; product mode refuses them until
    * confirmed.
    *
-   * @param req - the request, whose query carries the paging
-   * @param view - the application's detail view model
+   * @param ctx - the render context (`WebKit.context()`)
+   * @param json - the application's answer, with its `page`
    * @param carryBack - the hidden `back` field every form carries
    * @returns the section as HTML
    */
-  applicationObservedAddressesSection(req, view, carryBack) {
-    const { log, pageParamsOf, mode } = this.deps;
-    const self = this;
+  applicationObservedAddressesSection(ctx, json, carryBack) {
+    const { log } = this.deps;
     log.debug("Entering AdminConsole.applicationObservedAddressesSection().");
-    const row = view.row;
-    const shown = view.observedPaged.shown;
-    const nav = this.pageNavPair('/admin/applications', pageParamsOf(req.query),
-                                 view.observedPaged.paging);
-    const product = !mode.acceptsUnregisteredAddresses();
-    const rows = shown.map(function (one) {
-      function button(action, label, cls?) {
-        log.debug("Entering button().");
-        log.debug("Leaving button().");
-        return '<form method="post" action="/admin/applications">' + carryBack +
-          '<input type="hidden" name="action" value="' + action + '">' +
-          '<input type="hidden" name="application" value="' +
-          self.esc(row.identifier) + '"><input ' +
-          'type="hidden" name="attribute" ' +
-          'value="' + self.esc(one.attribute) + '"><input ' +
-          'type="hidden" name="value" value="' + self.esc(one.value) + '">' +
-          '<button type="submit"' + (cls ? ' class="' + cls + '"' : '') + '>' +
-          label +
-          '</button></form>';
-      }
-      return '<tr><td><code>' + self.esc(one.attribute) + '</code></td>' +
-        '<td><code>' + self.esc(one.value) + '</code>' +
-        (one.held ? '' : '<div class="sub">no longer on the entry; only the ' +
-                         'mark is left</div>') + '</td>' +
-        '<td>' + (one.trusted
-          ? '<span class="state-valid">used &mdash; development believes ' +
-            'it</span>'
-          : '<span class="state-revoked">refused &mdash; product withholds ' +
-            'it</span>') +
-        '</td>' +
-        '<td>' + button('confirm-address', 'Confirm') +
-        button('discard-address', 'Discard', 'danger') + '</td></tr>';
-    }).join('');
-    const html = '<h2>Return addresses nobody registered</h2>' +
-      this.note('Each address below is on this entry because a request NAMED ' +
-      'it while the realm was in DEVELOPMENT mode, which believes any ' +
-      'address and writes it down. <strong>Product mode refuses every one of ' +
-      'them</strong> exactly as it refuses an address that is not on the ' +
-      'entry at all' +
-      (product ? ' &mdash; and this realm is in product mode now' : '') + '. ' +
-      '<strong>Confirm</strong> an address that really is this ' +
-      'application\'s: the mark goes and the address stays. ' +
-      '<strong>Discard</strong> one that is not: both go. Adding the address ' +
-      'with the form below confirms it too. Addresses recorded before this ' +
-      'service marked sightings carry no mark and cannot be told apart from ' +
-      'registered ones &mdash; review the return-address attributes in the ' +
-      'table above by hand before switching a realm to product.') +
-      nav.head +
-      '<table><tr><th>Attribute</th><th>Address</th><th>In this realm\'s ' +
-      'mode</th><th>Decide</th></tr>' +
-      (rows || '<tr><td colspan="4">Nothing on this entry is marked as ' +
-               'observed.</td></tr>') +
-      '</table>' +
-      nav.foot;
-    log.debug("Leaving AdminConsole.applicationObservedAddressesSection(). " +
-              shown.length +
-        " " +
-        "row(s).");
-    return html;
+    log.debug("Leaving AdminConsole.applicationObservedAddressesSection().");
+    return ApplicationsPage.applicationObservedAddressesSection(ctx, json,
+      carryBack);
   }
 
   // ---------------------------------------------------------------------------
@@ -17277,6 +15747,7 @@ class AdminConsole {
              ? anchor : '');
   }
 
+  // Drawn by `web_applications.ts` (#446).
   /**
    * Draws a certificate summary: subject, issuer, serial, expiry and key
    * type, or `none` or `unreadable`.
@@ -17287,167 +15758,48 @@ class AdminConsole {
   certificateCells(summary) {
     const { log } = this.deps;
     log.debug("Entering AdminConsole.certificateCells().");
-    if (!summary) {
-      log.debug("Leaving AdminConsole.certificateCells(). None.");
-      return '<span class="state-none">none</span>';
-    }
-    if (summary.unreadable) {
-      log.debug("Leaving AdminConsole.certificateCells(). Unreadable.");
-      return '<span class="state-revoked">unreadable: ' +
-             this.esc(summary.unreadable) + '</span>';
-    }
     log.debug("Leaving AdminConsole.certificateCells().");
-    return '<code>' + this.esc(summary.subject) + '</code>' +
-      '<div class="sub">issued by <code>' + this.esc(summary.issuer) +
-      '</code>' +
-      (summary.selfSigned ? ' (self-signed)' : '') + ' &middot; serial <code>' +
-      this.esc(summary.serialHex) + '</code> &middot; valid until <code>' +
-      this.esc(summary.notAfter) + '</code>' +
-      (summary.expired ? ' <span class="state-revoked">expired</span>' : '') +
-      ' &middot; ' + this.esc(summary.keyType) + '</div>';
+    return ApplicationsPage.certificateCells(summary);
   }
 
-  // ---------------------------------------------------------------------------
-  // CREDENTIALS: THE CLIENT SECRET AND THE KEY PAIRS, ON THE APPLICATION'S OWN
-  // PAGE (2026-09-13).
-  //
-  // Every value here was already on the entry and in the attribute table below;
-  // what this adds is the READING — which certificate, issued by whom, through
-  // what chain, and whether this service holds the private half — and the
-  // controls that REPLACE a key pair, which lived only on `/admin/pki` where
-  // the application had to be typed into a box.
-  //
-  // **THREE CONTROLS PER PROFILE, AND NONE OF THEM IS NEW AS AN ACTION BUT
-  // ONE.** Issue and Take off post to `/admin/pki`'s existing `issue` and
-  // `revoke`; Upload posts `upload-certificate` beside them. All three carry
-  // `from`, so that page's handler sends the reader back here
-  // (`applicationReturnTo()`), and all three reach `/admin-api/pki/{action}`
-  // with no second operation — rule 7 read the way `/admin/delegation`'s grant
-  // form reads it.
-  //
-  // **THE ISSUE CONTROL IS NOT DRAWN IN A REALM WITH NO CERTIFICATE
-  // AUTHORITY**, because its only outcome there is a refusal. Upload still is:
-  // a certificate from somebody else's authority needs nothing from this
-  // realm's.
-  //
-  // **NO SCRIPT.** The secret is behind a `<details>`, which is how this
-  // console folds everything, and the upload is two textareas.
-  // ---------------------------------------------------------------------------
-  // ---------------------------------------------------------------------------
-  // THE APPLICATION'S SHARED SIGNALS STREAMS (2026-10-01). Each stream this
-  // application created at /ssf/stream, with the members its RECEIVER set
-  // (SSF 1.0 section 8.1.1: delivery, events_requested, format,
-  // description) shown and not edited here — changing them is the
-  // receiver's act through the stream management API. What an administrator
-  // may do to a stream is its STATUS, which is a transmitter-initiated change
-  // section 8.1.2 says must be announced: Pause and Enable post the existing
-  // `status` action, which sends stream-updated first. Beneath it, every
-  // per-receiver setting in force for these streams and where it comes from;
-  // they are edited in the field grid's Shared Signals group.
-  // ---------------------------------------------------------------------------
+  // Drawn by `web_applications.ts` (#446).
   /**
    * Draws the Shared Signals section of an application's page: its streams,
    * Pause and Enable for each, and the settings in force for them.
    *
-   * @param view - the page's view, from `applicationDetailJson()`
+   * @param json - the application's answer, with its `page`
    * @param carryBack - the hidden field carrying the list's place
    * @param writable - whether the reader holds Admin Write, which is what
    *   draws the Pause and Enable buttons
    * @returns the section as HTML, or '' for an application that has no
    *   Shared Signals family declared and owns no stream
    */
-  applicationSignalsSection(view, carryBack, writable) {
+  applicationSignalsSection(json, carryBack, writable) {
     const { log } = this.deps;
-    const self = this;
     log.debug("Entering AdminConsole.applicationSignalsSection().");
-    const row = view.row;
-    const state = view.signalsState;
-    const declared = (row.allowedProtocols || []).indexOf('ssf') >= 0;
-    if (!state || (!declared && !state.streams.length)) {
-      log.debug("Leaving AdminConsole.applicationSignalsSection(). Not a " +
-                "receiver.");
-      return '';
-    }
-    const statusForm = function (stream, status, label) {
-      return '<form method="post" action="/admin/ssf" class="inline">' +
-        carryBack +
-        '<input type="hidden" name="action" value="status">' +
-        '<input type="hidden" name="stream_id" value="' +
-        self.esc(stream.stream_id) + '">' +
-        '<input type="hidden" name="status" value="' + status + '">' +
-        '<input type="hidden" name="reason" value="set by an administrator ' +
-        'from the application\'s page">' +
-        '<input type="hidden" name="from" value="application">' +
-        '<input type="hidden" name="application" value="' +
-        self.esc(row.identifier) + '">' +
-        '<button type="submit" class="secondary"' +
-        self.tip(status === 'paused'
-          ? 'Stop delivering events on this stream. The receiver is told ' +
-            'the stream is paused first; events are held, not dropped.'
-          : 'Deliver events on this stream again, held ones first. The ' +
-            'receiver is told the stream is enabled.') + '>' + label +
-        '</button></form>';
-    };
-    const list = function (values) {
-      return values.length ? values.map(function (one) {
-        return '<code>' + self.esc(one) + '</code>';
-      }).join('<br>') : '<span class="state-none">none</span>';
-    };
-    const streams = state.streams.map(function (stream) {
-      return '<tr><td><code>' + self.esc(stream.stream_id) + '</code><br>' +
-        '<span class="sub">aud <code>' + self.esc(String(stream.aud)) +
-        '</code></span></td><td>' + self.esc(stream.status) +
-        (stream.statusReason
-          ? '<br><span class="sub">' + self.esc(stream.statusReason) +
-            '</span>' : '') + '</td><td><code>' +
-        self.esc((stream.delivery && stream.delivery.method) || '') +
-        '</code>' + (stream.delivery && stream.delivery.endpoint_url
-          ? '<br><code>' + self.esc(stream.delivery.endpoint_url) + '</code>'
-          : '') + '</td><td>' + list(stream.events_requested) + '</td><td>' +
-        list(stream.events_delivered) + '</td><td>' +
-        (stream.format ? '<code>' + self.esc(stream.format) + '</code>'
-          : '<span class="state-none">default</span>') +
-        (stream.description
-          ? '<br><span class="sub">' + self.esc(stream.description) +
-            '</span>' : '') + '</td><td>' +
-        (writable
-          ? (stream.status === 'enabled'
-            ? statusForm(stream, 'paused', 'Pause')
-            : statusForm(stream, 'enabled', 'Enable'))
-          : '') + '</td></tr>';
-    }).join('');
-    const settings = state.settings.map(function (one) {
-      return '<tr><td><code>' + self.esc(one.setting) + '</code></td><td>' +
-        '<code>' + self.esc(String(one.value)) + '</code></td><td>' +
-        (one.source === 'application'
-          ? 'this application (<code>' + self.esc(one.attribute) +
-            '</code>)'
-          : 'the setting') + '</td></tr>';
-    }).join('');
-    log.debug("Leaving AdminConsole.applicationSignalsSection(). " +
-              state.streams.length + " stream(s).");
-    return '<h2 id="signals">Shared Signals</h2>' +
-      this.note('The CAEP and RISC streams this application created at ' +
-        '<code>/ssf/stream</code>, matched by its identifier or its ' +
-        '<code>ssfReceiverId</code> values. The members each shows are the ' +
-        'ones its receiver set (SSF 1.0 section 8.1.1), so they are changed ' +
-        'by the receiver and not here. Pausing or enabling a stream is the ' +
-        'transmitter\'s act, and its receiver is sent a ' +
-        '<code>stream-updated</code> event first. Every new stream starts ' +
-        'from the defaults in the second table; change one in the field ' +
-        'grid\'s Shared Signals group below.') +
-      (state.installed ? '' : this.warn('ssf/ssf.ts is not loaded in this ' +
-        'process, so no stream can be listed.')) +
-      (state.streams.length
-        ? '<table><tr><th>Stream</th><th>Status</th><th>Delivery</th>' +
-          '<th>Requested</th><th>Delivered</th><th>Format</th><th></th></tr>' +
-          streams + '</table>'
-        : '<p class="sub">This application has created no stream yet.</p>') +
-      '<h3>What its streams are sent with</h3>' +
-      '<table><tr><th>Setting</th><th>In force</th><th>From</th></tr>' +
-      settings + '</table>';
+    log.debug("Leaving AdminConsole.applicationSignalsSection().");
+    return ApplicationsPage.applicationSignalsSection(json, carryBack,
+      writable);
   }
 
+  // Drawn by `web_applications.ts` (#446).
+  /**
+   * Draws the button that reveals one credential of an application.
+   *
+   * @param application - the application's identifier
+   * @param secret - a client secret's id, or `registration-access-token`
+   * @param what - what it is, for the button
+   * @param carryBack - the hidden back field the form carries, as HTML
+   * @returns the form as HTML
+   */
+  revealControl(application, secret, what, carryBack) {
+    const { log } = this.deps;
+    log.debug("Entering AdminConsole.revealControl().");
+    log.debug("Leaving AdminConsole.revealControl().");
+    return ApplicationsPage.revealControl(application, secret, what, carryBack);
+  }
+
+  // Drawn by `web_applications.ts` (#446).
   /**
    * Draws an application's Credentials section: the client secret with its
    * regenerate and rotate forms, the assertion profiles' key pairs with
@@ -17456,347 +15808,19 @@ class AdminConsole {
    * The key-pair and mutual TLS parts are drawn only for an application
    * declared for OAuth 2.0 or OpenID Connect.
    *
-   * @param req - the request
-   * @param view - the application's detail view model
+   * @param ctx - the render context (`WebKit.context()`)
+   * @param json - the application's answer, with its `page`
    * @param carryBack - the hidden `back` field every form carries
    * @returns the section as HTML
    */
-  applicationCredentialsSection(req, view, carryBack) {
+  applicationCredentialsSection(ctx, json, carryBack) {
     const { log } = this.deps;
-    const self = this;
     log.debug("Entering AdminConsole.applicationCredentialsSection().");
-    const row = view.row;
-    const state = view.credentialsState;
-    const id = row.identifier;
-    const hidden = function (name, value) {
-      log.debug("Entering hidden().");
-      log.debug("Leaving hidden().");
-      return '<input type="hidden" name="' + name + '" value="' +
-             self.esc(value) +
-             '">';
-    };
-    const secret = state.clientSecret;
-    const isoOf = function (seconds) {
-      log.debug("Entering isoOf().");
-      log.debug("Leaving isoOf().");
-      return new Date(seconds * 1000).toISOString();
-    };
-    // ONE ROW PER SECRET (2026-10-01, rcbj): its id and description, its
-    // value behind a fold as the one secret always was, when it EXPIRES —
-    // the column this section was asked for — and a Remove button.
-    const secretRows = secret.secrets.map(function (one) {
-      const value = secret.values[one.id] || '';
-      return '<tr><td><code>' + self.esc(one.id) + '</code>' +
-        (one.primary ? ' <span class="state-valid" title="The newest ' +
-          'unexpired secret: the one this service signs and encrypts with, ' +
-          'and the client_secret RFC 7591 and 7592 return.">primary</span>'
-          : '') +
-        (one.description ? '<div class="sub">' + self.esc(one.description) +
-          '</div>' : '') +
-        (one.createdAt ? '<div class="sub">created <code>' +
-          self.esc(isoOf(one.createdAt)) + '</code></div>' : '') +
-        '</td><td><details class="fold"><summary>Show the client secret' +
-        '</summary><code>' + self.esc(value) + '</code></details></td>' +
-        '<td>' + (one.expiresAt
-          ? '<code>' + self.esc(isoOf(one.expiresAt)) + '</code>' +
-            (one.expired ? '<div class="sub warn">expired' +
-              ' &mdash; product mode refuses it</div>' : '')
-          : '<span class="state-none">never</span>') + '</td>' +
-        '<td><form method="post" action="/admin/applications">' + carryBack +
-        hidden('action', 'remove-secret') + hidden('application', id) +
-        hidden('secret', one.id) +
-        '<button type="submit" class="danger">Remove</button></form></td>' +
-        '</tr>';
-    }).join('');
-    const atCap = secret.secrets.length >= secret.max;
-    const secretHtml = '<h3 id="credentials-secret">Client secrets</h3>' +
-      this.note('<code>oauthClientSecret</code> is what ' +
-      '<code>client_secret_basic</code>, <code>client_secret_post</code> and ' +
-      '<code>client_secret_jwt</code> authenticate with. The token endpoint ' +
-      'CHECKS it in RFC 9700 mode and in product mode. <strong>An ' +
-      'application may hold several</strong> (at most ' +
-      '<code>oauth2.clientSecretsMax</code>, ' + this.esc(String(secret.max)) +
-      '), each with its own expiry: every unexpired secret authenticates, ' +
-      'and the NEWEST unexpired one is the <em>primary</em> &mdash; the one ' +
-      'this service signs HS256 ID Tokens and JARM responses with, keys ' +
-      'symmetric encryption with, and returns as RFC 7591&rsquo;s ' +
-      '<code>client_secret</code>. A new value is minted here &mdash; ' +
-      '<code>oauth2.registeredSecretBytes</code> random bytes, as a ' +
-      'registration mints one &mdash; and never typed. The daily job ' +
-      '<code>oauth2.client-secret-expiry</code> warns before one expires ' +
-      'and removes expired ones, never the last one held.') +
-      '<table><tr><th>Secret</th><th>Value</th><th>Expires</th><th></th>' +
-      '</tr>' +
-      (secretRows || '<tr><td colspan="4"><span class="state-none">This ' +
-        'application holds no client secret.</span></td></tr>') +
-      '</table>' +
-      (secret.authMethod
-        ? '<p class="sub">Token endpoint auth method <code>' +
-          this.esc(secret.authMethod) + '</code>.</p>' : '') +
-      '<table><tr><th>Credential</th><th>Held</th></tr>' +
-      '<tr><td><code>appRegistrationAccessToken</code><div class="sub">RFC ' +
-      '7592&rsquo;s credential for reading and changing the registration ' +
-      '&mdash; not a client secret</div></td><td>' +
-      (secret.registrationAccessTokenHeld
-        ? '<details class="fold"><summary>Show the registration access token' +
-          '</summary><code>' + this.esc(secret.registrationAccessToken) +
-          '</code></details>'
-        : '<span class="state-none">none</span>') + '</td></tr></table>' +
-      // ADD ONE BESIDE THE OTHERS (2026-10-01): the new secret is the newest,
-      // so it becomes the primary; the others go on authenticating.
-      (atCap
-        ? this.note('It holds ' + secret.secrets.length + ' secret(s), ' +
-          'which is <code>oauth2.clientSecretsMax</code>. Remove one to add ' +
-          'or rotate in another.')
-        : '<form method="post" action="/admin/applications">' + carryBack +
-          '<div class="formrow">' + hidden('action', 'add-secret') +
-          hidden('application', id) +
-          '<label for="secret-lifetime">Lifetime (days)</label>' +
-          '<input type="number" id="secret-lifetime" name="lifetimeDays" ' +
-          'min="0" max="730" step="1" placeholder="' +
-          this.esc(String(secret.defaultLifetimeDays)) + '">' +
-          '<label for="secret-description">Description</label>' +
-          '<input type="text" id="secret-description" name="description" ' +
-          'size="28" maxlength="200" placeholder="what it is for">' +
-          '<button type="submit">Add a client secret</button>' +
-          '<span class="sub">Empty lifetime: ' +
-          '<code>oauth2.clientSecretLifetimeDays</code> (' +
-          (secret.defaultLifetimeDays
-            ? this.esc(String(secret.defaultLifetimeDays)) + ' days'
-            : 'never expires') + '); 0 never expires. The existing ' +
-          'secrets keep working.</span></div></form>') +
-      // ROTATION WITH AN OVERLAP (#49 P5): the one to use for a client in
-      // service — the live secrets keep working while it changes over.
-      (secret.held && !atCap
-        ? '<form method="post" action="/admin/applications">' + carryBack +
-          '<div class="formrow">' + hidden('action', 'rotate-secret') +
-          hidden('application', id) +
-          '<button type="submit">Rotate the client secret</button>' +
-          '<span class="sub">A new secret; every unexpired one goes on ' +
-          'working for <code>oauth2.clientSecretOverlapS</code> (' +
-          this.esc(String(secret.overlapS)) + ' seconds) and then ' +
-          'expires.</span></div></form>'
-        : '') +
-      '<form method="post" action="/admin/applications">' + carryBack +
-      '<div class="formrow">' + hidden('action', 'regenerate-secret') +
-      hidden('application', id) +
-      '<button type="submit"' + (secret.held ? ' class="danger"' : '') + '>' +
-      (secret.held ? 'Regenerate: replace every secret'
-                   : 'Generate a client secret') + '</button>' +
-      '<span class="sub">' + (secret.held
-        ? 'Every secret it holds stops working immediately.'
-        : 'This application holds none yet.') + '</span></div></form>';
-
-    const algOptions = state.ca.keyAlgorithms.map(function (one) {
-      return '<option value="' + self.esc(one.id) + '">' + self.esc(one.label) +
-             '</option>';
-    }).join('');
-    const purposeHtml = state.purposes.map(function (p) {
-      const names = p.attributes;
-      const anchor = 'credentials-' + p.id;
-      const chainCells = p.chain.length
-        ? '<ol>' + p.chain.map(function (link) {
-            return '<li>' + self.certificateCells(link) + '</li>';
-          }).join('') + '</ol>'
-        : (p.held
-          ? '<span class="state-none">none stored</span>' : '&mdash;');
-      const managed = p.held
-        ? '<table><tr><th>Fact</th><th>Value</th></tr>' +
-          '<tr><td>Source<div class="sub"><code>' + self.esc(names.source) +
-          '</code></div></td><td><code>' + self.esc(p.source) + '</code>' +
-          '<div class="sub">' + (KEY_SOURCE_SENTENCES[p.source] ||
-                                 self.esc(p.source)) + '</div></td></tr>' +
-          '<tr><td>Certificate<div class="sub"><code>' +
-          self.esc(names.certificate) +
-          '</code></div></td><td>' + self.certificateCells(p.certificate) +
-          '</td></tr>' +
-          '<tr><td>Chain<div class="sub"><code>' + self.esc(names.chain) +
-          '</code></div></td><td>' + chainCells + '</td></tr>' +
-          '<tr><td>Key handle<div class="sub"><code>' + self.esc(names.handle) +
-          '</code></div></td><td><code>' + self.esc(p.handle || '—') +
-          '</code> <span class="sub">(' + self.esc(p.handleLabel) +
-          ')</span></td></tr>' +
-          '<tr><td>Private key<div class="sub"><code>' +
-          self.esc(names.privateKey) + '</code></div></td><td>' +
-          (p.privateKeyHeld
-            ? '<span class="state-valid">held by this service</span>' +
-              (p.sealedAtRest ? ' &mdash; sealed at rest' : '') +
-              '<div class="sub">Collect it from the attribute table below.' +
-              '</div>'
-            : '<span class="state-none">not held here</span><div class="sub">' +
-              'The application keeps its own private key.</div>') +
-          '</td></tr><tr><td>Declared issuer<div class="sub"><code>' +
-          self.esc(names.issuer) +
-          '</code></div></td><td>' + (p.issuers.length
-            ? p.issuers.map(function (iss) {
-                return '<code>' + self.esc(iss) + '</code>';
-              }).join('<br>')
-            : '<em>none &mdash; it can authenticate, and cannot present an ' +
-              'authorization grant</em>') + '</td></tr></table>'
-        : self.note('No key pair is managed for this profile. Issue one from ' +
-                    'this realm&rsquo;s certificate authority, or upload a ' +
-                    'certificate the application already holds.');
-
-      const issueForm = state.ca.available
-        ? '<form method="post" action="/admin/pki">' + carryBack +
-          '<div class="formrow">' + hidden('action', 'issue') +
-          hidden('from', '/admin/applications') + hidden('identifier', id) +
-          hidden('purpose', p.id) +
-          '<label for="' + anchor + '-alg">Key algorithm</label>' +
-          '<select id="' + anchor + '-alg" name="leafKeyAlg">' +
-          '<option value="">(the Issuing CA&rsquo;s: ' +
-          self.esc(state.ca.keyAlg) +
-          ')</option>' + algOptions + '</select>' +
-          '<label for="' + anchor + '-days">Days</label>' +
-          '<input type="number" id="' + anchor + '-days" name="days" min="1" ' +
-          'value="' + self.esc(String(state.ca.leafLifetimeDays)) + '">' +
-          '<button type="submit">' + (p.held
-            ? 'Replace it with a key pair from this realm&rsquo;s CA'
-            : 'Issue a key pair from this realm&rsquo;s CA') + '</button>' +
-          '</div></form>'
-        : self.note('This realm has no certificate authority yet, so there ' +
-                    'is nothing to issue a key pair from. <a ' +
-                    'href="/admin/pki">Build one on the PKI page</a>, or ' +
-                    'upload a certificate below.');
-
-      const uploadForm = '<form method="post" action="/admin/pki">' +
-                         carryBack +
-        hidden('action', 'upload-certificate') +
-        hidden('from', '/admin/applications') + hidden('identifier', id) +
-        hidden('purpose', p.id) +
-        '<div class="formrow"><label for="' + anchor + '-cert">Certificate ' +
-        '(PEM)</label><textarea id="' + anchor + '-cert" name="certificate" ' +
-        'rows="6" required placeholder="-----BEGIN ' +
-        'CERTIFICATE-----"></textarea></div><div class="formrow"><label ' +
-        'for="' + anchor + '-chain">Chain ' +
-        '(PEM, every intermediate and the root)</label><textarea id="' +
-        anchor +
-        '-chain" name="chain" rows="6" placeholder="-----BEGIN ' +
-        'CERTIFICATE-----"></textarea></div><div class="formrow"><button ' +
-        'type="submit">' +
-        (p.held ? 'Replace it with this certificate' :
-         'Upload the certificate') +
-        '</button></div></form>';
-
-      const takeOff = p.held
-        ? '<form method="post" action="/admin/pki">' + carryBack +
-          '<div class="formrow">' + hidden('action', 'revoke') +
-          hidden('from', '/admin/applications') + hidden('identifier', id) +
-          hidden('purpose', p.id) +
-          '<button type="submit" class="danger">Take this key pair ' +
-          'off</button><span class="sub">Not revocation: the certificate ' +
-          'stays valid and this service stops accepting what it signs. The ' +
-          'other profile&rsquo;s key pair is untouched.</span></div></form>'
-        : '';
-
-      const registered = p.registered;
-      const registeredRows = p.id === 'jwt'
-        ? (registered.keys.length
-          ? '<table><tr><th>kid</th><th>Key</th><th>Certificate</th></tr>' +
-            registered.keys.map(function (key) {
-              return '<tr><td><code>' + self.esc(key.kid || '—') +
-                     '</code></td>' +
-                '<td><code>' + self.esc(key.kty) + '</code>' +
-                (key.alg ? ' <code>' + self.esc(key.alg) + '</code>' : '') +
-                '</td><td>' + (key.certificate
-                  ? self.certificateCells(key.certificate)
-                  : '<span class="state-none">bare key</span>') + '</td></tr>';
-            }).join('') + '</table>'
-          : '<p class="sub">' + (registered.problem
-            ? '<span class="state-revoked">' + self.esc(registered.problem) +
-              '</span>'
-            : 'None registered.') + '</p>')
-        : (registered.certificates.length
-          ? '<table><tr><th>Certificate</th></tr>' +
-            registered.certificates.map(function (cert) {
-              return '<tr><td>' + self.certificateCells(cert) + '</td></tr>';
-            }).join('') + '</table>'
-          : '<p class="sub">' + (registered.problem
-            ? '<span class="state-revoked">' + self.esc(registered.problem) +
-              '</span>'
-            : 'None registered.') + '</p>');
-
-      return '<h3 id="' + anchor + '">' + self.esc(p.label) + '</h3>' +
-        managed +
-        '<h4>Regenerate it</h4>' +
-        self.note('<strong>Either way REPLACES the key pair on this ' +
-        'entry.</strong> Issuing generates a new key pair here and signs it ' +
-        'with this realm&rsquo;s Issuing CA; the private key is sealed on ' +
-        'the entry. Uploading registers a certificate the application ' +
-        'already holds, and this service keeps no private key for it. A ' +
-        'certificate from THIS realm&rsquo;s authority may be uploaded ' +
-        'alone. <strong>One from any other authority must come with its full ' +
-        'chain</strong> &mdash; every intermediate and the self-signed root ' +
-        '&mdash; and every link is verified: signatures, names, validity, ' +
-        'and that each issuer is a CA allowed to sign. An upload carrying a ' +
-        'private key is refused.') +
-        issueForm + uploadForm + takeOff +
-        '<h4>Keys the application registered itself</h4>' +
-        self.note('<code>' + self.esc(registered.attribute) + '</code>, ' +
-        'registered by value and verified beside the key pair above &mdash; ' +
-        'replacing that pair leaves these alone. Change them with the ' +
-        'attribute editor below.') +
-        registeredRows;
-    }).join('');
-
-    // THE ASSERTION PROFILES ONLY FOR AN OAUTH 2.0 CLIENT (2026-09-13). See
-    // `oauthDeclared` in admin-core/admin_views.ts. The markup above is still
-    // built and then dropped rather than guarded, so the two branches cannot
-    // drift in what a profile section says.
-    const heldElsewhere = state.purposes.filter(function (p) {
-      return p.held || p.issuers.length;
-    });
-    const assertionHtml = state.oauthDeclared
-      ? purposeHtml
-      : '<h3 id="credentials-assertions">Assertion key pairs</h3>' +
-        this.note('The RFC 7523 (JWT bearer) and RFC 7522 (SAML 2.0 bearer) ' +
-        'sections are shown only for an application declared as ' +
-        '<strong>OAuth 2.0</strong> or <strong>OpenID Connect</strong>, ' +
-        'because both profiles are used at the token endpoint. Declare one ' +
-        'of those families under <em>Protocol families</em> to manage its ' +
-        'key pairs here.') +
-        (heldElsewhere.length
-          ? this.warn('This entry already carries ' +
-                      heldElsewhere.map(function (p) {
-              return self.esc(p.label);
-            }).join(' and ') + ' material, and hiding the section does not ' +
-            'take it off: the token endpoint still verifies what it signs. ' +
-            'Its attributes are in the table below.', 'Still in effect')
-          : '');
-
-    log.debug("Leaving AdminConsole.applicationCredentialsSection(). " +
-      "oauthDeclared=" +
-              state.oauthDeclared);
-    return '<h2 id="credentials">Credentials</h2>' +
-      this.note('What this application authenticates and signs with: its ' +
-      'client secret, and for each assertion profile the key pair this ' +
-      'service manages beside the keys the application registered itself. ' +
-      'The two profiles&rsquo; key pairs are separate on purpose &mdash; ' +
-      'neither can sign for the other &mdash; so each has its own controls.') +
-      secretHtml + assertionHtml +
-      (state.oauthDeclared
-        ? this.applicationMtlsSection(state.mtls, id, carryBack)
-        : '');
+    log.debug("Leaving AdminConsole.applicationCredentialsSection().");
+    return ApplicationsPage.applicationCredentialsSection(ctx, json, carryBack);
   }
 
-  // ---------------------------------------------------------------------------
-  // MUTUAL TLS — RFC 8705, ON THE APPLICATION'S OWN PAGE (2026-09-13).
-  //
-  // Both halves of the RFC read off one model (`applicationMtlsState()` in
-  // admin-core/admin_views.ts): how the token endpoint will authenticate this
-  // application by certificate, and whether its tokens are bound to one.
-  //
-  // **THE ISSUE CONTROL IS THE IMPLICIT MAPPING'S REGISTRATION.** A certificate
-  // issued here names the application in its subjectAltName and is listed on
-  // the application's record, and that is everything `tls_client_auth` needs —
-  // so the subject parameters below are for a certificate from somebody ELSE's
-  // authority, and are set with the attribute editor like every other
-  // attribute. The issue answers with a page of downloads rather than a
-  // redirect; see `answerIssuedTlsClientCertificate()`.
-  //
-  // **NO SCRIPT**: a form per certificate to revoke it, and two password
-  // fields.
-  // ---------------------------------------------------------------------------
+  // Drawn by `web_applications.ts` (#446).
   /**
    * Draws an application's RFC 8705 mutual TLS subsection: the certificates
    * issued to it with a revoke form each, the issue form, and the subject
@@ -17809,315 +15833,28 @@ class AdminConsole {
    */
   applicationMtlsSection(state, id, carryBack) {
     const { log } = this.deps;
-    const self = this;
     log.debug("Entering AdminConsole.applicationMtlsSection().");
-    const hidden = function (name, value) {
-      log.debug("Entering hidden().");
-      log.debug("Leaving hidden().");
-      return '<input type="hidden" name="' + name + '" value="' +
-             self.esc(value) +
-             '">';
-    };
-    const methodSentence = state.certificateMethod
-      ? 'This application authenticates with <code>' +
-        this.esc(state.authMethod) +
-        '</code>, and is held to it <strong>in every mode</strong>: a token ' +
-        'request from it that does not authenticate by certificate is ' +
-        'refused <code>invalid_client</code>.'
-      : 'This application&rsquo;s <code>oauthTokenEndpointAuthMethod</code> ' +
-        'is ' +
-        (state.authMethod ? '<code>' + this.esc(state.authMethod) + '</code>'
-                          : 'not set') + ', so nothing here authenticates it ' +
-        'yet. Set it to <code>tls_client_auth</code> (or ' +
-        '<code>self_signed_tls_client_auth</code>) with the attribute editor ' +
-        'below to use a certificate in place of a secret.';
-    const rows = state.certificates.length
-      ? '<table><tr><th>Certificate</th><th>State</th><th></th></tr>' +
-        state.certificates.map(function (cert) {
-          const revokeForm = cert.state === 'valid'
-            ? '<form method="post" action="/admin/applications">' + carryBack +
-              hidden('action', 'revoke-tls-client-certificate') +
-              hidden('application', id) + hidden('serialHex', cert.serialHex) +
-              '<div class="formrow"><select name="reason" ' +
-              'aria-label="Reason">' +
-              state.revocationReasons.map(function (reason) {
-                return '<option value="' + self.esc(reason) + '">' +
-                       self.esc(reason) +
-                       '</option>';
-              }).join('') + '</select><button type="submit" class="danger">' +
-              'Revoke</button></div></form>'
-            : '';
-          return '<tr><td><code>' + self.esc(cert.subject) + '</code><div ' +
-            'class="sub">' +
-            (cert.label ? self.esc(cert.label) + ' &middot; ' : '') +
-            'serial <code>' + self.esc(cert.serialHex) + '</code> &middot; ' +
-            self.esc(cert.keyAlg) + ' &middot; valid until <code>' +
-            self.esc(cert.notAfter) + '</code><br>thumbprint <code>' +
-            self.esc(cert.thumbprint) + '</code></div></td><td><span ' +
-              'class="state-' +
-            (cert.state === 'valid' ? 'valid' : 'revoked') + '">' +
-            self.esc(cert.state) + '</span>' + (cert.reason
-              ? '<div class="sub">' + self.esc(cert.reason) + '</div>' : '') +
-            '</td><td>' + revokeForm + '</td></tr>';
-        }).join('') + '</table>'
-      : '<p class="sub">This realm has issued this application no TLS client ' +
-        'certificate.</p>';
-    const issueForm = state.caAvailable
-      ? (state.active >= state.max
-        ? this.note('This application holds ' + state.active + ' valid TLS ' +
-                    'client certificates, which is <code>' +
-                    'pki.applicationTlsClientCertificateMax</code>. Revoke ' +
-                    'one to issue another.')
-        : '<form method="post" action="/admin/applications">' + carryBack +
-          hidden('action', 'issue-tls-client-certificate') +
-          hidden('application', id) +
-          '<div class="formrow"><label for="mtls-label">Name it</label>' +
-          '<input id="mtls-label" name="label" maxlength="40" ' +
-          'placeholder="instance 1"><label for="mtls-alg">Key</label>' +
-          '<select id="mtls-alg" name="keyAlg">' +
-          state.keyAlgorithms.map(function (alg) {
-            return '<option value="' + self.esc(alg) + '"' +
-                   (alg === state.defaultKeyAlg ? ' selected' : '') + '>' +
-                   self.esc(alg) + '</option>';
-          }).join('') + '</select></div>' +
-          '<div class="formrow"><label for="mtls-password">File password' +
-          '</label><input type="password" id="mtls-password" name="password" ' +
-          'minlength="' + state.passwordMin + '" required autocomplete=' +
-          '"new-password"><label for="mtls-confirm">Again</label><input ' +
-          'type="password" id="mtls-confirm" name="confirm" minlength="' +
-          state.passwordMin + '" required autocomplete="new-password"></div>' +
-          '<div class="formrow"><button type="submit">Issue a TLS client ' +
-          'certificate from this realm&rsquo;s CA</button><span class="sub">' +
-          'The private key is shown once, as downloads, and is not kept.' +
-          '</span></div></form>')
-      : this.note('This realm has no certificate authority yet, so there is ' +
-                  'nothing to issue a TLS client certificate from. <a ' +
-                  'href="/admin/pki">Build one on the PKI page</a>.');
-    const subjectRows = '<table><tr><th>Parameter</th><th>Attribute</th>' +
-      '<th>Registered</th></tr>' + state.subjects.map(function (subject) {
-        return '<tr><td><code>' + self.esc(subject.member) + '</code><div ' +
-          'class="sub">' + self.esc(subject.label) + '</div></td><td><code>' +
-          self.esc(subject.attribute) + '</code></td><td>' + (subject.value
-            ? '<code>' + self.esc(subject.value) + '</code>'
-            : '<span class="state-none">none</span>') + '</td></tr>';
-      }).join('') + '</table>';
-    const html = '<h3 id="credentials-tls-client">Mutual TLS (RFC 8705)</h3>' +
-      this.note(methodSentence) +
-      '<h4>TLS client certificates this realm issued it</h4>' +
-      this.note('The <strong>implicit</strong> mapping for ' +
-      '<code>tls_client_auth</code>: a certificate from this realm&rsquo;s ' +
-      'TLS client Issuing CA naming <code>' + this.esc(state.implicitName) +
-      '</code>, still listed here, authenticates this application with ' +
-      'nothing registered. A certificate this service issued to anybody else ' +
-      'never authenticates it, whatever subject is registered below.') +
-      rows + issueForm +
-      '<h4>A certificate from another authority</h4>' +
-      this.note('The <strong>explicit</strong> mapping, RFC 8705 section ' +
-      '2.1.2: register <strong>one</strong> of these five, and a certificate ' +
-      'whose chain verified against the client truststore (<a ' +
-      'href="/tls/trust">/tls/trust</a>) and carries it authenticates this ' +
-      'application. A DN is compared as a name, not a string. ' +
-      '<code>self_signed_tls_client_auth</code> instead matches ' +
-      '<code>oauthTlsClientCertificateThumbprint</code>' +
-      (state.selfSignedThumbprint ? ' (<code>' +
-        this.esc(state.selfSignedThumbprint) + '</code>)' : ' (none)') + ' ' +
-      'or a key&rsquo;s <code>x5c</code> in its registered <code>jwks</code>' +
-      '.') +
-      subjectRows +
-      '<h4>Certificate-bound access tokens</h4>' +
-      this.note((state.bindingAvailable
-        ? 'The main port is TLS, so every access token and refresh token ' +
-          'issued on a connection that presented a client certificate ' +
-          'carries <code>cnf["x5t#S256"]</code>, and a resource server here ' +
-          'refuses it on a connection without that certificate. '
-        : 'The main port is <strong>not</strong> TLS ' +
-          '(<code>global.https</code>), so no token can be bound. ') +
-      '<code>' + this.esc(state.boundTokensAttribute) + '</code> is <code>' +
-      (state.boundTokens ? 'TRUE' : 'FALSE') + '</code>' + (state.boundTokens
-        ? ': this application declared bound tokens, so a token request from ' +
-          'it with no client certificate is refused in every mode.'
-        : ': a token request with no certificate gets an unbound token.'));
-    log.debug("Leaving AdminConsole.applicationMtlsSection(). " +
-              state.certificates.length + " certificate(s).");
-    return html;
+    log.debug("Leaving AdminConsole.applicationMtlsSection().");
+    return ApplicationsPage.applicationMtlsSection(state, id, carryBack);
   }
 
-  // ---------------------------------------------------------------------------
-  // SOFTWARE STATEMENTS (RFC 7591 section 2.3), ON THE APPLICATION'S OWN PAGE
-  // (2026-09-13).
-  //
-  // Three halves, each drawn only where it says something: the issuers this
-  // application vouches for as a PUBLISHER, the statement this realm ISSUED for
-  // it with the one control on the section, and — for a client that registered
-  // with a statement — how that statement let it in. The declaration is an
-  // ordinary attribute, set with the attribute editor further down; the issue
-  // is `issue-software-statement` on `/admin/applications`, which `POST
-  // /admin-api/applications/issue-software-statement` mirrors.
-  //
-  // **NO SCRIPT.** The statement is behind a `<details>`, and the metadata a
-  // new one fixes is a textarea of JSON.
-  // ---------------------------------------------------------------------------
+  // Drawn by `web_applications.ts` (#446).
   /**
    * Draws an application's RFC 7591 software statements: the issuers it
    * vouches for, the statement this realm issued with the issue form, and
    * how a statement let it register.
    *
-   * @param req - the request
-   * @param view - the application's detail view model
+   * @param ctx - the render context (`WebKit.context()`)
+   * @param json - the application's answer, with its `page`
    * @param carryBack - the hidden `back` field every form carries
    * @returns the section as HTML
    */
-  applicationSoftwareStatementSection(req, view, carryBack) {
+  applicationSoftwareStatementSection(ctx, json, carryBack) {
     const { log } = this.deps;
-    const self = this;
     log.debug("Entering AdminConsole.applicationSoftwareStatementSection().");
-    const row = view.row;
-    const state = view.softwareStatementState;
-    const settings = state.settings;
-    const hidden = function (name, value) {
-      log.debug("Entering hidden().");
-      log.debug("Leaving hidden().");
-      return '<input type="hidden" name="' + name + '" value="' +
-             self.esc(value) +
-             '">';
-    };
-
-    const publisherHtml = '<h3 id="software-statements-publisher">As a ' +
-      'publisher</h3>' +
-      this.note('A statement whose <code>iss</code> is one of these is ' +
-      'TRUSTED at <code>POST /oauth2/register</code>, verified against this ' +
-      'application&rsquo;s <code>jwks</code> or its RFC 7523 key pair from ' +
-      '<em>Credentials</em> above. Add or remove an issuer with ' +
-      '<code>oauthSoftwareStatementIssuer</code> in the attribute editor ' +
-      'below. A statement this realm issued needs no declaration.') +
-      '<table><tr><th>Declared issuer</th><th>Keys a statement verifies ' +
-      'under</th></tr>' +
-      (state.issuers.length
-        ? state.issuers.map(function (iss) {
-            return '<tr><td><code>' + self.esc(iss) + '</code></td><td>' +
-              (state.usableKeys
-                ? '<span class="state-valid">' + state.usableKeys + ' key' +
-                  (state.usableKeys === 1 ? '' : 's') + '</span>'
-                : '<span class="state-revoked">none &mdash; every statement ' +
-                  'from this issuer is refused</span>') + '</td></tr>';
-          }).join('')
-        : '<tr><td colspan="2"><span class="state-none">none declared' +
-          '</span></td></tr>') + '</table>';
-
-    const issued = state.issued;
-    const issuedRows = issued
-      ? (issued.readable
-        ? '<table><tr><th>Fact</th><th>Value</th></tr>' +
-          '<tr><td>Issuer</td><td><code>' + this.esc(issued.issuer) +
-          '</code></td></tr>' +
-          '<tr><td>Issued</td><td><code>' +
-          this.esc(this.whenText(issued.issuedAt)) +
-          '</code></td></tr>' +
-          '<tr><td>Expires</td><td><code>' +
-          this.esc(issued.expiresAt ? this.whenText(issued.expiresAt) :
-                   'never') +
-          '</code></td></tr>' +
-          '<tr><td>Verifies now</td><td>' + (issued.verifies
-            ? '<span class="state-valid">yes, under this realm&rsquo;s key' +
-              '</span>'
-            : '<span class="state-revoked">no</span><div class="sub">' +
-              this.esc(issued.why) + ' &mdash; issue a new one.</div>') +
-          '</td></tr>' +
-          '<tr><td>Fixes</td><td><code>' +
-          this.esc(JSON.stringify(issued.metadata)) + '</code></td></tr>' +
-          '<tr><td>Statement</td><td><details class="fold"><summary>Show the ' +
-          'statement</summary><code>' + this.esc(state.issuedToken) +
-          '</code></details></td></tr></table>'
-        : this.warn(this.esc(issued.why), 'Unreadable'))
-      : '<p class="sub"><span class="state-none">This realm has issued no ' +
-        'statement for this application.</span></p>';
-
-    const issueForm = '<form method="post" action="/admin/applications">' +
-      carryBack + hidden('action', 'issue-software-statement') +
-      hidden('application', row.identifier) +
-      '<div class="formrow"><label for="software-statement-metadata">Client ' +
-      'metadata it fixes (JSON)</label><textarea ' +
-      'id="software-statement-metadata" name="metadata" rows="6" ' +
-      'placeholder="{&quot;redirect_uris&quot;: ' +
-      '[&quot;https://app.example/cb&quot;], &quot;grant_types&quot;: ' +
-      '[&quot;authorization_code&quot;]}"></textarea></div>' +
-      '<div class="formrow"><label ' +
-      'for="software-statement-lifetime">Lifetime (seconds, 0 for ' +
-      'none)</label><input id="software-statement-lifetime" ' +
-      'name="lifetimeSeconds" type="number" min="0" placeholder="' +
-      this.esc(String(settings.lifetimeSeconds)) + '"></div>' +
-      '<div class="formrow"><button type="submit">' +
-      (issued ? 'Issue a new statement' : 'Issue a statement') + '</button>' +
-      '<span class="sub">' + (issued
-        ? 'Replaces the one shown. The earlier statement still verifies ' +
-          'until it expires.'
-        : 'Signed with this realm&rsquo;s key.') + '</span></div></form>';
-
-    const issuedHtml = '<h3 id="software-statements-issued">Issued by this ' +
-      'realm</h3>' +
-      this.note('Hand the statement to whoever ships the software. A client ' +
-      'that presents it is registered with the members it fixes, and they ' +
-      'take precedence over the registration&rsquo;s own JSON; ' +
-      '<strong>whatever it does not fix, the registering client ' +
-      'chooses</strong> &mdash; so fix <code>grant_types</code> and ' +
-      '<code>redirect_uris</code> when those matter. ' +
-      '<code>software_id</code> defaults to this application&rsquo;s ' +
-      'identifier. The <code>iss</code> is the issuer published at the ' +
-      'address this page was reached on. It is not a secret, and it stops ' +
-      'verifying when the realm&rsquo;s signing key is replaced &mdash; in ' +
-      'development mode, every restart.') +
-      issuedRows + issueForm;
-
-    const facts = state.registeredWith;
-    const registeredHtml = facts
-      ? '<h3 id="software-statements-registered">How it registered</h3>' +
-        '<table><tr><th>Fact</th><th>Value</th></tr>' +
-        '<tr><td>Statement issuer<div class="sub"><code>' +
-        'appSoftwareStatementIssuer</code></div></td><td><code>' +
-        this.esc(facts.issuer) + '</code></td></tr>' +
-        '<tr><td>Trusted<div class="sub"><code>appSoftwareStatementTrusted' +
-        '</code></div></td><td>' + (facts.trusted
-          ? '<span class="state-valid">yes</span>'
-          : '<span class="state-revoked">no &mdash; accepted unverified' +
-            '</span>') + '</td></tr>' +
-        '<tr><td>Through<div class="sub"><code>appSoftwareStatementPublisher' +
-        '</code></div></td><td>' + (facts.publisher
-          ? '<a href="/admin/applications?application=' +
-            encodeURIComponent(facts.publisher) + '"><code>' +
-            this.esc(facts.publisher) + '</code></a>'
-          : '&mdash;') + '</td></tr></table>'
-      : '';
-
-    // AN OAUTH 2.0 CLIENT'S SECTION, for the Credentials section's reason: a
-    // statement is presented at POST /oauth2/register, so an application not
-    // declared for OAuth 2.0 or OpenID Connect gets a sentence rather than
-    // controls — unless it already carries something, which stays in effect.
-    if (!view.credentialsState.oauthDeclared && !state.issuers.length &&
-        !issued && !facts) {
-      log.debug("Leaving AdminConsole.applicationSoftwareStatementSection(). " +
-                "Not an OAuth client.");
-      return '<h2 id="software-statements">Software statements</h2>' +
-        this.note('RFC 7591 software statements are presented at the OAuth ' +
-        '2.0 registration endpoint, so this section is drawn for an ' +
-        'application declared as <strong>OAuth 2.0</strong> or ' +
-        '<strong>OpenID Connect</strong>. Declare one of those families ' +
-        'under <em>Protocol families</em> to issue a statement for it or ' +
-        'name the issuers it vouches for.');
-    }
     log.debug("Leaving AdminConsole.applicationSoftwareStatementSection().");
-    return '<h2 id="software-statements">Software statements</h2>' +
-      this.note('RFC 7591 section 2.3: a signed JWT of client metadata, ' +
-      'presented at registration. In this realm a statement from an ' +
-      'undeclared issuer is ' +
-      (settings.requireTrustedIssuer ? '<strong>refused</strong>'
-        : '<strong>accepted unverified</strong>') + ', a trusted one ' +
-      (settings.opensRegistration ? '<strong>opens</strong>' :
-       'does not open') +
-      ' a registration endpoint closed to everybody else, and a registration ' +
-      (settings.required ? '<strong>must</strong>' : 'need not') + ' carry ' +
-      'one. Those are <code>oauth2.softwareStatement*</code> on ' +
-      '<a href="/admin/oauth2">/admin/oauth2</a>.') +
-      publisherHtml + issuedHtml + registeredHtml;
+    return ApplicationsPage.applicationSoftwareStatementSection(ctx, json,
+      carryBack);
   }
 
   // The kit's (#446), where its reasoning went with it.
@@ -18151,356 +15888,30 @@ class AdminConsole {
    *   not found
    */
   applicationDetailPage(req, identifier, state?) {
-    const { log, adminViews, queryWith, pageParamsOf } = this.deps;
-    const self = this;
+    const { log, adminViews, queryWith, pageParamsOf, applications } =
+      this.deps;
     log.debug("Entering AdminConsole.applicationDetailPage(). identifier=" +
               identifier);
-    const view = adminViews.applicationDetailJson(req, identifier);
-    const row = view.row;
-    const carryBack = '<input type="hidden" name="back" value="' +
-      this.esc(queryWith(this.listViewOf('/admin/applications', req.query),
-                         {})) + '">';
-    if (!row) {
-      log.debug("Leaving AdminConsole.applicationDetailPage(). No such " +
-                "application.");
-      return {
-        missing: true,
-        inner: this.messagesOf(req) +
-          '<p class="warn">No application called <code>' +
-          this.esc(identifier) +
-          '</code> is recorded here. That is not the same as one this ' +
-          'service has refused: an entry appears the first time an ' +
-          'identifier is ACCEPTED, so a client whose every request was ' +
-          'turned away has none.</p>' + APPLICATIONS_LINKS,
-        json: view.json
-      };
+    // WHAT WAS POSTED AND REFUSED, or a credential just revealed, rides on the
+    // view the page is drawn from (#446), never on the answer. A refused
+    // save's families are read off its body here, where the request is.
+    const posted = Object.assign({}, state || {});
+    if (posted.draft && posted.draft.protocolsPresent) {
+      posted.declared = applications.familiesOfChoices(
+        this.listField(req, posted.draft, 'protocol'));
     }
-    // EVERY attribute the entry carries, operational ones and entryDN included.
-    // This used to be the schema half minus the twelve names applications.js
-    // reads into named members, under a heading that said "every attribute the
-    // entry carries" — so objectClass, cn, appIdentifier, both timestamps and
-    // the DN itself were all missing from the one table on this service whose
-    // whole job is to be complete.
-    const attributeRows = view.attributeRows;
-    const paged = view.paged;
-    const paging = view.paging;
-    const nav = this.pageNavPair('/admin/applications', pageParamsOf(req.query),
-                                 paging);
-
-    const attrHtml = paged.shown.map(function (attr) {
-      // What each attribute MEANS rather than only what it holds. The
-      // registry's own table is the first answer and is the same table the
-      // entry was written from — a second description here would be the one
-      // that went stale — and applicationAttributeNote() carries the other
-      // three cases.
-      const note = self.applicationAttributeNote(attr.name, attr.operational);
-      return '<tr><td><code>' + self.esc(attr.name) + '</code>' +
-        (note.sensitive ? ' <span class="state-revoked">credential</span>' :
-         '') +
-        (attr.sealedAtRest
-          ? ' <span class="state-valid" title="The entry holds this ' +
-            'encrypted under the key-encryption key — the same one this ' +
-            'service\'s signing keys and the certificate authority are ' +
-            'sealed with. An ldapsearch, an ldif file, a database row or a ' +
-            'backup shows the ciphertext; this page opened it.">sealed at ' +
-            'rest</span>'
-          : '') +
-        (attr.operational
-          ? ' <span class="state-none" title="An operational attribute. A ' +
-            'search returns it only when it is asked for by name (RFC 4511 ' +
-            'section 4.5.1.8) — this dump shows it ' +
-            'always.">(operational)</span>'
-          : '') +
-        '</td><td>' + attr.values.map(function (v) {
-          return '<code>' + self.esc(v) + '</code>';
-        }).join('<br>') + '</td><td class="sub">' + self.esc(note.text) +
-          '</td></tr>';
-    }).join('');
-
-    const refused = state && state.error && state.error.length
-      ? '<div class="warn"><strong>The save was refused.</strong><ul>' +
-        state.error.map(function (one) {
-          return '<li>' + self.esc(one) + '</li>';
-        }).join('') + '</ul></div>'
-      : '';
-    // THE PAGE IS TABS (2026-10-01), one per section that has something to
-    // show, so a reader is not scrolling past a dozen sections to reach one.
-    // `tabbedPanels()` argues the mechanism: no script, the fragment decides.
-    // A TAB FOR A PROTOCOL THIS APPLICATION IS NOT DECLARED FOR IS NOT
-    // DRAWN (rcbj, 2026-10-01): the page offers what its protocols use.
-    const declaredHere = [].concat(row.allowedProtocols || []);
-    const forFamilies = function (families, html) {
-      return families.some(function (one) {
-        return declaredHere.indexOf(one) >= 0;
-      }) ? html : '';
+    const answer = adminViews.applicationDetailJson(req, identifier).json;
+    const json = Object.assign({ state: posted }, answer);
+    // Drawn by `web_applications.ts` (#446).
+    const inner = this.messagesOf(req) +
+      ApplicationsPage.detail(this.renderContext(req),
+        JSON.parse(JSON.stringify(json)));
+    log.debug("Leaving AdminConsole.applicationDetailPage().");
+    return {
+      missing: !json.found,
+      inner: inner,
+      json: answer
     };
-    const OAUTH = ['oauth2', 'oidc', 'oid4vci', 'mtls'];
-    const panels = [
-      { id: 'tab-overview', label: 'Overview',
-        html: '<h3>What it is</h3>' +
-      '<table><tr><th>Thing</th><th>Value</th></tr>' +
-      // FIRST, because it is the thing this page could not previously answer:
-      // where in the tree this application lives. The registry is the
-      // directory, so the DN is what an ldapsearch or an ldapmodify is aimed
-      // at, and a console that showed only the cn made an operator reconstruct
-      // it.
-      '<tr><td>Distinguished name</td><td>' + (row.dn
-        ? '<code>' + this.esc(row.dn) + '</code>' +
-          (row.identifier === row.dnLabel ? '' :
-            '<div class="sub">The RDN is a digest &mdash; <code>' +
-            this.esc(row.identifier) +
-            '</code> is longer than 64 characters, which is not a readable ' +
-            'RDN. <code>appIdentifier</code> is the identity, not the ' +
-            '<code>cn</code>.</div>')
-        : '<span class="state-none">no directory is loaded in this process, ' +
-          'so there is no entry and no registry</span>') + '</td></tr>' +
-      '<tr><td>Name</td><td>' + this.esc(row.name) + '</td></tr>' +
-      '<tr><td>Kind</td><td>' + this.applicationKindCells(row) +
-      '</td></tr>' +
-      '<tr><td>Protocols</td><td>' +
-      this.applicationProtocolCell(row, applications.PROTOCOLS) +
-      '</td></tr>' +
-      '<tr><td>Registered</td><td>' + this.applicationRegisteredCell(row) +
-      '</td></tr><tr><td>First ' +
-      'seen</td><td><code>' + this.esc(row.firstSeen) +
-      '</code></td></tr><tr><td>Last ' +
-      'seen</td><td><code>' + this.esc(row.lastSeen) +
-      '</code></td></tr><tr><td>How ' +
-      'it got here</td><td>' + (row.descriptions.length
-        ? row.descriptions.map(function (d) { return self.esc(d); })
-          .join('<br>')
-        : '<span class="state-none">nothing recorded</span>') + '</td></tr>' +
-      '</table>' +
-          this.protocolFamilySection(row) },
-      { id: 'tab-config', label: 'Configuration',
-        html: this.applicationFieldsSection(req, row, carryBack, state) },
-      // EVERY CREDENTIAL IN ONE PLACE (rcbj, 2026-10-01): the DID key pair is
-      // here as well as on the DID configuration tab, for an application
-      // declared for `did`.
-      { id: 'tab-credentials', label: 'Credentials',
-        html: forFamilies(OAUTH,
-          this.applicationCredentialsSection(req, view, carryBack)) +
-          forFamilies(['did'], '<h3 id="credentials-did">DID key pair</h3>' +
-            this.applicationDidPanel(req, row, carryBack, 'credentials')) +
-          forFamilies(['acme', 'est', 'scep'],
-            '<h3 id="credentials-enroll">Certificates over ACME, EST and ' +
-            'SCEP</h3>' + this.applicationEnrollmentPanel(req, row, carryBack,
-                                                          'credentials')) },
-      { id: 'tab-origins', label: 'Browser origins',
-        html: this.applicationCorsSection(row, carryBack) },
-      // THE ACCESS-TYPE CATALOGUE (#432 phase 4): the types this
-      // application, as a resource server, owns — read by RFC 9396 and GNAP
-      // alike, so drawn for either.
-      { id: 'tab-access-types', label: 'Access types',
-        html: forFamilies(OAUTH.concat(['gnap']),
-          this.applicationAccessTypesSection(row, carryBack)) },
-      { id: 'tab-signals', label: 'Shared Signals',
-        html: forFamilies(['ssf'], this.applicationSignalsSection(view,
-          carryBack, this.mayWrite(req))) },
-      { id: 'tab-statements', label: 'Software statements',
-        html: forFamilies(OAUTH, this.applicationSoftwareStatementSection(req,
-          view, carryBack)) },
-      { id: 'tab-addresses', label: 'Return addresses',
-        html: this.applicationObservedAddressesSection(req, view, carryBack) },
-      // AFTER the generic attribute editor in the page this was. The editor
-      // can already write `oauthDelegatedPermission` by hand — it is an
-      // ordinary multi-valued attribute in the EDITABLE table — so this
-      // section is a second DOOR onto it and not a second place it lives,
-      // which is the one-store rule /admin/token-lifetimes' header argues.
-      { id: 'tab-permissions', label: 'Permissions',
-        html: forFamilies(OAUTH,
-          this.applicationPermissionsSection(req, row, carryBack)) },
-      // AND WHAT IT MAY DO AS ITSELF (#93): the roles it holds.
-      { id: 'tab-roles', label: 'Roles',
-        html: this.applicationRolesSection(row, view.rolesState, carryBack) },
-      // THE METADATA REFRESH, the only control on this page that reaches off
-      // this machine, drawn only for an application that names a URL — see
-      // sp_metadata.ts.
-      { id: 'tab-metadata', label: 'SP metadata',
-        html: !forFamilies(['saml2'], 'x') ? '' : (this.firstFieldValue(row,
-          'samlSpMetadataUrl')
-        ? '<h2>Service provider metadata</h2>' +
-          this.note('Fetches <code>' +
-                    this.esc(this.firstFieldValue(row, 'samlSpMetadataUrl')) +
-          '</code> and CONSUMES it: the document on ' +
-          '<code>samlSpMetadata</code>, its AssertionConsumerService and ' +
-          'SingleLogoutService endpoints as REGISTERED return addresses, its ' +
-          'signing certificates as what its requests are verified against, ' +
-          'its <code>use="encryption"</code> certificate on ' +
-          '<code>samlEncryptionCertificate</code>, and its NameIDFormats, ' +
-          'AuthnRequestsSigned and WantAssertionsSigned. A fetch that fails ' +
-          'changes NOTHING, so whatever is registered stays in force. <a ' +
-          'href="/admin/saml2?sp=' + encodeURIComponent(row.identifier) +
-          '">The SAML 2.0 page</a> shows what was consumed and takes an ' +
-          'uploaded document.') +
-          '<form method="post" action="/admin/applications">' + carryBack +
-          '<div class="formrow">' +
-          '<input type="hidden" name="action" value="refresh-metadata">' +
-          '<input type="hidden" name="application" value="' +
-          this.esc(row.identifier) + '"><button ' +
-          'type="submit">Refresh the metadata</button><span class="sub">' +
-          (this.firstFieldValue(row, 'samlSpMetadataConsumedAt')
-            ? 'Metadata was last consumed ' +
-              this.esc(this.firstFieldValue(row, 'samlSpMetadataConsumedAt')) +
-              '; this replaces what it registered.'
-            : 'No metadata has been consumed yet.') +
-          ' This is one of two places in this service that dials anything at ' +
-          'all.</span></div></form>'
-        : '') },
-      { id: 'tab-entry', label: 'Directory entry',
-        html:       '<h2>Its directory entry</h2><p class="sub">Every ' +
-          'attribute the entry ' +
-      'carries &mdash; the operational ones and <code>entryDN</code> ' +
-      'included, which a SEARCH would return only when asked for by name ' +
-      '(RFC 4511 section 4.5.1.8) &mdash; with what each one is. This IS the ' +
-      'entry &mdash; the registry is the <code>ou=applications</code> ' +
-      'container and nothing caches it &mdash; so an <code>ldapmodify</code> ' +
-      'shows here on the next refresh, and changes what RFC 9700 mode ' +
-      'enforces at the same moment.</p>' +
-      (row.dn
-        ? '<p class="sub"><code>' + this.esc(row.dn) + '</code>' +
-          (row.createdAt ?
-           ' &middot; created <code>' + this.esc(row.createdAt) +
-           '</code>' : '') +
-          (row.modifiedAt ?
-           ' &middot; last written <code>' + this.esc(row.modifiedAt) +
-                            '</code>' : '') +
-          (row.origin ?
-           ' &middot; written by <code>' + this.esc(row.origin) +
-           '</code>' : '') +
-          '</p>'
-        : '') +
-      nav.head +
-      '<table><tr><th>Attribute</th><th>Value</th><th>What it is</th></tr>' +
-      // Reachable only where no directory is loaded in this process. Every real
-      // entry carries objectClass, cn, appIdentifier and its two timestamps at
-      // the least, so "no attributes" is now a statement about the STORE rather
-      // than about this application — which is what it says.
-      (attrHtml || '<tr><td colspan="3">No directory is loaded in this ' +
-       'process, so there is no <code>ou=applications</code> container and ' +
-       'no entry to show. This module keeps no store of its own on ' +
-       'purpose.</td></tr>') +
-      '</table>' +
-      nav.foot +
-          // THE ONE-ATTRIBUTE FORMS reach every editable attribute by name,
-          // folded, for what the grid leaves to a control of its own and for
-          // an ldapmodify-shaped edit.
-      '<details class="fold section"><summary><h3>Change one attribute by ' +
-      'name</h3></summary>' +
-      this.note('These write the same entry an <code>ldapmodify</code> ' +
-      'writes, through the same functions &mdash; the console is a set of ' +
-      'controls in front of this registry and not a second copy of it. A ' +
-      'change here is what RFC 9700 mode enforces on the very next request: ' +
-      'add to <code>oauthRedirectUri</code> and that URI is accepted by ' +
-      'exact match, set <code>oauthTokenEndpointAuthMethod</code> to ' +
-      '<code>none</code> and the client becomes public, so PKCE is required ' +
-      'of it and its secret stops being checked.') +
-      '<form method="post" action="/admin/applications">' + carryBack +
-      '<div ' +
-      'class="formrow"><input type="hidden" name="action" value="set"><input ' +
-      'type="hidden" name="application" value="' + this.esc(row.identifier) +
-      '"><label for="setattr">Set</label><select id="setattr" ' +
-      'name="attribute">' + this.editableOptions('set', '', row) +
-      '</select><label ' +
-      'for="setval">to</label><input type="text" id="setval" name="value" ' +
-      'size="34" placeholder="empty clears it"><button ' +
-      'type="submit">Set</button></div></form><form method="post" ' +
-      'action="/admin/applications">' + carryBack + '<div ' +
-      'class="formrow"><input type="hidden" name="action" value="add"><input ' +
-      'type="hidden" name="application" value="' + this.esc(row.identifier) +
-      '"><label for="addattr">Add to</label><select id="addattr" ' +
-      'name="attribute">' +
-      this.editableOptions('multi', 'oauthRedirectUri', row) +
-      '</select><label for="addval">the value</label><input type="text" ' +
-      'id="addval" name="value" size="34" required><button ' +
-      'type="submit">Add</button></div></form><form method="post" ' +
-      'action="/admin/applications">' + carryBack +
-      '<div ' +
-      'class="formrow"><input type="hidden" name="action" ' +
-      'value="remove"><input type="hidden" name="application" ' +
-      'value="' + this.esc(row.identifier) + '">' +
-      '<label for="remattr">Remove from</label>' +
-      // NO `row` HERE, AND THAT IS THE RULE READ EXACTLY: the family scope
-      // refuses a SET and an ADD and never a REMOVE, for updateApplication()'s
-      // reason — a value can arrive by `ldapmodify` or be left behind when a
-      // family is untimed from the entry, and a console that would not offer to
-      // remove it would be the one door that could tidy it up, shut. So this
-      // select keeps offering everything editable. Nothing family-scoped is
-      // `multi` today; the asymmetry is here so that the first one that is
-      // behaves correctly.
-      '<select id="remattr" name="attribute">' +
-      this.editableOptions('multi', 'oauthRedirectUri') +
-      '</select>' +
-      '<label for="remval">the value</label>' +
-      '<input type="text" id="remval" name="value" size="34" required>' +
-      '<button type="submit">Remove</button>' +
-      '</div></form>' +
-      this.note('<strong>What these will not change, and why.</strong> The ' +
-      'counters, the first and last sighting, the kinds and the protocols ' +
-      'are DERIVED &mdash; they are what happened rather than what this ' +
-      'application may do &mdash; and a form that could rewrite them would ' +
-      'make this page lie about the service\'s own behaviour, in a way ' +
-      'indistinguishable from the recording being broken. ' +
-      '<code>ldapmodify</code> still reaches every one of them: an operator ' +
-      'with an LDAP client is doing something deliberate, and refusing them ' +
-      'HERE is the difference between offering an operation and merely not ' +
-      'preventing it. <code>appRegistrationJson</code> is not offered either ' +
-      '&mdash; edit the attributes beside it instead, which is what the ' +
-      'registration is rebuilt from.') + '</details>' },
-      { id: 'tab-remove', label: 'Remove',
-        html:       '<h2>Take it out of the registry</h2>' +
-      (row.registered
-        ? '<form method="post" action="/admin/applications">' + carryBack +
-          '<div class="formrow"><input type="hidden" name="action" ' +
-          'value="revoke-registration"><input type="hidden" ' +
-          'name="application" value="' + this.esc(row.identifier) +
-          '"><button type="submit">Revoke the RFC 7591 ' +
-          'registration</button><span class="sub">The entry and its history ' +
-          'stay; the client_secret, the registration access token and the ' +
-          'registration itself go. Afterwards RFC 9700 mode treats it as an ' +
-          'unregistered, public client.</span></div></form>'
-        : this.note('It has no RFC 7591 registration to revoke &mdash; it is ' +
-          'an identifier this service has seen rather than a client that ' +
-          'registered, which RFC 9700 mode already treats as public.')) +
-      '<form method="post" action="/admin/applications">' + carryBack +
-      '<div ' +
-      'class="formrow"><input type="hidden" name="action" ' +
-      'value="forget"><input type="hidden" name="application" ' +
-      'value="' + this.esc(row.identifier) + '"><button ' +
-      'type="submit" class="danger">Delete this entry</button><span ' +
-      'class="sub">The only control here that LOSES a fact: the entry goes ' +
-      'and takes its ' +
-      row.authentications + ' recorded authentication(s) with it. It will ' +
-      'reappear, empty, the next time this identifier is accepted by a ' +
-      'protocol.</span></div></form>' }
-    ];
-    const inner = this.flash(this.messagesOf(req) + refused) +
-      '<h2><code>' + this.esc(row.identifier) + '</code></h2>' +
-      '<div class="tiles">' +
-      this.tile(row.authentications, 'Authentications') +
-      this.tile(row.sessions, 'Sessions') +
-      this.tile(row.users, 'Users') +
-      this.tile(row.registered || row.registeredBy ? 'yes' : 'no',
-                'Registered') +
-      '</div>' +
-      this.tabbedPanels('apptabs', panels) +
-      this.applicationsCaveat() +
-      '<p class="sub"><a href="' +
-      this.esc('/admin/applications' +
-               queryWith(this.listViewOf('/admin/applications', req.query),
-                         {})) +
-      '">back to the list</a> &middot; <a ' +
-      'href="/admin/ldap/applications">the registry as the directory sees ' +
-      'it</a></p>';
-
-    // The same two lists the section above drew, for the reply. One pure
-    // function, called twice with the same arguments — see its header.
-    const permissionState = view.permissionState;
-    log.debug("Leaving AdminConsole.applicationDetailPage(). " +
-              paged.shown.length +
-              " attribute row(s), " + permissionState.held.length +
-              " delegated permission(s) held.");
-    return { inner: inner, json: view.json };
   }
 
   /**
@@ -28121,6 +25532,14 @@ class AdminConsole {
       if (result && result.ok && result.privateJwk &&
           String(body.action || '') === 'generate-did-key') {
         self.answerGeneratedDidKey(req, res, body, result);
+        return;
+      }
+      // A CREDENTIAL REVEALED (#446) is answered with the application's
+      // page, the value on it once: a redirect would carry it on a query
+      // string.
+      if (result && result.ok && String(body.action || '') ===
+          'reveal-secret') {
+        self.answerRevealedSecret(req, res, body, result);
         return;
       }
       // A SIGNED DID CONFIGURATION (2026-10-01) is answered with the FILE,

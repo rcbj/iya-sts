@@ -141,6 +141,16 @@ const PAGES: WebPage[] = [
     } },
   { path: '/admin/applications', title: 'Applications',
     operation: '/admin-api/applications',
+    drill: {
+      param: 'application',
+      sample: function (list: Json): string | null {
+        const rows = list.applications || [];
+        return rows[0] ? rows[0].identifier : null;
+      },
+      render: function (view: Json, ctx?: Json): string {
+        return ApplicationsPage.detail(ctx || WebKit.context(), view);
+      }
+    },
     render: function (view: Json, ctx?: Json): string {
       return ApplicationsPage.body(ctx || WebKit.context(), view);
     } },

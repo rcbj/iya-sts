@@ -7499,6 +7499,243 @@ class AdminViews {
     });
   }
 
+  // What one attribute of an application entry IS, as the drill-down's third
+  // column. Split out of that page because the entry carries FOUR kinds of
+  // attribute and the table only ever described one of them — so everything
+  // else came out as "not in the published schema", which is true of
+  // `objectClass` and `createTimestamp` in the narrowest sense and useless as
+  // an explanation.
+  //
+  // The order is the order of certainty: the registry's own table first, since
+  // it is the same table the entry was written from; then the operational ones,
+  // which the DIRECTORY sets and no schema of this module's would ever mention;
+  // then the object classes, published one heading further down
+  // `/admin/ldap/applications`; and only then the honest "somebody wrote this
+  // by hand", which is a real state — this directory is schemaless and an
+  // ldapmodify can put anything on an entry.
+  //
+  // No description is invented for an attribute nothing here knows. Saying
+  // something confident about a name written by hand is how a page starts
+  // lying.
+  /**
+   * Says what one attribute of an application entry is: from the published
+   * schema, an operational attribute, an object class, or written by hand.
+   *
+   * @param name - the attribute name
+   * @param operational - whether the directory marks it operational
+   * @returns an object with `text` and, for a schema attribute, `sensitive`
+   */
+  applicationAttributeNote(name, operational) {
+    const { log, applications } = this.deps;
+    log.debug("Entering AdminViews.applicationAttributeNote().");
+    const lower = String(name).toLowerCase();
+    const spec = applications.SCHEMA.attributes.filter(function (one) {
+      return one.name.toLowerCase() === lower;
+    })[0];
+    if (spec) {
+      log.debug("Leaving AdminViews.applicationAttributeNote().");
+      return { text: spec.what, sensitive: !!spec.sensitive };
+    }
+    if (lower === 'entrydn') {
+      log.debug("Leaving AdminViews.applicationAttributeNote().");
+      return { text: 'WHERE THE ENTRY IS. RFC 5020, and the directory ' +
+                     'synthesises it rather than storing it: the DN is the ' +
+                     'key the entry is held under, so a stored copy would be ' +
+                     'a second definition of the same fact and the one that ' +
+                     'goes stale the moment the entry is renamed. It is the ' +
+                     'name an ldapsearch filter matches this by, which is ' +
+                     'why the dump calls it the same thing.' };
+    }
+    if (lower === 'createtimestamp' || lower === 'modifytimestamp') {
+      log.debug("Leaving AdminViews.applicationAttributeNote().");
+      return { text: 'The directory\'s own, not the registry\'s: when this ' +
+                     'ENTRY was ' +
+                     (lower === 'createtimestamp' ? 'created' :
+                      'last written') +
+                     '. Different from appFirstSeen and appLastSeen one row ' +
+                     'up, which are when the APPLICATION was seen — an ' +
+                     'ldapmodify moves this one and not those.' };
+    }
+    if (lower === 'objectclass') {
+      log.debug("Leaving AdminViews.applicationAttributeNote().");
+      return { text: 'The classes this entry claims, from the registry\'s ' +
+                     'vocabulary: ' +
+                     applications.SCHEMA.objectClasses.map(function (one) {
+                       return one.name;
+                     }).join(', ') + '. A VOCABULARY and not a constraint — ' +
+                     'node-ldapjs has no schema subsystem and this directory ' +
+                     'is schemaless on purpose, so nothing rejects an entry ' +
+                     'for disobeying it.' };
+    }
+    if (operational) {
+      log.debug("Leaving AdminViews.applicationAttributeNote().");
+      // An operational attribute this function has no sentence for, which means
+      // ldap_server.js's OPERATIONAL list grew and this one did not. Saying so
+      // is better than the "written by hand" answer below, which would be
+      // flatly wrong about an attribute the directory sets itself.
+      return { text: 'An operational attribute the directory sets. A search ' +
+                     'returns it only when it is asked for by name (RFC 4511 ' +
+                     'section 4.5.1.8); this dump is not a search, so it is ' +
+                     'here. This page has nothing more specific to say about ' +
+                     'it.' };
+    }
+    log.debug("Leaving AdminViews.applicationAttributeNote().");
+    return { text: 'Not in the published schema and not one the directory ' +
+                   'sets — written by hand into this entry, which nothing ' +
+                   'here prevents and which is what a schemaless directory ' +
+                   'means. The registry\'s own writes REPLACE the entry, so ' +
+                   'a value here survives only until the next time this ' +
+                   'application is seen.' };
+  }
+  // ---------------------------------------------------------------------------
+  // WHAT AN APPLICATION'S PAGE IS DRAWN FROM (#446). The page's tabs read the
+  // registry, the mode and the section states while they drew; a page drawn
+  // in a browser has none of those, so this collects what they read, once,
+  // from the same functions. It carries NO CREDENTIAL: a client secret's
+  // value, the registration access token and every private key stay behind
+  // `reveal-secret` (rcbj, 2026-10-05), and a section that showed one draws a
+  // control that asks for it instead.
+  // ---------------------------------------------------------------------------
+  /**
+   * Collects what an application's page draws its tabs from.
+   *
+   * @param req - the request
+   * @param row - the application's registry row
+   * @param states - the section states `applicationDetailJson()` built
+   * @returns the page data
+   */
+  applicationPageData(req, row, states) {
+    const { log, applications, mode, baseUrlOf } = this.deps;
+    const self = this;
+    log.debug("Entering AdminViews.applicationPageData().");
+    const fields = row.fields || {};
+    const listOf = function (name) {
+      return [].concat(fields[name] || []).map(String)
+        .filter(function (one) { return one !== ''; });
+    };
+    // The configuration tab's fields: every field but the credentials, typed
+    // as the grid types them, with the entry's values.
+    const configFields = applications.applicationFields()
+      .filter(function (one) {
+        return !one.sensitive;
+      }).map(function (one) { return self.typedField(one); });
+    const configValues: Record<string, string[]> = {};
+    configFields.forEach(function (one) {
+      const value = fields[one.attribute];
+      configValues[one.attribute] = [].concat(value === undefined ||
+        value === null ? [] : value).map(String);
+    });
+    // The DID panel: the document advertised for it, and which keys this
+    // service keeps the private half of — by kid, never the key.
+    const vcDid = require('../oid4vc/vc_did');
+    const base = baseUrlOf(req);
+    const did = vcDid.applicationDid(base, row.identifier);
+    const document = vcDid.applicationDidDocument(base, row.identifier);
+    let keptKids = [];
+    try {
+      keptKids = JSON.parse(String(fields.didPrivateKeys || '[]'))
+        .map(function (one) { return String(one && one.kid || ''); });
+    } catch (e) {
+      log.debug("Caught in AdminViews.applicationPageData(): " +
+                ((e && e.message) || e));
+      keptKids = [];
+    }
+    // The credentials state, less every value: the page asks reveal-secret.
+    const credentials = Object.assign({}, states.credentials);
+    delete credentials.json;
+    credentials.clientSecret = Object.assign({},
+                                             states.credentials.clientSecret);
+    delete credentials.clientSecret.values;
+    delete credentials.clientSecret.registrationAccessToken;
+    const declared = applications.declaredFamiliesOf(row);
+    const editable = function (kind, filtered) {
+      return applications.editableAttributes(kind).filter(function (one) {
+        return !filtered ||
+          !applications.familyRefusal(one.name, declared, row.identifier);
+      }).map(function (one) {
+        return { name: one.name, sensitive: !!one.sensitive };
+      });
+    };
+    const permissions = states.permissions;
+    const out = {
+      notes: {},
+      config: {
+        fields: configFields, values: configValues,
+        groups: applications.FIELD_GROUPS,
+        familyChoices: applications.FAMILY_CHOICES,
+        protocols: applications.PROTOCOLS,
+        longTextAttributes: applications.LONG_TEXT_ATTRIBUTES || []
+      },
+      cors: listOf('appCorsOrigin').map(function (stored) {
+        return { stored: stored,
+                 canonical: applications.corsOriginsOf(
+                   { appCorsOrigin: [stored] })[0] || '' };
+      }),
+      accessTypes: listOf('oauthAuthorizationDetailsType').map(
+        function (stored) {
+          return Object.assign({ stored: stored },
+                               applications.authorizationDetailsTypeOf(stored));
+        }),
+      grantsUncataloguedAccess: mode.grantsUncataloguedAccess(),
+      acceptsUnregisteredAddresses: mode.acceptsUnregisteredAddresses(),
+      protocolRows: applications.PROTOCOL_IDS.map(function (id) {
+        const meta = applications.protocolRow(id) ||
+                     { label: id, kinds: [], kind: '' };
+        return { id: id, label: meta.label, kinds: meta.kinds || [],
+                 kind: meta.kind || '' };
+      }),
+      editable: { set: editable('set', true), multi: editable('multi', true),
+                  multiAll: editable('multi', false) },
+      did: {
+        did: did,
+        url: base + '/applications/' + encodeURIComponent(row.identifier) +
+             '/did.json',
+        ok: !!document.ok, why: document.why || '',
+        methods: document.ok ? document.document.verificationMethod
+          .map(function (m) {
+            const jwk = m.publicKeyJwk || {};
+            const kid = m.id.slice(did.length + 1);
+            return { kid: kid, kty: String(jwk.kty || ''),
+                     crv: String(jwk.crv || ''), alg: String(jwk.alg || ''),
+                     kept: keptKids.indexOf(kid) >= 0 };
+          }) : [],
+        origins: document.ok ? (document.document.service || [])
+          .filter(function (one) { return one.type === 'LinkedDomains'; })
+          .map(function (one) { return String(one.serviceEndpoint); }) : []
+      },
+      credentials: credentials,
+      signals: states.signals,
+      softwareStatement: states.softwareStatement,
+      roles: states.roles,
+      permissions: {
+        held: permissions.held, exposes: permissions.exposes,
+        offerable: permissions.offerable, clients: permissions.clients,
+        heldPage: { paging: permissions.heldPage.paging,
+                    shown: permissions.heldPage.shown },
+        exposedPage: { paging: permissions.exposedPage.paging,
+                       shown: permissions.exposedPage.shown },
+        grantedOutPage: { paging: permissions.grantedOutPage.paging,
+                          shown: permissions.grantedOutPage.shown },
+        registerPermissions: permissions.register.permissions.length
+      },
+      lifetimes: { rows: states.lifetimes.rows, skew: states.lifetimes.skew },
+      claims: states.claims.sets,
+      enrollment: {
+        credentials: this.applicationEnrollmentState(req, row, 'enrolled'),
+        config: this.applicationEnrollmentState(req, row, 'enrolledConfig')
+      },
+      observed: { shown: states.observed.shown,
+                  paging: states.observed.paging }
+    };
+    // The note beside every attribute row, by its name.
+    Object.keys(row.attributes || {}).forEach(function (name) {
+      out.notes[name] = self.applicationAttributeNote(name,
+        (row.operational || []).indexOf(name) >= 0);
+    });
+    log.debug("Leaving AdminViews.applicationPageData().");
+    return out;
+  }
+
   // The application drill-down: the entry, its attributes as a paged list, and
   // the delegated permissions it holds and exposes.
   /**
@@ -7594,6 +7831,14 @@ class AdminViews {
       // of them out, opened.
       const masked = self.maskedApplicationRow(row);
       return Object.assign({ found: true }, masked, {
+          // WHAT THE PAGE DRAWS ITS TABS FROM (#446), in one member because
+          // this answer is the entry spread out and a name of its own could
+          // never collide with an attribute: see applicationPageData().
+          page: self.applicationPageData(req, row, {
+            credentials: credentialsState, signals: signalsState,
+            softwareStatement: softwareStatementState, roles: rolesState,
+            permissions: permissionState, lifetimes: lifetimesState,
+            claims: claimsState, observed: observedPaged }),
           attributesShown: self.maskedAttributeRows(paged.shown),
           attributesPaging: self.pagingJson(paging),
           // `returnAddressesObserved` itself is WHOLE, on the row, beside the
@@ -10621,6 +10866,7 @@ export = {
   releaseWithholding: slot.forward('releaseWithholding'),
   withheldFor: slot.forward('withheldFor'),
   applicationDetailJson: slot.forward('applicationDetailJson'),
+  applicationAttributeNote: slot.forward('applicationAttributeNote'),
   applicationsJson: slot.forward('applicationsJson'),
   applicationsListJson: slot.forward('applicationsListJson'),
   secretExpiryOf: slot.forward('secretExpiryOf'),
