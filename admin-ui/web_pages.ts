@@ -43,6 +43,7 @@ import MailPage = require('./web_mail');
 import MailOutboxPage = require('./web_mail_outbox');
 import ModePage = require('./web_mode');
 import NodeHealthPage = require('./web_node_health');
+import OidfedPage = require('../oidfed/web_oidfed');
 import ProviderCommandsPage =
   require('../oauth-oidc/web_provider_commands');
 import OAuth2MonitorPage = require('../oauth-oidc/web_oauth2_monitor');
@@ -105,6 +106,8 @@ const PAGES: WebPage[] = [
     render: OAuth2MonitorPage.render },
   { path: '/admin/scheduler', title: 'Scheduler',
     operation: '/admin-api/scheduler', render: SchedulerPage.render },
+  { path: '/admin/oidfed', title: 'OpenID Federation',
+    operation: '/admin-api/oidfed', render: OidfedPage.render },
   { path: '/admin/secrets', title: 'Secret store',
     operation: '/admin-api/secrets', render: SecretsPage.render },
   { path: '/admin/ssf/transmitters', title: 'Signals from partners',

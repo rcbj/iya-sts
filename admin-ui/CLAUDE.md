@@ -7298,6 +7298,7 @@ module always was, and imports the kit by its relative path.
 | `web_geolocation.ts` | The body of `/admin/geolocation`. **The map is laid out by the server and arrives in the view** as `drawing` (the SVG and its legend) with `noDataColour`, as `/admin-api/delegation/map` answers its picture: the outlines and the projection are `geo_map.ts`'s and stay on the server. `hrefOf()`, `countText()` (told the minimum count by the view), `WINDOW_LABELS` and `DEFAULT_WINDOW` are the renderer's, read back by `geolocation_admin.ts`. |
 | `../oauth-oidc/web_claims_providers.ts` | The body of `/admin/claim-providers`, the redirect URI read from the view's `redirectUri` (which the API always answered and the page computed again). |
 | `../oauth-oidc/web_provider_commands.ts` | The bodies of `/admin/commands` (`render()`) and `/admin/deliveries` (`deliveriesBody()`, whose state filter is the render context's), sharing the delivery row and its Retry form. |
+| `../oidfed/web_oidfed.ts` | The body of `/admin/oidfed`. Its view and `GET /admin-api/oidfed`'s are one function since #446 (`oidfedView()`, the federation view with the page's `settings`); a resolution the reader just asked for is drawn from the view's `resolution`, which only the action's redraw sets. |
 | `web_vc_status.ts` | The body of `/admin/vc-status`; its Suspend, Reinstate and Revoke buttons are drawn only when `ctx.write` says so, and its paging is drawn from the view's `rowsPaging`. |
 | `../attribute-sources/web_attribute_sources.ts` | The body of `/admin/attribute-sources`. Its operation answered the register WITHOUT the page's `settings` until #446; both now answer `attributeSourcesView()`. |
 | `../debugger/web_debugger.ts` | The body of `/admin/debugger` — **the first page whose Settings block comes out of its own view** (`SettingsForms.forms(json.settings, PAGE_PATH)`). |
@@ -7371,7 +7372,7 @@ the view.
 
 **NOT BUILT YET**: the runtime that signs in (authorization code, PKCE, a
 non-extractable DPoP key), fetches, routes and draws the shell; the static
-route that serves it; and every page but the twenty above.
+route that serves it; and every page but the twenty-one above.
 
 **THE PAGING CONTROL IS DRAWN FROM THE PAGING A CALLER RECEIVES.**
 `pageNavPair(path, params, pg)` read two members of the console's own paging

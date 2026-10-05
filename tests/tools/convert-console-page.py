@@ -90,7 +90,8 @@ def strip_logs(text):
     out = []
     i = 0
     while True:
-        m = re.search(r'(^|\n)([ \t]*)(?:helpers\.)?log\.debug\(', text[i:])
+        m = re.search(r'(^|\n)([ \t]*)(?:helpers\.|this\.deps\.)?log\.debug\(',
+                      text[i:])
         if not m:
             out.append(text[i:])
             break
