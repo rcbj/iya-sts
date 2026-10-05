@@ -335,7 +335,14 @@ class ApiExplorer {
       // is the shape a script reads — a page handing one to a browser it has
       // already authenticated is a different act from an API handing one to
       // whoever asked.
-      tokenInReply: false
+      tokenInReply: false,
+      // What the static console draws the page from (#446): who the calls
+      // are made as (the API's handler names the token's subject and its
+      // scopes, which a console session cannot), the realm the document and
+      // the calls are under, and the explorer's script.
+      who: gate.username || '',
+      realmPrefix: this.deps.realms.currentPrefix() || '',
+      script: PATH + '/explorer.js'
     };
   }
 

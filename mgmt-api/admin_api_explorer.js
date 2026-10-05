@@ -105,6 +105,36 @@
   // ---------------------------------------------------------------------
   var TOKEN = root.getAttribute('data-token') || '';
 
+  // THE STATIC CONSOLE'S EXPLORER (#446) embeds no token at all: its calls
+  // go through `window.stsConsoleFetch`, which the console's runtime answers
+  // with its own DPoP-bound token and a proof by its own key — a key this
+  // script never sees. `data-console-fetch` says the page was drawn that
+  // way; with it and no runtime there is nothing to call with, and Try it
+  // is refused as it is with no token.
+  var consoleWindow = /** @type {any} */ (window);
+  var CONSOLE_FETCH = root.hasAttribute('data-console-fetch') &&
+    typeof consoleWindow.stsConsoleFetch === 'function'
+    ? consoleWindow.stsConsoleFetch : null;
+
+  // One way to call, whichever way the page was drawn.
+  function call(method, url, body) {
+    log.debug("Entering call().");
+    if (CONSOLE_FETCH) {
+      log.debug("Leaving call(). Through the console.");
+      return CONSOLE_FETCH(method, url, body);
+    }
+    var options = { method: method, headers: {} };
+    if (TOKEN) {
+      options.headers.Authorization = 'Bearer ' + TOKEN;
+    }
+    if (body !== null && body !== undefined) {
+      options.headers['Content-Type'] = 'application/json';
+      options.body = body;
+    }
+    log.debug("Leaving call().");
+    return fetch(url, options);
+  }
+
   // --- small DOM helpers ----------------------------------------------------
   function el(tag, className, text) {
     log.debug("Entering el().");
@@ -353,27 +383,20 @@
 
     run.addEventListener('click', function () {
       var url = urlFor(row, inputs);
-      var options = { method: row.method, headers: {} };
-      if (TOKEN) {
-        options.headers.Authorization = 'Bearer ' + TOKEN;
-      }
-      if (bodyBox) {
-        options.headers['Content-Type'] = 'application/json';
-        options.body = bodyBox.value;
-      }
       result.textContent = '';
       add(result, el('div', 'pending', 'calling ' + row.method + ' ' + url +
                                        ' …'));
       var started = Date.now();
-      fetch(url, options).then(function (response) {
-        return response.text().then(function (text) {
-          renderResult(result, response.status, Date.now() - started, text);
+      call(row.method, url, bodyBox ? bodyBox.value : null)
+        .then(function (response) {
+          return response.text().then(function (text) {
+            renderResult(result, response.status, Date.now() - started, text);
+          });
+        }).catch(function (error) {
+          // Shown rather than logged, for the reason at the top of this
+          // file: the page is the only place a person is looking.
+          renderResult(result, 0, Date.now() - started, String(error));
         });
-      }).catch(function (error) {
-        // Shown rather than logged, for the reason at the top of this file: the
-        // page is the only place a person is looking.
-        renderResult(result, 0, Date.now() - started, String(error));
-      });
     });
     log.debug("Leaving renderOperation().");
     return wrap;
@@ -443,11 +466,12 @@
   // `/admin-api/openapi.json`, so it arrives on the console session this page
   // was drawn with and needs no token of its own. See
   // admin-ui/api_explorer.ts.
-  fetch(SPEC_URL).then(function (response) {
-    return response.json();
-  }).then(render).catch(function (error) {
-    root.textContent = '';
-    add(root, el('h1', '', 'The OpenAPI document could not be read'));
-    add(root, el('pre', 'body', SPEC_URL + '\n\n' + String(error)));
-  });
+  (CONSOLE_FETCH ? CONSOLE_FETCH('GET', SPEC_URL, null) : fetch(SPEC_URL))
+    .then(function (response) {
+      return response.json();
+    }).then(render).catch(function (error) {
+      root.textContent = '';
+      add(root, el('h1', '', 'The OpenAPI document could not be read'));
+      add(root, el('pre', 'body', SPEC_URL + '\n\n' + String(error)));
+    });
 }());

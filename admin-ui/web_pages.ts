@@ -103,6 +103,7 @@ import WorkerPoolsPage = require('./web_worker_pools');
 import DelegationPage = require('./web_delegation');
 import DashboardPage = require('./web_dashboard');
 import StsMetadataPage = require('./web_sts_metadata');
+import ExplorerPage = require('./web_explorer');
 
 type Json = any;
 
@@ -231,6 +232,11 @@ const PAGES: WebPage[] = [
   { path: '/admin', title: 'Admin console', operation: '/admin-api/status',
     render: function (view: Json, ctx?: Json): string {
       return DashboardPage.body(ctx || WebKit.context(), view);
+    } },
+  { path: '/admin/api-explorer', title: 'API explorer',
+    operation: '/admin-api/api-explorer',
+    render: function (view: Json, ctx?: Json): string {
+      return ExplorerPage.body(ctx || WebKit.context(), view);
     } },
   { path: '/admin/sts-metadata', title: 'Service metadata',
     operation: '/admin-api/sts-metadata',

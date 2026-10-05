@@ -450,6 +450,20 @@ class ConsoleRuntime {
    * @returns the response
    */
   async api(method: string, path: string, body?: Json): Promise<Json> {
+    return this.send(method, this.url(path), body);
+  }
+
+  /**
+   * Calls the management API at an absolute URL — `api()`'s work, and what
+   * the explorer's `window.stsConsoleFetch` reaches.
+   *
+   * @param method - the method
+   * @param target - the absolute URL
+   * @param body - an object (sent as JSON), a JSON string, a FormData, or
+   *   nothing
+   * @returns the response, or null when a sign-in began
+   */
+  async send(method: string, target: string, body?: Json): Promise<Json> {
     const now = this.env.now ? this.env.now() : Date.now();
     if (this.accessToken && now > this.expiresAt - REFRESH_EARLY * 1000) {
       await this.refresh();
@@ -458,7 +472,6 @@ class ConsoleRuntime {
       await this.beginSignIn(this.here());
       return null;
     }
-    const target = this.url(path);
     for (let attempt = 0; attempt < 3; attempt++) {
       const headers: Json = {
         'Authorization': 'DPoP ' + this.accessToken,
@@ -468,6 +481,9 @@ class ConsoleRuntime {
       let payload = undefined;
       if (body !== undefined && body !== null) {
         if (typeof FormData !== 'undefined' && body instanceof FormData) {
+          payload = body;
+        } else if (typeof body === 'string') {
+          headers['Content-Type'] = 'application/json';
           payload = body;
         } else {
           headers['Content-Type'] = 'application/json';
@@ -583,6 +599,30 @@ class ConsoleRuntime {
       title: title, active: active, up: up, inner: messages + inner,
       path: this.here() });
     this.wireCopyButtons();
+    this.loadPageScripts();
+  }
+
+  // A SCRIPT A PAGE NAMES (`data-script`): markup drawn by `innerHTML` runs
+  // none, so the explorer names its script and it is loaded here, from this
+  // origin, after the page is in place — `script-src 'self'` is all it
+  // needs.
+  /**
+   * Loads the scripts the page drawn names.
+   *
+   * @returns nothing
+   */
+  loadPageScripts(): void {
+    const doc = this.env.document;
+    const named = doc.querySelectorAll('[data-script]');
+    for (let i = 0; i < named.length; i++) {
+      const src = named[i].getAttribute('data-script');
+      if (!src || !/^\/admin\//.test(src)) {
+        continue;
+      }
+      const script = doc.createElement('script');
+      script.src = this.prefix + src;
+      doc.body.appendChild(script);
+    }
   }
 
   /**
@@ -959,6 +999,12 @@ class ConsoleRuntime {
       self.onSubmit(event);
     });
     if (this.env.window) {
+      // THE EXPLORER'S WAY TO CALL (`admin_api_explorer.js`): this
+      // runtime's token and a proof by its key, for a path on this origin.
+      this.env.window.stsConsoleFetch = function (method, path, body) {
+        return self.send(String(method || 'GET'),
+                         self.env.location.origin + String(path), body);
+      };
       this.env.window.addEventListener('popstate', function () {
         self.prefix = ConsoleRuntime.prefixOf(self.env.location.pathname);
         self.route();

@@ -5145,8 +5145,15 @@ class AdminApi {
           // have. (Since #50's R1 a require of it registers nothing —
           // `common/protocol_stack.ts` registers its routes at 19a — so only
           // the cycle is left of that argument, and it is enough.)
-          self.sendJson(res, 200,
-                        loadApiExplorer().explorerJson(req));
+          // WHO THE CALLS ARE MADE AS, for the static console's explorer
+          // (#446): the token this request carried, its subject and scopes.
+          const explorer = loadApiExplorer().explorerJson(req);
+          const caller = (res.locals && res.locals.apiCaller) || null;
+          if (caller) {
+            explorer.who = String(caller.name || '');
+            explorer.scope = (caller.scopes || []).join(' ');
+          }
+          self.sendJson(res, 200, explorer);
           log.debug("Leaving the API explorer operation.");
         } },
 
