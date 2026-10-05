@@ -7304,6 +7304,7 @@ module always was, and imports the kit by its relative path.
 | `web_risk.ts` | The bodies of `/admin/risk` (`render()`) and `/admin/risk-scoring` (`metricsHtml()`), sharing the timeline, the bars and the dates. Since #446 each row naming a person carries `userHref`, the realm-prefixed link the page used to build with `realms.href()`; the Risk view carries `settings` unless the reader is a realm's own administrator, and its paging is `assessmentsPaging` and `subjectsPaging` rather than two objects JSON never carried; the scoring view carries the score `bands`. `LEVEL_COLOURS` is the renderer's. |
 | `web_devices.ts` | The device register's three pages: `/admin/devices` (`render()`: the list or one device), `/admin/device-registration` (`registrationHtml()`) and `/admin/devices/monitor` (`monitorHtml()`). The drill-down draws its selects from the view's `vocabulary` and the monitor its legend from `complianceSources` (added in #446), where they read the register's constants; the list's paging is `devicesPaging`. |
 | `../acme/web_acme.ts`, `../est/web_est.ts`, `../scep/web_scep.ts` | Certificate enrollment's six pages: each family's Protocols page (`render()`) and its Monitoring page (`monitorBody()`). Their views' `settings` is the page's settings block since #446 — `admin_views.settingsBlockOf()`, a new public reader of the console's slot — where it was the group's bare rows; GNAP's view answers the block too. The server-only pages that show a secret once (a new EAB key, a server-generated private key) stay in the page modules: they answer an act, not a view. |
+| `../gnap/web_gnap.ts` | `/admin/gnap` (`render()`) and `/admin/gnap/monitor` (`monitorBody()`), which were drawn inside their routes. Its Copy buttons need `/admin/copy.js`, which `respond()` adds on this side and the static console's shell must load. |
 | `web_vc_status.ts` | The body of `/admin/vc-status`; its Suspend, Reinstate and Revoke buttons are drawn only when `ctx.write` says so, and its paging is drawn from the view's `rowsPaging`. |
 | `../attribute-sources/web_attribute_sources.ts` | The body of `/admin/attribute-sources`. Its operation answered the register WITHOUT the page's `settings` until #446; both now answer `attributeSourcesView()`. |
 | `../debugger/web_debugger.ts` | The body of `/admin/debugger` — **the first page whose Settings block comes out of its own view** (`SettingsForms.forms(json.settings, PAGE_PATH)`). |
@@ -7377,7 +7378,7 @@ the view.
 
 **NOT BUILT YET**: the runtime that signs in (authorization code, PKCE, a
 non-extractable DPoP key), fetches, routes and draws the shell; the static
-route that serves it; and every page but the thirty-four above.
+route that serves it; and every page but the thirty-six above.
 
 **THE PAGING CONTROL IS DRAWN FROM THE PAGING A CALLER RECEIVES.**
 `pageNavPair(path, params, pg)` read two members of the console's own paging

@@ -42,6 +42,7 @@ import DevicesPage = require('./web_devices');
 import EncryptionPage = require('./web_encryption');
 import EstPage = require('../est/web_est');
 import GeolocationPage = require('./web_geolocation');
+import GnapPage = require('../gnap/web_gnap');
 import GrantsPage = require('../oauth-oidc/web_grants');
 import ListenersPage = require('./web_listeners');
 import MailPage = require('./web_mail');
@@ -126,6 +127,13 @@ const PAGES: WebPage[] = [
     } },
   { path: '/admin/geolocation', title: 'Geolocation',
     operation: '/admin-api/geolocation', render: GeolocationPage.render },
+  { path: '/admin/gnap', title: 'GNAP', operation: '/admin-api/gnap',
+    render: GnapPage.render },
+  { path: '/admin/gnap/monitor', title: 'GNAP grants',
+    operation: '/admin-api/gnap/monitor',
+    render: function (view: Json, ctx?: Json): string {
+      return GnapPage.monitorBody(ctx || WebKit.context(), view);
+    } },
   { path: '/admin/grants', title: 'Grants', operation: '/admin-api/grants',
     render: GrantsPage.render },
   { path: '/admin/listeners', title: 'Listeners',
