@@ -350,7 +350,7 @@ class OAuth2MonitorPage {
    * Draws the page's body: the lead, a link per section, each section, and
    * the closing notes.
    *
-   * @param ctx - the request, of which only the query is read
+   * @param ctx - the render context (`WebKit.context()`)
    * @param json - the view from `monitorView()`
    * @returns the body as HTML
    */
