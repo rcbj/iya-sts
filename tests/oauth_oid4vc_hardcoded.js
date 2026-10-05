@@ -455,8 +455,15 @@ function childMain() {
          '6i. PRODUCT: and a JWT signed by a key that is not this realm\'s',
          r.status + ' ' + r.text.slice(0, 160));
 
+    // THE OFFER NAMES A PERSON THE DIRECTORY HOLDS. Since #158 the
+    // pre-authorized code grant resolves the offered person when it is
+    // redeemed and refuses one with no entry (STS-OAUTH-0938) — and product
+    // mode creates none, so the default oid4vci.offerUsername would be
+    // refused before any of 6j-6l could be asked.
+    config.setOverride('oid4vci.offerUsername', 'hc-alice');
     built = offers.buildCredentialOffer(fakeReq, ['IdentityCredential'],
                                         'cross-device');
+    config.clearOverride('oid4vci.offerUsername');
     const minted = await request(port, 'POST', '/oauth2/token', {
       form: Object.assign({
         grant_type: 'urn:ietf:params:oauth:grant-type:pre-authorized_code',
