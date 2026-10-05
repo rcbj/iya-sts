@@ -1706,6 +1706,7 @@ name = "sts-oauth"
 version = "0.1.0"
 dependencies = [
  "base64 0.23.1",
+ "openssl",
  "serde_json",
  "sts-core",
  "tracing",
