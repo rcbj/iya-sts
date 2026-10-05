@@ -1254,6 +1254,157 @@ function webauthn() {
              .usesBrokenAlgorithms() };
 }
 
+// SIGSTORE AND TUF (section 11): Node's two canonical forms over values
+// that tell them apart (control characters, non-ASCII and astral keys,
+// numbers JavaScript spells its own way); TUF threshold verdicts over keys
+// of every kind cosign reads — Ed25519 as hex, ECDSA and RSA as PEM, a
+// post-quantum PEM — with a keyid twice, a keyid the role does not name, a
+// tampered signature, odd hex and thresholds Number() reads oddly; Rekor
+// SETs good, tampered and from an unknown log; DSSE PAE and the two hashes.
+async function sigstore() {
+  const pqcX509 = require(path.join(ROOT, 'common', 'vendored',
+                                    'pqc_x509.js'));
+  const values = [
+    null, true, 0, -0, 1, -17, 1e21, 1e20, 0.1, 1.5e-7, 123.456,
+    5e-324, 9007199254740993, '', 'plain', 'a"b\\c', 'tab\there\nnl\r',
+    '\u0000\u0001\u001f\u007f', '  ', 'café 😀',
+    [1, [2, [3, {}]], []],
+    { b: 1, a: 2, A: 3, '': 4, 'é': 5, '😀': 6,
+      '￿': 7, 'aa': 8, 'a\u0000': 9 },
+    { nested: { z: [true, false, null], y: 'x\u0007y' }, n: -12345678901 },
+    { f: 1.25 }, [0.5]
+  ];
+  const canonical = values.map(function (v) {
+    const row = { value: v, jcs: crypto.jcsCanonicalJson(v) };
+    try {
+      row.olpc = crypto.olpcCanonicalJson(v);
+    } catch (e) {
+      row.olpcError = e.message;
+    }
+    return row;
+  });
+  const pemOf = function (pub) {
+    return pub.export({ type: 'spki', format: 'pem' });
+  };
+  const ed = nodeCrypto.generateKeyPairSync('ed25519');
+  const ec = nodeCrypto.generateKeyPairSync('ec',
+                                            { namedCurve: 'prime256v1' });
+  const ec384 = nodeCrypto.generateKeyPairSync('ec',
+                                               { namedCurve: 'secp384r1' });
+  const rsa = nodeCrypto.generateKeyPairSync('rsa', { modulusLength: 2048 });
+  const pq = await pqcX509.generateKeyPair('ML-DSA-65');
+  const pqSpki = Buffer.from(pqcX509.encodeSpki('ML-DSA-65', pq.pub));
+  const signed = { _type: 'root', version: 7, expires: '2030-01-01T00:00:00Z',
+                   note: 'ctl\u0001 café "q" \\', roles: { a: [1, 2] } };
+  const bytes = Buffer.from(crypto.olpcCanonicalJson(signed), 'utf8');
+  const sig = {
+    ed: nodeCrypto.sign(null, bytes, ed.privateKey).toString('hex'),
+    ec: nodeCrypto.sign('sha256', bytes, ec.privateKey).toString('hex'),
+    ec384: nodeCrypto.sign('sha256', bytes, ec384.privateKey).toString('hex'),
+    rsa: nodeCrypto.sign('sha256', bytes, rsa.privateKey).toString('hex'),
+    pq: Buffer.from(await pqcX509.sign('ML-DSA-65', bytes, pq.priv))
+      .toString('hex')
+  };
+  const edHex = ed.publicKey.export({ format: 'jwk' }).x;
+  const keys = {
+    ed: { keytype: 'ed25519', scheme: 'ed25519',
+          keyval: { public: Buffer.from(edHex, 'base64url').toString('hex') } },
+    ec: { keytype: 'ecdsa', scheme: 'ecdsa-sha2-nistp256',
+          keyval: { public: pemOf(ec.publicKey) } },
+    ec384: { keytype: 'ecdsa-sha2-nistp384', scheme: 'ecdsa-sha2-nistp384',
+             keyval: { public: pemOf(ec384.publicKey) } },
+    rsa: { keytype: 'rsa', scheme: 'rsassa-pss-sha256',
+           keyval: { public: pemOf(rsa.publicKey) } },
+    pq: { keytype: 'ml-dsa', scheme: 'ml-dsa-65',
+          keyval: { public: crypto.publicKeyPemOfSpki(pqSpki) } },
+    junk: { keytype: 'ecdsa', keyval: { public: 'not a key!' } },
+    bare: { keytype: 'ecdsa',
+            keyval: { public: pemOf(ec.publicKey)
+              .replace(/-----[A-Z ]+-----/g, '') } }
+  };
+  const flip = function (hex) {
+    return (hex[0] === '0' ? '1' : '0') + hex.slice(1);
+  };
+  const all = ['ed', 'ec', 'ec384', 'rsa', 'pq'];
+  const cases = [
+    { name: 'all five of five', role: { keyids: all, threshold: 5 },
+      sigs: all.map(function (k) { return { keyid: k, sig: sig[k] }; }) },
+    { name: 'one keyid twice', role: { keyids: all, threshold: 2 },
+      sigs: [{ keyid: 'ed', sig: sig.ed }, { keyid: 'ed', sig: sig.ed }] },
+    { name: 'a keyid the role does not name',
+      role: { keyids: ['ed'], threshold: 2 },
+      sigs: [{ keyid: 'ed', sig: sig.ed }, { keyid: 'ec', sig: sig.ec }] },
+    { name: 'tampered', role: { keyids: all, threshold: 1 },
+      sigs: all.map(function (k) { return { keyid: k, sig: flip(sig[k]) }; }) },
+    { name: 'odd hex', role: { keyids: ['ed'], threshold: 1 },
+      sigs: [{ keyid: 'ed', sig: sig.ed + 'a' }] },
+    { name: 'not hex', role: { keyids: ['ed'], threshold: 1 },
+      sigs: [{ keyid: 'ed', sig: sig.ed.slice(0, -1) + 'g' }] },
+    { name: 'threshold zero', role: { keyids: all, threshold: 0 },
+      sigs: [{ keyid: 'ed', sig: sig.ed }] },
+    { name: 'threshold 1.5', role: { keyids: all, threshold: 1.5 },
+      sigs: [{ keyid: 'ed', sig: sig.ed }] },
+    { name: 'threshold "2"', role: { keyids: all, threshold: '2' },
+      sigs: [{ keyid: 'ed', sig: sig.ed }, { keyid: 'rsa', sig: sig.rsa }] },
+    { name: 'threshold "x"', role: { keyids: all, threshold: 'x' },
+      sigs: [{ keyid: 'ed', sig: sig.ed }] },
+    { name: 'a key that is not one', role: { keyids: ['junk'], threshold: 1 },
+      sigs: [{ keyid: 'junk', sig: sig.ec }] },
+    { name: 'a bare base64 PEM body', role: { keyids: ['bare'], threshold: 1 },
+      sigs: [{ keyid: 'bare', sig: sig.ec }] },
+    { name: 'no signatures', role: { keyids: all, threshold: 1 },
+      sigs: 'none' },
+    { name: 'a key under the wrong keyid', role: { keyids: all, threshold: 1 },
+      sigs: [{ keyid: 'rsa', sig: sig.ec }] }
+  ];
+  const threshold = [];
+  for (const c of cases) {
+    const v = await crypto.verifyThresholdSignatures(signed, c.sigs, keys,
+                                                     c.role);
+    threshold.push({ name: c.name, role: c.role, signatures: c.sigs,
+                     ok: v.ok, valid: v.valid, threshold: v.threshold });
+  }
+  const rekorKey = nodeCrypto.generateKeyPairSync('ec',
+                                                  { namedCurve: 'prime256v1' });
+  const rekorSpki = rekorKey.publicKey.export({ type: 'spki', format: 'der' });
+  const logIdHex = crypto.sha256Hex(rekorSpki);
+  const payload = { body: 'eyJhIjoiXHUwMDAxIn0=', integratedTime: 1700000000,
+                    logIndex: 123456789, logID: logIdHex };
+  const set = nodeCrypto.sign('sha256',
+                              Buffer.from(crypto.jcsCanonicalJson(payload)),
+                              rekorKey.privateKey);
+  const logs = [{ logIdHex: logIdHex.toUpperCase(),
+                  spki: rekorSpki.toString('base64') }];
+  const nodeLogs = [{ logIdHex: logIdHex.toUpperCase(), spki: rekorSpki }];
+  const tampered = Object.assign({}, payload, { logIndex: 123456790 });
+  const unknown = Object.assign({}, payload, { logID: 'ab'.repeat(32) });
+  const rekor = [];
+  for (const one of [{ name: 'good', payload: payload },
+                     { name: 'tampered', payload: tampered },
+                     { name: 'unknown log', payload: unknown }]) {
+    rekor.push({ name: one.name, payload: one.payload,
+                 answer: await crypto.verifyRekorSet(one.payload, set,
+                                                     nodeLogs) });
+  }
+  const blobs = ['', 'abc', 'café', 'x'.repeat(1000)];
+  return {
+    canonical: canonical,
+    signed: signed,
+    keys: keys,
+    threshold: threshold,
+    rekor: { set: set.toString('base64'), logs: logs, cases: rekor },
+    pae: blobs.map(function (b) {
+      return { type: 'application/vnd.in-toto+json', payload: b,
+               pae: crypto.dssePae('application/vnd.in-toto+json',
+                                   Buffer.from(b)).toString('base64'),
+               sha256: crypto.sha256Hex(Buffer.from(b)),
+               sha512: crypto.sha512Hex(Buffer.from(b)) };
+    }),
+    spkiPem: crypto.publicKeyPemOfSpki(pqSpki),
+    pqSpki: pqSpki.toString('base64')
+  };
+}
+
 const VECTORS = [{ file: 'jws-node.json', build: jws },
                  { file: 'jwe-node.json', build: jwe },
                  { file: 'c14n-node.json', build: c14n },
@@ -1263,7 +1414,8 @@ const VECTORS = [{ file: 'jws-node.json', build: jws },
                  { file: 'krb5-dkim-node.json', build: kerberosAndDkim },
                  { file: 'pq-x509-node.json', build: pqX509 },
                  { file: 'raw-sig-node.json', build: rawSignatures },
-                 { file: 'webauthn-node.json', build: webauthn }];
+                 { file: 'webauthn-node.json', build: webauthn },
+                 { file: 'sigstore-node.json', build: sigstore }];
 
 if (require.main === module) {
   fs.mkdirSync(OUT, { recursive: true });

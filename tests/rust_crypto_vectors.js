@@ -112,17 +112,18 @@ function run(t) {
   if (fs.existsSync(path.join(VECTORS, 'pq-x509-rust.json'))) {
     log.debug("Leaving run(). The post-quantum checks are asynchronous.");
     return pqX509FromRust(t, read('pq-x509-rust.json')).then(function () {
-      restOfRun(t);
+      return restOfRun(t);
     });
   }
-  restOfRun(t);
   log.debug("Leaving run().");
+  return restOfRun(t);
 }
 
 /**
  * The checks after the post-quantum X.509 ones.
  *
  * @param {any} t - the runner's check collector
+ * @returns {Promise<void>|undefined} when the asynchronous checks are done
  */
 function restOfRun(t) {
   log.debug("Entering restOfRun().");
@@ -133,7 +134,46 @@ function restOfRun(t) {
       fs.existsSync(path.join(VECTORS, 'xmlenc-node.json'))) {
     xmlEncryption(t, read('xmlenc-rust.json'), read('xmlenc-node.json'));
   }
+  if (fs.existsSync(path.join(VECTORS, 'sigstore-rust.json'))) {
+    log.debug("Leaving restOfRun(). The Sigstore checks are asynchronous.");
+    return sigstoreFromRust(t, read('sigstore-rust.json'));
+  }
   log.debug("Leaving restOfRun().");
+  return undefined;
+}
+
+// SIGSTORE AND TUF: Rust's two canonical forms are Node's strings, every TUF
+// signature Rust made — Ed25519, ECDSA, RSA and ML-DSA — counts towards the
+// role's threshold here, and Rust's Rekor SET verifies (and, its log index
+// changed, does not).
+/**
+ * @param {any} t - the runner's check collector
+ * @param {any} v - sigstore-rust.json
+ * @returns {Promise<void>} when every check is made
+ */
+async function sigstoreFromRust(t, v) {
+  log.debug("Entering sigstoreFromRust().");
+  t.check(crypto.olpcCanonicalJson(v.signed) === v.olpc,
+          'Rust\'s OLPC canonical JSON is Node\'s');
+  t.check(crypto.jcsCanonicalJson(v.rekor.payload) === v.rekor.jcs,
+          'Rust\'s JCS canonical JSON is Node\'s');
+  const verdict = await crypto.verifyThresholdSignatures(v.signed,
+                                                         v.signatures,
+                                                         v.keys, v.role);
+  t.check(verdict.ok && verdict.valid === 4,
+          'all four TUF signatures Rust made verify in Node',
+          JSON.stringify(verdict));
+  const logs = v.rekor.logs.map(function (l) {
+    return { logIdHex: l.logIdHex, spki: Buffer.from(l.spki, 'base64') };
+  });
+  const set = Buffer.from(v.rekor.set, 'base64');
+  t.check(await crypto.verifyRekorSet(v.rekor.payload, set, logs) === '',
+          'a Rekor SET Rust signed verifies in Node');
+  const changed = Object.assign({}, v.rekor.payload,
+                                { logIndex: v.rekor.payload.logIndex + 1 });
+  t.check(await crypto.verifyRekorSet(changed, set, logs) ===
+          'unable to verify SET', 'and not over another log index');
+  log.debug("Leaving sigstoreFromRust().");
 }
 
 // The composite whose ECDSA half is P-521: @noble/curves 1.4.0 writes and
