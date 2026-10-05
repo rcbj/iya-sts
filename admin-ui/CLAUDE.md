@@ -7320,6 +7320,7 @@ module always was, and imports the kit by its relative path.
 | `../kerberos/web_kerberos_principals.ts` | The body of `/admin/kerberos/principals`, drawn inside its route until #446; its write controls follow the render context's `write`, where it read the gate's state. It is outside the parent project's locked Kerberos files. |
 | `../tls/web_tls_trust.ts` | The body of `/admin/tls/trust`, its "not installed" answer included — the first route with an early `respond()`, which the route tool turns into an early return. |
 | `../ssf/web_ssf_dead_letters.ts` | The body of `/admin/ssf/dead-letters` and its chart, with the colours and the section's reasoning, drawn inside its route until #446. `durationText()`, which it and Metrics share, is the kit's. |
+| `web_audit.ts` | The body of `/admin/audit` and its five cell helpers. It drew from the view's server-side half (the wanted filters, the rows, a paging object, the whole known-user set) until #446, and draws from the JSON the API answers now, which gained `paging`, `knownActors` (which actors on the page have a user page) and `settings`. |
 | `web_vc_status.ts` | The body of `/admin/vc-status`; its Suspend, Reinstate and Revoke buttons are drawn only when `ctx.write` says so, and its paging is drawn from the view's `rowsPaging`. |
 | `../attribute-sources/web_attribute_sources.ts` | The body of `/admin/attribute-sources`. Its operation answered the register WITHOUT the page's `settings` until #446; both now answer `attributeSourcesView()`. |
 | `../debugger/web_debugger.ts` | The body of `/admin/debugger` — **the first page whose Settings block comes out of its own view** (`SettingsForms.forms(json.settings, PAGE_PATH)`). |
@@ -7395,7 +7396,7 @@ the view.
 
 **NOT BUILT YET**: the runtime that signs in (authorization code, PKCE, a
 non-extractable DPoP key), fetches, routes and draws the shell; the static
-route that serves it; and every page but the sixty-two above.
+route that serves it; and every page but the sixty-three above.
 
 **THE PAGING CONTROL IS DRAWN FROM THE PAGING A CALLER RECEIVES.**
 `pageNavPair(path, params, pg)` read two members of the console's own paging

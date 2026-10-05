@@ -3654,6 +3654,13 @@ class AdminViews {
     log.debug("Leaving AdminViews.auditView(). " + shown.length +
               " row(s) of " +
               filtered.length + ".");
+    const known = this.knownUserKeys();
+    const knownActors: Record<string, boolean> = {};
+    shown.forEach(function (row) {
+      if (row.actor && known[row.actor]) {
+        knownActors[row.actor] = true;
+      }
+    });
     return {
       wantedCategory: wantedCategory, wantedAction: wantedAction,
       wantedOutcome: wantedOutcome, wantedActor: wantedActor,
@@ -3689,7 +3696,14 @@ class AdminViews {
         // what the `category`, `action` and `outcome` filters take.
         categories: auditLog.CATEGORIES, actions: auditLog.ACTIONS,
         outcomes: auditLog.OUTCOMES,
-        events: shown
+        events: shown,
+        // What the page draws from beside the rows (#446): the paging, which
+        // actors on this page have a user page to link to, and the page's
+        // settings.
+        paging: this.pagingJson(paging),
+        knownActors: knownActors,
+        settings: configSettingsJson ? configSettingsJson('/admin/audit')
+          : null
       }
     };
   }
