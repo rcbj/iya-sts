@@ -6907,6 +6907,41 @@ class AdminViews {
     return out;
   }
 
+  // THE LIST'S EXPIRING-SECRET MARK (#49 P5): a client secret that has
+  // expired, or expires within oauth2.clientSecretExpiryWarningDays — the
+  // same two the daily job oauth2.client-secret-expiry warns about. Judged
+  // here since #446, against the clock and
+  // `oauth2.clientSecretExpiryWarningDays`, so the answer says it and a page
+  // drawn from the answer needs neither.
+  /**
+   * Judges an application's client secret against its expiry.
+   *
+   * @param row - the application, as the register lists it
+   * @returns `{ state, at }` — `expired`, `soon` or `''`, and the expiry as
+   *   an ISO 8601 instant ('' when the secret does not expire)
+   */
+  secretExpiryOf(row) {
+    const { log, applications } = this.deps;
+    log.debug("Entering AdminViews.secretExpiryOf().");
+    const record = applications.get(row.identifier);
+    const fields = (record && record.fields) || {};
+    const expiresAt = fields.oauthClientSecret
+      ? applications.secretExpiryOf(fields) : 0;
+    if (!expiresAt) {
+      log.debug("Leaving AdminViews.secretExpiryOf(). None.");
+      return { state: '', at: '' };
+    }
+    const nowS = Math.floor(Date.now() / 1000);
+    const warnS = Number(config.value('oauth2.clientSecretExpiryWarningDays')) *
+                  86400;
+    log.debug("Leaving AdminViews.secretExpiryOf().");
+    return {
+      state: expiresAt <= nowS ? 'expired'
+                               : (expiresAt - nowS <= warnS ? 'soon' : ''),
+      at: new Date(expiresAt * 1000).toISOString()
+    };
+  }
+
   // WHAT /admin/applications ANSWERS. `registeredCount` comes with the
   // computation although the page declares it among the markup: the tile a
   // person reads and the number the resource publishes are one count.
@@ -6919,7 +6954,6 @@ class AdminViews {
   applicationsListJson(req) {
     const { log, applications } = this.deps;
     log.debug("Entering AdminViews.applicationsListJson().");
-    log.debug("Entering applicationsListPage().");
     const all = applications.list();
     const wantedText = String(req.query.q || '').trim();
     const wantedKind = String(req.query.kind || '').trim();
@@ -6950,6 +6984,26 @@ class AdminViews {
         all.filter(function (row) {
           return row.registered || !!row.registeredBy;
         }).length;
+    // WHAT THE PAGE COUNTS AND MARKS (#446): the kind menu counts over every
+    // application, the tile sums every authentication, and a row's client
+    // secret is judged against the clock and the warning setting here,
+    // where both are, rather than in a page that has neither.
+    const self = this;
+    const kindCounts: Record<string, number> = {};
+    applications.KINDS.forEach(function (one) {
+      kindCounts[one.kind] = all.filter(function (row) {
+        return row.kinds.indexOf(one.kind) >= 0 ||
+               (row.declaredKinds || []).indexOf(one.kind) >= 0;
+      }).length;
+    });
+    const authenticationTotal = all.reduce(function (n, r) {
+      return n + r.authentications;
+    }, 0);
+    const shownRows = paged.shown.map(function (row) {
+      return Object.assign({}, row,
+                           { secretExpiry: self.secretExpiryOf(row) });
+    });
+    const pagingJson = this.pagingJson(paging);
     log.debug("Leaving AdminViews.applicationsListJson().");
     return {
       all: all, wantedText: wantedText, wantedKind: wantedKind, needle: needle,
@@ -6969,7 +7023,10 @@ class AdminViews {
                null,
           kinds: applications.KINDS,
           settings: configSettingsJson('/admin/applications'),
-          applications: paged.shown
+          paging: pagingJson, kindCounts: kindCounts,
+          authentications: authenticationTotal,
+          protocols: applications.PROTOCOLS || [],
+          applications: shownRows
       };
       }())
     };
@@ -10058,6 +10115,7 @@ export = {
   applicationDetailJson: slot.forward('applicationDetailJson'),
   applicationsJson: slot.forward('applicationsJson'),
   applicationsListJson: slot.forward('applicationsListJson'),
+  secretExpiryOf: slot.forward('secretExpiryOf'),
   NOT_A_VIEW: NOT_A_VIEW,
   pageParamsOf: slot.forward('pageParamsOf'),
   groupDetailJson: slot.forward('groupDetailJson'),

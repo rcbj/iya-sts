@@ -1514,6 +1514,26 @@ class WebKit {
     return out;
   }
 
+  // One application's kinds as cells, since a record commonly carries two — an
+  // OAuth client that asked for the openid scope is also a relying party, and a
+  // wtrealm handed a SAML 2.0 assertion in one request and the 1.1 default in
+  // the next is both of those. The registry accumulates rather than choosing,
+  // so the cell has to.
+  /**
+   * Draws an application's kinds as one cell, one per line, or `unstated`.
+   *
+   * @param kinds - the kinds to draw
+   * @returns the cell's HTML
+   */
+  static kindCells(kinds) {
+    if (!kinds.length) {
+      return '<span class="state-none">unstated</span>';
+    }
+    return kinds.map(function (kind) {
+      return '<code>' + WebKit.esc(kind) + '</code>';
+    }).join('<br>');
+  }
+
   // A query's VIEW parameters — every one but the three that are not part
   // of what is being looked at (`format`, and the `notice` and `error` a
   // redirect brought back) — first value each. `admin_views.ts`'s, which

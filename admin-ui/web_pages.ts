@@ -30,6 +30,7 @@
 
 import WebKit = require('./web_kit');
 import AcmePage = require('../acme/web_acme');
+import ApplicationsPage = require('./web_applications');
 import AuditPage = require('./web_audit');
 import AuthorizationServersPage = require('./web_authorization_servers');
 import AttributeSourcesPage =
@@ -123,6 +124,11 @@ const PAGES: WebPage[] = [
     operation: '/admin-api/acme/monitor',
     render: function (view: Json, ctx?: Json): string {
       return AcmePage.monitorBody(ctx || WebKit.context(), view);
+    } },
+  { path: '/admin/applications', title: 'Applications',
+    operation: '/admin-api/applications',
+    render: function (view: Json, ctx?: Json): string {
+      return ApplicationsPage.body(ctx || WebKit.context(), view);
     } },
   { path: '/admin/attribute-sources', title: 'Attribute sources',
     operation: '/admin-api/attribute-sources',
