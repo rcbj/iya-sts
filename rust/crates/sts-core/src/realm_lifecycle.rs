@@ -400,6 +400,16 @@ impl RealmLifecycle {
     // Reading.
     // -----------------------------------------------------------------
 
+    /// A restored realm reports when it was really defined, not when this
+    /// process last started.
+    pub fn set_created_at(&self, id: &str, ms: i64) {
+        if let Some(realm) = self.registry.get(id).filter(|r| !r.builtin) {
+            let mut next = (*realm).clone();
+            next.created_at = Some(ms);
+            self.registry.insert(next);
+        }
+    }
+
     /// A defined realm's overrides; `None` for the default realm (which
     /// carries none: it IS the service) and for one not defined.
     pub fn overrides(&self, id: &str) -> Option<Overrides> {

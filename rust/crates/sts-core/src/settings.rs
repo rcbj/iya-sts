@@ -529,7 +529,8 @@ thread_local! {
 pub struct Settings {
     operator: Json,
     env: HashMap<String, String>,
-    overrides: RwLock<HashMap<String, Json>>,
+    /// In the order they were set, as config.js's object keeps them.
+    overrides: RwLock<indexmap::IndexMap<String, Json>>,
     realm: OnceLock<Arc<dyn RealmLayer>>,
     rules: RwLock<Vec<Arc<dyn WriteRule>>>,
 }
@@ -548,7 +549,7 @@ impl Settings {
         Settings {
             operator,
             env,
-            overrides: RwLock::new(HashMap::new()),
+            overrides: RwLock::new(indexmap::IndexMap::new()),
             realm: OnceLock::new(),
             rules: RwLock::new(Vec::new()),
         }
@@ -822,9 +823,19 @@ impl Settings {
     /// Removes a process-wide runtime override; whether there was one.
     pub fn clear_override(&self, key: &str) -> bool {
         match self.overrides.write() {
-            Ok(mut map) => map.remove(key).is_some(),
-            Err(poisoned) => poisoned.into_inner().remove(key).is_some(),
+            Ok(mut map) => map.shift_remove(key).is_some(),
+            Err(poisoned) => poisoned.into_inner().shift_remove(key).is_some(),
         }
+    }
+
+    /// The process-wide runtime overrides, in the order they were set
+    /// (`persistableOverrides()`): what persistence writes down.
+    pub fn runtime_overrides(&self) -> serde_json::Map<String, Json> {
+        let map = match self.overrides.read() {
+            Ok(map) => map,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        map.iter().map(|(k, v)| (k.clone(), v.clone())).collect()
     }
 }
 
