@@ -133,6 +133,15 @@ is ONE require in the require order — and three `register()` calls, `gnap`,
   continue to the discovery handler whatever it decides about the origin.
 * **`/:as/gnap` matches `/admin/gnap`.** Reserved first segments fall through
   (`RESERVED_AS_NAMES`); the console route is registered later and still wins.
+* **A JWT's type is its HEADER `typ`, `gnap-at+jwt` (#157, 2026-10-05).** Until
+  then the header said `JWT`, `docs/gnap.md` said it said `GNAP`, and
+  `GnapTokens.verify()` read the PAYLOAD's `typ: GNAP` — the token register's
+  private marker, the same kind as OAuth's `Bearer`. Every JWT a realm signs
+  uses one key, so explicit typing (RFC 8725 section 3.11) is what tells a
+  GNAP token from an ID Token or an `at+jwt`; the name is PRIVATE (RFC 9767
+  registers none) and the docs say so. `verify()` holds both: the header is
+  the type, and the payload marker keeps a GNAP-typed header over somebody
+  else's claims out (`STS-GNAP-0343` for either).
 
 ## Delegation: who may act for whom, through #186's policy (#432 phase 1, 2026-10-03)
 

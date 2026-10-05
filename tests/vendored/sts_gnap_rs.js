@@ -606,6 +606,9 @@ async function test() {
             "cnf.jkt is the client's RFC 7638 thumbprint computed " +
             "here", function () {
               const v = verifyJws(token.value, jwks);
+              // #157: the header is the type (RFC 8725 section 3.11); the
+              // payload's typ is this service's private marker.
+              assert.strictEqual(v.header.typ, "gnap-at+jwt");
               assert.strictEqual(v.claims.typ, "GNAP");
               assert.strictEqual(v.claims.aud, RS_ID);
               assert.deepStrictEqual(v.claims.cnf, { jkt: clientJkt });
@@ -617,6 +620,7 @@ async function test() {
         const opened = openJwe(token.value, rsJwe.privateKey);
         assert.strictEqual(opened.header.cty, "JWT");
         const v = verifyJws(opened.plaintext, jwks);
+        assert.strictEqual(v.header.typ, "gnap-at+jwt");
         assert.strictEqual(v.claims.aud, RS_ID);
         assert.deepStrictEqual(v.claims.cnf, { jkt: clientJkt });
       });

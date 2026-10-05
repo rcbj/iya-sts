@@ -1054,11 +1054,13 @@ async function jwtCases(t) {
                                           'base64url').toString('utf8'));
     const claims = JSON.parse(Buffer.from(signed.value.split('.')[1],
                                           'base64url').toString('utf8'));
-    t.check(header.alg === 'RS256' && claims.typ === 'GNAP' &&
+    t.check(header.alg === 'RS256' && header.typ === 'gnap-at+jwt' &&
+            claims.typ === 'GNAP' &&
             claims.client_id === 'client-instance-7' &&
             Array.isArray(claims.aud) && claims.cnf.jkt === JKT,
-            'jwt-signed: RS256, typ GNAP, client_id is the instance, aud ' +
-            'kept as an array, cnf.jkt carried',
+            'jwt-signed: RS256, header typ gnap-at+jwt (#157), payload typ ' +
+            'GNAP, client_id is the instance, aud kept as an array, cnf.jkt ' +
+            'carried',
             JSON.stringify({ header: header, claims: claims }));
     const oauthLike = await realms.run(keys.realm, function () {
       return require('../common/helpers').signJwt(
@@ -1070,6 +1072,29 @@ async function jwtCases(t) {
                                                    presentedKey: null }),
             'STS-GNAP-0343', 'jwt-signed: an OAuth access token signed by ' +
                              'the SAME key is not a GNAP token');
+    // #157: the HEADER is the type. The GNAP claim set signed by the same key
+    // under the generic `typ: JWT` is refused, and so is another claim set
+    // under the GNAP header.
+    const untyped = await realms.run(keys.realm, function () {
+      return require('../common/helpers').signJwt(claims);
+    });
+    refused(t,
+            await jwtFormat('jwt-signed').verify(untyped, keys,
+                                                 { now: NOW, audience: null,
+                                                   presentedKey: null }),
+            'STS-GNAP-0343', 'jwt-signed: the GNAP claims under header typ ' +
+                             'JWT are not a GNAP token (#157)');
+    const mislabelled = await realms.run(keys.realm, function () {
+      return require('../common/helpers').signJwt(
+          { typ: 'Bearer', sub: 'alice', iss: 'x', exp: NOW + 60 }, null,
+          { header: { typ: 'gnap-at+jwt' } });
+    });
+    refused(t,
+            await jwtFormat('jwt-signed').verify(mislabelled, keys,
+                                                 { now: NOW, audience: null,
+                                                   presentedKey: null }),
+            'STS-GNAP-0343', 'jwt-signed: the GNAP header over another ' +
+                             'claim set is not a GNAP token (#157)');
 
     await commonCases(t, jwtFormat('jwt-encrypted'), keys, wrongKeys,
                       function (value) {

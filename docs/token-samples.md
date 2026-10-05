@@ -2667,14 +2667,15 @@ that key's signature.
 
 ### `jwt-signed`
 
-The header's `typ` is `JWT`, and `GNAP` is the payload's `typ` claim.
-[GNAP](gnap.md) says otherwise, which is
-[#157](https://github.com/rcbj/iya-sts/issues/157).
+The header's `typ` is `gnap-at+jwt`, a private media type
+([GNAP](gnap.md#the-jwt-formats-type) argues it), and is what a resource
+server checks. `GNAP` in the payload's `typ` is this service's own marker for
+its token register, as `Bearer` is on an OAuth access token.
 
 *Encoded (shortened):*
 
 ```text
-eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6InN0cy1mNzA0NTI0…4Ssgn6IN5TfYAj-LyOpw
+eyJhbGciOiJSUzI1NiIsInR5cCI6ImduYXAtYXQrand0Iiwia2lkIjoic3RzLWY3MDQ1MjQx…4Ssgn6IN5TfYAj-LyOpw
 ```
 
 *Header:*
@@ -2682,7 +2683,7 @@ eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6InN0cy1mNzA0NTI0…4Ssgn6IN5TfYAj-Ly
 ```json
 {
   "alg": "RS256",
-  "typ": "JWT",
+  "typ": "gnap-at+jwt",
   "kid": "sts-f7045241e6b0",
   "x5u": "https://127.0.0.1:38081/pki/chain/default/8f1e19cfeec3d56c499825b1ef7094961166198463b14e301914bef595c199dc.pem"
 }

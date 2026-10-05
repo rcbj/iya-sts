@@ -3616,7 +3616,7 @@ Raised from: gnap/.
 | `STS-GNAP-0340` | A presented jwt-encrypted GNAP access token is encrypted to a resource server's key, which this authorization server does not hold. | HTTP 401 invalid_token or 403 insufficient_scope at the demonstration resource server (WWW-Authenticate: GNAP) |
 | `STS-GNAP-0341` | A presented jwt-encrypted GNAP access token does not decrypt. | HTTP 401 invalid_token or 403 insufficient_scope at the demonstration resource server (WWW-Authenticate: GNAP) |
 | `STS-GNAP-0342` | A presented JWT GNAP access token's signature does not verify. | HTTP 401 invalid_token or 403 insufficient_scope at the demonstration resource server (WWW-Authenticate: GNAP) |
-| `STS-GNAP-0343` | A presented JWT is not a GNAP access token (its typ is wrong). | HTTP 401 invalid_token or 403 insufficient_scope at the demonstration resource server (WWW-Authenticate: GNAP) |
+| `STS-GNAP-0343` | A presented JWT is not a GNAP access token: its header typ is not gnap-at+jwt, or its payload typ is not GNAP. | HTTP 401 invalid_token or 403 insufficient_scope at the demonstration resource server (WWW-Authenticate: GNAP) |
 | `STS-GNAP-0344` | A GNAP token names an access token format that does not exist. | HTTP 401 invalid_token or 403 insufficient_scope at the demonstration resource server (WWW-Authenticate: GNAP) |
 | `STS-GNAP-0400` | A GNAP interaction start link (redirect or app) names no request still waiting for approval. | HTTP 400 page |
 | `STS-GNAP-0401` | A GNAP interaction start link had already been used. | HTTP 400 page |
