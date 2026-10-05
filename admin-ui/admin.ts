@@ -6838,9 +6838,6 @@ class AdminConsole {
            '</div></details></li>';
   }
 
-  // The three formatters below are deliberately without entering/leaving logs:
-  // they are called once per table cell and would drown everything else in the
-  // log.
   /**
    * Formats an instant as a UTC date and time without milliseconds.
    *
@@ -6848,8 +6845,7 @@ class AdminConsole {
    * @returns the text; a dash when there is none
    */
   whenText(ms) {
-    if (!ms) return '—';
-    return new Date(ms).toISOString().replace('T', ' ').replace(/\.\d+Z$/, 'Z');
+    return WebKit.whenText(ms);
   }
 
   /**
@@ -6885,10 +6881,6 @@ class AdminConsole {
     return 'state-none';
   }
 
-  // A long opaque value, shortened for the table but recoverable: the full
-  // string is the title attribute, so it can be hovered and read. Truncating
-  // with no way back would make the jti column decorative, and the jti is the
-  // thing every button on the tokens page acts on.
   /**
    * Draws a long opaque value shortened, with the whole value in the title.
    *
@@ -6899,16 +6891,8 @@ class AdminConsole {
   shortened(value, keep) {
     const { log } = this.deps;
     log.debug("Entering AdminConsole.shortened().");
-    const text = String(value || '');
-    if (text.length <= (keep || 18)) {
-      log.debug("Leaving AdminConsole.shortened().");
-      return '<code title="' + this.esc(text) + '">' + this.esc(text || '—') +
-             '</code>';
-    }
     log.debug("Leaving AdminConsole.shortened().");
-    return '<code title="' + this.esc(text) + '">' +
-           this.esc(text.slice(0, keep || 18)) +
-           '&hellip;</code>';
+    return WebKit.shortened(value, keep);
   }
 
   /**
@@ -6923,27 +6907,10 @@ class AdminConsole {
   clipped(value, keep) {
     const { log } = this.deps;
     log.debug("Entering AdminConsole.clipped().");
-    const text = String(value == null ? '' : value);
-    const limit = keep || CLIP_CHARS;
-    if (!text) {
-      log.debug("Leaving AdminConsole.clipped().");
-      return '<code>&mdash;</code>';
-    }
-    if (text.length <= limit) {
-      log.debug("Leaving AdminConsole.clipped().");
-      return '<code>' + this.esc(text) + '</code>';
-    }
     log.debug("Leaving AdminConsole.clipped().");
-    return '<span class="trunc" tabindex="0" title="' + this.esc(text) + '">' +
-      '<code>' + this.esc(text.slice(0, limit)) + '&hellip;</code>' +
-      '<span class="full"><code>' + this.esc(text) + '</code>' +
-      '<span class="hint">' + text.length + ' characters &mdash; click the ' +
-      'value to select it all, then copy</span></span></span>';
+    return WebKit.clipped(value, keep);
   }
 
-  // One attribute's values, clipped, one per line. Written once because four
-  // directory pages draw exactly this cell and a fifth written by hand is the
-  // one that goes back to printing the raw value.
   /**
    * Draws an attribute's values, each clipped, one per line.
    *
@@ -6953,26 +6920,9 @@ class AdminConsole {
    */
   clippedValues(values, keep?) {
     const { log } = this.deps;
-    const self = this;
     log.debug("Entering AdminConsole.clippedValues().");
-    const list = Array.isArray(values) ? values : [values];
-    if (!list.length) {
-      log.debug("Leaving AdminConsole.clippedValues().");
-      return '<code>&mdash;</code>';
-    }
     log.debug("Leaving AdminConsole.clippedValues().");
-    // ONE VALUE PER LINE, INSIDE AN INLINE BLOCK, and the wrapper is the whole
-    // point of it. Joined with a bare `<br>` the second value of a multi-valued
-    // attribute starts at the cell's left margin — under the attribute NAME
-    // rather than under the first value — so `member` with three DNs on it read
-    // as one attribute followed by two nameless ones. `display:inline-block`
-    // makes the values a column of their own that begins where the first one
-    // does. (They were joined with " | " on one line before 2026-09-01, which
-    // has the opposite failure: five values of forty characters is a line
-    // nothing can align.)
-    return '<span class="vals">' + list.map(function (one) {
-      return self.clipped(one, keep);
-    }).join('<br>') + '</span>';
+    return WebKit.clippedValues(values, keep);
   }
 
   // ---------------------------------------------------------------------------
@@ -7790,40 +7740,6 @@ class AdminConsole {
     return out;
   }
 
-  // The paging control. Drawn above and below the table both, because the
-  // reason to want the next page is usually that you have just read to the
-  // bottom of this one.
-  //
-  // The numbered links are a WINDOW around the current page rather than one per
-  // page: 5,000 tokens at 50 a page is 100 links, which is a worse navigation
-  // aid than none. First and last are always offered so the ends stay one click
-  // away.
-  //
-  // IT RETURNS THE TWO COPIES RATHER THAN ONE STRING, AND THAT IS THE WHOLE
-  // REASON THIS FUNCTION WAS RENAMED ON 2026-08-27.
-  //
-  // Every link here is a page load, and a page load lands at the top of the
-  // document — so `next ›` threw the reader back past the sidebar, the folded
-  // prose and the filter row to read the rows they had asked for, on pages that
-  // are several thousand pixels long. The fix is the one chooserPane() and the
-  // delegation filter use: the control submits to a FRAGMENT naming itself, so
-  // the browser puts it back under the reader's eyes. This console runs no
-  // script (app.js sets `script-src 'none'`), so nothing can restore a scroll
-  // offset after the navigation and there is no other fix available.
-  //
-  // The fragment has to name ONE element, and this control is drawn TWICE with
-  // the table between the copies. An id must be unique in a document, and the
-  // two copies are not interchangeable anyway: whichever copy was clicked, the
-  // reader wants the TOP of the page they have just asked for, which is the
-  // head copy. So the head copy carries the id and the foot copy does not, and
-  // the call site says which it is drawing — `nav.head` above the table,
-  // `nav.foot` below it. Building both from one call is what stops the two from
-  // drifting into controls that page different lists.
-  //
-  // The id is the list's OWN paging parameter, which is already unique per list
-  // on a page for the reason pagingOf() gives — a drill-down draws five of
-  // these and each must send its reader back to its own table, not to the first
-  // one.
   /**
    * Builds the paging control for one list, as a head and a foot copy.
    *
@@ -7836,70 +7752,10 @@ class AdminConsole {
    * @returns an object whose head and foot are each the control as HTML
    */
   pageNavPair(path, params, pg) {
-    const { log, queryWith } = this.deps;
-    const self = this;
-    log.debug("Entering AdminConsole.pageNavPair(). pages=" + pg.pages + ", " +
-      "param=" +
-              pg.param);
-    if (pg.pages <= 1) {
-      log.debug("Leaving AdminConsole.pageNavPair(). One page; no control " +
-                "drawn.");
-      return { head: '', foot: '' };
-    }
-    const anchor = 'list-' + pg.param;
-    function link(page, label, title?) {
-      log.debug("Entering link().");
-      const move = {};
-      // The list's OWN parameter, off pg, so that a drill-down's five controls
-      // move five different lists. Everything else in `params` rides along
-      // untouched, which is what keeps the other four where the reader left
-      // them.
-      move[pg.param] = page;
-      log.debug("Leaving link().");
-      // The fragment is the head copy of THIS control — see the header. It
-      // rides on the href rather than on the page's own URL, so a link somebody
-      // copies out of here still opens where they were looking.
-      return '<a href="' + self.esc(path + queryWith(params, move)) + '#' +
-             self.esc(anchor) +
-             '"' + (title ? ' title="' + self.esc(title) + '"' :
-                    '') + '>' + label + '</a>';
-    }
-    const out = [];
-    if (pg.page > 1) {
-      out.push(link(1, '&laquo; first', 'The newest rows'));
-      out.push(link(pg.page - 1, '&lsaquo; prev'));
-    } else {
-      out.push('<span class="off">&laquo; first</span><span ' +
-               'class="off">&lsaquo; prev</span>');
-    }
-    const from = Math.max(1, Math.min(pg.page - 3, pg.pages - 6));
-    const to = Math.min(pg.pages, Math.max(pg.page + 3, 7));
-    for (let n = from; n <= to; n++) {
-      out.push(n === pg.page ? '<span class="here">' + n + '</span>' :
-               link(n, String(n)));
-    }
-    if (pg.page < pg.pages) {
-      out.push(link(pg.page + 1, 'next &rsaquo;'));
-      out.push(link(pg.pages, 'last &raquo;', 'The oldest rows still held'));
-    } else {
-      out.push('<span class="off">next &rsaquo;</span><span class="off">last ' +
-               '&raquo;</span>');
-    }
-    out.push('<span class="where">page ' + pg.page + ' of ' + pg.pages + ' — ' +
-             pg.noun + ' ' +
-             pg.firstRow + '&ndash;' + pg.lastRow + ' of ' + pg.total +
-             '</span>');
-    log.debug("Leaving AdminConsole.pageNavPair(). Drew " + out.length +
-              " element(s).");
-    const inner = out.join('') + '</div>';
+    const { log } = this.deps;
+    log.debug("Entering AdminConsole.pageNavPair().");
     log.debug("Leaving AdminConsole.pageNavPair().");
-    return {
-      head: '<div class="pagenav" id="' + this.esc(anchor) + '">' + inner,
-      // The same control, without the id. A list drawn with ONE copy uses
-      // `head` whichever end of the table it is at, because an anchor nothing
-      // points to is the bug this exists to prevent.
-      foot: '<div class="pagenav">' + inner
-    };
+    return WebKit.pageNavPair(path, params, pg);
   }
 
   // ---------------------------------------------------------------------------
@@ -46939,47 +46795,6 @@ const SIGNOUT_PATH = '/admin/signout';
 // administrator and so the same link as before for them.
 const PORTAL_PATH = '/portal';
 
-// ---------------------------------------------------------------------------
-// THE SAME IDEA FOR A COLUMN OF THEM, AND WHY IT IS NOT shortened().
-//
-// shortened() above is for ONE identifier in a narrow column — a jti, eighteen
-// characters and a native tooltip — and it has been right for the tokens page
-// for as long as that page has existed. This is for the directory dumps, where
-// the shape of the problem is different in three ways that together make a
-// second function cheaper than a mode flag on the first:
-//
-//   * THERE ARE HUNDREDS OF THEM IN ONE CELL. `/admin/ldap/directory` prints
-//     EVERY attribute of every entry, and an entry that has authenticated
-//     over TLS carries a certificate subject, a serial, two thumbprints and a
-//     DN — none under forty characters, several over two hundred. Wrapping
-//     them (which is what the cell did before) made rows four and five lines
-//     deep, so a page of fifty entries was a mile long and unreadable; NOT
-//     wrapping them pushed the table out past the white card, which is the
-//     complaint this was written for. Cutting them is the only answer that
-//     leaves a table shaped like a table.
-//   * THE VALUE IS THE POINT, so it must be recoverable. A shortened DN that
-//     cannot be read in full is a dump that has quietly stopped being a dump.
-//   * IT MUST BE COPYABLE, which a `title` attribute is not. Somebody hovering
-//     `oauthClientSecret` here is going to paste it into a client's
-//     configuration, and a native tooltip cannot be selected. So the full
-//     value is a real element — see `.trunc` in page() — that the pointer can
-//     move into, with `user-select:all` on it so one click takes the whole
-//     thing.
-//
-// The `title` is set as well and is not redundant: it is what a keyboard user
-// and most screen readers get, and it is what a browser with the popup
-// scrolled off the edge of the window still shows. Nothing here is said only
-// in a tooltip — the rule tip() states — because the full value is in the
-// document twice over.
-//
-// `keep` is a CHARACTER count and not a width, deliberately. These cells are
-// monospace and the values are opaque, so characters are the honest measure;
-// a CSS width would cut mid-glyph at whatever the browser's font happened to
-// be and would give the reader no idea how much was missing. The count in the
-// hint is the other half of that: "218 characters" tells somebody at a glance
-// whether they are looking at a thumbprint or a whole certificate.
-// ---------------------------------------------------------------------------
-const CLIP_CHARS = 46;
 
 // The legend for the above, on the page, because a reader cannot see the
 // comment this file opens the section with and a table whose columns shift

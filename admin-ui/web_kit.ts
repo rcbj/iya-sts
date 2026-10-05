@@ -63,6 +63,48 @@ const SUMMARY_CHARS = 96;
 // screen.
 const TIP_CHARS = 190;
 
+// ---------------------------------------------------------------------------
+// THE SAME IDEA FOR A COLUMN OF THEM, AND WHY IT IS NOT shortened().
+//
+// shortened() above is for ONE identifier in a narrow column — a jti, eighteen
+// characters and a native tooltip — and it has been right for the tokens page
+// for as long as that page has existed. This is for the directory dumps, where
+// the shape of the problem is different in three ways that together make a
+// second function cheaper than a mode flag on the first:
+//
+//   * THERE ARE HUNDREDS OF THEM IN ONE CELL. `/admin/ldap/directory` prints
+//     EVERY attribute of every entry, and an entry that has authenticated
+//     over TLS carries a certificate subject, a serial, two thumbprints and a
+//     DN — none under forty characters, several over two hundred. Wrapping
+//     them (which is what the cell did before) made rows four and five lines
+//     deep, so a page of fifty entries was a mile long and unreadable; NOT
+//     wrapping them pushed the table out past the white card, which is the
+//     complaint this was written for. Cutting them is the only answer that
+//     leaves a table shaped like a table.
+//   * THE VALUE IS THE POINT, so it must be recoverable. A shortened DN that
+//     cannot be read in full is a dump that has quietly stopped being a dump.
+//   * IT MUST BE COPYABLE, which a `title` attribute is not. Somebody hovering
+//     `oauthClientSecret` here is going to paste it into a client's
+//     configuration, and a native tooltip cannot be selected. So the full
+//     value is a real element — see `.trunc` in page() — that the pointer can
+//     move into, with `user-select:all` on it so one click takes the whole
+//     thing.
+//
+// The `title` is set as well and is not redundant: it is what a keyboard user
+// and most screen readers get, and it is what a browser with the popup
+// scrolled off the edge of the window still shows. Nothing here is said only
+// in a tooltip — the rule tip() states — because the full value is in the
+// document twice over.
+//
+// `keep` is a CHARACTER count and not a width, deliberately. These cells are
+// monospace and the values are opaque, so characters are the honest measure;
+// a CSS width would cut mid-glyph at whatever the browser's font happened to
+// be and would give the reader no idea how much was missing. The count in the
+// hint is the other half of that: "218 characters" tells somebody at a glance
+// whether they are looking at a thumbprint or a whole certificate.
+// ---------------------------------------------------------------------------
+const CLIP_CHARS = 46;
+
 /**
  * The console's rendering kit: escaping, the statistics tile, and the prose
  * helpers that fold a paragraph longer than a line. Loadable in a browser;
@@ -85,6 +127,36 @@ class WebKit {
    * The longest tooltip `tip()` writes by default.
    */
   static readonly TIP_CHARS = TIP_CHARS;
+
+  /**
+   * How much of a long value `clipped()` draws before the full text is
+   * behind a hover.
+   */
+  static readonly CLIP_CHARS = CLIP_CHARS;
+
+  // `admin-core/admin_views.ts`'s `queryWith()`, written out because this
+  // file may not require it; `tests/console_web_bundle.js` compares the two.
+  /**
+   * Builds a query string from page parameters, with some overridden; an
+   * empty, null or undefined value is left out.
+   *
+   * @param params - the parameters to carry
+   * @param overrides - the parameters to set or clear
+   * @returns the query string with its `?`, or '' when nothing is left
+   */
+  static queryWith(params, overrides): string {
+    const merged = Object.assign({}, params, overrides);
+    const parts = [];
+    Object.keys(merged).forEach(function (key) {
+      const value = merged[key];
+      if (value === '' || value === null || value === undefined) {
+        return;
+      }
+      parts.push(encodeURIComponent(key) + '=' +
+                 encodeURIComponent(String(value)));
+    });
+    return parts.length ? '?' + parts.join('&') : '';
+  }
 
   // `common/helpers.js`'s `xmlEscape()`, to the byte — see the header.
   /**
@@ -454,6 +526,200 @@ class WebKit {
   static wideTable(label, html) {
     return '<div class="wide" tabindex="0" role="region" aria-label="' +
       WebKit.esc(label) + '">' + html + '</div>';
+  }
+
+  // The three formatters below are deliberately without entering/leaving logs:
+  // they are called once per table cell and would drown everything else in the
+  // log.
+  /**
+   * Formats an instant as a UTC date and time without milliseconds.
+   *
+   * @param ms - milliseconds since the epoch
+   * @returns the text; a dash when there is none
+   */
+  static whenText(ms) {
+    if (!ms) return '—';
+    return new Date(ms).toISOString().replace('T', ' ').replace(/\.\d+Z$/, 'Z');
+  }
+
+  // A long opaque value, shortened for the table but recoverable: the full
+  // string is the title attribute, so it can be hovered and read. Truncating
+  // with no way back would make the jti column decorative, and the jti is the
+  // thing every button on the tokens page acts on.
+  /**
+   * Draws a long opaque value shortened, with the whole value in the title.
+   *
+   * @param value - the value to draw; a dash when empty
+   * @param keep - how many characters to keep (18 when not given)
+   * @returns a <code> element as HTML
+   */
+  static shortened(value, keep) {
+    const text = String(value || '');
+    if (text.length <= (keep || 18)) {
+      return '<code title="' + WebKit.esc(text) + '">' +
+             WebKit.esc(text || '—') + '</code>';
+    }
+    return '<code title="' + WebKit.esc(text) + '">' +
+           WebKit.esc(text.slice(0, keep || 18)) +
+           '&hellip;</code>';
+  }
+
+  /**
+   * Draws a value clipped to a limit, with the whole of it on focus.
+   *
+   * A value over the limit gets a hover/focus panel holding the full text.
+   *
+   * @param value - the value to draw; a dash when null or empty
+   * @param keep - the character limit (CLIP_CHARS when not given)
+   * @returns the clipped value as HTML
+   */
+  static clipped(value, keep) {
+    const text = String(value == null ? '' : value);
+    const limit = keep || CLIP_CHARS;
+    if (!text) {
+      return '<code>&mdash;</code>';
+    }
+    if (text.length <= limit) {
+      return '<code>' + WebKit.esc(text) + '</code>';
+    }
+    return '<span class="trunc" tabindex="0" title="' + WebKit.esc(text) +
+      '">' +
+      '<code>' + WebKit.esc(text.slice(0, limit)) + '&hellip;</code>' +
+      '<span class="full"><code>' + WebKit.esc(text) + '</code>' +
+      '<span class="hint">' + text.length + ' characters &mdash; click the ' +
+      'value to select it all, then copy</span></span></span>';
+  }
+
+  // One attribute's values, clipped, one per line. Written once because four
+  // directory pages draw exactly this cell and a fifth written by hand is the
+  // one that goes back to printing the raw value.
+  /**
+   * Draws an attribute's values, each clipped, one per line.
+   *
+   * @param values - one value or an array of them
+   * @param keep - optional; the character limit passed to clipped()
+   * @returns the values as one inline-block column of HTML
+   */
+  static clippedValues(values, keep?) {
+    const self = this;
+    const list = Array.isArray(values) ? values : [values];
+    if (!list.length) {
+      return '<code>&mdash;</code>';
+    }
+    // ONE VALUE PER LINE, INSIDE AN INLINE BLOCK, and the wrapper is the whole
+    // point of it. Joined with a bare `<br>` the second value of a multi-valued
+    // attribute starts at the cell's left margin — under the attribute NAME
+    // rather than under the first value — so `member` with three DNs on it read
+    // as one attribute followed by two nameless ones. `display:inline-block`
+    // makes the values a column of their own that begins where the first one
+    // does. (They were joined with " | " on one line before 2026-09-01, which
+    // has the opposite failure: five values of forty characters is a line
+    // nothing can align.)
+    return '<span class="vals">' + list.map(function (one) {
+      return self.clipped(one, keep);
+    }).join('<br>') + '</span>';
+  }
+
+  // The paging control. Drawn above and below the table both, because the
+  // reason to want the next page is usually that you have just read to the
+  // bottom of this one.
+  //
+  // The numbered links are a WINDOW around the current page rather than one per
+  // page: 5,000 tokens at 50 a page is 100 links, which is a worse navigation
+  // aid than none. First and last are always offered so the ends stay one click
+  // away.
+  //
+  // IT RETURNS THE TWO COPIES RATHER THAN ONE STRING, AND THAT IS THE WHOLE
+  // REASON THIS FUNCTION WAS RENAMED ON 2026-08-27.
+  //
+  // Every link here is a page load, and a page load lands at the top of the
+  // document — so `next ›` threw the reader back past the sidebar, the folded
+  // prose and the filter row to read the rows they had asked for, on pages that
+  // are several thousand pixels long. The fix is the one chooserPane() and the
+  // delegation filter use: the control submits to a FRAGMENT naming itself, so
+  // the browser puts it back under the reader's eyes. This console runs no
+  // script (app.js sets `script-src 'none'`), so nothing can restore a scroll
+  // offset after the navigation and there is no other fix available.
+  //
+  // The fragment has to name ONE element, and this control is drawn TWICE with
+  // the table between the copies. An id must be unique in a document, and the
+  // two copies are not interchangeable anyway: whichever copy was clicked, the
+  // reader wants the TOP of the page they have just asked for, which is the
+  // head copy. So the head copy carries the id and the foot copy does not, and
+  // the call site says which it is drawing — `nav.head` above the table,
+  // `nav.foot` below it. Building both from one call is what stops the two from
+  // drifting into controls that page different lists.
+  //
+  // The id is the list's OWN paging parameter, which is already unique per list
+  // on a page for the reason pagingOf() gives — a drill-down draws five of
+  // these and each must send its reader back to its own table, not to the first
+  // one.
+  /**
+   * Builds the paging control for one list, as a head and a foot copy.
+   *
+   * Only the head copy carries the id its links' fragment names; both are
+   * empty when the list fits on one page.
+   *
+   * @param path - the page the links point at
+   * @param params - the page parameters every link carries
+   * @param pg - the list's paging object from pagingOf()
+   * @returns an object whose head and foot are each the control as HTML
+   */
+  static pageNavPair(path, params, pg) {
+    const self = this;
+    if (pg.pages <= 1) {
+      return { head: '', foot: '' };
+    }
+    const anchor = 'list-' + pg.param;
+    function link(page, label, title?) {
+      const move = {};
+      // The list's OWN parameter, off pg, so that a drill-down's five controls
+      // move five different lists. Everything else in `params` rides along
+      // untouched, which is what keeps the other four where the reader left
+      // them.
+      move[pg.param] = page;
+      // The fragment is the head copy of THIS control — see the header. It
+      // rides on the href rather than on the page's own URL, so a link somebody
+      // copies out of here still opens where they were looking.
+      return '<a href="' +
+             self.esc(path + WebKit.queryWith(params, move)) + '#' +
+             self.esc(anchor) +
+             '"' + (title ? ' title="' + self.esc(title) + '"' :
+                    '') + '>' + label + '</a>';
+    }
+    const out = [];
+    if (pg.page > 1) {
+      out.push(link(1, '&laquo; first', 'The newest rows'));
+      out.push(link(pg.page - 1, '&lsaquo; prev'));
+    } else {
+      out.push('<span class="off">&laquo; first</span><span ' +
+               'class="off">&lsaquo; prev</span>');
+    }
+    const from = Math.max(1, Math.min(pg.page - 3, pg.pages - 6));
+    const to = Math.min(pg.pages, Math.max(pg.page + 3, 7));
+    for (let n = from; n <= to; n++) {
+      out.push(n === pg.page ? '<span class="here">' + n + '</span>' :
+               link(n, String(n)));
+    }
+    if (pg.page < pg.pages) {
+      out.push(link(pg.page + 1, 'next &rsaquo;'));
+      out.push(link(pg.pages, 'last &raquo;', 'The oldest rows still held'));
+    } else {
+      out.push('<span class="off">next &rsaquo;</span><span class="off">last ' +
+               '&raquo;</span>');
+    }
+    out.push('<span class="where">page ' + pg.page + ' of ' + pg.pages + ' — ' +
+             pg.noun + ' ' +
+             pg.firstRow + '&ndash;' + pg.lastRow + ' of ' + pg.total +
+             '</span>');
+    const inner = out.join('') + '</div>';
+    return {
+      head: '<div class="pagenav" id="' + WebKit.esc(anchor) + '">' + inner,
+      // The same control, without the id. A list drawn with ONE copy uses
+      // `head` whichever end of the table it is at, because an anchor nothing
+      // points to is the bug this exists to prevent.
+      foot: '<div class="pagenav">' + inner
+    };
   }
 }
 

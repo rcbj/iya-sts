@@ -1240,6 +1240,17 @@ is who did it.
 
 `tests/admin_api_actor.js` holds it.
 
+## EVERY PAGING ANSWER SAYS WHAT MOVES IT (#446, 2026-10-05)
+
+`adminViews.pagingJson()` answered `page`, `pages`, `perPage`, `firstRow`,
+`lastRow` and `total`. It answers `param` and `noun` as well: the query
+parameter that moves that list (`page`, or `jobsPage` for a list named
+`jobs`) and what its rows are counted in. The console's renderer was handed
+its own paging object and read them there; a page drawn from the API's answer
+alone could not draw the paging control. Additive: nothing was renamed, and
+`tests/pki_revocation_paging.js`, which pinned the exact answer, pins the two
+new members too.
+
 ## A PAGE WITH NO FORM GETS AN OPERATION TOO, NOW (#446, 2026-10-05)
 
 Rule 7 asks for an operation per CONTROL, so the drill-downs that only draw

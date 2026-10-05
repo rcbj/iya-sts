@@ -2893,7 +2893,13 @@ class AdminViews {
     log.debug("Leaving AdminViews.pagingJson().");
     return {
       page: pg.page, pages: pg.pages, perPage: pg.perPage,
-      firstRow: pg.firstRow, lastRow: pg.lastRow, total: pg.total
+      firstRow: pg.firstRow, lastRow: pg.lastRow, total: pg.total,
+      // WHAT THE PAGING CONTROL IS DRAWN FROM (#446): the query parameter
+      // that moves this list and the noun its rows are counted in. They
+      // were on the paging object the console's own renderer was handed and
+      // not on this answer, so a page drawn from the answer alone — which
+      // is every page of the static console — could not draw the control.
+      param: pg.param, noun: pg.noun
     };
   }
 

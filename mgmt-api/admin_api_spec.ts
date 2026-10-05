@@ -3836,7 +3836,9 @@ const SCHEMAS = {
       applications: { type: 'integer', description: 'How many applications ' +
                                                     'are listed.' },
       paging: openObject('`page`, `pages`, `perPage`, `firstRow`, `lastRow`, ' +
-                         '`total`.', {}),
+                         '`total`; and `param`, the query parameter that ' +
+                         'moves this list, with `noun`, what its rows are ' +
+                         'counted in.', {}),
       rows: { type: 'array', items: openObject('One application and its ' +
                                                'counters.', {}) }
     }),

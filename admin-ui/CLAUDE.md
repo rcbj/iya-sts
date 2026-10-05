@@ -7279,7 +7279,7 @@ A file in this directory whose name begins `web_`:
 
 | File | What it is |
 |---|---|
-| `web_kit.ts` | The rendering kit: `esc()`, `tile()`, and the prose helpers `note()`, `warn()`, `tip()`, `foldOf()` and what they stand on, moved VERBATIM out of `AdminConsole`. The methods of those names in `admin.ts` are delegates. |
+| `web_kit.ts` | The rendering kit: `esc()`, `tile()`, the prose helpers `note()`, `warn()`, `tip()`, `foldOf()` and what they stand on, and `whenText()`, `shortened()`, `clipped()`, `clippedValues()` and `pageNavPair()`, all moved VERBATIM out of `AdminConsole`; and `queryWith()`, which is `admin-core/admin_views.ts`'s written out. The methods of those names in `admin.ts` are delegates. |
 | `web_mode.ts` | The body of `/admin/mode`, from `GET /admin-api/mode`'s answer. It was `ModeAdmin.html()`. |
 | `web_worker_pools.ts` | The body of `/admin/worker-pools`. It was `WorkerPoolsAdmin`'s four drawing methods. |
 | `web_node_health.ts` | The body of `/admin/node-health`. It was `NodeHealthAdmin`'s nine drawing methods; it carries its own `MIB` and `round1()`, which the view's module has too, because it may not require that module. |
@@ -7344,12 +7344,21 @@ see: a module constant or a static of the old class that the moved code read.
 non-extractable DPoP key), fetches, routes and draws the shell; the static
 route that serves it; and every page but the three above.
 
+**THE PAGING CONTROL IS DRAWN FROM THE PAGING A CALLER RECEIVES.**
+`pageNavPair(path, params, pg)` read two members of the console's own paging
+object that `pagingJson()` did not answer: `param`, the query parameter that
+moves the list, and `noun`, what its rows are counted in. Every paging answer
+carries both now (`admin-core/admin_views.ts`), so a renderer hands the kit
+`view.paging` and draws what the console drew — which
+`tests/console_web_bundle.js` holds, page by page of a list of 431 rows.
+
 **WHICH PAGES ARE NEXT IS DECIDED BY THE KIT.** Of the page modules outside
 `admin.ts`, four more need nothing the kit lacks but have FORMS, so their
 renderers need to be told whether the reader may write
 (`claims_providers_admin`, `grant_management_admin`,
 `provider_commands_admin`, `ssf_transmitters_admin`). The helpers the others
-wait on, by how many page modules call them: `pageNavPair` and the paging
-furniture, `configFormsFor` (the settings forms), `clipped`, `upTo` and
-`messagesOf` (which belong to the shell).
+wait on, by how many page modules call them: `configFormsFor` (the settings
+forms), the rest of the paging furniture (`perPageForm`, `perPageOptions`,
+`sectionSearchForm`), `upTo` and `messagesOf` (which belong to the shell).
+`pageNavPair` and `clipped` are in the kit.
 

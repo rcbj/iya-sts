@@ -152,10 +152,15 @@ async function run(t) {
           'and the whole revocation count');
   t.equal(model.totalRevoked, REVOKED_ISSUED + ORPHANS,
           'the model\'s total counts every authority\'s whole list');
+  // `param` and `noun` since #446: the paging control is drawn from this
+  // answer in the static console, and needs the parameter that moves the
+  // list and the noun its rows are counted in.
   t.equal(JSON.stringify(jose.issuedPaging),
           JSON.stringify({ page: 1, pages: ISSUED / PER, perPage: PER,
-                           firstRow: 1, lastRow: PER, total: ISSUED }),
-          'issuedPaging says what the page holds');
+                           firstRow: 1, lastRow: PER, total: ISSUED,
+                           param: 'ca-default-jose-issuedPage',
+                           noun: 'certificates' }),
+          'issuedPaging says what the page holds, and what moves it');
   t.equal(jose.orphansPaging.total, ORPHANS, 'orphansPaging too');
   t.check(r.calls.describeEntry <= 2 * PER,
           'describeEntry() ran for the rows of the page only, not the ' +

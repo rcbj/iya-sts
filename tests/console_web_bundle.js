@@ -16,8 +16,12 @@
 //   A. THE SOURCES. Every `web_` module requires other `web_` modules and
 //      nothing else, and names nothing of node's.
 //   B. THE KIT IS THE CONSOLE'S OWN. `web_kit.ts`'s `esc()` is
-//      `helpers.xmlEscape()` to the byte, and `note()`, `warn()`, `tip()`
-//      and `tile()` answer what the console's methods of those names do.
+//      `helpers.xmlEscape()` to the byte; `note()`, `warn()`, `tip()`,
+//      `tile()`, `shortened()`, `clipped()`, `clippedValues()` and
+//      `whenText()` answer what the console's methods of those names do;
+//      `queryWith()` is `admin_views`'s; and `pageNavPair()` draws from the
+//      paging a caller of the API RECEIVES exactly what the console draws
+//      from its own paging object.
 //   C. THE BUNDLE. It was built, and it runs in a context that has NO
 //      `require`, `process`, `module` or `Buffer` — a stand-in for a browser
 //      — and answers the page table.
@@ -150,11 +154,60 @@ function childMain() {
     if (admin.tile(3, 'things') !== WebKit.tile(3, 'things')) {
       proseDiffers.push('tile');
     }
+    // The paging, clipping and timestamp helpers, moved later (#446).
+    const adminViews = require(ROOT_DIR + '/admin-core/admin_views');
+    const opaque = 'urn:uuid:0123456789abcdef-0123456789abcdef-0123456789' +
+                   'abcdef-with-a-<tag>-and-an-&-in-it';
+    [['clipped', [opaque, undefined]], ['clipped', [null, undefined]],
+     ['clipped', ['short', 10]], ['clippedValues', [[opaque, 'b', ''], 20]],
+     ['clippedValues', ['one']]]
+      .forEach(function (one) {
+        if (admin[one[0]].apply(admin, one[1]) !==
+            WebKit[one[0]].apply(WebKit, one[1])) {
+          proseDiffers.push(one[0] + ' ' + JSON.stringify(one[1]));
+        }
+      });
+    // The two the console's module does not export, held to what they draw.
+    if (WebKit.whenText(0) !== '\u2014' ||
+        WebKit.whenText(1790000000123) !==
+          new Date(1790000000123).toISOString().replace('T', ' ')
+            .replace(/\.\d+Z$/, 'Z')) {
+      proseDiffers.push('whenText');
+    }
+    if (WebKit.shortened('short', 18) !==
+          '<code title="short">short</code>' ||
+        WebKit.shortened(opaque, 12) !== '<code title="' +
+          WebKit.esc(opaque) + '">' + WebKit.esc(opaque.slice(0, 12)) +
+          '&hellip;</code>') {
+      proseDiffers.push('shortened');
+    }
+    [[{ a: 1, b: '', c: null, q: 'x y&z' }, { page: 3 }],
+     [{}, {}], [{ user: 'a/b' }, { user: undefined }]]
+      .forEach(function (one) {
+        if (adminViews.queryWith(one[0], one[1]) !==
+            WebKit.queryWith(one[0], one[1])) {
+          proseDiffers.push('queryWith ' + JSON.stringify(one));
+        }
+      });
+    [3, 1, 9].forEach(function (pageNumber) {
+      const paging = adminViews.pagingOf({ jobsPage: String(pageNumber) }, 431,
+                                         { noun: 'jobs', name: 'jobs' });
+      const wire = JSON.parse(JSON.stringify(adminViews.pagingJson(paging)));
+      const params = { q: 'a b', per: '' };
+      const mine = admin.pageNavPair('/admin/x', params, paging);
+      const fromWire = WebKit.pageNavPair('/admin/x', params, wire);
+      if (mine.head !== fromWire.head || mine.foot !== fromWire.foot ||
+          (paging.pages > 1 && mine.head.indexOf('class="pagenav"') < 0)) {
+        proseDiffers.push('pageNavPair from the paging JSON, page ' +
+                          pageNumber);
+      }
+    });
     note(proseDiffers.length === 0 &&
          WebKit.note(long).indexOf('<details class="note fold">') === 0 &&
          WebKit.note(short) === '<p class="note">' + short + '</p>',
-         'B2. note(), warn(), tip() and tile() answer what the console\'s ' +
-         'own do, folded past a line and not before',
+         'B2. the kit\'s helpers answer what the console\'s own do — ' +
+         'prose folded past a line and not before, values clipped, the ' +
+         'paging control drawn from the paging JSON',
          proseDiffers.join(', '));
 
     // --- C. the bundle -------------------------------------------------------
