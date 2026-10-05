@@ -287,8 +287,16 @@ async function setUp(k) {
   log.debug("Entering setUp().");
   const made = await call("POST", api + "/realms/create",
     { id: RID, domain: DOMAIN, name: "#204 Samba raw Kerberos tests",
+      // krb5.pkinitRequireFreshness off: a KDC that requires RFC 8070's
+      // freshness token offers PA-AS-FRESHNESS in every
+      // KDC_ERR_PREAUTH_REQUIRED (section 2.2), and Samba's raw tests model
+      // one that offers it only to a client that sent an empty one — so
+      // every preauth-required answer they check fails on padata 150 (#179,
+      // 2026-10-05). The requirement is held by tests/kerberos_pkinit.js
+      // and sts_kerberos_pkinit.js.
       overrides: { "krb5.enabled": true, "krb5.realm": KREALM,
-                   "global.mode": "development" } });
+                   "global.mode": "development",
+                   "krb5.pkinitRequireFreshness": false } });
   assert.strictEqual(made.status, 200, "realm: " + made.text.slice(0, 300));
   k.password = String(await facts.setting(realmApi, "krb5.userPassword"));
   k.kvno = Number(await facts.setting(realmApi, "krb5.kvno"));
