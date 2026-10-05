@@ -48,6 +48,7 @@ import GrantsPage = require('../oauth-oidc/web_grants');
 import ListenersPage = require('./web_listeners');
 import MailPage = require('./web_mail');
 import MailOutboxPage = require('./web_mail_outbox');
+import MetricsPage = require('./web_metrics');
 import ModePage = require('./web_mode');
 import NodeHealthPage = require('./web_node_health');
 import PkiPage = require('./web_pki');
@@ -156,6 +157,11 @@ const PAGES: WebPage[] = [
     render: MailPage.render },
   { path: '/admin/mail/outbox', title: 'Mail outbox',
     operation: '/admin-api/mail/outbox', render: MailOutboxPage.render },
+  { path: '/admin/metrics', title: 'Metrics',
+    operation: '/admin-api/metrics',
+    render: function (view: Json, ctx?: Json): string {
+      return MetricsPage.body(ctx || WebKit.context(), view);
+    } },
   { path: '/admin/mode', title: 'Mode', operation: '/admin-api/mode',
     render: ModePage.render },
   { path: '/admin/node-health', title: 'Node health',
