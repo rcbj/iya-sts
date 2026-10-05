@@ -262,14 +262,14 @@ class ScepConsole {
    *
    * @returns the settings
    */
-  settingsJson() {
-    const { log, config } = this.deps;
+  settingsJson(): any {
+    const { log, adminViews } = this.deps;
     log.debug("Entering ScepConsole.settingsJson().");
-    const group = config.groups().filter(function (one) {
-      return one.group === 'SCEP';
-    })[0];
     log.debug("Leaving ScepConsole.settingsJson().");
-    return group ? group.settings : [];
+    // THE PAGE'S SETTINGS BLOCK (#446), as every page that owns settings
+    // answers it — the page is drawn from this view alone. It was the SCEP
+    // group's bare rows until then.
+    return adminViews.settingsBlockOf('/admin/scep');
   }
 
   /**

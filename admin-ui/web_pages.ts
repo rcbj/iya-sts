@@ -29,6 +29,7 @@
 // ---------------------------------------------------------------------------
 
 import WebKit = require('./web_kit');
+import AcmePage = require('../acme/web_acme');
 import AttributeSourcesPage =
   require('../attribute-sources/web_attribute_sources');
 import CachesPage = require('./web_caches');
@@ -39,6 +40,7 @@ import DatabasePage = require('./web_database');
 import DebuggerPage = require('../debugger/web_debugger');
 import DevicesPage = require('./web_devices');
 import EncryptionPage = require('./web_encryption');
+import EstPage = require('../est/web_est');
 import GeolocationPage = require('./web_geolocation');
 import GrantsPage = require('../oauth-oidc/web_grants');
 import ListenersPage = require('./web_listeners');
@@ -52,6 +54,7 @@ import ProviderCommandsPage =
 import OAuth2MonitorPage = require('../oauth-oidc/web_oauth2_monitor');
 import RiskPage = require('./web_risk');
 import SchedulerPage = require('./web_scheduler');
+import ScepPage = require('../scep/web_scep');
 import SecretsPage = require('./web_secrets');
 import SettingsForms = require('./web_settings');
 import SsfTransmittersPage = require('../ssf/web_ssf_transmitters');
@@ -71,6 +74,13 @@ interface WebPage {
 }
 
 const PAGES: WebPage[] = [
+  { path: '/admin/acme', title: 'ACME', operation: '/admin-api/acme',
+    render: AcmePage.render },
+  { path: '/admin/acme/monitor', title: 'ACME enrollments',
+    operation: '/admin-api/acme/monitor',
+    render: function (view: Json, ctx?: Json): string {
+      return AcmePage.monitorBody(ctx || WebKit.context(), view);
+    } },
   { path: '/admin/attribute-sources', title: 'Attribute sources',
     operation: '/admin-api/attribute-sources',
     render: AttributeSourcesPage.render },
@@ -107,6 +117,13 @@ const PAGES: WebPage[] = [
     } },
   { path: '/admin/encryption', title: 'Encryption',
     operation: '/admin-api/encryption', render: EncryptionPage.render },
+  { path: '/admin/est', title: 'EST', operation: '/admin-api/est',
+    render: EstPage.render },
+  { path: '/admin/est/monitor', title: 'EST enrollments',
+    operation: '/admin-api/est/monitor',
+    render: function (view: Json, ctx?: Json): string {
+      return EstPage.monitorBody(ctx || WebKit.context(), view);
+    } },
   { path: '/admin/geolocation', title: 'Geolocation',
     operation: '/admin-api/geolocation', render: GeolocationPage.render },
   { path: '/admin/grants', title: 'Grants', operation: '/admin-api/grants',
@@ -130,6 +147,13 @@ const PAGES: WebPage[] = [
     operation: '/admin-api/risk/metrics',
     render: function (view: Json): string {
       return RiskPage.metricsHtml(view);
+    } },
+  { path: '/admin/scep', title: 'SCEP', operation: '/admin-api/scep',
+    render: ScepPage.render },
+  { path: '/admin/scep/monitor', title: 'SCEP enrollments',
+    operation: '/admin-api/scep/monitor',
+    render: function (view: Json, ctx?: Json): string {
+      return ScepPage.monitorBody(ctx || WebKit.context(), view);
     } },
   { path: '/admin/scheduler', title: 'Scheduler',
     operation: '/admin-api/scheduler', render: SchedulerPage.render },

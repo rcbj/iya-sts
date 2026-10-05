@@ -822,6 +822,24 @@ class AdminViews {
     log.debug("Leaving AdminViews.setConfigSettingsJson().");
   }
 
+  // A page's settings block (#446), for a view layer outside this module —
+  // the certificate enrollment pages' — whose page is drawn from its view
+  // alone and so must answer the block every page that owns settings
+  // answers, rather than a bare list of rows.
+  /**
+   * Returns the settings block of a console page, as every page that owns
+   * settings answers it.
+   *
+   * @param path - the page's path
+   * @returns the block, or null before the console has filled the slot
+   */
+  settingsBlockOf(path) {
+    const { log } = this.deps;
+    log.debug("Entering AdminViews.settingsBlockOf(). path=" + path);
+    log.debug("Leaving AdminViews.settingsBlockOf().");
+    return configSettingsJson ? configSettingsJson(path) : null;
+  }
+
   /**
    * Fills the slot for the client-certificate truststore; the module that owns
    * it fills it (rule 3e).
@@ -9915,6 +9933,7 @@ export = {
   setScimReader: slot.forward('setScimReader'),
   setRolePreviewer: slot.forward('setRolePreviewer'),
   setConfigSettingsJson: slot.forward('setConfigSettingsJson'),
+  settingsBlockOf: slot.forward('settingsBlockOf'),
   setTruststore: slot.forward('setTruststore'),
   truststoreJson: slot.forward('truststoreJson'),
   kerberosPrincipalsJson: slot.forward('kerberosPrincipalsJson'),

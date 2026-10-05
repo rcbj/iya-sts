@@ -50,6 +50,8 @@ import admin = require('../admin-ui/admin');
 import core = require('../common/cert_enrollment');
 import consoleModel = require('./scep_console');
 import InstanceSlot = require('../common/instance_slot');
+// The page's renderer (#446): a `web_` module, loadable in a browser.
+import ScepPage = require('./web_scep');
 
 const esc = admin.esc;
 
@@ -133,339 +135,6 @@ class ScepAdmin {
     return false;
   }
 
-  /**
-   * Draws a value as escaped `<code>`.
-   *
-   * @param value - the value
-   * @returns the markup
-   */
-  code(value) {
-    const { log, esc } = this.deps;
-    log.debug("Entering ScepAdmin.code().");
-    log.debug("Leaving ScepAdmin.code().");
-    return '<code>' + esc(value == null ? '' : value) + '</code>';
-  }
-
-  /**
-   * Draws a muted placeholder for an empty cell.
-   *
-   * @param text - the text; `none` when omitted
-   * @returns the markup
-   */
-  none(text) {
-    const { log, esc } = this.deps;
-    log.debug("Entering ScepAdmin.none().");
-    log.debug("Leaving ScepAdmin.none().");
-    return '<span class="sub">' + esc(text || 'none') + '</span>';
-  }
-
-  /**
-   * Draws a hidden form field.
-   *
-   * @param name - the field's name
-   * @param value - its value
-   * @returns the markup
-   */
-  hidden(name, value) {
-    const { log, esc } = this.deps;
-    log.debug("Entering ScepAdmin.hidden().");
-    log.debug("Leaving ScepAdmin.hidden().");
-    return '<input type="hidden" name="' + esc(name) + '" value="' +
-           esc(value) + '">';
-  }
-
-  /**
-   * Draws an entry's URN as a link to its person or application page.
-   *
-   * @param entry - the entry's `kind` and `id`, or null
-   * @returns the markup
-   */
-  entryLink(entry) {
-    const { log, esc, core } = this.deps;
-    log.debug("Entering ScepAdmin.entryLink().");
-    if (!entry) {
-      log.debug("Leaving ScepAdmin.entryLink(). None.");
-      return this.none('none');
-    }
-    const href = entry.kind === 'person'
-      ? '/admin/users?user=' + encodeURIComponent(entry.id)
-      : '/admin/applications?application=' + encodeURIComponent(entry.id);
-    log.debug("Leaving ScepAdmin.entryLink().");
-    return '<a href="' + esc(href) + '">' + this.code(core.entryUri(entry)) +
-           '</a>';
-  }
-
-  /**
-   * Draws the select choosing a person or an application.
-   *
-   * @returns the markup
-   */
-  kindSelect() {
-    const { log } = this.deps;
-    log.debug("Entering ScepAdmin.kindSelect().");
-    log.debug("Leaving ScepAdmin.kindSelect().");
-    return '<select name="kind"><option value="person">person</option>' +
-           '<option value="application">application</option></select>';
-  }
-
-  /**
-   * Draws the endpoints section.
-   *
-   * @param json - the view
-   * @returns the markup
-   */
-  sectionEndpoints(json) {
-    const { log, esc } = this.deps;
-    const self = this;
-    log.debug("Entering ScepAdmin.sectionEndpoints().");
-    const rows = Object.keys(json.endpoints).map(function (name) {
-      return '<tr><th>' + esc(name) + '</th><td>' +
-             self.code(json.endpoints[name]) + '</td></tr>';
-    }).join('');
-    log.debug("Leaving ScepAdmin.sectionEndpoints().");
-    return '<h2>Endpoints</h2><table class="kv">' + rows +
-      '<tr><th>GetCACaps answers</th><td>' +
-      json.capabilities.map(this.code.bind(this)).join(' ') + '</td></tr>' +
-      '<tr><th>Messages answered</th><td>' +
-      Object.keys(json.messageTypes).filter(function (n) {
-        return n !== '3';
-      }).map(function (n) {
-        return self.code(json.messageTypes[n] + ' (' + n + ')');
-      }).join(' ') + '</td></tr></table>';
-  }
-
-  /**
-   * Draws the Issuing CA and RA certificate section.
-   *
-   * @param json - the view
-   * @returns the markup
-   */
-  sectionAuthority(json) {
-    const { log, esc, admin } = this.deps;
-    log.debug("Entering ScepAdmin.sectionAuthority().");
-    const a = json.authority;
-    const r = json.ra;
-    const authority = a
-      ? '<table class="kv"><tr><th>Subject</th><td>' + this.code(a.subject) +
-        '</td></tr><tr><th>Serial</th><td>' + this.code(a.serialHex) +
-        '</td></tr><tr><th>Key</th><td>' + esc(a.keyAlg) + ', signs ' +
-        esc(a.signatureAlg) + '</td></tr><tr><th>Valid until</th><td>' +
-        esc(a.notAfter) + '</td></tr><tr><th>Chain</th><td>' +
-        (a.intermediate ? this.code(a.intermediate.subject) : '') + ' → ' +
-        (a.root ? this.code(a.root.subject) : '') + '</td></tr></table>'
-      : admin.warn(esc(json.authorityNote));
-    const raTable = r.present
-      ? '<table class="kv"><tr><th>Subject</th><td>' + this.code(r.subject) +
-        '</td></tr><tr><th>Serial</th><td>' + this.code(r.serialHex) +
-        '</td></tr><tr><th>Key</th><td>' + esc(r.keyAlgorithm) +
-        (r.keyAlgorithm !== r.wantedKeyAlgorithm
-          ? ' <span class="sub">(scep.raKeyAlgorithm is ' +
-            esc(r.wantedKeyAlgorithm) + ')</span>' : '') +
-        '</td></tr><tr><th>Valid until</th><td>' + esc(r.notAfter) +
-        '</td></tr><tr><th>Status</th><td>' + esc(r.status) +
-        '</td></tr></table>'
-      : '<p class="sub">No RA certificate yet; the first GetCACert or ' +
-        'PKIOperation issues one (' + esc(r.keyAlgorithm) + ').</p>';
-    log.debug("Leaving ScepAdmin.sectionAuthority().");
-    return '<h2>SCEP Issuing CA</h2>' + authority +
-      '<h2>RA certificate</h2>' +
-      admin.note('The certificate a client encrypts its request to and ' +
-        'verifies a CertRep with. RSA whatever the Issuing CA is, because ' +
-        'SCEP key transport is RSA; a leaf of the SCEP Issuing CA, re-issued ' +
-        'when it is missing, expires within thirty days, or is not the size ' +
-        '<code>scep.raKeyAlgorithm</code> names.') + raTable +
-      '<form method="post" action="/admin/scep">' +
-      this.hidden('action', 'reissue-ra') +
-      '<button type="submit">Re-issue the RA certificate</button></form>';
-  }
-
-  /**
-   * Draws the profiles section: each profile, whether it is allowed and what it
-   * needs.
-   *
-   * @param json - the view
-   * @returns the markup
-   */
-  sectionProfiles(json) {
-    const { log, esc } = this.deps;
-    const self = this;
-    log.debug("Entering ScepAdmin.sectionProfiles().");
-    const rows = json.profiles.map(function (p) {
-      return '<tr><td>' + self.code(p.id) + '</td><td>' +
-        (p.allowed ? 'yes' : '<strong>no</strong>') + '</td><td>' +
-        (p.needs ? esc(p.needs) : self.none('nothing beyond the entry')) +
-        '</td><td>' + esc(p.keys) + '</td><td>' + self.code(p.url) +
-        '</td></tr>';
-    }).join('');
-    const refused = json.refusedProfiles.map(function (p) {
-      return '<tr><td>' + self.code(p.id) + '</td><td>' + esc(p.why) +
-             '</td></tr>';
-    }).join('');
-    log.debug("Leaving ScepAdmin.sectionProfiles().");
-    return '<h2>Profiles</h2><table><thead><tr><th>Profile</th><th>Allowed ' +
-      'here</th><th>Needs</th><th>Keys</th><th>SCEP ' +
-      'URL</th></tr></thead><tbody>' + rows + '</tbody></table>' +
-      '<h3>Never issued over an enrollment protocol</h3><table><thead><tr>' +
-      '<th>Profile</th><th>Why</th></tr></thead><tbody>' + refused +
-      '</tbody></table>';
-  }
-
-  /**
-   * Draws the challenge passwords section with its create and delete forms,
-   * paged.
-   *
-   * @param req - the request, for paging
-   * @param json - the view
-   * @returns the markup
-   */
-  sectionChallenges(req, json) {
-    const { log, admin, esc } = this.deps;
-    const self = this;
-    log.debug("Entering ScepAdmin.sectionChallenges().");
-    const nav = admin.pageNavPair('/admin/scep', req.query,
-      Object.assign({}, json.challenges.paging, { param: 'credentialsPage' }));
-    const rows = json.challenges.rows.length
-      ? json.challenges.rows.map(function (c) {
-        return '<tr><td>' + self.code(c.id) + '</td><td>' +
-               self.entryLink(c.entry) +
-          '</td><td>' + self.code(c.profile) + '</td><td>' + esc(c.status) +
-          '</td><td>' + esc(c.expiresAt) + '</td><td>' +
-          esc(c.createdBy || '—') + '</td><td><form method="post" ' +
-          'action="/admin/scep">' + self.hidden('action', 'delete-challenge') +
-          self.hidden('id', c.id) +
-          '<button type="submit" class="danger">Delete' +
-          '</button></form></td></tr>';
-      }).join('')
-      : '<tr><td colspan="7" class="sub">No challenge passwords in this ' +
-        'realm.</td></tr>';
-    const options = json.profiles.filter(function (p) {
-      return p.allowed;
-    }).map(function (p) {
-      return '<option value="' + esc(p.id) + '"' +
-        (p.id === json.defaultProfile ? ' selected' : '') + '>' + esc(p.id) +
-        '</option>';
-    }).join('');
-    log.debug("Leaving ScepAdmin.sectionChallenges().");
-    return '<h2 id="list-credentialsPage">Challenge passwords</h2>' +
-      admin.note('A challenge authorizes ONE enrollment for ONE entry and ' +
-                 'ONE ' +
-        'profile, and whoever redeems it is issued a certificate AS that ' +
-        'entry. It is shown once when it is made and kept only as a digest.') +
-      '<form method="post" action="/admin/scep" class="inline">' +
-      this.hidden('action', 'create-challenge') + this.kindSelect() +
-      ' <input name="identifier" placeholder="username or application" ' +
-      'required> <select name="profile">' + options + '</select> ' +
-      '<input name="lifetimeS" type="number" min="60" placeholder="lifetime ' +
-      '(seconds)"> <button type="submit">Create a challenge</button></form>' +
-      nav.head + '<table><thead><tr><th>Id</th><th>For</th><th>Profile</th>' +
-      '<th>Status</th><th>Expires</th><th>Created by</th><th></th></tr>' +
-      '</thead><tbody>' + rows + '</tbody></table>' + nav.foot;
-  }
-
-  /**
-   * Draws the registered host names section with its add and remove forms.
-   *
-   * @param json - the view
-   * @returns the markup
-   */
-  sectionHostNames(json) {
-    const { log, admin } = this.deps;
-    const self = this;
-    log.debug("Entering ScepAdmin.sectionHostNames().");
-    const rows = json.hostNames.length
-      ? json.hostNames.map(function (h) {
-        return '<tr><td>' + self.entryLink(h.entry) + '</td><td>' +
-          h.hostNames.map(function (name) {
-            return self.code(name) +
-                   ' <form method="post" action="/admin/scep" ' +
-              'class="inline">' + self.hidden('action', 'remove-host-name') +
-              self.hidden('kind', h.entry.kind) +
-              self.hidden('identifier', h.entry.id) +
-              self.hidden('hostName', name) + '<button type="submit" ' +
-              'class="danger">Remove</button></form>';
-          }).join('<br>') + '</td></tr>';
-      }).join('')
-      : '<tr><td colspan="2" class="sub">No entry in this realm has a ' +
-        'registered host name.</td></tr>';
-    log.debug("Leaving ScepAdmin.sectionHostNames().");
-    return '<h2>Registered host names</h2>' +
-      admin.note('A dNSName or iPAddress is issued only when it is ' +
-                 'registered ' +
-        'on the entry the certificate is for. This service never proves ' +
-        'control of a name by dialling it.') +
-      '<form method="post" action="/admin/scep" class="inline">' +
-      this.hidden('action', 'add-host-name') + this.kindSelect() +
-      ' <input name="identifier" placeholder="username or application" ' +
-      'required> <input name="hostName" placeholder="host.example.com" ' +
-      'required> <button type="submit">Register</button></form>' +
-      '<table><thead><tr><th>Entry</th><th>Host names</th></tr></thead>' +
-      '<tbody>' + rows + '</tbody></table>';
-  }
-
-  /**
-   * Draws the enrolled certificates section with its revoke forms, paged.
-   *
-   * @param req - the request, for paging
-   * @param json - the view
-   * @returns the markup
-   */
-  sectionCertificates(req, json) {
-    const { log, admin, esc } = this.deps;
-    const self = this;
-    log.debug("Entering ScepAdmin.sectionCertificates().");
-    const nav = admin.pageNavPair('/admin/scep', req.query,
-      Object.assign({}, json.certificates.paging,
-                    { param: 'certificatesPage' }));
-    const reasons = json.revokeReasons.map(function (r) {
-      return '<option value="' + esc(r) + '">' + esc(r) + '</option>';
-    }).join('');
-    const rows = json.certificates.rows.length
-      ? json.certificates.rows.map(function (c) {
-        const control = c.status === 'revoked'
-          ? self.none('revoked ' + ((c.revoked && c.revoked.reason) || ''))
-          : '<form method="post" action="/admin/scep" class="inline">' +
-            self.hidden('action', 'revoke-certificate') +
-            self.hidden('serial', c.serialHex) + '<select name="reason">' +
-            reasons + '</select> <button type="submit" class="danger">' +
-            'Revoke</button></form>';
-        return '<tr><td>' + self.code(c.serialHex) + '</td><td>' +
-          self.entryLink(c.entry) + '</td><td>' + self.code(c.profile) +
-          '</td><td>' +
-          esc(c.keyAlg) + '</td><td>' + esc(c.status) + '</td><td>' +
-          esc(c.notAfter) + '</td><td>' + control + '</td></tr>';
-      }).join('')
-      : '<tr><td colspan="7" class="sub">Nothing has been issued over SCEP ' +
-        'in this realm.</td></tr>';
-    log.debug("Leaving ScepAdmin.sectionCertificates().");
-    return '<h2 id="list-certificatesPage">Enrolled certificates</h2>' +
-      nav.head + '<table><thead><tr><th>Serial</th><th>For</th><th>Profile' +
-      '</th><th>Key</th><th>Status</th><th>Expires</th><th></th></tr></thead>' +
-      '<tbody>' + rows + '</tbody></table>' + nav.foot;
-  }
-
-  /**
-   * Draws what SCEP here does not do, and the mode's note.
-   *
-   * @param json - the view
-   * @returns the markup
-   */
-  sectionExceptions(json) {
-    const { log, esc, admin } = this.deps;
-    log.debug("Entering ScepAdmin.sectionExceptions().");
-    const rows = json.exceptions.map(function (x) {
-      return '<tr><th>' + esc(x.what) + '</th><td>' + esc(x.why) + '</td></tr>';
-    }).join('');
-    const m = json.mode;
-    log.debug("Leaving ScepAdmin.sectionExceptions().");
-    return '<h2>What SCEP here does not do</h2><table class="kv">' + rows +
-      '</table><h2>Mode</h2>' +
-      admin.note('<strong>This realm is in ' + esc(m.mode) +
-                 ' mode.</strong> ' +
-        esc(m.scep) +
-        (m.requirement ? ' Development: ' + esc(m.requirement.development) +
-         ' Product: ' + esc(m.requirement.product) : ''));
-  }
-
   // ---------------------------------------------------------------------------
   // GET /admin/scep
   // ---------------------------------------------------------------------------
@@ -483,49 +152,22 @@ class ScepAdmin {
     const json = consoleModel.scepView(req);
     const inner = (extraTop || '') +
       (typeof admin.messagesOf === 'function' ? admin.messagesOf(req) : '') +
-      admin.note('<strong>SCEP (RFC 8894) for this trust realm.</strong> A ' +
-        'device gets the RA and CA certificates with GetCACert, and sends a ' +
-        'PKCS#10 request signed and encrypted in CMS, carrying a challenge ' +
-        'password made below or on the user portal. ' +
-        (json.enabled ? '' : '<strong>SCEP is turned off in this realm.' +
-         '</strong>')) +
-      this.sectionEndpoints(json) + this.sectionAuthority(json) +
-      this.sectionProfiles(json) +
-      this.sectionChallenges(req, json) + this.sectionHostNames(json) +
-      this.sectionCertificates(req, json) + this.sectionExceptions(json) +
-      admin.configFormsFor('/admin/scep') +
-      '<p class="links"><a href="/admin/scep?format=json">JSON</a> · ' +
-      '<code>GET /admin-api/scep</code> · <a href="/admin/scep/monitor">SCEP ' +
-      'enrollments (monitoring)</a> · <a href="/admin/pki">PKI</a> · ' +
-      '<a href="/admin/error-codes">Error codes</a></p>';
+      this.body(req, json);
     admin.respond(req, res, json, 'SCEP', '/admin/scep', inner);
     log.debug("Leaving ScepAdmin.drawScep().");
   }
 
-  // ---------------------------------------------------------------------------
-  // GET /admin/scep/monitor
-  // ---------------------------------------------------------------------------
-  /**
-   * Draws a table of counts, largest first, for the monitor page.
-   *
-   * @param title - the table's heading
-   * @param counts - the counts, by name
-   * @returns the markup
-   */
-  table(title, counts) {
-    const { log, esc } = this.deps;
-    const self = this;
-    log.debug("Entering ScepAdmin.table().");
-    const keys = Object.keys(counts || {}).sort(function (a, b) {
-      return counts[b] - counts[a];
-    });
-    log.debug("Leaving ScepAdmin.table().");
-    return '<h2>' + esc(title) + '</h2>' + (keys.length
-      ? '<table><tbody>' + keys.map(function (k) {
-        return '<tr><td>' + self.code(k) + '</td><td class="num">' + counts[k] +
-               '</td></tr>';
-      }).join('') + '</tbody></table>'
-      : '<p class="sub">None yet.</p>');
+  // DRAWN BY `web_scep.ts` (#446): this page is converted for the static
+  // console, and its renderer is a module a browser can load. Until the
+  // cutover this process still draws it, handing the renderer the view passed
+  // THROUGH JSON, so it is held to what the API's caller receives.
+  body(req, json) {
+    const { log, admin } = this.deps;
+    log.debug("Entering ScepAdmin.body().");
+    const drawn = ScepPage.render(JSON.parse(JSON.stringify(json)),
+      admin.renderContext(req));
+    log.debug("Leaving ScepAdmin.body().");
+    return drawn;
   }
 
   // THE ROUTES, registered where they always were: the module exports
@@ -571,12 +213,12 @@ class ScepAdmin {
               esc(result.entryUri) + ' (' + esc(result.profile) + '). It is ' +
               'shown once and cannot be shown again.</strong>') +
               '<table class="kv"><tr><th>Challenge</th><td>' +
-              self.code(result.challenge) +
+              ScepPage.code(result.challenge) +
               '</td></tr><tr><th>Expires</th><td>' +
               esc(result.expiresAt) + '</td></tr><tr><th>SCEP URL</th><td>' +
-              self.code(result.url) +
+              ScepPage.code(result.url) +
               '</td></tr><tr><th>Plain-HTTP SCEP URL</th><td>' +
-              self.code(result.plainUrl) +
+              ScepPage.code(result.plainUrl) +
               '</td></tr></table><h3>With sscep</h3><pre>' +
               esc(result.hint) + '</pre>' + (back === '/admin/scep' ? ''
                 : '<p class="links"><a href="' + esc(back) + '">Back to ' +
@@ -605,43 +247,9 @@ class ScepAdmin {
         return;
       }
       const json = consoleModel.scepMonitorView(req);
-      const t = json.totals;
-      const nav = admin.pageNavPair('/admin/scep/monitor', req.query,
-                                    json.paging);
-      const rows = json.recent.length ? json.recent.map(function (r) {
-        return '<tr><td>' + esc(r.at) + '</td><td>' + self.code(r.operation) +
-          '</td><td>' + esc(r.outcome) + '</td><td>' + esc(r.failInfo || '') +
-          '</td><td>' + esc(r.profile || '') + '</td><td>' +
-          esc(r.principal || '') + '</td><td>' + esc(r.target || '') +
-          '</td><td>' + esc(r.errorCode || '') + '</td><td>' +
-          esc(r.serialHex || '') + '</td></tr>';
-      }).join('') : '<tr><td colspan="9" class="sub">No SCEP request in this ' +
-        'realm yet.</td></tr>';
-      const inner =
-        admin.note('<strong>What the SCEP server has done in this ' +
-          'realm</strong>, counted since ' + esc(json.since) + ' across ' +
-          esc(json.processes) + ' process(es). A refused PKIOperation is an ' +
-          'HTTP 200 CertRep FAILURE, so it is counted by its failInfo.') +
-        '<div class="tiles">' + admin.tile(t.requests, 'requests') +
-        admin.tile(t.issued, 'issued') + admin.tile(t.refused, 'refused') +
-        admin.tile(t.revoked, 'revoked') +
-        admin.tile(t.challengesCreated, 'challenges created') +
-        admin.tile(json.issuedCertificates, 'certificates held') + '</div>' +
-        self.table('By operation', json.operations) +
-        self.table('By failInfo', json.failInfo) +
-        self.table('Refusals by error code', json.errorCodes) +
-        self.table('By profile', json.profiles) +
-        self.table('By principal', json.principals) +
-        '<h2 id="list-page">Recent</h2>' + nav.head + '<table><thead><tr>' +
-        '<th>At</th><th>Operation</th><th>Outcome</th><th>failInfo</th>' +
-        '<th>Profile</th><th>Principal</th><th>Target</th><th>Code</th>' +
-        '<th>Serial</th></tr></thead><tbody>' + rows + '</tbody></table>' +
-        nav.foot +
-        admin.note('There is no reset; the durable record of each act is the ' +
-          '<a href="/admin/audit">Audit log</a>.') +
-        '<p class="links"><a href="/admin/scep/monitor?format=json">JSON</a> ' +
-        '· <code>GET /admin-api/scep/monitor</code> · <a ' +
-        'href="/admin/scep">SCEP</a></p>';
+      // Drawn by `web_scep.ts` (#446), as the SCEP page is.
+      const inner = ScepPage.monitorBody(admin.renderContext(req),
+                                         JSON.parse(JSON.stringify(json)));
       admin.respond(req, res, json, 'SCEP enrollments', '/admin/scep/monitor',
                     inner);
       log.debug("Leaving the admin SCEP monitor page.");
