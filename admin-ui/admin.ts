@@ -820,6 +820,7 @@ import InstanceSlot = require('../common/instance_slot');
 // process, so the pid alone no longer tells two of them apart.
 import WorkerChannel = require('../common/worker_channel');
 import MetricsPage = require('./web_metrics');
+import ProtocolSettingsPage = require('./web_protocol_settings');
 import TokenLifetimesPage = require('./web_token_lifetimes');
 import SamlAssertionsPage = require('./web_saml_assertions');
 import SsfPage = require('../ssf/web_ssf');
@@ -28622,7 +28623,12 @@ class AdminConsole {
       links: (row.links || []).map(function (link) {
         return { href: link[0], what: link[1] };
       }),
-      settings: this.configSettingsJson(row.path)
+      settings: this.configSettingsJson(row.path),
+      // THE SAME PROSE AS MARKUP (#446): `what` and `notes` are its plain
+      // text for a reader of the JSON, and a page drawn from this answer
+      // draws the lead and the warnings as this console wrote them.
+      leadHtml: row.lead,
+      alsoHtml: (row.also || []).slice()
     };
     // ONE OPTIONAL MEMBER, invented for `/admin/persistence` and carried by
     // five rows now (persistence, cluster and the three second-factor mechanism
@@ -28655,36 +28661,18 @@ class AdminConsole {
    */
   protocolSettingsPage(req, row) {
     const { log } = this.deps;
-    const self = this;
-    log.debug("Entering AdminConsole.protocolSettingsPage(). path=" + row.path);
-    const inner = this.messagesOf(req) +
-      this.note(row.lead) +
-      (row.also || []).map(function (text) { return self.warn(text); })
-        .join('') +
-      // ABOVE the settings forms, deliberately: what the store is doing right
-      // now is what somebody came to this page to find out, and the settings
-      // that produced it are the answer to the follow-up question. See the
-      // `status` member in protocolSettingsJson() above.
-      (typeof row.status === 'function' ? row.status().html : '') +
-      this.configFormsFor(row.path) +
-      // A `<p class="sub">` AND NOT A `note()`, which is the rule bullet()
-      // states for a list item that opens with a link, applied one helper
-      // across. A row of links is longer than a line and note() would therefore
-      // FOLD it — and the summary of that fold is a truncation of the first two
-      // link texts, so the only controls in the row end up behind a summary
-      // made of their own words. Every other link row in this console is a `<p
-      // class="sub">` for the same reason.
-      '<p class="sub">' + (row.links || []).map(function (link) {
-        return '<a href="' + self.esc(link[0]) + '">' + self.esc(link[1]) +
-               '</a>';
-      }).concat(['<a href="' + this.esc(row.path) +
-                 '?format=json">this page as ' +
-                                               'JSON</a>',
-                 '<a href="/admin/sts-metadata">every endpoint this service ' +
-                 'registers</a>']).join(' &middot; ') + '</p>';
+    log.debug("Entering AdminConsole.protocolSettingsPage().");
+    // DRAWN BY `web_protocol_settings.ts` (#446) from the page's JSON passed
+    // through JSON. A row with a status block hands its HTML in beside the
+    // view until that block is converted too; the page table lists only the
+    // pages without one.
+    const json = JSON.parse(JSON.stringify(this.protocolSettingsJson(row)));
+    const status = typeof row.status === 'function' ? row.status().html : '';
     log.debug("Leaving AdminConsole.protocolSettingsPage().");
-    return inner;
+    return this.messagesOf(req) +
+      ProtocolSettingsPage.render(json, this.renderContext(req), status);
   }
+
 
   // What `mgmt-api/admin_api.ts` calls for each of these. It takes the PATH
   // rather than an index or a title, because that is what SETTING_HOMES and NAV

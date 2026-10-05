@@ -58,6 +58,7 @@ import MetricsPage = require('./web_metrics');
 import ModePage = require('./web_mode');
 import NodeHealthPage = require('./web_node_health');
 import PkiPage = require('./web_pki');
+import ProtocolSettingsPage = require('./web_protocol_settings');
 import PoliciesPage = require('./web_policies');
 import OidfedPage = require('../oidfed/web_oidfed');
 import ProviderCommandsPage =
@@ -329,6 +330,23 @@ const PAGES: WebPage[] = [
     render: function (view: Json, ctx?: Json): string {
       return XacmlPage.policiesBody(ctx || WebKit.context(), view);
     } },
+  // The generated settings pages without a status block (#446).
+  { path: '/admin/oauth2', title: 'OAuth 2.0 / OIDC settings',
+    operation: '/admin-api/oauth2', render: ProtocolSettingsPage.render },
+  { path: '/admin/oid4vci', title: 'OpenID4VCI',
+    operation: '/admin-api/oid4vci-settings',
+    render: ProtocolSettingsPage.render },
+  { path: '/admin/oid4vp', title: 'OpenID4VP',
+    operation: '/admin-api/oid4vp-settings',
+    render: ProtocolSettingsPage.render },
+  { path: '/admin/ldap', title: 'LDAP / LDAPS',
+    operation: '/admin-api/ldap', render: ProtocolSettingsPage.render },
+  { path: '/admin/wstrust', title: 'WS-Trust',
+    operation: '/admin-api/wstrust', render: ProtocolSettingsPage.render },
+  { path: '/admin/wsfed', title: 'WS-Federation',
+    operation: '/admin-api/wsfed', render: ProtocolSettingsPage.render },
+  { path: '/admin/tls', title: 'TLS / mutual TLS',
+    operation: '/admin-api/tls', render: ProtocolSettingsPage.render },
   { path: '/admin/worker-pools', title: 'Worker pools',
     operation: '/admin-api/worker-pools', render: WorkerPoolsPage.render }
 ];
