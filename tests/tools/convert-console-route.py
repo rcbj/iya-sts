@@ -224,8 +224,12 @@ def convert(text):
         text = re.sub(r'\b(?:self|this)\.sourceNote\(([^()]*)\)',
                       r'SettingsForms.sourceNote(\1, ' + view_name +
                       '.context || {})', text)
-    # The kit's page-size cap, which the console reads as a module constant.
-    text = re.sub(r'(?<![\w.$])MAX_ROWS\b', 'kit.MAX_ROWS', text)
+    # The kit's constants (the page-size cap, the line and tooltip lengths),
+    # which the console reads as module constants of the same names.
+    # The console's own name for the kit.
+    text = re.sub(r'\bWebKit\.', 'kit.', text)
+    for const in sorted(c for c in KIT if c.isupper()):
+        text = re.sub(r'(?<![\w.$])%s\b' % const, 'kit.' + const, text)
     text = re.sub(r'\breq\.query\b', 'ctx.query', text)
     code_only = re.sub(r'//[^\n]*', '', text)
     assert not re.search(r'\breq\b', code_only), (
@@ -242,9 +246,17 @@ def convert(text):
         return 'self.' + name + '('
     text = re.sub(r'\b(?:self|this)\.([A-Za-z_]\w*)\(', call, text)
     # `self.esc` handed on as a function, as `.map(self.esc)` does
-    text = re.sub(r'\b(?:self|this)\.([A-Za-z_]\w*)\b',
-                  lambda mm: ('kit.' + mm.group(1)) if mm.group(1) in KIT
-                  else (page_class + '.' + mm.group(1)), text)
+    def ref(mm):
+        name = mm.group(1)
+        if name in KIT:
+            return 'kit.' + name
+        if name not in helpers:
+            UNKNOWN.add(name)
+        return page_class + '.' + name
+    text = re.sub(r'\b(?:self|this)\.([A-Za-z_]\w*)\b', ref, text)
+    # A method handed on with `.bind(self)` is bound to what holds it now.
+    text = re.sub(r'\b(kit|%s)\.(\w+)\.bind\((?:self|this)\)' % page_class,
+                  r'\1.\2.bind(\1)', text)
     return text
 
 
@@ -342,6 +354,7 @@ if USES_SETTINGS:
     settings_import = "\nimport SettingsForms = require('%s');" % rel_s
 addition = method_text + ('\n' + '\n\n'.join(moved_helpers)
                           if moved_helpers else '')
+addition = addition.rstrip('\n') + '\n'
 if os.path.exists(web_path):
     web = open(web_path).read()
     k = web.rindex('\n}\n\nexport = %s;' % page_class)

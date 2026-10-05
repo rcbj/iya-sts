@@ -7311,6 +7311,7 @@ module always was, and imports the kit by its relative path.
 | `web_metrics.ts` | The body of `/admin/metrics`, drawn inside its route until #446, with `durationText()` and the three tables, whose `AdminConsole` methods delegate here. The first page moved by `tests/tools/convert-console-route.py`, the tool for pages drawn inside an `admin.ts` route. |
 | `web_token_lifetimes.ts` | The body of `/admin/token-lifetimes`. Its view carries the settings `context` (the files the Source column names) and `overridable` (which settings an application may override) since #446; the warnings are `tokenLifetimeWarningsFor()`, the three numbers handed in — `AdminConsole.tokenLifetimeWarnings()` still reads the settings for an application's page and calls it. |
 | `web_saml_assertions.ts` | The body of `/admin/saml-assertions`. Its view carries `rows` (the assertion settings table: key, unit, kind, profile, field), `seconds` (each lifetime in seconds) and the settings `context` since #446, which the page read from `admin_actions`, the settings and the process while it drew. |
+| `../scim/web_scim.ts`, `../ssf/web_ssf.ts` | `/admin/scim` (`body()`), `/admin/scim/monitor` (`monitorBody()`) and `/admin/ssf`, each drawn inside its route until #446. The SSF view carries the two menus each stream's forms offer, `statuses` and `eventTypes`, which the page asked the reporter for while it drew. |
 | `web_vc_status.ts` | The body of `/admin/vc-status`; its Suspend, Reinstate and Revoke buttons are drawn only when `ctx.write` says so, and its paging is drawn from the view's `rowsPaging`. |
 | `../attribute-sources/web_attribute_sources.ts` | The body of `/admin/attribute-sources`. Its operation answered the register WITHOUT the page's `settings` until #446; both now answer `attributeSourcesView()`. |
 | `../debugger/web_debugger.ts` | The body of `/admin/debugger` — **the first page whose Settings block comes out of its own view** (`SettingsForms.forms(json.settings, PAGE_PATH)`). |
@@ -7386,7 +7387,7 @@ the view.
 
 **NOT BUILT YET**: the runtime that signs in (authorization code, PKCE, a
 non-extractable DPoP key), fetches, routes and draws the shell; the static
-route that serves it; and every page but the fifty above.
+route that serves it; and every page but the fifty-three above.
 
 **THE PAGING CONTROL IS DRAWN FROM THE PAGING A CALLER RECEIVES.**
 `pageNavPair(path, params, pg)` read two members of the console's own paging

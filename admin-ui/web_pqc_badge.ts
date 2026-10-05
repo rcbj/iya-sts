@@ -161,6 +161,7 @@ class PqcBadgeView {
       'key certified by an RSA CA is marked, and an RSA key certified by an ' +
       'ML-DSA CA is not.',
       'Post-quantum key pairs');
-  }}
+  }
+}
 
 export = PqcBadgeView;

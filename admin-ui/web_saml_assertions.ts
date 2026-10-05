@@ -397,6 +397,7 @@ class SamlAssertionsPage {
       return '';
     }
     return notes.map(function (note) { return kit.warn(note); }).join('');
-  }}
+  }
+}
 
 export = SamlAssertionsPage;

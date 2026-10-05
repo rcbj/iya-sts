@@ -324,6 +324,7 @@ class TokenLifetimesPage {
       return '';
     }
     return notes.map(function (note) { return kit.warn(note); }).join('');
-  }}
+  }
+}
 
 export = TokenLifetimesPage;

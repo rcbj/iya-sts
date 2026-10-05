@@ -4878,12 +4878,17 @@ class AdminViews {
       log.debug("Leaving AdminViews.ssfJson(). Not installed.");
       return { installed: false, enabled: false, streamDetail: [],
                receivedDetail: [], settings: configSettingsJson('/admin/ssf'),
+               statuses: [], eventTypes: [],
                note: 'ssf/ssf.ts is not loaded in this process, so nothing ' +
                      'here can report on the Shared Signals Framework.' };
     }
     const report = signalsReporter.report(req);
     report.installed = true;
     report.settings = configSettingsJson('/admin/ssf');
+    // The two menus each stream's forms offer (#446): the statuses a stream
+    // may be set to and the event types this transmitter can send.
+    report.statuses = signalsReporter.statuses.slice();
+    report.eventTypes = signalsReporter.eventTypes();
     log.debug("Leaving AdminViews.ssfJson(). " + report.streamDetail.length +
               " stream(s).");
     return report;

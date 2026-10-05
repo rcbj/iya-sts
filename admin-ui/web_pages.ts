@@ -59,9 +59,11 @@ import OAuth2MonitorPage = require('../oauth-oidc/web_oauth2_monitor');
 import RiskPage = require('./web_risk');
 import SamlAssertionsPage = require('./web_saml_assertions');
 import SchedulerPage = require('./web_scheduler');
+import ScimPage = require('../scim/web_scim');
 import ScepPage = require('../scep/web_scep');
 import SecretsPage = require('./web_secrets');
 import SettingsForms = require('./web_settings');
+import SsfPage = require('../ssf/web_ssf');
 import SsfTransmittersPage = require('../ssf/web_ssf_transmitters');
 import TokenLifetimesPage = require('./web_token_lifetimes');
 import VcStatusPage = require('./web_vc_status');
@@ -196,8 +198,23 @@ const PAGES: WebPage[] = [
     operation: '/admin-api/scheduler', render: SchedulerPage.render },
   { path: '/admin/oidfed', title: 'OpenID Federation',
     operation: '/admin-api/oidfed', render: OidfedPage.render },
+  { path: '/admin/scim', title: 'SCIM',
+    operation: '/admin-api/scim',
+    render: function (view: Json, ctx?: Json): string {
+      return ScimPage.body(ctx || WebKit.context(), view);
+    } },
+  { path: '/admin/scim/monitor', title: 'SCIM activity',
+    operation: '/admin-api/scim/monitor',
+    render: function (view: Json, ctx?: Json): string {
+      return ScimPage.monitorBody(ctx || WebKit.context(), view);
+    } },
   { path: '/admin/secrets', title: 'Secret store',
     operation: '/admin-api/secrets', render: SecretsPage.render },
+  { path: '/admin/ssf', title: 'Shared Signals',
+    operation: '/admin-api/ssf',
+    render: function (view: Json, ctx?: Json): string {
+      return SsfPage.body(ctx || WebKit.context(), view);
+    } },
   { path: '/admin/ssf/transmitters', title: 'Signals from partners',
     operation: '/admin-api/ssf/transmitters',
     render: SsfTransmittersPage.render },

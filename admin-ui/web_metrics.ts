@@ -296,6 +296,7 @@ class MetricsPage {
       (body || '<tr><td colspan="5">No assertion, ticket or credential has ' +
                'been issued yet.</td></tr>') +
       '</table>';
-  }}
+  }
+}
 
 export = MetricsPage;
