@@ -99,7 +99,60 @@ function nodeSignature(alg, key, input) {
   return nodeCrypto.sign(hash, input, params);
 }
 
-const VECTORS = [{ file: 'jws-node.json', build: jws }];
+// A JWE per alg (with A256GCM, or none for an Integrated HPKE alg), and
+// RSA-OAEP-256 with every enc: the recipient's private key and the compact
+// JWE Node encrypted to it.
+function jweSecretFor(alg, enc) {
+  const sizes = { A128KW: 16, A192KW: 24, A256KW: 32, A128GCMKW: 16,
+                  A192GCMKW: 24, A256GCMKW: 32 };
+  if (sizes[alg]) {
+    return nodeCrypto.randomBytes(sizes[alg]);
+  }
+  if (alg === 'dir') {
+    return nodeCrypto.randomBytes(crypto.JWE_ENCS[enc].cekBytes);
+  }
+  return Buffer.from('a password for PBES2', 'utf8');
+}
+
+function jweRecipient(alg) {
+  if (crypto.JWE_SYMMETRIC_ALGS.indexOf(alg) >= 0) {
+    return null;
+  }
+  if (crypto.JWE_RSA_ALGS.indexOf(alg) >= 0 ||
+      crypto.JWE_ECDH_ALGS.indexOf(alg) >= 0) {
+    const pair = crypto.JWE_RSA_ALGS.indexOf(alg) >= 0
+      ? nodeCrypto.generateKeyPairSync('rsa', { modulusLength: 2048 })
+      : nodeCrypto.generateKeyPairSync('ec', { namedCurve: 'secp384r1' });
+    return { publicJwk: pair.publicKey.export({ format: 'jwk' }),
+             privateJwk: pair.privateKey.export({ format: 'jwk' }) };
+  }
+  return crypto.generateJweKemKeyPair(alg, 'node-1');
+}
+
+function jwe() {
+  const cases = crypto.JWE_ALGS.map(function (alg) {
+    return { alg: alg, enc: 'A256GCM' };
+  }).concat(Object.keys(crypto.JWE_ENCS).map(function (enc) {
+    return { alg: 'RSA-OAEP-256', enc: enc };
+  }), Object.keys(crypto.JWE_ENCS).map(function (enc) {
+    return { alg: 'dir', enc: enc };
+  }));
+  return cases.map(function (one) {
+    const recipient = jweRecipient(one.alg);
+    const secret = recipient ? null : jweSecretFor(one.alg, one.enc);
+    const compact = crypto.encryptJweCompact('{"sub":"alice"}', {
+      alg: one.alg, enc: one.enc,
+      jwk: recipient ? recipient.publicJwk : undefined,
+      secret: secret || undefined });
+    return { alg: one.alg, enc: one.enc,
+             privateJwk: recipient ? recipient.privateJwk : null,
+             secret: secret ? secret.toString('base64url') : null,
+             compact: compact };
+  });
+}
+
+const VECTORS = [{ file: 'jws-node.json', build: jws },
+                 { file: 'jwe-node.json', build: jwe }];
 
 if (require.main === module) {
   fs.mkdirSync(OUT, { recursive: true });

@@ -11,6 +11,7 @@
 pub mod b64;
 pub mod error;
 pub mod hpke;
+pub mod jwe;
 pub mod jws;
 pub mod jws_alg;
 pub mod keys;

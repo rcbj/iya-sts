@@ -124,3 +124,57 @@ fn concrete_hybrid_kem_vectors() {
         }
     }
 }
+
+#[test]
+fn jose_hpke_encrypt_vectors() {
+    use sts_crypto::jwe::{
+        alg, decrypt_compact, encrypt_compact, DecryptOptions, EncryptOptions,
+    };
+    let Some(Json::Array(vectors)) = read("jose-hpke.json") else {
+        eprintln!("STS_HPKE_DIR is not set: the JOSE-HPKE vectors are not run");
+        return;
+    };
+    let mut not_applicable = Vec::new();
+    let mut passed = 0;
+    for v in &vectors {
+        let name = v["alg"].as_str().unwrap();
+        if alg(name).is_none() {
+            not_applicable.push(name);
+            continue;
+        }
+        let compact = v["compact"].as_str().unwrap();
+        let opened = decrypt_compact(
+            compact,
+            &DecryptOptions {
+                private_jwk: Some(&v["jwk"]),
+                ..DecryptOptions::default()
+            },
+        )
+        .unwrap_or_else(|e| panic!("{}: {}", name, e));
+        assert!(!opened.plaintext.is_empty(), "{}", name);
+        let mut public = v["jwk"].clone();
+        public.as_object_mut().unwrap().remove("d");
+        let mine = encrypt_compact(
+            &opened.plaintext,
+            &EncryptOptions {
+                alg: Some(name),
+                enc: "A256GCM",
+                jwk: Some(&public),
+                ..EncryptOptions::default()
+            },
+        )
+        .unwrap();
+        let back = decrypt_compact(
+            &mine,
+            &DecryptOptions {
+                private_jwk: Some(&v["jwk"]),
+                ..DecryptOptions::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(back.plaintext, opened.plaintext, "{}", name);
+        passed += 1;
+    }
+    assert_eq!(not_applicable, ["HPKE-4-KE", "HPKE-6-KE"]);
+    assert_eq!(passed, 14);
+}

@@ -117,3 +117,126 @@ fn write_the_rust_vectors_when_asked() {
     )
     .unwrap();
 }
+
+fn jwe_private(
+    jwk: &Json,
+) -> Option<openssl::pkey::PKey<openssl::pkey::Private>> {
+    match JwsKey::from_jwk(jwk).ok()?.material {
+        sts_crypto::keys::Material::Private(key) => Some(key),
+        _ => None,
+    }
+}
+
+#[test]
+fn every_node_jwe_decrypts_here() {
+    use sts_crypto::jwe::{decrypt_compact, DecryptOptions};
+    let text = std::fs::read_to_string(vectors("jwe-node.json")).unwrap();
+    let rows: Vec<Json> = serde_json::from_str(&text).unwrap();
+    assert!(rows.len() >= sts_crypto::jwe::algs().len());
+    for row in &rows {
+        let alg = row["alg"].as_str().unwrap();
+        let secret = row["secret"]
+            .as_str()
+            .map(|s| sts_crypto::b64::decode_loose(s).unwrap());
+        let private_key = row["privateJwk"]
+            .as_object()
+            .and_then(|_| jwe_private(&row["privateJwk"]));
+        let out = decrypt_compact(
+            row["compact"].as_str().unwrap(),
+            &DecryptOptions {
+                private_key: private_key.as_ref(),
+                private_jwk: row["privateJwk"]
+                    .as_object()
+                    .map(|_| &row["privateJwk"]),
+                secret: secret.as_deref(),
+                ..DecryptOptions::default()
+            },
+        )
+        .unwrap_or_else(|e| panic!("{} {}: {}", alg, row["enc"], e));
+        assert_eq!(out.plaintext, br#"{"sub":"alice"}"#, "{}", alg);
+    }
+}
+
+#[test]
+fn write_the_rust_jwe_vectors_when_asked() {
+    use sts_crypto::jwe::{
+        algs, encrypt_compact, generate_kem_key_pair, AlgKind, EncryptOptions,
+        ENCS,
+    };
+    if std::env::var("STS_WRITE_VECTORS").as_deref() != Ok("1") {
+        return;
+    }
+    let mut cases: Vec<(String, &str)> =
+        algs().into_iter().map(|a| (a.name, "A256GCM")).collect();
+    for enc in ENCS {
+        cases.push(("RSA-OAEP-256".into(), enc.name));
+        cases.push(("dir".into(), enc.name));
+    }
+    let mut out = Vec::new();
+    for (name, enc) in cases {
+        let alg = sts_crypto::jwe::alg(&name).unwrap();
+        let mut row = json!({ "alg": name, "enc": enc });
+        let (public, secret): (Option<Json>, Option<Vec<u8>>) = match alg.kind {
+            AlgKind::RsaOaep { .. } | AlgKind::EcdhEs(_) => {
+                let private = if matches!(alg.kind, AlgKind::RsaOaep { .. }) {
+                    openssl::pkey::PKey::from_rsa(
+                        openssl::rsa::Rsa::generate(2048).unwrap(),
+                    )
+                    .unwrap()
+                } else {
+                    let group = openssl::ec::EcGroup::from_curve_name(
+                        openssl::nid::Nid::SECP384R1,
+                    )
+                    .unwrap();
+                    openssl::pkey::PKey::from_ec_key(
+                        openssl::ec::EcKey::generate(&group).unwrap(),
+                    )
+                    .unwrap()
+                };
+                row["privatePem"] = json!(String::from_utf8(
+                    private.private_key_to_pem_pkcs8().unwrap()
+                )
+                .unwrap());
+                let key =
+                    JwsKey::of(sts_crypto::keys::Material::Private(private));
+                (key.public_jwk().unwrap(), None)
+            }
+            AlgKind::MlKem { .. } | AlgKind::Hpke { .. } => {
+                let (public, private) =
+                    generate_kem_key_pair(&name, Some("rust-1")).unwrap();
+                row["privateJwk"] = private;
+                (Some(public), None)
+            }
+            AlgKind::AesKw(n) | AlgKind::AesGcmKw(n) => {
+                (None, Some(vec![7u8; n]))
+            }
+            AlgKind::Dir => (
+                None,
+                Some(vec![8u8; sts_crypto::jwe::enc(enc).unwrap().cek_bytes]),
+            ),
+            AlgKind::Pbes2 { .. } => {
+                (None, Some(b"a password for PBES2".to_vec()))
+            }
+        };
+        if let Some(secret) = &secret {
+            row["secret"] = json!(sts_crypto::b64::encode(secret));
+        }
+        row["compact"] = json!(encrypt_compact(
+            br#"{"sub":"alice"}"#,
+            &EncryptOptions {
+                alg: Some(&name),
+                enc,
+                jwk: public.as_ref(),
+                secret: secret.as_deref(),
+                ..EncryptOptions::default()
+            },
+        )
+        .unwrap());
+        out.push(row);
+    }
+    std::fs::write(
+        vectors("jwe-rust.json"),
+        serde_json::to_string_pretty(&out).unwrap() + "\n",
+    )
+    .unwrap();
+}
