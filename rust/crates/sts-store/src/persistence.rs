@@ -1422,6 +1422,37 @@ impl LiveDirectory for MemoryDirectory {
 }
 
 impl crate::replication::Applier for Persistence {
+    fn prefetch<'a>(
+        &'a self,
+        rows: &'a [&'a crate::driver::ChangeRow],
+    ) -> crate::driver::StoreFuture<'a, ()> {
+        Box::pin(async move {
+            let Some(minted) = self.minted() else {
+                return Ok(());
+            };
+            // A DATA KEY MADE IN THIS PAGE is adopted first: the minted rows
+            // after it are sealed under it, names included, and a read ahead
+            // that cannot open their names reads none of them.
+            let keys = self.data_keys();
+            if rows.iter().any(|r| {
+                r.kind == "keys"
+                    && r.realm.starts_with(crate::keystore::DEK_ROW_PREFIX)
+            }) {
+                keys.load(false)
+                    .await
+                    .map_err(crate::driver::StoreError::new)?;
+            }
+            minted.prefetch(&keys, rows).await;
+            Ok(())
+        })
+    }
+
+    fn end_prefetch(&self) {
+        if let Some(minted) = self.minted() {
+            minted.end_prefetch();
+        }
+    }
+
     fn apply<'a>(
         &'a self,
         row: &'a crate::driver::ChangeRow,

@@ -43,6 +43,17 @@ pub trait Applier: Send + Sync {
         &'a self,
         row: &'a ChangeRow,
     ) -> crate::driver::StoreFuture<'a, ()>;
+
+    /// Reads ahead what a page of changes names, before any is applied.
+    fn prefetch<'a>(
+        &'a self,
+        _rows: &'a [&'a ChangeRow],
+    ) -> crate::driver::StoreFuture<'a, ()> {
+        Box::pin(async { Ok(()) })
+    }
+
+    /// Forgets what [`Applier::prefetch`] read.
+    fn end_prefetch(&self) {}
 }
 
 #[derive(Default)]
@@ -236,7 +247,10 @@ impl Replication {
             }
         }
         wanted.reverse();
-        for row in wanted {
+        if let Err(e) = applier.prefetch(&wanted).await {
+            tracing::warn!("persistence: reading a page ahead failed: {}", e);
+        }
+        for row in wanted.iter().copied() {
             if let Err(e) = applier.apply(row).await {
                 tracing::error!(
                     "{}persistence: a \"{}\" change for \"{}\" in realm \"{}\" could not be applied: {}. The rest of \
@@ -249,6 +263,7 @@ impl Replication {
                 );
             }
         }
+        applier.end_prefetch();
     }
 
     /// What `/admin/database` reports of the coordination.
