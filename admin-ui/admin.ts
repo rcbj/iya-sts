@@ -858,6 +858,7 @@ import SpiffePage = require('../spiffe/web_spiffe');
 import LogoutPage = require('../logout/web_logout');
 import UsedAssertionsPage = require('./web_used_assertions');
 import ClaimsPage = require('./web_claims');
+import VcClaimsPage = require('../oid4vc/web_vc_claims');
 
 // REQUIRED FOR THE ORDER THEY WERE ALWAYS REQUIRED IN, AND READ NOWHERE HERE
 // (#50). TypeScript drops an `import … = require()` whose name nothing reads,
@@ -21235,45 +21236,23 @@ class AdminConsole {
     return out;
   }
 
-  // The one preview row: what this attribute would put in a credential for the
-  // person the page is previewing, and where that value came from.
+  // Drawn by `web_vc_claims.ts` (#446).
   /**
    * Draws the value and source cells of one credential attribute row for
    * the person being previewed.
    *
-   * @param row - the catalogue row
-   * @param persona - the invented person for the preview user
-   * @param byLdap - the built claims, keyed by lower-case attribute name
+   * @param example - `{ value, source }`, from the page's answer
    * @returns two table cells as HTML
    */
-  vcExampleCell(row, persona, byLdap) {
+  vcExampleCell(example) {
     const { log } = this.deps;
     log.debug("Entering AdminConsole.vcExampleCell().");
-    const found = byLdap[row.ldap.toLowerCase()];
-    if (found) {
-      log.debug("Leaving AdminConsole.vcExampleCell().");
-      return '<td><code>' + this.esc(found.value) + '</code></td><td>' +
-             this.esc(found.source) + '</td>';
-    }
-    if (!row.from) {
-      log.debug("Leaving AdminConsole.vcExampleCell().");
-      // The only row with no generator: `description`, which this service
-      // already writes on every entry to record the protocols that person has
-      // used. Saying so is the point — it is the one attribute whose value is a
-      // real fact.
-      return '<td>—</td><td>the entry\'s own</td>';
-    }
-    // Shown in the form the CLAIM would take rather than the form the attribute
-    // holds, because that is what the column above it is showing for the
-    // selected rows and a table with two conventions in one column is a table
-    // nobody can read. The two differ for exactly two attributes — a date and a
-    // postal address — and both differences are punctuation.
-    const raw = persona[row.from] == null ? '' : String(persona[row.from]);
     log.debug("Leaving AdminConsole.vcExampleCell().");
-    return '<td><code>' + this.esc(row.toClaim ? row.toClaim(raw) : raw) +
-           '</code></td><td>would be generated</td>';
+    return VcClaimsPage.vcExampleCell(example);
   }
 
+
+  // Drawn by `web_vc_claims.ts` (#446).
   /**
    * Draws the /admin/vc selection form: a checkbox per credential attribute
    * with its value for the preview user, and the defaults and populate
@@ -21285,58 +21264,14 @@ class AdminConsole {
    * @param previewUser - the username being previewed
    * @returns the forms as HTML
    */
-  vcAttributeTable(previewUser) {
-    const { log, vcClaims } = this.deps;
-    const self = this;
-    log.debug("Entering AdminConsole.vcAttributeTable(). previewUser=" +
-              previewUser);
-    const persona = vcClaims.personaFor(previewUser);
-    const built = vcClaims.subjectClaimsFor(previewUser, {});
-    const byLdap = {};
-    built.report.forEach(function (item) {
-      byLdap[item.ldap.toLowerCase()] = item;
-    });
-
-    const rows = vcClaims.VC_ATTRIBUTES.map(function (row) {
-      const on = vcClaims.isSelected(row.ldap);
-      return '<tr><td><input type="checkbox" name="attribute" value="' +
-        self.esc(row.ldap) + '"' +
-        (on ? ' checked' : '') + '></td>' +
-        '<td><code>' + self.esc(row.ldap) + '</code></td>' +
-        '<td>' + self.esc(row.schema) + '</td>' +
-        '<td><code>' + self.esc(row.claim.join('.')) + '</code></td>' +
-        '<td>' + (row.ldpTerm ? '<code>' + self.esc(row.ldpTerm) + '</code>' :
-                  '<span ' +
-            'class="state-none">—</span>') +
-        '</td>' + self.vcExampleCell(row, persona, byLdap) + '</tr>';
-    }).join('');
-
-    log.debug("Leaving AdminConsole.vcAttributeTable(). " +
-              vcClaims.VC_ATTRIBUTES.length +
-        " " +
-        "row(s).");
-    return '<form method="post" action="/admin/vc"><input type="hidden" ' +
-      'name="action" value="select"><table><tr><th>In</th><th>LDAP ' +
-      'attribute</th><th>Defined by</th><th>Claim</th><th>ldp_vc ' +
-      'term</th><th>In a credential ' +
-      'for ' + this.esc(previewUser) + '</th><th>Source</th></tr>' +
-      rows + '</table><div class="formrow"><button>Save this ' +
-      'selection</button><span class="note">Saving also populates the ' +
-      'directory: every person under <code>ou=users</code> gains the ' +
-      'attributes they are missing.</span></div></form><div ' +
-      'class="formrow"><form method="post" action="/admin/vc" ' +
-      'class="inline"><input type="hidden" name="action" ' +
-      'value="defaults"><button class="secondary">Restore the six default ' +
-      'claims</button></form> <form method="post" action="/admin/vc" ' +
-      'class="inline"><input type="hidden" name="action" ' +
-      'value="populate"><button class="secondary">Populate the directory ' +
-      'now</button></form></div>';
+  vcAttributeTable(json) {
+    const { log } = this.deps;
+    log.debug("Entering AdminConsole.vcAttributeTable().");
+    log.debug("Leaving AdminConsole.vcAttributeTable().");
+    return VcClaimsPage.vcAttributeTable(json);
   }
 
-  // What a credential for this person would actually assert, claim by claim. It
-  // is built by the same function the issuer calls, not by a second walk of the
-  // catalogue — a preview that agreed with the page and disagreed with the
-  // credential would be worse than no preview.
+  // Drawn by `web_vc_claims.ts` (#446).
   /**
    * Draws what a credential for the preview user would assert, claim by
    * claim, built by the function the issuer calls.
@@ -21344,53 +21279,11 @@ class AdminConsole {
    * @param previewUser - the username being previewed
    * @returns the preview form, notes and table as HTML
    */
-  vcPreviewSection(previewUser) {
-    const { log, vcClaims } = this.deps;
-    const self = this;
-    log.debug("Entering AdminConsole.vcPreviewSection(). previewUser=" +
-              previewUser);
-    const built = vcClaims.subjectClaimsFor(previewUser, {});
-    const rows = built.report.map(function (item) {
-      return '<tr><td><code>' + self.esc(item.claim) + '</code></td>' +
-        '<td><code>' + self.esc(item.value) + '</code></td>' +
-        '<td>' + self.esc(item.source) + '</td>' +
-        '<td>' + (item.ldpTerm ? 'yes' : '<span class="state-none">no</span>') +
-        '</td></tr>';
-    }).join('');
-    const omitted = vcClaims.ldpOmitted();
-
-    log.debug("Leaving AdminConsole.vcPreviewSection(). " +
-              built.report.length +
-              " claim(s).");
-    return '<form method="get" action="/admin/vc"><div class="formrow">' +
-      '<label for="user">Preview the credential for</label>' +
-      '<input type="text" id="user" name="user" size="20" value="' +
-      this.esc(previewUser) + '"><button ' +
-      'class="secondary">Show</button></div></form>' +
-      this.note((built.entryFound
-        ? 'This person has an entry in the directory, so the values below ' +
-          'marked <em>directory</em> are what an LDAP client reads from it.'
-        : 'This person has no entry in the directory — nobody has ' +
-          'authenticated as them and nothing was added by hand — so every ' +
-          'value below is generated. It will be the same one next time: the ' +
-          'invented person is seeded from the username.')) +
-      '<table><tr><th>Claim</th><th>Value</th><th>From</th><th>In ' +
-      'ldp_vc</th></tr>' +
-      (rows ||
-       '<tr><td colspan="4">No attribute is selected, so a credential ' +
-               'carries nothing but its subject identifier. That is a ' +
-               'legitimate thing to test and is not a mistake this page will ' +
-               'correct.</td></tr>') + '</table>' +
-      (omitted.length
-        ? this.note('<strong>' + this.codeList(omitted) + '</strong> ' +
-          (omitted.length === 1 ? 'is selected and does' :
-           'are selected and do') +
-          ' not appear in an <code>ldp_vc</code> credential. That format is ' +
-          'signed over canonicalized JSON-LD, so it can only carry terms the ' +
-          'vendored context defines, and the context is vendored precisely ' +
-          'because editing it would invalidate every credential already ' +
-          'issued against it. The two JOSE-secured formats carry all of them.')
-        : '');
+  vcPreviewSection(json) {
+    const { log } = this.deps;
+    log.debug("Entering AdminConsole.vcPreviewSection().");
+    log.debug("Leaving AdminConsole.vcPreviewSection().");
+    return VcClaimsPage.vcPreviewSection(json);
   }
 
   // Drawn by `web_vc_verifier_config.ts` (#446).
@@ -30127,70 +30020,12 @@ class AdminConsole {
     app.get('/admin/vc', function (req, res) {
       log.debug("Entering the admin credential-claims page.");
       const previewUser = vcPreviewUser(req.query);
-
-      const inner = self.messagesOf(req) +
-        self.note('Which claims a Verifiable Credential issued by this ' +
-        'service carries, <em>from now on</em>. Nothing already issued ' +
-        'changes — a credential is a signed document and this page cannot ' +
-        'reach inside one. It applies to all five OID4VCI configurations: ' +
-        'the SD-JWT VC, the <code>jwt_vc_json</code> W3C credential, the ' +
-        '<code>ldp_vc</code> one with a BBS proof, and the two whose only ' +
-        'difference is that the issuer names itself by DID.') +
-
-        self.note('The list is of <strong>LDAP attribute types</strong> and ' +
-        'not of claim names, because this service has a directory and a ' +
-        'claim with a value nothing else can see is half a demonstration. A ' +
-        'selected attribute becomes the claim named beside it, and the value ' +
-        'is the one on that person\'s entry under <code>ou=users</code> — so ' +
-        'an LDAP client and an OID4VCI wallet pointed at this service are ' +
-        'shown the same person. Three rows are not RFC 4519/4524/2798: there ' +
-        'is no standard attribute type for a birthdate or a nationality, so ' +
-        'the SCHAC schema\'s names are borrowed rather than invented.') +
-
-        self.warn('<strong>None of this is verified, and the values are ' +
-        'garbage on purpose.</strong> This service authenticates nobody — ' +
-        'the username typed at the sign-in screen is the identity in every ' +
-        'token and credential it issues — so there is no source of a real ' +
-        'birthdate here and there had better not be. What a person is ' +
-        'missing is invented from their username: the same invented person ' +
-        'every time, across restarts, so that two credentials issued a ' +
-        'minute apart describe one human being rather than two. A verifier ' +
-        'that believed any of it would be believing this page.') +
-
-        '<h2>The attributes</h2>' +
-        self.vcAttributeTable(previewUser) +
-
-        '<h2>What a credential would carry</h2>' +
-        self.vcPreviewSection(previewUser) +
-
-        '<h2>Where a value comes from</h2>' +
-        self.note('Three sources, in this order. <strong>The access ' +
-        'token</strong>, where it carries a claim of that name — that is a ' +
-        'statement this service already made about the person, from the ' +
-        'sign-in or from the <a href="/admin/claims">custom claims</a> page, ' +
-        'and a credential contradicting the token that authorised it would ' +
-        'be indefensible. Then <strong>the directory entry</strong>, which ' +
-        'is where the generated values live once an entry exists and also ' +
-        'where an <code>ldapmodify</code> lands: change <code>mail</code> on ' +
-        '<code>uid=alice,ou=users</code> and the next credential says so. ' +
-        'Then <strong>the generated persona</strong>, for a person with no ' +
-        'entry, or an entry without that attribute, or a directory that is ' +
-        'not running.') +
-        self.note('Populating never overwrites. An attribute an entry ' +
-        'already carries is left exactly as it is — which is why the three ' +
-        'seeded people keep their names and only gain what they had nothing ' +
-        'for, and why a sweep run twice does nothing the second time.') +
-
-        '<h2>What these claims do not do</h2>' +
-        self.note('Nothing reads them back. No access token, ID Token, SAML ' +
-        'assertion or Kerberos PAC carries a claim from this page, and no ' +
-        'endpoint makes a decision on one — it reaches a credential and ' +
-        'stops there. The <a href="/admin/users">users</a> page shows the ' +
-        'directory entry each of these values was written onto.');
-
-      self.respond(req, res, vcJson(previewUser), 'Credential claims',
-                   '/admin/vc',
-                   inner);
+      const json = vcJson(previewUser);
+      self.respond(req, res, json, 'Credential claims', '/admin/vc',
+        // Drawn by `web_vc_claims.ts` (#446).
+        self.messagesOf(req) +
+        VcClaimsPage.body(self.renderContext(req),
+          JSON.parse(JSON.stringify(json))));
       log.debug("Leaving the admin credential-claims page.");
     });
 

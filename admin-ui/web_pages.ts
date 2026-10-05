@@ -93,6 +93,7 @@ import TokenLifetimesPage = require('./web_token_lifetimes');
 import TokensPage = require('./web_tokens');
 import UsedAssertionsPage = require('./web_used_assertions');
 import UsersPage = require('./web_users');
+import VcClaimsPage = require('../oid4vc/web_vc_claims');
 import VcStatusPage = require('./web_vc_status');
 import VcVerifierConfigPage =
   require('../oid4vc/web_vc_verifier_config');
@@ -542,6 +543,11 @@ const PAGES: WebPage[] = [
   { path: '/admin/users', title: 'Users', operation: '/admin-api/users',
     render: function (view: Json, ctx?: Json): string {
       return UsersPage.body(ctx || WebKit.context(), view);
+    } },
+  { path: '/admin/vc', title: 'Credential claims',
+    operation: '/admin-api/credential-claims',
+    render: function (view: Json, ctx?: Json): string {
+      return VcClaimsPage.body(ctx || WebKit.context(), view);
     } },
   { path: '/admin/vc-status', title: 'Credential status',
     operation: '/admin-api/vc-status', render: VcStatusPage.render },

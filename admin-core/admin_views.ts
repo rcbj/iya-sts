@@ -2264,7 +2264,17 @@ class AdminViews {
    */
   vcJson(previewUser) {
     const { log, vcClaims } = this.deps;
+    const self = this;
     log.debug("Entering AdminViews.vcJson(). previewUser=" + previewUser);
+    // WHAT EACH ATTRIBUTE WOULD SAY ABOUT THE PERSON PREVIEWED (#446), the
+    // page's last two columns: the value a credential would carry and where
+    // it comes from — the entry, the persona's generator, or nothing.
+    const persona = vcClaims.personaFor(previewUser);
+    const built = vcClaims.subjectClaimsFor(previewUser, {});
+    const byLdap: Record<string, any> = {};
+    built.report.forEach(function (item) {
+      byLdap[item.ldap.toLowerCase()] = item;
+    });
     const json = {
       selected: vcClaims.selectedNames(),
       defaults: vcClaims.DEFAULT_SELECTION,
@@ -2272,10 +2282,10 @@ class AdminViews {
       attributes: vcClaims.VC_ATTRIBUTES.map(function (row) {
         return { ldap: row.ldap, claim: row.claim.join('.'), label: row.label,
                  schema: row.schema, ldpTerm: row.ldpTerm || '',
-                 selected: vcClaims.isSelected(row.ldap) };
+                 selected: vcClaims.isSelected(row.ldap),
+                 example: self.vcExampleOf(row, persona, byLdap) };
       }),
-      preview: { user: previewUser,
-                 claims: vcClaims.subjectClaimsFor(previewUser, {}) }
+      preview: { user: previewUser, claims: built }
     };
     log.debug("Leaving AdminViews.vcJson().");
     return json;
@@ -2285,6 +2295,44 @@ class AdminViews {
   // is built by the function that builds the REAL one — see the note in
   // vc_verifier_config.js — so a caller reading this reply is reading the next
   // Authorization Request rather than a description of one.
+  // The one preview row as data: what an attribute would put in a credential
+  // for the person previewed, and where that value came from. It was the
+  // console's `vcExampleCell()`, which drew it; the page draws this (#446).
+  /**
+   * Says what one credential attribute would carry for the person previewed.
+   *
+   * @param row - the catalogue row
+   * @param persona - the invented person for the preview user
+   * @param byLdap - the built claims, keyed by lower-case attribute name
+   * @returns `{ value, source }`; `value` is null where there is none
+   */
+  vcExampleOf(row, persona, byLdap) {
+    const { log } = this.deps;
+    log.debug("Entering AdminViews.vcExampleOf().");
+    const found = byLdap[row.ldap.toLowerCase()];
+    if (found) {
+      log.debug("Leaving AdminViews.vcExampleOf(). From the claims.");
+      return { value: String(found.value), source: found.source };
+    }
+    if (!row.from) {
+      // The only row with no generator: `description`, which this service
+      // already writes on every entry to record the protocols that person has
+      // used. Saying so is the point — it is the one attribute whose value is
+      // a real fact.
+      log.debug("Leaving AdminViews.vcExampleOf(). The entry's own.");
+      return { value: null, source: 'the entry\'s own' };
+    }
+    // Shown in the form the CLAIM would take rather than the form the
+    // attribute holds, because that is what the column above it is showing for
+    // the selected rows and a table with two conventions in one column is a
+    // table nobody can read. The two differ for exactly two attributes — a
+    // date and a postal address — and both differences are punctuation.
+    const raw = persona[row.from] == null ? '' : String(persona[row.from]);
+    log.debug("Leaving AdminViews.vcExampleOf(). Generated.");
+    return { value: row.toClaim ? row.toClaim(raw) : raw,
+             source: 'would be generated' };
+  }
+
   /**
    * Builds `/admin/vc-verifier-config`'s JSON: what the Verifier asks for and
    * the `dcql_query` that carries it.
