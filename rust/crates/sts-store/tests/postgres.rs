@@ -406,4 +406,40 @@ async fn data_keys_on_postgres() {
         1,
         "one digest key"
     );
+
+    // Two processes making a realm's first key set at once agree on one.
+    raw_exec(&url, "DELETE FROM sts_keys WHERE realm = 'kstest'")
+        .await
+        .unwrap();
+    let sets = |keys: Arc<sts_store::keystore::DataKeys>| {
+        sts_store::key_sets::KeySets::new(
+            Arc::new(PostgresDriver::new(&url, false, 2).unwrap()),
+            keys,
+        )
+    };
+    let (sa, sb) = (sets(a.clone()), sets(b.clone()));
+    let blob_a = json!({ "certB64": "A", "generations": { "generation": 0 } });
+    let blob_b = json!({ "certB64": "B", "generations": { "generation": 0 } });
+    let (ra, rb) =
+        tokio::join!(sa.save("kstest", &blob_a), sb.save("kstest", &blob_b));
+    // A loser of the insert race is told to try again; it then keeps the
+    // winner's.
+    let ra = match ra {
+        Err(_) => sa.save("kstest", &blob_a).await,
+        other => other,
+    };
+    let rb = match rb {
+        Err(_) => sb.save("kstest", &blob_b).await,
+        other => other,
+    };
+    let written = [&ra, &rb]
+        .iter()
+        .filter(|r| matches!(r, Ok(sts_store::key_sets::Saved::Written)))
+        .count();
+    assert_eq!(written, 1, "{:?} {:?}", ra, rb);
+    assert_eq!(
+        sa.open("kstest").unwrap().cert_b64(),
+        sb.open("kstest").unwrap().cert_b64(),
+        "both hold the one written"
+    );
 }
