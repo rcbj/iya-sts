@@ -366,6 +366,50 @@ async fn a_made_key_set_is_whole() {
         .unwrap()
         .starts_with("sts-req-enc-"));
 
+    // Every algorithm the realm signs its own tokens with: signed here,
+    // verified against the key the JWKS publishes under the header's kid.
+    let mut tokens = serde_json::Map::new();
+    for (alg, curve) in [
+        ("RS256", ""),
+        ("RS512", ""),
+        ("PS256", ""),
+        ("ES256", ""),
+        ("ES384", ""),
+        ("ES512", ""),
+        ("ES256K", ""),
+        ("EdDSA", "Ed25519"),
+        ("EdDSA", "Ed448"),
+    ] {
+        let mut claims = serde_json::Map::new();
+        claims.insert("sub".into(), json!("alice"));
+        let token = set
+            .sign_jwt(&claims, alg, curve, Some(1_791_000_000))
+            .unwrap();
+        let header: Json = serde_json::from_slice(
+            &base64::engine::general_purpose::URL_SAFE_NO_PAD
+                .decode(token.split('.').next().unwrap())
+                .unwrap(),
+        )
+        .unwrap();
+        let jwk = list.iter().find(|k| k["kid"] == header["kid"]).unwrap();
+        let key = sts_crypto::keys::JwsKey::from_jwk(jwk).unwrap();
+        let verified = sts_crypto::jws::verify_compact(
+            &token,
+            &key,
+            &sts_crypto::jws::VerifyOptions {
+                algorithms: &[alg],
+                empty_payload: false,
+                policy: sts_crypto::keys::KeyPolicy::STRICT,
+            },
+        )
+        .unwrap_or_else(|e| panic!("{} {}: {}", alg, curve, e));
+        assert_eq!(verified.claims.unwrap()["iat"], 1_791_000_000);
+        tokens.insert(format!("{}{}", alg, curve), json!(token));
+    }
+    assert!(set
+        .sign_jwt(&serde_json::Map::new(), "HS256", "", None)
+        .is_err());
+
     // Written for Node to read, where asked: the vectors' KEK, an ldif store.
     let Ok(out) = std::env::var("STS_KEYSET_OUT") else {
         return;
@@ -387,7 +431,8 @@ async fn a_made_key_set_is_whole() {
         PathBuf::from(&out).join("expected.json"),
         json!({ "kid": set.kid(), "curveKids": curves.iter().map(|c| c.public_jwk["kid"].clone()).collect::<Vec<_>>(),
                 "vciKid": blob["vciRequestEncKey"]["publicJwk"]["kid"],
-                "jwks": sts_store::key_sets::jwks_document(&set).unwrap() }).to_string(),
+                "jwks": sts_store::key_sets::jwks_document(&set).unwrap(),
+                "tokens": tokens }).to_string(),
     )
     .unwrap();
 }
