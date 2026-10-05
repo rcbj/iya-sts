@@ -27,6 +27,8 @@ pub struct Presented<'a> {
     pub certificate_matches: bool,
     /// The port can ask for a client certificate.
     pub mtls_available: bool,
+    /// The token was issued to a client [`dpop_bound_public_client`] names.
+    pub client_bound: bool,
 }
 
 /// A refusal: the error, the code, the setting that asked for it, and why.
@@ -36,6 +38,43 @@ pub struct Refusal {
     pub code: ErrorCode,
     pub setting: &'static str,
     pub description: String,
+}
+
+/// The hosted clients that are DPoP-bound whenever they are public clients
+/// (#446): the admin console. Not a setting.
+pub const DPOP_BOUND_PUBLIC_CLIENTS: [&str; 1] = ["sts-admin-console"];
+
+/// `dpopBoundPublicClient()`: the admin console running as a public client,
+/// every token issued to which must be DPoP-bound — a key the browser
+/// cannot export (#446, reversing #444's D9 for the console on that
+/// condition). Not in force while the seeded entry is still confidential.
+pub fn dpop_bound_public_client(client_id: &str, method: &str) -> bool {
+    method == "none" && DPOP_BOUND_PUBLIC_CLIENTS.contains(&client_id)
+}
+
+/// `publicClientIssuanceRefusal()`: at the token endpoint, a request from
+/// that client carrying no DPoP proof (STS-OAUTH-0938). `dpop_jkt` is the
+/// proof key's thumbprint, `""` with no proof.
+pub fn public_client_issuance_refusal(
+    client_id: &str,
+    method: &str,
+    dpop_jkt: &str,
+    grant: &str,
+) -> Option<Refusal> {
+    if !dpop_bound_public_client(client_id, method) || !dpop_jkt.is_empty() {
+        return None;
+    }
+    Some(Refusal {
+        error: "invalid_dpop_proof",
+        code: codes::STS_OAUTH_0938,
+        setting: "the admin console is a public client",
+        description: format!(
+            "the admin console is a public client, and every token issued to it is bound to a key it proves \
+             possession of (RFC 9449). The {} request carried no DPoP proof. Send a DPoP header signed with the \
+             key the tokens are to be bound to.",
+            if grant.is_empty() { "token" } else { grant }
+        ),
+    })
 }
 
 /// `accessTokenDpopRequired()`.
@@ -64,6 +103,15 @@ pub fn access_token_refusal(
     };
     let dpop = "oauth2.accessTokenRequireDpop";
     let mtls = "oauth2.accessTokenRequireMtls";
+    // #446: whatever the two settings say, an unbound token issued to the
+    // console as a public client was not issued by the token endpoint as it
+    // stands, and is refused rather than believed.
+    if o.client_bound && o.bound_jkt.is_empty() {
+        return Some(Refusal { error: "invalid_token", code: codes::STS_OAUTH_0939,
+            setting: "the admin console is a public client", description: format!(
+            "{} accepts an access token issued to the admin console only when it is DPoP-bound (RFC 9449), \
+             because the console is a public client, and this token carries no cnf.jkt.", at) });
+    }
     if access_token_dpop_required(settings) {
         if o.bound_jkt.is_empty() {
             return Some(Refusal { error: "invalid_token", code: codes::STS_OAUTH_0528, setting: dpop, description: format!(

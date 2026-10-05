@@ -15,6 +15,9 @@
 //!   the certificate (RFC 8705, STS-API-0110) and the DPoP proof (RFC 9449,
 //!   STS-API-0120 and the proof's own code): this gate verifies its own
 //!   token, so it has to ask for itself.
+//! * **#446's two rules**: a token whose sign-on session has ended is
+//!   refused (STS-API-0126), and a token issued to the admin console as a
+//!   PUBLIC client is honoured only DPoP-bound (STS-OAUTH-0939).
 //! * **What it answers**: the claims and the scope the request needs
 //!   (`admin:read` for a GET, `admin:write` otherwise, `device:compliance`
 //!   for the MDM feed). The caller then makes the declared-scope, role and
@@ -70,6 +73,15 @@ pub struct Gate<'a> {
     /// Whether a person's account is disabled.
     pub disabled: &'a dyn Fn(&str) -> bool,
     pub dpop: &'a dyn ProofContext,
+    /// Whether the sign-on session the token was issued on (found by its
+    /// jti in the issuing realm's token register) has ENDED (#446). False
+    /// for a token issued on no session, or one the register no longer
+    /// holds, which is honoured until it expires.
+    pub session_ended: &'a dyn Fn(&str) -> bool,
+    /// The `token_endpoint_auth_method` a client's entry declares in the
+    /// realm that issued the token (#446), for the console-as-public-client
+    /// rule.
+    pub client_method: &'a dyn Fn(&str) -> String,
     pub eddsa_curve: &'a str,
 }
 
@@ -245,6 +257,14 @@ impl Gate<'_> {
             return Err(invalid(codes::STS_API_0122, scope,
                 "That access token has been revoked, or the account it was issued to is disabled.".into()));
         }
+        // #446: a token dies with the sign-on session it was issued on, for
+        // every client, as the server-rendered console's session did.
+        if !jti.is_empty() && (self.session_ended)(jti) {
+            return Err(invalid(codes::STS_API_0126, scope,
+                "That access token was issued on a sign-on session that has since ended, by a sign-out or by \
+                 running out. Sign in again to be issued another."
+                    .into()));
+        }
         let typ = JwtAccessTokens::typ_of(&token);
         if !JwtAccessTokens::is_access_token_type(&typ) {
             return Err(invalid(codes::STS_API_0082, scope, format!(
@@ -349,6 +369,13 @@ impl Gate<'_> {
                 && arrived.certificate.map(certificate_thumbprint).as_deref()
                     == Some(bound_thumbprint.as_str()),
             mtls_available: arrived.mtls_available,
+            client_bound:
+                sts_oauth::sender_constraints::DPOP_BOUND_PUBLIC_CLIENTS
+                    .contains(&client)
+                    && sts_oauth::sender_constraints::dpop_bound_public_client(
+                        client,
+                        &(self.client_method)(client),
+                    ),
         };
         if let Some(r) = access_token_refusal(self.settings, &presented) {
             return Err(Refused {

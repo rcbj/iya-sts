@@ -64,7 +64,7 @@ is an ordinary outcome.
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 26
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 47
 * [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 255
-* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 692
+* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 694
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 97
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 25
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 16
@@ -85,7 +85,7 @@ is an ordinary outcome.
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 88
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 34
 * [Admin console (`STS-ADMIN`)](#sts-admin) — 220
-* [Management API (`STS-API`)](#sts-api) — 75
+* [Management API (`STS-API`)](#sts-api) — 76
 * [User portal (`STS-PORTAL`)](#sts-portal) — 83
 * [Sign-out (`STS-LOGOUT`)](#sts-logout) — 7
 * [Registries (`STS-REG`)](#sts-reg) — 150
@@ -2047,6 +2047,8 @@ Raised from: oauth-oidc/, common/person_assertions.js.
 | `STS-OAUTH-0919` | Limits lowered on the consent screen no longer meet the authorization detail type's limits schema (#432 phase 5). | HTTP 400 invalid_request (the consent form) |
 | `STS-OAUTH-0936` | An authorization request's authorization_details carry a type whose catalogue entry requires an authentication level, and the session — after one sign-in for it — does not meet it (#432 phase 6, RFC 9470). | RFC 9470 section 5 (unmet_authentication_requirements) |
 | `STS-OAUTH-0937` | A token request would issue authorization_details of a type whose catalogue entry requires an authentication level the grant's authentication does not meet — or a grant with no person behind it (#432 phase 6). | RFC 9396 (invalid_authorization_details, HTTP 400) |
+| `STS-OAUTH-0938` | The admin console, declared as a public client, asked the token endpoint for tokens with no DPoP proof. Every token issued to it as a public client is bound to a key it proves (#446). | invalid_dpop_proof (HTTP 400) |
+| `STS-OAUTH-0939` | An access token issued to the admin console as a public client was presented at a resource carrying no cnf.jkt. Such a token is honoured only DPoP-bound (#446). | invalid_token (HTTP 401) |
 
 ## STS-SAML
 
@@ -4186,9 +4188,9 @@ Raised from: mgmt-api/.
 | `STS-API-0003` | A management API access token had expired. | HTTP 401 invalid_token, WWW-Authenticate: Bearer error="invalid_token" |
 | `STS-API-0004` | A management API access token was audienced to a different resource server than /admin-api. | HTTP 403 forbidden |
 | `STS-API-0005` | The XACML access policy refused a management API request made with a valid token, usually because the token lacks the admin:read or admin:write scope the method needs. | HTTP 403 forbidden |
-| `STS-API-0006` | In product mode with the token gate off, the XACML access policy refused a management API caller who does hold a console role. | HTTP 403 forbidden |
-| `STS-API-0007` | In product mode with the token gate off, a management API request arrived with nobody signed in. | HTTP 401 JSON (HTTP 403 page for a browser) |
-| `STS-API-0008` | In product mode with the token gate off, a signed-in management API caller did not hold the console role the method needs. | HTTP 403 forbidden (HTTP 403 page for a browser) |
+| `STS-API-0006` *(retired)* | In product mode with the token gate off, the XACML access policy refused a management API caller who does hold a console role. Retired by #446: product mode ignores adminApi.authRequired=false, so the token is always required there and nothing falls back to a console session. | — |
+| `STS-API-0007` *(retired)* | In product mode with the token gate off, a management API request arrived with nobody signed in. Retired by #446, as STS-API-0006 was. | — |
+| `STS-API-0008` *(retired)* | In product mode with the token gate off, a signed-in management API caller did not hold the console role the method needs. Retired by #446, as STS-API-0006 was. | — |
 | `STS-API-0009` | A management API request body did not match the operation's JSON Schema (an unknown member, a wrong type, or a value outside a closed set its enum declares — #86). | HTTP 400 { ok: false, errors } |
 | `STS-API-0010` | A management API request schema would not compile at startup, so that operation runs unvalidated. | — |
 | `STS-API-0011` | The crypto reporter slot that admin-ui/crypto_metadata.ts fills was not installed, so the crypto report, the key list or a key export could not be answered. | HTTP 503 { ok: false, errors } |
@@ -4256,6 +4258,7 @@ Raised from: mgmt-api/.
 | `STS-API-0123` | A management API access token carried the admin scope an operation needs, and the client it was issued to does not declare that scope in its oauthAllowedScope (in the realm that issued it). | HTTP 403 forbidden |
 | `STS-API-0124` | A management API query parameter held a value outside the closed set its operation's enum declares (#86). | HTTP 400 { ok: false, errors } |
 | `STS-API-0125` | A management API access token carried the admin scope an operation needs, and its subject — a person, or the application on a client_credentials token — no longer holds a role authorizing it in the realm that issued it (#302, #303). | HTTP 403 forbidden |
+| `STS-API-0126` | A management API access token was issued on a sign-on session that has since ended, by a sign-out or by running out, so the token is no longer honoured (#446). | invalid_token (HTTP 401) |
 
 ## STS-PORTAL
 
