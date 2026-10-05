@@ -21,10 +21,12 @@
 //   C. THE BUNDLE. It was built, and it runs in a context that has NO
 //      `require`, `process`, `module` or `Buffer` — a stand-in for a browser
 //      — and answers the page table.
-//   D. A CONVERTED PAGE IS ONE PAGE. `/admin/mode` drawn by the bundle from
-//      the view passed through JSON is, to the byte, what this process's own
-//      module draws, and carries every requirement and setting of the
-//      report.
+//   D. A CONVERTED PAGE IS ONE PAGE. Every page of the table, drawn by the
+//      bundle from its view passed through JSON, is to the byte what this
+//      process's own module draws — and `VIEWS` below must name a view for
+//      each, so a page cannot be converted without joining this check.
+//      `/admin/mode` is also held to carrying every requirement and setting
+//      of the report.
 //   E. THE TABLE IS TRUE. Every converted page is a page of the console, and
 //      names a management API operation that exists.
 // ===========================================================================
@@ -61,6 +63,22 @@ function childMain() {
     const adminApi = require(ROOT_DIR + '/mgmt-api/admin_api');
     const WebKit = require(ROOT_DIR + '/admin-ui/web_kit');
     const WebPages = require(ROOT_DIR + '/admin-ui/web_pages');
+    const workerPools = require(ROOT_DIR + '/admin-ui/worker_pools_admin');
+    const nodeHealth = require(ROOT_DIR + '/admin-ui/node_health_admin');
+    // THE VIEW OF EVERY CONVERTED PAGE, as its management API operation
+    // answers it. A page added to `web_pages.ts` owes a row here: D0 fails
+    // otherwise.
+    const VIEWS = {
+      '/admin/mode': function () {
+        return Promise.resolve(mode.report());
+      },
+      '/admin/node-health': function () {
+        return nodeHealth.nodeHealthView({});
+      },
+      '/admin/worker-pools': function () {
+        return workerPools.workerPoolsView({});
+      }
+    };
     const dir = pathC.join(ROOT_DIR, 'admin-ui');
 
     // --- A. the sources ---------------------------------------------------
@@ -170,14 +188,33 @@ function childMain() {
          (/\brequire\([^)]*\)/.exec(code) || [''])[0]);
 
     // --- D. a converted page is one page -------------------------------------
+    const unviewed = WebPages.PAGES.filter(function (page) {
+      return typeof VIEWS[page.path] !== 'function';
+    }).map(function (page) { return page.path; });
+    note(unviewed.length === 0,
+         'D0. this test has a view for every converted page',
+         unviewed.join(', '));
+    const differing = [];
+    for (let i = 0; i < WebPages.PAGES.length; i++) {
+      const page = WebPages.PAGES[i];
+      if (typeof VIEWS[page.path] !== 'function') {
+        continue;
+      }
+      const view = JSON.parse(JSON.stringify(await VIEWS[page.path]()));
+      const mine = WebPages.render(page.path, view);
+      const theirs = StsConsole ? StsConsole.render(page.path, view) : null;
+      if (typeof mine !== 'string' || mine.length < 100 || mine !== theirs) {
+        differing.push(page.path + ' (' + String(mine).length + ' against ' +
+                       String(theirs).length + ')');
+      }
+    }
+    note(differing.length === 0,
+         'D1. every converted page drawn by the bundle is, to the byte, ' +
+         'what this process draws from the same view (' +
+         WebPages.PAGES.length + ' page(s))', differing.join(', '));
     const report = mode.report();
-    const wire = JSON.parse(JSON.stringify(report));
-    const here = WebPages.render('/admin/mode', wire);
-    const there = StsConsole ? StsConsole.render('/admin/mode', wire) : null;
-    note(typeof here === 'string' && here.length > 200 && here === there,
-         'D1. /admin/mode drawn by the bundle is, to the byte, what this ' +
-         'process draws from the same view',
-         (here || '').length + ' against ' + (there || '').length);
+    const here = WebPages.render('/admin/mode',
+                                 JSON.parse(JSON.stringify(report)));
     const missing = report.requirements.filter(function (row) {
       return here.indexOf('id="requirement-' + WebKit.esc(row.id) + '"') < 0;
     }).concat(report.developmentOnlySettings.filter(function (row) {

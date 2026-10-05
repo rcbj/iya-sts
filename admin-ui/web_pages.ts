@@ -29,6 +29,8 @@
 
 import WebKit = require('./web_kit');
 import ModePage = require('./web_mode');
+import NodeHealthPage = require('./web_node_health');
+import WorkerPoolsPage = require('./web_worker_pools');
 
 type Json = any;
 
@@ -44,7 +46,11 @@ interface WebPage {
 
 const PAGES: WebPage[] = [
   { path: '/admin/mode', title: 'Mode', operation: '/admin-api/mode',
-    render: ModePage.render }
+    render: ModePage.render },
+  { path: '/admin/node-health', title: 'Node health',
+    operation: '/admin-api/node-health', render: NodeHealthPage.render },
+  { path: '/admin/worker-pools', title: 'Worker pools',
+    operation: '/admin-api/worker-pools', render: WorkerPoolsPage.render }
 ];
 
 /**

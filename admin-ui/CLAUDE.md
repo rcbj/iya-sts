@@ -7275,12 +7275,14 @@ directory:
 
 ### What a `web_` module is
 
-A file in this directory whose name begins `web_`. Three of them exist:
+A file in this directory whose name begins `web_`:
 
 | File | What it is |
 |---|---|
 | `web_kit.ts` | The rendering kit: `esc()`, `tile()`, and the prose helpers `note()`, `warn()`, `tip()`, `foldOf()` and what they stand on, moved VERBATIM out of `AdminConsole`. The methods of those names in `admin.ts` are delegates. |
 | `web_mode.ts` | The body of `/admin/mode`, from `GET /admin-api/mode`'s answer. It was `ModeAdmin.html()`. |
+| `web_worker_pools.ts` | The body of `/admin/worker-pools`. It was `WorkerPoolsAdmin`'s four drawing methods. |
+| `web_node_health.ts` | The body of `/admin/node-health`. It was `NodeHealthAdmin`'s nine drawing methods; it carries its own `MIB` and `round1()`, which the view's module has too, because it may not require that module. |
 | `web_pages.ts` | The table of converted pages (path, title, operation, renderer), and the ENTRY of the browser bundle. |
 
 **A `web_` MODULE MAY REQUIRE ANOTHER `web_` MODULE AND NOTHING ELSE.** No
@@ -7326,9 +7328,28 @@ image's strip takes its comments with the rest. esbuild is
    moves to the kit first, verbatim, leaving a delegate.
 3. **The page's own module calls it through `JSON.parse(JSON.stringify(view))`**
    until the cutover. `mode_admin.ts` is the pattern.
-4. **A row in `web_pages.ts`.**
+4. **A row in `web_pages.ts`**, and the page's view in
+   `tests/console_web_bundle.js`'s `VIEWS`, which fails for a converted page
+   it has no view of.
+
+**`tests/tools/convert-console-page.py` DOES STEP 2 AND 3** for a page whose
+renderer is already methods that take the view: it moves the named methods
+into a new `web_` file as static methods, drops what only a server has (the
+`deps` destructuring, every `log.debug()`), turns `admin.` into `kit.`, and
+leaves the entry method behind as the round-trip delegate. It refuses a
+helper the kit lacks rather than guessing. `tsc` then reports what it cannot
+see: a module constant or a static of the old class that the moved code read.
 
 **NOT BUILT YET**: the runtime that signs in (authorization code, PKCE, a
 non-extractable DPoP key), fetches, routes and draws the shell; the static
-route that serves it; and every page but `/admin/mode`.
+route that serves it; and every page but the three above.
+
+**WHICH PAGES ARE NEXT IS DECIDED BY THE KIT.** Of the page modules outside
+`admin.ts`, four more need nothing the kit lacks but have FORMS, so their
+renderers need to be told whether the reader may write
+(`claims_providers_admin`, `grant_management_admin`,
+`provider_commands_admin`, `ssf_transmitters_admin`). The helpers the others
+wait on, by how many page modules call them: `pageNavPair` and the paging
+furniture, `configFormsFor` (the settings forms), `clipped`, `upTo` and
+`messagesOf` (which belong to the shell).
 
