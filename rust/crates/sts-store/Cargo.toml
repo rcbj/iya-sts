@@ -1,0 +1,28 @@
+# SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+# SPDX-License-Identifier: BUSL-1.1
+
+[package]
+name = "sts-store"
+version = "0.1.0"
+description = "The one place the runtime writes anything down: the driver contract and its memory, ldif and postgres drivers (persistence/)."
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+sts-core.workspace = true
+base64.workspace = true
+chrono.workspace = true
+indexmap.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+tokio.workspace = true
+
+[lints]
+workspace = true
