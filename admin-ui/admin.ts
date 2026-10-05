@@ -12335,6 +12335,57 @@ class AdminConsole {
   // What a ROLE is called on this console, off `delegation.ROLES` rather than
   // out of a list here — the same rule the mechanism filter follows. A role
   // that existed in the store and was unnamed on a page would be a blank cell.
+  // ---------------------------------------------------------------------------
+  // THE WHOLE PICTURE AS ONE ANSWER, FOR THE MANAGEMENT API (#446, 2026-10-05).
+  //
+  // `/admin/delegation/map` had no operation, by rule 7 read exactly: it has
+  // no form. A console that is a static client of `/admin-api` needs one all
+  // the same, because three things on that page are known only to this
+  // process: what each box IS (`delegationLooks()` asks the directory and the
+  // application registry), where each box GOES (dagre, laid out on the
+  // server), and the markup of the drawing. So the answer is the page's own
+  // JSON — the graph, the filter, the counts — with `looks` and `svg` added.
+  //
+  // IT IS THE SAME FOUR CALLS THE PAGE'S ROUTE MAKES, in its order, and
+  // deliberately not yet the route's own source of them: the route is left as
+  // it is until its page is converted (#446 step 3), when both will be this.
+  // ---------------------------------------------------------------------------
+  /**
+   * Builds the delegation picture as one answer: the graph, every box's look,
+   * the counts and the drawing.
+   *
+   * @param query - the page's query: the delegation filter
+   * @param options - `links` (true by default): false draws the document
+   *   with no links in it, as `?format=svg` answers
+   * @returns the page's JSON with `summary`, `looks`, `label` and `svg`
+   */
+  delegationMapModel(query, options?) {
+    const { log, delegationMap } = this.deps;
+    log.debug("Entering AdminConsole.delegationMapModel().");
+    const view = delegationView(query || {});
+    const graph = view.graph;
+    const look = this.delegationLooks(graph, knownUserKeys());
+    const label = 'Delegation relationships in this service, as a diagram';
+    const drawn = delegationMap.render(graph, {
+      resolve: look.resolve, labelOf: look.labelOf,
+      links: !(options && options.links === false), id: 'delmap', label: label
+    });
+    const model = Object.assign({}, graph, {
+      filter: view.json.filter,
+      matched: view.filtered.length,
+      held: view.summary.held,
+      summary: view.summary,
+      drawing: { width: drawn.width, height: drawn.height,
+                 failed: drawn.failed || null },
+      looks: look.looks,
+      label: label,
+      svg: drawn.svg
+    });
+    log.debug("Leaving AdminConsole.delegationMapModel(). " + drawn.width +
+              "x" + drawn.height + ".");
+    return model;
+  }
+
   /**
    * Names a delegation role as the console shows it, from delegation.ROLES.
    *
@@ -49842,6 +49893,8 @@ const consoleExports = {
   },
   // above consoleJson().
   consoleJson: slot.forward('consoleJson'),
+  // The delegation picture as one answer, for `/admin-api` (#446).
+  delegationMapModel: slot.forward('delegationMapModel'),
   // The audit log's view is the whole function rather than a JSON builder, for
   // the reason the block above consoleJson() gives: the filtering and the
   // paging are work both the page and the API need, and two copies of it would

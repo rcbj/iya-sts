@@ -1240,6 +1240,40 @@ is who did it.
 
 `tests/admin_api_actor.js` holds it.
 
+## A PAGE WITH NO FORM GETS AN OPERATION TOO, NOW (#446, 2026-10-05)
+
+Rule 7 asks for an operation per CONTROL, so the drill-downs that only draw
+something had none: the delegation pictures, the federation picture, the
+credential lineage. That was the rule read exactly, and it stops being
+enough when the console is a static client of this API: such a page shows
+things only this process knows.
+
+**`GET /admin-api/delegation/map` is the first, and the pattern for the
+rest.** It answers `AdminConsole.delegationMapModel()`: the page's own JSON
+(the graph, the filter, the counts) plus the three things the browser cannot
+work out —
+
+* `looks`, what each node IS (label, shape, identifier, console link), which
+  `delegationLooks()` asks the directory and the application registry;
+* `svg`, the drawing, laid out by dagre on the server, with its links;
+* `summary`, the counts the filter's choices show.
+
+`format=svg` answers the document alone with no links, as the page's own
+`?format=svg` does. The five filter parameters are declared once
+(`delegationFilter`) for it and for `GET /admin-api/delegation`.
+
+**THE PAGE'S ROUTE IS NOT YET BUILT ON THE MODEL.** The model makes the same
+four calls the route makes; the route is left alone until its page is
+converted, when both become this one function.
+
+**STILL WITHOUT AN OPERATION**, each needing the same treatment:
+`/admin/delegation/chain`, `/application`, `/user`, `/allowed` and the picture
+on `/cluster`; `/admin/federation/map`; `/admin/tokens/credential`. Two the
+first inventory listed need none: the key-history rows already carry each
+certificate's PEM, and the PKI pane's export is `POST /admin-api/pki/export`.
+
+`tests/admin_api_delegation_map.js` holds it.
+
 ## A TOKEN DIES WITH THE SIGN-ON SESSION IT WAS ISSUED ON (#446, 2026-10-05)
 
 The server-rendered console held a relying-party session that named the

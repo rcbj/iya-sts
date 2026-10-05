@@ -7639,6 +7639,15 @@ const ENDPOINTS: EndpointEntry[] = [
           'grant. It does not repeat the document — the operation above is ' +
           'the document. Mirrors GET /admin/api-explorer, which is where the ' +
           'explorer itself moved on 2026-09-09.' },
+  { path: '/admin-api/delegation/map', group: 'Management API',
+    name: 'The delegation picture',
+    specs: [],
+    what: 'NON-SPEC. Mirrors GET /admin/delegation/map (#446): the acts of ' +
+          'GET /admin-api/delegation as a graph, what each node is (its ' +
+          'label, shape, identifier and console page, from the directory ' +
+          'and the application registry), the counts the filter shows, and ' +
+          'the drawing as SVG laid out on the server. `format=svg` answers ' +
+          'the SVG document alone, with no links in it.' },
   { path: '/admin-api/me', group: 'Management API', name: 'The caller',
     specs: [],
     what: 'NON-SPEC. What this API\'s gate decided for the access token ' +

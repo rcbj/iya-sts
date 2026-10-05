@@ -2285,6 +2285,42 @@ class AdminApi {
     const self = this;
     log.debug("Entering AdminApi.buildRoutes().");
     const closed = this.closedLists();
+    // THE DELEGATION FILTER, declared once: the acts (`/delegation`) and
+    // the picture of them (`/delegation/map`, #446) take the same five
+    // parameters, as the two console pages do.
+    const delegationFilter: any[] = [
+      { name: 'type', in: 'query', required: false,
+        schema: { type: 'string',
+                  enum: closed.delegationTypes },
+        description: 'One mechanism. The reply\'s `types` member ' +
+                     'describes each of them, with the specification it ' +
+                     'comes from and whether this service polices it.' },
+      { name: 'mode', in: 'query', required: false,
+        schema: { type: 'string', enum: closed.delegationModes },
+        description: 'The protocol-independent axis: whether what came ' +
+                     'out carries the chain. ' +
+                     'ANDed with `type`, so a mode ' +
+                     'that does not match the mechanism matches nothing.' },
+      { name: 'outcome', in: 'query', required: false,
+        schema: { type: 'string', enum: closed.delegationOutcomes },
+        description: 'Two rather than the audit log\'s three: a ' +
+                     'delegation is DECIDED rather than ' +
+                     'performed, so there is no third ' +
+                     'answer between issuing the credential and refusing ' +
+                     'to.' },
+      { name: 'protocol', in: 'query', required: false,
+        schema: { type: 'string' },
+        description: 'The family, spelled as /admin-api/users spells it ' +
+                     '— `Kerberos v5`, `WS-Trust`, `OAuth 2.0`. Free ' +
+                     'text rather than an enum, for the reason the audit ' +
+                     'log\'s `protocol` is.' },
+      { name: 'q', in: 'query', required: false, schema: { type: 'string' },
+        description: 'Substring of ANY party of the chain (normalised ' +
+                     'name, presented form or application) or of either ' +
+                     'explanation, case-insensitive. One box over six ' +
+                     'fields, because the fact a caller has names one of ' +
+                     'them and not which column it is in.' }
+    ];
     const ROUTES: any[] = [
       { method: 'GET', path: BASE, tag: 'Service',
         operationId: 'getIndex',
@@ -18302,39 +18338,7 @@ class AdminApi {
                      '/admin-api/users.\n\nWALK IT BY `seq`: ' +
                      'monotonic and never reused, including across a drop.',
         mirrors: 'GET /admin/delegation',
-        parameters: [
-          { name: 'type', in: 'query', required: false,
-            schema: { type: 'string',
-                      enum: closed.delegationTypes },
-            description: 'One mechanism. The reply\'s `types` member ' +
-                         'describes each of them, with the specification it ' +
-                         'comes from and whether this service polices it.' },
-          { name: 'mode', in: 'query', required: false,
-            schema: { type: 'string', enum: closed.delegationModes },
-            description: 'The protocol-independent axis: whether what came ' +
-                         'out carries the chain. ' +
-                         'ANDed with `type`, so a mode ' +
-                         'that does not match the mechanism matches nothing.' },
-          { name: 'outcome', in: 'query', required: false,
-            schema: { type: 'string', enum: closed.delegationOutcomes },
-            description: 'Two rather than the audit log\'s three: a ' +
-                         'delegation is DECIDED rather than ' +
-                         'performed, so there is no third ' +
-                         'answer between issuing the credential and refusing ' +
-                         'to.' },
-          { name: 'protocol', in: 'query', required: false,
-            schema: { type: 'string' },
-            description: 'The family, spelled as /admin-api/users spells it ' +
-                         '— `Kerberos v5`, `WS-Trust`, `OAuth 2.0`. Free ' +
-                         'text rather than an enum, for the reason the audit ' +
-                         'log\'s `protocol` is.' },
-          { name: 'q', in: 'query', required: false, schema: { type: 'string' },
-            description: 'Substring of ANY party of the chain (normalised ' +
-                         'name, presented form or application) or of either ' +
-                         'explanation, case-insensitive. One box over six ' +
-                         'fields, because the fact a caller has names one of ' +
-                         'them and not which column it is in.' }
-        ].concat(this.pagingParameters()),
+        parameters: delegationFilter.concat(this.pagingParameters()),
         responseDescription: 'The matching acts, the distinct chains among ' +
                              'them, the configured Kerberos policy, and the ' +
                              'vocabulary the filters take.',
@@ -18343,6 +18347,54 @@ class AdminApi {
           log.debug("Entering the management API delegation endpoint.");
           self.sendJson(res, 200, adminViews.delegationView(req.query).json);
           log.debug("Leaving the management API delegation endpoint.");
+        } },
+
+      // THE PICTURE OF THOSE ACTS (#446, 2026-10-05). The console page had no
+      // operation — it has no form — and a console that is a static client
+      // of this API needs what only this process knows about it: what each
+      // box IS, where it GOES, and the drawing's markup. See
+      // `AdminConsole.delegationMapModel()`.
+      { method: 'GET', path: BASE + '/delegation/map', tag: 'Delegation',
+        operationId: 'getDelegationMap',
+        summary: 'The delegation picture: the graph, each box, the drawing',
+        description: 'The same acts as `GET /admin-api/delegation`, with ' +
+                     'the time taken out and the parties shared: a party ' +
+                     'that is the intermediary of six chains is ONE node ' +
+                     'with six edges. Drawn from everything that MATCHED ' +
+                     'the filter, not from one page of it.\n\n`nodes` and ' +
+                     '`edges` are the graph. `looks` says what each node ' +
+                     'IS, by node id: its label, its shape, the identifier ' +
+                     'a protocol would present for it, and the console ' +
+                     'page it links to — which the directory and the ' +
+                     'application registry decide. `svg` is the drawing, ' +
+                     'laid out on the server, with its links in it; ' +
+                     '`drawing` is its size, and says so if the layout ' +
+                     'failed. `summary` carries the counts by mechanism, ' +
+                     'kind and outcome that the filter\'s choices show.' +
+                     '\n\nWith `format=svg` the answer is the SVG document ' +
+                     'alone, with no links in it, as `image/svg+xml`.',
+        mirrors: 'GET /admin/delegation/map',
+        parameters: delegationFilter.concat([
+          { name: 'format', in: 'query', required: false,
+            schema: { type: 'string', enum: ['json', 'svg'] },
+            description: '`svg` answers the drawing alone, as a document ' +
+                         'with no links in it. `json`, the default, ' +
+                         'answers everything.' }
+        ]),
+        responseDescription: 'The graph, every node\'s look, the counts ' +
+                             'and the drawing.',
+        handler: function (req, res) {
+          log.debug("Entering the management API delegation map endpoint.");
+          if (String((req.query || {}).format || '') === 'svg') {
+            const bare = admin.delegationMapModel(req.query, { links: false });
+            res.status(200).set('Cache-Control', 'no-store')
+               .type('image/svg+xml').send(bare.svg);
+            log.debug("Leaving the management API delegation map endpoint. " +
+                      "Answered SVG.");
+            return;
+          }
+          self.sendJson(res, 200, admin.delegationMapModel(req.query));
+          log.debug("Leaving the management API delegation map endpoint.");
         } },
 
       // THE WS-TRUST AND TOKEN-EXCHANGE DELEGATION POLICY (#108, 2026-09-23)
