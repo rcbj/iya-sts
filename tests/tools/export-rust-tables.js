@@ -28,7 +28,7 @@ const fs = require('fs');
 const path = require('path');
 
 const ROOT = path.join(__dirname, '..', '..');
-const DATA = path.join(ROOT, 'rust', 'crates', 'sts-core', 'data');
+const DATA = path.join(ROOT, 'rust', 'crates', 'sts-core', 'tables');
 
 // Each export: the file it writes and the document it holds. Key order is
 // the table's, so a diff of the export reads like a diff of the table.
