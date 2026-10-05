@@ -28162,15 +28162,12 @@ class AdminConsole {
     log.debug("Entering AdminConsole.kerberosPreauthStatusBlock().");
     const provider = krb5Principals.preauthProvider();
     const refuses = !mode.issuesTicketsOnPasswordAlone();
-    const info = provider ? provider.policy() : {
+    const base = provider ? provider.policy() : {
       fast: false,
       passwordAloneForSecondFactorAccounts: refuses ? 'refused' : 'accepted',
       note: 'no FAST provider is installed in this process (it arrives with ' +
             'the directory), so FAST and OTP pre-authentication are not ' +
             'offered'
-    };
-    const row = (what: string, answer: string) => {
-      return '<tr><th>' + this.esc(what) + '</th><td>' + answer + '</td></tr>';
     };
     // THE KRBTGT KEY (#169): its kvno, last rotation and next scheduled one,
     // drawn here as well as on Principals (where its controls are) because
@@ -28185,103 +28182,17 @@ class AdminConsole {
                 ((e && e.message) || e));
       krbtgt = null;
     }
-    const krbtgtHtml = !krbtgt ? '' :
-      '<h3>The krbtgt key</h3>' +
-      '<table class="key"><tr><th>What</th><th>Answer</th></tr>' +
-      row('Key from', this.esc(krbtgt.source === 'stored'
-        ? 'a random key stored on the directory'
-        : krbtgt.source === 'password'
-          ? 'krb5.krbtgtPassword (development)'
-          : krbtgt.source === 'unreadable'
-            ? 'a stored record this service cannot open — no TGT is issued'
-            : 'nothing yet — no TGT is issued')) +
-      row('kvno', this.esc(krbtgt.kvno == null ? '—' : String(krbtgt.kvno))) +
-      row('Last rotated', this.esc(krbtgt.lastRotatedAt || 'never')) +
-      row('Next scheduled rotation', krbtgt.scheduled
-        ? this.esc(String(krbtgt.nextDueAt || '—'))
-        : 'none — ' + this.esc(String(krbtgt.offReason || ''))) +
-      row('Previous versions kept', this.esc((krbtgt.retained || [])
-        .map(function (one: any) {
-          return 'kvno ' + one.kvno + ' until ' + one.expiresAt;
-        }).join('; ') || 'none')) +
-      '</table>' +
-      '<p><a href="/admin/kerberos/principals">Rotate it on ' +
-      'Principals</a></p>';
     // PKINIT (#179): a certificate as the pre-authentication, and anonymous
     // PKINIT as FAST armor — `kerberos/krb5_pkinit.ts`'s policy().
     const pkinitProvider = krb5Principals.pkinitProvider();
     const pkinit = pkinitProvider ? pkinitProvider.policy() : null;
-    const pkinitHtml = !pkinit ? '' :
-      '<h3>PKINIT: a certificate as the pre-authentication</h3>' +
-      '<table class="key"><tr><th>What</th><th>Answer</th></tr>' +
-      row('PKINIT (RFC 4556)', pkinit.pkinit
-        ? '<span class="state-valid">on</span> — ' +
-          this.esc(pkinit.clientCertificates)
-        : '<span class="state-none">off</span> (<code>krb5.pkinit</code>)') +
-      row('Key agreement', this.esc(pkinit.keyAgreement.join(', ')) +
-          '; RSA key transport ' + this.esc(pkinit.rsaKeyTransport)) +
-      row('Reply key (RFC 8636)', this.esc(pkinit.kdfs.join(', ')) +
-          (pkinit.legacyKdf ? '; RFC 4556\'s own derivation ACCEPTED ' +
-                              '(<code>krb5.pkinitLegacyKdf</code>)'
-                            : '; RFC 4556\'s own derivation refused')) +
-      row('Freshness token (RFC 8070)', pkinit.freshnessRequired
-        ? 'required' : 'accepted, not required') +
-      row('KDC certificate', pkinit.kdcCertificate
-        ? this.esc(pkinit.kdcCertificate.keyAlg + ', serial ' +
-                   pkinit.kdcCertificate.serialHex + ', expires ' +
-                   pkinit.kdcCertificate.notAfter) +
-          ' — from the Kerberos KDC Issuing CA on <a href="/admin/pki">' +
-          'PKI</a>; clients trust the service Root'
-        : 'none yet in this process — issued on the first PKINIT request, ' +
-          'with ' + this.esc(pkinit.kdcKeyAlgorithm)) +
-      row('What the ticket says', 'the indicators <code>pkinit</code>, and ' +
-          '<code>pkinit-hardware</code> with hw-authent for a smart-card ' +
-          'logon certificate over a key this service never held; ' +
-          '<code>/authn/spnego</code> reads them as <code>swk</code> and ' +
-          '<code>hwk</code>, never <code>pwd</code>') +
-      row('Anonymous PKINIT (RFC 8062)', pkinit.anonymousPkinit
-        ? '<span class="state-valid">on</span> — ' +
-          this.esc(pkinit.anonymousTickets) +
-          ' (<code>kinit -n</code>, then <code>kinit -T</code>)'
-        : '<span class="state-none">off</span> ' +
-          '(<code>krb5.anonymousPkinit</code>)') +
-      row('Post-quantum', this.esc(pkinit.postQuantum)) +
-      '</table>';
-    const html =
-      '<h3>Pre-authentication, and a second factor</h3>' +
-      '<table class="key"><tr><th>What</th><th>Answer</th></tr>' +
-      row('A password alone, for a person who holds or owes a second factor',
-          refuses
-            ? '<span class="state-valid">refused</span> — ' +
-              '<code>KDC_ERR_POLICY</code> (12), only after the password ' +
-              'verified; a wrong one is <code>KDC_ERR_PREAUTH_FAILED</code> ' +
-              'as for anybody (product mode)'
-            : '<span class="state-none">accepted</span> — development mode ' +
-              'issues a ticket on any password it accepts') +
-      row('FAST (RFC 6113)', info.fast
-        ? '<span class="state-valid">yes</span> — armor ' +
-          'FX_FAST_ARMOR_AP_REQUEST: a TGT the client host got with its own ' +
-          'keytab (a service principal from <a href="/admin/kerberos/' +
-          'principals">Principals</a>)'
-        : '<span class="state-none">no</span> — ' + this.esc(info.note)) +
-      row('Second factor over Kerberos', info.fast
-        ? 'RFC 6560 OTP pre-authentication inside FAST: the password as the ' +
-          'PIN and the person\'s authenticator app code, checked by the ' +
-          'sign-in screen\'s own verifier and once-only step ' +
-          '(<code>kinit -T &lt;armor ccache&gt;</code>). A smart-card or ' +
-          'security-key certificate is PKINIT, below.'
-        : 'none') +
-      row('What the ticket says', info.fast
-        ? 'the RFC 8129 authentication indicator <code>' +
-          this.esc(info.otpIndicator || 'otp') + '</code>, carried into ' +
-          'service tickets; <code>/authn/spnego</code> counts it as the ' +
-          'second factor (<code>amr</code> pwd, otp; <code>acr</code> mfa)'
-        : '—') +
-      '</table>' + pkinitHtml + krbtgtHtml;
-    const json = Object.assign({ passwordAloneRefused: refuses }, info,
+    // THE BLOCK'S JSON FIRST (#446), and the drawing from it alone.
+    const info = Object.assign({ passwordAloneRefused: refuses }, base,
                                { krbtgt: krbtgt, pkinit: pkinit });
-    log.debug("Leaving AdminConsole.kerberosPreauthStatusBlock().");
-    return { html: html, json: json };
+    // DRAWN BY `web_protocol_settings.ts` (#446) from the JSON this block
+    // answers, passed through JSON.
+    const html = ProtocolSettingsPage.kerberosPreauthStatus(JSON.parse(JSON.stringify(info)));
+    return { html: html, json: info };
   }
 
   /**
