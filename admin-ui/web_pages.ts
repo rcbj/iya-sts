@@ -58,6 +58,7 @@ import GroupsPage = require('./web_groups');
 import KerberosPrincipalsPage =
   require('../kerberos/web_kerberos_principals');
 import LogoutPage = require('../logout/web_logout');
+import LdapPage = require('../ldap/web_ldap');
 import ListenersPage = require('./web_listeners');
 import MailPage = require('./web_mail');
 import MailOutboxPage = require('./web_mail_outbox');
@@ -312,6 +313,51 @@ const PAGES: WebPage[] = [
     operation: '/admin-api/keys/history',
     render: function (view: Json, ctx?: Json): string {
       return CryptoMetadataPage.renderHistory(ctx || WebKit.context(), view);
+    } },
+  { path: '/admin/ldap/directory', title: 'Every entry in the directory',
+    operation: '/admin-api/ldap/directory',
+    render: function (view: Json, ctx?: Json): string {
+      return LdapPage.directory(ctx || WebKit.context(), view);
+    } },
+  { path: '/admin/ldap/peps', title: 'PEP entries',
+    operation: '/admin-api/ldap/peps',
+    render: function (view: Json, ctx?: Json): string {
+      return LdapPage.peps(ctx || WebKit.context(), view);
+    } },
+  { path: '/admin/ldap/policies', title: 'Policy entries',
+    operation: '/admin-api/ldap/policies',
+    render: function (view: Json, ctx?: Json): string {
+      return LdapPage.policies(ctx || WebKit.context(), view);
+    } },
+  { path: '/admin/ldap/service', title: 'The directory service',
+    operation: '/admin-api/ldap/service',
+    render: function (view: Json, ctx?: Json): string {
+      return LdapPage.service(ctx || WebKit.context(), view);
+    } },
+  { path: '/admin/ldap/applications', title: 'Application entries',
+    operation: '/admin-api/ldap/applications',
+    render: function (view: Json, ctx?: Json): string {
+      return LdapPage.applications(ctx || WebKit.context(), view);
+    } },
+  { path: '/admin/ldap/federations', title: 'Federation entries',
+    operation: '/admin-api/ldap/federations',
+    render: function (view: Json, ctx?: Json): string {
+      return LdapPage.federations(ctx || WebKit.context(), view);
+    } },
+  { path: '/admin/ldap/devices', title: 'Device entries',
+    operation: '/admin-api/ldap/devices',
+    render: function (view: Json, ctx?: Json): string {
+      return LdapPage.devices(ctx || WebKit.context(), view);
+    } },
+  { path: '/admin/ldap/roles', title: 'Role entries',
+    operation: '/admin-api/ldap/roles',
+    render: function (view: Json, ctx?: Json): string {
+      return LdapPage.roles(ctx || WebKit.context(), view);
+    } },
+  { path: '/admin/ldap/spiffe', title: 'SPIFFE entries',
+    operation: '/admin-api/ldap/spiffe',
+    render: function (view: Json, ctx?: Json): string {
+      return LdapPage.spiffe(ctx || WebKit.context(), view);
     } },
   { path: '/admin/listeners', title: 'Listeners',
     operation: '/admin-api/listeners', render: ListenersPage.render },

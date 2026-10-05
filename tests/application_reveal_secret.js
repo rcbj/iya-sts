@@ -16,7 +16,9 @@
 //   2. It refuses an id the application does not hold, a token it does not
 //      hold, and an application nobody recorded — STS-ADMIN-0842.
 //   3. It writes an audit row naming what was revealed and never the value.
-//   4. The application's GET answer still carries no value.
+//   4. The application's GET answer still carries no value, and neither do
+//      the directory's own pages (`/admin/ldap/applications`,
+//      `/admin/ldap/directory`), which show the attribute masked.
 // ---------------------------------------------------------------------------
 
 delete process.env.CONFIG_FILE;
@@ -105,6 +107,13 @@ function run(t) {
   t.check(JSON.stringify(list).indexOf(secret) < 0 &&
           list.applications.length === 1,
           '4b. nor does the list\'s');
+  ['applications', 'directory'].forEach(function (page) {
+    const ldap = adminViews.directoryPageJson(page, { query: { q: ID }, headers: {} });
+    const body = JSON.stringify(ldap && (ldap.json || ldap));
+    t.check(body.indexOf(secret) < 0 && body.indexOf(ID) >= 0,
+            '4c. nor does /admin-api/ldap/' + page + '\'s',
+            body.length + ' characters');
+  });
 
   adminActions.applicationsAction({ action: 'forget', application: ID });
   log.debug("Leaving run().");

@@ -6759,7 +6759,7 @@ class AdminConsole {
     return WebKit.wideTable(label, html);
   }
 
-  // Drawn by `web_scim.ts` (#446).
+  // The kit's (#446), where its reasoning went with it.
   /**
    * Draws one item of a prose list, folded when longer than a line.
    *
@@ -6774,7 +6774,7 @@ class AdminConsole {
     const { log } = this.deps;
     log.debug("Entering AdminConsole.bullet().");
     log.debug("Leaving AdminConsole.bullet().");
-    return ScimPage.bullet(html, label);
+    return WebKit.bullet(html, label);
   }
 
   /**

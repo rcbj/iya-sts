@@ -394,47 +394,8 @@ class ScimPage {
    * @returns the `<li>` as HTML
    */
   static bullet(html, label?) {
-    // Coerced once, here: a caller may hand this a number of rows or a
-    // fragment built by a .map(), and everything below slices and measures.
-    html = String(html == null ? '' : html);
-    const text = kit.plainTextOf(html);
-    if (!label && kit.visibleLength(text) <= kit.ONE_LINE_CHARS) {
-      return '<li>' + html + '</li>';
-    }
-
-    // AN ITEM THAT OPENS WITH A LINK IS NEVER FOLDED, and this is the rule that
-    // stops this helper quietly breaking two lists. The Overview page's list of
-    // every console page and the sidebar's are the same list, and each row of
-    // it IS a link — folding one puts the only control in the row behind a
-    // summary made of text, so the reader has to open the thing to find out it
-    // was the link they were looking for. A link inside a <summary> is also a
-    // control inside a control, which browsers resolve differently from each
-    // other.
-    if (/^\s*<a\b/i.test(html)) {
-      return '<li>' + html + '</li>';
-    }
-
-    // AN ITEM THAT OPENS WITH A CODE PATH KEEPS IT IN THE SUMMARY. The
-    // machine-readable lists here are a URL and then a paragraph about it, and
-    // the URL is what somebody came for — but <code> is not interactive, so it
-    // can sit in the summary beside the teaser rather than forcing the whole
-    // row open. This is why fold.summary is escaped everywhere else and this
-    // one place composes markup: the prefix is the caller's own element, and
-    // only the text after it is escaped.
-    const lead = /^\s*(<code\b[^>]*>[\s\S]*?<\/code>)/i.exec(html);
-    if (!label && lead) {
-      const rest = html.slice(lead[0].length).replace(/^[\s,—-]+/, '');
-      return '<li class="foldli"><details class="fold"><summary>' + lead[1] +
-             ' ' +
-             kit.teaserOf(kit.plainTextOf(rest)) + '</summary><div ' +
-               'class="foldbody">' +
-             rest + '</div></details></li>';
-    }
-
-    const fold = kit.foldOf(html, label);
-    return '<li class="foldli"><details class="fold"><summary>' + fold.summary +
-           '</summary><div class="foldbody">' + fold.body +
-           '</div></details></li>';
+    // The kit's since #446: the LDAP service page draws the same list.
+    return kit.bullet(html, label);
   }
 
   /**
