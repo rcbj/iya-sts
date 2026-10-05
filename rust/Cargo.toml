@@ -8,6 +8,7 @@
 resolver = "2"
 members = [
   "crates/sts-crypto",
+  "crates/sts-pki",
   "crates/sts-xml",
   "crates/sts-core",
   "crates/sts-xacml",
@@ -26,6 +27,7 @@ publish = false
 [workspace.dependencies]
 sts-core = { path = "crates/sts-core" }
 sts-crypto = { path = "crates/sts-crypto" }
+sts-pki = { path = "crates/sts-pki" }
 sts-xacml = { path = "crates/sts-xacml" }
 sts-xml = { path = "crates/sts-xml" }
 axum = "0.8"

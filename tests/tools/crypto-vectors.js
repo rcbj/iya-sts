@@ -1405,6 +1405,318 @@ async function sigstore() {
   };
 }
 
+// X.509 (the parent project's `x509.js`, which `sts-pki` ports): every
+// profile, every extension with values of every kind, every signature
+// algorithm under a chain, a hybrid certificate, PKCS#10 requests, and the
+// refusals — each with Node's DER, its describeCertificate() and its
+// verifyChain(), so Rust can issue the same spec and match the bytes where
+// the signer is deterministic and the TBSCertificate everywhere.
+async function x509Vectors() {
+  const x509 = require(path.join(ROOT, 'common', 'vendored', 'x509.js'));
+  const pqcX509 = require(path.join(ROOT, 'common', 'vendored',
+                                    'pqc_x509.js'));
+  const bytes = require(path.join(ROOT, 'common', 'vendored',
+                                  'crypto_bytes.js'));
+  const pair = function (type, options) {
+    const k = nodeCrypto.generateKeyPairSync(type, options);
+    return { priv: k.privateKey.export({ type: 'pkcs8', format: 'pem' }),
+             pub: k.publicKey.export({ type: 'spki', format: 'pem' }) };
+  };
+  const pqPair = async function (id) {
+    const k = await pqcX509.generateKeyPair(id);
+    const out = { pub: bytes.derToPem(pqcX509.encodeSpki(id, k.pub),
+                                      'PUBLIC KEY') };
+    if (pqcX509.alg(id).use === 'sig') {
+      out.priv = bytes.derToPem(pqcX509.encodePkcs8(id, k.priv,
+                                                    { form: 'seed' }),
+                                'PRIVATE KEY');
+    }
+    return out;
+  };
+  const keys = {
+    rsa: pair('rsa', { modulusLength: 2048 }),
+    rsa2: pair('rsa', { modulusLength: 3072 }),
+    p256: pair('ec', { namedCurve: 'prime256v1' }),
+    p384: pair('ec', { namedCurve: 'secp384r1' }),
+    p521: pair('ec', { namedCurve: 'secp521r1' }),
+    ed25519: pair('ed25519'),
+    mldsa65: await pqPair('ML-DSA-65'),
+    slh: await pqPair('SLH-DSA-SHA2-128f'),
+    composite: await pqPair('mldsa65-ecdsa-p256-sha512'),
+    mlkem: await pqPair('ML-KEM-768')
+  };
+  const keyFor = { 'sha256-rsa': 'rsa', 'sha384-rsa': 'rsa',
+                   'sha512-rsa': 'rsa', 'sha1-rsa': 'rsa',
+                   'sha256-rsapss': 'rsa', 'sha384-rsapss': 'rsa',
+                   'sha512-rsapss': 'rsa', 'sha256-ecdsa': 'p256',
+                   'sha384-ecdsa': 'p384', 'sha512-ecdsa': 'p521',
+                   'sha1-ecdsa': 'p256', ed25519: 'ed25519',
+                   'ml-dsa-65': 'mldsa65', 'slh-dsa-sha2-128f': 'slh',
+                   'mldsa65-ecdsa-p256-sha512': 'composite' };
+  const window = { notBefore: '2026-01-02T03:04:05.000Z',
+                   notAfter: '2036-01-02T03:04:05.000Z' };
+  const everything = x509.defaultExtensions('tls-server');
+  Object.assign(everything.subjectAltName, { present: true, names: [
+    { kind: 'dns', value: 'host.example' },
+    { kind: 'email', value: 'a@example.com' },
+    { kind: 'uri', value: 'spiffe://example.org/w' },
+    { kind: 'ip', value: '192.0.2.7' },
+    { kind: 'ip', value: '2001:db8::1' },
+    { kind: 'dirName', value: 'CN=Inner, O=Org, C=US' },
+    { kind: 'registeredID', value: '1.2.3.4.5' },
+    { kind: 'upn', value: 'alice@example.com' },
+    { kind: 'krb5', value: 'alice@EXAMPLE.COM' },
+    { kind: 'otherName', oid: '1.2.3.9', value: 'DAVoZWxsbw==' }] });
+  Object.assign(everything.issuerAltName, { present: true,
+    names: [{ kind: 'uri', value: 'https://ca.example/' }] });
+  Object.assign(everything.cRLDistributionPoints, { present: true,
+    urls: ['http://crl.example/a.crl', 'http://crl.example/b.crl'] });
+  Object.assign(everything.freshestCRL, { present: true,
+    urls: ['http://crl.example/delta.crl'] });
+  Object.assign(everything.authorityInfoAccess, { present: true, entries: [
+    { method: 'ocsp', url: 'http://ocsp.example/' },
+    { method: 'caIssuers', url: 'http://ca.example/ca.cer' }] });
+  Object.assign(everything.subjectInfoAccess, { present: true, entries: [
+    { method: 'caRepository', url: 'http://repo.example/' },
+    { method: '1.2.3.4', url: 'http://other.example/' }] });
+  Object.assign(everything.certificatePolicies, { present: true, policies: [
+    { oid: '2.23.140.1.2.1' },
+    { oid: '1.3.6.1.4.1.99.1', cps: 'https://cps.example/',
+      notice: 'Notice text é' }] });
+  Object.assign(everything.policyMappings, { present: true, mappings: [
+    { issuer: '1.2.3.1', subject: '1.2.3.2' }] });
+  Object.assign(everything.policyConstraints, { present: true,
+    requireExplicitPolicy: '0', inhibitPolicyMapping: 3 });
+  Object.assign(everything.nameConstraints, { present: true,
+    permitted: [{ kind: 'dns', value: '.example' },
+                { kind: 'ip', value: '10.0.0.0/12' },
+                { kind: 'ip', value: '2001:db8::/32', minimum: 0,
+                  maximum: '' },
+                { kind: 'email', value: 'example.com', minimum: 1,
+                  maximum: 5 }],
+    excluded: [{ kind: 'dirName', value: 'O=Bad' }] });
+  Object.assign(everything.inhibitAnyPolicy, { present: true,
+    skipCerts: '2' });
+  Object.assign(everything.privateKeyUsagePeriod, { present: true,
+    notBefore: '2026-01-02T03:04:05Z', notAfter: '2027-06-30T00:00:00Z' });
+  Object.assign(everything.tlsFeature, { present: true,
+    features: [5, '17', 'x'] });
+  Object.assign(everything.netscapeCertType, { present: true,
+    types: ['sslServer', 'objectSigningCA'] });
+  Object.assign(everything.netscapeComment, { present: true,
+    text: 'a comment' });
+  everything.ocspNoCheck.present = true;
+  everything.extKeyUsage.usages.push('1.2.3.99', 'kdcAuthentication');
+  everything.authorityKeyIdentifier.includeIssuerAndSerial = true;
+  everything.custom = [{ oid: '1.2.3.77', critical: true, value: 'BQA=' },
+                       { oid: '1.2.3.78', value: '' }];
+
+  const certs = [];
+  const issue = async function (name, spec, chain) {
+    const row = { name: name, spec: spec };
+    try {
+      const out = await x509.issueCertificate(spec);
+      row.der = Buffer.from(out.der).toString('base64');
+      row.pem = out.pem;
+      row.result = { serialHex: out.serialHex, subject: out.subject,
+                     issuer: out.issuer, notBefore: out.notBefore,
+                     notAfter: out.notAfter, signatureAlg: out.signatureAlg };
+      row.describe = await x509.describeCertificate(out.pem);
+      row.chain = [out.pem].concat(chain || []);
+      row.links = await x509.verifyChain(row.chain);
+    } catch (e) {
+      row.error = e.message;
+    }
+    certs.push(row);
+    return row;
+  };
+  const selfSigned = function (alg, extra) {
+    const k = keys[keyFor[alg]];
+    return Object.assign({ subject: 'CN=' + alg + ', O=Example, C=US',
+                           subjectPublicKey: k.pub, issuerPrivateKey: k.priv,
+                           signatureAlg: alg, serial: '0a1b2c', profile:
+                           'root-ca' }, window, extra || {});
+  };
+
+  for (const id of x509.profileIds()) {
+    await issue('profile ' + id, Object.assign({
+      subject: [{ name: 'CN', value: x509.defaultSubjectCN(id) },
+                { name: 'O', value: 'Example Corp' },
+                { name: 'C', value: 'US' },
+                { name: 'emailAddress', value: 'x@example.com' },
+                { name: 'DC', value: 'example' },
+                { oid: '1.2.3.4', value: 'custom' },
+                { name: 'OU', value: '' }],
+      subjectPublicKey: keys.rsa.pub, issuerPrivateKey: keys.rsa.priv,
+      signatureAlg: 'sha256-rsa', serial: 'ff01', profile: id,
+      extensions: x509.defaultExtensions(id) }, window));
+  }
+  const roots = {};
+  for (const alg of Object.keys(keyFor)) {
+    roots[alg] = await issue('self-signed ' + alg, selfSigned(alg));
+  }
+  // A leaf under each root, by a different key, with every extension.
+  for (const alg of Object.keys(keyFor)) {
+    const root = roots[alg];
+    if (!root.pem) continue;
+    const k = keys[keyFor[alg]];
+    await issue('leaf under ' + alg, Object.assign({
+      subject: 'CN=leaf ' + alg + ', O=Example, C=US',
+      subjectPublicKey: keys.p256.pub,
+      issuer: { certificatePem: root.pem, privateKeyPem: k.priv },
+      signatureAlg: alg, serial: '00ab', extensions: everything
+    }, window), [root.pem]);
+  }
+  await issue('an ML-KEM leaf', Object.assign({
+    subject: 'CN=kem', subjectPublicKey: keys.mlkem.pub,
+    issuer: { certificatePem: roots['sha256-rsa'].pem,
+              privateKeyPem: keys.rsa.priv },
+    signatureAlg: 'sha256-rsa', serial: '42', profile: 'key-encipherment'
+  }, window), [roots['sha256-rsa'].pem]);
+  await issue('after 2050, with milliseconds', selfSigned('ed25519', {
+    notBefore: '2051-02-03T04:05:06.789Z',
+    notAfter: '2061-02-03T04:05:06.000Z' }));
+  await issue('no notAfter: the profile\'s years', selfSigned('ed25519', {
+    notBefore: '2028-02-29T00:00:00.000Z', notAfter: undefined,
+    profile: 'issuing-ca' }));
+  await issue('no extensions: the profile\'s', selfSigned('sha256-rsa', {
+    profile: 'ocsp-responder' }));
+  await issue('extensions all absent', selfSigned('sha256-rsa', {
+    extensions: { basicConstraints: { present: false } } }));
+  await issue('a serial with its top bit set', selfSigned('sha256-rsa', {
+    serial: '80:00:01' }));
+
+  // The hybrid: a classical root with an ML-DSA alternative key, and a
+  // leaf it signs both ways.
+  const hybridRoot = await issue('hybrid root', selfSigned('sha256-rsa', {
+    subjectAltPublicKey: keys.mldsa65.pub,
+    altSignature: { signatureAlg: 'ml-dsa-65',
+                    privateKeyPem: keys.mldsa65.priv } }));
+  await issue('hybrid leaf', Object.assign({
+    subject: 'CN=hybrid leaf', subjectPublicKey: keys.p256.pub,
+    subjectAltPublicKey: keys.slh.pub,
+    issuer: { certificatePem: hybridRoot.pem, privateKeyPem: keys.rsa.priv },
+    signatureAlg: 'sha256-rsa', serial: '01',
+    altSignature: { signatureAlg: 'ml-dsa-65',
+                    privateKeyPem: keys.mldsa65.priv, critical: true },
+    extensions: x509.defaultExtensions('tls-server') }, window),
+  [hybridRoot.pem]);
+  await issue('hybrid with an RSA-PSS alternative', selfSigned('ed25519', {
+    subjectAltPublicKey: keys.rsa2.pub,
+    altSignature: { signatureAlg: 'sha384-rsapss',
+                    privateKeyPem: keys.rsa2.priv } }));
+
+  // The refusals.
+  const refusals = [
+    ['an empty subject', selfSigned('sha256-rsa', { subject: '' })],
+    ['an unknown algorithm', selfSigned('sha256-rsa',
+                                        { signatureAlg: 'md5-rsa' })],
+    ['a KEM as the algorithm', selfSigned('sha256-rsa',
+                                          { signatureAlg: 'ML-KEM-768' })],
+    ['no issuer key', selfSigned('sha256-rsa', { issuerPrivateKey: '' })],
+    ['an unknown DN attribute', selfSigned('sha256-rsa', {
+      subject: [{ name: 'XX', value: 'y' }] })],
+    ['a bad otherName', selfSigned('sha256-rsa', { extensions: {
+      subjectAltName: { present: true, names: [
+        { kind: 'otherName', oid: '1.2.3', value: 'not base64!' }] } } })],
+    ['an otherName that is not DER', selfSigned('sha256-rsa', {
+      extensions: { subjectAltName: { present: true, names: [
+        { kind: 'otherName', oid: '1.2.3', value: 'AAAA' }] } } })],
+    ['an otherName with no OID', selfSigned('sha256-rsa', {
+      extensions: { subjectAltName: { present: true, names: [
+        { kind: 'otherName', value: 'BQA=' }] } } })],
+    ['a bad IP', selfSigned('sha256-rsa', { extensions: {
+      subjectAltName: { present: true, names: [
+        { kind: 'ip', value: '300.1.1.1' }] } } })],
+    ['a prefix out of range', selfSigned('sha256-rsa', { extensions: {
+      nameConstraints: { present: true, permitted: [
+        { kind: 'ip', value: '10.0.0.0/33' }] } } })],
+    ['an unknown general name', selfSigned('sha256-rsa', { extensions: {
+      subjectAltName: { present: true, names: [
+        { kind: 'x400', value: 'q' }] } } })],
+    ['an unknown alternative algorithm', selfSigned('sha256-rsa', {
+      altSignature: { signatureAlg: 'nope', privateKeyPem: 'x' } })],
+    ['an alternative with no key', selfSigned('sha256-rsa', {
+      altSignature: { signatureAlg: 'ml-dsa-65' } })],
+    ['a custom extension not base64', selfSigned('sha256-rsa', {
+      extensions: { custom: [{ oid: '1.2.3', value: '$$' }] } })]
+  ];
+  for (const r of refusals) {
+    await issue('refused: ' + r[0], r[1]);
+  }
+
+  const csrs = [];
+  const csrSpecs = [
+    ['RSA with everything', { subject: 'CN=req, O=Example',
+      publicKeyPem: keys.rsa.pub, privateKeyPem: keys.rsa.priv,
+      subjectAltName: [{ kind: 'uri', value: 'spiffe://example.org/w' },
+                       { kind: 'dns', value: 'w.example' }],
+      keyUsage: ['digitalSignature', 'keyAgreement'],
+      extKeyUsage: ['clientAuth'],
+      basicConstraints: { ca: true, pathLen: 0 } }],
+    ['RSA-PSS', { subject: 'CN=pss', publicKeyPem: keys.rsa.pub,
+                  privateKeyPem: keys.rsa.priv,
+                  signatureAlg: 'sha512-rsapss' }],
+    ['P-384 by default', { subject: 'C=US, O=SPIRE',
+                           publicKeyPem: keys.p384.pub,
+                           privateKeyPem: keys.p384.priv }],
+    ['Ed25519', { subject: [{ name: 'CN', value: 'ed' }],
+                  publicKeyPem: keys.ed25519.pub,
+                  privateKeyPem: keys.ed25519.priv, keyUsage: [] }],
+    ['ML-DSA-65', { subject: 'CN=pq', publicKeyPem: keys.mldsa65.pub,
+                    privateKeyPem: keys.mldsa65.priv,
+                    extKeyUsage: ['serverAuth'] }],
+    ['refused: no subject', { subject: '', publicKeyPem: keys.rsa.pub,
+                              privateKeyPem: keys.rsa.priv }],
+    ['refused: no public key', { subject: 'CN=x',
+                                 privateKeyPem: keys.rsa.priv }],
+    ['refused: no private key', { subject: 'CN=x',
+                                  publicKeyPem: keys.rsa.pub }],
+    ['refused: a KEM key', { subject: 'CN=x', publicKeyPem: keys.mlkem.pub,
+                             privateKeyPem: keys.rsa.priv }],
+    ['refused: an unknown algorithm', { subject: 'CN=x',
+      publicKeyPem: keys.rsa.pub, privateKeyPem: keys.rsa.priv,
+      signatureAlg: 'nope' }]
+  ];
+  for (const c of csrSpecs) {
+    const row = { name: c[0], spec: c[1] };
+    try {
+      const out = await x509.certificationRequest(c[1]);
+      row.der = Buffer.from(out.der).toString('base64');
+      row.subject = out.subject;
+      row.signatureAlg = out.signatureAlg;
+    } catch (e) {
+      row.error = e.message;
+    }
+    csrs.push(row);
+  }
+  const ecdsa = [];
+  for (let i = 0; i < 40; i++) {
+    const raw = nodeCrypto.randomBytes(132);
+    if (i % 3 === 0) raw.fill(0, 0, 2);
+    if (i % 5 === 0) raw.fill(0, 66, 68);
+    if (i % 7 === 0) raw[0] = 0x80;
+    const der = x509.ecdsaRawToDer(raw);
+    ecdsa.push({ raw: raw.toString('base64'),
+                 der: Buffer.from(der).toString('base64'),
+                 back: Buffer.from(x509.ecdsaDerToRaw(der, 66))
+                   .toString('base64') });
+  }
+  return { keys: keys, certificates: certs, requests: csrs, ecdsa: ecdsa,
+           defaults: x509.profileIds().map(function (id) {
+             return { id: id, extensions: x509.defaultExtensions(id),
+                      cn: x509.defaultSubjectCN(id),
+                      san: x509.defaultSubjectAltName(id) };
+           }),
+           signatureAlgorithms: ['rsa', 'ec', 'okp'].map(function (kind) {
+             return { kind: kind, ids: x509.signatureAlgorithmsFor(kind) };
+           }),
+           parsedDns: ['CN=a, O=b (x, y), C=US', 'bogus=1, 2.5.4.3=q',
+                       ' CN = spaced ,,O=', 'no equals'].map(function (t) {
+             return { text: t, attrs: x509.parseDnString(t) };
+           }) };
+}
+
 const VECTORS = [{ file: 'jws-node.json', build: jws },
                  { file: 'jwe-node.json', build: jwe },
                  { file: 'c14n-node.json', build: c14n },
@@ -1415,7 +1727,8 @@ const VECTORS = [{ file: 'jws-node.json', build: jws },
                  { file: 'pq-x509-node.json', build: pqX509 },
                  { file: 'raw-sig-node.json', build: rawSignatures },
                  { file: 'webauthn-node.json', build: webauthn },
-                 { file: 'sigstore-node.json', build: sigstore }];
+                 { file: 'sigstore-node.json', build: sigstore },
+                 { file: 'x509-node.json', build: x509Vectors }];
 
 if (require.main === module) {
   fs.mkdirSync(OUT, { recursive: true });

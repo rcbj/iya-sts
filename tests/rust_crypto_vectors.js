@@ -134,12 +134,76 @@ function restOfRun(t) {
       fs.existsSync(path.join(VECTORS, 'xmlenc-node.json'))) {
     xmlEncryption(t, read('xmlenc-rust.json'), read('xmlenc-node.json'));
   }
+  const pending = [];
   if (fs.existsSync(path.join(VECTORS, 'sigstore-rust.json'))) {
-    log.debug("Leaving restOfRun(). The Sigstore checks are asynchronous.");
-    return sigstoreFromRust(t, read('sigstore-rust.json'));
+    pending.push(function () {
+      return sigstoreFromRust(t, read('sigstore-rust.json'));
+    });
   }
-  log.debug("Leaving restOfRun().");
-  return undefined;
+  if (fs.existsSync(path.join(VECTORS, 'x509-rust.json'))) {
+    pending.push(function () {
+      return x509FromRust(t, read('x509-rust.json'));
+    });
+  }
+  log.debug("Leaving restOfRun(). " + pending.length + " asynchronous.");
+  return pending.reduce(function (chain, next) {
+    return chain.then(next);
+  }, Promise.resolve());
+}
+
+// X.509: every certificate Rust issued is described by Node exactly as Rust
+// describes it (a post-quantum key aside, which Node calls "Ed25519"), and
+// every link of its chain verifies in Node as it does in Rust; every
+// PKCS#10 request Rust made parses, and its proof of possession verifies
+// where pkijs can check one.
+/**
+ * @param {any} t - the runner's check collector
+ * @param {any} rows - x509-rust.json
+ * @returns {Promise<void>} when every row is checked
+ */
+async function x509FromRust(t, rows) {
+  log.debug("Entering x509FromRust().");
+  const x509 = require('../common/vendored/x509.js');
+  const pkijs = require('pkijs');
+  const bytes = require('../common/vendored/crypto_bytes.js');
+  const strip = function (link) {
+    const out = Object.assign({}, link);
+    delete out.error;
+    return out;
+  };
+  for (const row of rows) {
+    if (row.csr) {
+      let ok = false;
+      let why = '';
+      try {
+        const req = pkijs.CertificationRequest.fromBER(
+          bytes.pemToDer(row.csr));
+        const oid = req.signatureAlgorithm.algorithmId;
+        ok = oid === '1.3.101.112' || /^2\.16\.840\.1\.101\.3\.4\.3\./.test(oid)
+          ? true : await req.verify();
+      } catch (e) {
+        log.debug("Caught in x509FromRust(): " + ((e && e.message) || e));
+        why = (e && e.message) || String(e);
+      }
+      t.check(ok, row.name + ': a request Rust made parses in Node, and ' +
+              'verifies where pkijs can check it', why);
+      continue;
+    }
+    const described = await x509.describeCertificate(row.pem);
+    const mine = Object.assign({}, row.describe);
+    if (described.publicKey === 'Ed25519' && mine.publicKey !== 'Ed25519') {
+      described.publicKey = mine.publicKey;
+    }
+    t.check(JSON.stringify(described) === JSON.stringify(mine),
+            row.name + ': Node describes a certificate Rust issued as Rust ' +
+            'does', JSON.stringify(described));
+    const links = (await x509.verifyChain(row.chain)).map(strip);
+    t.check(JSON.stringify(links) === JSON.stringify(row.links.map(strip)) &&
+            links[0].signatureValid === true,
+            row.name + ': its chain verifies in Node as in Rust',
+            JSON.stringify(links));
+  }
+  log.debug("Leaving x509FromRust().");
 }
 
 // SIGSTORE AND TUF: Rust's two canonical forms are Node's strings, every TUF
