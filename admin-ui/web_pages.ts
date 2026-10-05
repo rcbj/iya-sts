@@ -37,6 +37,7 @@ import ClaimsProvidersPage =
   require('../oauth-oidc/web_claims_providers');
 import DatabasePage = require('./web_database');
 import DebuggerPage = require('../debugger/web_debugger');
+import EncryptionPage = require('./web_encryption');
 import GeolocationPage = require('./web_geolocation');
 import GrantsPage = require('../oauth-oidc/web_grants');
 import ListenersPage = require('./web_listeners');
@@ -90,6 +91,8 @@ const PAGES: WebPage[] = [
       return ProviderCommandsPage.deliveriesBody(ctx || WebKit.context(),
                                                  view);
     } },
+  { path: '/admin/encryption', title: 'Encryption',
+    operation: '/admin-api/encryption', render: EncryptionPage.render },
   { path: '/admin/geolocation', title: 'Geolocation',
     operation: '/admin-api/geolocation', render: GeolocationPage.render },
   { path: '/admin/grants', title: 'Grants', operation: '/admin-api/grants',
