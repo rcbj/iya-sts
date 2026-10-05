@@ -70,6 +70,7 @@ import ProviderCommandsPage =
   require('../oauth-oidc/web_provider_commands');
 import OAuth2MonitorPage = require('../oauth-oidc/web_oauth2_monitor');
 import RbacPage = require('./web_rbac');
+import RealmsPage = require('./web_realms');
 import RiskPage = require('./web_risk');
 import RolesPage = require('./web_roles');
 import SamlAssertionsPage = require('./web_saml_assertions');
@@ -303,6 +304,11 @@ const PAGES: WebPage[] = [
   { path: '/admin/rbac', title: 'Admin roles', operation: '/admin-api/rbac',
     render: function (view: Json, ctx?: Json): string {
       return RbacPage.body(ctx || WebKit.context(), view);
+    } },
+  { path: '/admin/realms', title: 'Trust realms',
+    operation: '/admin-api/realms',
+    render: function (view: Json, ctx?: Json): string {
+      return RealmsPage.body(ctx || WebKit.context(), view);
     } },
   { path: '/admin/risc', title: 'RISC',
     operation: '/admin-api/risc',

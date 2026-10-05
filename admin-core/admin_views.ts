@@ -119,6 +119,9 @@ import devices = require('../common/devices');
 // wherever this file is legitimately loaded.
 import authn = require('../authn/authn');
 import config = require('../common/config');
+// The store's own status, for what a page says about whether its state
+// survives a restart (#446). A library, required in the ordinary direction.
+import persistence = require('../persistence/persistence');
 import mode = require('../common/mode');
 import realms = require('../common/realms');
 import stats = require('../common/admin_stats');
@@ -2496,6 +2499,21 @@ class AdminViews {
                                                                   realm); }),
       support: realms.realmSupport()
     };
+    // WHAT THE PAGE DRAWS BESIDE THE LIST (#446): its settings, which the
+    // console used to add to this answer after building it, the domain the
+    // default realm's directory is rooted at, and the paging of the list.
+    out.settings = configSettingsJson('/admin/realms');
+    out.defaultDomain = realms.domainOf(realms.DEFAULT_ID);
+    out.count = realms.count();
+    // Whether a realm defined here comes back after a restart, which the
+    // caveat says — it was read once, when the console was wired.
+    const store = persistence.status();
+    out.persistence = { persistsRealms: !!store.persistsRealms,
+                        mode: store.mode };
+    out.paging = req
+      ? this.pagingJson(this.pagedRows(req.query, out.realms,
+                                       { path: '/admin/realms' }).paging)
+      : null;
     log.debug("Leaving AdminViews.realmsJson(). " + out.realms.length +
               " realm(s).");
     return out;

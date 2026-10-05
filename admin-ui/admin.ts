@@ -853,6 +853,7 @@ import FederationPage = require('../federation/web_federation');
 import ApplicationsPage = require('./web_applications');
 import UsersPage = require('./web_users');
 import RbacPage = require('./web_rbac');
+import RealmsPage = require('./web_realms');
 
 // REQUIRED FOR THE ORDER THEY WERE ALWAYS REQUIRED IN, AND READ NOWHERE HERE
 // (#50). TypeScript drops an `import … = require()` whose name nothing reads,
@@ -22418,12 +22419,7 @@ class AdminConsole {
     return VcVerifierConfigPage.vpFormatsSection(json);
   }
 
-  // HOW a family is separated, in the words the row itself carries. This used
-  // to print the literal "by path" for every `full` row, which was true of all
-  // of them until the embedded directory became per realm: LDAP is separated by
-  // DN — a subtree per realm inside one naming context — and a table that
-  // called that "by path" would be describing the one family whose separation
-  // is NOT a path segment as though it were.
+  // Drawn by `web_realms.ts` (#446).
   /**
    * Words how a protocol family is separated between realms.
    *
@@ -22433,40 +22429,23 @@ class AdminConsole {
   separatedBy(by) {
     const { log } = this.deps;
     log.debug("Entering AdminConsole.separatedBy().");
-    const how = String(by || 'path');
     log.debug("Leaving AdminConsole.separatedBy().");
-    return 'by ' + (how === 'dn' ? 'DN' : how);
+    return RealmsPage.separatedBy(by);
   }
 
+  // Drawn by `web_realms.ts` (#446).
   /**
    * Draws the table of what trust realms separate and what they share, one
    * row per family, from realms.realmSupport().
    *
+   * @param support - `realms.realmSupport()`, from the page's answer
    * @returns the table as HTML
    */
-  realmSupportTable() {
-    const { log, realms } = this.deps;
-    const self = this;
+  realmSupportTable(support) {
+    const { log } = this.deps;
     log.debug("Entering AdminConsole.realmSupportTable().");
-    const rows = realms.realmSupport().map(function (row) {
-      const state = row.state === 'full'
-        ? '<span class="m">' + self.esc(self.separatedBy(row.by)) + '</span>'
-        : (row.state === 'partial'
-            ? '<span class="eff" title="Realm-aware, but not wholly">' +
-              self.esc(row.by) + '</span>'
-            : '<span class="none">shared</span>');
-      // The note is realms.js's own prose and runs to a paragraph on the rows
-      // that matter most — the directory's is 1,700 characters — so it folds.
-      // What stays on the row is the family and whether it is separated, which
-      // is the question somebody scans this table to answer.
-      return '<tr><td>' + self.esc(row.family) + '</td><td>' + state +
-             '</td><td>' +
-             self.note(self.esc(row.note)) + '</td></tr>';
-    }).join('');
     log.debug("Leaving AdminConsole.realmSupportTable().");
-    return '<table><tr><th>Family</th><th>Separated</th><th>What that ' +
-           'means</th></tr>' +
-           rows + '</table>';
+    return RealmsPage.realmSupportTable(support);
   }
 
   /**
@@ -22479,152 +22458,17 @@ class AdminConsole {
    *   (json)
    */
   realmsListPage(req) {
-    const { log, realmsJson, pagedRows, queryWith, realms, config,
-            pageParamsOf } = this.deps;
-    const self = this;
+    const { log, realmsJson } = this.deps;
     log.debug("Entering AdminConsole.realmsListPage().");
     const json = realmsJson(req);
-    const listView = this.listViewOf('/admin/realms', req.query);
-    const paged = pagedRows(req.query, json.realms, { path: '/admin/realms' });
-    const pg = paged.paging;
-    const rows = paged.shown.map(function (row) {
-      const href = '/admin/realms' + queryWith(listView, { realm: row.id });
-      return '<tr><td><a href="' + self.esc(href) + '"><code>' +
-             self.esc(row.id) +
-        '</code></a>' +
-        (row.builtin ? ' <span class="why">built in</span>' : '') +
-        (row.retiring
-          ? ' <span class="none">' + (row.retiring.interrupted
-              ? 'removal interrupted' : 'being removed') + '</span>'
-          : '') +
-        '</td><td>' + self.esc(row.name) + '</td>' +
-        '<td><code>' + self.esc(row.domain) + '</code></td>' +
-        '<td><code>' + self.esc(row.pathPrefix || '/') + '</code></td>' +
-        '<td><code>' + self.esc(row.kid) + '</code></td>' +
-        '<td class="num">' + row.settings.length + '</td></tr>';
-    }).join('');
-
-    const carryBack = '<input type="hidden" name="back" value="' +
-      this.esc(queryWith(listView, {})) + '">';
-
-    // THE REALMS BEING REMOVED (#294), above everything else on the page:
-    // an interrupted one refuses every sign-in in it until somebody finishes
-    // the removal, and nothing else in this console says so.
-    const retiringRows = json.realms.filter(function (row) {
-      return !!row.retiring;
-    });
-    const retiringBlock = retiringRows.map(function (row) {
-      return self.retiringNotice(row, carryBack);
-    }).join('');
-
-    const inner =
-      '<p class="sub">' + realms.count() + ' realm(s). Everything under a ' +
-      'realm\'s prefix is that realm; everything under no prefix is the ' +
-      'default one.</p>' +
-      retiringBlock +
-      REALMS_CAVEAT +
-
-      // `realms.active()` IS FALSE FOR TWO DIFFERENT REASONS AND THIS USED TO
-      // NAME ONLY ONE OF THEM. It is `realms.size > 0 &&
-      // config.value('realms.enabled')`, and the banner here said
-      // "`realms.enabled` is false" whenever it came back false — which on a
-      // service with the setting ON and no realm yet defined is a page
-      // asserting something untrue about a setting a reader can go and look at.
-      // That is the worst shape a console message can take: it sent somebody to
-      // Configuration to turn on a thing that was already on.
-      //
-      // So the two states are told apart, and the second is not a warning at
-      // all. "The flag is on and nothing has been defined" is the ORDINARY
-      // state of this service — the contract `common/realms.js` states is that
-      // a service with no realms defined behaves exactly as it did before
-      // realms existed — so it is a note saying what to do next, not a yellow
-      // box saying something is wrong.
-      (realms.active()
-        ? ''
-        : !config.value('realms.enabled')
-          ? this.warn('<strong>Trust realms are switched off.</strong> ' +
-            '<code>realms.enabled</code> is false, so every prefix below ' +
-            'answers 404 and this whole service is the default realm. The ' +
-            'definitions are untouched — that is what this setting is for: ' +
-            'it lets a realm be ruled out as the cause of something without ' +
-            'anything being deleted. Turn it back on in the settings at the ' +
-            'foot of this page.')
-          : this.note('<strong>Trust realms are switched ON and none has ' +
-            'been defined, which is this service\'s ordinary state rather ' +
-            'than something to fix.</strong> <code>realms.enabled</code> is ' +
-            '<code>true</code>; the feature does nothing until a realm ' +
-            'exists, because the built-in <code>default</code> realm has an ' +
-            'empty prefix and IS this service. That is a property rather ' +
-            'than a coincidence — a service with no realm defined behaves ' +
-            'exactly as it did before realms existed, which is what keeps ' +
-            'every client, container and test that predates them working ' +
-            'unchanged. <strong>Define one below</strong> and its prefix ' +
-            'starts answering immediately: a switcher appears on every page ' +
-            'of this console, and <code>GET /realms</code> starts reporting ' +
-            '<code>active: true</code>.')) +
-
-      '<h2>The realms</h2><table><tr><th>Id</th><th>Name</th>' +
-      '<th>Domain</th><th>Path prefix</th><th>Signing key</th><th ' +
-      'class="num">Settings</th></tr>' + rows + '</table>' +
-      this.pageNavPair('/admin/realms', pageParamsOf(req.query), pg).head +
-      this.perPageForm('/admin/realms', 'per', req.query.per, pg.perPage, '',
-                       listView) +
-
-      '<h2>Define a realm</h2>' +
-      this.note('The id becomes a path segment, so it is lower-case letters, ' +
-      'digits and hyphens. It may not be <code>default</code> and it may not ' +
-      'be the first segment of a path this service already serves — ' +
-      (json.reserved.length ? this.codeList(json.reserved.slice(0, 12)) +
-        (json.reserved.length > 12 ? ' and ' + (json.reserved.length - 12) +
-         ' ' +
-            'more' : '')
-        : 'nothing is registered yet') +
-      ' — whatever <code>realms.pathSegment</code> is set to, precisely so ' +
-      'that clearing that setting cannot turn an existing realm into a ' +
-      'shadow over the console or the authorization server.') +
-      this.note('<strong>The domain</strong> — <code>iyasec.io</code>, ' +
-      '<code>dev.iyasec.io</code> — is the root of every NAME the realm ' +
-      'invents: its directory is a tree of its own at the RFC 2247 mapping ' +
-      'of it (<code>iyasec.io</code> is <code>dc=iyasec,dc=io</code>), its ' +
-      'Kerberos realm is the domain in capitals, its SPIFFE trust domain is ' +
-      'the domain, and its identity providers call themselves ' +
-      '<code>urn:&lt;domain&gt;:idp</code>. It is not where the realm is ' +
-      'REACHED — the issuer and every URL still come from the host a request ' +
-      'arrived on. No two realms may share one; one inside another\'s is ' +
-      'allowed and is a separate tree. <strong>It is fixed once the realm is ' +
-      'created.</strong> Left empty it is <code>&lt;id&gt;.' +
-      this.esc(realms.domainOf(realms.DEFAULT_ID)) + '</code>.') +
-      '<form method="post" action="/admin/realms">' + carryBack +
-      '<input type="hidden" name="action" value="create"><div ' +
-      'class="formrow"><label for="rid">Id</label><input type="text" ' +
-      'id="rid" name="id" size="16" placeholder="acme" required><label ' +
-      'for="rname">Name</label><input type="text" id="rname" name="name" ' +
-      'size="22" placeholder="Acme Corporation"><label ' +
-      'for="rdomain">Domain</label><input type="text" id="rdomain" ' +
-      'name="domain" size="22" placeholder="iyasec.io" ' +
-      'autocapitalize="off" spellcheck="false"><label ' +
-      'for="rdesc">Description</label><input type="text" id="rdesc" ' +
-      'name="description" size="40"><button type="submit">Define ' +
-      'it</button></div></form><h2>What is separated, and what is ' +
-      'shared</h2><p class="lead">A realm separates what this service ISSUES ' +
-      'and everything it is holding while it issues it — keys, sessions, ' +
-      'codes, tokens, offers, artifacts, statistics and the audit log — and ' +
-      'since each realm has a directory of its own, the people, groups, ' +
-      'applications and policies in it. The families on sockets with no ' +
-      'path in them are told apart some other way, and a few things belong ' +
-      'to the process and are shared. This table is the whole list, ' +
-      'and <code>GET /realms</code> answers the same thing to a client that ' +
-      'cannot read a console.</p>' +
-      this.realmSupportTable() +
-      // The realms.* rows. `realms.enabled` is the one that makes every
-      // prefixed path in this service answer or not, which is worth being able
-      // to see beside the list of realms it governs.
-      this.configFormsFor('/admin/realms');
-
+    // Drawn by `web_realms.ts` (#446).
+    const inner = RealmsPage.body(this.renderContext(req),
+        JSON.parse(JSON.stringify(json)));
     log.debug("Leaving AdminConsole.realmsListPage().");
-    json.settings = this.configSettingsJson('/admin/realms');
-    log.debug("Leaving AdminConsole.realmsListPage().");
-    return { json: json, inner: inner };
+    return {
+      inner: inner,
+      json: json
+    };
   }
 
   /**
@@ -22689,7 +22533,8 @@ class AdminConsole {
        '</p>' :
        '') +
 
-      (json.retiring ? this.retiringNotice(json, carryBack) : '') +
+      (json.retiring ? this.retiringNotice(json, carryBack, realms.currentId())
+                     : '') +
       (inRealm
         ? '<div class="ok">You are reading this console ' +
           '<strong>inside</strong> this realm. Every settings form in this ' +
@@ -22777,12 +22622,7 @@ class AdminConsole {
     return { json: json, inner: inner };
   }
 
-  // A REALM BEING REMOVED (#262, #294), as a console block: when it began,
-  // what it refuses, and — for an INTERRUPTED removal — the button that
-  // finishes it, which is the Remove action again (realms.js argues why
-  // there is no other). `row` is `realmJson()`'s shape. Drawn on
-  // /admin/realms and on the realm's own drill-down; `retiringBanner()` is
-  // the line on every other page of the realm.
+  // Drawn by `web_realms.ts` (#446).
   /**
    * Draws the notice for a realm being removed: why, what it refuses, and
    * how to finish.
@@ -22792,33 +22632,14 @@ class AdminConsole {
    *
    * @param row - the realm, in realmJson()'s shape
    * @param carryBack - the hidden back field the form carries, as HTML
+   * @param current - the realm this console is being read in
    * @returns the notice as HTML
    */
-  retiringNotice(row, carryBack) {
-    const { log, realms } = this.deps;
-    log.debug("Entering AdminConsole.retiringNotice(). realm=" + row.id);
-    const state = row.retiring;
-    const fromHere = realms.currentId() !== row.id;
-    const button = state.interrupted && fromHere
-      ? '<form method="post" action="/admin/realms">' + carryBack +
-        '<input type="hidden" name="action" value="remove">' +
-        '<input type="hidden" name="id" value="' + this.esc(row.id) + '">' +
-        '<button type="submit" class="danger">Finish removing ' +
-        this.esc(row.id) + '</button></form>'
-      : '';
-    const html = (state.interrupted ? this.warn.bind(this)
-                                    : this.note.bind(this))(
-      '<strong>The realm <code>' + this.esc(row.id) + '</code> ' +
-      (state.interrupted ? 'was being removed, and the removal was ' +
-                           'interrupted' : 'is being removed') +
-      '.</strong> ' + this.esc(state.why) + ' Refused: ' +
-      this.esc(state.refusing) + '. ' + this.esc(state.finish) +
-      (state.interrupted && !fromHere
-        ? ' You are reading this console inside it, so do it from another ' +
-          'realm: the switcher at the top of the sidebar.'
-        : '')) + button;
+  retiringNotice(row, carryBack, current) {
+    const { log } = this.deps;
+    log.debug("Entering AdminConsole.retiringNotice().");
     log.debug("Leaving AdminConsole.retiringNotice().");
-    return html;
+    return RealmsPage.retiringNotice(row, carryBack, current);
   }
 
   // The one line every console page of a realm being removed carries (#294),
@@ -35653,43 +35474,7 @@ const SAML_PLACEHOLDERS = ['subject', 'audience', 'now', 'iso'];
 // existed is a URL in it, so an operator who could delete it could delete the
 // service.
 // ---------------------------------------------------------------------------
-let REALMS_CAVEAT: string;
-WIRE_STEPS.push(function (instance: AdminConsole): void {
-  REALMS_CAVEAT =
-    instance.note('<strong>A realm separates what this service ISSUES, ' +
-    'not who it knows.</strong> Each realm has its own signing key, so a ' +
-    'token minted in one does not verify against another\'s JWKS — that is ' +
-    'the point of a realm rather than a side effect. Each realm also has a ' +
-    'directory of its own — its own <code>ou=users</code>, ' +
-    '<code>ou=groups</code> and <code>ou=applications</code> under ' +
-    '<code>dc=&lt;id&gt;</code> — and so <strong>administrators of its ' +
-    'own</strong>: the two role groups in that directory administer that ' +
-    'realm and nothing outside it, while the default realm\'s two groups ' +
-    'administer every realm. A new realm is seeded with an ' +
-    '<code>admin</code> account that holds both. The table at ' +
-    'the foot of this page is the whole list of what is separated how.') +
-    (persistence.status().persistsRealms
-      ? '<div class="ok"><strong>A realm defined here WILL come ' +
-        'back.</strong> ' +
-        'This process is running with ' +
-        '<code>persistence.mode=' +
-        instance.esc(persistence.status().mode) + '</code>, ' +
-        'so the realm rows — their names, descriptions and per-realm ' +
-        'settings — and each realm\'s own directory are written down and ' +
-        'restored at the next start. WHAT DOES NOT COME BACK IS THE KEYS: ' +
-        'every realm\'s signing key is regenerated on every start, exactly ' +
-        'like the default realm\'s, so a token minted in this realm today ' +
-        'verifies against nothing tomorrow. See <a ' +
-        'href="/admin/persistence">Persistence</a>.</div>'
-      : instance.note('<strong>Nothing here is persisted on this ' +
-        'process.</strong> Realms are held in memory and die with it, along ' +
-        'with the keys they signed with. Define them from <code>POST ' +
-        '/admin-api/realms</code> in whatever starts your stack if you want ' +
-        'them back — or turn on <a ' +
-        'href="/admin/persistence">Persistence</a>, which writes the realm ' +
-        'registry and each realm\'s directory down. The ' +
-        'KEYS are regenerated on every start either way.'));
-});
+// The caveat of Trust realms is `web_realms.ts`'s `realmsCaveat()`.
 
 // THE SIXTH THING THE READ LAYER IS HANDED, and the only one that is not an
 // inverted hook: `scimJson()` embeds this console's settings block in its
