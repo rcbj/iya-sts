@@ -360,14 +360,21 @@ function oldView(query) {
 }
 
 // The members compared between the two answers. Whole rows, with their
-// factors, for the rows shown.
+// factors, for the rows shown — less `liveSessions`, which the answer has
+// carried since #446 for the page's sessions column and which counts sign-on
+// sessions rather than anything the old algorithm decided.
 function comparable(json) {
   log.debug("Entering comparable().");
+  const users = (json.users || []).map(function (row) {
+    const copy = Object.assign({}, row);
+    delete copy.liveSessions;
+    return copy;
+  });
   log.debug("Leaving comparable().");
   return JSON.stringify({ known: json.known, matched: json.matched,
                           authenticatedHere: json.authenticatedHere,
                           scanned: json.scanned, capped: json.capped,
-                          factors: json.factors, users: json.users });
+                          factors: json.factors, users: users });
 }
 
 // Two answers compared, with a SHORT detail on a mismatch — the whole reply

@@ -86,6 +86,7 @@ import SsfTransmittersPage = require('../ssf/web_ssf_transmitters');
 import TlsTrustPage = require('../tls/web_tls_trust');
 import TokenLifetimesPage = require('./web_token_lifetimes');
 import TokensPage = require('./web_tokens');
+import UsersPage = require('./web_users');
 import VcStatusPage = require('./web_vc_status');
 import VcVerifierConfigPage =
   require('../oid4vc/web_vc_verifier_config');
@@ -415,6 +416,10 @@ const PAGES: WebPage[] = [
     operation: '/admin-api/tokens',
     render: function (view: Json, ctx?: Json): string {
       return TokensPage.body(ctx || WebKit.context(), view);
+    } },
+  { path: '/admin/users', title: 'Users', operation: '/admin-api/users',
+    render: function (view: Json, ctx?: Json): string {
+      return UsersPage.body(ctx || WebKit.context(), view);
     } },
   { path: '/admin/vc-status', title: 'Credential status',
     operation: '/admin-api/vc-status', render: VcStatusPage.render },

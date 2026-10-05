@@ -8535,7 +8535,6 @@ class AdminViews {
   usersListJson(req) {
     const { log } = this.deps;
     log.debug("Entering AdminViews.usersListJson().");
-    log.debug("Entering usersListPage().");
     const wantedText = String(req.query.q || '').trim();
     const wantedProtocol = String(req.query.protocol || '');
     // THE UNION, not `stats.userRows()` — see peopleRows(). The registry is
@@ -8646,6 +8645,18 @@ class AdminViews {
         return !f.usable && !r.isClient;
       })
     };
+    // WHO HOLDS A LIVE SIGN-ON SESSION, counted for the page's tile (#446):
+    // one person with three browsers is one, by the same identity key the
+    // rows are filed under.
+    const liveByUser: Record<string, number> = {};
+    this.signOnSessionRows().forEach(function (session) {
+      if (session.expired) {
+        return;
+      }
+      const key = stats.identityKeyOf(session.username || session.sub);
+      liveByUser[key] = (liveByUser[key] || 0) + 1;
+    });
+    const pagingJson = this.pagingJson(paging);
     log.debug("Leaving AdminViews.usersListJson().");
     return {
       wantedText: wantedText, wantedProtocol: wantedProtocol,
@@ -8676,7 +8687,20 @@ class AdminViews {
           protocols: Object.keys(protocolsSeen).sort(),
           page: paging.page, pages: paging.pages, perPage: paging.perPage,
           firstRow: paging.firstRow, lastRow: paging.lastRow,
-          users: shown
+          // What the page draws beside the rows (#446): the paging control,
+          // the active-session tile, and three facts its notes state — how
+          // many person fields a new entry may carry, where it goes, and how
+          // many identities the registry keeps.
+          paging: pagingJson,
+          withActiveSession: Object.keys(liveByUser).length,
+          personFieldCount: vcClaims.personFields().length,
+          newUserContainer: self.newUserContainer(),
+          registryKeeps: stats.MAX_USERS,
+          // Each row with its live sign-on sessions, the column beside it.
+          users: shown.map(function (row) {
+            return Object.assign({}, row,
+                                 { liveSessions: liveByUser[row.key] || 0 });
+          })
       };
       }())
     };
