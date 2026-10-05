@@ -124,13 +124,15 @@
 //    3.4.4.1, which is what a redirect response is really verified by — an XML
 //    signature is there too and is not what that binding's verifier reads.
 //
-// 6. **THE ARTIFACT IS ONE-SHOT AND SAYS SO.** Section 3.6.4.1 requires that an
-//    artifact be resolvable exactly once, and no lifetime setting can express
-//    that — so resolving one DESTROYS it, and a second ArtifactResolve for the
-//    same artifact is refused with a status naming the reason rather than
-//    answering with the message again. It is the single easiest thing to get
-//    wrong in this profile and the hardest to notice, because the happy path
-//    passes either way.
+// 6. **THE ARTIFACT IS ONE-SHOT.** Section 3.6.4.1 requires that an artifact
+//    be resolvable exactly once, and no lifetime setting can express that — so
+//    resolving one DESTROYS it, and a second ArtifactResolve for the same
+//    artifact gets the EMPTY response saml-core-2.0-os section 3.5.3 requires
+//    (Success, no message) rather than the message again. It is the single
+//    easiest thing to get wrong in this profile and the hardest to notice,
+//    because the happy path passes either way. Until #160 that second answer
+//    was a Requester status naming the reason, which section 3.5.3 does not
+//    allow; the reason is the log line's and the error code's now.
 // ===========================================================================
 
 // ---------------------------------------------------------------------------
@@ -1682,13 +1684,14 @@ class Saml2Sso {
   }
 
   // --- signing ---------------------------------------------------------------
-  // The enveloped XML signature this service puts on a Response, an
-  // ArtifactResponse and its own metadata. The DIFFERENCE between the three is
-  // the reference and where the signature goes, and both are schema-mandated
-  // rather than a matter of taste: a protocol message puts ds:Signature after
-  // Issuer, and a metadata EntityDescriptor puts it FIRST. Getting either wrong
-  // produces a document that verifies and that a strict parser rejects, which
-  // is the worst of both.
+  // The enveloped XML signature this service puts on a Response, a logout
+  // message and its own metadata — never on an ArtifactResponse, which is
+  // deliberately unsigned (see `resolveArtifact()`). The DIFFERENCE between
+  // them is the reference and where the signature goes, and both are
+  // schema-mandated rather than a matter of taste: a protocol message puts
+  // ds:Signature after Issuer, and a metadata EntityDescriptor puts it FIRST.
+  // Getting either wrong produces a document that verifies and that a strict
+  // parser rejects, which is the worst of both.
   private signDocument(xml, rootLocalName, id, placement) {
     const { documentSettings, stsCrypto } = this.deps;
     const { STS, log } = this.deps.helpers;
@@ -2520,6 +2523,30 @@ class Saml2Sso {
     return artifact;
   }
 
+  // IS THIS A TYPE 0x0004 ARTIFACT WHOSE SourceID NAMES AN ENTITY OTHER THAN
+  // the resolver at `scopedEntityId` (#160)? A value that is not a 44-byte
+  // type 0x0004 artifact names no SourceID at all, and `mintArtifact()` never
+  // stored one, so it is not answered here — it is the unknown artifact it
+  // looks like, and `resolveArtifact()` says so as it always did.
+  private isForeignArtifact(artifact, scopedEntityId): boolean {
+    const { crypto } = this.deps;
+    const { log } = this.deps.helpers;
+    log.debug("Entering Saml2Sso.isForeignArtifact().");
+    const bytes = Buffer.from(String(artifact || ''), 'base64');
+    if (bytes.length !== 44 || bytes.readUInt16BE(0) !== 0x0004) {
+      log.debug("Leaving Saml2Sso.isForeignArtifact(). Not a type 0x0004 " +
+                "artifact.");
+      return false;
+    }
+    const own = crypto.createHash('sha1')
+                      .update(String(this.idpEntityIdFor(scopedEntityId)),
+                              'utf8')
+                      .digest();
+    const foreign = !own.equals(bytes.subarray(4, 24));
+    log.debug("Leaving Saml2Sso.isForeignArtifact(). " + foreign);
+    return foreign;
+  }
+
   private stashArtifact(artifact, detail) {
     const { log } = this.deps.helpers;
     log.debug("Entering Saml2Sso.stashArtifact().");
@@ -2565,7 +2592,7 @@ class Saml2Sso {
                opts.field +
                ' for ' + (opts.spEntityId || '(unnamed)') + '; it is ' +
                    'resolvable once, at ' +
-               ARS_PATH + '.');
+               this.endpointsFor('', opts.spEntityId).ars + '.');
       // 303, not 302: this may follow the POST that carried the AuthnRequest,
       // and a 307 would repeat that body at the service provider. The same
       // reasoning authn.js's returnToCaller() writes down at length.
@@ -4145,6 +4172,25 @@ class Saml2Sso {
     }
     const raw = typeof req.body === 'string' ? req.body : '';
     logArtifact('SAML 2.0 ArtifactResolve', 'as received over SOAP', raw);
+    // AN ARTIFACT THAT DOES NOT RESOLVE IS ONE ANSWER, AND IT IS SUCCESS
+    // (#160). saml-core-2.0-os section 3.5.3: a responder that recognises the
+    // artifact as valid answers with the message; "otherwise, it responds with
+    // an <ArtifactResponse> element with no embedded message. In both cases,
+    // the <Status> element MUST include a <StatusCode> element with the code
+    // value ...:status:Success" — and a repeat of a resolved artifact, and a
+    // requester that "cannot authenticate itself as the original intended
+    // recipient", MUST get that same empty response. So every reason an
+    // artifact is not handed over — never minted here, expired, already
+    // resolved here or on another node, another entity's SourceID, a caller
+    // that is not the intended recipient or cannot prove it, a claim store
+    // that cannot be asked, an answer that failed after the spend — is
+    // `empty()`: Success, no message, NO StatusMessage, byte for byte the
+    // same whatever the reason, so the answer is no oracle for whether an
+    // artifact exists or whom it was for. The reason is the operator's: an
+    // error code on the response and the log line or audit row beside it.
+    // Requester is kept for a request that is not an artifact resolution at
+    // all (not XML, no ArtifactResolve, no Artifact) — section 3.5.3 is about
+    // an artifact, and those carry none.
     const answer = function (status, message, payload, inResponseTo) {
       log.debug("Entering answer().");
       const envelope = self.soapEnvelope(self.buildArtifactResponse(
@@ -4191,6 +4237,12 @@ class Saml2Sso {
                     'else.', '', '');
     }
     const inResponseTo = resolve.getAttribute('ID') || '';
+    const empty = function (code) {
+      log.debug("Entering empty(). " + code);
+      errorCodes.mark(res, code);
+      log.debug("Leaving empty().");
+      return answer(STATUS_SUCCESS, '', '', inResponseTo);
+    };
     const spEntityId = textByLocal(resolve, 'Issuer');
     const artifact = textByLocal(resolve, 'Artifact');
     if (!artifact) {
@@ -4213,6 +4265,27 @@ class Saml2Sso {
                 "that minted it.");
       return undefined;
     }
+    // ANOTHER ENTITY'S ARTIFACT (#160): this resolver answers only for an
+    // artifact whose SourceID is the SHA-1 of ITS OWN entityID. With
+    // `saml2.perApplicationEntityId` on, every service provider's artifacts
+    // are minted under `urn:sts:idp:app-…` and belong to `/saml2/ars/{sp}`;
+    // until this check the unscoped `/saml2/ars` resolved them too, under an
+    // envelope naming `urn:sts:idp` around a Response naming the other —
+    // answering for someone else, and spending the artifact so that the
+    // right resolver, asked next, had nothing. Section 3.6.4 has the SourceID
+    // name the issuer so that a requester can find that issuer's resolver;
+    // the answer here is the empty ArtifactResponse with Success of
+    // saml-core-2.0-os section 3.5.3, and the artifact is LEFT ALONE.
+    if (this.isForeignArtifact(artifact, scoped.entityId)) {
+      log.warn(errorCodes.tag('STS-SAML-0098') + 'saml2: artifact ' +
+               String(artifact).slice(0, 12) + '… was presented at the ' +
+               'resolver of "' + this.idpEntityIdFor(scoped.entityId) +
+               '", but its SourceID names another entity. Answered empty, ' +
+               'and the artifact is left for the resolver it belongs to.');
+      log.debug("Leaving Saml2Sso.resolveArtifact(). Another entity's " +
+                "artifact.");
+      return empty('STS-SAML-0098');
+    }
     const held = artifacts.get(artifact);
     if (held) {
       // WHO IS ASKING, BEFORE ANYTHING IS SPENT (#37 follow-up): a caller that
@@ -4224,29 +4297,22 @@ class Saml2Sso {
       if (caller.refuse) {
         log.debug("Leaving Saml2Sso.resolveArtifact(). The caller was " +
                   "refused: " + caller.errorCode);
-        errorCodes.mark(res, caller.errorCode || 'STS-SAML-0077');
-        return answer(STATUS_REQUESTER, caller.why, '', inResponseTo);
+        return empty(caller.errorCode || 'STS-SAML-0077');
       }
     }
     if (!held) {
-      // The one refusal in this file that is worth making loudly, because it is
-      // the same answer for three different mistakes and a service provider
-      // cannot tell them apart from the status code alone: an artifact that was
-      // never minted here, one that has expired, and — the interesting one —
-      // one that has ALREADY BEEN RESOLVED. Decision 6.
+      // The one refusal in this file that is worth logging loudly, because it
+      // is the same empty answer for three different mistakes and a service
+      // provider cannot tell them apart from the response at all: an
+      // artifact that was never minted here, one that has expired, and — the
+      // interesting one — one that has ALREADY BEEN RESOLVED. Decision 6.
       log.warn('saml2: artifact ' + String(artifact).slice(0, 12) + '… does ' +
                'not resolve. It was never minted here, or it has expired ' +
                '(saml2.artifactTtlS), or it has already been resolved once — ' +
                'which destroys it, because section 3.6.4.1 says an artifact ' +
                'is resolvable exactly once.');
       log.debug("Leaving Saml2Sso.resolveArtifact(). Unknown artifact.");
-      errorCodes.mark(res, 'STS-SAML-0018');
-      log.debug("Leaving Saml2Sso.resolveArtifact().");
-      return answer(STATUS_REQUESTER,
-                    'that artifact does not resolve: it was never issued ' +
-                    'here, it has expired, or it has already been resolved — ' +
-                    'an artifact is one-shot (section 3.6.4.1).',
-                    '', inResponseTo);
+      return empty('STS-SAML-0018');
     }
     // ONE-SHOT. Deleted BEFORE the answer is built rather than after it is
     // sent, so that two ArtifactResolve calls arriving together cannot both
@@ -4256,11 +4322,9 @@ class Saml2Sso {
     return this.spendArtifact(artifact, held).then(function (spent) {
       log.debug("Entering Saml2Sso.resolveArtifact()'s claim answer.");
       if (!spent.ok) {
-        errorCodes.mark(res, spent.errorCode);
         log.debug("Leaving Saml2Sso.resolveArtifact()'s claim answer. " +
                   "Refused.");
-        return answer(spent.reason === 'used' ? STATUS_REQUESTER :
-                      STATUS_RESPONDER, spent.message, '', inResponseTo);
+        return empty(spent.errorCode);
       }
       log.debug("Leaving Saml2Sso.resolveArtifact()'s claim answer. Spent.");
       return self.answerResolved(held, spEntityId, artifact, inResponseTo,
@@ -4273,9 +4337,7 @@ class Saml2Sso {
                 'ArtifactResolve could not be answered after its claim: ' +
                 ((e && e.message) || e));
       if (!res.headersSent) {
-        errorCodes.mark(res, 'STS-SAML-0060');
-        answer(STATUS_RESPONDER, 'the artifact could not be resolved.', '',
-               inResponseTo);
+        empty('STS-SAML-0060');
       }
     });
   }
@@ -4386,10 +4448,7 @@ class Saml2Sso {
                    'resolution.');
           log.debug("Leaving Saml2Sso.spendArtifact()'s answer. Used " +
                     "elsewhere.");
-          return { ok: false, reason: 'used', errorCode: 'STS-SAML-0057',
-                   message: 'that artifact does not resolve: it has already ' +
-                            'been resolved — an artifact is one-shot ' +
-                            '(section 3.6.4.1).' };
+          return { ok: false, reason: 'used', errorCode: 'STS-SAML-0057' };
         }
         log.error(errorCodes.tag('STS-SAML-0059') + 'saml2: whether artifact ' +
                   String(artifact).slice(0, 12) + '… was already resolved ' +
@@ -4397,9 +4456,7 @@ class Saml2Sso {
                   (claimed.why || 'no reason given') + '). It is refused.');
         log.debug("Leaving Saml2Sso.spendArtifact()'s answer. Store " +
                   "unavailable.");
-        return { ok: false, reason: 'store', errorCode: 'STS-SAML-0059',
-                 message: 'the identity provider could not confirm that ' +
-                          'artifact is unresolved, so it is not resolved.' };
+        return { ok: false, reason: 'store', errorCode: 'STS-SAML-0059' };
       });
   }
 

@@ -220,8 +220,10 @@ now asynchronous at that point. What is decided, and why:
 * **Nothing releases it.** The delete has already spent the artifact in this
   process whatever the answer, and a claim given back without the map restored
   would only license another node to resolve it.
-* **A store that cannot be asked refuses** (fail closed) with `StatusCode
-  Responder`, where a used artifact is `Requester` as before.
+* **A store that cannot be asked refuses** (fail closed). Since #160 that
+  refusal, like a used artifact, is the EMPTY response — see *AN ARTIFACT
+  THAT DOES NOT RESOLVE IS ONE ANSWER* below; it was `Responder` and
+  `Requester` until then.
 * Codes: `STS-SAML-0057` (2.0, resolved elsewhere), `0058` (1.1), `0059` (the
   store), `0060` (the answer failed after the spend) — renumbered from
   0055–0058 when feature/46 was rebased onto develop, which had taken 0055 and
@@ -1135,6 +1137,15 @@ leaves it resolvable by the right one):
   or for SAML 1.1 (whose Request names nobody) any responder path segment —
   in every mode (`STS-SAML-0078`);
 * its metadata must not have expired (`STS-SAML-0074`, SAML 2.0);
+* the artifact's SourceID must be the SHA-1 of THIS resolver's entityID
+  (SAML 2.0) or providerID (SAML 1.1) (#160) — with
+  `saml2.perApplicationEntityId` / `saml11.perApplicationProviderId` on, an
+  artifact minted for a party belongs to `/saml2/ars/{sp}` or
+  `/saml11/responder/{rp}`, and the unscoped resolver or another party's
+  answers it with the empty response and leaves it unspent
+  (`STS-SAML-0098`). Checked after the cell relay, so the minting cell
+  decides; a value that is not a 44-byte type 0x0004 (42-byte 0x0001)
+  artifact names no SourceID and is the unknown artifact it looks like;
 * it must be AUTHENTICATED where signed requests are required
   (`saml2.requireSignedAuthnRequests`; product by default) — an enveloped
   signature on the message verifying against its registered certificates, or
@@ -1143,6 +1154,29 @@ leaves it resolvable by the right one):
   for TLS client authentication, self-signed as a rule, so no chain is asked
   for; a revoked chain counts as none) — else `STS-SAML-0077`. A signature
   that is present and wrong is refused in every mode.
+
+### AN ARTIFACT THAT DOES NOT RESOLVE IS ONE ANSWER (#160)
+
+saml-core-2.0-os section 3.5.3 and saml-bindings-1.1 section 4.1.1.6 leave
+the resolver one answer for every artifact it does not hand over: Success,
+nothing embedded. The SAML 2.0 text names a replay and a requester that
+"cannot authenticate itself as the original intended recipient"; the 1.1 text
+a replay ("the same message as … an unknown artifact") and an artifact issued
+to another destination site. So every refusal above, an unknown, expired or
+replayed artifact, another entity's SourceID, a replay seen through the
+cluster claim, a claim store that cannot be asked and an answer that failed
+after the spend all answer `empty()` in `resolveArtifact()` (2.0) and
+`respond()` (1.1): Success, no message or assertion, **no StatusMessage**,
+identical whatever the reason, so the answer says nothing about whether an
+artifact exists or whom it was for. The reason is the error code, the log
+line and the audit row. Until #160 each was `Requester` (or `Responder`) with
+a sentence naming the reason, which neither specification allows. `Requester`
+is kept for a request that is not an artifact resolution at all (not XML, no
+ArtifactResolve or Request, no Artifact). **Owed to the parent project**: its
+`tests/vendored/sts_saml11.js` resolves a per-relying-party artifact at the
+unscoped `/saml11/responder` and expects a replay to be `samlp:Requester`
+naming the one-shot rule; both now fail here until that copy is changed and
+synced.
 
 ### HTTP-POST-SimpleSign
 

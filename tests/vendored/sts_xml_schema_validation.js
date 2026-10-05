@@ -945,15 +945,19 @@ async function saml2(w) {
   // THE ARTIFACT, and the ArtifactResponse the service provider fetches.
   const art = await ssoRound(w, cookies, w.sp, w.acs, BINDING.artifact);
   for (const m of await capturedOne("the artifact", art, "SAMLart")) {
+    // The service provider's own resolver: with saml2.perApplicationEntityId
+    // on, the artifact's SourceID names w.sp's entity, and the unscoped
+    // /saml2/ars answers only for its own (#160).
+    const ars = w.rb + "/saml2/ars/" + encodeURIComponent(w.sp);
     const resolveId = samlId();
     const resolve = signEnveloped(
       "<samlp:ArtifactResolve xmlns:samlp=\"" + NS.samlp + "\" " +
       "xmlns:saml=\"" + NS.saml + "\" ID=\"" + resolveId + "\" " +
       "Version=\"2.0\" IssueInstant=\"" + new Date().toISOString() + "\" " +
-      "Destination=\"" + w.rb + "/saml2/ars\"><saml:Issuer>" + w.sp +
+      "Destination=\"" + ars + "\"><saml:Issuer>" + w.sp +
       "</saml:Issuer><samlp:Artifact>" + m.artifact + "</samlp:Artifact>" +
       "</samlp:ArtifactResolve>", "ArtifactResolve", "ID", "Issuer");
-    const r = await hop(null, w.rb + "/saml2/ars", {
+    const r = await hop(null, ars, {
       method: "POST",
       body: "<soap:Envelope xmlns:soap=\"" + NS.soap11 + "\"><soap:Body>" +
             resolve + "</soap:Body></soap:Envelope>",
@@ -966,7 +970,7 @@ async function saml2(w) {
       }
     });
     await validate(w.mode + " SAML 2.0 ArtifactResponse over SOAP (HTTP " +
-                   r.status + ")", r.body, "/saml2/ars");
+                   r.status + ")", r.body, "/saml2/ars/{sp}");
   }
 
   // IDENTITY-PROVIDER-INITIATED SSO (#189): the unsolicited Response.

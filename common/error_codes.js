@@ -8735,7 +8735,8 @@ const CODES = [
   { code: 'STS-SAML-0018',
     summary: 'A SAML 2.0 artifact does not resolve: never issued here, ' +
       'expired (saml2.artifactTtlS), or already resolved once.',
-    spec: 'SOAP samlp:ArtifactResponse with status Requester (HTTP 200)' },
+    spec: 'SOAP samlp:ArtifactResponse with status Success and no message ' +
+      '(HTTP 200) — saml-core-2.0-os 3.5.3\'s empty response (#160)' },
   { code: 'STS-SAML-0019',
     summary: 'The SAMLRequest at the SAML 2.0 Single Logout service is not a ' +
       'readable <samlp:LogoutRequest>.',
@@ -8814,7 +8815,8 @@ const CODES = [
   { code: 'STS-SAML-0037',
     summary: 'A SAML 1.1 artifact does not resolve: never issued here, ' +
       'expired (saml11.artifactTtlS), or already resolved once.',
-    spec: 'SOAP samlp:Response with status samlp:Requester (HTTP 200)' },
+    spec: 'SOAP samlp:Response with status samlp:Success and no assertion ' +
+      '(HTTP 200) — saml-bindings-1.1 4.1.1.6 (#160)' },
   { code: 'STS-SAML-0038',
     summary: 'A SAML 1.1 AssertionIDReference names an assertion this ' +
       'service does not hold.',
@@ -8903,21 +8905,25 @@ const CODES = [
     summary: 'A SAML 2.0 artifact this process still held was already ' +
       'resolved by another process against the same store (the cluster ' +
       'claim, #46); section 3.6.4.1 allows one resolution.',
-    spec: 'ArtifactResponse with StatusCode Requester (HTTP 200)' },
+    spec: 'ArtifactResponse with StatusCode Success and no message ' +
+      '(HTTP 200) — the empty response (#160)' },
   { code: 'STS-SAML-0058',
     summary: 'A SAML 1.1 artifact this process still held was already ' +
       'resolved by another process against the same store (the cluster ' +
       'claim, #46); saml-bindings-1.1 section 3.2.3 allows one resolution.',
-    spec: 'samlp:Response with StatusCode samlp:Requester (HTTP 200)' },
+    spec: 'samlp:Response with StatusCode samlp:Success and no assertion ' +
+      '(HTTP 200) — the empty response (#160)' },
   { code: 'STS-SAML-0059',
     summary: 'The cluster claim store could not be asked whether a SAML ' +
       'artifact (2.0 or 1.1) was already resolved, so it was refused rather ' +
       'than resolved unproven.',
-    spec: 'StatusCode Responder (HTTP 200)' },
+    spec: 'the empty response: StatusCode Success and no message or ' +
+      'assertion (HTTP 200) (#160)' },
   { code: 'STS-SAML-0060',
     summary: 'An artifact resolution (2.0 or 1.1) failed while its answer ' +
       'was being built or sent, after the artifact had been spent.',
-    spec: 'StatusCode Responder (HTTP 200) when nothing was sent yet' },
+    spec: 'the empty response (StatusCode Success, nothing embedded; ' +
+      'HTTP 200) when nothing was sent yet (#160)' },
   { code: 'STS-SAML-0061',
     summary: 'A SAML 2.0 service provider\'s AuthnRequest, LogoutRequest or ' +
       'LogoutResponse carried a signature (the Redirect binding\'s query ' +
@@ -8987,8 +8993,9 @@ const CODES = [
       'LogoutResponse or ArtifactResolve was signed with SHA-1 (its ' +
       'SignatureMethod or a DigestMethod) and saml.allowSha1Signatures is ' +
       'off, the default. Refused in every mode.',
-    spec: 'an HTTP 403 page (a SOAP ArtifactResponse with StatusCode ' +
-      'Requester for ArtifactResolve); no Response is sent' },
+    spec: 'an HTTP 403 page (for an ArtifactResolve, the empty ' +
+      'ArtifactResponse: StatusCode Success, no message, #160); no ' +
+      'Response is sent' },
   { code: 'STS-SAML-0074',
     summary: 'A SAML 2.0 service provider\'s AuthnRequest, LogoutRequest, ' +
       'LogoutResponse or ArtifactResolve was refused because the metadata ' +
@@ -8996,8 +9003,9 @@ const CODES = [
       'earliest on the EntitiesDescriptor, EntityDescriptor and ' +
       'SPSSODescriptor) has passed. Refused in every mode until a newer ' +
       'document is consumed.',
-    spec: 'an HTTP 403 page (a SOAP ArtifactResponse with StatusCode ' +
-      'Requester for ArtifactResolve); no Response is sent' },
+    spec: 'an HTTP 403 page (for an ArtifactResolve, the empty ' +
+      'ArtifactResponse: StatusCode Success, no message, #160); no ' +
+      'Response is sent' },
   { code: 'STS-SAML-0075',
     summary: 'A Metadata Query (MDQ) import was asked for and ' +
       'saml2.mdqBaseUrl is not set in the realm.',
@@ -9015,13 +9023,15 @@ const CODES = [
       'certificate that is one of them — where authenticated callers are ' +
       'required (saml2.requireSignedAuthnRequests, on in product by ' +
       'default). The artifact is not spent.',
-    spec: 'a SOAP response with StatusCode Requester (HTTP 200)' },
+    spec: 'a SOAP response with StatusCode Success and nothing embedded ' +
+      '(HTTP 200) — the empty response (#160)' },
   { code: 'STS-SAML-0078',
     summary: 'An artifact was asked for by a party other than the one it ' +
       'was issued to (an ArtifactResolve whose Issuer, or a SAML 1.1 ' +
       'responder path, names another). Refused in every mode; the artifact ' +
       'is not spent.',
-    spec: 'a SOAP response with StatusCode Requester (HTTP 200)' },
+    spec: 'a SOAP response with StatusCode Success and nothing embedded ' +
+      '(HTTP 200) — the empty response (#160)' },
   { code: 'STS-SAML-0079',
     summary: 'A service provider metadata fetch (a refresh, the background ' +
       'refresher or an MDQ lookup) was refused because the host resolves to ' +
@@ -9126,6 +9136,16 @@ const CODES = [
       'KeyDescriptor and a service provider authenticating the back channel ' +
       'from metadata will refuse the node it names none for. #248.',
     spec: 'none — the metadata is served (HTTP 200) without the key' },
+  { code: 'STS-SAML-0098',
+    summary: 'A SAML 2.0 ArtifactResolve or SAML 1.1 artifact Request ' +
+      'reached a resolver whose entityID (providerID) the artifact\'s ' +
+      'SourceID does not name — with saml2.perApplicationEntityId or ' +
+      'saml11.perApplicationProviderId on, an artifact minted for one ' +
+      'party presented at the unscoped resolver or at another party\'s. ' +
+      'The artifact is not spent; it stays resolvable at its own resolver. ' +
+      '#160.',
+    spec: 'SOAP response with status Success and nothing embedded ' +
+      '(HTTP 200) — the empty response' },
   // ===== WSTRUST ===========================================================
   { code: 'STS-WSTRUST-0001',
     summary: 'The RequestSecurityToken body is not well-formed XML (or is ' +

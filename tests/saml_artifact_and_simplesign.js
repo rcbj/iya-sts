@@ -21,6 +21,15 @@
 //      unsigned caller by default. On /saml11/responder: the same for a
 //      SAML 1.1 <samlp:Request>, and a responder path naming another
 //      relying party is refused (STS-SAML-0078).
+//   B1b. A RESOLVER ANSWERS ONLY FOR ITS OWN SourceID (#160). An artifact
+//      minted under a per-application entityID, presented at the unscoped
+//      /saml2/ars or at another service provider's resolver, is answered
+//      with Success and no message (STS-SAML-0098) and NOT spent; its own
+//      resolver then resolves it under an envelope naming the same entity.
+//      With saml2.perApplicationEntityId off, the unscoped resolver answers.
+//      Every refusal above and below is that same EMPTY response (section
+//      3.5.3; saml-bindings-1.1 4.1.1.6 for the responder) — never Requester —
+//      and SAML 1.1's responder holds the same SourceID rule.
 //   C. HTTP-POST-SimpleSign. A signed AuthnRequest, LogoutRequest and
 //      LogoutResponse over it are verified (and tampered ones refused); a
 //      Response is SENT over it to a service provider whose consumed
@@ -156,7 +165,14 @@ async function run(t) {
                             socket ? { socket: socket } : {});
     ars(req, res);
     await res.done;
-    res.success = /status:Success/.test(res.body);
+    // RESOLVED is Success WITH the message; a refusal is the EMPTY response
+    // saml-core-2.0-os 3.5.3 requires since #160 — Success, nothing
+    // embedded, no StatusMessage.
+    res.success = /status:Success/.test(res.body) &&
+                  /<samlp:Response\b/.test(res.body);
+    res.empty = /status:Success/.test(res.body) &&
+                !/<samlp:Response\b/.test(res.body) &&
+                !/StatusMessage/.test(res.body);
     log.debug("Leaving resolve2().");
     return res;
   };
@@ -191,10 +207,10 @@ async function run(t) {
     const unsigned = await kit.withSettings(config, required, function () {
       return resolve2(soap(artifactResolve(sp, 'ART-UNSIGNED', '_a1')));
     });
-    t.check(!unsigned.success && codeOf(unsigned) === 'STS-SAML-0077' &&
-            /status:Requester/.test(unsigned.body),
+    t.check(unsigned.empty && codeOf(unsigned) === 'STS-SAML-0077',
             'an UNSIGNED ArtifactResolve where signatures are required is ' +
-            'refused with Requester, STS-SAML-0077',
+            'answered with the EMPTY response (Success, nothing embedded, no ' +
+            'StatusMessage — section 3.5.3), STS-SAML-0077',
             codeOf(unsigned) + ' ' + unsigned.body.slice(0, 200));
     const wrongKey = await resolve2(soap(sign(
       artifactResolve(sp, 'ART-UNSIGNED', '_a2'), other)));
@@ -208,7 +224,7 @@ async function run(t) {
             codeOf(sha1Signed));
     const wrongSp = await resolve2(soap(sign(
       artifactResolve(stranger, 'ART-UNSIGNED', '_a4'), other)));
-    t.check(!wrongSp.success && codeOf(wrongSp) === 'STS-SAML-0078',
+    t.check(wrongSp.empty && codeOf(wrongSp) === 'STS-SAML-0078',
             'a validly signed request from a DIFFERENT service provider is ' +
             'refused, STS-SAML-0078', codeOf(wrongSp));
     const noIssuer = await resolve2(soap(artifactResolve('', 'ART-UNSIGNED',
@@ -224,8 +240,24 @@ async function run(t) {
             'ArtifactResolve then resolves it', good.body.slice(0, 200));
     const again = await resolve2(soap(sign(
       artifactResolve(sp, 'ART-UNSIGNED', '_a7'), ec)));
-    t.check(!again.success && codeOf(again) === 'STS-SAML-0018',
-            'and it is one-shot after that', codeOf(again));
+    t.check(again.empty && codeOf(again) === 'STS-SAML-0018',
+            'and it is one-shot after that: the empty response', codeOf(again));
+    const neverMinted = await resolve2(soap(sign(
+      artifactResolve(sp, 'ART-NEVER-' + stamp, '_a7'), ec)));
+    const shape = function (body) {
+      log.debug("Entering shape().");
+      log.debug("Leaving shape().");
+      return String(body).replace(/ID="[^"]*"/g, '')
+                         .replace(/IssueInstant="[^"]*"/g, '')
+                         .replace(/InResponseTo="[^"]*"/g, '');
+    };
+    t.check(neverMinted.empty &&
+            shape(neverMinted.body) === shape(again.body) &&
+            shape(unsigned.body) === shape(again.body) &&
+            shape(wrongSp.body) === shape(again.body),
+            'a refused caller, a replay and an artifact never minted get the ' +
+            'SAME answer — no oracle for whether an artifact exists',
+            neverMinted.body.slice(0, 300));
 
     artifacts2.restore(realms.DEFAULT_ID, 'ART-SHA1', held2(sp, '_m2'));
     applications.updateApplication(sp, { attribute: 'samlSigningCertificate',
@@ -290,6 +322,73 @@ async function run(t) {
             'a service provider whose metadata EXPIRED is refused');
 
     // -----------------------------------------------------------------------
+    t.log.info('B1b. a resolver answers only for its own SourceID (#160)');
+    // -----------------------------------------------------------------------
+    const scopedArs = kit.handlerFor(app, 'post', '/saml2/ars/:sp');
+    const resolveScoped = async function (segment, body) {
+      log.debug("Entering resolveScoped().");
+      const res = kit.fakeRes();
+      scopedArs(kit.fakeReq('POST', '/saml2/ars/' +
+                            encodeURIComponent(segment), {}, '', body,
+                            { params: { sp: segment } }), res);
+      await res.done;
+      // RESOLVED is Success WITH the message; a refusal is the EMPTY response
+      // saml-core-2.0-os 3.5.3 requires since #160 — Success, nothing
+      // embedded, no StatusMessage.
+      res.success = /status:Success/.test(res.body) &&
+                    /<samlp:Response\b/.test(res.body);
+      res.empty = /status:Success/.test(res.body) &&
+                  !/<samlp:Response\b/.test(res.body) &&
+                  !/StatusMessage/.test(res.body);
+      log.debug("Leaving resolveScoped().");
+      return res;
+    };
+    const ownIdp = direct.idpEntityIdFor(sp);
+    t.check(ownIdp !== direct.idpEntityIdFor(''),
+            'with saml2.perApplicationEntityId on (the default) the service ' +
+            'provider has an entityID of its own', ownIdp);
+    const perApp = direct['mintArtifact'](ownIdp, 0);
+    artifacts2.restore(realms.DEFAULT_ID, perApp,
+                       Object.assign(held2(sp, '_m7'), { issuer: ownIdp }));
+    const atUnscoped = await resolve2(soap(artifactResolve(sp, perApp,
+                                                           '_f1')));
+    t.check(atUnscoped.empty && !/_m7/.test(atUnscoped.body) &&
+            codeOf(atUnscoped) === 'STS-SAML-0098',
+            'an artifact whose SourceID is a per-application entity, ' +
+            'presented at the UNSCOPED /saml2/ars, is answered with Success ' +
+            'and no message, STS-SAML-0098',
+            codeOf(atUnscoped) + ' ' + atUnscoped.body.slice(0, 300));
+    const otherSlug = direct.slugOf(stranger);
+    const atStranger = await resolveScoped(otherSlug,
+      soap(artifactResolve(sp, perApp, '_f2')));
+    t.check(atStranger.empty && !/_m7/.test(atStranger.body) &&
+            codeOf(atStranger) === 'STS-SAML-0098',
+            'and so is one presented at ANOTHER service provider\'s resolver',
+            codeOf(atStranger));
+    const atOwn = await resolveScoped(direct.slugOf(sp),
+      soap(artifactResolve(sp, perApp, '_f3')));
+    t.check(atOwn.success && /_m7/.test(atOwn.body) &&
+            atOwn.body.indexOf('<saml:Issuer>' + ownIdp + '</saml:Issuer>') >=
+              0,
+            'NEITHER SPENT IT: its own resolver then resolves it, under an ' +
+            'ArtifactResponse naming the same entity',
+            codeOf(atOwn) + ' ' + atOwn.body.slice(0, 300));
+    await kit.withSettings(config,
+      { 'saml2.perApplicationEntityId': false },
+      async function () {
+        log.debug("Entering the shared-entityID control.");
+        const shared = direct['mintArtifact'](direct.idpEntityIdFor(sp), 0);
+        artifacts2.restore(realms.DEFAULT_ID, shared, held2(sp, '_m8'));
+        const atShared = await resolve2(soap(artifactResolve(sp, shared,
+                                                             '_f4')));
+        t.check(atShared.success && /_m8/.test(atShared.body),
+                'with it off, every service provider shares the one ' +
+                'entityID and the unscoped resolver answers (the control)',
+                codeOf(atShared));
+        log.debug("Leaving the shared-entityID control.");
+      });
+
+    // -----------------------------------------------------------------------
     t.log.info('B2. the SAML 1.1 responder');
     // -----------------------------------------------------------------------
     const rp = newParty('rp11', saml11sso.RP_KIND, [ec.cert.b64]);
@@ -314,7 +413,13 @@ async function run(t) {
         responder(req, res);
       }
       await res.done;
-      res.success = /samlp:Success/.test(res.body);
+      // RESOLVED is Success WITH an assertion; a refusal is the response
+      // with no assertions saml-bindings-1.1 4.1.1.6 requires (#160).
+      res.success = /samlp:Success/.test(res.body) &&
+                    /<saml:Assertion\b/.test(res.body);
+      res.empty = /samlp:Success/.test(res.body) &&
+                  !/<saml:Assertion\b/.test(res.body) &&
+                  !/StatusMessage/.test(res.body);
       log.debug("Leaving resolve11().");
       return res;
     };
@@ -322,12 +427,12 @@ async function run(t) {
     const unsigned11 = await kit.withSettings(config, required, function () {
       return resolve11(soap(request11('ART11-A', '_q1')));
     });
-    t.check(!unsigned11.success && codeOf(unsigned11) === 'STS-SAML-0077',
+    t.check(unsigned11.empty && codeOf(unsigned11) === 'STS-SAML-0077',
             'SAML 1.1: an unsigned artifact Request where signatures are ' +
             'required is refused, STS-SAML-0077', codeOf(unsigned11));
     const elsewhere = await resolve11(soap(kit.signEnveloped(stsCrypto,
       request11('ART11-A', '_q2'), ec)), saml2sso.slugOf(rpOther));
-    t.check(!elsewhere.success && codeOf(elsewhere) === 'STS-SAML-0078',
+    t.check(elsewhere.empty && codeOf(elsewhere) === 'STS-SAML-0078',
             'SAML 1.1: at ANOTHER relying party\'s responder it is refused, ' +
             'STS-SAML-0078', codeOf(elsewhere));
     const wrong11 = await resolve11(soap(kit.signEnveloped(stsCrypto,
@@ -353,6 +458,30 @@ async function run(t) {
     const dev11 = await resolve11(soap(request11('ART11-C', '_q6')));
     t.check(dev11.success, 'SAML 1.1: development accepts an unsigned ' +
             'caller by default', codeOf(dev11));
+    const again11 = await resolve11(soap(request11('ART11-C', '_q6b')));
+    t.check(again11.empty && codeOf(again11) === 'STS-SAML-0037',
+            'SAML 1.1: a replay gets Success with no assertion ' +
+            '(saml-bindings-1.1 4.1.1.6), STS-SAML-0037', codeOf(again11));
+
+    // A RESPONDER ANSWERS ONLY FOR ITS OWN SourceID (#160), SAML 1.1.
+    const direct11 = new saml11sso.Saml11Sso(
+      saml11sso.Saml11Sso.defaultDeps());
+    const own11 = direct11.providerIdFor(rp);
+    t.check(own11 !== direct11.providerIdFor(''),
+            'SAML 1.1: with saml11.perApplicationProviderId on (the default) ' +
+            'the relying party has a providerID of its own', own11);
+    const perApp11 = direct11['mintArtifact'](own11);
+    artifacts11.restore(realms.DEFAULT_ID, perApp11, held11('_s6'));
+    const unscoped11 = await resolve11(soap(request11(perApp11, '_q6c')));
+    t.check(unscoped11.empty && codeOf(unscoped11) === 'STS-SAML-0098',
+            'SAML 1.1: an artifact under a per-relying-party providerID at ' +
+            'the UNSCOPED responder is answered with no assertion, ' +
+            'STS-SAML-0098', codeOf(unscoped11));
+    const own11Res = await resolve11(soap(request11(perApp11, '_q6d')),
+                                     saml2sso.slugOf(rp));
+    t.check(own11Res.success && /_s6/.test(own11Res.body),
+            'SAML 1.1: NOT SPENT — its own responder then resolves it',
+            codeOf(own11Res) + ' ' + own11Res.body.slice(0, 200));
 
     // -----------------------------------------------------------------------
     // A RELYING PARTY WITH TWO NAMES, which is the ordinary case for anything
@@ -394,7 +523,7 @@ async function run(t) {
     artifacts11.restore(realms.DEFAULT_ID, 'ART11-E', heldTwoNames('_s5'));
     const twoNamesElsewhere = await resolve11(
       soap(request11('ART11-E', '_q8')), saml2sso.slugOf(rpOther));
-    t.check(!twoNamesElsewhere.success &&
+    t.check(twoNamesElsewhere.empty &&
             codeOf(twoNamesElsewhere) === 'STS-SAML-0078',
             'SAML 1.1: and at a THIRD party\'s responder it is still ' +
             'refused, STS-SAML-0078', codeOf(twoNamesElsewhere));

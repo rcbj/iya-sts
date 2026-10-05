@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4067** of them, in **41** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4068** of them, in **41** subsystems.
 
 ## Where a code appears
 
@@ -65,7 +65,7 @@ is an ordinary outcome.
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 47
 * [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 255
 * [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 693
-* [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 97
+* [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 98
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 25
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 16
 * [Federation (`STS-FED`)](#sts-fed) — 141
@@ -2074,7 +2074,7 @@ Raised from: saml/.
 | `STS-SAML-0015` | The body posted to the SAML 2.0 Artifact Resolution Service is not XML. | SOAP samlp:ArtifactResponse with status Requester (HTTP 200) |
 | `STS-SAML-0016` | The SOAP body posted to the SAML 2.0 Artifact Resolution Service carries no <samlp:ArtifactResolve>. | SOAP samlp:ArtifactResponse with status Requester (HTTP 200) |
 | `STS-SAML-0017` | A SAML 2.0 ArtifactResolve carries no <samlp:Artifact>. | SOAP samlp:ArtifactResponse with status Requester (HTTP 200) |
-| `STS-SAML-0018` | A SAML 2.0 artifact does not resolve: never issued here, expired (saml2.artifactTtlS), or already resolved once. | SOAP samlp:ArtifactResponse with status Requester (HTTP 200) |
+| `STS-SAML-0018` | A SAML 2.0 artifact does not resolve: never issued here, expired (saml2.artifactTtlS), or already resolved once. | SOAP samlp:ArtifactResponse with status Success and no message (HTTP 200) — saml-core-2.0-os 3.5.3's empty response (#160) |
 | `STS-SAML-0019` | The SAMLRequest at the SAML 2.0 Single Logout service is not a readable <samlp:LogoutRequest>. | HTTP 400 page |
 | `STS-SAML-0020` | A SAML 2.0 LogoutRequest carried an <saml:EncryptedID> this service could not decrypt, so the session was not ended. | HTTP 400 page |
 | `STS-SAML-0021` | The mock SAML 2.0 service provider was handed an artifact that does not resolve (already resolved, expired or never issued). | HTTP 200 error page |
@@ -2093,7 +2093,7 @@ Raised from: saml/.
 | `STS-SAML-0034` | The SAML 1.1 identity provider metadata could not be signed and was served unsigned. | — |
 | `STS-SAML-0035` | The body posted to the SAML 1.1 SAML responder is not XML. | SOAP samlp:Response with status samlp:Requester (HTTP 200) |
 | `STS-SAML-0036` | The SOAP body posted to the SAML 1.1 SAML responder carries no <samlp:Request>. | SOAP samlp:Response with status samlp:Requester (HTTP 200) |
-| `STS-SAML-0037` | A SAML 1.1 artifact does not resolve: never issued here, expired (saml11.artifactTtlS), or already resolved once. | SOAP samlp:Response with status samlp:Requester (HTTP 200) |
+| `STS-SAML-0037` | A SAML 1.1 artifact does not resolve: never issued here, expired (saml11.artifactTtlS), or already resolved once. | SOAP samlp:Response with status samlp:Success and no assertion (HTTP 200) — saml-bindings-1.1 4.1.1.6 (#160) |
 | `STS-SAML-0038` | A SAML 1.1 AssertionIDReference names an assertion this service does not hold. | SOAP samlp:Response with status samlp:Requester (HTTP 200) |
 | `STS-SAML-0039` | A SAML 1.1 AttributeQuery or AuthenticationQuery was refused in product mode: it names no registered relying party (Resource or the path segment), or its caller did not authenticate as that relying party (a signed Request or its registered certificate at the TLS handshake). Until #189 every query was refused in product. | SOAP samlp:Response with status samlp:Requester (HTTP 200) |
 | `STS-SAML-0040` | A SAML 1.1 query carries no <saml:Subject> with a NameIdentifier. | SOAP samlp:Response with status samlp:Requester (HTTP 200) |
@@ -2113,10 +2113,10 @@ Raised from: saml/.
 | `STS-SAML-0054` | The application entry refused the metadata and encryption certificate a refresh fetched. | — |
 | `STS-SAML-0055` | A SAML 2.0 sign-in came back from its one trip to the sign-in screen without a fresh authentication (ForceAuthn) or without a session, and was answered AuthnFailed rather than sent again. | Response status AuthnFailed |
 | `STS-SAML-0056` | A SAML 2.0 sign-in came back from its one trip to the sign-in screen with a session that still does not meet the RequestedAuthnContext, and was answered NoAuthnContext. | Response status NoAuthnContext |
-| `STS-SAML-0057` | A SAML 2.0 artifact this process still held was already resolved by another process against the same store (the cluster claim, #46); section 3.6.4.1 allows one resolution. | ArtifactResponse with StatusCode Requester (HTTP 200) |
-| `STS-SAML-0058` | A SAML 1.1 artifact this process still held was already resolved by another process against the same store (the cluster claim, #46); saml-bindings-1.1 section 3.2.3 allows one resolution. | samlp:Response with StatusCode samlp:Requester (HTTP 200) |
-| `STS-SAML-0059` | The cluster claim store could not be asked whether a SAML artifact (2.0 or 1.1) was already resolved, so it was refused rather than resolved unproven. | StatusCode Responder (HTTP 200) |
-| `STS-SAML-0060` | An artifact resolution (2.0 or 1.1) failed while its answer was being built or sent, after the artifact had been spent. | StatusCode Responder (HTTP 200) when nothing was sent yet |
+| `STS-SAML-0057` | A SAML 2.0 artifact this process still held was already resolved by another process against the same store (the cluster claim, #46); section 3.6.4.1 allows one resolution. | ArtifactResponse with StatusCode Success and no message (HTTP 200) — the empty response (#160) |
+| `STS-SAML-0058` | A SAML 1.1 artifact this process still held was already resolved by another process against the same store (the cluster claim, #46); saml-bindings-1.1 section 3.2.3 allows one resolution. | samlp:Response with StatusCode samlp:Success and no assertion (HTTP 200) — the empty response (#160) |
+| `STS-SAML-0059` | The cluster claim store could not be asked whether a SAML artifact (2.0 or 1.1) was already resolved, so it was refused rather than resolved unproven. | the empty response: StatusCode Success and no message or assertion (HTTP 200) (#160) |
+| `STS-SAML-0060` | An artifact resolution (2.0 or 1.1) failed while its answer was being built or sent, after the artifact had been spent. | the empty response (StatusCode Success, nothing embedded; HTTP 200) when nothing was sent yet (#160) |
 | `STS-SAML-0061` | A SAML 2.0 service provider's AuthnRequest, LogoutRequest or LogoutResponse carried a signature (the Redirect binding's query signature or an enveloped one) that does not verify against any of its registered signing certificates. Refused in every mode. | an HTTP 403 page; no Response is sent and no session ends |
 | `STS-SAML-0062` | A SAML 2.0 service provider's request signature could not be checked at all — an algorithm common/crypto.js does not verify (MD5, a MAC, HSS/LMS…), an unreadable key, a reference naming something other than the message (signature wrapping), a malformed signature, or a Signature parameter without the SAMLRequest and SigAlg it signs. Refused in every mode. | an HTTP 403 page; no Response is sent and no session ends |
 | `STS-SAML-0063` | An unsigned SAML 2.0 AuthnRequest, LogoutRequest or LogoutResponse — or a signed one with no registered certificate to verify it — was refused because signed requests are required (saml2.requireSignedAuthnRequests, on in product by default, or the service provider's metadata saying AuthnRequestsSigned). | an HTTP 403 page; no Response is sent and no session ends |
@@ -2129,12 +2129,12 @@ Raised from: saml/.
 | `STS-SAML-0070` | An AuthnRequest named an AssertionConsumerServiceURL that is not one of the endpoints in the service provider's consumed metadata (in every mode). | an HTTP 400 page; no Response is sent |
 | `STS-SAML-0071` | An AuthnRequest's NameIDPolicy asked for a Format the service provider's consumed metadata does not declare. | a Response with StatusCode Requester / InvalidNameIDPolicy |
 | `STS-SAML-0072` | An AuthnRequest named no assertion consumer service, and no endpoint in the service provider's consumed metadata is on a binding this identity provider delivers on (or on the ProtocolBinding asked for). | an HTTP 400 page; no Response is sent |
-| `STS-SAML-0073` | A SAML 2.0 service provider's AuthnRequest, LogoutRequest, LogoutResponse or ArtifactResolve was signed with SHA-1 (its SignatureMethod or a DigestMethod) and saml.allowSha1Signatures is off, the default. Refused in every mode. | an HTTP 403 page (a SOAP ArtifactResponse with StatusCode Requester for ArtifactResolve); no Response is sent |
-| `STS-SAML-0074` | A SAML 2.0 service provider's AuthnRequest, LogoutRequest, LogoutResponse or ArtifactResolve was refused because the metadata consumed for it has EXPIRED — its effective validUntil (the earliest on the EntitiesDescriptor, EntityDescriptor and SPSSODescriptor) has passed. Refused in every mode until a newer document is consumed. | an HTTP 403 page (a SOAP ArtifactResponse with StatusCode Requester for ArtifactResolve); no Response is sent |
+| `STS-SAML-0073` | A SAML 2.0 service provider's AuthnRequest, LogoutRequest, LogoutResponse or ArtifactResolve was signed with SHA-1 (its SignatureMethod or a DigestMethod) and saml.allowSha1Signatures is off, the default. Refused in every mode. | an HTTP 403 page (for an ArtifactResolve, the empty ArtifactResponse: StatusCode Success, no message, #160); no Response is sent |
+| `STS-SAML-0074` | A SAML 2.0 service provider's AuthnRequest, LogoutRequest, LogoutResponse or ArtifactResolve was refused because the metadata consumed for it has EXPIRED — its effective validUntil (the earliest on the EntitiesDescriptor, EntityDescriptor and SPSSODescriptor) has passed. Refused in every mode until a newer document is consumed. | an HTTP 403 page (for an ArtifactResolve, the empty ArtifactResponse: StatusCode Success, no message, #160); no Response is sent |
 | `STS-SAML-0075` | A Metadata Query (MDQ) import was asked for and saml2.mdqBaseUrl is not set in the realm. | the caller's refusal (errors on a console or /admin-api reply) |
 | `STS-SAML-0076` | The background refresh of a service provider's stale metadata failed (the fetch, or consuming what it fetched). Recorded when the state changes and summarised hourly while it persists; the last good document stays in force until its validUntil. | — |
-| `STS-SAML-0077` | A SAML 2.0 ArtifactResolve or SAML 1.1 artifact Request came from a caller that is not authenticated — no signature verifying against the party's registered certificates and no TLS client certificate that is one of them — where authenticated callers are required (saml2.requireSignedAuthnRequests, on in product by default). The artifact is not spent. | a SOAP response with StatusCode Requester (HTTP 200) |
-| `STS-SAML-0078` | An artifact was asked for by a party other than the one it was issued to (an ArtifactResolve whose Issuer, or a SAML 1.1 responder path, names another). Refused in every mode; the artifact is not spent. | a SOAP response with StatusCode Requester (HTTP 200) |
+| `STS-SAML-0077` | A SAML 2.0 ArtifactResolve or SAML 1.1 artifact Request came from a caller that is not authenticated — no signature verifying against the party's registered certificates and no TLS client certificate that is one of them — where authenticated callers are required (saml2.requireSignedAuthnRequests, on in product by default). The artifact is not spent. | a SOAP response with StatusCode Success and nothing embedded (HTTP 200) — the empty response (#160) |
+| `STS-SAML-0078` | An artifact was asked for by a party other than the one it was issued to (an ArtifactResolve whose Issuer, or a SAML 1.1 responder path, names another). Refused in every mode; the artifact is not spent. | a SOAP response with StatusCode Success and nothing embedded (HTTP 200) — the empty response (#160) |
 | `STS-SAML-0079` | A service provider metadata fetch (a refresh, the background refresher or an MDQ lookup) was refused because the host resolves to a loopback, private, link-local or reserved address, or did not resolve, in product mode (federation_http.ts vetHost()). | the caller's refusal (errors on a console or /admin-api reply) |
 | `STS-SAML-0080` | A Metadata Query (MDQ) lookup started by a request from an entityID nobody registered was not made: the realm is in product mode (mode.registersFromMetadataQuery()) and has no saml2.metadataTrustAnchors, so no answer could be verified. Nothing is fetched or created; the entityID is listed as refused on the SAML 2.0 page. | — |
 | `STS-SAML-0081` | A Metadata Query (MDQ) answer for an entityID nobody registered, fetched for a lookup a request started, did not verify against any of the realm's saml2.metadataTrustAnchors (product mode). Nothing is created; the entityID is listed as refused on the SAML 2.0 page. | — |
@@ -2154,6 +2154,7 @@ Raised from: saml/.
 | `STS-SAML-0095` | The SAML 2.0 attribute authority received no <samlp:AttributeQuery>, or one naming no Issuer. #189. | SOAP samlp:Response, Requester (HTTP 200) |
 | `STS-SAML-0096` | A SAML 1.1 AttributeQuery or AuthenticationQuery in product mode named a subject no live session here gave the asking relying party (by the NameIdentifier it was issued). #189. | SOAP samlp:Response with status samlp:Requester (HTTP 200) |
 | `STS-SAML-0097` | The TLS certificate the SAML back channel presents (this process's main-port leaves, or another cluster node's off its membership row) could not be read while a SAML 2.0 or SAML 1.1 metadata document was built, so the document went out without that KeyDescriptor and a service provider authenticating the back channel from metadata will refuse the node it names none for. #248. | none — the metadata is served (HTTP 200) without the key |
+| `STS-SAML-0098` | A SAML 2.0 ArtifactResolve or SAML 1.1 artifact Request reached a resolver whose entityID (providerID) the artifact's SourceID does not name — with saml2.perApplicationEntityId or saml11.perApplicationProviderId on, an artifact minted for one party presented at the unscoped resolver or at another party's. The artifact is not spent; it stays resolvable at its own resolver. #160. | SOAP response with status Success and nothing embedded (HTTP 200) — the empty response |
 
 ## STS-WSTRUST
 

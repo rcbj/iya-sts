@@ -1443,6 +1443,32 @@ class Saml11Sso {
     return artifact;
   }
 
+  // IS THIS A TYPE 0x0001 ARTIFACT WHOSE SourceID NAMES A PROVIDER OTHER THAN
+  // the responder at `scopedId` (#160)? saml-bindings-1.1 section 4.1.1.6:
+  // the SourceID is how a destination site finds the responder of the source
+  // site that issued the artifact, so a responder answers only for its own
+  // providerID — with `saml11.perApplicationProviderId` on, an artifact
+  // minted for a relying party belongs to `/saml11/responder/{rp}`, not to
+  // the unscoped responder or another party's. A value that is not a 42-byte
+  // type 0x0001 artifact names no SourceID, and is the unknown artifact it
+  // looks like. `saml2_sso.ts`'s `isForeignArtifact()` is the 2.0 form.
+  private isForeignArtifact(artifact, scopedId): boolean {
+    const { log } = this.deps;
+    log.debug("Entering Saml11Sso.isForeignArtifact().");
+    const bytes = Buffer.from(String(artifact || ''), 'base64');
+    if (bytes.length !== 42 || bytes.readUInt16BE(0) !== 0x0001) {
+      log.debug("Leaving Saml11Sso.isForeignArtifact(). Not a type 0x0001 " +
+                "artifact.");
+      return false;
+    }
+    const own = crypto.createHash('sha1')
+                      .update(String(this.providerIdFor(scopedId)), 'utf8')
+                      .digest();
+    const foreign = !own.equals(bytes.subarray(2, 22));
+    log.debug("Leaving Saml11Sso.isForeignArtifact(). " + foreign);
+    return foreign;
+  }
+
   private stashArtifact(artifact, detail) {
     const { log } = this.deps;
     log.debug("Entering Saml11Sso.stashArtifact().");
@@ -2315,9 +2341,31 @@ class Saml11Sso {
     const requestId = request.getAttribute('RequestID') || '';
 
     // --- an artifact ---------------------------------------------------------
+    // AN ARTIFACT THAT DOES NOT RESOLVE IS ONE ANSWER, AND IT IS SUCCESS
+    // (#160). saml-bindings-1.1 section 4.1.1.6: a source site that cannot
+    // find or construct the assertions "responds with a <samlp:Response>
+    // message with no assertions", whose status "MUST include a
+    // <samlp:StatusCode> element with the value Success"; an artifact
+    // presented again MUST get "the same message as it would if it were
+    // queried with an unknown artifact"; and an artifact issued to another
+    // destination site MUST get a response with no assertions and Success.
+    // So every reason an assertion is not handed over — never minted here,
+    // expired, already resolved here or on another node, another provider's
+    // SourceID, a caller that is not the relying party or cannot prove it, a
+    // claim store that cannot be asked, an answer that failed after the
+    // spend — is `empty()`: Success, no assertion, NO StatusMessage, the same
+    // whatever the reason. The reason is the operator's: the error code and
+    // the log line or audit row beside it. `saml2_sso.ts`'s
+    // `resolveArtifact()` is the same rule for SAML 2.0.
     const artifactEl = firstByLocal(request, 'AssertionArtifact');
     if (artifactEl) {
       const artifact = (artifactEl.textContent || '').trim();
+      const empty = (code) => {
+        log.debug("Entering empty(). " + code);
+        errorCodes.mark(res, code);
+        log.debug("Leaving empty().");
+        return answer(STATUS_SUCCESS, '', '', requestId, '');
+      };
       // MINTED IN ANOTHER CELL (#98 D10): the whole Request goes to the cell
       // whose tag the AssertionHandle carries, before the caller is
       // authenticated or the artifact is spent.
@@ -2328,6 +2376,17 @@ class Saml11Sso {
                   "minted the artifact.");
         return undefined;
       }
+      // ANOTHER PROVIDER'S ARTIFACT (#160), asked before anything is looked
+      // up or spent — see isForeignArtifact().
+      if (this.isForeignArtifact(artifact, scoped.id)) {
+        log.warn(errorCodes.tag('STS-SAML-0098') + 'saml11: artifact ' +
+                 String(artifact).slice(0, 12) + '… was presented at the ' +
+                 'responder of "' + this.providerIdFor(scoped.id) + '", but ' +
+                 'its SourceID names another provider. Answered empty, and ' +
+                 'the artifact is left for the responder it belongs to.');
+        log.debug("Leaving Saml11Sso.respond(). Another provider's artifact.");
+        return empty('STS-SAML-0098');
+      }
       const held = artifacts.get(artifact);
       if (held) {
         // WHO IS ASKING, before the artifact is spent (#37 follow-up) — see
@@ -2336,16 +2395,15 @@ class Saml11Sso {
                                                        held);
         if (caller.refuse) {
           log.debug("Leaving Saml11Sso.respond(). The caller was refused.");
-          errorCodes.mark(res, caller.errorCode || 'STS-SAML-0077');
-          return answer(STATUS_REQUESTER, caller.why, '', requestId, '');
+          return empty(caller.errorCode || 'STS-SAML-0077');
         }
       }
       if (!held) {
-        // The one refusal here worth making loudly, because it is the same
-        // answer for three different mistakes and a relying party cannot tell
-        // them apart from the status code alone: an artifact that was never
-        // minted here, one that has expired, and — the interesting one — one
-        // that has ALREADY BEEN RESOLVED.
+        // The one refusal here worth logging loudly, because it is the same
+        // empty answer for three different mistakes and a relying party
+        // cannot tell them apart from the response at all: an artifact that
+        // was never minted here, one that has expired, and — the interesting
+        // one — one that has ALREADY BEEN RESOLVED.
         log.warn('saml11: artifact ' + String(artifact).slice(0, 12) +
                  '… does ' +
                  'not resolve. It was never minted here, or it has expired ' +
@@ -2353,13 +2411,7 @@ class Saml11Sso {
                  'once — which destroys it, because saml-bindings-1.1 ' +
                  'section 3.2.3 says an artifact is resolvable exactly once.');
         log.debug("Leaving Saml11Sso.respond(). Unknown artifact.");
-        errorCodes.mark(res, 'STS-SAML-0037');
-        log.debug("Leaving Saml11Sso.respond().");
-        return answer(STATUS_REQUESTER,
-                      'that artifact does not resolve: it was never issued ' +
-                      'here, it has expired, or it has already been resolved ' +
-                      '— an artifact is one-shot (section 3.2.3).',
-                      '', requestId, '');
+        return empty('STS-SAML-0037');
       }
       // ONE-SHOT. Deleted BEFORE the answer is built rather than after it is
       // sent, so that two requests arriving together cannot both find it.
@@ -2381,13 +2433,9 @@ class Saml11Sso {
                      'but has ALREADY BEEN RESOLVED by another node against ' +
                      'the same store. Refused: saml-bindings-1.1 section ' +
                      '3.2.3 allows one resolution.');
-            errorCodes.mark(res, 'STS-SAML-0058');
             log.debug("Leaving Saml11Sso.respond()'s artifact claim answer. " +
                       "Used.");
-            return answer(STATUS_REQUESTER,
-                          'that artifact does not resolve: it has already ' +
-                          'been resolved — an artifact is one-shot (section ' +
-                          '3.2.3).', '', requestId, '');
+            return empty('STS-SAML-0058');
           }
           if (!claimed.ok) {
             log.error(errorCodes.tag('STS-SAML-0059') + 'saml11: whether ' +
@@ -2396,13 +2444,9 @@ class Saml11Sso {
                       'store ' +
                       '(' + (claimed.why || 'no reason given') + '). It is ' +
                       'refused.');
-            errorCodes.mark(res, 'STS-SAML-0059');
             log.debug("Leaving Saml11Sso.respond()'s artifact claim answer. " +
                       "Store.");
-            return answer(STATUS_RESPONDER,
-                          'the identity provider could not confirm that ' +
-                          'artifact is unresolved, so it is not resolved.',
-                          '', requestId, '');
+            return empty('STS-SAML-0059');
           }
           log.debug("Leaving Saml11Sso.respond()'s artifact claim answer. An " +
                     "artifact was resolved and destroyed.");
@@ -2419,9 +2463,7 @@ class Saml11Sso {
                     'request could not be answered after its claim: ' +
                     ((e && e.message) || e));
           if (!res.headersSent) {
-            errorCodes.mark(res, 'STS-SAML-0060');
-            answer(STATUS_RESPONDER, 'the artifact could not be resolved.', '',
-                   requestId, '');
+            empty('STS-SAML-0060');
           }
         });
     }

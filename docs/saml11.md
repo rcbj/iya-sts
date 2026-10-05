@@ -110,7 +110,7 @@ names the SOAP request and its `Recipient` names whoever asked.
 
 | Request | Answer |
 |---|---|
-| `AssertionArtifact` | the assertion — **exactly once**, across every node of a cluster: resolving destroys it (bindings section 3.2.3), and a second attempt is refused with a status naming the reason. `saml11.artifactTtlS` only bounds how long an unresolved one lives |
+| `AssertionArtifact` | the assertion — **exactly once**, across every node of a cluster: resolving destroys it (bindings section 3.2.3), and a second attempt — like an unknown artifact, another provider's, or one asked for by the wrong relying party — gets `samlp:Success` with no assertion and no status message, as bindings section 4.1.1.6 requires; the reason is in the log under its error code. `saml11.artifactTtlS` only bounds how long an unresolved one lives |
 | `AssertionIDReference` | an assertion this realm issued, from a cache of `saml11.assertionCacheMax`; not one-shot, since holding the reference means already holding the assertion |
 | `AttributeQuery` | an assertion carrying the person's attributes and **no** `AuthenticationStatement` — in product under a release policy, below |
 | `AuthenticationQuery` | answered from a live, authenticated session for that name, with its real method and instant; with no such session, Success and no assertion — in product under the same policy |
