@@ -1040,6 +1040,220 @@ async function rawSignatures() {
            integers: integers, pkcs7: pkcs7 };
 }
 
+// WEBAUTHN (section 10): Node's verdict from verifyCoseSignature() for
+// every COSE algorithm — on the signature, tampered with, under the key of
+// another algorithm, a fully specified one on the wrong curve, RS1 with and
+// without the insecure flag — with the key as a JWK; and Node's parse of
+// TPM structures and attestation extensions built field by field here.
+function webauthn() {
+  const asn1js = require('asn1js');
+  const data = Buffer.from('authenticatorData || clientDataHash');
+  const jwkOf = function (pub) {
+    return pub.export({ format: 'jwk' });
+  };
+  const keyFor = {
+    ec256: nodeCrypto.generateKeyPairSync('ec', { namedCurve: 'prime256v1' }),
+    ec384: nodeCrypto.generateKeyPairSync('ec', { namedCurve: 'secp384r1' }),
+    ec521: nodeCrypto.generateKeyPairSync('ec', { namedCurve: 'secp521r1' }),
+    k1: nodeCrypto.generateKeyPairSync('ec', { namedCurve: 'secp256k1' }),
+    ed25519: nodeCrypto.generateKeyPairSync('ed25519'),
+    ed448: nodeCrypto.generateKeyPairSync('ed448'),
+    rsa: nodeCrypto.generateKeyPairSync('rsa', { modulusLength: 2048 }),
+    rsa1024: nodeCrypto.generateKeyPairSync('rsa', { modulusLength: 1024 })
+  };
+  const plan = [
+    [-7, 'ec256'], [-35, 'ec384'], [-36, 'ec521'], [-8, 'ed25519'],
+    [-8, 'ed448'], [-257, 'rsa'], [-258, 'rsa'], [-259, 'rsa'],
+    [-37, 'rsa'], [-38, 'rsa'], [-39, 'rsa'], [-9, 'ec256'], [-9, 'ec384'],
+    [-51, 'ec384'], [-52, 'ec521'], [-47, 'k1'], [-19, 'ed25519'],
+    [-19, 'ed448'], [-53, 'ed448'], [-65535, 'rsa'], [-257, 'rsa1024'],
+    [-48, 'ML-DSA-44'], [-49, 'ML-DSA-65'], [-50, 'ML-DSA-87']
+  ];
+  const cose = plan.map(function (row) {
+    const spec = crypto.coseSignatureAlg(row[0]);
+    let jwk;
+    let sig;
+    if (spec.family === 'pq') {
+      const pair = pqJose.generate(spec.name);
+      jwk = { kty: 'AKP', alg: spec.name, pub: pair.pub.toString('base64url') };
+      sig = Buffer.from(pqJose.sign(spec.name, pair.priv, data));
+    } else {
+      const pair = keyFor[row[1]];
+      jwk = jwkOf(pair.publicKey);
+      const opts = { key: pair.privateKey };
+      if (spec.family === 'rsa-pss') {
+        opts.padding = nodeCrypto.constants.RSA_PKCS1_PSS_PADDING;
+        opts.saltLength = spec.saltLength;
+      }
+      if (spec.family === 'rsa-pkcs1') {
+        opts.padding = nodeCrypto.constants.RSA_PKCS1_PADDING;
+      }
+      sig = nodeCrypto.sign(spec.hash, data, opts);
+    }
+    const tampered = Buffer.from(sig);
+    tampered[tampered.length - 1] ^= 1;
+    const other = jwkOf(keyFor[row[1] === 'rsa' ? 'ec256' : 'rsa'].publicKey);
+    return { alg: row[0], key: row[1], jwk: jwk, wrongJwk: other,
+             signature: sig.toString('base64'),
+             ok: crypto.verifyCoseSignature(row[0], jwk, data, sig),
+             okInsecure: crypto.verifyCoseSignature(row[0], jwk, data, sig,
+                                                    { allowInsecure: true }),
+             tampered: crypto.verifyCoseSignature(row[0], jwk, data,
+                                                  tampered),
+             wrongKey: crypto.verifyCoseSignature(row[0], other, data, sig) };
+  });
+  // TPM structures, built field by field.
+  const u16 = function (n) {
+    const b = Buffer.alloc(2);
+    b.writeUInt16BE(n, 0);
+    return b;
+  };
+  const u32 = function (n) {
+    const b = Buffer.alloc(4);
+    b.writeUInt32BE(n, 0);
+    return b;
+  };
+  const sized = function (b) {
+    return Buffer.concat([u16(b.length), b]);
+  };
+  const rsaPub = Buffer.concat([u16(0x0001), u16(0x000b), u32(0x00060472),
+    sized(nodeCrypto.randomBytes(32)), u16(0x0010), u16(0x0014), u16(0x000b),
+    u16(2048), u32(0), sized(nodeCrypto.randomBytes(256))]);
+  const eccPub = Buffer.concat([u16(0x0023), u16(0x000b), u32(0x00050072),
+    sized(Buffer.alloc(0)), u16(0x0006), u16(128), u16(0x0043), u16(0x001a),
+    u16(0x000b), u16(1), u16(0x0003), u16(0x0010),
+    sized(nodeCrypto.randomBytes(31)), sized(nodeCrypto.randomBytes(32))]);
+  const badCurve = Buffer.concat([u16(0x0023), u16(0x000b), u32(0),
+    sized(Buffer.alloc(0)), u16(0x0010), u16(0x0010), u16(0x0009),
+    u16(0x0010), sized(Buffer.alloc(32)), sized(Buffer.alloc(32))]);
+  const attest = Buffer.concat([u32(0xff544347), u16(0x8017),
+    sized(nodeCrypto.randomBytes(34)), sized(nodeCrypto.randomBytes(32)),
+    Buffer.from('0000000000abcdef', 'hex'), u32(7), u32(9), Buffer.from([1]),
+    Buffer.from('0102030405060708', 'hex'), sized(nodeCrypto.randomBytes(34)),
+    sized(nodeCrypto.randomBytes(34))]);
+  const sigs = [
+    Buffer.concat([u16(0x0014), u16(0x000b), sized(nodeCrypto.randomBytes(256))]),
+    Buffer.concat([u16(0x0018), u16(0x000b), sized(Buffer.from('0102', 'hex')),
+                   sized(Buffer.from('81ff', 'hex'))]),
+    Buffer.concat([u16(0x0018), u16(0x000b), sized(nodeCrypto.randomBytes(32)),
+                   sized(nodeCrypto.randomBytes(32))]),
+    nodeCrypto.randomBytes(64)
+  ];
+  const tpm = {
+    publics: [rsaPub, eccPub, badCurve, rsaPub.subarray(0, 20),
+              Buffer.concat([eccPub, Buffer.from([0])])].map(function (b) {
+      let parsed = null;
+      let error = null;
+      try {
+        const p = crypto.tpmParsePublic(b);
+        parsed = { type: p.type, nameAlg: p.nameAlg, attributes: p.attributes,
+                   scheme: p.scheme, schemeHash: p.schemeHash,
+                   keyBits: p.keyBits, exponent: p.exponent,
+                   curveId: p.curveId, kdf: p.kdf, jwk: p.jwk,
+                   name: crypto.tpmName(p).toString('base64') };
+      } catch (e) {
+        error = e.message;
+      }
+      return { bytes: b.toString('base64'), parsed: parsed, error: error };
+    }),
+    attest: (function () {
+      const a = crypto.tpmParseAttest(attest);
+      return { bytes: attest.toString('base64'), magic: a.magic,
+               type: a.type, extraData: a.extraData.toString('base64'),
+               clock: String(a.clock), resetCount: a.resetCount,
+               restartCount: a.restartCount, safe: a.safe,
+               firmwareVersion: String(a.firmwareVersion),
+               name: a.name.toString('base64'),
+               qualifiedName: a.qualifiedName.toString('base64') };
+    })(),
+    signatures: sigs.map(function (b) {
+      const p = crypto.tpmParseSignature(b);
+      return { bytes: b.toString('base64'),
+               parsed: p ? { sigAlg: p.sigAlg, hash: p.hash,
+                             signature: p.signature.toString('base64') }
+                         : null };
+    })
+  };
+  // Extensions.
+  const der = function (schema) {
+    return Buffer.from(schema.toBER(false));
+  };
+  const aaguid = nodeCrypto.randomBytes(16);
+  const nonce = nodeCrypto.randomBytes(32);
+  const ctx = function (n, inner) {
+    return new asn1js.Constructed({ idBlock: { tagClass: 3, tagNumber: n },
+                                    value: [inner] });
+  };
+  const authList = function (purposes, all, origin) {
+    const fields = [ctx(1, new asn1js.Set({ value: purposes.map(function (p) {
+      return new asn1js.Integer({ value: p });
+    }) }))];
+    if (all) {
+      fields.push(ctx(600, new asn1js.Null()));
+    }
+    if (origin !== null) {
+      fields.push(ctx(702, new asn1js.Integer({ value: origin })));
+    }
+    return new asn1js.Sequence({ value: fields });
+  };
+  const challenge = nodeCrypto.randomBytes(32);
+  const keyDescription = der(new asn1js.Sequence({ value: [
+    new asn1js.Integer({ value: 200 }), new asn1js.Enumerated({ value: 1 }),
+    new asn1js.Integer({ value: 200 }), new asn1js.Enumerated({ value: 1 }),
+    new asn1js.OctetString({ valueHex: challenge }),
+    new asn1js.OctetString({ valueHex: new Uint8Array(0) }),
+    authList([2], false, null), authList([2, 3], true, 0)] }));
+  const extensions = {
+    aaguid: { value: der(new asn1js.OctetString({ valueHex: aaguid }))
+      .toString('base64'),
+              out: Buffer.from(crypto.fidoAaguidExtension(der(
+                new asn1js.OctetString({ valueHex: aaguid })))).toString('base64') },
+    apple: (function () {
+      const v = der(new asn1js.Sequence({ value: [ctx(1,
+        new asn1js.OctetString({ valueHex: nonce }))] }));
+      return { value: v.toString('base64'),
+               out: crypto.appleAttestationNonce(v).toString('base64') };
+    })(),
+    android: (function () {
+      const d = crypto.androidKeyDescription(keyDescription);
+      return { value: keyDescription.toString('base64'),
+               attestationVersion: d.attestationVersion,
+               attestationSecurityLevel: d.attestationSecurityLevel,
+               attestationChallenge: d.attestationChallenge.toString('base64'),
+               softwareEnforced: d.softwareEnforced,
+               teeEnforced: d.teeEnforced };
+    })()
+  };
+  // A CSR attestation bundle with a tcg-attest-tpm-certify statement.
+  const certDer = new nodeCrypto.X509Certificate(
+    require(path.join(ROOT, 'common', 'vendored', 'xmldsig.js'))
+      .generateKeyPair(1024, 'bundle').certPem).raw;
+  const stmt = new asn1js.Sequence({ value: [
+    new asn1js.OctetString({ valueHex: sized(attest) }),
+    new asn1js.OctetString({ valueHex: sigs[1] }),
+    new asn1js.OctetString({ valueHex: rsaPub })] });
+  const bundle = der(new asn1js.Sequence({ value: [
+    new asn1js.Sequence({ value: [new asn1js.Sequence({ value: [
+      new asn1js.ObjectIdentifier({ value: '2.23.133.20.1' }), stmt] })] }),
+    new asn1js.Sequence({ value: [
+      asn1js.fromBER(new Uint8Array(certDer)).result,
+      new asn1js.Constructed({ idBlock: { tagClass: 3, tagNumber: 3 },
+                               value: [new asn1js.Null()] })] })] }));
+  const b = crypto.csrAttestationBundle(bundle);
+  const t = crypto.tcgTpmCertifyStatement(b.attestations[0].stmt);
+  const csr = { bundle: bundle.toString('base64'),
+                types: b.attestations.map(function (a) { return a.type; }),
+                stmt: b.attestations[0].stmt.toString('base64'),
+                certs: b.certs.map(function (c) { return c.toString('base64'); }),
+                otherCerts: b.otherCerts,
+                tpmSAttest: t.tpmSAttest.toString('base64'),
+                signature: t.signature.toString('base64'),
+                tpmTPublic: t.tpmTPublic.toString('base64') };
+  return { cose: cose, tpm: tpm, extensions: extensions, csr: csr,
+           brokenAlgorithms: require(path.join(ROOT, 'common', 'mode.js'))
+             .usesBrokenAlgorithms() };
+}
+
 const VECTORS = [{ file: 'jws-node.json', build: jws },
                  { file: 'jwe-node.json', build: jwe },
                  { file: 'c14n-node.json', build: c14n },
@@ -1048,7 +1262,8 @@ const VECTORS = [{ file: 'jws-node.json', build: jws },
                  { file: 'secrets-node.json', build: secrets },
                  { file: 'krb5-dkim-node.json', build: kerberosAndDkim },
                  { file: 'pq-x509-node.json', build: pqX509 },
-                 { file: 'raw-sig-node.json', build: rawSignatures }];
+                 { file: 'raw-sig-node.json', build: rawSignatures },
+                 { file: 'webauthn-node.json', build: webauthn }];
 
 if (require.main === module) {
   fs.mkdirSync(OUT, { recursive: true });

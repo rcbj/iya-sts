@@ -23,6 +23,7 @@ pub mod pq_x509;
 pub mod random;
 pub mod raw_sig;
 pub mod secrets;
+pub mod webauthn;
 pub mod xmldsig;
 pub mod xmlenc;
 
