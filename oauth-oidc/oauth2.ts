@@ -8385,6 +8385,13 @@ class OAuth2Server {
   // and a button, and this one deliberately has neither — an interstitial that
   // submitted itself would be an automatic redirect with an extra page in front
   // of it.
+  //
+  // WHICH IS WHY THE TIMED CONTINUE IS AN OPERATOR'S CHOICE AND OFF (#317).
+  // rcbj asked for one after using the page from the idptools.com debugger;
+  // `oauth2.errorPageAutoRedirectS` above 0 adds a meta refresh to the link's
+  // own target — markup, so `script-src 'none'` still holds — and a sentence
+  // saying when. Its description carries the RFC 9700 warning. The form_post
+  // variant never gets one: a POST cannot be made by markup alone.
   // ---------------------------------------------------------------------------
   /**
    * Sends the page shown instead of a redirect a person must decide on: the
@@ -8395,11 +8402,18 @@ class OAuth2Server {
    *   `state`, `target` and `form`
    */
   sendRedirectInterstitial(res: Res, info: Json): Json {
-    const { log, xmlEscape } = this.deps;
+    const { log, xmlEscape, config } = this.deps;
     log.debug("Entering OAuth2Server.sendRedirectInterstitial(). error=" +
               info.error);
+    const after = info.form ? 0 :
+      Math.max(0, Number(config.value('oauth2.errorPageAutoRedirectS')) || 0);
     const html = '<!doctype html><html lang="en"><head><meta ' +
-      'charset="utf-8"><title>This request could not be completed</title>' +
+      'charset="utf-8">' +
+      (after > 0
+        ? '<meta http-equiv="refresh" content="' + after + ';url=' +
+          xmlEscape(info.target) + '">'
+        : '') +
+      '<title>This request could not be completed</title>' +
       '<style>body{font-family:system-ui,sans-serif;margin:2rem;' +
       'max-width:46rem;color:#222}code{font-family:ui-monospace,Menlo,' +
       'monospace;font-size:.85rem;background:#f4f4f8;padding:.1rem .25rem;' +
@@ -8433,6 +8447,10 @@ class OAuth2Server {
           xmlEscape(info.redirectUri) + '</button></form>'
         : '<p><a href="' + xmlEscape(info.target) + '">Continue to ' +
           xmlEscape(info.redirectUri) + '</a></p>') +
+      (after > 0
+        ? '<p class="sub">You will be sent there automatically in ' + after +
+          ' second' + (after === 1 ? '' : 's') + '.</p>'
+        : '') +
       '<p class="sub">Nothing has been ' +
       'sent anywhere yet. Following that link delivers the error above to ' +
       'the application, which is what would have happened automatically if ' +
@@ -19913,6 +19931,7 @@ export = {
   ownTokenKind: slot.forward('ownTokenKind'),
   // Key Binding's two checks (#150), for tests/device_key_binding.js.
   boundKeyProofRefusal: slot.forward('boundKeyProofRefusal'),
+  sendRedirectInterstitial: slot.forward('sendRedirectInterstitial'),
   boundIdTokenRefusal: slot.forward('boundIdTokenRefusal'),
   exchangeTypeProblem: slot.forward('exchangeTypeProblem'),
   requestedClaimNames: slot.forward('requestedClaimNames'),

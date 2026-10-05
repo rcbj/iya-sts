@@ -7304,6 +7304,25 @@ const SETTINGS = [
   // rcbj's decision: on, it sets a cookie script can read and a cross-site
   // iframe is sent (the OP browser state), which no deployment should acquire
   // without asking. `oauth-oidc/session_management.js` argues the rest.
+  { key: 'oauth2.errorPageAutoRedirectS', group: 'OAuth 2.0 / OIDC',
+    label: 'Error page: continue to the client after (seconds)',
+    env: 'STS_OAUTH2_ERROR_PAGE_AUTO_REDIRECT_S', type: 'int', dflt: 0,
+    min: 0, max: 60, runtime: true,
+    description: 'The page shown instead of redirecting an authorization ' +
+                 'error to the client, when the person has not signed in ' +
+                 'here (RFC 9700 section 4.11.2), has a link to continue. ' +
+                 '0 (the default) leaves it at that: the person decides. ' +
+                 'Above 0, the page ALSO continues by itself after this many ' +
+                 'seconds (a meta refresh, no script) and says so. ' +
+                 '**This weakens the protection the page exists for**: a ' +
+                 'timed redirect is still an automatic redirect of a browser ' +
+                 'that has not authenticated here, which RFC 9700 section ' +
+                 '4.11.2 warns lets this server be used as a hop to send ' +
+                 'somebody to a client\'s address without their say. The ' +
+                 'address has already been matched to the client\'s ' +
+                 'registration, which bounds the risk. A form_post error ' +
+                 'keeps its button: a POST cannot be made without a ' +
+                 'script. (#317)' },
   { key: 'oauth2.sessionManagement', group: 'OAuth 2.0 / OIDC',
     label: 'OpenID Connect Session Management',
     env: 'STS_OAUTH2_SESSION_MANAGEMENT', type: 'bool', dflt: false,
