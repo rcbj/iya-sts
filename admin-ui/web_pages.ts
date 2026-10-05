@@ -101,6 +101,7 @@ import VcVerifierConfigPage =
 import XacmlPage = require('../xacml/web_xacml');
 import WorkerPoolsPage = require('./web_worker_pools');
 import DelegationPage = require('./web_delegation');
+import DashboardPage = require('./web_dashboard');
 
 type Json = any;
 
@@ -226,6 +227,10 @@ const PAGES: WebPage[] = [
     } },
   { path: '/admin/crypto-metadata', title: 'Cryptography',
     operation: '/admin-api/crypto', render: CryptoMetadataPage.render },
+  { path: '/admin', title: 'Admin console', operation: '/admin-api/status',
+    render: function (view: Json, ctx?: Json): string {
+      return DashboardPage.body(ctx || WebKit.context(), view);
+    } },
   { path: '/admin/delegation', title: 'Delegation',
     operation: '/admin-api/delegation',
     render: function (view: Json, ctx?: Json): string {

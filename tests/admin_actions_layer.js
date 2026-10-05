@@ -284,7 +284,7 @@ function checkTheApiDoesNotGoThroughTheConsole(t) {
 // (4) THE FORWARDS (`FORWARDED` above). One statement, one writer.
 // ---------------------------------------------------------------------------
 // ---------------------------------------------------------------------------
-// AND THE FOUR THAT STAY. This is the finish line, written down.
+// AND THE FEW THAT STAY. This is the finish line, written down.
 //
 // The management API calls exactly these on the console module and nothing
 // else. Three of them are the console describing ITSELF — which pages it has,
@@ -301,9 +301,14 @@ function checkTheApiDoesNotGoThroughTheConsole(t) {
 // 2026-09-30 (#361): it is the same answer after the row's `prepare` step
 // (a page whose settings read the cell's own state first), and it calls
 // `protocolSettingsJsonFor()` itself. Still the console describing itself.
+//
+// `dashboardJson` JOINED IT ON 2026-10-05 (#446): `GET /admin-api/status` is
+// what the console index is drawn from, and the index's guide is the
+// sidebar's SECTIONS filtered by the gate — the console describing which of
+// its own pages this reader may see. `consoleJson()`'s totals are inside it.
 // ---------------------------------------------------------------------------
 const MAY_STAY_ON_THE_CONSOLE = ['consoleJson', 'configJson',
-  'preparedSettingsJsonFor', 'listField'];
+  'preparedSettingsJsonFor', 'listField', 'dashboardJson'];
 
 function checkOnlyTheConsolesOwnKnowledgeIsLeft(t) {
   log.debug("Entering checkOnlyTheConsolesOwnKnowledgeIsLeft().");
@@ -319,7 +324,7 @@ function checkOnlyTheConsolesOwnKnowledgeIsLeft(t) {
           'it calls only the console\'s own knowledge (' + called.join(', ') +
           ')',
           'everything else it needs comes from admin-core/. A name here that ' +
-          'is not one of the four is the API reading through the console ' +
+          'is not on that list is the API reading through the console ' +
           'again, which is the coupling this directory exists to remove: ' +
           'found ' + (unexpected.join(', ') || 'none'));
 

@@ -5137,7 +5137,9 @@ class AdminApi {
         responseSchema: { $ref: '#/components/schemas/Status' },
         handler: function (req, res) {
           log.debug("Entering the management API status endpoint.");
-          self.sendJson(res, 200, admin.consoleJson());
+          // The dashboard's answer since #446: the totals as before, and
+          // the visible sections, persistence and the base URL beside them.
+          self.sendJson(res, 200, admin.dashboardJson(req));
           log.debug("Leaving the management API status endpoint.");
         } },
 
