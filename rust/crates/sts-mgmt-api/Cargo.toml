@@ -1,0 +1,24 @@
+# SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+# SPDX-License-Identifier: BUSL-1.1
+
+[package]
+name = "sts-mgmt-api"
+version = "0.1.0"
+description = "/admin-api (mgmt-api/admin_api.ts). Today: the gate's access-token half."
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+sts-core.workspace = true
+sts-crypto.workspace = true
+sts-oauth.workspace = true
+sts-store.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+openssl.workspace = true
+
+[lints]
+workspace = true

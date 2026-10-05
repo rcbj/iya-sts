@@ -1702,6 +1702,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "sts-mgmt-api"
+version = "0.1.0"
+dependencies = [
+ "openssl",
+ "serde_json",
+ "sts-core",
+ "sts-crypto",
+ "sts-oauth",
+ "sts-store",
+]
+
+[[package]]
 name = "sts-oauth"
 version = "0.1.0"
 dependencies = [
