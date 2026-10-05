@@ -190,8 +190,8 @@ view_name = args[2]
 assert re.match(r'^[A-Za-z_]\w*$', view_name), view_name
 html_expr = args[5]
 up = args[6] if len(args) > 6 else None
-vm = re.search(r'^([ \t]*)const %s = [^;]*;\n' % re.escape(view_name), body,
-               re.M)
+vm = re.search(r'^([ \t]*)const %s(?:: \w+)? = [^;]*;\n' %
+               re.escape(view_name), body, re.M)
 assert vm and vm.end() <= r_line, ('no view line', view_name)
 code = body[vm.end():r_line]
 while 'self.respond(' in code:

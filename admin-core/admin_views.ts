@@ -5498,6 +5498,31 @@ class AdminViews {
         return { key: key, value: config.text(key) };
       })
     };
+    // WHAT THE PAGE DRAWS BESIDE (#446): the authorities and the federated
+    // bundles as the CA holds them, whether the SPIRE Server API
+    // authenticates, and the page's settings block — `settings` above is
+    // this answer's own list of readings, and stays what it was.
+    const extra: Record<string, any> = json;
+    extra.authorityState = {
+      x509Authorities: state.x509Authorities.map(function (one) {
+        return { id: one.id, active: one.active, notAfter: one.notAfter,
+                 subject: one.subject, createdAt: one.createdAt,
+                 keyType: one.keyType };
+      }),
+      jwtAuthorities: state.jwtAuthorities.map(function (one) {
+        return { id: one.id, active: one.active, notAfter: one.notAfter,
+                 alg: one.alg, createdAt: one.createdAt };
+      }),
+      federated: state.federated.map(function (one) {
+        return { trustDomain: one.trustDomain,
+                 trustDomainId: one.trustDomainId, x509Keys: one.x509Keys,
+                 jwtKeys: one.jwtKeys, sequence: one.sequence,
+                 bundleEndpointProfile: one.bundleEndpointProfile,
+                 bundleEndpointUrl: one.bundleEndpointUrl };
+      })
+    };
+    extra.serverApiAuthenticated = spiffeAuth.authRequired();
+    extra.settingsForms = configSettingsJson('/admin/spiffe');
     log.debug("Leaving AdminViews.spiffeJson(). ready=" + json.ready);
     return json;
   }

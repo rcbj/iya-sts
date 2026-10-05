@@ -413,6 +413,10 @@ const PAGES: WebPage[] = [
     render: function (view: Json, ctx?: Json): string {
       return SignalsPage.body(ctx || WebKit.context(), view);
     } },
+  { path: '/admin/spiffe', title: 'SPIFFE', operation: '/admin-api/spiffe',
+    render: function (view: Json, ctx?: Json): string {
+      return SpiffePage.overview(ctx || WebKit.context(), view);
+    } },
   { path: '/admin/spiffe/agents', title: 'SPIFFE agents',
     operation: '/admin-api/spiffe/agents',
     drill: {

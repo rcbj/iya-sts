@@ -25081,9 +25081,7 @@ class AdminConsole {
     return SpiffePage.spiffePostureNote(enforced);
   }
 
-  // WORKLOAD ATTESTATION ON THE UNIX SOCKET (#40 phase four): whether the
-  // kernel can be asked at all, which attestors run, and each connection
-  // open now with what it was attested as.
+  // Drawn by `web_spiffe.ts` (#446).
   /**
    * Draws the Workload API's attestation state: whether the native module
    * is loaded, the TCP port's posture, the attestors and open connections.
@@ -25093,75 +25091,12 @@ class AdminConsole {
    */
   spiffeWorkloadAttestation(state) {
     const { log } = this.deps;
-    const self = this;
     log.debug("Entering AdminConsole.spiffeWorkloadAttestation().");
-    if (!state) {
-      log.debug("Leaving AdminConsole.spiffeWorkloadAttestation(). None.");
-      return '';
-    }
-    const kernel = state.nativeModule
-      ? 'The native module is loaded: each connection to the Workload ' +
-        'API\'s Unix socket is attested when it is accepted, and every call ' +
-        'on it checks that the process is still the one attested.'
-      : (state.unattestedSocketServed
-        ? '<strong>The native module is not loaded, so the Unix socket is ' +
-          'served UNATTESTED</strong> (development): ' +
-          this.esc(state.problem)
-        : '<strong>The native module is not loaded, so the Unix socket is ' +
-          'NOT SERVED</strong> (product): ' + this.esc(state.problem));
-    // THE TCP PORT (#166): what the realm's posture is and whether its port
-    // is listening. A product realm serves it only where the network is
-    // declared to authenticate source addresses, on a named address.
-    const tcp = state.tcp || null;
-    const tcpLine = tcp
-      ? ' The Workload API TCP port is <strong>' + this.esc(tcp.state) +
-        '</strong>' + (tcp.port
-          ? ' (' + this.esc(tcp.host + ':' + tcp.port) + ', ' +
-            (tcp.listening ? 'listening' : 'not listening') + ')'
-          : '') + ': ' + this.esc(tcp.why) + '.'
-      : '';
-    const out = '<h2>Workload attestation</h2>' + this.note(kernel +
-      tcpLine +
-      ' A TCP caller is never attested. Which attestors run is ' +
-      '<code>spiffe.workloadAttestors</code>' +
-      (state.unknownConfigured.length
-        ? '; it names ' + state.unknownConfigured.map(function (t) {
-            return '<code>' + self.esc(t) + '</code>';
-          }).join(', ') + ', which nothing here implements'
-        : '') + '.') +
-      '<table><tr><th>Attestor</th><th>Runs</th><th>What it verifies</th>' +
-      '</tr>' + state.attestors.map(function (a) {
-        return '<tr><td><code>' + self.esc(a.type) + '</code></td><td>' +
-          (a.enabled ? 'yes' : 'no') + '</td><td>' + self.esc(a.verifies) +
-          '</td></tr>';
-      }).join('') + '</table>' +
-      (state.connections.length
-        ? '<table><tr><th>Connection</th><th>pid</th><th>uid</th>' +
-          '<th>gid</th><th>Selectors</th><th>State</th></tr>' +
-          state.connections.map(function (c) {
-            return '<tr><td><code>' + self.esc(c.tag) + '</code></td><td>' +
-              self.esc(String(c.pid)) + '</td><td>' + self.esc(String(c.uid)) +
-              '</td><td>' + self.esc(String(c.gid)) + '</td><td>' +
-              self.esc(String(c.selectors)) + '</td><td>' +
-              self.esc(c.error ? 'refused: ' + c.error
-                               : (c.note || 'attested')) + '</td></tr>';
-          }).join('') + '</table>'
-        : this.note('No connection is open on the socket now.'));
     log.debug("Leaving AdminConsole.spiffeWorkloadAttestation().");
-    return out;
+    return SpiffePage.spiffeWorkloadAttestation(state);
   }
 
-  // A listener row, and the fourth column is WHAT A CALLER HAS TO PRESENT ON
-  // IT. Not decoration: the four sockets have three different postures — plain,
-  // plain-and-trusted-as-local, and mutual TLS — and a reader who cannot see
-  // which is which meets the difference as a handshake failure with no message.
-  // The same courtesy /tls says about which port needs verification turned off.
-  // **THE REALM IS A COLUMN SINCE 2026-09-12**, and it is the first thing a
-  // reader of this table needs: the listeners are per realm now, so two rows
-  // with the same surface and different addresses are two TRUST DOMAINS rather
-  // than one surface on two transports. A table without it would report four
-  // Workload API rows and leave the reader to work out which service they
-  // belong to from the port.
+  // Drawn by `web_spiffe.ts` (#446).
   /**
    * Draws one SPIFFE surface's listeners as table rows: realm, address,
    * whether it bound, and what a caller must present.
@@ -25172,26 +25107,9 @@ class AdminConsole {
    */
   spiffeListenerRows(bindings, what) {
     const { log } = this.deps;
-    const self = this;
     log.debug("Entering AdminConsole.spiffeListenerRows().");
-    if (!bindings.length) {
-      log.debug("Leaving AdminConsole.spiffeListenerRows().");
-      return '<tr><td colspan="5">Nothing bound for ' + this.esc(what) + '. ' +
-        'Either both transports are off in configuration, or the process has ' +
-        'not finished starting.</td></tr>';
-    }
     log.debug("Leaving AdminConsole.spiffeListenerRows().");
-    return bindings.map(function (binding) {
-      return '<tr><td>' + self.esc(what) + '</td><td>' +
-        self.esc(binding.realm || 'default') + '</td><td><code>' +
-        self.esc(binding.address) +
-        '</code>' +
-        (binding.tls ? ' <span class="note">(mutual TLS)</span>' : '') +
-        '</td><td>' + (binding.listening ? 'listening'
-          : '<strong>did not bind</strong> &mdash; ' +
-            self.esc(binding.error)) +
-        '</td><td>' + self.esc(binding.authentication || '') + '</td></tr>';
-    }).join('');
+    return SpiffePage.spiffeListenerRows(bindings, what);
   }
 
   /**
@@ -25202,294 +25120,19 @@ class AdminConsole {
    * @returns `json`, `inner` (the page body as HTML) and `title`
    */
   spiffePage(req) {
-    const { log, spiffeJson, spiffeCa } = this.deps;
-    const self = this;
+    const { log, spiffeJson } = this.deps;
     log.debug("Entering AdminConsole.spiffePage().");
     const json: any = spiffeJson(req);
-    const state = spiffeCa.state();
-    const x509Rows = state.x509Authorities.map(function (authority) {
-      return '<tr><td><code>' + self.esc(authority.id) + '</code></td><td>' +
-        (authority.active ? '<strong>active</strong>' :
-         'retired, still published') +
-        '</td><td>' + self.esc(authority.keyType) + '</td><td>' +
-        self.esc(authority.notAfter) + '</td><td><code>' +
-        self.esc(authority.subject) +
-        '</code></td></tr>';
-    }).join('');
-    const jwtRows = state.jwtAuthorities.map(function (authority) {
-      return '<tr><td><code>' + self.esc(authority.id) + '</code></td><td>' +
-        (authority.active ? '<strong>active</strong>' :
-         'retired, still published') +
-        '</td><td>' + self.esc(authority.keyType) + ' / ' +
-        self.esc(authority.alg) +
-        '</td><td>' + self.esc(new Date(authority.createdAt).toISOString()) +
-        '</td><td>&mdash;</td></tr>';
-    }).join('');
-    const federatedRows = state.federated.map(function (entry) {
-      return '<tr><td><code>' + self.esc(entry.trustDomainId) +
-             '</code></td><td>' +
-        entry.x509Keys + ' x509, ' + entry.jwtKeys + ' jwt</td><td>' +
-        self.esc(entry.bundleEndpointProfile) + '<br><span class="note">' +
-        self.esc(entry.bundleEndpointUrl || '(no endpoint URL recorded)') +
-        '</span></td><td>' + self.esc(entry.sequence) + '</td><td>' +
-        '<form method="post" action="/admin/spiffe" class="inline">' +
-        '<input type="hidden" name="action" value="federation-remove">' +
-        '<input type="hidden" name="trustDomain" value="' +
-        self.esc(entry.trustDomain) + '"><button ' +
-        'class="danger">Remove</button></form> <a ' +
-        'href="/spiffe/federated/' + encodeURIComponent(entry.trustDomain) +
-        '">document</a></td></tr>';
-    }).join('') ||
-      '<tr><td colspan="5">None. This trust domain federates with ' +
-      'nobody.</td></tr>';
-
+    // Drawn by `web_spiffe.ts` (#446).
     const inner = this.messagesOf(req) +
-      this.spiffePostureNote(this.deps.spiffeAuth.authRequired()) +
-      (json.enabled ? '' : this.warn('SPIFFE is turned OFF ' +
-        '(<code>spiffe.enabled</code>): the bundle endpoint answers 404 and ' +
-        'every gRPC call is refused with <code>Unavailable</code>. Turn it ' +
-        'back on in the settings at the foot of this page; it needs no ' +
-        'restart.')) +
-      (json.ready ? '' : this.warn((json.error
-        ? 'The issuing authority could not be built, so nothing here will ' +
-          'issue an SVID: ' + this.esc(json.error)
-        : 'The issuing authority is still being generated &mdash; an ' +
-          'RSA-4096 key takes a few seconds. Reload.'))) +
-
-      '<h2>The trust domain</h2>' +
-      this.note('This service is the issuing authority for <code>' +
-      this.esc(json.trustDomainId) + '</code>. Its own identity as a SPIFFE ' +
-      'server is <code>' + this.esc(json.serverId || '(not yet)') +
-      '</code>, and every ' +
-      'registration entry hangs beneath that by default. The trust domain is ' +
-      'restart-only (<code>spiffe.trustDomain</code>): every authority ' +
-      'certificate names it.') +
-      this.note('The bundle is published at <a href="' +
-                this.esc(json.bundle.path) +
-      '"><code>' + this.esc(json.bundle.path) +
-      '</code></a> &mdash; sequence <code>' +
-      this.esc(json.bundle.sequence) + '</code>, refresh hint ' +
-      this.esc(json.bundle.refreshHint) + ' seconds. The sequence changes ' +
-      'whenever the bundle does and never otherwise, which is what lets a ' +
-      'consumer tell &ldquo;I have the current bundle&rdquo; from &ldquo;I ' +
-      'have a bundle&rdquo;.') +
-
-      '<h2>Authorities</h2>' +
-      // ---------------------------------------------------------------------
-      // THE X.509 AUTHORITY CAME FROM ONE OF TWO PLACES AND THIS PAGE SAYS
-      // WHICH (2026-09-11).
-      //
-      // The two differ in the one thing an operator has to ACT on — what to
-      // install as a trust anchor and how often — so the note is branched
-      // rather than generalised into a sentence true of both. A page that read
-      // the same either way would be describing a self-signed authority's
-      // maintenance burden to somebody who no longer has one, or hiding it from
-      // somebody who does.
-      // ---------------------------------------------------------------------
-      (json.authorities.source === 'pki'
-        ? this.note('The X.509 authority is this realm\'s <strong>SPIFFE ' +
-          'Issuing CA</strong>, under this service\'s own Root &mdash; ' +
-          '<a href="/admin/pki">manage it on the PKI page</a>, where it is ' +
-          'one of the Issuing CAs in this realm\'s branch. So the trust ' +
-          'anchor a consumer installs is the <strong>Root</strong>, which ' +
-          'every realm shares and which also covers LDAPS 636, the main port ' +
-          'and every token this service signs: one anchor, installed once. ' +
-          'An X509-SVID carries the Issuing CA and this realm\'s ' +
-          'Intermediate in its own chain' +
-          (json.authorities.chainSubjects.length
-            ? ' (' + json.authorities.chainSubjects.map(function (subject) {
-                return '<code>' + self.esc(subject) + '</code>';
-              }).join(' &rarr; ') + ')'
-            : '') + '. <strong>Rotating it re-issues that Issuing CA and ' +
-          'leaves the anchor alone</strong>, so the bundle does not change, ' +
-          'nothing has to be re-fetched, and SVIDs minted under the old ' +
-          'authority go on verifying &mdash; which is the whole difference ' +
-          'from the self-signed arrangement this replaced. The JWT authority ' +
-          'has no certificate and no hierarchy to hang from: it is generated ' +
-          'per start and rotating it still prepends, keeping at most ' +
-          this.esc(json.authorities.maxRetained) + '.')
-        : this.warn('This realm has <strong>no certificate ' +
-          'authority</strong>, so its X.509 authority is ' +
-          '<strong>self-signed</strong> and IS the trust anchor &mdash; ' +
-          'generated per start and held in memory, exactly like the STS ' +
-          'signing key and the TLS certificate, so a workload holding a ' +
-          'bundle from before a restart will fail to verify every SVID ' +
-          'minted after it. Rotating PREPENDS a new authority and keeps the ' +
-          'old one published: an SVID minted a minute ago has to go on ' +
-          'verifying, which is what a bundle is for. At most ' +
-          this.esc(json.authorities.maxRetained) + ' are retained, and past ' +
-          'that the oldest is dropped &mdash; anything it signed stops ' +
-          'verifying at that moment. <a href="/admin/pki">Build this ' +
-          'realm\'s certificate authority</a> to put the SPIFFE authority ' +
-          'under this service\'s Root instead.')) +
-      '<table><tr><th>Id</th><th>State</th><th>Key</th><th>Until</th>' +
-      '<th>Subject</th></tr>' + x509Rows + jwtRows + '</table>' +
-      // **WHAT SIGNS AND WHAT IS TRUSTED ARE TWO TABLES.** They were one, and
-      // could be, while a self-signed authority was both. See `/spiffe`'s own
-      // version of this note.
-      '<h3>What a consumer trusts</h3>' +
-      '<table><tr><th>Anchor</th><th>Subject</th><th>Until</th></tr>' +
-      (json.authorities.trustAnchors || []).map(function (anchor) {
-        return '<tr><td><code>' + self.esc(anchor.id) +
-               '</code></td><td><code>' +
-          self.esc(anchor.subject) + '</code></td><td>' +
-          self.esc(anchor.notAfter) +
-          '</td></tr>';
-      }).join('') + '</table>' +
-      '<form method="post" action="/admin/spiffe"><div class="formrow">' +
-      '<input type="hidden" name="action" value="rotate">' +
-      '<label for="which">Rotate</label>' +
-      '<select id="which" name="which">' +
-      '<option value="x509">the X.509 authority</option>' +
-      '<option value="jwt">the JWT authority</option>' +
-      '<option value="both">both</option></select>' +
-      '<button>Rotate</button>' +
-      '<span class="note">New SVIDs are signed with the new authority ' +
-      'immediately; existing ones keep verifying until they expire.</span>' +
-      '</div></form>' +
-
-      '<h2>The gRPC listeners</h2>' +
-      this.note('Neither <code>/admin/sts-metadata</code> nor this page can ' +
-      'see a socket, so this table is the only place that reports whether ' +
-      'each one actually bound. The DEFAULT realm\'s four are bound when the ' +
-      'process starts and stay bound with <code>spiffe.enabled</code> off — ' +
-      'they answer <code>Unavailable</code>, because a socket that vanished ' +
-      'would read as a service that had stopped. EVERY OTHER REALM\'S are ' +
-      'bound when <code>spiffe.enabled</code> is turned on for it, on the ' +
-      'address <code>spiffe.grpcHost</code> names for that realm — the ' +
-      'endpoint address is the only thing a SPIFFE client has to name a ' +
-      'tenant with, because the gRPC method name is fixed by the ' +
-      'specification.') +
-      '<table><tr><th>Surface</th><th>Realm</th><th>Address</th><th>State' +
-      '</th>' +
-      '<th>What a caller presents</th></tr>' +
-      this.spiffeListenerRows(json.listeners.workloadApi, 'Workload API') +
-      this.spiffeListenerRows(json.listeners.serverApi, 'SPIRE Server API') +
-      this.spiffeListenerRows(json.listeners.brokerApi || [],
-                              'SPIFFE Broker API') +
-      '</table>' +
-
-      this.spiffeWorkloadAttestation(json.workloadAttestation) +
-
-      '<h2>Who may call the SPIRE Server API</h2>' +
-      '<p>' + this.esc(json.authentication.what || '') + '</p>' +
-      this.note('A caller may be several of these at once and the check asks ' +
-      'whether it is <em>any</em> of the ones a method allows, which is what ' +
-      'SPIRE\'s own policy does: the <code>spire-server</code> CLI on this ' +
-      'host is <code>local</code>, and an agent that also holds an entry ' +
-      'marked <code>admin</code> is both.') +
-      '<table><tr><th>Entity</th><th>What it means</th></tr>' +
-      json.authentication.entities.map(function (entity) {
-        return '<tr><td><code>' + self.esc(entity.id) + '</code></td><td>' +
-          self.esc(entity.what) + '</td></tr>';
-      }).join('') + '</table>' +
-      this.note('Administrators by configuration ' +
-      '(<code>spiffe.adminIds</code>, in the ' +
-      'settings at the foot of this page): ' +
-      (json.authentication.adminIds.length
-        ? json.authentication.adminIds.map(function (id) {
-            return '<code>' + self.esc(id) + '</code>';
-          }).join(', ') + '. '
-        : 'none. ') +
-      'The other way to make one is to mark a registration entry ' +
-      '<code>admin</code> on <a href="/admin/spiffe/entries">the entries ' +
-      'page</a>; SPIRE has both, and neither is cached, so either takes ' +
-      'effect on the next call.') +
-      this.note('Workload API selectors: a caller there is identified as ' +
-      '<code>transport:</code>, <code>endpoint:</code>, ' +
-      '<code>peer:</code> over TCP, and on the Unix socket by what the ' +
-      'workload attestors established (above), and ' +
-      (json.authentication.attestWorkloads
-        ? 'those decide which entries answer it ' +
-          '(<code>spiffe.attestWorkloads</code>).'
-        : 'that decides nothing at the moment &mdash; ' +
-          '<code>spiffe.attestWorkloads</code> is off, so every caller is ' +
-          'answered with every entry.') +
-      ' Asserted selectors (<code>' +
-      this.esc(json.authentication.assertedSelectorHeader) + '</code>) are ' +
-      (json.authentication.acceptAssertedSelectors
-        ? '<strong>believed</strong>, and nothing verifies them.'
-        : 'ignored (<code>spiffe.acceptAssertedSelectors</code> is off, ' +
-          'or this realm is in product mode, where it is never in force).') +
-      ' Both switches are what is IN FORCE: in product mode ' +
-      '<code>spiffe.attestWorkloads</code> is always on and asserted ' +
-      'selectors are never believed, whatever is stored, and neither can ' +
-      'be changed to the looser value there.') +
-      '<h3>The per-method table</h3>' +
-      this.note('Copied from SPIRE\'s own <code>policy_data.json</code> ' +
-      'rather than reasoned out: a table derived from what each method ' +
-      '&ldquo;obviously&rdquo; needs disagrees with SPIRE in two or three ' +
-      'places, and the client author who meets the disagreement cannot tell ' +
-      'which end is wrong. <code>any</code> means the method is open here ' +
-      'and in a real server too &mdash; <code>AttestAgent</code> because an ' +
-      'agent has no SVID until that call gives it one, ' +
-      '<code>GetBundle</code> because a trust bundle is public.') +
-      '<table><tr><th>Method</th><th>Allowed to</th></tr>' +
-      json.authentication.policy.map(function (row) {
-        return '<tr><td><code>' + self.esc(row.method) + '</code></td><td>' +
-          self.esc(row.allow.join(', ')) + '</td></tr>';
-      }).join('') + '</table>' +
-
-      '<h2>Federated trust domains</h2>' +
-      this.note('<strong>A foreign bundle is given to this service and never ' +
-      'fetched by it.</strong> The federation specification has a bundle ' +
-      'endpoint URL in the relationship and a real implementation polls it; ' +
-      'this one records the URL and refuses to follow it, because fetching a ' +
-      'URL somebody registered in order to obtain a credential-verification ' +
-      'key is a server-side request forgery with a citation attached &mdash; ' +
-      'the same refusal this service gives WS-Federation\'s ' +
-      '<code>wreqptr</code> and a client\'s <code>jwks_uri</code>. Paste the ' +
-      'bundle in below, or push it with <code>BatchSetFederatedBundle</code>' +
-      '.') +
-      '<table><tr><th>Trust domain</th><th>Keys</th><th>Profile / ' +
-      'endpoint</th><th>Sequence</th><th></th></tr>' + federatedRows +
-      '</table><form ' +
-      'method="post" action="/admin/spiffe"><div class="formrow"><input ' +
-      'type="hidden" name="action" value="federation-set"><label ' +
-      'for="fed-td">Trust domain</label><input id="fed-td" ' +
-      'name="trustDomain" placeholder="other.example" size="24"><label ' +
-      'for="fed-url">Bundle endpoint URL</label><input id="fed-url" ' +
-      'name="bundleEndpointUrl" placeholder="https://other.example/bundle" ' +
-      'size="34"><label for="fed-profile">Profile</label><select ' +
-      'id="fed-profile" name="bundleEndpointProfile"><option ' +
-      'value="https_web">https_web</option><option ' +
-      'value="https_spiffe">https_spiffe</option></select></div><div ' +
-      'class="formrow"><label for="fed-doc">Bundle document</label><textarea ' +
-      'id="fed-doc" name="document" rows="6" cols="80" ' +
-      'placeholder=\'{"keys":[{"kty":"EC","use":"x509-svid","x5c":["..."]}],' +
-      '"spiffe_sequence":1,"spiffe_refresh_hint":300}\'></textarea><button>' +
-      'Set</button>' +
-      this.note('A JWK Set. Every key needs <code>use</code> of ' +
-      '<code>x509-svid</code>, <code>jwt-svid</code> or ' +
-      '<code>wit-svid</code>: a consumer MUST IGNORE one without it, so a ' +
-      'bundle of keys missing that member verifies nothing and reports no ' +
-      'error, which is why it is refused here rather than stored.') +
-      '</div></form>' +
-
-      '<h2>Elsewhere</h2><ul>' +
-      '<li><a href="/admin/spiffe/entries">Registration entries</a> &mdash; ' +
-      this.esc(json.counts.entries) + ' of at most ' +
-      this.esc(json.counts.maxEntries) +
-      '</li>' +
-      '<li><a href="/admin/spiffe/agents">Attested agents</a> &mdash; ' +
-      this.esc(json.counts.agents) + ' of at most ' +
-      this.esc(json.counts.maxAgents) +
-      '</li><li><a href="/admin/spiffe/brokers">SPIFFE Broker API ' +
-      'brokers</a> &mdash; who may ask for a referenced workload\'s SVIDs' +
-      '</li><li><a href="/spiffe">What this is, and what it does not ' +
-      'check</a></li><li><a href="/admin/ldap/spiffe">The containers and ' +
-      'their schema</a></li><li><a href="/admin-api/spiffe">The same, over ' +
-      'JSON</a></li></ul>' +
-      // The spiffe.* rows (thirty-four as of 2026-09-16), on the page about
-      // the trust domain rather than on /admin/config. The two lists below
-      // them — the registration entries and the agents — are a STORE and are
-      // edited on their own pages; these are the settings that decide what an
-      // SVID minted against any entry looks like.
-      this.configFormsFor('/admin/spiffe');
+      SpiffePage.overview(this.renderContext(req),
+        JSON.parse(JSON.stringify(json)));
     log.debug("Leaving AdminConsole.spiffePage().");
-    json.settings = this.configSettingsJson('/admin/spiffe');
-    log.debug("Leaving AdminConsole.spiffePage().");
-    return { json: json, inner: inner, title: 'SPIFFE' };
+    return {
+      json: json,
+      inner: inner,
+      title: 'SPIFFE'
+    };
   }
 
   /**
