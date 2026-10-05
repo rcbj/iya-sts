@@ -330,7 +330,17 @@ const PAGES: WebPage[] = [
     render: function (view: Json, ctx?: Json): string {
       return XacmlPage.policiesBody(ctx || WebKit.context(), view);
     } },
-  // The generated settings pages without a status block (#446).
+  // The generated settings pages (#446), a status block drawn by
+  // `web_protocol_settings.ts` where the page has one.
+  { path: '/admin/backup-codes', title: 'Recovery codes',
+    operation: '/admin-api/backup-codes',
+    render: ProtocolSettingsPage.render },
+  { path: '/admin/totp', title: 'TOTP MFA',
+    operation: '/admin-api/totp',
+    render: ProtocolSettingsPage.render },
+  { path: '/admin/webauthn', title: 'WebAuthn',
+    operation: '/admin-api/webauthn',
+    render: ProtocolSettingsPage.render },
   { path: '/admin/oauth2', title: 'OAuth 2.0 / OIDC settings',
     operation: '/admin-api/oauth2', render: ProtocolSettingsPage.render },
   { path: '/admin/oid4vci', title: 'OpenID4VCI',
