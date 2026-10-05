@@ -60,6 +60,7 @@ import ProviderCommandsPage =
   require('../oauth-oidc/web_provider_commands');
 import OAuth2MonitorPage = require('../oauth-oidc/web_oauth2_monitor');
 import RiskPage = require('./web_risk');
+import RolesPage = require('./web_roles');
 import SamlAssertionsPage = require('./web_saml_assertions');
 import SchedulerPage = require('./web_scheduler');
 import ScimPage = require('../scim/web_scim');
@@ -83,6 +84,9 @@ interface WebPage {
   path: string;
   title: string;
   operation: string;
+  // Other operations whose answers the view is composed with, by the member
+  // each goes in: asked only when the page's query asks for it (#446).
+  compose?: Record<string, string>;
   render: (view: Json, ctx?: Json) => string;
 }
 
@@ -205,6 +209,12 @@ const PAGES: WebPage[] = [
     operation: '/admin-api/risk/metrics',
     render: function (view: Json): string {
       return RiskPage.metricsHtml(view);
+    } },
+  { path: '/admin/roles', title: 'Roles',
+    operation: '/admin-api/roles',
+    compose: { preview: '/admin-api/roles/preview' },
+    render: function (view: Json, ctx?: Json): string {
+      return RolesPage.body(ctx || WebKit.context(), view);
     } },
   { path: '/admin/saml-assertions', title: 'SAML assertions',
     operation: '/admin-api/saml-assertions',

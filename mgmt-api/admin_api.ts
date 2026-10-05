@@ -18979,7 +18979,7 @@ class AdminApi {
                           description: 'The role register, both relations.' },
         handler: function (req, res) {
           log.debug("Entering the management API roles endpoint.");
-          self.sendJson(res, 200, adminViews.rolesView());
+          self.sendJson(res, 200, adminViews.rolesView(req.query));
           log.debug("Leaving the management API roles endpoint.");
         } },
 

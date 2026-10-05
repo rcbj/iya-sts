@@ -236,6 +236,7 @@ import spiffeAuth = require('../spiffe/spiffe_auth');
 // is a thing an action has no business consulting.
 // ---------------------------------------------------------------------------
 import adminActions = require('./admin_actions');
+import issuanceGate = require('../common/issuance_gate');
 // The signing-key history (#42's follow-up). A LIBRARY over `realms` and
 // `error_codes` that reaches `helpers` and `pki` lazily, so requiring it here
 // closes no cycle and moves no route.
@@ -1577,19 +1578,60 @@ class AdminViews {
     return out;
   }
 
+  // THE ROLES PAGE'S VIEW, AND `GET /admin-api/roles`' (#446). It was the
+  // register alone for the API and the register with the page's own members
+  // for the page, built in the route; one function now, so the page is drawn
+  // from the answer a caller of the API receives. The register's members are
+  // its first members, as they were. **The preview is not in it**: it is
+  // `GET /admin-api/roles/preview`, an operation of its own for the reason
+  // argued above that one, and the page composes it in as `preview` (the
+  // route here; the page table's `compose` in the browser).
   /**
-   * Returns the role register for `/admin/roles`.
+   * Returns the roles page's view: the register, the roles a query matched
+   * and its page of them, the menus the forms offer, and the page's
+   * settings.
    *
-   * @returns the register
+   * @param query - the query: `q` and the roles' paging
+   * @returns the view
    */
-  rolesView() {
-    const { log } = this.deps;
+  rolesView(query?) {
+    const { log, applications } = this.deps;
     log.debug("Entering AdminViews.rolesView().");
+    const q0 = query || {};
     const register = this.rolesRegister();
-    log.debug("Leaving AdminViews.rolesView(). " + register.counts.configured +
+    const q = String((Array.isArray(q0.q) ? q0.q[0] : q0.q) || '')
+      .trim().toLowerCase();
+    const matched = q
+      ? register.roles.filter(function (one) {
+          return [one.name, one.description].concat(one.users, one.groups,
+                                                    one.applications)
+            .some(function (text) {
+              return String(text).toLowerCase().indexOf(q) >= 0;
+            });
+        })
+      : register.roles;
+    const rolePage = this.pagedRows(q0, matched,
+      { name: 'roles', noun: 'roles', defaultPer: 25 });
+    const json = Object.assign({}, register, {
+      matched: matched.length,
+      shown: rolePage.shown.length,
+      paging: this.pagingJson(rolePage.paging),
+      query: { q: q },
+      memberKinds: adminActions.ROLE_MEMBER_KINDS,
+      issuanceKinds: issuanceGate.KINDS,
+      actions: adminActions.ROLE_ACTIONS.slice(),
+      settings: configSettingsJson ? configSettingsJson('/admin/roles') : null,
+      // The page's own rows and its application menu.
+      shownRoles: rolePage.shown,
+      applicationChoices: applications.list().map(function (row) {
+        return { identifier: row.identifier, name: row.name || '' };
+      })
+    });
+    log.debug("Leaving AdminViews.rolesView(). " + register.roles.length +
               " role(s).");
-    return register;
+    return json;
   }
+
 
   // ---------------------------------------------------------------------------
   // WHAT /admin/policies AND GET /admin-api/policies ANSWER (2026-09-12).
