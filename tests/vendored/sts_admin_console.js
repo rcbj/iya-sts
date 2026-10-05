@@ -523,46 +523,27 @@ async function goThroughTheSwitcher(driver, path) {
   log.debug("Entering goThroughTheSwitcher(). path=" + path);
   const hash = path.indexOf("#");
   const bare = hash < 0 ? path : path.slice(0, hash);
-  // A page this run is signed in on, in any realm, carries the switcher; a
-  // fresh document of the default realm signs in silently on the sign-on
-  // session this run holds.
-  const here = await driver.executeScript(
-    "return !!document.querySelector('form.realmpick select[name=realm]');")
-    .catch(function (e) {
-      log.debug("Caught looking for the switcher: " + ((e && e.message) || e));
-      return false;
-    });
-  if (!here) {
-    const from0 = mark();
-    await driver.get(root("/admin?realm=default"));
-    await waitForResponse(root("/admin?realm=default"), from0);
-    await waitForDrawn(driver);
-  }
-  // THE SWITCHER IS DRAWN FROM THE SHELL ANSWER THE PAGE FETCHED WHEN IT
-  // LOADED (#446), so a realm created since is not on it until a page is
-  // loaded again — which a person meets as "the realm I just made is not in
-  // the list". That is reported, not hidden: a reload is what fixes it for
-  // them, and it is what this does.
-  // AND FROM THE DEFAULT REALM'S PAGE: the switcher on a page already
-  // under a realm prefix posts to the default root's /admin/realm-switch,
-  // which the console does not take as its own there (theRealmSwitcher-
-  // Switches() asserts that control; this only needs to arrive).
+  // ANY SIGNED-IN CONSOLE PAGE CARRIES THE SWITCHER, in any realm, and it
+  // offers a realm as soon as one is created (the console refetches its
+  // shell after a create). Only a browser on no console page loads one.
   const offered = await driver.executeScript(`
-    if (/^\\/realm\\//.test(location.pathname)) { return false; }
     const wanted = arguments[0];
     const pick = document.querySelector('form.realmpick select[name=realm]');
     return !!pick && Array.from(pick.options).some(function (o) {
       return o.value === wanted;
     });
-  `, REALM);
+  `, REALM).catch(function (e) {
+    log.debug("Caught looking for the switcher: " + ((e && e.message) || e));
+    return false;
+  });
   if (!offered) {
-    log.info("The realm switcher does not offer " + REALM + " until the " +
-             "console is loaded again; loading it.");
-    const from1 = mark();
+    const from0 = mark();
     await driver.get(root("/admin?realm=default"));
-    await waitForResponse(root("/admin?realm=default"), from1);
+    await waitForResponse(root("/admin?realm=default"), from0);
     await waitForDrawn(driver);
   }
+  await shellOrSayWhy(driver, "before switching to " + REALM + " for " +
+                      path);
   const leaving = await driver.findElement(By.css(".shell"));
   const from = mark();
   const switched = await driver.executeScript(`
@@ -600,6 +581,26 @@ async function goThroughTheSwitcher(driver, path) {
   return { url: at, method: "GET", status: data ? data.status : 200,
            headers: doc ? doc.headers : {}, document: doc, data: data,
            at: Date.now() };
+}
+
+// THE CONSOLE'S FRAME IS ON THE PAGE, or a failure saying what the browser
+// shows instead: where it is, the title and the text.
+async function shellOrSayWhy(driver, what) {
+  log.debug("Entering shellOrSayWhy().");
+  const there = await driver.findElements(By.css(".shell"));
+  if (!there.length) {
+    const where = await driver.executeScript(
+      "return location.href + ' | ' + document.title + ' | ' + " +
+      "(document.body ? document.body.innerText.slice(0, 600) : '');")
+      .catch(function (e) {
+        log.debug("Caught reading where: " + ((e && e.message) || e));
+        return "?";
+      });
+    await keepAPicture(driver, "no-shell");
+    throw new Error("no console frame " + what + "; the browser is at " +
+                    where);
+  }
+  log.debug("Leaving shellOrSayWhy().");
 }
 
 // THE PAGE IS DRAWN (#446): the console's frame is in place — its head row
@@ -969,13 +970,50 @@ async function fillAndPress(driver, formIndex, values, options) {
   // panel it is in, as a person clicking the tab does. It is opened BEFORE
   // anything is typed: Chrome will not type into a field it does not display
   // (`ElementNotInteractableError`, an application's drill-down, b2b64e4b).
-  await driver.executeScript(`
+  const opened = await driver.executeScript(`
     const f = document.forms[arguments[0]];
     const panel = f && f.closest('.subpanel, .tabpanel');
     if (panel && panel.id && !f.checkVisibility()) {
       location.hash = panel.id;
+      return true;
     }
+    return false;
   `, formIndex);
+  if (opened) {
+    // A FRAGMENT CHANGE REDRAWS THE PAGE (#446): the console's `popstate`
+    // handler routes again, so the form is found again once the redraw is
+    // done and its tab is the one shown.
+    await driver.wait(async function () {
+      return await driver.executeScript(`
+        const f = document.forms[arguments[0]];
+        return !!f && f.checkVisibility() &&
+               !!document.querySelector('.pagehead');
+      `, formIndex).catch(function (e) {
+        log.debug("Caught waiting for the tab: " + ((e && e.message) || e));
+        return false;
+      });
+    }, 15000).catch(async function (e) {
+      log.debug("Caught waiting for the tab: " + ((e && e.message) || e));
+      const why = await driver.executeScript(`
+        const f = document.forms[arguments[0]];
+        if (!f) { return 'no form ' + arguments[0] + ' at ' + location.href; }
+        const chain = [];
+        for (let p = f.closest('.subpanel, .tabpanel, details'); p;
+             p = p.parentElement && p.parentElement.closest(
+               '.subpanel, .tabpanel, details')) {
+          chain.push((p.tagName === 'DETAILS' ? 'details' + (p.open ? '+' :
+            '-') : p.className) + '#' + p.id + ' ' + getComputedStyle(p)
+            .display);
+        }
+        return location.href + ' | action=' + f.getAttribute('action') +
+          ' | ' + chain.join(' < ');
+      `, formIndex).catch(function (e2) {
+        log.debug("Caught describing it: " + ((e2 && e2.message) || e2));
+        return '?';
+      });
+      throw new Error("form " + formIndex + "'s tab was never shown: " + why);
+    });
+  }
   if (typed.firstText && values && values[typed.firstText] !== undefined &&
       !opts.noTyping && typed.firstTextIndex >= 0) {
     // A FIELD IN A CLOSED <details> IS OPENED FIRST, AS A PERSON WOULD
@@ -3196,9 +3234,11 @@ async function theDirectoryPagesWork(driver) {
   // By its words: the form draws Generate Secret (a `formaction` button that
   // redraws the page and creates nothing) halfway down, BEFORE the Create
   // button at its foot, so "the first visible submit" is the wrong one here.
-  await fillAndPress(driver, createApp,
+  const appPressed = await fillAndPress(driver, createApp,
       { identifier: identifier, name: "Console UI application" },
       { noTyping: false, buttonText: "Create the application" });
+  const appLanded = await driver.getCurrentUrl();
+  const appPage = await survey(driver);
 
   const apps = await apiJson("/realm/" + REALM +
       "/admin-api/applications?q=" + encodeURIComponent(identifier));
@@ -3209,7 +3249,13 @@ async function theDirectoryPagesWork(driver) {
     })[0];
     assert.ok(found,
       "the application " + identifier + " should be in the realm's registry " +
-      "after the console's own form created it.");
+      "after the console's own form created it. The press made " +
+      JSON.stringify(appPressed.responses.filter(function (r) {
+        return !/^data:/.test(r.url);
+      }).map(function (r) {
+        return r.method + " " + r.url + " -> " + r.status;
+      })) + " and left the browser at " + appLanded + " showing: " +
+      String(appPage.error || appPage.text).slice(0, 500));
     assert.strictEqual(found.name, "Console UI application",
       "and it should carry the NAME the form was given; it carries " +
       JSON.stringify(found.name));

@@ -458,11 +458,8 @@ async function throughTheSwitcher(driver, path) {
   log.debug("Entering throughTheSwitcher(). path=" + path);
   // THE SWITCHER IS DRAWN FROM THE SHELL ANSWER THE PAGE LOADED WITH (#446),
   // so a realm made since is offered only once a page is loaded again.
-  // AND FROM THE DEFAULT REALM'S PAGE: the switcher on a page already
-  // under a realm prefix posts to the default root's /admin/realm-switch,
-  // which the console does not take as its own there (reported with #446).
+  // From any realm's page: the console claims the switcher everywhere.
   const offered = await driver.executeScript(`
-    if (/^\\/realm\\//.test(location.pathname)) { return false; }
     const wanted = arguments[0];
     const pick = document.querySelector('form.realmpick select[name=realm]');
     return !!pick && Array.from(pick.options).some(function (o) {
@@ -1690,15 +1687,23 @@ async function theBrowserConsoleIsClean(driver) {
     // The browser asks for /favicon.ico on its own and this service serves
     // none; it is the browser's request rather than the page's.
     return message.indexOf("/favicon.ico") < 0;
+  }).filter(function (message) {
+    // A 4xx FROM /admin-api OR THE TOKEN ENDPOINT IS AN ANSWER THE CONSOLE
+    // READS (#446): the console sends every edit to /admin-api and draws a
+    // refusal — this file provokes one on purpose — and retries a proof the
+    // server asks a nonce for. A 5xx, a 4xx from anywhere else and every CSP
+    // violation still fail.
+    return !(/\/(admin-api|oauth2\/token)(\/|\?|\s|$)/.test(message) &&
+             /status of 4\d\d/.test(message));
   });
 
   check("the browser logged nothing severe while editing", function () {
     assert.deepStrictEqual(severe, [],
       "THE BROWSER LOGGED " + severe.length + " SEVERE MESSAGE(S) while this " +
       "file drove the editor: " + severe.join(" | ") + ". This page runs " +
-      "under script-src 'none' and every control on it is a form; a severe " +
-      "line means the page asked for something its own policy refuses, which " +
-      "no status code would show.");
+      "only the console's script, under a policy that names it; a severe " +
+      "line means the page asked for something its own policy refuses, or " +
+      "a call failed in a way the console does not answer.");
   });
   log.debug("Leaving theBrowserConsoleIsClean().");
 }
