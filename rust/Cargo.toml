@@ -12,6 +12,7 @@ members = [
   "crates/sts-cache",
   "crates/sts-store",
   "crates/sts-cluster",
+  "crates/sts-http",
   "crates/sts-xml",
   "crates/sts-core",
   "crates/sts-xacml",
@@ -34,6 +35,7 @@ sts-crypto = { path = "crates/sts-crypto" }
 sts-pki = { path = "crates/sts-pki" }
 sts-store = { path = "crates/sts-store" }
 sts-cluster = { path = "crates/sts-cluster" }
+sts-http = { path = "crates/sts-http" }
 sts-xacml = { path = "crates/sts-xacml" }
 sts-xml = { path = "crates/sts-xml" }
 axum = "0.8"
