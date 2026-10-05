@@ -1422,6 +1422,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "sts-runtime"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "hyper",
+ "hyper-util",
+ "openssl",
+ "serde_json",
+ "sts-cluster",
+ "sts-core",
+ "sts-http",
+ "sts-pki",
+ "sts-store",
+ "tokio",
+ "tokio-openssl",
+ "tower",
+ "tracing",
+]
+
+[[package]]
 name = "sts-store"
 version = "0.1.0"
 dependencies = [

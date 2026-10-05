@@ -852,3 +852,55 @@ impl Persistence {
         })
     }
 }
+
+/// A directory held in memory only: the runtime's until the embedded LDAP
+/// directory is ported, and what a test hands persistence.
+#[derive(Default)]
+pub struct MemoryDirectory {
+    realms: Mutex<IndexMap<String, IndexMap<String, StoredEntry>>>,
+}
+
+impl MemoryDirectory {
+    /// Puts an entry under its DN, lower-cased as its key.
+    pub fn put(&self, realm: &str, entry: StoredEntry) {
+        let key = entry.dn.to_lowercase();
+        self.realms
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .entry(realm.to_string())
+            .or_default()
+            .insert(key, entry);
+    }
+}
+
+impl EntryLookup for MemoryDirectory {
+    fn entry_at(&self, realm: &str, key: &str) -> Option<StoredEntry> {
+        self.realms
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .get(realm)?
+            .get(key)
+            .cloned()
+    }
+}
+
+impl LiveDirectory for MemoryDirectory {
+    fn realm_entries(&self, realm: &str) -> IndexMap<String, StoredEntry> {
+        self.realms
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .get(realm)
+            .cloned()
+            .unwrap_or_default()
+    }
+    fn replace_realm(&self, realm: &str, entries: Vec<StoredEntry>) {
+        let rows = entries
+            .into_iter()
+            .map(|e| (e.dn.to_lowercase(), e))
+            .collect();
+        self.realms
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .insert(realm.to_string(), rows);
+    }
+}

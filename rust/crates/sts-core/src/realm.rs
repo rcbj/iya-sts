@@ -546,3 +546,62 @@ impl RealmRegistry {
         out
     }
 }
+
+/// The realm environment the runtime reads from its settings
+/// (`realms.enabled`, `realms.pathSegment`, `global.domain`), with the
+/// first path segments routes already claim and the EST labels given by
+/// their owners.
+pub struct SettingsEnvironment {
+    settings: Arc<crate::settings::Settings>,
+    reserved: RwLock<Vec<String>>,
+    est_labels: Vec<String>,
+}
+
+impl SettingsEnvironment {
+    pub fn new(
+        settings: Arc<crate::settings::Settings>,
+        est_labels: Vec<String>,
+    ) -> SettingsEnvironment {
+        SettingsEnvironment {
+            settings,
+            reserved: RwLock::new(Vec::new()),
+            est_labels,
+        }
+    }
+
+    /// Names a first path segment a route claims, so no realm takes it.
+    pub fn reserve(&self, segment: &str) {
+        let mut held = self
+            .reserved
+            .write()
+            .unwrap_or_else(PoisonError::into_inner);
+        let segment = segment.to_ascii_lowercase();
+        if !held.contains(&segment) {
+            held.push(segment);
+        }
+    }
+}
+
+impl RealmEnvironment for SettingsEnvironment {
+    fn enabled(&self) -> bool {
+        self.settings.value_of("realms.enabled").as_bool()
+    }
+    fn path_segment(&self) -> String {
+        self.settings
+            .value_of("realms.pathSegment")
+            .as_str()
+            .to_string()
+    }
+    fn global_domain(&self) -> String {
+        self.settings.value_of("global.domain").as_str().to_string()
+    }
+    fn reserved(&self) -> Vec<String> {
+        self.reserved
+            .read()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+    }
+    fn est_labels(&self) -> Vec<String> {
+        self.est_labels.clone()
+    }
+}
