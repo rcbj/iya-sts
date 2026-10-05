@@ -47,6 +47,7 @@ num-bigint = "0.5"
 num-traits = "0.2"
 regex = "1.13"
 roxmltree = "0.21"
+sha3 = "0.10"
 thiserror = "2.0"
 tracing = "0.1"
 
