@@ -213,7 +213,8 @@ class CaepRiscPage {
       // were scrolling past is the half nobody needs twice. Closed by default
       // rather than open: a reader who wants the members knows they want
       // them, and the summary says how many are there. Native <details>, so
-      // `script-src 'none'` is untouched — the same answer kit.note() gives, one
+      // `script-src 'none'` is untouched — the same answer kit.note() gives,
+      // one
       // level up.
       (json.installed
         ? '<details class="fold section"><summary>The eight event types' +
@@ -248,7 +249,8 @@ class CaepRiscPage {
   // sessions.
   //
   // **IT WAS A `<select name="session_id">` UNTIL 2026-09-03**, and the
-  // argument for replacing it is kit.chooserPane()'s own, one register further on:
+  // argument for replacing it is kit.chooserPane()'s own, one register further
+  // on:
   // a control on this page must be the same size whatever is behind it, and
   // this register grows BY ONE ROW PER SIGN-IN for the life of the process and
   // never shrinks — `caep.ts` keeps a row after the session has been signed
