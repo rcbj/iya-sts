@@ -154,6 +154,20 @@ if [ -f "$BUNDLE_ENTRY" ]; then
     echo "build-typescript.sh: esbuild wrote no $BUNDLE_OUT" >&2
     exit 1
   fi
+  # AND THE CONSOLE ITSELF (#446, step 5): `admin-ui/console.js`, the
+  # runtime (`web_runtime.ts`, started by `web_console.ts`) with every
+  # renderer, the shell and the form table in one file. `console.bundle.js`
+  # above stays, the renderers alone under a global, because that is what
+  # `tests/console_web_bundle.js` compares this process's pages with.
+  CONSOLE_ENTRY=admin-ui/web_console.ts
+  CONSOLE_OUT=admin-ui/console.js
+  "$ESBUILD" "$CONSOLE_ENTRY" --bundle --platform=browser --format=iife \
+    --target=es2022 --charset=ascii --legal-comments=none \
+    --log-level=warning --banner:js="$BUNDLE_BANNER" --outfile="$CONSOLE_OUT"
+  if [ ! -s "$CONSOLE_OUT" ]; then
+    echo "build-typescript.sh: esbuild wrote no $CONSOLE_OUT" >&2
+    exit 1
+  fi
 fi
 
 if [ "$STRIP" = true ]; then

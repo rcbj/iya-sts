@@ -64,25 +64,24 @@ class WebForms {
   // Keyed `<console path> <action>`, and `<console path>` alone for the
   // page whose form carries no action — kept only when exactly one POST
   // operation mirrors that page, since otherwise there is no one answer.
-  // A key two operations claim is recorded as ambiguous (null) rather than
-  // won by whichever came first.
+  // Every operation a key names is kept: two can mirror one control
+  // (`/admin-api/users/clear-email-factor` and `/mfa/clear-email-factor`
+  // both mirror `POST /admin/users`), and `resolve()` says which answers.
   /**
    * Builds the table of console forms to operations from the API's index.
    *
    * @param operations - `GET /admin-api`'s `operations`
-   * @returns the table: key to the operation's path, or null where two
-   *   operations claim one key
+   * @returns the table: key to the paths of the operations it names
    */
   static table(operations: Json[]): Json {
     const table = {};
     const bare = {};
     const put = function (key, path) {
-      if (Object.prototype.hasOwnProperty.call(table, key) &&
-          table[key] !== path) {
-        table[key] = null;
-        return;
+      const held = Object.prototype.hasOwnProperty.call(table, key)
+        ? table[key] : [];
+      if (held.indexOf(path) < 0) {
+        table[key] = held.concat([path]);
       }
-      table[key] = path;
     };
     (operations || []).forEach(function (op) {
       if (op.method !== 'POST') {
@@ -111,9 +110,21 @@ class WebForms {
    * @returns the operation's path, or null when no one operation is it
    */
   static resolve(table: Json, page: string, action: string): string | null {
+    // ONE OPERATION, or of several the one in the page's own area —
+    // `/admin/users` is `/admin-api/users/...` — and otherwise none: two
+    // operations in other areas are two acts to choose between, and the
+    // runtime does not choose.
+    const area = '/admin-api' + String(page).replace(/^\/admin/, '') + '/';
     const has = function (key) {
-      return Object.prototype.hasOwnProperty.call(table, key) && table[key]
-        ? table[key] : null;
+      const held = Object.prototype.hasOwnProperty.call(table, key)
+        ? table[key] : [];
+      if (held.length === 1) {
+        return held[0];
+      }
+      const own = held.filter(function (path) {
+        return path.indexOf(area) === 0;
+      });
+      return own.length === 1 ? own[0] : null;
     };
     if (action) {
       return has(page + ' ' + action);

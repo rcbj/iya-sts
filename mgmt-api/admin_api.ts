@@ -5167,7 +5167,11 @@ class AdminApi {
         responseDescription: 'The shell answer.',
         handler: function (req, res) {
           log.debug("Entering the management API console shell endpoint.");
-          self.sendJson(res, 200, admin.shellJson(req));
+          // THE GATE IS THE TOKEN'S: the static console has no session of
+          // its own, so who is signed in, and what they may see, is what
+          // this API decided for the caller (`meJson()`).
+          const gate = self.consoleGateOf(self.meJson(req, res));
+          self.sendJson(res, 200, admin.shellJson(req, gate, gate));
           log.debug("Leaving the management API console shell endpoint.");
         } },
 
@@ -21479,6 +21483,48 @@ class AdminApi {
     const name = caller ? String(caller.name || '') : '';
     log.debug("Leaving AdminApi.callerNameOf(). " + (name || '(nobody)'));
     return name;
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE CONSOLE'S GATE, AS THE TOKEN DECIDED IT (#446).
+  //
+  // The console's frame says who is signed in and with which roles, and
+  // draws the sidebar for that reader (`AdminConsole.shellJson()`). The
+  // server-rendered console read it off its own session; the static one has
+  // none — the token is the session — so the gate it is drawn from is
+  // `meJson()`'s answer in the shape `gateStateFor()` gives: a token is a
+  // session, its subject the username, and `ADMIN_READ` / `ADMIN_WRITE` the
+  // console's `read` and `write`.
+  // ---------------------------------------------------------------------------
+  /**
+   * Describes the caller as the console's gate does, for the frame.
+   *
+   * @param me - `meJson()`'s answer
+   * @returns the gate state
+   */
+  consoleGateOf(me) {
+    const { log } = this.deps;
+    log.debug("Entering AdminApi.consoleGateOf().");
+    const roles = (me.roles || []).map(function (role) {
+      return role === 'ADMIN_READ' ? 'read'
+        : (role === 'ADMIN_WRITE' ? 'write' : String(role).toLowerCase());
+    });
+    const held = me.console || {};
+    const enforced = !!me.tokenRequired;
+    log.debug("Leaving AdminApi.consoleGateOf().");
+    return {
+      enforced: enforced, available: !!held.available,
+      session: !!me.caller,
+      username: me.caller ? String(me.caller.name || '') : '',
+      authority: me.authority || null, identityRealm: me.realm || null,
+      readGroup: me.readGroup, writeGroup: me.writeGroup,
+      read: !!me.read, write: !!me.write, roles: roles,
+      open: enforced && !!held.open,
+      closed: enforced && !!held.empty && !held.open && !roles.length,
+      windowOpens: held.windowOpens !== false, empty: !!held.empty,
+      bootstrapPasswordRequired: enforced && !!held.bootstrapPasswordRequired,
+      bootstrap: held.bootstrap || null
+    };
   }
 
   // ---------------------------------------------------------------------------

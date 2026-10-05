@@ -5741,13 +5741,16 @@ class AdminConsole {
    * @param req - the express request, or null outside one
    * @param gate - optional; the gate state the banners are drawn from, when
    *   the caller holds one (null draws them as for no gate); the request's
-   *   own when left out. The sections are always the request's.
+   *   own when left out
+   * @param nav - optional; the gate state the sidebar is drawn for — the
+   *   request's own when left out, and the token's for `/admin-api/console`
    * @returns the shell answer
    */
-  shellJson(req, gate?) {
+  shellJson(req, gate?, nav?) {
     const { log, realms, config, rbac, gateStateFor, persistence } = this.deps;
     log.debug("Entering AdminConsole.shellJson().");
-    const navState = req ? gateStateFor(req) : null;
+    const navState = nav !== undefined ? nav
+      : (req ? gateStateFor(req) : null);
     const given = gate === undefined ? navState : gate;
     const state = given || {};
     const roleLabels = {};
@@ -5776,7 +5779,9 @@ class AdminConsole {
       wsTrustIssuer: config.value('wstrust.issuer'),
       realms: realms.active()
         ? realms.list().map(function (one) {
-          return { id: one.id, name: one.name };
+          // `prefix` for the static console's switcher, which moves between
+          // realms in the browser rather than through `/admin/realm-switch`.
+          return { id: one.id, name: one.name, prefix: realms.prefixOf(one) };
         })
         : null,
       realmRoot: req ? this.realmRoot(req) : '',

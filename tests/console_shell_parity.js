@@ -24,7 +24,6 @@
 
 delete process.env.CONFIG_FILE;
 
-require('../common/protocol_stack');
 const admin = require('../admin-ui/admin');
 const realms = require('../common/realms');
 
