@@ -1192,14 +1192,15 @@ class ConsoleRuntime {
       this.drawView(null, again.banner);
       return;
     }
-    // A NEW APPLICATION is looked at next, as the server-rendered console
-    // sent its create: to the entry, not back to an empty form.
-    if (json && json.ok && page === '/admin/applications/new' &&
-        action === 'create' && json.application &&
-        json.application.identifier) {
-      await this.go('/admin/applications?' + new URLSearchParams({
-        application: String(json.application.identifier),
-        notice: String(json.message || 'Created.') }).toString());
+    // AN ACT THAT LANDS ELSEWHERE — a new application on its entry, a
+    // group acted on on that group (`WebAnswers.landing()`) — with its
+    // notice there.
+    const landing = page ? WebAnswers.landing(page, action, json, back)
+                         : null;
+    if (landing) {
+      await this.go(landing + (landing.indexOf('?') < 0 ? '?' : '&') +
+                    'notice=' + encodeURIComponent(
+                      String(json.message || 'Done.')));
       return;
     }
     const key = json && json.ok ? 'notice' : 'error';

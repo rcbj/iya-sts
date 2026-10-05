@@ -396,6 +396,46 @@ class WebAnswers {
   }
 
   // ---------------------------------------------------------------------------
+  // WHERE AN ACT LANDS, WHERE IT IS NOT THE PAGE ITS FORM WAS ON (#446).
+  //
+  // The server-rendered console's handlers each chose a target, and two sent
+  // the reader somewhere the form was not: a new APPLICATION is looked at
+  // next, on its own drill-down rather than an empty create form, and a
+  // GROUP acted on lands on that group — a create on the group it made,
+  // because the next thing anybody does with a new group is put somebody in
+  // it and the Add member control is on the drill-down. A refusal stays put,
+  // beside the form that produced it. Every other act goes back to its
+  // page (`ConsoleRuntime.submit()`).
+  // ---------------------------------------------------------------------------
+  /**
+   * The console path an act's answer is drawn on, where it is not `back`.
+   *
+   * @param page - the console path the form posts to
+   * @param action - the form's action
+   * @param answer - the operation's answer
+   * @param back - the page and list view the form was on
+   * @returns the path and query, without the notice, or null for `back`
+   */
+  static landing(page: string, action: string, answer: Json,
+                 back: string): string | null {
+    if (!answer || !answer.ok) {
+      return null;
+    }
+    const at = new URL(back, 'https://console.invalid');
+    if (page === '/admin/applications/new' && action === 'create' &&
+        answer.application && answer.application.identifier) {
+      return '/admin/applications?' + new URLSearchParams({
+        application: String(answer.application.identifier) }).toString();
+    }
+    if (page === '/admin/groups' && answer.dn &&
+        (action === 'create' || action === 'add-member')) {
+      at.searchParams.set('group', String(answer.dn));
+      return '/admin/groups?' + at.searchParams.toString();
+    }
+    return null;
+  }
+
+  // ---------------------------------------------------------------------------
   // 1. THE SECRETS SHOWN ONCE
   // ---------------------------------------------------------------------------
   /**

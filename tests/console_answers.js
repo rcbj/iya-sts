@@ -18,6 +18,8 @@
 //      write, so a press missed here would create or save.
 //   B. A round trip draws the form again with every box as it was.
 //   C. A secret shown once is drawn, and an answer without one is not.
+//      An act that lands elsewhere — a group acted on, a new application —
+//      names where (C6).
 //   D. A refused create comes back to its form with the reasons; the
 //      workbench's next draft and a generated secret go into their forms;
 //      Fill never overwrites what was typed.
@@ -115,6 +117,23 @@ function checkOnce(t) {
           WebAnswers.once('/admin/users', 'reset-password', {},
                           { ok: false, password: 'x' }, env) === null,
           'C5. an answer with no secret, or a refusal, is not');
+  const dn = 'cn=ops,ou=groups,dc=example,dc=net';
+  const madeGroup = WebAnswers.landing('/admin/groups', 'create',
+    { ok: true, dn: dn }, '/admin/groups?q=op');
+  const madeApp = WebAnswers.landing('/admin/applications/new', 'create',
+    { ok: true, application: { identifier: 'urn:example:crm' } },
+    '/admin/applications/new');
+  t.check(madeGroup === '/admin/groups?q=op&group=' + encodeURIComponent(dn)
+            .replace(/%20/g, '+') &&
+          madeApp === '/admin/applications?application=' +
+            encodeURIComponent('urn:example:crm') &&
+          WebAnswers.landing('/admin/groups', 'create',
+                             { ok: false, dn: dn }, '/admin/groups') === null &&
+          WebAnswers.landing('/admin/users', 'disable', { ok: true, dn: dn },
+                             '/admin/users') === null,
+          'C6. a group acted on lands on the group, a new application on its ' +
+          'entry, keeping the list view; a refusal and any other act stay put',
+          JSON.stringify([madeGroup, madeApp]));
   log.debug("Leaving checkOnce().");
 }
 
