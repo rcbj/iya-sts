@@ -694,11 +694,79 @@ function xmlenc() {
            recipients: recipients, cases: cases, refusals: refusals };
 }
 
+// SECRETS: HOTP in every digest and length, scrypt hashes at the floor
+// cost, envelopes under both kinds of data key and wrapped data keys, and
+// the deterministic derivations (deriveDek(), deriveSharedCredential(),
+// kekBytes()) — which Rust must reproduce byte for byte.
+function secrets() {
+  const kekText = 'an operator\'s passphrase long enough to be a KEK';
+  const kekHex = nodeCrypto.randomBytes(32).toString('hex');
+  const kekB64 = nodeCrypto.randomBytes(48).toString('base64');
+  const hotp = [];
+  ['SHA1', 'SHA256', 'SHA512'].forEach(function (alg) {
+    [6, 8, 10].forEach(function (digits) {
+      const key = nodeCrypto.randomBytes(alg === 'SHA1' ? 20 : 32);
+      [0, 1, 59, 1111111109, 2000000000].forEach(function (counter) {
+        hotp.push({ key: key.toString('base64'), counter: counter,
+                    digits: digits, algorithm: alg,
+                    code: crypto.hotpCode(key, counter,
+                                          { digits: digits, algorithm: alg })
+        });
+      });
+    });
+  });
+  const hashes = ['', 'password', 'pässwörd 🔑',
+                  'x'.repeat(300)].map(function (plain) {
+    return { plain: plain, stored: crypto.hashSecret(plain) };
+  });
+  const envelopes = ['aes-256-gcm', 'aes-256-siv'].map(function (alg) {
+    const key = crypto.generateDek(alg);
+    const id = crypto.generateDekId();
+    return { alg: alg, key: key.toString('base64'), id: id,
+             plain: 'a value é 中',
+             sealed: crypto.encryptWithDek(id, key, 'a value é 中',
+                                           'vectors') };
+  });
+  const dek = crypto.generateDek('aes-256-gcm');
+  const wraps = [kekText, kekHex, kekB64].map(function (kek) {
+    return { kek: kek, aad: 'id|realm|class', dek: dek.toString('base64'),
+             wrapped: crypto.wrapDek(kek, dek, 'id|realm|class') };
+  });
+  const derived = [kekText, kekHex, kekB64].map(function (kek) {
+    const d = crypto.deriveDek(kek, 'realm|default|directory');
+    return { kek: kek, context: 'realm|default|directory', id: d.id,
+             key: d.key.toString('base64'),
+             kekBytes: crypto.kekBytes(kek).toString('base64') };
+  });
+  const kekRefusals = ['', 'short', 'ab'.repeat(15)].map(function (kek) {
+    let refused = false;
+    try {
+      crypto.kekBytes(kek);
+    } catch (e) {
+      refused = true;
+    }
+    return { kek: kek, refused: refused };
+  });
+  const credentials = [
+    ['secret', 'ssf-receiver', ['default', 'console']],
+    ['sécret', 'label', []],
+    ['k', 'a', ['b', 'c']], ['k', 'a', ['bc']], ['k', 'ab', ['c']]
+  ].map(function (row) {
+    return { secret: row[0], label: row[1], parts: row[2],
+             credential: crypto.deriveSharedCredential.apply(null,
+               [row[0], row[1]].concat(row[2])) };
+  });
+  return { hotp: hotp, hashes: hashes, envelopes: envelopes, wraps: wraps,
+           derived: derived, kekRefusals: kekRefusals,
+           credentials: credentials };
+}
+
 const VECTORS = [{ file: 'jws-node.json', build: jws },
                  { file: 'jwe-node.json', build: jwe },
                  { file: 'c14n-node.json', build: c14n },
                  { file: 'xmldsig-node.json', build: xmldsig },
-                 { file: 'xmlenc-node.json', build: xmlenc }];
+                 { file: 'xmlenc-node.json', build: xmlenc },
+                 { file: 'secrets-node.json', build: secrets }];
 
 if (require.main === module) {
   fs.mkdirSync(OUT, { recursive: true });
