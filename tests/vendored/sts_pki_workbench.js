@@ -22,19 +22,23 @@
 // WHAT IS HERE IS WHAT THAT FILE CANNOT SEE: FOUR THINGS, AND A FIFTH SINCE
 // 2026-09-11.
 //
-//   * **THE ROUND TRIP IS THE FEATURE.** This console has no script on it, so
-//     *Apply the profile* is a SUBMIT and the form is the only state there is:
+//   * **THE ROUND TRIP IS THE FEATURE.** The form is the only state there is
+//     — since #446 the static console sends it to `/admin-api/pki/<action>`
+//     and draws the pane again from the answer's `workbench`:
 //     a field the page fails to re-render falls back to its default on every
 //     press, silently, for ever. In process both lists are values and the
 //     comparison is exact; over HTTP the question is different and only
 //     answerable here — does what the browser POSTS come back?
-//   * **THE DOWNLOAD IS NOT A PAGE.** `POST /admin/pki/export` answers with the
-//     FILE, through `formaction` on a button of the same form. The media type,
-//     the `Content-Disposition` filename and the bytes being a real PKCS#12
-//     are properties of a RESPONSE, and there is no response in process.
+//   * **THE DOWNLOAD IS NOT A PAGE.** The pane's Download answers the FILE —
+//     since the cutover (#446) in `POST /admin-api/pki/export`'s `files`,
+//     the handler that answered it as an attachment having gone with the
+//     server-rendered console. Its media type, its filename and the bytes
+//     being a real PKCS#12 are properties of a RESPONSE, and there is no
+//     response in process.
 //   * **THE GATE.** A caller holding nothing must not be handed a private key
-//     by a POST. That is a property of middleware on a path and there is no
-//     middleware in process.
+//     by a POST — at the console's old path, which has no handler now, and at
+//     the operation, which needs a token. That is a property of a live door
+//     and there is no door in process.
 //   * **AND `/admin-api` MIRRORS ALL OF IT** (rule 7). Eight new actions, each
 //     of which must exist, take the same form and answer the same way. A
 //     console control whose operation is missing is exactly what that rule
@@ -108,6 +112,7 @@
 const assert = require("assert");
 const { Command, Option } = require("commander");
 const names = require("./random_username.js");
+const signin = require("./console_signin.js");
 
 var appconfig;
 let appconfigProblem = null;
@@ -143,18 +148,14 @@ const CA_CN = "Workbench Root";
 const LEAF_CN = "leaf.pane.example.test";
 const P12_PASSWORD = "changeit";
 
-// THE OPERATOR WHO SIGNS IN, created by this job in its realm with a password
-// (2026-09-12). It was the seeded `alice` with the password `x`, which works
-// only because development mode seeds her and checks no password. The code
-// flow authenticates in the realm the console is reached in, so that is where
-// the account is made. Since 2026-09-14 (#32) the roster that decides what it
-// may do is that realm's too (`admin-ui/CLAUDE.md` 8d); the account is on
-// neither of its role groups until this job grants it Admin Write in that
-// realm. It used to hold both roles because the realm's bootstrap window was
-// open; product mode never opens it (#103, 2026-09-22), so the grant is made
-// in both modes and the job asserts the same thing in each.
+// THE OPERATOR WHO SIGNS IN, created in this job's realm with a password only
+// this process holds (`console_signin.js`, 2026-09-12: it was the seeded
+// `alice`, which works only because development mode seeds her and checks no
+// password). The code flow authenticates in the realm the console is reached
+// in, so that is where the account is made, and since 2026-09-14 (#32) the
+// roster that decides what it may do is that realm's too
+// (`admin-ui/CLAUDE.md` 8d): it is granted Admin Write there, in both modes.
 const OPERATOR = "pki-workbench-operator";
-const OPERATOR_PASSWORD = "pki-workbench-Passw0rd!-" + names.runStamp();
 
 var checks = 0;
 function check(what, fn) {
@@ -212,70 +213,89 @@ function postJson(url, payload) {
 }
 
 // ---------------------------------------------------------------------------
-// THE BROWSER'S HALF: a cookie jar, and a form read out of a page and posted
-// back the way a browser would.
+// THE CONSOLE'S HALF, AS THE STATIC CONSOLE DOES IT (#446).
 //
-// **THE JAR KEEPS COOKIES BY NAME.** `sts_portal_backup_keys.js` records what
-// the one-line version costs: a signed-in console browser holds the sign-on
-// cookie AND the console's own relying-party cookie, whichever arrived last
-// evicts the other, and what that looks like is a GET succeeding and the POST
-// beside it redirecting to the authorization endpoint — a server that appears
-// to have forgotten its session.
+// Until the cutover this was a cookie jar and a form posted back to
+// `/admin/pki/certificate`, whose handler drew the page again around the next
+// draft. The console is a static page now: it signs in as the public client
+// with a DPoP-bound token (`console_signin.js`), draws `/admin/pki` from
+// `GET /admin-api/pki` (`rows=shown`), and sends the pane's form — every
+// field as drawn — to `POST /admin-api/pki/<action>`, the action its pressed
+// button names in a `formaction` (`/admin/pki/certificate?action=generate-
+// keys`; Issue is the form's hidden `issue-certificate`). The answer carries
+// `workbench`, the next draft's view, refused or not, and the page is drawn
+// again from it. So this job does exactly that, and draws each state with the
+// console's own renderers (`admin-ui/console.bundle.js`).
 // ---------------------------------------------------------------------------
-const jar = new Map();
+let consoleClient = null;
+let view = null;
+let bundle = null;
 
-function rememberCookies(response) {
-  log.debug("Entering rememberCookies().");
-  const raw = typeof response.headers.getSetCookie === "function"
-    ? response.headers.getSetCookie()
-    : (response.headers.get("set-cookie") ?
-       [response.headers.get("set-cookie")] : []);
-  raw.forEach(function (line) {
-    const first = String(line).split(";")[0];
-    const eq = first.indexOf("=");
-    if (eq > 0) {
-      jar.set(first.slice(0, eq).trim(), first.slice(eq + 1).trim());
-    }
-  });
-  log.debug("Leaving rememberCookies().");
-}
-
-function cookieHeader() {
-  log.debug("Entering cookieHeader().");
-  log.debug("Leaving cookieHeader().");
-  return Array.from(jar.entries()).map(function (pair) {
-    return pair[0] + "=" + pair[1];
-  }).join("; ");
-}
-
-// Follow redirects by hand, keeping the jar. `redirect: "follow"` would lose
-// every `Set-Cookie` on the way through, which for a three-hop OIDC code flow
-// is every cookie there is.
-async function browse(url, options) {
-  log.debug("Entering browse(). url=" + url);
-  let next = url;
-  for (let hop = 0; hop < 12; hop++) {
-    const opts = Object.assign({ redirect: "manual" }, options || {});
-    opts.headers = Object.assign({}, opts.headers || {});
-    if (jar.size) {
-      opts.headers.Cookie = cookieHeader();
-    }
-    const r = await fetch(next, opts);
-    rememberCookies(r);
-    if (r.status >= 300 && r.status < 400 && r.headers.get("location")) {
-      next = new URL(r.headers.get("location"), next).toString();
-      options = {};       // a redirect is followed as a GET
-      continue;
-    }
-    const text = await r.text();
-    log.debug("Leaving browse(). status=" + r.status + " url=" + next);
-    return { status: r.status, text: text, url: next,
-             contentType: r.headers.get("content-type") || "",
-             disposition: r.headers.get("content-disposition") || "",
-             response: r };
+// The console's renderers, loaded as a browser loads them: run with no
+// require, process or Buffer, as `console_signin.js` loads them.
+function consoleBundle() {
+  log.debug("Entering consoleBundle().");
+  if (!bundle) {
+    const fs = require("fs");
+    const path = require("path");
+    const vm = require("vm");
+    const code = fs.readFileSync(path.join(__dirname, "..", "..", "admin-ui",
+                                           "console.bundle.js"), "utf8");
+    bundle = vm.runInContext(code + "\n;StsConsole;", vm.createContext({}),
+                             { filename: "console.bundle.js" });
   }
-  log.debug("Leaving browse().");
-  throw new Error("browse(): too many redirects starting at " + url);
+  log.debug("Leaving consoleBundle().");
+  return bundle;
+}
+
+// The page drawn from a view, for a reader holding Admin Write.
+function drawn(json) {
+  log.debug("Entering drawn().");
+  const table = consoleBundle();
+  const html = table.render("/admin/pki", json,
+                            table.kit.context({}, true)) || "";
+  log.debug("Leaving drawn().");
+  return html;
+}
+
+// `/admin/pki` as the console opens it: the operation's answer, drawn.
+async function openPage() {
+  log.debug("Entering openPage().");
+  const answer = await consoleClient.page("/admin/pki", {});
+  assert.strictEqual(answer.status, 200,
+    "GET /admin-api/pki for the console answered " + answer.status + " " +
+    String(answer.text).slice(0, 200));
+  view = answer.json;
+  log.debug("Leaving openPage().");
+  return { status: answer.status, text: drawn(view), json: view };
+}
+
+// A press of the pane: the form's fields as drawn, with what was typed over
+// them, sent to the action's operation as the console sends it; the page is
+// drawn again from the answer's `workbench` — which is the round trip.
+async function press(pairs, extra, action) {
+  log.debug("Entering press(). action=" + action);
+  const body = {};
+  pairs.forEach(function (pair) {
+    body[pair[0]] = pair[1];
+  });
+  Object.keys(extra || {}).forEach(function (name) {
+    body[name] = extra[name];
+  });
+  // The formaction's query takes the place of the form's own hidden action.
+  delete body.action;
+  const answer = await consoleClient.api("POST", "/admin-api/pki/" + action,
+                                         body);
+  if (answer.json && answer.json.workbench) {
+    view = Object.assign({}, view, { workbench: answer.json.workbench });
+  }
+  const said = answer.json
+    ? [].concat(answer.json.errors || []).join(" ") + " " +
+      String(answer.json.why || "")
+    : "";
+  log.debug("Leaving press().");
+  return { status: answer.status, json: answer.json, said: said,
+           text: drawn(view) };
 }
 
 // **THE ACTION IS MATCHED AS A SUFFIX AND NOT AS THE WHOLE VALUE.** Inside a
@@ -342,27 +362,6 @@ function fields(html) {
   return out;
 }
 
-function bodyOf(pairs, extra, drop) {
-  log.debug("Entering bodyOf().");
-  const set = new Map(pairs);
-  (drop || []).forEach(function (name) { set.delete(name); });
-  Object.keys(extra || {}).forEach(function (name) {
-    set.set(name, extra[name]);
-  });
-  log.debug("Leaving bodyOf().");
-  return Array.from(set.entries()).map(function (pair) {
-    return encodeURIComponent(pair[0]) + "=" + encodeURIComponent(pair[1]);
-  }).join("&");
-}
-
-function press(url, body) {
-  log.debug("Entering press().");
-  log.debug("Leaving press().");
-  return browse(url, { method: "POST", body: body,
-                       headers: { "Content-Type":
-                                  "application/x-www-form-urlencoded" } });
-}
-
 function valueOf(page, name) {
   log.debug("Entering valueOf().");
   const m = new RegExp('name="' + name + '"[^>]*value="([^"]*)"').exec(page);
@@ -385,49 +384,23 @@ function ticked(page, name) {
 }
 
 // ---------------------------------------------------------------------------
-// SIGN IN TO THE CONSOLE. It is an OpenID Connect relying party since
-// 2026-09-06, so this is the real code flow: `/admin` sends the browser to
-// `/oauth2/authorize`, the sign-in screen posts a name and a password, and the
-// code comes back to `/admin/callback`.
-//
-// It starts at THIS REALM's `/admin/pki`: since 2026-09-11 the code flow runs
-// in the realm the console is reached in, and since 2026-09-14 the roster
-// asked is that realm's. The console's session record still lives in the
-// default realm's partition (`admin-ui/CLAUDE.md` 8 and 8d).
+// SIGN IN TO THE CONSOLE, AS THE STATIC CONSOLE DOES (#446): the code flow
+// with PKCE in THIS REALM, as the public client, for a DPoP-bound token
+// audienced to this realm's `/admin-api`. The account is made in this realm
+// and granted Admin Write there first — since 2026-09-14 (#32) the roster
+// asked is the realm's, and a token's scopes are narrowed at issuance to the
+// roles held — in both modes, so the job asserts the same thing in each.
 // ---------------------------------------------------------------------------
 async function signIn() {
   log.debug("Entering signIn().");
-  const account = await postJson(api("/users/create"), {
-    username: OPERATOR, invent: false,
-    attributes: { cn: "PKI Workbench Operator", givenName: "PKI",
-                  sn: "Workbench Operator", displayName: "PKI Workbench " +
-                      "Operator",
-                  mail: OPERATOR + "@pki-workbench.test" },
-    credential: "password", password: OPERATOR_PASSWORD
-  });
-  assert.ok(account.status === 200 && account.body && account.body.ok,
-            "creating the operator " + OPERATOR + " in " + REALM +
-            " answered " +
-            account.status + " " + String(account.text).slice(0, 300));
-  const granted = await postJson(api("/rbac/grant"),
-                                 { username: OPERATOR, role: "write" });
-  assert.ok(granted.status === 200,
-            "granting the operator Admin Write in " + REALM + " answered " +
-            granted.status + " " + String(granted.text).slice(0, 300));
-  const screen = await browse(realmUrl("/admin/pki"));
-  assert.ok(/name="authn_id"/.test(screen.text),
-            "the console did not send the browser to a sign-in screen; it " +
-            "answered " + screen.status + " at " + screen.url);
-  const id = valueOf(screen.text, "authn_id");
-  const landed = await press(screen.url.replace(/\?.*$/, ""),
-    bodyOf([["authn_id", id], ["username", OPERATOR],
-            ["password", OPERATOR_PASSWORD],
-            ["action", "login"]]));
-  assert.ok(/<h1[^>]*>PKI/.test(landed.text),
-            "signing in did not land on the PKI page; it landed on " +
-            landed.url);
+  consoleClient = await signin.signInToTheConsole(realmUrl(""), OPERATOR, log,
+                                                  { grant: "write" });
+  const page = await openPage();
+  assert.ok(/action="[^"]*\/admin\/pki\/certificate/.test(page.text),
+            "the PKI page drawn for the console carries no pane: " +
+            page.text.slice(0, 200));
   log.debug("Leaving signIn().");
-  return landed;
+  return page;
 }
 
 // ---------------------------------------------------------------------------
@@ -486,16 +459,16 @@ async function theFormRoundTrips(page) {
     pki_ext_ns_comment: "1",
     pki_validity_years: "3"
   };
-  const back = await press(realmUrl("/admin/pki/certificate"),
-                           bodyOf(before,
-                                  Object.assign({ defaults: "1" }, typed)));
-  check("pressing Apply the profile answers with a PAGE and not a redirect",
-        function () {
+  const back = await press(before, typed, "apply-profile");
+  check("pressing Apply the profile answers the next draft, and the pane is " +
+        "drawn again from it", function () {
           assert.strictEqual(back.status, 200,
-            "expected the pane's POST to render a page; got " + back.status +
-            " at " + back.url);
-          assert.ok(/<h1[^>]*>PKI/.test(back.text),
-            "the answer was not the PKI page: " + back.text.slice(0, 200));
+            "POST /admin-api/pki/apply-profile answered " + back.status +
+            " " + back.said);
+          assert.ok(back.json && back.json.workbench,
+            "the answer carries no workbench to draw the pane from");
+          assert.ok(/action="[^"]*\/admin\/pki\/certificate/.test(back.text),
+            "the pane was not drawn again: " + back.text.slice(0, 200));
         });
   check("a Common Name somebody TYPED survives the round trip", function () {
     assert.strictEqual(valueOf(back.text, "pki_dn_cn"), typed.pki_dn_cn);
@@ -516,7 +489,7 @@ async function theFormRoundTrips(page) {
   const after = new Map(fields(form(back.text, "/admin/pki/certificate")));
   const lost = before.map(function (pair) { return pair[0]; })
     .filter(function (name) {
-      return name !== "csrf_token" && !after.has(name);
+      return !after.has(name);
     });
   check("NO FIELD WAS LOST on the way through — a control the page forgets " +
         "to re-render falls back to its default on every press, which is a " +
@@ -534,8 +507,7 @@ async function theBrowserIssues(page) {
   log.debug("Entering theBrowserIssues().");
   log.info("=== 2. a certificate is issued through the form ===");
   const pane = form(page.text, "/admin/pki/certificate");
-  const issued = await press(realmUrl("/admin/pki/certificate"),
-    bodyOf(fields(pane), {
+  const issued = await press(fields(pane), {
       pki_profile: "root-ca",
       pki_key_alg: "ec-p256",
       pki_dn_cn: CA_CN,
@@ -545,11 +517,12 @@ async function theBrowserIssues(page) {
       pki_ext_skid: "1",
       pki_gen_csr: "1",
       pki_save_keys: "1"
-    }));
-  check("the issue answers 200 with the page rather than a 303", function () {
-    assert.strictEqual(issued.status, 200,
-      "got " + issued.status + " at " + issued.url);
-  });
+    }, "issue-certificate");
+  check("the issue answers 200 and the pane is drawn again from its draft",
+        function () {
+          assert.strictEqual(issued.status, 200,
+            "got " + issued.status + " " + issued.said);
+        });
   check("the certification request is in the form afterwards, because the " +
         "box was ticked", function () {
     assert.ok(/BEGIN CERTIFICATE REQUEST/.test(issued.text),
@@ -578,19 +551,20 @@ async function aRefusalKeepsTheForm(page) {
   log.debug("Entering aRefusalKeepsTheForm().");
   log.info("=== 3. a refusal comes back with the form still in it ===");
   const pane = form(page.text, "/admin/pki/certificate");
-  const refused = await press(realmUrl("/admin/pki/certificate"),
-    bodyOf(fields(pane), {
-      pki_dn_cn: "kept.example.test",
-      pki_ext_san: "1",
-      pki_san: "this line has no type at all"
-    }));
-  check("it is still a page", function () {
-    assert.strictEqual(refused.status, 200);
+  const refused = await press(fields(pane), {
+    pki_dn_cn: "kept.example.test",
+    pki_ext_san: "1",
+    pki_san: "this line has no type at all"
+  }, "issue-certificate");
+  check("it is refused (400) and still answers the draft to draw the pane " +
+        "from", function () {
+    assert.strictEqual(refused.status, 400, refused.said);
+    assert.ok(refused.json && refused.json.workbench,
+      "a refusal that answered no draft would draw the form empty");
   });
   check("the refusal NAMES the line it could not read", function () {
-    assert.ok(/has no type/.test(refused.text),
-      "the page does not explain the refusal: " +
-      refused.text.replace(/<[^>]*>/g, " ").slice(0, 400));
+    assert.ok(/has no type/.test(refused.said),
+      "the answer does not explain the refusal: " + refused.said);
   });
   check("and the Common Name that was typed is still in the box", function () {
     assert.strictEqual(valueOf(refused.text, "pki_dn_cn"), "kept.example.test");
@@ -649,54 +623,65 @@ async function theStoreIsReported() {
 }
 
 // 5. THE DOWNLOAD, which is the one form on this page whose answer is a FILE.
+//
+// **SINCE THE CUTOVER (#446) THE CONSOLE'S EXPORT IS THE OPERATION'S**: the
+// file came back from `POST /admin/pki/export` as an attachment, and that
+// handler went with the server-rendered console. What the pane's form sends
+// is what `POST /admin-api/pki/export` takes — the form's fields, the object
+// and the keystore choices — and it answers the file in `files`, named,
+// typed and base64'd. Those are asserted here: the name, the media type and
+// the bytes being a real PKCS#12.
 async function theDownloadIsAFile(page, object) {
   log.debug("Entering theDownloadIsAFile().");
   log.info("=== 5. Download answers with the file itself ===");
   const pane = form(page.text, "/admin/pki/certificate");
-  const file = await press(realmUrl("/admin/pki/export"),
-    bodyOf(fields(pane), {
+  const sent = {};
+  fields(pane).forEach(function (pair) {
+    sent[pair[0]] = pair[1];
+  });
+  delete sent.action;
+  const file = await consoleClient.api("POST", "/admin-api/pki/export",
+    Object.assign(sent, {
       pki_selected: object.id,
       pki_ks_format: "pkcs12",
       pki_ks_password: P12_PASSWORD,
-      pki_ks_include_chain: "1",
-      export: "1"
+      pki_ks_include_chain: "1"
     }));
-  check("it is not a page", function () {
-    assert.strictEqual(file.status, 200, file.text.slice(0, 300));
-    assert.ok(/application\/x-pkcs12/.test(file.contentType),
-      "the media type is " + file.contentType);
+  const one = (file.json && file.json.files && file.json.files[0]) || {};
+  check("it answers the file, typed as a PKCS#12", function () {
+    assert.strictEqual(file.status, 200, String(file.text).slice(0, 300));
+    assert.ok(/application\/x-pkcs12/.test(String(one.mime || "")),
+      "the media type is " + one.mime);
   });
   check("and it is named after the certificate rather than after the form",
         function () {
-          assert.ok(/attachment; filename="/.test(file.disposition),
-            "no attachment disposition: " + file.disposition);
-          assert.ok(file.disposition.indexOf("Workbench-Root") >= 0 ||
-                    file.disposition.indexOf(CA_CN.replace(/ /g, "-")) >= 0,
-            "the filename does not name the subject: " + file.disposition);
+          assert.ok(String(one.name || "").indexOf("Workbench-Root") >= 0 ||
+                    String(one.name || "").indexOf(CA_CN.replace(/ /g, "-")) >=
+                    0,
+            "the filename does not name the subject: " + one.name);
         });
   // A PKCS#12 is a DER SEQUENCE, so the first byte is 0x30. Checking the MAGIC
-  // rather than the length is what tells a real keystore from an HTML error
-  // page served with the right media type.
+  // rather than the length is what tells a real keystore from something else
+  // carried under the right media type.
   check("the body really is DER and not a page wearing a media type",
         function () {
-          const first = Buffer.from(file.text, "binary")[0];
+          const first = Buffer.from(String(one.base64 || ""), "base64")[0];
           assert.strictEqual(first, 0x30,
-            "the first byte is 0x" + first.toString(16) + ", not a DER " +
-            "SEQUENCE");
+            "the first byte is 0x" + Number(first).toString(16) + ", not a " +
+            "DER SEQUENCE");
         });
 
-  log.info("--- and PKCS#12 without a password is REFUSED as a page ---");
-  const refused = await press(realmUrl("/admin/pki/export"),
-    bodyOf(fields(pane), {
+  log.info("--- and PKCS#12 without a password is REFUSED ---");
+  const refused = await consoleClient.api("POST", "/admin-api/pki/export",
+    Object.assign({}, sent, {
       pki_selected: object.id, pki_ks_format: "pkcs12",
-      pki_ks_password: "", export: "1"
+      pki_ks_password: ""
     }));
-  check("a refused export is a PAGE, so it reads like every other refusal on " +
-        "this console rather than as a broken download", function () {
-          assert.strictEqual(refused.status, 200);
-          assert.ok(/text\/html/.test(refused.contentType),
-            "a refusal came back as " + refused.contentType);
-          assert.ok(/password/i.test(refused.text),
+  check("a refused export is a refusal naming the password, rather than a " +
+        "broken download", function () {
+          assert.strictEqual(refused.status, 400,
+            String(refused.text).slice(0, 300));
+          assert.ok(/password/i.test(JSON.stringify(refused.json || {})),
             "the refusal does not mention the password");
         });
   log.debug("Leaving theDownloadIsAFile().");
@@ -705,28 +690,31 @@ async function theDownloadIsAFile(page, object) {
 // 6. THE GATE. A caller holding nothing must not be handed a private key.
 //
 // **THIS IS NOT THE ROLE SPLIT AND THE HEADER SAYS WHY.** The handler's own
-// `mayWrite()` is reachable only by a session with Admin Read and not Admin
-// Write, which this job does not produce yet — the header's mutation record
-// says why it once could not and why it now could. What is asserted here is
-// the failure that would actually matter.
+// role check is reachable only by a token with Admin Read and not Admin
+// Write, which this job does not produce yet. What is asserted here is the
+// failure that would actually matter — since the cutover (#446) at both
+// doors: the console's old path, which has no handler any more, and the
+// operation, which refuses a caller with no token. `Authorization: none`
+// keeps the suite's preloaded token off the request.
 async function theExportNeedsASession() {
   log.debug("Entering theExportNeedsASession().");
   log.info("=== 6. the export is not open to a caller with no session ===");
-  const r = await fetch(realmUrl("/admin/pki/export"),
-    { method: "POST", redirect: "manual",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: "pki_ks_format=pem" });
-  const text = await r.text();
-  check("a POST to the export with no console session does not hand over a " +
-        "key", function () {
-          assert.ok(r.status !== 200 ||
-                    !/application\/x-pkcs12|x-pem-file/.test(
-                      r.headers.get("content-type") || ""),
-            "the export answered " + r.status + " with " +
-            r.headers.get("content-type") + " to a caller holding nothing");
-          assert.ok(String(text).indexOf("PRIVATE KEY") < 0,
-            "a private key was returned to a caller with no session");
-        });
+  const doors = [realmUrl("/admin/pki/export"), api("/pki/export")];
+  for (const door of doors) {
+    const r = await fetch(door,
+      { method: "POST", redirect: "manual",
+        headers: { "Content-Type": "application/json",
+                   authorization: "none" },
+        body: JSON.stringify({ pki_ks_format: "pem" }) });
+    const text = await r.text();
+    check("a POST to " + door + " with no credential does not hand over a " +
+          "key", function () {
+            assert.ok(r.status === 401 || r.status === 404,
+              door + " answered " + r.status + " to a caller holding nothing");
+            assert.ok(String(text).indexOf("PRIVATE KEY") < 0,
+              "a private key was returned to a caller with no credential");
+          });
+  }
   log.debug("Leaving theExportNeedsASession().");
 }
 
@@ -1070,7 +1058,7 @@ async function eachRealmSeesItsOwnAuthorities() {
   // function, so a narrowing that reached one and not the other would be two
   // answers to "what is this realm's certificate authority".
   // ---------------------------------------------------------------------
-  const page = await browse(realmUrl("/admin/pki"));
+  const page = await openPage();
   check("the console page in this realm answers", function () {
     assert.strictEqual(page.status, 200, page.text.slice(0, 300));
   });

@@ -1410,6 +1410,11 @@ const HELPERS = [
 // a silent gap. A local helper that nothing lists gets that guarantee from
 // nothing.
 const LOCAL_HELPERS = [
+  // The console's sign-in and a client of the operations its pages are
+  // drawn from (#446). Copied from the parent on 2026-09-06 and written here
+  // since; the static console (#446) made it a different helper from the
+  // parent's, which signs in to a cookie-holding console.
+  'console_signin.js',
   // What the OpenID conformance suite's drivers share (#187): the suite's
   // API, a plan run module by module, and the ledger of argued failures and
   // known warnings. `sts_fapi_conformance.js` keeps its own copy (#176).

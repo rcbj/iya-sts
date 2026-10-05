@@ -283,10 +283,9 @@ async function theRoutes() {
                 return /mode/.test(p);
               })));
   });
-  const cookie = await signin.signInToTheConsole(base, "weakmode-" + STAMP,
-                                                 log, { grant: "read" });
-  const headers = cookie ? { Cookie: cookie } : {};
-  const page = await call("GET", base + "/admin/mode", undefined, headers);
+  const consoleClient = await signin.signInToTheConsole(base,
+    "weakmode-" + STAMP, log, { grant: "read" });
+  const page = await consoleClient.get("/admin/mode");
   const own = await modeOf("");
   check("GET /admin/mode draws the report in the console", function () {
     assert.strictEqual(page.status, 200, page.status + " " +
@@ -299,8 +298,7 @@ async function theRoutes() {
     });
     assert.ok(page.text.indexOf("Development-only settings") >= 0);
   });
-  const pageJson = await call("GET", base + "/admin/mode?format=json",
-                              undefined, headers);
+  const pageJson = await consoleClient.get("/admin/mode?format=json");
   check("and its ?format=json is the API's answer", function () {
     assert.strictEqual(pageJson.status, 200, pageJson.text.slice(0, 200));
     assert.strictEqual(pageJson.json.mode, own.mode);

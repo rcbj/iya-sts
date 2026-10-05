@@ -300,12 +300,26 @@ async function test() {
 
   log.info("=== G. the page itself ===");
 
+  // THE PAGE IS THE STATIC CONSOLE'S SHELL SINCE #446, AND THE DATA IS
+  // BEHIND /admin-api: the document every `/admin/*` path answers carries
+  // nothing of this service's, and the page draws itself from
+  // GET /admin-api/database, which refuses a caller with no token. `Authorization: none` keeps the suite's
+  // preloaded token off this one request.
   const page = await fetch(base + "/admin/database", { redirect: "manual" });
-  check("/admin/database is BEHIND THE GATE, like every other page of that " +
+  const pageText = await page.text();
+  const tokenless = await fetch(base + "/admin-api/database", {
+    redirect: "manual", headers: { authorization: "none" } });
+  check("/admin/database is the console's shell, and its data is BEHIND " +
+        "/admin-api's token, like every other page of that " +
         "console — the metrics are an operator's business and the reply " +
         "names hosts, ports and a user", function () {
-          assert.ok(page.status === 303 || page.status === 302,
-            "status " + page.status);
+          assert.ok(page.status === 200 && /<html/i.test(pageText) &&
+                    !/PRIVATE KEY|"persons"|"connections"/.test(pageText),
+            "/admin/database answered " + page.status + " with " +
+            pageText.slice(0, 120));
+          assert.strictEqual(tokenless.status, 401,
+            "GET /admin-api/database answered " + tokenless.status +
+            " to a caller with no token");
         });
 
   log.info(checks + " check(s) passed.");

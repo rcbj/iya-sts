@@ -657,6 +657,15 @@ function assertMatches(entry, identifier, protocols, fields) {
   Object.keys(fields).forEach(function (name) {
     var want = valuesOf(fields[name]);
     var got = valuesOf(heldValues(held[name]));
+    // A CREDENTIAL IS ANSWERED MASKED (iya-sts #446): no GET of the
+    // management API carries a credential's value, so the entry says the
+    // attribute is SET and not what it holds. That is all that can be
+    // compared, and it is compared: set, where the job asked for a value.
+    if (got.length && got.every(function (one) {
+      return one === "(set — not returned)";
+    })) {
+      return;
+    }
     want.forEach(function (one) {
       assert.ok(got.indexOf(one) >= 0,
         "\"" + identifier + "\" should carry " + name + "=" + one +

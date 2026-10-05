@@ -26,8 +26,9 @@
 //      THE SAME PAGE. The refresh token is revoked; the next page runs the code
 //      flow, the sign-on session answers it without a sign-in, and the browser
 //      lands on the page it asked for.
-//   4. THE CONSOLE RENEWS TOO, and its session — which lives in the default
-//      realm's partition while its sign-in ran here — writes its renewal there.
+//   4. THE CONSOLE RENEWS TOO. Since #446 it holds no session of its own:
+//      it is a static page holding a DPoP-bound token, and it renews with
+//      the refresh grant, the refresh token rotated with the same key.
 //   5. THE SIGN-ON SESSION RUNNING OUT DOES NOT END IT. With the realm's
 //      session lifetime at its sixty-second floor, the portal session outlives
 //      its sign-on session and goes on renewing.
@@ -45,6 +46,7 @@
 
 const assert = require("assert");
 const { runStamp, usernameFor } = require("./random_username.js");
+const signin = require("./console_signin.js");
 
 var appconfig;
 let appconfigProblem = null;
@@ -488,30 +490,35 @@ async function aRefusedRenewalReturnsToThePage() {
 async function theConsoleRenewsToo() {
   log.debug("Entering theConsoleRenewsToo().");
   log.info("=== 4. the admin console renews inside the same session ===");
-  const who = usernameFor("renew-console");
-  await ensurePerson(who);
-  const b = browser();
-  await signInAt(b, R + "/admin/sessions", who);
-  const adminId = b.jar.sts_admin;
-  check("the sign-in left the browser holding a console session", function () {
-    assert.ok(adminId, JSON.stringify(Object.keys(b.jar)));
+  // THE CONSOLE IS A STATIC PAGE SINCE #446, signed in in the browser as a
+  // public client with a DPoP-bound token; there is no console session to
+  // keep. What renews is the TOKEN: the refresh grant, with the same key,
+  // the refresh token rotated. `console_signin.js` does what the page does.
+  const consoleClient = await signin.signInToTheConsole(base + R,
+    usernameFor("renew-console"), log);
+  const firstToken = consoleClient.token;
+  const firstRefresh = consoleClient.refreshToken;
+  check("the sign-in left the console holding a refresh token", function () {
+    assert.ok(firstRefresh, "no refresh token was issued");
   });
   await sleep(1100);
-  const page = await b.go("GET", R + "/admin/sessions");
-  check("the console answers the page (200, or 403 where the role roster " +
-        "names others) and does NOT send the browser to the authorization " +
-        "endpoint", function () {
+  const renewed = await consoleClient.refresh();
+  check("the refresh grant answers a new DPoP-bound access token and " +
+        "rotates the refresh token", function () {
+    assert.strictEqual(renewed.status, 200,
+                       JSON.stringify(renewed.json).slice(0, 300));
+    assert.ok(/^dpop$/i.test(String(renewed.json.token_type || "")),
+              JSON.stringify(renewed.json).slice(0, 200));
+    assert.notStrictEqual(consoleClient.token, firstToken);
+    assert.ok(consoleClient.refreshToken &&
+              consoleClient.refreshToken !== firstRefresh,
+              "the refresh token was not rotated");
+  });
+  const page = await consoleClient.api("GET", "/admin-api/sessions");
+  check("and the console reads with it (200, or 403 where the role roster " +
+        "names others), with no new sign-in", function () {
     assert.ok(page.status === 200 || page.status === 403,
-              page.status + " -> " + page.location);
-  });
-  check("with the same console session", function () {
-    assert.strictEqual(b.jar.sts_admin, adminId);
-  });
-  const rows = await auditRows(api, "session.renew", sidOf(adminId));
-  check("THE RENEWAL IS RECORDED IN THE DEFAULT REALM, where the console " +
-        "session lives, although the sign-in ran in " + REALM, function () {
-    assert.ok(rows.some(function (row) { return row.outcome === "success"; }),
-              JSON.stringify(rows));
+              page.status + " " + String(page.text).slice(0, 200));
   });
   log.debug("Leaving theConsoleRenewsToo().");
 }

@@ -373,11 +373,12 @@ async function test() {
 
   log.info("=== 6. the console and the API ===");
   const reader = "krbtgt-reader-" + STAMP;
-  const cookie = await signin.signInToTheConsole(base, reader, log,
-                                                 { grant: "read" });
-  const page = await call("GET", base + "/admin/kerberos/principals" +
-                          "?format=json", undefined,
-                          cookie ? { Cookie: cookie } : {});
+  // The page's answer is its `/admin-api` operation's since the static
+  // console (#446), asked as the console asks it.
+  const consoleClient = await signin.signInToTheConsole(base, reader, log,
+                                                        { grant: "read" });
+  const page = await consoleClient.get("/admin/kerberos/principals" +
+                                       "?format=json");
   const apiView = await krbtgtOf(api);
   check("the default realm's console page and the API report the same " +
         "krbtgt kvno", function () {

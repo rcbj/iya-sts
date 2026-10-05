@@ -283,11 +283,10 @@ async function everyWorkerIsListed(body) {
   log.debug("Leaving everyWorkerIsListed().");
 }
 
-async function thePageAgrees(cookie, body) {
+async function thePageAgrees(consoleClient, body) {
   log.debug("Entering thePageAgrees().");
   log.info("=== 3. /admin/node-health draws the same node ===");
-  const page = await call("GET", base + "/admin/node-health",
-                          { headers: { Cookie: cookie } });
+  const page = await consoleClient.get("/admin/node-health");
   check("the page answers 200 and draws each section", function () {
     assert.strictEqual(page.status, 200, page.text.slice(0, 300));
     ["cpu", "memory", "processes", "ecs", "machine"].forEach(
@@ -295,8 +294,7 @@ async function thePageAgrees(cookie, body) {
         assert.ok(page.text.indexOf('id="' + anchor + '"') >= 0, anchor);
       });
   });
-  const json = await call("GET", base + "/admin/node-health?format=json",
-                          { headers: { Cookie: cookie } });
+  const json = await consoleClient.get("/admin/node-health?format=json");
   check("its ?format=json answers the same view", function () {
     assert.strictEqual(json.status, 200, json.text.slice(0, 300));
     assert.strictEqual(json.body.scope, "node");
@@ -426,11 +424,11 @@ async function everyNodeByName() {
 async function main() {
   log.debug("Entering main().");
   const admin = "health-admin-" + STAMP;
-  const cookie = await signin.signInToTheConsole(base, admin, log,
-                                                 { grant: "read" });
+  const consoleClient = await signin.signInToTheConsole(base, admin, log,
+                                                        { grant: "read" });
   const body = await theApiAnswers();
   await everyWorkerIsListed(body);
-  await thePageAgrees(cookie || "", body);
+  await thePageAgrees(consoleClient, body);
   await everyNodeByName();
   await aRealmTokenIsRefused();
   log.info("sts_node_health: " + checks + " check(s) passed.");
