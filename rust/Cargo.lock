@@ -1702,6 +1702,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "sts-oauth"
+version = "0.1.0"
+dependencies = [
+ "base64 0.23.1",
+ "serde_json",
+ "sts-core",
+ "tracing",
+]
+
+[[package]]
 name = "sts-pki"
 version = "0.1.0"
 dependencies = [

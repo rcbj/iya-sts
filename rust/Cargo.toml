@@ -16,6 +16,7 @@ members = [
   "crates/sts-xml",
   "crates/sts-core",
   "crates/sts-xacml",
+  "crates/sts-oauth",
   "bins/xacml-pep",
   "bins/sts-runtime",
 ]
@@ -38,6 +39,7 @@ sts-store = { path = "crates/sts-store" }
 sts-cluster = { path = "crates/sts-cluster" }
 sts-http = { path = "crates/sts-http" }
 sts-xacml = { path = "crates/sts-xacml" }
+sts-oauth = { path = "crates/sts-oauth" }
 sts-xml = { path = "crates/sts-xml" }
 axum = "0.8"
 base64 = "0.23"
