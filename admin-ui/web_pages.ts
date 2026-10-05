@@ -49,6 +49,7 @@ import OidfedPage = require('../oidfed/web_oidfed');
 import ProviderCommandsPage =
   require('../oauth-oidc/web_provider_commands');
 import OAuth2MonitorPage = require('../oauth-oidc/web_oauth2_monitor');
+import RiskPage = require('./web_risk');
 import SchedulerPage = require('./web_scheduler');
 import SecretsPage = require('./web_secrets');
 import SettingsForms = require('./web_settings');
@@ -110,6 +111,13 @@ const PAGES: WebPage[] = [
   { path: '/admin/oauth2/monitor', title: 'OAuth 2.0 / OIDC activity',
     operation: '/admin-api/oauth2/monitor',
     render: OAuth2MonitorPage.render },
+  { path: '/admin/risk', title: 'Risk', operation: '/admin-api/risk',
+    render: RiskPage.render },
+  { path: '/admin/risk-scoring', title: 'Risk scoring',
+    operation: '/admin-api/risk/metrics',
+    render: function (view: Json): string {
+      return RiskPage.metricsHtml(view);
+    } },
   { path: '/admin/scheduler', title: 'Scheduler',
     operation: '/admin-api/scheduler', render: SchedulerPage.render },
   { path: '/admin/oidfed', title: 'OpenID Federation',
