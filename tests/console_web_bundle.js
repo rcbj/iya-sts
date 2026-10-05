@@ -407,6 +407,8 @@ function childMain() {
       '/admin/delegation/cluster': { application: 'webcheck-no-group' }
     };
     const exampled = [];
+    // Every page drawn, kept for the form check below (F1).
+    const drawnPages = [];
     const unviewed = [];
     const differing = [];
     const drilled = [];
@@ -421,6 +423,7 @@ function childMain() {
       }
       const ctx = WebKit.context({ per: '10', q: 'a b' }, true);
       const mine = WebPages.render(page.path, view, ctx);
+      drawnPages.push({ path: page.path, html: mine });
       const theirs = StsConsole
         ? StsConsole.render(page.path, view, ctx) : null;
       if (typeof mine !== 'string' || mine.length < 100 || mine !== theirs) {
@@ -459,6 +462,7 @@ function childMain() {
         if (one) {
           const ectx = WebKit.context(query, true);
           const a = WebPages.render(page.path, one, ectx);
+          drawnPages.push({ path: label, html: a });
           const b = StsConsole ? StsConsole.render(page.path, one, ectx)
                                : null;
           if (typeof a !== 'string' || a.length < 100 || a !== b ||
@@ -491,6 +495,7 @@ function childMain() {
         }
         const dctx = WebKit.context(query, true);
         const a = WebPages.render(page.path, one, dctx);
+        drawnPages.push({ path: label, html: a });
         const b = StsConsole ? StsConsole.render(page.path, one, dctx) : null;
         // Not the list again: a drill that fell through to the list's
         // renderer would draw the same page for every item.
@@ -501,6 +506,66 @@ function childMain() {
         }
       }
     }
+    // EVERY POST FORM A CONVERTED PAGE DRAWS IS ONE /admin-api OPERATION
+    // (#446). The static console sends a submitted form to the operation
+    // that mirrors it (`web_forms.ts`), read off `GET /admin-api`'s index;
+    // a form that resolves to none, or to two, is a control the static
+    // console could not work.
+    const WebForms = require(ROOT_DIR + '/admin-ui/web_forms');
+    const formTable = WebForms.table(adminApi.operationSummaries());
+    const unresolved = {};
+    let forms = 0;
+    drawnPages.forEach(function (one) {
+      const re = /<form\b[^>]*>[\s\S]*?<\/form>/gi;
+      let m = re.exec(one.html);
+      while (m) {
+        const form = m[0];
+        const head = /^<form\b[^>]*>/i.exec(form)[0];
+        if (/method="post"/i.test(head)) {
+          const target = (/action="([^"]*)"/i.exec(head) || [])[1] || '';
+          const path = target.replace(/[?#].*$/, '');
+          const actions = [];
+          const fields = /<(?:input|button)\b[^>]*\bname="action"[^>]*>/gi;
+          let f = fields.exec(form);
+          while (f) {
+            const v = (/value="([^"]*)"/i.exec(f[0]) || [])[1];
+            if (v !== undefined && actions.indexOf(v) < 0) {
+              actions.push(v);
+            }
+            f = fields.exec(form);
+          }
+          // A <select name="action"> offers its options as the action.
+          const select = /<select\b[^>]*\bname="action"[^>]*>([\s\S]*?)<\/select>/i
+            .exec(form);
+          if (select) {
+            const opts = /<option\b[^>]*value="([^"]*)"/gi;
+            let o = opts.exec(select[1]);
+            while (o) {
+              if (o[1] && actions.indexOf(o[1]) < 0) {
+                actions.push(o[1]);
+              }
+              o = opts.exec(select[1]);
+            }
+          }
+          (actions.length ? actions : ['']).forEach(function (action) {
+            forms++;
+            if (!WebForms.resolve(formTable, path, action)) {
+              const key = path + (action ? ' ' + action : '');
+              unresolved[key] = unresolved[key] || one.path;
+            }
+          });
+        }
+        m = re.exec(one.html);
+      }
+    });
+    note(forms > 300 && Object.keys(unresolved).length === 0,
+         'F0. every POST form a converted page draws resolves to one ' +
+         '/admin-api operation (web_forms.ts, off GET /admin-api)',
+         forms + ' form action(s), ' + Object.keys(unresolved).length +
+         ' unresolved: ' + Object.keys(unresolved).map(function (k) {
+           return k + ' (on ' + unresolved[k] + ')';
+         }).join('; '));
+
     // THE DRIFT CHECK, IN PROCESS (#446): `/admin/sts-metadata`'s answer
     // reports a route registered and undescribed, and a description of a
     // route that is not registered. Every page converted here owes its
