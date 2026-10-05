@@ -148,8 +148,8 @@ already written code that assumed it was there. Parity is kept structurally:
 * **The API decides nothing on its own.** Each `POST` calls the same action
   function the console's form posts to, with the action taken from the URL
   (`POST /admin-api/tokens/revoke`) rather than from a hidden form field.
-  Each `GET` returns the same view the console page's `?format=json` returns.
-  The two doors cannot disagree about what is allowed.
+  Each console page is DRAWN from its `GET`, and each console form is SENT
+  to its `POST`, so the two doors cannot disagree about what is allowed.
 * **A page with no form has only a `GET`.** The audit log is an example.
   There is nothing to change, so there is no operation to mirror.
 * **Each operation's description ends by naming the console control it
@@ -406,8 +406,11 @@ them on the console or with `POST /admin-api/config/set`.
 ## Design decisions
 
 * **An API, because a form is the right shape for a person and the wrong one
-  for anything else.** Every console page always answered `?format=json`, so
-  reading was never the problem; *changing* something was. Without the API a
+  for anything else.** Every console page answered `?format=json` from the
+  start, so reading was never the problem; *changing* something was. Since
+  the console became a static application over this API (2026-10-05), the
+  API is not a second door beside the console but the only one: the console
+  is its client. Without the API a
   script that wanted to revoke a token, or a CI job narrowing the issuer's
   claim set before running a wallet against it, would have to parse a 303
   redirect for its message or know which hidden input a form carried — driving

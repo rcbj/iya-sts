@@ -13,18 +13,17 @@ written, which is the point it is making.
 Ask the service instead:
 
 ```bash
-curl -s localhost:8081/admin/sts-metadata            # a page
-curl -s 'localhost:8081/admin/sts-metadata?format=json' | jq
+# the page, in a browser: https://localhost:8081/admin/sts-metadata
+curl -s -H "Authorization: Bearer $TOKEN" \
+  localhost:8081/admin-api/sts-metadata | jq      # what the page is drawn from
 ```
 
-Both are **behind the console gate**: with no browser sign-on session the first is a 302 to the sign-in
-screen and the second is a `401 login_required`, because a redirect to an HTML
-login screen is not an answer a program can read. The gate cannot be turned
-off; sign in at `/authn/login` (any username in development mode, where no
-password is checked). **Everything under `/admin-api` needs an OAuth 2.0
-access token** audienced to that API (`admin:read` to read, `admin:write` to
-write); `ADMIN_API_AUTH_REQUIRED=false` turns that off in development mode
-only.
+The page is the admin console's, which signs in in the browser and draws it
+from `GET /admin-api/sts-metadata`. **Everything under `/admin-api` needs an
+OAuth 2.0 access token** audienced to that API (`admin:read` to read,
+`admin:write` to write) — the [management API](management-api.md) says how
+to get one; `ADMIN_API_AUTH_REQUIRED=false` turns that off in development
+mode only. The console's own sign-in cannot be turned off.
 
 ## What that page is
 

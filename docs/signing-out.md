@@ -249,30 +249,34 @@ What to expect:
 
 ## The Sign out button on the console and the portal
 
-This service's own two web surfaces each have a **Sign out** button of their
-own — at the top of every page of `/admin`, and at the top of every page of
-`/portal`. On the console it is in the **account menu**, the drop-down in the
-head row labelled with the name you are signed in as; the menu's other row is a
-link to your own account in the user portal. (It is a `<details>` element, so it
-opens with no JavaScript — this console ships none — and closes when you click
-its label again rather than when you click elsewhere on the page.)
+This service's own two web surfaces each have a **Sign out** button — at the
+top of every page of `/admin`, and at the top of every page of `/portal`. On
+the console it is in the **account menu**, the drop-down in the head row
+labelled with the name you are signed in as; the menu's other row is a link to
+your own account in the user portal.
 
-| Endpoint | What it ends |
+| Button | What it ends |
 |---|---|
-| `POST /admin/signout` | the console's session **and the sign-on session behind it** |
+| the console's **Sign out** | it goes to `/logout` below: the sign-on session, and with it everything issued on it — the console's own tokens among them |
 | `POST /portal/signout` | the portal's session **and the sign-on session behind it** |
 
-**Each ends two sessions, and it has to.** Both surfaces are ordinary OpenID
-Connect clients of this service (`sts-admin-console` and `sts-user-portal`), so
-they hold a session of their own on top of the sign-on session you have with
-the identity provider. A button that ended only the application's session would
-sign nobody out: the next page runs the authorization code flow, meets the
-sign-on session that is still live, and lets you back in with nothing typed.
+**The portal's ends two sessions, and it has to.** The portal is an ordinary
+OpenID Connect client of this service (`sts-user-portal`), so it holds a
+session of its own on top of the sign-on session you have with the identity
+provider. A button that ended only the application's session would sign nobody
+out: the next page runs the authorization code flow, meets the sign-on session
+that is still live, and lets you back in with nothing typed.
 
-**They are the NARROW sign-out.** What they do not touch is anything already
-issued to other applications — access and refresh tokens, Kerberos tickets,
-credential offers, LDAP binds. `/logout` below is the one that ends those, and
-the portal draws a button for it at the foot of its **Overview** page.
+**The console holds no session of its own** (since 2026-10-05): it is a static
+page holding a DPoP-bound access token in the browser's memory, so its Sign
+out is the global one, and its refresh token is refused once the sign-on
+session it was issued on has ended.
+
+**The portal's is the NARROW sign-out.** What it does not touch is anything
+already issued to other applications — access and refresh tokens, Kerberos
+tickets, credential offers, LDAP binds. `/logout` below is the one that ends
+those, and the portal draws a button for it at the foot of its **Overview**
+page.
 
 ## The other two doors
 

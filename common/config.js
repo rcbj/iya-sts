@@ -7606,7 +7606,8 @@ const SETTINGS = [
     // decides who administers the service — see admin-ui/admin_scope.ts.
     perProcess: true,
     description: 'The cn of the directory group whose members may READ the ' +
-                 'console — every page, and every ?format=json view of one. ' +
+                 'console — every page, and every /admin-api read it is ' +
+                 'drawn from. ' +
                  'It is an ordinary group under ou=groups, so an ldapmodify, ' +
                  'a SCIM PATCH and the /admin/rbac screen are three doors ' +
                  'onto the same membership. The group need not exist: while ' +
