@@ -31,6 +31,12 @@
 # did for the node health page), and a test that calls a moved method on the
 # old instance.
 #
+# `COPY_CONSTS=PAGE,OTHER` in the environment copies those constants of the
+# old file into the new one. A file that says `const esc = admin.esc;` gets
+# `const esc = kit.esc;` in the new one. The new file may be beside
+# its page's module, in any directory; the kit is imported by its relative
+# path.
+#
 # AFTER IT: a row in `admin-ui/web_pages.ts`, a view in
 # `tests/console_web_bundle.js`'s `VIEWS`, and the image build.
 #
@@ -100,6 +106,24 @@ def strip_logs(text):
         i = j
     return ''.join(out)
 
+import os
+BARE_ESC = bool(re.search(r'^const esc = admin\.esc;$', '\n'.join(lines), re.M))
+# CONSTANTS THE MOVED CODE READS, named in $COPY_CONSTS (comma-separated):
+# each `const NAME = ...;` of the old file is copied into the new one with
+# the comment above it, and stays where it was too.
+COPY = [c for c in os.environ.get('COPY_CONSTS', '').split(',') if c]
+copied = []
+# A module that says `const esc = admin.esc;` calls the console's escaping
+# by its bare name. The new file says the same of the kit's, so no moved
+# line changes.
+if BARE_ESC:
+    copied.append("// The console's escaping, under the name the moved code "
+                  "calls it by.\nconst esc = kit.esc;\n")
+for const in COPY:
+    m = re.search(r'((?:^(?://|/\*\*| \*)[^\n]*\n)*)^const %s = [^;]*;\n'
+                  % re.escape(const), '\n'.join(lines), re.M)
+    assert m, ('no such constant', const)
+    copied.append(m.group(0))
 spans = sorted((span(n) + (n,) for n in names))
 blocks = []
 for doc, start, end, name in spans:
@@ -130,6 +154,9 @@ assert used <= KIT, ('helpers not in the kit', sorted(used - KIT))
 # view) and `tsc` would only say the same thing after an image build.
 top = set(re.findall(r'^(?:const|let|function|class|import) ([A-Za-z_$][\w$]*)',
                      '\n'.join(lines), re.M)) - {'kit', 'WebKit'}
+top -= set(COPY)
+if BARE_ESC:
+    top.discard('esc')
 code_only = '\n'.join(l for l in body.split('\n')
                       if not re.match(r'^\s*(//|\*|/\*)', l))
 left = sorted(n for n in top
@@ -145,6 +172,10 @@ def wrap(prefix, text):
     return '\n'.join(prefix + l for l in textwrap.wrap(
         text, 79 - len(prefix), break_on_hyphens=False, break_long_words=False))
 leaf = web_file.split('/')[-1]
+kit_path = os.path.relpath(root + '/admin-ui/web_kit',
+                           os.path.dirname(root + '/' + web_file))
+if not kit_path.startswith('.'):
+    kit_path = './' + kit_path
 web = """// SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
 // SPDX-License-Identifier: BUSL-1.1
 
@@ -160,10 +191,10 @@ web = """// SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
 %s
 // ---------------------------------------------------------------------------
 
-import kit = require('./web_kit');
+import kit = require('%s');
 
 type Json = any;
-
+%s
 /**
 %s
  *
@@ -191,6 +222,7 @@ export = %s;
             source + "`, moved with their comments; that module still draws the "
             "page until the console's cutover, by calling `render()` with its "
             "view passed through JSON."),
+       kit_path, ('\n' + '\n'.join(copied)) if copied else '',
        wrap(' * ', what), page_class, page_class, entry, body, page_class)
 open(root + '/' + web_file, 'w').write(web)
 
@@ -210,11 +242,15 @@ for doc, start, end, name in sorted(spans, reverse=True):
             "    log.debug(\"Leaving %s.%s().\");" % (src_class, entry),
             "    return drawn;",
             "  }"]
-        assert re.search(r'\(json: Json\): string \{$', sig), sig
+        assert re.search(r'\(json(: Json)?\)(: string)? \{$', sig), sig
     else:
         del lines[doc:end + 2]
 out = '\n'.join(lines)
-imp = "import %s = require('./%s');\n" % (page_class, leaf[:-3])
+web_rel = os.path.relpath(root + '/' + web_file[:-3],
+                          os.path.dirname(root + '/' + source))
+if not web_rel.startswith('.'):
+    web_rel = './' + web_rel
+imp = "import %s = require('%s');\n" % (page_class, web_rel)
 m = list(re.finditer(r'^import [A-Za-z]+ = require\([^)]*\);\n', out, re.M))
 assert m
 k = m[-1].end()

@@ -13,7 +13,8 @@
 // at, its title, the `/admin-api` operation whose answer it is drawn from,
 // and the function that draws it. A page is converted when everything it
 // shows is in that operation's answer and its renderer is a `web_` module
-// (`web_kit.ts` argues the terms).
+// (`web_kit.ts` argues the terms). A renderer sits beside the module whose
+// page it draws, so some of them are in a protocol family's directory.
 //
 // **THIS FILE IS WHAT `build-typescript.sh` HANDS TO esbuild**, so what it
 // reaches is exactly what the browser bundle (`admin-ui/console.bundle.js`,
@@ -29,9 +30,11 @@
 
 import WebKit = require('./web_kit');
 import DatabasePage = require('./web_database');
+import GrantsPage = require('../oauth-oidc/web_grants');
 import ModePage = require('./web_mode');
 import NodeHealthPage = require('./web_node_health');
 import SecretsPage = require('./web_secrets');
+import SsfTransmittersPage = require('../ssf/web_ssf_transmitters');
 import WorkerPoolsPage = require('./web_worker_pools');
 
 type Json = any;
@@ -49,12 +52,17 @@ interface WebPage {
 const PAGES: WebPage[] = [
   { path: '/admin/database', title: 'Database',
     operation: '/admin-api/database', render: DatabasePage.render },
+  { path: '/admin/grants', title: 'Grants', operation: '/admin-api/grants',
+    render: GrantsPage.render },
   { path: '/admin/mode', title: 'Mode', operation: '/admin-api/mode',
     render: ModePage.render },
   { path: '/admin/node-health', title: 'Node health',
     operation: '/admin-api/node-health', render: NodeHealthPage.render },
   { path: '/admin/secrets', title: 'Secret store',
     operation: '/admin-api/secrets', render: SecretsPage.render },
+  { path: '/admin/ssf/transmitters', title: 'Signals from partners',
+    operation: '/admin-api/ssf/transmitters',
+    render: SsfTransmittersPage.render },
   { path: '/admin/worker-pools', title: 'Worker pools',
     operation: '/admin-api/worker-pools', render: WorkerPoolsPage.render }
 ];

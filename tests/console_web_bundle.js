@@ -75,6 +75,14 @@ function childMain() {
     // answers it. A page added to `web_pages.ts` owes a row here: D0 fails
     // otherwise.
     const VIEWS = {
+      '/admin/grants': function () {
+        return Promise.resolve({
+          grants: require(ROOT_DIR + '/oauth-oidc/grant_management').list() });
+      },
+      '/admin/ssf/transmitters': function () {
+        return Promise.resolve(
+          require(ROOT_DIR + '/ssf/ssf_transmitters').report({}));
+      },
       '/admin/database': function () {
         return database.databaseView();
       },
@@ -94,24 +102,35 @@ function childMain() {
     const dir = pathC.join(ROOT_DIR, 'admin-ui');
 
     // --- A. the sources ---------------------------------------------------
-    const sources = fsC.readdirSync(dir).filter(function (name) {
-      return /^web_.*\.ts$/.test(name);
+    // In every directory of the service: a page's renderer may sit beside
+    // the module whose page it draws. Names are relative to the root.
+    const sources = [];
+    fsC.readdirSync(ROOT_DIR, { withFileTypes: true }).forEach(function (d) {
+      if (!d.isDirectory() || /^(node_modules|tests|\.git)$/.test(d.name)) {
+        return;
+      }
+      fsC.readdirSync(pathC.join(ROOT_DIR, d.name)).forEach(function (name) {
+        if (/^web_.*\.ts$/.test(name)) {
+          sources.push(d.name + '/' + name);
+        }
+      });
     });
-    note(sources.length >= 3 && sources.indexOf('web_kit.ts') >= 0 &&
-         sources.indexOf('web_pages.ts') >= 0,
+    note(sources.length >= 3 &&
+         sources.indexOf('admin-ui/web_kit.ts') >= 0 &&
+         sources.indexOf('admin-ui/web_pages.ts') >= 0,
          'A1. the web_ sources are in the tree this test reads',
          sources.join(', '));
     const foreign = [];
     const nodeNames = [];
     sources.forEach(function (name) {
-      const text = fsC.readFileSync(pathC.join(dir, name), 'utf8');
+      const text = fsC.readFileSync(pathC.join(ROOT_DIR, name), 'utf8');
       const code = text.split('\n').filter(function (line) {
         return !/^\s*(\/\/|\*|\/\*)/.test(line);
       }).join('\n');
       const requires = /require\(\s*['"]([^'"]+)['"]\s*\)/g;
       let found = requires.exec(code);
       while (found) {
-        if (!/^\.\/web_[a-z0-9_]+$/.test(found[1])) {
+        if (!/^(\.\/|\.\.\/[a-z0-9-]+\/)web_[a-z0-9_]+$/.test(found[1])) {
           foreign.push(name + ' requires ' + found[1]);
         }
         found = requires.exec(code);

@@ -28,6 +28,8 @@ import helpers = require('../common/helpers');
 import admin = require('../admin-ui/admin');
 import InstanceSlot = require('../common/instance_slot');
 import transmitters = require('./ssf_transmitters');
+// The page's renderer (#446): a `web_` module, loadable in a browser.
+import SsfTransmittersPage = require('./web_ssf_transmitters');
 
 type Json = any;
 
@@ -78,108 +80,16 @@ class SsfTransmittersAdmin {
     return { log: helpers.log, admin: admin, transmitters: transmitters };
   }
 
-  /**
-   * Draws the page's body from the report: a card per relationship, the
-   * blocks and locks partners put on people here, and the table of what
-   * arrived.
-   *
-   * @param json - `ssf_transmitters.ts`'s report
-   * @returns the HTML
-   */
+  // DRAWN BY `web_ssf_transmitters.ts` (#446): this page is converted for the
+  // static console, and its renderer is a module a browser can load. Until the
+  // cutover this process still draws it, handing the renderer the view passed
+  // THROUGH JSON, so it is held to what the API's caller receives.
   body(json: Json): string {
-    const { log, admin } = this.deps;
+    const { log } = this.deps;
     log.debug("Entering SsfTransmittersAdmin.body().");
-    const link = function (id: string): string {
-      return '<a href="/admin/federation?relationship=' +
-        encodeURIComponent(id) + '#signals"><code>' + esc(id) +
-        '</code></a>';
-    };
-    const cards = json.relationships.length
-      ? json.relationships.map(function (t: Json): string {
-        return '<div class="card" id="relationship-' + esc(t.relationship) +
-          '"><h3>' + link(t.relationship) + ' <span class="sub">' +
-          esc(t.kind) + ', ' + esc(t.receiving ? t.state : 'not receiving') +
-          '</span></h3><p>Issuer <code>' + esc(t.issuer) + '</code>, ' +
-          'delivery <strong>' + esc(t.streamDelivery || t.delivery) +
-          '</strong>' + (t.streamId ? ', stream <code>' + esc(t.streamId) +
-            '</code> (aud <code>' + esc((t.streamAud || []).join(' ')) +
-            '</code>)' : ', no stream yet') + '.</p><p class="sub">' +
-          esc(t.counts.received || 0) + ' received, ' +
-          esc(t.counts.verified || 0) + ' verified, ' +
-          esc(t.counts.refused || 0) + ' refused, ' +
-          esc(t.counts.acted || 0) + ' reaction(s)' +
-          (t.lastPollAt ? '; last poll ' + esc(t.lastPollAt) + ': ' +
-            esc(t.lastPollResult) : '') +
-          (t.verifiedAt ? '; verified ' + esc(t.verifiedAt) : '') +
-          (t.ready ? '' : '<br>Still to set: ' + esc(t.missing.join(', '))) +
-          (t.lastError ? '<br><strong>' + esc(t.lastError) + '</strong>'
-                       : '') + '</p></div>';
-      }).join('')
-      : '<p class="sub" id="relationships-none">No federation relationship ' +
-        'in this realm receives its partner\'s Shared Signals. Turn ' +
-        '<code>fedSignalsEnabled</code> on for one on <a ' +
-        'href="/admin/federation">Federation</a>, or create an ' +
-        '<code>ssf</code> relationship for a partner that signs nobody in.' +
-        '</p>';
-    const blocks = json.blocks.length
-      ? '<h3>Sign-ins partners have blocked</h3><table><thead><tr><th>' +
-        'Person</th><th>Relationship</th><th>Since</th><th>Event</th></tr>' +
-        '</thead><tbody>' + json.blocks.map(function (b: Json): string {
-          return '<tr><td>' + esc(b.username) + '</td><td>' +
-            link(b.relationship) + '</td><td>' + esc(b.at) + '</td><td>' +
-            '<code>' + esc(b.event) + '</code></td></tr>';
-        }).join('') + '</tbody></table>'
-      : '';
-    const locks = json.locks.length
-      ? '<h3>Accounts a partner disabled</h3><table><thead><tr><th>Person' +
-        '</th><th>Relationship</th><th>Since</th></tr></thead><tbody>' +
-        json.locks.map(function (l: Json): string {
-          return '<tr><td>' + esc(l.username) + '</td><td>' +
-            link(l.relationship) + '</td><td>' + esc(l.at) + '</td></tr>';
-        }).join('') + '</tbody></table>'
-      : '';
-    const received = json.received.length ? json.received.map(function (r:
-                                                                       Json) {
-      return '<tr><td>' + link(r.relationship) + '</td><td>' +
-        esc(r.receivedAt) + ' <span class="sub">' + esc(r.via) + '</span>' +
-        '</td><td>' + (r.events || []).map(function (e: string) {
-          return '<code>' + esc(String(e).replace(/^.*\//, '')) + '</code>';
-        }).join(' ') + '</td><td>' + (r.verified ? 'verified'
-          : '<strong>' + esc(r.refusal || 'unverified') + '</strong>') +
-        (r.why ? '<br><span class="sub">' + esc(r.why) + '</span>' : '') +
-        '</td><td>' + esc(r.person || '—') + (r.mapping
-          ? '<br><span class="sub">' + esc(r.mapping) + '</span>' : '') +
-        '</td><td>' + (r.reactions || []).map(function (x: Json) {
-          return esc(x.reaction || '—') + (x.done ? ' ✓' : '') +
-            (x.observed ? ' (observed only)' : '') +
-            // #432: how much a signal-revoke-grants revoked, and a reaction
-            // the operator's switch skipped.
-            (x.revoked !== undefined ? ' — ' + esc(String(x.revoked)) +
-              ' revoked' : '') +
-            (x.skipped ? ' <span class="sub">skipped: ' + esc(x.skipped) +
-              '</span>' : '') +
-            (x.why ? ' <span class="sub">' + esc(x.why) + '</span>' : '');
-        }).join('<br>') + '</td></tr>';
-    }).join('') : '<tr><td colspan="6" class="sub">Nothing has arrived.' +
-      '</td></tr>';
+    const drawn = SsfTransmittersPage.render(JSON.parse(JSON.stringify(json)));
     log.debug("Leaving SsfTransmittersAdmin.body().");
-    return admin.note('<strong>Shared Signals from federation ' +
-        'partners.</strong> A partner\'s CAEP and RISC events about the ' +
-        'people it signs in — or, from an <code>ssf</code> relationship, ' +
-        'about the people and devices it manages — are acted on only when ' +
-        'they verified against the keys its SSF configuration names, name ' +
-        'this stream\'s audience and a person the relationship links, and ' +
-        'then only as the <code>signal-response</code> policy permits. Each ' +
-        'stream is configured and acted on from its relationship\'s page.' +
-        (json.observeOnly
-          ? ' <strong>This realm only records what it would do</strong> ' +
-            '(development; <code>ssf.actOnSignalsInDevelopment</code>).'
-          : '')) + cards + blocks + locks +
-      '<h3>What arrived</h3><table><thead><tr><th>Relationship</th><th>When' +
-      '</th><th>Events</th><th>Verified</th><th>Person</th><th>Reactions' +
-      '</th></tr></thead><tbody>' + received + '</tbody></table>' +
-      '<p class="links"><a href="' + PAGE + '?format=json">JSON</a> · ' +
-      '<code>GET /admin-api/ssf/transmitters</code></p>';
+    return drawn;
   }
 
   /**

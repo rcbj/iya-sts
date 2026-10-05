@@ -7275,7 +7275,10 @@ directory:
 
 ### What a `web_` module is
 
-A file in this directory whose name begins `web_`:
+A file whose name begins `web_`. Most are in this directory; **a page drawn
+by a protocol family's own module has its renderer beside that module**
+(`oauth-oidc/web_grants.ts`, `ssf/web_ssf_transmitters.ts`), as its page
+module always was, and imports the kit by its relative path.
 
 | File | What it is |
 |---|---|
@@ -7284,8 +7287,16 @@ A file in this directory whose name begins `web_`:
 | `web_worker_pools.ts` | The body of `/admin/worker-pools`. It was `WorkerPoolsAdmin`'s four drawing methods. |
 | `web_database.ts` | The body of `/admin/database`, and the table of its `SECTIONS`, which `database_admin.ts` now reads from here: the table is what the page is drawn from, and this module may not require that one. |
 | `web_secrets.ts` | The body of `/admin/secrets`. |
+| `../oauth-oidc/web_grants.ts` | The body of `/admin/grants`, its Revoke form included. |
+| `../ssf/web_ssf_transmitters.ts` | The body of `/admin/ssf/transmitters`. |
 | `web_node_health.ts` | The body of `/admin/node-health`. It was `NodeHealthAdmin`'s nine drawing methods; it carries its own `MIB` and `round1()`, which the view's module has too, because it may not require that module. |
 | `web_pages.ts` | The table of converted pages (path, title, operation, renderer), and the ENTRY of the browser bundle. |
+
+**A FORM IN A RENDERER IS STILL A FORM.** `web_grants.ts` draws
+`<form method="post" action="/admin/grants">` exactly as the page did. The
+static console's runtime will send it as the management API call that
+mirrors that console POST (the operation's `mirrors`), so the renderer does
+not change when the console does.
 
 **A `web_` MODULE MAY REQUIRE ANOTHER `web_` MODULE AND NOTHING ELSE.** No
 logger, no `config`, no `realms`, no store, nothing of node's: it runs in a
@@ -7347,7 +7358,7 @@ the view.
 
 **NOT BUILT YET**: the runtime that signs in (authorization code, PKCE, a
 non-extractable DPoP key), fetches, routes and draws the shell; the static
-route that serves it; and every page but the five above.
+route that serves it; and every page but the seven above.
 
 **THE PAGING CONTROL IS DRAWN FROM THE PAGING A CALLER RECEIVES.**
 `pageNavPair(path, params, pg)` read two members of the console's own paging
@@ -7358,10 +7369,9 @@ carries both now (`admin-core/admin_views.ts`), so a renderer hands the kit
 `tests/console_web_bundle.js` holds, page by page of a list of 431 rows.
 
 **WHICH PAGES ARE NEXT IS DECIDED BY THE KIT.** Of the page modules outside
-`admin.ts`, four more need nothing the kit lacks but have FORMS, so their
-renderers need to be told whether the reader may write
-(`claims_providers_admin`, `grant_management_admin`,
-`provider_commands_admin`, `ssf_transmitters_admin`). The helpers the others
+`admin.ts`, two more need nothing the kit lacks: `claims_providers_admin`,
+whose renderer takes a callback address the view does not carry yet, and
+`provider_commands_admin`, which draws two pages. The helpers the others
 wait on, by how many page modules call them: `configFormsFor` (the settings
 forms), the rest of the paging furniture (`perPageForm`, `perPageOptions`,
 `sectionSearchForm`), `upTo` and `messagesOf` (which belong to the shell).
