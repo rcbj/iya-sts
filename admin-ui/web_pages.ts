@@ -114,6 +114,12 @@ interface WebPage {
   // a drill-down is not a page of its own but a second renderer chosen when
   // the query names `param`. `sample` picks an item off the list's answer,
   // which is how the bundle check draws one without knowing the data.
+  // THE OPERATION'S NAMES FOR THIS PAGE'S QUERY (#446): a page at a path
+  // of its own whose operation answers it under another parameter —
+  // `/admin/caep-sessions/session?id=` is `GET /admin-api/caep/sessions
+  // ?session=` — maps the page's name to the operation's here, and the
+  // page is asked for with the operation's.
+  params?: Record<string, string>;
   drill?: {
     param: string;
     sample: (listView: Json) => string | null;
@@ -164,6 +170,11 @@ const PAGES: WebPage[] = [
     operation: '/admin-api/caep',
     render: function (view: Json, ctx?: Json): string {
       return CaepRiscPage.caepBody(ctx || WebKit.context(), view);
+    } },
+  { path: '/admin/caep-sessions/session', title: 'CAEP sessions — one session',
+    operation: '/admin-api/caep/sessions', params: { id: 'session' },
+    render: function (view: Json, ctx?: Json): string {
+      return CaepRiscPage.caepSessionBody(ctx || WebKit.context(), view);
     } },
   { path: '/admin/caep-sessions', title: 'CAEP sessions',
     operation: '/admin-api/caep/sessions',
@@ -342,6 +353,12 @@ const PAGES: WebPage[] = [
     operation: '/admin-api/risc',
     render: function (view: Json, ctx?: Json): string {
       return CaepRiscPage.riscBody(ctx || WebKit.context(), view);
+    } },
+  { path: '/admin/risc-accounts/account',
+    title: 'RISC accounts — one account',
+    operation: '/admin-api/risc/accounts', params: { id: 'account' },
+    render: function (view: Json, ctx?: Json): string {
+      return CaepRiscPage.riscAccountBody(ctx || WebKit.context(), view);
     } },
   { path: '/admin/risc-accounts', title: 'RISC accounts',
     operation: '/admin-api/risc/accounts',
@@ -620,6 +637,23 @@ class WebPages {
    *   who may not write when left out.
    * @returns the body as HTML, or null when the page is not converted
    */
+  /**
+   * Translates a page's query into its operation's, by the row's `params`.
+   *
+   * @param path - the console path
+   * @param query - the page's query
+   * @returns the query the page's operation is asked with
+   */
+  static operationQuery(path: string, query: Json): Json {
+    const page = WebPages.pageFor(path);
+    const out: Json = {};
+    Object.keys(query || {}).forEach(function (name) {
+      const mapped = page && page.params && page.params[name];
+      out[mapped || name] = query[name];
+    });
+    return out;
+  }
+
   static render(path: string, view: Json, ctx?: Json): string | null {
     const page = WebPages.pageFor(path);
     const context = ctx || WebKit.context();

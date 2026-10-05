@@ -1579,6 +1579,476 @@ class CaepRiscPage {
       kit.esc(state) + '</td>';
     return out;
   }
+
+  /**
+   * Draws the page's body from its view.
+   *
+   * @param ctx - the render context (`WebKit.context()`)
+   * @param json - the answer of the page's management API operation
+   * @returns the body as HTML
+   */
+  static caepSessionBody(ctx, json) {
+    const row = json.session;
+    const listView = kit.listViewOf('/admin/caep-sessions', ctx.query);
+    const upHref = '/admin/caep-sessions' + kit.queryWith(listView, {});
+    const backLink = kit.note('<a class="btn" href="' + kit.esc(upHref) +
+      '">&larr; Back to the sessions table</a>');
+    // The list view as a POSTable field, for the reset form below: the reader
+    // came from page three of a search and should go back to it.
+    const back = kit.queryWith(listView, {});
+
+    if (!row) {
+      const inner = backLink +
+        kit.note(json.id
+          ? '<strong>No tracked session is called <code>' +
+            kit.esc(json.id) +
+            '</code>.</strong> That is not necessarily a wrong link. This ' +
+            'register is capped at <code>caep.maxSessionsTracked</code> ' +
+            'sessions and drops the oldest, and the <em>Clear the ' +
+            'register</em> button on the sessions table empties it ' +
+            'outright &mdash; so an old link coming back empty is the ' +
+            'ordinary outcome on a service that has been running a while. ' +
+            'What it does NOT mean is that the session was never real: ' +
+            'nothing here is ever deleted because a session ended, and a ' +
+            'session that ended is exactly what this register is for keeping.'
+          : '<strong>Name a session.</strong> This page draws ONE of them ' +
+            'and the way to it is a link on <a href="' + kit.esc(upHref) +
+            '">the sessions table</a> &mdash; every identifier there is ' +
+            'one. It is keyed on the session identifier this service gave ' +
+            'the session, which is what the SSF subject sent to a receiver ' +
+            'names.');
+      return inner;
+    }
+
+    // The events, paged. `eventsPage` rather than `page` because this list is
+    // named for pagingOf()'s reason and because the parameter travels back to
+    // the list page in the trail, where a bare `page` would be the sessions
+    // table's.
+    const navParams = kit.pageParamsOf(ctx.query);
+    const eventNav = kit.pageNavPair('/admin/caep-sessions/session',
+                                      navParams,
+                                      json.paging.events);
+
+    const eventRows = json.events.length
+      ? json.events.map(CaepRiscPage.caepEventRow.bind(CaepRiscPage)).join('')
+      : '<tr><td colspan="5">Nothing has been said about this session. ' +
+        'That is the ordinary case when no stream asked for the type, and ' +
+        'it is the answer to &ldquo;why did nothing arrive&rdquo; nine ' +
+        'times out of ten &mdash; <a href="/admin/caep-sessions">the ' +
+        'streams table</a> is where that shows up.</td></tr>';
+
+    const inner = backLink +
+
+      kit.note('<strong>Everything this transmitter has said about one ' +
+      'session.</strong> The sessions table counts HOW MANY events of each ' +
+      'type went out; this says WHICH, in order, with what the register ' +
+      'noticed as each one was applied. They are separate on purpose ' +
+      '&mdash; the state machine and the counters answer different ' +
+      'questions, and <code>ssf/caep.ts</code> argues why.') +
+
+      '<h2>The session</h2>' +
+      CaepRiscPage.caepSessionFacts(row) +
+
+      '<h2>What has been said about it</h2>' +
+      kit.note('A <strong>warning</strong> in the last column is this ' +
+      'register\'s own reading of an event it had just applied &mdash; a ' +
+      'state change that was not a transition, a payload member the type ' +
+      'does not define &mdash; and not something a receiver was told. SSF ' +
+      'has no channel for that: an event either goes out or does not.') +
+      kit.perPageForm('/admin/caep-sessions/session', 'id', json.id,
+                       json.paging.events.perPage,
+                       'It applies to the event list below.', listView) +
+      eventNav.head +
+      '<table><tr><th>When</th><th>Event</th><th>jti</th><th>Stream</th>' +
+      '<th>What the register noticed</th></tr>' + eventRows + '</table>' +
+      eventNav.foot +
+
+      '<h2>Per event type</h2>' +
+      kit.note('The same eight columns the sessions table carries, ' +
+      'written out with room for each type\'s whole name. A count of zero ' +
+      'almost always means <strong>no stream asked for that type</strong> ' +
+      'rather than anything being wrong.') +
+      CaepRiscPage.caepSessionCounts(row, json.eventTypes || []) +
+
+      '<h2>Reset this session\'s CAEP state</h2>' +
+      '<form method="post" action="/admin/caep">' +
+      '<input type="hidden" name="action" value="reset-session">' +
+      '<input type="hidden" name="session_id" value="' +
+      kit.esc(row.sessionId) +
+      '">' +
+      // WHICH PAGE PRESSED IT. Read as an enum by caepSessionsBackTo(), never
+      // as a path — see its header.
+      '<input type="hidden" name="from" value="session">' +
+      '<input type="hidden" name="back" value="' + kit.esc(back) + '">' +
+      '<div class="formrow"><button class="secondary">Reset</button></div>' +
+      '</form>' +
+      kit.note('It forgets what has been SAID about this session and puts ' +
+      'its state back to where it started. <strong>Nobody is signed out ' +
+      'and no stream is touched</strong> &mdash; a control on a monitoring ' +
+      'page that ended a session would be a monitoring page with a weapon ' +
+      'on it.') +
+
+      kit.note('<a href="/admin/caep-sessions">Every session</a> &middot; ' +
+      '<a href="/admin/caep">the settings, the catalogue and the by-hand ' +
+      'emit form</a> &middot; <a href="' +
+      kit.esc('/admin/caep' + kit.queryWith({ session: row.sessionId },
+                                                       {})) +
+      '">emit an event about this session</a> &middot; ' +
+      '<a href="/admin/ssf">the streams</a> &middot; ' +
+      '<a href="' + kit.esc('/admin/caep-sessions/session' +
+        kit.queryWith(kit.pageParamsOf(ctx.query), { format: 'json' })) +
+      '">this page as JSON</a>');
+
+    return inner;
+  }
+
+  // The facts about one session that are not events: who it belongs to, what
+  // state it is in, and the three CAEP dimensions a receiver acts on. Drawn as
+  // a table rather than as the run of `<div class="sub">` lines the card used,
+  // because on a page of its own this is the summary somebody reads first and a
+  // paragraph of eight facts is not read at all.
+  /**
+   * Draws the facts about one CAEP session that are not events — who, state,
+   * assurance, compliance, risk and the rest — as a table.
+   *
+   * @param row - the session as the reporter describes it
+   * @returns the table as HTML
+   */
+  static caepSessionFacts(row) {
+    function line(label, value, cls?) {
+      return '<tr><th>' + kit.esc(label) + '</th><td' +
+        (cls ? ' class="' + cls + '"' : '') + '>' + value + '</td></tr>';
+    }
+    const out = '<table>' +
+      line('Session', '<code>' + kit.esc(row.sessionId) + '</code>') +
+      line('Who', kit.esc(row.username || row.sub || '(unknown)') +
+        ' <span class="sub"><code>' + kit.esc(row.sub) + '</code></span>') +
+      line('Subject',
+           '<span class="sub">' + kit.esc(row.subject) + '</span>') +
+      line('Issuer', '<span class="sub"><code>' + kit.esc(row.iss || '—') +
+        '</code></span>') +
+      line('Protocol', '<span class="sub">' + kit.esc(row.protocol || '—') +
+        '</span>') +
+      line('State', kit.esc(row.state),
+        row.state === 'revoked' ? 'state-invalid'
+          : (row.state === 'presented' ? 'state-valid' : 'sub')) +
+      line('Established', '<span class="sub">' + kit.esc(row.establishedAt) +
+        '</span>') +
+      line('Last changed', '<span class="sub">' + kit.esc(row.updatedAt) +
+        '</span>') +
+      line('Assurance', '<span class="sub">' + kit.esc(row.assurance.level
+        ? (row.assurance.namespace + ' ' + row.assurance.level) : '—') +
+        '</span>') +
+      line('Device compliance', kit.esc(row.compliance || '—'),
+        row.compliance === 'not-compliant' ? 'state-invalid' : 'sub') +
+      line('Risk', kit.esc(row.risk.level || '—') +
+        (row.risk.subject ? ' <span class="sub">' + kit.esc(row.risk.subject) +
+          '</span>' : ''),
+        row.risk.level === 'HIGH' ? 'state-invalid' : 'sub') +
+      line('acr / amr', '<span class="sub"><code>' + kit.esc(row.acr || '—') +
+        '</code> / <code>' + kit.esc((row.amr || []).join(' ') || '—') +
+        '</code></span>') +
+      (Object.keys(row.claims).length
+        ? line('Claims changed',
+               '<code>' + kit.esc(JSON.stringify(row.claims)) +
+          '</code>')
+        : '') +
+      ((row.credentials || []).length
+        ? line('Credentials', '<span class="sub">' +
+          kit.esc(row.credentials.join(', ')) + '</span>')
+        : '') +
+      ((row.notes || []).length
+        ? line('Notes', '<span class="sub">' + kit.esc(row.notes.join(' ')) +
+          '</span>')
+        : '') +
+      '</table>';
+    return out;
+  }
+
+  // One session, opened out: what has actually been sent about it, in order,
+  // with the findings the register made as each one was applied. The counts on
+  // the table above say HOW MANY and this says WHICH, and the two are different
+  // questions — see caep.ts on why the ring and the counters are separate.
+  //
+  // **IT IS A PAGE OF ITS OWN SINCE 2026-09-04 AND USED TO BE A CARD PER
+  // SESSION UNDER THE TABLE.** That block was drawn for EVERY session the
+  // register held, each with a table of its own, so a service driven for an
+  // afternoon answered /admin/caep-sessions with a couple of hundred nested
+  // tables under the one table anybody had come to read — and the sessions
+  // table itself was then off the top of the screen for the whole of it. One
+  // session at a time, reached by clicking the identifier, is the arrangement
+  // /admin/tokens and its credential drill-down already have.
+  /**
+   * Draws one event sent about a CAEP session as a table row.
+   *
+   * @param one - the event: when, name, jti, stream and warnings
+   * @returns the row as HTML
+   */
+  static caepEventRow(one) {
+    return '<tr><td class="sub">' + kit.esc(one.at) + '</td>' +
+      '<td>' + kit.esc(one.name) + '</td>' +
+      '<td><code>' + kit.esc(one.jti) + '</code></td>' +
+      '<td><code>' + kit.esc(one.streamId || '(none)') + '</code></td>' +
+      '<td class="sub">' + kit.esc((one.warnings || []).join(' ') || '—') +
+      '</td></tr>';
+  }
+
+  // What has been said about this session PER TYPE, which is the row of the
+  // sessions table the reader clicked, drawn the long way round. It is here and
+  // not only there because the eight columns of that table are headed by an
+  // abbreviation — `revoked`, `established`, `credential` — and this is the one
+  // place there is room for the type's whole name and its URI.
+  /**
+   * Draws how many events of each CAEP type were sent about one session,
+   * with each type's whole name.
+   *
+   * @param row - the session, whose `counts` are keyed by type URI
+   * @param types - the CAEP event types
+   * @returns the table as HTML
+   */
+  static caepSessionCounts(row, types) {
+    const rows = types.map(function (type) {
+      const n = row.counts[type.uri] || 0;
+      return '<tr><td>' + kit.esc(type.name) + '</td>' +
+        '<td class="sub"><code>' + kit.esc(type.short) + '</code></td>' +
+        '<td class="' + (n ? '' : 'sub') + '">' + kit.esc(String(n)) +
+        '</td></tr>';
+    }).join('');
+    return '<table><tr><th>Event type</th><th>Short ' +
+      'name</th><th>Sent</th></tr>' +
+      rows + '</table>';
+  }
+
+  /**
+   * Draws the page's body from its view.
+   *
+   * @param ctx - the render context (`WebKit.context()`)
+   * @param json - the answer of the page's management API operation
+   * @returns the body as HTML
+   */
+  static riscAccountBody(ctx, json) {
+    const row = json.account;
+    const listView = kit.listViewOf('/admin/risc-accounts', ctx.query);
+    const upHref = '/admin/risc-accounts' + kit.queryWith(listView, {});
+    const backLink = kit.note('<a class="btn" href="' + kit.esc(upHref) +
+      '">&larr; Back to the accounts table</a>');
+    const back = kit.queryWith(listView, {});
+
+    if (!row) {
+      const inner = backLink +
+        kit.note(json.id
+          ? '<strong>No tracked account is called <code>' +
+            kit.esc(json.id) +
+            '</code>.</strong> That is not necessarily a wrong link. This ' +
+            'register is capped at <code>risc.maxAccountsTracked</code> ' +
+            'accounts and drops the oldest, and the <em>Clear the ' +
+            'register</em> button on the accounts table empties it ' +
+            'outright. What it does NOT mean is that the account was never ' +
+            'real: nothing here is deleted because a person was, and a ' +
+            'person who was deleted is exactly what this register is for ' +
+            'keeping.'
+          : '<strong>Name an account.</strong> This page draws ONE of them ' +
+            'and the way to it is a link on <a href="' + kit.esc(upHref) +
+            '">the accounts table</a>.');
+      return inner;
+    }
+
+    const eventNav = kit.pageNavPair('/admin/risc-accounts/account',
+                                      kit.pageParamsOf(ctx.query),
+                                      json.paging.events);
+
+    const eventRows = json.events.length
+      ? json.events.map(CaepRiscPage.riscEventRow.bind(CaepRiscPage)).join('')
+      : '<tr><td colspan="5">Nothing has been said about this account. ' +
+        'That is the ordinary case when no stream asked for the type, and ' +
+        'it is the answer to &ldquo;why did nothing arrive&rdquo; nine ' +
+        'times out of ten &mdash; <a href="/admin/risc-accounts">the ' +
+        'streams table</a> is where that shows up.</td></tr>';
+
+    const inner = backLink +
+
+      kit.note('<strong>Everything this transmitter has said about one ' +
+      'account.</strong> The accounts table counts HOW MANY events of each ' +
+      'type went out; this says WHICH, in order, with what the register ' +
+      'noticed as each one was applied. They are separate on purpose ' +
+      '&mdash; the state machine and the counters answer different ' +
+      'questions, and <code>ssf/risc.ts</code> argues why.') +
+
+      '<h2>The account</h2>' +
+      CaepRiscPage.riscAccountFacts(row) +
+
+      '<h2>What has been said about it</h2>' +
+      kit.note('A <strong>warning</strong> in the last column is this ' +
+      'register\'s own reading of an event it had just applied &mdash; a ' +
+      'state change that RISC section 2.8\'s diagram has no arrow for, a ' +
+      'payload member the type does not define &mdash; and not something a ' +
+      'receiver was told. SSF has no channel for that: an event either ' +
+      'goes out or does not.') +
+      kit.perPageForm('/admin/risc-accounts/account', 'id', json.id,
+                       json.paging.events.perPage,
+                       'It applies to the event list below.', listView) +
+      eventNav.head +
+      '<table><tr><th>When</th><th>Event</th><th>jti</th><th>Stream</th>' +
+      '<th>What the register noticed</th></tr>' + eventRows + '</table>' +
+      eventNav.foot +
+
+      '<h2>Per event type</h2>' +
+      kit.note('The same fourteen columns the accounts table carries, ' +
+      'written out with room for each type\'s whole name. A count of zero ' +
+      'almost always means <strong>no stream asked for that type</strong>.') +
+      CaepRiscPage.riscAccountCounts(row, json.eventTypes || []) +
+
+      '<h2>Reset this account\'s RISC state</h2>' +
+      '<form method="post" action="/admin/risc">' +
+      '<input type="hidden" name="action" value="reset-account">' +
+      '<input type="hidden" name="account_id" value="' +
+      kit.esc(row.accountId) +
+      '">' +
+      '<input type="hidden" name="from" value="account">' +
+      '<input type="hidden" name="back" value="' + kit.esc(back) + '">' +
+      '<div class="formrow"><button class="secondary">Reset</button></div>' +
+      '</form>' +
+      kit.note('It forgets what has been SAID about this account and puts ' +
+      'its state back to where it started &mdash; except the holder\'s ' +
+      'opt-out choice, which is theirs (RISC section 2.8) and is kept. ' +
+      '<strong>The directory entry is ' +
+      'untouched</strong> &mdash; nobody is enabled, disabled or restored, ' +
+      'and a control on a monitoring page that did any of those would be a ' +
+      'monitoring page with a weapon on it.') +
+
+      kit.note('<a href="/admin/risc-accounts">Every account</a> &middot; ' +
+      '<a href="' +
+      kit.esc('/admin/risc' + kit.queryWith({ acctq2: row.accountId },
+                                                       {})) +
+      '">emit an event about this account</a> &middot; ' +
+      '<a href="/admin/risc">the settings and the catalogue</a> &middot; ' +
+      '<a href="/admin/ssf">the streams</a> &middot; ' +
+      '<a href="' + kit.esc('/admin/risc-accounts/account' +
+        kit.queryWith(kit.pageParamsOf(ctx.query), { format: 'json' })) +
+      '">this page as JSON</a>');
+
+    return inner;
+  }
+
+  // The facts about one account that are not events. It is longer than the CAEP
+  // equivalent by exactly the amount RISC's model is larger: a session has one
+  // state and an account has three that move independently, and the identifiers
+  // it has been known by are a list rather than a value — because
+  // `identifier-changed` is an event about the key itself.
+  /**
+   * Draws the facts about one RISC account that are not events — its three
+   * states, contact details, former identifiers and the rest — as a table.
+   *
+   * @param row - the account as the reporter describes it
+   * @returns the table as HTML
+   */
+  static riscAccountFacts(row) {
+    function line(label, value, cls?) {
+      return '<tr><th>' + kit.esc(label) + '</th><td' +
+        (cls ? ' class="' + cls + '"' : '') + '>' + value + '</td></tr>';
+    }
+    const out = '<table>' +
+      line('Account', '<code>' + kit.esc(row.accountId) + '</code>') +
+      line('Subject', '<span class="sub">' + kit.esc(row.subject || '—') +
+        '</span>') +
+      line('Issuer', '<span class="sub"><code>' + kit.esc(row.iss || '—') +
+        '</code></span>') +
+      line('Directory entry',
+           '<span class="sub"><code>' + kit.esc(row.dn || '—') +
+        '</code></span>') +
+      line('Lifecycle', kit.esc(row.lifecycle),
+        (row.lifecycle === 'purged' || row.lifecycle === 'disabled')
+          ? 'state-invalid' : 'sub') +
+      line('Opt-out state', kit.esc(row.optOut),
+        row.optOut === 'opt-out' ? 'state-invalid' : 'sub') +
+      line('Credential standing', kit.esc(row.credentialStanding || '—'),
+        row.credentialStanding === 'compromised' ? 'state-invalid' : 'sub') +
+      line('Credential change required', row.credentialChangeRequired
+        ? 'yes' : '<span class="sub">no</span>') +
+      line('Recovery activated', row.recoveryActivated
+        ? 'yes' : '<span class="sub">no</span>') +
+      line('Email',
+           '<span class="sub">' + kit.esc(row.email || '—') + '</span>') +
+      line('Phone',
+           '<span class="sub">' + kit.esc(row.phone || '—') + '</span>') +
+      ((row.formerIdentifiers || []).length
+        ? line('Known by, formerly', '<span class="sub" title="' +
+          kit.esc('An event naming one of these still counts against this ' +
+                   'row. That is what keeps identifier-changed from ' +
+                   'splitting one person into two rows at the moment their ' +
+                   'identifier moves.') +
+          '">' + kit.esc(row.formerIdentifiers.join(', ')) + '</span>')
+        : '') +
+      line('First seen', '<span class="sub">' + kit.esc(row.createdAt) +
+        '</span>') +
+      line('Last changed', '<span class="sub">' + kit.esc(row.updatedAt) +
+        '</span>') +
+      line('Suppressed', kit.esc(String(row.suppressed || 0)),
+        row.suppressed ? 'state-invalid' : 'sub') +
+      ((row.identifierChanges || []).length
+        ? line('Identifier changes', '<span class="sub">' +
+          kit.esc(row.identifierChanges.map(function (one) {
+            return (one.from || '(none)') + ' → ' + (one.to || '(not said)');
+          }).join(', ')) + '</span>')
+        : '') +
+      ((row.credentials || []).length
+        ? line('Compromised credentials', '<span class="sub">' +
+          kit.esc(row.credentials.map(function (one) {
+            return one.credentialType || '(unstated)';
+          }).join(', ')) + '</span>')
+        : '') +
+      ((row.notes || []).length
+        ? line('Notes', '<span class="sub">' + kit.esc(row.notes.join(' ')) +
+          '</span>')
+        : '') +
+      '</table>';
+    return out;
+  }
+
+  /**
+   * Draws one event sent about a RISC account as a table row.
+   *
+   * @param one - the event: when, name, jti, stream and warnings
+   * @returns the row as HTML
+   */
+  static riscEventRow(one) {
+    return '<tr><td class="sub">' + kit.esc(one.at) + '</td>' +
+      '<td>' + kit.esc(one.name) + '</td>' +
+      '<td><code>' + kit.esc(one.jti) + '</code></td>' +
+      '<td><code>' + kit.esc(one.streamId || '(none)') + '</code></td>' +
+      '<td class="sub">' + kit.esc((one.warnings || []).join(' ') || '—') +
+      '</td></tr>';
+  }
+
+  // What has been said about this account PER TYPE, written the long way round.
+  // It carries a DEPRECATED column that the CAEP equivalent has no need of: one
+  // of RISC's fourteen is deprecated by its own specification in favour of a
+  // CAEP event, and a count in that row is a fact about the receiver's future
+  // rather than about this account.
+  /**
+   * Draws how many events of each RISC type were sent about one account,
+   * marking the type its specification deprecates.
+   *
+   * @param row - the account, whose `counts` are keyed by type URI
+   * @param types - the RISC event types
+   * @returns the table as HTML
+   */
+  static riscAccountCounts(row, types) {
+    const rows = types.map(function (type) {
+      const n = row.counts[type.uri] || 0;
+      return '<tr><td>' + kit.esc(type.name) + '</td>' +
+        '<td class="sub"><code>' + kit.esc(type.short) + '</code></td>' +
+        '<td class="' + (type.deprecated ? 'state-invalid' : 'sub') + '">' +
+        (type.deprecated
+          ? 'deprecated &mdash; use <code>' +
+            kit.esc(String(type.deprecated).split('/').pop()) + '</code>'
+          : '&mdash;') + '</td>' +
+        '<td class="' + (n ? '' : 'sub') + '">' + kit.esc(String(n)) +
+        '</td></tr>';
+    }).join('');
+    return '<table><tr><th>Event type</th><th>Short name</th><th></th>' +
+      '<th>Sent</th></tr>' + rows + '</table>';
+  }
 }
 
 export = CaepRiscPage;

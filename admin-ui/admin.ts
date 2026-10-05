@@ -11042,6 +11042,27 @@ class AdminConsole {
     return !!state.write;
   }
 
+  // A request with some query names replaced, for a page that asks a
+  // management API view under that operation's names (#446): the console's
+  // `/admin/caep-sessions/session?id=` is the operation's `?session=`. The
+  // request itself is the prototype, so whatever else a view reads off it —
+  // the host, the realm, the gate — is the request's own.
+  /**
+   * Builds a request whose query has some names replaced.
+   *
+   * @param req - the request
+   * @param names - the query names to set, and their values
+   * @returns the request, with that query
+   */
+  withQuery(req, names) {
+    const { log } = this.deps;
+    log.debug("Entering AdminConsole.withQuery().");
+    const out = Object.create(req);
+    out.query = Object.assign({}, req.query || {}, names);
+    log.debug("Leaving AdminConsole.withQuery().");
+    return out;
+  }
+
   // What a `web_` renderer is told beside its view (#446; `WebKit.context()`
   // argues what belongs in it): this request's query, passed through JSON
   // so the renderer sees what an address bar would give it, and the gate's
@@ -23187,19 +23208,7 @@ class AdminConsole {
     return CaepRiscPage.caepSessionRow(row, shorts, prefix, listView, back);
   }
 
-  // One session, opened out: what has actually been sent about it, in order,
-  // with the findings the register made as each one was applied. The counts on
-  // the table above say HOW MANY and this says WHICH, and the two are different
-  // questions — see caep.ts on why the ring and the counters are separate.
-  //
-  // **IT IS A PAGE OF ITS OWN SINCE 2026-09-04 AND USED TO BE A CARD PER
-  // SESSION UNDER THE TABLE.** That block was drawn for EVERY session the
-  // register held, each with a table of its own, so a service driven for an
-  // afternoon answered /admin/caep-sessions with a couple of hundred nested
-  // tables under the one table anybody had come to read — and the sessions
-  // table itself was then off the top of the screen for the whole of it. One
-  // session at a time, reached by clicking the identifier, is the arrangement
-  // /admin/tokens and its credential drill-down already have.
+  // Drawn by `web_caep_risc.ts` (#446).
   /**
    * Draws one event sent about a CAEP session as a table row.
    *
@@ -23210,19 +23219,10 @@ class AdminConsole {
     const { log } = this.deps;
     log.debug("Entering AdminConsole.caepEventRow().");
     log.debug("Leaving AdminConsole.caepEventRow().");
-    return '<tr><td class="sub">' + this.esc(one.at) + '</td>' +
-      '<td>' + this.esc(one.name) + '</td>' +
-      '<td><code>' + this.esc(one.jti) + '</code></td>' +
-      '<td><code>' + this.esc(one.streamId || '(none)') + '</code></td>' +
-      '<td class="sub">' + this.esc((one.warnings || []).join(' ') || '—') +
-      '</td></tr>';
+    return CaepRiscPage.caepEventRow(one);
   }
 
-  // The facts about one session that are not events: who it belongs to, what
-  // state it is in, and the three CAEP dimensions a receiver acts on. Drawn as
-  // a table rather than as the run of `<div class="sub">` lines the card used,
-  // because on a page of its own this is the summary somebody reads first and a
-  // paragraph of eight facts is not read at all.
+  // Drawn by `web_caep_risc.ts` (#446).
   /**
    * Draws the facts about one CAEP session that are not events — who, state,
    * assurance, compliance, risk and the rest — as a table.
@@ -23232,66 +23232,12 @@ class AdminConsole {
    */
   caepSessionFacts(row) {
     const { log } = this.deps;
-    const self = this;
     log.debug("Entering AdminConsole.caepSessionFacts().");
-    function line(label, value, cls?) {
-      log.debug("Entering line().");
-      log.debug("Leaving line().");
-      return '<tr><th>' + self.esc(label) + '</th><td' +
-        (cls ? ' class="' + cls + '"' : '') + '>' + value + '</td></tr>';
-    }
-    const out = '<table>' +
-      line('Session', '<code>' + this.esc(row.sessionId) + '</code>') +
-      line('Who', this.esc(row.username || row.sub || '(unknown)') +
-        ' <span class="sub"><code>' + this.esc(row.sub) + '</code></span>') +
-      line('Subject',
-           '<span class="sub">' + this.esc(row.subject) + '</span>') +
-      line('Issuer', '<span class="sub"><code>' + this.esc(row.iss || '—') +
-        '</code></span>') +
-      line('Protocol', '<span class="sub">' + this.esc(row.protocol || '—') +
-        '</span>') +
-      line('State', this.esc(row.state),
-        row.state === 'revoked' ? 'state-invalid'
-          : (row.state === 'presented' ? 'state-valid' : 'sub')) +
-      line('Established', '<span class="sub">' + this.esc(row.establishedAt) +
-        '</span>') +
-      line('Last changed', '<span class="sub">' + this.esc(row.updatedAt) +
-        '</span>') +
-      line('Assurance', '<span class="sub">' + this.esc(row.assurance.level
-        ? (row.assurance.namespace + ' ' + row.assurance.level) : '—') +
-        '</span>') +
-      line('Device compliance', this.esc(row.compliance || '—'),
-        row.compliance === 'not-compliant' ? 'state-invalid' : 'sub') +
-      line('Risk', this.esc(row.risk.level || '—') +
-        (row.risk.subject ? ' <span class="sub">' + this.esc(row.risk.subject) +
-          '</span>' : ''),
-        row.risk.level === 'HIGH' ? 'state-invalid' : 'sub') +
-      line('acr / amr', '<span class="sub"><code>' + this.esc(row.acr || '—') +
-        '</code> / <code>' + this.esc((row.amr || []).join(' ') || '—') +
-        '</code></span>') +
-      (Object.keys(row.claims).length
-        ? line('Claims changed',
-               '<code>' + this.esc(JSON.stringify(row.claims)) +
-          '</code>')
-        : '') +
-      ((row.credentials || []).length
-        ? line('Credentials', '<span class="sub">' +
-          this.esc(row.credentials.join(', ')) + '</span>')
-        : '') +
-      ((row.notes || []).length
-        ? line('Notes', '<span class="sub">' + this.esc(row.notes.join(' ')) +
-          '</span>')
-        : '') +
-      '</table>';
     log.debug("Leaving AdminConsole.caepSessionFacts().");
-    return out;
+    return CaepRiscPage.caepSessionFacts(row);
   }
 
-  // What has been said about this session PER TYPE, which is the row of the
-  // sessions table the reader clicked, drawn the long way round. It is here and
-  // not only there because the eight columns of that table are headed by an
-  // abbreviation — `revoked`, `established`, `credential` — and this is the one
-  // place there is room for the type's whole name and its URI.
+  // Drawn by `web_caep_risc.ts` (#446).
   /**
    * Draws how many events of each CAEP type were sent about one session,
    * with each type's whole name.
@@ -23302,20 +23248,9 @@ class AdminConsole {
    */
   caepSessionCounts(row, types) {
     const { log } = this.deps;
-    const self = this;
     log.debug("Entering AdminConsole.caepSessionCounts().");
-    const rows = types.map(function (type) {
-      const n = row.counts[type.uri] || 0;
-      return '<tr><td>' + self.esc(type.name) + '</td>' +
-        '<td class="sub"><code>' + self.esc(type.short) + '</code></td>' +
-        '<td class="' + (n ? '' : 'sub') + '">' + self.esc(String(n)) +
-        '</td></tr>';
-    }).join('');
-    log.debug("Leaving AdminConsole.caepSessionCounts(). " + types.length +
-              " type(s).");
-    return '<table><tr><th>Event type</th><th>Short ' +
-      'name</th><th>Sent</th></tr>' +
-      rows + '</table>';
+    log.debug("Leaving AdminConsole.caepSessionCounts().");
+    return CaepRiscPage.caepSessionCounts(row, types);
   }
 
   // Drawn by `web_caep_risc.ts` (#446).
@@ -23486,6 +23421,7 @@ class AdminConsole {
     return CaepRiscPage.riscAccountRow(row, shorts, prefix, listView, back);
   }
 
+  // Drawn by `web_caep_risc.ts` (#446).
   /**
    * Draws one event sent about a RISC account as a table row.
    *
@@ -23496,19 +23432,10 @@ class AdminConsole {
     const { log } = this.deps;
     log.debug("Entering AdminConsole.riscEventRow().");
     log.debug("Leaving AdminConsole.riscEventRow().");
-    return '<tr><td class="sub">' + this.esc(one.at) + '</td>' +
-      '<td>' + this.esc(one.name) + '</td>' +
-      '<td><code>' + this.esc(one.jti) + '</code></td>' +
-      '<td><code>' + this.esc(one.streamId || '(none)') + '</code></td>' +
-      '<td class="sub">' + this.esc((one.warnings || []).join(' ') || '—') +
-      '</td></tr>';
+    return CaepRiscPage.riscEventRow(one);
   }
 
-  // The facts about one account that are not events. It is longer than the CAEP
-  // equivalent by exactly the amount RISC's model is larger: a session has one
-  // state and an account has three that move independently, and the identifiers
-  // it has been known by are a list rather than a value — because
-  // `identifier-changed` is an event about the key itself.
+  // Drawn by `web_caep_risc.ts` (#446).
   /**
    * Draws the facts about one RISC account that are not events — its three
    * states, contact details, former identifiers and the rest — as a table.
@@ -23518,78 +23445,12 @@ class AdminConsole {
    */
   riscAccountFacts(row) {
     const { log } = this.deps;
-    const self = this;
     log.debug("Entering AdminConsole.riscAccountFacts().");
-    function line(label, value, cls?) {
-      log.debug("Entering line().");
-      log.debug("Leaving line().");
-      return '<tr><th>' + self.esc(label) + '</th><td' +
-        (cls ? ' class="' + cls + '"' : '') + '>' + value + '</td></tr>';
-    }
-    const out = '<table>' +
-      line('Account', '<code>' + this.esc(row.accountId) + '</code>') +
-      line('Subject', '<span class="sub">' + this.esc(row.subject || '—') +
-        '</span>') +
-      line('Issuer', '<span class="sub"><code>' + this.esc(row.iss || '—') +
-        '</code></span>') +
-      line('Directory entry',
-           '<span class="sub"><code>' + this.esc(row.dn || '—') +
-        '</code></span>') +
-      line('Lifecycle', this.esc(row.lifecycle),
-        (row.lifecycle === 'purged' || row.lifecycle === 'disabled')
-          ? 'state-invalid' : 'sub') +
-      line('Opt-out state', this.esc(row.optOut),
-        row.optOut === 'opt-out' ? 'state-invalid' : 'sub') +
-      line('Credential standing', this.esc(row.credentialStanding || '—'),
-        row.credentialStanding === 'compromised' ? 'state-invalid' : 'sub') +
-      line('Credential change required', row.credentialChangeRequired
-        ? 'yes' : '<span class="sub">no</span>') +
-      line('Recovery activated', row.recoveryActivated
-        ? 'yes' : '<span class="sub">no</span>') +
-      line('Email',
-           '<span class="sub">' + this.esc(row.email || '—') + '</span>') +
-      line('Phone',
-           '<span class="sub">' + this.esc(row.phone || '—') + '</span>') +
-      ((row.formerIdentifiers || []).length
-        ? line('Known by, formerly', '<span class="sub" title="' +
-          this.esc('An event naming one of these still counts against this ' +
-                   'row. That is what keeps identifier-changed from ' +
-                   'splitting one person into two rows at the moment their ' +
-                   'identifier moves.') +
-          '">' + this.esc(row.formerIdentifiers.join(', ')) + '</span>')
-        : '') +
-      line('First seen', '<span class="sub">' + this.esc(row.createdAt) +
-        '</span>') +
-      line('Last changed', '<span class="sub">' + this.esc(row.updatedAt) +
-        '</span>') +
-      line('Suppressed', this.esc(String(row.suppressed || 0)),
-        row.suppressed ? 'state-invalid' : 'sub') +
-      ((row.identifierChanges || []).length
-        ? line('Identifier changes', '<span class="sub">' +
-          this.esc(row.identifierChanges.map(function (one) {
-            return (one.from || '(none)') + ' → ' + (one.to || '(not said)');
-          }).join(', ')) + '</span>')
-        : '') +
-      ((row.credentials || []).length
-        ? line('Compromised credentials', '<span class="sub">' +
-          this.esc(row.credentials.map(function (one) {
-            return one.credentialType || '(unstated)';
-          }).join(', ')) + '</span>')
-        : '') +
-      ((row.notes || []).length
-        ? line('Notes', '<span class="sub">' + this.esc(row.notes.join(' ')) +
-          '</span>')
-        : '') +
-      '</table>';
     log.debug("Leaving AdminConsole.riscAccountFacts().");
-    return out;
+    return CaepRiscPage.riscAccountFacts(row);
   }
 
-  // What has been said about this account PER TYPE, written the long way round.
-  // It carries a DEPRECATED column that the CAEP equivalent has no need of: one
-  // of RISC's fourteen is deprecated by its own specification in favour of a
-  // CAEP event, and a count in that row is a fact about the receiver's future
-  // rather than about this account.
+  // Drawn by `web_caep_risc.ts` (#446).
   /**
    * Draws how many events of each RISC type were sent about one account,
    * marking the type its specification deprecates.
@@ -23600,24 +23461,9 @@ class AdminConsole {
    */
   riscAccountCounts(row, types) {
     const { log } = this.deps;
-    const self = this;
     log.debug("Entering AdminConsole.riscAccountCounts().");
-    const rows = types.map(function (type) {
-      const n = row.counts[type.uri] || 0;
-      return '<tr><td>' + self.esc(type.name) + '</td>' +
-        '<td class="sub"><code>' + self.esc(type.short) + '</code></td>' +
-        '<td class="' + (type.deprecated ? 'state-invalid' : 'sub') + '">' +
-        (type.deprecated
-          ? 'deprecated &mdash; use <code>' +
-            self.esc(String(type.deprecated).split('/').pop()) + '</code>'
-          : '&mdash;') + '</td>' +
-        '<td class="' + (n ? '' : 'sub') + '">' + self.esc(String(n)) +
-        '</td></tr>';
-    }).join('');
-    log.debug("Leaving AdminConsole.riscAccountCounts(). " + types.length +
-              " type(s).");
-    return '<table><tr><th>Event type</th><th>Short name</th><th></th>' +
-      '<th>Sent</th></tr>' + rows + '</table>';
+    log.debug("Leaving AdminConsole.riscAccountCounts().");
+    return CaepRiscPage.riscAccountCounts(row, types);
   }
 
   // WHERE A RISC ACTION ANSWERS BACK TO. The same enum-not-a-path rule
@@ -32050,147 +31896,27 @@ class AdminConsole {
     // -------------------------------------------------------------------------
     app.get('/admin/caep-sessions/session', function (req, res) {
       log.debug("Entering the admin CAEP one-session page.");
-      const json = caepJson(req);
+      // THE ONE-SESSION ANSWER OF `GET /admin-api/caep/sessions` (#446),
+      // asked with this page's `id` as that operation's `session`: one
+      // computation for the page and the API, and the page drawn from it.
       const asked = String(req.query.id || '').trim();
-      const row = (json.sessions || []).filter(function (one) {
-        return String(one.sessionId) === asked;
-      })[0] || null;
-
-      const listView = self.listViewOf('/admin/caep-sessions', req.query);
+      const found = caepSessionsJson(self.withQuery(req, { session: asked }));
+      const one = found.session;
       const up = self.upTo('/admin/caep-sessions',
-                           row ? (row.username || row.sub || asked) :
+                           one ? (one.username || one.sub || asked) :
                            'One session',
-                           listView);
-      const backLink = self.note('<a class="btn" href="' + self.esc(up.href) +
-        '">&larr; Back to the sessions table</a>');
-      // The list view as a POSTable field, for the reset form below: the reader
-      // came from page three of a search and should go back to it.
-      const back = queryWith(listView, {});
-
-      if (!row) {
-        const inner = self.messagesOf(req) + backLink +
-          self.note(asked
-            ? '<strong>No tracked session is called <code>' + self.esc(asked) +
-              '</code>.</strong> That is not necessarily a wrong link. This ' +
-              'register is capped at <code>caep.maxSessionsTracked</code> ' +
-              'sessions and drops the oldest, and the <em>Clear the ' +
-              'register</em> button on the sessions table empties it ' +
-              'outright &mdash; so an old link coming back empty is the ' +
-              'ordinary outcome on a service that has been running a while. ' +
-              'What it does NOT mean is that the session was never real: ' +
-              'nothing here is ever deleted because a session ended, and a ' +
-              'session that ended is exactly what this register is for keeping.'
-            : '<strong>Name a session.</strong> This page draws ONE of them ' +
-              'and the way to it is a link on <a href="' + self.esc(up.href) +
-              '">the sessions table</a> &mdash; every identifier there is ' +
-              'one. It is keyed on the session identifier this service gave ' +
-              'the session, which is what the SSF subject sent to a receiver ' +
-              'names.');
-        self.respond(req, res, { installed: json.installed, id: asked || null,
-                                 session: null },
-                     'CAEP sessions — one session', '/admin/caep-sessions',
-                     inner, up);
-        log.debug("Leaving the admin CAEP one-session page. Nothing was " +
-                  "found.");
-        return;
-      }
-
-      // The events, paged. `eventsPage` rather than `page` because this list is
-      // named for pagingOf()'s reason and because the parameter travels back to
-      // the list page in the trail, where a bare `page` would be the sessions
-      // table's.
-      const eventPage = pagedRows(req.query, row.events || [],
-        { name: 'events', noun: 'events' });
-      const navParams = pageParamsOf(req.query);
-      const eventNav = self.pageNavPair('/admin/caep-sessions/session',
-                                        navParams,
-                                        eventPage.paging);
-
-      const eventRows = eventPage.shown.length
-        ? eventPage.shown.map(self.caepEventRow.bind(self)).join('')
-        : '<tr><td colspan="5">Nothing has been said about this session. ' +
-          'That is the ordinary case when no stream asked for the type, and ' +
-          'it is the answer to &ldquo;why did nothing arrive&rdquo; nine ' +
-          'times out of ten &mdash; <a href="/admin/caep-sessions">the ' +
-          'streams table</a> is where that shows up.</td></tr>';
-
-      const inner = self.messagesOf(req) + backLink +
-
-        self.note('<strong>Everything this transmitter has said about one ' +
-        'session.</strong> The sessions table counts HOW MANY events of each ' +
-        'type went out; this says WHICH, in order, with what the register ' +
-        'noticed as each one was applied. They are separate on purpose ' +
-        '&mdash; the state machine and the counters answer different ' +
-        'questions, and <code>ssf/caep.ts</code> argues why.') +
-
-        '<h2>The session</h2>' +
-        self.caepSessionFacts(row) +
-
-        '<h2>What has been said about it</h2>' +
-        self.note('A <strong>warning</strong> in the last column is this ' +
-        'register\'s own reading of an event it had just applied &mdash; a ' +
-        'state change that was not a transition, a payload member the type ' +
-        'does not define &mdash; and not something a receiver was told. SSF ' +
-        'has no channel for that: an event either goes out or does not.') +
-        self.perPageForm('/admin/caep-sessions/session', 'id', asked,
-                         eventPage.paging.perPage,
-                         'It applies to the event list below.', listView) +
-        eventNav.head +
-        '<table><tr><th>When</th><th>Event</th><th>jti</th><th>Stream</th>' +
-        '<th>What the register noticed</th></tr>' + eventRows + '</table>' +
-        eventNav.foot +
-
-        '<h2>Per event type</h2>' +
-        self.note('The same eight columns the sessions table carries, ' +
-        'written out with room for each type\'s whole name. A count of zero ' +
-        'almost always means <strong>no stream asked for that type</strong> ' +
-        'rather than anything being wrong.') +
-        self.caepSessionCounts(row, json.eventTypes || []) +
-
-        '<h2>Reset this session\'s CAEP state</h2>' +
-        '<form method="post" action="/admin/caep">' +
-        '<input type="hidden" name="action" value="reset-session">' +
-        '<input type="hidden" name="session_id" value="' +
-        self.esc(row.sessionId) +
-        '">' +
-        // WHICH PAGE PRESSED IT. Read as an enum by caepSessionsBackTo(), never
-        // as a path — see its header.
-        '<input type="hidden" name="from" value="session">' +
-        '<input type="hidden" name="back" value="' + self.esc(back) + '">' +
-        '<div class="formrow"><button class="secondary">Reset</button></div>' +
-        '</form>' +
-        self.note('It forgets what has been SAID about this session and puts ' +
-        'its state back to where it started. <strong>Nobody is signed out ' +
-        'and no stream is touched</strong> &mdash; a control on a monitoring ' +
-        'page that ended a session would be a monitoring page with a weapon ' +
-        'on it.') +
-
-        self.note('<a href="/admin/caep-sessions">Every session</a> &middot; ' +
-        '<a href="/admin/caep">the settings, the catalogue and the by-hand ' +
-        'emit form</a> &middot; <a href="' +
-        self.esc('/admin/caep' + queryWith({ session: row.sessionId },
-                                                         {})) +
-        '">emit an event about this session</a> &middot; ' +
-        '<a href="/admin/ssf">the streams</a> &middot; ' +
-        '<a href="' + self.esc('/admin/caep-sessions/session' +
-          queryWith(pageParamsOf(req.query), { format: 'json' })) +
-        '">this page as JSON</a>');
-
-      self.respond(req, res,
-                   { installed: json.installed, id: asked, session: row,
-                               eventTypes: json.eventTypes || [],
-                               // WHAT THE BROWSER WAS SHOWN, beside the whole
-                               // list rather than instead of it:
-                               // `session.events` is entire, and this is the
-                               // slice the markup drew. The rule the list page
-                               // follows one level up.
-                               events: eventPage.shown,
-                               paging:
-                                 { events: pagingJson(eventPage.paging) } },
-                   'CAEP sessions — ' + (row.username || row.sub || asked),
-                   '/admin/caep-sessions', inner, up);
-      log.debug("Leaving the admin CAEP one-session page. " +
-                (row.events || []).length + " event(s).");
+                           self.listViewOf('/admin/caep-sessions', req.query));
+      const title = one
+        ? 'CAEP sessions — ' + (one.username || one.sub || asked)
+        : 'CAEP sessions — one session';
+      const json = found;
+      self.respond(req, res, json, title, '/admin/caep-sessions',
+        // Drawn by `web_caep_risc.ts` (#446).
+        self.messagesOf(req) +
+        CaepRiscPage.caepSessionBody(self.renderContext(req),
+          JSON.parse(JSON.stringify(json))), up);
+      log.debug("Leaving the admin CAEP one-session page. found=" + !!one +
+                ".");
     });
 
     // -------------------------------------------------------------------------
@@ -32260,130 +31986,26 @@ class AdminConsole {
     // -------------------------------------------------------------------------
     app.get('/admin/risc-accounts/account', function (req, res) {
       log.debug("Entering the admin RISC one-account page.");
-      const json = riscJson(req);
+      // THE ONE-ACCOUNT ANSWER OF `GET /admin-api/risc/accounts` (#446),
+      // asked with this page's `id` as that operation's `account`.
       const asked = String(req.query.id || '').trim();
-      const row = (json.accounts || []).filter(function (one) {
-        return String(one.accountId) === asked;
-      })[0] || null;
-
-      const listView = self.listViewOf('/admin/risc-accounts', req.query);
+      const found = riscAccountsJson(self.withQuery(req, { account: asked }));
+      const one = found.account;
       const up = self.upTo('/admin/risc-accounts',
-                           row ? (row.username || row.accountId) :
+                           one ? (one.username || one.accountId) :
                            'One account',
-                           listView);
-      const backLink = self.note('<a class="btn" href="' + self.esc(up.href) +
-        '">&larr; Back to the accounts table</a>');
-      const back = queryWith(listView, {});
-
-      if (!row) {
-        const inner = self.messagesOf(req) + backLink +
-          self.note(asked
-            ? '<strong>No tracked account is called <code>' + self.esc(asked) +
-              '</code>.</strong> That is not necessarily a wrong link. This ' +
-              'register is capped at <code>risc.maxAccountsTracked</code> ' +
-              'accounts and drops the oldest, and the <em>Clear the ' +
-              'register</em> button on the accounts table empties it ' +
-              'outright. What it does NOT mean is that the account was never ' +
-              'real: nothing here is deleted because a person was, and a ' +
-              'person who was deleted is exactly what this register is for ' +
-              'keeping.'
-            : '<strong>Name an account.</strong> This page draws ONE of them ' +
-              'and the way to it is a link on <a href="' + self.esc(up.href) +
-              '">the accounts table</a>.');
-        self.respond(req, res, { installed: json.installed, id: asked || null,
-                                 account: null },
-                     'RISC accounts — one account', '/admin/risc-accounts',
-                     inner, up);
-        log.debug("Leaving the admin RISC one-account page. Nothing found.");
-        return;
-      }
-
-      const eventPage = pagedRows(req.query, row.events || [],
-        { name: 'events', noun: 'events' });
-      const eventNav = self.pageNavPair('/admin/risc-accounts/account',
-                                        pageParamsOf(req.query),
-                                        eventPage.paging);
-
-      const eventRows = eventPage.shown.length
-        ? eventPage.shown.map(self.riscEventRow.bind(self)).join('')
-        : '<tr><td colspan="5">Nothing has been said about this account. ' +
-          'That is the ordinary case when no stream asked for the type, and ' +
-          'it is the answer to &ldquo;why did nothing arrive&rdquo; nine ' +
-          'times out of ten &mdash; <a href="/admin/risc-accounts">the ' +
-          'streams table</a> is where that shows up.</td></tr>';
-
-      const inner = self.messagesOf(req) + backLink +
-
-        self.note('<strong>Everything this transmitter has said about one ' +
-        'account.</strong> The accounts table counts HOW MANY events of each ' +
-        'type went out; this says WHICH, in order, with what the register ' +
-        'noticed as each one was applied. They are separate on purpose ' +
-        '&mdash; the state machine and the counters answer different ' +
-        'questions, and <code>ssf/risc.ts</code> argues why.') +
-
-        '<h2>The account</h2>' +
-        self.riscAccountFacts(row) +
-
-        '<h2>What has been said about it</h2>' +
-        self.note('A <strong>warning</strong> in the last column is this ' +
-        'register\'s own reading of an event it had just applied &mdash; a ' +
-        'state change that RISC section 2.8\'s diagram has no arrow for, a ' +
-        'payload member the type does not define &mdash; and not something a ' +
-        'receiver was told. SSF has no channel for that: an event either ' +
-        'goes out or does not.') +
-        self.perPageForm('/admin/risc-accounts/account', 'id', asked,
-                         eventPage.paging.perPage,
-                         'It applies to the event list below.', listView) +
-        eventNav.head +
-        '<table><tr><th>When</th><th>Event</th><th>jti</th><th>Stream</th>' +
-        '<th>What the register noticed</th></tr>' + eventRows + '</table>' +
-        eventNav.foot +
-
-        '<h2>Per event type</h2>' +
-        self.note('The same fourteen columns the accounts table carries, ' +
-        'written out with room for each type\'s whole name. A count of zero ' +
-        'almost always means <strong>no stream asked for that type</strong>.') +
-        self.riscAccountCounts(row, json.eventTypes || []) +
-
-        '<h2>Reset this account\'s RISC state</h2>' +
-        '<form method="post" action="/admin/risc">' +
-        '<input type="hidden" name="action" value="reset-account">' +
-        '<input type="hidden" name="account_id" value="' +
-        self.esc(row.accountId) +
-        '">' +
-        '<input type="hidden" name="from" value="account">' +
-        '<input type="hidden" name="back" value="' + self.esc(back) + '">' +
-        '<div class="formrow"><button class="secondary">Reset</button></div>' +
-        '</form>' +
-        self.note('It forgets what has been SAID about this account and puts ' +
-        'its state back to where it started &mdash; except the holder\'s ' +
-        'opt-out choice, which is theirs (RISC section 2.8) and is kept. ' +
-        '<strong>The directory entry is ' +
-        'untouched</strong> &mdash; nobody is enabled, disabled or restored, ' +
-        'and a control on a monitoring page that did any of those would be a ' +
-        'monitoring page with a weapon on it.') +
-
-        self.note('<a href="/admin/risc-accounts">Every account</a> &middot; ' +
-        '<a href="' +
-        self.esc('/admin/risc' + queryWith({ acctq2: row.accountId },
-                                                         {})) +
-        '">emit an event about this account</a> &middot; ' +
-        '<a href="/admin/risc">the settings and the catalogue</a> &middot; ' +
-        '<a href="/admin/ssf">the streams</a> &middot; ' +
-        '<a href="' + self.esc('/admin/risc-accounts/account' +
-          queryWith(pageParamsOf(req.query), { format: 'json' })) +
-        '">this page as JSON</a>');
-
-      self.respond(req, res,
-                   { installed: json.installed, id: asked, account: row,
-                               eventTypes: json.eventTypes || [],
-                               events: eventPage.shown,
-                               paging:
-                                 { events: pagingJson(eventPage.paging) } },
-                   'RISC accounts — ' + (row.username || row.accountId),
-                   '/admin/risc-accounts', inner, up);
-      log.debug("Leaving the admin RISC one-account page. " +
-                (row.events || []).length + " event(s).");
+                           self.listViewOf('/admin/risc-accounts', req.query));
+      const title = one
+        ? 'RISC accounts — ' + (one.username || one.accountId)
+        : 'RISC accounts — one account';
+      const json = found;
+      self.respond(req, res, json, title, '/admin/risc-accounts',
+        // Drawn by `web_caep_risc.ts` (#446).
+        self.messagesOf(req) +
+        CaepRiscPage.riscAccountBody(self.renderContext(req),
+          JSON.parse(JSON.stringify(json))), up);
+      log.debug("Leaving the admin RISC one-account page. found=" + !!one +
+                ".");
     });
 
     app.get('/admin/config', function (req, res) {

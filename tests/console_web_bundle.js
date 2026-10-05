@@ -143,7 +143,8 @@ function childMain() {
       });
     }
     async function viewOf(page, query) {
-      const answer = await apiAnswer(page.operation, query);
+      const answer = await apiAnswer(page.operation,
+                                     WebPages.operationQuery(page.path, query));
       if (answer.status !== 200 || !answer.body ||
           typeof answer.body !== 'object') {
         throw new Error(page.operation + ' answered ' + answer.status);
@@ -396,6 +397,28 @@ function childMain() {
       if (typeof mine !== 'string' || mine.length < 100 || mine !== theirs) {
         differing.push(page.path + ' (' + String(mine).length + ' against ' +
                        String(theirs).length + ')');
+      }
+      // A PAGE WHOSE QUERY THE OPERATION NAMES OTHERWISE, asked with its
+      // own names for an item that is not there: the mapping has to reach
+      // the operation, or the page is drawn from the list instead.
+      if (page.params) {
+        const own = { per: '10' };
+        own[Object.keys(page.params)[0]] = 'not-there-' + i;
+        const mapped = await viewOf(page, own).catch(function (e) {
+          unviewed.push(page.path + ' (mapped): ' +
+                        String((e && e.message) || e));
+          return null;
+        });
+        if (mapped) {
+          const pctx = WebKit.context(own, true);
+          const a = WebPages.render(page.path, mapped, pctx);
+          const b = StsConsole ? StsConsole.render(page.path, mapped, pctx)
+                               : null;
+          if (typeof a !== 'string' || a !== b ||
+              a.indexOf('not-there-' + i) < 0) {
+            differing.push(page.path + ' (mapped query)');
+          }
+        }
       }
       if (!page.drill) {
         continue;
