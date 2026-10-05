@@ -8,6 +8,7 @@
 resolver = "2"
 members = [
   "crates/sts-crypto",
+  "crates/sts-xml",
   "crates/sts-core",
   "crates/sts-xacml",
   "bins/xacml-pep",
@@ -26,6 +27,7 @@ publish = false
 sts-core = { path = "crates/sts-core" }
 sts-crypto = { path = "crates/sts-crypto" }
 sts-xacml = { path = "crates/sts-xacml" }
+sts-xml = { path = "crates/sts-xml" }
 axum = "0.8"
 base64 = "0.23"
 flate2 = "1"
@@ -47,6 +49,7 @@ indexmap = "2.14"
 num-bigint = "0.5"
 num-traits = "0.2"
 regex = "1.13"
+quick-xml = "0.42"
 roxmltree = "0.21"
 sha3 = "0.10"
 thiserror = "2.0"

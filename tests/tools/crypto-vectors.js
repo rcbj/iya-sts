@@ -160,8 +160,76 @@ function jwe() {
   });
 }
 
+// CANONICAL XML: every element of every document, in all four forms, as
+// common/vendored/xmldsig.js computes it in place — the bytes every XML
+// signature here is made and checked over, which sts-xml must reproduce
+// exactly. The documents are the hand-written edge cases below and, when
+// STS_C14N_CORPUS names a directory, every .xml file under it (the W3C
+// interop cases tests/tools/fetch-w3c-xmlsec.sh fetches). A document Node
+// refuses to parse is recorded as refused, and Rust must refuse it too.
+const C14N_CASES = [
+  '<a:r xmlns:a="urn:a" xmlns:b="urn:b" z="1" a:y="&lt;2&gt;"><c>x&amp;y</c></a:r>',
+  '<r xmlns="urn:d"><c xmlns=""><d xmlns="urn:e"/></c><!-- c --><?pi data?></r>',
+  '<r xmlns:p="urn:p"><p:c p:a="1" b="2" xml:lang="en"><e xmlns:p="urn:p"/></p:c></r>',
+  '<r>\r\n<a b="t\tn\nr\r">&#xD;&#x9;\t</a><![CDATA[<x> & ]]></r>',
+  '<r xmlns:a="urn:z" xmlns:b="urn:a"><e b:y="1" a:x="2" c="3" b:a="4"/></r>',
+  '<s:Envelope xmlns:s="urn:s" xmlns:xsi="urn:xsi"><s:Body><t xsi:type="s:T" ' +
+    'xmlns="urn:t">\u00e9\u4e2d\ud83d\ude00</t></s:Body></s:Envelope>',
+  '<r xmlns="urn:a"><a xmlns="urn:a"/><b xmlns=""/><c xmlns="urn:c"><d xmlns=""/></c></r>',
+  '<r><!--x--><a><!--y--></a></r>',
+  '<!DOCTYPE r [<!ENTITY e "x">]><r>&e;</r>',
+  '<r><a></b></r>'
+];
+
+function c14nCorpus() {
+  const out = C14N_CASES.map(function (xml, i) {
+    return { name: 'case-' + i, xml: xml };
+  });
+  const dir = process.env.STS_C14N_CORPUS;
+  if (dir) {
+    const walk = function (d) {
+      fs.readdirSync(d, { withFileTypes: true }).forEach(function (e) {
+        const full = path.join(d, e.name);
+        if (e.isDirectory()) {
+          walk(full);
+        } else if (/\.xml$/.test(e.name)) {
+          out.push({ name: path.relative(dir, full),
+                     xml: fs.readFileSync(full, 'utf8') });
+        }
+      });
+    };
+    walk(dir);
+  }
+  return out;
+}
+
+function c14n() {
+  const xmldsig = require(path.join(ROOT, 'common', 'vendored',
+                                    'xmldsig.js'));
+  return c14nCorpus().map(function (one) {
+    let doc;
+    try {
+      doc = xmldsig.parseXmlStrict(one.xml, 'a corpus document');
+    } catch (e) {
+      return { name: one.name, xml: one.xml, refused: e.message };
+    }
+    const forms = [];
+    const all = doc.getElementsByTagName('*');
+    for (let i = 0; i < all.length; i++) {
+      forms.push([
+        xmldsig.canonicalize(all[i], {}),
+        xmldsig.canonicalize(all[i], { comments: true }),
+        xmldsig.canonicalizeInclusive(all[i], {}),
+        xmldsig.canonicalizeInclusive(all[i], { comments: true })
+      ]);
+    }
+    return { name: one.name, xml: one.xml, forms: forms };
+  });
+}
+
 const VECTORS = [{ file: 'jws-node.json', build: jws },
-                 { file: 'jwe-node.json', build: jwe }];
+                 { file: 'jwe-node.json', build: jwe },
+                 { file: 'c14n-node.json', build: c14n }];
 
 if (require.main === module) {
   fs.mkdirSync(OUT, { recursive: true });
