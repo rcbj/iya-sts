@@ -21247,10 +21247,7 @@ class AdminConsole {
                                                         'provider' };
   }
 
-  // Which of the two browser profiles a recorded binding value names, in words.
-  // The registry holds the profile URI, which is what the metadata publishes
-  // and what a person reading a table does not want to compare character by
-  // character.
+  // Drawn by `web_saml.ts` (#446).
   /**
    * Names the SAML 1.1 browser profile a profile URI stands for.
    *
@@ -21258,18 +21255,10 @@ class AdminConsole {
    * @returns `Browser/POST`, `Browser/Artifact`, or the value unchanged
    */
   saml11ProfileLabel(value) {
-    const { log, saml11 } = this.deps;
+    const { log } = this.deps;
     log.debug("Entering AdminConsole.saml11ProfileLabel().");
-    if (value === saml11.PROFILE_POST) {
-      log.debug("Leaving AdminConsole.saml11ProfileLabel().");
-      return 'Browser/POST';
-    }
-    if (value === saml11.PROFILE_ARTIFACT) {
-      log.debug("Leaving AdminConsole.saml11ProfileLabel().");
-      return 'Browser/Artifact';
-    }
     log.debug("Leaving AdminConsole.saml11ProfileLabel().");
-    return value;
+    return SamlPage.saml11ProfileLabel(value);
   }
 
   // The settings that decide what a relying party receives are DRAWN ON THIS
@@ -21287,124 +21276,16 @@ class AdminConsole {
    * @returns the page body as HTML (`inner`) and its JSON view (`json`)
    */
   saml11ListPage(req) {
-    const { log, adminViews, saml11Facts, queryWith, valuesFor, saml11,
-            SAML11_RP_KIND } = this.deps;
-    const self = this;
+    const { log, adminViews } = this.deps;
     log.debug("Entering AdminConsole.saml11ListPage().");
-    const view = adminViews.saml11ListJson(req);
-    const base = view.base;
-    const all = view.all;
-    const needle = view.needle;
-    const filtered = view.filtered;
-    const paged = view.paged;
-    const paging = view.paging;
-    const filterParams = view.filterParams;
-    const nav = this.pageNavPair('/admin/saml11', filterParams, paging);
-    const listView = this.listViewOf('/admin/saml11', req.query);
-
-    const rows = paged.shown.map(function (row) {
-      const facts = saml11Facts(base, row.identifier);
-      const href = '/admin/saml11' +
-                   queryWith(listView, { rp: row.identifier });
-      const acs = row.fields.samlAssertionConsumerService;
-      const profiles = valuesFor(row.fields.samlResponseBinding)
-        .filter(function (v) {
-          return v === saml11.PROFILE_POST || v === saml11.PROFILE_ARTIFACT;
-        })
-        .map(self.saml11ProfileLabel.bind(self));
-      return '<tr><td><a href="' + self.esc(href) + '"><code>' +
-             self.esc(row.identifier) +
-        '</code></a><div ' +
-        'class="sub">its identity provider: ' +
-        '<code>' + self.esc(facts.idpProviderId) + '</code></div></td><td><a ' +
-        'href="' + self.esc(facts.metadataUrl) + '">metadata</a></td>' +
-        '<td>' + (acs ? self.codeList(Array.isArray(acs) ? acs : [acs])
-                      : '<span class="sub">none seen</span>') + '</td>' +
-        '<td>' + (profiles.length ? self.esc(profiles.join(', '))
-                                  : '<span class="sub">none &mdash; it has ' +
-                                    'only ever been handed a 1.1 assertion ' +
-                                    'through another door</span>') +
-                                    '</td><td>' +
-        self.esc(String(row.authentications)) + '</td><td>' +
-        self.esc(row.lastSeen ? row.lastSeen.replace('T', ' ').slice(0, 19) :
-                 '') +
-        '</td></tr>';
-    }).join('');
-
-    const inner = '<h1>SAML 1.1 identity provider</h1><p class="sub">Both ' +
-      'browser profiles, and the SAML responder behind one of them. This ' +
-      'page holds nothing: every row is an entry in ' +
-      '<code>ou=applications</code>.</p>' +
-      this.note('<strong>SAML 1.1 has no request message</strong>, which is ' +
-      'where most of the differences from <a href="/admin/saml2">the SAML ' +
-      '2.0 page</a> come from. A relying party cannot identify itself in the ' +
-      'protocol, so it is named by Shibboleth\'s <code>providerId</code> ' +
-      'parameter, by the path segment of a scoped endpoint, or it is GUESSED ' +
-      'from the origin of the <code>TARGET</code>. There is also no Single ' +
-      'Logout to configure &mdash; it arrived with SAML 2.0 &mdash; and no ' +
-      'request signature to record.') +
-      this.note('<strong>Every relying party gets its own metadata ' +
-      'document</strong>, minted for anything asked for, exactly as the 2.0 ' +
-      'profile does. It is a SAML 2.0 metadata document describing a SAML ' +
-      '1.1 identity provider, which is what every relying party actually ' +
-      'consumes: SAML 1.1 never had a metadata specification. The unscoped ' +
-      'document at <a href="/saml11/metadata">/saml11/metadata</a> works too ' +
-      'and names one identity provider for everybody.') +
-      '<p class="sub"><a href="/saml11">what the profile is</a> &middot; <a ' +
-      'href="/saml11/rp">the mock relying party</a> &middot; <a ' +
-      'href="/admin/saml-attributes">what goes into an assertion</a> ' +
-      '&middot; <a ' +
-      'href="/admin/applications?kind=' + SAML11_RP_KIND + '">these entries ' +
-      'on the applications page</a></p><form method="get" ' +
-      'action="/admin/saml11"><div class="formrow"><label ' +
-      'for="q">Search</label><input type="text" id="q" name="q" ' +
-      'value="' + this.esc(String(req.query.q || '')) + '" ' +
-      'placeholder="an identifier or a name">' +
-      (req.query.per ?
-       '<input type="hidden" name="per" value="' + this.esc(paging.perPage) +
-       '">' :
-       '') +
-      '<button class="secondary">Filter</button>' +
-      (String(req.query.q || '') ? ' <a href="/admin/saml11">clear</a>' : '') +
-      '</div></form>' +
-      nav.head +
-      (rows
-        ? '<table><thead><tr><th>Relying party</th><th>Its metadata</th>' +
-          '<th>Assertion consumer (shire)</th><th>Profiles used</th>' +
-          '<th>Assertions</th><th>Last seen</th></tr></thead><tbody>' + rows +
-          '</tbody></table>' + nav.foot
-        : this.note('No relying party has taken a SAML 1.1 assertion yet' +
-          (needle ? ' under that filter' : '') + '. Start one at <a ' +
-          'href="/saml11/rp">the mock relying party</a>, or register an ' +
-          'identifier below.')) +
-      '<h2>Register a relying party</h2><p class="sub">Optional, and it ' +
-      'changes nothing about whether a flow is accepted &mdash; any ' +
-      'identifier is accepted whether or not it is here. What it buys is a ' +
-      'metadata document to hand somebody before they have sent anything, ' +
-      'and a name to use in <code>providerId</code> so that nothing has to ' +
-      'be guessed.</p><form method="post" action="/admin/saml11"><div ' +
-      'class="formrow"><input type="hidden" name="action" ' +
-      'value="register"><label for="new_rp">Identifier</label><input ' +
-      'type="text" id="new_rp" name="rp" ' +
-      'placeholder="urn:example:app"><button>Register</button><span ' +
-      'class="note">The same thing a flow or a metadata fetch would ' +
-      'do.</span></div></form>' +
-      this.configFormsFor('/admin/saml11') +
-      this.note('These decide the SHAPE of an assertion. <a ' +
-      'href="/admin/saml-attributes">Custom SAML attributes</a> is the page ' +
-      'that changes what one CONTAINS, and its SAML 1.1 set reaches this ' +
-      'profile through the same assertion builder that serves WS-Trust and ' +
-      'WS-Federation.') +
-      this.perPageForm('/admin/saml11', 'q', String(req.query.q || ''),
-                       paging.perPage,
-                       '', {});
-
-    log.debug("Leaving AdminConsole.saml11ListPage(). " + paged.shown.length +
-              " row(s) of " +
-              filtered.length + ".");
+    const json = adminViews.saml11ListJson(req).json;
+    // Drawn by `web_saml.ts` (#446).
+    const inner = SamlPage.saml11Body(this.renderContext(req),
+        JSON.parse(JSON.stringify(json)));
+    log.debug("Leaving AdminConsole.saml11ListPage().");
     return {
       inner: inner,
-      json: view.json
+      json: json
     };
   }
 
@@ -21417,126 +21298,17 @@ class AdminConsole {
    * @returns the page body as HTML (`inner`) and its JSON view (`json`)
    */
   saml11DetailPage(req, identifier) {
-    const { log, adminViews, config, valuesFor } = this.deps;
-    const self = this;
+    const { log, adminViews } = this.deps;
     log.debug("Entering AdminConsole.saml11DetailPage(). identifier=" +
               identifier);
-    const view = adminViews.saml11DetailJson(req, identifier);
-    const base = view.base;
-    const facts = view.facts;
-    const row = view.row;
-    const fields = view.fields;
-    const acs = view.acs;
-    const profiles = view.profiles;
-    const endpointRows = [
-      ['providerID of the identity provider', facts.idpProviderId,
-       config.value('saml11.perApplicationProviderId')
-         ? 'Unique to this relying party. saml11.perApplicationProviderId ' +
-           'turns that off, and then every document names the same identity ' +
-           'provider — and every artifact carries the same SourceID, because ' +
-           'that is a hash of this value.'
-         : 'The same for every relying party, because ' +
-           'saml11.perApplicationProviderId is off. The ENDPOINTS below are ' +
-           'still this relying party\'s own.'],
-      ['Metadata', facts.metadataUrl,
-       'Signed, and served no-store because the signing key is regenerated ' +
-       'on every start. This is the URL to configure the relying party from. ' +
-       'It carries an IDPSSODescriptor for the browser profiles AND an ' +
-       'AttributeAuthorityDescriptor for the responder, because a Shibboleth ' +
-       'service provider looks for its attribute authority in the second.'],
-      ['Inter-site transfer', facts.ssoUrl,
-       'Where a browser is sent to be signed in. SAML 1.1\'s name for what ' +
-       'SAML 2.0 calls the Single Sign-On service. Send TARGET, and shire ' +
-       'for where the assertion goes.'],
-      ['SAML responder', facts.responderUrl,
-       'SOAP over HTTP POST, and a back channel: the browser never touches ' +
-       'it. It resolves artifacts (once each), returns assertions by ' +
-       'AssertionID, and answers AttributeQuery and AuthenticationQuery — ' +
-       'which is SAML 1.1\'s attribute authority.']
-    ].map(function (r) {
-      return '<tr><td>' + self.esc(r[0]) + '</td><td><code>' + self.esc(r[1]) +
-        '</code></td><td ' +
-        'class="sub">' + self.esc(r[2]) + '</td></tr>';
-    }).join('');
-
-    // A relying party whose identifier looks like a bare origin is very likely
-    // one this service GUESSED, and saying so here is the whole reason the
-    // guess is survivable. It is a heuristic and is worded as one: somebody may
-    // perfectly well have registered `https://app.example.com` on purpose.
-    const looksGuessed = /^https?:\/\/[^/]+$/i.test(identifier);
-
-    const inner = '<h1><code>' + this.esc(identifier) + '</code></h1>' +
-      '<p class="sub">A SAML 1.1 relying party. Its entry is ' +
-      (row ?
-       '<a href="/admin/applications?application=' +
-             encodeURIComponent(identifier) +
-             '">in the applications registry</a>'
-           : 'NOT in the registry yet — this page is showing what it WOULD ' +
-             'be given') + '.</p>' +
-      (looksGuessed
-        ? this.note('<strong>This identifier is a bare origin, which is what ' +
-          'this service writes down when nobody told it the relying party\'s ' +
-          'name.</strong> SAML 1.1 has no request message, so a flow that ' +
-          'sent no <code>providerId</code> and used no scoped endpoint ' +
-          'leaves the audience to be guessed from the origin of the TARGET. ' +
-          'The assertion is issued to THIS string, so a relying party ' +
-          'expecting a different audience refuses it inside a signature ' +
-          'check with nothing saying why. Send <code>providerId</code>, or ' +
-          'use the scoped endpoint above, to make it exact.')
-        : '') +
-      '<h2>The endpoints it is configured from</h2>' +
-      '<table><thead><tr><th>What</th><th>Where</th><th></th></tr></thead>' +
-      '<tbody>' +
-      endpointRows + '</tbody></table>' +
-      '<p class="sub">The path segment is <code>' + this.esc(facts.slug) +
-      '</code>' +
-      (facts.slug === identifier ? '' :
-        ', which is a digest of the identifier because the identifier is not ' +
-        'safe in a URL path segment. The percent-encoded identifier works in ' +
-        'the same place') +
-      '. It is THE SAME SLUG <a href="/admin/saml2">the SAML 2.0 profile</a> ' +
-      'uses for this application, deliberately: one application has one ' +
-      'handle, or the console would show one entry as two.</p><h2>What this ' +
-      'service has recorded</h2><table><tbody><tr><td>Assertion consumers ' +
-      'seen</td><td>' +
-        (acs.length ? this.codeList(acs) : '<span class="sub">none</span>') +
-        ' <span class="sub">&mdash; the <code>shire</code> parameter. Not ' +
-        'checked against any registration, like every other return URL ' +
-        'here.</span></td></tr><tr><td>Browser profiles used</td><td>' +
-        (profiles.length ?
-         this.esc(profiles.map(this.saml11ProfileLabel.bind(this)).join(', '))
-                         : '<span class="sub">none &mdash; it has only ever ' +
-                           'been handed a 1.1 assertion through ' +
-                           'WS-Federation or WS-Trust</span>') +
-      '</td></tr><tr><td>NameIdentifier ' +
-      'formats asked for</td><td>' +
-        (valuesFor(fields.samlNameIdFormat).length
-          ? this.codeList(valuesFor(fields.samlNameIdFormat))
-          : '<span class="sub">none &mdash; and in this protocol that is the ' +
-            'ordinary case, because there is no NameIDPolicy to ask in. It ' +
-            'gets saml11.nameIdFormat unless the non-spec ' +
-            '<code>format</code> parameter says otherwise.</span>') +
-      '</td></tr><tr><td>Assertions ' +
-      'issued to it</td><td>' +
-      this.esc(String((row && row.authentications) || 0)) +
-        '</td></tr></tbody></table><h2>What is NOT here, and why</h2><p ' +
-      'class="sub">The SAML 2.0 page has three rows this one does not, and ' +
-      'none of them is missing work. <strong>No logout return ' +
-      'address</strong>: SAML 1.1 has no Single Logout, so there is nothing ' +
-      'to send anywhere. <strong>No request signature and no signing ' +
-      'certificate</strong>: there is no request, so there is nothing for a ' +
-      'relying party to sign. <strong>No response binding</strong>: which of ' +
-      'the two browser profiles is used is chosen HERE, by ' +
-      '<code>saml11.defaultProfile</code> or the non-spec ' +
-      '<code>profile</code> parameter, because nothing in SAML 1.1 lets a ' +
-      'relying party ask.</p><p class="sub"><a href="/saml11/rp">The mock ' +
-      'relying party</a> will run either profile against this service and ' +
-      'show every check.</p>';
-
+    const json = adminViews.saml11DetailJson(req, identifier).json;
+    // Drawn by `web_saml.ts` (#446).
+    const inner = SamlPage.saml11Detail(this.renderContext(req),
+        JSON.parse(JSON.stringify(json)));
     log.debug("Leaving AdminConsole.saml11DetailPage().");
     return {
       inner: inner,
-      json: view.json
+      json: json
     };
   }
 

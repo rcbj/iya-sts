@@ -313,6 +313,21 @@ const PAGES: WebPage[] = [
     render: function (view: Json, ctx?: Json): string {
       return SamlPage.saml2Body(ctx || WebKit.context(), view);
     } },
+  { path: '/admin/saml11', title: 'SAML 1.1',
+    operation: '/admin-api/saml11',
+    drill: {
+      param: 'rp',
+      sample: function (list: Json): string | null {
+        const rows = list.relyingParties || [];
+        return rows[0] ? rows[0].identifier : null;
+      },
+      render: function (view: Json, ctx?: Json): string {
+        return SamlPage.saml11Detail(ctx || WebKit.context(), view);
+      }
+    },
+    render: function (view: Json, ctx?: Json): string {
+      return SamlPage.saml11Body(ctx || WebKit.context(), view);
+    } },
   { path: '/admin/saml-assertions', title: 'SAML assertions',
     operation: '/admin-api/saml-assertions',
     render: function (view: Json, ctx?: Json): string {

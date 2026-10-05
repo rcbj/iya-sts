@@ -6394,7 +6394,6 @@ class AdminViews {
     const { log, baseUrlOf, saml11 } = this.deps;
     const self = this;
     log.debug("Entering AdminViews.saml11ListJson().");
-    log.debug("Entering saml11ListPage().");
     const base = baseUrlOf(req);
     const all = this.saml11RelyingParties();
     const needle = String(req.query.q || '').trim().toLowerCase();
@@ -6445,7 +6444,10 @@ class AdminViews {
           // at its ceiling.
           artifactsAwaitingResolution: saml11.artifactCount(),
           assertionsHeldByReference: saml11.cachedAssertionCount(),
-          flowsHeldForSignIn: saml11.pendingFlowCount()
+          flowsHeldForSignIn: saml11.pendingFlowCount(),
+          // The kind the applications page files these entries under, for
+          // the page's link to them (#446).
+          kind: SAML11_RP_KIND
       };
       }())
     };
@@ -6463,7 +6465,6 @@ class AdminViews {
     const self = this;
     log.debug("Entering AdminViews.saml11DetailJson(). identifier=" +
               identifier);
-    log.debug("Entering saml11DetailPage(). rp=" + identifier);
     const base = baseUrlOf(req);
     const facts = this.saml11Facts(base, identifier);
     const row = applications.get(identifier);
@@ -6490,7 +6491,11 @@ class AdminViews {
           authentications: row ? row.authentications : 0,
           assertionConsumerServices: acs,
           nameIdFormats: self.valuesFor(fields.samlNameIdFormat),
-          profiles: profiles
+          profiles: profiles,
+          // Whether the identity provider names itself per relying party,
+          // which the page's first row explains (#446).
+          perApplicationProviderId:
+            !!config.value('saml11.perApplicationProviderId')
       });
       }())
     };

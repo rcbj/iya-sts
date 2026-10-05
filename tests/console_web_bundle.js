@@ -338,8 +338,8 @@ function childMain() {
     servers.setMember('webcheck', 'code_challenge_methods_supported',
                       '["S256"]');
     servers.removeMember('webcheck', 'request_uri_parameter_supported');
-    // And a SAML 2.0 service provider, for its identity provider's
-    // drill-down.
+    // And a SAML 2.0 service provider and a SAML 1.1 relying party, for
+    // the two identity providers' drill-downs.
     const applications = require(ROOT_DIR + '/common/applications');
     const seeded = applications.createApplication({
       identifier: 'https://sp.webcheck.example/saml2',
@@ -349,8 +349,15 @@ function childMain() {
       // carrying a field the protocol endpoints accumulate.
       fields: { samlEntityId: 'https://sp.webcheck.example/saml2' }
     });
-    note(seeded && seeded.ok, 'D-seed. the service provider is made',
-         JSON.stringify((seeded && seeded.errors) || []));
+    const seeded11 = applications.createApplication({
+      identifier: 'urn:webcheck:saml11',
+      kind: 'saml11-relying-party', protocol: 'SAML 1.1',
+      note: 'drawn by the bundle check'
+    });
+    note(seeded && seeded.ok && seeded11 && seeded11.ok,
+         'D-seed. the service provider and the relying party are made',
+         JSON.stringify([(seeded && seeded.errors) || [],
+                         (seeded11 && seeded11.errors) || []]));
     const unviewed = [];
     const differing = [];
     const drilled = [];
