@@ -210,6 +210,10 @@ def convert(text):
     text = re.sub(r'^[ \t]*const \{[^}]*\} = this\.deps;\n', '', text,
                   flags=re.M)
     text = re.sub(r'\b(?:self|this)\.mayWrite\(req\)', 'ctx.write', text)
+    # The gate's state read only for its write flag is the context's.
+    text = re.sub(r'const state = gateStateFor\(req\);\n(\s*)const mayChange = '
+                  r'!!\(state && state\.write\);',
+                  r'const mayChange = ctx.write;', text)
     # THE SETTINGS BLOCK, from the view's own `settings` member (which the
     # view must carry: the bundle check draws the page from the operation's
     # answer and fails on a page whose view has none).
