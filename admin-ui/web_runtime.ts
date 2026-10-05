@@ -1195,17 +1195,20 @@ class ConsoleRuntime {
     // AN ACT THAT LANDS ELSEWHERE — a new application on its entry, a
     // group acted on on that group (`WebAnswers.landing()`) — with its
     // notice there.
+    // WHAT AN ANSWER SAYS: `message`, or — where a handler describes a
+    // success in `why`, as the PKI page's upload does — that, as the
+    // server-rendered console's strip read it.
+    const said = String((json && (json.message || json.why)) || 'Done.');
     const landing = page ? WebAnswers.landing(page, action, json, back)
                          : null;
     if (landing) {
       await this.go(landing + (landing.indexOf('?') < 0 ? '?' : '&') +
-                    'notice=' + encodeURIComponent(
-                      String(json.message || 'Done.')));
+                    'notice=' + encodeURIComponent(said));
       return;
     }
     const key = json && json.ok ? 'notice' : 'error';
     const message = json && json.ok
-      ? String(json.message || 'Done.')
+      ? said
       : ((json && json.errors) || []).join(' ') ||
         String((json && (json.why || json.error_description ||
                          json.error)) || 'Refused.');
