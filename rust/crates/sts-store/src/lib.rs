@@ -21,6 +21,7 @@ pub mod ldif;
 pub mod ldif_driver;
 pub mod memory;
 pub mod merge;
+pub mod minted;
 pub mod model;
 pub mod persistence;
 pub mod postgres;

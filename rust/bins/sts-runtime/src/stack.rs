@@ -126,6 +126,9 @@ impl Stack {
             lifecycle.clone(),
             directory.clone(),
         );
+        // Every declared store's writes are minted state, journalled for
+        // the store once it opens (where minted state is persisted).
+        persistence.attach_minted(handles.clone());
 
         // The scheduler's run rows: persisted, tombstoned, merged by rank,
         // each row's expiry the scheduler's own (a forward reference, read

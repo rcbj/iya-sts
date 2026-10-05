@@ -141,6 +141,10 @@ pub struct Persistence {
     /// The keystore's data keys, started when the store opens and before
     /// anything sealed is restored; none until then.
     data_keys: Mutex<Arc<crate::keystore::DataKeys>>,
+    /// The declared stores whose writes are minted state, once attached.
+    handles: Mutex<Option<Arc<sts_core::realm_store::StoreHandles>>>,
+    /// Minted persistence, built when the store opens and it applies.
+    minted: Mutex<Option<Arc<crate::minted::Minted>>>,
     me: Weak<Persistence>,
 }
 
@@ -169,6 +173,8 @@ impl Persistence {
             flush_lock: tokio::sync::Mutex::new(()),
             replication: Mutex::new(None),
             data_keys: Mutex::new(crate::keystore::DataKeys::none()),
+            handles: Mutex::new(None),
+            minted: Mutex::new(None),
             me: me.clone(),
         });
         let weak = Arc::downgrade(&me);
@@ -417,6 +423,22 @@ impl Persistence {
     /// Writes what is dirty. Serialised: a flush asked for while one runs
     /// runs after it, and finds only what is still dirty.
     pub async fn flush(&self) -> Result<bool, String> {
+        let stored = self.flush_store().await;
+        // MINTED STATE IS A SEPARATE TRANSACTION from the directory's: a
+        // request that ended a session and started another lands whole, and
+        // a failed directory write does not hold up the sessions.
+        let minted = match self.minted() {
+            Some(m) => m.flush(&self.data_keys()).await,
+            None => Ok(false),
+        };
+        if minted.is_err() {
+            self.retry_after_failure();
+        }
+        let wrote = stored?;
+        Ok(minted? || wrote)
+    }
+
+    async fn flush_store(&self) -> Result<bool, String> {
         let _guard = self.flush_lock.lock().await;
         let Some(driver) = self.driver.clone() else {
             return Ok(false);
@@ -688,6 +710,83 @@ impl Persistence {
     // Starting and stopping.
     // -----------------------------------------------------------------
 
+    /// Hands over the declared stores: every write one of them reports is
+    /// journalled for minted persistence once the store is open (before
+    /// that, and where minted state is not persisted, it is passed over).
+    pub fn attach_minted(
+        &self,
+        handles: Arc<sts_core::realm_store::StoreHandles>,
+    ) {
+        let weak = self.me.clone();
+        handles.set_persist_observer(Arc::new(
+            move |handle: &str, realm: &str, key: Option<&str>| {
+                if let Some(minted) = weak.upgrade().and_then(|p| p.minted()) {
+                    minted.note(handle, realm, key);
+                }
+            },
+        ));
+        *self.handles.lock().unwrap_or_else(PoisonError::into_inner) =
+            Some(handles);
+    }
+
+    /// Minted persistence, where it is on.
+    pub fn minted(&self) -> Option<Arc<crate::minted::Minted>> {
+        self.minted
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+    }
+
+    /// Builds minted persistence over the open store and restores what it
+    /// holds — fatal when it cannot be read.
+    async fn start_minted(
+        &self,
+        driver: &Arc<dyn Driver>,
+    ) -> Result<u64, String> {
+        let Some(handles) = self
+            .handles
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+        else {
+            return Ok(0);
+        };
+        if !driver.mints() {
+            if self.lifecycle.mode().current() == "product" {
+                tracing::warn!(
+                    "persistence: the {} store cannot hold minted state, so sessions, tokens and codes are held in                      memory only and a restart ends them.",
+                    self.mode.as_str()
+                );
+            }
+            return Ok(0);
+        }
+        let origin = driver
+            .change_log()
+            .map(|log| log.origin())
+            .unwrap_or_else(|| format!("process-{}", std::process::id()));
+        let mode = self.lifecycle.mode().clone();
+        let minted = crate::minted::Minted::new(
+            handles,
+            self.settings.clone(),
+            self.lifecycle.registry().clone(),
+            driver.clone(),
+            Arc::new(move || mode.current() == "product"),
+            self.coordinates(),
+            origin,
+        );
+        let weak = self.me.clone();
+        minted.set_scheduler(Arc::new(move || {
+            if let Some(p) = weak.upgrade() {
+                p.schedule();
+            }
+        }));
+        let keys = self.data_keys();
+        let restored = minted.restore(&keys).await?;
+        *self.minted.lock().unwrap_or_else(PoisonError::into_inner) =
+            Some(minted);
+        Ok(restored)
+    }
+
     /// The keystore's data keys: none before [`Persistence::start`].
     pub fn data_keys(&self) -> Arc<crate::keystore::DataKeys> {
         self.data_keys
@@ -750,6 +849,10 @@ impl Persistence {
                     restored.realms,
                     restored.overrides
                 );
+                if let Err(e) = self.start_minted(&driver).await {
+                    self.state().enabled = false;
+                    return Err(e);
+                }
                 self.schedule();
                 Ok(restored)
             }
@@ -1219,6 +1322,14 @@ impl Persistence {
     /// Writes what is pending and closes the store, for a clean shutdown.
     pub async fn stop(&self) -> Result<(), String> {
         let flushed = self.flush().await;
+        if let Some(minted) = self.minted() {
+            if let Err(e) = minted.stop(&self.data_keys()).await {
+                tracing::error!(
+                    "persistence: the last minted flush failed: {}",
+                    e
+                );
+            }
+        }
         self.state().stopped = true;
         if let Some(driver) = &self.driver {
             driver.close().await.map_err(|e| e.to_string())?;
@@ -1240,6 +1351,7 @@ impl Persistence {
             "restored": { "entries": st.restored.entries, "realms": st.restored.realms,
                           "overrides": st.restored.overrides },
             "shadowEntries": self.shadow().entry_count(),
+            "minted": self.minted().map(|m| m.status()).unwrap_or(Json::Null),
         })
     }
 }
@@ -1331,6 +1443,14 @@ impl crate::replication::Applier for Persistence {
                 "appconfig" => {
                     self.apply_appconfig_change(driver.as_ref()).await
                 }
+                "minted" | "minted-own" => match self.minted() {
+                    Some(minted) => minted
+                        .apply_change(&self.data_keys(), row)
+                        .await
+                        .map(|_| ())
+                        .map_err(crate::driver::StoreError::new),
+                    None => Ok(()),
+                },
                 // Another process made or destroyed a data key: read the
                 // rows again, so what it sealed opens here.
                 "keys"
