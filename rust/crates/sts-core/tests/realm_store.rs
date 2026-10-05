@@ -289,3 +289,153 @@ fn an_expiry_is_the_rows_own_or_none() {
     assert_eq!(seconds(&json!("1700000000"), "k"), Some(1700000000000.0));
     assert_eq!(seconds(&json!(-5), "k"), None);
 }
+
+#[test]
+fn a_segmented_array_journals_only_the_segments_it_touches() {
+    let w = world();
+    let log: sts_core::realm_store::RealmVec<i64> =
+        sts_core::realm_store::RealmVec::new(
+            &w.life,
+            &w.handles,
+            StoreSpec::persisted("audit.events"),
+            3,
+        );
+    for i in 0..7 {
+        log.push(i);
+    }
+    let notes = |w: &World| -> Vec<String> {
+        w.notes.lock().unwrap().drain(..).collect()
+    };
+    assert_eq!(
+        notes(&w),
+        ["0", "0", "0", "1", "1", "1", "2"]
+            .iter()
+            .map(|k| format!("audit.events|default|{}", k))
+            .collect::<Vec<_>>()
+    );
+    // Shifting journals a segment only when the base leaves it.
+    assert_eq!(log.shift(), Some(0));
+    assert_eq!(log.shift(), Some(1));
+    assert!(notes(&w).is_empty());
+    assert_eq!(log.shift(), Some(2));
+    assert_eq!(notes(&w), vec!["audit.events|default|0"]);
+    assert_eq!(log.pop(), Some(6));
+    assert_eq!(notes(&w), vec!["audit.events|default|2"]);
+    let access = w.handles.handle_for("audit.events").unwrap().access.clone();
+    let dumped = access.dump("");
+    assert_eq!(
+        dumped,
+        vec![("1".to_string(), json!({ "start": 3, "rows": [3, 4, 5] }))],
+        "segment 2 is empty again after the pop"
+    );
+    assert!(access.read("", "0").is_none());
+
+    // Read back into a store of its own: the same rows, at the same base.
+    let other = world();
+    let again: sts_core::realm_store::RealmVec<i64> =
+        sts_core::realm_store::RealmVec::new(
+            &other.life,
+            &other.handles,
+            StoreSpec::persisted("audit.events"),
+            3,
+        );
+    let back = other
+        .handles
+        .handle_for("audit.events")
+        .unwrap()
+        .access
+        .clone();
+    back.restore("", "2", json!({ "start": 6, "rows": [6, 7] }));
+    back.restore("", "1", json!({ "start": 4, "rows": [4, 5] }));
+    assert_eq!(again.to_vec(), vec![4, 5, 6, 7]);
+    again.push(8);
+    assert_eq!(
+        notes(&other),
+        vec!["audit.events|default|2"],
+        "index 8 is in segment 2"
+    );
+    back.remove("", "1");
+    assert_eq!(again.to_vec(), vec![6, 7]);
+    assert!(
+        other.notes.lock().unwrap().is_empty(),
+        "a restore and a remove report nothing"
+    );
+
+    // Unsegmented: one row, every change reported without a key.
+    let plain: sts_core::realm_store::RealmVec<i64> =
+        sts_core::realm_store::RealmVec::new(
+            &w.life,
+            &w.handles,
+            StoreSpec::persisted("t.list"),
+            0,
+        );
+    plain.push(1);
+    plain.retain(|v| *v > 5);
+    assert_eq!(notes(&w), vec!["t.list|default|*", "t.list|default|*"]);
+    assert_eq!(
+        w.handles.handle_for("t.list").unwrap().access.dump(""),
+        vec![(String::new(), json!([]))]
+    );
+}
+
+#[derive(
+    Clone, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize,
+)]
+struct Counts {
+    #[serde(default)]
+    calls: i64,
+    #[serde(default)]
+    refused: i64,
+}
+
+#[test]
+fn an_object_is_one_row_per_realm() {
+    let w = world();
+    let counts: sts_core::realm_store::RealmObj<Counts> =
+        sts_core::realm_store::RealmObj::new(
+            &w.life,
+            &w.handles,
+            StoreSpec::persisted("stats.counts"),
+            Arc::new(|_| Counts::default()),
+        );
+    counts.update(|c| c.calls += 2);
+    realm::run_sync(w.registry.get("acme").unwrap(), || {
+        counts.update(|c| c.refused += 1)
+    });
+    assert_eq!(
+        counts.get(),
+        Counts {
+            calls: 2,
+            refused: 0
+        }
+    );
+    assert_eq!(
+        counts.get_in("acme"),
+        Counts {
+            calls: 0,
+            refused: 1
+        }
+    );
+    assert_eq!(
+        *w.notes.lock().unwrap(),
+        vec!["stats.counts|default|*", "stats.counts|acme|*"]
+    );
+    let access = w.handles.handle_for("stats.counts").unwrap().access.clone();
+    // A stored row's fields over what is held.
+    access.restore("", "", json!({ "refused": 9 }));
+    assert_eq!(
+        counts.get(),
+        Counts {
+            calls: 2,
+            refused: 9
+        }
+    );
+    access.remove("", "");
+    assert_eq!(counts.get(), Counts::default());
+    w.life.remove("acme").unwrap();
+    assert_eq!(
+        counts.get_in("acme"),
+        Counts::default(),
+        "the removal purged it"
+    );
+}

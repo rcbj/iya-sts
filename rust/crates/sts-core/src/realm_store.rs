@@ -774,3 +774,584 @@ where
         MapAccess(self.0.clone()).remove(DEFAULT_ID, key)
     }
 }
+
+// ---------------------------------------------------------------------------
+// The array and object shapes (`realms.arr()`, its segmented form, and
+// `realms.obj()`).
+// ---------------------------------------------------------------------------
+
+/// A value per realm, built on first use, purged with the realm.
+struct Parts<T> {
+    parts: RwLock<HashMap<String, Arc<RwLock<T>>>>,
+    factory: Arc<dyn Fn(&str) -> T + Send + Sync>,
+    lifecycle: Weak<RealmLifecycle>,
+}
+
+impl<T: Send + Sync + 'static> Parts<T> {
+    fn new(
+        lifecycle: &Arc<RealmLifecycle>,
+        factory: Arc<dyn Fn(&str) -> T + Send + Sync>,
+    ) -> Arc<Parts<T>> {
+        let parts = Arc::new(Parts {
+            parts: RwLock::new(HashMap::new()),
+            factory,
+            lifecycle: Arc::downgrade(lifecycle),
+        });
+        let weak = Arc::downgrade(&parts);
+        lifecycle.on_remove(Arc::new(move |id: &str| {
+            if let Some(p) = weak.upgrade() {
+                p.parts
+                    .write()
+                    .unwrap_or_else(PoisonError::into_inner)
+                    .remove(id);
+            }
+        }));
+        parts
+    }
+
+    fn of(&self, realm: &str) -> Arc<RwLock<T>> {
+        let id = partition_id(realm);
+        if let Some(p) = self
+            .parts
+            .read()
+            .unwrap_or_else(PoisonError::into_inner)
+            .get(id)
+        {
+            return p.clone();
+        }
+        self.parts
+            .write()
+            .unwrap_or_else(PoisonError::into_inner)
+            .entry(id.to_string())
+            .or_insert_with(|| Arc::new(RwLock::new((self.factory)(id))))
+            .clone()
+    }
+
+    fn accepts(&self, realm: &str) -> bool {
+        self.lifecycle
+            .upgrade()
+            .is_none_or(|l| l.accepts_rows(partition_id(realm)))
+    }
+}
+
+/// A persisted array is one row (key `''`), or with `segment` N, one row per
+/// N consecutive entries — so an append journals one segment rather than
+/// the whole history (the audit log's case).
+struct VecState<V> {
+    rows: std::collections::VecDeque<V>,
+    /// The absolute index of `rows[0]`, for a segmented array.
+    base: u64,
+    /// Segments read back, by key: `(start, rows)`.
+    restored: IndexMap<String, (u64, Vec<V>)>,
+}
+
+impl<V> Default for VecState<V> {
+    fn default() -> Self {
+        VecState {
+            rows: Default::default(),
+            base: 0,
+            restored: IndexMap::new(),
+        }
+    }
+}
+
+/// An array per trust realm.
+pub struct RealmVec<V> {
+    parts: Arc<Parts<VecState<V>>>,
+    handle: Option<String>,
+    handles: Arc<StoreHandles>,
+    segment: u64,
+}
+
+impl<V> Clone for RealmVec<V> {
+    fn clone(&self) -> Self {
+        RealmVec {
+            parts: self.parts.clone(),
+            handle: self.handle.clone(),
+            handles: self.handles.clone(),
+            segment: self.segment,
+        }
+    }
+}
+
+/// The segment keys covering absolute indices `[from, to)`.
+fn keys_over(from: u64, to: u64, size: u64) -> Vec<String> {
+    if to <= from || size == 0 {
+        return Vec::new();
+    }
+    (from / size..=(to - 1) / size)
+        .map(|k| k.to_string())
+        .collect()
+}
+
+struct VecAccess<V> {
+    parts: Weak<Parts<VecState<V>>>,
+    segment: u64,
+}
+
+impl<V> VecAccess<V>
+where
+    V: Clone + Serialize + DeserializeOwned + Send + Sync + 'static,
+{
+    fn segment_of(state: &VecState<V>, key: &str, size: u64) -> Option<Json> {
+        let k: u64 = key
+            .parse()
+            .ok()
+            .filter(|_| key.bytes().all(|c| c.is_ascii_digit()))?;
+        let start = k * size;
+        let lo = start.max(state.base);
+        let hi = (start + size).min(state.base + state.rows.len() as u64);
+        if lo >= hi {
+            return None;
+        }
+        let rows: Vec<&V> = state
+            .rows
+            .iter()
+            .skip((lo - state.base) as usize)
+            .take((hi - lo) as usize)
+            .collect();
+        Some(
+            serde_json::json!({ "start": lo, "rows": serde_json::to_value(rows).ok()? }),
+        )
+    }
+
+    fn rebuild(state: &mut VecState<V>) {
+        let mut ordered: Vec<&(u64, Vec<V>)> =
+            state.restored.values().collect();
+        ordered.sort_by_key(|(start, _)| *start);
+        state.base = ordered.first().map_or(0, |(s, _)| *s);
+        state.rows = ordered
+            .iter()
+            .flat_map(|(_, rows)| rows.iter().cloned())
+            .collect();
+    }
+}
+
+impl<V> StoreAccess for VecAccess<V>
+where
+    V: Clone + Serialize + DeserializeOwned + Send + Sync + 'static,
+{
+    fn dump(&self, realm: &str) -> Vec<(String, Json)> {
+        let Some(parts) = self.parts.upgrade() else {
+            return Vec::new();
+        };
+        let p = parts.of(realm);
+        let state = p.read().unwrap_or_else(PoisonError::into_inner);
+        if self.segment == 0 {
+            let rows: Vec<&V> = state.rows.iter().collect();
+            return vec![(
+                String::new(),
+                serde_json::to_value(rows).unwrap_or(Json::Array(Vec::new())),
+            )];
+        }
+        keys_over(
+            state.base,
+            state.base + state.rows.len() as u64,
+            self.segment,
+        )
+        .into_iter()
+        .filter_map(|k| {
+            VecAccess::segment_of(&state, &k, self.segment).map(|v| (k, v))
+        })
+        .collect()
+    }
+
+    fn read(&self, realm: &str, key: &str) -> Option<Json> {
+        let parts = self.parts.upgrade()?;
+        let p = parts.of(realm);
+        let state = p.read().unwrap_or_else(PoisonError::into_inner);
+        if self.segment == 0 {
+            let rows: Vec<&V> = state.rows.iter().collect();
+            return serde_json::to_value(rows).ok();
+        }
+        VecAccess::segment_of(&state, key, self.segment)
+    }
+
+    fn restore(&self, realm: &str, key: &str, value: Json) {
+        let Some(parts) = self.parts.upgrade() else {
+            return;
+        };
+        if !parts.accepts(realm) {
+            return;
+        }
+        let rows_of = |v: &Json| -> Vec<V> {
+            v.as_array()
+                .map(|a| {
+                    a.iter()
+                        .filter_map(|r| serde_json::from_value(r.clone()).ok())
+                        .collect()
+                })
+                .unwrap_or_default()
+        };
+        let p = parts.of(realm);
+        let mut state = p.write().unwrap_or_else(PoisonError::into_inner);
+        if self.segment == 0 {
+            state.rows = rows_of(&value).into();
+            return;
+        }
+        match &value {
+            Json::Array(_) => {
+                state.restored.insert(key.to_string(), (0, rows_of(&value)));
+            }
+            Json::Object(o) if o.get("rows").is_some_and(Json::is_array) => {
+                let start = o
+                    .get("start")
+                    .and_then(Json::as_f64)
+                    .unwrap_or(0.0)
+                    .max(0.0) as u64;
+                state
+                    .restored
+                    .insert(key.to_string(), (start, rows_of(&o["rows"])));
+            }
+            _ => {
+                state.restored.shift_remove(key);
+            }
+        }
+        VecAccess::rebuild(&mut state);
+    }
+
+    fn remove(&self, realm: &str, key: &str) {
+        let Some(parts) = self.parts.upgrade() else {
+            return;
+        };
+        let p = parts.of(realm);
+        let mut state = p.write().unwrap_or_else(PoisonError::into_inner);
+        if self.segment > 0 && !key.is_empty() && !state.restored.is_empty() {
+            state.restored.shift_remove(key);
+            VecAccess::rebuild(&mut state);
+        } else {
+            state.rows.clear();
+            state.base = 0;
+        }
+    }
+}
+
+impl<V> RealmVec<V>
+where
+    V: Clone + Serialize + DeserializeOwned + Send + Sync + 'static,
+{
+    /// An array per realm; `segment` > 0 persists it in segments of that
+    /// many entries.
+    pub fn new(
+        lifecycle: &Arc<RealmLifecycle>,
+        handles: &Arc<StoreHandles>,
+        spec: StoreSpec,
+        segment: u64,
+    ) -> RealmVec<V> {
+        let segment = if spec.persist.is_some() { segment } else { 0 };
+        let parts =
+            Parts::new(lifecycle, Arc::new(|_: &str| VecState::default()));
+        let handle = handles.declare(
+            &spec,
+            "arr",
+            "realm",
+            Arc::new(VecAccess {
+                parts: Arc::downgrade(&parts),
+                segment,
+            }),
+        );
+        RealmVec {
+            parts,
+            handle,
+            handles: handles.clone(),
+            segment,
+        }
+    }
+
+    fn realm(&self, realm: Option<&str>) -> String {
+        realm.map_or_else(realm::current_id, |r| partition_id(r).to_string())
+    }
+
+    fn note(&self, realm: &str, keys: Vec<String>) {
+        let Some(handle) = self.handle.as_deref() else {
+            return;
+        };
+        if self.segment == 0 {
+            self.handles.note(handle, realm, None);
+        } else {
+            for k in keys {
+                self.handles.note(handle, realm, Some(&k));
+            }
+        }
+    }
+
+    /// Changes the array in place and journals the segments it touched:
+    /// every segment over the old and new extent.
+    fn mutate<R>(
+        &self,
+        realm: Option<&str>,
+        f: impl FnOnce(&mut std::collections::VecDeque<V>) -> R,
+    ) -> R {
+        let realm = self.realm(realm);
+        let p = self.parts.of(&realm);
+        let (out, keys) = {
+            let mut state = p.write().unwrap_or_else(PoisonError::into_inner);
+            let before = state.rows.len() as u64;
+            let out = f(&mut state.rows);
+            let span = before.max(state.rows.len() as u64);
+            (out, keys_over(state.base, state.base + span, self.segment))
+        };
+        self.note(&realm, keys);
+        out
+    }
+
+    pub fn push(&self, value: V) {
+        self.push_in(None, value)
+    }
+
+    /// Appends in a named realm; journals only the segments the new entry
+    /// is in.
+    pub fn push_in(&self, realm: Option<&str>, value: V) {
+        let realm = self.realm(realm);
+        let p = self.parts.of(&realm);
+        let keys = {
+            let mut state = p.write().unwrap_or_else(PoisonError::into_inner);
+            let before = state.rows.len() as u64;
+            state.rows.push_back(value);
+            keys_over(
+                state.base + before,
+                state.base + state.rows.len() as u64,
+                self.segment,
+            )
+        };
+        self.note(&realm, keys);
+    }
+
+    /// Removes the oldest entry. In segments, journals the segment it
+    /// emptied, once the base crosses a boundary.
+    pub fn shift(&self) -> Option<V> {
+        self.shift_in(None)
+    }
+
+    pub fn shift_in(&self, realm: Option<&str>) -> Option<V> {
+        let realm = self.realm(realm);
+        let p = self.parts.of(&realm);
+        let (out, keys) = {
+            let mut state = p.write().unwrap_or_else(PoisonError::into_inner);
+            let out = state.rows.pop_front();
+            let mut keys = Vec::new();
+            if out.is_some() && self.segment > 0 {
+                state.base += 1;
+                if state.base % self.segment == 0 {
+                    keys.push((state.base / self.segment - 1).to_string());
+                }
+            }
+            (out, keys)
+        };
+        if out.is_some() || self.segment == 0 {
+            self.note(&realm, keys);
+        }
+        out
+    }
+
+    /// Removes the newest entry, journalling its segment.
+    pub fn pop(&self) -> Option<V> {
+        let realm = self.realm(None);
+        let p = self.parts.of(&realm);
+        let (out, keys) = {
+            let mut state = p.write().unwrap_or_else(PoisonError::into_inner);
+            let before = state.rows.len() as u64;
+            let out = state.rows.pop_back();
+            let keys = if before > 0 {
+                keys_over(
+                    state.base + before - 1,
+                    state.base + before,
+                    self.segment,
+                )
+            } else {
+                Vec::new()
+            };
+            (out, keys)
+        };
+        self.note(&realm, keys);
+        out
+    }
+
+    pub fn clear(&self) {
+        self.mutate(None, |rows| rows.clear())
+    }
+
+    /// Keeps the entries `keep` answers true for.
+    pub fn retain(&self, keep: impl FnMut(&V) -> bool) {
+        self.mutate(None, |rows| rows.retain(keep))
+    }
+
+    /// Any other change, journalled over the whole extent.
+    pub fn with_mut<R>(
+        &self,
+        f: impl FnOnce(&mut std::collections::VecDeque<V>) -> R,
+    ) -> R {
+        self.mutate(None, f)
+    }
+
+    pub fn len(&self) -> usize {
+        self.len_in(None)
+    }
+
+    pub fn len_in(&self, realm: Option<&str>) -> usize {
+        self.parts
+            .of(&self.realm(realm))
+            .read()
+            .unwrap_or_else(PoisonError::into_inner)
+            .rows
+            .len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    pub fn to_vec(&self) -> Vec<V> {
+        self.to_vec_in(None)
+    }
+
+    pub fn to_vec_in(&self, realm: Option<&str>) -> Vec<V> {
+        self.parts
+            .of(&self.realm(realm))
+            .read()
+            .unwrap_or_else(PoisonError::into_inner)
+            .rows
+            .iter()
+            .cloned()
+            .collect()
+    }
+
+    pub fn handle(&self) -> Option<String> {
+        self.handle.clone()
+    }
+}
+
+/// An object per trust realm: a counter set, a small record. Persisted as
+/// one row (key `''`), every change journalling the whole of it.
+pub struct RealmObj<V> {
+    parts: Arc<Parts<V>>,
+    handle: Option<String>,
+    handles: Arc<StoreHandles>,
+}
+
+impl<V> Clone for RealmObj<V> {
+    fn clone(&self) -> Self {
+        RealmObj {
+            parts: self.parts.clone(),
+            handle: self.handle.clone(),
+            handles: self.handles.clone(),
+        }
+    }
+}
+
+struct ObjAccess<V>(Weak<Parts<V>>);
+
+impl<V> StoreAccess for ObjAccess<V>
+where
+    V: Clone + Serialize + DeserializeOwned + Send + Sync + 'static,
+{
+    fn dump(&self, realm: &str) -> Vec<(String, Json)> {
+        self.read(realm, "")
+            .map(|v| vec![(String::new(), v)])
+            .unwrap_or_default()
+    }
+
+    fn read(&self, realm: &str, _key: &str) -> Option<Json> {
+        let parts = self.0.upgrade()?;
+        let p = parts.of(realm);
+        let held = p.read().unwrap_or_else(PoisonError::into_inner);
+        serde_json::to_value(&*held).ok()
+    }
+
+    /// `Object.assign(held, value)`: the stored fields over what is held.
+    fn restore(&self, realm: &str, _key: &str, value: Json) {
+        let Some(parts) = self.0.upgrade() else {
+            return;
+        };
+        if !parts.accepts(realm) {
+            return;
+        }
+        let p = parts.of(realm);
+        let mut held = p.write().unwrap_or_else(PoisonError::into_inner);
+        let Ok(Json::Object(mut current)) = serde_json::to_value(&*held) else {
+            return;
+        };
+        if let Json::Object(incoming) = value {
+            for (k, v) in incoming {
+                current.insert(k, v);
+            }
+        }
+        match serde_json::from_value(Json::Object(current)) {
+            Ok(next) => *held = next,
+            Err(e) => tracing::error!(
+                "{}realms: a stored object row could not be read, so it was NOT applied: {}",
+                tag(codes::STS_CORE_0042),
+                e
+            ),
+        }
+    }
+
+    fn remove(&self, realm: &str, _key: &str) {
+        if let Some(parts) = self.0.upgrade() {
+            let p = parts.of(realm);
+            let fresh = (parts.factory)(partition_id(realm));
+            *p.write().unwrap_or_else(PoisonError::into_inner) = fresh;
+        }
+    }
+}
+
+impl<V> RealmObj<V>
+where
+    V: Clone + Serialize + DeserializeOwned + Send + Sync + 'static,
+{
+    /// An object per realm, each built by `factory` from the realm's id.
+    pub fn new(
+        lifecycle: &Arc<RealmLifecycle>,
+        handles: &Arc<StoreHandles>,
+        spec: StoreSpec,
+        factory: Arc<dyn Fn(&str) -> V + Send + Sync>,
+    ) -> RealmObj<V> {
+        let parts = Parts::new(lifecycle, factory);
+        let handle = handles.declare(
+            &spec,
+            "obj",
+            "realm",
+            Arc::new(ObjAccess(Arc::downgrade(&parts))),
+        );
+        RealmObj {
+            parts,
+            handle,
+            handles: handles.clone(),
+        }
+    }
+
+    /// The ambient realm's object, as it is now.
+    pub fn get(&self) -> V {
+        self.parts
+            .of(&realm::current_id())
+            .read()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+    }
+
+    pub fn get_in(&self, realm: &str) -> V {
+        self.parts
+            .of(realm)
+            .read()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+    }
+
+    /// Changes the ambient realm's object, and reports it.
+    pub fn update<R>(&self, f: impl FnOnce(&mut V) -> R) -> R {
+        let id = realm::current_id();
+        let out = f(&mut self
+            .parts
+            .of(&id)
+            .write()
+            .unwrap_or_else(PoisonError::into_inner));
+        if let Some(handle) = self.handle.as_deref() {
+            self.handles.note(handle, &id, None);
+        }
+        out
+    }
+
+    pub fn handle(&self) -> Option<String> {
+        self.handle.clone()
+    }
+}
