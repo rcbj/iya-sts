@@ -15444,6 +15444,33 @@ class OAuth2Server {
                                    'The actor_token has been revoked.');
           }
         } else {
+          // #116: DEVELOPMENT HOLDS THIS REALM'S OWN actor_token TO ITS
+          // DECLARED TYPE TOO. A token from anywhere is still read unverified
+          // (`mode.exchangesUnverifiedTokens()`), but one that verifies under
+          // this realm's key is one whose kind is known, and an ID Token
+          // declared an access token is the same mistake in either mode — a
+          // TYPE check, not a trust check, which is how the subject_token has
+          // been held since #130.
+          let ownActor: Json = null;
+          try {
+            ownActor = helpers.verifyOwnJws(String(body.actor_token));
+          } catch (e) {
+            log.debug("Caught in OAuth2Server.tokenGrant(): the actor_token is " +
+                      "not this realm's own: " + ((e && e.message) || e));
+            ownActor = null;
+          }
+          const ownMismatch = ownActor ? self.kindProblem(
+            String(body.actor_token_type || '').trim(),
+            self.ownTokenKind(String(body.actor_token), ownActor),
+            'actor_token') : '';
+          if (ownMismatch) {
+            errorCodes.mark(res, 'STS-OAUTH-0628');
+            log.debug("Leaving OAuth2Server.tokenGrant(). The actor_token is " +
+                      "not its declared type.");
+            return self.oauthError(res, 400, 'invalid_request', ownMismatch);
+          }
+        }
+        if (!strictExchange) {
           try {
             actorClaims = jsonFromB64u(String(body.actor_token)
               .split('.')[1]) || {};
