@@ -17,6 +17,7 @@ members = [
   "crates/sts-core",
   "crates/sts-xacml",
   "bins/xacml-pep",
+  "bins/sts-runtime",
 ]
 
 [workspace.package]

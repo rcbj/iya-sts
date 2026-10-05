@@ -115,12 +115,30 @@ const EXPORTS = [
   { file: 'mode.json', build: modeTable }
 ];
 
+// THE APPCONFIG LAYERS (#444, rust/DESIGN.md section 8): `env/*.js` are data,
+// and the Rust runtime reads them as `env/*.json`, which are exported here
+// beside the tables and checked the same way. `defaults.js` is not among
+// them: it is the settings table's `dflt` column, which the runtime compiles
+// in from settings.json.
+const APPCONFIG = ['local', 'test', 'docker-tests'];
+
+function appconfig(name) {
+  return function () {
+    const file = path.join(ROOT, 'env', name + '.js');
+    delete require.cache[require.resolve(file)];
+    return require(file);
+  };
+}
+
 // The text each export should hold.
 function rendered() {
   return EXPORTS.map(function (one) {
     return { file: path.join(DATA, one.file),
              text: JSON.stringify(one.build(), null, 1) + '\n' };
-  });
+  }).concat(APPCONFIG.map(function (name) {
+    return { file: path.join(ROOT, 'env', name + '.json'),
+             text: JSON.stringify(appconfig(name)(), null, 2) + '\n' };
+  }));
 }
 
 // The exports whose committed file differs from what the table says.
@@ -150,6 +168,7 @@ if (require.main === module) {
     console.log('the Rust tables are current');
   } else {
     fs.mkdirSync(DATA, { recursive: true });
+    // A file under env/ is written only where its directory exists.
     rendered().forEach(function (one) {
       fs.writeFileSync(one.file, one.text);
       console.log('wrote ' + path.relative(ROOT, one.file));

@@ -1,0 +1,172 @@
+{
+  "logLevel": "info",
+  "global": {
+    "host": "0.0.0.0",
+    "port": 8081,
+    "domain": "example.com",
+    "https": true,
+    "trustProxy": false
+  },
+  "oauth2": {
+    "issuer": "",
+    "rfc9700": false,
+    "codeReplayIdempotent": true,
+    "oauth21": false,
+    "frontchannelLogout": true,
+    "backchannelLogout": true,
+    "redirectUris": "",
+    "loopbackPortWildcard": true,
+    "breakIdTokenNonce": false,
+    "clientAssertionSkewS": 60,
+    "refreshIdleSeconds": 86400,
+    "revokeRefreshOnLogout": true,
+    "accessTokenTtlS": 3600,
+    "idTokenTtlS": 3600,
+    "refreshTokenTtlS": 86400,
+    "clockSkewS": 30
+  },
+  "admin": {
+    "readGroup": "admin-read",
+    "writeGroup": "admin-write",
+    "openWhenEmpty": true
+  },
+  "applications": {
+    "max": 500,
+    "seedInternal": true
+  },
+  "saml": {
+    "issuer": "urn:wstrust:mock:sts"
+  },
+  "wstrust": {
+    "issuer": "urn:wstrust:mock:sts"
+  },
+  "wsfed": {
+    "entityId": "urn:wstrust:mock:sts"
+  },
+  "tls": {
+    "hostnames": "localhost,sts,sts-mock,sts.example.com",
+    "ips": "127.0.0.1"
+  },
+  "oid4vci": {
+    "walletUrl": "http://localhost:3000",
+    "authorizationServer": "",
+    "batchSize": 4,
+    "deferredReadyMs": 4000,
+    "deferredIntervalS": 2,
+    "offerUsername": "diploma.student",
+    "requestEncryptionRequired": false,
+    "sdJwtIssuerDid": false,
+    "ldpVcIssuerDid": false
+  },
+  "oid4vp": {
+    "clientId": "sts-verifier",
+    "kbMaxAgeS": 600,
+    "claims": "given_name,family_name"
+  },
+  "krb5": {
+    "realm": "EXAMPLE.COM",
+    "kdcPort": 88,
+    "servicePort": 8888,
+    "servicePrincipal": "HTTP/web.example.com",
+    "clockSkew": 300,
+    "clockOffset": 0,
+    "userPassword": "password!",
+    "unknownUsers": "nosuchuser,nobody",
+    "autoServicePassword": "auto-service-password",
+    "krbtgtPassword": "krbtgt-mock-password",
+    "domainSid": "S-1-5-21-1004336348-1177238915-682003330",
+    "trustedRealm": "PARTNER.COM",
+    "trustPassword": "inter-realm-trust-password",
+    "trustedDomainSid": "S-1-5-21-2035427030-2118130302-1178042555",
+    "trustedKrbtgtPassword": "partner-krbtgt-password",
+    "s2kparams": "omit"
+  },
+  "ldap": {
+    "port": 389,
+    "tlsPort": 636,
+    "autocreateUsers": true,
+    "maxEntries": 10000,
+    "sizeLimit": 500
+  },
+  "scim": {
+    "enabled": true,
+    "maxResults": 200,
+    "bulkMaxOperations": 100,
+    "bulkMaxPayloadSize": 1048576,
+    "authDiscovery": false,
+    "authRealm": "SCIM",
+    "scopeRead": "scim:read",
+    "scopeWrite": "scim:write",
+    "authBearer": true,
+    "authBasic": true,
+    "authDigest": true,
+    "digestPassword": "password!",
+    "digestNonceSeconds": 300,
+    "authHoba": true,
+    "hobaMaxAgeSeconds": 600,
+    "authCookie": true,
+    "authClientCert": true
+  },
+  "groups": {
+    "claim": true,
+    "claimName": "groups",
+    "claimValue": "cn",
+    "claimFromMemberOf": true
+  },
+  "audit": {
+    "maxEvents": 5000,
+    "protocolCalls": true
+  },
+  "logout": {
+    "anyUser": true,
+    "kerberosSignOut": true,
+    "ldapDisconnect": true,
+    "maxRows": 500
+  },
+  "security": {
+    "rateLimitWindowS": 60,
+    "rateLimitPerIdentity": 100,
+    "rateLimitPerAddress": 500,
+    "activationTtlMinutes": 1440
+  },
+  "acme": {
+    "attemptsPerAddress": 5000
+  },
+  "spiffe": {
+    "enabled": true,
+    "trustDomain": "example.org",
+    "x509KeyType": "ec-p256",
+    "jwtKeyType": "ec-p256",
+    "caTtl": 86400,
+    "svidTtl": 3600,
+    "jwtSvidTtl": 300,
+    "refreshHint": 300,
+    "svidSubject": "C=US,O=SPIRE",
+    "autoCreateEntries": true,
+    "requireSecurityHeader": true,
+    "trustLocalSocket": true,
+    "adminIds": "",
+    "clockSkew": 60,
+    "attestWorkloads": true,
+    "acceptAssertedSelectors": false,
+    "maxEntries": 500,
+    "maxAgents": 200,
+    "maxFederatedBundles": 32,
+    "bundlePath": "/spiffe/bundle",
+    "workloadSocketEnabled": true,
+    "workloadSocket": "/tmp/spire-agent/public/api.sock",
+    "workloadPort": 8092,
+    "serverPort": 8181,
+    "serverSocketEnabled": false,
+    "serverSocket": "/tmp/spire-server/private/api.sock",
+    "grpcHost": "0.0.0.0"
+  },
+  "persistence": {
+    "mode": "memory",
+    "dataDir": "./data",
+    "databaseUrl": "postgres://sts:sts@localhost:5432/sts",
+    "writeDelay": 1500,
+    "realms": true,
+    "appconfig": true
+  }
+}
