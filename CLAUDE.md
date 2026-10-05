@@ -824,7 +824,8 @@ design. **Since #444 the Rust crates build a constant per code from an export
 of the table** (`rust/crates/sts-core/tables/error_codes.json`), so a new or
 changed row also needs `node tests/tools/export-rust-tables.js`;
 `tests/rust_tables.js` fails until the export matches. The same holds for a
-row of `common/config.js`'s settings table (`tables/settings.json`).
+row of `common/config.js`'s settings table (`tables/settings.json`) and a
+predicate or a REQUIREMENTS row of `common/mode.js` (`tables/mode.json`).
 
 ## Code style
 

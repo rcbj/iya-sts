@@ -78,9 +78,41 @@ function settings() {
   };
 }
 
+// The mode (`common/mode.js`): the names of its predicates — each is a
+// method of `sts-core::mode::Mode`, and a Rust test fails on a name it does
+// not answer — the sentence each one's write refusal ends with, and the two
+// tables `/admin/mode` draws, REQUIREMENTS and NOT_YET.
+const MODE_HELPERS = ['current', 'isProduct', 'isDevelopment', 'allowsValue',
+                      'valueInForce', 'inForce', 'writeRefusalReason',
+                      'report'];
+
+function modeTable() {
+  const mode = require(path.join(ROOT, 'common', 'mode.js'));
+  const predicates = Object.keys(mode).filter(function (name) {
+    return typeof mode[name] === 'function' &&
+      MODE_HELPERS.indexOf(name) < 0;
+  });
+  const fallback = mode.writeRefusalReason('');
+  const writeRefusals = {};
+  predicates.forEach(function (name) {
+    const reason = mode.writeRefusalReason(name);
+    if (reason !== fallback) {
+      writeRefusals[name] = reason;
+    }
+  });
+  return {
+    predicates: predicates,
+    writeRefusalFallback: fallback,
+    writeRefusals: writeRefusals,
+    requirements: mode.REQUIREMENTS,
+    notYet: mode.NOT_YET
+  };
+}
+
 const EXPORTS = [
   { file: 'error_codes.json', build: errorCodes },
-  { file: 'settings.json', build: settings }
+  { file: 'settings.json', build: settings },
+  { file: 'mode.json', build: modeTable }
 ];
 
 // The text each export should hold.
