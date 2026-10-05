@@ -226,6 +226,22 @@ const PAGES: WebPage[] = [
     } },
   { path: '/admin/crypto-metadata', title: 'Cryptography',
     operation: '/admin-api/crypto', render: CryptoMetadataPage.render },
+  { path: '/admin/delegation/application',
+    title: 'Delegation — one application',
+    operation: '/admin-api/delegation/application',
+    drill: {
+      param: 'application',
+      sample: function (list: Json): string | null {
+        const rows = list.applications || [];
+        return rows[0] ? rows[0].identifier : null;
+      },
+      render: function (view: Json, ctx?: Json): string {
+        return DelegationPage.application(ctx || WebKit.context(), view);
+      }
+    },
+    render: function (view: Json, ctx?: Json): string {
+      return DelegationPage.application(ctx || WebKit.context(), view);
+    } },
   { path: '/admin/delegation/chain', title: 'Delegation — one relationship',
     operation: '/admin-api/delegation/chain',
     render: function (view: Json, ctx?: Json): string {

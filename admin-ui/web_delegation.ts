@@ -2593,6 +2593,230 @@ class DelegationPage {
       '/admin-api/delegation</code> where a caller can filter them.');
 
   }
+
+  // ---------------------------------------------------------------------------
+  // /admin/delegation/application, FROM
+  // `GET /admin-api/delegation/application` (#446).
+  //
+  // Everything delegated through an application or to it: who it is, both
+  // its roles, the drawing, the parties, every credential and act — or, for
+  // a name no act holds, the chooser and the catalogue to pick from.
+  // ---------------------------------------------------------------------------
+  /**
+   * Draws `/admin/delegation/application` from its answer.
+   *
+   * @param ctx - the render context (`WebKit.context()`)
+   * @param json - the answer of `GET /admin-api/delegation/application`
+   * @returns the body as HTML
+   */
+  static application(ctx: Json, json: Json): string {
+    const listView = kit.listViewOf('/admin/delegation', ctx.query);
+    const upHref = '/admin/delegation' + kit.queryWith(listView, {});
+    const back = kit.note('<a class="btn" href="' + kit.esc(upHref) +
+      '">&larr; Back to the delegation table</a>');
+    // The chooser itself, drawn on the bare page AND under a selected
+    // application — the second is what makes comparing two of them one
+    // click rather than two.
+    const chooser = DelegationPage.delegationApplicationChooser(
+      json.chooser, json.key,
+      { path: '/admin/delegation/application', query: ctx.query });
+    const entry = json.application;
+    const labelOf = function (id) {
+      return json.looks[id] ? json.looks[id].label : id;
+    };
+    if (!entry) {
+    return back +
+      (json.asked
+        ? kit.note('<strong>No act held here names ' +
+          '<code>' + kit.esc(json.asked) + '</code> as an ' +
+          'application.</strong> Three things could be true and they are ' +
+          'different: nothing has ever delegated through or to it; ' +
+          'something did and the acts have been DROPPED, because this ' +
+          'store keeps at most ' +
+          kit.esc(json.maxRecords) + ' and discards the ' +
+          'oldest; or the name is spelled differently from the way a ' +
+          'protocol presented it. The list below is every application ' +
+          'some act actually named, which settles the third.')
+        : '') +
+      kit.note('<strong>Choose an application to see everything that ' +
+      'has been delegated through it or to it.</strong> A delegation has ' +
+      'three parties and an application can be two of them — the ' +
+      'INTERMEDIARY that acts on somebody\'s behalf, and the TARGET the ' +
+      'credential is for — so this page shows both sides of one ' +
+      'application rather than making you pick a side. That is the ' +
+      'question worth asking before turning a middle tier off: not ' +
+      '<em>what reaches it</em>, but <em>what exists because of it</em>.') +
+      chooser +
+      DelegationPage.delegationApplicationTable(json.applications,
+                                                 json.facts, listView) +
+      kit.note('The list is built from the ACTS rather than from <a ' +
+      'href="/admin/applications">the registry</a>, which is why an ' +
+      'entry here can be marked <em>not in the registry</em>: the ' +
+      'registry holds what this service has been asked about, and an RFC ' +
+      '8693 <code>audience</code> nobody has otherwise mentioned is a ' +
+      'real delegation target that nothing else in this console knows ' +
+      'the name of.');
+    }
+    const parties = json.graph.nodes.filter(function (node) {
+      return node.kind !== 'sts';
+    });
+
+    return back +
+      '<div class="tiles">' +
+        kit.tile(entry.acts, 'acts') +
+        kit.tile(entry.issued, 'issued') +
+        kit.tile(entry.refused, 'refused') +
+        kit.tile(json.graph.tokens.length, 'credentials issued') +
+        kit.tile(entry.chains, 'relationships') +
+        kit.tile(entry.roles.intermediary, 'as the intermediary') +
+      '</div>' +
+
+      kit.note('<strong><code>' + kit.esc(entry.identifier) +
+                '</code></strong> — ' +
+      (json.registered
+        ? '<a href="' + kit.esc('/admin/applications' +
+            kit.queryWith({ application: entry.identifier }, {})) +
+            '">in the ' +
+          'registry</a> as <strong>' +
+          kit.esc(json.registeredName || entry.identifier) +
+          '</strong>'
+        : '<span class="state-none" title="No entry under ou=applications ' +
+          'names this. The registry holds what this service has been ASKED ' +
+          'ABOUT, and a delegation naming something nobody has otherwise ' +
+          'mentioned is ordinary — an RFC 8693 audience is exactly ' +
+          'that.">not in the registry</span>') +
+      (entry.identityKey
+        ? '. It has also PRESENTED a credential of its own, so it is a ' +
+          'person here as well as an application: ' +
+          GroupsPage.usersPageCell(entry.identityKey, json.facts.users) +
+          ' on the users ' +
+          'page. That is the middle tier being both, which is ordinary — a ' +
+          'service account authenticates, so the identity funnel files it ' +
+          'under <code>ou=users</code>, and tickets are issued FOR it, so ' +
+          'the registry files it under <code>ou=applications</code>.'
+        : '.') +
+      (entry.spellings.length > 1
+        ? ' <strong>It has been spelled ' + entry.spellings.length + ' ' +
+          'ways</strong> and they are one application ' +
+          'here: ' + kit.codeList(entry.spellings) +
+          '. Two spellings of one identity is two people, so they are ' +
+          'collapsed on the same normalisation the picture uses — the ' +
+          'spellings are kept so that the collapse is something you can ' +
+          'see rather than take on trust.'
+        : '') +
+      ' Protocols: ' +
+      (entry.protocols.length ? kit.codeList(entry.protocols) : 'none') +
+      '. First seen ' + kit.esc(kit.whenText(entry.firstAt)) + ', last ' +
+      kit.esc(kit.whenText(entry.lastAt)) + '.') +
+
+      '<h2>What it does in a delegation</h2>' +
+      kit.note('<strong>Both sides of one application.</strong> The ' +
+      'counts below are of ACTS, and one act can count twice here — an ' +
+      'S4U2Self names the requester as the intermediary and as the target, ' +
+      'because the ticket is to itself.') +
+      '<table><tr><th>Role</th><th>Acts</th><th>What the role is</th></tr>' +
+      json.roles.map(function (role) {
+        const n = entry.roles[role.role] || 0;
+        return '<tr>' +
+          '<td>' + kit.esc(role.label) + '</td>' +
+          '<td class="num">' + (n
+            ? '<strong>' + kit.esc(n) + '</strong>'
+            : '<span class="state-none">0</span>') + '</td>' +
+          '<td>' + kit.esc(role.what) + '</td>' +
+          '</tr>';
+      }).join('') + '</table>' +
+
+      (json.graph.acts
+        ? '<h2>The relationships it is part of</h2>' +
+          kit.note('Every chain this application appears in, drawn ' +
+          'together — so a middle tier shows the people it acts for on one ' +
+          'side and what it reaches on the other, which is the shape a ' +
+          'list of rows cannot show. The <strong>chain</strong> link ' +
+          'beside each act at the foot of this page draws ONE of them ' +
+          'alone.') +
+          DelegationPage.drawing(json, '/admin/delegation/application',
+            Object.assign({}, listView,
+                          { application: entry.identifier }))
+        : '') +
+
+      '<h2>The key</h2>' +
+      kit.note('The shapes are drawn by the same functions the picture ' +
+      'uses, so a legend cannot come to describe a diagram this service no ' +
+      'longer draws.') +
+      json.mapKey +
+
+      '<h2>The parties it deals with</h2>' +
+      kit.note('Every box in the picture above, including this ' +
+      'application itself.') +
+      '<table><tr><th>Label</th><th>Drawn as</th><th>Identity</th>' +
+      '<th>Roles it played</th><th>Acts</th><th>Protocols</th></tr>' +
+      (parties.map(function (node) {
+        return DelegationPage.delegationNodeRow(node, json.facts,
+                                               json.looks[node.id]);
+      }).join('') || '<tr><td colspan="6">No parties.</td></tr>') +
+        '</table>' +
+
+      '<h2>Every delegated credential related to it</h2>' +
+      kit.note('<strong>This is the list this page exists for.</strong> ' +
+      'Every credential that came out of an act this application took part ' +
+      'in, newest first, WHATEVER ROLE IT PLAYED — so a token issued ' +
+      'THROUGH it (it was the intermediary) and one issued FOR it (it was ' +
+      'the target) are both here, with the role in its own column. ' +
+      '<strong>NO CREDENTIAL IS EVER HERE, only its kind and its ' +
+      'identifier</strong>, which is the rule the audit log follows; a ' +
+      'Kerberos ticket genuinely has no identifier to quote. A REFUSED act ' +
+      'produced nothing by definition, which is why ' +
+      json.graph.tokens.length +
+      ' credential(s) sit under ' + entry.acts + ' act(s).') +
+      '<table><tr><th class="num">#</th><th>When</th><th>Its role</th>' +
+      '<th>Credential</th><th>Subject</th><th>Actor</th><th>Target</th>' +
+      '<th>Mechanism</th></tr>' +
+      (json.graph.tokens.map(function (token) {
+        return DelegationPage.delegationTokenRow(
+          token, labelOf,
+          DelegationPage.delegationRoleCell(json.rolesBySeq[token.seq],
+                                            json.roles));
+      }).join('') ||
+        '<tr><td colspan="8">Nothing has been issued through this ' +
+        'application or to it. A page of red acts and an empty table here ' +
+        'is a consistent state rather than a broken one.</td></tr>') +
+        '</table>' +
+      (json.graph.tokensLeftOff
+        ? kit.note('<strong>' + json.graph.tokensLeftOff + ' more ' +
+          'credential(s) are not listed.</strong> This list holds at most ' +
+          json.graph.maxTokenRows +
+          ' and keeps the newest; every one of them is still COUNTED on ' +
+          'its line in the picture, so what is lost is the individual ' +
+          'identifiers of the oldest.')
+        : '') +
+
+      '<h2>Every act it took part in</h2>' +
+      kit.note('The rows <a href="' + kit.esc(upHref) +
+                '">the delegation table</a> ' +
+      'holds, narrowed to this application and not paged. This is where ' +
+      'the TIMES and the REFUSALS are — a refusal produced no credential, ' +
+      'so it is in this table and not in the one above.') +
+      '<table><tr><th class="num">#</th><th>When</th><th>Mechanism</th>' +
+      '<th>Kind</th><th>Outcome</th><th>Initial identity</th>' +
+      '<th>Intermediary</th><th>Target</th><th>Authorized by / why not</th>' +
+      '<th>Credentials</th></tr>' +
+      json.acts.map(function (row) {
+        return DelegationPage.delegationRow(row, json.facts,
+                                         { listView: listView });
+      }).join('') + '</table>' +
+
+      '<h2>Another application</h2>' + chooser +
+      DelegationPage.delegationApplicationTable(json.applications,
+                                                 json.facts, listView) +
+
+      kit.note('<code>?format=json</code> carries this application, its ' +
+      'acts and the graph behind the picture; <code>?format=svg</code> is ' +
+      'the document alone. There is no form that changes anything on this ' +
+      'page and therefore no operation on <code>/admin-api</code> — the ' +
+      'acts are in <code>GET /admin-api/delegation</code>, where a caller ' +
+      'can filter them by the same free text.');
+
+  }
 }
 
 export = DelegationPage;

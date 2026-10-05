@@ -4512,6 +4512,90 @@ class AdminViews {
   }
 
   // ---------------------------------------------------------------------------
+  // ONE APPLICATION'S DELEGATIONS, AS ONE ANSWER (#446).
+  //
+  // `/admin/delegation/application?application=`: every act an application
+  // took part in, in either role, drawn — the page's own JSON with the
+  // looks, the drawing, the key, the chooser's pane and the facts its cells
+  // ask. An application no act names is `application: null`, with the
+  // catalogue to choose from.
+  // ---------------------------------------------------------------------------
+  /**
+   * Builds one application's delegations as one answer.
+   *
+   * @param query - the page's query: `application`, as presented or
+   *   normalised
+   * @param options - `links` (true by default): false draws the document
+   *   with no links in it, as `?format=svg` answers
+   * @returns the application, its acts and graph, and the drawing
+   */
+  delegationApplicationModel(query, options?) {
+    const { log, delegation, delegationMap, applications } = this.deps;
+    log.debug("Entering AdminViews.delegationApplicationModel().");
+    const asked = String((query || {}).application || '').trim();
+    // Normalised the same way the store normalises one, so a link carrying
+    // the RAW identifier finds the same application the chooser's does.
+    const key = delegation.applicationKeyOf(asked);
+    const all = delegation.list();
+    const catalogue = delegation.applicationList(all);
+    const entry = catalogue.filter(function (one) {
+      return one.key === key;
+    })[0] || null;
+    const acts = entry ? delegation.actsForApplication(all, key) : [];
+    const graph = delegation.graph(acts);
+    const look = this.delegationLooks(graph, this.knownUserKeys());
+    const label = entry
+      ? 'Everything delegated through or to ' + entry.identifier
+      : 'Applications with delegated access';
+    const drawn = delegationMap.render(graph, {
+      resolve: look.resolve, labelOf: look.labelOf,
+      links: !(options && options.links === false), id: 'delmap', label: label
+    });
+    // WHICH ROLES THIS APPLICATION PLAYED IN THE ACT EACH CREDENTIAL CAME
+    // OUT OF, keyed on `seq` — the act's own identifier, monotonic and never
+    // reused, so a role cannot attach to the wrong credential.
+    const rolesBySeq = {};
+    acts.forEach(function (row) {
+      rolesBySeq[row.seq] = delegation.applicationRolesIn(row, key);
+    });
+    // The registry's answer, tried against every spelling: `ou=applications`
+    // is keyed by what a caller presented, and this key is normalised.
+    let registered = null;
+    (entry ? entry.spellings : []).forEach(function (spelling) {
+      if (!registered) {
+        registered = applications.get(spelling) || null;
+      }
+    });
+    const summary = delegation.summary();
+    const model: any = {
+      application: entry, asked: asked || null, key: key,
+      registered: !!registered,
+      registeredName: registered
+        ? (registered.name || registered.dnLabel || '') : '',
+      acts: acts, graph: graph,
+      // The role played per act, keyed by the act's sequence number. It is
+      // the one thing here a caller could not work out from `acts` without
+      // reimplementing the normalisation.
+      rolesBySeq: rolesBySeq,
+      applications: catalogue,
+      held: summary.held, maxRecords: summary.maxRecords,
+      roles: delegation.ROLES,
+      drawing: { width: drawn.width, height: drawn.height,
+                 failed: drawn.failed || null },
+      looks: look.looks, label: label, svg: drawn.svg
+    };
+    if (!(options && options.links === false)) {
+      model.chooser = this.delegationChooser('application', query, catalogue,
+        WebKit.listViewOf('/admin/delegation', query || {}));
+      model.mapKey = this.delegationMapKey();
+      model.facts = this.delegationFacts(model);
+    }
+    log.debug("Leaving AdminViews.delegationApplicationModel(). " +
+              acts.length + " act(s).");
+    return model;
+  }
+
+  // ---------------------------------------------------------------------------
   // A DELEGATION CHOOSER'S PANE, SEARCHED AND PAGED HERE (#446).
   //
   // The console drew both choosers from the whole catalogue — every
@@ -11487,6 +11571,7 @@ export = {
   delegationLooks: slot.forward('delegationLooks'),
   delegationMapModel: slot.forward('delegationMapModel'),
   delegationMapKey: slot.forward('delegationMapKey'),
+  delegationApplicationModel: slot.forward('delegationApplicationModel'),
   delegationChainModel: slot.forward('delegationChainModel'),
   delegationChooser: slot.forward('delegationChooser'),
   delegationFacts: slot.forward('delegationFacts'),

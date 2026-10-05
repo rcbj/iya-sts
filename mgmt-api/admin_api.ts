@@ -18440,6 +18440,57 @@ class AdminApi {
           log.debug("Leaving the management API delegation map endpoint.");
         } },
 
+      // ONE APPLICATION'S DELEGATIONS (#446): the console page had no
+      // operation, having no form; see
+      // `AdminViews.delegationApplicationModel()`.
+      { method: 'GET', path: BASE + '/delegation/application',
+        tag: 'Delegation',
+        operationId: 'getDelegationApplication',
+        summary: 'Everything delegated through one application or to it',
+        description: 'Every act an application took part in, in EITHER ' +
+                     'role — the intermediary acting for somebody and the ' +
+                     'target a credential is for — with the role it played ' +
+                     'in each (`rolesBySeq`), the graph of those acts and, ' +
+                     'as for `/delegation/map`, `looks`, the drawing ' +
+                     '(`svg`) and its size. `applications` is every ' +
+                     'application some act named, which is what the page\'s ' +
+                     'chooser searches.\n\nAn application no act names is ' +
+                     'answered with `application: null`, not an error: the ' +
+                     'store is capped and drops the oldest.\n\nWith ' +
+                     '`format=svg` the answer is the SVG document alone, ' +
+                     'with no links in it, as `image/svg+xml`.',
+        mirrors: 'GET /admin/delegation/application',
+        parameters: [
+          { name: 'application', in: 'query', required: false,
+            schema: { type: 'string' },
+            description: 'The application, as a protocol presented it or ' +
+                         'normalised.' },
+          { name: 'format', in: 'query', required: false,
+            schema: { type: 'string', enum: ['json', 'svg'] },
+            description: '`svg` answers the drawing alone, as a document ' +
+                         'with no links in it. `json`, the default, ' +
+                         'answers everything.' }
+        ],
+        responseDescription: 'The application, its acts, the graph, every ' +
+                             'node\'s look and the drawing.',
+        handler: function (req, res) {
+          log.debug("Entering the management API delegation application " +
+                    "endpoint.");
+          if (String((req.query || {}).format || '') === 'svg') {
+            const bare = adminViews.delegationApplicationModel(req.query,
+              { links: false });
+            res.status(200).set('Cache-Control', 'no-store')
+               .type('image/svg+xml').send(bare.svg);
+            log.debug("Leaving the management API delegation application " +
+                      "endpoint. Answered SVG.");
+            return;
+          }
+          self.sendJson(res, 200,
+                        adminViews.delegationApplicationModel(req.query));
+          log.debug("Leaving the management API delegation application " +
+                    "endpoint.");
+        } },
+
       // ONE RELATIONSHIP, DRAWN ALONE (#446): the console page had no
       // operation, having no form; see `AdminViews.delegationChainModel()`.
       { method: 'GET', path: BASE + '/delegation/chain', tag: 'Delegation',
