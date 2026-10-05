@@ -656,3 +656,94 @@ pub fn jwks_document(set: &KeySet) -> Result<Json, String> {
     }
     Ok(json!({ "keys": keys }))
 }
+
+impl KeySet {
+    /// `ownSignerFor()`: the key this realm signs its own tokens with under
+    /// `alg`, and its `kid` — the RSA key for RS* and PS*, the curve key
+    /// for the rest, the Edwards key on `eddsa_curve` (`oauth2.eddsaCurve`)
+    /// for EdDSA. An HMAC or a post-quantum `alg` is refused: an HS*
+    /// signature is made with a client's own secret, and this service signs
+    /// its own tokens with a classical key.
+    pub fn signer_for(
+        &self,
+        alg: &str,
+        eddsa_curve: &str,
+    ) -> Result<(sts_crypto::keys::JwsKey, String), String> {
+        let refused = || {
+            format!(
+                "this service does not sign its own tokens with \"{}\"; it signs them with an RSA or elliptic-curve \
+                 key of its own.",
+                alg
+            )
+        };
+        if alg.starts_with("HS")
+            || alg.starts_with("ML-DSA")
+            || alg.starts_with("SLH-DSA")
+        {
+            return Err(refused());
+        }
+        if alg.starts_with("RS") || alg.starts_with("PS") {
+            let pem = self
+                .private_key_pem()
+                .ok_or("the key set holds no RSA signing key")?;
+            let kid = self.kid().ok_or("the key set holds no certificate")?;
+            let key = sts_crypto::keys::JwsKey::from_pem(pem)
+                .map_err(|e| e.to_string())?;
+            return Ok((key, kid));
+        }
+        let wanted = if eddsa_curve.is_empty() {
+            "Ed25519"
+        } else {
+            eddsa_curve
+        };
+        let found = self
+            .curve_keys()
+            .into_iter()
+            .find(|one| {
+                one.alg == alg
+                    && (alg != "EdDSA"
+                        || one
+                            .public_jwk
+                            .get("crv")
+                            .and_then(Json::as_str)
+                            .unwrap_or("Ed25519")
+                            == wanted)
+            })
+            .ok_or_else(|| {
+                format!("this realm holds no key for \"{}\".", alg)
+            })?;
+        let kid = found
+            .public_jwk
+            .get("kid")
+            .and_then(Json::as_str)
+            .ok_or("a curve key with no kid")?
+            .to_string();
+        let key = sts_crypto::keys::JwsKey::from_pem(&found.private_key_pem)
+            .map_err(|e| e.to_string())?;
+        Ok((key, kid))
+    }
+
+    /// `signJwt()` over this set: the payload signed as a compact JWS under
+    /// `alg`, its header naming the key's `kid`, `iat` added at `now`
+    /// (seconds) unless the payload has one.
+    pub fn sign_jwt(
+        &self,
+        payload: &serde_json::Map<String, Json>,
+        alg: &str,
+        eddsa_curve: &str,
+        now: Option<i64>,
+    ) -> Result<String, String> {
+        let (key, kid) = self.signer_for(alg, eddsa_curve)?;
+        sts_crypto::jws::sign_jws(
+            payload,
+            &key,
+            &sts_crypto::jws::SignOptions {
+                algorithm: Some(alg.to_string()),
+                keyid: Some(kid),
+                now,
+                ..Default::default()
+            },
+        )
+        .map_err(|e| e.to_string())
+    }
+}
