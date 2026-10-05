@@ -106,9 +106,10 @@
 // story of resource-based delegation, and the FORWARDED block in handleTgsReq()
 // for the one control that limits unconstrained delegation at all.
 //
-// It does NOT check request signatures, does not implement FAST in the TGS
-// exchange, does not implement kpasswd or PKINIT, and does not apply SID
-// filtering across a trust. The AS and TGS exchanges are both served; the AP
+// It does NOT check request signatures, does not implement kpasswd, and does
+// not apply SID filtering across a trust. PKINIT (RFC 4556, with anonymous
+// PKINIT for FAST armor) is served since #179 — krb5_pkinit.ts, reached
+// through the key source like FAST, below. The AS and TGS exchanges are both served; the AP
 // exchange belongs to a SERVICE rather than to a KDC and lives in
 // krb5_service.js.
 //
@@ -4834,8 +4835,14 @@ app.get('/krb5/principals', function (req, res) {
                   'krbtgt key rotation, a previous kvno kept for the TGT ' +
                     'lifetime (#169)' +
                     (principals.keySourceInstalled() ? '' : ' - not here: ' +
+                     'this process has no directory'),
+                  // #179: where the directory is loaded, like FAST.
+                  'PKINIT (RFC 4556, 8070, 8636, 5349): a certificate as ' +
+                    'the pre-authentication, Diffie-Hellman only; anonymous ' +
+                    'PKINIT (RFC 8062) as FAST armor' +
+                    (principals.pkinitProvider() ? '' : ' - not here: ' +
                      'this process has no directory')],
-    notImplementedYet: ['PKINIT (RFC 4556, #179)',
+    notImplementedYet: ['PKINIT RSA key transport (RFC 4556 3.2.3.2)',
                         'kpasswd (RFC 3244)',
                         'SID filtering across a trust',
                         'rotation of an inter-realm trust key'],

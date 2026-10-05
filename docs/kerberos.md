@@ -352,8 +352,90 @@ The KRB-FX-CF2 and the Kerberos PRF FAST needs are section 9 of
 `common/crypto.js`, held to RFC 3961's and MIT's test vectors.
 
 `/admin/kerberos` and `GET /admin-api/kerberos` (`status`) say what the KDC
-does in the realm. A person whose only second factor is a security key cannot
-use Kerberos yet: PKINIT is [#179](https://github.com/rcbj/iya-sts/issues/179).
+does in the realm. A person whose second factor is a security key uses PKINIT,
+below.
+
+### A certificate as the pre-authentication: PKINIT (#179)
+
+PKINIT (RFC 4556) signs the AS-REQ with a certificate's key — a smart card's,
+a PIV token's, or a key file — and agrees the reply key by Diffie-Hellman, so
+no password is involved. It is on in every realm (`krb5.pkinit`) and is how a
+person whose second factor is a security key gets a ticket in product mode,
+where a password alone is refused them. Implemented with RFC 8070's freshness
+token, RFC 8636's key-derivation agility and RFC 5349's elliptic curves.
+
+**The certificate** is one this realm issued to the person, with
+`id-pkinit-KPClientAuth` or smart-card logon in its extended key usage:
+
+* a **smart-card logon** certificate enrolled on their entry over ACME, EST or
+  SCEP (the `smartcard-logon` profile, e.g. `/.well-known/est/smartcard-logon/
+  simpleenroll`), or
+* any certificate from the realm's identity Issuing CAs whose `id-pkinit-san`
+  names them exactly.
+
+It is validated to the service Root through this realm's own hierarchy, and
+its revocation is consulted under `pki.revocationCheck`. A certificate naming
+somebody else in an `id-pkinit-san` is refused, whatever else it says. The
+portal's TLS client certificates carry no PKINIT purpose and are refused.
+
+**The KDC's certificate** comes from the realm's own *Kerberos KDC* Issuing
+CA (`/admin/pki`), with `id-pkinit-KPKdc` and an `id-pkinit-san` of
+`krbtgt/REALM@REALM`. It is made the first time PKINIT is used, so a client
+needs only the service Root as its anchor.
+
+With MIT Kerberos (the `krb5-pkinit` package):
+
+```bash
+# krb5.conf: [realms] EXAMPLE.COM = { pkinit_anchors = FILE:/etc/sts/root.pem
+#                                      pkinit_pool = FILE:/etc/sts/chain.pem }
+kinit -X X509_user_identity=FILE:alice.pem,alice.key alice@EXAMPLE.COM
+kinit -X X509_user_identity=PKCS11:/usr/lib/opensc-pkcs11.so alice@EXAMPLE.COM
+```
+
+`root.pem` is the service Root and `chain.pem` the Issuing CA and Intermediate
+the certificate was issued under (the enrollment response carries both).
+
+**What the ticket says.** Every PKINIT ticket carries the RFC 8129 indicator
+`pkinit`, and `/authn/spnego` reads it as `amr ["swk"]`, never `pwd`. A
+smart-card logon certificate over a key this service did not generate (that
+is, not EST `/serverkeygen`) is the one case the KDC treats as a hardware
+key: the ticket also carries `pkinit-hardware` and the hw-authent flag, read
+as `amr ["hwk"]`. Either way it is one factor, `acr "1"`. The ticket ends no
+later than the certificate does, and carries `AD-INITIAL-VERIFIED-CAS`.
+
+**Refused, by design:**
+
+* RSA key transport of the reply key (section 3.2.3.2), because it has no
+  forward secrecy;
+* MODP group 2;
+* SHA-1 in a signature or a certificate;
+* a request without a freshness token (`krb5.pkinitRequireFreshness`);
+* a client that offers no RFC 8636 KDF, unless `krb5.pkinitLegacyKdf` is set.
+
+> **Warning.** Turning `krb5.pkinitRequireFreshness` off, or
+> `krb5.pkinitLegacyKdf` on, weakens PKINIT. Do it only for a client that
+> needs it.
+
+**A person with no Kerberos keys** — who has never signed in with a password —
+can still use PKINIT. Their password gets the usual "sign in once" refusal.
+
+**Anonymous PKINIT (RFC 8062)** gives a machine with no host keytab FAST
+armor:
+
+```bash
+kinit -n -c FILE:/tmp/armor @EXAMPLE.COM
+kinit -T FILE:/tmp/armor alice@EXAMPLE.COM
+```
+
+The anonymous ticket names nobody (`WELLKNOWN/ANONYMOUS@WELLKNOWN:ANONYMOUS`)
+and its session key includes the KDC's contribution (PA-PKINIT-KX). It is
+only a TGT for the realm, and the TGS refuses it: it armors and buys nothing.
+`krb5.anonymousPkinit` switches it off.
+
+**Post-quantum.** No post-quantum PKINIT is standardised. The key agreement is
+the quantum-exposed part. An ML-KEM encapsulation would replace it, and ML-DSA
+would replace the CMS signatures, once a client sends either
+(`common/crypto.js` section 16).
 
 ### The `krbtgt` key, and its rotation
 
@@ -408,8 +490,8 @@ ticket"). Since #169:
   strongest registered ones — aes256-cts-hmac-sha384-192 (20, RFC 8009) and
   aes256-cts-hmac-sha1-96 (18) — are symmetric, and Grover's algorithm leaves
   AES-256 at about 128-bit strength, so rotation needs no new enctype. The
-  quantum-exposed part of Kerberos is PKINIT's public-key key agreement, which
-  this service does not implement (#179).
+  quantum-exposed part of Kerberos is PKINIT's Diffie-Hellman key agreement
+  (#179), for which nothing post-quantum is standardised either.
 
 ### What Samba's and Heimdal's clients found (#204, #205)
 
@@ -447,8 +529,8 @@ exception in `tests/vendored/sts_kerberos_samba.js` and on #204.
 
 ### Not implemented
 
-PKINIT (#179), anonymous PKINIT armor, OTP PIN change and hashed OTP
-values, kpasswd, request signatures, SID filtering (see [the PAC](#the-pac) below), claims and device info in the
+PKINIT's RSA key transport and DH key reuse, anonymous tickets in the TGS
+exchange, OTP PIN change and hashed OTP values, kpasswd, request signatures, SID filtering (see [the PAC](#the-pac) below), claims and device info in the
 PAC, and rotation of an inter-realm trust key. DES is decoded and never
 produced: Windows Server 2025 removed it and it is not coming back. The **AP
 exchange** is not missing from the KDC — it belongs to a service rather than to
