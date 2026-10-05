@@ -7,6 +7,7 @@
 [workspace]
 resolver = "2"
 members = [
+  "crates/sts-crypto",
   "crates/sts-core",
   "crates/sts-xacml",
   "bins/xacml-pep",
@@ -23,6 +24,7 @@ publish = false
 # release of a library the service runs.
 [workspace.dependencies]
 sts-core = { path = "crates/sts-core" }
+sts-crypto = { path = "crates/sts-crypto" }
 sts-xacml = { path = "crates/sts-xacml" }
 axum = "0.8"
 base64 = "0.23"
@@ -32,6 +34,8 @@ hyper-util = { version = "0.1", features = ["server", "server-auto", "tokio", "s
 # OpenSSL 3.5+ built from source, so every machine and image has the same
 # library and the post-quantum algorithms (rust/DESIGN.md section 6, D5).
 openssl = { version = "0.10", features = ["vendored"] }
+openssl-sys = "0.9"
+foreign-types = "0.3"
 reqwest = { version = "0.12", default-features = false, features = ["native-tls-vendored", "json"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
@@ -47,9 +51,10 @@ thiserror = "2.0"
 tracing = "0.1"
 
 [workspace.lints.rust]
-# The one exception (rust/DESIGN.md section 6) is the openssl-sys wrapper in
-# sts-crypto, which will say so with an `allow` of its own.
-unsafe_code = "forbid"
+# DENY here and FORBID at each crate root: the one exception (rust/DESIGN.md
+# section 6) is sts-crypto's openssl-sys wrapper, `pq.rs`, whose `allow`
+# a workspace `forbid` would refuse. Every other crate forbids it itself.
+unsafe_code = "deny"
 
 [workspace.lints.clippy]
 # No swallowed error and no panic in service code (DESIGN.md section 4.5).
