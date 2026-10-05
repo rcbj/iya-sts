@@ -106,13 +106,55 @@ function run(t) {
             row.alg + ' ' + row.enc + ': a JWE Rust encrypted decrypts in ' +
             'Node', why);
   });
+  if (fs.existsSync(path.join(VECTORS, 'xmldsig-rust.json'))) {
+    xmlSignatures(t, read('xmldsig-rust.json'));
+  }
   log.debug("Leaving run().");
+}
+
+// XML SIGNATURE: every document Rust signed, in each of the ten methods
+// saml.signatureAlgorithm offers, gets the verdict from
+// crypto.verifyXmlSignature() here that Node's own signature of the same
+// document got (`ok`, carried in the vector) — a WithComments signature over
+// a document with a comment fails in both, because signEnveloped() digests
+// without comments; and every Redirect binding signature verifies against
+// the signer's public key.
+/**
+ * @param {any} t - the runner's check collector
+ * @param {any} vectors - xmldsig-rust.json
+ */
+function xmlSignatures(t, vectors) {
+  log.debug("Entering xmlSignatures().");
+  vectors.signed.forEach(function (row) {
+    const verdict = crypto.verifyXmlSignature(row.signed, {
+      element: row.element, publicKeyPem: row.publicKeyPem });
+    t.check(!!verdict.ok === !!row.ok,
+            row.name + ': the XML Rust signed gets Node\'s verdict on its ' +
+            'own (' + (row.ok ? 'verifies' : 'refused') + ')', verdict.why);
+  });
+  vectors.queries.forEach(function (row) {
+    const method = crypto.xmlSignatureAlgorithms().verified
+      .filter(function (m) { return m.uri === row.sigAlg; })[0];
+    let ok = false;
+    try {
+      ok = !!method && crypto.verifyXmlSignatureValue(row.sigAlg,
+        nodeCrypto.createPublicKey(row.publicKeyPem),
+        Buffer.from(row.query, 'utf8'),
+        Buffer.from(row.signature, 'base64'), null);
+    } catch (e) {
+      log.debug("Caught in xmlSignatures(): " + ((e && e.message) || e));
+    }
+    t.check(ok, row.name + ': a Redirect binding signature Rust made ' +
+            'verifies in Node');
+  });
+  log.debug("Leaving xmlSignatures().");
 }
 
 module.exports = {
   name: 'rust_crypto_vectors',
   describe: 'what the Rust sts-crypto crate signed verifies, and what it ' +
             'encrypted decrypts, in the Node service — every JWS and JWE ' +
-            'algorithm',
+            'algorithm, and every XML signature method this service signs ' +
+            'with',
   run: run
 };

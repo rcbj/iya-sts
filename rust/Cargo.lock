@@ -1239,6 +1239,8 @@ dependencies = [
  "openssl-sys",
  "serde_json",
  "sha3",
+ "sts-core",
+ "sts-xml",
  "thiserror",
  "tracing",
 ]

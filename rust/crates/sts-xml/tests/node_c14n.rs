@@ -70,6 +70,17 @@ fn every_node_canonical_form_is_reproduced() {
                 continue;
             }
         };
+        if let Some(want) = case["serialized"].as_str() {
+            checked += 1;
+            let got = doc.serialize();
+            if got != want {
+                failures.push(format!(
+                    "{}: serialized differently: {}",
+                    name,
+                    first_difference(want, &got)
+                ));
+            }
+        }
         let root = doc.document_element().unwrap();
         let elements = doc.descendants(root);
         let forms = case["forms"].as_array().unwrap();
@@ -105,5 +116,36 @@ fn every_node_canonical_form_is_reproduced() {
         let shown: Vec<_> = failures.iter().take(8).cloned().collect();
         panic!("{} differences:\n{}", failures.len(), shown.join("\n"));
     }
-    eprintln!("{} canonical forms identical to Node's", checked);
+    eprintln!(
+        "{} canonical forms and serializations identical to Node's",
+        checked
+    );
+}
+
+/// Where two strings part, with a little of each around it.
+fn first_difference(node: &str, rust: &str) -> String {
+    let at = node
+        .char_indices()
+        .zip(rust.chars())
+        .find(|((_, a), b)| a != b)
+        .map(|((i, _), _)| i)
+        .unwrap_or(node.len().min(rust.len()));
+    let from = node[..at]
+        .char_indices()
+        .rev()
+        .nth(40)
+        .map_or(0, |(i, _)| i);
+    let clip = |s: &str| {
+        s.get(from..)
+            .unwrap_or("")
+            .chars()
+            .take(100)
+            .collect::<String>()
+    };
+    format!(
+        "at byte {}\n node: {:?}\n rust: {:?}",
+        at,
+        clip(node),
+        clip(rust)
+    )
 }

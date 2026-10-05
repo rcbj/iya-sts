@@ -151,7 +151,7 @@ fn ml_dsa_key_type(name: &str) -> KeyType {
 }
 
 /// An ML-DSA private key from RFC 9964's 32-byte seed.
-fn ml_dsa_private(name: &str, seed: &[u8]) -> CryptoResult<PKey<Private>> {
+pub fn ml_dsa_private(name: &str, seed: &[u8]) -> CryptoResult<PKey<Private>> {
     if seed.len() != 32 {
         return Err(CryptoError::new(format!(
             "an ML-DSA \"priv\" is the 32-byte seed of RFC 9964 section 3.2; \
