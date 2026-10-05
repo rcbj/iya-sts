@@ -216,6 +216,16 @@ const PAGES: WebPage[] = [
     } },
   { path: '/admin/federation', title: 'Federation',
     operation: '/admin-api/federation',
+    drill: {
+      param: 'relationship',
+      sample: function (list: Json): string | null {
+        const rows = list.relationships || [];
+        return rows[0] ? rows[0].id : null;
+      },
+      render: function (view: Json, ctx?: Json): string {
+        return FederationPage.detail(ctx || WebKit.context(), view);
+      }
+    },
     render: function (view: Json, ctx?: Json): string {
       return FederationPage.body(ctx || WebKit.context(), view);
     } },

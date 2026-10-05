@@ -354,6 +354,14 @@ function childMain() {
       kind: 'saml11-relying-party', protocol: 'SAML 1.1',
       note: 'drawn by the bundle check'
     });
+    // And a federation relationship of each direction, for its drill-down.
+    const federation = require(ROOT_DIR + '/federation/federation');
+    const fedSp = federation.create({ id: 'webcheck-sp',
+                                      role: 'service-provider',
+                                      protocol: 'saml2',
+                                      peer: 'https://idp.webcheck.example' });
+    note(fedSp && fedSp.ok !== false, 'D-seed-fed. a relationship is made',
+         JSON.stringify((fedSp && fedSp.errors) || []));
     note(seeded && seeded.ok && seeded11 && seeded11.ok,
          'D-seed. the service provider and the relying party are made',
          JSON.stringify([(seeded && seeded.errors) || [],

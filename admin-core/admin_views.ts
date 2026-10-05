@@ -8166,7 +8166,8 @@ class AdminViews {
     if (!record) {
       log.debug("Leaving AdminViews.federationDetailJson(). No such " +
                 "relationship.");
-      return { record: null, row: null, json: { found: false, id: id } };
+      return { record: null, row: null,
+               json: { found: false, id: id, paths: federation.PATHS } };
     }
     const row = this.federationRow(record);
     // ---------------------------------------------------------------------
@@ -8311,6 +8312,18 @@ class AdminViews {
     // first. Service-provider side only, where attributes arrive.
     const unmapped = row.role === 'service-provider'
       ? federation.unmappedOf(record.fedId) : [];
+    // The label of every value a select on the page offers: a sign-in
+    // mechanism's or a subject policy's.
+    const enumLabels: Record<string, string> = {};
+    setFields.forEach(function (field) {
+      (Array.isArray(field.enum) ? field.enum : []).forEach(function (one) {
+        const known = federation.mechanismRow(one) ||
+                      federation.subjectPolicyRow(one);
+        if (known) {
+          enumLabels[one] = known.label;
+        }
+      });
+    });
 
     log.debug("Leaving AdminViews.federationDetailJson().");
     return {
@@ -8360,7 +8373,22 @@ class AdminViews {
           // Who this partner's subjects are linked to (#109): the page, and
           // the paging a caller walks it with.
           links: linkPage.shown,
-          linksPaging: self.pagingJson(linkPage.paging)
+          linksPaging: self.pagingJson(linkPage.paging),
+          // WHAT THE PAGE IS DRAWN FROM BESIDES THE RECORD (#446): the
+          // field rows each list and form is built from, the schema the
+          // switches are described by, the labels of the values a select
+          // offers, the policy and encryption answers the register gives
+          // about this record, and the addresses the page prints or links.
+          setFields: setFields, multiFields: multiFields,
+          signalSetFields: signalSetFields,
+          schema: federation.SCHEMA.attributes,
+          enumLabels: enumLabels,
+          defaultSubjectPolicy: federation.DEFAULT_SUBJECT_POLICY,
+          subjectPolicy: federation.subjectPolicyOf(record),
+          encrypts: federation.encrypts(record),
+          paths: federation.PATHS, base: base, loginHref: login,
+          metadataUrl: metadata,
+          signOut: row.role === 'service-provider' ? signOut : {}
       });
       }())
     };
