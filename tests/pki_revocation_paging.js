@@ -24,9 +24,7 @@
 //      can shorten a list below five, never lengthen it past five
 //      (2026-09-30).
 //   D. The pane draws the page's rows, a pager and a search box per list,
-//      and every Revoke form carries `back` and the list it is in;
-//      `pkiReturnTo()` sends the reader back to that list's search box, and
-//      only to a name this file writes.
+//      and every Revoke form carries `back` and the list it is in.
 //   E. Each list's search narrows it before it is paged, on a parameter of
 //      its own, and leaves the other lists alone (2026-09-30).
 //
@@ -271,16 +269,8 @@ async function run(t) {
   t.check(/name="list" value="ca-default-jose-issuedq"/.test(html) &&
           /name="back" value="\?[^"]*ca-default-jose-issuedPage=2/.test(html),
           'every form carries the list it is in and the page it is on');
-  t.equal(admin.pkiReturnTo({ back: '?ca-default-jose-issuedPage=2',
-                              list: 'ca-default-jose-issuedq' }),
-          '/admin/pki?ca-default-jose-issuedPage=2' +
-          '#find-ca-default-jose-issuedq',
-          'a revoke goes back to that page of that list, at its search box, ' +
-          'which is drawn however short the list is');
-  t.equal(admin.pkiReturnTo({ back: '?ca-default-jose-issuedPage=2',
-                              list: 'https://evil.example/' }),
-          '/admin/pki?ca-default-jose-issuedPage=2#pki-applications',
-          'and a list name this file does not write is not echoed');
+  // Where a revoke sent the browser back to went with the server-rendered
+  // console (#446): the static console stays on the page it was on.
 
   t.log.info('=== E. each list searched before it is paged ===');
   const searched = admin['revocationModel'](

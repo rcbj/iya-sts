@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4066** of them, in **41** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4064** of them, in **41** subsystems.
 
 ## Where a code appears
 
@@ -4030,8 +4030,8 @@ Raised from: admin-ui/ (except pki_admin.js), admin-core/.
 
 | Code | What failed | Client sees |
 |---|---|---|
-| `STS-ADMIN-0001` | The admin console could not start a sign-in: its OIDC client entry (sts-admin-console) is missing, or declares a client secret method and has no secret. | HTTP 503 temporarily_unavailable (JSON) or a 503 page |
-| `STS-ADMIN-0002` | The admin console could not start a sign-in in product mode because the address it was reached at is not a registered redirect URI of sts-admin-console. | HTTP 503 temporarily_unavailable (JSON) or a 503 page |
+| `STS-ADMIN-0001` *(retired)* | The admin console could not start a sign-in: its OIDC client entry (sts-admin-console) is missing, or declares a client secret method and has no secret. | HTTP 503 temporarily_unavailable (JSON) or a 503 page |
+| `STS-ADMIN-0002` *(retired)* | The admin console could not start a sign-in in product mode because the address it was reached at is not a registered redirect URI of sts-admin-console. | HTTP 503 temporarily_unavailable (JSON) or a 503 page |
 | `STS-ADMIN-0003` *(retired)* | A console request that cannot be redirected to sign in (a JSON caller, or a form POST) carried no console session. | HTTP 401 login_required |
 | `STS-ADMIN-0004` *(retired)* | A console sign-out was refused because the form did not carry this session's CSRF token. | HTTP 403 csrf |
 | `STS-ADMIN-0005` | A console write (a non-GET request) was refused because it did not carry this session's CSRF token. | HTTP 403 csrf |

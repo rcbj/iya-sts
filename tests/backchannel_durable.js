@@ -965,11 +965,14 @@ function childMain() {
          searched.backchannelDeliveries[0].id === 'from-node-b',
          'K3. deliveryq narrows by client', searched.backchannelDeliveries
            .length);
-    const consoleView = require(ROOT + '/admin-ui/admin').logoutView({
-      query: { deliveryState: 'dead' }, headers: {}, cookies: {} });
-    note(/Back-channel Logout Tokens/.test(consoleView.inner) &&
-         /dead letter/.test(consoleView.inner),
-         'K4. /admin/logout draws the same list', String(consoleView.inner)
+    // THE PAGE AS THE STATIC CONSOLE DRAWS IT (#446): GET /admin-api/logout
+    // drawn by its renderer, where it was the console's own view until the
+    // cutover.
+    const consoleView = await require(ROOT + '/tests/tools/console_page.js')
+      .consolePage(ROOT).draw('/admin/logout', { deliveryState: 'dead' });
+    note(/Back-channel Logout Tokens/.test(consoleView.html) &&
+         /dead letter/.test(consoleView.html),
+         'K4. /admin/logout draws the same list', String(consoleView.html)
            .slice(0, 120));
 
     held.forEach(function (res) {

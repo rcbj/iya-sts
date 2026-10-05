@@ -14,8 +14,9 @@
 // renderer (`admin-ui/web_pages.ts`) in the browser. So this does exactly
 // that in node — the operation's handler is called directly, past the API's
 // token gate (an in-process test asks the service itself, as the route
-// handler did past the console's gate), and the answer is drawn with
-// `WebPages.render()` as a reader holding Admin Write sees it.
+// handler did past the console's gate), as a service administrator holding
+// both roles, and the answer is drawn with `WebPages.render()` as a reader
+// holding Admin Write sees it.
 //
 // `draw(path, query)` answers `{ status, json, html }`: `json` is the
 // operation's answer — what `?format=json` used to be — and `html` the page's
@@ -65,6 +66,11 @@ function consolePage(root) {
         params: params, protocol: 'https', secure: true,
         hostname: 'sts.example', path: operation, url: operation,
         originalUrl: operation, socket: { encrypted: true }, connection: {},
+        // THE CALLER THE API'S GATE WOULD HAVE SET: a service administrator
+        // holding both roles, so a view decides its scope and what it may
+        // offer as it does for the console's token (`apiGateStateOf()`).
+        adminApiCaller: { name: 'console-page', realm: 'default',
+                          roles: ['ADMIN_READ', 'ADMIN_WRITE'] },
         get: function (name) {
           return headers[String(name).toLowerCase()];
         }

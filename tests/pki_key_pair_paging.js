@@ -245,29 +245,9 @@ async function runBody(t) {
   t.equal(clamped.issuedPaging.page, clamped.issuedPaging.pages,
           'a page past the end is the last page, not an empty table');
 
-  // -------------------------------------------------------------------------
-  t.log.info('=== 3. where a Take-off button sends the browser ===');
-  t.equal(pkiAdmin.returnTo({ action: 'revoke', target: 'person',
-                              identifier: PEOPLE[0],
-                              back: '?per=2&personsPage=3&issuedPage=2' }),
-          '/admin/pki?per=2&issuedPage=2&personsPage=3#pki-people',
-          'a person\'s Take-off lands on the same pages, at the People table');
-  t.equal(pkiAdmin.returnTo({ action: 'revoke', identifier: APPS[0],
-                              back: '?issuedPage=4' }),
-          '/admin/pki?issuedPage=4#pki-applications',
-          'an application\'s lands at the Applications table');
-  t.equal(pkiAdmin.returnTo({ action: 'revoke', identifier: APPS[0],
-                              back: '?next=//evil.example&per=x&' +
-                                    'issuedPage=2%0d%0aSet-Cookie:a' }),
-          '/admin/pki#pki-applications',
-          'anything in `back` that is not a page number is dropped — the ' +
-          'destination is rebuilt, never echoed');
-  t.equal(pkiAdmin.returnTo({ action: 'revoke', identifier: APPS[0],
-                              back: '?issuedq=pkp&issuedPage=2' }),
-          '/admin/pki?issuedPage=2&issuedq=pkp#pki-applications',
-          'a search in `back` survives the round trip');
-  t.equal(pkiAdmin.returnTo({ action: 'build' }), '/admin/pki',
-          'a control that carries no `back` gets the bare page, as before');
+  // 3. WHERE A TAKE-OFF BUTTON SENT THE BROWSER went with the server-rendered
+  // console (#446): the static console sends the form to its operation and
+  // stays on the page it was on, so there is no destination to rebuild.
 
   // -------------------------------------------------------------------------
   t.log.info('=== 4. each table searched before it is paged ===');

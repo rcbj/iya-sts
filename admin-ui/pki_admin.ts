@@ -365,19 +365,6 @@ class PkiAdmin {
     };
   }
 
-  // The action names this page's form can post, for the management API.
-  /**
-   * Answers the action names the page's form can post, for the management API.
-   *
-   * @returns a copy of the action list
-   */
-  pkiActionNames() {
-    const { log } = this.deps;
-    log.debug("Entering PkiAdmin.pkiActionNames().");
-    log.debug("Leaving PkiAdmin.pkiActionNames().");
-    return PKI_ACTIONS.slice();
-  }
-
   // RFC 4517 GeneralizedTime, which is how every timestamp in this directory is
   // spelled. Written here rather than imported because `applications.js` keeps
   // its copy private and `helpers.js` has none — three lines, and a fourth
@@ -396,33 +383,6 @@ class PkiAdmin {
     return d.getUTCFullYear() + pad(d.getUTCMonth() + 1) + pad(d.getUTCDate()) +
            pad(d.getUTCHours()) + pad(d.getUTCMinutes()) +
            pad(d.getUTCSeconds()) + 'Z';
-  }
-
-  // The same thing out of a Take-off button's `back` field, which is a query
-  // string a browser sent rather than one this page is looking at. REBUILT and
-  // never echoed, for `listViewFromBack()`'s reason in `admin.js`: it ends up
-  // in a `Location` header, and the worst a hand-written one can reach is
-  // another page of these two tables.
-  private keyPairListViewFromBack(raw: Json) {
-    const { log } = this.deps;
-    const self = this;
-    log.debug("Entering PkiAdmin.keyPairListViewFromBack().");
-    const query = {};
-    try {
-      new URLSearchParams(String(raw || '').replace(/^\?/, ''))
-        .forEach(function (value, key) {
-          if (!Object.prototype.hasOwnProperty.call(query, key)) {
-            query[key] = value;
-          }
-        });
-    } catch (e) {
-      // Unparseable: the first page of each table, which is what a form
-      // carrying no `back` at all gets too.
-      log.debug("Caught in PkiAdmin.keyPairListViewFromBack(): " +
-                ((e && e.message) || e));
-    }
-    log.debug("Leaving PkiAdmin.keyPairListViewFromBack().");
-    return PkiPage.keyPairListView(query);
   }
 
   // Both tables' slices and paging, from one query. Called by `pkiJson()` for
@@ -2503,42 +2463,6 @@ class PkiAdmin {
   // ===========================================================================
 
   // ---------------------------------------------------------------------------
-  // WHICH BUTTON WAS PRESSED. Read FIRST, before `action`, because the Issue
-  // button is the unnamed one behind the hidden `action=issue-certificate` and
-  // every other button carries a name of its own (see the pane's header for
-  // what two buttons sharing `action` cost `/admin/users/new`).
-  //
-  // `/admin-api` never goes through this: a caller there names the action and
-  // the object outright, which is why the action names below are words rather
-  // than button labels.
-  // ---------------------------------------------------------------------------
-  private paneActionFrom(body: Json) {
-    const { log } = this.deps;
-    log.debug('Entering PkiAdmin.paneActionFrom().');
-    const pressed = function (name) {
-      log.debug("Entering pressed().");
-      log.debug("Leaving pressed().");
-      return body[name] !== undefined && body[name] !== '';
-    };
-    let out: Json = { action: 'issue-certificate' };
-    if (pressed('defaults')) {
-      out = { action: 'apply-profile' };
-    } else if (pressed('generate')) {
-      out = { action: 'generate-keys' };
-    } else if (pressed('generatealt')) {
-      out = { action: 'generate-alt-keys' };
-    } else if (pressed('use')) {
-      out = { action: 'use-key', objectId: String(body.use) };
-    } else if (pressed('remove')) {
-      out = { action: 'remove-object', objectId: String(body.remove) };
-    } else if (pressed('clearstore')) {
-      out = { action: 'clear-store' };
-    }
-    log.debug('Leaving PkiAdmin.paneActionFrom(). ' + out.action);
-    return out;
-  }
-
-  // ---------------------------------------------------------------------------
   // THE PAGE, DRAWN WITH A DRAFT.
   //
   // It is a function rather than the body of the GET handler because the pane's
@@ -2778,81 +2702,6 @@ class PkiAdmin {
     return 'ca-' + clean(scopeSegment) + '-' + clean(caId);
   }
 
-  // DRAWN BY `web_pki.ts` (#446): this page is converted for the static
-  // console, and its renderer is a module a browser can load. Until the
-  // cutover this process still draws it, handing the renderer the view passed
-  // THROUGH JSON, so it is held to what the API's caller receives.
-  private body(req: Json, json: Json) {
-    const { log, admin } = this.deps;
-    log.debug("Entering PkiAdmin.body().");
-    const drawn = PkiPage.render(JSON.parse(JSON.stringify(json)),
-      admin.renderContext(req));
-    log.debug("Leaving PkiAdmin.body().");
-    return drawn;
-  }
-
-  // ---------------------------------------------------------------------------
-  // WHERE A PKI ACTION GOES BACK TO (2026-09-13). The key-pair controls are
-  // drawn on an application's own page as well as here — moving a FORM is not
-  // moving an ACTION, which is `/admin/delegation`'s arrangement with the grant
-  // form — so a form posted from there names `from` and goes back there. `from`
-  // is a NAME checked against the one page that sends it, never a URL, and the
-  // destination is REBUILT from `identifier` by the console, for
-  // `permissionsReturnTo()`'s reason: a redirect target taken out of a request
-  // body is an open redirect.
-  // ---------------------------------------------------------------------------
-  /**
-   * Answers where a PKI action goes back to: the application's or person's own
-   * page when the form was posted from there, otherwise `/admin/pki`, rebuilt
-   * from the body rather than taken from it.
-   *
-   * @param body - the posted body: `from`, `identifier` and paging
-   * @returns the path to redirect to
-   */
-  pkiReturnTo(body: Json) {
-    const { log, adminViews, admin } = this.deps;
-    const self = this;
-    log.debug("Entering PkiAdmin.pkiReturnTo().");
-    const identifier = String((body && body.identifier) || '').trim();
-    if (String((body && body.from) || '') === '/admin/applications' &&
-        identifier && typeof admin.applicationReturnTo === 'function') {
-      log.debug("Leaving PkiAdmin.pkiReturnTo(). The application page.");
-      return admin.applicationReturnTo(body, identifier, '#credentials');
-    }
-    // AND A PERSON'S OWN PAGE (2026-09-13), whose Credentials section draws the
-    // same controls. The same rule: a name, and a destination rebuilt.
-    if (String((body && body.from) || '') === '/admin/users' &&
-        identifier && typeof admin.userReturnTo === 'function') {
-      log.debug("Leaving PkiAdmin.pkiReturnTo(). The person's page.");
-      return admin.userReturnTo(body, identifier, '#credentials');
-    }
-    // A TAKE-OFF BUTTON IN ONE OF THIS PAGE'S TWO PAGED TABLES (2026-09-13),
-    // or a Revoke / Release button in an authority's list (#370), which
-    // carries `back` so the reader lands on the page of the table they
-    // pressed it in rather than on page 1 of every table, several screens
-    // above it. Only those buttons carry the field; every other control here
-    // posts without it and gets the bare page, as before.
-    if (body && Object.prototype.hasOwnProperty.call(body, 'back')) {
-      log.debug("Leaving PkiAdmin.pkiReturnTo(). This page, at a key-pair " +
-                "table.");
-      // A Revoke or Release button in an authority's list (#370) names that
-      // list, and goes back to it — the name only when it is one this file
-      // writes, since it ends up in a `Location` header. It lands on the
-      // list's search box, `find-<its search parameter>`, which is drawn
-      // whether or not the list runs to a second page; the pager's own
-      // anchor is not, and until 2026-09-30 a return into a one-page list
-      // named an element that did not exist and landed at the top.
-      const list = String(body.list || '');
-      return '/admin/pki' +
-             adminViews.queryWith(self.keyPairListViewFromBack(body.back), {}) +
-             (REVOCATION_LIST_PARAM.test(list) ? '#find-' + list
-               : String(body.target || '') === 'person' ? '#pki-people'
-                                                         : '#pki-applications');
-    }
-    log.debug("Leaving PkiAdmin.pkiReturnTo(). This page.");
-    return '/admin/pki';
-  }
-
   /**
    * Registers `/admin/pki`, its actions, the certificate view and export, and a
    * person's key-pair actions.
@@ -2919,7 +2768,6 @@ export = {
   pkiView: slot.forward('pkiJson'),
   pkiAction: slot.forward('pkiAction'),
   workbenchOf: slot.forward('workbenchOf'),
-  pkiActionNames: slot.forward('pkiActionNames'),
   // For `tests/pki_authoring.js` ONLY, and it is worth saying why a renderer
   // is exported at all. The pane's field table is declared in
   // `common/pki_authoring.ts` and DRAWN here, and the two going out of step is
@@ -2929,10 +2777,5 @@ export = {
   // an error anywhere. So the test renders the pane and compares the two
   // lists, which it cannot do without this.
   // The renderer's since #446 (`web_pki.ts`).
-  paneHtml: PkiPage.certificatePane.bind(PkiPage),
-  // For `tests/pki_key_pair_paging.js` ONLY. Where a Take-off button in one of
-  // the two paged tables sends the browser is a `Location` header built out
-  // of a request body, so the test holds the rebuild — the page kept, anything
-  // else dropped — rather than trusting that a redirect nobody reads is right.
-  returnTo: slot.forward('pkiReturnTo')
+  paneHtml: PkiPage.certificatePane.bind(PkiPage)
 };

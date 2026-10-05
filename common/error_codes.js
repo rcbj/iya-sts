@@ -17249,12 +17249,14 @@ const CODES = [
     summary: 'The admin console could not start a sign-in: its OIDC client ' +
       'entry (sts-admin-console) is missing, or declares a client secret ' +
       'method and has no secret.',
-    spec: 'HTTP 503 temporarily_unavailable (JSON) or a 503 page' },
+    spec: 'HTTP 503 temporarily_unavailable (JSON) or a 503 page',
+    retired: true },
   { code: 'STS-ADMIN-0002',
     summary: 'The admin console could not start a sign-in in product mode ' +
       'because the address it was reached at is not a registered ' +
       'redirect URI of sts-admin-console.',
-    spec: 'HTTP 503 temporarily_unavailable (JSON) or a 503 page' },
+    spec: 'HTTP 503 temporarily_unavailable (JSON) or a 503 page',
+    retired: true },
   { code: 'STS-ADMIN-0003',
     summary: 'A console request that cannot be redirected to sign in (a JSON ' +
       'caller, or a form POST) carried no console session.',

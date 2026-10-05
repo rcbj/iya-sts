@@ -9,8 +9,8 @@
 // EVERY PROTOCOLS PAGE LISTS THE ENDPOINTS OF THE REALM IT IS READ IN.
 //
 // `admin-core/protocol_endpoints.ts` is a table from console page to route, and
-// `admin.respond()` and the management API's `sendJson()` add what it computes
-// to a page and to the operation mirroring it. Three things about that can go
+// the management API's `sendJson()` adds what it computes to the operation
+// mirroring a page, which the static console draws (#446). Three things about that can go
 // wrong with nothing on any page looking broken, and each is a check here:
 //
 //   A. A Protocols page with no row — added to `SECTIONS` tomorrow — gets no
@@ -63,25 +63,6 @@ function childMain() {
                return String(name).toLowerCase() === 'host' ?
                       'endpoints.test' : undefined;
              } };
-  }
-  function fakeRes() {
-    const res = { headers: {}, body: null, statusCode: 200, locals: {} };
-    res.set = function (k, v) {
-      res.headers[k] = v;
-      return res;
-    };
-    res.status = function (code) {
-      res.statusCode = code;
-      return res;
-    };
-    res.type = function () {
-      return res;
-    };
-    res.send = function (body) {
-      res.body = body;
-      return res;
-    };
-    return res;
   }
   function fetchJson(port, urlPath) {
     return new Promise(function (resolve, reject) {
@@ -240,55 +221,11 @@ function childMain() {
         return row.url;
       }).join(', '));
 
-      // --- D. respond() adds the member only for the page itself ------------
-      const res = fakeRes();
-      admin.respond(fakeReq('/admin/saml2', { format: 'json' }), res,
-                    { page: '/admin/saml2' }, 'SAML 2.0', '/admin/saml2', '');
-      const answered = JSON.parse(res.body);
-      note(Array.isArray(answered.protocolEndpoints) &&
-           answered.protocolEndpoints.length > 0 &&
-           answered.protocolEndpoints[0].url.indexOf(prefix) === 0,
-           'the console\'s JSON for a Protocols page carries ' +
-           'protocolEndpoints, in the realm it was read in',
-           (answered.protocolEndpoints || []).length + ' row(s)');
-      const other = fakeRes();
-      admin.respond(fakeReq('/admin/kerberos/keytab', { format: 'json' }),
-                    other, { page: 'keytab' }, 'Kerberos keytab',
-                    '/admin/kerberos/principals', '');
-      note(!('protocolEndpoints' in JSON.parse(other.body)),
-           'and not for a page drawn under that page\'s tab with a path of ' +
-           'its own');
-
-      // --- D2. A Copy button beside every endpoint, and the one script ---
-      // (2026-10-01): drawn hidden, revealed by /admin/copy.js, which the
-      // page is served script-src 'self' for — frame-ancestors and
-      // base-uri kept — and only a page that draws a button.
-      const drawn = fakeRes();
-      admin.respond(fakeReq('/admin/saml2'), drawn, { page: '/admin/saml2' },
-                    'SAML 2.0', '/admin/saml2', '<h2>Its settings</h2>');
-      const html = String(drawn.body || '');
-      const csp = String(drawn.headers['Content-Security-Policy'] || '');
-      const buttons = html.split('class="copybtn" hidden data-copy="')
-        .length - 1;
-      note(buttons === answered.protocolEndpoints.length &&
-           html.split('<script').length - 1 === 1 &&
-           html.indexOf('<script src="/admin/copy.js" defer></script>') >= 0,
-           'D2a. the Endpoints section draws a hidden Copy button per ' +
-           'endpoint and the page carries exactly one script, ' +
-           '/admin/copy.js', buttons + ' button(s) for ' +
-           answered.protocolEndpoints.length + ' endpoint(s)');
-      note(/script-src 'self'/.test(csp) && !/unsafe-inline/.test(
-             csp.replace(/style-src[^;]*/, '')) &&
-           /frame-ancestors 'none'/.test(csp) && /base-uri 'none'/.test(csp),
-           'D2b. that page is served script-src \'self\', never ' +
-           'unsafe-inline, with frame-ancestors and base-uri kept', csp);
-      const plain = fakeRes();
-      admin.respond(fakeReq('/admin/users'), plain, { page: '/admin/users' },
-                    'Users', '/admin/users', '<h2>People</h2>');
-      note(plain.headers['Content-Security-Policy'] === undefined &&
-           String(plain.body || '').indexOf('<script') < 0,
-           'D2c. a page with no Copy button gets no script and no relaxed ' +
-           'policy');
+      // D AND D2 WENT WITH THE SERVER-DRAWN CONSOLE (#446): `respond()`
+      // added `protocolEndpoints` to a page's JSON and drew its Copy
+      // buttons with `/admin/copy.js`. The operation adds the member now
+      // (section E) and the console's renderer draws the buttons, which its
+      // runtime wires (section F).
     });
 
     // --- E. the management API's mirror answers the same --------------------
@@ -313,6 +250,29 @@ function childMain() {
          !('protocolEndpoints' in plain.json),
          'and an operation mirroring a page outside Protocols does not',
          'status ' + plain.status);
+
+    // --- F. the document the console is in ---------------------------------
+    // The Endpoints section and its Copy buttons were drawn by the console's
+    // server-side `endpointsSection()` through `respond()`, which went with
+    // the server-rendered console (#446). No `web_` renderer draws
+    // `protocolEndpoints` yet, so the static console does not show that
+    // section: OPEN, recorded on #446. Until it does, what is held here is
+    // the document the console's one script is served in.
+    const shell = await new Promise(function (resolve, reject) {
+      http.get({ host: '127.0.0.1', port: port, path: '/admin/saml2' },
+        function (r) {
+          r.resume();
+          r.on('end', function () {
+            resolve(r);
+          });
+        }).on('error', reject);
+    });
+    const csp = String(shell.headers['content-security-policy'] || '');
+    note(shell.statusCode === 200 && /script-src 'self'/.test(csp) &&
+         !/unsafe-inline/.test(csp.replace(/style-src[^;]*/, '')) &&
+         /frame-ancestors 'none'/.test(csp) && /base-uri 'none'/.test(csp),
+         'F1. the console\'s document is served script-src \'self\', never ' +
+         'unsafe-inline, with frame-ancestors and base-uri kept', csp);
     server.close();
 
     fs.writeFileSync(OUT, JSON.stringify(findings));

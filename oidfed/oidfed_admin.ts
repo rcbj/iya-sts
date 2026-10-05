@@ -23,8 +23,6 @@ import errorCodes = require('../common/error_codes');
 import admin = require('../admin-ui/admin');
 import InstanceSlot = require('../common/instance_slot');
 import oidfed = require('./oidfed');
-// The page's renderer (#446): a `web_` module, loadable in a browser.
-import OidfedPage = require('./web_oidfed');
 
 type Json = any;
 
@@ -122,32 +120,6 @@ class OidfedAdmin {
     view.settings = admin.configSettingsJson('/admin/oidfed');
     log.debug("Leaving OidfedAdmin.oidfedView().");
     return view;
-  }
-
-  async draw(req: Json, res: Json, extraTop: string,
-             resolution: Json): Promise<void> {
-    const { log, admin } = this.deps;
-    log.debug("Entering OidfedAdmin.draw().");
-    const json = await this.oidfedView(req);
-    // A RESOLUTION just made is shown under the form that made it: the
-    // action's answer, beside the view rather than in it.
-    const inner = (extraTop || '') +
-      (typeof admin.messagesOf === 'function' ? admin.messagesOf(req) : '') +
-      this.body(Object.assign({ resolution: resolution }, json));
-    admin.respond(req, res, json, 'OpenID Federation', '/admin/oidfed', inner);
-    log.debug("Leaving OidfedAdmin.draw().");
-  }
-
-  // DRAWN BY `web_oidfed.ts` (#446): this page is converted for the static
-  // console, and its renderer is a module a browser can load. Until the
-  // cutover this process still draws it, handing the renderer the view passed
-  // THROUGH JSON, so it is held to what the API's caller receives.
-  body(json: Json): string {
-    const { log } = this.deps;
-    log.debug("Entering OidfedAdmin.body().");
-    const drawn = OidfedPage.render(JSON.parse(JSON.stringify(json)));
-    log.debug("Leaving OidfedAdmin.body().");
-    return drawn;
   }
 
   /**

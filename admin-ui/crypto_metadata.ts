@@ -297,8 +297,6 @@ import stsKeystore = require('../common/keystore');
 // same module as `pki` above, under the name the key-pair code reads it by.
 import stsPki = require('../common/pki');
 import InstanceSlot = require('../common/instance_slot');
-// The page's renderer (#446): a `web_` module, loadable in a browser.
-import CryptoMetadataPage = require('./web_crypto_metadata');
 
 // ---------------------------------------------------------------------------
 // THE HIGHER-LEVEL STANDARDS — the envelopes the primitives above travel in.
@@ -4168,19 +4166,6 @@ class CryptoMetadata {
                answer.runId + '. It runs on the scheduler\'s leader at its ' +
                'next tick.'
     };
-  }
-
-  // DRAWN BY `web_crypto_metadata.ts` (#446): this page is converted for the
-  // static console, and its renderer is a module a browser can load. Until the
-  // cutover this process still draws it, handing the renderer the view passed
-  // THROUGH JSON, so it is held to what the API's caller receives.
-  cryptoBody(req, json) {
-    const { log, admin } = this.deps;
-    log.debug("Entering CryptoMetadata.cryptoBody().");
-    const drawn = CryptoMetadataPage.render(JSON.parse(JSON.stringify(json)),
-      admin.renderContext(req));
-    log.debug("Leaving CryptoMetadata.cryptoBody().");
-    return drawn;
   }
 
   /**

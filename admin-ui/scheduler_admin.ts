@@ -335,19 +335,6 @@ class SchedulerAdmin {
           errors: [answer.why] };
   }
 
-  // DRAWN BY `web_scheduler.ts` (#446): this page is converted for the static
-  // console, and its renderer is a module a browser can load. Until the
-  // cutover this process still draws it, handing the renderer the view passed
-  // THROUGH JSON, so it is held to what the API's caller receives.
-  private body(req: Req, json: Json): string {
-    const { log, admin } = this.deps;
-    log.debug("Entering SchedulerAdmin.body().");
-    const drawn = SchedulerPage.render(JSON.parse(JSON.stringify(json)),
-      admin.renderContext(req));
-    log.debug("Leaving SchedulerAdmin.body().");
-    return drawn;
-  }
-
   /**
    * Registers `GET /admin/scheduler` and its actions.
    *

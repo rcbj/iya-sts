@@ -65,8 +65,6 @@ import InstanceSlot = require('../common/instance_slot');
 import errorCodes = require('../common/error_codes');
 import admin = require('../admin-ui/admin');
 import consoleModel = require('./oauth2_monitor_console');
-// The page's renderer (#446): a `web_` module, loadable in a browser.
-import OAuth2MonitorPage = require('./web_oauth2_monitor');
 
 type Req = any;
 type Res = any;
@@ -125,44 +123,6 @@ class OAuth2MonitorAdmin {
     };
   }
 
-  // The notice or error a redirect brought back. `admin.js` has one of these
-  // and does not export it; this is the same two lines, escaped the same way.
-  private messagesOf(req: Req) {
-    const { log, esc } = this.deps;
-    log.debug("Entering OAuth2MonitorAdmin.messagesOf().");
-    const notice = String(req.query.notice || '').slice(0, 500);
-    const error = String(req.query.error || '').slice(0, 500);
-    log.debug("Leaving OAuth2MonitorAdmin.messagesOf().");
-    return (notice ? '<div class="ok">' + esc(notice) + '</div>' : '') +
-           (error ? '<div class="err">' + esc(error) + '</div>' : '');
-  }
-
-  // The same, out of a form's `back` field.
-  private listViewFromBack(raw: Json) {
-    const { log } = this.deps;
-    const self = this;
-    log.debug("Entering OAuth2MonitorAdmin.listViewFromBack().");
-    let params = null;
-    try {
-      params = new URLSearchParams(String(raw || '').replace(/^\?/, ''));
-    } catch (e) {
-      // Unparseable: the bare page is the right answer, and is what a form
-      // carrying no `back` at all gets anyway.
-      log.debug("Caught in OAuth2MonitorAdmin.listViewFromBack(): " +
-                ((e && e.message) || e));
-      log.debug("Leaving OAuth2MonitorAdmin.listViewFromBack(). Unparseable.");
-      return {};
-    }
-    const query = {};
-    params.forEach(function (value, key) {
-      if (!Object.prototype.hasOwnProperty.call(query, key)) {
-        query[key] = value;
-      }
-    });
-    log.debug("Leaving OAuth2MonitorAdmin.listViewFromBack().");
-    return OAuth2MonitorPage.listViewOf(query);
-  }
-
   private queryRefused(req: Req, res: Res) {
     const { log, errorCodes, consoleModel } = this.deps;
     log.debug("Entering OAuth2MonitorAdmin.queryRefused().");
@@ -178,19 +138,6 @@ class OAuth2MonitorAdmin {
     }
     log.debug("Leaving OAuth2MonitorAdmin.queryRefused().");
     return false;
-  }
-
-  // DRAWN BY `web_oauth2_monitor.ts` (#446): this page is converted for the
-  // static console, and its renderer is a module a browser can load. Until the
-  // cutover this process still draws it, handing the renderer the view passed
-  // THROUGH JSON, so it is held to what the API's caller receives.
-  private body(req: Req, json: Json) {
-    const { log, admin } = this.deps;
-    log.debug("Entering OAuth2MonitorAdmin.body().");
-    const drawn = OAuth2MonitorPage.render(JSON.parse(JSON.stringify(json)),
-      admin.renderContext(req));
-    log.debug("Leaving OAuth2MonitorAdmin.body().");
-    return drawn;
   }
 
   /**

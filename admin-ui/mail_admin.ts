@@ -39,10 +39,6 @@ import errorCodes = require('../common/error_codes');
 import InstanceSlot = require('../common/instance_slot');
 import mail = require('../common/mail');
 import mailUses = require('../common/mail_uses');
-// The page's renderer (#446): a `web_` module, loadable in a browser.
-import MailOutboxPage = require('./web_mail_outbox');
-// The page's renderer (#446): a `web_` module, loadable in a browser.
-import MailPage = require('./web_mail');
 
 type Req = import('express').Request;
 type Res = import('express').Response;
@@ -331,32 +327,6 @@ class MailAdmin {
     }
     log.debug("Leaving MailAdmin.outboxAction().");
     return mail.retry(id, actor || 'the management API');
-  }
-
-  // DRAWN BY `web_mail.ts` (#446): this page is converted for the static
-  // console, and its renderer is a module a browser can load. Until the
-  // cutover this process still draws it, handing the renderer the view passed
-  // THROUGH JSON, so it is held to what the API's caller receives.
-  private settingsBody(req: Req, json: Json): string {
-    const { log, admin } = this.deps;
-    log.debug("Entering MailAdmin.settingsBody().");
-    const drawn = MailPage.render(JSON.parse(JSON.stringify(json)),
-      admin.renderContext(req));
-    log.debug("Leaving MailAdmin.settingsBody().");
-    return drawn;
-  }
-
-  // DRAWN BY `web_mail_outbox.ts` (#446): this page is converted for the
-  // static console, and its renderer is a module a browser can load. Until the
-  // cutover this process still draws it, handing the renderer the view passed
-  // THROUGH JSON, so it is held to what the API's caller receives.
-  private outboxBody(req: Req, json: Json): string {
-    const { log, admin } = this.deps;
-    log.debug("Entering MailAdmin.outboxBody().");
-    const drawn = MailOutboxPage.render(JSON.parse(JSON.stringify(json)),
-      admin.renderContext(req));
-    log.debug("Leaving MailAdmin.outboxBody().");
-    return drawn;
   }
 
   registerRoutes(app: { get: Function; post: Function }): void {

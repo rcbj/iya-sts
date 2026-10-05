@@ -43,8 +43,6 @@ import helpers = require('../common/helpers');
 import errorCodes = require('../common/error_codes');
 import InstanceSlot = require('../common/instance_slot');
 import vcStatus = require('../oid4vc/vc_status');
-// The page's renderer (#446): a `web_` module, loadable in a browser.
-import VcStatusPage = require('./web_vc_status');
 
 type Req = any;
 type Res = any;
@@ -193,19 +191,6 @@ class VcStatusAdmin {
              message: 'Status-list index ' + idx + ' is now ' +
                       vcStatus.STATUS_NAMES[wanted] + '. Verifiers see it ' +
                       'when they next fetch the list.' };
-  }
-
-  // DRAWN BY `web_vc_status.ts` (#446): this page is converted for the static
-  // console, and its renderer is a module a browser can load. Until the
-  // cutover this process still draws it, handing the renderer the view passed
-  // THROUGH JSON, so it is held to what the API's caller receives.
-  private html(req: Req, json: Json): string {
-    const { log, admin } = this.deps;
-    log.debug("Entering VcStatusAdmin.html().");
-    const drawn = VcStatusPage.render(JSON.parse(JSON.stringify(json)),
-      admin.renderContext(req));
-    log.debug("Leaving VcStatusAdmin.html().");
-    return drawn;
   }
 
   /**

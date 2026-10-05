@@ -62,8 +62,6 @@ import riskStore = require('../risk/risk_store');
 import riskUpload = require('../risk/risk_upload');
 import websecurity = require('../common/websecurity');
 import adminScope = require('./admin_scope');
-// The page's renderer (#446): a `web_` module, loadable in a browser.
-import RiskPage = require('./web_risk');
 
 type Req = any;
 type Res = any;
@@ -469,19 +467,6 @@ class RiskAdmin {
   }
 
   // ===== THE PAGE ==========================================================
-
-  // DRAWN BY `web_risk.ts` (#446): this page is converted for the static
-  // console, and its renderer is a module a browser can load. Until the
-  // cutover this process still draws it, handing the renderer the view passed
-  // THROUGH JSON, so it is held to what the API's caller receives.
-  private html(req: Req, view: Json): string {
-    const { log, admin } = this.deps;
-    log.debug("Entering RiskAdmin.html().");
-    const drawn = RiskPage.render(JSON.parse(JSON.stringify(view)),
-      admin.renderContext(req));
-    log.debug("Leaving RiskAdmin.html().");
-    return drawn;
-  }
 
   // Whether the request is a realm administrator's (#32): theirs is the
   // realm-only view. The console's session and the management API's token

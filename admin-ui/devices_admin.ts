@@ -58,8 +58,6 @@ import mode = require('../common/mode');
 import oauth2 = require('../oauth-oidc/oauth2');
 // The SPKI thumbprint of a certificate an MDM names a device by (#164).
 import stsCrypto = require('../common/crypto');
-// The page's renderer (#446): a `web_` module, loadable in a browser.
-import DevicesPage = require('./web_devices');
 
 type Req = import('express').Request;
 type Res = import('express').Response;
@@ -766,19 +764,6 @@ class DevicesAdmin {
              // legend: the register's list, which a page drawn from this
              // answer cannot ask (#446).
              complianceSources: devices.COMPLIANCE_SOURCES.slice(0) };
-  }
-
-  // DRAWN BY `web_devices.ts` (#446): this page is converted for the static
-  // console, and its renderer is a module a browser can load. Until the
-  // cutover this process still draws it, handing the renderer the view passed
-  // THROUGH JSON, so it is held to what the API's caller receives.
-  private listBody(req: Req, json: Json): string {
-    const { log, admin } = this.deps;
-    log.debug("Entering DevicesAdmin.listBody().");
-    const drawn = DevicesPage.render(JSON.parse(JSON.stringify(json)),
-      admin.renderContext(req));
-    log.debug("Leaving DevicesAdmin.listBody().");
-    return drawn;
   }
 
   // Where a console form goes back to: the device it acted on, or the list

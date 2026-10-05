@@ -83,8 +83,6 @@ import cluster = require('../cluster/cluster');
 // This thread's identity (#364): a request worker is a thread of this
 // process, so the pid alone no longer tells two of them apart.
 import WorkerChannel = require('../common/worker_channel');
-// The page's renderer (#446): a `web_` module, loadable in a browser.
-import CachesPage = require('./web_caches');
 
 type Req = any;
 type Res = any;
@@ -449,19 +447,6 @@ class CachesAdmin {
     log.debug("Entering CachesAdmin.cachesView().");
     log.debug("Leaving CachesAdmin.cachesView().");
     return this.publicJson(this.cachesJson(query));
-  }
-
-  // DRAWN BY `web_caches.ts` (#446): this page is converted for the static
-  // console, and its renderer is a module a browser can load. Until the
-  // cutover this process still draws it, handing the renderer the view passed
-  // THROUGH JSON, so it is held to what the API's caller receives.
-  private body(req: Req, json: Json): string {
-    const { log, admin } = this.deps;
-    log.debug("Entering CachesAdmin.body().");
-    const drawn = CachesPage.render(JSON.parse(JSON.stringify(json)),
-      admin.renderContext(req));
-    log.debug("Leaving CachesAdmin.body().");
-    return drawn;
   }
 
   /**

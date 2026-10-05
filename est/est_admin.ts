@@ -53,8 +53,6 @@ import validation = require('../common/validation');
 import admin = require('../admin-ui/admin');
 import consoleModel = require('./est_console');
 import InstanceSlot = require('../common/instance_slot');
-// The page's renderer (#446): a `web_` module, loadable in a browser.
-import EstPage = require('./web_est');
 
 const esc = admin.esc;
 const vz = validation.z;
@@ -148,32 +146,6 @@ class EstAdmin {
     }
     log.debug("Leaving EstAdmin.queryRefused().");
     return false;
-  }
-
-  /**
-   * Draws the console's pending messages for a request.
-   *
-   * @param req - the request
-   * @returns the HTML
-   */
-  messages(req) {
-    const { log, admin } = this.deps;
-    log.debug("Entering EstAdmin.messages().");
-    log.debug("Leaving EstAdmin.messages().");
-    return typeof admin.messagesOf === 'function' ? admin.messagesOf(req) : '';
-  }
-
-  // DRAWN BY `web_est.ts` (#446): this page is converted for the static
-  // console, and its renderer is a module a browser can load. Until the
-  // cutover this process still draws it, handing the renderer the view passed
-  // THROUGH JSON, so it is held to what the API's caller receives.
-  estPageBody(req, json) {
-    const { log, admin } = this.deps;
-    log.debug("Entering EstAdmin.estPageBody().");
-    const drawn = EstPage.render(JSON.parse(JSON.stringify(json)),
-      admin.renderContext(req));
-    log.debug("Leaving EstAdmin.estPageBody().");
-    return drawn;
   }
 
   // THE ROUTES, registered where they always were: the module exports

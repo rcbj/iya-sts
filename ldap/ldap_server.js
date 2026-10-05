@@ -279,8 +279,6 @@ const proxyProtocol = require('../common/proxy_protocol');
 // (`common/protocol_stack.ts`) loads ./admin BEFORE this module (rule 6), so
 // admin.js must not require this one back — see the note
 // above objectFor().
-// The directory pages' renderer (#446).
-const LdapPage = require('./web_ldap');
 const admin = require('../admin-ui/admin');
 // THE PAGING HELPERS MOVED ON 2026-09-12. `pagedRows()` and `pagingJson()`
 // went to the read layer with the views that use them — they are pure
@@ -16040,11 +16038,8 @@ function ldapServiceView(req) {
     ldapPort: LDAP_PORT, ldapsPort: LDAPS_PORT,
     certificateProvenance: tlsServer.certificateProvenance()
   };
-  // Drawn by `ldap/web_ldap.ts` (#446), from the answer alone.
-  const inner = LdapPage.service(admin.renderContext(req),
-    JSON.parse(JSON.stringify(payload)));
   log.debug('Leaving ldapServiceView().');
-  return { title: 'The directory service', inner: inner, json: payload };
+  return { title: 'The directory service', json: payload };
 }
 
 
@@ -16234,15 +16229,11 @@ function ldapDirectoryView(req) {
     paging: adminViews.pagingJson(paging),
     entries: paged.shown.map(withoutSecrets)
   };
-  // Drawn by `ldap/web_ldap.ts` (#446), from the answer alone.
-  const inner = LdapPage.directory(admin.renderContext(req),
-    JSON.parse(JSON.stringify(payload)));
   log.debug('Leaving ldapDirectoryView(). ' + paged.shown.length +
             ' row(s) of ' +
             filtered.length + ' matched.');
   return {
     title: 'Every entry in the directory',
-    inner: inner,
     json: payload
   };
 }
@@ -19832,13 +19823,9 @@ function ldapSpiffeView(req) {
     }),
     attestedAgents: pagedAgents.shown.map(withoutSecrets)
   };
-  // Drawn by `ldap/web_ldap.ts` (#446), from the answer alone.
-  const inner = LdapPage.spiffe(admin.renderContext(req),
-    JSON.parse(JSON.stringify(payload)));
   log.debug('Leaving ldapSpiffeView(). ' + pagedEntries.shown.length +
             ' entry row(s), ' + pagedAgents.shown.length + ' agent row(s).');
-  return { title: 'SPIFFE entries in the directory', inner: inner,
-           json: payload };
+  return { title: 'SPIFFE entries in the directory', json: payload };
 }
 
 
@@ -19914,12 +19901,9 @@ function ldapApplicationsView(req) {
     // The paging control's own object (#446).
     paging: adminViews.pagingJson(paging)
   };
-  // Drawn by `ldap/web_ldap.ts` (#446), from the answer alone.
-  const inner = LdapPage.applications(admin.renderContext(req),
-    JSON.parse(JSON.stringify(payload)));
   log.debug('Leaving ldapApplicationsView(). ' + paged.shown.length +
             ' row(s) of ' + filtered.length + ' matched.');
-  return { title: 'Application entries', inner: inner, json: payload };
+  return { title: 'Application entries', json: payload };
 }
 
 
@@ -20005,12 +19989,9 @@ function ldapFederationsView(req) {
       return federation.isEnabled(r);
     }).length
   };
-  // Drawn by `ldap/web_ldap.ts` (#446), from the answer alone.
-  const inner = LdapPage.federations(admin.renderContext(req),
-    JSON.parse(JSON.stringify(payload)));
   log.debug('Leaving ldapFederationsView(). ' + paged.shown.length +
             ' row(s) of ' + filtered.length + ' matched.');
-  return { title: 'Federation entries', inner: inner, json: payload };
+  return { title: 'Federation entries', json: payload };
 }
 
 
@@ -20085,12 +20066,9 @@ function ldapDevicesView(req) {
     // The paging control's own object (#446).
     paging: adminViews.pagingJson(paging)
   };
-  // Drawn by `ldap/web_ldap.ts` (#446), from the answer alone.
-  const inner = LdapPage.devices(admin.renderContext(req),
-    JSON.parse(JSON.stringify(payload)));
   log.debug('Leaving ldapDevicesView(). ' + shown.length + ' row(s) of ' +
             filtered.length + ' matched.');
-  return { title: 'Device entries', inner: inner, json: payload };
+  return { title: 'Device entries', json: payload };
 }
 
 
@@ -20179,12 +20157,9 @@ function ldapRolesView(req) {
                what: one.what || /** @type {any} */ (one).description || '' };
     })
   };
-  // Drawn by `ldap/web_ldap.ts` (#446), from the answer alone.
-  const inner = LdapPage.roles(admin.renderContext(req),
-    JSON.parse(JSON.stringify(payload)));
   log.debug('Leaving ldapRolesView(). ' + paged.shown.length +
             ' row(s) of ' + filtered.length + ' matched.');
-  return { title: 'Role entries', inner: inner, json: payload };
+  return { title: 'Role entries', json: payload };
 }
 
 
@@ -20271,12 +20246,9 @@ function ldapPoliciesView(req) {
       return first(row, 'xacmlEnabled') !== 'FALSE';
     }).length
   };
-  // Drawn by `ldap/web_ldap.ts` (#446), from the answer alone.
-  const inner = LdapPage.policies(admin.renderContext(req),
-    JSON.parse(JSON.stringify(payload)));
   log.debug('Leaving ldapPoliciesView(). ' + paged.shown.length +
             ' row(s) of ' + filtered.length + ' matched.');
-  return { title: 'Policy entries', inner: inner, json: payload };
+  return { title: 'Policy entries', json: payload };
 }
 
 
@@ -20362,12 +20334,9 @@ function ldapPepsView(req) {
       return first(row, 'xacmlPepEnabled') !== 'FALSE';
     }).length
   };
-  // Drawn by `ldap/web_ldap.ts` (#446), from the answer alone.
-  const inner = LdapPage.peps(admin.renderContext(req),
-    JSON.parse(JSON.stringify(payload)));
   log.debug('Leaving ldapPepsView(). ' + paged.shown.length +
             ' row(s) of ' + filtered.length + ' matched.');
-  return { title: 'PEP entries', inner: inner, json: payload };
+  return { title: 'PEP entries', json: payload };
 }
 
 

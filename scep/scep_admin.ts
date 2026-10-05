@@ -50,8 +50,6 @@ import admin = require('../admin-ui/admin');
 import core = require('../common/cert_enrollment');
 import consoleModel = require('./scep_console');
 import InstanceSlot = require('../common/instance_slot');
-// The page's renderer (#446): a `web_` module, loadable in a browser.
-import ScepPage = require('./web_scep');
 
 const esc = admin.esc;
 
@@ -133,19 +131,6 @@ class ScepAdmin {
     }
     log.debug("Leaving ScepAdmin.queryRefused().");
     return false;
-  }
-
-  // DRAWN BY `web_scep.ts` (#446): this page is converted for the static
-  // console, and its renderer is a module a browser can load. Until the
-  // cutover this process still draws it, handing the renderer the view passed
-  // THROUGH JSON, so it is held to what the API's caller receives.
-  body(req, json) {
-    const { log, admin } = this.deps;
-    log.debug("Entering ScepAdmin.body().");
-    const drawn = ScepPage.render(JSON.parse(JSON.stringify(json)),
-      admin.renderContext(req));
-    log.debug("Leaving ScepAdmin.body().");
-    return drawn;
   }
 
   // THE ROUTES, registered where they always were: the module exports

@@ -122,8 +122,6 @@ import pepHttp = require('./xacml_pep_http');
 import pepTls = require('./xacml_pep_tls');
 import pki = require('../common/pki');
 import monitor = require('./xacml_monitor');
-// The page's renderer (#446): a `web_` module, loadable in a browser.
-import XacmlPage = require('./web_xacml');
 
 type Req = import('express').Request;
 type Res = import('express').Response;
@@ -1279,19 +1277,6 @@ class XacmlAdmin {
     return errorCodes.mark({ ok: false,
              why: 'Unknown action "' + action + '". There are ' + all.length +
                   ': ' + all.join(', ') + '.' }, 'STS-XACML-0032');
-  }
-
-  // DRAWN BY `web_xacml.ts` (#446): this page is converted for the static
-  // console, and its renderer is a module a browser can load. Until the
-  // cutover this process still draws it, handing the renderer the view passed
-  // THROUGH JSON, so it is held to what the API's caller receives.
-  overviewBody(req, json) {
-    const { log, admin } = this.deps;
-    log.debug("Entering XacmlAdmin.overviewBody().");
-    const drawn = XacmlPage.render(JSON.parse(JSON.stringify(json)),
-      admin.renderContext(req));
-    log.debug("Leaving XacmlAdmin.overviewBody().");
-    return drawn;
   }
 
   // Every route, in the order this file has always registered them.

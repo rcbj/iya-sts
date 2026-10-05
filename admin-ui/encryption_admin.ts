@@ -97,8 +97,6 @@ import mode = require('../common/mode');
 import persistence = require('../persistence/persistence');
 import minted = require('../persistence/persistence_minted');
 import InstanceSlot = require('../common/instance_slot');
-// The page's renderer (#446): a `web_` module, loadable in a browser.
-import EncryptionPage = require('./web_encryption');
 
 type Req = any;
 type Res = any;
@@ -936,28 +934,6 @@ class EncryptionAdmin {
         ' was queued as run ' + answer.runId + '. It runs on the ' +
         'scheduler\'s leader at its next tick.'
     };
-  }
-
-  private renderEncryption(req: Req, res: Res): void {
-    const { log, admin } = this.deps;
-    log.debug('Entering EncryptionAdmin.renderEncryption().');
-    const json = this.encryptionJson(req.query || {});
-    admin.respond(req, res, json, 'Encryption', '/admin/encryption',
-                  this.body(req, json));
-    log.debug('Leaving EncryptionAdmin.renderEncryption().');
-  }
-
-  // DRAWN BY `web_encryption.ts` (#446): this page is converted for the static
-  // console, and its renderer is a module a browser can load. Until the
-  // cutover this process still draws it, handing the renderer the view passed
-  // THROUGH JSON, so it is held to what the API's caller receives.
-  private body(req: Req, json: Json): string {
-    const { log, admin } = this.deps;
-    log.debug("Entering EncryptionAdmin.body().");
-    const drawn = EncryptionPage.render(JSON.parse(JSON.stringify(json)),
-      admin.renderContext(req));
-    log.debug("Leaving EncryptionAdmin.body().");
-    return drawn;
   }
 
   // For `tests/encryption_report.js`, which checks the table against the
