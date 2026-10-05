@@ -90,7 +90,9 @@ async fn the_ldif_store_is_nodes() {
         .collect();
     let out =
         std::env::temp_dir().join(format!("sts-ldif-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&out);
+    if out.exists() {
+        std::fs::remove_dir_all(&out).unwrap();
+    }
     let driver = LdifDriver::new(&out);
     driver.open().await.unwrap();
     let mut all = BTreeMap::new();
@@ -146,7 +148,7 @@ async fn the_ldif_store_is_nodes() {
             "domain": "a.example", "overrides": { "x.y": 3, "z": "é" } }])),
         "realms.json read back".to_string(),
     );
-    let _ = std::fs::remove_dir_all(&out);
+    std::fs::remove_dir_all(&out).unwrap();
 
     for (text, node) in v["foreign"]
         .as_array()
