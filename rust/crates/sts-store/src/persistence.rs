@@ -138,6 +138,9 @@ pub struct Persistence {
     shadow: Mutex<Shadow>,
     flush_lock: tokio::sync::Mutex<()>,
     replication: Mutex<Option<Arc<crate::replication::Replication>>>,
+    /// The keystore's data keys, started when the store opens and before
+    /// anything sealed is restored; none until then.
+    data_keys: Mutex<Arc<crate::keystore::DataKeys>>,
     me: Weak<Persistence>,
 }
 
@@ -165,6 +168,7 @@ impl Persistence {
             shadow: Mutex::new(Shadow::new()),
             flush_lock: tokio::sync::Mutex::new(()),
             replication: Mutex::new(None),
+            data_keys: Mutex::new(crate::keystore::DataKeys::none()),
             me: me.clone(),
         });
         let weak = Arc::downgrade(&me);
@@ -684,8 +688,17 @@ impl Persistence {
     // Starting and stopping.
     // -----------------------------------------------------------------
 
-    /// Opens the store and reads back what it holds: the overrides, the
-    /// realms, the directory. Fatal when the store cannot be read.
+    /// The keystore's data keys: none before [`Persistence::start`].
+    pub fn data_keys(&self) -> Arc<crate::keystore::DataKeys> {
+        self.data_keys
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+    }
+
+    /// Opens the store and reads back what it holds: the keystore's data
+    /// keys, the overrides, the realms, the directory. Fatal when the store
+    /// cannot be read.
     pub async fn start(&self) -> Result<Restored, String> {
         let Some(driver) = self.driver.clone() else {
             tracing::info!(
@@ -771,6 +784,19 @@ impl Persistence {
                 log.latest_change_seq().await.map_err(|e| e.to_string())?;
             self.state().change_from = Some(from);
         }
+        // THE KEYSTORE STARTS THE MOMENT THE STORE IS OPEN (#222), before
+        // anything sealed is restored; a data key of ours that will not
+        // unwrap stops the start here.
+        let keys = crate::keystore::DataKeys::start(
+            self.settings.clone(),
+            self.lifecycle.mode(),
+            self.driver.clone(),
+        )
+        .await?;
+        *self
+            .data_keys
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner) = keys;
         let saved = if self.persists_appconfig() {
             driver.load_overrides().await.map_err(|e| e.to_string())?
         } else {
@@ -1304,6 +1330,19 @@ impl crate::replication::Applier for Persistence {
                 "realms" => self.apply_realms_change(driver.as_ref()).await,
                 "appconfig" => {
                     self.apply_appconfig_change(driver.as_ref()).await
+                }
+                // Another process made or destroyed a data key: read the
+                // rows again, so what it sealed opens here.
+                "keys"
+                    if row
+                        .realm
+                        .starts_with(crate::keystore::DEK_ROW_PREFIX) =>
+                {
+                    self.data_keys()
+                        .load(false)
+                        .await
+                        .map(|_| ())
+                        .map_err(crate::driver::StoreError::new)
                 }
                 // Minted rows and the rest arrive with their stores.
                 _ => Ok(()),

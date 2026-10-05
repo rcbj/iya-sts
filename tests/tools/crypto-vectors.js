@@ -2970,7 +2970,95 @@ const VECTORS = [{ file: 'jws-node.json', build: jws },
                    build: schedulerHistoryVectors },
                  { file: 'realm-lifecycle-node.json',
                    build: realmLifecycleVectors },
-                 { file: 'http-node.json', build: httpVectors }];
+                 { file: 'http-node.json', build: httpVectors },
+                 { file: 'keystore-node.json', build: keystoreVectors }];
+
+// THE KEYSTORE'S DATA KEYS (#444): values sealed by `common/keystore.js`
+// under a durable key-encryption key — with the data-key rows it wrote to
+// its store — and under an ephemeral one, with keyed digests under both, for
+// the Rust keystore to open and reproduce. Run in a child process, because
+// the key settings are read from the environment once per process. The KEK
+// is generated here and written only into the vectors directory, which is
+// never committed.
+function keystoreVectors() {
+  const childProcess = require('child_process');
+  const kekFile = path.join(OUT, 'keystore-kek.txt');
+  const kekText = nodeCrypto.randomBytes(32).toString('base64');
+  fs.writeFileSync(kekFile, kekText + '\n', { mode: 0o600 });
+  const program = [
+    "'use strict';",
+    'const path = require("path");',
+    'const ROOT = process.argv[1];',
+    'const keystore = require(path.join(ROOT, "common", "keystore.js"));',
+    'const LABELS = ["authn-sessions", "authorization-codes", "totp-secret",',
+    '                "Odd Label!", ""];',
+    'const REALMS = ["", "acme"];',
+    'function sealAll() {',
+    '  const out = [];',
+    '  LABELS.forEach(function (label) {',
+    '    REALMS.forEach(function (realm) {',
+    '      const text = "value of " + label + " in [" + realm + "] é";',
+    '      out.push({ label: label, realm: realm, text: text,',
+    '                 cipher: keystore.seal(text, label, undefined,',
+    '                                       { realm: realm }) });',
+    '    });',
+    '  });',
+    '  return out;',
+    '}',
+    'function digests() {',
+    '  return ["cluster-fingerprint", "directory:uid", ""].map(function (l) {',
+    '    return { label: l, text: "hunter2",',
+    '             digest: keystore.keyedDigest(l, "hunter2") };',
+    '  });',
+    '}',
+    '(async function () {',
+    '  const rows = new Map();',
+    '  keystore.setStore({',
+    '    loadKeys: function () {',
+    '      return Promise.resolve(Array.from(rows, function (e) {',
+    '        return { realm: e[0], material: e[1] };',
+    '      }));',
+    '    },',
+    '    saveKeys: function (realm, material) {',
+    '      rows.set(realm, material);',
+    '      return Promise.resolve();',
+    '    }',
+    '  });',
+    '  await keystore.start();',
+    '  const durable = { sealed: sealAll(), digests: digests() };',
+    '  await keystore.settleDeks();',
+    '  durable.rows = Array.from(rows, function (e) {',
+    '    return { realm: e[0], material: e[1] };',
+    '  }).filter(function (r) { return r.realm.indexOf("dek:") === 0; });',
+    '  keystore.reset();',
+    '  require("fs").writeFileSync(process.argv[2],',
+    '                              JSON.stringify({ durable: durable }));',
+    '})().catch(function (e) { console.error(e); process.exitCode = 1; });'
+  ].join('\n');
+  // The child writes its answer to a file: its log shares stdout.
+  const answerFile = path.join(OUT, 'keystore-answer.json');
+  const run = function (text, env) {
+    childProcess.execFileSync(process.execPath, ['-e', text, ROOT, answerFile],
+      { env: Object.assign({}, process.env, { STS_LOG_LEVEL: 'fatal' }, env),
+        stdio: ['ignore', 'ignore', 'inherit'] });
+    const answer = JSON.parse(fs.readFileSync(answerFile, 'utf8')).durable;
+    fs.unlinkSync(answerFile);
+    return answer;
+  };
+  const durable = run(program, { STS_KEYS_SOURCE: 'persisted',
+                                 STS_KEYS_KEK_PROVIDER: 'file',
+                                 STS_KEYS_KEK_FILE: kekFile });
+  // The ephemeral half: a KEK handed over as text, derived data keys.
+  const ephemeralKek = nodeCrypto.randomBytes(32).toString('hex');
+  const ephemeral = run(program.replace('await keystore.start();',
+                                        'keystore.useEphemeralKek("' +
+                                        ephemeralKek + '");'),
+                        { STS_KEYS_SOURCE: 'generated' });
+  delete ephemeral.rows;
+  return { kekFile: path.basename(kekFile), kekText: kekText,
+           durable: durable, ephemeralKek: ephemeralKek,
+           ephemeral: ephemeral };
+}
 
 if (require.main === module) {
   fs.mkdirSync(OUT, { recursive: true });

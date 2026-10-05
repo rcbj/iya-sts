@@ -339,3 +339,71 @@ async fn raw_exec(url: &str, sql: &str) -> Result<u64, String> {
     tokio::spawn(conn);
     client.execute(sql, &[]).await.map_err(|e| e.to_string())
 }
+
+/// Two processes' data keys on one postgres store: each makes a key for one
+/// class at the same moment and the row keeps both, each opens what the
+/// other sealed once it has read the row, and the digest key is ONE — the
+/// first written — so both compute the same keyed digest.
+#[tokio::test]
+async fn data_keys_on_postgres() {
+    let Ok(url) = std::env::var("STS_TEST_DATABASE_URL") else {
+        eprintln!(
+            "STS_TEST_DATABASE_URL is not set: the data keys are not checked"
+        );
+        return;
+    };
+    raw_exec(&url, "DELETE FROM sts_keys WHERE realm LIKE 'dek:%'")
+        .await
+        .unwrap();
+    let kek = b"a test key-encryption key, never a real one".to_vec();
+    let keys = |url: &str| {
+        let driver: Arc<dyn Driver> =
+            Arc::new(PostgresDriver::new(url, false, 2).unwrap());
+        sts_store::keystore::DataKeys::durable(kek.clone(), true, driver, None)
+            .unwrap()
+    };
+    let a = keys(&url);
+    let b = keys(&url);
+    a.ensure_digest_key().await;
+    b.ensure_digest_key().await;
+    assert!(a.keyed_digest("l", "x").is_some());
+    assert_eq!(a.keyed_digest("l", "x"), b.keyed_digest("l", "x"));
+    let from_a = a.seal("from a", "sessions", "kstest").unwrap();
+    let from_b = b.seal("from b", "sessions", "kstest").unwrap();
+    assert_ne!(
+        sts_crypto::secrets::dek_id_of(&from_a),
+        sts_crypto::secrets::dek_id_of(&from_b)
+    );
+    tokio::join!(a.settle(), b.settle());
+    a.load(false).await.unwrap();
+    b.load(false).await.unwrap();
+    assert_eq!(a.open(&from_b, "sessions").as_deref(), Some("from b"));
+    assert_eq!(b.open(&from_a, "sessions").as_deref(), Some("from a"));
+    let rows = PostgresDriver::new(&url, false, 1)
+        .unwrap()
+        .load_keys()
+        .await
+        .unwrap();
+    let row: serde_json::Value = serde_json::from_str(
+        &rows
+            .iter()
+            .find(|(k, _)| k == "dek:service:kstest")
+            .unwrap()
+            .1,
+    )
+    .unwrap();
+    assert_eq!(row["deks"].as_array().unwrap().len(), 2);
+    let defaults: serde_json::Value = serde_json::from_str(
+        &rows
+            .iter()
+            .find(|(k, _)| k == "dek:service:default")
+            .unwrap()
+            .1,
+    )
+    .unwrap();
+    assert_eq!(
+        defaults["deks"].as_array().unwrap().len(),
+        1,
+        "one digest key"
+    );
+}

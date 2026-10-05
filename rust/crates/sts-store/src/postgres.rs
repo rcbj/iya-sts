@@ -42,7 +42,7 @@ use tokio_postgres::Row;
 
 use crate::codec;
 use crate::driver::{
-    ChangeLog, ChangeRow, Directory, Driver, StoreError, StoreFuture,
+    ChangeLog, ChangeRow, Directory, Driver, KeyMerge, StoreError, StoreFuture,
     StoreResult,
 };
 use crate::merge::{merge_entry, Outcome};
@@ -295,6 +295,100 @@ impl PostgresDriver {
 impl Driver for PostgresDriver {
     fn name(&self) -> &'static str {
         "postgres"
+    }
+
+    fn load_keys(&self) -> StoreFuture<'_, Vec<(String, String)>> {
+        Box::pin(async move {
+            let client = self.client().await?;
+            let rows = client
+                .query("SELECT realm, material FROM sts_keys", &[])
+                .await
+                .map_err(err)?;
+            Ok(rows.iter().map(|r| (r.get(0), r.get(1))).collect())
+        })
+    }
+
+    // A TRANSACTION WITH A CHANGE ROW (#46): a node that never heard of a
+    // key write went on using what it had.
+    fn save_keys<'a>(
+        &'a self,
+        realm: &'a str,
+        material: &'a str,
+    ) -> StoreFuture<'a, ()> {
+        Box::pin(async move {
+            let mut client = self.client().await?;
+            let tx = client.transaction().await.map_err(err)?;
+            tx.execute(
+                "INSERT INTO sts_keys (realm, material, written_at) VALUES ($1, $2, now()) ON CONFLICT (realm) DO \
+                 UPDATE SET material = EXCLUDED.material, written_at = now()",
+                &[&realm, &material],
+            )
+            .await
+            .map_err(err)?;
+            self.record_changes(&tx, &[("keys", realm, "")]).await?;
+            tx.commit().await.map_err(err)
+        })
+    }
+
+    fn merges_keys(&self) -> bool {
+        true
+    }
+
+    // Under the row's lock: two processes making a data key for one class
+    // at once keep both. A row nobody has yet is locked by inserting it, and
+    // the loser of that race merges against the winner's.
+    fn merge_keys<'a>(
+        &'a self,
+        realm: &'a str,
+        merge: KeyMerge,
+    ) -> StoreFuture<'a, Option<String>> {
+        Box::pin(async move {
+            let mut client = self.client().await?;
+            let tx = client.transaction().await.map_err(err)?;
+            let current: Option<String> = tx
+                .query_opt(
+                    "SELECT material FROM sts_keys WHERE realm = $1 FOR UPDATE",
+                    &[&realm],
+                )
+                .await
+                .map_err(err)?
+                .map(|r| r.get(0));
+            let next = merge(current.as_deref()).map_err(StoreError::new)?;
+            let Some(next) = next.filter(|n| Some(n) != current.as_ref())
+            else {
+                tx.commit().await.map_err(err)?;
+                return Ok(current);
+            };
+            if current.is_some() {
+                tx.execute(
+                    "UPDATE sts_keys SET material = $2, written_at = now() WHERE realm = $1",
+                    &[&realm, &next],
+                )
+                .await
+                .map_err(err)?;
+            } else {
+                let inserted = tx
+                    .execute(
+                        "INSERT INTO sts_keys (realm, material, written_at) VALUES ($1, $2, now()) ON CONFLICT \
+                         (realm) DO NOTHING",
+                        &[&realm, &next],
+                    )
+                    .await
+                    .map_err(err)?;
+                if inserted == 0 {
+                    // Another process inserted it first: nothing written
+                    // here; the caller reads again and merges once more.
+                    tx.rollback().await.map_err(err)?;
+                    return Err(StoreError::new(format!(
+                        "the \"{}\" key row was written by another process at the same moment; try again",
+                        realm
+                    )));
+                }
+            }
+            self.record_changes(&tx, &[("keys", realm, "")]).await?;
+            tx.commit().await.map_err(err)?;
+            Ok(Some(next))
+        })
     }
 
     fn change_log(&self) -> Option<&dyn ChangeLog> {

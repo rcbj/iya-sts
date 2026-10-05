@@ -322,6 +322,11 @@ impl RealmLifecycle {
         &self.registry
     }
 
+    /// The mode the realms are served in.
+    pub fn mode(&self) -> &Arc<Mode> {
+        &self.mode
+    }
+
     // -----------------------------------------------------------------
     // Hooks.
     // -----------------------------------------------------------------
