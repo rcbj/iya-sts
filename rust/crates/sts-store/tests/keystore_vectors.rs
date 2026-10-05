@@ -216,3 +216,69 @@ fn the_union_keeps_both_and_one_digest_key() {
     assert_eq!(merged["deks"][0]["status"], "destroyed");
     assert_eq!(merged["deks"][0]["wrapped"], "");
 }
+
+#[tokio::test]
+async fn key_sets_are_nodes() {
+    use sts_store::key_sets::{KeySets, Saved};
+    let Some((dir, v)) = vectors() else {
+        return;
+    };
+    let Some(signing) = v["durable"].get("signing") else {
+        eprintln!("keystore-node.json has no signing key set: regenerate it");
+        return;
+    };
+    let (kek, _) = DataKeys::read_kek_file(
+        dir.join(v["kekFile"].as_str().unwrap()).to_str().unwrap(),
+    )
+    .unwrap();
+    let driver = store_of(&v, "key-sets").await;
+    let keys =
+        DataKeys::durable(kek.clone(), true, driver.clone(), None).unwrap();
+    keys.load(true).await.unwrap();
+    let sets = KeySets::new(driver.clone(), keys.clone());
+    assert_eq!(sets.load().await.unwrap(), 1);
+    assert_eq!(sets.realms(), vec!["default"]);
+    let set = sets.open("").unwrap();
+    assert_eq!(set.cert_b64(), signing["certB64"].as_str());
+    assert_eq!(set.kid().as_deref(), signing["kid"].as_str(), "Node's kid");
+    // The private key is the certificate's.
+    use base64::Engine;
+    let der = base64::engine::general_purpose::STANDARD
+        .decode(set.cert_b64().unwrap())
+        .unwrap();
+    let cert = openssl::x509::X509::from_der(&der).unwrap();
+    let private = openssl::pkey::PKey::private_key_from_pem(
+        set.private_key_pem().unwrap().as_bytes(),
+    )
+    .unwrap();
+    assert!(cert.public_key().unwrap().public_eq(&private));
+    let curves = set.curve_keys();
+    assert!(!curves.is_empty());
+    for one in &curves {
+        openssl::pkey::PKey::private_key_from_pem(
+            one.private_key_pem.as_bytes(),
+        )
+        .unwrap_or_else(|e| panic!("{}: {}", one.alg, e));
+    }
+
+    // A save of the same generation keeps what is stored; a newer one is
+    // written, and another process reads it back whole.
+    let mut newer = set.blob.clone();
+    newer["generations"] = json!({ "generation": set.generation() + 1 });
+    let ldif_saved = sets.save("", &newer).await.unwrap();
+    assert_eq!(ldif_saved, Saved::Written);
+    let again = KeySets::new(driver.clone(), keys.clone());
+    again.load().await.unwrap();
+    assert_eq!(again.open("default").unwrap().blob, newer);
+
+    // The wrong key-encryption key stops the start, with its code.
+    let wrong = DataKeys::durable(
+        b"an entirely different key of 32+ bytes!!".to_vec(),
+        true,
+        driver.clone(),
+        None,
+    )
+    .unwrap();
+    let refused = KeySets::new(driver, wrong).load().await.unwrap_err();
+    assert!(refused.contains("STS-KEYS-0029"), "{}", refused);
+}
