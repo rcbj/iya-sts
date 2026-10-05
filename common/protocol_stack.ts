@@ -1699,9 +1699,9 @@ class ProtocolStack {
     require('../gnap/gnap');
     this.build('gnap/gnap_store', require('../gnap/gnap_store'), 'GnapStore');
     this.build('gnap/gnap_keys', require('../gnap/gnap_keys'), 'GnapKeys');
-    this.build('gnap/gnap_sf', require('../gnap/gnap_sf'), 'GnapSf');
-    this.build('gnap/gnap_httpsig', require('../gnap/gnap_httpsig'),
-               'GnapHttpsig');
+    // RFC 9421 and RFC 8941 were `gnap_httpsig` and `gnap_sf` here until #178:
+    // they are `common/crypto.js` section 14 and `common/structured_fields.ts`
+    // now, neither of which has an instance to build.
     this.build('gnap/gnap_proof', require('../gnap/gnap_proof'), 'GnapProof');
     this.build('gnap/gnap_schemas', require('../gnap/gnap_schemas'),
                'GnapSchemas');

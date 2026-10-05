@@ -800,18 +800,20 @@ const SPECS: Spec[] = [
     url: 'https://www.rfc-editor.org/rfc/rfc9421',
     coverage: 'partial: signing and verification of requests and responses ' +
               'with every derived component, header and structured-field ' +
-              'component parameters (sf, key, bs, req, tr), multiple ' +
-              'signatures, and the algorithms in section 3.3 except those ' +
-              'needing a key type this process does not hold. It is held to ' +
-              'the specification\'s Appendix B test vectors by ' +
-              'tests/gnap_httpsig.js. It is used as GNAP\'s httpsig proof ' +
-              'and nowhere else, so trailers are parsed and never sent.' },
+              'component parameters (sf, key, bs, req), multiple ' +
+              'signatures, the six algorithms of section 3.3 and every JWS ' +
+              'algorithm this service speaks under section 3.3.7, ' +
+              'post-quantum included. It is held to the specification\'s ' +
+              'Appendix B test vectors by tests/http_signatures.js. It is ' +
+              'GNAP\'s httpsig proof and the FAPI 2.0 HTTP Signatures ' +
+              'profile at the OAuth resource servers. Trailers (tr) are ' +
+              'refused, because the message model has no trailer section.' },
   { id: 'rfc9530', name: 'RFC 9530 — Digest Fields',
     where: 'IETF',
     url: 'https://www.rfc-editor.org/rfc/rfc9530',
     coverage: 'partial: Content-Digest with sha-256 and sha-512, generated ' +
-              'and verified, which is what GNAP\'s httpsig proof covers a ' +
-              'body with. Repr-Digest and the Want- fields are not ' +
+              'and verified, which is what GNAP\'s httpsig proof and a FAPI ' +
+              'signed request or response cover a body with. Repr-Digest and the Want- fields are not ' +
               'implemented, because nothing here negotiates a ' +
               'representation.' },
   { id: 'macaroons', name: 'Macaroons: Cookies with Contextual Caveats (NDSS ' +

@@ -33,7 +33,11 @@
 // own `sign`/`verify`/`publicEncrypt`/`privateDecrypt`/`createDecipheriv`, with
 // every algorithm it accepts named in the tables below so that
 // `admin-ui/crypto_metadata.ts` reads them from here rather than from a
-// paragraph. It is the arrangement `gnap/gnap_httpsig.ts` has for RFC 9421.
+// paragraph. It was the arrangement `gnap/gnap_httpsig.ts` had for RFC 9421
+// until #178 moved that into `common/crypto.js`. rcbj's rule of 2026-10-05
+// ("all crypto operations across all protocols and use cases are to be
+// centralized in a common module") ends this arrangement too, and #453 moves
+// these primitives.
 //
 // ---------------------------------------------------------------------------
 // FOUR DECISIONS, EACH A REFUSAL SOMEBODY WILL MEET.

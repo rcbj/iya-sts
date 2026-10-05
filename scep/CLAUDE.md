@@ -92,8 +92,12 @@ their failInfo with them.
 
 Rule 3r is about primitives having one policy. This is an ENVELOPE only SCEP
 reads, over node's own primitives, with every algorithm it accepts in a table
-`admin-ui/crypto_metadata.ts` reads (`algorithms()`) — `gnap/gnap_httpsig.ts`'s
-arrangement.
+`admin-ui/crypto_metadata.ts` reads (`algorithms()`) — the arrangement
+`gnap/gnap_httpsig.ts` had until #178 moved it into `common/crypto.js`.
+**rcbj's rule of 2026-10-05 ends it here too**: every cryptographic operation,
+in every protocol, goes through the common module. #453 moves these
+primitives; until then this heading records a decision that has been
+reversed.
 
 ### The RA certificate
 

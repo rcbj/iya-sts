@@ -52,18 +52,21 @@
 
 // ---------------------------------------------------------------------------
 // TYPESCRIPT, AS A CLASS (#50, 2026-09-16) — `common/realm_chooser.ts`'s
-// shape: `GnapKeys` takes node's crypto, the service's crypto module, the
-// error-code table and the logger through its constructor. The module still
+// shape: `GnapKeys` takes the service's crypto module, the certificate
+// authority's reader, the error-code table and the logger through its
+// constructor. Since #178 it touches no key itself: a certificate is read by
+// `pki.js` and a JWK imported by `crypto.js`, by rcbj's rule that every
+// cryptographic operation goes through the common module. The module still
 // exports every old name as FACADES forwarding to the instance the composition
 // root builds (#50, R2), for the unconverted GNAP modules that require it; the
 // two tables are static members. A process that loads this module without the
 // root builds a default instance when the module loads.
 // ---------------------------------------------------------------------------
 
-import nodeCrypto = require('crypto');
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
 import stsCrypto = require('../common/crypto');
+import pki = require('../common/pki');
 import errorCodes = require('../common/error_codes');
 
 // A result in the one shape every GNAP library returns: `ok`, and either the
@@ -79,12 +82,13 @@ interface DescribeOptions {
 }
 
 interface GnapKeysDeps {
-  nodeCrypto: typeof nodeCrypto;
   stsCrypto: {
     JWS_ALGS: Record<string, any>;
     certificateThumbprint(certificate: any): string;
     jwkThumbprint(jwk: any): string;
+    publicKeyFromJwk(jwk: any): any;
   };
+  pki: { certificateFromDer(der: any): any };
   errorCodes: { mark<T>(res: T, code: string): T };
   log: { debug(message: string): void };
 }
@@ -136,7 +140,7 @@ class GnapKeys {
   //
   // Section 7.3.1: in string form "the signing algorithm MUST be derived from
   // the key material (such as using the JWS algorithm in a JWK formatted
-  // key)". For a JWK that is its `alg`, read by `gnap_httpsig.ts` through RFC
+  // key)". For a JWK that is its `alg`, read by `crypto.verifyHttpMessage()` through RFC
   // 9421 section 3.3.7's JWS mapping. A CERTIFICATE carries no `alg`, so the
   // choice below is this service's, and it is the least surprising one for
   // each key type: the PKCS #1 v1.5 / ECDSA / EdDSA algorithm a JOSE library
@@ -269,8 +273,8 @@ class GnapKeys {
    * @param value - the member's value
    * @returns the certificate, or null when it does not parse
    */
-  certificateFrom(value: unknown): nodeCrypto.X509Certificate | null {
-    const { log, nodeCrypto } = this.deps;
+  certificateFrom(value: unknown): any {
+    const { log, pki } = this.deps;
     log.debug("Entering GnapKeys.certificateFrom().");
     const text = String(value || '')
       .replace(/-----(BEGIN|END) CERTIFICATE-----/g, '')
@@ -279,21 +283,15 @@ class GnapKeys {
       log.debug("Leaving GnapKeys.certificateFrom(). Not base64.");
       return null;
     }
-    try {
-      const certificate = new nodeCrypto.X509Certificate(
-          Buffer.from(text, 'base64'));
-      log.debug("Leaving GnapKeys.certificateFrom().");
-      return certificate;
-    } catch (e) {
-      // Not a certificate. The caller refuses with a sentence naming the
-      // member; the parser's own message is logged here because it is the
-      // useful detail.
-      log.debug("Caught in GnapKeys.certificateFrom(): " +
-                ((e && e.message) || e));
-      log.debug("Leaving GnapKeys.certificateFrom(). Not a certificate: " +
-                e.message);
+    // `pki.certificateFromDer()` answers null for anything that is not a
+    // certificate, and logs why.
+    const read = pki.certificateFromDer(Buffer.from(text, 'base64'));
+    if (!read) {
+      log.debug("Leaving GnapKeys.certificateFrom(). Not a certificate.");
       return null;
     }
+    log.debug("Leaving GnapKeys.certificateFrom().");
+    return read.x509;
   }
 
   // -------------------------------------------------------------------------
@@ -437,7 +435,7 @@ class GnapKeys {
   }
 
   private describeJwk(key: any, proof: KeyResult): KeyResult {
-    const { log, nodeCrypto, stsCrypto } = this.deps;
+    const { log, stsCrypto } = this.deps;
     log.debug("Entering GnapKeys.describeJwk().");
     const jwk = key.jwk;
     if (!jwk || typeof jwk !== 'object' || Array.isArray(jwk)) {
@@ -473,10 +471,10 @@ class GnapKeys {
                           '" is not an asymmetric JWS algorithm for ' +
                           'a ' + jwk.kty + ' key.', 'invalid_client');
     }
-    let publicKey: nodeCrypto.KeyObject;
+    let publicKey: any;
     let thumbprint: string;
     try {
-      publicKey = nodeCrypto.createPublicKey({ key: jwk, format: 'jwk' });
+      publicKey = stsCrypto.publicKeyFromJwk(jwk);
       thumbprint = stsCrypto.jwkThumbprint(jwk);
     } catch (e) {
       log.debug("Caught in GnapKeys.describeJwk(): " +
@@ -575,8 +573,8 @@ class GnapKeys {
     helpers.log.debug("Entering GnapKeys.defaultDeps().");
     helpers.log.debug("Leaving GnapKeys.defaultDeps().");
     return {
-      nodeCrypto: nodeCrypto,
       stsCrypto: stsCrypto,
+      pki: pki,
       errorCodes: errorCodes,
       log: helpers.log
     };

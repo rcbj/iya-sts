@@ -11176,16 +11176,2221 @@ function randomString(alphabet, length) {
   return out;
 }
 
+// ===========================================================================
+// SECTION 14 — HTTP MESSAGE SIGNATURES (RFC 9421) AND CONTENT-DIGEST (RFC
+// 9530) (#178, 2026-10-05).
+//
+// An HTTP signature is a signature over a string that neither party
+// transmits. The signer builds it out of the message, the verifier builds it
+// again out of the message it RECEIVED, and the two strings must agree byte
+// for byte. Two callers use it:
+//
+//   * GNAP's `httpsig` key proof (RFC 9635 section 7.3.1), from
+//     `gnap/gnap_proof.ts`. GNAP decides the tag, the required components
+//     and the key.
+//   * The FAPI 2.0 HTTP Signatures profile at this service's OAuth resource
+//     servers (signed requests in, signed responses out), from
+//     `oauth-oidc/http_signatures.ts`. That module decides the same things for
+//     `fapi-2-request` and `fapi-2-response`.
+//
+// It was `gnap/gnap_httpsig.ts` until #178, when rcbj's rule moved it here.
+// The rule, as he restated it on 2026-10-05, is: "All crypto operations
+// across all protocols and use cases are to be centralized in a common
+// module." The GNAP file signed, verified, MACed and hashed on node's
+// OpenSSL in a directory of its own. This section is that code, unchanged in
+// what it builds and refuses, with four differences:
+//
+//   1. `;req` (section 2.4) is IMPLEMENTED rather than refused, because a
+//      FAPI response signature must cover the request's `@method`,
+//      `@target-uri`, `content-digest` and, when the request was signed, its
+//      `signature` and `signature-input`. A response message carries the
+//      request it answers as `message.request`. `httpsigRequestTarget()`
+//      below says what is still refused.
+//   2. Every JWS algorithm this service speaks is admitted under section
+//      3.3.7, read off `JWS_ALGS` rather than listed again. That includes
+//      ES256K and the post-quantum and composite algorithms (ML-DSA, SLH-DSA,
+//      ML-DSA + traditional), which are signed and verified by
+//      `jwsSignatureOver()` and `jwsSignatureValid()`, the same functions that
+//      do it for a JWS. Section 3.3.7's rule holds for all of them: the
+//      signature base is the JWS Signing Input as-is, and the `alg` signature
+//      parameter is never used with a JWS name.
+//   3. A key may be a JWK as well as a KeyObject or bytes, so a caller holding
+//      a client's registered JWKS does not convert keys itself. An RSA public
+//      key goes through `rsaKeyProblem()` like every other RSA verification
+//      here: the exponent, the ROCA fingerprint and the 2048-bit floor.
+//   4. The error codes are STS-KEYS-0107 to 0154. STS-GNAP-0200 to 0246 are
+//      retired, with the same meanings in the same order, because a code is
+//      never renumbered or reused.
+//
+// The rest of the original header still applies, and is kept here:
+//
+// THE SIGNATURE BASE IS THE WHOLE GAME. Section 2 is a list of
+// canonicalization rules, and each is implemented where it is stated and
+// cited by number:
+//
+//   * a field value is STRIPPED, has obsolete line folding replaced by one
+//     space, and repeated field lines are joined with exactly ", " (2.1);
+//   * `@authority` and `@scheme` are LOWERCASED and the default port omitted
+//     (2.2.3, 2.2.4), while `@method` is NOT, because the method is
+//     case-sensitive (2.2.1);
+//   * `@path` and `@query` are the RAW, still-percent-encoded text of the
+//     target URI (2.2.6, 2.2.7), and an absent query is `?`, not the empty
+//     string;
+//   * `@query-param` is DECODED AND RE-ENCODED (2.2.8), so that `+` and `%20`
+//     sign alike, and a parameter named twice is an ERROR rather than the
+//     first one, since that ambiguity is exactly the one an attacker would
+//     choose;
+//   * `;sf` and `;key=` re-serialize through `common/structured_fields.ts`
+//     (2.1.1, 2.1.2) and `;bs` wraps each field line as a Byte Sequence
+//     (2.1.3);
+//   * a component identifier may appear ONCE (2.5 step 2.1), and equality
+//     ignores parameter ORDER while serialization preserves it (2).
+//
+// `@signature-params` is always the last line and is never in the covered
+// list, because it is what makes a signature cover its own metadata (2.3).
+//
+// WHAT IS REFUSED RATHER THAN IMPLEMENTED: `;tr` (2.1.4, because the message
+// model here has no trailer section); `@status` on a REQUEST (2.2.9); `;req`
+// on a request, or on a response with no request given (2.4); and `;sf` or
+// `;key=` on a field whose Structured Field type is not known (2.1.1; callers
+// name further types with `options.fieldTypes`).
+//
+// REPRESENTATION CHOICES THAT DECIDE INTEROPERABILITY: ECDSA signatures are
+// r||s at the curve's coordinate size and never DER (3.3.4). RSASSA-PSS uses
+// a salt as long as the hash. An HMAC is compared in constant time. RSA keys
+// under 2048 bits and HMAC secrets shorter than their hash are refused (RFC
+// 7518 sections 3.3 and 3.2), so the HTTP names offer no downgrade the JWS
+// names do not (section 7.3.6).
+//
+// THE REFUSAL SHAPE is `{ ok: false, errorCode, why }`, MARKED with the code,
+// never a response. The client-facing error is the caller's to choose: the
+// same failed signature is GNAP's `invalid_client` at a grant endpoint and a
+// 401 at a FAPI resource server.
+//
+// It stays a LEAF: `./structured_fields` requires only `config` and
+// `instance_slot`.
+// ===========================================================================
+const sf = require('./structured_fields');
+
+// RFC 9530 section 7.2: only the two "Active" algorithms. The "Deprecated"
+// ones MUST NOT be used where the digest is signed for authenticity (section
+// 5), which is the only reason this service computes one. So they are
+// unknown, and an unknown algorithm is ignored by the verifier, as section 2
+// allows.
+const DIGEST_ALGORITHMS = {
+  'sha-256': 'sha256',
+  'sha-512': 'sha512'
+};
+
+// The derived components of section 2.2 and whether each belongs to a request
+// or a response message.
+const DERIVED = {
+  '@method': 'request',
+  '@target-uri': 'request',
+  '@authority': 'request',
+  '@scheme': 'request',
+  '@request-target': 'request',
+  '@path': 'request',
+  '@query': 'request',
+  '@query-param': 'request',
+  '@status': 'response'
+};
+
+// Fields whose Structured Field type is known, so that `;sf` and `;key=` can
+// be honoured (RFC 9421 section 2.1.1). Each row cites the document defining
+// the type.
+const KNOWN_FIELD_TYPES = {
+  'signature': 'dictionary',            // RFC 9421 section 4.2
+  'signature-input': 'dictionary',      // RFC 9421 section 4.1
+  'accept-signature': 'dictionary',     // RFC 9421 section 5.1
+  'content-digest': 'dictionary',       // RFC 9530 section 2
+  'repr-digest': 'dictionary',          // RFC 9530 section 3
+  'want-content-digest': 'dictionary',  // RFC 9530 section 4
+  'want-repr-digest': 'dictionary',     // RFC 9530 section 4
+  'client-cert': 'item',                // RFC 9440 section 2.2
+  'client-cert-chain': 'list',          // RFC 9440 section 2.3
+  'priority': 'dictionary',             // RFC 9218 section 4
+  'cache-status': 'list',               // RFC 9211 section 2
+  'proxy-status': 'list'                // RFC 9209 section 2
+};
+
+// The six registered metadata parameters (section 6.3.2) have types, and a
+// parameter of the wrong type is a signature a conforming verifier cannot
+// read: `created="1618884473"` is a String and not a timestamp.
+const PARAM_TYPES = {
+  created: 'integer',
+  expires: 'integer',
+  nonce: 'string',
+  alg: 'string',
+  keyid: 'string',
+  tag: 'string'
+};
+
+// The algorithms. Section 3.3's "HTTP Signature Algorithms" registry is listed
+// here. The JWS names of section 3.3.7 are derived from JWS_ALGS just below,
+// so an algorithm added to that table is an HTTP signature algorithm too,
+// with no second list to forget.
+const HTTP_SIGNATURE_ALGORITHMS = {
+  'rsa-pss-sha512': { registry: 'http', kind: 'rsa-pss', hash: 'sha512',
+                      saltLength: 64, spec: 'RFC 9421 section 3.3.1' },
+  'rsa-v1_5-sha256': { registry: 'http', kind: 'rsa-v1_5', hash: 'sha256',
+                       spec: 'RFC 9421 section 3.3.2' },
+  'hmac-sha256': { registry: 'http', kind: 'hmac', hash: 'sha256',
+                   minKeyBytes: 32, spec: 'RFC 9421 section 3.3.3' },
+  'ecdsa-p256-sha256': { registry: 'http', kind: 'ecdsa', hash: 'sha256',
+                         curve: 'prime256v1', coordinateBytes: 32,
+                         spec: 'RFC 9421 section 3.3.4' },
+  'ecdsa-p384-sha384': { registry: 'http', kind: 'ecdsa', hash: 'sha384',
+                         curve: 'secp384r1', coordinateBytes: 48,
+                         spec: 'RFC 9421 section 3.3.5' },
+  'ed25519': { registry: 'http', kind: 'eddsa', curves: ['ed25519'],
+               spec: 'RFC 9421 section 3.3.6' }
+};
+
+// Section 3.3.7: "JSON Web Signature (JWS) algorithms". One row per JWS_ALGS
+// row, in the shape the checks below read. The post-quantum and composite
+// rows are kind 'jws-pq', signed and verified by the JWS functions
+// themselves.
+Object.keys(JWS_ALGS).forEach(function (alg) {
+  const spec = JWS_ALGS[alg];
+  const cite = 'RFC 9421 section 3.3.7, ' + alg;
+  let row;
+  if (spec.family === 'hmac') {
+    row = { kind: 'hmac', hash: spec.hash,
+            minKeyBytes: nodeCrypto.createHash(spec.hash).digest().length };
+  } else if (spec.family === 'rsa') {
+    row = spec.padding !== undefined
+      ? { kind: 'rsa-pss', hash: spec.hash, saltLength: spec.saltLength }
+      : { kind: 'rsa-v1_5', hash: spec.hash };
+  } else if (spec.family === 'ec') {
+    row = { kind: 'ecdsa', hash: spec.hash, curve: spec.namedCurve,
+            coordinateBytes: spec.sigBytes / 2 };
+  } else if (spec.family === 'okp') {
+    // RFC 8037 section 3.1: EdDSA names both curves.
+    row = { kind: 'eddsa', curves: ['ed25519', 'ed448'] };
+  } else {
+    row = { kind: 'jws-pq' };
+  }
+  HTTP_SIGNATURE_ALGORITHMS[alg] = Object.assign(row,
+    { registry: 'jws', jws: alg, spec: cite });
+});
+
+/** The Content-Digest algorithms this section computes and checks. */
+const CONTENT_DIGEST_ALGORITHMS = Object.keys(DIGEST_ALGORITHMS);
+
+// ---------------------------------------------------------------------------
+// THE ONE PLACE A REFUSAL IS MADE. Logged at warn with the code at the front
+// of the line — a failed proof is an operator's question before it is
+// anything else — and marked, per the subsystem contract.
+// ---------------------------------------------------------------------------
+function httpsigRefuse(code, why) {
+  log.debug("Entering httpsigRefuse().");
+  const result = { ok: false, errorCode: code, why: why };
+  log.warn(errorCodes.tag(code) + why);
+  log.debug("Leaving httpsigRefuse().");
+  return errorCodes.mark(result, code);
+}
+
+function httpsigIsRefusal(value) {
+  log.debug("Entering httpsigIsRefusal().");
+  log.debug("Leaving httpsigIsRefusal().");
+  return !!value && value.ok === false;
+}
+
+function httpsigBodyBytes(body) {
+  log.debug("Entering httpsigBodyBytes().");
+  if (body === undefined || body === null) {
+    log.debug("Leaving httpsigBodyBytes(). No content.");
+    return Buffer.alloc(0);
+  }
+  if (Buffer.isBuffer(body)) {
+    log.debug("Leaving httpsigBodyBytes(). Buffer.");
+    return body;
+  }
+  if (body instanceof Uint8Array) {
+    log.debug("Leaving httpsigBodyBytes(). Uint8Array.");
+    return Buffer.from(body);
+  }
+  log.debug("Leaving httpsigBodyBytes(). String.");
+  return Buffer.from(String(body), 'utf8');
+}
+
+// `algorithm` may be one name or an array of names, in which case every
+// member is computed — section 2's second example, and what a client
+// supporting a population of verifiers sends. It THROWS on an unknown name,
+// carrying the code: an unsupported algorithm here is the caller's own
+// configuration, not anything a client sent.
+/**
+ * Computes a Content-Digest field value for a body.
+ *
+ * @param body - the body's bytes
+ * @param algorithm - one algorithm name, or an array of them, each computed
+ * @returns the serialized Dictionary
+ * @throws Error, carrying its code, for an unknown algorithm name
+ */
+function contentDigest(body, algorithm) {
+  log.debug("Entering contentDigest().");
+  const names = Array.isArray(algorithm) ? algorithm
+                                         : [algorithm === undefined ?
+                                            'sha-256' : algorithm];
+  const bytes = httpsigBodyBytes(body);
+  const dictionary = [];
+  for (let k = 0; k < names.length; k++) {
+    const hash = DIGEST_ALGORITHMS[names[k]];
+    if (!hash) {
+      const why = 'Content-Digest cannot be computed with "' +
+                  String(names[k]) +
+                  '": only sha-256 and sha-512, the two Active algorithms ' +
+                  'of the RFC 9530 registry, are supported.';
+      log.warn(errorCodes.tag('STS-KEYS-0107') + why);
+      const err = /** @type {any} */ (new Error(why));
+      err.errorCode = 'STS-KEYS-0107';
+      errorCodes.mark(err, 'STS-KEYS-0107');
+      log.debug("Leaving contentDigest(). Unsupported " +
+                "algorithm.");
+      throw err;
+    }
+    dictionary.push([names[k], {
+      type: 'bytes',
+      value: nodeCrypto.createHash(hash).update(bytes).digest(),
+      params: []
+    }]);
+  }
+  log.debug("Leaving contentDigest().");
+  return sf.serializeDictionary(dictionary);
+}
+
+// Section 2 read with GNAP's requirement (RFC 9635 section 7.3.1: "The
+// verifier MUST validate this field value"): EVERY member whose algorithm is
+// accepted must match, and at least one must be present. "Any one matches"
+// would let a client send a correct sha-256 beside a wrong sha-512 and have a
+// verifier that prefers sha-512 accept a body the sha-512 does not describe.
+/**
+ * Verifies a Content-Digest field against a body: every member whose
+ * algorithm is accepted must match, and at least one must be present.
+ *
+ * @param headerValue - the Content-Digest field value
+ * @param body - the body's bytes
+ * @param options - `accepted`, the algorithms accepted (sha-256 and
+ *   sha-512 by default)
+ * @returns `{ ok: true, algorithms }` naming those matched, or a refusal
+ */
+function verifyContentDigest(headerValue, body, options) {
+  log.debug("Entering verifyContentDigest().");
+  const accepted = (options && Array.isArray(options.accepted))
+    ? options.accepted : ['sha-256', 'sha-512'];
+  for (let k = 0; k < accepted.length; k++) {
+    if (!DIGEST_ALGORITHMS[accepted[k]]) {
+      log.debug("Leaving verifyContentDigest(). Unsupported " +
+                "accepted algorithm.");
+      return httpsigRefuse('STS-KEYS-0107',
+                         'The verifier was configured to accept the ' +
+                         'Content-Digest algorithm "' +
+                         String(accepted[k]) + '", which is not supported; ' +
+                         'only sha-256 and sha-512 are.');
+    }
+  }
+  const text = Array.isArray(headerValue) ? headerValue.join(', ') :
+               headerValue;
+  if (typeof text !== 'string' || text.trim() === '') {
+    log.debug("Leaving verifyContentDigest(). Absent.");
+    return httpsigRefuse('STS-KEYS-0108',
+                       'The message has no Content-Digest field to ' +
+                       'validate against its content (RFC 9530 section 2).');
+  }
+  let dictionary;
+  try {
+    dictionary = sf.parseDictionary(text);
+  } catch (e) {
+    log.debug("Caught in verifyContentDigest(): " +
+              ((e && e.message) || e));
+    log.debug("Leaving verifyContentDigest(). Malformed.");
+    return httpsigRefuse('STS-KEYS-0109',
+                       'The Content-Digest field is not a Structured Field ' +
+                       'Dictionary: ' + e.message);
+  }
+  const bytes = httpsigBodyBytes(body);
+  const matched = [];
+  for (let k = 0; k < dictionary.length; k++) {
+    const name = dictionary[k][0];
+    if (accepted.indexOf(name) < 0) {
+      // Not accepted, or not an algorithm this module knows: ignored, as RFC
+      // 9530 section 2 allows. It still had to PARSE — a malformed member
+      // anywhere makes the whole field malformed (RFC 8941 section 4.2).
+      continue;
+    }
+    const member = dictionary[k][1];
+    if (!member || member.type !== 'bytes') {
+      log.debug("Leaving verifyContentDigest(). Not a byte " +
+                "sequence.");
+      return httpsigRefuse('STS-KEYS-0110',
+                         'The Content-Digest member "' + name + '" is a ' +
+                         (member ? member.type : 'nothing') +
+                         ', not the Byte Sequence RFC 9530 section 2 ' +
+                         'requires.');
+    }
+    const expected = nodeCrypto.createHash(DIGEST_ALGORITHMS[name])
+                               .update(bytes)
+                               .digest();
+    if (expected.length !== member.value.length ||
+        !nodeCrypto.timingSafeEqual(expected, member.value)) {
+      log.debug("Leaving verifyContentDigest(). Mismatch.");
+      return httpsigRefuse('STS-KEYS-0111',
+                         'The Content-Digest member "' + name +
+                         '" does not match the content: the body was ' +
+                         'changed, or the digest was computed over ' +
+                         'something other than the bytes sent.');
+    }
+    matched.push(name);
+  }
+  if (matched.length === 0) {
+    log.debug("Leaving verifyContentDigest(). No accepted " +
+              "algorithm.");
+    return httpsigRefuse('STS-KEYS-0112',
+                       'The Content-Digest field carries no digest in an ' +
+                       'accepted algorithm (' + accepted.join(', ') +
+                       '); it carries ' +
+                       (dictionary.length ?
+                        dictionary.map((p) => { return p[0]; }).join(', ')
+                                          : 'no members') + '.');
+  }
+  log.debug("Leaving verifyContentDigest(). " +
+            matched.join(', '));
+  return { ok: true, algorithms: matched };
+}
+
+// ===========================================================================
+// COMPONENT IDENTIFIERS.
+// ===========================================================================
+
+// A JavaScript value handed in as a parameter, turned into a bare item. A
+// value that is already a bare item is kept, so a caller that needs a Token
+// rather than a String can say so.
+function httpsigBareItem(value) {
+  log.debug("Entering httpsigBareItem().");
+  let bare = null;
+  if (value && typeof value === 'object' && !Buffer.isBuffer(value) &&
+      typeof value.type === 'string' && 'value' in value) {
+    bare = { type: value.type, value: value.value };
+  } else if (typeof value === 'boolean') {
+    bare = { type: 'boolean', value: value };
+  } else if (Buffer.isBuffer(value)) {
+    bare = { type: 'bytes', value: value };
+  } else if (typeof value === 'number') {
+    bare = { type: Number.isInteger(value) ? 'integer' : 'decimal',
+             value: value };
+  } else if (typeof value === 'string') {
+    bare = { type: 'string', value: value };
+  }
+  log.debug("Leaving httpsigBareItem(). " +
+            (bare ? bare.type : 'not a bare item'));
+  return bare;
+}
+
+// Parameters from either an ordered [[key, value]] array or a plain object
+// (in its insertion order). Duplicate keys are last-wins in the first
+// position, which is what a PARSER would have made of the same text (RFC 8941
+// section 4.2.3.2) — so a signer cannot build an identifier no verifier could
+// parse back to itself. THROWS on a value that is not a bare item; callers
+// map it.
+function httpsigParamsFrom(input) {
+  log.debug("Entering httpsigParamsFrom().");
+  if (input === undefined || input === null) {
+    log.debug("Leaving httpsigParamsFrom(). None.");
+    return [];
+  }
+  const pairs = Array.isArray(input) ? input :
+                Object.keys(input).map((key) => {
+    return [key, input[key]];
+  });
+  const out = [];
+  pairs.forEach((pair) => {
+    if (!Array.isArray(pair) || pair.length !== 2) {
+      throw new Error('each parameter must be a [key, value] pair');
+    }
+    if (pair[1] === undefined) {
+      // An object member present but undefined is how a caller writes "no
+      // such parameter" ({ expires: undefined }); section 2.3 step 5 skips
+      // parameters "not available or not used", so it is skipped too.
+      return;
+    }
+    sf.serializeKey(pair[0]);
+    const bare = httpsigBareItem(pair[1]);
+    if (!bare) {
+      throw new Error('the parameter "' + pair[0] + '" has a value that is ' +
+                      'not a Structured Field bare item');
+    }
+    sf.serializeBareItem(bare);
+    let at = -1;
+    for (let k = 0; k < out.length; k++) {
+      if (out[k][0] === pair[0]) {
+        at = k;
+      }
+    }
+    if (at >= 0) {
+      out[at][1] = bare;
+    } else {
+      out.push([pair[0], bare]);
+    }
+  });
+  log.debug("Leaving httpsigParamsFrom(). " + out.length +
+            " parameter(s).");
+  return out;
+}
+
+// A component identifier from any of the forms a caller may write:
+//
+//   '@method'                              a bare NAME, no parameters
+//   '"@query-param";name="Pet"'            a serialized identifier (it begins
+//                                          with a DQUOTE, which no name can)
+//   { name: 'signature', params: { key: 'old' } }
+//   { type: 'string', value: 'x', params: [[...]] }   a parsed sf-string item
+//
+// The NAME rule is section 2.1's: a field name is used LOWERCASED, and a name
+// that is not is refused rather than lowercased, because silently lowercasing
+// it would sign a component the signer did not name.
+function httpsigComponentItem(component) {
+  log.debug("Entering httpsigComponentItem().");
+  let item;
+  try {
+    if (typeof component === 'string' && component[0] === '"') {
+      item = sf.parseItem(component);
+    } else if (typeof component === 'string') {
+      item = { type: 'string', value: component, params: [] };
+    } else if (component && typeof component === 'object' &&
+               component.type === 'string') {
+      item = { type: 'string', value: component.value,
+               params: httpsigParamsFrom(component.params) };
+    } else if (component && typeof component === 'object' &&
+               typeof component.name === 'string') {
+      item = { type: 'string', value: component.name,
+               params: httpsigParamsFrom(component.params) };
+    } else {
+      throw new Error('it is not a name, a serialized identifier or a ' +
+                      '{name, params} object');
+    }
+    if (item.type !== 'string') {
+      throw new Error('a component name is an sf-string (RFC 9421 section ' +
+                      '2.5), and this is a ' + item.type);
+    }
+    sf.serializeItem(item);
+  } catch (e) {
+    log.debug("Caught in httpsigComponentItem(): " +
+              ((e && e.message) || e));
+    log.debug("Leaving httpsigComponentItem(). Malformed.");
+    return httpsigRefuse('STS-KEYS-0113',
+                       'A covered component identifier is malformed: ' +
+                       e.message + '.');
+  }
+  const name = item.value;
+  const fieldName = /^[!#$%&'*+\-.^_`|~0-9a-z]+$/;
+  if (!(name[0] === '@' && name.length > 1) && !fieldName.test(name)) {
+    log.debug("Leaving httpsigComponentItem(). Bad name.");
+    return httpsigRefuse('STS-KEYS-0113',
+                       'The component name "' + name +
+                       '" is neither a derived component name nor a ' +
+                       'lowercased HTTP field name (RFC 9421 sections 2.1 ' +
+                       'and 2.2).');
+  }
+  log.debug("Leaving httpsigComponentItem(). " + name);
+  return { ok: true, item: item };
+}
+
+// Two identifiers are the same when the names are equal and the parameters
+// are equal AS A SET — section 2: `"foo";bar;baz` and `"foo";baz;bar` "cannot
+// be in the same message".
+function httpsigIdentityOf(item) {
+  log.debug("Entering httpsigIdentityOf().");
+  const params = (item.params || []).map((pair) => {
+    return sf.serializeParams([pair]);
+  }).sort();
+  log.debug("Leaving httpsigIdentityOf().");
+  return JSON.stringify([item.value, params]);
+}
+
+// The header lines of a named field, as an array of strings, or null when the
+// field is absent. A header value may be one combined string or an array of
+// the separate field lines — the second form is needed only for `;bs`, which
+// wraps each line on its own (section 2.1.3).
+function httpsigFieldLines(message, name) {
+  log.debug("Entering httpsigFieldLines(). " + name);
+  const headers = message && message.headers;
+  if (!headers || typeof headers !== 'object') {
+    log.debug("Leaving httpsigFieldLines(). No headers.");
+    return null;
+  }
+  let raw;
+  const keys = Object.keys(headers);
+  for (let k = 0; k < keys.length; k++) {
+    if (keys[k].toLowerCase() === name) {
+      raw = headers[keys[k]];
+    }
+  }
+  if (raw === undefined || raw === null) {
+    log.debug("Leaving httpsigFieldLines(). Absent.");
+    return null;
+  }
+  const lines = (Array.isArray(raw) ? raw : [raw]).map(String);
+  log.debug("Leaving httpsigFieldLines(). " + lines.length +
+            " line(s).");
+  return lines.length ? lines : null;
+}
+
+// Section 2.1 steps 2 and 3: strip the ends, and replace obsolete line
+// folding (OWS CRLF RWS, RFC 9112 section 5.2) with a single space.
+function httpsigNormalizeLine(line) {
+  log.debug("Entering httpsigNormalizeLine().");
+  log.debug("Leaving httpsigNormalizeLine().");
+  return line.replace(/^[ \t\r\n]+|[ \t\r\n]+$/g, '')
+             .replace(/[ \t]*\r?\n[ \t]+/g, ' ');
+}
+
+// The parts of the target URI, read out of the RAW string, because section
+// 2.2.6 and 2.2.7 want the path and query "before decoding any
+// percent-encoded octets" and a WHATWG URL object re-encodes and resolves dot
+// segments. The URL parser is used for what it is right about — that the
+// string is absolute, and the host normalization of 2.2.3.
+function httpsigTargetParts(message) {
+  log.debug("Entering httpsigTargetParts().");
+  const raw = message && message.targetUri;
+  if (typeof raw !== 'string') {
+    log.debug("Leaving httpsigTargetParts(). No target URI.");
+    return null;
+  }
+  const m = /^([A-Za-z][A-Za-z0-9+.-]*):\/\/([^/?#]*)([^?#]*)(?:\?([^#]*))?(?:#.*)?$/.exec(raw);
+  if (!m) {
+    log.debug("Leaving httpsigTargetParts(). Not absolute.");
+    return null;
+  }
+  let url;
+  try {
+    url = new URL(raw);
+  } catch (e) {
+    log.debug("Caught in httpsigTargetParts(): " +
+              ((e && e.message) || e));
+    // Not a URI the WHATWG parser accepts; the caller refuses with the code
+    // for a missing target, which is what this is to a signature base.
+    log.debug("Leaving httpsigTargetParts(). Unparseable: " + e.message);
+    return null;
+  }
+  const scheme = m[1].toLowerCase();
+  let authority = url.host.toLowerCase();
+  // WHATWG omits the default port for http and https only; section 2.2.3 says
+  // the default port of the SCHEME is omitted, and those are the two schemes
+  // an HTTP request has.
+  const hashAt = raw.indexOf('#');
+  log.debug("Leaving httpsigTargetParts().");
+  return {
+    targetUri: hashAt >= 0 ? raw.slice(0, hashAt) : raw,
+    scheme: scheme,
+    authority: authority,
+    path: m[3] === '' ? '/' : m[3],
+    query: m[4] === undefined ? null : m[4]
+  };
+}
+
+// ---------------------------------------------------------------------------
+// `@query-param`, section 2.2.8: the WHATWG application/x-www-form-urlencoded
+// PARSER (section 5.1 of the URL Standard), then the "percent-encode after
+// encoding" step with the urlencoded percent-encode set and WITHOUT
+// space-as-plus — which is why the RFC's example turns `with+plus+whitespace`
+// into `with%20plus%20whitespace`. That set leaves exactly ASCII
+// alphanumerics and `*-._` unencoded.
+// ---------------------------------------------------------------------------
+function httpsigPercentDecode(text) {
+  log.debug("Entering httpsigPercentDecode().");
+  const bytes = Buffer.from(text, 'utf8');
+  const out = [];
+  for (let k = 0; k < bytes.length; k++) {
+    const b = bytes[k];
+    if (b === 0x25 && k + 2 < bytes.length &&
+        /^[0-9A-Fa-f]{2}$/.test(String.fromCharCode(bytes[k + 1],
+                                                    bytes[k + 2]))) {
+      out.push(parseInt(String.fromCharCode(bytes[k + 1], bytes[k + 2]), 16));
+      k += 2;
+    } else {
+      out.push(b);
+    }
+  }
+  log.debug("Leaving httpsigPercentDecode().");
+  return Buffer.from(out).toString('utf8');
+}
+
+function httpsigUrlencode(text) {
+  log.debug("Entering httpsigUrlencode().");
+  const bytes = Buffer.from(text, 'utf8');
+  let out = '';
+  for (let k = 0; k < bytes.length; k++) {
+    const c = String.fromCharCode(bytes[k]);
+    if (/^[A-Za-z0-9*\-._]$/.test(c)) {
+      out += c;
+    } else {
+      out += '%' + bytes[k].toString(16).toUpperCase().padStart(2, '0');
+    }
+  }
+  log.debug("Leaving httpsigUrlencode().");
+  return out;
+}
+
+function httpsigQueryParams(query) {
+  log.debug("Entering httpsigQueryParams().");
+  const out = [];
+  (query || '').split('&').forEach((sequence) => {
+    if (sequence === '') {
+      return;
+    }
+    const eq = sequence.indexOf('=');
+    const name = eq >= 0 ? sequence.slice(0, eq) : sequence;
+    const value = eq >= 0 ? sequence.slice(eq + 1) : '';
+    out.push([httpsigUrlencode(httpsigPercentDecode(name.replace(/\+/g,
+                                    ' '))),
+              httpsigUrlencode(httpsigPercentDecode(value.replace(/\+/g,
+                                    ' ')))]);
+  });
+  log.debug("Leaving httpsigQueryParams(). " + out.length +
+            " parameter(s).");
+  return out;
+}
+
+// Which parameters a component may carry. A parameter outside this list is
+// "not understood" (section 2.5 step 2.5, first bullet) and is an error.
+function httpsigCheckParams(name, params, allowed) {
+  log.debug("Entering httpsigCheckParams(). " + name);
+  for (let k = 0; k < params.length; k++) {
+    const key = params[k][0];
+    const value = params[k][1];
+    if (allowed.indexOf(key) < 0) {
+      log.debug("Leaving httpsigCheckParams(). Not understood.");
+      return httpsigRefuse('STS-KEYS-0114',
+                         'The parameter "' + key +
+                         '" is not understood on the component "' +
+                         name + '" (RFC 9421 section 2.5 step 2.5).');
+    }
+    const isFlag = key === 'sf' || key === 'bs' || key === 'req' ||
+                   key === 'tr';
+    if (isFlag && !(value.type === 'boolean' && value.value === true)) {
+      // A false flag would make `"x";sf=?0` a second identifier for the value
+      // `"x"` already names — two identifiers, one value, and a signature
+      // over one standing for the other.
+      log.debug("Leaving httpsigCheckParams(). Flag not true.");
+      return httpsigRefuse('STS-KEYS-0114',
+                         'The parameter "' + key + '" on "' + name +
+                         '" is a Boolean flag and is only meaningful as ' +
+                         'true (RFC 9421 sections 2.1 and 6.5.2).');
+    }
+    if ((key === 'key' || key === 'name') && value.type !== 'string') {
+      log.debug("Leaving httpsigCheckParams(). Not a string.");
+      return httpsigRefuse('STS-KEYS-0114',
+                         'The parameter "' + key + '" on "' + name +
+                         '" must be a String, not a ' + value.type +
+                         ' (RFC 9421 sections 2.1.2 and 2.2.8).');
+    }
+  }
+  log.debug("Leaving httpsigCheckParams().");
+  return null;
+}
+
+function httpsigDerivedValue(message, name, params) {
+  log.debug("Entering httpsigDerivedValue(). " + name);
+  if (!Object.prototype.hasOwnProperty.call(DERIVED, name)) {
+    log.debug("Leaving httpsigDerivedValue(). Unknown.");
+    return httpsigRefuse('STS-KEYS-0116',
+                       'The derived component "' + name +
+                       '" is not one this verifier understands (RFC 9421 ' +
+                       'sections 2.2 and 2.5).');
+  }
+  const problem = httpsigCheckParams(name, params,
+                                   name === '@query-param' ? ['name', 'req'] :
+                                   ['req']);
+  if (problem) {
+    log.debug("Leaving httpsigDerivedValue(). Parameters.");
+    return problem;
+  }
+  const isResponse = message && message.status !== undefined &&
+                     message.status !== null;
+  if ((DERIVED[name] === 'response') !== isResponse) {
+    log.debug("Leaving httpsigDerivedValue(). Wrong message kind.");
+    return httpsigRefuse('STS-KEYS-0117',
+                       name === '@status'
+                    ? '@status MUST NOT be used in a request message (RFC ' +
+                       '9421 section 2.2.9).'
+                    : 'The component "' + name + '" targets a request, and ' +
+                       'this message is a response (RFC 9421 section 2.2).');
+  }
+  if (name === '@status') {
+    const status = message.status;
+    if (!Number.isInteger(status) || status < 100 || status > 999) {
+      log.debug("Leaving httpsigDerivedValue(). Bad status.");
+      return httpsigRefuse('STS-KEYS-0117',
+                         'The response status "' + String(status) +
+                         '" is not a three-digit integer (RFC 9421 section ' +
+                         '2.2.9).');
+    }
+    log.debug("Leaving httpsigDerivedValue(). @status");
+    return { ok: true, value: String(status) };
+  }
+  if (name === '@method') {
+    if (typeof message.method !== 'string' || message.method === '') {
+      log.debug("Leaving httpsigDerivedValue(). No method.");
+      return httpsigRefuse('STS-KEYS-0118',
+                         'The request has no method to derive @method from.');
+    }
+    log.debug("Leaving httpsigDerivedValue(). @method");
+    return { ok: true, value: message.method };
+  }
+  const parts = httpsigTargetParts(message);
+  if (!parts) {
+    log.debug("Leaving httpsigDerivedValue(). No target.");
+    return httpsigRefuse('STS-KEYS-0118',
+                       'The request has no absolute target URI to derive ' +
+                       name + ' from (RFC 9421 section 2.2.2); got ' +
+                       JSON.stringify(message && message.targetUri) + '.');
+  }
+  let value;
+  switch (name) {
+    case '@target-uri':
+      value = parts.targetUri;
+      break;
+    case '@authority':
+      value = parts.authority;
+      break;
+    case '@scheme':
+      value = parts.scheme;
+      break;
+    case '@request-target':
+      value = typeof message.requestTarget === 'string'
+        ? message.requestTarget
+        : parts.path + (parts.query === null ? '' : '?' + parts.query);
+      break;
+    case '@path':
+      value = parts.path;
+      break;
+    case '@query':
+      value = '?' + (parts.query === null ? '' : parts.query);
+      break;
+    default: {
+      const wanted = sf.paramValue(params, 'name');
+      if (wanted === undefined) {
+        log.debug("Leaving httpsigDerivedValue(). No name.");
+        return httpsigRefuse('STS-KEYS-0119',
+                           '@query-param requires a name parameter (RFC ' +
+                           '9421 section 2.2.8).');
+      }
+      const matches = httpsigQueryParams(parts.query).filter((pair) => {
+        return pair[0] === wanted;
+      });
+      if (matches.length === 0) {
+        log.debug("Leaving httpsigDerivedValue(). Query parameter " +
+                  "absent.");
+        return httpsigRefuse('STS-KEYS-0119',
+                           'The query parameter "' + wanted +
+                           '" named as a covered component does not occur ' +
+                           'in the target URI (RFC 9421 section 2.2.8).');
+      }
+      if (matches.length > 1) {
+        log.debug("Leaving httpsigDerivedValue(). Query parameter " +
+                  "repeated.");
+        return httpsigRefuse('STS-KEYS-0120',
+                           'The query parameter "' + wanted + '" occurs ' +
+                           matches.length +
+                           ' times; a parameter that occurs more than once ' +
+                           'MUST NOT be covered by name (RFC 9421 section ' +
+                           '2.2.8).');
+      }
+      value = matches[0][1];
+    }
+  }
+  log.debug("Leaving httpsigDerivedValue(). " + name);
+  return { ok: true, value: value };
+}
+
+function httpsigFieldValue(message, name, params, options) {
+  log.debug("Entering httpsigFieldValue(). " + name);
+  const problem = httpsigCheckParams(name, params, ['sf', 'key', 'bs', 'req',
+                                   'tr']);
+  if (problem) {
+    log.debug("Leaving httpsigFieldValue(). Parameters.");
+    return problem;
+  }
+  if (sf.param(params, 'tr') !== undefined) {
+    log.debug("Leaving httpsigFieldValue(). Trailer.");
+    return httpsigRefuse('STS-KEYS-0121',
+                       'The component "' + name +
+                       '";tr names a trailer field, and trailers are not ' +
+                       'part of the message this verifier is given (RFC ' +
+                       '9421 section 2.1.4).');
+  }
+  const bs = sf.param(params, 'bs') !== undefined;
+  const key = sf.paramValue(params, 'key');
+  const strict = sf.param(params, 'sf') !== undefined;
+  if (bs && (strict || key !== undefined)) {
+    log.debug("Leaving httpsigFieldValue(). Incompatible.");
+    return httpsigRefuse('STS-KEYS-0122',
+                       'The component "' + name + '" combines ;bs with ' +
+                       (strict ? ';sf' : ';key') + ', which are mutually ' +
+                       'incompatible (RFC 9421 sections 2.1 and 2.5 step ' +
+                       '2.5).');
+  }
+  const lines = httpsigFieldLines(message, name);
+  if (!lines) {
+    log.debug("Leaving httpsigFieldValue(). Absent.");
+    return httpsigRefuse('STS-KEYS-0123',
+                       'The HTTP field "' + name +
+                       '" is a covered component and is not present in the ' +
+                       'message (RFC 9421 section 2.5).');
+  }
+  const normalized = lines.map((line) => httpsigNormalizeLine(line));
+  if (bs) {
+    log.debug("Leaving httpsigFieldValue(). bs.");
+    return {
+      ok: true,
+      value: sf.serializeList(normalized.map((line) => {
+        return { type: 'bytes', value: Buffer.from(line, 'latin1'),
+                 params: [] };
+      }))
+    };
+  }
+  const combined = normalized.join(', ');
+  if (!strict && key === undefined) {
+    log.debug("Leaving httpsigFieldValue(). Plain.");
+    return { ok: true, value: combined };
+  }
+  const types = Object.assign({}, KNOWN_FIELD_TYPES,
+                              (options && options.fieldTypes) || {});
+  const type = types[name];
+  if (!type || (key !== undefined && type !== 'dictionary')) {
+    log.debug("Leaving httpsigFieldValue(). Type unknown.");
+    return httpsigRefuse('STS-KEYS-0124',
+                       'The component "' + name + '" asks for ' +
+                       (key !== undefined ? ';key' : ';sf') +
+                       ', and "' + name + '" is ' +
+                       (type ? 'a Structured Field ' + type +
+                               ', not a Dictionary'
+                             : 'not a Structured Field type this ' +
+                               'verifier knows') +
+                       ' (RFC 9421 sections 2.1.1 and 2.1.2).');
+  }
+  let value;
+  try {
+    if (key !== undefined) {
+      const member = sf.member(sf.parseDictionary(combined), key);
+      if (member === undefined) {
+        log.debug("Leaving httpsigFieldValue(). Key absent.");
+        return httpsigRefuse('STS-KEYS-0125',
+                           'The Dictionary field "' + name +
+                           '" has no member "' + key + '", which is a ' +
+                           'covered component (RFC 9421 section 2.1.2).');
+      }
+      value = member.type === 'innerList' ? sf.serializeInnerList(member)
+                                          : sf.serializeItem(member);
+    } else if (type === 'dictionary') {
+      value = sf.serializeDictionary(sf.parseDictionary(combined));
+    } else if (type === 'list') {
+      value = sf.serializeList(sf.parseList(combined));
+    } else {
+      value = sf.serializeItem(sf.parseItem(combined));
+    }
+  } catch (e) {
+    log.debug("Caught in httpsigFieldValue(): " +
+              ((e && e.message) || e));
+    log.debug("Leaving httpsigFieldValue(). Malformed.");
+    return httpsigRefuse('STS-KEYS-0126',
+                       'The field "' + name +
+                       '" does not parse as a Structured Field ' + type +
+                       ': ' + e.message);
+  }
+  log.debug("Leaving httpsigFieldValue(). Strict.");
+  return { ok: true, value: value };
+}
+
+// WHICH MESSAGE A COMPONENT IS READ FROM, AND WITH WHICH PARAMETERS. Without
+// `;req` it is the message itself. With it, section 2.4 says the component
+// "is to be derived from the request message" a response answers. Two cases
+// are refused rather than guessed at:
+//
+//   * `;req` on a REQUEST. Section 2.4: a signature targeting a request
+//     "MUST NOT" use it. Reading the request's own value would sign the same
+//     component under two identifiers.
+//   * `;req` on a response whose request the caller did not supply. Deriving
+//     the value from the response instead would sign the wrong message's value,
+//     and it would verify.
+//
+// `@status;req` falls to the derived-component check, because a request has
+// no status (section 2.2.9).
+function httpsigRequestTarget(message, name, params) {
+  log.debug("Entering httpsigRequestTarget(). " + name);
+  if (sf.param(params, 'req') === undefined) {
+    log.debug("Leaving httpsigRequestTarget(). The message itself.");
+    return { ok: true, message: message, params: params };
+  }
+  const isResponse = message && message.status !== undefined &&
+                     message.status !== null;
+  if (!isResponse) {
+    log.debug("Leaving httpsigRequestTarget(). ;req on a request.");
+    return httpsigRefuse('STS-KEYS-0115',
+                         'The component "' + name + '";req names a value ' +
+                         'from the request a RESPONSE answers, and this ' +
+                         'message is a request; a signature targeting a ' +
+                         'request MUST NOT use ;req (RFC 9421 section 2.4).');
+  }
+  const request = message.request;
+  if (!request || typeof request !== 'object' ||
+      (request.status !== undefined && request.status !== null)) {
+    log.debug("Leaving httpsigRequestTarget(). No related request.");
+    return httpsigRefuse('STS-KEYS-0154',
+                         'The component "' + name + '";req names a value ' +
+                         'from the request this response answers, and no ' +
+                         'request message was given to read it from (RFC ' +
+                         '9421 section 2.4).');
+  }
+  log.debug("Leaving httpsigRequestTarget(). The related request.");
+  return { ok: true, message: request,
+           params: params.filter((pair) => { return pair[0] !== 'req'; }) };
+}
+
+// A component's canonical value, or a refusal. `identifier` is the serialized
+// component identifier the value is written after in a signature base.
+/**
+ * Returns a component's canonical value in a message, with its serialized
+ * component identifier.
+ *
+ * @param message - the HTTP message
+ * @param component - the component
+ * @param options - per-call options, such as extra field types
+ * @returns `{ ok: true, value, identifier }`, or a refusal
+ */
+function httpSignatureComponentValue(message, component, options) {
+  log.debug("Entering httpSignatureComponentValue().");
+  const normalized = httpsigComponentItem(component);
+  if (httpsigIsRefusal(normalized)) {
+    log.debug("Leaving httpSignatureComponentValue(). Identifier.");
+    return normalized;
+  }
+  const item = normalized.item;
+  const name = item.value;
+  if (name === '@signature-params') {
+    log.debug("Leaving httpSignatureComponentValue(). @signature-params.");
+    return httpsigRefuse('STS-KEYS-0127',
+                       '@signature-params MUST NOT be listed among the ' +
+                       'covered components; it is always the last line of ' +
+                       'the signature base (RFC 9421 section 2.3).');
+  }
+  // `;req` (section 2.4): the value comes from the REQUEST this response
+  // answers, which the caller hands in as `message.request`. The identifier
+  // keeps the flag, because it is part of what is signed. The value is derived
+  // from the request with the flag taken off, so `"@method";req` reads the
+  // request's @method exactly as `"@method"` would on the request itself.
+  const req = httpsigRequestTarget(message, name, item.params);
+  if (httpsigIsRefusal(req)) {
+    log.debug("Leaving httpSignatureComponentValue(). ;req.");
+    return req;
+  }
+  const result = name[0] === '@'
+    ? httpsigDerivedValue(req.message, name, req.params)
+    : httpsigFieldValue(req.message, name, req.params, options);
+  if (httpsigIsRefusal(result)) {
+    log.debug("Leaving httpSignatureComponentValue(). Refused.");
+    return result;
+  }
+  // Section 2: a component value MUST NOT contain a newline; section 2.5 step
+  // 4: the base is ASCII. Both are checked on the VALUE, so the refusal can
+  // name the component that broke them.
+  if (/[\r\n]/.test(result.value) || /[^\x20-\x7e\t]/.test(result.value)) {
+    log.debug("Leaving httpSignatureComponentValue(). Not printable ASCII.");
+    return httpsigRefuse('STS-KEYS-0128',
+                       'The value of the component "' + name +
+                       '" contains a newline or a character outside ASCII, ' +
+                       'which a signature base may not (RFC 9421 sections ' +
+                       '2 and 2.5 step 4); ;bs exists for such a field.');
+  }
+  log.debug("Leaving httpSignatureComponentValue().");
+  return { ok: true, value: result.value, identifier: sf.serializeItem(item),
+           item: item };
+}
+
+// ===========================================================================
+// THE SIGNATURE BASE, SECTION 2.5, AND THE SIGNATURE PARAMETERS, SECTION 2.3.
+// ===========================================================================
+
+function httpsigCheckSignatureParams(params) {
+  log.debug("Entering httpsigCheckSignatureParams().");
+  for (let k = 0; k < params.length; k++) {
+    const wanted = PARAM_TYPES[params[k][0]];
+    if (wanted && params[k][1].type !== wanted) {
+      log.debug("Leaving httpsigCheckSignatureParams(). Wrong type.");
+      return httpsigRefuse('STS-KEYS-0129',
+                         'The signature parameter "' + params[k][0] +
+                         '" must be ' +
+                         (wanted === 'integer' ? 'an Integer' : 'a String') +
+                         ', not a ' +
+                         params[k][1].type + ' (RFC 9421 section 2.3).');
+    }
+    if (wanted === 'integer' && params[k][1].value < 0) {
+      log.debug("Leaving httpsigCheckSignatureParams(). Negative time.");
+      return httpsigRefuse('STS-KEYS-0129',
+                         'The signature parameter "' + params[k][0] +
+                         '" is a negative UNIX timestamp (RFC 9421 section ' +
+                         '2.3).');
+    }
+  }
+  log.debug("Leaving httpsigCheckSignatureParams().");
+  return null;
+}
+
+// `covered` is either an Inner List (whose own `params` are used when
+// `signatureParams` is not given — which is what a PARSED Signature-Input
+// member is) or an array of components in any form `componentItem()` reads.
+// `signatureParams` is an ordered [[key, value]] array or a plain object.
+/**
+ * Builds the signature base (RFC 9421 section 2.5) over the covered
+ * components.
+ *
+ * @param message - the HTTP message
+ * @param covered - an Inner List, or an array of components
+ * @param signatureParams - an ordered `[[key, value]]` array or a plain
+ *   object; an Inner List's own `params` when absent
+ * @param options - per-call options, such as extra field types
+ * @returns `{ ok: true, base, signatureParams, components }`, or a refusal
+ */
+function httpSignatureBase(message, covered, signatureParams, options) {
+  log.debug("Entering httpSignatureBase().");
+  let components;
+  let paramsInput = signatureParams;
+  if (covered && covered.type === 'innerList' &&
+      Array.isArray(covered.value)) {
+    components = covered.value;
+    if (paramsInput === undefined) {
+      paramsInput = covered.params;
+    }
+  } else if (Array.isArray(covered)) {
+    components = covered;
+  } else {
+    log.debug("Leaving httpSignatureBase(). No component list.");
+    return httpsigRefuse('STS-KEYS-0113',
+                       'The covered components must be an array or an ' +
+                       'Inner List.');
+  }
+  let params;
+  try {
+    params = httpsigParamsFrom(paramsInput);
+  } catch (e) {
+    log.debug("Caught in httpSignatureBase(): " +
+              ((e && e.message) || e));
+    log.debug("Leaving httpSignatureBase(). Parameters.");
+    return httpsigRefuse('STS-KEYS-0129',
+                       'The signature parameters cannot be serialized: ' +
+                       e.message + '.');
+  }
+  const paramProblem = httpsigCheckSignatureParams(params);
+  if (paramProblem) {
+    log.debug("Leaving httpSignatureBase(). Parameter types.");
+    return paramProblem;
+  }
+  const items = [];
+  const lines = [];
+  const seen = {};
+  for (let k = 0; k < components.length; k++) {
+    const normalized = httpsigComponentItem(components[k]);
+    if (httpsigIsRefusal(normalized)) {
+      log.debug("Leaving httpSignatureBase(). Identifier.");
+      return normalized;
+    }
+    const identity = httpsigIdentityOf(normalized.item);
+    if (seen[identity]) {
+      log.debug("Leaving httpSignatureBase(). Duplicate.");
+      return httpsigRefuse('STS-KEYS-0130',
+                         'The component ' +
+                         sf.serializeItem(normalized.item) + ' is covered ' +
+                         'more than once; each component identifier MUST ' +
+                         'occur only once (RFC 9421 sections 2 and 2.5 ' +
+                         'step 2.1).');
+    }
+    seen[identity] = true;
+    const cv = httpSignatureComponentValue(message, normalized.item, options);
+    if (httpsigIsRefusal(cv)) {
+      log.debug("Leaving httpSignatureBase(). Component refused.");
+      return cv;
+    }
+    items.push(normalized.item);
+    lines.push(cv.identifier + ': ' + cv.value);
+  }
+  const serializedParams = sf.serializeInnerList(
+      { type: 'innerList', value: items, params: params });
+  lines.push('"@signature-params": ' + serializedParams);
+  log.debug("Leaving httpSignatureBase(). " + items.length +
+            " component(s).");
+  return {
+    ok: true,
+    base: lines.join('\n'),
+    signatureParams: serializedParams,
+    components: items,
+    params: params
+  };
+}
+
+function httpsigAlgorithmNamed(name) {
+  log.debug("Entering httpsigAlgorithmNamed().");
+  log.debug("Leaving httpsigAlgorithmNamed().");
+  return typeof name === 'string' &&
+         Object.prototype.hasOwnProperty.call(HTTP_SIGNATURE_ALGORITHMS, name)
+    ? HTTP_SIGNATURE_ALGORITHMS[name] : null;
+}
+
+// THE KEY A CALLER HANDED IN, IN THE FORM THE PRIMITIVE TAKES. A KeyObject
+// or bytes pass through unchanged. A JWK is read here, so a caller holding a
+// client's registered JWKS or a realm signer's JWK does not convert it: `oct`
+// becomes the secret's bytes, `AKP` stays a JWK (or becomes its `priv` seed
+// when signing) for `pq_jose`, and anything else becomes a KeyObject. A
+// public JWK whose `use` or `key_ops` says it is not for verification is
+// refused, as `verifyCompactJws()` refuses it (RFC 7517 sections 4.2 and
+// 4.3). Throws on a JWK node cannot read; `httpsigCheckKey()` maps that.
+function httpsigKeyOf(entry, key, purpose) {
+  log.debug("Entering httpsigKeyOf(). " + purpose);
+  const isJwk = key && typeof key === 'object' && !Buffer.isBuffer(key) &&
+                !(key instanceof Uint8Array) &&
+                !(key instanceof nodeCrypto.KeyObject) &&
+                typeof key.kty === 'string';
+  if (!isJwk) {
+    log.debug("Leaving httpsigKeyOf(). Not a JWK.");
+    return key;
+  }
+  if (purpose === 'verify') {
+    const misuse = jwkUseProblem(key);
+    if (misuse) {
+      log.debug("Leaving httpsigKeyOf(). " + misuse);
+      throw new Error('the JWK is ' + misuse);
+    }
+  }
+  if (key.kty === 'oct') {
+    log.debug("Leaving httpsigKeyOf(). A secret.");
+    return Buffer.from(String(key.k || ''), 'base64url');
+  }
+  if (key.kty === 'AKP') {
+    if (purpose === 'sign' && typeof key.priv !== 'string') {
+      log.debug("Leaving httpsigKeyOf(). A public AKP key, to sign.");
+      throw new Error('an AKP JWK with no "priv" member, which is a public ' +
+                      'key and cannot sign');
+    }
+    log.debug("Leaving httpsigKeyOf(). An AKP key.");
+    return purpose === 'sign' ? Buffer.from(key.priv, 'base64url') : key;
+  }
+  const made = purpose === 'sign'
+    ? nodeCrypto.createPrivateKey({ key: key, format: 'jwk' })
+    : nodeCrypto.createPublicKey({ key: key, format: 'jwk' });
+  log.debug("Leaving httpsigKeyOf(). A " + made.asymmetricKeyType + " key.");
+  return made;
+}
+
+// Is this key material appropriate for this algorithm (section 3.1 step 1,
+// section 3.2 step 8)? A key of the wrong family is refused BEFORE node is
+// asked, because node's answer to an Ed25519 key under an RSA algorithm is an
+// exception whose text names neither. Returns null, or a refusal.
+function httpsigCheckKey(name, entry, key, purpose) {
+  log.debug("Entering httpsigCheckKey(). " + name + " " + purpose);
+  if (entry.kind === 'jws-pq') {
+    // `pq_jose` signs with the private seed or key as bytes, and verifies
+    // with an AKP JWK or the public key's bytes. Its own checks (the seed's
+    // length, the signature's) answer the rest.
+    const bytes = Buffer.isBuffer(key) || key instanceof Uint8Array;
+    const akp = !!key && typeof key === 'object' && key.kty === 'AKP' &&
+                (key.alg === undefined || key.alg === name);
+    if (purpose === 'sign' ? !bytes : !(bytes || akp)) {
+      log.debug("Leaving httpsigCheckKey(). Not a post-quantum key.");
+      return httpsigRefuse('STS-KEYS-0131',
+                           name + ' needs ' + (purpose === 'sign'
+                             ? 'its private key as bytes'
+                             : 'an AKP JWK for ' + name + ' or the public ' +
+                               'key as bytes') +
+                           ', and the key given is not one (RFC 9964).');
+    }
+    log.debug("Leaving httpsigCheckKey(). Post-quantum.");
+    return null;
+  }
+  if (entry.kind === 'hmac') {
+    let length = -1;
+    if (Buffer.isBuffer(key) || key instanceof Uint8Array) {
+      length = key.length;
+    } else if (key instanceof nodeCrypto.KeyObject && key.type === 'secret') {
+      length = key.symmetricKeySize;
+    }
+    if (length < 0) {
+      log.debug("Leaving httpsigCheckKey(). Not a secret.");
+      return httpsigRefuse('STS-KEYS-0131',
+                           name + ' needs a shared secret (a Buffer), and ' +
+                           'the key given is not one.');
+    }
+    if (length < entry.minKeyBytes) {
+      log.debug("Leaving httpsigCheckKey(). Secret too short.");
+      return httpsigRefuse('STS-KEYS-0131',
+                           name + ' needs a secret of at least ' +
+                           entry.minKeyBytes + ' octets, the size of its ' +
+                           'hash; this one has ' + length + ' (RFC 7518 ' +
+                           'section 3.2).');
+    }
+    log.debug("Leaving httpsigCheckKey(). Secret.");
+    return null;
+  }
+  if (!(key instanceof nodeCrypto.KeyObject) || key.type === 'secret' ||
+      (purpose === 'sign' && key.type !== 'private')) {
+    log.debug("Leaving httpsigCheckKey(). Not an asymmetric key.");
+    return httpsigRefuse('STS-KEYS-0131',
+                         name + ' needs ' +
+                         (purpose === 'sign' ? 'a private' : 'a public') +
+                         ' asymmetric KeyObject, and the key given is not ' +
+                         'one.');
+  }
+  const type = key.asymmetricKeyType;
+  const details = key.asymmetricKeyDetails || {};
+  let problem = null;
+  if (entry.kind === 'rsa-v1_5' || entry.kind === 'rsa-pss') {
+    if (type !== 'rsa' && !(type === 'rsa-pss' && entry.kind === 'rsa-pss')) {
+      problem = 'is a ' + type + ' key, not an RSA key' +
+                (type === 'rsa-pss' ? ' usable for PKCS#1 v1.5' : '');
+    } else if (!(details.modulusLength >= 2048)) {
+      problem = 'is an RSA key of ' + details.modulusLength +
+                ' bits, under the 2048 RFC 7518 section 3.3 requires';
+    } else if (type === 'rsa-pss' && details.hashAlgorithm &&
+               details.hashAlgorithm !== entry.hash) {
+      problem = 'is an RSASSA-PSS key restricted to ' + details.hashAlgorithm;
+    } else if (purpose === 'verify') {
+      // The checks every RSA verification here makes (#202): an exponent
+      // or a modulus that makes a forgery.
+      const weak = rsaKeyProblem(key, 2048);
+      if (weak) {
+        problem = 'is ' + weak;
+      }
+    }
+  } else if (entry.kind === 'ecdsa') {
+    if (type !== 'ec' || details.namedCurve !== entry.curve) {
+      problem = 'is a ' + type +
+                (details.namedCurve ? ' ' + details.namedCurve : '') +
+                ' key, not an EC key on ' + entry.curve;
+    }
+  } else if (entry.kind === 'eddsa') {
+    if (entry.curves.indexOf(type) < 0) {
+      problem = 'is a ' + type + ' key, not ' + entry.curves.join(' or ');
+    }
+  }
+  if (problem) {
+    log.debug("Leaving httpsigCheckKey(). " + problem);
+    return httpsigRefuse('STS-KEYS-0131',
+                         'The key for ' + name + ' ' + problem + ' (' +
+                         entry.spec + ').');
+  }
+  log.debug("Leaving httpsigCheckKey().");
+  return null;
+}
+
+// HTTP_SIGN, section 3.3. Throws whatever the primitive throws; callers map
+// it. A post-quantum or composite JWS algorithm is signed by
+// `jwsSignatureOver()`, the function that signs it inside a JWS.
+function httpsigRawSign(entry, key, data) {
+  log.debug("Entering httpsigRawSign(). " + entry.kind);
+  let out;
+  switch (entry.kind) {
+    case 'jws-pq':
+      out = jwsSignatureOver(entry.jws, key, data);
+      break;
+    case 'hmac':
+      out = nodeCrypto.createHmac(entry.hash, key).update(data).digest();
+      break;
+    case 'rsa-v1_5':
+      out = nodeCrypto.sign(entry.hash, data, key);
+      break;
+    case 'rsa-pss':
+      out = nodeCrypto.sign(entry.hash, data, {
+        key: key, padding: nodeCrypto.constants.RSA_PKCS1_PSS_PADDING,
+        saltLength: entry.saltLength
+      });
+      break;
+    case 'ecdsa':
+      out = nodeCrypto.sign(entry.hash, data,
+                            { key: key, dsaEncoding: 'ieee-p1363' });
+      break;
+    default:
+      out = nodeCrypto.sign(null, data, key);
+  }
+  log.debug("Leaving httpsigRawSign().");
+  return out;
+}
+
+// HTTP_VERIFY, section 3.3. The HMAC comparison is constant-time, and a
+// length difference is a plain false: `timingSafeEqual` throws on unequal
+// lengths, and an exception there would be a different code path an
+// attacker can time. A post-quantum or composite JWS algorithm is verified
+// by `jwsSignatureValid()`.
+function httpsigRawVerify(entry, key, data, signature) {
+  log.debug("Entering httpsigRawVerify(). " + entry.kind);
+  let ok;
+  switch (entry.kind) {
+    case 'jws-pq':
+      ok = jwsSignatureValid(entry.jws, key, data, signature);
+      break;
+    case 'hmac': {
+      const expected = nodeCrypto.createHmac(entry.hash, key)
+                                 .update(data)
+                                 .digest();
+      ok = expected.length === signature.length &&
+           nodeCrypto.timingSafeEqual(expected, signature);
+      break;
+    }
+    case 'rsa-v1_5':
+      ok = nodeCrypto.verify(entry.hash, data, key, signature);
+      break;
+    case 'rsa-pss':
+      ok = nodeCrypto.verify(entry.hash, data, {
+        key: key, padding: nodeCrypto.constants.RSA_PKCS1_PSS_PADDING,
+        saltLength: entry.saltLength
+      }, signature);
+      break;
+    case 'ecdsa':
+      // r||s at the coordinate size and nothing else: a DER signature, or one
+      // of the other curve's length, is not this algorithm's output (3.3.4).
+      ok = signature.length === 2 * entry.coordinateBytes &&
+           nodeCrypto.verify(entry.hash, data,
+                             { key: key, dsaEncoding: 'ieee-p1363' },
+                             signature);
+      break;
+    default:
+      ok = nodeCrypto.verify(null, data, key, signature);
+  }
+  log.debug("Leaving httpsigRawVerify(). " + ok);
+  return !!ok;
+}
+
+// ===========================================================================
+// SIGNING, SECTION 3.1, AND PUTTING A SIGNATURE IN A MESSAGE, SECTION 4.
+// ===========================================================================
+
+// options: { label, components, params, key, algorithm, fieldTypes }
+//
+// `algorithm` may be an HTTP registry name or a JWS name; when it is absent
+// the `alg` parameter names it. It is never INVENTED into the parameters:
+// whether the signature carries `alg` is the signer's decision (GNAP forbids
+// it), so the parameters are exactly what the caller passed, in the caller's
+// order.
+/**
+ * Signs a message (section 3.1). The parameters are exactly what the caller
+ * passed, in its order; `alg` is never added.
+ *
+ * @param message - the HTTP message
+ * @param options - `{ label, components, params, key, algorithm, fieldTypes
+ *   }`
+ * @returns `{ ok: true, label, algorithm, signatureInput, ... }`, or a
+ *   refusal
+ */
+function signHttpMessage(message, options) {
+  log.debug("Entering signHttpMessage().");
+  const opts = options || {};
+  try {
+    sf.serializeKey(opts.label);
+  } catch (e) {
+    log.debug("Caught in signHttpMessage(): " + ((e && e.message) || e));
+    log.debug("Leaving signHttpMessage(). Label.");
+    return httpsigRefuse('STS-KEYS-0132',
+                       'The signature label ' + JSON.stringify(opts.label) +
+                       ' is not a valid Dictionary key (RFC 9421 section ' +
+                       '4.1): ' + e.message);
+  }
+  let params;
+  try {
+    params = httpsigParamsFrom(opts.params);
+  } catch (e) {
+    log.debug("Caught in signHttpMessage(): " + ((e && e.message) || e));
+    log.debug("Leaving signHttpMessage(). Parameters.");
+    return httpsigRefuse('STS-KEYS-0129',
+                       'The signature parameters cannot be serialized: ' +
+                       e.message + '.');
+  }
+  const algParam = sf.paramValue(params, 'alg');
+  const name = opts.algorithm !== undefined ? opts.algorithm : algParam;
+  if (name === undefined) {
+    log.debug("Leaving signHttpMessage(). No algorithm.");
+    return httpsigRefuse('STS-KEYS-0133',
+                       'No signature algorithm was named, by the caller or ' +
+                       'by an alg parameter (RFC 9421 section 3.1 step 1).');
+  }
+  const entry = httpsigAlgorithmNamed(name);
+  if (!entry) {
+    log.debug("Leaving signHttpMessage(). Unknown algorithm.");
+    return httpsigRefuse('STS-KEYS-0134',
+                       'The signature algorithm ' + JSON.stringify(name) +
+                       ' is not supported; the supported ones are ' +
+                       Object.keys(HTTP_SIGNATURE_ALGORITHMS).join(', ') + '.');
+  }
+  if (algParam !== undefined &&
+      (entry.registry === 'jws' || algParam !== name)) {
+    log.debug("Leaving signHttpMessage(). alg conflict.");
+    return httpsigRefuse('STS-KEYS-0135',
+                       entry.registry === 'jws'
+                    ? 'The JWS algorithm ' + name + ' cannot be signalled ' +
+                       'with the alg signature parameter (RFC 9421 section ' +
+                       '3.3.7).'
+                    : 'The alg parameter "' + algParam + '" names a ' +
+                       'different algorithm from the one signing, ' +
+                       name + ' (RFC 9421 section 3.2 step 6.5).');
+  }
+  let signingKey;
+  try {
+    signingKey = httpsigKeyOf(entry, opts.key, 'sign');
+  } catch (e) {
+    log.debug("Caught in signHttpMessage(): " + ((e && e.message) || e));
+    log.debug("Leaving signHttpMessage(). The key cannot be read.");
+    return httpsigRefuse('STS-KEYS-0131',
+                         'The key for ' + name + ' cannot be read: ' +
+                         e.message + '.');
+  }
+  const keyProblem = httpsigCheckKey(name, entry, signingKey, 'sign');
+  if (keyProblem) {
+    log.debug("Leaving signHttpMessage(). Key.");
+    return keyProblem;
+  }
+  const built = httpSignatureBase(message, opts.components || [], params,
+                                   opts);
+  if (httpsigIsRefusal(built)) {
+    log.debug("Leaving signHttpMessage(). Base.");
+    return built;
+  }
+  let signatureBytes;
+  try {
+    signatureBytes = httpsigRawSign(entry, signingKey, Buffer.from(built.base,
+                                  'ascii'));
+  } catch (e) {
+    log.debug("Caught in signHttpMessage(): " + ((e && e.message) || e));
+    log.debug("Leaving signHttpMessage(). Primitive threw.");
+    return httpsigRefuse('STS-KEYS-0136',
+                       'Signing with ' + name +
+                       ' failed inside the cryptographic library: ' +
+                       e.message);
+  }
+  log.debug("Leaving signHttpMessage(). " + opts.label);
+  return {
+    ok: true,
+    label: opts.label,
+    algorithm: name,
+    signatureInput: opts.label + '=' + built.signatureParams,
+    signature: opts.label + '=' +
+               sf.serializeItem({ type: 'bytes', value: signatureBytes,
+                                  params: [] }),
+    signatureParams: built.signatureParams,
+    base: built.base,
+    signatureBytes: signatureBytes
+  };
+}
+
+function httpsigHeaderKeyFor(headers, name) {
+  log.debug("Entering httpsigHeaderKeyFor().");
+  const keys = Object.keys(headers);
+  for (let k = 0; k < keys.length; k++) {
+    if (keys[k].toLowerCase() === name) {
+      log.debug("Leaving httpsigHeaderKeyFor().");
+      return keys[k];
+    }
+  }
+  log.debug("Leaving httpsigHeaderKeyFor().");
+  return name;
+}
+
+// A NEW message with `result`'s two members appended to the message's
+// Signature-Input and Signature fields — the shape of RFC 9635 section
+// 7.3.1.1, where the key-rotation signature is added beside the old key's and
+// covers it.
+//
+// It APPENDS TEXT rather than re-serializing what was there. A later
+// signature may cover the whole `signature-input` field without `;key`, and
+// that covers its bytes as sent; re-serializing the existing members would
+// change those bytes under a signature that has already been made. The
+// existing value is still PARSED first, because appending to a malformed
+// field makes one nobody can read, and a label already present in either
+// field is refused — section 4 says a label MUST be unique, and a second
+// member under it would replace the first for every last-wins parser.
+/**
+ * Returns a new message with a signature's two members appended to its
+ * Signature-Input and Signature fields, as text, so bytes already signed do
+ * not change (RFC 9635 section 7.3.1.1). A label already present is refused.
+ *
+ * @param message - the HTTP message
+ * @param result - what `sign()` returned
+ * @returns `{ ok: true, message }`, or a refusal
+ */
+function appendHttpSignature(message, result) {
+  log.debug("Entering appendHttpSignature().");
+  if (!result || result.ok !== true ||
+      typeof result.signatureInput !== 'string' ||
+      typeof result.signature !== 'string') {
+    log.debug("Leaving appendHttpSignature(). Not a signature.");
+    return httpsigRefuse('STS-KEYS-0137',
+                       'Only a successful sign() result can be appended to ' +
+                       'a message.');
+  }
+  const headers = Object.assign({}, (message && message.headers) || {});
+  const fields = [['signature-input', result.signatureInput],
+                  ['signature', result.signature]];
+  for (let k = 0; k < fields.length; k++) {
+    const lines = httpsigFieldLines({ headers: headers }, fields[k][0]);
+    if (!lines) {
+      continue;
+    }
+    let dictionary;
+    try {
+      dictionary = sf.parseDictionary(lines.join(', '));
+    } catch (e) {
+      log.debug("Caught in appendHttpSignature(): " +
+                ((e && e.message) || e));
+      log.debug("Leaving appendHttpSignature(). Existing field " +
+                "malformed.");
+      return httpsigRefuse('STS-KEYS-0138',
+                         'The message\'s existing ' + fields[k][0] +
+                         ' field is not a Dictionary, so nothing can be ' +
+                         'appended to it: ' + e.message);
+    }
+    if (sf.member(dictionary, result.label) !== undefined) {
+      log.debug("Leaving appendHttpSignature(). Label taken.");
+      return httpsigRefuse('STS-KEYS-0137',
+                         'The label "' + result.label +
+                         '" is already used in the message\'s ' +
+                         fields[k][0] +
+                         ' field; a signature label MUST be unique (RFC ' +
+                         '9421 section 4).');
+    }
+  }
+  fields.forEach((field) => {
+    const headerKey = httpsigHeaderKeyFor(headers, field[0]);
+    const existing = headers[headerKey];
+    if (existing === undefined || existing === null) {
+      headers[headerKey] = field[1];
+    } else if (Array.isArray(existing)) {
+      headers[headerKey] = existing.concat([field[1]]);
+    } else {
+      headers[headerKey] = String(existing) + ', ' + field[1];
+    }
+  });
+  log.debug("Leaving appendHttpSignature(). " + result.label);
+  return { ok: true,
+           message: Object.assign({}, message, { headers: headers }) };
+}
+
+// ===========================================================================
+// PARSING THE TWO FIELDS, SECTIONS 4.1, 4.2 AND 3.2 STEPS 1 TO 3.
+// ===========================================================================
+
+function httpsigParseField(message, name) {
+  log.debug("Entering httpsigParseField(). " + name);
+  const lines = httpsigFieldLines(message, name);
+  if (!lines) {
+    log.debug("Leaving httpsigParseField(). Absent.");
+    return { ok: true, dictionary: [] };
+  }
+  const duplicates = [];
+  let dictionary = [];
+  try {
+    // Line by line as well as combined: a label repeated on two field lines
+    // is just as much a second signature under one name as one repeated
+    // within a line (section 4.1: "unique across all field values").
+    dictionary = sf.parseDictionary(lines.join(', '), {
+      onDuplicate: (key) => {
+        log.debug("Entering onDuplicate().");
+        duplicates.push(key);
+        log.debug("Leaving onDuplicate().");
+      }
+    });
+  } catch (e) {
+    log.debug("Caught in httpsigParseField(): " +
+              ((e && e.message) || e));
+    log.debug("Leaving httpsigParseField(). Malformed.");
+    return httpsigRefuse('STS-KEYS-0138',
+                       'The ' + name + ' field is not a Structured Field ' +
+                       'Dictionary (RFC 9421 section 4): ' + e.message);
+  }
+  if (duplicates.length) {
+    log.debug("Leaving httpsigParseField(). Duplicate label.");
+    return httpsigRefuse('STS-KEYS-0139',
+                       'The ' + name + ' field uses the label "' +
+                       duplicates[0] + '" more than once; labels MUST be ' +
+                       'unique across all field values (RFC 9421 sections ' +
+                       '4.1 and 4.2).');
+  }
+  log.debug("Leaving httpsigParseField(). " +
+            dictionary.length + " member(s).");
+  return { ok: true, dictionary: dictionary };
+}
+
+function httpsigParamsObject(params) {
+  log.debug("Entering httpsigParamsObject().");
+  const out = {};
+  (params || []).forEach((pair) => {
+    out[pair[0]] = pair[1].value;
+  });
+  log.debug("Leaving httpsigParamsObject().");
+  return out;
+}
+
+// Every signature the message carries, in Signature-Input order:
+// { ok: true, signatures: [{ label, components, componentIds, params,
+//   paramList, signature, serializedParams }] }, or a refusal.
+/**
+ * Parses every signature a message carries, in Signature-Input order.
+ *
+ * @param message - the HTTP message
+ * @returns `{ ok: true, signatures }`, each with its label, components,
+ *   parameters and signature, or a refusal
+ */
+function parseHttpSignatures(message) {
+  log.debug("Entering parseHttpSignatures().");
+  const inputs = httpsigParseField(message, 'signature-input');
+  if (httpsigIsRefusal(inputs)) {
+    log.debug("Leaving parseHttpSignatures(). Signature-Input.");
+    return inputs;
+  }
+  const values = httpsigParseField(message, 'signature');
+  if (httpsigIsRefusal(values)) {
+    log.debug("Leaving parseHttpSignatures(). Signature.");
+    return values;
+  }
+  if (inputs.dictionary.length === 0 && values.dictionary.length === 0) {
+    log.debug("Leaving parseHttpSignatures(). None.");
+    return httpsigRefuse('STS-KEYS-0140',
+                       'The message carries no HTTP message signature: it ' +
+                       'has no Signature-Input and no Signature field (RFC ' +
+                       '9421 section 4).');
+  }
+  const labels = {};
+  inputs.dictionary.forEach((pair) => { labels[pair[0]] = true; });
+  values.dictionary.forEach((pair) => { labels[pair[0]] = true; });
+  const out = [];
+  const allLabels = Object.keys(labels);
+  for (let k = 0; k < allLabels.length; k++) {
+    const label = allLabels[k];
+    const input = sf.member(inputs.dictionary, label);
+    const value = sf.member(values.dictionary, label);
+    if (input === undefined || value === undefined) {
+      log.debug("Leaving parseHttpSignatures(). Label mismatch.");
+      return httpsigRefuse('STS-KEYS-0141',
+                         'The signature label "' + label +
+                         '" is present in the ' +
+                         (input === undefined ? 'Signature'
+                                              : 'Signature-Input') +
+                         ' field and not in the ' +
+                         (input === undefined ? 'Signature-Input'
+                                              : 'Signature') +
+                         ' field; the presence of a label in one field but ' +
+                         'not the other is an error (RFC 9421 section 4).');
+    }
+    const componentsAreStrings = input.type === 'innerList' &&
+                                 input.value.every((item) => {
+      return item.type === 'string';
+    });
+    if (!componentsAreStrings || value.type !== 'bytes') {
+      log.debug("Leaving parseHttpSignatures(). Member types.");
+      return httpsigRefuse('STS-KEYS-0142',
+                         !componentsAreStrings
+                      ? 'The Signature-Input member "' + label + '" is not ' +
+                         'an Inner List of String component identifiers ' +
+                         '(RFC 9421 section 4.1).'
+                      : 'The Signature member "' + label +
+                         '" is not a Byte Sequence (RFC 9421 section 4.2).');
+    }
+    out.push({
+      label: label,
+      components: input.value,
+      componentIds: input.value.map((item) => {
+        return sf.serializeItem(item);
+      }),
+      params: httpsigParamsObject(input.params),
+      paramList: input.params,
+      signature: value.value,
+      serializedParams: sf.serializeInnerList(input)
+    });
+  }
+  // Signature-Input order, which is the order a reader of the message sees.
+  out.sort((a, b) => {
+    return httpsigIndexOfLabel(inputs.dictionary, a.label) -
+           httpsigIndexOfLabel(inputs.dictionary, b.label);
+  });
+  log.debug("Leaving parseHttpSignatures(). " + out.length +
+            " signature(s).");
+  return { ok: true, signatures: out };
+}
+
+function httpsigIndexOfLabel(dictionary, label) {
+  log.debug("Entering httpsigIndexOfLabel().");
+  for (let k = 0; k < dictionary.length; k++) {
+    if (dictionary[k][0] === label) {
+      log.debug("Leaving httpsigIndexOfLabel().");
+      return k;
+    }
+  }
+  log.debug("Leaving httpsigIndexOfLabel().");
+  return -1;
+}
+
+// ===========================================================================
+// VERIFYING, SECTION 3.2, WITH THE APPLICATION REQUIREMENTS OF 3.2.1.
+// ===========================================================================
+
+// options:
+//   label             verify only this signature (it must be present)
+//   keyFor(parsed)    -> { key, algorithm } | null; `parsed` is a
+//                     parseSignatures() entry. REQUIRED: section 3.2 step 5
+//                     says an unknown or untrusted key MUST fail.
+//   now               seconds; defaults to the clock
+//   maxAgeS           created must be within this many seconds of now
+//   skewS             how far in the FUTURE created may be; defaults to
+//   maxAgeS requireCreated    refuse a signature with no created (implied by
+//   maxAgeS) requireComponents components that MUST be covered
+//   requireTag        the tag parameter's required value
+//   forbidAlgParam    refuse any signature carrying alg (RFC 9635 7.3.1)
+//   allowedAlgorithms the algorithms policy allows (section 3.2 step 6.1)
+//   require           'all' (default): every candidate must verify;
+//                     'any': one verifying candidate is enough (RFC 9635
+//                     section 7.3.1's "until it finds (at least) one")
+//   fieldTypes        extra Structured Field types for ;sf and ;key
+//
+// Candidates are the labelled signature, else every signature with the
+// required tag, else every signature. The default is 'all' because a verifier
+// that quietly passed over a failing signature has made a policy decision its
+// caller did not.
+/**
+ * Verifies a message's signatures (section 3.2) against the keys
+ * `options.keyFor()` names; an unknown key fails.
+ *
+ * By default every candidate signature must verify.
+ *
+ * @param message - the HTTP message
+ * @param options - `label`, `keyFor`, `now`, `maxAgeS`, `skewS`,
+ *   `requireCreated`, `requireComponents`, `requireTag`, `forbidAlgParam`,
+ *   `allowedAlgorithms`, `require` (`all` or `any`) and `fieldTypes`
+ * @returns `{ ok: true, verified }`, or a refusal
+ */
+function verifyHttpMessage(message, options) {
+  log.debug("Entering verifyHttpMessage().");
+  const opts = options || {};
+  const now = opts.now !== undefined ? opts.now
+                                     : Math.floor(Date.now() / 1000);
+  const parsed = parseHttpSignatures(message);
+  if (httpsigIsRefusal(parsed)) {
+    log.debug("Leaving verifyHttpMessage(). Parse.");
+    return parsed;
+  }
+  let candidates = parsed.signatures;
+  if (opts.label !== undefined) {
+    candidates =
+        candidates.filter((s) => { return s.label === opts.label; });
+    if (candidates.length === 0) {
+      log.debug("Leaving verifyHttpMessage(). Label absent.");
+      return httpsigRefuse('STS-KEYS-0143',
+                         'The message carries no signature labelled "' +
+                         String(opts.label) +
+                         '" (RFC 9421 section 3.2 step 1.1).');
+    }
+  } else if (opts.requireTag !== undefined) {
+    candidates = candidates.filter((s) => {
+      return s.params.tag === opts.requireTag;
+    });
+    if (candidates.length === 0) {
+      log.debug("Leaving verifyHttpMessage(). No signature with the tag.");
+      return httpsigRefuse('STS-KEYS-0144',
+                         'No signature in the message carries tag="' +
+                         String(opts.requireTag) +
+                         '"; the tags present are ' + JSON.stringify(
+                        parsed.signatures.map((s) => {
+                      return s.params.tag === undefined ? null : s.params.tag;
+                    })) + ' (RFC 9421 section 3.2.1).');
+    }
+  }
+  const verified = [];
+  let firstFailure = null;
+  for (let k = 0; k < candidates.length; k++) {
+    const result = httpsigVerifyOne(message, candidates[k], opts, now);
+    if (result.ok) {
+      verified.push(result);
+    } else if (opts.require !== 'any') {
+      log.debug("Leaving verifyHttpMessage(). " + candidates[k].label +
+                " refused.");
+      return result;
+    } else if (!firstFailure) {
+      firstFailure = result;
+    }
+  }
+  if (verified.length === 0) {
+    log.debug("Leaving verifyHttpMessage(). None verified.");
+    return firstFailure;
+  }
+  log.debug("Leaving verifyHttpMessage(). " + verified.length +
+            " verified.");
+  return { ok: true, verified: verified };
+}
+
+function httpsigVerifyOne(message, parsed, opts, now) {
+  log.debug("Entering httpsigVerifyOne(). " + parsed.label);
+  const p = parsed.params;
+  const paramProblem = httpsigCheckSignatureParams(parsed.paramList);
+  if (paramProblem) {
+    log.debug("Leaving httpsigVerifyOne(). Parameter types.");
+    return paramProblem;
+  }
+  if (opts.requireTag !== undefined && p.tag !== opts.requireTag) {
+    log.debug("Leaving httpsigVerifyOne(). Tag.");
+    return httpsigRefuse('STS-KEYS-0144',
+                       'The signature "' + parsed.label + '" carries ' +
+                       (p.tag === undefined ? 'no tag' : 'tag="' + p.tag +
+                        '"') +
+                       ' and tag="' + opts.requireTag +
+                       '" is required (RFC 9421 section 3.2.1).');
+  }
+  if (opts.forbidAlgParam && p.alg !== undefined) {
+    log.debug("Leaving httpsigVerifyOne(). alg present.");
+    return httpsigRefuse('STS-KEYS-0145',
+                       'The signature "' + parsed.label +
+                       '" carries the alg parameter, which this ' +
+                       'application forbids (RFC 9635 section 7.3.1: "The ' +
+                       'explicit alg signature parameter MUST NOT be ' +
+                       'included").');
+  }
+  if ((opts.requireCreated ||
+       opts.maxAgeS !== undefined) && p.created === undefined) {
+    log.debug("Leaving httpsigVerifyOne(). No created.");
+    return httpsigRefuse('STS-KEYS-0146',
+                       'The signature "' + parsed.label +
+                       '" has no created parameter, and its age must be ' +
+                       'checked (RFC 9421 section 3.2.1).');
+  }
+  if (p.created !== undefined && opts.maxAgeS !== undefined) {
+    const skew = opts.skewS !== undefined ? opts.skewS : opts.maxAgeS;
+    if (now - p.created > opts.maxAgeS) {
+      log.debug("Leaving httpsigVerifyOne(). Stale.");
+      return httpsigRefuse('STS-KEYS-0147',
+                         'The signature "' + parsed.label + '" was created ' +
+                         (now - p.created) +
+                         ' seconds ago, more than the ' + opts.maxAgeS +
+                         ' allowed.');
+    }
+    if (p.created - now > skew) {
+      log.debug("Leaving httpsigVerifyOne(). Future.");
+      return httpsigRefuse('STS-KEYS-0148',
+                         'The signature "' + parsed.label +
+                         '" claims to be created ' + (p.created -
+                     now) + ' seconds in the future, more than the ' + skew +
+                         ' of clock skew allowed.');
+    }
+  }
+  if (p.expires !== undefined && now >= p.expires) {
+    log.debug("Leaving httpsigVerifyOne(). Expired.");
+    return httpsigRefuse('STS-KEYS-0149',
+                       'The signature "' + parsed.label + '" expired ' +
+                       (now - p.expires) +
+                       ' seconds ago (RFC 9421 section 2.3, expires).');
+  }
+  const required = opts.requireComponents || [];
+  const covered = {};
+  parsed.components.forEach((item) => {
+    covered[httpsigIdentityOf(item)] = true;
+  });
+  for (let k = 0; k < required.length; k++) {
+    const wanted = httpsigComponentItem(required[k]);
+    if (httpsigIsRefusal(wanted)) {
+      log.debug("Leaving httpsigVerifyOne(). Required component " +
+                "malformed.");
+      return wanted;
+    }
+    if (!covered[httpsigIdentityOf(wanted.item)]) {
+      log.debug("Leaving httpsigVerifyOne(). Required component " +
+                "missing.");
+      return httpsigRefuse('STS-KEYS-0150',
+                         'The signature "' + parsed.label +
+                         '" does not cover the required component ' +
+                         sf.serializeItem(wanted.item) + '; it covers (' +
+                         parsed.componentIds.join(' ') +
+                         ') (RFC 9421 section 3.2 step 4).');
+    }
+  }
+  let keyed = null;
+  try {
+    keyed = typeof opts.keyFor === 'function' ? opts.keyFor(parsed) : null;
+  } catch (e) {
+    log.debug("Caught in httpsigVerifyOne(): " +
+              ((e && e.message) || e));
+    // A key lookup that throws is a key this verifier does not have; the
+    // refusal below carries the reason rather than the process carrying the
+    // exception.
+    log.debug("keyFor() threw: " + e.message);
+    keyed = null;
+  }
+  if (!keyed || keyed.key === undefined || keyed.key === null) {
+    log.debug("Leaving httpsigVerifyOne(). No key.");
+    return httpsigRefuse('STS-KEYS-0151',
+                       'No verification key is known for the signature "' +
+                       parsed.label + '"' +
+                       (p.keyid !== undefined ? ' (keyid="' + p.keyid +
+                        '")' : '') +
+                       '; an unknown or untrusted key MUST fail (RFC 9421 ' +
+                       'section 3.2 step 5).');
+  }
+  const fromKey = keyed.algorithm;
+  const fromParam = p.alg;
+  if (fromParam !== undefined) {
+    const paramEntry = httpsigAlgorithmNamed(fromParam);
+    if (!paramEntry || paramEntry.registry !== 'http') {
+      log.debug("Leaving httpsigVerifyOne(). alg parameter unknown.");
+      return httpsigRefuse('STS-KEYS-0134',
+                         'The alg parameter "' + fromParam + '" is not an ' +
+                         'algorithm in the HTTP Signature Algorithms ' +
+                         'registry this verifier supports (RFC 9421 ' +
+                         'sections 2.3 and 3.3.7).');
+    }
+    if (fromKey !== undefined && fromKey !== fromParam) {
+      log.debug("Leaving httpsigVerifyOne(). alg conflict.");
+      return httpsigRefuse('STS-KEYS-0135',
+                         'The signature "' + parsed.label + '" says alg="' +
+                         fromParam + '" and its key is for ' +
+                         fromKey + '; when the algorithm is stated in more ' +
+                         'than one place they MUST agree (RFC 9421 section ' +
+                         '3.2 step 6.5).');
+    }
+  }
+  const name = fromKey !== undefined ? fromKey : fromParam;
+  if (name === undefined) {
+    log.debug("Leaving httpsigVerifyOne(). No algorithm.");
+    return httpsigRefuse('STS-KEYS-0133',
+                       'No algorithm could be determined for the signature ' +
+                       '"' + parsed.label +
+                       '": the key names none and the signature carries no ' +
+                       'alg parameter (RFC 9421 section 3.2 step 6).');
+  }
+  const entry = httpsigAlgorithmNamed(name);
+  if (!entry) {
+    log.debug("Leaving httpsigVerifyOne(). Unknown algorithm.");
+    return httpsigRefuse('STS-KEYS-0134',
+                       'The signature algorithm ' + JSON.stringify(name) +
+                       ' is not supported.');
+  }
+  if (Array.isArray(opts.allowedAlgorithms) &&
+      opts.allowedAlgorithms.indexOf(name) < 0) {
+    log.debug("Leaving httpsigVerifyOne(). Not allowed.");
+    return httpsigRefuse('STS-KEYS-0152',
+                       'The algorithm ' + name +
+                       ' is not one this verifier allows (' +
+                       opts.allowedAlgorithms.join(', ') +
+                       ') (RFC 9421 section 3.2 step 6.1).');
+  }
+  let verifyingKey;
+  try {
+    verifyingKey = httpsigKeyOf(entry, keyed.key, 'verify');
+  } catch (e) {
+    log.debug("Caught in httpsigVerifyOne(): " + ((e && e.message) || e));
+    log.debug("Leaving httpsigVerifyOne(). The key cannot be read.");
+    return httpsigRefuse('STS-KEYS-0131',
+                         'The key for ' + name + ' cannot be read: ' +
+                         e.message + '.');
+  }
+  const keyProblem = httpsigCheckKey(name, entry, verifyingKey, 'verify');
+  if (keyProblem) {
+    log.debug("Leaving httpsigVerifyOne(). Key.");
+    return keyProblem;
+  }
+  const built = httpSignatureBase(message, parsed.components,
+                                   parsed.paramList,
+                                   opts);
+  if (httpsigIsRefusal(built)) {
+    log.debug("Leaving httpsigVerifyOne(). Base.");
+    return built;
+  }
+  let good;
+  try {
+    good = httpsigRawVerify(entry, verifyingKey, Buffer.from(built.base, 'ascii'),
+                          parsed.signature);
+  } catch (e) {
+    log.debug("Caught in httpsigVerifyOne(): " +
+              ((e && e.message) || e));
+    log.debug("Leaving httpsigVerifyOne(). Primitive threw.");
+    return httpsigRefuse('STS-KEYS-0136',
+                       'Verifying with ' + name + ' failed inside the ' +
+                       'cryptographic library: ' + e.message);
+  }
+  if (!good) {
+    log.debug("Leaving httpsigVerifyOne(). Bad signature.");
+    return httpsigRefuse('STS-KEYS-0153',
+                       'The signature "' + parsed.label +
+                       '" does not verify with ' + name +
+                       ' over the signature base rebuilt from the message: ' +
+                       'the message was changed, or it was signed with a ' +
+                       'different key (RFC 9421 section 3.2 step 8).');
+  }
+  log.debug("Leaving httpsigVerifyOne(). " + parsed.label +
+            " verified.");
+  return {
+    ok: true,
+    label: parsed.label,
+    algorithm: name,
+    keyid: p.keyid,
+    components: parsed.componentIds,
+    params: p,
+    base: built.base
+  };
+}
+
+
+// ===========================================================================
+// SECTION 15 — DIGESTS, KEY DERIVATION AND KEY IMPORT, BY NAME (#178,
+// 2026-10-05).
+//
+// rcbj's rule, restated on 2026-10-05: "All crypto operations across all
+// protocols and use cases are to be centralized in a common module." It
+// covers more than signatures. A digest, an HKDF, the import of a public key
+// from a JWK and the export of one as SubjectPublicKeyInfo are cryptographic
+// operations too, and a feature module that calls node's `crypto` for one of
+// them is a second place that decides an algorithm. These are the small
+// operations `gnap/` did on node directly until #178. #453 moves the rest of
+// the service onto them, and onto the functions above.
+//
+// Each one names its algorithm from a closed list, so an unknown name is a
+// thrown Error at the caller's own line rather than whatever node makes of it.
+// ===========================================================================
+
+// The digests a caller may ask for by name: SHA-2, SHA-3 and the two BLAKE2
+// functions, by node's names. RFC 9635 section 4.2.3's interaction hash may
+// name any of them through IANA's "Named Information Hash Algorithm"
+// registry (`gnap/gnap_request.ts`'s HASH_METHODS). SHA-1 is not here:
+// nothing new may choose it, and the callers that still meet it (a SPIRE
+// fingerprint, a certificate thumbprint) have functions of their own that say
+// why.
+const DIGESTS = ['sha256', 'sha384', 'sha512', 'sha3-224', 'sha3-256',
+                 'sha3-384', 'sha3-512', 'blake2s256', 'blake2b512'];
+// HKDF (RFC 5869) is defined over an HMAC, so it takes the SHA-2 names only.
+const HKDF_DIGESTS = ['sha256', 'sha384', 'sha512'];
+
+// HOT PATH: a digest is computed per request in several places (a token's
+// index, a GNAP key's identity), so no Entering/Leaving pair. It would drown
+// the log.
+/**
+ * Returns the digest of a value under a named algorithm.
+ *
+ * @param algorithm - one of DIGESTS: SHA-2, SHA-3 or BLAKE2, by node's name
+ * @param data - the bytes, or a string read as UTF-8
+ * @param encoding - `hex`, `base64` or `base64url` for a string; a Buffer
+ *   when absent
+ * @returns {any} the digest: a string when an encoding is named, a Buffer
+ *   when not
+ * @throws Error for an algorithm outside the list
+ */
+function digest(algorithm, data, encoding) {
+  if (DIGESTS.indexOf(algorithm) < 0) {
+    // error-code: none — a programming error; every caller names a constant
+    throw new Error('crypto: digest() computes ' + DIGESTS.join(', ') +
+                    ', not "' + algorithm + '"');
+  }
+  const hash = nodeCrypto.createHash(algorithm)
+    .update(typeof data === 'string' ? Buffer.from(data, 'utf8')
+                                     : Buffer.from(data || []));
+  return encoding ? hash.digest(encoding) : hash.digest();
+}
+
+// RFC 5869 HKDF in one call, for a caller deriving a purpose-bound key from a
+// realm secret (GNAP's macaroon and biscuit root keys, `gnap_tokens.ts`). The
+// extract and expand steps above are JWE's, kept apart because HPKE calls
+// them separately.
+/**
+ * Derives key material with HKDF (RFC 5869).
+ *
+ * @param algorithm - `sha256`, `sha384` or `sha512`
+ * @param ikm - the input keying material
+ * @param salt - the salt; empty when absent
+ * @param info - the context, bytes or a UTF-8 string
+ * @param length - the octets wanted
+ * @returns the output keying material
+ * @throws Error for an algorithm outside the list
+ */
+function hkdf(algorithm, ikm, salt, info, length) {
+  log.debug("Entering hkdf(). " + algorithm + " " + length);
+  if (HKDF_DIGESTS.indexOf(algorithm) < 0) {
+    log.debug("Leaving hkdf(). Unknown algorithm.");
+    // error-code: none — a programming error; every caller names a constant
+    throw new Error('crypto: hkdf() uses ' + HKDF_DIGESTS.join(', ') +
+                    ', not "' + algorithm + '"');
+  }
+  const out = Buffer.from(nodeCrypto.hkdfSync(algorithm,
+    Buffer.from(ikm || []), Buffer.from(salt || []),
+    typeof info === 'string' ? Buffer.from(info, 'utf8')
+                             : Buffer.from(info || []),
+    length));
+  log.debug("Leaving hkdf().");
+  return out;
+}
+
+/**
+ * Imports a public key from a JWK (RSA, EC or OKP).
+ *
+ * @param jwk - the JWK; private members are ignored
+ * @returns the public KeyObject
+ * @throws Error when node cannot read the JWK
+ */
+function publicKeyFromJwk(jwk) {
+  log.debug("Entering publicKeyFromJwk(). " + (jwk && jwk.kty));
+  const key = nodeCrypto.createPublicKey({ key: jwk, format: 'jwk' });
+  log.debug("Leaving publicKeyFromJwk().");
+  return key;
+}
+
+/**
+ * Returns the public half of a private key (a KeyObject or a PEM), or the
+ * public key itself.
+ *
+ * @param key - the key
+ * @returns the public KeyObject
+ */
+function publicKeyOf(key) {
+  log.debug("Entering publicKeyOf().");
+  const out = key && key.type === 'public' ? key
+                                           : nodeCrypto.createPublicKey(key);
+  log.debug("Leaving publicKeyOf().");
+  return out;
+}
+
+// The SubjectPublicKeyInfo of a key, for comparing two keys by value: the
+// key a certificate holds against the key a JWK names (`gnap_proof.ts`).
+/**
+ * Returns a public key's SubjectPublicKeyInfo as DER.
+ *
+ * @param key - a public or private KeyObject, or a PEM
+ * @returns the DER
+ */
+function spkiDerOf(key) {
+  log.debug("Entering spkiDerOf().");
+  const der = publicKeyOf(key).export({ type: 'spki', format: 'der' });
+  log.debug("Leaving spkiDerOf().");
+  return Buffer.from(der);
+}
+
 /**
  * The one place this service signs, verifies, encrypts and decrypts.
  *
  * XML Signature and Encryption, JWS and JWE, keys and certificates, password
  * hashing, the key-encryption key, raw signatures, TPM and attestation
- * structures, the Kerberos PRF, DKIM and random values. A leaf library that
+ * structures, the Kerberos PRF, DKIM, random values and HTTP Message
+ * Signatures with Content-Digest. A leaf library that
  * may never require `helpers` back.
  * @namespace
  */
 module.exports = {
+  // --- section 15: digests, key derivation and key import (#178) ---
+  DIGESTS: DIGESTS,
+  digest: digest,
+  hkdf: hkdf,
+  publicKeyFromJwk: publicKeyFromJwk,
+  publicKeyOf: publicKeyOf,
+  spkiDerOf: spkiDerOf,
+  // --- section 14: HTTP Message Signatures and Content-Digest (#178) ---
+  HTTP_SIGNATURE_ALGORITHMS: HTTP_SIGNATURE_ALGORITHMS,
+  CONTENT_DIGEST_ALGORITHMS: CONTENT_DIGEST_ALGORITHMS,
+  HTTP_SIGNATURE_FIELD_TYPES: KNOWN_FIELD_TYPES,
+  contentDigest: contentDigest,
+  verifyContentDigest: verifyContentDigest,
+  httpSignatureComponentValue: httpSignatureComponentValue,
+  httpSignatureBase: httpSignatureBase,
+  signHttpMessage: signHttpMessage,
+  appendHttpSignature: appendHttpSignature,
+  parseHttpSignatures: parseHttpSignatures,
+  verifyHttpMessage: verifyHttpMessage,
   // --- section 13: random values (#65) ---
   RANDOM_TOKEN_MIN_BITS: RANDOM_TOKEN_MIN_BITS,
   installForgeRandom: installForgeRandom,
