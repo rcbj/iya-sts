@@ -1760,6 +1760,412 @@ async function limbo() {
   return { cases: out };
 }
 
+// SOMEBODY ELSE'S CERTIFICATES (`pki.js` #40, #105, #170, #62 P5): PEM
+// bundles, WebAuthn attestation certificate facts, OpenSSH keys and host
+// certificates (written here field by field, PROTOCOL.certkeys), the FIDO
+// MDS3 BLOB under a generated chain, sigstore signer facts, and embedded
+// SCTs from a generated CT log — each with Node's answer.
+async function foreign() {
+  const pki = require(path.join(ROOT, 'common', 'pki.js'));
+  const x509 = require(path.join(ROOT, 'common', 'vendored', 'x509.js'));
+  const pqcX509 = require(path.join(ROOT, 'common', 'vendored',
+                                    'pqc_x509.js'));
+  const bytes = require(path.join(ROOT, 'common', 'vendored',
+                                  'crypto_bytes.js'));
+  const pair = function (type, options) {
+    const k = nodeCrypto.generateKeyPairSync(type, options);
+    return { priv: k.privateKey.export({ type: 'pkcs8', format: 'pem' }),
+             pub: k.publicKey.export({ type: 'spki', format: 'pem' }),
+             privateKey: k.privateKey, publicKey: k.publicKey };
+  };
+  const window = { notBefore: '2026-01-01T00:00:00.000Z',
+                   notAfter: '2036-01-01T00:00:00.000Z' };
+  const now = Date.parse('2027-06-01T00:00:00.000Z');
+  const rsa = pair('rsa', { modulusLength: 2048 });
+  const p256 = pair('ec', { namedCurve: 'prime256v1' });
+  const p384 = pair('ec', { namedCurve: 'secp384r1' });
+  const ed = pair('ed25519');
+  const pq = await pqcX509.generateKeyPair('ML-DSA-65');
+  const pqPub = bytes.derToPem(pqcX509.encodeSpki('ML-DSA-65', pq.pub),
+                               'PUBLIC KEY');
+  const root = await x509.issueCertificate(Object.assign({
+    subject: 'CN=Foreign Root, O=Example, C=US', subjectPublicKey: rsa.pub,
+    issuerPrivateKey: rsa.priv, signatureAlg: 'sha256-rsa', serial: '01',
+    profile: 'root-ca' }, window));
+  const inter = await x509.issueCertificate(Object.assign({
+    subject: 'CN=Foreign Intermediate, O=Example', subjectPublicKey: p384.pub,
+    issuer: { certificatePem: root.pem, privateKeyPem: rsa.priv },
+    signatureAlg: 'sha256-rsa', serial: '02', profile: 'intermediate-ca' },
+    window));
+  const leafOf = async function (subject, pub, extensions, serial) {
+    return x509.issueCertificate(Object.assign({
+      subject: subject, subjectPublicKey: pub,
+      issuer: { certificatePem: inter.pem, privateKeyPem: p384.priv,
+                keyAlg: 'ec-p384' },
+      signatureAlg: 'sha384-ecdsa', serial: serial || '03',
+      extensions: extensions }, window));
+  };
+  const leafExt = x509.defaultExtensions('tls-client');
+  const sanExt = x509.defaultExtensions('digital-signature');
+  Object.assign(sanExt.subjectAltName, { present: true, critical: true,
+    names: [{ kind: 'dirName',
+              value: '2.23.133.2.1=id:414D4400, 2.23.133.2.2=SLB9670, ' +
+                     '2.23.133.2.3=id:0D' },
+            { kind: 'dns', value: 'tpm.example' },
+            { kind: 'ip', value: '192.0.2.1' }] });
+  Object.assign(sanExt.extKeyUsage, { present: true,
+                                      usages: ['2.23.133.8.3'] });
+  const leaves = {
+    rsa: await leafOf('CN=leaf rsa, O=Vendor, OU=Authenticator Attestation, ' +
+                      'C=US', rsa.pub, leafExt),
+    p256: await leafOf('CN=leaf p256, O=Vendor', p256.pub, leafExt, '04'),
+    ed: await leafOf('CN=leaf ed', ed.pub, leafExt, '05'),
+    pq: await leafOf('CN=leaf ml-dsa', pqPub, x509.defaultExtensions(
+      'digital-signature'), '06'),
+    tpm: await leafOf([{ name: 'CN', value: '' }], p256.pub, sanExt, '07')
+  };
+  const bundleText = [root.pem, 'junk', inter.pem,
+                      '-----BEGIN CERTIFICATE-----\nAAAA\n' +
+                      '-----END CERTIFICATE-----\n', leaves.rsa.pem]
+    .join('\n');
+  const attestation = {};
+  for (const name of Object.keys(leaves)) {
+    const der = Buffer.from(leaves[name].der);
+    const facts = pki.attestationCertificateFacts(der);
+    const ext = {};
+    Object.keys(facts.extensions).forEach(function (oid) {
+      ext[oid] = { critical: facts.extensions[oid].critical,
+                   value: facts.extensions[oid].value.toString('base64') };
+    });
+    facts.extensions = ext;
+    attestation[name] = { der: der.toString('base64'), facts: facts,
+                          keyIdentifier: pki.attestationKeyIdentifier(der),
+                          rsaBits: pki.rsaKeyBits(pki.certificateFromDer(der)) };
+  }
+
+  // OpenSSH, written out.
+  const u32 = function (n) {
+    const b = Buffer.alloc(4); b.writeUInt32BE(n >>> 0); return b;
+  };
+  const u64 = function (n) {
+    const b = Buffer.alloc(8); b.writeBigUInt64BE(BigInt(n)); return b;
+  };
+  const str = function (v) {
+    const b = Buffer.from(v); return Buffer.concat([u32(b.length), b]);
+  };
+  const mpint = function (v) {
+    let b = Buffer.from(v);
+    while (b.length > 1 && b[0] === 0 && !(b[1] & 0x80)) b = b.subarray(1);
+    if (b[0] & 0x80) b = Buffer.concat([Buffer.from([0]), b]);
+    return str(b);
+  };
+  const sshKey = function (kp, type) {
+    const jwk = kp.publicKey.export({ format: 'jwk' });
+    const b = function (x) { return Buffer.from(x, 'base64url'); };
+    if (type === 'ssh-rsa') {
+      return { type: type, fields: Buffer.concat([mpint(b(jwk.e)),
+                                                  mpint(b(jwk.n))]) };
+    }
+    if (type === 'ssh-ed25519') {
+      return { type: type, fields: str(b(jwk.x)) };
+    }
+    const curve = type.replace('ecdsa-sha2-', '');
+    return { type: type, fields: Buffer.concat([str(curve), str(
+      Buffer.concat([Buffer.from([4]), b(jwk.x), b(jwk.y)]))]) };
+  };
+  const blobOf = function (k) {
+    return Buffer.concat([str(k.type), k.fields]);
+  };
+  const sshSign = function (kp, type, data, format) {
+    if (type === 'ssh-rsa') {
+      const hash = { 'ssh-rsa': 'sha1', 'rsa-sha2-256': 'sha256',
+                     'rsa-sha2-512': 'sha512' }[format];
+      return Buffer.concat([str(format), str(nodeCrypto.sign(hash, data,
+                                                              kp.privateKey))]);
+    }
+    if (type === 'ssh-ed25519') {
+      return Buffer.concat([str(type), str(nodeCrypto.sign(null, data,
+                                                            kp.privateKey))]);
+    }
+    const hash = { 'ecdsa-sha2-nistp256': 'sha256',
+                   'ecdsa-sha2-nistp384': 'sha384',
+                   'ecdsa-sha2-nistp521': 'sha512' }[type];
+    const raw = nodeCrypto.sign(hash, data, { key: kp.privateKey,
+                                               dsaEncoding: 'ieee-p1363' });
+    const half = raw.length / 2;
+    return Buffer.concat([str(type), str(Buffer.concat([
+      mpint(raw.subarray(0, half)), mpint(raw.subarray(half))]))]);
+  };
+  const options = function (pairs) {
+    return Buffer.concat(pairs.map(function (p) {
+      return Buffer.concat([str(p[0]), str(p[1] === '' ? Buffer.alloc(0)
+                                                         : str(p[1]))]);
+    }));
+  };
+  const sshKeys = {
+    'ssh-rsa': pair('rsa', { modulusLength: 2048 }),
+    'ecdsa-sha2-nistp256': pair('ec', { namedCurve: 'prime256v1' }),
+    'ecdsa-sha2-nistp384': pair('ec', { namedCurve: 'secp384r1' }),
+    'ecdsa-sha2-nistp521': pair('ec', { namedCurve: 'secp521r1' }),
+    'ssh-ed25519': pair('ed25519')
+  };
+  const certOf = function (subjectType, caType, spec) {
+    const subject = sshKey(sshKeys[subjectType], subjectType);
+    const ca = sshKey(sshKeys[caType], caType);
+    const body = Buffer.concat([
+      str(subjectType + '-cert-v01@openssh.com'), str(Buffer.alloc(32, 7)),
+      subject.fields, u64(spec.serial || 1), u32(spec.kind || 2),
+      str(spec.keyId || 'host key'),
+      str(Buffer.concat((spec.principals || []).map(str))),
+      u64(spec.validAfter === undefined ? 0 : spec.validAfter),
+      u64(spec.validBefore === undefined ? '18446744073709551615'
+                                         : spec.validBefore),
+      str(options(spec.critical || [])), str(options(spec.extensions || [])),
+      str(Buffer.alloc(0)), str(blobOf(ca))]);
+    let signature = sshSign(sshKeys[caType], caType, body,
+                            spec.format || caType);
+    if (spec.tamper) {
+      signature = Buffer.from(signature);
+      signature[signature.length - 1] ^= 1;
+    }
+    return Buffer.concat([body, str(signature)]);
+  };
+  const ssh = { keys: [], certs: [], authorized: [] };
+  for (const type of Object.keys(sshKeys)) {
+    const blob = blobOf(sshKey(sshKeys[type], type));
+    const parsed = pki.parseSshPublicKey(blob);
+    const data = Buffer.from('data the key signs');
+    const formats = type === 'ssh-rsa'
+      ? ['ssh-rsa', 'rsa-sha2-256', 'rsa-sha2-512'] : [type];
+    const signatures = [];
+    for (const f of formats) {
+      const sig = sshSign(sshKeys[type], type, data, f);
+      const r = { format: f, blob: Buffer.alloc(0) };
+      const inner = sig.subarray(4 + sig.readUInt32BE(0));
+      r.blob = inner.subarray(4, 4 + inner.readUInt32BE(0));
+      signatures.push({ format: f, blob: r.blob.toString('base64'),
+                        ok: await pki.verifySshSignature(parsed, data, r),
+                        wrongFormat: await pki.verifySshSignature(parsed, data,
+                          { format: 'ssh-ed25519x', blob: r.blob }) });
+    }
+    ssh.keys.push({ type: type, blob: blob.toString('base64'),
+                    fingerprint: pki.sshFingerprint(parsed),
+                    curve: parsed.curve, data: data.toString('base64'),
+                    signatures: signatures });
+  }
+  const authority = pki.parseSshPublicKey(blobOf(sshKey(sshKeys['ssh-ed25519'],
+                                                        'ssh-ed25519')));
+  const certSpecs = [
+    ['good', 'ecdsa-sha2-nistp256', 'ssh-ed25519',
+     { principals: ['host.example'], validAfter: 1000,
+       validBefore: 4000000000 }],
+    ['any principal', 'ssh-rsa', 'ssh-ed25519', {}],
+    ['other principal', 'ssh-ed25519', 'ssh-ed25519',
+     { principals: ['other.example'] }],
+    ['a user certificate', 'ssh-ed25519', 'ssh-ed25519', { kind: 1 }],
+    ['expired', 'ssh-ed25519', 'ssh-ed25519', { validBefore: 1000 }],
+    ['not yet', 'ssh-ed25519', 'ssh-ed25519', { validAfter: 4000000000 }],
+    ['a critical option', 'ssh-ed25519', 'ssh-ed25519',
+     { critical: [['force-command', '/bin/true']] }],
+    ['source-address only', 'ssh-ed25519', 'ssh-ed25519',
+     { critical: [['source-address', '10.0.0.0/8']],
+       extensions: [['permit-pty', '']] }],
+    ['tampered', 'ssh-ed25519', 'ssh-ed25519', { tamper: true }],
+    ['unknown authority', 'ssh-ed25519', 'ecdsa-sha2-nistp384', {}],
+    ['an RSA authority, SHA-512', 'ssh-ed25519', 'ssh-rsa',
+     { format: 'rsa-sha2-512' }]
+  ];
+  const rsaAuthority = pki.parseSshPublicKey(blobOf(sshKey(sshKeys['ssh-rsa'],
+                                                           'ssh-rsa')));
+  for (const c of certSpecs) {
+    const blob = certOf(c[1], c[2], c[3]);
+    let parsed = null;
+    let error = '';
+    try {
+      parsed = pki.parseSshPublicKey(blob);
+    } catch (e) {
+      error = e.message;
+    }
+    const row = { name: c[0], blob: blob.toString('base64'), error: error };
+    if (parsed) {
+      row.parsed = { type: parsed.type, certType: parsed.certType,
+                     serial: String(parsed.serial), kind: parsed.kind,
+                     keyId: parsed.keyId, principals: parsed.principals,
+                     validAfter: String(parsed.validAfter),
+                     validBefore: String(parsed.validBefore),
+                     criticalOptions: parsed.criticalOptions,
+                     extensions: parsed.extensions,
+                     fingerprint: pki.sshFingerprint(parsed),
+                     authority: pki.sshFingerprint(parsed.signatureKey) };
+      row.check = await pki.checkSshHostCertificate(parsed, 'host.example',
+        [authority, rsaAuthority], now / 1000);
+    }
+    ssh.certs.push(row);
+  }
+  ssh.authorityBlobs = [authority.blob.toString('base64'),
+                        rsaAuthority.blob.toString('base64')];
+  const edBlob = blobOf(sshKey(sshKeys['ssh-ed25519'], 'ssh-ed25519'))
+    .toString('base64');
+  for (const line of ['ssh-ed25519 ' + edBlob + ' alice@host',
+                      'command="echo \\"hi there\\"",no-pty ssh-ed25519 ' +
+                        edBlob,
+                      '# ssh-ed25519 ' + edBlob, '', 'ssh-rsa ' + edBlob,
+                      'from="a b" ecdsa-sha2-nistp256 ' + Buffer.from(
+                        blobOf(sshKey(sshKeys['ecdsa-sha2-nistp256'],
+                                      'ecdsa-sha2-nistp256')))
+                        .toString('base64') + ' c']) {
+    const k = pki.parseSshAuthorizedKey(line);
+    ssh.authorized.push({ line: line,
+                          fingerprint: k ? pki.sshFingerprint(k) : null });
+  }
+
+  // The FIDO MDS3 BLOB.
+  const mdsSigner = await leafOf('CN=MDS signer', p256.pub,
+                                 x509.defaultExtensions('digital-signature'),
+                                 '08');
+  const b64u = function (o) {
+    return Buffer.from(JSON.stringify(o)).toString('base64url');
+  };
+  const derB64 = function (pem) {
+    return Buffer.from(bytes.pemToDer(pem)).toString('base64');
+  };
+  const jwsOf = function (header, payload, key, alg) {
+    const input = b64u(header) + '.' + b64u(payload);
+    const sig = alg === 'ES256'
+      ? nodeCrypto.sign('sha256', Buffer.from(input), { key: key,
+                                                        dsaEncoding: 'ieee-p1363' })
+      : nodeCrypto.sign('sha256', Buffer.from(input), key);
+    return input + '.' + sig.toString('base64url');
+  };
+  const blobPayload = { no: 42, nextUpdate: '2027-07-01',
+                        legalHeader: 'x', entries: [{ aaguid: 'a' }] };
+  const x5c = [derB64(mdsSigner.pem), derB64(inter.pem)];
+  const goodBlob = jwsOf({ alg: 'ES256', typ: 'JWT', x5c: x5c }, blobPayload,
+                         p256.privateKey, 'ES256');
+  const otherRoot = await x509.issueCertificate(Object.assign({
+    subject: 'CN=Other Root', subjectPublicKey: ed.pub,
+    issuerPrivateKey: ed.priv, signatureAlg: 'ed25519', serial: '09',
+    profile: 'root-ca' }, window));
+  const blobs = [
+    ['good', goodBlob, root.pem, false],
+    ['good, overridden anyway', goodBlob, root.pem, true],
+    ['not a JWS', 'a.b', root.pem, false],
+    ['no x5c', jwsOf({ alg: 'ES256' }, blobPayload, p256.privateKey, 'ES256'),
+     root.pem, false],
+    ['the wrong anchor', goodBlob, otherRoot.pem, false],
+    ['the wrong anchor, overridden', goodBlob, otherRoot.pem, true],
+    ['a tampered signature', goodBlob.slice(0, -4) + 'AAAA', root.pem, false],
+    ['a tampered signature, overridden', goodBlob.slice(0, -4) + 'AAAA',
+     root.pem, true],
+    ['RS256 by an EC key', jwsOf({ alg: 'RS256', x5c: x5c }, blobPayload,
+                                 rsa.privateKey, 'RS256'), root.pem, false],
+    ['not a BLOB', jwsOf({ alg: 'ES256', x5c: x5c }, { hello: 1 },
+                         p256.privateKey, 'ES256'), root.pem, false],
+    ['no anchors', goodBlob, '', false]
+  ];
+  const mds = [];
+  for (const b of blobs) {
+    const anchors = b[2] ? pki.certificateBundle(b[2]).certificates : [];
+    const v = b[2] || b[3] ? await pki.verifyFidoMdsBlob(b[1], {
+      anchorsPem: b[2], now: now, overrideSignature: b[3] }) : null;
+    mds.push({ name: b[0], token: b[1], anchors: b[2], override: b[3],
+               verdict: v, anchorCount: anchors.length });
+  }
+
+  // Sigstore signer facts and an embedded SCT.
+  const fulcio = x509.defaultExtensions('code-signing');
+  Object.assign(fulcio.subjectAltName, { present: true, critical: true,
+    names: [{ kind: 'email', value: 'signer@example.com' },
+            { kind: 'uri', value: 'https://github.com/o/r/.github/w.yml@x' }] });
+  fulcio.custom = [
+    { oid: '1.3.6.1.4.1.57264.1.1',
+      value: Buffer.concat([Buffer.from([0x0c, 23]),
+                            Buffer.from('https://issuer.v1.example')
+                              .subarray(0, 23)]).toString('base64') },
+    { oid: '1.3.6.1.4.1.57264.1.8',
+      value: 'DBdodHRwczovL2lzc3Vlci52Mi5leGFtcGxl' }];
+  const ctLog = pair('ec', { namedCurve: 'prime256v1' });
+  const ctSpki = ctLog.publicKey.export({ type: 'spki', format: 'der' });
+  const logId = nodeCrypto.createHash('sha256').update(ctSpki).digest();
+  const pre = await leafOf([{ name: 'CN', value: '' }], p256.pub, fulcio,
+                          '0a');
+  const preTbs = Buffer.from(pkiTbs(pre.der));
+  const ts = 1767500000000;
+  const issuerKeyHash = nodeCrypto.createHash('sha256').update(Buffer.from(
+    bytes.pemToDer(p384.pub))).digest();
+  const t8 = Buffer.alloc(8); t8.writeBigUInt64BE(BigInt(ts));
+  const len3 = Buffer.alloc(3); len3.writeUIntBE(preTbs.length, 0, 3);
+  const signed = Buffer.concat([Buffer.from([0, 0]), t8, Buffer.from([0, 1]),
+                                issuerKeyHash, len3, preTbs,
+                                Buffer.from([0, 0])]);
+  const sctSig = nodeCrypto.sign('sha256', signed, ctLog.privateKey);
+  const sct = Buffer.concat([Buffer.from([0]), logId, t8, Buffer.from([0, 0]),
+                             Buffer.from([4, 3]), u16(sctSig.length), sctSig]);
+  const junkSct = Buffer.concat([Buffer.from([1]), Buffer.alloc(50)]);
+  const list = Buffer.concat([u16(junkSct.length), junkSct, u16(sct.length),
+                              sct]);
+  const listWrapped = Buffer.concat([u16(list.length), list]);
+  const sctExt = JSON.parse(JSON.stringify(fulcio));
+  sctExt.custom.push({ oid: '1.3.6.1.4.1.11129.2.4.2',
+                       value: derOctetString(listWrapped)
+                         .toString('base64') });
+  const withSct = await leafOf([{ name: 'CN', value: '' }], p256.pub,
+                              sctExt, '0a');
+  const logs = [{ logIdHex: logId.toString('hex'), spki: ctSpki }];
+  const sctCases = [];
+  for (const c of [['good', withSct.der, logs],
+                   ['no SCT', pre.der, logs],
+                   ['an unknown log', withSct.der, [{ logIdHex: '00'.repeat(32),
+                                                      spki: ctSpki }]],
+                   ['outside the log key window', withSct.der,
+                    [{ logIdHex: logId.toString('hex'), spki: ctSpki,
+                       startMs: ts + 1 }]],
+                   ['the wrong log key', withSct.der,
+                    [{ logIdHex: logId.toString('hex'),
+                       spki: p256.publicKey.export({ type: 'spki',
+                                                     format: 'der' }) }]]]) {
+    sctCases.push({ name: c[0], leaf: Buffer.from(c[1]).toString('base64'),
+                    logs: c[2].map(function (l) {
+                      return { logIdHex: l.logIdHex,
+                               spki: Buffer.from(l.spki).toString('base64'),
+                               startMs: l.startMs || null };
+                    }),
+                    verdict: await pki.verifyEmbeddedScts(Buffer.from(c[1]),
+                      Buffer.from(bytes.pemToDer(inter.pem)), c[2]) });
+  }
+  const sigstoreFacts = pki.sigstoreSignerFacts(Buffer.from(withSct.der));
+  sigstoreFacts.spki = sigstoreFacts.spki.toString('base64');
+  return {
+    now: now,
+    bundle: { text: bundleText,
+              described: pki.describeCertificateBundle(bundleText, now) },
+    attestation: attestation,
+    ssh: ssh,
+    mds: mds,
+    sigstore: { der: Buffer.from(withSct.der).toString('base64'),
+                facts: sigstoreFacts },
+    scts: { issuer: derB64(inter.pem), cases: sctCases }
+  };
+}
+
+function u16(n) {
+  const b = Buffer.alloc(2); b.writeUInt16BE(n); return b;
+}
+
+// An OCTET STRING around bytes, for an extension value.
+function derOctetString(content) {
+  const len = content.length < 128 ? Buffer.from([content.length])
+    : content.length < 256 ? Buffer.from([0x81, content.length])
+      : Buffer.from([0x82, content.length >> 8, content.length & 0xff]);
+  return Buffer.concat([Buffer.from([0x04]), len, content]);
+}
+
+// A certificate's TBSCertificate, as it is encoded.
+function pkiTbs(der) {
+  const pkijs = require('pkijs');
+  return pkijs.Certificate.fromBER(new Uint8Array(der)).tbsView;
+}
+
 const VECTORS = [{ file: 'jws-node.json', build: jws },
                  { file: 'jwe-node.json', build: jwe },
                  { file: 'c14n-node.json', build: c14n },
@@ -1772,7 +2178,8 @@ const VECTORS = [{ file: 'jws-node.json', build: jws },
                  { file: 'webauthn-node.json', build: webauthn },
                  { file: 'sigstore-node.json', build: sigstore },
                  { file: 'x509-node.json', build: x509Vectors },
-                 { file: 'limbo-node.json', build: limbo }];
+                 { file: 'limbo-node.json', build: limbo },
+                 { file: 'foreign-node.json', build: foreign }];
 
 if (require.main === module) {
   fs.mkdirSync(OUT, { recursive: true });

@@ -13,6 +13,7 @@
 
 pub mod der;
 pub mod error;
+pub mod foreign;
 pub mod path;
 pub mod x509;
 

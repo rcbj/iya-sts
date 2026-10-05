@@ -67,8 +67,13 @@ impl Entry {
 
 /// `oneLineName(new X509Certificate(der).subject)`.
 pub fn one_line_name(name_der: &[u8]) -> String {
+    name_lines(name_der).join(", ")
+}
+
+/// `X509Certificate.subject`'s lines: one RDN each.
+pub fn name_lines(name_der: &[u8]) -> Vec<String> {
     let Some(name) = der::read(name_der) else {
-        return String::new();
+        return Vec::new();
     };
     let mut lines = Vec::new();
     for rdn in der::children(name.content).unwrap_or_default() {
@@ -85,11 +90,7 @@ pub fn one_line_name(name_der: &[u8]) -> String {
             lines.push(parts.join(" + "));
         }
     }
-    lines
-        .into_iter()
-        .filter(|l| !l.is_empty())
-        .collect::<Vec<_>>()
-        .join(", ")
+    lines.into_iter().filter(|l| !l.is_empty()).collect()
 }
 
 /// `XN_FLAG_FN_SN`: OpenSSL's short name, the dotted OID for one it does
@@ -144,8 +145,49 @@ fn units_of(value: &Element<'_>) -> Units {
     }
 }
 
+/// A Name as node prints a DirName alternative name
+/// (`kX509NameFlagsRFC2253WithinUtf8JSON`): the RDNs REVERSED, `,` between
+/// them and `+` inside one, RFC 2253 escaping but not of control or
+/// non-ASCII characters, and an attribute OpenSSL does not know dumped as
+/// `#` and the hex of its DER.
+pub fn rfc2253_name(name_der: &[u8]) -> String {
+    let Some(name) = der::read(name_der) else {
+        return String::new();
+    };
+    let mut rdns = Vec::new();
+    for rdn in der::children(name.content).unwrap_or_default() {
+        let mut parts = Vec::new();
+        for atv in der::children(rdn.content).unwrap_or_default() {
+            let fields = der::children(atv.content).unwrap_or_default();
+            let (Some(oid), Some(value)) = (fields.first(), fields.get(1))
+            else {
+                continue;
+            };
+            let field = field_name(oid);
+            // `field_name()` answers the dotted OID for one OpenSSL does not
+            // know.
+            let known = !field.chars().all(|c| c.is_ascii_digit() || c == '.');
+            let text = if known {
+                escaped(value, false)
+            } else {
+                format!("#{}", crate::der::hex(value.raw).to_uppercase())
+            };
+            parts.push(format!("{}={}", field, text));
+        }
+        rdns.push(parts.join("+"));
+    }
+    rdns.reverse();
+    rdns.join(",")
+}
+
 /// RFC 2253 and control-character escaping, as `do_esc_char()` does it.
 fn printed_value(value: &Element<'_>) -> String {
+    escaped(value, true)
+}
+
+/// `do_esc_char()` with RFC 2253 escaping, and control characters escaped
+/// only when `control` is set.
+fn escaped(value: &Element<'_>, control: bool) -> String {
     let codes: Vec<u32> = match units_of(value) {
         Units::Bytes(b) => b.into_iter().map(u32::from).collect(),
         Units::Chars(c) => c.into_iter().map(|c| c as u32).collect(),
@@ -159,7 +201,7 @@ fn printed_value(value: &Element<'_>) -> String {
             matches!(c, 0x2c | 0x2b | 0x22 | 0x5c | 0x3c | 0x3e | 0x3b)
                 || (i == 0 && c == 0x23)
                 || first_or_last_space;
-        if c < 0x20 || c == 0x7f {
+        if control && (c < 0x20 || c == 0x7f) {
             out.extend(format!("\\{:02X}", c).as_bytes());
         } else if escape {
             out.push(b'\\');
