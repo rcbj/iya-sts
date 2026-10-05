@@ -2801,6 +2801,23 @@ function preauthProvider() {
     ? keySource.fast : null;
 }
 
+// THE PKINIT PROVIDER (#179), handed over inside the key source beside FAST
+// and for FAST's reason: `krb5_kdc.js` reaches it here and requires nothing
+// new. Null without a key source — the parent project's in-process jobs —
+// so PA-PK-AS-REQ stays unknown padata there, as it always was.
+/**
+ * Returns the PKINIT provider handed over inside the key source.
+ *
+ * @returns the `krb5_pkinit.ts` instance, or null
+ */
+function pkinitProvider() {
+  log.debug('Entering pkinitProvider().');
+  log.debug('Leaving pkinitProvider().');
+  return (keySource && keySource.pkinit &&
+          typeof keySource.pkinit.checkRequest === 'function')
+    ? keySource.pkinit : null;
+}
+
 // The e-texts, one per state the source can report. No em dash and nothing
 // non-ASCII, for handleAsReq()'s reason: a KerberosString is a GeneralString
 // and a client decoding it as Latin-1 renders UTF-8 as mojibake in the one
@@ -4008,6 +4025,7 @@ module.exports = {
   personDisabled: personDisabled,
   personSecondFactor: personSecondFactor,
   preauthProvider: preauthProvider,
+  pkinitProvider: pkinitProvider,
   // Previous key versions (see PREVIOUS KEY VERSIONS).
   retainedKeyFor: retainedKeyFor,
   retainedKvnosOf: retainedKvnosOf,

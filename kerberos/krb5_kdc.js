@@ -1439,6 +1439,11 @@ const REFUSAL = Symbol('krb5.kdc.refusal');
 // RFC 6560's PA-OTP-REQUEST, which the vendored codec's PA_TYPE table does not
 // name (it has RFC 6113's FAST types). #173.
 const PA_OTP_REQUEST = 142;
+// RFC 4556's PA-PK-AS-REQ, which the vendored codec's table does not name
+// either (#179), and RFC 4120's AD-IF-RELEVANT, which AD-INITIAL-VERIFIED-CAS
+// rides in.
+const PA_PK_AS_REQ = 16;
+const AD_IF_RELEVANT = 1;
 
 function errorReply(code, options) {
   log.debug('Entering errorReply().');
@@ -1661,10 +1666,14 @@ function saltHints(client, etypes) {
 async function preAuthRequiredReply(client, request, fast, offer) {
   log.debug('Entering preAuthRequiredReply().');
   const provider = principals.preauthProvider();
-  const methods = fast && provider
+  // PKINIT (#179): PA-PK-AS-REQ, PA-PKINIT-KX and a freshness token, inside
+  // FAST and out, after the password methods — krb5_pkinit.ts's offers().
+  const pkinit = principals.pkinitProvider();
+  const methods = (fast && provider
     ? await provider.offers(client, fast, offer || {})
     : [{ type: msgs.PA_TYPE.ENC_TIMESTAMP, value: new Uint8Array(0) }]
-        .concat(provider ? [provider.outerAdvertisement()] : []);
+        .concat(provider ? [provider.outerAdvertisement()] : []))
+    .concat(pkinit ? await pkinit.offers(request, request.reqBody.realm) : []);
   const hints = saltHints(client, request.reqBody.etypes);
   const entries = hints.entries;
   log.info('krb5: ' + client.name.join('/') + ' needs pre-authentication; ' +
@@ -1929,6 +1938,188 @@ async function handleAsReq(request) {
   return wrapped;
 }
 
+// ---------------------------------------------------------------------------
+// ANONYMOUS PKINIT (RFC 8062, #179): AN ARMOR TICKET FOR NOBODY.
+//
+// `kinit -n` asks for `WELLKNOWN/ANONYMOUS` with an UNSIGNED AuthPack and a
+// Diffie-Hellman value, and gets a TGT naming nobody — crealm
+// WELLKNOWN:ANONYMOUS, the anonymous flag, no PAC, no indicator, no
+// AD-INITIAL-VERIFIED-CAS — whose session key is KRB-FX-CF2 of the KDC's
+// contribution (PA-PKINIT-KX) and the reply key, so that neither side alone
+// chose it (section 7). The client authenticated the KDC by its signature on
+// the reply; the KDC authenticated nobody.
+//
+// **WHAT IT IS FOR, AND ALL IT IS FOR, HERE**: FAST armor for a client with
+// no host keytab — `kinit -n -c armor`, then `kinit -T armor alice`. So only
+// a TGT for this realm is issued (a request for anything else is
+// KDC_ERR_POLICY, STS-KRB-0198), it is neither forwardable nor proxiable,
+// and `answerTgsReq()` refuses a TGS-REQ that presents one: an anonymous
+// ticket buys nothing, and armors.
+// ---------------------------------------------------------------------------
+// The reply-key enctypes anonymous PKINIT derives, strongest first: the
+// AES enctypes `common/crypto.js` section 16 derives a key for.
+const ANONYMOUS_REPLY_ETYPES = [20, 19, 18, 17];
+const WELLKNOWN_ANONYMOUS_REALM = 'WELLKNOWN:ANONYMOUS';
+
+function isAnonymousName(cname) {
+  log.debug("Entering isAnonymousName().");
+  const name = (cname && cname.name) || [];
+  log.debug("Leaving isAnonymousName().");
+  return name.length === 2 && name[0] === 'WELLKNOWN' &&
+         name[1] === 'ANONYMOUS';
+}
+
+async function answerAnonymousAsReq(request, fast, pkinit) {
+  log.debug('Entering answerAnonymousAsReq().');
+  const body = request.reqBody;
+  const asRealm = body.realm;
+  const refuse = function (code, errorCode, eText, eData) {
+    log.debug('Entering refuse().');
+    log.debug('Leaving refuse().');
+    return errorReply(code, {
+      // error-code: none — each caller below names its own code
+      errorCode: errorCode, crealm: body.realm, cname: body.cname,
+      sname: body.sname, eText: eText, eData: eData || null
+    });
+  };
+  if (!pkinit.anonymousEnabled()) {
+    log.debug('Leaving answerAnonymousAsReq(). Off.');
+    return refuse(6, 'STS-KRB-0198', 'anonymous PKINIT is off in this ' +
+                  'realm (krb5.anonymousPkinit)');
+  }
+  // RFC 8062 section 4.1: "If the client in the AS request is anonymous, the
+  // anonymous KDC option MUST be set".
+  if ((body.kdcOptions || []).indexOf(msgs.KDC_OPTION.REQUEST_ANONYMOUS) ===
+      -1) {
+    log.debug('Leaving answerAnonymousAsReq(). No anonymous option.');
+    return refuse(13, 'STS-KRB-0198', 'the anonymous principal asks with ' +
+                  'the anonymous KDC option (RFC 8062 section 4.1)');
+  }
+  const sname = (body.sname && body.sname.name) || [];
+  if (sname.length !== 2 || sname[0] !== 'krbtgt' || sname[1] !== asRealm) {
+    log.debug('Leaving answerAnonymousAsReq(). Not a TGT.');
+    return refuse(12, 'STS-KRB-0198', 'an anonymous ticket here is FAST ' +
+                  'armor, so only krbtgt/' + asRealm + ' is issued to the ' +
+                  'anonymous principal');
+  }
+  const krbtgt = principals.find(['krbtgt', asRealm], asRealm);
+  if (!krbtgt) {
+    log.debug('Leaving answerAnonymousAsReq(). No krbtgt.');
+    return refuse(7, 'STS-KRB-0022', 'this KDC has no krbtgt principal');
+  }
+  const pa = (request.padata || []).filter(function (one) {
+    return one.type === PA_PK_AS_REQ;
+  })[0];
+  if (!pa) {
+    // RFC 8062 section 4.1.1: PA-PK-AS-REQ, and PA-PKINIT-KX to say
+    // anonymous PKINIT is supported, in the error that asks for it.
+    log.debug('Leaving answerAnonymousAsReq(). Pre-authentication needed.');
+    return refuse(25, 'STS-KRB-0013', 'NEEDED_PREAUTH',
+                  asn1.encSequenceOf((await pkinit.offers(request, asRealm))
+                                       .map(msgs.encPaData)));
+  }
+  const etype = (body.etypes || []).filter(function (one) {
+    return ANONYMOUS_REPLY_ETYPES.indexOf(one) !== -1 &&
+           principals.etypePermitted(one);
+  })[0];
+  if (etype === undefined) {
+    log.debug('Leaving answerAnonymousAsReq(). No enctype.');
+    return refuse(14, 'STS-KRB-0198', 'anonymous PKINIT derives an AES ' +
+                  'reply key, and the request offers none');
+  }
+  const result = await pkinit.checkRequest({
+    pa: pa, request: request, asReqBytes: request[REQUEST_BYTES],
+    realm: asRealm, etype: etype, anonymous: true
+  });
+  if (!result.ok) {
+    log.debug('Leaving answerAnonymousAsReq(). Refused.');
+    // error-code: none — the code is the refusal's own, STS-KRB-0178..0197, chosen in krb5_pkinit.ts
+    return refuse(result.code, result.errorCode, result.eText, result.eData);
+  }
+  const authtime = now();
+  const requestedTill = body.till && body.till > authtime ? body.till :
+                        kdcTime(ticketLifetimeSeconds());
+  const endtime = new Date(Math.min(requestedTill.getTime(),
+    kdcTime(ticketLifetimeSeconds()).getTime()));
+  const flags = [msgs.TICKET_FLAG.INITIAL, msgs.TICKET_FLAG.PRE_AUTHENT,
+                 msgs.TICKET_FLAG.ANONYMOUS];
+  if (request[REQUEST_BYTES]) flags.push(msgs.TICKET_FLAG.ENC_PA_REP);
+  const anonymousName = { type: 11, name: ['WELLKNOWN', 'ANONYMOUS'] };
+  const sessionEtype = principals.chooseEtype(krbtgt, body.etypes) || etype;
+  const kx = await result.sessionKeyFor(sessionEtype);
+  const ticketEtype = principals.supportedEtypes(krbtgt)[0] || etype;
+  const krbtgtKey = await principals.longTermKey(krbtgt, ticketEtype);
+  const encTicketPart = msgs.encEncTicketPart({
+    flags: flags,
+    key: { etype: sessionEtype, key: kx.sessionKey },
+    crealm: WELLKNOWN_ANONYMOUS_REALM,
+    cname: anonymousName,
+    authtime: authtime,
+    starttime: authtime,
+    endtime: endtime,
+    renewTill: null,
+    authorizationData: null
+  });
+  const ticket = {
+    realm: asRealm,
+    sname: body.sname,
+    encPart: {
+      etype: ticketEtype,
+      kvno: krbtgt.kvno,
+      cipher: await kcrypto.etypeById(ticketEtype).encrypt(krbtgtKey,
+        kcrypto.KEY_USAGE.KDC_REP_TICKET, encTicketPart)
+    }
+  };
+  let replyKey = result.replyKey;
+  let replyPadata = result.kdcPadata.concat([kx.padata]);
+  const provider = principals.preauthProvider();
+  if (fast && provider) {
+    const finished = await provider.finishAsReply({
+      fast: fast, ticket: ticket, crealm: WELLKNOWN_ANONYMOUS_REALM,
+      cname: anonymousName, replyKey: replyKey, padata: replyPadata
+    });
+    replyPadata = finished.padata;
+    replyKey = finished.replyKey;
+  }
+  const encRepPart = msgs.encEncKdcRepPart({
+    key: { etype: sessionEtype, key: kx.sessionKey },
+    lastReq: [{ type: 0, value: authtime }],
+    nonce: body.nonce,
+    flags: flags,
+    authtime: authtime,
+    starttime: authtime,
+    endtime: endtime,
+    renewTill: null,
+    srealm: asRealm,
+    sname: body.sname,
+    encryptedPaData: await encPaRepData(request, replyKey)
+  }, msgs.APPLICATION.ENC_AS_REP_PART);
+  stats.recordTicket('TGT', {
+    client: 'WELLKNOWN/ANONYMOUS@' + WELLKNOWN_ANONYMOUS_REALM,
+    realm: asRealm,
+    service: sname.join('/'),
+    etype: kcrypto.etypeById(sessionEtype).name,
+    expiresAt: endtime.getTime()
+  });
+  log.info('krb5: issued an ANONYMOUS TGT for ' + asRealm + ' by anonymous ' +
+           'PKINIT (' + result.method + '), expiring ' +
+           endtime.toISOString() + '; it is FAST armor and buys nothing');
+  log.debug('Leaving answerAnonymousAsReq().');
+  return msgs.encKdcRep({
+    msgType: msgs.MSG_TYPE.AS_REP,
+    padata: replyPadata,
+    crealm: WELLKNOWN_ANONYMOUS_REALM,
+    cname: anonymousName,
+    ticket: ticket,
+    encPart: {
+      etype: replyKey.etype,
+      kvno: null,
+      cipher: await kcrypto.etypeById(replyKey.etype).encrypt(replyKey.key,
+        kcrypto.KEY_USAGE.AS_REP_ENCPART, encRepPart)
+    }
+  });
+}
+
 // The AS exchange proper. `fast` is null for an ordinary AS-REQ and the
 // provider's state for an armored one, whose INNER request `request` then is.
 async function answerAsReq(request, fast) {
@@ -1964,6 +2155,15 @@ async function answerAsReq(request, fast) {
     return errorReply(6, { errorCode: 'STS-KRB-0019',
       realm: ourRealm(), sname: body.sname,
       eText: 'no client name in the request' });
+  }
+  // RFC 8062's ANONYMOUS PRINCIPAL (#179) has no account to look up: it is
+  // answered by anonymous PKINIT or not at all, before anything below would
+  // read it as a name.
+  const pkinit = principals.pkinitProvider();
+  if (pkinit && pkinit.enabled() && isAnonymousName(body.cname)) {
+    const anonymous = await answerAnonymousAsReq(request, fast, pkinit);
+    log.debug("Leaving answerAsReq(). Anonymous.");
+    return anonymous;
   }
 
   // Any username authenticates here, so a name that is not in the table gets an
@@ -2151,6 +2351,8 @@ async function answerAsReq(request, fast) {
   const encTimestamp = findPa(msgs.PA_TYPE.ENC_TIMESTAMP);
   const encChallenge = fast ? findPa(msgs.PA_TYPE.ENCRYPTED_CHALLENGE) : null;
   const otpRequest = fast ? findPa(PA_OTP_REQUEST) : null;
+  // PKINIT (#179): a certificate's signature, in FAST or out.
+  const pkAsReq = pkinit && pkinit.enabled() ? findPa(PA_PK_AS_REQ) : null;
   // A SECOND FACTOR HELD OR REQUIRED (#173). Asked here, once, and acted on in
   // two places below: it forces pre-authentication, and it refuses a password
   // alone — both only where `mode.issuesTicketsOnPasswordAlone()` says no.
@@ -2158,7 +2360,7 @@ async function answerAsReq(request, fast) {
   const passwordAloneRefused = !!secondFactor.needed &&
                                !mode.issuesTicketsOnPasswordAlone();
   if ((client.requiresPreAuth || passwordAloneRefused) &&
-      !encTimestamp && !encChallenge && !otpRequest) {
+      !encTimestamp && !encChallenge && !otpRequest && !pkAsReq) {
     log.debug("Leaving answerAsReq().");
     return preAuthRequiredReply(client, request, fast,
                                 { otp: !!(provider && secondFactor.totp) });
@@ -2182,7 +2384,30 @@ async function answerAsReq(request, fast) {
         : null
     });
   };
-  if (otpRequest) {
+  if (pkAsReq) {
+    // PKINIT (#179) — the strongest method present, so it is the one checked:
+    // the certificate's signature, its path to this realm's authorities, its
+    // revocation and its binding to this client, and the Diffie-Hellman reply
+    // key. krb5_pkinit.ts says which RFC 4556 error a refusal is.
+    const result = await pkinit.checkRequest({
+      pa: pkAsReq, request: request, asReqBytes: request[REQUEST_BYTES],
+      realm: asRealm, etype: etype, anonymous: false
+    });
+    if (!result.ok) {
+      log.debug("Leaving answerAsReq(). PKINIT refused.");
+      return errorReply(result.code, {
+        // error-code: none — the code is the refusal's own, STS-KRB-0178..0197, chosen in krb5_pkinit.ts
+        errorCode: result.errorCode,
+        crealm: body.realm, cname: body.cname, sname: body.sname,
+        eText: result.eText, eData: result.eData || null
+      });
+    }
+    preauth = { method: 'PA-PK-AS-REQ' + (fast ? ' inside FAST' : '') +
+                        ', ' + result.method,
+                indicators: result.indicators || [],
+                replyKey: result.replyKey, kdcPadata: result.kdcPadata,
+                pkinit: result };
+  } else if (otpRequest) {
     const result = await provider.checkOtpRequest(client, etype, otpRequest,
                                                   fast);
     if (!result.ok) {
@@ -2226,8 +2451,10 @@ async function answerAsReq(request, fast) {
   // sign-in screen tells them by asking for the code next: this door, unlike
   // #101's five, CAN ask for the second factor, and the e-text says how.
   // ---------------------------------------------------------------------
+  // PKINIT (#179) is not a password at all: its indicator passes as the OTP
+  // one does.
   if (preauth && preauth.indicators.indexOf('otp') === -1 &&
-      passwordAloneRefused) {
+      !preauth.pkinit && passwordAloneRefused) {
     const why = secondFactor.holds
       ? 'this account holds a second factor'
       : (secondFactor.byUser
@@ -2246,8 +2473,8 @@ async function answerAsReq(request, fast) {
                ? 'Use FAST armor with OTP pre-authentication and your ' +
                  'authenticator app code (kinit -T <armor ccache>).'
                : 'Kerberos can take an authenticator app code (FAST with ' +
-                 'OTP); enrol one on the portal. A security key over ' +
-                 'Kerberos (PKINIT) is not supported.')
+                 'OTP) or a smart-card certificate (PKINIT, kinit -X ' +
+                 'X509_user_identity=...); enrol either on the portal.')
     });
   }
 
@@ -2275,8 +2502,12 @@ async function answerAsReq(request, fast) {
   const authtime = now();
   const requestedTill = body.till && body.till > authtime ? body.till :
                         kdcTime(ticketLifetimeSeconds());
+  // RFC 4556 section 3.2.3: a PKINIT ticket "MUST NOT exceed" the lifetime
+  // of the client's key pair, which is its certificate's validity (#179).
   const endtime = new Date(Math.min(requestedTill.getTime(),
-    kdcTime(ticketLifetimeSeconds()).getTime()));
+    kdcTime(ticketLifetimeSeconds()).getTime(),
+    preauth && preauth.pkinit && preauth.pkinit.notAfter
+      ? preauth.pkinit.notAfter.getTime() : Infinity));
 
   const wantsForwardable = (body.kdcOptions || []).indexOf(
       msgs.KDC_OPTION.FORWARDABLE) !== -1;
@@ -2305,6 +2536,12 @@ async function answerAsReq(request, fast) {
   // an OTP added is the authentication indicator below, not a flag —
   // hw-authent claims hardware, and an authenticator app is not that.
   if (preauth) flags.push(msgs.TICKET_FLAG.PRE_AUTHENT);
+  // hw-authent for a PKINIT certificate MARKED hardware-bound (#179,
+  // krb5_pkinit.ts): the smart-card logon profile over a key this service
+  // did not generate. Nothing else here can say a key was in hardware.
+  if (preauth && preauth.pkinit && preauth.pkinit.hardware) {
+    flags.push(msgs.TICKET_FLAG.HW_AUTHENT);
+  }
   // #186: unconstrained delegation is `krb5TrustedForDelegation` on the
   // service's entry, off by default.
   if (krb5Delegation().trustedForDelegation(service.name, asRealm)) {
@@ -2367,6 +2604,15 @@ async function answerAsReq(request, fast) {
                 key: await principals.longTermKey(krbtgt, krbtgtEtype) },
       serviceKey: { etype: ticketEtype, key: serviceKey }
     });
+  }
+  // RFC 4556 section 3.2.3's AD-INITIAL-VERIFIED-CAS (#179), in
+  // AD-IF-RELEVANT because the path satisfied this realm's policy. Appended
+  // after the indicator's CAMMAC, whose kdc-verifier covers its own elements
+  // alone (RFC 7751 section 4).
+  if (preauth && preauth.pkinit && preauth.pkinit.verifiedCas) {
+    indicatorAd = indicatorAd.concat([{
+      type: AD_IF_RELEVANT,
+      data: msgs.encAuthorizationData([preauth.pkinit.verifiedCas]) }]);
   }
   // A client that DECLINED a PAC gets none. That is not a curiosity: it is the
   // only way to see what a Windows service does when the groups it authorizes
@@ -2477,6 +2723,10 @@ async function answerAsReq(request, fast) {
       value: msgs.encEtypeInfo2(
         principals.etypeInfo2For(client, [replyKey.etype]))
     }];
+  }
+  // PKINIT outside FAST: the PA-PK-AS-REP is the reply's padata (#179).
+  if (!fast && preauth && preauth.pkinit) {
+    replyPadata = preauth.kdcPadata;
   }
   if (fast && provider) {
     const finished = await provider.finishAsReply({
@@ -3098,6 +3348,20 @@ async function answerTgsReq(request, state) {
              'this request is not armored with FAST'
     });
   }
+  // AN ANONYMOUS TICKET ARMORS AND BUYS NOTHING (#179, RFC 8062): this KDC
+  // issues one only to be FAST armor (answerAnonymousAsReq()), and RFC 8062
+  // section 4.2 leaves what a TGS does with one to policy. This policy is
+  // no.
+  if ((ticketPart.flags || []).indexOf(msgs.TICKET_FLAG.ANONYMOUS) !== -1) {
+    log.debug("Leaving answerTgsReq(). An anonymous ticket.");
+    return errorReply(12, {
+      errorCode: 'STS-KRB-0198',
+      crealm: ticketPart.crealm, cname: ticketPart.cname,
+      realm: ourRealm(), sname: body.sname,
+      eText: 'an anonymous ticket is FAST armor on this KDC and buys no ' +
+             'other ticket'
+    });
+  }
 
   // Which realm this request is being answered AS. It comes from the request
   // body, not from a constant, because this trust realm may serve two Kerberos
@@ -3635,6 +3899,22 @@ async function answerTgsReq(request, state) {
                carried.indicators.join(', ') + ' of the TGT are carried ' +
                'into the ticket for ' + (body.sname.name || []).join('/'));
     }
+    // RFC 4556 section 3.2.3: "any TGS MUST copy" AD-INITIAL-VERIFIED-CAS
+    // from the TGT into what it buys (#179). Copied as the AS wrote it, in
+    // its AD-IF-RELEVANT.
+    (ticketPart.authorizationData || []).forEach(function (entry) {
+      if (entry.type !== AD_IF_RELEVANT) {
+        return;
+      }
+      try {
+        const inner = msgs.readAuthorizationData(asn1.readTlv(entry.data, 0));
+        if (inner.some(function (one) { return one.type === 9; })) {
+          indicatorAd = indicatorAd.concat([entry]);
+        }
+      } catch (e) {
+        log.debug('Caught in answerTgsReq(): ' + ((e && e.message) || e));
+      }
+    });
   }
 
   // The delegation audit trail, if this hop is one. It names the target and

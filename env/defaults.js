@@ -927,6 +927,11 @@ var config = {
     retainedKeyVersions: 1,                                        // Previous key versions kept
     retainedKeyTtlS: 0,                                            // Previous key version lifetime (s)
     krbtgtRotationIntervalDays: 180,                               // Rotate the krbtgt key every (days)
+    pkinit: true,                                                  // PKINIT (certificate pre-authentication)
+    pkinitRequireFreshness: true,                                  // PKINIT requires a freshness token
+    pkinitLegacyKdf: false,                                        // PKINIT accepts RFC 4556's own key derivation
+    pkinitKdcKeyAlgorithm: "ec-p256",                              // PKINIT KDC key algorithm
+    anonymousPkinit: true,                                         // Anonymous PKINIT (FAST armor)
     spnegoLoginButton: true,                                       // Offer Kerberos at the sign-in screen
     s2kparams: "omit"                                              // Send s2kparams
   },

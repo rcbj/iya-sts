@@ -179,6 +179,7 @@ import keytab = require('./krb5_keytab');
 // it through the slot it already reads and gains no require (see
 // `installSlots()`).
 import Krb5Fast = require('./krb5_fast');
+import Krb5Pkinit = require('./krb5_pkinit');
 
 // A stored record, an info value, a directory row: JSON this file wrote.
 type Json = any;
@@ -215,6 +216,7 @@ interface PrincipalDatabase {
     personDisabled?(name: string): boolean;
     personSecondFactor?(name: string): Json;
     fast?: Krb5Fast;
+    pkinit?: Krb5Pkinit;
   }): unknown;
 }
 
@@ -253,6 +255,7 @@ interface Krb5PersonKeysDeps {
   keytab: typeof keytab;
   nodeCrypto: typeof nodeCrypto;
   fast: Krb5Fast;
+  pkinit: Krb5Pkinit;
   // LAZILY, each (#169): the claim a cluster's first krbtgt key is made
   // under, and the store it is made against. Both load after this module in
   // the composition root, and neither is wanted by a process with no store.
@@ -379,6 +382,7 @@ class Krb5PersonKeys {
       keytab: keytab,
       nodeCrypto: nodeCrypto,
       fast: new Krb5Fast(Krb5Fast.defaultDeps()),
+      pkinit: new Krb5Pkinit(Krb5Pkinit.defaultDeps()),
       claims: function (): Json {
         return require('../cluster/cluster_claims');
       },
@@ -1018,13 +1022,14 @@ class Krb5PersonKeys {
    * Describes what the KDC does about pre-authentication in the ambient realm,
    * for the console and the management API.
    *
-   * @returns `Krb5Fast.policy()`'s description
+   * @returns `Krb5Fast.policy()`'s description, with PKINIT's (#179) as
+   *   `pkinit`
    */
   preauthPolicy(): Json {
-    const { log, fast } = this.deps;
+    const { log, fast, pkinit } = this.deps;
     log.debug('Entering Krb5PersonKeys.preauthPolicy().');
     log.debug('Leaving Krb5PersonKeys.preauthPolicy().');
-    return fast.policy();
+    return Object.assign({}, fast.policy(), { pkinit: pkinit.policy() });
   }
 
   /**
@@ -3233,7 +3238,8 @@ class Krb5PersonKeys {
       // would be rule 3e's "a slot by analogy". One object, validated whole
       // by `setKeySource()` as before; the two new members are optional
       // there, so a source without them (the parent project's jobs have
-      // none) leaves the KDC exactly as it was.
+      // none) leaves the KDC exactly as it was. PKINIT (#179) rides beside
+      // FAST for the same reason, and is as optional.
       principals.setKeySource({ personKeys: this.personKeys.bind(this),
                                 serviceKeys: this.serviceKeys.bind(this),
                                 // #169: this realm's random krbtgt key.
@@ -3242,7 +3248,8 @@ class Krb5PersonKeys {
                                   this.personDisabled.bind(this),
                                 personSecondFactor:
                                   this.personSecondFactor.bind(this),
-                                fast: this.deps.fast });
+                                fast: this.deps.fast,
+                                pkinit: this.deps.pkinit });
     } else {
       log.warn('krb5-keys: kerberos/krb5_principals.js offers no ' +
                'setKeySource(), so stored Kerberos keys are never read. That ' +

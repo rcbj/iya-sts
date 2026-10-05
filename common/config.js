@@ -11069,6 +11069,78 @@ const SETTINGS = [
                  'would sign every Kerberos user in the realm out ' +
                  'unannounced.' },
 
+  // ---------------------------------------------------------------------------
+  // PKINIT (#179, 2026-10-05): a certificate — a smart card's, a PIV token's —
+  // as the Kerberos pre-authentication, for a person whose second factor is a
+  // key (kerberos/krb5_pkinit.ts). ON by default, because the one thing it
+  // needs that an operator would otherwise supply — the KDC's certificate —
+  // this service issues itself from the realm's own `kdc` Issuing CA. The
+  // three rows after the switch are its security posture, each at the most
+  // secure value by default; the one weaker choice, RFC 4556's own key
+  // derivation, carries the warning in its description.
+  // ---------------------------------------------------------------------------
+  { key: 'krb5.pkinit', group: 'Kerberos',
+    label: 'PKINIT (certificate pre-authentication)',
+    env: 'KRB5_PKINIT', type: 'bool', dflt: true, runtime: true,
+    description: 'Whether the KDC takes PKINIT (RFC 4556): an AS-REQ signed ' +
+                 'with a certificate this realm issued to the person — ' +
+                 'smart-card logon over ACME, EST or SCEP, recorded on their ' +
+                 'entry, or one naming them in an id-pkinit-san — with the ' +
+                 'reply key agreed by Diffie-Hellman (MODP groups 14 to 18, ' +
+                 'or ECDH on P-256, P-384 and P-521). It is how a person ' +
+                 'whose only second factor is a security key gets a ticket ' +
+                 'in product mode, where a password alone is refused. The ' +
+                 'KDC signs with a certificate from the realm\'s own Kerberos ' +
+                 'KDC Issuing CA, made on first use; a client trusts the ' +
+                 'service Root (X509_anchors). Off, PA-PK-AS-REQ is neither ' +
+                 'offered nor read.' },
+
+  { key: 'krb5.pkinitRequireFreshness', group: 'Kerberos',
+    label: 'PKINIT requires a freshness token',
+    env: 'KRB5_PKINIT_REQUIRE_FRESHNESS', type: 'bool', dflt: true,
+    runtime: true,
+    description: 'Whether a PKINIT request must carry an RFC 8070 freshness ' +
+                 'token — one this KDC issued in KDC_ERR_PREAUTH_REQUIRED ' +
+                 'within the clock skew. It is what stops an AuthPack signed ' +
+                 'on a borrowed smart card in advance from being used later. ' +
+                 'MIT Kerberos 1.17 and later and Heimdal send one when asked. ' +
+                 'WARNING: off, a PKINIT request is held only to its own ' +
+                 'timestamp and the replay check.' },
+
+  { key: 'krb5.pkinitLegacyKdf', group: 'Kerberos',
+    label: 'PKINIT accepts RFC 4556\'s own key derivation',
+    env: 'KRB5_PKINIT_LEGACY_KDF', type: 'bool', dflt: false, runtime: true,
+    description: 'Whether a PKINIT client that offers no RFC 8636 KDF may ' +
+                 'have its reply key derived by RFC 4556\'s octetstring2key ' +
+                 'instead. Off — the default — such a client is refused ' +
+                 'KDC_ERR_NO_ACCEPTABLE_KDF. WARNING: the old derivation ' +
+                 'binds neither the AS-REQ nor the reply into the key, so on ' +
+                 'it the request\'s integrity rests on a SHA-1 paChecksum ' +
+                 '(RFC 8636 section 3). Turn it on only for a client too old ' +
+                 'to send supportedKDFs.' },
+
+  { key: 'krb5.pkinitKdcKeyAlgorithm', group: 'Kerberos',
+    label: 'PKINIT KDC key algorithm',
+    env: 'KRB5_PKINIT_KDC_KEY_ALGORITHM', type: 'enum',
+    enumValues: ['ec-p256', 'ec-p384', 'rsa-2048', 'rsa-3072'],
+    dflt: 'ec-p256', runtime: true,
+    description: 'The key the KDC signs its PKINIT replies with, certified by ' +
+                 'the realm\'s Kerberos KDC Issuing CA. A change takes effect ' +
+                 'when a process next makes its KDC certificate — on its ' +
+                 'next start, or a day before the current one expires. No ' +
+                 'post-quantum algorithm is offered: no PKINIT client ' +
+                 'verifies one yet.' },
+
+  { key: 'krb5.anonymousPkinit', group: 'Kerberos',
+    label: 'Anonymous PKINIT (FAST armor)',
+    env: 'KRB5_ANONYMOUS_PKINIT', type: 'bool', dflt: true, runtime: true,
+    description: 'Whether the KDC issues RFC 8062 anonymous tickets — `kinit ' +
+                 '-n` — to a client that authenticates nobody, so that a ' +
+                 'machine with no host keytab has FAST armor for `kinit -T`. ' +
+                 'An anonymous ticket is only a TGT for this realm, names ' +
+                 'nobody, and buys no other ticket: the TGS refuses it. ' +
+                 'Needs krb5.pkinit.' },
+
   { key: 'krb5.spnegoLoginButton', group: 'Kerberos',
     label: 'Offer Kerberos at the sign-in screen',
     env: 'KRB5_SPNEGO_LOGIN_BUTTON', type: 'bool', dflt: true,
