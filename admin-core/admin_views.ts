@@ -7378,8 +7378,9 @@ class AdminViews {
     const authenticationTotal = all.reduce(function (n, r) {
       return n + r.authentications;
     }, 0);
+    // Each row with its credentials masked (#446): no GET carries one.
     const shownRows = paged.shown.map(function (row) {
-      return Object.assign({}, row,
+      return Object.assign(self.maskedApplicationRow(row),
                            { secretExpiry: self.secretExpiryOf(row) });
     });
     const pagingJson = this.pagingJson(paging);
@@ -7409,6 +7410,93 @@ class AdminViews {
       };
       }())
     };
+  }
+
+  // THE ATTRIBUTES THAT ARE CREDENTIALS (#446): the application schema's
+  // `sensitive` rows. Every one is masked in a GET answer.
+  /**
+   * Lists the application attributes that hold a credential.
+   *
+   * @returns the attribute names
+   */
+  sensitiveApplicationAttributes() {
+    const { log, applications } = this.deps;
+    log.debug("Entering AdminViews.sensitiveApplicationAttributes().");
+    log.debug("Leaving AdminViews.sensitiveApplicationAttributes().");
+    return applications.SCHEMA.attributes.filter(function (one) {
+      return !!one.sensitive;
+    }).map(function (one) {
+      return one.name;
+    });
+  }
+
+  /**
+   * Masks a credential's values: each held value becomes the same sentence.
+   *
+   * @param value - the attribute's value or values
+   * @returns the masked value, the same shape
+   */
+  maskedCredential(value) {
+    const { log } = this.deps;
+    log.debug("Entering AdminViews.maskedCredential().");
+    const mask = '(set — not returned)';
+    log.debug("Leaving AdminViews.maskedCredential().");
+    if (Array.isArray(value)) {
+      return value.map(function () {
+        return mask;
+      });
+    }
+    return value === undefined || value === null || value === '' ? value
+                                                                  : mask;
+  }
+
+  /**
+   * Copies an application's registry row with every credential masked in
+   * its `fields` and `attributes`.
+   *
+   * @param row - the registry row
+   * @returns the masked copy
+   */
+  maskedApplicationRow(row) {
+    const { log } = this.deps;
+    const self = this;
+    log.debug("Entering AdminViews.maskedApplicationRow().");
+    const names = this.sensitiveApplicationAttributes();
+    const out = Object.assign({}, row);
+    ['fields', 'attributes'].forEach(function (member) {
+      if (!row[member]) {
+        return;
+      }
+      const copy = Object.assign({}, row[member]);
+      Object.keys(copy).forEach(function (name) {
+        if (names.indexOf(name) >= 0) {
+          copy[name] = self.maskedCredential(copy[name]);
+        }
+      });
+      out[member] = copy;
+    });
+    log.debug("Leaving AdminViews.maskedApplicationRow().");
+    return out;
+  }
+
+  /**
+   * Copies an application's attribute rows with every credential's values
+   * masked.
+   *
+   * @param rows - the rows, `{ name, values, ... }`
+   * @returns the masked copies
+   */
+  maskedAttributeRows(rows) {
+    const { log } = this.deps;
+    const self = this;
+    log.debug("Entering AdminViews.maskedAttributeRows().");
+    const names = this.sensitiveApplicationAttributes();
+    log.debug("Leaving AdminViews.maskedAttributeRows().");
+    return rows.map(function (one) {
+      return names.indexOf(one.name) >= 0
+        ? Object.assign({}, one, { values: self.maskedCredential(one.values) })
+        : one;
+    });
   }
 
   // The application drill-down: the entry, its attributes as a paged list, and
@@ -7497,8 +7585,16 @@ class AdminViews {
       claimsState: claimsState,
       lifetimesState: lifetimesState,
       json: (function () {
-      return Object.assign({ found: true }, row, {
-          attributesShown: paged.shown,
+      // NO CREDENTIAL IN A GET (#446, rcbj 2026-10-05). The entry's sensitive
+      // attributes — client secrets, the registration access token, private
+      // keys, GNAP keys — are masked in every copy this answer carries of
+      // them: `fields`, `attributes` and the attribute rows. A value is read
+      // with `POST /admin-api/applications/reveal-secret`, which needs the
+      // write role and is audited. Until then this answer handed every one
+      // of them out, opened.
+      const masked = self.maskedApplicationRow(row);
+      return Object.assign({ found: true }, masked, {
+          attributesShown: self.maskedAttributeRows(paged.shown),
           attributesPaging: self.pagingJson(paging),
           // `returnAddressesObserved` itself is WHOLE, on the row, beside the
           // slice the page draws — the same arrangement `delegatedPermissions`

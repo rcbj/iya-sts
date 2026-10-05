@@ -525,7 +525,7 @@ const APPLICATION_ACTIONS = ['create', 'set', 'add', 'remove',
                              'discard-address',
                              'regenerate-secret', 'rotate-secret',
                              'add-secret', 'remove-secret',
-                             'generate-secret',
+                             'reveal-secret', 'generate-secret',
                              'issue-software-statement',
                              'issue-tls-client-certificate',
                              'revoke-tls-client-certificate',
@@ -4402,7 +4402,7 @@ class AdminActions {
                       'confirm-address',
                       'discard-address', 'regenerate-secret',
                       'rotate-secret', 'add-secret', 'remove-secret',
-                      'issue-software-statement',
+                      'reveal-secret', 'issue-software-statement',
                       'issue-tls-client-certificate',
                       'revoke-tls-client-certificate',
                       'revoke-registration', 'generate-did-key',
@@ -4850,6 +4850,54 @@ class AdminActions {
       log.debug("Leaving AdminActions.applicationsAction(). remove-secret " +
                 (result.ok ? 'ok' : 'refused') + ".");
       return this.refusedBy('STS-ADMIN-0620', result);
+    }
+
+    // ---------------------------------------------------------------------
+    // ONE CREDENTIAL'S VALUE, ON DEMAND (#446, rcbj 2026-10-05). The
+    // application's page showed every client secret and the registration
+    // access token behind folds, drawn by the server; a page drawn from
+    // `GET /admin-api/applications` cannot, because that answer carries a
+    // secret's id and expiry and never its value — and no GET here carries a
+    // credential. So the fold asks for the one value it opens: `secret` is a
+    // client secret's id, or `registration-access-token`. A WRITE ROLE'S
+    // ACT, because handing out a credential is one, and AUDITED with what was
+    // revealed and never the value.
+    if (action === 'reveal-secret') {
+      const entry = applications.get(identifier);
+      const fields = (entry && entry.fields) || {};
+      const asked = String(body.secret || '').trim();
+      let value = '';
+      if (entry && asked === 'registration-access-token') {
+        value = String([].concat(fields.appRegistrationAccessToken || [])[0] ||
+                       '');
+      } else if (entry && asked) {
+        applications.clientSecretRecordsOf(fields).forEach(function (rec) {
+          if (rec.id === asked) {
+            value = String(rec.secret || '');
+          }
+        });
+      }
+      if (!value) {
+        log.debug("Leaving AdminActions.applicationsAction(). reveal-secret " +
+                  "found nothing to reveal.");
+        return this.refused('STS-ADMIN-0842', { ok: false, errors: [
+          !entry ? 'No application called "' + identifier + '" is recorded ' +
+                   'here.'
+                 : 'This application holds no ' +
+                   (asked === 'registration-access-token'
+                     ? 'registration access token.'
+                     : 'client secret with the id "' + asked + '". The ids ' +
+                       'are in its credentials.clientSecret.secrets.')] });
+      }
+      auditLog.record({ category: 'application',
+        action: 'application.secret-revealed',
+        actor: body.actor || '', target: identifier, outcome: 'success',
+        summary: 'A credential of ' + identifier + ' was revealed: ' + asked +
+                 '.',
+        detail: { application: identifier, secret: asked } });
+      log.debug("Leaving AdminActions.applicationsAction(). reveal-secret.");
+      return { ok: true, changed: false, application: identifier,
+               secret: asked, value: value };
     }
 
     // ---------------------------------------------------------------------

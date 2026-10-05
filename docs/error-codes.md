@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4095** of them, in **41** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4096** of them, in **41** subsystems.
 
 ## Where a code appears
 
@@ -84,7 +84,7 @@ is an ordinary outcome.
 * [Device register (`STS-DEVICE`)](#sts-device) — 46
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 88
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 34
-* [Admin console (`STS-ADMIN`)](#sts-admin) — 220
+* [Admin console (`STS-ADMIN`)](#sts-admin) — 221
 * [Management API (`STS-API`)](#sts-api) — 76
 * [User portal (`STS-PORTAL`)](#sts-portal) — 83
 * [Sign-out (`STS-LOGOUT`)](#sts-logout) — 7
@@ -4250,6 +4250,7 @@ Raised from: admin-ui/ (except pki_admin.js), admin-core/.
 | `STS-ADMIN-0839` | A person's update-fields was refused one or more attributes, possibly after saving others; the reply names what was saved and each refusal. | HTTP 400 (console and API) |
 | `STS-ADMIN-0840` | A settings save ticked none of an ordered choice's values (webauthn.algorithms on /admin/webauthn): an empty list is refused rather than saved, because the setting would fall back to a default nobody chose. | none (a console refusal, drawn on the page) |
 | `STS-ADMIN-0841` | set-delegation-semantics was refused: a value is neither delegation nor impersonation, nobody has that name, or the entry could not be written (#186). | none (a console or management API refusal, HTTP 400) |
+| `STS-ADMIN-0842` | reveal-secret found nothing to reveal: no such application, or it holds no client secret with that id, or no registration access token (#446). | none (a management API refusal, HTTP 400) |
 
 ## STS-API
 

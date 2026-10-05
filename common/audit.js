@@ -595,6 +595,8 @@ const ACTIONS = [
   // every token request would otherwise produce a row saying nothing happened.
   { action: 'application.create', category: 'application',
     label: 'An application was seen for the first time' },
+  { action: 'application.secret-revealed', category: 'application',
+    label: 'A credential of an application was revealed to an administrator' },
   { action: 'application.update', category: 'application',
     label: 'An application recorded something new' },
   // Only ever from the console or the management API: no protocol path deletes

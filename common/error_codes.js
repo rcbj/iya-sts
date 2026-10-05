@@ -18174,6 +18174,11 @@ const CODES = [
       'delegation nor impersonation, nobody has that name, or the entry ' +
       'could not be written (#186).',
     spec: 'none (a console or management API refusal, HTTP 400)' },
+  { code: 'STS-ADMIN-0842',
+    summary: 'reveal-secret found nothing to reveal: no such application, ' +
+      'or it holds no client secret with that id, or no registration ' +
+      'access token (#446).',
+    spec: 'none (a management API refusal, HTTP 400)' },
   { code: 'STS-API-0001',
     summary: 'A management API request carried no Bearer access token while ' +
       'adminApi.authRequired is on.',

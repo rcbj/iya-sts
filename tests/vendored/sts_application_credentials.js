@@ -457,19 +457,23 @@ async function test() {
           assert.strictEqual(regenerated.replaced, true);
         });
   view = await applicationView(CLIENT);
+  // NO GET CARRIES A CREDENTIAL (#446): the entry's secrets are listed by id
+  // and masked, and the one value is read with reveal-secret.
+  const ids = ((view.credentials && view.credentials.clientSecret &&
+                view.credentials.clientSecret.secrets) || [])
+    .map(function (one) { return one.id; });
+  const revealed = ids.length === 1
+    ? await ok(realmApi + "/applications/reveal-secret",
+               { application: CLIENT, secret: ids[0] },
+               "revealed the one client secret")
+    : {};
   check("the entry now holds the new secret, and only it", function () {
-    // Each value is a record (2026-10-01): {"id", "secret", "created",
-    // "expires"}; a bare value is a secret on its own.
-    const held = [].concat(view.fields.oauthClientSecret || [])
-      .map(function (value) {
-        try {
-          return JSON.parse(value).secret;
-        } catch (e) {
-          log.debug("Caught in the secret check: " + ((e && e.message) || e));
-          return String(value);
-        }
-      });
-    assert.deepStrictEqual(held, [newSecret]);
+    assert.strictEqual(ids.length, 1, JSON.stringify(ids));
+    assert.strictEqual(revealed.value, newSecret);
+  });
+  check("and the application's GET answer masks it", function () {
+    assert.ok(JSON.stringify(view).indexOf(newSecret) < 0,
+      "the secret is in GET /admin-api/applications?application=");
   });
   const auditRows = await get(realmApi + "/audit?per=200");
   check("and the new secret is nowhere in the audit log", function () {

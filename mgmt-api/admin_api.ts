@@ -12200,6 +12200,34 @@ class AdminApi {
             responseDescription: 'How many secrets are `left`, and the ' +
                                  'application as it now stands.' },
 
+          // A credential's value on demand (#446): the application page's
+          // folds, which no GET may carry.
+          { action: 'reveal-secret',
+            operationId: 'revealApplicationSecret',
+            summary: 'Hand back one credential of an application: a client ' +
+                     'secret by its id, or the registration access token',
+            description: 'The one way to read a credential this registry ' +
+                         'holds: `GET /admin-api/applications` answers each ' +
+                         'secret\'s id and expiry and never its value. ' +
+                         '`secret` is a client secret\'s id (the ids are in ' +
+                         'the application\'s `credentials.clientSecret' +
+                         '.secrets`) or `registration-access-token`. It ' +
+                         'needs `admin:write` and writes an audit row naming ' +
+                         'what was revealed — never the value. Nothing is ' +
+                         'changed.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: { application: { type: 'string' },
+                            secret: { type: 'string' } },
+              required: ['application', 'secret'],
+              examples: [{ application: 'my-web-app',
+                           secret: 'cs-0123456789ab' }],
+              additionalProperties: false
+            },
+            responseDescription: 'The `value`, with the `application` and ' +
+                                 '`secret` it belongs to.' },
+
           // /admin/applications/new's *Generate Secret* button (2026-09-18).
           { action: 'generate-secret',
             operationId: 'generateClientSecret',
