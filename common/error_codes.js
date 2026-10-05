@@ -15208,8 +15208,8 @@ const CODES = [
     spec: 'HTTP 401 invalid_token or 403 insufficient_scope at the ' +
       'demonstration resource server (WWW-Authenticate: GNAP)' },
   { code: 'STS-GNAP-0343',
-    summary: 'A presented JWT is not a GNAP access token (its typ is ' +
-      'wrong).',
+    summary: 'A presented JWT is not a GNAP access token: its header typ ' +
+      'is not gnap-at+jwt, or its payload typ is not GNAP.',
     spec: 'HTTP 401 invalid_token or 403 insufficient_scope at the ' +
       'demonstration resource server (WWW-Authenticate: GNAP)' },
   { code: 'STS-GNAP-0344',

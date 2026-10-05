@@ -1210,7 +1210,7 @@ class CryptoMetadata {
       { name: 'GNAP',
         signs: 'THE FIVE ACCESS TOKEN FORMATS, three of which are not JWTs. ' +
                'jwt-signed goes through the same signer as every other JWT ' +
-               'here (`typ: GNAP`); a biscuit is signed with the realm\'s ' +
+               'here, its header `typ` gnap-at+jwt (#157); a biscuit is signed with the realm\'s ' +
                'Ed25519 key (Biscuit\'s own block signature); a ZCAP-LD ' +
                'capability carries a Data Integrity proof in the suite ' +
                'gnap.zcapCryptosuite names — eddsa-jcs-2022 by default, ' +

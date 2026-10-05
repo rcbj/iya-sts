@@ -88,7 +88,7 @@ All five formats RFC 9767 registers are minted and verified.
 
 | Format | What it is | How a resource server verifies it |
 |---|---|---|
-| `jwt-signed` | a JWT with `typ` `GNAP`, signed with the realm key | `/oauth2/jwks` |
+| `jwt-signed` | a JWT whose protected header carries `typ` `gnap-at+jwt`, signed with the realm key | `/oauth2/jwks`, and refuse any other header `typ` (see below) |
 | `jwt-encrypted` | that JWT inside a JWE | to the resource server's own `gnapJweKey` (RSA-OAEP-256 or ECDH-ES+A256KW), else `dir` A256GCM that only introspection can open |
 | `macaroon` | the V2 binary format, HMAC-SHA256, first-party caveats | the root key written onto the resource server's application entry as `gnapMacaroonKey` |
 | `biscuit` | Ed25519, Datalog facts and checks | the root public key in `/gnap/keys` |
@@ -99,6 +99,30 @@ that accepts only some formats, then the resource server's
 `gnapAccessTokenFormat`, then the client's, then `gnap.accessTokenFormat`.
 
 **Resource servers can always introspect**, whatever the format.
+
+### The JWT formats' type
+
+A `jwt-signed` token's protected header is
+`{"alg": "RS256", "typ": "gnap-at+jwt", "kid": …}` (with `x5c` or `x5u` where
+`gnap.accessTokenCertificateHeader` asks), and the JWS inside a
+`jwt-encrypted` token carries the same header. Every JWT this realm signs —
+ID Tokens, RFC 9068 access tokens, logout tokens — is signed with the same
+key, so **a resource server must check the header `typ`** (RFC 8725 section
+3.11, explicit typing), comparing it case-insensitively and accepting
+`application/gnap-at+jwt` as the same type (RFC 7515 section 4.1.9). This
+service's own resource server does, and refuses anything else
+(`STS-GNAP-0343`); an OAuth resource server here likewise refuses a GNAP
+token, whose header is not `at+jwt`.
+
+> **`gnap-at+jwt` is a private media type.** RFC 9767 registers no media type
+> for a JWT access token, so this service names one the way RFC 9068 named
+> `at+jwt`. It is not in the IANA media types registry, and another GNAP
+> implementation will not use it.
+
+The payload also carries `"typ": "GNAP"`. That is a private claim, the
+marker every token this service signs carries for its own token register
+(`Bearer`, `ID`, `Refresh` on the OAuth tokens); it is not the token's type,
+and a resource server should not dispatch on it.
 
 ### Seeing a revocation without introspection
 
