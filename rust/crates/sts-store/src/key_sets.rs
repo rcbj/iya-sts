@@ -150,6 +150,8 @@ pub struct KeySets {
     driver: Option<Arc<dyn Driver>>,
     keys: Arc<DataKeys>,
     sealed: Mutex<BTreeMap<String, String>>,
+    /// The `pki:` rows, by scope, sealed.
+    pki: Mutex<BTreeMap<String, String>>,
     plain: Mutex<BTreeMap<String, Json>>,
     /// One set made at a time, so a burst of first requests makes one.
     making: tokio::sync::Mutex<()>,
@@ -161,6 +163,7 @@ impl KeySets {
             driver: Some(driver),
             keys,
             sealed: Mutex::new(BTreeMap::new()),
+            pki: Mutex::new(BTreeMap::new()),
             plain: Mutex::new(BTreeMap::new()),
             making: tokio::sync::Mutex::new(()),
         })
@@ -174,6 +177,7 @@ impl KeySets {
             driver: None,
             keys: DataKeys::none(),
             sealed: Mutex::new(BTreeMap::new()),
+            pki: Mutex::new(BTreeMap::new()),
             plain: Mutex::new(BTreeMap::new()),
             making: tokio::sync::Mutex::new(()),
         })
@@ -271,9 +275,14 @@ impl KeySets {
         })?;
         let mut loaded = 0;
         for (realm, cipher) in rows {
-            if realm.starts_with(DEK_ROW_PREFIX)
-                || realm.starts_with(PKI_ROW_PREFIX)
-            {
+            if realm.starts_with(DEK_ROW_PREFIX) {
+                continue;
+            }
+            // A CERTIFICATE AUTHORITY'S ROW is checked the same way and held
+            // apart: it shares the table on purpose, told apart by its key.
+            if let Some(scope) = realm.strip_prefix(PKI_ROW_PREFIX) {
+                self.open_row(&realm, &cipher)?;
+                self.hierarchies().insert(scope.to_string(), cipher);
                 continue;
             }
             self.open_row(&realm, &cipher)?;
@@ -281,6 +290,60 @@ impl KeySets {
             loaded += 1;
         }
         Ok(loaded)
+    }
+
+    fn hierarchies(&self) -> MutexGuard<'_, BTreeMap<String, String>> {
+        self.pki.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// `pki.js`'s publishedCertificateFor(): the certificate the scope's
+    /// hierarchy issued over a key in a slot — `certs["<use>:<slot>@<kid>"]`,
+    /// or the slot's plain record when it names that kid — as `(certificate
+    /// base64, chain base64 leaf-side first)`. `None` while no hierarchy has
+    /// certified it, when the key's self-signed certificate is what is
+    /// published.
+    pub fn published_certificate_for(
+        &self,
+        realm: &str,
+        use_case: &str,
+        slot: &str,
+        kid: &str,
+    ) -> Option<(String, Vec<String>)> {
+        let scope = dek_realm(realm);
+        let cipher = self.hierarchies().get(&scope).cloned()?;
+        let row = match self
+            .open_row(&format!("{}{}", PKI_ROW_PREFIX, scope), &cipher)
+        {
+            Ok(row) => row,
+            Err(e) => {
+                tracing::error!("keystore: {}", e);
+                return None;
+            }
+        };
+        let certs = row.get("certs")?;
+        let held = certs
+            .get(format!("{}:{}@{}", use_case, slot, kid))
+            .or_else(|| {
+                certs.get(format!("{}:{}", use_case, slot)).filter(|plain| {
+                    plain.get("kid").and_then(Json::as_str) == Some(kid)
+                })
+            })?;
+        let strip = |pem: &str| -> String {
+            pem.lines()
+                .filter(|l| !l.starts_with("-----"))
+                .collect::<String>()
+                .split_whitespace()
+                .collect()
+        };
+        let cert = strip(held.get("certificatePem")?.as_str()?);
+        let chain = held
+            .get("chainPem")
+            .and_then(Json::as_array)
+            .map(|list| {
+                list.iter().filter_map(Json::as_str).map(strip).collect()
+            })
+            .unwrap_or_default();
+        Some((cert, chain))
     }
 
     /// The realms holding a set (`default` for the default realm).
@@ -704,16 +767,26 @@ pub fn generate_key_set(now_ms: i64) -> Result<Json, String> {
 /// Not here yet: the standby generations, the signer groups, the pinned
 /// keys and the KEM keys, none of which a set made by this runtime holds;
 /// and `keys.kidFormat: jwk-thumbprint-uri`'s second entries.
-pub fn jwks_document(set: &KeySet) -> Result<Json, String> {
-    let cert_b64 = set.cert_b64().ok_or("the key set holds no certificate")?;
-    let der = STANDARD.decode(cert_b64).map_err(|e| e.to_string())?;
+pub fn jwks_document(
+    set: &KeySet,
+    published: Option<(String, Vec<String>)>,
+) -> Result<Json, String> {
+    let born = set.cert_b64().ok_or("the key set holds no certificate")?;
+    // THE KID IS THE SET'S, from the certificate it was born with; the
+    // certificate PUBLISHED is the one the hierarchy issued over the same
+    // key once there is one, with its chain (RFC 7517 section 4.7).
+    let (cert_b64, chain) =
+        published.unwrap_or_else(|| (born.to_string(), Vec::new()));
+    let mut x5c = vec![cert_b64.clone()];
+    x5c.extend(chain);
+    let der = STANDARD.decode(&cert_b64).map_err(|e| e.to_string())?;
     let cert = ossl(openssl::x509::X509::from_der(&der))?;
     let public = ossl(cert.public_key())?;
     let rsa = ossl(public.rsa())?;
     let mut keys = vec![json!({
-        "kty": "RSA", "use": "sig", "kid": kid_of(cert_b64),
+        "kty": "RSA", "use": "sig", "kid": kid_of(born),
         "n": b64u(&rsa.n().to_vec()), "e": b64u(&rsa.e().to_vec()),
-        "x5c": [cert_b64],
+        "x5c": x5c,
     })];
     for member in ["extraKeys", "pqKeys"] {
         for one in set
