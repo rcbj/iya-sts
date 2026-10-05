@@ -854,6 +854,7 @@ import ApplicationsPage = require('./web_applications');
 import UsersPage = require('./web_users');
 import RbacPage = require('./web_rbac');
 import RealmsPage = require('./web_realms');
+import SpiffePage = require('../spiffe/web_spiffe');
 
 // REQUIRED FOR THE ORDER THEY WERE ALWAYS REQUIRED IN, AND READ NOWHERE HERE
 // (#50). TypeScript drops an `import … = require()` whose name nothing reads,
@@ -25064,61 +25065,20 @@ class AdminConsole {
   // Workload API socket is handed every identity in the trust domain.
   // ---------------------------------------------------------------------------
 
-  // The warning that goes at the top of all three, written once. It is the
-  // SPIFFE analogue of the "a group here grants nothing" line on /admin/groups,
-  // and it matters more, because what comes out of these pages is a credential
-  // another service will believe. The banner every SPIFFE page carries. It is a
-  // FUNCTION rather than a constant now, because half of what it says depends
-  // on a setting that can be off: a fixed string would go on describing mutual
-  // TLS on a port that had been bound plain, which is the silent disagreement
-  // this repository keeps warning about.
-  //
-  // TWO PARAGRAPHS, and the split is the point — the two surfaces are
-  // authenticated differently because their specifications say opposite things,
-  // and a single sentence covering both was what made the old note wrong in one
-  // direction as soon as one of them changed.
+  // Drawn by `web_spiffe.ts` (#446).
   /**
    * Draws the banner every SPIFFE page carries: that a Workload API caller
    * is not attested, and whether the SPIRE Server API requires mutual TLS.
    *
+   * @param enforced - whether the SPIRE Server API authenticates its
+   *   callers (`spiffeAuth.authRequired()`)
    * @returns the two notes as HTML
    */
-  spiffePostureNote() {
-    const { log, spiffeAuth } = this.deps;
+  spiffePostureNote(enforced) {
+    const { log } = this.deps;
     log.debug("Entering AdminConsole.spiffePostureNote().");
-    const enforced = spiffeAuth.authRequired();
     log.debug("Leaving AdminConsole.spiffePostureNote().");
-    return this.warn('<strong>Nothing here is attested.</strong> A real ' +
-      'SPIFFE agent reads the peer credentials of its socket — pid, uid, ' +
-      'gid, and from those the executable, the container, the pod — and ' +
-      'hands a workload only the identities those selectors match. Node ' +
-      'cannot read them at all, so this service identifies a Workload API ' +
-      'caller by the transport it arrived on, the endpoint it reached and ' +
-      'its peer address, and nothing else. Those DO now decide which entries ' +
-      'answer (<code>spiffe.attestWorkloads</code>), and they prove nothing ' +
-      'about who is calling: anybody who can reach the socket can still get ' +
-      'an identity. Node attestation is not: an agent below attested with a ' +
-      'type its realm accepts and an attestor here verified, or it was ' +
-      'refused.') +
-      '<div class="' + (enforced ? 'note' : 'warn') + '">' +
-      (enforced
-        ? '<strong>The SPIRE Server API is the exception.</strong> Its TCP ' +
-          'port is mutual TLS: a caller presents an X509-SVID from this ' +
-          'trust domain, and every method is authorized against SPIRE\'s own ' +
-          'table — so an entry marked <code>admin</code> or ' +
-          '<code>downstream</code> below now decides what its holder may do. ' +
-          'Its Unix socket is the <code>local</code> entity and needs no ' +
-          'credential. The Workload API is deliberately untouched: its ' +
-          'specification says a client MUST NOT be required to authenticate.'
-        : '<strong>And nobody is authenticated on the SPIRE Server API ' +
-          'either.</strong> That port is plain gRPC, any caller can create a ' +
-          'registration entry granting any identity here and then collect an ' +
-          'SVID for it, and the <code>admin</code> and ' +
-          '<code>downstream</code> flags below are recorded and read by ' +
-          'nothing. It is restart-only, because it decides how the socket is ' +
-          'bound.') +
-      ' <a href="/spiffe">GET /spiffe</a> has the whole table and the full ' +
-      'list of what is and is not checked.</div>';
+    return SpiffePage.spiffePostureNote(enforced);
   }
 
   // WORKLOAD ATTESTATION ON THE UNIX SOCKET (#40 phase four): whether the
@@ -25283,7 +25243,8 @@ class AdminConsole {
       '<tr><td colspan="5">None. This trust domain federates with ' +
       'nobody.</td></tr>';
 
-    const inner = this.messagesOf(req) + this.spiffePostureNote() +
+    const inner = this.messagesOf(req) +
+      this.spiffePostureNote(this.deps.spiffeAuth.authRequired()) +
       (json.enabled ? '' : this.warn('SPIFFE is turned OFF ' +
         '(<code>spiffe.enabled</code>): the bundle endpoint answers 404 and ' +
         'every gRPC call is refused with <code>Unavailable</code>. Turn it ' +
@@ -25539,107 +25500,32 @@ class AdminConsole {
    * @returns `json` and `inner`, the page body as HTML
    */
   spiffeEntriesListPage(req) {
-    const { log, spiffeEntriesJson, queryWith, spiffeSelectorText } = this.deps;
-    const self = this;
+    const { log, spiffeEntriesJson } = this.deps;
     log.debug("Entering AdminConsole.spiffeEntriesListPage().");
-    const view = spiffeEntriesJson(req);
-    const json = view.json;
-    const listView = this.listViewOf('/admin/spiffe/entries', req.query);
-    const rows = json.entries.map(function (entry) {
-      return '<tr><td><a href="/admin/spiffe/entries' +
-        queryWith(listView, { entry: entry.id }) + '"><code>' +
-        self.esc(entry.spiffeId) + '</code></a>' +
-        (entry.expired ? ' <strong>(expired)</strong>' : '') +
-        '<br><span class="note"><code>' + self.esc(entry.id) +
-        '</code></span></td>' +
-        '<td>' + self.esc(entry.selectors.map(spiffeSelectorText).join(', ') ||
-                          '(none — matches every workload)') + '</td>' +
-        '<td>' + self.esc(entry.origin) + '</td>' +
-        '<td>' + self.esc(entry.hint || '—') + '</td>' +
-        '<td>' + entry.svidsIssued + '</td>' +
-        '<td>rev ' + entry.revisionNumber + '</td></tr>';
-    }).join('') ||
-      '<tr><td colspan="6">No registration entry matches.</td></tr>';
-    const originOptions = ['<option value="">every origin</option>'].concat(
-      json.origins.map(function (name) {
-        return '<option value="' + self.esc(name) + '"' +
-          (json.filter.origin === name ? ' selected' : '') + '>' +
-          self.esc(name) +
-          '</option>';
-      })).join('');
-    const inner = this.messagesOf(req) + this.spiffePostureNote() +
-      this.note(this.esc(json.total) + ' registration entry/entries, of at ' +
-        'most ' +
-      this.esc(json.max) + ' (<code>spiffe.maxEntries</code>). The store is ' +
-      'the embedded directory under <code>' + this.esc(json.container) +
-      '</code>: an <code>ldapmodify</code> there, a form here and the SPIRE ' +
-      'Server API\'s <code>BatchUpdateEntry</code> are three doors onto one ' +
-      'entry, and nothing caches it &mdash; so a change takes effect on the ' +
-      'next SVID.') +
-      '<form method="get" action="/admin/spiffe/entries"><div ' +
-      'class="formrow"><label for="q">Search</label>' +
-      '<input id="q" name="q" value="' + this.esc(json.filter.q) +
-      '" size="28" ' +
-      'placeholder="a SPIFFE ID, a selector, an entry id">' +
-      '<label for="origin">Origin</label>' +
-      '<select id="origin" name="origin">' + originOptions + '</select>' +
-      '<label for="per">Rows</label>' +
-      '<select id="per" name="per">' +
-      this.perPageOptions(view.paging.perPage) +
-      '</select><button class="secondary">Filter</button>' +
-      this.note('Origin is how the entry got here: <code>seed</code> ' +
-      'at startup, <code>console</code>, <code>api</code>, ' +
-      '<code>grpc</code>, <code>auto</code> (invented for a workload that ' +
-      'matched nothing) or <code>ldap</code>.') +
-      '</div></form><table><tr><th>SPIFFE ID / entry ' +
-      'id</th><th>Selectors</th><th>Origin</th><th>Hint</th><th>SVIDs</th>' +
-      '<th>' +
-      'Revision</th></tr>' + rows + '</table>' +
-      this.pageNavPair('/admin/spiffe/entries', this.filterOnly(listView),
-                       view.paging).head +
-      this.spiffeCreateEntryForm() ;
+    const json = spiffeEntriesJson(req).json;
+    // Drawn by `web_spiffe.ts` (#446).
+    const inner = this.messagesOf(req) +
+      SpiffePage.entries(this.renderContext(req),
+        JSON.parse(JSON.stringify(json)));
     log.debug("Leaving AdminConsole.spiffeEntriesListPage().");
-    return { json: json, inner: inner };
+    return {
+      json: json,
+      inner: inner
+    };
   }
 
+  // Drawn by `web_spiffe.ts` (#446).
   /**
    * Draws the form that creates a SPIFFE registration entry.
    *
+   * @param trustDomain - the realm's trust domain, for the placeholder
    * @returns the form as HTML
    */
-  spiffeCreateEntryForm() {
-    const { log, spiffeCa } = this.deps;
+  spiffeCreateEntryForm(trustDomain) {
+    const { log } = this.deps;
     log.debug("Entering AdminConsole.spiffeCreateEntryForm().");
     log.debug("Leaving AdminConsole.spiffeCreateEntryForm().");
-    return '<h2>Create a registration entry</h2>' +
-      this.note('The SPIFFE ID must be in this trust domain and outside the ' +
-      'reserved <code>/spire</code> path &mdash; those two refusals are the ' +
-      'whole of what is checked. The parent defaults to this server\'s own ' +
-      'identity, which is what SPIRE uses for an entry describing a workload ' +
-      'rather than a node.') +
-      '<form method="post" action="/admin/spiffe/entries"><div ' +
-      'class="formrow"><input type="hidden" name="action" value="create">' +
-      '<label for="e-id">SPIFFE ID</label>' +
-      '<input id="e-id" name="spiffeId" size="40" placeholder="spiffe://' +
-      this.esc(spiffeCa.trustDomain()) + '/ns/default/sa/web"><label ' +
-      'for="e-parent">Parent</label><input id="e-parent" name="parentId" ' +
-      'size="34" placeholder="(this server)"></div><div ' +
-      'class="formrow"><label for="e-sel">Selectors</label><input id="e-sel" ' +
-      'name="selectors" size="40" placeholder="unix:uid:1000, ' +
-      'k8s:ns:default"><label for="e-dns">DNS names</label><input id="e-dns" ' +
-      'name="dnsNames" size="26" placeholder="web.default.svc"></div><div ' +
-      'class="formrow"><label for="e-x509ttl">X509-SVID TTL</label><input ' +
-      'id="e-x509ttl" name="x509SvidTtl" size="6" placeholder="3600"><label ' +
-      'for="e-jwtttl">JWT-SVID TTL</label><input id="e-jwtttl" ' +
-      'name="jwtSvidTtl" size="6" placeholder="300"><label ' +
-      'for="e-hint">Hint</label><input id="e-hint" name="hint" size="12" ' +
-      'placeholder="internal"><label for="e-fed">Federates ' +
-      'with</label><input id="e-fed" name="federatesWith" size="20" ' +
-      'placeholder="other.example"><button>Create</button>' +
-      this.note('Selectors, DNS names and trust domains are ' +
-      'comma-separated. A selector is <code>type:value</code>, split on the ' +
-      'FIRST colon only &mdash; so <code>docker:label:app:web</code> is type ' +
-      '<code>docker</code>.') + '</div></form>';
+    return SpiffePage.spiffeCreateEntryForm(trustDomain);
   }
 
   /**
@@ -25685,7 +25571,8 @@ class AdminConsole {
                     '"><input ' +
                     'type="hidden" name="entry" value="' + this.esc(entry.id) +
                     '">';
-    const inner = this.messagesOf(req) + this.spiffePostureNote() +
+    const inner = this.messagesOf(req) +
+      this.spiffePostureNote(this.deps.spiffeAuth.authRequired()) +
       '<h2><code>' + this.esc(entry.spiffeId) + '</code></h2>' +
       this.note('Entry <code>' + this.esc(entry.id) + '</code>, revision ' +
       this.esc(entry.revisionNumber) + ', created by <code>' +
@@ -25799,47 +25686,18 @@ class AdminConsole {
    * @returns `json` and `inner`, the page body as HTML
    */
   spiffeAgentsListPage(req) {
-    const { log, spiffeAgentsJson, queryWith } = this.deps;
-    const self = this;
+    const { log, spiffeAgentsJson } = this.deps;
     log.debug("Entering AdminConsole.spiffeAgentsListPage().");
-    const view = spiffeAgentsJson(req);
-    const json = view.json;
-    const listView = this.listViewOf('/admin/spiffe/agents', req.query);
-    const rows = json.agents.map(function (agent) {
-      return '<tr><td><a href="/admin/spiffe/agents' +
-        queryWith(listView, { agent: agent.id }) + '"><code>' +
-        self.esc(agent.id) + '</code></a></td>' +
-        '<td>' + self.esc(agent.attestationType) + '</td>' +
-        '<td>' + (agent.banned ? '<strong>banned</strong>' : 'active') +
-        '</td><td>' + agent.attestations + '</td>' +
-        '<td>' + self.esc(agent.lastSeen || '—') + '</td></tr>';
-    }).join('') || '<tr><td colspan="5">No agent has attested here. An agent ' +
-      'appears when it calls <code>AttestAgent</code> on the SPIRE Server ' +
-      'API.</td></tr>';
-    const inner = this.messagesOf(req) + this.spiffePostureNote() +
-      this.note(this.esc(json.total) + ' agent(s), of at most ' +
-                this.esc(json.max) +
-      ' (<code>spiffe.maxAgents</code>). These entries are a RECORD rather ' +
-      'than configuration &mdash; everything on them was written by this ' +
-      'service when an agent attested &mdash; which is why nothing about an ' +
-      'agent is editable and only the ban is.') +
-      this.note('<strong>Node attestation is verified or refused.</strong> ' +
-      'An agent here attested with a type its realm names in ' +
-      '<code>spiffe.nodeAttestors</code> and an attestor verified, and its ' +
-      'selectors are the ones that attestor derived.') +
-      '<form method="get" action="/admin/spiffe/agents"><div class="formrow">' +
-      '<label for="q">Search</label>' +
-      '<input id="q" name="q" value="' + this.esc(json.filter.q) +
-      '" size="30" placeholder="an agent id, an attestor, a selector"><label ' +
-      'for="per">Rows</label><select id="per" name="per">' +
-      this.perPageOptions(view.paging.perPage) +
-      '</select><button class="secondary">Filter</button></div></form>' +
-      '<table><tr><th>Agent</th><th>Attestor</th><th>State</th>' +
-      '<th>Attestations</th><th>Last seen</th></tr>' + rows + '</table>' +
-      this.pageNavPair('/admin/spiffe/agents', this.filterOnly(listView),
-                       view.paging).head;
+    const json = spiffeAgentsJson(req).json;
+    // Drawn by `web_spiffe.ts` (#446).
+    const inner = this.messagesOf(req) +
+      SpiffePage.agents(this.renderContext(req),
+        JSON.parse(JSON.stringify(json)));
     log.debug("Leaving AdminConsole.spiffeAgentsListPage().");
-    return { json: json, inner: inner };
+    return {
+      json: json,
+      inner: inner
+    };
   }
 
   /**
@@ -25878,7 +25736,8 @@ class AdminConsole {
                     '"><input ' +
                     'type="hidden" name="agent" value="' + this.esc(agent.id) +
                     '">';
-    const inner = this.messagesOf(req) + this.spiffePostureNote() +
+    const inner = this.messagesOf(req) +
+      this.spiffePostureNote(this.deps.spiffeAuth.authRequired()) +
       '<h2><code>' + this.esc(agent.id) + '</code></h2>' +
       this.note('Attested with <code>' + this.esc(agent.attestationType) +
                 '</code>, ' +
@@ -25948,70 +25807,19 @@ class AdminConsole {
    * @returns `json`, `inner` (the page body as HTML) and `title`
    */
   spiffeBrokersPage(req) {
-    const { log, spiffeBrokersJson, queryWith, spiffeCa } = this.deps;
-    const self = this;
+    const { log, spiffeBrokersJson } = this.deps;
     log.debug("Entering AdminConsole.spiffeBrokersPage().");
-    const view = spiffeBrokersJson(req);
-    const json = view.json;
-    const listView = this.listViewOf('/admin/spiffe/brokers', req.query);
-    const back = '<input type="hidden" name="back" value="' +
-                 this.esc(queryWith(listView, {})) + '">';
-    const rows = json.brokers.map(function (one) {
-      return '<tr><td><code>' + self.esc(one.id) + '</code></td><td>' +
-        (one.problem ? '<strong>refused:</strong> ' + self.esc(one.problem)
-                     : self.esc(one.referenceTypes.join(', '))) +
-        '</td><td><form method="post" action="/admin/spiffe/brokers">' +
-        '<input type="hidden" name="action" value="remove"><input ' +
-        'type="hidden" name="id" value="' + self.esc(one.id) + '">' + back +
-        '<button class="danger">Remove</button></form></td></tr>';
-    }).join('') || '<tr><td colspan="3">No broker is authorized, so every ' +
-      'call to the SPIFFE Broker API is refused PERMISSION_DENIED.</td></tr>';
-    const listening = json.listeners.filter(function (b) {
-      return b.listening;
-    }).map(function (b) {
-      return '<code>' + self.esc(b.address) + '</code>';
-    }).join(', ');
+    const json = spiffeBrokersJson(req).json;
+    // Drawn by `web_spiffe.ts` (#446).
     const inner = this.messagesOf(req) +
-      this.note('The SPIFFE Broker API (Incubating) lets a trusted ' +
-      'infrastructure component ask for the SVIDs of a workload it ' +
-      'REFERENCES — a process id, or a Kubernetes pod — which this service ' +
-      'attests itself before answering. It is served with mutual TLS on ' +
-      '<code>spiffe.grpcHost</code> and <code>spiffe.brokerPort</code> (' +
-      (listening ? 'listening on ' + listening
-                 : 'not listening in this realm: <code>spiffe.brokerPort' +
-                   '</code> is ' + this.esc(json.port)) + '). A caller ' +
-      'presents an X509-SVID, and one whose SPIFFE ID is not listed here is ' +
-      'refused.') +
-      this.note('<strong>A process id means something only on the node it ' +
-      'was read on.</strong> The endpoint is TCP, so allow ' +
-      '<code>pid</code> only to a broker running on this host; ' +
-      '<code>k8s</code> resolves a pod in this node\'s kubelet pod list.') +
-      '<form method="get" action="/admin/spiffe/brokers"><div ' +
-      'class="formrow"><label for="q">Search</label><input id="q" name="q" ' +
-      'value="' + this.esc(json.filter.q) + '" size="30" placeholder="a ' +
-      'SPIFFE ID or a reference type"><label for="per">Rows</label><select ' +
-      'id="per" name="per">' + this.perPageOptions(view.paging.perPage) +
-      '</select><button class="secondary">Filter</button></div></form>' +
-      '<table><tr><th>Broker</th><th>May reference</th><th></th></tr>' +
-      rows + '</table>' +
-      this.pageNavPair('/admin/spiffe/brokers', this.filterOnly(listView),
-                       view.paging).head +
-      '<h2>Authorize a broker</h2>' +
-      '<form method="post" action="/admin/spiffe/brokers"><div ' +
-      'class="formrow"><input type="hidden" name="action" value="set">' +
-      back + '<label for="b-id">SPIFFE ID</label><input id="b-id" name="id" ' +
-      'size="44" placeholder="spiffe://' + this.esc(spiffeCa.trustDomain()) +
-      '/ns/mesh/sa/node-proxy"></div><div class="formrow"><label><input ' +
-      'type="checkbox" name="referenceTypes" value="pid"> pid ' +
-      '(WorkloadPIDReference)</label><label><input type="checkbox" ' +
-      'name="referenceTypes" value="k8s"> k8s (a pod)</label><label><input ' +
-      'type="checkbox" name="referenceTypes" value="*"> * (both)</label>' +
-      '<button>Save</button>' +
-      this.note('A broker already listed has its reference types replaced. ' +
-      'An ID from a federated trust domain is verified against that ' +
-      'domain\'s bundle.') + '</div></form>';
+      SpiffePage.brokers(this.renderContext(req),
+        JSON.parse(JSON.stringify(json)));
     log.debug("Leaving AdminConsole.spiffeBrokersPage().");
-    return { json: json, inner: inner, title: 'SPIFFE brokers' };
+    return {
+      json: json,
+      inner: inner,
+      title: 'SPIFFE brokers'
+    };
   }
 
   /**

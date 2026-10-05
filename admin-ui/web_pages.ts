@@ -82,6 +82,7 @@ import SecretsPage = require('./web_secrets');
 import SessionsPage = require('../logout/web_sessions');
 import SettingsForms = require('./web_settings');
 import SignalsPage = require('../ssf/web_signals');
+import SpiffePage = require('../spiffe/web_spiffe');
 import SsfDeadLettersPage = require('../ssf/web_ssf_dead_letters');
 import SsfPage = require('../ssf/web_ssf');
 import SsfTransmittersPage = require('../ssf/web_ssf_transmitters');
@@ -411,6 +412,21 @@ const PAGES: WebPage[] = [
     operation: '/admin-api/signals',
     render: function (view: Json, ctx?: Json): string {
       return SignalsPage.body(ctx || WebKit.context(), view);
+    } },
+  { path: '/admin/spiffe/agents', title: 'SPIFFE agents',
+    operation: '/admin-api/spiffe/agents',
+    render: function (view: Json, ctx?: Json): string {
+      return SpiffePage.agents(ctx || WebKit.context(), view);
+    } },
+  { path: '/admin/spiffe/brokers', title: 'SPIFFE brokers',
+    operation: '/admin-api/spiffe/brokers',
+    render: function (view: Json, ctx?: Json): string {
+      return SpiffePage.brokers(ctx || WebKit.context(), view);
+    } },
+  { path: '/admin/spiffe/entries', title: 'SPIFFE entries',
+    operation: '/admin-api/spiffe/entries',
+    render: function (view: Json, ctx?: Json): string {
+      return SpiffePage.entries(ctx || WebKit.context(), view);
     } },
   { path: '/admin/ssf', title: 'Shared Signals',
     operation: '/admin-api/ssf',

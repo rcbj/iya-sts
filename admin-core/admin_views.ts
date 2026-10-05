@@ -5537,11 +5537,22 @@ class AdminViews {
           return list.indexOf(value) === index;
         })
         .sort(),
-      paging: { page: pg.page, pages: pg.pages, perPage: pg.perPage,
-                total: pg.total },
+      paging: this.pagingJson(pg),
       max: spiffeRegistry.maxEntries(),
       container: 'ou=entries,ou=spiffe',
+      // What the page states beside the rows (#446): whether the SPIRE
+      // Server API authenticates, and the trust domain a new entry's
+      // SPIFFE ID is written in.
+      serverApiAuthenticated: spiffeAuth.authRequired(),
+      trustDomain: spiffeCa.trustDomain(),
+      // Each entry with its selectors as text, the column the page draws.
       entries: rows.slice(pg.offset, pg.offset + pg.perPage)
+        .map(function (entry) {
+          return Object.assign({}, entry, {
+            selectorTexts: entry.selectors
+              .map(self.spiffeSelectorText.bind(self))
+          });
+        })
     };
     log.debug("Leaving AdminViews.spiffeEntriesJson(). " + rows.length +
               " matched.");
@@ -5577,8 +5588,8 @@ class AdminViews {
       total: all.length,
       matched: rows.length,
       filter: { q: q },
-      paging: { page: pg.page, pages: pg.pages, perPage: pg.perPage,
-                total: pg.total },
+      paging: this.pagingJson(pg),
+      trustDomain: spiffeCa.trustDomain(),
       setting: 'spiffe.brokers',
       port: config.text('spiffe.brokerPort'),
       referenceTypes: ['pid', 'k8s', '*'],
@@ -5623,8 +5634,8 @@ class AdminViews {
       filter: { q: q },
       max: spiffeRegistry.maxAgents(),
       container: 'ou=agents,ou=spiffe',
-      paging: { page: pg.page, pages: pg.pages, perPage: pg.perPage,
-                total: pg.total },
+      paging: this.pagingJson(pg),
+      serverApiAuthenticated: spiffeAuth.authRequired(),
       agents: rows.slice(pg.offset, pg.offset + pg.perPage)
     };
     log.debug("Leaving AdminViews.spiffeAgentsJson(). " + rows.length +
