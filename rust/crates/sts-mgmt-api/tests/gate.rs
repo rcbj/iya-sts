@@ -80,6 +80,14 @@ fn every_refusal_in_order() {
     let tokens = JwtAccessTokens::new(settings.clone());
     let revoked = |jti: &str| jti == "revoked";
     let disabled = |sub: &str| sub == "mallory";
+    let ended = |jti: &str| jti == "signed-out";
+    let method = |client: &str| {
+        if client == "sts-admin-console" {
+            "none".to_string()
+        } else {
+            "private_key_jwt".to_string()
+        }
+    };
     let gate = Gate {
         settings: &settings,
         keys: &keys,
@@ -88,6 +96,8 @@ fn every_refusal_in_order() {
         disabled: &disabled,
         dpop: stores.as_ref(),
         eddsa_curve: "",
+        session_ended: &ended,
+        client_method: &method,
     };
     let ask = |method: &str, auth: Option<String>| {
         gate.check(&Arrived {
@@ -166,6 +176,40 @@ fn every_refusal_in_order() {
             Some(format!("DPoP {}", token(&keys, "at+jwt", c)))
         )),
         codes::STS_OAUTH_0093
+    );
+
+    // #446: a token whose sign-on session ended, and the public console's
+    // unbound token; the same token from a confidential client is admitted.
+    let mut c = good();
+    c["jti"] = json!("signed-out");
+    assert_eq!(
+        code(ask("GET", bearer(token(&keys, "at+jwt", c)))),
+        codes::STS_API_0126
+    );
+    let mut c = good();
+    c["client_id"] = json!("sts-admin-console");
+    c["sub"] = json!("alice");
+    let r = ask("GET", bearer(token(&keys, "at+jwt", c))).unwrap_err();
+    assert_eq!((r.status, r.code), (401, codes::STS_OAUTH_0939));
+    assert!(ask("GET", bearer(token(&keys, "at+jwt", good()))).is_ok());
+    use sts_oauth::sender_constraints::public_client_issuance_refusal as issuance;
+    assert_eq!(
+        issuance("sts-admin-console", "none", "", "authorization_code")
+            .unwrap()
+            .code,
+        codes::STS_OAUTH_0938
+    );
+    assert!(
+        issuance("sts-admin-console", "none", "jkt", "authorization_code")
+            .is_none()
+    );
+    assert!(
+        issuance("sts-admin-console", "client_secret_basic", "", "").is_none(),
+        "not while confidential"
+    );
+    assert!(
+        issuance("sts-user-portal", "none", "", "").is_none(),
+        "the portal is in neither list"
     );
 
     let ok = ask("GET", bearer(token(&keys, "at+jwt", good()))).unwrap();

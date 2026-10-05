@@ -8649,6 +8649,16 @@ const CODES = [
       'authentication does not meet — or a grant with no person behind it ' +
       '(#432 phase 6).',
     spec: 'RFC 9396 (invalid_authorization_details, HTTP 400)' },
+  { code: 'STS-OAUTH-0938',
+    summary: 'The admin console, declared as a public client, asked the ' +
+      'token endpoint for tokens with no DPoP proof. Every token issued to ' +
+      'it as a public client is bound to a key it proves (#446).',
+    spec: 'invalid_dpop_proof (HTTP 400)' },
+  { code: 'STS-OAUTH-0939',
+    summary: 'An access token issued to the admin console as a public ' +
+      'client was presented at a resource carrying no cnf.jkt. Such a token ' +
+      'is honoured only DPoP-bound (#446).',
+    spec: 'invalid_token (HTTP 401)' },
   { code: 'STS-SAML-0001',
     summary: 'A SAML 2.0 sign-in resumed with a held-request id that is ' +
       'unknown or has expired (saml2.requestTtlMin), so there is no ' +
@@ -17635,17 +17645,20 @@ const CODES = [
   { code: 'STS-API-0006',
     summary: 'In product mode with the token gate off, the XACML access ' +
       'policy refused a management API caller who does hold a console ' +
-      'role.',
-    spec: 'HTTP 403 forbidden' },
+      'role. Retired by #446: product mode ignores ' +
+      'adminApi.authRequired=false, so the token is always required there ' +
+      'and nothing falls back to a console session.',
+    spec: '', retired: true },
   { code: 'STS-API-0007',
     summary: 'In product mode with the token gate off, a management API ' +
-      'request arrived with nobody signed in.',
-    spec: 'HTTP 401 JSON (HTTP 403 page for a browser)' },
+      'request arrived with nobody signed in. Retired by #446, as ' +
+      'STS-API-0006 was.',
+    spec: '', retired: true },
   { code: 'STS-API-0008',
     summary: 'In product mode with the token gate off, a signed-in ' +
       'management API caller did not hold the console role the method ' +
-      'needs.',
-    spec: 'HTTP 403 forbidden (HTTP 403 page for a browser)' },
+      'needs. Retired by #446, as STS-API-0006 was.',
+    spec: '', retired: true },
   { code: 'STS-API-0009',
     summary: 'A management API request body did not match the operation\'s ' +
       'JSON Schema (an unknown member, a wrong type, or a value outside a ' +
@@ -17964,6 +17977,11 @@ const CODES = [
       'a client_credentials token — no longer holds a role authorizing it ' +
       'in the realm that issued it (#302, #303).',
     spec: 'HTTP 403 forbidden' },
+  { code: 'STS-API-0126',
+    summary: 'A management API access token was issued on a sign-on ' +
+      'session that has since ended, by a sign-out or by running out, so ' +
+      'the token is no longer honoured (#446).',
+    spec: 'invalid_token (HTTP 401)' },
   { code: 'STS-PORTAL-0001',
     summary: 'A user portal request\'s query string or form body did not ' +
       'match the shape its route accepts, and was refused before ' +
