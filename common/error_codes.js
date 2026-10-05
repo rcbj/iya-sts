@@ -18189,17 +18189,20 @@ const CODES = [
   { code: 'STS-API-0006',
     summary: 'In product mode with the token gate off, the XACML access ' +
       'policy refused a management API caller who does hold a console ' +
-      'role.',
-    spec: 'HTTP 403 forbidden' },
+      'role. Retired by #446: product mode ignores ' +
+      'adminApi.authRequired=false, so the token is always required there ' +
+      'and nothing falls back to a console session.',
+    spec: '', retired: true },
   { code: 'STS-API-0007',
     summary: 'In product mode with the token gate off, a management API ' +
-      'request arrived with nobody signed in.',
-    spec: 'HTTP 401 JSON (HTTP 403 page for a browser)' },
+      'request arrived with nobody signed in. Retired by #446, as ' +
+      'STS-API-0006 was.',
+    spec: '', retired: true },
   { code: 'STS-API-0008',
     summary: 'In product mode with the token gate off, a signed-in ' +
       'management API caller did not hold the console role the method ' +
-      'needs.',
-    spec: 'HTTP 403 forbidden (HTTP 403 page for a browser)' },
+      'needs. Retired by #446, as STS-API-0006 was.',
+    spec: '', retired: true },
   { code: 'STS-API-0009',
     summary: 'A management API request body did not match the operation\'s ' +
       'JSON Schema (an unknown member, a wrong type, or a value outside a ' +

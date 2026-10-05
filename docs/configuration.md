@@ -706,8 +706,9 @@ If the console is ever closed to everybody, `/admin-api` is the way back out:
 it is gated by a credential of its own (`adminApi.authRequired`, an OAuth 2.0
 access token rather than a console session), so getting back in means holding
 that token and calling `POST /admin-api/rbac/grant`. In development, turning
-that one setting off restores an open API; in
-product it gates `/admin-api` by the console's own session and roles instead.
+that one setting off restores an open API. Product ignores the setting turned
+off: pin `adminApi.clientSecret` before the start, so that a token can always
+be minted.
 
 Renaming a role group does not move anybody: the members stay in the old group,
 which stops granting anything the moment the name changes.

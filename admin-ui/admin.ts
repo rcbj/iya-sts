@@ -6541,7 +6541,7 @@ class AdminConsole {
         ? ' Set global.publicBaseUrl to the address this console is reached ' +
           'at, or add that address\'s /admin/callback to the ' +
           'sts-admin-console application\'s oauthRedirectUri.'
-        : (mode.gatesManagementApi()
+        : (mode.valueInForce('adminApi.authRequired') === true
             ? ' Until it is fixed, /admin-api can do everything this console ' +
               'can, with an access token carrying admin:write.'
             : ' Until it is fixed, /admin-api is not gated and can do ' +

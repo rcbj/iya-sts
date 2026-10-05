@@ -56,7 +56,8 @@
 // **It is a DIFFERENT credential from the console's, not the same gate
 // widened**, and that distinction is the whole design: the console takes a
 // browser session, this takes a token. `adminApi.authRequired` is the off
-// switch and restores the open API exactly.
+// switch and restores the open API exactly — in development mode only since
+// #446 (2026-10-05); product ignores it turned off, see `tokenRequired()`.
 //
 // **THE THREE REASONS IT WAS OPEN ARE KEPT VERBATIM IN `mgmt-api/CLAUDE.md`**
 // rather than here, because they are now the argument for that off switch and
@@ -2327,7 +2328,8 @@ class AdminApi {
             // missed, and `admin_api_spec.ts`'s own header argues why that
             // matters more for the document than for either sentence.
             // ------------------------------------------------------------
-            protected: config.value('adminApi.authRequired') === true,
+            // The value IN FORCE (#446): product ignores `false`.
+            protected: self.tokenRequired(),
             // THE EXPLORER IS A CONSOLE PAGE SINCE 2026-09-09 and this field
             // still names it, because a client that read it wants to know
             // where the explorer IS rather than which path space it is in.
@@ -5393,13 +5395,13 @@ class AdminApi {
           return self.runClaimed(res, request.action === 'create'
             ? { username: String(request.username || request.user || '') }
             : null, function (held) {
-            // `via: 'api'` and whatever actor the caller named, for the audit
-            // rows the two second-factor clears write — the same honesty
-            // `rbacAction`'s caller keeps: this API authenticates a CLIENT
-            // rather than a person, so an empty actor is the true answer rather
-            // than an inconvenient one.
+            // `via: 'api'` and the subject of the token the gate verified,
+            // for the audit rows this action writes (#446). It was an empty
+            // actor while this API authenticated only clients; with no token
+            // (development's open API) it still is.
             const result = adminActions.usersAction(request,
-                                             { via: 'api', actor: '',
+                                             { via: 'api',
+                                               actor: self.callerNameOf(res),
                                                // The address a password reset
                                                // link is built on (2026-09-13).
                                                base: baseUrlOf(req) });
@@ -8057,11 +8059,11 @@ class AdminApi {
           log.debug("Entering the management API admin roles action endpoint.");
           const body = parseBody(req);
           // `via: 'api'` and an empty actor, for the audit row. The console
-          // passes its signed-in user here; this API authenticates a CLIENT
-          // rather than a person and has no session to read, so an empty actor
-          // is the honest answer rather than an inconvenient one.
+          // passes its signed-in user here; this API passes the subject of
+          // the token its gate verified (#446), and nobody where no token was
+          // required.
           const result = adminActions.rbacAction(self.withAction(req, body),
-                                          { via: 'api', actor: '' });
+            { via: 'api', actor: self.callerNameOf(res) });
           if (!result.ok) {
             errorCodes.mark(res, errorCodes.codeOf(result) || 'STS-API-0034');
           }
@@ -8237,11 +8239,10 @@ class AdminApi {
                     "endpoint.");
           const body = parseBody(req);
           // `via: 'api'` and whatever actor the caller named, for the audit row
-          // — the same honesty `rbacAction`'s caller keeps: this API
-          // authenticates a CLIENT rather than a person, so an empty actor is
-          // the true answer rather than an inconvenient one.
+          // — `rbacAction`'s caller's rule: the subject of the token the
+          // gate verified (#446), and nobody where no token was required.
           const result = adminActions.mfaAction(self.withAction(req, body),
-                                         { via: 'api', actor: '' });
+            { via: 'api', actor: self.callerNameOf(res) });
           if (!result.ok) {
             errorCodes.mark(res, errorCodes.codeOf(result) || 'STS-API-0035');
           }
@@ -10210,7 +10211,8 @@ class AdminApi {
           log.debug("Entering the management API federation action endpoint.");
           const body = parseBody(req);
           adminActions.federationAction(self.withAction(req, body),
-            { via: 'api', actor: 'admin-api', base: baseUrlOf(req) })
+            { via: 'api', actor: self.callerNameOf(res) || 'admin-api',
+              base: baseUrlOf(req) })
             .then(function (result) {
               if (!result.ok) {
                 errorCodes.mark(res, errorCodes.codeOf(result) ||
@@ -20746,6 +20748,103 @@ class AdminApi {
   }
 
   // ---------------------------------------------------------------------------
+  // IS AN ACCESS TOKEN REQUIRED ON THIS REQUEST? ONE READING, FOR THE GATE AND
+  // FOR EVERYTHING THAT REPORTS IT (#446, 2026-10-05).
+  //
+  // `adminApi.authRequired` is development-only when it is off: the row
+  // carries the `onlyWhile` marker on `mode.opensManagementApi()`, so the
+  // value IN FORCE in a product realm is `true` whatever is stored. The gate,
+  // the index's `protected`, the OpenAPI document's security section and the
+  // startup banner all ask this, because a report reading the stored value
+  // would say "open" about an API that is refusing.
+  //
+  // The mode is the AMBIENT realm's, as everywhere: a product realm of a
+  // development process requires the token under its own prefix.
+  // ---------------------------------------------------------------------------
+  /**
+   * Tells whether this API requires an access token here: the value of
+   * `adminApi.authRequired` in force, which product mode reads as true.
+   *
+   * @returns true when a token is required
+   */
+  tokenRequired(): boolean {
+    const { log, mode } = this.deps;
+    log.debug("Entering AdminApi.tokenRequired().");
+    const required = mode.valueInForce('adminApi.authRequired') === true;
+    log.debug("Leaving AdminApi.tokenRequired(). " + required);
+    return required;
+  }
+
+  // ---------------------------------------------------------------------------
+  // WHO IS CALLING, FOR AN AUDIT ROW (#446, 2026-10-05).
+  //
+  // The gate leaves the verified token's subject on `res.locals.apiCaller`.
+  // With `adminApi.authRequired` off — development only — there is no token
+  // and so nobody to name, and this answers ''. It never reads the request:
+  // an actor a caller could nominate is not an audit trail.
+  // ---------------------------------------------------------------------------
+  /**
+   * Names the subject of the access token this request was let in on, for an
+   * audit row: a person's name, or the client's id.
+   *
+   * @param res - the response, whose locals the gate wrote
+   * @returns the name, or '' where no token was required
+   */
+  callerNameOf(res): string {
+    const { log } = this.deps;
+    log.debug("Entering AdminApi.callerNameOf().");
+    const caller = res && res.locals && res.locals.apiCaller;
+    const name = caller ? String(caller.name || '') : '';
+    log.debug("Leaving AdminApi.callerNameOf(). " + (name || '(nobody)'));
+    return name;
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE ACTOR IS THE GATE'S ANSWER, NEVER THE CALLER'S (#446, 2026-10-05).
+  //
+  // Eighteen places in `admin-core/admin_actions.ts` read `body.actor` for
+  // the audit row an action writes — the console puts its signed-in user
+  // there — and until #446 this API gave them nothing: an operation's schema
+  // refuses a member it does not define, so those rows named nobody (and the
+  // few operations whose schema is open took whatever a caller sent). The
+  // route wrapper calls this after the body has passed its schema: where the
+  // gate verified a token, a JSON body's `actor` member is SET to that
+  // token's subject, replacing anything there. Every handler reads its own
+  // body with `parseBody(req)`, which parses `req.body` each time, so the
+  // one place that reaches all of them is the text they parse.
+  //
+  // A body that is not JSON, and one the handler owns (a streamed upload),
+  // is left alone: the HTTP row still names the caller. So is every request
+  // with no token, which only development's open API has.
+  // ---------------------------------------------------------------------------
+  /**
+   * Replaces a JSON request body's `actor` member with the subject of the
+   * verified access token, so an action's audit row names who called.
+   *
+   * @param req - the request, whose body text is rewritten
+   * @param res - the response, whose locals the gate wrote
+   */
+  nameActor(req, res): void {
+    const { log, parseBody } = this.deps;
+    log.debug("Entering AdminApi.nameActor().");
+    const name = this.callerNameOf(res);
+    if (!name || req.__adminApiHandlerOwnsBody ||
+        typeof req.body !== 'string' ||
+        !/json/i.test(String(req.headers['content-type'] || ''))) {
+      log.debug("Leaving AdminApi.nameActor(). Nothing to name.");
+      return;
+    }
+    const body = parseBody(req);
+    if (!body || typeof body !== 'object' || Array.isArray(body)) {
+      log.debug("Leaving AdminApi.nameActor(). Not an object.");
+      return;
+    }
+    body.actor = name;
+    req.body = JSON.stringify(body);
+    log.debug("Leaving AdminApi.nameActor(). Named.");
+  }
+
+  // ---------------------------------------------------------------------------
   // WHAT THE OPENAPI DOCUMENT IS BUILT FROM, IN ONE PLACE.
   //
   // `admin_api_spec.ts` is a pure function over the route table and takes every
@@ -20772,16 +20871,15 @@ class AdminApi {
    * @returns `{ baseUrl, version, authRequired }`
    */
   specOptions(req) {
-    const { log, baseUrlOf, config } = this.deps;
+    const { log, baseUrlOf } = this.deps;
     log.debug("Entering AdminApi.specOptions().");
     const options = {
       baseUrl: baseUrlOf(req),
       version: VERSION,
-      // The one that was missing. `=== true` rather than a truthy test because
-      // this becomes a claim in a published document: an unset value is the
-      // setting's default, which config.js already resolves, and anything else
-      // here would be this file inventing a policy.
-      authRequired: config.value('adminApi.authRequired') === true
+      // The one that was missing. A boolean rather than a truthy test because
+      // this becomes a claim in a published document, and the value IN FORCE
+      // rather than the stored one (#446): product ignores `false`.
+      authRequired: this.tokenRequired()
     };
     log.debug("Leaving AdminApi.specOptions(). authRequired=" +
               options.authRequired);
@@ -20795,20 +20893,21 @@ class AdminApi {
   /**
    * Registers the access-token gate on the base path, ahead of every operation.
    *
-   * With `adminApi.authRequired` on it refuses a missing or unverifiable token
-   * with 401 and a token for another audience, issuer or without the needed
-   * permission with 403; the permission is decided by the XACML access policy.
+   * With `adminApi.authRequired` in force — always, in product mode — it
+   * refuses a missing or unverifiable token with 401 and a token for another
+   * audience, issuer or without the needed permission with 403; the permission
+   * is decided by the XACML access policy.
    *
    * @param app - the express app
    */
   registerGate(app: RouteApp): void {
-    const { log, config, errorCodes, realms, STS, stsCrypto, jwtAccessToken,
-            mtls, dpop, senderConstraints, accessGate, mode, adminViews,
-            parseBody, adminScope, rolePermissions } = this.deps;
+    const { log, errorCodes, realms, STS, stsCrypto, jwtAccessToken,
+            mtls, dpop, senderConstraints, accessGate,
+            rolePermissions } = this.deps;
     const self = this;
     log.debug("Entering AdminApi.registerGate().");
     app.use(BASE, function (req, res, next) {
-      if (config.value('adminApi.authRequired')) {
+      if (self.tokenRequired()) {
         // THE ONE OPERATION THAT IS NOT AN ADMINISTRATOR'S (#164 phase 3):
         // the MDM feed takes `device:compliance` and its role, and nothing
         // else here takes that scope — see DevicesAdmin.mdmFeed().
@@ -21177,124 +21276,40 @@ class AdminApi {
         // WHO CALLED, for an operation that records its caller (#164: the
         // MDM feed's reports name the feed's client).
         res.locals.apiClientId = String(claims.client_id || '');
+        // AND THE SUBJECT, WHICH IS THE AUDIT ACTOR (#446, 2026-10-05). Until
+        // then every row this API wrote named nobody — "this API
+        // authenticates a CLIENT rather than a person" — which was true while
+        // the only tokens it saw were `client_credentials` ones. The console
+        // is becoming a client of this API that presents the signed-in
+        // PERSON's token, so the subject the gate has just verified, and
+        // decided the roles of, is who did it: a person's name, or the
+        // client's id on `client_credentials`. Read by `callerNameOf()`, by
+        // the route wrapper (which hands it to every action as `actor`) and
+        // by `common/audit.js`'s HTTP row.
+        res.locals.apiCaller = {
+          kind: effective.subject.kind === 'application' ? 'application'
+                                                         : 'person',
+          name: String(effective.subject.name || ''),
+          clientId: String(claims.client_id || ''),
+          realm: tokenRealm
+        };
         return next();
       }
-      if (!mode.gatesManagementApi()) {
-        return next();
-      }
-      const gate = adminViews.gateStateFor(req);
-      // A REALM ADMINISTRATOR'S SESSION (2026-09-14, #32) holds nothing outside
-      // its realm — `gateStateFor()` has already said so — and in its realm is
-      // refused the service-wide operations, exactly as at the console's gate.
-      if (gate.authority === 'realm') {
-        const operation = self.consoleOperationOf(req);
-        const body = req.method === 'GET' || req.method === 'HEAD'
-          ? null : Object.assign({}, parseBody(req));
-        if (body && operation.action) {
-          body.action = operation.action;
-        }
-        const scoped = gate.outsideRealm
-          ? { detail: 'This session administers the "' + gate.identityRealm +
-                      '" realm and this request is for another.' }
-          : adminScope.refusalFor(gate, operation.path, body, req.query);
-        if (scoped) {
-          errorCodes.mark(res, 'STS-API-0112');
-          return self.sendJson(res, 403, { error: 'forbidden',
-                                           errors: [scoped.detail] });
-        }
-      }
-      // THE SAME TWO ROLES THE CONSOLE USES, and the same asymmetry: a GET
-      // needs Admin Read and anything else needs Admin Write. Asking `admin.js`
-      // rather than re-deriving it is what stops this becoming a second answer
-      // to who may administer this service — the mistake `logout.ts` exists to
-      // prevent one layer down.
-      const needed = req.method === 'GET' ? gate.read : gate.write;
-      if (needed) {
-        // -------------------------------------------------------------------
-        // AND THEN THE POLICY (2026-09-06), which is the layer ABOVE the roles
-        // and not a replacement for them.
-        //
-        // The two console roles decide who may administer this service and stay
-        // exactly where they are — `adminViews.gateStateFor()` is still the one
-        // answer to that, which is what stops this becoming a second one. What
-        // the gate adds is that a deployment can narrow this surface by POLICY,
-        // with the subject taken from the SESSION that got the caller through
-        // the check above and never from anything on the request.
-        //
-        // **IT RUNS ONLY WHERE THIS SURFACE IS GATED AT ALL**, which is the
-        // same `mode.gatesManagementApi()` branch above — reached only with
-        // `adminApi.authRequired` off, since the token branch answers first. In
-        // development that branch leaves this API open by design — there is no
-        // credential, so no session, so no subject — and asking a policy whose
-        // built-in document refuses an
-        // unauthenticated subject would close the door the tests drive and the
-        // door somebody locked out of the console gets back in through. A
-        // policy layer must not be the thing that removes the recovery path.
-        //
-        // On an unedited product deployment it permits: the built-in document
-        // asks for a role only where somebody has required one, and the caller
-        // has already been shown to hold Admin Read or Admin Write.
-        const policy = accessGate.check({
-          resource: accessGate.RESOURCE.MANAGEMENT_API,
-          action: req.method === 'GET' ? accessGate.ACTION.READ
-                                       : accessGate.ACTION.WRITE,
-          subject: { name: gate.username,
-                     authenticated: !!(gate.session &&
-                                       gate.session.authenticated !== false),
-                     roles: gate.roles || [],
-                     sessionId: gate.session ? gate.session.id : null },
-          context: { method: req.method, path: req.originalUrl || req.url }
-        });
-        if (!policy.allowed) {
-          log.info('admin-api: the access policy refused ' + req.method + ' ' +
-                   (req.originalUrl || req.url) + ' for ' +
-                   (gate.username || '(nobody)') + '. ' + policy.why);
-          errorCodes.mark(res, 'STS-API-0006');
-          return self.sendJson(res, 403, {
-            error: 'forbidden',
-            errors: ['The access policy refused this request. ' + policy.why +
-                     ' This is a POLICY decision rather than a missing role: ' +
-                     (gate.username || 'the caller') + ' holds ' +
-                     ((gate.roles && gate.roles.length)
-                       ? gate.roles.join(', ') : 'no role') +
-                     ' and passed the role check. The document is on ' +
-                     '/admin/xacml and xacml.enforceAccess turns the layer ' +
-                     'off.']
-          });
-        }
-        return next();
-      }
-      log.info('admin-api: product mode refused ' + req.method + ' ' +
-               (req.originalUrl || req.url) + ' — ' +
-               (gate.username ? gate.username + ' holds ' +
-                  (gate.roles.length ? gate.roles.join(', ') : 'no role')
-                : 'nobody is signed in') + '.');
-      const wantsHtml = /html/i.test(String(req.headers.accept || ''));
-      if (wantsHtml) {
-        errorCodes.mark(res, gate.username ? 'STS-API-0008' : 'STS-API-0007');
-        return res.status(403).type('html').send(
-          '<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">' +
-          '<title>Forbidden</title></head><body><h1>403 Forbidden</h1>' +
-          '<p>This service is in <strong>product mode</strong>, where the ' +
-          'management API requires the same sign-in and roles the console ' +
-          'does. <a href="/admin">Sign in</a>.</p></body></html>');
-      }
-      errorCodes.mark(res, gate.username ? 'STS-API-0008' : 'STS-API-0007');
-      return self.sendJson(res, gate.username ? 403 : 401, {
-        error: 'forbidden',
-        errors: ['This service is in product mode, where ' + BASE +
-                 ' requires ' +
-                 'the same sign-in and the same two roles /admin does — ' +
-                 (req.method === 'GET' ? gate.readGroup : gate.writeGroup) +
-                 ' for a ' + req.method + '. ' +
-                 (gate.username
-                   ? 'You are signed in as ' + gate.username + ' and hold ' +
-                     (gate.roles.length ? gate.roles.join(', ') : 'no role') +
-                     '.'
-                   : 'Nobody is signed in on this request.') +
-                 ' In development mode this API is open, which is what the ' +
-                 'tests drive and the way back in when nobody holds a role.']
-      });
+      // ---------------------------------------------------------------------
+      // THE SETTING IS OFF, WHICH ONLY DEVELOPMENT MODE CAN BE (#446,
+      // 2026-10-05): `tokenRequired()` reads it as the mode lets it be, and
+      // product reads `false` as `true`. So this line is the open API of
+      // development — what a test drives, and the way back in when nobody
+      // can mint a token — and nothing else reaches it.
+      //
+      // UNTIL #446 PRODUCT FELL BACK, HERE, TO THE CONSOLE'S SESSION AND ITS
+      // TWO ROLES (#411; STS-API-0006, 0007 and 0008, all retired). The
+      // console is becoming a static application that calls this API with
+      // the signed-in person's own token, so there is no console session to
+      // fall back to, and a setting that opened this gate would open the
+      // console with it. `common/mode.js`'s `opensManagementApi()` argues it.
+      // ---------------------------------------------------------------------
+      return next();
     });
     log.debug("Leaving AdminApi.registerGate().");
   }
@@ -21384,6 +21399,10 @@ class AdminApi {
           self.sendJson(res, 400, { ok: false, errors: checked.errors });
           return undefined;
         }
+        // AFTER the schema, so a caller's own `actor` is judged by the
+        // operation's schema as it always was — refused, wherever the schema
+        // is closed — and what the actions read is the gate's answer (#446).
+        self.nameActor(req, res);
         return entry.handler(req, res);
       });
     });
@@ -21571,7 +21590,7 @@ function startupBanner(operations: number): string {
          '/openapi.json and an explorer that calls it is on the console, ' +
          'at /admin/api-explorer (it was ' + BASE + '/docs until ' +
          '2026-09-09). ' +
-         (config.value('adminApi.authRequired')
+         (mode.valueInForce('adminApi.authRequired') === true
            ? 'It REQUIRES an OAuth 2.0 access token (adminApi.authRequired): ' +
              'audience ' +
              (config.sourceOf('adminApi.audience') === 'default'
@@ -21587,10 +21606,10 @@ function startupBanner(operations: number): string {
              'role, and it is only still that if the secret was pinned ' +
              'before the start — a secret minted per start is readable only ' +
              'through the API it unlocks.'
-           : 'It is NOT protected (adminApi.authRequired is off) — and the ' +
-             'console is gated unconditionally, so this is the surface to ' +
-             'reach for when nobody holds a console role: POST ' + BASE +
-             '/rbac/grant.');
+           : 'It is NOT protected (adminApi.authRequired is off, which ' +
+             'only development mode honours) — and the console is gated ' +
+             'unconditionally, so this is the surface to reach for when ' +
+             'nobody holds a console role: POST ' + BASE + '/rbac/grant.');
   log.debug("Leaving startupBanner().");
   return text;
 }

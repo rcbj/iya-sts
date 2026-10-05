@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4095** of them, in **41** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4092** of them, in **41** subsystems.
 
 ## Where a code appears
 
@@ -4262,9 +4262,9 @@ Raised from: mgmt-api/.
 | `STS-API-0003` | A management API access token had expired. | HTTP 401 invalid_token, WWW-Authenticate: Bearer error="invalid_token" |
 | `STS-API-0004` | A management API access token was audienced to a different resource server than /admin-api. | HTTP 403 forbidden |
 | `STS-API-0005` | The XACML access policy refused a management API request made with a valid token, usually because the token lacks the admin:read or admin:write scope the method needs. | HTTP 403 forbidden |
-| `STS-API-0006` | In product mode with the token gate off, the XACML access policy refused a management API caller who does hold a console role. | HTTP 403 forbidden |
-| `STS-API-0007` | In product mode with the token gate off, a management API request arrived with nobody signed in. | HTTP 401 JSON (HTTP 403 page for a browser) |
-| `STS-API-0008` | In product mode with the token gate off, a signed-in management API caller did not hold the console role the method needs. | HTTP 403 forbidden (HTTP 403 page for a browser) |
+| `STS-API-0006` *(retired)* | In product mode with the token gate off, the XACML access policy refused a management API caller who does hold a console role. Retired by #446: product mode ignores adminApi.authRequired=false, so the token is always required there and nothing falls back to a console session. | — |
+| `STS-API-0007` *(retired)* | In product mode with the token gate off, a management API request arrived with nobody signed in. Retired by #446, as STS-API-0006 was. | — |
+| `STS-API-0008` *(retired)* | In product mode with the token gate off, a signed-in management API caller did not hold the console role the method needs. Retired by #446, as STS-API-0006 was. | — |
 | `STS-API-0009` | A management API request body did not match the operation's JSON Schema (an unknown member, a wrong type, or a value outside a closed set its enum declares — #86). | HTTP 400 { ok: false, errors } |
 | `STS-API-0010` | A management API request schema would not compile at startup, so that operation runs unvalidated. | — |
 | `STS-API-0011` | The crypto reporter slot that admin-ui/crypto_metadata.ts fills was not installed, so the crypto report, the key list or a key export could not be answered. | HTTP 503 { ok: false, errors } |

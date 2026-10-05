@@ -1159,6 +1159,10 @@ about.
 `admin.view` event and the list is one row longer than when you asked. That is
 stated rather than suppressed; `?category=` reads past it.
 
+**A management API call names the subject of its token**: the person it was
+issued for, or the client's id for a `client_credentials` token. A caller
+cannot name somebody else.
+
 Filtering is by category, action, outcome, actor and free text, and the filter
 vocabulary is read from the table the log records against. The actor filter is
 a **substring**, because the actor on a directory row is a bind DN and on a

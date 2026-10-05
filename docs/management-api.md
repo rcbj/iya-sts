@@ -107,6 +107,18 @@ The refusals are in the `STS-API-*` rows of [error codes](error-codes.md).
 The code is recorded in the audit log and the service log, and is never sent
 to the caller.
 
+## Who a call is recorded as
+
+Every call is written to the audit log, and the row names **the subject of the
+access token**: the person the token was issued for, or the client's id for a
+`client_credentials` token. The rows an operation writes about what it changed
+name the same subject. A caller cannot choose the name: an operation's schema
+refuses an `actor` member in a request body, and the name always comes from
+the token.
+
+Where no token is required (development mode with `adminApi.authRequired`
+off), a call names nobody.
+
 ## What it covers
 
 ### Every console control, for a machine
@@ -317,31 +329,37 @@ side.
 ## Development and product mode
 
 With `adminApi.authRequired` on (the default), **both modes require the token
-and check it the same way**. What `global.mode` changes around the API:
+and check it the same way**. Only development mode can turn it off. What
+`global.mode` changes around the API:
 
 | | Development | Product |
 |---|---|---|
 | The token, when `adminApi.authRequired` is on | required and verified | required and verified |
 | The client secret at `/oauth2/token` | not checked, outside RFC 9700 / OAuth 2.1 mode | checked (product mode implies RFC 9700 mode) |
-| `adminApi.authRequired` **off** | **the API is open** to anybody who can reach the port | the API falls back to the **console's gate**: a sign-in session, the role the method needs (Admin Read for `GET`, Admin Write otherwise), and the XACML policy above the roles |
+| `adminApi.authRequired` **off** | **the API is open** to anybody who can reach the port | **ignored**: the token is still required. Writing `false` is refused (`STS-CORE-0103`), and a `false` already stored is read as `true` and logged once (`STS-CORE-0106`) |
 
-The off switch exists because it is the recovery path. If nobody can mint a
-token, it restores the open API so that `POST /admin-api/rbac/grant` can give
-somebody a console role again. In development mode that also means **anybody
-who can reach the port can grant themselves both roles**, which is as
-dangerous as it sounds. In product mode, with the switch off, a browser that
-navigates to the API gets a 403 page telling it to sign in at `/admin`, and a
-realm administrator's session is confined to their realm as described above.
+The off switch exists because it is the recovery path in development. If
+nobody can mint a token, it restores the open API so that
+`POST /admin-api/rbac/grant` can give somebody a console role again. That also
+means **anybody who can reach the port can grant themselves both roles**,
+which is as dangerous as it sounds.
+
+**Product mode has no off switch** (since 2026-10-05). This API's gate is
+becoming the admin console's only gate, so a setting that opened the API
+would open the console too. Until then product fell back to the console's own
+session and roles when the switch was off; a console session is no longer a
+credential here in either mode. The recovery path in product is the seeded
+`sts-management-api` client: set `adminApi.clientSecret` before the service
+starts, so a token can always be minted.
 
 Whatever the state, **whoever can call this API can revoke every token this
 service has issued and change what the next one contains**. Do not expose a
 development-mode instance on a public address.
 
-The policy layer runs only where the API is gated. In development with the
+The policy layer runs wherever the token is required. In development with the
 switch off there is no credential and so no subject, and a policy that
-refused an unauthenticated subject would close the recovery path. On an
-unedited product deployment, the policy permits anybody who has already
-passed the role check.
+refused an unauthenticated subject would close the recovery path, so it is
+not asked there.
 
 ## Configuration
 
@@ -350,7 +368,7 @@ override them, because they decide who administers the service.
 
 | Setting | Environment variable | Default | Runtime? | What it does |
 |---|---|---|---|---|
-| `adminApi.authRequired` | `ADMIN_API_AUTH_REQUIRED` | `true` | yes | Require an access token on every `/admin-api` call; off restores the open API (development) or the console's gate (product). |
+| `adminApi.authRequired` | `ADMIN_API_AUTH_REQUIRED` | `true` | yes | Require an access token on every `/admin-api` call; off restores the open API. Off is honoured in development mode only: product refuses it and ignores it where it is stored. |
 | `adminApi.clientSecret` | `ADMIN_API_CLIENT_SECRET` | empty (generated per start) | no | The `client_secret` of the default realm's seeded `sts-management-api` client; set it so the secret survives a restart. Secret. |
 | `adminApi.audience` | `ADMIN_API_AUDIENCE` | derived: `global.publicBaseUrl` + `/admin-api`, or this process's scheme, host and port + `/admin-api` | yes | The `aud` a token must carry. At its default, `/admin-api` under the host the request arrived on is accepted as well; any other value pins that one value. |
 | `admin.readGroup` | `ADMIN_READ_GROUP` | `admin-read` | yes | The directory group whose members hold Admin Read, which lets them read the console and, with the token gate off in product mode, `GET` the API. |
@@ -362,7 +380,7 @@ override them, because they decide who administers the service.
 | `oauth2.accessTokenRequireDpop` | `STS_OAUTH2_ACCESS_TOKEN_REQUIRE_DPOP` | `false` | yes | Refuse any access token that is not DPoP-bound and proved, here and at every other resource server; the explorer stops working. |
 | `oauth2.accessTokenRequireMtls` | `STS_OAUTH2_ACCESS_TOKEN_REQUIRE_MTLS` | `false` | yes | Refuse any access token that is not bound to the certificate the connection presents (RFC 8705). |
 | `global.publicBaseUrl` | `STS_PUBLIC_BASE_URL` | empty (read from each request) | yes | The base of every issuer and address the service builds, including this API's default audience. |
-| `global.mode` | `STS_MODE` | `development` | yes | `development` or `product`; decides what `adminApi.authRequired=false` falls back to. Per trust realm. |
+| `global.mode` | `STS_MODE` | `development` | yes | `development` or `product`; decides whether `adminApi.authRequired=false` is honoured. Per trust realm. |
 
 The `adminApi.*` and `admin.*` groups are edited on `/admin/rbac`. See
 [Configuration](configuration.md) for how values resolve, and for changing

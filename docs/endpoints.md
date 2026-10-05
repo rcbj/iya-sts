@@ -23,7 +23,8 @@ login screen is not an answer a program can read. The gate cannot be turned
 off; sign in at `/authn/login` (any username in development mode, where no
 password is checked). **Everything under `/admin-api` needs an OAuth 2.0
 access token** audienced to that API (`admin:read` to read, `admin:write` to
-write); `ADMIN_API_AUTH_REQUIRED=false` turns that off.
+write); `ADMIN_API_AUTH_REQUIRED=false` turns that off in development mode
+only.
 
 ## What that page is
 

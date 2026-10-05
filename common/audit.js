@@ -1808,7 +1808,13 @@ function recordHttp(req, res, detail) {
               "recorded.");
     return null;
   }
-  const actor = actorOfRequest(req);
+  // THE MANAGEMENT API'S CALLER IS THE SUBJECT OF ITS TOKEN (#446,
+  // 2026-10-05): `mgmt-api/admin_api.ts`'s gate leaves the subject it
+  // verified on `res.locals.apiCaller`, and that is who made this call —
+  // not whoever's sign-on cookie the request happened to carry, which is
+  // what the resolver reads. Nothing but that gate writes the member.
+  const caller = res.locals && res.locals.apiCaller;
+  const actor = (caller && String(caller.name || '')) || actorOfRequest(req);
   const posted = (action === 'admin.change' || action === 'api.change')
     ? actionOf(req) : '';
   const statusOutcome = outcomeOfStatus(res.statusCode);

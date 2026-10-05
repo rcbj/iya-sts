@@ -7643,15 +7643,23 @@ const SETTINGS = [
     // PROCESS-WIDE SINCE 2026-09-14 (#32): a realm may not carry it, because it
     // decides who administers the service — see admin-ui/admin_scope.ts.
     perProcess: true,
-    runtime: true,
-    description: 'Every call into /admin-api must present a Bearer access ' +
-                 'token this service issued, audienced to this API, carrying ' +
+    // DEVELOPMENT MODE ONLY SINCE #446 (2026-10-05): the `onlyWhile` marker.
+    // This API's gate is becoming the admin console's only gate, so product
+    // refuses `false` on write and ignores it where it is stored — see
+    // `common/mode.js`'s `opensManagementApi()`. It fell back to the
+    // console's session and roles until then (#411).
+    runtime: true, onlyWhile: 'opensManagementApi',
+    description: 'Every call into /admin-api must present an access token ' +
+                 'this service issued, audienced to this API, carrying ' +
                  '`admin:read` for a read and `admin:write` for anything ' +
                  'that changes state. OFF restores what this surface did ' +
                  'before the token was required — open to anybody who can ' +
                  'reach the port — which is the recovery path when nobody ' +
                  'can mint a token, and is exactly as dangerous as it ' +
-                 'sounds.' },
+                 'sounds. DEVELOPMENT MODE ONLY: product refuses OFF and ' +
+                 'ignores it where it is stored, because the admin console ' +
+                 'is gated by this API and by nothing else. A product ' +
+                 'deployment pins adminApi.clientSecret before it starts.' },
 
   { key: 'adminApi.clientSecret', group: 'Management API',
     label: 'The management API client\'s secret',

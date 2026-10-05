@@ -69,8 +69,9 @@
 //      and that is a total authentication bypass which cannot survive into a
 //      product. Since 2026-09-09 an OAuth 2.0 access token is required in BOTH
 //      modes (`adminApi.authRequired`, on by default); what this file decides
-//      is what happens with that setting OFF — open in development, the
-//      console's session and roles in product. See `gatesManagementApi()`.
+//      is whether that setting may be turned OFF — in development it may, and
+//      the API is then open; in product it is ignored and the token is
+//      required (#446). See `opensManagementApi()`.
 //
 // ---------------------------------------------------------------------------
 // IT IS PER TRUST REALM, and that is worth stating because it is unusual.
@@ -1794,22 +1795,30 @@ function acceptsNonconformingResourceMetadata() {
   return !isProduct();
 }
 
-// Is the management API gated by the console's session and roles WHEN
-// `adminApi.authRequired` IS OFF? Since 2026-09-09 that setting — on by
-// default, in both modes — puts an access token in front of `/admin-api`
-// first, and `mgmt-api/admin_api.ts` asks this only below it. See the note
-// above on why it is open in development. **THIS IS THE ONLY GATE THE MODE
-// TURNS ON**, because it is the only one that was ever off.
+// May `adminApi.authRequired` be turned OFF, opening the management API to
+// anybody who can reach the port (#446, 2026-10-05)? Since 2026-09-09 that
+// setting — on by default, in both modes — puts an access token in front of
+// `/admin-api`. Development may turn it off: it is what a test drives and the
+// way back in when nobody can mint a token. **Product may not.** Until #446
+// product fell back to the console's session and roles with the setting off
+// (`gatesManagementApi()`, #411); the console is becoming a static
+// application whose only gate IS this API's, so a setting that opened the
+// API would open the console with it, and a console session is no longer a
+// thing to fall back on. The row carries the `onlyWhile` marker on this
+// predicate: `false` is refused on write in product (STS-CORE-0103) and
+// ignored where it is read (`valueInForce()`, STS-CORE-0106). The way back
+// in for a product deployment is `adminApi.clientSecret`, pinned before the
+// start.
 /**
- * Tells whether the management API is gated by the console's session and roles
- * when `adminApi.authRequired` is off.
+ * Tells whether `adminApi.authRequired` may be turned off, which opens the
+ * management API to anybody who can reach the port.
  *
- * @returns true in product mode
+ * @returns true in development mode
  */
-function gatesManagementApi() {
-  log.debug("Entering gatesManagementApi().");
-  log.debug("Leaving gatesManagementApi().");
-  return isProduct();
+function opensManagementApi() {
+  log.debug("Entering opensManagementApi().");
+  log.debug("Leaving opensManagementApi().");
+  return !isProduct();
 }
 
 // ---------------------------------------------------------------------------
@@ -2578,19 +2587,22 @@ const REQUIREMENTS = [
              'request_uri is fetched only when the client registered it.',
     where: 'oauth-oidc/request_object.ts' },
   // 2026-09-09: `adminApi.authRequired` (on by default, both modes) put an
-  // access token in front of this surface, so the two columns below are what
-  // happens with that setting OFF. Both columns say so.
+  // access token in front of this surface. Since #446 (2026-10-05) product
+  // ignores the setting turned off, where it fell back to the console's
+  // session and roles until then.
   { id: 'management-api',
-    what: '/admin-api requires a sign-in and a role',
+    what: '/admin-api requires an access token and a role',
     development: 'An OAuth 2.0 access token carrying admin:read or ' +
                  'admin:write, while adminApi.authRequired is on (the ' +
                  'default). With it off: open. It is what the tests drive ' +
                  'and the way back in when nobody holds a role — which also ' +
                  'means anybody who can reach this port can grant themselves ' +
                  'both roles through it.',
-    product: 'The same access token while adminApi.authRequired is on. With ' +
-             'it off: gated exactly as /admin is — the same session, the ' +
-             'same two roles.',
+    product: 'The same access token, always. adminApi.authRequired=false ' +
+             'is refused on write and ignored where it is stored: this ' +
+             'API\'s gate is the console\'s only gate, so nothing may open ' +
+             'it. The way back in is adminApi.clientSecret, pinned before ' +
+             'the start.',
     where: 'mgmt-api/admin_api.ts' },
   { id: 'console',
     what: '/admin requires a sign-in and a role',
@@ -3492,7 +3504,11 @@ const WRITE_REFUSALS = {
     'without the workload.spiffe.io header MUST be refused.',
   derivesKrbtgtFromPassword:
     'the krbtgt key is random there, made once per realm and kept sealed ' +
-    'on the directory, so no password is read for it.'
+    'on the directory, so no password is read for it.',
+  opensManagementApi:
+    'the management API always requires an access token there, because ' +
+    'its gate is the admin console\'s only gate; pin adminApi.clientSecret ' +
+    'before the start to be able to mint one.'
 };
 
 /**
@@ -3588,7 +3604,7 @@ module.exports = {
   requiresConfidentialClientAuthentication:
     requiresConfidentialClientAuthentication,
   enforcesOauthSecurityBcp: enforcesOauthSecurityBcp,
-  gatesManagementApi: gatesManagementApi,
+  opensManagementApi: opensManagementApi,
   seedsDemoData: seedsDemoData,
   rotatesSigningKeys: rotatesSigningKeys,
   rotatesKerberosKeys: rotatesKerberosKeys,

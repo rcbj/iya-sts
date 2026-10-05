@@ -2,33 +2,37 @@
 // SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
-// File: tests/admin_api_session_gate.js
+// File: tests/admin_api_auth_required_mode.js
 // ===========================================================================
-// WITH `adminApi.authRequired` OFF, PRODUCT MODE STILL GATES /admin-api — ON
-// THE CONSOLE'S SESSION AND ROLES (#411, 2026-10-02).
+// `adminApi.authRequired=false` IS DEVELOPMENT MODE'S ALONE (#446,
+// 2026-10-05). PRODUCT IGNORES IT, AND A CONSOLE SESSION OPENS NOTHING.
 //
 // `adminApi.authRequired` (on by default) puts an OAuth 2.0 access token in
-// front of the management API. Turned off — the recovery path when nobody can
-// mint a token — development leaves the API open, and product falls back to
-// the console's own gate: `mgmt-api/admin_api.ts` asks
-// `mode.gatesManagementApi()`, then `adminViews.gateStateFor(req)` for the
-// caller's console session and its two roles, a read needing Admin Read and a
-// write Admin Write. Nothing exercised that branch (#113 item 4;
-// `tests/vendored/sts_admin_api_auth.js` says so): every stack runs with the
-// token required.
+// front of the management API. Turned off, development leaves the API open:
+// what a test drives, and the way back in when nobody can mint a token.
+// Until #446 product then fell back to the console's own session and its two
+// roles (#411, and this file was `admin_api_session_gate.js`, which held
+// that branch). The console is becoming a static application whose only gate
+// is this API's, so the fallback is gone: the setting's row carries the
+// `onlyWhile` marker on `mode.opensManagementApi()`, product reads a stored
+// `false` as `true`, and refuses to store one.
 //
-// In a CHILD PROCESS with the whole stack on an ephemeral port, three people
-// in the default realm — one holding Admin Read, one Admin Write, one nothing
-// — each with a console session made over a real sign-on session, as
-// `tests/console_bootstrap_product.js` makes them; then, in product with the
-// setting off:
+// In a CHILD PROCESS with the whole stack on an ephemeral port, and one
+// person holding Admin Write with a console session made over a real sign-on
+// session, as `tests/console_bootstrap_product.js` makes them:
 //
-//   1. no session: 401, recorded under STS-API-0007;
-//   2. a session holding no role: 403, under STS-API-0008;
-//   3. Admin Read reads, and is refused a write (403, STS-API-0008);
-//   4. Admin Write writes;
-//   5. and, the control, development with the setting off answers a caller
-//      with no session at all — the open API this branch exists to close.
+//   1. the control: development with the setting off answers a caller with
+//      no credential at all;
+//   2. product, the `false` still stored: no credential is 401, recorded
+//      under STS-API-0001 — the token gate's own refusal, not a fallback's;
+//   3. product: the Admin Write console session is 401 too, read and write —
+//      a session is not this API's credential;
+//   4. product: the value in force is `true` while the stored one is
+//      `false`, and `/admin/mode`'s report lists the row as ignored;
+//   5. product: storing `false` is refused, and the default may still be
+//      written;
+//   6. back in development the stored `false` opens the API again, so
+//      nothing was changed by the product reading.
 // ===========================================================================
 
 const fs = require('fs');
@@ -37,7 +41,7 @@ const path = require('path');
 const childProcess = require('child_process');
 const bunyan = require('bunyan');
 
-const log = bunyan.createLogger({ name: 'admin_api_session_gate',
+const log = bunyan.createLogger({ name: 'admin_api_auth_required_mode',
   level: process.env.STS_LOG_LEVEL || 'info' });
 
 const ROOT = path.join(__dirname, '..');
@@ -108,19 +112,15 @@ function childMain() {
     const oidcRp = require(ROOT_DIR + '/common/oidc_rp');
     const ldap = require(ROOT_DIR + '/ldap/ldap_server');
     const audit = require(ROOT_DIR + '/common/audit');
+    const mode = require(ROOT_DIR + '/common/mode');
 
     const stamp = String(process.pid);
-    const READER = 'ag-reader-' + stamp;
     const WRITER = 'ag-writer-' + stamp;
-    const NOBODY = 'ag-nobody-' + stamp;
-    [READER, WRITER, NOBODY].forEach(function (name) {
-      ldap.createUser(name, { invent: false });
-    });
+    ldap.createUser(WRITER, { invent: false });
     const inDefault = function (fn) {
       return realms.run(realms.DEFAULT_REALM, fn);
     };
     inDefault(function () {
-      rbac.grant(READER, 'read', { via: 'test' });
       rbac.grant(WRITER, 'write', { via: 'test' });
     });
 
@@ -158,63 +158,76 @@ function childMain() {
                event.errorCode === code;
       }).length;
     };
+    const KEY = 'adminApi.authRequired';
     const READ = '/admin-api/config';
     const WRITE = '/admin-api/config/set';
     // A write that changes nothing: the setting's own default, written back.
     const WRITE_BODY = { key: 'oauth2.parRequestUriLifetimeS', value: '60' };
 
-    // --- 5 first: the CONTROL, in development ------------------------------
-    config.setOverride('adminApi.authRequired', false);
+    // --- 1. the CONTROL, in development -----------------------------------
+    const stored = config.setOverride(KEY, false);
+    note(stored && stored.ok !== false, 'precondition: development stores ' +
+         KEY + '=false', JSON.stringify(stored));
     let r = await call(port, 'GET', READ, '');
-    note(r.status === 200, '5. development, adminApi.authRequired off: the ' +
-         'API answers a caller with no session (the open API, the control)',
+    note(r.status === 200, '1. development, ' + KEY + ' off: the API ' +
+         'answers a caller with no credential (the open API, the control)',
          r.status + ' ' + r.text.slice(0, 160));
 
     config.setOverride('global.mode', 'product');
     try {
-      const reader = consoleSessionAs(READER);
       const writer = consoleSessionAs(WRITER);
-      const nobody = consoleSessionAs(NOBODY);
-      note(!!reader && !!writer && !!nobody,
-           'precondition: three console sessions were made',
-           [!!reader, !!writer, !!nobody].join(','));
+      note(!!writer, 'precondition: a console session was made', !!writer);
 
-      // --- 1. no session --------------------------------------------------
-      let before = coded('STS-API-0007');
+      // --- 2. no credential -------------------------------------------------
+      const before = coded('STS-API-0001');
       r = await call(port, 'GET', READ, '');
       await new Promise(function (res) { setTimeout(res, 30); });
-      note(r.status === 401 && coded('STS-API-0007') === before + 1,
-           '1. PRODUCT, setting off: no session is 401, recorded under ' +
-           'STS-API-0007', r.status + ' ' + r.text.slice(0, 160));
-
-      // --- 2. a session holding no role ------------------------------------
-      before = coded('STS-API-0008');
-      r = await call(port, 'GET', READ, nobody);
-      await new Promise(function (res) { setTimeout(res, 30); });
-      note(r.status === 403 && coded('STS-API-0008') === before + 1,
-           '2. PRODUCT, setting off: a console session holding no role is ' +
-           '403, recorded under STS-API-0008',
+      note(r.status === 401 && coded('STS-API-0001') === before + 1,
+           '2. PRODUCT, the false still stored: no credential is 401, ' +
+           'recorded under STS-API-0001 (the token gate)',
            r.status + ' ' + r.text.slice(0, 160));
 
-      // --- 3. Admin Read ---------------------------------------------------
-      r = await call(port, 'GET', READ, reader);
-      note(r.status === 200, '3a. PRODUCT, setting off: Admin Read reads',
-           r.status + ' ' + r.text.slice(0, 160));
-      before = coded('STS-API-0008');
-      r = await call(port, 'POST', WRITE, reader, WRITE_BODY);
-      await new Promise(function (res) { setTimeout(res, 30); });
-      note(r.status === 403 && coded('STS-API-0008') === before + 1,
-           '3b. PRODUCT, setting off: Admin Read is refused a write (403, ' +
-           'STS-API-0008)', r.status + ' ' + r.text.slice(0, 160));
-
-      // --- 4. Admin Write --------------------------------------------------
+      // --- 3. a console session is not a credential here --------------------
+      r = await call(port, 'GET', READ, writer);
+      note(r.status === 401, '3a. PRODUCT: an Admin Write console session ' +
+           'does not read (401)', r.status + ' ' + r.text.slice(0, 160));
       r = await call(port, 'POST', WRITE, writer, WRITE_BODY);
-      note(r.status === 200, '4. PRODUCT, setting off: Admin Write writes',
-           r.status + ' ' + r.text.slice(0, 160));
+      note(r.status === 401, '3b. PRODUCT: an Admin Write console session ' +
+           'does not write (401)', r.status + ' ' + r.text.slice(0, 160));
+
+      // --- 4. stored against in force ---------------------------------------
+      const row = (mode.report().developmentOnlySettings || [])
+        .filter(function (one) { return one.key === KEY; })[0] || null;
+      note(config.value(KEY) === false && mode.valueInForce(KEY) === true,
+           '4a. PRODUCT: the stored value is false and the value in force ' +
+           'is true', config.value(KEY) + ' / ' + mode.valueInForce(KEY));
+      note(!!row && row.ignored === true && row.inForce === true &&
+           row.predicate === 'opensManagementApi',
+           '4b. PRODUCT: the mode report lists the row as ignored, in force ' +
+           'true, on opensManagementApi', JSON.stringify(row));
+
+      // --- 5. the write ------------------------------------------------------
+      config.clearOverride(KEY);
+      const refused = config.setOverride(KEY, false);
+      note(!!refused && refused.ok === false,
+           '5a. PRODUCT: storing false is refused', JSON.stringify(refused));
+      note(config.value(KEY) === true, '5b. PRODUCT: the refused write ' +
+           'stored nothing', String(config.value(KEY)));
+      const allowed = config.setOverride(KEY, true);
+      note(!allowed || allowed.ok !== false,
+           '5c. PRODUCT: the default may still be written',
+           JSON.stringify(allowed));
     } finally {
       config.clearOverride('global.mode');
-      config.clearOverride('adminApi.authRequired');
     }
+
+    // --- 6. development again ------------------------------------------------
+    config.setOverride(KEY, false);
+    r = await call(port, 'GET', READ, '');
+    note(r.status === 200, '6. development again, ' + KEY + ' off: the API ' +
+         'is open, so the product reading changed nothing stored',
+         r.status + ' ' + r.text.slice(0, 160));
+    config.clearOverride(KEY);
     server.close();
     require('fs').writeFileSync(OUT, JSON.stringify(findings));
     process.exit(0);
@@ -268,8 +281,8 @@ async function run(t) {
 }
 
 module.exports = {
-  name: 'admin_api_session_gate',
-  describe: 'with adminApi.authRequired off, product mode gates /admin-api ' +
-            'on the console\'s session and roles (#411)',
+  name: 'admin_api_auth_required_mode',
+  describe: 'adminApi.authRequired=false is development-only: product ' +
+            'ignores it and a console session opens nothing (#446)',
   run: run
 };
