@@ -228,13 +228,15 @@ pub fn verify_path_to_anchors(
     for (i, d) in intermediate_ders.iter().enumerate() {
         match Entry::from_der(d) {
             Some(e) => intermediates.push(e),
-            None => return PathVerdict::refused(
-                "unusable",
-                format!(
+            None => {
+                return PathVerdict::refused(
+                    "unusable",
+                    format!(
                     "intermediate certificate {} is not an X.509 certificate",
                     i
                 ),
-            ),
+                )
+            }
         }
     }
     if anchors.is_empty() {
