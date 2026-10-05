@@ -47,6 +47,7 @@ import DebuggerPage = require('../debugger/web_debugger');
 import DevicesPage = require('./web_devices');
 import EncryptionPage = require('./web_encryption');
 import ErrorCodesPage = require('./web_error_codes');
+import FederationPage = require('../federation/web_federation');
 import EstPage = require('../est/web_est');
 import GeolocationPage = require('./web_geolocation');
 import GnapPage = require('../gnap/web_gnap');
@@ -212,6 +213,11 @@ const PAGES: WebPage[] = [
     operation: '/admin-api/est/monitor',
     render: function (view: Json, ctx?: Json): string {
       return EstPage.monitorBody(ctx || WebKit.context(), view);
+    } },
+  { path: '/admin/federation', title: 'Federation',
+    operation: '/admin-api/federation',
+    render: function (view: Json, ctx?: Json): string {
+      return FederationPage.body(ctx || WebKit.context(), view);
     } },
   { path: '/admin/geolocation', title: 'Geolocation',
     operation: '/admin-api/geolocation', render: GeolocationPage.render },

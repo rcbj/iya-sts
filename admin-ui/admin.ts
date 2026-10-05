@@ -849,6 +849,7 @@ import ConfigPage = require('./web_config');
 import VcVerifierConfigPage = require('../oid4vc/web_vc_verifier_config');
 import AuthorizationServersPage = require('./web_authorization_servers');
 import SamlPage = require('../saml/web_saml');
+import FederationPage = require('../federation/web_federation');
 
 // REQUIRED FOR THE ORDER THEY WERE ALWAYS REQUIRED IN, AND READ NOWHERE HERE
 // (#50). TypeScript drops an `import … = require()` whose name nothing reads,
@@ -27293,9 +27294,7 @@ class AdminConsole {
     return { json: list.json, inner: list.inner, title: 'Attested agents' };
   }
 
-  // THE STATE CELL, and it is the most important thing on the page. Four states
-  // and each is a different instruction to the reader, which is why they are
-  // four sentences rather than a boolean and a tooltip.
+  // Drawn by `web_federation.ts` (#446).
   /**
    * Draws a federation relationship's state as a table cell: ready,
    * disabled, or enabled and not configured with what is still missing.
@@ -27306,20 +27305,35 @@ class AdminConsole {
   federationStateCell(row) {
     const { log } = this.deps;
     log.debug("Entering AdminConsole.federationStateCell().");
-    if (row.usable) {
-      log.debug("Leaving AdminConsole.federationStateCell().");
-      return '<td class="ok">ready</td>';
-    }
-    if (!row.enabled) {
-      log.debug("Leaving AdminConsole.federationStateCell().");
-      return '<td class="off">disabled' +
-        (row.ready ? '' : ' <span class="sub">and not configured</span>') +
-             '</td>';
-    }
     log.debug("Leaving AdminConsole.federationStateCell().");
-    return '<td class="bad">ENABLED, not configured<span class="sub">' +
-      this.esc(row.missing.join(', ')) + ' still to set. It refuses rather ' +
-      'than half-working.</span></td>';
+    return FederationPage.federationStateCell(row);
+  }
+
+  // Drawn by `web_federation.ts` (#446).
+  /**
+   * Draws the caveat both federation pages carry.
+   *
+   * @returns the caveat as HTML
+   */
+  federationCaveat() {
+    const { log } = this.deps;
+    log.debug("Entering AdminConsole.federationCaveat().");
+    log.debug("Leaving AdminConsole.federationCaveat().");
+    return FederationPage.federationCaveat();
+  }
+
+  // Drawn by `web_federation.ts` (#446).
+  /**
+   * Draws the links at the foot of the federation pages.
+   *
+   * @param base - the federation index's path (`federation.PATHS.base`)
+   * @returns the links as HTML
+   */
+  federationLinks(base) {
+    const { log } = this.deps;
+    log.debug("Entering AdminConsole.federationLinks().");
+    log.debug("Leaving AdminConsole.federationLinks().");
+    return FederationPage.federationLinks(base);
   }
 
   /**
@@ -27330,187 +27344,31 @@ class AdminConsole {
    * @returns `inner`, the page body as HTML, and `json`
    */
   federationListPage(req) {
-    const { log, adminViews, pageParamsOf, queryWith, federation } = this.deps;
-    const self = this;
+    const { log, adminViews } = this.deps;
     log.debug("Entering AdminConsole.federationListPage().");
-    const view = adminViews.federationListJson(req);
-    const all = view.all;
-    const wantedText = view.wantedText;
-    const wantedRole = view.wantedRole;
-    const filtered = view.filtered;
-    const paging = view.paging;
-    const paged = view.paged;
-    const nav = this.pageNavPair('/admin/federation', pageParamsOf(req.query),
-                                 paging);
-
-    const rows = paged.shown.map(function (row) {
-      return '<tr><td><a href="/admin/federation' +
-        self.esc(queryWith(self.listViewOf('/admin/federation', req.query),
-                           { relationship: row.id })) +
-        '">' + self.esc(row.id) + '</a>' +
-        (row.name !== row.id ? '<span class="sub">' + self.esc(row.name) +
-         '</span>' :
-         '') + '</td><td>' + self.esc(row.roleLabel) + '</td><td>' +
-        self.esc(row.protocolLabel) + '</td><td ' +
-        'class="who">' + self.esc(row.peer || row.application || '') +
-        (!row.peer && !row.application ? '<span class="sub">nothing named ' +
-                                         'yet</span>' : '') +
-        '</td>' +
-        self.federationStateCell(row) +
-        '<td class="num">' + row.authentications + '</td>' +
-        '<td class="num">' + row.users + '</td>' +
-        '<td>' + (row.lastError
-          ? '<span class="bad">' + self.shortened(row.lastError, 60) + '</span>'
-          : '<span class="sub">none recorded</span>') + '</td></tr>';
-    }).join('');
-
-    const roleOptions = ['<option value="">any role</option>'].concat(
-      federation.ROLES.map(function (one) {
-        const n = all.filter(function (r) { return r.role === one.role; })
-          .length;
-        return '<option value="' + self.esc(one.role) + '"' +
-          (one.role === wantedRole ? ' selected' : '') + '>' +
-          self.esc(one.short) +
-          ' (' + n + ')</option>';
-      })).join('');
-
+    const json = adminViews.federationListJson(req).json;
+    // Drawn by `web_federation.ts` (#446).
     const inner = this.messagesOf(req) +
-      '<div class="tiles">' +
-      this.tile(all.length, 'Relationships') +
-      this.tile(all.filter(function (r) { return r.usable; }).length, 'Ready') +
-      this.tile(all.filter(function (r) { return r.enabled && !r.ready; })
-        .length,
-                'Enabled, not configured') +
-      this.tile(all.reduce(function (n, r) { return n + r.authentications; },
-                           0),
-                'Federated sign-ins') +
-      '</div>' +
-      FEDERATION_CAVEAT +
-      // THE PICTURE, pointed at from the page it drills down from. This table
-      // has one row per relationship and no row can say anything about another,
-      // so three questions an operator arrives with have no cell here: how many
-      // applications are behind a partner, how many people have come through it
-      // FOR EACH of them, and what an arriving foreign service provider
-      // actually meets. All three are facts about two registers at once.
-      this.note('<a href="/admin/federation/map">The picture</a> draws this ' +
-      'register as a diagram, laid out on the server. It adds the three ' +
-      'things a table of relationships has nowhere to put: how many ' +
-      'applications are configured to use each partner, how many people have ' +
-      'signed in through each <em>application and relationship</em> pair, ' +
-      'and what the identity-provider side is configured to do about ' +
-      'authenticating somebody — including where one relationship brokers to ' +
-      'another, which is what makes this service an identity bridge and is ' +
-      'invisible in any single row.') +
-      '<form method="get" action="/admin/federation"><div class="formrow">' +
-      '<label for="q">Relationship</label>' +
-      '<input type="text" id="q" name="q" value="' +
-      this.esc(String(req.query.q || '')) +
-      '" size="24" placeholder="id, name, partner or application">' +
-      '<label for="role">Role</label><select id="role" name="role">' +
-      roleOptions + '</select><label for="per">Show</label><select id="per" ' +
-      'name="per">' + this.perPageOptions(paging.perPage) +
-      '</select><button ' +
-      'type="submit">Filter</button>' +
-      ((wantedText || wantedRole) ? ' <a href="/admin/federation">clear</a>' :
-        '') +
-      '</div></form>' + nav.head +
-      '<table><tr><th>Relationship</th><th>This service ' +
-      'is</th><th>Protocol</th><th>Partner</th><th>State</th><th ' +
-      'class="num">Sign-ins</th><th class="num">People</th><th>Last ' +
-      'refusal</th></tr>' +
-      (rows || '<tr><td colspan="8">No federation relationship ' +
-        ((wantedText || wantedRole) ? 'matches. The filter above may be ' +
-                                      'hiding some.'
-          : 'is configured. Nothing federated happens until one is — and ' +
-            'then not until it is enabled, which is a second, deliberate ' +
-            'act.') + '</td></tr>') +
-      '</table>' + nav.foot +
-      this.federationCreateForm() +
-      '<h2>The two directions</h2>' +
-      '<table><tr><th>This service is</th><th>What it means</th></tr>' +
-      federation.ROLES.map(function (one) {
-        return '<tr><td>' + self.esc(one.short) + '</td><td>' +
-               self.esc(one.what) +
-               '</td></tr>';
-      }).join('') + '</table>' +
-      this.note('<strong>One relationship is one DIRECTION.</strong> A ' +
-      'partner this service both consumes from and asserts to is two ' +
-      'relationships with two ids, because everything that configures one ' +
-      'differs by direction — the endpoints are theirs or ours, the ' +
-      'certificate is theirs or ours, the attribute mapping runs inbound or ' +
-      'the release list runs outbound.') +
-      '<h2>The five protocols</h2><table><tr><th>Protocol</th><th>What ' +
-      'happens</th><th>Specification</th></tr>' +
-      federation.PROTOCOLS.map(function (one) {
-        return '<tr><td>' + self.esc(one.label) + '</td><td>' +
-               self.esc(one.what) +
-          '</td><td ' +
-          'class="sub">' + self.esc(one.spec) + '</td></tr>';
-      }).join('') + '</table>' +
-      // The federation.* rows (fifteen as of 2026-09-16), on the page that
-      // configures the feature. `federation.enabled` and `federation.outbound`
-      // are the two that turn halves of it off, and a person reading a
-      // relationship that does not work should not have to guess that the
-      // answer is a setting somewhere else.
-      this.configFormsFor('/admin/federation') +
-      FEDERATION_LINKS;
-
-    log.debug("Leaving AdminConsole.federationListPage(). " +
-              paged.shown.length + " row(s) of " +
-              filtered.length + " matched.");
+      FederationPage.body(this.renderContext(req),
+        JSON.parse(JSON.stringify(json)));
+    log.debug("Leaving AdminConsole.federationListPage().");
     return {
       inner: inner,
-      json: view.json
+      json: json
     };
   }
 
+  // Drawn by `web_federation.ts` (#446).
   /**
    * Draws the form that adds a federation relationship.
    *
    * @returns the form as HTML
    */
-  federationCreateForm() {
-    const { log, federation } = this.deps;
-    const self = this;
+  federationCreateForm(roles, protocols) {
+    const { log } = this.deps;
     log.debug("Entering AdminConsole.federationCreateForm().");
     log.debug("Leaving AdminConsole.federationCreateForm().");
-    return '<h2>Add a relationship</h2>' +
-      this.note('It is created <strong>disabled</strong>, whatever is filled ' +
-      'in here, and nothing about it does anything until it is enabled on ' +
-      'its own page. That is not caution for its own sake: a partner that ' +
-      'half-exists and silently accepts assertions is the failure this whole ' +
-      'register is arranged to prevent, and enabling is the second, ' +
-      'deliberate act that says the configuration is finished.') +
-      '<form method="post" action="/admin/federation"><div ' +
-      'class="formrow"><input type="hidden" name="action" ' +
-      'value="create"><label for="fedid">Id</label><input type="text" ' +
-      'id="fedid" name="id" size="16" required ' +
-      'placeholder="partner-a"><label for="fedrole">This service ' +
-      'is</label><select id="fedrole" name="role">' +
-      federation.ROLES.map(function (one) {
-        return '<option value="' + self.esc(one.role) + '">' +
-               self.esc(one.short) +
-               '</option>';
-      }).join('') + '</select>' +
-      '<label for="fedprotocol">Protocol</label>' +
-      '<select id="fedprotocol" name="protocol">' +
-      federation.PROTOCOLS.map(function (one) {
-        return '<option value="' + self.esc(one.protocol) + '">' +
-               self.esc(one.label) +
-               '</option>';
-      }).join('') + '</select><label for="fedname">Name</label><input ' +
-      'type="text" id="fedname" name="name" size="16" ' +
-      'placeholder="optional"><label for="fedpeer">Partner</label><input ' +
-      'type="text" id="fedpeer" name="peer" size="26" placeholder="their ' +
-      'entityID, issuer or realm"><button ' +
-      'type="submit">Add</button></div></form>' +
-      this.note('The <strong>id</strong> is the key, the RDN and a URL ' +
-      'segment, so it has to start with a letter or a digit and hold only ' +
-      'letters, digits, dot, dash and underscore. <strong>Partner</strong> ' +
-      'is their own identifier in whatever their protocol calls it, and on a ' +
-      'service-provider-side relationship it is CHECKED: an assertion whose ' +
-      'issuer is not that string is refused, even when the signature ' +
-      'verifies.');
+    return FederationPage.federationCreateForm(roles, protocols);
   }
 
   // WHAT THE PARTNER SENT AND NOTHING WROTE (#94), under the mapping it
@@ -27594,7 +27452,7 @@ class AdminConsole {
           '</code>. Unlike almost everything else in this console, one does ' +
           'not appear because somebody used it: this register is configured ' +
           'and nothing creates an entry in it by turning ' +
-          'up.</p>' + FEDERATION_LINKS,
+          'up.</p>' + this.federationLinks(federation.PATHS.base),
         json: view.json
       };
     }
@@ -27962,11 +27820,12 @@ class AdminConsole {
       'know that. The Shared Signals credentials, <code>fedSignalsClient' +
       'Secret</code> and <code>fedSignalsBearer</code>, are sealed under the ' +
       'key-encryption key wherever keys persist (#373).') +
-      FEDERATION_CAVEAT +
+      this.federationCaveat() +
       '<p class="sub"><a href="' +
       this.esc('/admin/federation' +
                queryWith(this.listViewOf('/admin/federation', req.query), {})) +
-      '">back to the list</a></p>' + FEDERATION_LINKS;
+      '">back to the list</a></p>' +
+      this.federationLinks(federation.PATHS.base);
 
     log.debug("Leaving AdminConsole.federationDetailPage(). " + row.id + ".");
     return { inner: inner, json: view.json };
@@ -38407,41 +38266,9 @@ const PROTOCOL_SETTINGS_PAGES = [
 // certificate stay on `/admin/applications` where every protocol module reads
 // them.
 // ---------------------------------------------------------------------------
-let FEDERATION_CAVEAT: string;
-WIRE_STEPS.push(function (instance: AdminConsole): void {
-  FEDERATION_CAVEAT =
-    instance.note('<strong>This is the one feature here that has to be ' +
-    'configured before it will do anything, and the one page in this console ' +
-    'that configures a REFUSAL.</strong> Everywhere else this service ' +
-    'accepts what it is given — any username, any client_id, any entityID, ' +
-    'any LDAP bind. It cannot do that at an assertion consumer service: what ' +
-    'arrives there is an unauthenticated HTTP request claiming to be a ' +
-    'person, and the session it would produce is the same one ' +
-    '<code>/oauth2/authorize</code>, <code>/wsfed</code>, ' +
-    '<code>/saml2</code> and this console all read. A permissive version of ' +
-    'it would not be a permissive mock; it would be an ' +
-    'authentication bypass for every protocol in this process.') +
-    instance.note('<strong>The gate is on the SIGNER, and on the SUBJECT ' +
-    'too (#109).</strong> A verified assertion signs in only the person its ' +
-    'partner\'s subject is LINKED to — a <code>federationLink</code> on the ' +
-    'entry. What happens to a subject nobody linked is the relationship\'s ' +
-    '<code>fedSubjectPolicy</code>: the person it names signs in here first ' +
-    'and is then linked (<code>link-at-first-sign-in</code>, the default), ' +
-    'it is refused (<code>pre-linked</code>), it gets a new entry of its own ' +
-    '(<code>jit-namespaced</code>), or — in development only — the old name ' +
-    'match (<code>any-existing</code>). Three rules narrow it further, and a ' +
-    'console administrator is refused unless ' +
-    '<code>fedMayAssertAdministrators</code> is on. Nothing is written onto ' +
-    'an entry before all of that has passed.');
-});
+// The caveat and the links of the federation pages are `federationCaveat()`
+// and `federationLinks()`.
 
-const FEDERATION_LINKS =
-  '<p class="sub"><a href="/admin/federation/map">the picture</a> &middot; ' +
-  '<a href="' + federation.PATHS.base + '">the federation index</a> &middot; ' +
-  '<a href="/admin/applications">the applications registry</a> &middot; <a ' +
-  'href="/admin/users">who has signed in</a> &middot; <a ' +
-  'href="/admin/ldap/federations">the register as the directory sees ' +
-  'it</a></p>';
 
 // ROUTES ARE REGISTERED BY THE COMPOSITION ROOT (#50, R1): requiring this
 // module no longer registers anything. `common/protocol_stack.ts` calls the

@@ -8095,7 +8095,6 @@ class AdminViews {
   federationListJson(req) {
     const { log, federation } = this.deps;
     log.debug("Entering AdminViews.federationListJson().");
-    log.debug("Entering federationListPage().");
     const all = federation.list().map(this.federationRow.bind(this));
     const wantedText = String(req.query.q || '').trim().toLowerCase();
     const wantedRole = String(req.query.role || '').trim();
@@ -8107,6 +8106,19 @@ class AdminViews {
     });
     const paging = this.pagingOf(req.query, filtered.length, {});
     const paged = this.pagedRows(req.query, filtered, {});
+    const pagingJson = this.pagingJson(paging);
+    // WHAT THE TILES AND THE ROLE MENU COUNT, over every relationship and not
+    // the page shown (#446).
+    const roleCounts: Record<string, number> = {};
+    all.forEach(function (r) {
+      roleCounts[r.role] = (roleCounts[r.role] || 0) + 1;
+    });
+    const notConfigured = all.filter(function (r) {
+      return r.enabled && !r.ready;
+    }).length;
+    const authenticationTotal = all.reduce(function (n, r) {
+      return n + r.authentications;
+    }, 0);
     log.debug("Leaving AdminViews.federationListJson().");
     return {
       all: all, wantedText: wantedText, wantedRole: wantedRole,
@@ -8125,6 +8137,9 @@ class AdminViews {
           settings: configSettingsJson('/admin/federation'),
           roles: federation.ROLES, protocols: federation.PROTOCOLS,
           paths: federation.PATHS,
+          paging: pagingJson, roleCounts: roleCounts,
+          enabledNotConfigured: notConfigured,
+          authentications: authenticationTotal,
           relationships: paged.shown
       };
       }())
