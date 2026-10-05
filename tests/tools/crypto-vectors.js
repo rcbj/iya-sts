@@ -2771,6 +2771,98 @@ async function schedulerHistoryVectors() {
            pinned: pinned, settles: settles };
 }
 
+// A TRUST REALM'S LIFE (`common/realms.js`): realms created, refused,
+// changed one setting and whole, cleared, and removed, in development and in
+// a realm carrying product mode. The keys a refusal is about are chosen from
+// config.js's own table (a restart-only one, a per-process one, a
+// development-only one), so the vectors name them for the Rust side.
+async function realmLifecycleVectors() {
+  const realms = require(path.join(ROOT, 'common', 'realms.js'));
+  const config = require(path.join(ROOT, 'common', 'config.js'));
+  const errorCodes = require(path.join(ROOT, 'common', 'error_codes.js'));
+  const rows = config.SETTINGS || config.settings || config.rows;
+  const all = typeof config.describeAll === 'function' ? config.describeAll()
+    : rows;
+  const pick = function (test) {
+    const row = (all || []).filter(test)[0];
+    return row ? row.key : null;
+  };
+  const restartKey = pick(function (r) {
+    return !r.runtime && !r.realmRuntime && !r.perProcess &&
+      r.key.indexOf('realms.') !== 0;
+  });
+  const perProcessKey = pick(function (r) { return r.perProcess; });
+  const devOnlyKey = pick(function (r) {
+    return r.onlyWhile && r.type === 'bool' && r.runtime;
+  });
+  const answer = function (result) {
+    return { ok: !!result.ok, errors: result.errors || [],
+             code: errorCodes.codeOf(result) || null };
+  };
+  const steps = [];
+  const create = function (id, overrides, extra) {
+    const spec = Object.assign({ id: id, overrides: overrides }, extra || {});
+    const result = realms.create(spec);
+    steps.push({ op: 'create', id: id, overrides: overrides || {},
+                 name: spec.name || '', description: spec.description || '',
+                 domain: spec.domain || '', result: answer(result) });
+  };
+  create('acme', {});
+  create('bad', { 'realms.pathSegment': 'x' });
+  create('pp', { [perProcessKey]: 5 });
+  create('rs', { [restartKey]: 'x' });
+  create('uk', { 'nope.key': 1 });
+  create('prod', { 'global.mode': 'product', [devOnlyKey]: true });
+  create('prod2', { 'global.mode': 'product' }, { name: '  Prod Two ',
+    description: ' second ', domain: 'Prod2.Example.ORG.' });
+  create('Bad_Id', {});
+  create('dup', {}, { domain: 'prod2.example.org' });
+  const set = function (id, key, raw) {
+    steps.push({ op: 'set', id: id, key: key, raw: raw,
+                 result: answer(realms.setOverride(id, key, raw)) });
+  };
+  const clear = function (id, key) {
+    steps.push({ op: 'clear', id: id, key: key,
+                 result: answer(realms.clearOverride(id, key)) });
+  };
+  const update = function (id, changes) {
+    steps.push({ op: 'update', id: id, changes: changes,
+                 result: answer(realms.update(id, changes)) });
+  };
+  set('prod2', devOnlyKey, true);
+  set('acme', devOnlyKey, true);
+  set('nosuch', devOnlyKey, true);
+  set('acme', 'realms.pathSegment', 'x');
+  set('acme', 'nope.key', 1);
+  clear('acme', 'nope.key');
+  clear('acme', devOnlyKey);
+  clear('nosuch', 'x');
+  update('acme', { domain: 'other.example.com' });
+  update('acme', { overrides: { 'realms.x': 1 } });
+  update('prod2', { overrides: { 'global.mode': 'product',
+                                 [devOnlyKey]: true } });
+  update('acme', { name: '  New Name ', description: ' d ' });
+  update('nosuch', { name: 'x' });
+  const listed = function () {
+    return realms.list().filter(function (r) { return !r.builtin; })
+      .map(function (r) {
+        return { id: r.id, name: r.name, description: r.description,
+                 domain: r.domain, overrides: r.overrides,
+                 retiring: !!realms.isRetiring(r.id) };
+      });
+  };
+  const before = listed();
+  const retired = await realms.retire('acme', {});
+  steps.push({ op: 'retire', id: 'acme', result: answer(retired) });
+  steps.push({ op: 'remove', id: 'acme', result: answer(realms.remove('acme')) });
+  steps.push({ op: 'remove', id: 'prod2',
+               result: answer(realms.remove('prod2')) });
+  const after = listed();
+  return { keys: { restart: restartKey, perProcess: perProcessKey,
+                   devOnly: devOnlyKey },
+           steps: steps, before: before, after: after };
+}
+
 const VECTORS = [{ file: 'jws-node.json', build: jws },
                  { file: 'jwe-node.json', build: jwe },
                  { file: 'c14n-node.json', build: c14n },
@@ -2790,7 +2882,9 @@ const VECTORS = [{ file: 'jws-node.json', build: jws },
                  { file: 'merge-node.json', build: mergeVectors },
                  { file: 'scheduler-node.json', build: schedulerVectors },
                  { file: 'scheduler-history-node.json',
-                   build: schedulerHistoryVectors }];
+                   build: schedulerHistoryVectors },
+                 { file: 'realm-lifecycle-node.json',
+                   build: realmLifecycleVectors }];
 
 if (require.main === module) {
   fs.mkdirSync(OUT, { recursive: true });
