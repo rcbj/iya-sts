@@ -549,10 +549,156 @@ function xmldsig() {
            queries: queries, queryChecks: queryChecks };
 }
 
+// XML ENCRYPTION: what crypto.encryptElement() makes for an RSA recipient
+// in every cipher and key transport and for an EC one in every curve and
+// key wrap, what crypto.decryptElement() answers about each — and about the
+// ways a document is refused. Every encryption is randomised, so Rust must
+// decrypt Node's, make the same document but for the random values, and
+// give every verdict Node gives. The EC certificates come from the openssl
+// command line, as forge makes RSA ones only.
+function ecCertificate(curve) {
+  const os = require('os');
+  const childProcess = require('child_process');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'xmlenc-'));
+  try {
+    childProcess.execFileSync('openssl', ['req', '-x509', '-newkey', 'ec',
+      '-pkeyopt', 'ec_paramgen_curve:' + curve, '-nodes', '-keyout',
+      path.join(dir, 'key.pem'), '-out', path.join(dir, 'cert.pem'),
+      '-subj', '/CN=xmlenc ' + curve, '-days', '2'], { stdio: 'ignore' });
+    return { privateKeyPem: fs.readFileSync(path.join(dir, 'key.pem'),
+                                            'utf8'),
+             certPem: fs.readFileSync(path.join(dir, 'cert.pem'), 'utf8') };
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+function decryptVerdict(v) {
+  return { ok: !!v.ok, xml: v.xml || '', why: v.why || '',
+           code: require(path.join(ROOT, 'common', 'error_codes.js'))
+             .codeOf(v) || null,
+           refused: !!v.refused, algorithm: v.algorithm || '',
+           keyTransport: v.keyTransport || '', keyWrap: v.keyWrap || '',
+           oaepDigest: v.oaepDigest || '' };
+}
+
+function xmlenc() {
+  const engine = require(path.join(ROOT, 'common', 'vendored',
+                                   'xmldsig.js'));
+  const rsa = engine.generateKeyPair(2048, 'xmlenc rsa');
+  const recipients = { rsa: { privateKeyPem: rsa.privateKeyPem,
+                              certPem: rsa.certPem } };
+  ['P-256', 'P-384', 'P-521'].forEach(function (curve) {
+    recipients[curve] = ecCertificate(curve);
+  });
+  const plain = {
+    assertion: '<saml:Assertion xmlns:saml="urn:oasis:names:tc:SAML:2.0:' +
+      'assertion" ID="_e1"><saml:Issuer>idp é</saml:Issuer>' +
+      '</saml:Assertion>',
+    nameid: '<saml:NameID Format="urn:oasis:names:tc:SAML:1.1:nameid-' +
+      'format:emailAddress">a@b.example</saml:NameID>'
+  };
+  const ciphers = ['aes256-gcm', 'aes128-gcm', 'aes256-cbc', 'aes128-cbc',
+                   'aes192-gcm', 'aes192-cbc'];
+  const cases = [];
+  const decrypt = function (name, xml, recipient, opts) {
+    return { name: name, xml: xml, recipient: recipient,
+             options: opts || {},
+             verdict: decryptVerdict(crypto.decryptElement(xml,
+               recipients[recipient].privateKeyPem, opts || {})) };
+  };
+  ciphers.forEach(function (cipher) {
+    ['rsa-oaep', 'rsa-oaep-mgf1p', 'rsa-1_5'].forEach(function (transport) {
+      const opts = { algorithm: cipher, keyTransport: transport,
+                     wrapper: 'saml:EncryptedID' };
+      const enc = crypto.encryptElement(plain.nameid, rsa.certPem, opts);
+      const c = decrypt(cipher + ' ' + transport, enc, 'rsa');
+      c.encrypt = { plain: plain.nameid, options: opts };
+      cases.push(c);
+    });
+  });
+  ['P-256', 'P-384', 'P-521'].forEach(function (curve) {
+    ['kw-aes128', 'kw-aes192', 'kw-aes256'].forEach(function (wrap) {
+      const opts = { keyWrap: wrap };
+      const enc = crypto.encryptElement(plain.assertion,
+                                        recipients[curve].certPem, opts);
+      const c = decrypt(curve + ' ' + wrap, enc, curve);
+      c.encrypt = { plain: plain.assertion, options: opts };
+      cases.push(c);
+    });
+  });
+  ciphers.forEach(function (cipher) {
+    const opts = { algorithm: cipher };
+    const enc = crypto.encryptElement(plain.assertion,
+                                      recipients['P-256'].certPem, opts);
+    const c = decrypt('P-256 ' + cipher, enc, 'P-256');
+    c.encrypt = { plain: plain.assertion, options: opts };
+    cases.push(c);
+  });
+
+  // The refusals.
+  const gcm = crypto.encryptElement(plain.assertion, rsa.certPem,
+                                    { keyTransport: 'rsa-oaep' });
+  const cbc = crypto.encryptElement(plain.assertion, rsa.certPem,
+                                    { algorithm: 'aes128-cbc' });
+  const ec = crypto.encryptElement(plain.assertion,
+                                   recipients['P-256'].certPem, {});
+  const flip = function (xml) {
+    // The last CipherValue is the data's; change one character of it.
+    const at = xml.lastIndexOf('</xenc:CipherValue>') - 6;
+    return xml.slice(0, at) + (xml[at] === 'A' ? 'B' : 'A') +
+      xml.slice(at + 1);
+  };
+  const other = engine.generateKeyPair(2048, 'other');
+  recipients.other = { privateKeyPem: other.privateKeyPem,
+                       certPem: other.certPem };
+  recipients['P-256b'] = ecCertificate('P-256');
+  const refusals = [
+    decrypt('GCM tampered', flip(gcm), 'rsa'),
+    decrypt('CBC tampered', flip(cbc), 'rsa'),
+    decrypt('the wrong RSA key (OAEP)', gcm, 'other'),
+    decrypt('the wrong RSA key (1_5)', crypto.encryptElement(plain.assertion,
+      rsa.certPem, { keyTransport: 'rsa-1_5' }), 'other'),
+    decrypt('an unknown cipher', gcm.replace(
+      'http://www.w3.org/2009/xmlenc11#aes256-gcm', 'urn:x'), 'rsa'),
+    decrypt('an unknown transport', gcm.replace(
+      'http://www.w3.org/2009/xmlenc11#rsa-oaep', 'urn:y'), 'rsa'),
+    decrypt('no EncryptedData', '<x/>', 'rsa'),
+    decrypt('not XML', '<x>', 'rsa'),
+    decrypt('a cipher not allowed', gcm, 'rsa',
+            { allowedCiphers: ['aes128-gcm'] }),
+    decrypt('a transport not allowed', gcm, 'rsa',
+            { allowedKeyManagement: ['ecdh-es'] }),
+    decrypt('an OAEP digest not allowed', gcm, 'rsa',
+            { allowedOaepDigests: ['sha512'] }),
+    decrypt('nothing allowed', gcm, 'rsa', { allowedCiphers: [] }),
+    decrypt('an OAEP digest pair that differs', gcm.replace(
+      'http://www.w3.org/2009/xmlenc11#mgf1sha256',
+      'http://www.w3.org/2009/xmlenc11#mgf1sha1'), 'rsa'),
+    decrypt('another agreement', ec.replace(
+      'http://www.w3.org/2009/xmlenc11#ECDH-ES', 'urn:dh'), 'P-256'),
+    decrypt('a SHA-1 ConcatKDF', ec.replace(
+      '<ds:DigestMethod Algorithm="http://www.w3.org/2001/04/xmlenc#sha256"' +
+      '/></xenc11:ConcatKDFParams>',
+      '<ds:DigestMethod Algorithm="http://www.w3.org/2000/09/xmldsig#sha1"' +
+      '/></xenc11:ConcatKDFParams>'), 'P-256'),
+    decrypt('an agreement to an RSA key', ec, 'rsa'),
+    decrypt('an agreement to another EC key', ec, 'P-384'),
+    decrypt('an agreement to another P-256 key', ec, 'P-256b'),
+    decrypt('no CipherValue', gcm.replace(/<xenc:CipherValue>[^<]*<\/xenc:Ci/,
+                                          '<xenc:CipherValu></xenc:CipherValu' +
+                                          '><xenc:Ci'), 'rsa')
+  ];
+  return { brokenAlgorithms: require(path.join(ROOT, 'common', 'mode.js'))
+    .usesBrokenAlgorithms(),
+           recipients: recipients, cases: cases, refusals: refusals };
+}
+
 const VECTORS = [{ file: 'jws-node.json', build: jws },
                  { file: 'jwe-node.json', build: jwe },
                  { file: 'c14n-node.json', build: c14n },
-                 { file: 'xmldsig-node.json', build: xmldsig }];
+                 { file: 'xmldsig-node.json', build: xmldsig },
+                 { file: 'xmlenc-node.json', build: xmlenc }];
 
 if (require.main === module) {
   fs.mkdirSync(OUT, { recursive: true });
