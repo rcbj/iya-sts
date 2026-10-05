@@ -11,14 +11,21 @@
 // door; the list below is those first pages, and `SECTIONS` further down is
 // the whole of it now.
 //
-//   GET  /admin           what the console is, and what it can do to this service
+//   GET  /admin           what the console is, and what it can do to this
+// service
 //   GET  /admin/metrics   every call, every artifact, and both kinds of session
-//   GET  /admin/users     everyone this service has authenticated; with ?user= it is
-//                         one of them, their sessions, and what was issued on each
-//   GET  /admin/groups    every group in the embedded LDAP directory; with ?group= it
-//                         is one of them, every attribute it has, and everybody in it
-//   GET  /admin/tokens    what was issued — every JWT, every SAML assertion and every
-//                         Kerberos ticket, filtered and paged — and the buttons that
+//   GET  /admin/users     everyone this service has authenticated; with ?user=
+// it is
+//                         one of them, their sessions, and what was issued on
+// each
+//   GET  /admin/groups    every group in the embedded LDAP directory; with
+// ?group= it
+//                         is one of them, every attribute it has, and everybody
+// in it
+//   GET  /admin/tokens    what was issued — every JWT, every SAML assertion and
+// every
+//                         Kerberos ticket, filtered and paged — and the buttons
+// that
 //                         invalidate the ones that can be
 //   POST /admin/tokens    revoke / restore, one token or a whole class of them
 //   GET  /admin/audit     what happened here, in order — every authentication,
@@ -840,6 +847,7 @@ import ConsentPage = require('../oauth-oidc/web_consent');
 import SessionsPage = require('../logout/web_sessions');
 import ConfigPage = require('./web_config');
 import VcVerifierConfigPage = require('../oid4vc/web_vc_verifier_config');
+import AuthorizationServersPage = require('./web_authorization_servers');
 
 // REQUIRED FOR THE ORDER THEY WERE ALWAYS REQUIRED IN, AND READ NOWHERE HERE
 // (#50). TypeScript drops an `import … = require()` whose name nothing reads,
@@ -1753,11 +1761,14 @@ const SECTIONS = [
                'certificate against (LDAPS 636 asks for none) — which, since ' +
                'a verified certificate is an identity here, is the list of ' +
                'whose certificates this service believes. Each row says ' +
-               'whether it came from <code>tls.trustAnchorsFile</code> or was ' +
+               'whether it came from <code>tls.trustAnchorsFile</code> or ' +
+                 'was ' +
                'added while the process was running; add PEM certificates or ' +
                'remove one row at a time, in either mode. An anchor added ' +
-               'here is kept in the directory (<code>ou=trustAnchors</code>), ' +
-               'so it survives a restart and reaches every process, and there ' +
+               'here is kept in the directory ' +
+                 '(<code>ou=trustAnchors</code>), ' +
+               'so it survives a restart and reaches every process, and ' +
+                 'there ' +
                'is deliberately no button that empties it.' }
     ] },
   { title: 'Directory',
@@ -2337,7 +2348,8 @@ const SECTIONS = [
       // oauth-oidc/provider_commands_admin.ts.
       { path: '/admin/deliveries', label: 'Outbound deliveries',
         blurb: 'Every Logout Token, CIBA notification and OpenID Provider ' +
-               'Command this realm sent to a relying party, by kind: pending, ' +
+               'Command this realm sent to a relying party, by kind: ' +
+                 'pending, ' +
                'sent and <strong>dead</strong> — each dead letter with its ' +
                'code and the reason, and a Retry that sends it again as a ' +
                'new generation.' },
@@ -7725,7 +7737,8 @@ class AdminConsole {
   //                    request, and SPIFFE the sixteenth, for an X509-SVID
   //                    presented over mutual TLS, an agent attesting and a
   //                    JWT-SVID validated
-  //   session          authn.js's startSession / endSession, which is where both
+  //   session          authn.js's startSession / endSession, which is where
+  // both
   //                    OAuth 2.0 / OIDC and WS-Federation sign in and out
   //   directory        the seven LDAP handlers in ldap_server.js, plus the
   //                    entries this service creates for people who
@@ -7996,7 +8009,8 @@ class AdminConsole {
       return heading + this.note(state || v.deliveryq
         ? 'No delivery matches.'
         : 'None yet. A sign-out — or an expiry, while ' +
-          '<code>oauth2.backchannelLogoutOnExpiry</code> is on — sends one to ' +
+          '<code>oauth2.backchannelLogoutOnExpiry</code> is on — sends one ' +
+            'to ' +
           'every relying party on the ending session that registered a ' +
           '<code>backchannel_logout_uri</code>, while ' +
           '<code>oauth2.backchannelLogout</code> is on.');
@@ -8695,7 +8709,8 @@ class AdminConsole {
     }).join('');
     const register = view.register;
     log.debug("Leaving AdminConsole.delegationPolicySection().");
-    return '<h2 id="delegation-policy">Who may act for whom &mdash; WS-Trust, ' +
+    return '<h2 id="delegation-policy">Who may act for whom &mdash; ' +
+      'WS-Trust, ' +
       'token exchange and Kerberos</h2>' +
       self.note('<strong>Decided by the issuance policy</strong> (#186), ' +
       'from facts on the entries — one set of settings for the three ' +
@@ -10007,7 +10022,8 @@ class AdminConsole {
         what: '<strong>may delegate &mdash; a CONFIGURED relationship, ' +
               'DASHED until an act has used it.</strong> One line per pair ' +
               'an entry allows: <code>appAllowedToDelegateTo</code> on the ' +
-              'source (constrained) or <code>appAllowedToActOnBehalfOf</code> ' +
+              'source (constrained) or ' +
+                '<code>appAllowedToActOnBehalfOf</code> ' +
               'on the target (resource-based) &mdash; the same controls for ' +
               'the OAuth 2.0 token exchange, WS-Trust and Kerberos. Solid ' +
               'once an act has crossed it. Drawn unless the acts are ' +
@@ -11634,7 +11650,8 @@ class AdminConsole {
     // Said on every branch, including the ones with an entry: the entry can be
     // there and the socket down, and a reader who trusts this page to mean "an
     // LDAP client can fetch this" needs to know which.
-    const listener = this.directoryListenerWarning(info, GroupsPage.ENTRY_SUBJECT);
+    const listener = this.directoryListenerWarning(info,
+      GroupsPage.ENTRY_SUBJECT);
     const alsoNamed = info.alsoNamed.length
       ? this.note(info.alsoNamed.length + ' other entr' +
         (info.alsoNamed.length === 1 ? 'y names' : 'ies name') + ' this uid: ' +
@@ -13262,7 +13279,8 @@ class AdminConsole {
     if (!kerberos.person) {
       log.debug("Leaving AdminConsole.userKerberosSection(). Not in the " +
                 "directory.");
-      return heading + this.note('This identity has no entry in this realm\'s ' +
+      return heading +
+        this.note('This identity has no entry in this realm\'s ' +
         'directory, which is the one its KDC reads, so it is not a Kerberos ' +
         'principal here.');
     }
@@ -16721,7 +16739,8 @@ class AdminConsole {
       this.note('The realm\'s claims are issued to this application, and its ' +
         'own are added to them; where both name the same claim, this ' +
         'application\'s value is the one issued. A row is a typed value, ' +
-        'whose <code>${…}</code> placeholders are expanded as on the realm\'s ' +
+        'whose <code>${…}</code> placeholders are expanded as on the ' +
+          'realm\'s ' +
         'page, or a directory attribute of the person. ' +
         'The realm\'s rows are edited on the realm\'s page under Protocols.') +
       sets.map(function (set) {
@@ -19828,7 +19847,8 @@ class AdminConsole {
       // this machine, drawn only for an application that names a URL — see
       // sp_metadata.ts.
       { id: 'tab-metadata', label: 'SP metadata',
-        html: !forFamilies(['saml2'], 'x') ? '' : (this.firstFieldValue(row, 'samlSpMetadataUrl')
+        html: !forFamilies(['saml2'], 'x') ? '' : (this.firstFieldValue(row,
+          'samlSpMetadataUrl')
         ? '<h2>Service provider metadata</h2>' +
           this.note('Fetches <code>' +
                     this.esc(this.firstFieldValue(row, 'samlSpMetadataUrl')) +
@@ -19858,7 +19878,8 @@ class AdminConsole {
           'all.</span></div></form>'
         : '') },
       { id: 'tab-entry', label: 'Directory entry',
-        html:       '<h2>Its directory entry</h2><p class="sub">Every attribute the entry ' +
+        html:       '<h2>Its directory entry</h2><p class="sub">Every ' +
+          'attribute the entry ' +
       'carries &mdash; the operational ones and <code>entryDN</code> ' +
       'included, which a SEARCH would return only when asked for by name ' +
       '(RFC 4511 section 4.5.1.8) &mdash; with what each one is. This IS the ' +
@@ -20332,7 +20353,8 @@ class AdminConsole {
           self.esc(row.attribute + ' value ' + (n + 1)) + '">' +
           '<button type="submit" class="secondary fg-drop" name="drop" ' +
           'value="' + self.esc(row.attribute + '.' + n) + '" formaction="' +
-          self.esc(opts.redraw + '#fgc-' + row.attribute) + '" formnovalidate ' +
+          self.esc(opts.redraw + '#fgc-' + row.attribute) +
+            '" formnovalidate ' +
           'title="Delete this ' +
           'value" aria-label="Delete value ' + (n + 1) + ' of ' +
           self.esc(row.attribute) + '">' + self.trashIcon() +
@@ -21316,6 +21338,19 @@ class AdminConsole {
     }).join('');
   }
 
+  // Drawn by `web_authorization_servers.ts` (#446).
+  /**
+   * Draws the caveat both authorization-server pages carry.
+   *
+   * @returns the caveat as HTML
+   */
+  asCaveat() {
+    const { log } = this.deps;
+    log.debug("Entering AdminConsole.asCaveat().");
+    log.debug("Leaving AdminConsole.asCaveat().");
+    return AuthorizationServersPage.asCaveat();
+  }
+
   /**
    * Draws `/admin/authorization-servers`: every authorization server
    * profile, paged, and the form to add one.
@@ -21324,101 +21359,18 @@ class AdminConsole {
    * @returns the page body as HTML (`inner`) and its JSON view (`json`)
    */
   asListPage(req) {
-    const { log, adminViews, asDriftRows, queryWith } = this.deps;
-    const self = this;
+    const { log, adminViews } = this.deps;
     log.debug("Entering AdminConsole.asListPage().");
-    const view = adminViews.asListJson(req);
-    const all = view.all;
-    const paged = view.paged;
-    const paging = view.paging;
-    const nav = this.pageNavPair('/admin/authorization-servers',
-                        { per: req.query.per ? paging.perPage : '' }, paging);
-
-    const listView = this.listViewOf('/admin/authorization-servers', req.query);
-    const rows = paged.shown.map(function (row) {
-      const drift = asDriftRows(row.id);
-      // The link carries the list AS IT IS BEING VIEWED, which is what lets the
-      // trail on the other side come back to this page of this filter rather
-      // than to the top of everything. See listViewOf().
-      const href = '/admin/authorization-servers' +
-                   queryWith(listView, { profile: row.id });
-      return '<tr><td><a href="' + self.esc(href) + '"><code>' +
-             self.esc(row.id) +
-        '</code></a></td><td>' + self.esc(row.label || '') + '</td><td ' +
-        'class="num">' + Object.keys(row.overrides).length + '</td>' +
-        '<td class="num">' + row.removed.length + '</td>' +
-        '<td class="num">' + (drift.length
-          ? '<span class="state-expired" title="Members whose published ' +
-            'value disagrees with what this service would ' +
-            'publish.">' + drift.length + '</span>'
-          : '<span class="state-none">0</span>') + '</td>' +
-        '<td><code>' + self.esc(row.urls.authorize) + '</code><br><code>' +
-        self.esc(
-            row.urls.token) +
-        '</code><div class="sub">metadata at <code>' + self.esc(
-            row.urls.oidc) + '</code></div></td><td>' + (row.autoCreated
-          ? '<span class="sub">asked for</span>' : '<span ' +
-                                                   'class="sub">configured' +
-                                                   '</span>') +
-        '</td><td class="num">' + self.esc(row.seen) + '</td></tr>';
-    }).join('');
-
+    const json = adminViews.asListJson(req).json;
+    // Drawn by `web_authorization_servers.ts` (#446).
     const inner = this.messagesOf(req) +
-      '<div class="tiles">' +
-      this.tile(all.length, 'Profiles') +
-      this.tile(all.reduce(function (n, r) {
-        return n + Object.keys(r.overrides).length;
-      },
-                           0), 'Overrides') +
-      this.tile(all.reduce(function (n,
-                                     r) { return n +
-                                          asDriftRows(r.id).length; },
-                           0), 'Drifting ' +
-          'members') +
-      '</div>' +
-      this.note('<strong>One process, several authorization ' +
-      'servers.</strong> The path component the two discovery shapes already ' +
-      'carry now selects a CONFIGURATION as well as an issuer identifier ' +
-      '&mdash; RFC 8414 section 3.1 <em>inserts</em> it after the well-known ' +
-      'segment and OpenID Connect Discovery section 4 <em>appends</em> the ' +
-      'well-known segment to it, which is the commonest reason a discovery ' +
-      'fetch 404s, and this service has answered both for a long time. ' +
-      '<strong>A path nobody has configured publishes the document this ' +
-      'service always published</strong>, so nothing that worked before this ' +
-      'page existed behaves differently.') +
-      nav.head +
-      '<table><tr><th>Authorization server</th><th>Label</th><th ' +
-      'class="num">Overrides</th><th class="num">Removed</th><th ' +
-      'class="num">Drift</th><th>Its endpoints</th><th>Came from</th><th ' +
-      'class="num">Asked for</th></tr>' +
-      (rows || '<tr><td colspan="8">No authorization server has been named. ' +
-               'Every discovery URL answers with the document this service ' +
-               'builds for itself, which is what RFC 9700 section 2.6 asks ' +
-               'for &mdash; these are for when you need it to say something ' +
-               'else.</td></tr>') +
-      '</table>' +
-      nav.foot +
-      '<h2>Add an authorization server</h2><form method="post" ' +
-      'action="/admin/authorization-servers"><div class="formrow"><input ' +
-      'type="hidden" name="action" value="create"><label ' +
-      'for="asid">Id</label><input type="text" id="asid" name="id" size="18" ' +
-      'required placeholder="tenant1"><label ' +
-      'for="aslabel">Label</label><input type="text" id="aslabel" ' +
-      'name="label" size="20" placeholder="optional"><label ' +
-      'for="asdesc">Note</label><input type="text" id="asdesc" ' +
-      'name="description" size="28" placeholder="what it is for"><button ' +
-      'type="submit">Add</button></div></form>' +
-      this.note('The id is a single URL path segment &mdash; letters, ' +
-      'digits, dot, dash, underscore or tilde &mdash; because it has to ' +
-      'appear in a URL without being escaped. One that had to be escaped ' +
-      'would be one nobody could find again.') +
-      AS_CAVEAT + AS_LINKS;
-
-    log.debug("Leaving AdminConsole.asListPage(). " + paged.shown.length +
+      AuthorizationServersPage.body(this.renderContext(req),
+        JSON.parse(JSON.stringify(json)));
+    log.debug("Leaving AdminConsole.asListPage(). " + json.shown +
               " row(s).");
     return {
       inner: inner,
-      json: view.json
+      json: json
     };
   }
 
@@ -21601,7 +21553,7 @@ class AdminConsole {
       'URLs go on answering &mdash; with this service\'s own document ' +
       '&mdash; because an unconfigured path has always been served that ' +
       'way.</span></div></form>' +
-      AS_CAVEAT + AS_LINKS;
+      this.asCaveat() + AS_LINKS;
 
     log.debug("Leaving AdminConsole.asDetailPage(). " + drift.length +
               " drifting member(s).");
@@ -26561,7 +26513,8 @@ class AdminConsole {
     const info = persistence.status();
     // DRAWN BY `web_protocol_settings.ts` (#446) from the JSON this block
     // answers, passed through JSON.
-    const html = ProtocolSettingsPage.persistenceStatus(JSON.parse(JSON.stringify(info)));
+    const html = ProtocolSettingsPage.persistenceStatus(
+      JSON.parse(JSON.stringify(info)));
     return { html: html, json: info };
   }
 
@@ -27149,7 +27102,8 @@ class AdminConsole {
     const info = totp.report();
     // DRAWN BY `web_protocol_settings.ts` (#446) from the JSON this block
     // answers, passed through JSON.
-    const html = ProtocolSettingsPage.totpStatus(JSON.parse(JSON.stringify(info)));
+    const html = ProtocolSettingsPage.totpStatus(
+      JSON.parse(JSON.stringify(info)));
     return { html: html, json: info };
   }
 
@@ -27264,7 +27218,8 @@ class AdminConsole {
                                { mds: this.attestationMds() });
     // DRAWN BY `web_protocol_settings.ts` (#446) from the JSON this block
     // answers, passed through JSON.
-    const html = ProtocolSettingsPage.webauthnStatus(JSON.parse(JSON.stringify(info)));
+    const html = ProtocolSettingsPage.webauthnStatus(
+      JSON.parse(JSON.stringify(info)));
     return { html: html, json: info };
   }
 
@@ -27332,7 +27287,8 @@ class AdminConsole {
                                { krbtgt: krbtgt, pkinit: pkinit });
     // DRAWN BY `web_protocol_settings.ts` (#446) from the JSON this block
     // answers, passed through JSON.
-    const html = ProtocolSettingsPage.kerberosPreauthStatus(JSON.parse(JSON.stringify(info)));
+    const html = ProtocolSettingsPage.kerberosPreauthStatus(
+      JSON.parse(JSON.stringify(info)));
     return { html: html, json: info };
   }
 
@@ -27348,7 +27304,8 @@ class AdminConsole {
     const info = backupCodes.report();
     // DRAWN BY `web_protocol_settings.ts` (#446) from the JSON this block
     // answers, passed through JSON.
-    const html = ProtocolSettingsPage.backupCodesStatus(JSON.parse(JSON.stringify(info)));
+    const html = ProtocolSettingsPage.backupCodesStatus(
+      JSON.parse(JSON.stringify(info)));
     return { html: html, json: info };
   }
 
@@ -27528,10 +27485,12 @@ class AdminConsole {
   //                           the four gRPC listeners, the federated bundles.
   //                           The forms here rotate an authority and set or
   //                           remove a federated bundle.
-  //   /admin/spiffe/entries   the REGISTRATION ENTRIES: a list with a filter and
+  //   /admin/spiffe/entries   the REGISTRATION ENTRIES: a list with a filter
+  // and
   //                           paging, a drill-down per entry, and the forms
   //                           that create, change and delete one.
-  //   /admin/spiffe/agents    the ATTESTED AGENTS: the same shape, and the forms
+  //   /admin/spiffe/agents    the ATTESTED AGENTS: the same shape, and the
+  // forms
   //                           ban, unban and delete.
   //
   // **The second and third are separate sections rather than drill-downs**,
@@ -28908,7 +28867,8 @@ class AdminConsole {
             'one ends the sessions this partner signed them in to.')
           : this.note('Each person below carries a <code>federationLink' +
             '</code> through this relationship, written by an administrator ' +
-            'on the person\'s own page: the issuer and subject the partner\'s ' +
+            'on the person\'s own page: the issuer and subject the ' +
+              'partner\'s ' +
             'iss_sub events name them by, or <code>opaque</code> and the ' +
             'opaque id. It signs nobody in; it is how this partner\'s ' +
             'events find the person (#374).')) +
@@ -30930,7 +30890,8 @@ class AdminConsole {
         'reading. <a href="/admin/scim">SCIM</a> is the exception and it is ' +
         'a whole protocol rather than a button — a <code>DELETE ' +
         '/scim/v2/Users/{id}</code> really does remove the entry, while its ' +
-        '<code>active: false</code> DISABLES the account (2026-09-17), which is ' +
+        '<code>active: false</code> DISABLES the account (2026-09-17), ' +
+          'which is ' +
         'the same act as Disable on a person\'s page.') +
         self.bullet('<strong>It shows ONE trust realm at a time, and it ' +
         'writes the one it is read in.</strong> Every page here reports the ' +
@@ -36262,7 +36223,8 @@ class AdminConsole {
     app.get('/admin/kerberos/principals', function (req, res) {
       log.debug("Entering the admin Kerberos principals page.");
       const json = adminViews.kerberosPrincipalsJson(req);
-      self.respond(req, res, json, 'Kerberos principals', '/admin/kerberos/principals',
+      self.respond(req, res, json, 'Kerberos principals',
+        '/admin/kerberos/principals',
         // Drawn by `web_kerberos_principals.ts` (#446).
         self.messagesOf(req) +
         KerberosPrincipalsPage.body(self.renderContext(req),
@@ -38466,30 +38428,7 @@ const RESOURCE_METADATA_OWNED = ['oauthClientId', 'oauthPermissionBaseUri',
 // disagree with what this service would actually publish, and which removals
 // hide something real.
 // ---------------------------------------------------------------------------
-let AS_CAVEAT: string;
-WIRE_STEPS.push(function (instance: AdminConsole): void {
-  AS_CAVEAT =
-    instance.note('<strong>What a document says is what that ' +
-    'authorization server DOES.</strong> Advertise ' +
-    '<code>code_challenge_methods_supported: ["S256"]</code> here and this ' +
-    'server\'s own authorization endpoint refuses <code>plain</code> — at ' +
-    '<code>/{id}/oauth2/authorize</code>, and nowhere else. The members ' +
-    'marked <em>enforced</em> below drive behaviour; the rest are published ' +
-    'and cannot be made true by this service, which is still useful (a ' +
-    'document a client did not expect is a client error path worth running) ' +
-    'and is listed ' +
-    'as <em>drift</em> so that nobody discovers it the hard way.') +
-    instance.note('<strong>Every authorization server starts ' +
-    'equal.</strong> A new one — or one created by somebody simply asking ' +
-    'for it — has exactly the capabilities the default server has, and ' +
-    'differs only where it has been made to. <strong>Every client may use ' +
-    'every one of them</strong>: nothing here restricts a client to a ' +
-    'server, and <a href="/admin/applications">the applications page</a> ' +
-    'records which ones each client has actually used. What does NOT cross ' +
-    'between them is a credential — an authorization code issued by one is ' +
-    'refused at another\'s ' +
-    'token endpoint.');
-});
+// The caveat both authorization-server pages carry is `asCaveat()`.
 
 const AS_LINKS =
   '<p class="sub"><a href="/.well-known/oauth-authorization-server">the ' +

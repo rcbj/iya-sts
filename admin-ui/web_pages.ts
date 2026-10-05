@@ -31,6 +31,7 @@
 import WebKit = require('./web_kit');
 import AcmePage = require('../acme/web_acme');
 import AuditPage = require('./web_audit');
+import AuthorizationServersPage = require('./web_authorization_servers');
 import AttributeSourcesPage =
   require('../attribute-sources/web_attribute_sources');
 import CachesPage = require('./web_caches');
@@ -114,6 +115,11 @@ const PAGES: WebPage[] = [
   { path: '/admin/attribute-sources', title: 'Attribute sources',
     operation: '/admin-api/attribute-sources',
     render: AttributeSourcesPage.render },
+  { path: '/admin/authorization-servers', title: 'Authorization servers',
+    operation: '/admin-api/authorization-servers',
+    render: function (view: Json, ctx?: Json): string {
+      return AuthorizationServersPage.body(ctx || WebKit.context(), view);
+    } },
   { path: '/admin/caches', title: 'Caches', operation: '/admin-api/caches',
     render: CachesPage.render },
   { path: '/admin/audit', title: 'Audit log',

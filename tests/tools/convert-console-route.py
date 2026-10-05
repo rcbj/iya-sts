@@ -497,6 +497,8 @@ if METHOD:
                 ('this.messagesOf(req) +\n      ' if messages else '') +
                 '%s.%s(this.renderContext(req),\n' % (page_class, method) +
                 '        JSON.parse(JSON.stringify(json)));\n' +
+                '    log.debug("Leaving AdminConsole.%s().");\n' %
+                route[len('method:'):] +
                 body[r_line:])
 else:
     new_body = body[:vm.end()] + call + body[r_end + 1:]

@@ -6576,11 +6576,18 @@ class AdminViews {
     const { log, authorizationServers } = this.deps;
     const self = this;
     log.debug("Entering AdminViews.asListJson().");
-    log.debug("Entering asListPage().");
     const all = authorizationServers.list();
     const paged = this.pagedRows(req.query, all,
                                  { noun: 'authorization servers' });
     const paging = paged.paging;
+    const pagingJson = this.pagingJson(paging);
+    // The page's three tiles count every profile, not the page shown (#446).
+    const overrideTotal = all.reduce(function (n, r) {
+      return n + Object.keys(r.overrides).length;
+    }, 0);
+    const driftTotal = all.reduce(function (n, r) {
+      return n + self.asDriftRows(r.id).length;
+    }, 0);
     log.debug("Leaving AdminViews.asListJson().");
     return {
       all: all, paged: paged, paging: paging,
@@ -6590,6 +6597,8 @@ class AdminViews {
           page: paging.page, pages: paging.pages, perPage: paging.perPage,
           firstRow: paging.firstRow, lastRow: paging.lastRow,
           members: authorizationServers.MEMBERS,
+          paging: pagingJson, overrideTotal: overrideTotal,
+          driftTotal: driftTotal,
           authorizationServers: paged.shown.map(function (row) {
             return Object.assign({}, row, { drift: self.asDriftRows(row.id) });
           })
