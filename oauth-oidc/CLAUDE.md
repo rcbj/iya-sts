@@ -2717,6 +2717,24 @@ In product a requested scope outside a verified subject_token's `scope` claim is
 `invalid_scope` (`STS-OAUTH-0621`); a subject_token with no `scope` claim (an ID
 Token, a WS-Trust JWT) has no grant to compare against.
 
+**AN EXCHANGE THAT NAMES NO `scope` CARRIES THE SUBJECT'S FORWARD, AND THE
+RESPONSE ACCOUNTS FOR WHAT SURVIVED (#156, 2026-10-05).** RFC 8693 section 2.1
+leaves the new token's scope to policy, and this one is stated once, at the
+`issue()` call: the `scope` asked for, else the subject_token's `scope` claim,
+else none — then `tokenSet()`'s narrowing as for every grant (#110, #302, and
+RFC 9068's plan, which takes `openid` and the other OpenID Connect scopes off a
+token for another resource server). Until then an exchange of an `openid
+profile` access token for `audience=https://api.example.org` answered
+`"scope": ""` — not a value under RFC 6749 section 3.3 — and an `id_token`
+beside an access token whose scope named no `openid`. **`tokenSet()` now
+leaves `scope` out when the token carries none, for every grant** (and the
+implicit and hybrid response does the same), and **an exchange gets an ID
+Token only when the token it issued carries `openid`**
+(`idTokenFollowsIssuedScope`). The other grants keep their ID Token when the
+plan strips `openid` from the access token: they are OpenID Connect requests,
+and the client asked who signed in. Native SSO is not affected — its ID Token
+is the point of it. `tests/vendored/sts_token_exchange_response.js` holds it.
+
 **IN PRODUCT MODE BOTH TOKENS MUST VERIFY (2026-09-21), AND UNTIL THEN NEITHER
 HAD TO.** The branch tried `verifyJws()` on the `subject_token` and, on failure,
 read its payload unverified and exchanged it — the development behaviour, with
