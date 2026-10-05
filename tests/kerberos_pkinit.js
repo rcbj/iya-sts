@@ -204,7 +204,7 @@ function makeClient() {
                        : { type: 1, name: [who] },
       realm: REALM, sname: { type: 2, name: ['krbtgt', REALM] },
       till: new Date(Date.now() + 3600000),
-      nonce: 4242 + Math.floor(Math.random() * 1000), etypes: [18, 17] };
+      nonce: 4242 + nodeCrypto.randomInt(1000), etypes: [18, 17] };
     const raw = msgs.encKdcReqBody(body);
     const padata = [];
     let ecdh = null;
