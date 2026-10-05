@@ -996,6 +996,41 @@ class WebKit {
       // box.
       (spec.what ? WebKit.note(spec.what) : '');
   }
+  // Seconds as a person reads them. Deliberately approximate above an hour and
+  // exact below one: the interesting settings on this page are the short ones,
+  // and "90 minutes" is the answer somebody wants for 5400 while "1.04 days" is
+  // nobody's answer for 90000. The exact number is always beside it in its own
+  // column, so this is a gloss rather than the value.
+  /**
+   * Words a number of seconds as a person reads it: exact below a minute,
+   * to one decimal place in minutes, hours or days above.
+   *
+   * @param seconds - the number of seconds
+   * @returns the phrase, or "no allowance at all" for zero
+   */
+  static humanSeconds(seconds) {
+    const n = Number(seconds) || 0;
+    if (n === 0) {
+      return 'no allowance at all';
+    }
+    if (n < 60) {
+      return n + ' second' + (n === 1 ? '' : 's');
+    }
+    if (n < 3600) {
+      const minutes = n / 60;
+      return (Number.isInteger(minutes) ? minutes : minutes.toFixed(1)) +
+             ' minute' + (minutes === 1 ? '' : 's');
+    }
+    if (n < 86400) {
+      const hours = n / 3600;
+      return (Number.isInteger(hours) ? hours : hours.toFixed(1)) +
+             ' hour' + (hours === 1 ? '' : 's');
+    }
+    const days = n / 86400;
+    return (Number.isInteger(days) ? days :
+            days.toFixed(1)) + ' day' + (days === 1 ? '' : 's');
+  }
+
   // A query's VIEW parameters — every one but the three that are not part
   // of what is being looked at (`format`, and the `notice` and `error` a
   // redirect brought back) — first value each. `admin_views.ts`'s, which

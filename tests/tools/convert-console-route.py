@@ -210,6 +210,22 @@ def convert(text):
     text = re.sub(r'^[ \t]*const \{[^}]*\} = this\.deps;\n', '', text,
                   flags=re.M)
     text = re.sub(r'\b(?:self|this)\.mayWrite\(req\)', 'ctx.write', text)
+    # THE SETTINGS BLOCK, from the view's own `settings` member (which the
+    # view must carry: the bundle check draws the page from the operation's
+    # answer and fails on a page whose view has none).
+    if re.search(r'\b(?:self|this)\.configFormsFor\(', text):
+        USES_SETTINGS.append(True)
+        text = re.sub(r'\b(?:self|this)\.configFormsFor\(',
+                      'SettingsForms.forms(' + view_name + '.settings, ', text)
+    # A Source column: the settings block's wording, told the two file
+    # names by the view's `context` (`AdminConsole.settingsContext()`).
+    if re.search(r'\b(?:self|this)\.sourceNote\(', text):
+        USES_SETTINGS.append(True)
+        text = re.sub(r'\b(?:self|this)\.sourceNote\(([^()]*)\)',
+                      r'SettingsForms.sourceNote(\1, ' + view_name +
+                      '.context || {})', text)
+    # The kit's page-size cap, which the console reads as a module constant.
+    text = re.sub(r'(?<![\w.$])MAX_ROWS\b', 'kit.MAX_ROWS', text)
     text = re.sub(r'\breq\.query\b', 'ctx.query', text)
     code_only = re.sub(r'//[^\n]*', '', text)
     assert not re.search(r'\breq\b', code_only), (
@@ -233,6 +249,7 @@ def convert(text):
 
 
 UNKNOWN = set()
+USES_SETTINGS = []
 moved_helpers = []
 for name in helpers:
     d, st, e = span(name)
@@ -267,7 +284,7 @@ function if else for while do switch case break continue typeof instanceof
 in of try catch finally throw Object Array String Number Boolean Math Date
 JSON RegExp Error Map Set WeakMap Promise encodeURIComponent
 decodeURIComponent parseInt parseFloat isNaN isFinite Infinity NaN kit ctx
-default void delete Symbol BigInt URL URLSearchParams'''.split())
+default void delete Symbol BigInt URL URLSearchParams SettingsForms'''.split())
 GLOBALS.add(page_class)
 everything = method_text + '\n'.join(moved_helpers)
 bare = re.sub(r'//[^\n]*', '', everything)
@@ -291,6 +308,10 @@ if free:
     sys.stderr.write('STAYS BEHIND, and the moved code names it: ' +
                      ', '.join(free) + '\n')
 
+if os.environ.get('DRY_RUN'):
+    print('would move', route, 'with', helpers)
+    sys.exit(0)
+
 # --- write the web file -----------------------------------------------------
 web_path = os.path.join(root, web_file)
 kit_rel = os.path.relpath(os.path.join(root, 'admin-ui/web_kit'),
@@ -312,12 +333,22 @@ def wrap(prefix, text):
         break_long_words=False))
 
 
+settings_import = ''
+if USES_SETTINGS:
+    rel_s = os.path.relpath(os.path.join(root, 'admin-ui/web_settings'),
+                            os.path.dirname(web_path))
+    if not rel_s.startswith('.'):
+        rel_s = './' + rel_s
+    settings_import = "\nimport SettingsForms = require('%s');" % rel_s
 addition = method_text + ('\n' + '\n\n'.join(moved_helpers)
                           if moved_helpers else '')
 if os.path.exists(web_path):
     web = open(web_path).read()
     k = web.rindex('\n}\n\nexport = %s;' % page_class)
     web = web[:k] + '\n\n' + addition.rstrip('\n') + web[k:]
+    if settings_import and 'import SettingsForms' not in web:
+        k = web.index('\n', web.index("import kit = require("))
+        web = web[:k] + settings_import + web[k:]
     if copied:
         k = web.index('\n/**\n', web.index("import kit = require("))
         web = web[:k] + '\n' + '\n'.join(c for c in copied
@@ -339,7 +370,7 @@ else:
 %s
 // ---------------------------------------------------------------------------
 
-import kit = require('%s');
+import kit = require('%s');%s
 
 type Json = any;
 %s
@@ -359,7 +390,7 @@ export = %s;
             "route of `" + route + "` in `" + source + "`, which still draws "
             "the page until the console's cutover by calling this with its "
             "view passed through JSON."),
-       kit_rel, ('\n' + '\n'.join(copied)) if copied else '',
+       kit_rel, settings_import, ('\n' + '\n'.join(copied)) if copied else '',
        wrap(' * ', what), page_class, addition, page_class)
 for n, l in enumerate(web.split('\n')):
     if len(l) > 80:

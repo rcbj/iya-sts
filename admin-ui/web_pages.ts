@@ -62,6 +62,7 @@ import ScepPage = require('../scep/web_scep');
 import SecretsPage = require('./web_secrets');
 import SettingsForms = require('./web_settings');
 import SsfTransmittersPage = require('../ssf/web_ssf_transmitters');
+import TokenLifetimesPage = require('./web_token_lifetimes');
 import VcStatusPage = require('./web_vc_status');
 import XacmlPage = require('../xacml/web_xacml');
 import WorkerPoolsPage = require('./web_worker_pools');
@@ -194,6 +195,11 @@ const PAGES: WebPage[] = [
   { path: '/admin/ssf/transmitters', title: 'Signals from partners',
     operation: '/admin-api/ssf/transmitters',
     render: SsfTransmittersPage.render },
+  { path: '/admin/token-lifetimes', title: 'Token lifetimes',
+    operation: '/admin-api/token-lifetimes',
+    render: function (view: Json, ctx?: Json): string {
+      return TokenLifetimesPage.body(ctx || WebKit.context(), view);
+    } },
   { path: '/admin/vc-status', title: 'Credential status',
     operation: '/admin-api/vc-status', render: VcStatusPage.render },
   { path: '/admin/xacml', title: 'XACML', operation: '/admin-api/xacml',

@@ -2450,7 +2450,7 @@ class AdminViews {
    * @returns the JSON
    */
   tokenLifetimesJson() {
-    const { log, config, stats, configSettingFor } = this.deps;
+    const { log, config, stats, configSettingFor, applications } = this.deps;
     log.debug("Entering AdminViews.tokenLifetimesJson().");
     const snapshot = stats.snapshot();
     const settings = TOKEN_LIFETIME_KEYS.map(function (key) {
@@ -2481,6 +2481,13 @@ class AdminViews {
     };
     log.debug("Leaving AdminViews.tokenLifetimesJson(). " + settings.length +
               " setting(s).");
+    // What the Source column names (#446): the two appconfig files, which
+    // a page drawn from this answer cannot ask the process for.
+    const block = this.settingsBlockOf('/admin/token-lifetimes');
+    (json as any).context = (block && block.context) || null;
+    // Which of these an application may override, and with which attribute
+    // (`applications.js`'s own table): the page's per-client column.
+    (json as any).overridable = applications.overridableSettings();
     return json;
   }
 
@@ -2567,6 +2574,10 @@ class AdminViews {
     };
     log.debug("Leaving AdminViews.samlAssertionsJson(). " + settings.length +
               " setting(s).");
+    // What the Source column names (#446): the two appconfig files, which
+    // a page drawn from this answer cannot ask the process for.
+    const block = this.settingsBlockOf('/admin/saml-assertions');
+    (json as any).context = (block && block.context) || null;
     return json;
   }
 
