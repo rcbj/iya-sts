@@ -9,6 +9,7 @@ resolver = "2"
 members = [
   "crates/sts-crypto",
   "crates/sts-pki",
+  "crates/sts-cache",
   "crates/sts-xml",
   "crates/sts-core",
   "crates/sts-xacml",
@@ -25,6 +26,7 @@ publish = false
 # `workspace = true` — so two crates cannot quietly disagree about which
 # release of a library the service runs.
 [workspace.dependencies]
+sts-cache = { path = "crates/sts-cache" }
 sts-core = { path = "crates/sts-core" }
 sts-crypto = { path = "crates/sts-crypto" }
 sts-pki = { path = "crates/sts-pki" }
