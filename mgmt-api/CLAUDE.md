@@ -1240,6 +1240,36 @@ is who did it.
 
 `tests/admin_api_actor.js` holds it.
 
+## `GET /admin-api/me` — WHAT THE GATE DECIDED FOR THE CALLER (#446, 2026-10-05)
+
+The console is becoming a static application whose only knowledge of its
+reader is the access token it presents. What the server-rendered console
+learned from `adminViews.gateStateFor(req)` — who is signed in, which
+authority they are, what they hold, which pages `admin-ui/admin_scope.ts`
+hides from them, whether the roster is still open — this operation tells it.
+
+* **IT REPORTS THE GATE'S DECISION AND MAKES NONE.** The caller, scopes and
+  roles are the ones the gate left on `res.locals.apiCaller` for this very
+  request. `read` is "ADMIN_READ is among the roles the gate handed the access
+  policy" and `write` the same for ADMIN_WRITE, which are held ∩ carried
+  (#303). A second reading of the roster here could disagree with the gate
+  that has just let the request in.
+* **THE ROSTER IS ASKED FOR WHAT ONLY IT KNOWS**: whether the console is open
+  to anybody, and the bootstrap administrator's state (`console`). Asked for a
+  person only, in the token's realm; one that cannot be read reports itself
+  unavailable rather than failing the call.
+* **`authority` IS THE TOKEN'S REALM**: `service` for a default-realm token,
+  `realm` for a realm's own, as the gate's two keys decide (#32). `pages` is
+  the console's page list less what `adminScope.pageVisible()` hides from that
+  authority, so a realm administrator is not shown a service page.
+* **WITH NO TOKEN THERE IS NO CALLER** — development's open API — and both
+  `read` and `write` are true, which is what that state means.
+* **IT MIRRORS NO CONSOLE PAGE**, and its `mirrors` says so in words, as the
+  MDM feed's does: it is the banner and the navigation filter every page
+  draws.
+
+`tests/admin_api_me.js` holds it.
+
 ## `/admin-api/mfa`: A REPORT AND A RESET, AND DELIBERATELY NO ENROL (2026-09-10)
 
 **THE CONSOLE PAGE THIS MIRRORED IS GONE AND THIS RESOURCE IS NOT.**

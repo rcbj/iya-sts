@@ -119,6 +119,12 @@ the token.
 Where no token is required (development mode with `adminApi.authRequired`
 off), a call names nobody.
 
+`GET /admin-api/me` answers what the API decided about the caller: who the
+token names, which realm issued it and whether that makes the caller a service
+or a realm administrator, the scopes and roles in effect, whether it may read
+and write, and the console pages it may reach. The roles are read on every
+call, so a role granted or revoked since the token was minted shows at once.
+
 ## What it covers
 
 ### Every console control, for a machine
@@ -475,6 +481,7 @@ them on the console or with `POST /admin-api/config/set`.
 | `GET /admin-api` | The index: name, version and build, whether the API is `protected`, where the document and the explorer are, and a summary of every operation |
 | `GET /admin-api/openapi.json` | The OpenAPI 3.1 document, with `servers[0].url` set to the address the request reached. Behind the gate like everything else |
 | `GET /admin-api/status` | The cheapest call, and the one to poll: the issuer, the start time and the running totals |
+| `GET /admin-api/me` | What the API decided about the caller: who, which authority, the roles in effect and the pages they may reach |
 | `/admin/api-explorer` | The explorer, on the console; `GET /admin-api/api-explorer` reports where the document is, how many operations it describes and what your roles would grant |
 | `/admin/rbac` | The two console roles, and the `adminApi.*` and `admin.*` settings; `GET /admin-api/rbac` and `POST /admin-api/rbac/{grant,revoke}` |
 | `/admin/applications?application=sts-management-api` | The seeded client in this realm, including its secret |

@@ -190,6 +190,7 @@ them can drift from what the service does:
 | `GET /.well-known/openid-federation` | The realm's OpenID Federation Entity Configuration: its Federation Entity Keys, its federation, OpenID Provider, authorization server and verifier metadata, its superiors, and the Trust Marks it carries. The rest of the federation's endpoints are `/oidfed/*`. See [OpenID Federation](oidfed.md) |
 | `GET /oidfed/historical-keys` | Every Federation Entity Key the realm has retired or revoked, signed, with why |
 | `GET /admin-api/status` | Which console pages exist — what the parity test reads |
+| `GET /admin-api/me` | Who the access token names, what it may do, and which console pages it may reach |
 
 **Two rows in that table are behind the console's gate, and their `/admin-api`
 twins are not.** `GET /admin/ldap/service` and `GET /admin/ldap/federations`

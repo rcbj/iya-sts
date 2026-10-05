@@ -5091,6 +5091,113 @@ class AdminApi {
           log.debug("Leaving the management API status endpoint.");
         } },
 
+      // ---------------------------------------------------------------------
+      // WHO AM I, AND WHAT MAY I DO HERE (#446, 2026-10-05).
+      //
+      // The console is becoming a static application whose only knowledge of
+      // its reader is the access token it presents. Everything the
+      // server-rendered console learned from `adminViews.gateStateFor(req)` —
+      // who is signed in, which authority they are, what they hold, which
+      // pages `admin_scope.ts` hides from them, whether the roster is still
+      // open — it has to be TOLD, and this is where. It answers what the gate
+      // above DECIDED for this request rather than deciding anything: the
+      // caller, scopes and roles are the ones the gate left on
+      // `res.locals.apiCaller`, so the answer cannot disagree with what the
+      // next call will be allowed.
+      //
+      // It mirrors no console page: it is the console's banner and the
+      // filter on its navigation, which every page draws.
+      // ---------------------------------------------------------------------
+      { method: 'GET', path: BASE + '/me', tag: 'Service',
+        operationId: 'getMe',
+        summary: 'Who the caller is here, and what they may do',
+        description: 'What this API\'s gate decided for the access token ' +
+                     'on this request: the token\'s subject (`caller`: a ' +
+                     'person, or a client on `client_credentials`), the ' +
+                     'realm that issued it and whether that makes the ' +
+                     'caller a `service` or a `realm` authority, the ' +
+                     'scopes it carries that its client still declares, ' +
+                     'the roles its subject holds NOW that those scopes ' +
+                     'carry, and so whether it may `read` and `write`. ' +
+                     '`console` reports the roster the answer was read ' +
+                     'from: whether it is still open to anybody, and the ' +
+                     'bootstrap administrator\'s state. `pages` is every ' +
+                     'console page this caller may reach; a realm ' +
+                     'authority is not given the service pages.\n\n' +
+                     'A role granted or revoked since the token was minted ' +
+                     'shows here at once, because the roles are read on ' +
+                     'every call. Where no token is required (development ' +
+                     'mode with `adminApi.authRequired` off) there is no ' +
+                     'caller, and both `read` and `write` are true.',
+        mirrors: 'no console page — what the gate decided for the caller; ' +
+                 'the console draws its banner and its navigation from it',
+        responseDescription: 'The caller, the authority, the roles and the ' +
+                             'pages.',
+        responseSchema: {
+          type: 'object',
+          properties: {
+            tokenRequired: { type: 'boolean',
+              description: 'Whether this API requires an access token ' +
+                           'here: `adminApi.authRequired` as it is in ' +
+                           'force, which product mode reads as true.' },
+            caller: { type: ['object', 'null'],
+              description: 'The token\'s subject; null where no token ' +
+                           'is required.',
+              properties: {
+                kind: { type: 'string', enum: ['person', 'application'] },
+                name: { type: 'string' },
+                clientId: { type: 'string',
+                  description: 'The client the token was issued to.' }
+              } },
+            realm: { type: 'string',
+              description: 'The trust realm whose roster decides: the ' +
+                           'one that issued the token.' },
+            readingRealm: { type: 'string',
+              description: 'The trust realm this request was made in.' },
+            authority: { type: ['string', 'null'],
+              enum: ['service', 'realm', null],
+              description: '`service` for a default-realm token, which ' +
+                           'administers every realm; `realm` for a ' +
+                           'realm\'s own, confined to it.' },
+            scopes: { type: 'array', items: { type: 'string' } },
+            roles: { type: 'array', items: { type: 'string' } },
+            read: { type: 'boolean' },
+            write: { type: 'boolean' },
+            expiresAt: { type: ['integer', 'null'],
+              description: 'When the token stops being accepted, in ' +
+                           'seconds since the epoch.' },
+            mode: { type: 'string', enum: ['development', 'product'] },
+            readGroup: { type: 'string' },
+            writeGroup: { type: 'string' },
+            console: { type: 'object',
+              description: 'The roster the roles were read from.',
+              properties: {
+                available: { type: 'boolean',
+                  description: 'False where no directory is loaded.' },
+                open: { type: 'boolean',
+                  description: 'True while anybody who signs in holds ' +
+                               'both roles: development, before the ' +
+                               'bootstrap administrator has arrived.' },
+                empty: { type: 'boolean' },
+                windowOpens: { type: 'boolean',
+                  description: 'False in product mode, which never ' +
+                               'opens the console to anybody.' },
+                bootstrapPasswordRequired: { type: 'boolean',
+                  description: 'True for the bootstrap administrator ' +
+                               'before it has claimed the console with ' +
+                               'its password, in product mode.' },
+                bootstrap: { type: ['object', 'null'] }
+              } },
+            pages: { type: 'array', items: { type: 'string' },
+              description: 'The console pages this caller may reach.' }
+          }
+        },
+        handler: function (req, res) {
+          log.debug("Entering the management API me endpoint.");
+          self.sendJson(res, 200, self.meJson(req, res));
+          log.debug("Leaving the management API me endpoint.");
+        } },
+
       { method: 'GET', path: BASE + '/metrics', tag: 'Metrics',
         operationId: 'getMetrics',
         summary: 'Every call, every artifact, and both kinds of session',
@@ -20800,6 +20907,86 @@ class AdminApi {
   }
 
   // ---------------------------------------------------------------------------
+  // `GET /admin-api/me`'S ANSWER (#446, 2026-10-05) — see the operation.
+  //
+  // THE ROLES ARE THE GATE'S, NOT A SECOND READING. `read` is "the gate would
+  // let a GET through" and `write` "anything else": ADMIN_READ and ADMIN_WRITE
+  // among the roles the gate handed the access policy, which are held ∩
+  // carried (#303). Asking the roster again here could answer differently
+  // from the gate that has just let this very request in.
+  //
+  // The roster IS asked for what only it knows and the gate does not decide
+  // on: whether the console is still open to anybody, and the bootstrap
+  // administrator's state — what the server-rendered console's banner said
+  // from `gateStateFor()`. Asked for a person only, in the token's realm; a
+  // roster that cannot be read reports itself unavailable rather than
+  // failing the call.
+  // ---------------------------------------------------------------------------
+  /**
+   * Builds `GET /admin-api/me`'s answer from what the gate decided for this
+   * request.
+   *
+   * @param req - the request
+   * @param res - the response, whose locals the gate wrote
+   * @returns the caller, the authority, the scopes and roles, `read` and
+   *   `write`, the roster's state and the console pages the caller may reach
+   */
+  meJson(req, res) {
+    const { log, config, realms, mode, adminScope } = this.deps;
+    log.debug("Entering AdminApi.meJson().");
+    const caller = (res && res.locals && res.locals.apiCaller) || null;
+    const required = this.tokenRequired();
+    const realmId = caller ? String(caller.realm) : realms.currentId();
+    const authority = !caller ? null
+      : (realmId === realms.DEFAULT_ID ? 'service' : 'realm');
+    const roles = caller ? (caller.roles || []).slice(0) : [];
+    let roster = null;
+    if (caller && caller.kind === 'person') {
+      try {
+        roster = rbac.rolesOf(caller.name, realmId);
+      } catch (e) {
+        // A roster that cannot be read is reported as unavailable: this is a
+        // description of the caller, and the gate has already decided.
+        log.debug("Caught in AdminApi.meJson(): " + ((e && e.message) || e));
+        roster = null;
+      }
+    }
+    const scopeState = { authority: authority || undefined,
+                         identityRealm: realmId };
+    const json = {
+      tokenRequired: required,
+      caller: caller ? { kind: caller.kind, name: caller.name,
+                         clientId: caller.clientId } : null,
+      realm: realmId,
+      readingRealm: realms.currentId(),
+      authority: authority,
+      scopes: caller ? (caller.scopes || []).slice(0) : [],
+      roles: roles,
+      read: !required || roles.indexOf('ADMIN_READ') >= 0,
+      write: !required || roles.indexOf('ADMIN_WRITE') >= 0,
+      expiresAt: caller ? caller.expiresAt : null,
+      mode: mode.current(),
+      readGroup: config.value('admin.readGroup'),
+      writeGroup: config.value('admin.writeGroup'),
+      console: {
+        available: rbac.available(),
+        open: !!(roster && roster.open),
+        empty: !!(roster && roster.empty),
+        windowOpens: !roster || roster.windowOpens !== false,
+        bootstrapPasswordRequired: !!(roster && roster.claimPending),
+        bootstrap: (roster && roster.bootstrap) || null
+      },
+      pages: admin.consoleJson().pages.filter(function (path) {
+        return adminScope.pageVisible(scopeState, path);
+      })
+    };
+    log.debug("Leaving AdminApi.meJson(). " +
+              (caller ? caller.kind + ' ' + caller.name : 'no caller') +
+              ", read=" + json.read + ", write=" + json.write + ".");
+    return json;
+  }
+
+  // ---------------------------------------------------------------------------
   // THE ACTOR IS THE GATE'S ANSWER, NEVER THE CALLER'S (#446, 2026-10-05).
   //
   // Eighteen places in `admin-core/admin_actions.ts` read `body.actor` for
@@ -21291,7 +21478,14 @@ class AdminApi {
                                                          : 'person',
           name: String(effective.subject.name || ''),
           clientId: String(claims.client_id || ''),
-          realm: tokenRealm
+          realm: tokenRealm,
+          // What the decision above was made on, for `GET /admin-api/me`:
+          // the scopes the token carries that its client still declares,
+          // the roles its subject holds now that those scopes carry, and
+          // when the token stops being accepted.
+          scopes: scopes.slice(0),
+          roles: held.slice(0),
+          expiresAt: claims.exp ? Number(claims.exp) : null
         };
         return next();
       }

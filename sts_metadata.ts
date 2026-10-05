@@ -7639,6 +7639,15 @@ const ENDPOINTS: EndpointEntry[] = [
           'grant. It does not repeat the document — the operation above is ' +
           'the document. Mirrors GET /admin/api-explorer, which is where the ' +
           'explorer itself moved on 2026-09-09.' },
+  { path: '/admin-api/me', group: 'Management API', name: 'The caller',
+    specs: [],
+    what: 'NON-SPEC. What this API\'s gate decided for the access token ' +
+          'on the request (#446): the token\'s subject, the realm that ' +
+          'issued it and whether that is the service or a realm authority, ' +
+          'the roles held now that the scopes carry, whether the caller may ' +
+          'read and write, the roster\'s state, and the console pages the ' +
+          'caller may reach. Mirrors no console page: the console draws its ' +
+          'banner and its navigation from it.' },
   { path: '/admin-api/status', group: 'Management API', name: 'Service status',
     specs: [],
     what: 'NON-SPEC. The issuer, when this process started, and the running ' +
