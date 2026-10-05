@@ -901,6 +901,101 @@ class WebKit {
     return parts.join(' ');
   }
 
+  // One query parameter's first value as text, '' when absent: Express hands
+  // back an array for a repeated parameter. `admin_views.ts`'s, which calls
+  // this (#446).
+  /**
+   * Returns one query parameter's first value as text.
+   *
+   * @param query - the query
+   * @param key - the parameter's name
+   * @returns the value, or '' when absent
+   */
+  static queryOne(query, key) {
+    const raw = (query || {})[key];
+    const value = Array.isArray(raw) ? raw[0] : raw;
+    return value === undefined || value === null ? '' : String(value);
+  }
+
+  // ---------------------------------------------------------------------------
+  // A ONE-BOX SEARCH OVER ONE SECTION OF A PAGE THAT CARRIES SEVERAL.
+  //
+  // The list views have a filter form each and they can: a page with one table
+  // on it can put the filter, the page size and the search in one row above it
+  // and every control there is unambiguous. /admin/delegation is seven tables,
+  // and a second `q` would have been a box the reader has to guess the scope
+  // of. So each searchable section gets its own parameter and its own box,
+  // drawn immediately under its own heading, and the box says in its label
+  // WHICH table it narrows.
+  //
+  // It is deliberately NOT chooserPane(). That control is a SEARCH FOR ONE
+  // THING — it draws a scrolling pane of candidates and every hit is a link
+  // away from this page — and this one narrows a table the reader is going to
+  // stay and read. Sharing an implementation would have meant one function with
+  // a mode flag deciding whether its results were the answer or the rows, which
+  // is two controls wearing one name.
+  //
+  // THE FRAGMENT IS THE SAME TRICK AND FOR THE SAME REASON chooserPane()'s
+  // header argues at length: this is a GET that reloads the page, a reload
+  // lands at the top of the document, and this console runs no script (app.js
+  // sets `script-src 'none'`) so nothing can restore a scroll offset
+  // afterwards. Submitting to `#find-<param>` puts the box back under the
+  // reader's eyes. Submitting a GET form replaces the action URL's QUERY and
+  // leaves its FRAGMENT alone, which is why the anchor cannot be a hidden
+  // input.
+  //
+  // TWO NAMES COME OUT OF THE CARRIED SET AND EACH FOR ITS OWN REASON. The
+  // search term, because the text input re-emits it and a hidden input beside
+  // it would submit the old one; and the section's PAGE NUMBER, because a new
+  // search starts at its first page — carrying page 4 into a two-page result
+  // would be clamped by pagingOf() and read as the box ignoring what was typed.
+  //
+  // `spec`: { path, query, param, pageParam, label, placeholder, what }
+  /**
+   * Draws a one-box search form over one section of a multi-table page.
+   *
+   * The form submits to a fragment naming itself, carries every other page
+   * parameter, and drops the search term and the section's page number.
+   *
+   * @param spec - the path, query, param, pageParam, label, placeholder
+   *   and what of the search
+   * @returns the form, and the optional note under it, as HTML
+   */
+  static sectionSearchForm(spec) {
+    const esc = WebKit.esc;
+    const query = spec.query || {};
+    const wanted = WebKit.queryOne(query, spec.param).trim();
+    const anchor = 'find-' + spec.param;
+    const carried = WebKit.pageParamsOf(query);
+    delete carried[spec.param];
+    delete carried[spec.pageParam];
+    const hidden = Object.keys(carried).map(function (name) {
+      return '<input type="hidden" name="' + esc(name) + '" value="' +
+             esc(carried[name]) + '">';
+    }).join('');
+    return '<form method="get" id="' + esc(anchor) +
+           '" class="finder" action="' +
+      esc(spec.path) + '#' + esc(anchor) + '">' +
+      '<div class="formrow">' + hidden +
+        '<label for="' + esc(spec.param) + '">' + esc(spec.label) +
+        '</label><input type="text" id="' + esc(spec.param) + '" name="' +
+      esc(spec.param) +
+          '" size="32" value="' + esc(wanted) + '" placeholder="' +
+          esc(spec.placeholder) + '">' +
+        '<button class="secondary">Search</button>' +
+        (wanted
+          ? ' <a href="' +
+            esc(spec.path + WebKit.queryWith(carried, {})) + '#' +
+            esc(anchor) +
+            '">clear</a>'
+          : '') +
+      '</div></form>' +
+      // OUTSIDE the form rather than in it. A note() longer than a line is a
+      // `<details>`, and a disclosure widget inside a form is legal but reads
+      // as part of the control — this sentence is about the TABLE under the
+      // box.
+      (spec.what ? WebKit.note(spec.what) : '');
+  }
   // A query's VIEW parameters — every one but the three that are not part
   // of what is being looked at (`format`, and the `notice` and `error` a
   // redirect brought back) — first value each. `admin_views.ts`'s, which

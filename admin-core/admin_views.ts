@@ -4336,11 +4336,10 @@ class AdminViews {
   queryOne(query, key) {
     const { log } = this.deps;
     log.debug("Entering AdminViews.queryOne().");
-    const raw = (query || {})[key];
-    const value = Array.isArray(raw) ? raw[0] : raw;
     log.debug("Leaving AdminViews.queryOne().");
-    return value === undefined || value === null ? '' : String(value);
+    return WebKit.queryOne(query, key);
   }
+
 
   // Does one catalogue entry match what was typed? Case-insensitive, and over
   // EVERY spelling the catalogue holds rather than the one it shows: an

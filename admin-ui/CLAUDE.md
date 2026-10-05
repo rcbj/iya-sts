@@ -7283,7 +7283,7 @@ module always was, and imports the kit by its relative path.
 
 | File | What it is |
 |---|---|
-| `web_kit.ts` | The rendering kit: `esc()`, `tile()`, the prose helpers `note()`, `warn()`, `tip()`, `foldOf()` and what they stand on, and `whenText()`, `shortened()`, `clipped()`, `clippedValues()` `pageNavPair()`, `codeList()`, `perPageOptions()`, `perPageForm()`, `copyButton()`, `tabbedPanels()`, `pageParamsOf()` and `span()`, all moved VERBATIM out of `AdminConsole`; and `queryWith()`, which is `admin-core/admin_views.ts`'s written out. The methods of those names in `admin.ts` are delegates. |
+| `web_kit.ts` | The rendering kit: `esc()`, `tile()`, the prose helpers `note()`, `warn()`, `tip()`, `foldOf()` and what they stand on, and `whenText()`, `shortened()`, `clipped()`, `clippedValues()` `pageNavPair()`, `codeList()`, `perPageOptions()`, `perPageForm()`, `copyButton()`, `tabbedPanels()`, `pageParamsOf()`, `queryOne()`, `sectionSearchForm()` and `span()`, all moved VERBATIM out of `AdminConsole`; and `queryWith()`, which is `admin-core/admin_views.ts`'s written out. The methods of those names in `admin.ts` are delegates. |
 | `web_mode.ts` | The body of `/admin/mode`, from `GET /admin-api/mode`'s answer. It was `ModeAdmin.html()`. |
 | `web_worker_pools.ts` | The body of `/admin/worker-pools`. It was `WorkerPoolsAdmin`'s four drawing methods. |
 | `web_database.ts` | The body of `/admin/database`, and the table of its `SECTIONS`, which `database_admin.ts` now reads from here: the table is what the page is drawn from, and this module may not require that one. |
