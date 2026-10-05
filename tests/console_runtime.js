@@ -30,6 +30,9 @@
 //      drawn again with the answer in the strip; a form no operation
 //      mirrors is refused without a request.
 //   6. A drill-down's way up names its section and keeps the list's state.
+//   7. A tab survives: a page drawn at an address with a fragment makes it
+//      the `:target` again (a panel drawn after the navigation is not), and
+//      an act returns to the tab its form was on.
 // ---------------------------------------------------------------------------
 
 const fs = require('fs');
@@ -99,6 +102,7 @@ function childMain() {
     // THE BROWSER'S OBJECTS, AS STAND-INS where node has none.
     const makeEnv = function (pathname, search, fetchImpl) {
       const assigned = [];
+      const replaced = [];
       const store = {};
       const location = {
         origin: origin, pathname: pathname, search: search || '', hash: '',
@@ -107,6 +111,15 @@ function childMain() {
         },
         assign: function (url) {
           assigned.push(url);
+        },
+        // A navigation in place, as the browser's: recorded, and the
+        // address it names is where the location now is.
+        replace: function (url) {
+          replaced.push(url);
+          const u = new URL(url, origin);
+          location.pathname = u.pathname;
+          location.search = u.search;
+          location.hash = u.hash;
         }
       };
       const move = function (_s, _t, url) {
@@ -119,7 +132,7 @@ function childMain() {
                     querySelectorAll: function () { return []; },
                     addEventListener: function () {} };
       return {
-        assigned: assigned, store: store,
+        assigned: assigned, replaced: replaced, store: store,
         env: {
           fetch: fetchImpl || fetch, crypto: globalThis.crypto,
           location: location,
@@ -282,6 +295,28 @@ function childMain() {
          drilled.indexOf('<h1>Users ' + WRITER + '</h1>') >= 0,
          '6. a drill-down is titled for its item and its trail goes back ' +
          'to the list as it was filtered', drilled.slice(0, 300));
+
+    // --- 7. a tab survives the drawing and the act ---
+    const seven = makeEnv('/admin/users', '');
+    seven.env.location.hash = '#tab-config';
+    runtime = new ConsoleRuntime(seven.env);
+    await signedIn(runtime);
+    await runtime.route();
+    note(seven.replaced.length === 1 &&
+         seven.replaced[0] === '/admin/users#tab-config',
+         '7a. a page drawn at an address with a fragment navigates to it ' +
+         'again, so the tab\'s panel is the :target of the page drawn',
+         JSON.stringify(seven.replaced));
+    await runtime.submit({ getAttribute: function (name) {
+      return name === 'action' ? '/admin/users' : '';
+    }, fields: { action: 'clear-email-factor', user: WRITER } }, null);
+    note(seven.env.location.hash === '#tab-config' &&
+         /^\?(notice|error)=/.test(seven.env.location.search) &&
+         seven.replaced[seven.replaced.length - 1] ===
+           '/admin/users' + seven.env.location.search + '#tab-config',
+         '7b. an act returns to the tab its form was on, with its answer ' +
+         'in the strip', JSON.stringify(seven.replaced) + ' ' +
+           seven.env.location.href);
 
     server.close();
     require('fs').writeFileSync(OUT, JSON.stringify(findings));

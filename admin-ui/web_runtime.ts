@@ -89,6 +89,9 @@ class ConsoleRuntime {
   private me: Json;
   private formTable: Json;
   private view: Json;
+  // The path and query of the page last drawn: a `popstate` that changes
+  // neither is a fragment's, which the browser has already answered.
+  private drawnAt: string;
   private spec: Json;
 
   /**
@@ -113,6 +116,7 @@ class ConsoleRuntime {
     this.me = null;
     this.formTable = null;
     this.view = null;
+    this.drawnAt = '';
     this.spec = null;
   }
 
@@ -611,6 +615,12 @@ class ConsoleRuntime {
       WebShell.frame(shell, {
         title: title, active: active, up: up, inner: messages + inner,
         path: this.here() }), this.prefix);
+    // EVERY DRAWING replaces the panels a tab's `:target` named — a page
+    // routed to, a round trip, an act's answer — so the fragment is made
+    // the target again (targetFragment()), and what was drawn is recorded
+    // so the `popstate` that causes is known for a fragment's.
+    this.drawnAt = this.env.location.pathname + this.env.location.search;
+    this.targetFragment();
     this.wireCopyButtons();
     this.loadPageScripts();
   }
@@ -725,6 +735,29 @@ class ConsoleRuntime {
     }
     this.view = { page: page, json: answer.json, query: query };
     this.drawView(null);
+  }
+
+  // A TAB IS A FRAGMENT (`#tab-config`), and a panel is shown by CSS's
+  // `:target` — which the browser sets during a fragment NAVIGATION and never
+  // for an element drawn after it. So after a page is drawn whose address
+  // carries a fragment (a deep link, a reload, a link to another page's
+  // tab), the fragment is navigated to again — replacing the history entry
+  // rather than adding one — so `:target` matches the element now in the
+  // page. The `popstate` that follows changes neither path nor query, and is
+  // left alone (`start()`).
+  /**
+   * Makes the address's fragment the `:target` of the page just drawn.
+   *
+   * @returns nothing
+   */
+  targetFragment(): void {
+    const loc = this.env.location;
+    const hash = String(loc.hash || '');
+    if (!hash || !this.env.history || !loc.replace) {
+      return;
+    }
+    this.env.history.replaceState(null, '', loc.pathname + loc.search);
+    loc.replace(loc.pathname + loc.search + hash);
   }
 
   /**
@@ -1175,8 +1208,11 @@ class ConsoleRuntime {
       : ((json && json.errors) || []).join(' ') ||
         String((json && (json.why || json.error_description ||
                          json.error)) || 'Refused.');
+    // BACK TO THE TAB THE FORM WAS ON: the notice goes in the query and the
+    // fragment stays, so the answer is shown where the control was.
     await this.go(back + (back.indexOf('?') < 0 ? '?' : '&') + key + '=' +
-                  encodeURIComponent(message));
+                  encodeURIComponent(message) +
+                  String(this.env.location.hash || ''));
   }
 
   /**
@@ -1291,14 +1327,9 @@ class ConsoleRuntime {
       this.env.location.hash = url.hash;
       return;
     }
-    this.go(page + url.search).then(function () {
-      if (url.hash) {
-        const target = el.ownerDocument.getElementById(url.hash.slice(1));
-        if (target && target.scrollIntoView) {
-          target.scrollIntoView();
-        }
-      }
-    });
+    // The fragment goes with the address, and targetFragment() makes it
+    // the drawn page's `:target` (another page's tab, a section to land on).
+    this.go(page + url.search + url.hash);
   }
 
   // A PAGE'S OTHER FORMS — `?format=json`, `?format=svg` — were the
@@ -1487,6 +1518,15 @@ class ConsoleRuntime {
                          self.env.location.origin + String(path), body);
       };
       this.env.window.addEventListener('popstate', function () {
+        // A FRAGMENT'S OWN NAVIGATION — a tab pressed, or targetFragment() —
+        // changes neither the path nor the query, and the browser has
+        // already shown its target. Drawing the page again would draw the
+        // panel after the navigation and lose `:target`: the tab would flash
+        // and fall back to the first.
+        if (self.env.location.pathname + self.env.location.search ===
+            self.drawnAt) {
+          return;
+        }
         self.prefix = ConsoleRuntime.prefixOf(self.env.location.pathname);
         self.route();
       });
