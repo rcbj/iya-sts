@@ -13361,17 +13361,981 @@ function spkiDerOf(key) {
   return Buffer.from(der);
 }
 
+// ===========================================================================
+// SECTION 16 — PKINIT: CMS SIGNED DATA, DIFFIE-HELLMAN AND THE AS REPLY KEY
+// (#179, 2026-10-05).
+//
+// RFC 4556 authenticates a Kerberos AS-REQ with a certificate: the client
+// SIGNS an AuthPack in a CMS SignedData, the KDC verifies it, both sides run
+// a Diffie-Hellman exchange, and the AS reply key is DERIVED from the agreed
+// secret. Every one of those is a cryptographic operation, so every one of
+// them is here, for rcbj's rule of 2026-10-05 ("all crypto operations across
+// all protocols and use cases are to be centralized in a common module"):
+// `kerberos/krb5_pkinit.ts` decides what to accept, and asks this section
+// to read, verify, agree, derive and sign.
+//
+//   * CMS SignedData (RFC 5652), READ AND VERIFIED: the client's
+//     signedAuthPack — one SignerInfo, the content-type and message-digest
+//     signed attributes, a signature over the signed attributes AS THEY
+//     ARRIVED (`scep/scep_cms.ts`'s fourth decision, for its reason). An
+//     anonymous request (RFC 8062 section 4.1.1) carries a SignedData with
+//     no SignerInfo and no certificate, which `pkinitReadSignedData()` reads
+//     and the caller recognises.
+//   * CMS SignedData, WRITTEN: the KDC's dhSignedData over a KDCDHKeyInfo,
+//     signed with the realm's KDC key — RSA PKCS #1 v1.5 or ECDSA, SHA-256 —
+//     with the certificate chain minus the Root (RFC 4556 section 3.2.3.1
+//     item 6: "MUST NOT contain root CA certificates").
+//   * THE DIGESTS ARE SHA-256, SHA-384 AND SHA-512. RFC 4556 predates
+//     SHA-2's ubiquity and RFC 8636 section 4 is how a KDC says it refuses
+//     the older ones: KDC_ERR_DIGEST_IN_SIGNED_DATA_NOT_ACCEPTED with
+//     TD-CMS-DIGEST-ALGORITHMS, the list from `PKINIT_CMS_DIGEST_OIDS`.
+//     SHA-1 and MD5 are refused in both modes.
+//   * MODP DIFFIE-HELLMAN over RFC 3526's groups 14 to 18, and RFC 5349's
+//     ECDH over P-256, P-384 and P-521. GROUP 2 (1024 bits) IS REFUSED,
+//     although RFC 4556 section 3.2.1 makes it a MUST: RFC 3766 puts it near
+//     80 bits, and MIT's own client has refused it since 1.17 (its
+//     `pkinit_dh_min_bits` defaults to 2048). The refusal is
+//     KDC_ERR_DH_KEY_PARAMETERS_NOT_ACCEPTED with TD-DH-PARAMETERS listing
+//     what is taken, which is how a client learns to retry.
+//   * NO RSA KEY TRANSPORT (RFC 4556 section 3.2.3.2), which #179 excludes:
+//     the reply key encrypted to the client's RSA key has no forward secrecy,
+//     and the Marvin attack is about exactly that decryption. A request
+//     without a clientPublicValue is the caller's refusal,
+//     KDC_ERR_PUBLIC_KEY_ENCRYPTION_NOT_SUPPORTED.
+//   * THE REPLY KEY: RFC 4556 section 3.2.3.1's `octetstring2key()` (SHA-1
+//     in counter mode), and RFC 8636 section 6's KDFs — SP 800-56A's one-step
+//     KDF over SHA-1, SHA-256, SHA-384 or SHA-512 with an ASN.1 OtherInfo
+//     that binds the AS-REQ and the PA-PK-AS-REP into the key. The OtherInfo
+//     is a Kerberos structure and `kerberos/krb5_pkinit_codec.ts` encodes it;
+//     what is here is the hashing. Both are held to RFC 8636 section 8's
+//     vectors by `tests/kerberos_pkinit.js`.
+//
+// **POST-QUANTUM.** No post-quantum PKINIT is standardised. The two places
+// one would go are named here so the next reader does not have to find them:
+// the KEY AGREEMENT (`pkinitKeyAgreement()`) is the quantum-exposed part — a
+// recorded exchange is broken by whoever can later solve the discrete log —
+// and an ML-KEM encapsulation to a key in the clientPublicValue would replace
+// it, with the reply key derived from the shared secret through the same RFC
+// 8636 KDF; and the SIGNATURES (`pkinitVerifySignedData()`,
+// `pkinitSignedData()`) would take ML-DSA through CMS (RFC 9882) where the
+// table `PKINIT_CMS_SIGNATURES` lists the classical ones. Neither is offered
+// until a client exists to send it.
+//
+// It stays a LEAF: node's `crypto` and `asn1js`, nothing of this service.
+// ===========================================================================
+
+// The OIDs PKINIT's CMS uses.
+/** The object identifiers PKINIT's CMS and key agreement use. */
+const PKINIT_OID = {
+  signedData: '1.2.840.113549.1.7.2',
+  contentType: '1.2.840.113549.1.9.3',
+  messageDigest: '1.2.840.113549.1.9.4',
+  authData: '1.3.6.1.5.2.3.1',
+  dhKeyData: '1.3.6.1.5.2.3.2',
+  dhPublicNumber: '1.2.840.10046.2.1',
+  ecPublicKey: '1.2.840.10045.2.1'
+};
+
+// The digests a CMS signature here may be made over, by OID, in the order
+// the KDC prefers them — the order TD-CMS-DIGEST-ALGORITHMS lists.
+/**
+ * The CMS digest algorithms PKINIT accepts, by OID, in preference order.
+ */
+const PKINIT_CMS_DIGEST_OIDS = {
+  '2.16.840.1.101.3.4.2.1': { id: 'sha256', label: 'SHA-256' },
+  '2.16.840.1.101.3.4.2.2': { id: 'sha384', label: 'SHA-384' },
+  '2.16.840.1.101.3.4.2.3': { id: 'sha512', label: 'SHA-512' }
+};
+// The ones a client may send and is told no about, by name.
+const PKINIT_REFUSED_DIGESTS = {
+  '1.3.14.3.2.26': 'SHA-1',
+  '1.2.840.113549.2.5': 'MD5'
+};
+
+// A SignerInfo's signatureAlgorithm: the key it needs and, where the OID
+// names one, the digest it must agree with. `rsaEncryption` names none and
+// takes the SignerInfo's digestAlgorithm, which is what OpenSSL — and so
+// MIT's client — writes. RSASSA-PSS and EdDSA are not in PKINIT's use and
+// are refused as unknown.
+/**
+ * The CMS signature algorithms PKINIT verifies, by OID, with the key type
+ * each needs and the digest an OID names.
+ */
+const PKINIT_CMS_SIGNATURES = {
+  '1.2.840.113549.1.1.1': { key: 'rsa', digest: null,
+                            label: 'RSA PKCS #1 v1.5' },
+  '1.2.840.113549.1.1.11': { key: 'rsa', digest: 'sha256',
+                             label: 'sha256WithRSAEncryption' },
+  '1.2.840.113549.1.1.12': { key: 'rsa', digest: 'sha384',
+                             label: 'sha384WithRSAEncryption' },
+  '1.2.840.113549.1.1.13': { key: 'rsa', digest: 'sha512',
+                             label: 'sha512WithRSAEncryption' },
+  '1.2.840.10045.4.3.2': { key: 'ec', digest: 'sha256',
+                           label: 'ecdsa-with-SHA256' },
+  '1.2.840.10045.4.3.3': { key: 'ec', digest: 'sha384',
+                           label: 'ecdsa-with-SHA384' },
+  '1.2.840.10045.4.3.4': { key: 'ec', digest: 'sha512',
+                           label: 'ecdsa-with-SHA512' }
+};
+
+// The key-agreement groups, in the order the KDC prefers them — the order
+// TD-DH-PARAMETERS lists. The curves first: P-256 is faster than any MODP
+// group and stronger than group 14. `node` is node's name for each.
+/**
+ * The Diffie-Hellman groups PKINIT agrees over, in preference order:
+ * RFC 5349's curves, then RFC 3526's MODP groups 14 to 18.
+ */
+const PKINIT_DH_GROUPS = [
+  { id: 'P-256', kind: 'ec', oid: '1.2.840.10045.3.1.7', node: 'prime256v1',
+    bits: 256, label: 'ECDH on P-256 (RFC 5349)' },
+  { id: 'P-384', kind: 'ec', oid: '1.3.132.0.34', node: 'secp384r1',
+    bits: 384, label: 'ECDH on P-384 (RFC 5349)' },
+  { id: 'P-521', kind: 'ec', oid: '1.3.132.0.35', node: 'secp521r1',
+    bits: 521, label: 'ECDH on P-521 (RFC 5349)' },
+  { id: 'modp14', kind: 'modp', node: 'modp14', bits: 2048,
+    label: 'RFC 3526 group 14 (2048-bit MODP)' },
+  { id: 'modp15', kind: 'modp', node: 'modp15', bits: 3072,
+    label: 'RFC 3526 group 15 (3072-bit MODP)' },
+  { id: 'modp16', kind: 'modp', node: 'modp16', bits: 4096,
+    label: 'RFC 3526 group 16 (4096-bit MODP)' },
+  { id: 'modp17', kind: 'modp', node: 'modp17', bits: 6144,
+    label: 'RFC 3526 group 17 (6144-bit MODP)' },
+  { id: 'modp18', kind: 'modp', node: 'modp18', bits: 8192,
+    label: 'RFC 3526 group 18 (8192-bit MODP)' }
+];
+
+// RFC 8636 section 6's KDFs, strongest first — the order the KDC picks from
+// the client's unordered set.
+/**
+ * RFC 8636's key derivation functions, strongest first.
+ */
+const PKINIT_KDFS = [
+  { oid: '1.3.6.1.5.2.3.6.3', hash: 'sha512',
+    label: 'id-pkinit-kdf-ah-sha512' },
+  { oid: '1.3.6.1.5.2.3.6.4', hash: 'sha384',
+    label: 'id-pkinit-kdf-ah-sha384' },
+  { oid: '1.3.6.1.5.2.3.6.2', hash: 'sha256',
+    label: 'id-pkinit-kdf-ah-sha256' },
+  { oid: '1.3.6.1.5.2.3.6.1', hash: 'sha1', label: 'id-pkinit-kdf-ah-sha1' }
+];
+
+// ---------------------------------------------------------------------------
+// A HANDFUL OF DER WRITERS. The structures written here are small and fixed,
+// and writing the bytes is plainer than building asn1js objects to write
+// them: a definite-length TLV, an INTEGER from unsigned bytes, a SET OF
+// sorted as DER requires.
+// ---------------------------------------------------------------------------
+function pkinitDerLength(n) {
+  log.debug("Entering pkinitDerLength().");
+  if (n < 0x80) {
+    log.debug("Leaving pkinitDerLength().");
+    return Buffer.from([n]);
+  }
+  const bytes = [];
+  let rest = n;
+  while (rest > 0) {
+    bytes.unshift(rest & 0xff);
+    rest = Math.floor(rest / 256);
+  }
+  log.debug("Leaving pkinitDerLength().");
+  return Buffer.from([0x80 | bytes.length].concat(bytes));
+}
+
+function pkinitTlv(tag, content) {
+  log.debug("Entering pkinitTlv().");
+  const body = Buffer.concat((Array.isArray(content) ? content : [content])
+    .map(function (one) { return Buffer.from(one); }));
+  log.debug("Leaving pkinitTlv().");
+  return Buffer.concat([Buffer.from([tag]), pkinitDerLength(body.length),
+                        body]);
+}
+
+function pkinitOidDer(dotted) {
+  log.debug("Entering pkinitOidDer(). " + dotted);
+  const arcs = String(dotted).split('.').map(function (one) {
+    return BigInt(one);
+  });
+  const out = [];
+  const writeArc = function (arc) {
+    const septets = [Number(arc & 0x7fn)];
+    let rest = arc >> 7n;
+    while (rest > 0n) {
+      septets.unshift(Number(rest & 0x7fn) | 0x80);
+      rest >>= 7n;
+    }
+    out.push.apply(out, septets);
+  };
+  writeArc(arcs[0] * 40n + arcs[1]);
+  arcs.slice(2).forEach(writeArc);
+  log.debug("Leaving pkinitOidDer().");
+  return pkinitTlv(0x06, Buffer.from(out));
+}
+
+// An unsigned big-endian value as a DER INTEGER: leading zeros dropped, one
+// put back where the top bit would read as a sign.
+function pkinitUnsignedIntegerDer(bytes) {
+  log.debug("Entering pkinitUnsignedIntegerDer().");
+  let value = Buffer.from(bytes || []);
+  let start = 0;
+  while (start < value.length - 1 && value[start] === 0) {
+    start++;
+  }
+  value = value.subarray(start);
+  if (!value.length) {
+    value = Buffer.from([0]);
+  }
+  if (value[0] & 0x80) {
+    value = Buffer.concat([Buffer.from([0]), value]);
+  }
+  log.debug("Leaving pkinitUnsignedIntegerDer().");
+  return pkinitTlv(0x02, value);
+}
+
+// DER's SET OF: the elements sorted by their encodings (X.690 11.6).
+function pkinitSetOf(elements) {
+  log.debug("Entering pkinitSetOf().");
+  const sorted = elements.map(function (one) {
+    return Buffer.from(one);
+  }).sort(Buffer.compare);
+  log.debug("Leaving pkinitSetOf().");
+  return pkinitTlv(0x31, sorted);
+}
+
+// ---------------------------------------------------------------------------
+// READING, WITH asn1js. One value and nothing after it, as `scep_cms.ts`
+// reads: bytes nobody signed riding behind a signed structure are bytes two
+// readers disagree about.
+// ---------------------------------------------------------------------------
+function pkinitReadOne(bytes, what) {
+  log.debug("Entering pkinitReadOne(). " + what);
+  const buf = Buffer.from(bytes || []);
+  let parsed = null;
+  try {
+    parsed = buf.length ? asn1js.fromBER(new Uint8Array(buf).buffer) : null;
+  } catch (e) {
+    log.debug("Caught in pkinitReadOne(): " + ((e && e.message) || e));
+    parsed = null;
+  }
+  if (!parsed || parsed.offset === -1 || parsed.offset !== buf.length ||
+      parsed.result.error) {
+    log.debug("Leaving pkinitReadOne(). Not one value.");
+    // error-code: none — a reader; the caller refuses what does not decode
+    throw new Error('pkinit: ' + what + ' is not one BER value');
+  }
+  log.debug("Leaving pkinitReadOne().");
+  return parsed.result;
+}
+
+// HOT PATH helpers for the tree walk below: called per node of every
+// SignedData, so no Entering/Leaving pair. It would drown the log.
+function pkinitKids(node) {
+  return node && node.valueBlock && Array.isArray(node.valueBlock.value)
+    ? node.valueBlock.value : [];
+}
+
+// HOT PATH: per node of every SignedData, as pkinitKids() above.
+function pkinitIs(node, tagClass, tagNumber) {
+  return !!(node && node.idBlock && node.idBlock.tagClass === tagClass &&
+            node.idBlock.tagNumber === tagNumber);
+}
+
+// HOT PATH: per node of every SignedData, as pkinitKids() above.
+function pkinitRaw(node) {
+  return Buffer.from(node.valueBeforeDecodeView);
+}
+
+// HOT PATH: per node of every SignedData, as pkinitKids() above.
+function pkinitOidOf(node) {
+  return pkinitIs(node, 1, 6) ? String(node.valueBlock.toString()) : '';
+}
+
+// The octets of an OCTET STRING, primitive or BER-constructed, or of an
+// implicitly tagged one. HOT PATH: per node, as pkinitKids() above.
+function pkinitOctets(node) {
+  if (!node || !node.idBlock) {
+    return null;
+  }
+  if (node.idBlock.isConstructed ||
+      (node.valueBlock && node.valueBlock.isConstructed)) {
+    const parts = [];
+    const kids = pkinitKids(node);
+    for (let i = 0; i < kids.length; i++) {
+      const one = pkinitOctets(kids[i]);
+      if (one === null) {
+        return null;
+      }
+      parts.push(one);
+    }
+    return Buffer.concat(parts);
+  }
+  const view = node.valueBlock && node.valueBlock.valueHexView;
+  return view ? Buffer.from(view) : null;
+}
+
+// A certificate's issuer Name and serialNumber, as their encodings, and its
+// subjectKeyIdentifier when it has one: what a SignerIdentifier is matched
+// against.
+/**
+ * Reads a certificate's issuer, serial number and subject key identifier as
+ * their DER encodings, for matching a CMS SignerIdentifier.
+ *
+ * @param certDer - the certificate
+ * @returns `{ issuer, serial, ski }`; `ski` is null when absent
+ * @throws Error when it is not a certificate
+ */
+function pkinitCertificateIds(certDer) {
+  log.debug("Entering pkinitCertificateIds().");
+  const cert = pkinitReadOne(certDer, 'a certificate');
+  const tbs = pkinitKids(cert)[0];
+  const fields = pkinitKids(tbs);
+  const i = pkinitIs(fields[0], 3, 0) ? 1 : 0;
+  const serial = fields[i];
+  const issuer = fields[i + 2];
+  if (!pkinitIs(serial, 1, 2) || !pkinitIs(issuer, 1, 16)) {
+    log.debug("Leaving pkinitCertificateIds(). Not a certificate.");
+    // error-code: none — a reader; the caller refuses what does not decode
+    throw new Error('pkinit: not an X.509 certificate');
+  }
+  let ski = null;
+  const extensions = fields.filter(function (one) {
+    return pkinitIs(one, 3, 3);
+  })[0];
+  pkinitKids(pkinitKids(extensions)[0]).forEach(function (ext) {
+    const parts = pkinitKids(ext);
+    if (pkinitOidOf(parts[0]) === '2.5.29.14') {
+      const wrapped = pkinitOctets(parts[parts.length - 1]);
+      try {
+        ski = pkinitOctets(pkinitReadOne(wrapped, 'a subjectKeyIdentifier'));
+      } catch (e) {
+        log.debug("Caught in pkinitCertificateIds(): " +
+                  ((e && e.message) || e));
+        ski = null;
+      }
+    }
+  });
+  log.debug("Leaving pkinitCertificateIds().");
+  return { issuer: pkinitRaw(issuer), serial: pkinitRaw(serial), ski: ski };
+}
+
+// ---------------------------------------------------------------------------
+// READ A SignedData: `{ eContentType, eContent, certificates, signerInfos }`,
+// each SignerInfo with its sid, digest, signature algorithm, the signed
+// attributes as they arrived and the two this section checks. Throws when it
+// is not one.
+// ---------------------------------------------------------------------------
+/**
+ * Reads a CMS ContentInfo holding a SignedData: the encapsulated content,
+ * the certificates and each SignerInfo with its signed attributes as they
+ * arrived.
+ *
+ * @param contentInfoDer - the ContentInfo
+ * @returns `{ eContentType, eContent, certificates, signerInfos }`
+ * @throws Error when it is not a SignedData
+ */
+function pkinitReadSignedData(contentInfoDer) {
+  log.debug("Entering pkinitReadSignedData().");
+  const info = pkinitReadOne(contentInfoDer, 'the ContentInfo');
+  const top = pkinitKids(info);
+  if (!pkinitIs(info, 1, 16) ||
+      pkinitOidOf(top[0]) !== PKINIT_OID.signedData ||
+      !pkinitIs(top[1], 3, 0)) {
+    log.debug("Leaving pkinitReadSignedData(). Not a SignedData.");
+    // error-code: none — a reader; the caller refuses what does not decode
+    throw new Error('pkinit: the ContentInfo does not hold a SignedData');
+  }
+  const signed = pkinitKids(pkinitKids(top[1])[0]);
+  const encap = pkinitKids(signed[2]);
+  const eContentType = pkinitOidOf(encap[0]);
+  const eContent = encap[1] && pkinitIs(encap[1], 3, 0)
+    ? pkinitOctets(pkinitKids(encap[1])[0]) : null;
+  let at = 3;
+  const certificates = [];
+  if (signed[at] && pkinitIs(signed[at], 3, 0)) {
+    pkinitKids(signed[at]).forEach(function (one) {
+      if (pkinitIs(one, 1, 16)) {
+        certificates.push(pkinitRaw(one));
+      }
+    });
+    at++;
+  }
+  if (signed[at] && pkinitIs(signed[at], 3, 1)) {
+    at++;
+  }
+  const signerSet = signed[at];
+  if (!eContentType || !pkinitIs(signerSet, 1, 17) ||
+      signed.length !== at + 1) {
+    log.debug("Leaving pkinitReadSignedData(). Malformed.");
+    // error-code: none — a reader; the caller refuses what does not decode
+    throw new Error('pkinit: the SignedData is not well formed');
+  }
+  const signerInfos = pkinitKids(signerSet).map(function (si) {
+    const f = pkinitKids(si);
+    const sid = f[1];
+    let k = 3;
+    let signedAttrsRaw = null;
+    const attrs = {};
+    if (f[k] && pkinitIs(f[k], 3, 0)) {
+      signedAttrsRaw = pkinitRaw(f[k]);
+      pkinitKids(f[k]).forEach(function (attr) {
+        const parts = pkinitKids(attr);
+        const type = pkinitOidOf(parts[0]);
+        const values = pkinitKids(parts[1]);
+        if (values.length !== 1) {
+          // error-code: none — a reader; the caller refuses what does not decode
+          throw new Error('pkinit: a signed attribute has ' + values.length +
+                          ' values');
+        }
+        if (type === PKINIT_OID.contentType) {
+          attrs.contentType = pkinitOidOf(values[0]);
+        } else if (type === PKINIT_OID.messageDigest) {
+          attrs.messageDigest = pkinitOctets(values[0]);
+        }
+      });
+      k++;
+    }
+    return {
+      sid: pkinitIs(sid, 3, 0)
+        ? { ski: pkinitOctets(sid) }
+        : { issuer: pkinitRaw(pkinitKids(sid)[0]),
+            serial: pkinitRaw(pkinitKids(sid)[1]) },
+      digestAlg: pkinitOidOf(pkinitKids(f[2])[0]),
+      signedAttrsRaw: signedAttrsRaw,
+      contentTypeAttr: attrs.contentType || '',
+      messageDigestAttr: attrs.messageDigest || null,
+      signatureAlg: pkinitOidOf(pkinitKids(f[k])[0]),
+      signature: pkinitOctets(f[k + 1])
+    };
+  });
+  log.debug("Leaving pkinitReadSignedData(). " + certificates.length +
+            " certificate(s), " + signerInfos.length + " signer(s).");
+  return { eContentType: eContentType, eContent: eContent,
+           certificates: certificates, signerInfos: signerInfos };
+}
+
+// Does a SignerIdentifier name this certificate?
+/**
+ * Says whether a SignerInfo's identifier names a certificate.
+ *
+ * @param sid - the `sid` of a `pkinitReadSignedData()` signer
+ * @param certDer - the certificate
+ * @returns true when it does
+ */
+function pkinitSignerIdentifies(sid, certDer) {
+  log.debug("Entering pkinitSignerIdentifies().");
+  let ids = null;
+  try {
+    ids = pkinitCertificateIds(certDer);
+  } catch (e) {
+    log.debug("Caught in pkinitSignerIdentifies(): " +
+              ((e && e.message) || e));
+    log.debug("Leaving pkinitSignerIdentifies(). Not a certificate.");
+    return false;
+  }
+  const same = sid.ski
+    ? !!ids.ski && ids.ski.equals(Buffer.from(sid.ski))
+    : ids.issuer.equals(Buffer.from(sid.issuer)) &&
+      ids.serial.equals(Buffer.from(sid.serial));
+  log.debug("Leaving pkinitSignerIdentifies(). " + same);
+  return same;
+}
+
+// ---------------------------------------------------------------------------
+// VERIFY a SignedData's one signature with the signer's certificate.
+// Answers `{ ok: true, digest }` or `{ ok: false, reason, why }`, the reason
+// being which RFC 4556 error the caller sends: `digest`
+// (KDC_ERR_DIGEST_IN_SIGNED_DATA_NOT_ACCEPTED) or `signature`
+// (KDC_ERR_INVALID_SIG).
+// ---------------------------------------------------------------------------
+/**
+ * Verifies a SignedData's one signature with the signer's certificate: the
+ * digest, the content-type and message-digest attributes and the signature
+ * over the signed attributes as they arrived.
+ *
+ * @param signed - a `pkinitReadSignedData()` answer
+ * @param certDer - the signer's certificate
+ * @returns `{ ok: true, digest }`, or `{ ok: false, reason, why }` with a
+ *   reason of `digest` or `signature`
+ */
+function pkinitVerifySignedData(signed, certDer) {
+  log.debug("Entering pkinitVerifySignedData().");
+  const signer = signed.signerInfos[0];
+  if (signed.signerInfos.length !== 1) {
+    log.debug("Leaving pkinitVerifySignedData(). Not one signer.");
+    return { ok: false, reason: 'signature',
+             why: 'the SignedData has ' + signed.signerInfos.length +
+                  ' SignerInfos; RFC 4556 section 3.2.1 item 4 requires one' };
+  }
+  const digest = PKINIT_CMS_DIGEST_OIDS[signer.digestAlg];
+  if (!digest) {
+    log.debug("Leaving pkinitVerifySignedData(). Digest refused.");
+    return { ok: false, reason: 'digest',
+             why: 'the AuthPack is signed over ' +
+                  (PKINIT_REFUSED_DIGESTS[signer.digestAlg] ||
+                   'an unknown digest (' + signer.digestAlg + ')') +
+                  '; this KDC accepts SHA-256, SHA-384 and SHA-512' };
+  }
+  let x509 = null;
+  try {
+    x509 = new nodeCrypto.X509Certificate(Buffer.from(certDer));
+  } catch (e) {
+    log.debug("Caught in pkinitVerifySignedData(): " + ((e && e.message) || e));
+    x509 = null;
+  }
+  const keyType = x509 ? x509.publicKey.asymmetricKeyType : '';
+  const sig = PKINIT_CMS_SIGNATURES[signer.signatureAlg];
+  if (!x509 || !sig || sig.key !== keyType ||
+      (sig.digest && sig.digest !== digest.id)) {
+    log.debug("Leaving pkinitVerifySignedData(). Signature algorithm.");
+    return { ok: false, reason: 'signature',
+             why: 'the signature algorithm (' + signer.signatureAlg + ') is ' +
+                  'not one this KDC verifies, or does not agree with the ' +
+                  'digest or with the ' + (keyType || 'unreadable') +
+                  ' key in the signer\'s certificate' };
+  }
+  if (!signer.signedAttrsRaw || signer.contentTypeAttr !==
+      signed.eContentType) {
+    log.debug("Leaving pkinitVerifySignedData(). content-type attribute.");
+    // RFC 4556 section 3.2.1 item 2: "the signed attribute content-type MUST
+    // be present in this SignedData instance".
+    return { ok: false, reason: 'signature',
+             why: 'the SignedData carries no content-type signed attribute ' +
+                  'naming its content (' + signed.eContentType + ')' };
+  }
+  const computed = nodeCrypto.createHash(digest.id)
+    .update(signed.eContent || Buffer.alloc(0)).digest();
+  const claimed = signer.messageDigestAttr;
+  if (!claimed || claimed.length !== computed.length ||
+      !nodeCrypto.timingSafeEqual(claimed, computed)) {
+    log.debug("Leaving pkinitVerifySignedData(). message-digest.");
+    return { ok: false, reason: 'signature',
+             why: 'the message-digest signed attribute is not the ' +
+                  digest.label + ' of the AuthPack' };
+  }
+  const signedBytes = Buffer.from(signer.signedAttrsRaw);
+  signedBytes[0] = 0x31;
+  let verified = false;
+  try {
+    verified = nodeCrypto.verify(digest.id, signedBytes, x509.publicKey,
+                                 signer.signature || Buffer.alloc(0));
+  } catch (e) {
+    log.debug("Caught in pkinitVerifySignedData(): " + ((e && e.message) || e));
+    verified = false;
+  }
+  if (!verified) {
+    log.debug("Leaving pkinitVerifySignedData(). Does not verify.");
+    return { ok: false, reason: 'signature',
+             why: 'the signature over the AuthPack does not verify with the ' +
+                  'signer\'s certificate' };
+  }
+  log.debug("Leaving pkinitVerifySignedData(). " + digest.label + ", " +
+            sig.label);
+  return { ok: true, digest: digest.id };
+}
+
+// ---------------------------------------------------------------------------
+// WRITE a SignedData: one signer, SHA-256, the content-type and
+// message-digest signed attributes, the signer's certificate and the chain
+// handed in (the caller leaves the Root out). RSA keys sign PKCS #1 v1.5 and
+// say `rsaEncryption`, as OpenSSL writes it; EC keys sign ECDSA.
+// ---------------------------------------------------------------------------
+/**
+ * Writes a CMS ContentInfo holding a SignedData over `content`, signed with
+ * SHA-256 by an RSA or EC key, carrying the given certificates — or, with no
+ * `privateKey`, RFC 8062's unsigned SignedData, with no signer and no
+ * certificate.
+ *
+ * @param opts - `contentType` (an OID), `content` (bytes), `signerCertDer`,
+ *   `chainDers` (more certificates, the Root left out) and `privateKey`
+ * @returns the ContentInfo's DER
+ * @throws Error for a key that is neither RSA nor EC
+ */
+function pkinitSignedData(opts) {
+  log.debug("Entering pkinitSignedData(). " + opts.contentType);
+  const content = Buffer.from(opts.content);
+  const sha256 = pkinitTlv(0x30, [pkinitOidDer('2.16.840.1.101.3.4.2.1')]);
+  if (!opts.privateKey) {
+    // RFC 8062 section 4.1.1's anonymous AuthPack: "the signerInfos field of
+    // the SignedData ... is empty, and the certificates field is absent".
+    log.debug("Leaving pkinitSignedData(). Unsigned.");
+    return pkinitTlv(0x30, [pkinitOidDer(PKINIT_OID.signedData),
+      pkinitTlv(0xa0, [pkinitTlv(0x30, [
+        pkinitUnsignedIntegerDer([3]),
+        pkinitSetOf([sha256]),
+        pkinitTlv(0x30, [pkinitOidDer(opts.contentType),
+                         pkinitTlv(0xa0, [pkinitTlv(0x04, content)])]),
+        pkinitTlv(0x31, [])])])]);
+  }
+  const key = nodeCrypto.createPrivateKey(opts.privateKey);
+  const kind = key.asymmetricKeyType;
+  if (kind !== 'rsa' && kind !== 'ec') {
+    log.debug("Leaving pkinitSignedData(). Unsupported key.");
+    // error-code: none — a programming error; the KDC key is RSA or EC
+    throw new Error('pkinit: a KDC signs with RSA or EC, not ' + kind);
+  }
+  const signatureAlg = kind === 'rsa'
+    ? pkinitTlv(0x30, [pkinitOidDer('1.2.840.113549.1.1.1'),
+                       Buffer.from([0x05, 0x00])])
+    : pkinitTlv(0x30, [pkinitOidDer('1.2.840.10045.4.3.2')]);
+  const attrs = [
+    pkinitTlv(0x30, [pkinitOidDer(PKINIT_OID.contentType),
+                     pkinitSetOf([pkinitOidDer(opts.contentType)])]),
+    pkinitTlv(0x30, [pkinitOidDer(PKINIT_OID.messageDigest),
+                     pkinitSetOf([pkinitTlv(0x04,
+                       nodeCrypto.createHash('sha256').update(content)
+                         .digest())])])
+  ];
+  const signedAttrs = pkinitSetOf(attrs);
+  const signature = nodeCrypto.sign('sha256', signedAttrs, key);
+  const ids = pkinitCertificateIds(opts.signerCertDer);
+  const signerInfo = pkinitTlv(0x30, [
+    pkinitUnsignedIntegerDer([1]),
+    pkinitTlv(0x30, [ids.issuer, ids.serial]),
+    sha256,
+    Buffer.concat([Buffer.from([0xa0]), signedAttrs.subarray(1)]),
+    signatureAlg,
+    pkinitTlv(0x04, signature)
+  ]);
+  const certificates = [opts.signerCertDer].concat(opts.chainDers || []);
+  const signedData = pkinitTlv(0x30, [
+    // Version 3: the content is not id-data (RFC 5652 section 5.1).
+    pkinitUnsignedIntegerDer([3]),
+    pkinitSetOf([sha256]),
+    pkinitTlv(0x30, [pkinitOidDer(opts.contentType),
+                     pkinitTlv(0xa0, [pkinitTlv(0x04, content)])]),
+    pkinitTlv(0xa0, certificates.map(function (one) {
+      return Buffer.from(one);
+    })),
+    pkinitSetOf([signerInfo])
+  ]);
+  log.debug("Leaving pkinitSignedData().");
+  return pkinitTlv(0x30, [pkinitOidDer(PKINIT_OID.signedData),
+                          pkinitTlv(0xa0, [signedData])]);
+}
+
+// ---------------------------------------------------------------------------
+// THE KEY AGREEMENT. The client's SubjectPublicKeyInfo names the group and
+// carries its public value; the KDC makes an ephemeral key in the same
+// group, computes the shared secret and answers its own public value in the
+// form KDCDHKeyInfo's BIT STRING carries (RFC 3279: a DER INTEGER for MODP,
+// the uncompressed point for a curve). Answers `{ ok: true, group, secret,
+// kdcPublicValue }` or `{ ok: false, reason: 'params' | 'value', why }`;
+// `params` is KDC_ERR_DH_KEY_PARAMETERS_NOT_ACCEPTED.
+//
+// **THE SHARED SECRET IS PADDED TO THE MODULUS** (RFC 4556 section 3.2.3.1:
+// "padded with leading zeros such that the size of DHSharedSecret in octets
+// is the same as that of the modulus"), which node does not promise. An ECDH
+// secret is the x-coordinate at the field's size (RFC 5349 section 4), which
+// node does.
+//
+// **THE CLIENT'S VALUE IS CHECKED** before it is used: 1 < y < p - 1 for a
+// MODP group, whose primes are safe primes so that the range check is the
+// small-subgroup check; a point on the curve for ECDH, which node refuses
+// otherwise.
+// ---------------------------------------------------------------------------
+/**
+ * Runs the KDC's half of a PKINIT Diffie-Hellman exchange against the
+ * client's SubjectPublicKeyInfo: the group checked against
+ * `PKINIT_DH_GROUPS`, the client's value checked, an ephemeral key made.
+ *
+ * @param clientSpkiDer - the AuthPack's clientPublicValue
+ * @returns `{ ok: true, group, secret, kdcPublicValue }`, or `{ ok: false,
+ *   reason, why }` with a reason of `params` or `value`
+ */
+function pkinitKeyAgreement(clientSpkiDer) {
+  log.debug("Entering pkinitKeyAgreement().");
+  let spki;
+  try {
+    spki = pkinitReadOne(clientSpkiDer, 'the clientPublicValue');
+  } catch (e) {
+    log.debug("Caught in pkinitKeyAgreement(): " + ((e && e.message) || e));
+    log.debug("Leaving pkinitKeyAgreement(). Unreadable.");
+    return { ok: false, reason: 'params',
+             why: 'the clientPublicValue is not a SubjectPublicKeyInfo' };
+  }
+  const algorithm = pkinitKids(pkinitKids(spki)[0]);
+  const bits = pkinitKids(spki)[1];
+  const oid = pkinitOidOf(algorithm[0]);
+  const publicBits = bits && pkinitIs(bits, 1, 3) && bits.valueBlock &&
+                     bits.valueBlock.valueHexView
+    ? Buffer.from(bits.valueBlock.valueHexView) : null;
+  if (!publicBits) {
+    log.debug("Leaving pkinitKeyAgreement(). No public value.");
+    return { ok: false, reason: 'params',
+             why: 'the clientPublicValue carries no public key' };
+  }
+  if (oid === PKINIT_OID.ecPublicKey) {
+    const curveOid = pkinitOidOf(algorithm[1]);
+    const group = PKINIT_DH_GROUPS.filter(function (one) {
+      return one.kind === 'ec' && one.oid === curveOid;
+    })[0];
+    if (!group) {
+      log.debug("Leaving pkinitKeyAgreement(). Curve refused.");
+      return { ok: false, reason: 'params',
+               why: 'ECDH on the curve ' + (curveOid || '(not named)') +
+                    ' is not accepted; this KDC agrees on P-256, P-384 and ' +
+                    'P-521' };
+    }
+    const ecdh = nodeCrypto.createECDH(group.node);
+    ecdh.generateKeys();
+    let secret;
+    try {
+      secret = ecdh.computeSecret(publicBits);
+    } catch (e) {
+      log.debug("Caught in pkinitKeyAgreement(): " + ((e && e.message) || e));
+      log.debug("Leaving pkinitKeyAgreement(). Not a point on the curve.");
+      return { ok: false, reason: 'value',
+               why: 'the client\'s ECDH public value is not a point on ' +
+                    group.id };
+    }
+    log.debug("Leaving pkinitKeyAgreement(). " + group.id);
+    return { ok: true, group: group, secret: Buffer.from(secret),
+             kdcPublicValue: Buffer.from(ecdh.getPublicKey(null,
+                                                            'uncompressed')) };
+  }
+  if (oid !== PKINIT_OID.dhPublicNumber) {
+    log.debug("Leaving pkinitKeyAgreement(). Not DH.");
+    return { ok: false, reason: 'params',
+             why: 'the clientPublicValue is a ' + (oid || 'unnamed') +
+                  ' key, not Diffie-Hellman (dhpublicnumber) or ECDH ' +
+                  '(id-ecPublicKey)' };
+  }
+  const domain = pkinitKids(algorithm[1]).map(function (one) {
+    return pkinitIs(one, 1, 2) ? Buffer.from(one.valueBlock.valueHexView)
+                               : null;
+  });
+  const stripped = function (buf) {
+    log.debug("Entering stripped().");
+    let i = 0;
+    while (buf && i < buf.length - 1 && buf[i] === 0) {
+      i++;
+    }
+    log.debug("Leaving stripped().");
+    return buf ? buf.subarray(i) : Buffer.alloc(0);
+  };
+  const p = stripped(domain[0]);
+  const g = stripped(domain[1]);
+  const group = PKINIT_DH_GROUPS.filter(function (one) {
+    if (one.kind !== 'modp') {
+      return false;
+    }
+    const known = nodeCrypto.getDiffieHellman(one.node);
+    return stripped(known.getPrime()).equals(p) &&
+           stripped(known.getGenerator()).equals(g);
+  })[0];
+  if (!group) {
+    log.debug("Leaving pkinitKeyAgreement(). Group refused.");
+    return { ok: false, reason: 'params',
+             why: 'the Diffie-Hellman group (' + (p.length * 8) + '-bit ' +
+                  'modulus) is not one of RFC 3526\'s groups 14 to 18; ' +
+                  'group 2 and any group of the client\'s own are refused' };
+  }
+  const dh = nodeCrypto.getDiffieHellman(group.node);
+  const prime = BigInt('0x' + dh.getPrime().toString('hex'));
+  let y;
+  try {
+    const intNode = pkinitReadOne(publicBits, 'the DH public value');
+    y = pkinitIs(intNode, 1, 2)
+      ? BigInt('0x' + (Buffer.from(intNode.valueBlock.valueHexView)
+                         .toString('hex') || '0'))
+      : -1n;
+  } catch (e) {
+    log.debug("Caught in pkinitKeyAgreement(): " + ((e && e.message) || e));
+    y = -1n;
+  }
+  if (y <= 1n || y >= prime - 1n) {
+    log.debug("Leaving pkinitKeyAgreement(). Value out of range.");
+    return { ok: false, reason: 'value',
+             why: 'the client\'s Diffie-Hellman public value is outside ' +
+                  '1 < y < p - 1' };
+  }
+  dh.generateKeys();
+  const modulusBytes = dh.getPrime().length;
+  const yBytes = Buffer.from(y.toString(16).padStart(modulusBytes * 2, '0'),
+                             'hex');
+  const raw = Buffer.from(dh.computeSecret(yBytes));
+  const secret = Buffer.concat([Buffer.alloc(Math.max(0,
+                                  modulusBytes - raw.length)), raw]);
+  log.debug("Leaving pkinitKeyAgreement(). " + group.id);
+  return { ok: true, group: group, secret: secret,
+           kdcPublicValue: pkinitUnsignedIntegerDer(dh.getPublicKey()) };
+}
+
+// The groups this KDC takes, as the AlgorithmIdentifiers TD-DH-PARAMETERS
+// lists (RFC 4556 section 3.2.2; RFC 3279 section 2.3.3 for a MODP group,
+// its DomainParameters p, g and q; RFC 5349 section 4 for a curve).
+/**
+ * Returns the AlgorithmIdentifiers of the groups this KDC agrees over, in
+ * preference order, for TD-DH-PARAMETERS.
+ *
+ * @returns the DER of each
+ */
+function pkinitDhParameters() {
+  log.debug("Entering pkinitDhParameters().");
+  const out = PKINIT_DH_GROUPS.map(function (group) {
+    if (group.kind === 'ec') {
+      return pkinitTlv(0x30, [pkinitOidDer(PKINIT_OID.ecPublicKey),
+                              pkinitOidDer(group.oid)]);
+    }
+    const dh = nodeCrypto.getDiffieHellman(group.node);
+    const p = BigInt('0x' + dh.getPrime().toString('hex'));
+    const q = (p - 1n) / 2n;
+    return pkinitTlv(0x30, [pkinitOidDer(PKINIT_OID.dhPublicNumber),
+      pkinitTlv(0x30, [pkinitUnsignedIntegerDer(dh.getPrime()),
+                       pkinitUnsignedIntegerDer(dh.getGenerator()),
+                       pkinitUnsignedIntegerDer(Buffer.from(
+                         q.toString(16).padStart(dh.getPrime().length * 2,
+                                                 '0'), 'hex'))])]);
+  });
+  log.debug("Leaving pkinitDhParameters().");
+  return out;
+}
+
+// The digests this KDC accepts in a SignedData, as AlgorithmIdentifiers, for
+// TD-CMS-DIGEST-ALGORITHMS (RFC 8636 section 4).
+/**
+ * Returns the AlgorithmIdentifiers of the CMS digests this KDC accepts, in
+ * preference order, for TD-CMS-DIGEST-ALGORITHMS.
+ *
+ * @returns the DER of each
+ */
+function pkinitDigestAlgorithms() {
+  log.debug("Entering pkinitDigestAlgorithms().");
+  log.debug("Leaving pkinitDigestAlgorithms().");
+  return Object.keys(PKINIT_CMS_DIGEST_OIDS).map(function (oid) {
+    return pkinitTlv(0x30, [pkinitOidDer(oid)]);
+  });
+}
+
+// RFC 4556 section 3.2.1 item 6: paChecksum is the SHA-1 of the
+// KDC-REQ-BODY. SHA-1 because the RFC fixes it, and only as a binding of the
+// request to the signed AuthPack: the reply key's binding to the exchange is
+// RFC 8636's KDF, whose OtherInfo covers the whole AS-REQ.
+/**
+ * Computes RFC 4556's paChecksum, the SHA-1 of the KDC-REQ-BODY, and
+ * compares it with the one a request carries in constant time.
+ *
+ * @param reqBodyBytes - the KDC-REQ-BODY as it arrived
+ * @param claimed - the PKAuthenticator's paChecksum
+ * @returns true when they agree
+ */
+function pkinitPaChecksumMatches(reqBodyBytes, claimed) {
+  log.debug("Entering pkinitPaChecksumMatches().");
+  const computed = nodeCrypto.createHash('sha1')
+    .update(Buffer.from(reqBodyBytes || [])).digest();
+  const given = Buffer.from(claimed || []);
+  log.debug("Leaving pkinitPaChecksumMatches().");
+  return given.length === computed.length &&
+         nodeCrypto.timingSafeEqual(given, computed);
+}
+
+// The key-generation seed length of an AS reply key's enctype, which is its
+// key length for every enctype this KDC uses: random-to-key is the identity
+// for the AES enctypes (RFC 3962, RFC 8009) and for rc4-hmac (RFC 4757).
+function pkinitSeedBytes(etype) {
+  log.debug("Entering pkinitSeedBytes(). " + etype);
+  const profile = KRB5_PRF_ETYPES[etype];
+  if (!profile) {
+    log.debug("Leaving pkinitSeedBytes(). Unknown enctype.");
+    // error-code: none — the caller chose the enctype from this KDC's list
+    throw new Error('pkinit: no reply key of enctype ' + etype +
+                    ' is derived here');
+  }
+  log.debug("Leaving pkinitSeedBytes().");
+  return profile.keyBytes;
+}
+
+/**
+ * RFC 4556 section 3.2.3.1's `octetstring2key()`: the SHA-1 of a counter
+ * octet and the input, in counter mode, truncated to the enctype's key
+ * length, as the AS reply key.
+ *
+ * @param etype - the reply key's enctype
+ * @param x - DHSharedSecret, with n_c and n_k when DH keys are reused
+ * @returns `{ etype, key }`
+ */
+function pkinitOctetString2Key(etype, x) {
+  log.debug("Entering pkinitOctetString2Key(). " + etype);
+  const size = pkinitSeedBytes(etype);
+  const parts = [];
+  let have = 0;
+  for (let counter = 0; have < size; counter++) {
+    const block = nodeCrypto.createHash('sha1')
+      .update(Buffer.from([counter & 0xff])).update(Buffer.from(x)).digest();
+    parts.push(block);
+    have += block.length;
+  }
+  log.debug("Leaving pkinitOctetString2Key().");
+  return { etype: Number(etype),
+           key: new Uint8Array(Buffer.concat(parts).subarray(0, size)) };
+}
+
+/**
+ * RFC 8636 section 6's KDF: SP 800-56A's one-step KDF, H(counter || Z ||
+ * OtherInfo) in counter mode, truncated to the enctype's key length, as the
+ * AS reply key.
+ *
+ * @param kdfOid - one of `PKINIT_KDFS`
+ * @param z - the Diffie-Hellman shared secret, padded to the modulus
+ * @param otherInfo - the DER OtherInfo (`krb5_pkinit_codec.ts` builds it)
+ * @param etype - the reply key's enctype
+ * @returns `{ etype, key }`
+ * @throws Error for a KDF not in the table
+ */
+function pkinitKdf(kdfOid, z, otherInfo, etype) {
+  log.debug("Entering pkinitKdf(). " + kdfOid + " " + etype);
+  const kdf = PKINIT_KDFS.filter(function (one) {
+    return one.oid === String(kdfOid);
+  })[0];
+  if (!kdf) {
+    log.debug("Leaving pkinitKdf(). Unknown KDF.");
+    // error-code: none — the caller chose the KDF from `PKINIT_KDFS`
+    throw new Error('pkinit: ' + kdfOid + ' is not a KDF of RFC 8636');
+  }
+  const size = pkinitSeedBytes(etype);
+  const parts = [];
+  let have = 0;
+  for (let counter = 1; have < size; counter++) {
+    const c = Buffer.alloc(4);
+    c.writeUInt32BE(counter >>> 0, 0);
+    const block = nodeCrypto.createHash(kdf.hash).update(c)
+      .update(Buffer.from(z)).update(Buffer.from(otherInfo)).digest();
+    parts.push(block);
+    have += block.length;
+  }
+  log.debug("Leaving pkinitKdf(). " + kdf.label);
+  return { etype: Number(etype),
+           key: new Uint8Array(Buffer.concat(parts).subarray(0, size)) };
+}
+
 /**
  * The one place this service signs, verifies, encrypts and decrypts.
  *
  * XML Signature and Encryption, JWS and JWE, keys and certificates, password
  * hashing, the key-encryption key, raw signatures, TPM and attestation
- * structures, the Kerberos PRF, DKIM, random values and HTTP Message
- * Signatures with Content-Digest. A leaf library that
+ * structures, the Kerberos PRF, DKIM, random values, HTTP Message
+ * Signatures with Content-Digest, and PKINIT's CMS, key agreement and reply
+ * key. A leaf library that
  * may never require `helpers` back.
  * @namespace
  */
 module.exports = {
+  // --- section 16: PKINIT's CMS, key agreement and reply key (#179) ---
+  PKINIT_OID: PKINIT_OID,
+  PKINIT_CMS_DIGEST_OIDS: PKINIT_CMS_DIGEST_OIDS,
+  PKINIT_CMS_SIGNATURES: PKINIT_CMS_SIGNATURES,
+  PKINIT_DH_GROUPS: PKINIT_DH_GROUPS,
+  PKINIT_KDFS: PKINIT_KDFS,
+  pkinitCertificateIds: pkinitCertificateIds,
+  pkinitReadSignedData: pkinitReadSignedData,
+  pkinitSignerIdentifies: pkinitSignerIdentifies,
+  pkinitVerifySignedData: pkinitVerifySignedData,
+  pkinitSignedData: pkinitSignedData,
+  pkinitKeyAgreement: pkinitKeyAgreement,
+  pkinitDhParameters: pkinitDhParameters,
+  pkinitDigestAlgorithms: pkinitDigestAlgorithms,
+  pkinitPaChecksumMatches: pkinitPaChecksumMatches,
+  pkinitOctetString2Key: pkinitOctetString2Key,
+  pkinitKdf: pkinitKdf,
   // --- section 15: digests, key derivation and key import (#178) ---
   DIGESTS: DIGESTS,
   digest: digest,

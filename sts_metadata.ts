@@ -357,8 +357,9 @@ const SPECS: Spec[] = [
               'carrying the salt, ticket flags, clock-skew enforcement and ' +
               'the error catalogue. Two realms with a trust between them, so ' +
               'cross-realm referrals work. FAST and OTP pre-authentication are ' +
-              'their own rows (RFC 6113, RFC 6560); no request signatures, ' +
-              'no PKINIT, no kpasswd (S4U is [MS-SFU], its own row). The AP ' +
+              'their own rows (RFC 6113, RFC 6560), and so is PKINIT (RFC ' +
+              '4556); no request signatures, no kpasswd (S4U is [MS-SFU], ' +
+              'its own row). The AP ' +
               'exchange belongs to the protected service, not here. ' +
               // The rule for these notes is that they say what would mislead
               // somebody who believed the row. "Pre-authentication is
@@ -387,7 +388,8 @@ const SPECS: Spec[] = [
               'with random keys an operator created; and a person who holds ' +
               'or must hold a second factor gets NO ticket on the password ' +
               'alone (KDC_ERR_POLICY, after the password verified) — only ' +
-              'through FAST with OTP pre-authentication.' },
+              'through FAST with OTP pre-authentication, or with a ' +
+              'certificate through PKINIT.' },
   { id: 'rfc6113', name: 'A Generalized Framework for Kerberos ' +
                          'Pre-Authentication — FAST (RFC 6113)',
     where: 'IETF',
@@ -404,9 +406,11 @@ const SPECS: Spec[] = [
               'wherever the directory is loaded. NOT implemented: FAST in ' +
               'the TGS exchange (implicit armor — a TGS-REQ that carries it ' +
               'is answered unarmored, which MIT\'s client accepts), ' +
-              'anonymous PKINIT armor, the hide-client-names option ' +
+              'the hide-client-names option ' +
               '(refused as an unknown critical option), authentication sets ' +
-              '(section 5.3) and AD-authentication-strength.' },
+              '(section 5.3) and AD-authentication-strength. An anonymous ' +
+              'PKINIT TGT (RFC 8062, its own row) armors as a host\'s ' +
+              'does.' },
   { id: 'rfc6560', name: 'One-Time Password (OTP) Pre-Authentication ' +
                          '(RFC 6560)',
     where: 'IETF',
@@ -432,8 +436,78 @@ const SPECS: Spec[] = [
               'realm\'s own TGT into the tickets it buys (never under S4U or ' +
               'across a trust); the acceptor reads it only from a CAMMAC ' +
               'that verifies under its key, and /authn/spnego counts it as ' +
-              'a second factor. No other indicator is issued, and ' +
-              'other-verifiers are neither written nor read.' },
+              'a second factor. A PKINIT ticket carries `pkinit`, and ' +
+              '`pkinit-hardware` beside it for a smart-card logon ' +
+              'certificate over a key this service never held, which ' +
+              '/authn/spnego reads as `swk` and `hwk`. No other indicator is ' +
+              'issued, and other-verifiers are neither written nor read.' },
+  { id: 'rfc4556', name: 'Public Key Cryptography for Initial ' +
+                         'Authentication in Kerberos — PKINIT (RFC 4556)',
+    where: 'IETF',
+    url: 'https://www.rfc-editor.org/rfc/rfc4556',
+    coverage: 'partial: PA-PK-AS-REQ in the AS exchange, in FAST and out, ' +
+              'per trust realm (krb5.pkinit, on by default). The signed ' +
+              'AuthPack is verified (SHA-256, SHA-384 or SHA-512 — SHA-1 ' +
+              'and MD5 are refused with the RFC 8636 error data); the ' +
+              'client certificate is validated to the service Root through ' +
+              'this realm\'s own identity Issuing CAs, its revocation ' +
+              'consulted under pki.revocationCheck, its EKU required ' +
+              '(id-pkinit-KPClientAuth or smart-card logon) and its binding ' +
+              'to the client checked — recorded on the person\'s entry, or ' +
+              'an id-pkinit-san naming them; the paChecksum, the timestamp ' +
+              'and a replay check across the cluster. The reply is ' +
+              'Diffie-Hellman (MODP groups 14 to 18, RFC 3526), signed with ' +
+              'the realm\'s KDC certificate (id-pkinit-KPKdc and an ' +
+              'id-pkinit-san of krbtgt/REALM) from a Kerberos KDC Issuing ' +
+              'CA of its own; the ticket ends no later than the client ' +
+              'certificate and carries AD-INITIAL-VERIFIED-CAS, which the ' +
+              'TGS copies. NOT implemented: public-key encryption of the ' +
+              'reply key (section 3.2.3.2), refused ' +
+              'KDC_ERR_PUBLIC_KEY_ENCRYPTION_NOT_SUPPORTED because it has no ' +
+              'forward secrecy; MODP group 2, refused as too weak; DH key ' +
+              'reuse (no serverDHNonce); and certificates from any authority ' +
+              'but this realm\'s. No post-quantum PKINIT is standardised.' },
+  { id: 'rfc8070', name: 'PKINIT Freshness Extension (RFC 8070)',
+    where: 'IETF',
+    url: 'https://www.rfc-editor.org/rfc/rfc8070',
+    coverage: 'full: a PA-AS-FRESHNESS token, sealed under the realm\'s ' +
+              'krbtgt key and valid for the clock skew, in every ' +
+              'KDC_ERR_PREAUTH_REQUIRED that asks for one or where the realm ' +
+              'requires one; required by default ' +
+              '(krb5.pkinitRequireFreshness), with KDC_ERR_PREAUTH_FAILED ' +
+              'and KDC_ERR_PREAUTH_EXPIRED each carrying a fresh token.' },
+  { id: 'rfc8636', name: 'PKINIT Algorithm Agility (RFC 8636)',
+    where: 'IETF',
+    url: 'https://www.rfc-editor.org/rfc/rfc8636',
+    coverage: 'full: the four KDFs (SHA-1, SHA-256, SHA-384, SHA-512), the ' +
+              'strongest the client offers chosen, with the OtherInfo ' +
+              'binding ' +
+              'the AS-REQ and the PA-PK-AS-REP into the reply key (held to ' +
+              'section 8\'s vectors); TD-CMS-DIGEST-ALGORITHMS and ' +
+              'TD-CERT-DIGEST-ALGORITHMS on the two digest refusals; ' +
+              'KDC_ERR_NO_ACCEPTABLE_KDF. RFC 4556\'s own derivation is ' +
+              'refused unless krb5.pkinitLegacyKdf allows it.' },
+  { id: 'rfc5349', name: 'Elliptic Curve Cryptography Support for PKINIT ' +
+                         '(RFC 5349)',
+    where: 'IETF',
+    url: 'https://www.rfc-editor.org/rfc/rfc5349',
+    coverage: 'full: ECDH on P-256, P-384 and P-521 as the key agreement, ' +
+              'ECDSA client and KDC certificates and signatures, and ' +
+              'TD-DH-PARAMETERS listing the curves first.' },
+  { id: 'rfc8062', name: 'Anonymity Support for Kerberos (RFC 8062)',
+    where: 'IETF',
+    url: 'https://www.rfc-editor.org/rfc/rfc8062',
+    coverage: 'partial: anonymous PKINIT in the AS exchange — an unsigned ' +
+              'AuthPack for WELLKNOWN/ANONYMOUS, a TGT in ' +
+              'WELLKNOWN:ANONYMOUS ' +
+              'with the anonymous flag and nothing naming anybody, and ' +
+              'PA-PKINIT-KX, the KDC\'s contribution to the session key — ' +
+              'as FAST ARMOR for a client with no host keytab ' +
+              '(krb5.anonymousPkinit). By policy it is only that: only a ' +
+              'TGT for this realm is issued, and the TGS refuses an ' +
+              'anonymous ticket. NOT implemented: anonymous tickets in the ' +
+              'TGS exchange (section 4.2) and an authenticated client ' +
+              'asking for an anonymous ticket.' },
   { id: 'rfc3961', name: 'Kerberos encryption framework (RFC 3961/3962/8009, ' +
                          'RFC 4757)',
     where: 'IETF',
@@ -3200,7 +3274,8 @@ const ENDPOINTS: EndpointEntry[] = [
     // tests/vendored/sts_metadata.js fails the page for. It was listed and
     // unlinked when the Kerberos rows were first added.
     specs: ['ms-kkdcp', 'rfc4120', 'rfc3961', 'rfc6113', 'rfc6560',
-            'rfc8129'],
+            'rfc8129', 'rfc4556', 'rfc8070', 'rfc8636', 'rfc5349',
+            'rfc8062'],
     what: 'Relays a KDC-PROXY-MESSAGE to the KDC listening on TCP and UDP ' +
           'port 88 in this process. A browser cannot open a raw socket, so ' +
           'this is how the in-browser client reaches a KDC without the api ' +

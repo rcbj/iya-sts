@@ -31593,6 +31593,46 @@ class AdminConsole {
       '</table>' +
       '<p><a href="/admin/kerberos/principals">Rotate it on ' +
       'Principals</a></p>';
+    // PKINIT (#179): a certificate as the pre-authentication, and anonymous
+    // PKINIT as FAST armor — `kerberos/krb5_pkinit.ts`'s policy().
+    const pkinitProvider = krb5Principals.pkinitProvider();
+    const pkinit = pkinitProvider ? pkinitProvider.policy() : null;
+    const pkinitHtml = !pkinit ? '' :
+      '<h3>PKINIT: a certificate as the pre-authentication</h3>' +
+      '<table class="key"><tr><th>What</th><th>Answer</th></tr>' +
+      row('PKINIT (RFC 4556)', pkinit.pkinit
+        ? '<span class="state-valid">on</span> — ' +
+          this.esc(pkinit.clientCertificates)
+        : '<span class="state-none">off</span> (<code>krb5.pkinit</code>)') +
+      row('Key agreement', this.esc(pkinit.keyAgreement.join(', ')) +
+          '; RSA key transport ' + this.esc(pkinit.rsaKeyTransport)) +
+      row('Reply key (RFC 8636)', this.esc(pkinit.kdfs.join(', ')) +
+          (pkinit.legacyKdf ? '; RFC 4556\'s own derivation ACCEPTED ' +
+                              '(<code>krb5.pkinitLegacyKdf</code>)'
+                            : '; RFC 4556\'s own derivation refused')) +
+      row('Freshness token (RFC 8070)', pkinit.freshnessRequired
+        ? 'required' : 'accepted, not required') +
+      row('KDC certificate', pkinit.kdcCertificate
+        ? this.esc(pkinit.kdcCertificate.keyAlg + ', serial ' +
+                   pkinit.kdcCertificate.serialHex + ', expires ' +
+                   pkinit.kdcCertificate.notAfter) +
+          ' — from the Kerberos KDC Issuing CA on <a href="/admin/pki">' +
+          'PKI</a>; clients trust the service Root'
+        : 'none yet in this process — issued on the first PKINIT request, ' +
+          'with ' + this.esc(pkinit.kdcKeyAlgorithm)) +
+      row('What the ticket says', 'the indicators <code>pkinit</code>, and ' +
+          '<code>pkinit-hardware</code> with hw-authent for a smart-card ' +
+          'logon certificate over a key this service never held; ' +
+          '<code>/authn/spnego</code> reads them as <code>swk</code> and ' +
+          '<code>hwk</code>, never <code>pwd</code>') +
+      row('Anonymous PKINIT (RFC 8062)', pkinit.anonymousPkinit
+        ? '<span class="state-valid">on</span> — ' +
+          this.esc(pkinit.anonymousTickets) +
+          ' (<code>kinit -n</code>, then <code>kinit -T</code>)'
+        : '<span class="state-none">off</span> ' +
+          '(<code>krb5.anonymousPkinit</code>)') +
+      row('Post-quantum', this.esc(pkinit.postQuantum)) +
+      '</table>';
     const html =
       '<h3>Pre-authentication, and a second factor</h3>' +
       '<table class="key"><tr><th>What</th><th>Answer</th></tr>' +
@@ -31614,8 +31654,8 @@ class AdminConsole {
         ? 'RFC 6560 OTP pre-authentication inside FAST: the password as the ' +
           'PIN and the person\'s authenticator app code, checked by the ' +
           'sign-in screen\'s own verifier and once-only step ' +
-          '(<code>kinit -T &lt;armor ccache&gt;</code>). A security key over ' +
-          'Kerberos (PKINIT) is not supported.'
+          '(<code>kinit -T &lt;armor ccache&gt;</code>). A smart-card or ' +
+          'security-key certificate is PKINIT, below.'
         : 'none') +
       row('What the ticket says', info.fast
         ? 'the RFC 8129 authentication indicator <code>' +
@@ -31623,9 +31663,9 @@ class AdminConsole {
           'service tickets; <code>/authn/spnego</code> counts it as the ' +
           'second factor (<code>amr</code> pwd, otp; <code>acr</code> mfa)'
         : '—') +
-      '</table>' + krbtgtHtml;
+      '</table>' + pkinitHtml + krbtgtHtml;
     const json = Object.assign({ passwordAloneRefused: refuses }, info,
-                               { krbtgt: krbtgt });
+                               { krbtgt: krbtgt, pkinit: pkinit });
     log.debug("Leaving AdminConsole.kerberosPreauthStatusBlock().");
     return { html: html, json: json };
   }

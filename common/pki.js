@@ -364,6 +364,25 @@ const USE_CASES = [
           'listener.hostnames. REALM-scoped because the listener answers ' +
           'that realm alone. One per node; the private key never leaves ' +
           'the node that serves it.' },
+  // **THE REALM'S KDC, FOR PKINIT (#179, 2026-10-05).** A PKINIT reply is a
+  // CMS SignedData the client verifies against this service's Root, and RFC
+  // 4556 section 3.2.4 has it require that the KDC's certificate name the
+  // ticket-granting service of the realm it asked (an id-pkinit-san
+  // `krbtgt/REALM@REALM`) or carry id-pkinit-KPKdc — this authority's leaves
+  // carry both. REALM-scoped because a KDC answers one trust realm's Kerberos
+  // realm, and an Issuing CA of its own because "this certificate may answer
+  // PKINIT as the realm's KDC" is a power over every client that trusts the
+  // Root: no other authority here issues it, and the enrollment protocols
+  // refuse the `kdc` profile for the same reason. One leaf per realm per
+  // process, issued by `issueKdcKeyPair()` on first use, its private key held
+  // in that process's memory and nowhere else.
+  { id: 'kdc', scope: 'realm', label: 'Kerberos KDC (PKINIT)',
+    cn: 'Kerberos KDC Issuing CA',
+    what: 'The certificate this realm\'s KDC signs its PKINIT replies with ' +
+          '(RFC 4556): id-pkinit-KPKdc in its extended key usage and the ' +
+          'realm\'s ticket-granting service, krbtgt/REALM@REALM, in an ' +
+          'id-pkinit-san. One per process, made when PKINIT is first used; ' +
+          'the private key never leaves the process that made it.' },
   // **THE THREE ENROLLMENT PROTOCOLS (2026-09-13).** One Issuing CA per
   // protocol rather than one for all three, for the reason `jose` and `xml`
   // are two: a relying party that trusts what ACME issued has said nothing
@@ -6907,6 +6926,232 @@ async function issueTlsServerKeyPair(scopeId, useCaseId, spec) {
 }
 
 // ===========================================================================
+// THE REALM'S KDC CERTIFICATE, FOR PKINIT (#179, 2026-10-05).
+//
+// RFC 4556 section 3.2.4: a client MUST validate the KDC's certificate to an
+// anchor it trusts and MUST find in it either an id-pkinit-san naming the
+// ticket-granting service of the realm it asked or the id-pkinit-KPKdc
+// extended key usage. This leaf carries BOTH, from the `kdc` use case's
+// Issuing CA, with keyUsage `digitalSignature` alone — the one use the RFC
+// says must be consistent with id-pkinit-KPKdc, and all a KDC does with the
+// key, since a Diffie-Hellman reply is SIGNED and nothing is ever encrypted
+// to it (#179 implements no RSA key transport).
+//
+// **THE CALLER ENCODES THE NAME.** The id-pkinit-san's value is a Kerberos
+// KRB5PrincipalName, which `kerberos/krb5_pkinit_codec.ts` writes; this
+// module takes its DER and puts it in an otherName, so the certificate
+// authority learns nothing about Kerberos. (The vendored encoder's `krb5`
+// kind writes a UTF8String there, which no PKINIT client reads as a name —
+// the reason the raw `otherName` kind is used instead.)
+//
+// **THE PRIVATE KEY IS HANDED BACK AND NOT KEPT**, as
+// `issueTlsServerKeyPair()` hands a listener's back: `kerberos/krb5_pkinit.ts`
+// holds it in the memory of the process that asked, per realm, and a slot per
+// process (`spec.slot`) keeps one process's certificate from superseding —
+// and so revoking — another's.
+// ===========================================================================
+/**
+ * The key algorithms a KDC certificate is issued with: the ones every
+ * PKINIT client verifies a CMS signature with.
+ */
+const KDC_KEY_ALGS = ['ec-p256', 'ec-p384', 'rsa-2048', 'rsa-3072'];
+/**
+ * The key algorithm a KDC certificate is issued with when none is named.
+ */
+const DEFAULT_KDC_KEY_ALG = 'ec-p256';
+
+/**
+ * Generates and certifies a realm's KDC key pair for PKINIT: id-pkinit-KPKdc,
+ * digitalSignature, and an id-pkinit-san the caller encoded.
+ *
+ * @param scopeId - the realm
+ * @param spec - `slot`, `principalNameDer` (the KRB5PrincipalName of
+ *   krbtgt/REALM@REALM), `commonName` and `keyAlg`
+ * @returns a promise of `{ ok: true, issued }`, `issued` carrying the
+ *   certificate, its chain without the Root, the private key and the
+ *   anchor, or `{ ok: false, errors }`
+ */
+async function issueKdcKeyPair(scopeId, spec) {
+  log.debug('Entering issueKdcKeyPair(). scope=' + scopeId);
+  const s = spec || {};
+  const id = realmIdOf(scopeId);
+  const slot = String(s.slot || '').trim();
+  if (!slot || !s.principalNameDer) {
+    log.debug('Leaving issueKdcKeyPair(). No slot or name.');
+    return errorCodes.mark({ ok: false,
+             errors: ['A KDC certificate names the realm\'s ticket-granting ' +
+                      'service and is held in a slot; one of the two is ' +
+                      'missing.'] }, 'STS-PKI-0219');
+  }
+  const keyAlgId = String(s.keyAlg || DEFAULT_KDC_KEY_ALG);
+  const keyDesc = keyMaterial.keyAlg(keyAlgId);
+  if (!keyDesc || KDC_KEY_ALGS.indexOf(keyAlgId) < 0) {
+    log.debug('Leaving issueKdcKeyPair(). Key algorithm refused.');
+    return errorCodes.mark({ ok: false,
+             errors: ['"' + keyAlgId + '" is not a key algorithm a KDC ' +
+                      'certificate is issued with here. It may be ' +
+                      KDC_KEY_ALGS.join(', ') + '.'] }, 'STS-PKI-0219');
+  }
+  const branch = await ensureScope(id);
+  if (!branch.ok) {
+    log.debug('Leaving issueKdcKeyPair(). No branch.');
+    return branch;
+  }
+  const pair = await keyMaterial.generateKeyPair(keyAlgId);
+  const was = certificateFor(id, 'kdc', slot);
+  const made = await certify(id, 'kdc', {
+    slot: slot,
+    label: 'KDC ' + slot,
+    commonName: String(s.commonName || 'kdc'),
+    keyAlg: keyAlgId,
+    publicKeyPem: pair.publicPem,
+    profile: 'kdc',
+    days: s.days,
+    keyUsage: ['digitalSignature'],
+    extensions: {
+      extKeyUsage: { present: true, critical: false,
+                     usages: ['kdcAuthentication'] },
+      subjectAltName: { present: true, critical: false, names: [{
+        kind: 'otherName', oid: PKINIT_SAN_OID,
+        value: Buffer.from(s.principalNameDer).toString('base64') }] }
+    }
+  });
+  if (!made.ok) {
+    log.debug('Leaving issueKdcKeyPair(). certify() refused.');
+    return made;
+  }
+  if (was && normalSerialsDiffer(was.serialHex, made.record.serialHex)) {
+    supersede(id, 'kdc', was, 'replaced by a new KDC certificate for "' +
+              slot + '"');
+  }
+  const root = serviceRoot();
+  log.info('pki: a ' + keyDesc.label + ' KDC certificate was issued for "' +
+           slot + '" in "' + (id || 'default') + '"; expires ' +
+           made.record.notAfter + '. The private key was handed to the ' +
+           'caller and is not kept here.');
+  log.debug('Leaving issueKdcKeyPair().');
+  return { ok: true,
+           issued: Object.assign(describeCertificate(made.record), {
+             scope: id,
+             privateKeyPem: pair.privatePem,
+             // RFC 4556 section 3.2.3.1 item 6: a PKINIT reply's certificates
+             // "MUST NOT contain root CA certificates".
+             chainWithoutRootPem: (made.record.chainPem || []).filter(
+               function (pem) {
+                 const x = new nodeCrypto.X509Certificate(pem);
+                 return x.subject !== x.issuer;
+               }),
+             anchorPem: root ? root.certificatePem : ''
+           }) };
+}
+
+// ---------------------------------------------------------------------------
+// WHAT A PKINIT CLIENT CERTIFICATE SAYS (#179): its extended key usages, the
+// digitalSignature bit, the KRB5PrincipalNames in its id-pkinit-san
+// otherNames (as their DER, which `krb5_pkinit_codec.ts` reads), and the
+// digest its issuer signed it with — RFC 4556 section 3.2.2's
+// KDC_ERR_DIGEST_IN_CERT_NOT_ACCEPTED is about that digest, and SHA-1 and MD5
+// are refused. Read from the DER with asn1js, because node's X509Certificate
+// prints an otherName as "othername:<unsupported>".
+// ---------------------------------------------------------------------------
+/**
+ * The OID of RFC 4556's id-pkinit-san otherName.
+ */
+const PKINIT_SAN_OID = '1.3.6.1.5.2.2';
+
+// Certificate signature algorithms by the digest they sign over.
+const CERT_SIGNATURE_DIGESTS = {
+  '1.2.840.113549.1.1.4': 'md5',
+  '1.2.840.113549.1.1.5': 'sha1',
+  '1.2.840.10045.4.1': 'sha1',
+  '1.2.840.113549.1.1.11': 'sha256',
+  '1.2.840.113549.1.1.12': 'sha384',
+  '1.2.840.113549.1.1.13': 'sha512',
+  '1.2.840.10045.4.3.2': 'sha256',
+  '1.2.840.10045.4.3.3': 'sha384',
+  '1.2.840.10045.4.3.4': 'sha512'
+};
+
+/**
+ * Reads what PKINIT asks of a certificate: its extended key usages, whether
+ * keyUsage allows digitalSignature, its id-pkinit-san names as DER, the
+ * digest it was signed over and its validity.
+ *
+ * @param der - the certificate
+ * @returns `{ ekus, digitalSignature, pkinitSans, signatureAlgorithm,
+ *   signatureDigest, notBefore, notAfter, issuer, subject }`
+ * @throws Error when it is not a certificate
+ */
+function pkinitCertificateFacts(der) {
+  log.debug('Entering pkinitCertificateFacts().');
+  const buf = Buffer.from(der);
+  const x509 = new nodeCrypto.X509Certificate(buf);
+  const parsed = asn1js.fromBER(new Uint8Array(buf).buffer);
+  if (parsed.offset === -1) {
+    log.debug('Leaving pkinitCertificateFacts(). Unreadable.');
+    // error-code: none — a reader; the caller refuses what does not decode
+    throw new Error('pki: not a certificate');
+  }
+  const kids = function (node) {
+    log.debug('Entering kids().');
+    log.debug('Leaving kids().');
+    return node && node.valueBlock && Array.isArray(node.valueBlock.value)
+      ? node.valueBlock.value : [];
+  };
+  const cert = kids(parsed.result);
+  const tbs = kids(cert[0]);
+  const sigAlg = String(kids(cert[1])[0].valueBlock.toString());
+  const extsNode = tbs.filter(function (one) {
+    return one.idBlock.tagClass === 3 && one.idBlock.tagNumber === 3;
+  })[0];
+  let digitalSignature = true;
+  const pkinitSans = [];
+  kids(kids(extsNode)[0]).forEach(function (ext) {
+    const parts = kids(ext);
+    const oid = String(parts[0].valueBlock.toString());
+    const value = Buffer.from(parts[parts.length - 1].valueBlock.valueHexView);
+    if (oid === '2.5.29.15') {
+      // KeyUsage: bit 0 is digitalSignature. An absent extension allows it.
+      // A cast because asn1js types a parse result's value block as any of
+      // its kinds; a KeyUsage is a BIT STRING, whose block has the octets.
+      const bits = asn1js.fromBER(new Uint8Array(value).buffer).result;
+      const bytes = Buffer.from(/** @type {any} */ (bits.valueBlock)
+        .valueHexView);
+      digitalSignature = bytes.length > 0 && (bytes[0] & 0x80) !== 0;
+    } else if (oid === '2.5.29.17') {
+      const names = asn1js.fromBER(new Uint8Array(value).buffer).result;
+      kids(names).forEach(function (gn) {
+        if (gn.idBlock.tagClass !== 3 || gn.idBlock.tagNumber !== 0) {
+          return;
+        }
+        const on = kids(gn);
+        if (on.length === 2 &&
+            String(on[0].valueBlock.toString()) === PKINIT_SAN_OID) {
+          const inner = kids(on[1])[0];
+          if (inner) {
+            pkinitSans.push(Buffer.from(inner.valueBeforeDecodeView));
+          }
+        }
+      });
+    }
+  });
+  const ekus = Array.isArray(x509.keyUsage) ? x509.keyUsage.slice() : [];
+  log.debug('Leaving pkinitCertificateFacts(). ' + pkinitSans.length +
+            ' id-pkinit-san(s).');
+  return {
+    ekus: ekus,
+    digitalSignature: digitalSignature,
+    pkinitSans: pkinitSans,
+    signatureAlgorithm: sigAlg,
+    signatureDigest: CERT_SIGNATURE_DIGESTS[sigAlg] || '',
+    notBefore: new Date(x509.validFrom),
+    notAfter: new Date(x509.validTo),
+    issuer: x509.issuer,
+    subject: x509.subject
+  };
+}
+
+// ===========================================================================
 // THE OPENID4VP VERIFIER'S CERTIFICATE (2026-09-26, #230): what the
 // `x509_san_dns` and `x509_hash` Client Identifier Prefixes (OpenID4VP 1.0
 // section 5.9.3) sign a Request Object under.
@@ -12913,6 +13158,13 @@ module.exports = {
   publishedCertificateFor: publishedCertificateFor,
   forgetCertificate: forgetCertificate,
   issueTlsServerKeyPair: issueTlsServerKeyPair,
+  // The realm's KDC certificate and a client certificate's PKINIT facts
+  // (#179).
+  issueKdcKeyPair: issueKdcKeyPair,
+  KDC_KEY_ALGS: KDC_KEY_ALGS,
+  DEFAULT_KDC_KEY_ALG: DEFAULT_KDC_KEY_ALG,
+  PKINIT_SAN_OID: PKINIT_SAN_OID,
+  pkinitCertificateFacts: pkinitCertificateFacts,
   certifyVerifierKey: certifyVerifierKey,
   verifierCertificateFor: verifierCertificateFor,
   MAX_VERIFIER_CERTIFICATES: MAX_VERIFIER_CERTIFICATES,

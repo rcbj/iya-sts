@@ -2,10 +2,10 @@
 
 Kerberos v5 — a KDC on raw TCP and UDP 88 and over MS-KKDCP, a Kerberos-protected
 service, the same acceptor over HTTP as SPNEGO (RFC 4559/4178), and **a way of
-signing in with it**. Nineteen files, and they divide into three groups — the two
-stored-key modules of 2026-09-12, the two FAST modules of 2026-09-22 and the
-krbtgt rotation of 2026-09-23 belong to the service group and are described at
-the foot.
+signing in with it**. Twenty-one files, and they divide into three groups — the
+two stored-key modules of 2026-09-12, the two FAST modules of 2026-09-22, the
+krbtgt rotation of 2026-09-23 and the two PKINIT modules of 2026-10-05 belong
+to the service group and are described at the foot.
 
 **The codec**, which knows nothing about this service: `krb5_primitives.js`,
 `krb5_asn1.js`, `krb5_crypto.js`, `krb5_messages.js`, `krb5_ndr.js`,
@@ -1313,9 +1313,9 @@ at a full stack WILL see is one more entry, PA-FX-FAST (136), in every
 factor it takes, the indicator — which `GET /admin-api/kerberos` carries as
 `status` (rule 7).
 
-**NOT BUILT**: anonymous PKINIT armor, PKINIT itself (#179 — so a person whose
-only second factor is a security key cannot get a ticket in product), RFC 6113
-authentication sets, OTP PIN change and hashed OTP values. (FAST in the TGS exchange
+**NOT BUILT**: RFC 6113 authentication sets, OTP PIN change and hashed OTP
+values. (PKINIT and anonymous PKINIT armor were on this list until #179 — the
+section below.) (FAST in the TGS exchange
 and hide-client-names were on this list until #204 — see the section at the foot.)
 
 **TESTS.** `tests/kerberos_fast_otp.js` (in process: the vectors, the codec's DER
@@ -1328,6 +1328,130 @@ both modes: the host armor from a keytab the API hands over, the portal-enrolled
 code, the refusal and PREAUTH_FAILED, FAST and OTP with its own client in
 `krb5_wire.js`, the indicator read with the keytab key, the SPNEGO session's
 `amr`, and MIT `kinit -k`, `kinit -T` and `kvno`).
+
+## PKINIT: A CERTIFICATE AS THE PRE-AUTHENTICATION (#179, 2026-10-05)
+
+**THE HOLE #173 LEFT.** A product person who holds or owes a second factor is
+refused a ticket on the password alone, and FAST with OTP is the way in for
+an authenticator app. A person whose only second factor is a SECURITY KEY had
+no way in: Kerberos has no WebAuthn pre-authentication. What it has is PKINIT
+(RFC 4556), with RFC 8070's freshness token, RFC 8636's KDF agility, RFC 5349's
+curves and RFC 8062's anonymous PKINIT. `krb5_pkinit.ts` is the KDC's half,
+`krb5_pkinit_codec.ts` its wire format, and `common/crypto.js` section 16 every
+cryptographic operation: CMS SignedData read, verify and write, DH/ECDH, the
+two reply-key derivations. The headers of those three argue each section; the
+decisions a reader needs here:
+
+* **rcbj's two answers (2026-10-05, on #179).**
+  * *Which certificates:* this realm's identity Issuing CAs (the
+    `tls-client`, `acme`, `est` and `scep` authorities, read from
+    `tls_client_certificates.js`'s list), with id-pkinit-KPClientAuth or
+    smart-card logon. Bound by RFC 4556's first rule, the certificate
+    recorded on the person's entry (`identityOf()` + `stillHeld()`), or its
+    second, an id-pkinit-san naming exactly the client. An id-pkinit-san
+    naming anybody else refuses whatever else matches. The portal's TLS
+    client certificates are not widened.
+  * *What the ticket claims:* `pkinit` always, and `pkinit-hardware` (with
+    hw-authent) only for a smart-card logon certificate whose key this
+    service did not generate (`keySource` on the enrolled record). Read by
+    `spnego_authn.ts` as `swk` and `hwk`, NEVER `pwd`; one factor, so `acr
+    "1"`.
+* **REACHED THROUGH THE KEY SOURCE, BESIDE FAST** (`setKeySource({ ...,
+  fast, pkinit })`, `principals.pkinitProvider()`), for #173's reason:
+  `krb5_kdc.js`, `krb5_principals.js` and `krb5_service.js` gained no
+  require, so the parent project's COPY set is what it was. A process
+  without the key source (the parent's in-process jobs) does not offer
+  PA-PK-AS-REQ and ignores it as unknown padata. `pki.js` and `crypto.js`
+  changed, but required nothing new.
+* **THE KDC CERTIFICATE** is a new realm use case, `kdc` — its own Issuing
+  CA, because "may answer PKINIT as this realm's KDC" is a power over every
+  client that trusts the Root (and the enrollment protocols refuse the `kdc`
+  profile for the same reason). `pki.issueKdcKeyPair()` makes one per realm
+  per PROCESS on first use, with id-pkinit-KPKdc, digitalSignature and an
+  id-pkinit-san of krbtgt/REALM@REALM, the KRB5PrincipalName encoded by the
+  codec (the vendored encoder's `krb5` SAN kind writes a UTF8String, which no
+  client reads). The private key lives in that process's memory only; a slot
+  per node, pid and thread keeps one process from superseding another's.
+* **THE CLIENT'S PATH** is built to the service Root through the realm's own
+  Issuing CAs (`pki.describeIssuer()`), because MIT's `FILE:` identity sends
+  the leaf alone. Which authority signed the leaf is read off the register
+  (`revocation_status.walk()`), so a leaf from another realm, or from a
+  non-identity authority, is CLIENT_NOT_TRUSTED although it chains to the
+  same Root. Revocation is `localVerdictFor()` under `pki.revocationCheck`.
+* **WHAT THE WIRE TAUGHT** (MIT Kerberos 1.22, driven against an in-process
+  KDC): PA-PK-AS-REP's `dhInfo [0]` is EXPLICIT, as the RFC's module says. It
+  was written IMPLICIT first, and MIT refused it ("ASN.1 length doesn't match
+  expected value"). MIT also names the anonymous client in realm
+  WELLKNOWN:ANONYMOUS in RFC 8636's partyUInfo, so that is what the KDC
+  derives with. RFC 8636 section 8's vectors are reproduced only with the
+  server name's type NT-PRINCIPAL, which is what MIT parses `krbtgt/SU.SE`
+  as.
+* **MOST SECURE BY DEFAULT**:
+  * The freshness token is required (`krb5.pkinitRequireFreshness`).
+  * RFC 4556's own KDF is refused (`krb5.pkinitLegacyKdf`, with a warning).
+  * MODP group 2 is refused, although the RFC makes it a MUST: MIT itself
+    defaults to 2048 bits.
+  * SHA-1 in a CMS signature or a certificate is refused, with RFC 8636's
+    error data.
+  * RSA key transport (section 3.2.3.2) is not implemented at all,
+    KDC_ERR_PUBLIC_KEY_ENCRYPTION_NOT_SUPPORTED: no forward secrecy.
+  * DH keys are never reused.
+  * The ticket ends no later than the certificate.
+  * The AuthPack is spent once across the cluster
+    (`krb5.pkinit-authpack`).
+* **AD-INITIAL-VERIFIED-CAS** goes into the TGT inside AD-IF-RELEVANT, after
+  the indicator's CAMMAC, and the TGS copies it ("any TGS MUST copy").
+* **ANONYMOUS PKINIT IS FAST ARMOR AND NOTHING ELSE** (`krb5.anonymousPkinit`,
+  `answerAnonymousAsReq()` in `krb5_kdc.js`):
+  * only a TGT for this realm is issued;
+  * it carries no PAC, no indicator and no AD-INITIAL-VERIFIED-CAS;
+  * its session key is KRB-FX-CF2 of the KDC's PA-PKINIT-KX contribution and
+    the reply key;
+  * `answerTgsReq()` refuses any TGS-REQ presenting an anonymous ticket
+    (KDC_ERR_POLICY, `STS-KRB-0198`);
+  * `armorFromApReq()` needed no change: an anonymous TGT is a TGT for this
+    realm's TGS.
+* **A PERSON WITH NO KERBEROS KEYS** (never signed in with a password, or
+  keys stale) is refused before pre-authentication with "sign in once"
+  (`STS-KRB-0104`), which is wrong for a certificate. With PKINIT on, a
+  request that brings NO password is answered for them through
+  `principals.certificatePerson()`, a registered record with no keys. One
+  that brings a password keeps the old refusal.
+* **POST-QUANTUM**: nothing is standardised. ML-KEM would replace the key
+  agreement and ML-DSA the CMS signatures (crypto.js section 16's header).
+  `krb5.pkinitKdcKeyAlgorithm` is the row an ML-DSA KDC key would be added
+  to.
+
+**NOT BUILT**:
+* RSA key transport;
+* DH key reuse;
+* anonymous tickets in the TGS exchange (RFC 8062 section 4.2) and an
+  authenticated client asking for an anonymous ticket;
+* TD-TRUSTED-CERTIFIERS hints from the client (read and ignored: the KDC has
+  one chain);
+* `kdcPkId`;
+* RSASSA-PSS and EdDSA CMS signatures;
+* certificates from any authority but this realm's.
+
+**CODES**: `STS-KRB-0178`–`0198`, `STS-PKI-0219`. **CONSOLE AND API**: a
+PKINIT block on `/admin/kerberos`, `status.pkinit` on `GET /admin-api/kerberos`
+(`Krb5Pkinit.policy()`).
+
+**TESTS**:
+* `tests/kerberos_pkinit.js` (in process):
+  * RFC 8636's vectors and the codec;
+  * SPNEGO's reading;
+  * a development AS exchange with an EST-enrolled smart-card logon
+    certificate, through the reply key and into the TGT (indicators,
+    hw-authent, AD-INITIAL-VERIFIED-CAS, lifetime);
+  * the refusals: no token, another's certificate, replay, 1024-bit MODP, no
+    KDF, no DH, revoked;
+  * anonymous PKINIT with PA-PKINIT-KX and the TGS refusal;
+  * a product child: password alone refused and the certificate admitted
+    for a two-factor person, and a keyless person admitted.
+* `tests/vendored/sts_kerberos_pkinit.js` (`local: true`): MIT `kinit -X` and
+  `kinit -n` / `-T` against the running service. The tests image installs
+  `krb5-pkinit`.
 
 ## RC4-HMAC IS DEVELOPMENT MODE'S (#182, 2026-09-23)
 

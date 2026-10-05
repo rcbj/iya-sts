@@ -942,6 +942,14 @@ const JOBS = [
   // indicator in the tickets — with real MIT kinit where it is installed.
   // `local: true`: this repository's KDC, portal and API.
   { file: 'sts_kerberos_fast_otp.js',    browser: false, local: true },
+  // A CERTIFICATE AS THE KERBEROS PRE-AUTHENTICATION (#179, 2026-10-05):
+  // over TCP 88 in both modes, a smart-card logon certificate enrolled over
+  // EST with a key made at run time, then real MIT `kinit -X` (hw-authent),
+  // the password alone refused in product once a second factor is required,
+  // another person's certificate a client name mismatch, and `kinit -n` as
+  // FAST armor for `kinit -T` — the MIT half skipped where kinit or its
+  // PKINIT plugin is absent. `local: true`: this repository's KDC and EST.
+  { file: 'sts_kerberos_pkinit.js',      browser: false, local: true },
   // A PERSON'S KEYTAB (#59, 2026-09-22): from the administrator's reset, a
   // generated password and /portal/kerberos, each read with `klist -k` and
   // SIGNED IN WITH by MIT `kinit -k -t` and by `krb5_wire.js` using the

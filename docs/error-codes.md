@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4073** of them, in **41** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4095** of them, in **41** subsystems.
 
 ## Where a code appears
 
@@ -58,7 +58,7 @@ is an ordinary outcome.
 * [Cells and residency (`STS-CELL`)](#sts-cell) — 87
 * [Scheduler (`STS-SCHED`)](#sts-sched) — 18
 * [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 143
-* [Certificate authority (`STS-PKI`)](#sts-pki) — 205
+* [Certificate authority (`STS-PKI`)](#sts-pki) — 206
 * [Certificate enrollment core (`STS-ENROLL`)](#sts-enroll) — 56
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 72
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 26
@@ -70,7 +70,7 @@ is an ordinary outcome.
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 16
 * [Federation (`STS-FED`)](#sts-fed) — 141
 * [OpenID Federation (`STS-OIDFED`)](#sts-oidfed) — 67
-* [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 177
+* [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 198
 * [LDAP directory (`STS-LDAP`)](#sts-ldap) — 91
 * [Attribute sources (`STS-ATTR`)](#sts-attr) — 15
 * [SCIM 2.0 (`STS-SCIM`)](#sts-scim) — 77
@@ -893,6 +893,7 @@ Raised from: common/pki.js, common/pki_authoring.ts, common/pki_revocation.js, c
 | `STS-PKI-0216` | At start, a realm holds pinned signing keys but pki.pinnedSigners is off there (environment, appconfig or a stored override), so it signs with its generated keys (#263). | log only (a warning, at start) |
 | `STS-PKI-0217` | A key pair was not pinned into the xml slot: the certificate supplied with it has a keyUsage without keyEncipherment, and an xml pin is also the key partners encrypt to (#263). | console / /admin-api refusal (HTTP 400) |
 | `STS-PKI-0218` | A certificate authority branch finished building for a realm that had been removed while it was built, and was discarded rather than saved. | none (logged; the realm is gone) |
+| `STS-PKI-0219` | A KDC certificate for PKINIT was asked for with no slot, no principal name, or a key algorithm it is not issued with (#179). | none (the KDC refuses PKINIT, STS-KRB-0197) |
 
 ## STS-ENROLL
 
@@ -2678,6 +2679,27 @@ Raised from: kerberos/.
 | `STS-KRB-0175` | An S4U2Self request's PA-S4U-X509-USER carried neither a cname nor a certificate (#186). | [MS-SFU] 2.2.2: KDC_ERR_BADOPTION (13) |
 | `STS-KRB-0176` | S4U2Proxy was refused because the evidence ticket's PAC is missing, or its ticket or KDC signature does not verify with the krbtgt key: the ticket was altered after issue (CVE-2020-17049) or forged by the requester (#186). | [MS-SFU] 3.2.5.2.2, [MS-PAC] 2.8.3: KRB_AP_ERR_MODIFIED (41) |
 | `STS-KRB-0177` | S4U2Proxy was refused by the issuance policy's delegation rules: a protected user, the front end's subject groups or semantics, or the user's authority for it (#186). Refused in both modes. | KDC_ERR_BADOPTION (13) for the relationship, KDC_ERR_POLICY (12) otherwise |
+| `STS-KRB-0178` | A PA-PK-AS-REQ did not decode: the PA-PK-AS-REQ, its CMS SignedData, an encapsulated content other than id-pkinit-authData, or the AuthPack (#179). | RFC 4556 section 3.2.1: KDC_ERR_PREAUTH_FAILED (24) |
+| `STS-KRB-0179` | A PKINIT request was signed for the anonymous principal or unsigned for a named one (#179). | RFC 8062 section 4.1.1, RFC 4556 section 3.2.2: KDC_ERR_CLIENT_NOT_TRUSTED (62) |
+| `STS-KRB-0180` | A PKINIT PKAuthenticator carried no paChecksum, or one that is not the SHA-1 of the KDC-REQ-BODY (#179). | RFC 4556 sections 3.2.1 and 3.2.3: KDC_ERR_PA_CHECKSUM_MUST_BE_INCLUDED (79), KRB_AP_ERR_MODIFIED (41) |
+| `STS-KRB-0181` | A PKINIT request did not carry the signer's certificate, or it could not be read (#179). | RFC 4556 section 3.2.2: KDC_ERR_CANT_VERIFY_CERTIFICATE (70) with TD-TRUSTED-CERTIFIERS, KDC_ERR_INVALID_CERTIFICATE (71) |
+| `STS-KRB-0182` | A PKINIT client certificate was signed with SHA-1, MD5 or an unknown algorithm (#179). | RFC 4556 section 3.2.2, RFC 8636 section 5: KDC_ERR_DIGEST_IN_CERT_NOT_ACCEPTED (78) with TD-CERT-DIGEST-ALGORITHMS |
+| `STS-KRB-0183` | A PKINIT client certificate did not validate to the service Root through this realm's hierarchy (#179). | RFC 4556 section 3.2.2: KDC_ERR_CANT_VERIFY_CERTIFICATE (70) with TD-TRUSTED-CERTIFIERS, KDC_ERR_INVALID_CERTIFICATE (71) with TD-INVALID-CERTIFICATES |
+| `STS-KRB-0184` | A PKINIT client certificate was not issued by one of this realm's identity Issuing CAs (TLS client, ACME, EST, SCEP) (#179). | RFC 4556 section 3.2.2: KDC_ERR_CLIENT_NOT_TRUSTED (62) |
+| `STS-KRB-0185` | A PKINIT client certificate, or a certificate on its path, is revoked (#179). | RFC 4556 section 3.2.2: KDC_ERR_REVOKED_CERTIFICATE (72) |
+| `STS-KRB-0186` | A PKINIT client certificate's revocation status could not be established and pki.revocationCheck refused it (#179). | RFC 4556 section 3.2.2: KDC_ERR_REVOCATION_STATUS_UNKNOWN (73) |
+| `STS-KRB-0187` | A PKINIT client certificate carries neither id-pkinit-KPClientAuth nor smart-card logon in its extended key usage, or its keyUsage does not allow digitalSignature (#179). | RFC 4556 section 3.2.2: KDC_ERR_INCONSISTENT_KEY_PURPOSE (77) |
+| `STS-KRB-0188` | A PKINIT client certificate is not bound to the AS-REQ's client: not recorded on their entry and naming them in no id-pkinit-san, issued to somebody else, or naming somebody else (#179). | RFC 4556 section 3.2.2: KDC_ERR_CLIENT_NAME_MISMATCH (75) |
+| `STS-KRB-0189` | A PKINIT PKAuthenticator's time was outside the clock tolerance (#179). | RFC 4556 section 3.2.2: KRB_AP_ERR_SKEW (37) |
+| `STS-KRB-0190` | A PKINIT request carried no RFC 8070 freshness token where one is required, or one this realm did not issue or that expired (#179). | RFC 8070 section 2.4: KDC_ERR_PREAUTH_FAILED (24), KDC_ERR_PREAUTH_EXPIRED (90), each with a fresh PA-AS-FRESHNESS |
+| `STS-KRB-0191` | A PKINIT AuthPack was signed over SHA-1, MD5 or an unknown digest (#179). | RFC 4556 section 3.2.2, RFC 8636 section 4: KDC_ERR_DIGEST_IN_SIGNED_DATA_NOT_ACCEPTED (80) with TD-CMS-DIGEST-ALGORITHMS |
+| `STS-KRB-0192` | A PKINIT AuthPack's signature did not verify with the signer's certificate, or its signed attributes were wrong (#179). | RFC 4556 section 3.2.2: KDC_ERR_INVALID_SIG (64) |
+| `STS-KRB-0193` | A signed PKINIT AuthPack was presented a second time, or could not be proved unused (#179). | RFC 4556 section 3.2.2: KRB_AP_ERR_REPEAT (34), KRB_ERR_GENERIC (60) |
+| `STS-KRB-0194` | A PKINIT request asked for the reply key by public-key encryption, which this KDC does not implement (#179). | RFC 4556 section 3.2.3: KDC_ERR_PUBLIC_KEY_ENCRYPTION_NOT_SUPPORTED (81) |
+| `STS-KRB-0195` | A PKINIT request's Diffie-Hellman group or public value was refused: MODP group 2, a group of the client's own, an unsupported curve, or a value out of range (#179). | RFC 4556 section 3.2.2, RFC 5349 section 4: KDC_ERR_DH_KEY_PARAMETERS_NOT_ACCEPTED (65) with TD-DH-PARAMETERS |
+| `STS-KRB-0196` | A PKINIT request offered no RFC 8636 KDF this KDC uses, or none at all while krb5.pkinitLegacyKdf is off (#179). | RFC 8636 section 6: KDC_ERR_NO_ACCEPTABLE_KDF (100) |
+| `STS-KRB-0197` | The KDC held no PKINIT certificate for the realm, or could not sign its reply (#179). | none (logged); KDC_ERR_CLIENT_NOT_TRUSTED (62) to the client |
+| `STS-KRB-0198` | An anonymous PKINIT request was refused — anonymous PKINIT off, no anonymous KDC option, a service other than the realm's TGS or no AES enctype — or an anonymous ticket was presented to the TGS, which it may not buy from (#179). | RFC 8062 sections 4.1 and 4.2: KDC_ERR_C_PRINCIPAL_UNKNOWN (6), KDC_ERR_BADOPTION (13), KDC_ERR_POLICY (12), KDC_ERR_ETYPE_NOSUPP (14) |
 
 ## STS-LDAP
 

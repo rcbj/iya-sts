@@ -6277,10 +6277,14 @@ class AdminApi {
                          'doors — an LDAP bind, a WS-Trust UsernameToken, ' +
                          'SCIM, SSF and EST Basic — answered as a wrong ' +
                          'password; an app password (`create-app-password`) ' +
-                         'is what they use there (#101). **What it does not ' +
-                         'reach** is a sign-in that is neither that screen ' +
-                         'nor one of those doors: federation, SPNEGO or a ' +
-                         'Kerberos AS-REQ, a TLS client certificate. ' +
+                         'is what they use there (#101). In product the KDC ' +
+                         'refuses their password alone too ' +
+                         '(KDC_ERR_POLICY, #173); a ticket takes an ' +
+                         'authenticator code through FAST and OTP, or a ' +
+                         'certificate through PKINIT (#179). **What it does ' +
+                         'not reach** is a sign-in that is neither that ' +
+                         'screen nor one of those doors: federation, a TLS ' +
+                         'client certificate. ' +
                          'The authentication policy\'s `requireSecondFactor: ' +
                          'always` ' +
                          'is the same requirement for ' +

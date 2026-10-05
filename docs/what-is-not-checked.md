@@ -263,9 +263,10 @@ sign-in screen's own verifier and spent from the same once-only step, so one
 code cannot be used at both. The ticket carries the RFC 8129 authentication
 indicator `otp`, copied into the service tickets it buys, and `/authn/spnego`
 counts it as the second factor. An app password is never a Kerberos key, so the
-KDC refuses it like any wrong password. A person whose only second factor is a
-security key cannot use Kerberos at all yet: PKINIT is
-[#179](https://github.com/rcbj/iya-sts/issues/179).
+KDC refuses it like any wrong password. A person whose second factor is a
+security key uses PKINIT (#179): a smart-card logon certificate this realm
+issued them, checked to the service Root, for revocation and against their
+entry, with no password at all.
 
 **In development mode** any username authenticates and every user shares one
 password (`password!`, `KRB5_USER_PASSWORD`), with a name nobody configured
@@ -1009,11 +1010,8 @@ grant that names no client is refused.
 
 ## What product mode still does not check
 
-These are true in a product deployment today, and are tracked as issues:
-
-* **A person whose only second factor is a security key cannot use Kerberos.**
-  Since #173 the KDC refuses a password alone to anybody who holds or must hold
-  a second factor, and takes an authenticator app's code through FAST and OTP
-  pre-authentication; the security-key equivalent, PKINIT, is
-  [#179](https://github.com/rcbj/iya-sts/issues/179). (FAST in the TGS
-  exchange, which this list also named, is implemented since #204.)
+Nothing is listed here at present. The last entry, that a person whose
+only second factor is a security key could not use Kerberos, was closed by
+PKINIT ([#179](https://github.com/rcbj/iya-sts/issues/179)): see
+[Kerberos](kerberos.md). (FAST in the TGS exchange, which this list also named,
+is implemented since #204.)

@@ -342,17 +342,27 @@ class SpnegoAuthn {
   // section 5 says an indicator must be read with the realm that wrote it, so
   // `ownRealm` is false for a ticket from a foreign realm and its indicators
   // count for nothing.
+  //
+  // **AND PKINIT (#179, 2026-10-05).** A ticket whose TGT came from a
+  // certificate carries `pkinit`, and `pre-authent` — but NO password was
+  // proven, so `pre-authent` is not `pwd` on it. The certificate is `swk`, as
+  // `/tls/sign-in` says of one, unless the KDC also wrote `pkinit-hardware`:
+  // a smart-card logon certificate over a key this service did not generate
+  // (krb5_pkinit.ts's header), with hw-authent set, which is `hwk`. One
+  // factor either way, so `acr "1"` — rcbj's answer on #179.
   // ---------------------------------------------------------------------------
   /**
    * Derives the session's `amr` and `acr` from a ticket's own flags and
    * authentication indicators: `pwd` for pre-authent, `hwk` for hw-authent,
-   * `otp` for the RFC 8129 indicator from this realm; `mfa` only for two.
+   * `otp` for the RFC 8129 indicator from this realm, `swk` for a PKINIT
+   * certificate not marked hardware-bound (and never `pwd` for one); `mfa`
+   * only for two.
    *
    * @param ticketFlags - the ticket's flag names
    * @param indicators - the ticket's authentication indicators
    * @param ownRealm - false for a ticket from a foreign realm, whose indicators
    *   count for nothing
-   * @returns `{ amr, acr, method, password, hardware, otp }`
+   * @returns `{ amr, acr, method, password, hardware, otp, pkinit }`
    */
   factorsFor(ticketFlags, indicators?, ownRealm?) {
     const { log } = this.deps;
@@ -360,16 +370,19 @@ class SpnegoAuthn {
               (ticketFlags || []).join(',') + ' indicators=' +
               (indicators || []).join(','));
     const flags = ticketFlags || [];
-    const password = flags.indexOf('pre-authent') !== -1;
+    const own = ownRealm !== false ? (indicators || []) : [];
+    const pkinit = own.indexOf('pkinit') !== -1;
+    const password = flags.indexOf('pre-authent') !== -1 && !pkinit;
     const hardware = flags.indexOf('hw-authent') !== -1;
-    const otp = ownRealm !== false &&
-                (indicators || []).indexOf('otp') !== -1;
+    const otp = own.indexOf('otp') !== -1;
     const amr = [];
     if (password) {
       amr.push('pwd');
     }
     if (hardware) {
       amr.push('hwk');
+    } else if (pkinit) {
+      amr.push('swk');
     }
     if (otp) {
       amr.push('otp');
@@ -381,7 +394,11 @@ class SpnegoAuthn {
     const acr = (password && (hardware || otp)) ? 'mfa'
       : (amr.length ? '1' : '0');
     const method = 'Kerberos ticket over SPNEGO' +
-      (password && otp
+      (pkinit
+         ? ' (the KDC checked a certificate with PKINIT' +
+           (hardware ? ', a smart-card logon certificate whose key this ' +
+                       'service never held' : '') + ')'
+         : password && otp
          ? ' (the KDC checked the password and an authenticator app code, ' +
            'with FAST and OTP pre-authentication)'
          : password && hardware
@@ -396,7 +413,7 @@ class SpnegoAuthn {
     log.debug('Leaving SpnegoAuthn.factorsFor(). amr=' + amr.join(',') +
               ', acr=' + acr);
     return { amr: amr, acr: acr, method: method, password: password,
-             hardware: hardware, otp: otp };
+             hardware: hardware, otp: otp, pkinit: pkinit };
   }
 
   // Is this door open at all? A function rather than a constant, because the

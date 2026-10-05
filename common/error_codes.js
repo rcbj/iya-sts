@@ -3967,6 +3967,10 @@ const CODES = [
       'that had been removed while it was built, and was discarded rather ' +
       'than saved.',
     spec: 'none (logged; the realm is gone)' },
+  { code: 'STS-PKI-0219',
+    summary: 'A KDC certificate for PKINIT was asked for with no slot, no ' +
+      'principal name, or a key algorithm it is not issued with (#179).',
+    spec: 'none (the KDC refuses PKINIT, STS-KRB-0197)' },
   { code: 'STS-ENROLL-0001',
     summary: 'A certificate request named a profile that is not one of the nine issued over an enrollment protocol.',
     spec: 'the protocol\'s refusal: ACME malformed / badCSR, EST HTTP 400, SCEP failInfo badRequest' },
@@ -11393,6 +11397,113 @@ const CODES = [
       'modes.',
     spec: 'KDC_ERR_BADOPTION (13) for the relationship, KDC_ERR_POLICY (12) ' +
       'otherwise' },
+  { code: 'STS-KRB-0178',
+    summary: 'A PA-PK-AS-REQ did not decode: the PA-PK-AS-REQ, its CMS ' +
+      'SignedData, an encapsulated content other than id-pkinit-authData, ' +
+      'or the AuthPack (#179).',
+    spec: 'RFC 4556 section 3.2.1: KDC_ERR_PREAUTH_FAILED (24)' },
+  { code: 'STS-KRB-0179',
+    summary: 'A PKINIT request was signed for the anonymous principal or ' +
+      'unsigned for a named one (#179).',
+    spec: 'RFC 8062 section 4.1.1, RFC 4556 section 3.2.2: ' +
+      'KDC_ERR_CLIENT_NOT_TRUSTED (62)' },
+  { code: 'STS-KRB-0180',
+    summary: 'A PKINIT PKAuthenticator carried no paChecksum, or one that ' +
+      'is not the SHA-1 of the KDC-REQ-BODY (#179).',
+    spec: 'RFC 4556 sections 3.2.1 and 3.2.3: ' +
+      'KDC_ERR_PA_CHECKSUM_MUST_BE_INCLUDED (79), KRB_AP_ERR_MODIFIED (41)' },
+  { code: 'STS-KRB-0181',
+    summary: 'A PKINIT request did not carry the signer\'s certificate, or ' +
+      'it could not be read (#179).',
+    spec: 'RFC 4556 section 3.2.2: KDC_ERR_CANT_VERIFY_CERTIFICATE (70) with ' +
+      'TD-TRUSTED-CERTIFIERS, KDC_ERR_INVALID_CERTIFICATE (71)' },
+  { code: 'STS-KRB-0182',
+    summary: 'A PKINIT client certificate was signed with SHA-1, MD5 or an ' +
+      'unknown algorithm (#179).',
+    spec: 'RFC 4556 section 3.2.2, RFC 8636 section 5: ' +
+      'KDC_ERR_DIGEST_IN_CERT_NOT_ACCEPTED (78) with ' +
+      'TD-CERT-DIGEST-ALGORITHMS' },
+  { code: 'STS-KRB-0183',
+    summary: 'A PKINIT client certificate did not validate to the service ' +
+      'Root through this realm\'s hierarchy (#179).',
+    spec: 'RFC 4556 section 3.2.2: KDC_ERR_CANT_VERIFY_CERTIFICATE (70) with ' +
+      'TD-TRUSTED-CERTIFIERS, KDC_ERR_INVALID_CERTIFICATE (71) with ' +
+      'TD-INVALID-CERTIFICATES' },
+  { code: 'STS-KRB-0184',
+    summary: 'A PKINIT client certificate was not issued by one of this ' +
+      'realm\'s identity Issuing CAs (TLS client, ACME, EST, SCEP) (#179).',
+    spec: 'RFC 4556 section 3.2.2: KDC_ERR_CLIENT_NOT_TRUSTED (62)' },
+  { code: 'STS-KRB-0185',
+    summary: 'A PKINIT client certificate, or a certificate on its path, is ' +
+      'revoked (#179).',
+    spec: 'RFC 4556 section 3.2.2: KDC_ERR_REVOKED_CERTIFICATE (72)' },
+  { code: 'STS-KRB-0186',
+    summary: 'A PKINIT client certificate\'s revocation status could not be ' +
+      'established and pki.revocationCheck refused it (#179).',
+    spec: 'RFC 4556 section 3.2.2: KDC_ERR_REVOCATION_STATUS_UNKNOWN (73)' },
+  { code: 'STS-KRB-0187',
+    summary: 'A PKINIT client certificate carries neither ' +
+      'id-pkinit-KPClientAuth nor smart-card logon in its extended key ' +
+      'usage, or its keyUsage does not allow digitalSignature (#179).',
+    spec: 'RFC 4556 section 3.2.2: KDC_ERR_INCONSISTENT_KEY_PURPOSE (77)' },
+  { code: 'STS-KRB-0188',
+    summary: 'A PKINIT client certificate is not bound to the AS-REQ\'s ' +
+      'client: not recorded on their entry and naming them in no ' +
+      'id-pkinit-san, issued to somebody else, or naming somebody else ' +
+      '(#179).',
+    spec: 'RFC 4556 section 3.2.2: KDC_ERR_CLIENT_NAME_MISMATCH (75)' },
+  { code: 'STS-KRB-0189',
+    summary: 'A PKINIT PKAuthenticator\'s time was outside the clock ' +
+      'tolerance (#179).',
+    spec: 'RFC 4556 section 3.2.2: KRB_AP_ERR_SKEW (37)' },
+  { code: 'STS-KRB-0190',
+    summary: 'A PKINIT request carried no RFC 8070 freshness token where ' +
+      'one is required, or one this realm did not issue or that expired ' +
+      '(#179).',
+    spec: 'RFC 8070 section 2.4: KDC_ERR_PREAUTH_FAILED (24), ' +
+      'KDC_ERR_PREAUTH_EXPIRED (90), each with a fresh PA-AS-FRESHNESS' },
+  { code: 'STS-KRB-0191',
+    summary: 'A PKINIT AuthPack was signed over SHA-1, MD5 or an unknown ' +
+      'digest (#179).',
+    spec: 'RFC 4556 section 3.2.2, RFC 8636 section 4: ' +
+      'KDC_ERR_DIGEST_IN_SIGNED_DATA_NOT_ACCEPTED (80) with ' +
+      'TD-CMS-DIGEST-ALGORITHMS' },
+  { code: 'STS-KRB-0192',
+    summary: 'A PKINIT AuthPack\'s signature did not verify with the ' +
+      'signer\'s certificate, or its signed attributes were wrong (#179).',
+    spec: 'RFC 4556 section 3.2.2: KDC_ERR_INVALID_SIG (64)' },
+  { code: 'STS-KRB-0193',
+    summary: 'A signed PKINIT AuthPack was presented a second time, or ' +
+      'could not be proved unused (#179).',
+    spec: 'RFC 4556 section 3.2.2: KRB_AP_ERR_REPEAT (34), ' +
+      'KRB_ERR_GENERIC (60)' },
+  { code: 'STS-KRB-0194',
+    summary: 'A PKINIT request asked for the reply key by public-key ' +
+      'encryption, which this KDC does not implement (#179).',
+    spec: 'RFC 4556 section 3.2.3: ' +
+      'KDC_ERR_PUBLIC_KEY_ENCRYPTION_NOT_SUPPORTED (81)' },
+  { code: 'STS-KRB-0195',
+    summary: 'A PKINIT request\'s Diffie-Hellman group or public value was ' +
+      'refused: MODP group 2, a group of the client\'s own, an unsupported ' +
+      'curve, or a value out of range (#179).',
+    spec: 'RFC 4556 section 3.2.2, RFC 5349 section 4: ' +
+      'KDC_ERR_DH_KEY_PARAMETERS_NOT_ACCEPTED (65) with TD-DH-PARAMETERS' },
+  { code: 'STS-KRB-0196',
+    summary: 'A PKINIT request offered no RFC 8636 KDF this KDC uses, or ' +
+      'none at all while krb5.pkinitLegacyKdf is off (#179).',
+    spec: 'RFC 8636 section 6: KDC_ERR_NO_ACCEPTABLE_KDF (100)' },
+  { code: 'STS-KRB-0197',
+    summary: 'The KDC held no PKINIT certificate for the realm, or could not ' +
+      'sign its reply (#179).',
+    spec: 'none (logged); KDC_ERR_CLIENT_NOT_TRUSTED (62) to the client' },
+  { code: 'STS-KRB-0198',
+    summary: 'An anonymous PKINIT request was refused — anonymous PKINIT ' +
+      'off, no anonymous KDC option, a service other than the realm\'s TGS ' +
+      'or no AES enctype — or an anonymous ticket was presented to the TGS, ' +
+      'which it may not buy from (#179).',
+    spec: 'RFC 8062 sections 4.1 and 4.2: KDC_ERR_C_PRINCIPAL_UNKNOWN (6), ' +
+      'KDC_ERR_BADOPTION (13), KDC_ERR_POLICY (12), KDC_ERR_ETYPE_NOSUPP ' +
+      '(14)' },
   { code: 'STS-LDAP-0001',
     summary: 'An LDAP simple bind presented the reserved password this ' +
       'service refuses in every protocol.',
