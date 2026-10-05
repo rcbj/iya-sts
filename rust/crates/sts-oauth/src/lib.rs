@@ -8,7 +8,10 @@
 //!   issuer and the audience a resource server here checks after it has
 //!   verified a token's signature. The issuance half (`audiencePlan()`)
 //!   arrives with the token endpoint.
+//! * [`mtls`] — RFC 8705 section 3.1: a certificate-bound token held to
+//!   the connection's certificate.
 
 #![forbid(unsafe_code)]
 
 pub mod jwt_access_token;
+pub mod mtls;
