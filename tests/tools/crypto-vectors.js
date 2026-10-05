@@ -2243,6 +2243,61 @@ function realmsVectors() {
   };
 }
 
+// THE LDIF STORE (`persistence/persistence_ldif.js`): the files Node's
+// driver writes for entries that exercise every encoding rule — a leading
+// space, colon or '<', a trailing space, CR, LF, NUL, non-ASCII, a line
+// long enough to fold — and its parse of LDIF it did not write (folded
+// lines, CRLF, URL values, a line before any dn:, comments).
+async function ldifVectors() {
+  const os = require('os');
+  const driverModule = require(path.join(ROOT, 'persistence',
+                                         'persistence_ldif.js'));
+  const bunyan = require('bunyan');
+  const log = bunyan.createLogger({ name: 'vectors', level: 'fatal' });
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ldif-vectors-'));
+  const driver = driverModule.create({ dir: dir, log: log });
+  await driver.open();
+  const entries = [
+    { dn: 'dc=example,dc=com', origin: 'seed',
+      attributes: { objectClass: ['top', 'domain'], dc: ['example'],
+                    createTimestamp: ['20260101000000Z'] } },
+    { dn: 'cn=Zoë Ünïcode,ou=people,dc=example,dc=com',
+      attributes: { cn: ['Zoë Ünïcode'], description: [' leading',
+        'trailing ', ':colon', '<angle', 'line\nbreak', 'cr\rhere',
+        'nul\u0000x', '', 'plain value', 'x'.repeat(200)],
+        mail: ['zoe@example.com'],
+        modifyTimestamp: ['20260102000000Z'] } },
+    { dn: 'uid=' + 'long'.repeat(30) + ',dc=example,dc=com',
+      attributes: { uid: ['long'.repeat(30)] } }
+  ];
+  const all = new Map([['default', entries], ['acme', entries.slice(1)]]);
+  await driver.saveDirectory({ removedRealms: [], touched: ['default',
+                                                           'acme'],
+                               all: all });
+  await driver.saveRealms([{ id: 'acme', name: 'Acme', domain: 'a.example',
+                             overrides: { 'x.y': 3, 'z': 'é' } }]);
+  await driver.saveOverrides({ 'global.logLevel': 'debug', 'n': 0.5 });
+  const files = {};
+  fs.readdirSync(dir).sort().forEach(function (name) {
+    files[name] = fs.readFileSync(path.join(dir, name), 'utf8');
+  });
+  const foreign = [
+    'version: 1\r\n\r\n# sts-origin: seed\r\ndn: cn=a,dc=x\r\ncn: a\r\n' +
+      'description: folded\r\n  across lines\r\n\r\n',
+    'cn: before any dn\ndn: cn=b,dc=x\njpegPhoto:< file:///etc/passwd\n' +
+      'CN:: w6k=\nsn:value-with-no-space\nsn:  two spaces\n\n' +
+      '# sts-origin: lost\n\ndn: cn=c,dc=x\nnocolon\n',
+    'dn:: Y249ZMOpLGRjPXg=\ncreateTimestamp: 20250101000000Z\n'
+  ];
+  const parsed = foreign.map(function (t) {
+    return driverModule.fromLdif(t, log);
+  });
+  const reread = await driver.loadDirectory();
+  fs.rmSync(dir, { recursive: true, force: true });
+  return { entries: entries, files: files, foreign: foreign,
+           parsed: parsed, reread: reread };
+}
+
 const VECTORS = [{ file: 'jws-node.json', build: jws },
                  { file: 'jwe-node.json', build: jwe },
                  { file: 'c14n-node.json', build: c14n },
@@ -2257,7 +2312,8 @@ const VECTORS = [{ file: 'jws-node.json', build: jws },
                  { file: 'x509-node.json', build: x509Vectors },
                  { file: 'limbo-node.json', build: limbo },
                  { file: 'foreign-node.json', build: foreign },
-                 { file: 'realms-node.json', build: realmsVectors }];
+                 { file: 'realms-node.json', build: realmsVectors },
+                 { file: 'ldif-node.json', build: ldifVectors }];
 
 if (require.main === module) {
   fs.mkdirSync(OUT, { recursive: true });

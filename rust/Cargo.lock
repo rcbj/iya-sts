@@ -1275,6 +1275,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "sts-store"
+version = "0.1.0"
+dependencies = [
+ "base64 0.23.1",
+ "chrono",
+ "indexmap",
+ "serde",
+ "serde_json",
+ "sts-core",
+ "thiserror",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "sts-xacml"
 version = "0.1.0"
 dependencies = [
