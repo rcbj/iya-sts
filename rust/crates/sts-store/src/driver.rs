@@ -133,4 +133,48 @@ pub trait Driver: Send + Sync {
     ) -> StoreFuture<'a, ()> {
         self.save_overrides(overrides)
     }
+
+    /// Every key row (`sts_keys`): `(realm, material)`. A store that keeps
+    /// no keys answers none.
+    fn load_keys(&self) -> StoreFuture<'_, Vec<(String, String)>> {
+        Box::pin(async { Ok(Vec::new()) })
+    }
+    /// Replaces one key row.
+    fn save_keys<'a>(
+        &'a self,
+        realm: &'a str,
+        _material: &'a str,
+    ) -> StoreFuture<'a, ()> {
+        Box::pin(async move {
+            Err(StoreError::new(format!(
+                "the {} store keeps no keys (\"{}\" was not written)",
+                self.name(),
+                realm
+            )))
+        })
+    }
+    /// Whether [`Driver::merge_keys`] decides under the row's lock.
+    fn merges_keys(&self) -> bool {
+        false
+    }
+    /// One key row merged under its lock: `merge` is handed what is stored
+    /// and answers the row to write, or `None` to leave it. Answers what the
+    /// store holds afterwards.
+    fn merge_keys<'a>(
+        &'a self,
+        realm: &'a str,
+        _merge: KeyMerge,
+    ) -> StoreFuture<'a, Option<String>> {
+        Box::pin(async move {
+            Err(StoreError::new(format!(
+                "the {} store does not merge keys (\"{}\" was not written)",
+                self.name(),
+                realm
+            )))
+        })
+    }
 }
+
+/// What [`Driver::merge_keys`] decides with.
+pub type KeyMerge =
+    Box<dyn FnOnce(Option<&str>) -> Result<Option<String>, String> + Send>;

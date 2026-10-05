@@ -31,6 +31,8 @@ use serde_json::{json, Map, Value as Json};
 use crate::driver::{Directory, Driver, StoreError, StoreFuture, StoreResult};
 use crate::ldif;
 use crate::model::DirectoryChange;
+use sts_core::errors::codes;
+use sts_core::log::tag;
 
 const HEADER: &[&str] = &[
     "",
@@ -120,6 +122,81 @@ impl LdifDriver {
 impl Driver for LdifDriver {
     fn name(&self) -> &'static str {
         "ldif"
+    }
+
+    // ONE FILE FOR EVERY REALM's keys (`keys.json`), as the Node driver
+    // writes it: ciphertext only, 0600 like every other file here.
+    fn load_keys(&self) -> StoreFuture<'_, Vec<(String, String)>> {
+        Box::pin(async move {
+            let Some(text) =
+                Self::read_if_present(&self.dir.join("keys.json"))?
+            else {
+                return Ok(Vec::new());
+            };
+            let parsed: Json = serde_json::from_str(&text)?;
+            Ok(parsed
+                .get("keys")
+                .and_then(Json::as_array)
+                .map(|rows| {
+                    rows.iter()
+                        .filter_map(|r| {
+                            Some((
+                                r.get("realm")?.as_str()?.to_string(),
+                                r.get("material")?.as_str()?.to_string(),
+                            ))
+                        })
+                        .collect()
+                })
+                .unwrap_or_default())
+        })
+    }
+
+    fn save_keys<'a>(
+        &'a self,
+        realm: &'a str,
+        material: &'a str,
+    ) -> StoreFuture<'a, ()> {
+        Box::pin(async move {
+            let file = self.dir.join("keys.json");
+            let mut rows: Vec<Json> = match Self::read_if_present(&file)? {
+                Some(text) => match serde_json::from_str::<Json>(&text) {
+                    Ok(parsed) => parsed
+                        .get("keys")
+                        .and_then(Json::as_array)
+                        .cloned()
+                        .unwrap_or_default(),
+                    Err(e) => {
+                        // Replaced rather than appended to: appending to
+                        // something unparseable is unparseable for ever.
+                        tracing::warn!(
+                            "{}persistence: keys.json could not be parsed and is being rewritten: {}",
+                            tag(codes::STS_STORE_0011),
+                            e
+                        );
+                        Vec::new()
+                    }
+                },
+                None => Vec::new(),
+            };
+            rows.retain(|r| {
+                r.get("realm").and_then(Json::as_str) != Some(realm)
+            });
+            rows.push(json!({ "realm": realm, "material": material,
+                "writtenAt": sts_core::time::iso_now() }));
+            let doc = json!({
+                "version": 1,
+                "note": "This service's signing keys, one row per trust realm, ENCRYPTED with AES-256-GCM. The key \
+                         that opens them is not here and is never written by this service — see common/secrets.js \
+                         for the five places it can be read from. Deleting a row makes that realm generate new keys \
+                         on next use, and everything signed with the old ones stops verifying.",
+                "keys": rows,
+            });
+            fs::create_dir_all(&self.dir)?;
+            Self::write_atomic(
+                &file,
+                &format!("{}\n", serde_json::to_string_pretty(&doc)?),
+            )
+        })
     }
 
     fn open(&self) -> StoreFuture<'_, ()> {

@@ -1749,6 +1749,7 @@ dependencies = [
  "serde_json",
  "sts-cluster",
  "sts-core",
+ "sts-crypto",
  "thiserror",
  "tokio",
  "tokio-postgres",
