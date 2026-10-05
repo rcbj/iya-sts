@@ -10,6 +10,7 @@
 //!   arrives with the token endpoint.
 //! * [`mtls`] — RFC 8705 section 3.1: a certificate-bound token held to
 //!   the connection's certificate.
+//! * [`sender_constraints`] — a resource that accepts only bound tokens.
 //! * [`revocation`] — the revoked-token register every resource server
 //!   asks.
 //! * [`dpop`] — RFC 9449's proof check, its stores behind a trait, and
@@ -24,3 +25,4 @@ pub mod dpop_stores;
 pub mod jwt_access_token;
 pub mod mtls;
 pub mod revocation;
+pub mod sender_constraints;
