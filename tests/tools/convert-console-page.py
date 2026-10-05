@@ -181,7 +181,8 @@ for doc, start, end, name in spans:
     # `this` and `self` stay: a static method called on its class has the
     # class for `this`. The kit is imported as `kit`, shorter than `admin`,
     # so no line the move touches grows.
-    block = re.sub(r'\badmin\.', 'kit.', block)
+    # Not a file name in a comment: `admin.js` is prose, not the console.
+    block = re.sub(r'\badmin\.(?!(?:js|ts)\b)', 'kit.', block)
     block = re.sub(r'\.bind\(admin\)', '.bind(kit)', block)
     blocks.append(block)
 body = '\n\n'.join(blocks)

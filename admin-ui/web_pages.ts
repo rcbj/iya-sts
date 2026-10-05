@@ -60,6 +60,7 @@ import SecretsPage = require('./web_secrets');
 import SettingsForms = require('./web_settings');
 import SsfTransmittersPage = require('../ssf/web_ssf_transmitters');
 import VcStatusPage = require('./web_vc_status');
+import XacmlPage = require('../xacml/web_xacml');
 import WorkerPoolsPage = require('./web_worker_pools');
 
 type Json = any;
@@ -174,6 +175,28 @@ const PAGES: WebPage[] = [
     render: SsfTransmittersPage.render },
   { path: '/admin/vc-status', title: 'Credential status',
     operation: '/admin-api/vc-status', render: VcStatusPage.render },
+  { path: '/admin/xacml', title: 'XACML', operation: '/admin-api/xacml',
+    render: XacmlPage.render },
+  { path: '/admin/xacml/decide', title: 'Try a decision',
+    operation: '/admin-api/xacml/decide',
+    render: function (view: Json, ctx?: Json): string {
+      return XacmlPage.decideBody(ctx || WebKit.context(), view);
+    } },
+  { path: '/admin/xacml/monitor', title: 'XACML decisions',
+    operation: '/admin-api/xacml/monitor',
+    render: function (view: Json, ctx?: Json): string {
+      return XacmlPage.monitorBody(ctx || WebKit.context(), view);
+    } },
+  { path: '/admin/xacml/peps', title: 'Remote PEPs',
+    operation: '/admin-api/xacml/peps',
+    render: function (view: Json, ctx?: Json): string {
+      return XacmlPage.pepsBody(ctx || WebKit.context(), view);
+    } },
+  { path: '/admin/xacml/policies', title: 'XACML policies',
+    operation: '/admin-api/xacml/policies',
+    render: function (view: Json, ctx?: Json): string {
+      return XacmlPage.policiesBody(ctx || WebKit.context(), view);
+    } },
   { path: '/admin/worker-pools', title: 'Worker pools',
     operation: '/admin-api/worker-pools', render: WorkerPoolsPage.render }
 ];
