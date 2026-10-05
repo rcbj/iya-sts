@@ -4801,6 +4801,92 @@ class AdminViews {
   }
 
   // ---------------------------------------------------------------------------
+  // WHICH ROWS OF THE CONFIGURED PERMISSIONS REGISTER A PAGE SHOWS (#446).
+  //
+  // The console's `permissionsListState()`, here so that an answer carries
+  // it: the two searches (`permq`, `grantq`) and the two pagings, worked out
+  // in ONE function so the table and the reply cannot disagree. The pages
+  // are `{ shown, paging }` with the paging as every answer carries one.
+  // ---------------------------------------------------------------------------
+  /**
+   * Works out the searched and paged rows of the permissions register.
+   *
+   * @param query - the page's query
+   * @param register - the configured permissions register
+   * @returns `permWanted`, `grantWanted`, `permPage` and `grantPage`
+   */
+  permissionsListStateOf(query, register) {
+    const { log } = this.deps;
+    const self = this;
+    log.debug("Entering AdminViews.permissionsListStateOf().");
+    const permWanted = this.queryOne(query, 'permq').trim();
+    const grantWanted = this.queryOne(query, 'grantq').trim();
+    const permissionsMatched = register.permissions.filter(function (one) {
+      return self.chooserMatches([one.resourceName, one.resource], permWanted);
+    });
+    // BOTH ENDS OF THE RELATIONSHIP: a dangling grant carries no resource,
+    // so it matches on its client alone.
+    const grantsMatched = register.grants.filter(function (one) {
+      return self.chooserMatches([one.clientName, one.client,
+                                  one.resourceName, one.resource],
+                                 grantWanted);
+    });
+    const permPage = this.pagedRows(query, permissionsMatched,
+      { name: 'permissions', noun: 'permissions',
+        defaultPer: DELEGATION_PER_PAGE });
+    const grantPage = this.pagedRows(query, grantsMatched,
+      { name: 'grants', noun: 'grants', defaultPer: DELEGATION_PER_PAGE });
+    log.debug("Leaving AdminViews.permissionsListStateOf().");
+    return {
+      permWanted: permWanted, grantWanted: grantWanted,
+      permPage: { shown: permPage.shown,
+                  paging: this.pagingJson(permPage.paging) },
+      grantPage: { shown: grantPage.shown,
+                   paging: this.pagingJson(grantPage.paging) }
+    };
+  }
+
+  // ---------------------------------------------------------------------------
+  // PROTOCOLS → DELEGATION, AS ONE ANSWER (#446).
+  //
+  // `/admin/delegation-settings`: the configured permissions register with
+  // its searches and pagings, every application for the two selects, and
+  // the page's settings block. `allowed` is what the page answered before.
+  // ---------------------------------------------------------------------------
+  /**
+   * Builds `/admin/delegation-settings`'s answer.
+   *
+   * @param query - the page's query
+   * @returns the register, its list state, the applications and settings
+   */
+  delegationSettingsModel(query) {
+    const { log, applications } = this.deps;
+    log.debug("Entering AdminViews.delegationSettingsModel().");
+    const permissions = this.permissionsView();
+    const register = permissions.register;
+    const listState = this.permissionsListStateOf(query || {}, register);
+    log.debug("Leaving AdminViews.delegationSettingsModel().");
+    return {
+      allowed: {
+        resources: register.resources,
+        permissions: register.permissions,
+        grants: register.grants,
+        counts: register.counts,
+        filter: { permissions: listState.permWanted || null,
+                  grants: listState.grantWanted || null },
+        paging: { permissions: listState.permPage.paging,
+                  grants: listState.grantPage.paging }
+      },
+      settings: this.settingsBlockOf('/admin/delegation-settings'),
+      register: register,
+      listState: listState,
+      allApplications: applications.list().map(function (row) {
+        return { identifier: row.identifier, name: row.name || '' };
+      })
+    };
+  }
+
+  // ---------------------------------------------------------------------------
   // A DELEGATION CHOOSER'S PANE, SEARCHED AND PAGED HERE (#446).
   //
   // The console drew both choosers from the whole catalogue — every
@@ -11776,6 +11862,8 @@ export = {
   delegationLooks: slot.forward('delegationLooks'),
   delegationMapModel: slot.forward('delegationMapModel'),
   delegationMapKey: slot.forward('delegationMapKey'),
+  permissionsListStateOf: slot.forward('permissionsListStateOf'),
+  delegationSettingsModel: slot.forward('delegationSettingsModel'),
   credentialLineageModel: slot.forward('credentialLineageModel'),
   delegationUserModel: slot.forward('delegationUserModel'),
   delegationApplicationModel: slot.forward('delegationApplicationModel'),

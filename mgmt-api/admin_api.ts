@@ -18493,6 +18493,42 @@ class AdminApi {
           log.debug("Leaving the management API delegation map endpoint.");
         } },
 
+      // PROTOCOLS → DELEGATION (#446): what the page draws, as the page
+      // answers it; see `AdminViews.delegationSettingsModel()`. The register
+      // alone is `GET /admin-api/permissions`.
+      { method: 'GET', path: BASE + '/delegation-settings',
+        tag: 'Delegation',
+        operationId: 'getDelegationSettings',
+        summary: 'The configured permissions register, as its page shows it',
+        description: 'The delegated permissions register searched and ' +
+                     'paged as the page shows it — `permq` and `grantq` ' +
+                     'search the permissions and the grants, ' +
+                     '`permissionsPage` and `grantsPage` page them ' +
+                     '(`listState`) — with every application in the ' +
+                     'registry for the two selects (`allApplications`) and ' +
+                     'the page\'s settings block. `allowed` is the register ' +
+                     'with its filter and paging, as the page answered it ' +
+                     'before.',
+        mirrors: 'GET /admin/delegation-settings',
+        parameters: [
+          { name: 'permq', in: 'query', required: false,
+            schema: { type: 'string' },
+            description: 'Part of a permission\'s resource.' },
+          { name: 'grantq', in: 'query', required: false,
+            schema: { type: 'string' },
+            description: 'Part of a grant\'s client or resource.' }
+        ].concat(this.pagingParameters()),
+        responseDescription: 'The register, its list state, the ' +
+                             'applications and the settings block.',
+        handler: function (req, res) {
+          log.debug("Entering the management API delegation settings " +
+                    "endpoint.");
+          self.sendJson(res, 200,
+                        adminViews.delegationSettingsModel(req.query));
+          log.debug("Leaving the management API delegation settings " +
+                    "endpoint.");
+        } },
+
       // EVERYTHING DONE IN ONE PERSON'S NAME (#446): the console page had
       // no operation, having no form; see
       // `AdminViews.delegationUserModel()`.

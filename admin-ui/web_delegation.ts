@@ -32,6 +32,7 @@
 import kit = require('./web_kit');
 import GroupsPage = require('./web_groups');
 import TokensPage = require('./web_tokens');
+import SettingsForms = require('./web_settings');
 
 type Json = any;
 
@@ -3308,6 +3309,36 @@ class DelegationPage {
       '/admin-api/delegation</code> and the credentials are in <code>GET ' +
       '/admin-api/tokens</code>.');
 
+  }
+
+  // ---------------------------------------------------------------------------
+  // /admin/delegation-settings, FROM `GET /admin-api/delegation-settings`
+  // (#446): the configured permissions register, editable, and the page's
+  // settings.
+  // ---------------------------------------------------------------------------
+  /**
+   * Draws `/admin/delegation-settings` from its answer.
+   *
+   * @param ctx - the render context (`WebKit.context()`)
+   * @param json - the answer of `GET /admin-api/delegation-settings`
+   * @returns the body as HTML
+   */
+  static settings(ctx: Json, json: Json): string {
+    const listView = kit.listViewOf('/admin/delegation-settings', ctx.query);
+    return kit.note('<strong>Which applications may reach which, decided ' +
+      'in advance, and how much of what HAPPENED is kept.</strong> This ' +
+      'page configures; <a href="/admin/delegation">Monitoring &rsaquo; ' +
+      'Delegation</a> shows the acts &mdash; Kerberos S4U, WS-Trust ' +
+      '<code>OnBehalfOf</code> / <code>ActAs</code> and RFC 8693 token ' +
+      'exchange &mdash; with this register beside them, read-only. One ' +
+      'application\'s part of it is also on that application\'s ' +
+      '<em>Permissions</em> tab under <a href="/admin/applications">' +
+      'Directory &rsaquo; Applications</a>, which is where a grant is ' +
+      'made. Who may act for whom at Kerberos, WS-Trust and token ' +
+      'exchange is attributes of applications and people, edited on ' +
+      'their pages.') +
+      DelegationPage.permissionsSection(ctx, json, listView, true) +
+      SettingsForms.forms(json.settings, '/admin/delegation-settings');
   }
 }
 

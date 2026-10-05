@@ -19960,39 +19960,13 @@ class AdminConsole {
     // -------------------------------------------------------------------------
     app.get('/admin/delegation-settings', function (req, res) {
       log.debug("Entering the admin delegation settings page.");
-      const permissions = permissionsView();
-      const allowedState = self.permissionsListState(req.query,
-                                                     permissions.register);
-      const listView = self.listViewOf('/admin/delegation-settings',
-                                       req.query);
-      const inner = self.messagesOf(req) +
-        self.note('<strong>Which applications may reach which, decided in ' +
-        'advance, and how much of what HAPPENED is kept.</strong> This page ' +
-        'configures; <a href="/admin/delegation">Monitoring &rsaquo; ' +
-        'Delegation</a> shows the acts &mdash; Kerberos S4U, WS-Trust ' +
-        '<code>OnBehalfOf</code> / <code>ActAs</code> and RFC 8693 token ' +
-        'exchange &mdash; with this register beside them, read-only. One ' +
-        'application\'s part of it is also on that application\'s ' +
-        '<em>Permissions</em> tab under <a href="/admin/applications">' +
-        'Directory &rsaquo; Applications</a>, which is where a grant is ' +
-        'made. Who may act for whom at Kerberos, WS-Trust and token ' +
-        'exchange is attributes of applications and people, edited on ' +
-        'their pages.') +
-        self.permissionsSection(req, permissions, listView, true) +
-        self.configFormsFor('/admin/delegation-settings');
-      self.respond(req, res, {
-        allowed: {
-          resources: permissions.register.resources,
-          permissions: permissions.register.permissions,
-          grants: permissions.register.grants,
-          counts: permissions.register.counts,
-          filter: { permissions: allowedState.permWanted || null,
-                    grants: allowedState.grantWanted || null },
-          paging: { permissions: pagingJson(allowedState.permPage.paging),
-                    grants: pagingJson(allowedState.grantPage.paging) }
-        },
-        settings: self.configSettingsJson('/admin/delegation-settings')
-      }, 'Delegation', '/admin/delegation-settings', inner);
+      // The same model `GET /admin-api/delegation-settings` answers.
+      const json = adminViews.delegationSettingsModel(req.query);
+      self.respond(req, res, json, 'Delegation', '/admin/delegation-settings',
+        // Drawn by `web_delegation.ts` (#446).
+        self.messagesOf(req) +
+        DelegationPage.settings(self.renderContext(req),
+          JSON.parse(JSON.stringify(json))));
       log.debug("Leaving the admin delegation settings page.");
     });
 

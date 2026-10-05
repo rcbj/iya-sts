@@ -242,6 +242,11 @@ const PAGES: WebPage[] = [
     render: function (view: Json, ctx?: Json): string {
       return DelegationPage.application(ctx || WebKit.context(), view);
     } },
+  { path: '/admin/delegation-settings', title: 'Delegation',
+    operation: '/admin-api/delegation-settings',
+    render: function (view: Json, ctx?: Json): string {
+      return DelegationPage.settings(ctx || WebKit.context(), view);
+    } },
   { path: '/admin/delegation/user', title: 'Delegation — one person',
     operation: '/admin-api/delegation/user',
     drill: {
