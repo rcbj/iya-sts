@@ -11469,8 +11469,8 @@ const CODES = [
       'KDC_ERR_DIGEST_IN_SIGNED_DATA_NOT_ACCEPTED (80) with ' +
       'TD-CMS-DIGEST-ALGORITHMS' },
   { code: 'STS-KRB-0192',
-    summary: 'A PKINIT AuthPack\'s signature did not verify with the signer\'s ' +
-      'certificate, or its signed attributes were wrong (#179).',
+    summary: 'A PKINIT AuthPack\'s signature did not verify with the ' +
+      'signer\'s certificate, or its signed attributes were wrong (#179).',
     spec: 'RFC 4556 section 3.2.2: KDC_ERR_INVALID_SIG (64)' },
   { code: 'STS-KRB-0193',
     summary: 'A signed PKINIT AuthPack was presented a second time, or ' +

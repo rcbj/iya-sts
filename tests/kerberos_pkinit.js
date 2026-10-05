@@ -501,9 +501,9 @@ async function throughTheKdc(t) {
 // hold a second factor is refused a ticket on the password alone (#173) and
 // gets one with a certificate; a person with NO Kerberos keys (never signed
 // in with a password) gets one with a certificate, and with a password is
-// told to sign in once, as before. The child requires this file and calls the function
-// below: the product KDC's principal database is built at require time in the
-// mode the process starts in, as `kerberos_fast_otp.js` explains.
+// told to sign in once, as before. The child requires this file and calls
+// the function below: the product KDC's principal database is built at require
+// time in the mode the process starts in, as `kerberos_fast_otp.js` explains.
 // ---------------------------------------------------------------------------
 async function productScenario() {
   log.debug("Entering productScenario().");

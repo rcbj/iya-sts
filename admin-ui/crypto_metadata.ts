@@ -1706,7 +1706,8 @@ class CryptoMetadata {
                'long-term key for that message\'s key usage number.',
         verifies: 'Pre-authentication — PKINIT\'s signed AuthPack and ' +
                   'its certificate path among it — every AP-REQ ' +
-                  'authenticator, and the checksums above. THIS IS THE ONE DOOR IN THIS SERVICE ' +
+                  'authenticator, and the checksums above. THIS IS THE ' +
+                  'ONE DOOR IN THIS SERVICE ' +
                   'THAT REALLY VERIFIES A CREDENTIAL, and it is not a policy ' +
                   'choice: in Kerberos the password IS the key, so a KDC ' +
                   'that accepted anything would still have to pick a key the ' +

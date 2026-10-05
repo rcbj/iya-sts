@@ -11090,8 +11090,9 @@ const SETTINGS = [
                  'or ECDH on P-256, P-384 and P-521). It is how a person ' +
                  'whose only second factor is a security key gets a ticket ' +
                  'in product mode, where a password alone is refused. The ' +
-                 'KDC signs with a certificate from the realm\'s own Kerberos ' +
-                 'KDC Issuing CA, made on first use; a client trusts the ' +
+                 'KDC signs with a certificate from the realm\'s own ' +
+                 'Kerberos KDC Issuing CA, made on first use; a client ' +
+                 'trusts the ' +
                  'service Root (X509_anchors). Off, PA-PK-AS-REQ is neither ' +
                  'offered nor read.' },
 
@@ -11103,7 +11104,8 @@ const SETTINGS = [
                  'token — one this KDC issued in KDC_ERR_PREAUTH_REQUIRED ' +
                  'within the clock skew. It is what stops an AuthPack signed ' +
                  'on a borrowed smart card in advance from being used later. ' +
-                 'MIT Kerberos 1.17 and later and Heimdal send one when asked. ' +
+                 'MIT Kerberos 1.17 and later and Heimdal send one when ' +
+                 'asked. ' +
                  'WARNING: off, a PKINIT request is held only to its own ' +
                  'timestamp and the replay check.' },
 
@@ -11124,8 +11126,9 @@ const SETTINGS = [
     env: 'KRB5_PKINIT_KDC_KEY_ALGORITHM', type: 'enum',
     enumValues: ['ec-p256', 'ec-p384', 'rsa-2048', 'rsa-3072'],
     dflt: 'ec-p256', runtime: true,
-    description: 'The key the KDC signs its PKINIT replies with, certified by ' +
-                 'the realm\'s Kerberos KDC Issuing CA. A change takes effect ' +
+    description: 'The key the KDC signs its PKINIT replies with, certified ' +
+                 'by the realm\'s Kerberos KDC Issuing CA. A change takes ' +
+                 'effect ' +
                  'when a process next makes its KDC certificate — on its ' +
                  'next start, or a day before the current one expires. No ' +
                  'post-quantum algorithm is offered: no PKINIT client ' +

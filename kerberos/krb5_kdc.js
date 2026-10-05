@@ -109,9 +109,9 @@
 // It does NOT check request signatures, does not implement kpasswd, and does
 // not apply SID filtering across a trust. PKINIT (RFC 4556, with anonymous
 // PKINIT for FAST armor) is served since #179 — krb5_pkinit.ts, reached
-// through the key source like FAST, below. The AS and TGS exchanges are both served; the AP
-// exchange belongs to a SERVICE rather than to a KDC and lives in
-// krb5_service.js.
+// through the key source like FAST, below. The AS and TGS exchanges are both
+// served; the AP exchange belongs to a SERVICE rather than to a KDC and lives
+// in krb5_service.js.
 //
 // **FAST IN THE AS EXCHANGE, OTP PRE-AUTHENTICATION AND AUTHENTICATION
 // INDICATORS ARE SERVED SINCE 2026-09-22 (#173)** — RFC 6113, RFC 6560 and RFC

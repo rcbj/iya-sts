@@ -480,7 +480,8 @@ const SPECS: Spec[] = [
     where: 'IETF',
     url: 'https://www.rfc-editor.org/rfc/rfc8636',
     coverage: 'full: the four KDFs (SHA-1, SHA-256, SHA-384, SHA-512), the ' +
-              'strongest the client offers chosen, with the OtherInfo binding ' +
+              'strongest the client offers chosen, with the OtherInfo ' +
+              'binding ' +
               'the AS-REQ and the PA-PK-AS-REP into the reply key (held to ' +
               'section 8\'s vectors); TD-CMS-DIGEST-ALGORITHMS and ' +
               'TD-CERT-DIGEST-ALGORITHMS on the two digest refusals; ' +
@@ -497,7 +498,8 @@ const SPECS: Spec[] = [
     where: 'IETF',
     url: 'https://www.rfc-editor.org/rfc/rfc8062',
     coverage: 'partial: anonymous PKINIT in the AS exchange — an unsigned ' +
-              'AuthPack for WELLKNOWN/ANONYMOUS, a TGT in WELLKNOWN:ANONYMOUS ' +
+              'AuthPack for WELLKNOWN/ANONYMOUS, a TGT in ' +
+              'WELLKNOWN:ANONYMOUS ' +
               'with the anonymous flag and nothing naming anybody, and ' +
               'PA-PKINIT-KX, the KDC\'s contribution to the session key — ' +
               'as FAST ARMOR for a client with no host keytab ' +
