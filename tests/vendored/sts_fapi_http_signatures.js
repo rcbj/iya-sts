@@ -99,7 +99,10 @@ const STRANGER_KEY = nodeCrypto.generateKeyPairSync("ec",
                                                     { namedCurve: "P-256" });
 const KID = "fapihs-" + STAMP;
 
-const FLOOR = 25;
+// Eighteen is every check the file makes when sections a to f all run
+// (counted on the first run, 2026-10-05; it was written as 25, more than the
+// file holds, and so could never pass).
+const FLOOR = 18;
 var checks = 0;
 function check(what, fn) {
   log.debug("Entering check().");

@@ -96,9 +96,16 @@ function profile(fixture) {
         ? { known: true, required: !!fixture.clientRequires, fields: {} }
         : { known: false, required: false, fields: {} };
     },
+    // The shape `assertion_grant.keysForParty()` really answers: a record per
+    // key with the JWK as its `jwk` member. A bare JWK here let
+    // `HttpSignatures.keysOf()` read the record as the JWK and pass, while
+    // every real signed request was refused (2026-10-05).
     keysForParty: function () {
-      return { keys: [Object.assign({ source: 'oauthJwks' },
-                                    fixture.client.jwk)] };
+      const jwk = fixture.client.jwk;
+      return { keys: [{ source: 'oauthJwks',
+                        kid: jwk.kid ? String(jwk.kid) : '', jwk: jwk,
+                        key: nodeCrypto.createPublicKey(
+                          { key: jwk, format: 'jwk' }) }] };
     },
     ensurePartyKeys: function () { return Promise.resolve(null); }
   });

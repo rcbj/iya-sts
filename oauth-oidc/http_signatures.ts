@@ -263,16 +263,20 @@ class HttpSignatures {
     return tagged;
   }
 
-  // The client's keys, as JWKs, each without the `source` member
-  // `keysForParty()` adds.
+  // The client's keys, as JWKs. `keysForParty()` answers each key as a
+  // record — `{ source, kid, jwk, key }`, `key` a node KeyObject — so the JWK
+  // is its `jwk` member; reading the record as the JWK lost the key's `alg`
+  // (every signed request was refused STS-KEYS-0133) and handed the record on
+  // as the key. Found by tests/vendored/sts_fapi_http_signatures.js on its
+  // first run (2026-10-05).
   private keysOf(fields: Json): Json[] {
     const { log, keysForParty } = this.deps;
     log.debug("Entering HttpSignatures.keysOf().");
     const read = keysForParty(fields, 'application');
-    const keys = (read.keys || []).map(function (one: Json) {
-      const jwk = Object.assign({}, one);
-      delete jwk.source;
-      return jwk;
+    const keys = (read.keys || []).filter(function (one: Json) {
+      return one && one.jwk;
+    }).map(function (one: Json) {
+      return Object.assign({}, one.jwk);
     });
     log.debug("Leaving HttpSignatures.keysOf(). " + keys.length + " key(s).");
     return keys;
@@ -431,9 +435,13 @@ class HttpSignatures {
     }
     if (verified) {
       (verified.components || []).forEach(add);
-      add('"signature";key=' + sf.serializeBareItem(
+      // `;req` FIRST, as RFC 9421 section 2.4 and the draft's 5.3.2.1 write
+      // it (`add()` appends `req` LAST, after `key`). Either order verifies —
+      // the Signature-Input carries the spelling — but this is the one a
+      // client reading the draft looks for (2026-10-05).
+      add('"signature";req;key=' + sf.serializeBareItem(
         { type: 'string', value: verified.label }));
-      add('"signature-input";key=' + sf.serializeBareItem(
+      add('"signature-input";req;key=' + sf.serializeBareItem(
         { type: 'string', value: verified.label }));
     }
     log.debug("Leaving HttpSignatures.requestComponents(). " + out.length);
