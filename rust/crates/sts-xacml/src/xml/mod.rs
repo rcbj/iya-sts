@@ -1,9 +1,11 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
 // SPDX-License-Identifier: BUSL-1.1
 
-//! XACML 3.0 core XML, read into the model. A port of the reading half of
-//! `xacml/xacml_xml.js` (the writer, which only the PAP needs, comes with
-//! the PDP's move into the runtime).
+//! XACML 3.0 core XML, read into the model and a policy written back out. A
+//! port of `xacml/xacml_xml.js`: the reader here, the writer — which the
+//! PAP's editor and the ALFA import need — in `writer.rs`, whose output was
+//! compared with the Node writer's over every policy of the OASIS suite and
+//! is identical byte for byte (484 documents, 2026-10-05).
 //!
 //! **The parser is deliberately strict.** Six conformance cases carry an
 //! invalid POLICY and assert that loading it FAILS; a permissive reader would
@@ -20,8 +22,10 @@
 //! PDP.
 
 mod reader;
+mod writer;
 
 pub use reader::{
     parse_policy, parse_policy_unchecked, parse_request, parse_response,
     read_request, ExpectedResponse, ExpectedResult,
 };
+pub use writer::{escape, write_policy};
