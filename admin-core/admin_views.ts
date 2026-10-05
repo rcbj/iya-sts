@@ -10114,7 +10114,15 @@ class AdminViews {
       backchannelDeliveriesPaging: this.pagingJson(deliveriesPg.paging),
       backchannelCounts: backchannel.counts(),
       deliveryState: deliveryState,
-      deliveryq: deliveryQ
+      deliveryq: deliveryQ,
+      // WHAT THE PAGE STATES IN EVERY STATE OF IT (#446): its settings,
+      // whether this process can read what is live at all, the Kerberos
+      // realm an identity's principal is spelt in, and whether the
+      // development-only undo is offered.
+      settings: configSettingsJson('/admin/logout'),
+      hasReader: !!logoutReader,
+      kerberosRealm: krb5Principals.REALM,
+      opensTestControls: mode.opensTestControls()
     };
     if (!wantedUser) {
       log.debug("Leaving AdminViews.logoutJson(). Nobody was named.");
@@ -10173,7 +10181,8 @@ class AdminViews {
       json: Object.assign({ user: wantedUser, known: true, canWrite: canWrite },
                           inventory,
                           { rows: pg.shown,
-                            paging: this.pagingJson(pg.paging) },
+                            paging: this.pagingJson(pg.paging),
+                            family: wantedFamily, key: key },
                           backchannelBlock)
     };
   }

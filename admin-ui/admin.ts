@@ -855,6 +855,7 @@ import UsersPage = require('./web_users');
 import RbacPage = require('./web_rbac');
 import RealmsPage = require('./web_realms');
 import SpiffePage = require('../spiffe/web_spiffe');
+import LogoutPage = require('../logout/web_logout');
 
 // REQUIRED FOR THE ORDER THEY WERE ALWAYS REQUIRED IN, AND READ NOWHERE HERE
 // (#50). TypeScript drops an `import … = require()` whose name nothing reads,
@@ -7863,6 +7864,7 @@ class AdminConsole {
 
 
 
+  // Drawn by `web_logout.ts` (#446).
   /**
    * Draws the error shown when the logout module has not filled its slot.
    *
@@ -7872,25 +7874,10 @@ class AdminConsole {
     const { log } = this.deps;
     log.debug("Entering AdminConsole.logoutNoReaderNote().");
     log.debug("Leaving AdminConsole.logoutNoReaderNote().");
-    return '<div class="err"><strong>The logout module is not loaded in this ' +
-      'process.</strong> That is a require-order fault rather than a ' +
-      'configuration one: <code>logout/logout.ts</code> fills this ' +
-      'console\'s slot at its own require time, and <code>server.js</code> ' +
-      'requires it second to last. Nothing else on this console is ' +
-      'affected.</div>';
+    return LogoutPage.logoutNoReaderNote();
   }
 
-  // One row of the flattened table. The family is a COLUMN here where /logout
-  // makes it a heading, because this table is filtered and paged across
-  // families and a heading that appeared and vanished with the filter would be
-  // worse than a column that is always there. The opaque `back` field every
-  // form on this page carries, so that ending one item does not cost the reader
-  // their place in the list. Three other pages here build the same input as a
-  // local `const`; this is a function because six forms on this one page need
-  // it and a sixth hand-written copy is the one that would forget. It is
-  // REBUILT by listViewFromBack() on the way in and never echoed — the
-  // guarantee that keeps a hand-written `back` from reaching anything but
-  // another page of this same list.
+  // Drawn by `web_logout.ts` (#446).
   /**
    * Draws the hidden `back` input every form on the sign-out page carries.
    *
@@ -7901,9 +7888,10 @@ class AdminConsole {
     const { log } = this.deps;
     log.debug("Entering AdminConsole.logoutBackField().");
     log.debug("Leaving AdminConsole.logoutBackField().");
-    return '<input type="hidden" name="back" value="' + this.esc(back) + '">';
+    return LogoutPage.logoutBackField(back);
   }
 
+  // Drawn by `web_logout.ts` (#446).
   /**
    * Draws one row of the sign-out page's table, with its End form.
    *
@@ -7915,47 +7903,11 @@ class AdminConsole {
   logoutRowHtml(row, canWrite, back) {
     const { log } = this.deps;
     log.debug("Entering AdminConsole.logoutRowHtml().");
-    const button = row.terminable && canWrite
-      ? '<form method="post" action="/admin/logout" style="display:inline">' +
-        '<input type="hidden" name="action" value="end">' +
-        '<input type="hidden" name="user" value="' + this.esc(row.user) + '">' +
-        '<input type="hidden" name="select" value="' + this.esc(row.id) + '">' +
-        this.logoutBackField(back) +
-        '<button type="submit">End</button></form>'
-      : (row.terminable ? '<span class="state-none">—</span>'
-                        : '<span class="state-none" title="' +
-                          this.esc(row.why) +
-                          '">cannot</span>');
     log.debug("Leaving AdminConsole.logoutRowHtml().");
-    return '<tr><td>' + this.esc(row.family) + '</td>' +
-      // shortened() emits its OWN <code title=…> wrapper — the title is how the
-      // full value stays recoverable — so it must NOT be escaped or wrapped
-      // again: esc() around it prints the tags, which is what this cell did.
-      '<td>' + this.shortened(row.label, 44) + '<br><span class="sub">' +
-      this.esc(row.detail) + '</span>' +
-      (row.terminable ? '' :
-       '<br><span class="sub">' + this.esc(row.why) + '</span>') + '</td><td>' +
-      this.esc(row.kind) + '</td><td ' +
-      'class="sub">' + this.esc(this.whenText(row.startedAt)) + '</td>' +
-      '<td class="sub">' + this.esc(this.whenText(row.expiresAt)) + '</td>' +
-      '<td>' + button + '</td></tr>';
+    return LogoutPage.logoutRowHtml(row, canWrite, back);
   }
 
-  // ---------------------------------------------------------------------------
-  // THE BACK-CHANNEL LOGOUT DELIVERIES AND THEIR DEAD LETTERS (2026-09-17,
-  // #36; the cluster-wide, paged list and the retry the same day).
-  //
-  // A sign-out answers before its Logout Tokens are sent, so every result
-  // says `pending`; this is where each one is seen to have been accepted or
-  // not. On both halves of the page — the lookup and one person — because a
-  // delivery is not only one person's: an operator asking "is the relying
-  // party getting these?" has nobody in particular in mind. The rows are the
-  // SHARED store's (`oauth-oidc/backchannel_logout.ts`, header point 3), so
-  // this node lists every node's deliveries. Filtered by state and a search,
-  // paged on `backchannelDeliveriesPage`; a DEAD row carries a Retry button
-  // for a holder of Admin Write, which posts `retry-backchannel` — the same
-  // action `POST /admin-api/logout/retry-backchannel` calls.
-  // ---------------------------------------------------------------------------
+  // Drawn by `web_logout.ts` (#446).
   /**
    * Draws the back-channel Logout Token deliveries section.
    *
@@ -7969,93 +7921,11 @@ class AdminConsole {
    * @returns the section as HTML
    */
   backchannelDeliveriesSection(view, canWrite?, back?, wantedUser?) {
-    const { log, queryWith, pageParamsOf } = this.deps;
-    const self = this;
+    const { log } = this.deps;
     log.debug("Entering AdminConsole.backchannelDeliveriesSection().");
-    const v = view || {};
-    const list = Array.isArray(v.backchannelDeliveries)
-      ? v.backchannelDeliveries : [];
-    const counts = v.backchannelCounts || { pending: 0, sent: 0, dead: 0 };
-    const state = String(v.deliveryState || '');
-    const heading = '<h2 id="backchannel">Back-channel Logout Tokens</h2>' +
-      this.note('<strong>' + counts.pending + '</strong> pending, <strong>' +
-        counts.sent + '</strong> sent, <strong>' + counts.dead + '</strong> ' +
-        'dead letter(s) in this realm, across every node. A relying party ' +
-        'that is down is retried with backoff by whichever node gets there ' +
-        'first, across restarts; one that never accepts — or answers 400, ' +
-        'or is refused by the outbound policy — is a DEAD LETTER, sent again ' +
-        'only when somebody presses Retry. Each final outcome is also a ' +
-        '<code>logout.backchannel</code> row on <a href="/admin/audit">the ' +
-        'audit log</a>.') +
-      '<form method="get" action="/admin/logout#backchannel"><div ' +
-      'class="formrow">' +
-      (wantedUser ? '<input type="hidden" name="user" value="' +
-                    this.esc(wantedUser) + '">' : '') +
-      '<label for="deliveryState">State</label><select id="deliveryState" ' +
-      'name="deliveryState"><option value="">any</option>' +
-      ['pending', 'sent', 'dead'].map(function (one) {
-        return '<option value="' + one + '"' +
-               (one === state ? ' selected' : '') + '>' +
-               (one === 'dead' ? 'dead letters' : one) + '</option>';
-      }).join('') + '</select><label for="deliveryq">Search</label>' +
-      '<input id="deliveryq" name="deliveryq" value="' +
-      this.esc(v.deliveryq || '') + '" placeholder="client, session, code">' +
-      '<button class="secondary">Filter</button></div></form>';
-    if (!list.length) {
-      log.debug("Leaving AdminConsole.backchannelDeliveriesSection(). None.");
-      return heading + this.note(state || v.deliveryq
-        ? 'No delivery matches.'
-        : 'None yet. A sign-out — or an expiry, while ' +
-          '<code>oauth2.backchannelLogoutOnExpiry</code> is on — sends one ' +
-            'to ' +
-          'every relying party on the ending session that registered a ' +
-          '<code>backchannel_logout_uri</code>, while ' +
-          '<code>oauth2.backchannelLogout</code> is on.');
-    }
-    const paging = (v.deliveriesPg && v.deliveriesPg.paging) || null;
-    const params = Object.assign({}, pageParamsOf({}), wantedUser
-      ? { user: wantedUser } : {}, { deliveryState: state,
-                                     deliveryq: v.deliveryq || '' });
-    const nav = paging
-      ? this.pageNavPair('/admin/logout', params, paging) : { head: '' };
-    log.debug("Leaving AdminConsole.backchannelDeliveriesSection(). " +
-              list.length + " row(s).");
-    return heading + nav.head +
-      '<table><thead><tr><th>Queued</th><th>Client</th><th>Session</th>' +
-      '<th>State</th><th>Why</th><th></th></tr></thead><tbody>' +
-      list.map(function (row) {
-        const retry = row.state === 'dead' && canWrite
-          ? '<form method="post" action="/admin/logout" ' +
-            'style="display:inline">' +
-            '<input type="hidden" name="action" value="retry-backchannel">' +
-            '<input type="hidden" name="delivery" value="' +
-            self.esc(row.id) + '">' +
-            '<input type="hidden" name="user" value="' +
-            self.esc(wantedUser || '') + '">' +
-            self.logoutBackField(back || queryWith(params, {})) +
-            '<button type="submit">Retry</button></form>'
-          : '';
-        return '<tr><td class="sub">' + self.esc(row.queuedAt) + '</td>' +
-          '<td><code>' + self.esc(row.clientId) + '</code><br><span ' +
-          'class="sub">' + self.esc(row.uri) + '</span></td>' +
-          '<td class="sub">' + self.esc(row.sessionId) +
-          (row.trigger && row.trigger !== 'sign-out'
-            ? '<br>' + self.esc(row.trigger) : '') + '</td>' +
-          '<td>' + self.esc(row.state === 'dead' ? 'dead letter' : row.state) +
-          (row.attempts ? '<br><span class="sub">' + row.attempts +
-                          ' attempt(s)' +
-                          (row.status ? ', HTTP ' + row.status : '') +
-                          (row.generation > 1
-                            ? ', retry ' + (row.generation - 1) : '') +
-                          '</span>' : '') +
-          (row.encrypted ? '<br><span class="sub">encrypted ' +
-                           self.esc(row.encrypted) + '</span>' : '') +
-          '</td>' +
-          '<td class="sub">' + (row.errorCode
-            ? '<code>' + self.esc(row.errorCode) + '</code> ' : '') +
-          self.esc(row.why || row.via || '') + '</td><td>' + retry +
-          '</td></tr>';
-      }).join('') + '</tbody></table>';
+    log.debug("Leaving AdminConsole.backchannelDeliveriesSection().");
+    return LogoutPage.backchannelDeliveriesSection(view, canWrite, back,
+                                                   wantedUser);
   }
 
   // One route, two answers, and the choice is here rather than in the route so
@@ -8073,184 +7943,22 @@ class AdminConsole {
    *   the `up` trail
    */
   logoutView(req) {
-    const { log, adminViews, gateStateFor, pageParamsOf, queryWith,
-            logoutFamilies, krb5Principals } = this.deps;
-    const self = this;
+    const { log, adminViews } = this.deps;
     log.debug("Entering AdminConsole.logoutView().");
-    const view = adminViews.logoutJson(req);
-    const wantedUser = String(req.query.user || '').trim();
-    const gate = gateStateFor(req);
-    const params = pageParamsOf(req.query);
-    const back = queryWith(params, {});
-    const families = logoutFamilies();
-
-    if (!wantedUser) {
-      // No name is not an error and not a 404: this page is a lookup, and the
-      // list of everybody is /admin/users' job rather than a second copy here.
-      const inner = this.messagesOf(req) +
-        (logoutReader ? '' : this.logoutNoReaderNote()) +
-        this.note('Name an identity to see everything this service is still ' +
-        'holding for them — every browser sign-on session, every token it ' +
-        'can still revoke, every outstanding code, every directory ' +
-        'connection bound as them, and the Kerberos sign-out instant — and ' +
-        'to end any of it.') +
-        '<form method="get" action="/admin/logout"><label>Identity <input ' +
-        'name="user" value="" placeholder="alice"></label> <button ' +
-        'type="submit">Look</button></form><h2>What a logout ' +
-        'reaches</h2><table><thead><tr><th>Family</th><th>Protocol</th><th>' +
-        'Can ' +
-        'it be ended?</th><th>What it is</th></tr></thead><tbody>' +
-        families.map(function (family) {
-          return '<tr><td>' + self.esc(family.label) + '</td><td>' +
-            self.esc(family.protocol) + '</td><td>' +
-            (family.terminable ? 'yes' : '<span ' +
-                                                  'class="state-none">no' +
-                                                  '</span>') + '</td>' +
-            // The family's prose is a paragraph on most rows and it is the same
-            // prose logout.ts owns (see FAMILIES over there) — so it folds here
-            // rather than being shortened, which would have made this file the
-            // second place it is written.
-            '<td class="sub">' + self.note(self.esc(family.what)) + '<em>' +
-              self.esc(
-                family.spec) +
-            '</em></td></tr>';
-        }).join('') + '</tbody></table>' +
-        this.note('The families that cannot be ended are listed on purpose. ' +
-        'Nothing consults this service when a SAML assertion, a Kerberos ' +
-        'service ticket or an X509-SVID is presented, so there is no ' +
-        'revocation any issuer could perform — and a page that hid them ' +
-        'would make a global logout look complete when it is not.') +
-        this.note('A person signing THEMSELVES out uses ' +
-        '<code>/logout</code>, which needs no console role and is where the ' +
-        'front-channel notifications actually load: those are iframes in the ' +
-        'signed-out person\'s own browser, and this console is not that ' +
-        'browser. The back-channel Logout Tokens are different — this ' +
-        'service sends them, whichever door the sign-out came through — and ' +
-        'the list below is where each one ended up.') +
-        this.backchannelDeliveriesSection(view, gate.write, back, '') +
-        // ON THE LOOKUP PAGE AND NOT ON THE PER-PERSON ONE. These four decide
-        // what a logout REACHES, which is a question about the feature; the
-        // drill-down is about one person, and a form there would invite
-        // somebody to change the rules for everybody while looking at one of
-        // them.
-        this.configFormsFor('/admin/logout');
-      log.debug("Leaving AdminConsole.logoutView(). The lookup form.");
-      return { json: Object.assign({}, view.json, {
-                 settings: this.configSettingsJson('/admin/logout') }),
-               inner: inner, title: 'Sign-out' };
-    }
-
-    const key = view.key;
-    const inventory = view.inventory;
-    const all = view.all;
-    const wantedFamily = view.wantedFamily;
-    const filtered = view.filtered;
-    const pg = view.pg;
-    const canWrite = view.canWrite;
-    const summary = '<table><thead><tr><th>Family</th><th>Live</th><th>' +
-                    'Endable</th><th>Protocol</th></tr></thead><tbody>' +
-      inventory.families.map(function (family) {
-        return '<tr><td><a href="' +
-          self.esc('/admin/logout' +
-                   queryWith(params, { user: wantedUser, family: family.id,
-                                                         page: '' })) + '">' +
-          self.esc(family.label) + '</a></td>' +
-          '<td>' + family.held +
-          (family.notListed ? ' (' + family.notListed + ' ' +
-              'not listed)' : '') +
-          '</td>' +
-          '<td>' + (family.terminable ? 'yes' : '<span ' +
-                                                'class="state-none">no' +
-                                                '</span>') +
-          '</td><td ' +
-          'class="sub">' + self.esc(family.protocol) + '</td></tr>';
-      }).join('') + '</tbody></table>';
-
+    const json = adminViews.logoutJson(req).json;
+    const wantedUser = json.user;
+    // Drawn by `web_logout.ts` (#446).
     const inner = this.messagesOf(req) +
-      this.note('<strong>' + inventory.total + '</strong> live item(s) for ' +
-        '<code>' +
-      this.esc(wantedUser) + '</code>, in ' +
-      inventory.families.filter(function (f) { return f.held; }).length + ' ' +
-      'family/families. Filed under the key ' +
-      '<code>' + this.esc(key) + '</code>, which is what folds ' +
-                                                     '<code>' +
-      this.esc(wantedUser) + '</code>, <code>' + this.esc(wantedUser) + '@' +
-      this.esc(krb5Principals.REALM) + '</code> and a <code>urn:</code> ' +
-                                       'subject into one person.') +
-      summary +
-      (canWrite
-        ? '<form method="post" action="/admin/logout">' +
-          '<input type="hidden" name="action" value="global">' +
-          '<input type="hidden" name="user" value="' + this.esc(wantedUser) +
-          '">' +
-          this.logoutBackField(back) +
-          '<p><button type="submit">Global logout — end everything ' +
-          'above</button> <span class="sub">Everything endable, in every ' +
-          'family, in one act. What cannot be ended is reported rather than ' +
-          'skipped silently.</span></p></form>'
-        : this.note('Ending anything needs the Admin Write role.')) +
-      '<h2>Live items' + (wantedFamily ? ' — ' + this.esc(wantedFamily) : '') +
-      '</h2>' +
-      this.perPageForm('/admin/logout', 'family', wantedFamily,
-                       pg.paging.perPage,
-                       'Filter by family, and choose how many rows a page ' +
-                       'holds.',
-                       { user: wantedUser }) +
-      (pg.shown.length
-        ? '<table><thead><tr><th>Family</th><th>What</th><th>Kind</th><th>' +
-          'Since</th><th>Until</th><th>End</th></tr></thead><tbody>' +
-          pg.shown.map(function (r) { return self.logoutRowHtml(r, canWrite,
-              back); })
-                  .join('') +
-          '</tbody></table>' +
-          this.pageNavPair('/admin/logout', params, pg.paging).head
-        : this.note('Nothing live' + (wantedFamily ? ' in that family' : '') +
-                    '.')) +
-      (canWrite
-        ? '<h2>Undo — both NON-SPEC</h2>' +
-          this.note('Neither of these is an operation any real deployment ' +
-          'could offer, and they are here for the reason /admin/tokens\' ' +
-          'restore button is: having to restart this service to get back to ' +
-          'a working credential turns a two-second test into a two-minute ' +
-          'one.') +
-          // DEVELOPMENT ONLY (#111): refused in product by the action, and
-          // so not offered there — a note says why in its place.
-          (mode.opensTestControls()
-            ? '<form method="post" action="/admin/logout">' +
-              '<input type="hidden" name="action" ' +
-              'value="restore-kerberos">' +
-              '<input type="hidden" name="user" value="' +
-              this.esc(wantedUser) + '">' +
-              this.logoutBackField(back) +
-              '<p><button type="submit">Clear the Kerberos sign-out ' +
-              'instant</button> <span class="sub">Tickets issued before it ' +
-              'are accepted again. Development mode only. A fresh AS-REQ ' +
-              'does NOT do this: it gets a newer ticket and the older ones ' +
-              'stay refused.</span></p></form>'
-            : this.note('Clearing a Kerberos sign-out instant is a ' +
-              'development-only test control and is not offered in product ' +
-              'mode: the instant stands until the latest a ticket from ' +
-              'before it could still be valid.')) +
-          '<form method="post" ' +
-          'action="/admin/logout"><input type="hidden" name="action" ' +
-          'value="restore-token"><input type="hidden" name="user" ' +
-          'value="' + this.esc(wantedUser) + '">' +
-          this.logoutBackField(back) +
-          '<p><label>Restore a token by jti <input name="jti" ' +
-          'placeholder="jti"></label> <button type="submit">Restore</button> ' +
-          '<span class="sub">RFC 7009 has no such operation: a resource ' +
-          'server may already have cached the refusal.</span></p></form>'
-        : '') +
-      this.backchannelDeliveriesSection(view, canWrite, back, wantedUser);
-
-    log.debug("Leaving AdminConsole.logoutView(). " + inventory.total +
-              " live item(s).");
+      LogoutPage.body(this.renderContext(req),
+        JSON.parse(JSON.stringify(json)));
+    log.debug("Leaving AdminConsole.logoutView().");
     return {
-      json: view.json,
+      json: json,
       inner: inner,
-      title: 'Sign-out — ' + wantedUser,
-      up: this.upTo('/admin/logout', wantedUser,
-                    this.listViewOf('/admin/logout', req.query))
+      title: wantedUser ? 'Sign-out — ' + wantedUser : 'Sign-out',
+      up: wantedUser ? this.upTo('/admin/logout', wantedUser,
+                                 this.listViewOf('/admin/logout', req.query))
+                     : undefined
     };
   }
 

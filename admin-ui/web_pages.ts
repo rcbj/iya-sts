@@ -56,6 +56,7 @@ import GrantsPage = require('../oauth-oidc/web_grants');
 import GroupsPage = require('./web_groups');
 import KerberosPrincipalsPage =
   require('../kerberos/web_kerberos_principals');
+import LogoutPage = require('../logout/web_logout');
 import ListenersPage = require('./web_listeners');
 import MailPage = require('./web_mail');
 import MailOutboxPage = require('./web_mail_outbox');
@@ -279,6 +280,20 @@ const PAGES: WebPage[] = [
     } },
   { path: '/admin/listeners', title: 'Listeners',
     operation: '/admin-api/listeners', render: ListenersPage.render },
+  { path: '/admin/logout', title: 'Sign-out',
+    operation: '/admin-api/logout',
+    drill: {
+      param: 'user',
+      sample: function (): string | null {
+        return 'alice';
+      },
+      render: function (view: Json, ctx?: Json): string {
+        return LogoutPage.body(ctx || WebKit.context(), view);
+      }
+    },
+    render: function (view: Json, ctx?: Json): string {
+      return LogoutPage.body(ctx || WebKit.context(), view);
+    } },
   { path: '/admin/mail', title: 'Mail', operation: '/admin-api/mail',
     render: MailPage.render },
   { path: '/admin/mail/outbox', title: 'Mail outbox',
