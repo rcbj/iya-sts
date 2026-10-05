@@ -1523,6 +1523,17 @@ impl crate::replication::Applier for Persistence {
                         .map(|_| ())
                         .map_err(crate::driver::StoreError::new)
                 }
+                // A KEY SET OR A CERTIFICATE AUTHORITY another process
+                // wrote: the store's current row is adopted
+                // (`applyStoredChange()`).
+                "keys" => match self.key_sets() {
+                    Some(sets) => sets
+                        .adopt(&row.realm)
+                        .await
+                        .map(|_| ())
+                        .map_err(crate::driver::StoreError::new),
+                    None => Ok(()),
+                },
                 // Minted rows and the rest arrive with their stores.
                 _ => Ok(()),
             }

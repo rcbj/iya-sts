@@ -292,6 +292,68 @@ impl KeySets {
         Ok(loaded)
     }
 
+    /// `applyStoredChange()`: another process wrote this row, so the row
+    /// in the store now is the one every process uses. It reads the CURRENT
+    /// row rather than replaying the change, so a late or repeated change is
+    /// safe, and the store arbitrated the write (first writer wins), so
+    /// adopting it strands only what this process signed in the window
+    /// before the write it lost. A row that will not open here is said,
+    /// with its code, and the set held stays; a row the store no longer
+    /// holds is dropped. Answers whether anything held changed.
+    pub async fn adopt(&self, row_key: &str) -> Result<bool, String> {
+        let Some(driver) = self.driver.clone() else {
+            return Ok(false);
+        };
+        if row_key.starts_with(DEK_ROW_PREFIX) {
+            return Ok(false);
+        }
+        let rows = driver.load_keys().await.map_err(|e| {
+            format!(
+                "{}the stored key material could not be read: {}",
+                tag(codes::STS_KEYS_0028),
+                e
+            )
+        })?;
+        let current =
+            rows.into_iter().find(|(k, _)| k == row_key).map(|(_, c)| c);
+        let pki = row_key.strip_prefix(PKI_ROW_PREFIX);
+        let held = match pki {
+            Some(scope) => self.hierarchies().get(scope).cloned(),
+            None => self.held().get(row_key).cloned(),
+        };
+        if held == current {
+            return Ok(false);
+        }
+        let Some(cipher) = current else {
+            match pki {
+                Some(scope) => self.hierarchies().remove(scope),
+                None => self.held().remove(row_key),
+            };
+            return Ok(true);
+        };
+        // Sealed, perhaps, under a data key made a moment ago elsewhere.
+        if self.open_row(row_key, &cipher).is_err() {
+            self.keys.load(false).await?;
+        }
+        if let Err(e) = self.open_row(row_key, &cipher) {
+            tracing::error!("keystore: {} The set held here is kept.", e);
+            return Ok(false);
+        }
+        match pki {
+            Some(scope) => {
+                self.hierarchies().insert(scope.to_string(), cipher);
+            }
+            None => {
+                tracing::info!(
+                    "keystore: the \"{}\" realm's key set was replaced by another process; it is the one used here now.",
+                    row_key
+                );
+                self.held().insert(row_key.to_string(), cipher);
+            }
+        }
+        Ok(true)
+    }
+
     fn hierarchies(&self) -> MutexGuard<'_, BTreeMap<String, String>> {
         self.pki.lock().unwrap_or_else(PoisonError::into_inner)
     }

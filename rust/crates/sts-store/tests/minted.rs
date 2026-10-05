@@ -244,6 +244,30 @@ async fn minted_state_on_postgres() {
         vec![json!(3)]
     );
 
+    // A KEY SET made on A is B's after a pull, and so is A's rotation of it
+    // (`applyStoredChange()`): one JWKS per realm across processes.
+    let a_sets = a.persistence.key_sets().unwrap();
+    let b_sets = b.persistence.key_sets().unwrap();
+    let made = a_sets.open_or_make("adopted").await.unwrap();
+    assert!(b_sets.open("adopted").is_none(), "not yet pulled");
+    b.persistence.pull_changes().await.unwrap();
+    assert_eq!(b_sets.open("adopted").unwrap().kid(), made.kid());
+    let mut rotated = sts_store::key_sets::generate_key_set(
+        sts_core::time::now_ms_f64() as i64,
+    )
+    .unwrap();
+    rotated["generations"] = json!({ "generation": 2 });
+    assert_eq!(
+        a_sets.save("adopted", &rotated).await.unwrap(),
+        sts_store::key_sets::Saved::Written
+    );
+    let new_kid = a_sets.open("adopted").unwrap().kid();
+    assert_ne!(new_kid, made.kid());
+    b.persistence.pull_changes().await.unwrap();
+    assert_eq!(b_sets.open("adopted").unwrap().kid(), new_kid);
+    // A repeated change adopts nothing more.
+    assert!(!b_sets.adopt("adopted").await.unwrap());
+
     // A third process restores what is live, and not what expired.
     a.sessions
         .set("sid-2", json!({ "sub": "bob", "expiresAt": far }));
