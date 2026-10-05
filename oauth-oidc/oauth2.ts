@@ -13246,8 +13246,18 @@ class OAuth2Server {
     // here, known or not.
     const clientlessAssertion = !client.client_id &&
       oauth21.ASSERTION_GRANTS.indexOf(grant) >= 0;
+    // **NOR IS AN OPENID4VCI PRE-AUTHORIZED CODE REDEEMED BY A WALLET THAT
+    // NAMES NONE** (2026-10-05). OpenID4VCI section 6.1 makes `client_id`
+    // optional for this grant — anonymous access, the reason `oauth21.js`
+    // leaves the grant out of its registered-client rule — and the code (with
+    // its Transaction Code, where the offer has one) is the credential. This
+    // check read the missing client_id as an unknown client and refused every
+    // anonymous wallet in product: found by sts_oid4vci_preauth_subject.js
+    // (#158) in single-node. A wallet that NAMES a client is still judged.
+    const clientlessPreAuthorized = !client.client_id &&
+      grant === 'urn:ietf:params:oauth:grant-type:pre-authorized_code';
     if (mode.requiresConfidentialClientAuthentication() &&
-        !clientlessAssertion &&
+        !clientlessAssertion && !clientlessPreAuthorized &&
         bcp.declaredPublic(registeredClient) === false &&
         !clientObservation.authenticated) {
       log.info('oauth2: product mode refused the token request from "' +

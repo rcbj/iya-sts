@@ -3516,6 +3516,16 @@ test that relied on the old looseness and registers the URI now.
 `STS-OAUTH-0194` — a public client presenting no credential — is an
 OBSERVATION and never a refusal since this change; it was product mode's 401.
 
+**A request that names NO client is not a client to refuse, for two grants**
+(`tokenGrant()`, beside the gate): the RFC 7523 and RFC 7522 assertion grants
+(2026-09-18, the assertion is the credential) and, since 2026-10-05, the
+OpenID4VCI pre-authorized code — section 6.1's anonymous access, where the
+code and its Transaction Code are the credential. The gate read a missing
+`client_id` as an unknown client and refused every anonymous wallet in
+product; `tests/vendored/sts_oid4vci_preauth_subject.js` (#158) found it in
+single-node, and `tests/oauth_oid4vc_hardcoded.js` 6j-ii holds it in process.
+A wallet that NAMES a client is still judged.
+
 ### An application created by hand declares its method (2026-09-18)
 
 **The undeclared case above was not hypothetical: it was every application
