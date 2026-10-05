@@ -7333,36 +7333,6 @@ class AdminConsole {
     return /json/i.test(accept) && !/text\/html/i.test(accept);
   }
 
-  // A refusal, in whichever of the two shapes the caller can read. The HTML one
-  // goes through page() like everything else, so it carries the nav and the
-  // banner: a reader who is refused one page can still see the ones they are
-  // allowed, which is the difference between a permission and a wall.
-  // ONE LOG LINE PER CONSOLE SESSION for a refusal of product mode's
-  // unclaimed console (#103): a flag on the session's own row, so a browser
-  // that keeps clicking is one event, and a new sign-in is a new one. The
-  // response itself is marked with the same code by the caller.
-  /**
-   * Logs a refusal of the unclaimed product console once per session.
-   *
-   * @param state - the gate state, whose session is flagged
-   * @param code - the error code
-   * @param what - what was refused, for the log line
-   */
-  noteBootstrapRefusal(state, code, what) {
-    const { log, errorCodes } = this.deps;
-    log.debug("Entering AdminConsole.noteBootstrapRefusal(). " + code);
-    const session = state && state.session;
-    if (session && session.consoleWindowRefusal === code) {
-      log.debug("Leaving AdminConsole.noteBootstrapRefusal(). Already said.");
-      return;
-    }
-    if (session) {
-      session.consoleWindowRefusal = code;
-    }
-    log.warn(errorCodes.tag(code) + 'admin console: ' + what + '.');
-    log.debug("Leaving AdminConsole.noteBootstrapRefusal().");
-  }
-
   /**
    * Answers a refusal as JSON or as a console page, whichever the caller
    * reads.
@@ -10255,250 +10225,6 @@ class AdminConsole {
   }
 
   // ---------------------------------------------------------------------------
-  // WHAT A SUCCESSFUL CREATE ANSWERS WITH, and the reason it is a page rather
-  // than the 303-with-a-message every other control on this console answers
-  // with.
-  //
-  // **A SECRET THAT EXISTS ONCE MUST NOT TRAVEL IN A URL.** A generated
-  // password and an activation link are both produced here and stored only as a
-  // hash, so this is the single moment either value exists outside somebody's
-  // head. Put in a query parameter it would be in the browser's history, in the
-  // referrer of anything clicked next, in every proxy log on the way — and
-  // sliced to 500 characters by `respondToAction()`, which for an activation
-  // URL is a link that silently does not work.
-  //
-  // So it is in the BODY of a response this console already marks `no-store`,
-  // in a block that says outright that it will not be shown again.
-  // ---------------------------------------------------------------------------
-  /**
-   * Draws the page a successful create answers with: the generated password
-   * or activation link shown once (or where it was mailed), and the entry
-   * as the store holds it, secrets withheld.
-   *
-   * @param req - the express request, for the link's base URL
-   * @param result - createUser()'s result
-   * @returns the page body as HTML
-   */
-  createdUserPage(req, result) {
-    const { log, baseUrlOf, queryWith } = this.deps;
-    const self = this;
-    log.debug("Entering AdminConsole.createdUserPage(). ok=" + result.ok);
-    const base = baseUrlOf(req);
-    const secret = [];
-    if (result.password) {
-      secret.push('<h2>The generated password, shown once</h2>' +
-        '<div class="secret">' + this.esc(result.password) + '</div>' +
-        this.warn('<strong>This is the only time this value exists anywhere ' +
-        'but in the hash on the entry.</strong> Copy it now and send it to ' +
-        this.esc(result.username) + ' by whatever channel you already use. ' +
-        'Nothing in this service can show it again — not this console, not ' +
-        '<code>/admin-api</code>, not an <code>ldapsearch</code>, which sees ' +
-        'a scrypt hash. If it is lost, set a new one; there is no recovery ' +
-        'because there is nothing to recover.'));
-    }
-    if (result.mailedTo) {
-      secret.push('<h2>The activation link was mailed</h2>' +
-        this.note('It went to <strong>' + this.esc(result.mailedTo) +
-                  '</strong>, valid until ' +
-                  this.esc(result.expiresAt || 'it expires') + ', and is ' +
-                  'not shown here. Monitoring &rarr; ' +
-                  '<a href="/admin/mail/outbox">Mail</a> shows where it got ' +
-                  'to.'));
-    }
-    if (result.mailError) {
-      secret.push(this.warn('<strong>The activation link was NOT ' +
-        'mailed:</strong> ' + this.esc(result.mailError) + ' It is shown ' +
-        'below instead.'));
-    }
-    if (result.activationUrl) {
-      // ABSOLUTE, and built from the request rather than from a setting: this
-      // is a link somebody is about to paste into a message, and a
-      // root-relative path is not one. `baseUrlOf()` is what every other
-      // outbound URL in this service is built from, so it carries the scheme,
-      // host and port this request actually arrived on.
-      const absolute = base + result.activationUrl;
-      secret.push('<h2>The activation link, shown once</h2>' +
-        '<div class="secret">' + this.esc(absolute) + '</div>' +
-        this.warn('<strong>Valid until ' +
-                  this.esc(result.expiresAt || 'it expires') +
-        ', and shown once.</strong> This service stores only a hash of the ' +
-        'token in it and cannot produce the link again — issuing another ' +
-        'invalidates this one, which is also how a link that never arrived ' +
-        'is replaced. <strong>Treat it as the credential it is</strong>: ' +
-        'anybody holding it can finish setting up this account, choosing a ' +
-        'password or enrolling a security key. It is spent when that setup ' +
-        'FINISHES rather than when the link is opened, so a mail scanner or ' +
-        'a browser prefetch cannot burn it. There is deliberately no ' +
-        'self-service version of this link: until the account is activated ' +
-        'nobody has proved the address on it is theirs. Tick <em>mail the ' +
-        'activation link</em> on the form to have this service send it ' +
-        'instead.'));
-    }
-    const inner =
-      (result.credentialError
-        ? this.warn('<strong>The person was created and the credential was ' +
-                    'NOT set.</strong> ' +
-          this.esc(result.credentialError) + ' The name is taken now, by ' +
-          'this entry — so set a credential on it rather than creating them ' +
-          'again.')
-        : '<div class="ok"><strong>' + this.esc(result.dn) + '</strong> now ' +
-                                                        'exists.</div>') +
-      secret.join('') +
-      '<h2>What was written</h2>' +
-      this.note(this.esc(result.message)) +
-      '<table><tr><th>Attribute</th><th>Value</th></tr>' +
-      Object.keys((result.entry && result.entry.attributes) || {}).sort()
-        .map(function (name) {
-          // THE TWO VERIFIERS ARE NAMED AND NOT PRINTED. What sits in
-          // `userPassword` and `stsActivationToken` is a scrypt hash rather
-          // than the value — so this is not a leak of the password or the link
-          // — but it is the thing a sign-in and an activation are CHECKED
-          // against, and there is no reason for it to be on a page whose
-          // subject is what an operator just typed. Saying the attribute is
-          // there is the useful half; the hash itself is noise beside the
-          // one-time value printed above it, and a reader who saw both would
-          // reasonably wonder which one to copy.
-          //
-          // /admin/ldap/directory still shows every attribute of every entry,
-          // deliberately and behind this console's gate — that page's whole
-          // subject is what the store holds, and hiding a row there would make
-          // it lie about the directory. This page's subject is a create.
-          if (name === 'userpassword' || name === 'stsactivationtoken') {
-            return '<tr><td><code>' + self.esc(name) + '</code></td><td ' +
-              'class="state-none">set — a scrypt hash, not shown ' +
-              'here</td></tr>';
-          }
-          return '<tr><td><code>' + self.esc(name) + '</code></td><td>' +
-            self.esc((result.entry.attributes[name] || []).join(', ')) +
-            '</td></tr>';
-        }).join('') +
-      '</table>' +
-      this.note('The entry exactly as the store holds it, which is what an ' +
-      '<code>ldapsearch</code> under this realm\'s base DN returns. ' +
-      'Attribute names are lower-cased because LDAP attribute descriptions ' +
-      'are case-insensitive and this store normalises them on the way in; ' +
-      'the catalogue\'s own spelling is what the form and ' +
-      '<code>/admin-api</code> use. <strong>The two attributes that hold a ' +
-      'verifier are named rather than printed</strong> — ' +
-      '<code>userPassword</code> and <code>stsActivationToken</code> carry a ' +
-      'scrypt hash rather than the value, and the value itself is above, ' +
-      'once. <a href="/admin/ldap/directory">The directory page</a> shows ' +
-      'both in full, because what that page is FOR is exactly what the store ' +
-      'holds.') +
-      '<div class="formrow">' +
-      '<a href="' + this.esc('/admin/users' +
-                             queryWith({ user: result.username }, {})) +
-      '">Their row on Users &rsaquo;</a></div>' +
-      this.note('<a href="/admin/users/new">Create another</a> &middot; <a ' +
-      'href="/admin/ldap/directory">Every entry in the directory</a> ' +
-      '&middot; <a href="/admin/users">Back to Users</a>. Remember that they ' +
-      'will not appear in the Users TABLE until they authenticate: that list ' +
-      'is who this service has SEEN.');
-    log.debug("Leaving AdminConsole.createdUserPage().");
-    return inner;
-  }
-
-  // ---------------------------------------------------------------------------
-  // WHERE THIS PAGE SITS IN THE SHELL, AND WHY IT IS ONE FUNCTION RATHER THAN
-  // SEVEN LITERALS.
-  //
-  // This page has no row in `SECTIONS` — the argument is beside the Users row
-  // up there — so it is a DRILL-DOWN of `/admin/users`, and every `respond()`
-  // below says so twice: `active` is the SECTION's path, which is what marks
-  // the Users tab, and `up` is what turns that tab into a link and gives the
-  // trail its third crumb (`Admin console › Users › New user`).
-  //
-  // **THERE ARE SEVEN RESPONSES ON THIS PATH AND EVERY ONE OF THEM NEEDS
-  // BOTH.** Two of them are refusals that redraw the form, one is Fill, one is
-  // the form itself, and one is the page that shows a generated password ONCE —
-  // which is precisely the response a reader must not be stranded on. Writing
-  // `upTo()` out seven times is how the seventh comes to be the one that was
-  // missed, and the symptom would not be an error: it would be a page drawn
-  // with no way back and the Users tab looking as though the reader were
-  // somewhere else entirely.
-  //
-  // The leaf is a parameter because one of the seven is not called `New user`:
-  // the success page is `User created`, and the crumb has to agree with the
-  // `h1` under it (see `trailBar()`).
-  //
-  // It carries NO LIST VIEW, deliberately. The Create box on `/admin/users` is
-  // a GET form with one field and does not forward the list's filter, so there
-  // is nothing to carry — and `upTo()` handed an empty view reports
-  // `filtered:false`, which is what makes the crumb's tooltip say `Back to
-  // Users` rather than promising a filter that was never here.
-  /**
-   * Builds the "up" link that makes the new-user page a drill-down of
-   * `/admin/users`, carrying no list view.
-   *
-   * @param leaf - optional; the trail's last crumb, `New user` when omitted
-   * @returns the up link for `respond()`
-   */
-  newUserUp(leaf?) {
-    const { log } = this.deps;
-    log.debug("Entering AdminConsole.newUserUp().");
-    log.debug("Leaving AdminConsole.newUserUp().");
-    return this.upTo('/admin/users', leaf || 'New user');
-  }
-
-  // The create half of `POST /admin/users/new`, run with its name claimed.
-  /**
-   * Runs the create half of `POST /admin/users/new`, with the name already
-   * claimed, and answers the request.
-   *
-   * A refusal redraws the form with everything posted still in it and an
-   * error code marked; success draws the `User created` page. A JSON caller
-   * gets the action's result as JSON.
-   *
-   * @param req - the request
-   * @param res - the response
-   * @param body - the parsed form body
-   * @param posted - the posted values, to redraw the form with
-   * @param wantsJson - whether the caller asked for JSON
-   * @param held - the claim on the name, settled with the outcome
-   */
-  newUserCreate(req, res, body, posted, wantsJson, held) {
-    const { log, gateStateFor, usersAction, errorCodes } = this.deps;
-    log.debug("Entering AdminConsole.newUserCreate().");
-    const state = gateStateFor(req);
-    const result = usersAction(Object.assign({}, body, {
-      action: 'create',
-      actor: (state && state.username) || ''
-    }));
-    held.settle(!!result.ok);
-    if (wantsJson) {
-      this.respondToAction(req, res, '/admin/users/new', result);
-      log.debug("Leaving AdminConsole.newUserCreate(). Answered JSON.");
-      return;
-    }
-    if (!result.ok) {
-      // BACK ONTO THE FORM WITH EVERYTHING STILL IN IT. A redirect would lose
-      // twenty-five boxes because a username had a comma in it, which is how a
-      // screen teaches people not to use it.
-      errorCodes.mark(res,
-                      result.errorCode || errorCodes.codeOf(result) ||
-                      'STS-ADMIN-0012');
-      const view = this.newUserPage(req, posted);
-      this.respond(req, res,
-                   Object.assign({ created: false,
-                                   errors: result.errors || [] },
-                                           view.json),
-                   'New user', '/admin/users',
-                   this.warn('<strong>Nobody was created.</strong> ' +
-                             this.esc((result.errors || []).join(' ') || String(
-                                 result.why || ''))) +
-                   view.inner, this.newUserUp());
-      log.debug("Leaving AdminConsole.newUserCreate(). Refused.");
-      return;
-    }
-    this.respond(req, res, Object.assign({ created: true }, result),
-                 'User created', '/admin/users',
-                 this.createdUserPage(req, result),
-                 this.newUserUp('User created'));
-    log.debug("Leaving AdminConsole.newUserCreate(). Created " + result.dn +
-              ".");
-  }
-
-  // ---------------------------------------------------------------------------
   // GET /admin/groups — every group in the embedded directory, and one of them
   // in full.
   //
@@ -10930,97 +10656,6 @@ class AdminConsole {
     return this.applicationReturnTo(body, id,
       String(body.where || '') === 'config' ? '#cfg-enroll'
                                             : '#credentials-enroll');
-  }
-
-  // The page answering a reveal (#446): the application's own, drawn with
-  // the value in its flash, never cached and never on a URL.
-  /**
-   * Answers a revealed credential with the application's page, the value
-   * shown on it once.
-   *
-   * @param req - the request
-   * @param res - the response
-   * @param body - the posted form
-   * @param result - `reveal-secret`'s answer
-   */
-  answerRevealedSecret(req, res, body, result) {
-    const { log } = this.deps;
-    log.debug("Entering AdminConsole.answerRevealedSecret().");
-    const identifier = String(body.application || '');
-    const detail = this.applicationDetailPage(req, identifier, {
-      revealed: { secret: result.secret, value: result.value } });
-    res.set('Cache-Control', 'no-store');
-    this.respond(req, res, detail.json, 'Application ' + identifier,
-                 '/admin/applications', detail.inner,
-                 this.upTo('/admin/applications', identifier,
-                           this.listViewFromBack('/admin/applications',
-                                                 body.back)));
-    log.debug("Leaving AdminConsole.answerRevealedSecret().");
-  }
-
-  // The one-time answer to *Generate a key pair*: the private key, as a JWK
-  // and as PKCS#8 PEM, each a download and a read-only box, `no-store` —
-  // `answerIssuedTlsClientCertificate()`'s arrangement, because this page is
-  // the only copy.
-  /**
-   * Answers a generated DID key pair with a page carrying the private key
-   * once, served `no-store`.
-   *
-   * @param req - the request
-   * @param res - the response
-   * @param body - the posted form body, for the application and `back`
-   * @param answer - the action's result
-   */
-  answerGeneratedDidKey(req, res, body, answer) {
-    const { log, queryWith } = this.deps;
-    log.debug("Entering AdminConsole.answerGeneratedDidKey().");
-    const identifier = String((answer.application &&
-                               answer.application.identifier) ||
-                              body.application || '');
-    const listView = this.listViewFromBack('/admin/applications', body.back);
-    const back = '/admin/applications' +
-      queryWith(listView, { application: identifier }) +
-      (String(body.from || '') === 'credentials' ? '#credentials-did'
-                                                  : '#cfg-did');
-    const jwk = JSON.stringify(answer.privateJwk, null, 2);
-    const dataUri = function (mime, text) {
-      log.debug("Entering dataUri().");
-      log.debug("Leaving dataUri().");
-      return 'data:' + mime + ';base64,' +
-             Buffer.from(String(text), 'utf8').toString('base64');
-    };
-    const file = String(answer.kid || 'did-key').slice(0, 16);
-    const html = this.warn('<p><strong>This is the only time the private ' +
-      'key is shown.</strong> This service keeps it sealed, to sign the ' +
-      'application&rsquo;s Domain Linkage Credentials, and shows it on no ' +
-      'page after this one. If your copy is lost, generate another with ' +
-      '<em>replace</em> ticked.</p><p><a class="btn" download="' +
-      this.esc(file) + '.jwk.json" href="' +
-      this.esc(dataUri('application/json', jwk)) + '">Download the JWK</a> ' +
-      '<a class="btn" download="' + this.esc(file) + '.pem" href="' +
-      this.esc(dataUri('application/x-pem-file', answer.privateKeyPem)) +
-      '">Download the PEM</a></p>', 'The private key, once') +
-      '<table><tr><th>DID</th><td><code>' + this.esc(answer.did) +
-      '</code></td></tr><tr><th>Verification method</th><td><code>' +
-      this.esc(answer.verificationMethod) + '</code></td></tr>' +
-      '<tr><th>Algorithm</th><td>' + this.esc(answer.algorithm) +
-      '</td></tr><tr><th>Document</th><td><a href="' +
-      this.esc(answer.documentUrl) + '"><code>' +
-      this.esc(answer.documentUrl) + '</code></a></td></tr></table>' +
-      '<h3>Private key (JWK)</h3><textarea readonly rows="9" cols="80">' +
-      this.esc(jwk) + '</textarea>' +
-      '<h3>Private key (PKCS#8 PEM)</h3><textarea readonly rows="6" ' +
-      'cols="80">' + this.esc(answer.privateKeyPem) + '</textarea>' +
-      this.note('Sign as the DID with this key and name the verification ' +
-      'method above as the <code>kid</code>; a verifier resolves the DID ' +
-      'and finds the public key in the document.') +
-      '<p><a class="btn" href="' + this.esc(back) + '">Back to ' +
-      this.esc(identifier) + '</a></p>';
-    res.set('Cache-Control', 'no-store');
-    this.respond(req, res, { ok: true }, 'DID key pair',
-                 '/admin/applications', html,
-                 this.upTo('/admin/applications', 'DID key pair', listView));
-    log.debug("Leaving AdminConsole.answerGeneratedDidKey().");
   }
 
   // ---------------------------------------------------------------------------
@@ -11682,67 +11317,6 @@ class AdminConsole {
   // works out, and on `/realm/acme/admin/applications/new` it says `acme`'s.
   // ---------------------------------------------------------------------------
 
-  // ---------------------------------------------------------------------------
-  // THE FIELD GRID (2026-09-30): EVERY PER-APPLICATION FIELD, TYPED, ON BOTH
-  // APPLICATION PAGES.
-  //
-  // `/admin/applications/new` (its simplified and advanced views) and an
-  // application's own page draw one grid of fields out of
-  // `applications.applicationFields()`, each with the control its type needs:
-  //
-  //   * a BOOLEAN is three radio buttons — true, false, and not set (an
-  //     attribute left unset is a state of its own: for an override it means
-  //     the service-wide default, and that default is named on the button);
-  //   * a STRING is a text box (a document — JSON, PEM, XML — a box of a few
-  //     lines), an enumerated override a select, a number override a number
-  //     box;
-  //   * an ARRAY OF STRINGS is one text box per value, each with a delete
-  //     button beside it, and a "+" that adds a box. **A list with no values
-  //     is no boxes**, and every box that is there must hold a value — the
-  //     action refuses an empty one (`STS-ADMIN-0834`) rather than saving a
-  //     list one shorter than the page showed.
-  //
-  // **"+" AND DELETE ARE SUBMIT BUTTONS, NOT A SCRIPT.** `script-src 'none'`
-  // holds on both pages, and the test for an exception is that the page cannot
-  // work without one: a round trip answers it. Each button posts the whole
-  // form, through a `formaction`, to the page's redraw route with `grow` or
-  // `drop` naming the list and box; the page comes back with one box more or
-  // one fewer and every other box as it was, and nothing is written. Neither
-  // is named `action`, which is the trap `/admin/users/new` records (two
-  // submits named `action` make `form.elements.action` a RadioNodeList).
-  // `formnovalidate`, so a box left empty does not stop the round trip that
-  // is about to delete it.
-  //
-  // **WHICH FIELDS SHOW is the declared protocol families**, by the same
-  // `:has()` rules the create form has used since 2026-08-27 (the `pf` and
-  // `pf-<family>` classes): a cell belongs to the families of its attribute,
-  // and an attribute for every family is always shown. On an application's
-  // own page a field that HOLDS a value is shown whatever is ticked, so a
-  // value is never hidden from the page that edits it.
-  // ---------------------------------------------------------------------------
-  /**
-   * Reads the grid's values out of an entry's fields: each named attribute as
-   * a list of strings.
-   *
-   * @param fields - the entry's fields
-   * @param names - the attributes the grid draws
-   * @returns the values by attribute
-   */
-  gridValuesFromEntry(fields, names) {
-    const { log } = this.deps;
-    log.debug("Entering AdminConsole.gridValuesFromEntry().");
-    const out = {};
-    // ONLY THE NAMED ATTRIBUTES ARE READ: a sealed field of a view opens its
-    // key when it is read (#352), and the grid never draws one.
-    (names || []).forEach(function (name) {
-      const value = fields ? fields[name] : undefined;
-      out[name] = [].concat(value === undefined || value === null
-        ? [] : value).map(function (one) { return String(one); });
-    });
-    log.debug("Leaving AdminConsole.gridValuesFromEntry().");
-    return out;
-  }
-
   // The kit's (#446), where its reasoning went with it.
   /**
    * Reads the grid's values out of a posted form, keeping every list box —
@@ -12368,39 +11942,6 @@ class AdminConsole {
                                                         'provider' };
   }
 
-  /**
-   * Handles a POST to /admin/groups: runs the groups action, settles the
-   * held write, and redirects.
-   *
-   * A successful create lands on the group it made; a refusal goes back to
-   * the page that asked, so the message sits beside its form.
-   *
-   * @param req - the request
-   * @param res - the response
-   * @param body - the parsed form body
-   * @param held - the held write, settled with the action's outcome
-   */
-  groupsPost(req, res, body, held) {
-    const { log, groupsAction, queryWith } = this.deps;
-    log.debug("Entering AdminConsole.groupsPost().");
-    const result = groupsAction(body);
-    held.settle(result.ok !== false);
-    // WHERE THE READER GOES AFTERWARDS. A create lands on the group it just
-    // made, because the next thing anybody does with a new group is put
-    // somebody in it and that control is on the drill-down; an add-member stays
-    // where it was, on the group it was adding to. A refusal goes back to the
-    // page that asked, so the message is next to the form that produced it.
-    const listView = this.listViewFromBack('/admin/groups', body.back);
-    const landOn = result.ok !== false
-      ? String(result.dn || '')
-      : String(body.group && /,/.test(String(body.group)) ? body.group : '');
-    const back = landOn
-      ? '/admin/groups' + queryWith(listView, { group: landOn })
-      : '/admin/groups' + queryWith(listView, {});
-    this.respondToAction(req, res, back, result);
-    log.debug("Leaving AdminConsole.groupsPost().");
-  }
-
   // Drawn by `web_rbac.ts` (#446).
   /**
    * Draws the person cell of one admin-role grant row.
@@ -12835,28 +12376,6 @@ class AdminConsole {
     return '/admin/claims?user=' + encodeURIComponent(claimsPreviewUser(query));
   }
 
-  // The same for the SAML page. Two functions rather than one taking a path,
-  // because these are the two strings the two POST handlers redirect to and a
-  // caller that passed the wrong path would send a reader to the page their
-  // form was NOT on — which is the one failure this helper exists to prevent.
-  // The preview user is read by the same function for both, deliberately: the
-  // two pages preview the same person unless somebody says otherwise, exactly
-  // as /admin/vc already does.
-  /**
-   * Builds the /admin/saml-attributes URL carrying the preview user, which
-   * every form on that page posts to.
-   *
-   * @param query - the request's query
-   * @returns the page's path and query
-   */
-  samlAttributesPageUrl(query) {
-    const { log, claimsPreviewUser } = this.deps;
-    log.debug("Entering AdminConsole.samlAttributesPageUrl().");
-    log.debug("Leaving AdminConsole.samlAttributesPageUrl().");
-    return '/admin/saml-attributes?user=' +
-           encodeURIComponent(claimsPreviewUser(query));
-  }
-
   // Drawn by `web_claims.ts` (#446).
   /**
    * Draws the directory attribute half of one claim set: a checkbox per
@@ -13030,28 +12549,6 @@ class AdminConsole {
   // that registered `userinfo_signed_response_alg`) is a JWT carrying `iss`,
   // `aud` and `exp`. admin_stats.js's reservedNames() is where that is decided.
   // ---------------------------------------------------------------------------
-
-  // The page's own URL with the preview user and any claims request on it, for
-  // the same reason claimsPageUrl() carries the user: every form here posts to
-  // THIS, so the 303 after an action lands back on what the reader was looking
-  // at. Dropping the request would answer "what did that do?" with a page that
-  // had forgotten the question.
-  /**
-   * Builds the /admin/userinfo-claims URL carrying the preview user and any
-   * claims request, which every form on that page posts to.
-   *
-   * @param query - the request's query
-   * @returns the page's path and query
-   */
-  userinfoClaimsPageUrl(query) {
-    const { log, claimsRequestParameter, claimsPreviewUser } = this.deps;
-    log.debug("Entering AdminConsole.userinfoClaimsPageUrl().");
-    const request = claimsRequestParameter(query);
-    log.debug("Leaving AdminConsole.userinfoClaimsPageUrl().");
-    return '/admin/userinfo-claims?user=' +
-           encodeURIComponent(claimsPreviewUser(query)) +
-      (request ? '&request=' + encodeURIComponent(request) : '');
-  }
 
   // Drawn by `web_claims.ts` (#446).
   /**
@@ -13843,35 +13340,6 @@ class AdminConsole {
     return TokenLifetimesPage.tokenLifetimeRow(setting, snapshot);
   }
 
-  // The two ways these four can be set to something legal and surprising.
-  // Neither is refused — this service exists to be pointed at a client and made
-  // to misbehave on purpose, and both of these are reachable states a real
-  // deployment can get into — but a page that showed the numbers and not the
-  // consequence would leave the consequence to be discovered from a client that
-  // stopped working.
-  /**
-   * Draws a warning for each legal but surprising combination of the token
-   * lifetimes: an access token outliving its refresh token, or a clock skew
-   * at least as long as the access token's life.
-   *
-   * @returns the warnings as HTML, or an empty string
-   */
-  tokenLifetimeWarnings(values?) {
-    const { log, config } = this.deps;
-    log.debug("Entering AdminConsole.tokenLifetimeWarnings().");
-    // An application's page hands in the values in force FOR IT
-    // (2026-10-01); the realm's page reads the settings.
-    const given = values || {};
-    const access = given.access !== undefined ? given.access
-      : config.value('oauth2.accessTokenTtlS');
-    const refresh = given.refresh !== undefined ? given.refresh
-      : config.value('oauth2.refreshTokenTtlS');
-    const skew = given.skew !== undefined ? given.skew
-      : config.value('oauth2.clockSkewS');
-    log.debug("Leaving AdminConsole.tokenLifetimeWarnings().");
-    return this.tokenLifetimeWarningsFor(access, refresh, skew);
-  }
-
   // Drawn by `web_token_lifetimes.ts` (#446).
   /**
    * Draws the warnings for an access, refresh and skew in seconds.
@@ -14544,36 +14012,6 @@ class AdminConsole {
     log.debug("Entering AdminConsole.riscAccountCounts().");
     log.debug("Leaving AdminConsole.riscAccountCounts().");
     return CaepRiscPage.riscAccountCounts(row, types);
-  }
-
-  // WHERE A RISC ACTION ANSWERS BACK TO. The same enum-not-a-path rule
-  // caepSessionsBackTo() follows, for its reason.
-  /**
-   * Decides where a RISC action redirects to, reading `from` as an enum and
-   * rebuilding the list view from `back`, so no path is taken from the form.
-   *
-   * @param body - the posted form
-   * @returns the path to redirect to; /admin/risc by default
-   */
-  riscAccountsBackTo(body) {
-    const { log, queryWith } = this.deps;
-    log.debug("Entering AdminConsole.riscAccountsBackTo().");
-    const from = String((body || {}).from || '');
-    if (from === 'account') {
-      const target = '/admin/risc-accounts/account' +
-        queryWith(this.listViewFromBack('/admin/risc-accounts', body.back),
-                  { id: String(body.account_id || '') });
-      log.debug("Leaving AdminConsole.riscAccountsBackTo(). " + target);
-      return target;
-    }
-    if (from === 'accounts') {
-      const target = '/admin/risc-accounts' +
-        queryWith(this.listViewFromBack('/admin/risc-accounts', body.back), {});
-      log.debug("Leaving AdminConsole.riscAccountsBackTo(). " + target);
-      return target;
-    }
-    log.debug("Leaving AdminConsole.riscAccountsBackTo(). The RISC page.");
-    return '/admin/risc';
   }
 
   // Drawn by `web_caep_risc.ts` (#446).
@@ -15477,30 +14915,6 @@ class AdminConsole {
     return json;
   }
 
-  // The page, written once. `configFormsFor()` is the whole of the second half;
-  // everything above it is the row.
-  /**
-   * Draws a protocol settings page: its prose, its status block when it has
-   * one, its settings forms and a row of links.
-   *
-   * @param req - the request
-   * @param row - the page's row of PROTOCOL_SETTINGS_PAGES
-   * @returns the page body as HTML
-   */
-  protocolSettingsPage(req, row) {
-    const { log } = this.deps;
-    log.debug("Entering AdminConsole.protocolSettingsPage().");
-    // DRAWN BY `web_protocol_settings.ts` (#446) from the page's JSON passed
-    // through JSON. A row with a status block hands its HTML in beside the
-    // view until that block is converted too; the page table lists only the
-    // pages without one.
-    const json = JSON.parse(JSON.stringify(this.protocolSettingsJson(row)));
-    const status = typeof row.status === 'function' ? row.status().html : '';
-    log.debug("Leaving AdminConsole.protocolSettingsPage().");
-    return this.messagesOf(req) +
-      ProtocolSettingsPage.render(json, this.renderContext(req), status);
-  }
-
 
   // What `mgmt-api/admin_api.ts` calls for each of these. It takes the PATH
   // rather than an index or a title, because that is what SETTING_HOMES and NAV
@@ -15827,31 +15241,6 @@ class AdminConsole {
     return {
       json: json,
       inner: inner
-    };
-  }
-
-  // THE SPIFFE BROKER API'S BROKERS (#170): the list, a remove per row, and
-  // the form that adds a broker or replaces what it may reference.
-  /**
-   * Builds /admin/spiffe/brokers: the SPIFFE Broker API's brokers, a remove
-   * form per row, and the form that adds or changes one.
-   *
-   * @param req - the request
-   * @returns `json`, `inner` (the page body as HTML) and `title`
-   */
-  spiffeBrokersPage(req) {
-    const { log, spiffeBrokersJson } = this.deps;
-    log.debug("Entering AdminConsole.spiffeBrokersPage().");
-    const json = spiffeBrokersJson(req).json;
-    // Drawn by `web_spiffe.ts` (#446).
-    const inner = this.messagesOf(req) +
-      SpiffePage.brokers(this.renderContext(req),
-        JSON.parse(JSON.stringify(json)));
-    log.debug("Leaving AdminConsole.spiffeBrokersPage().");
-    return {
-      json: json,
-      inner: inner,
-      title: 'SPIFFE brokers'
     };
   }
 
