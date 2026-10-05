@@ -391,10 +391,11 @@ RUN apt-get update \
 # the client every other Kerberos deployment uses rather than only by this
 # suite's own. Its own layer below the source copy, for the compiler's
 # reason; noninteractive, because the package otherwise asks for a default
-# realm.
+# realm. krb5-pkinit (#179) is MIT's PKINIT plugin, for `kinit -X
+# X509_user_identity=` and `kinit -n` in sts_kerberos_pkinit.js.
 RUN apt-get update \
     && DEBIAN_FRONTEND=noninteractive apt-get -y install --no-install-recommends \
-        krb5-user \
+        krb5-user krb5-pkinit \
     && rm -rf /var/lib/apt/lists/*
 # THE CERTIFICATE ENROLLMENT CLIENTS (#207-#211), from the two stages at the
 # top of this file, and certbot, which is Python and is installed here into

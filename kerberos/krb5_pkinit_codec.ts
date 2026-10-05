@@ -20,11 +20,11 @@
 // THE TAGS. RFC 4556's module is `DEFINITIONS EXPLICIT TAGS`, so every
 // context tag is explicit unless the field says IMPLICIT — signedAuthPack,
 // kdcPkId, dhSignedData, encKeyPack and the three fields of an
-// ExternalPrincipalIdentifier. **ONE EXCEPTION THE WIRE MAKES AND THE TEXT
-// DOES NOT**: PA-PK-AS-REP's `dhInfo [0] DHRepInfo` is written IMPLICIT by
-// MIT Kerberos and by Windows — the [0] replaces DHRepInfo's SEQUENCE tag —
-// and a reply tagged as the module says is one MIT's client does not read.
-// This KDC writes it as the clients read it, and reads both.
+// ExternalPrincipalIdentifier. PA-PK-AS-REP's `dhInfo [0] DHRepInfo` is
+// therefore EXPLICIT — the [0] round DHRepInfo's own SEQUENCE. This file
+// first wrote it IMPLICIT, on a recollection that MIT and Windows do, and
+// MIT's `kinit` refused the reply ("ASN.1 length doesn't match expected
+// value"); the module's reading is what it accepts. The reader takes both.
 //
 // A STATIC UTILITY CLASS (#50's rule for helpers): no state, no dependencies
 // but the codec and the logger. A LIBRARY (rule 3): it registers nothing and
@@ -412,8 +412,8 @@ class Krb5PkinitCodec {
   // }, and the reply: PA-PK-AS-REP ::= CHOICE { dhInfo [0] DHRepInfo, ... }
   // with DHRepInfo ::= SEQUENCE { dhSignedData [0] IMPLICIT OCTET STRING,
   // serverDHNonce [1] DHNonce OPTIONAL, ..., kdf [2] KDFAlgorithmId OPTIONAL
-  // (RFC 8636) }. The [0] of the CHOICE is IMPLICIT on the wire — the
-  // header says why.
+  // (RFC 8636) }. The [0] of the CHOICE is EXPLICIT — the header says how
+  // that was learned.
   // -------------------------------------------------------------------------
   /**
    * Encodes a KDCDHKeyInfo.
@@ -450,8 +450,8 @@ class Krb5PkinitCodec {
   }
 
   /**
-   * Encodes a PA-PK-AS-REP carrying a DHRepInfo, with the CHOICE's [0]
-   * implicit as MIT and Windows write it.
+   * Encodes a PA-PK-AS-REP carrying a DHRepInfo, the CHOICE's [0]
+   * explicit.
    *
    * @param rep - `{ dhSignedData, kdf }`; `kdf` is an OID, or null for RFC
    *   4556's own derivation
@@ -465,8 +465,7 @@ class Krb5PkinitCodec {
                                   Krb5PkinitCodec.encKdfAlgorithmId(rep.kdf)));
     }
     log.debug('Leaving Krb5PkinitCodec.encPaPkAsRep().');
-    return fastCodec.implicit(0, fastCodec.implicitSequence(fields)) as
-      Uint8Array;
+    return asn1.encContext(0, fastCodec.implicitSequence(fields));
   }
 
   /**

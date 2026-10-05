@@ -1117,7 +1117,12 @@ class Krb5Pkinit {
     if (kdf) {
       const otherInfo = codec.encOtherInfo({
         kdf: kdf,
-        client: codec.encKrb5PrincipalName(body.realm, body.cname),
+        // The anonymous principal's realm is WELLKNOWN:ANONYMOUS (RFC 8062
+        // section 3), not the realm asked — which is how MIT's client
+        // names it in partyUInfo, and so the only reading whose reply key
+        // it can derive.
+        client: codec.encKrb5PrincipalName(
+          opts.anonymous ? ANONYMOUS_REALM : body.realm, body.cname),
         server: codec.encKrb5PrincipalName(body.realm, body.sname),
         etype: opts.etype,
         asReq: opts.asReqBytes,

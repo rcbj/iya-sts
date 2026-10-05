@@ -14,8 +14,8 @@
 //   1. RFC 8636 section 8's KDF vectors through the codec's OtherInfo and
 //      `common/crypto.js` section 16 — EXTERNAL answers, so a mistake made
 //      the same way on both ends of an exchange is still caught;
-//   2. the codec: PA-PK-AS-REP's [0] written IMPLICIT, as MIT and Windows
-//      read it, and the AuthPack's round trip;
+//   2. the codec: PA-PK-AS-REP's dhInfo [0] EXPLICIT, as RFC 4556's module
+//      says and MIT's client reads, and the AuthPack's round trip;
 //   3. `spnego_authn.ts` turning `pkinit` into `swk` and `pkinit-hardware`
 //      (with hw-authent) into `hwk` — never `pwd`, and `acr "1"`;
 //   4. real AS-REQs through `handleMessage()` with a client written here: a
@@ -98,10 +98,11 @@ function theCodec(t) {
   const codec = require('../kerberos/krb5_pkinit_codec');
   const rep = Buffer.from(codec.encPaPkAsRep({
     dhSignedData: Buffer.from('0102', 'hex'), kdf: '1.3.6.1.5.2.3.6.2' }));
-  t.equal(rep.subarray(0, 4).toString('hex'), 'a0' +
-          rep[1].toString(16).padStart(2, '0') + '8002',
-          'PA-PK-AS-REP: dhInfo [0] IMPLICIT, then dhSignedData [0] ' +
-          'IMPLICIT OCTET STRING');
+  t.equal(rep.subarray(0, 6).toString('hex'), 'a0' +
+          rep[1].toString(16).padStart(2, '0') + '30' +
+          rep[3].toString(16).padStart(2, '0') + '8002',
+          'PA-PK-AS-REP: dhInfo [0] EXPLICIT round DHRepInfo\'s SEQUENCE, ' +
+          'then dhSignedData [0] IMPLICIT OCTET STRING — what MIT reads');
   const back = codec.readPaPkAsRep(new Uint8Array(rep));
   t.equal(back.kdf, '1.3.6.1.5.2.3.6.2', 'the KDF reads back');
   const pack = codec.readAuthPack(codec.encAuthPack({
@@ -299,7 +300,9 @@ async function throughTheKdc(t) {
     const z = nodeCrypto.diffieHellman({ privateKey: ecdh.privateKey,
                                         publicKey: kdcPub });
     const replyKey = cryptoLib.pkinitKdf(dh.kdf, z, codec.encOtherInfo({
-      kdf: dh.kdf, client: codec.encKrb5PrincipalName(REALM, body.cname),
+      kdf: dh.kdf,
+      client: codec.encKrb5PrincipalName(anonymous ? 'WELLKNOWN:ANONYMOUS'
+                                                   : REALM, body.cname),
       server: codec.encKrb5PrincipalName(REALM, body.sname), etype: 18,
       asReq: bytes, pkAsRep: pkRep.value }), 18);
     let enc = null;
