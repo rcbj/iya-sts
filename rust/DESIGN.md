@@ -60,7 +60,10 @@ sequence of phases, each of which leaves a service that passes the suite
   Node process at runtime. The paths, the origin and the cookies stay as they
   are today, so the OIDC redirect URIs and the suite's URLs do not move.
   **The console is converted on the Node service first (#446)**, which
-  serves the same static files on the same paths. Its source and its build
+  serves the same static files on the same paths — **done on
+  `feature/446` (2026-10-05)**: `/admin` and `/admin/*` answer one document
+  and `/admin/console.js`, and every page and form goes through
+  `/admin-api`. Its source and its build
   stay Node.js / TypeScript for good; only its output is in the runtime's
   image. The build tool is esbuild, as a bundler, with no front-end
   framework (owner, 2026-10-05): the console's existing renderers are kept.
