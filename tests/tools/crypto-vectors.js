@@ -851,19 +851,65 @@ function kerberosAndDkim() {
            dkimKeys: keys, dkim: dkim };
 }
 
+// POST-QUANTUM KEYS IN X.509: for every algorithm pqc_x509.js knows — 15
+// ML-DSA and SLH-DSA sets, 3 ML-KEM sets, 16 composites — a key pair, its
+// SubjectPublicKeyInfo and PKCS#8 (all three CHOICE arms where there are
+// three), and for the signature algorithms a signature. Every encoding is
+// DER and so must be Rust's bytes; Rust must verify every signature, and
+// Node verifies Rust's (tests/rust_crypto_vectors.js).
+async function pqX509() {
+  const pqcX509 = require(path.join(ROOT, 'common', 'vendored',
+                                    'pqc_x509.js'));
+  const message = Buffer.from('a certificate\'s to-be-signed bytes');
+  const out = [];
+  for (const id of pqcX509.algIds()) {
+    const entry = pqcX509.alg(id);
+    const pair = await pqcX509.generateKeyPair(id);
+    const row = { id: id, family: entry.family, oid: entry.oid,
+                  label: pqcX509.labelFor(id),
+                  pub: Buffer.from(pair.pub).toString('base64'),
+                  priv: Buffer.from(pair.priv).toString('base64'),
+                  spki: Buffer.from(pqcX509.encodeSpki(id, pair.pub))
+                    .toString('base64'),
+                  pkcs8: {} };
+    const forms = entry.family === 'ML-DSA' || entry.family === 'ML-KEM'
+      ? ['seed', 'expandedKey', 'both'] : ['seed'];
+    forms.forEach(function (form) {
+      row.pkcs8[form] = Buffer.from(pqcX509.encodePkcs8(id, pair.priv,
+                                                        { form: form }))
+        .toString('base64');
+    });
+    if (entry.use === 'sig') {
+      row.message = message.toString('base64');
+      row.signature = Buffer.from(await pqcX509.sign(id, message, pair.priv))
+        .toString('base64');
+    }
+    out.push(row);
+  }
+  return out;
+}
+
 const VECTORS = [{ file: 'jws-node.json', build: jws },
                  { file: 'jwe-node.json', build: jwe },
                  { file: 'c14n-node.json', build: c14n },
                  { file: 'xmldsig-node.json', build: xmldsig },
                  { file: 'xmlenc-node.json', build: xmlenc },
                  { file: 'secrets-node.json', build: secrets },
-                 { file: 'krb5-dkim-node.json', build: kerberosAndDkim }];
+                 { file: 'krb5-dkim-node.json', build: kerberosAndDkim },
+                 { file: 'pq-x509-node.json', build: pqX509 }];
 
 if (require.main === module) {
   fs.mkdirSync(OUT, { recursive: true });
-  VECTORS.forEach(function (one) {
-    fs.writeFileSync(path.join(OUT, one.file),
-                     JSON.stringify(one.build(), null, 1) + '\n');
-    console.log('wrote ' + path.relative(ROOT, path.join(OUT, one.file)));
+  // One at a time, awaiting a builder that is asynchronous (pqX509).
+  (async function () {
+    for (const one of VECTORS) {
+      const built = await one.build();
+      fs.writeFileSync(path.join(OUT, one.file),
+                       JSON.stringify(built, null, 1) + '\n');
+      console.log('wrote ' + path.relative(ROOT, path.join(OUT, one.file)));
+    }
+  })().catch(function (e) {
+    console.error(e);
+    process.exitCode = 1;
   });
 }
