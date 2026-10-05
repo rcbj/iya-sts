@@ -20,9 +20,11 @@
 //!   that exist, not past their own expiry, a short-lived store's row not
 //!   older than `persistence.mintedRetention`.
 //!
-//! Not here yet: the fan-in of `merge: own` rows another process wrote (they
-//! are passed over and counted), a page prefetch for the applier, and the
-//! tombstone and expiry purge jobs.
+//! * **A `merge: own` store's row another process wrote** (a counter, the
+//!   audit ring) is never put into this process's store: it goes to the
+//!   fan-in (`fan_in.rs`), which the reporting code sums.
+//!
+//! Not here yet: a page prefetch for the applier.
 
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
@@ -40,6 +42,7 @@ use crate::driver::{
     ChangeRow, Driver, MintedDecided, MintedFilter, MintedMerge, MintedRow,
     MintedWrite, PurgeKind,
 };
+use crate::fan_in::FanIn;
 use crate::keystore::DataKeys;
 
 /// What a row's NAME is sealed and digested under.
@@ -87,6 +90,7 @@ pub struct Minted {
     origin: String,
     state: Mutex<State>,
     flushing: tokio::sync::Mutex<()>,
+    fan_in: Arc<FanIn>,
     scheduler: Mutex<Option<Arc<dyn Fn() + Send + Sync>>>,
 }
 
@@ -143,6 +147,7 @@ impl Minted {
             origin,
             state: Mutex::new(State::default()),
             flushing: tokio::sync::Mutex::new(()),
+            fan_in: Arc::new(FanIn::default()),
             scheduler: Mutex::new(None),
         })
     }
@@ -607,6 +612,13 @@ impl Minted {
                 && !origin.is_empty()
                 && origin != self.origin
             {
+                self.fan_in.contribute(
+                    &row.handle,
+                    &row.realm,
+                    &key,
+                    &origin,
+                    Some(value),
+                );
                 foreign += 1;
                 continue;
             }
@@ -695,13 +707,10 @@ impl Minted {
             return Ok(false);
         };
         let (key, origin) = split_key(&h, &name);
-        if h.spec.merge == Merge::Own
+        // Another process's own row goes to the fan-in, never the store.
+        let foreign = h.spec.merge == Merge::Own
             && !origin.is_empty()
-            && origin != self.origin
-        {
-            self.state().foreign_own += 1;
-            return Ok(false);
-        }
+            && origin != self.origin;
         let column = Minted::key_column_of(keys, &handle, &change.realm, &name);
         let rows = self
             .driver
@@ -713,7 +722,17 @@ impl Minted {
             .await
             .map_err(|e| e.to_string())?;
         let Some(row) = rows.into_iter().next() else {
-            self.apply_locally(&h, &change.realm, &key, None);
+            if foreign {
+                self.fan_in.contribute(
+                    &handle,
+                    &change.realm,
+                    &key,
+                    &origin,
+                    None,
+                );
+            } else {
+                self.apply_locally(&h, &change.realm, &key, None);
+            }
             return Ok(true);
         };
         let Some(text) = keys.open(&row.body, BODY_LABEL) else {
@@ -732,8 +751,23 @@ impl Minted {
             );
             return Ok(false);
         };
-        self.apply_locally(&h, &change.realm, &key, Some(value));
+        if foreign {
+            self.fan_in.contribute(
+                &handle,
+                &change.realm,
+                &key,
+                &origin,
+                Some(value),
+            );
+        } else {
+            self.apply_locally(&h, &change.realm, &key, Some(value));
+        }
         Ok(true)
+    }
+
+    /// What every other process contributed to the `merge: own` stores.
+    pub fn fan_in(&self) -> &Arc<FanIn> {
+        &self.fan_in
     }
 
     fn retention_ms(&self) -> i64 {
@@ -861,7 +895,8 @@ impl Minted {
                 "generation": st.generation, "committed": st.committed, "writes": st.writes,
                 "rowsWritten": st.rows_written, "rowsDeleted": st.rows_deleted, "failures": st.failures,
                 "restored": st.restored, "droppedUnreadable": st.dropped_unreadable,
-                "droppedUnknown": st.dropped_unknown, "foreignOwn": st.foreign_own,
+                "droppedUnknown": st.dropped_unknown, "contributedOnRestore": st.foreign_own,
+                "otherProcesses": self.fan_in.origins().len(),
                 "lastError": st.last_error })
     }
 }
