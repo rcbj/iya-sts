@@ -607,9 +607,10 @@ class ConsoleRuntime {
     const shell = this.shell || { gate: null, sections: [], realm: { id: '',
       name: '' }, navLabels: {}, version: {}, persistence: {} };
     this.env.document.title = title + ' — IYA STS admin';
-    this.env.document.body.innerHTML = WebShell.frame(shell, {
-      title: title, active: active, up: up, inner: messages + inner,
-      path: this.here() });
+    this.env.document.body.innerHTML = ConsoleRuntime.realmLinks(
+      WebShell.frame(shell, {
+        title: title, active: active, up: up, inner: messages + inner,
+        path: this.here() }), this.prefix);
     this.wireCopyButtons();
     this.loadPageScripts();
   }
@@ -635,6 +636,27 @@ class ConsoleRuntime {
       script.src = this.prefix + src;
       doc.body.appendChild(script);
     }
+  }
+
+  // A PAGE UNDER A REALM'S PREFIX LINKS INTO THAT REALM. The renderers draw
+  // root-relative addresses (`/admin/users`, a form's `action`, a button's
+  // `formaction`), and the server-rendered console prefixed every one with
+  // the realm's on the way out (`common/app.js` `withRealmLinks()`); the
+  // static console draws them itself, so it does the same: `="/` and not
+  // `="//`, which is another host.
+  /**
+   * Prefixes every root-relative `href`, `action`, `formaction` and `src`.
+   *
+   * @param html - the page
+   * @param prefix - the realm's path prefix, or '' for the default realm
+   * @returns the page with its links in the realm
+   */
+  static realmLinks(html: string, prefix: string): string {
+    if (!prefix) {
+      return html;
+    }
+    return String(html).replace(/\b(href|action|formaction|src)="\/(?!\/)/g,
+                                '$1="' + prefix + '/');
   }
 
   /**
@@ -1111,6 +1133,11 @@ class ConsoleRuntime {
                                   value: json.value } });
       return;
     }
+    // A REALM MADE OR REMOVED changes the shell's realm switcher, so the
+    // shell is asked again on the next draw.
+    if (json && json.ok && page === '/admin/realms') {
+      this.shell = null;
+    }
     // A SECRET SHOWN ONCE is drawn in place — never on a URL, never in the
     // history — and is gone when the reader moves on.
     const once = WebAnswers.once(page, action, fields, json, {
@@ -1338,7 +1365,11 @@ class ConsoleRuntime {
     const form = event.target;
     const target = new URL(form.getAttribute('action') || this.here(),
                            this.env.location.href);
-    const page = this.consolePath(target.pathname);
+    // THE REALM SWITCHER POSTS AT THE SERVICE'S ROOT, whatever realm the
+    // page is in — it moves between realms — so it is claimed by its path
+    // alone, before the realm's own prefix is asked.
+    const page = target.pathname === WebShell.REALM_SWITCH_PATH
+      ? WebShell.REALM_SWITCH_PATH : this.consolePath(target.pathname);
     if (!page || target.origin !== this.env.location.origin) {
       return;
     }
@@ -1384,16 +1415,53 @@ class ConsoleRuntime {
    * @returns nothing
    */
   wireCopyButtons(): void {
-    const buttons = this.env.document.querySelectorAll(
-      'button.copybtn[data-copy]');
+    const doc = this.env.document;
+    const buttons = doc.querySelectorAll('button.copybtn[data-copy]');
     const nav = this.env.navigator;
+    // OUTSIDE A SECURE CONTEXT `navigator.clipboard` is undefined — a console
+    // reached over plain http — so a selected, hidden text area and
+    // `execCommand('copy')` stand in, as the parent project's `copyField()`
+    // and the deleted `/admin/copy.js` did.
+    const fallback = function (text: string): boolean {
+      const area = doc.createElement('textarea');
+      area.value = text;
+      area.setAttribute('readonly', '');
+      area.style.position = 'fixed';
+      area.style.opacity = '0';
+      doc.body.appendChild(area);
+      area.focus();
+      area.select();
+      let ok = false;
+      try {
+        ok = doc.execCommand('copy');
+      } catch (e) {
+        // A browser that has dropped execCommand: the button says it failed.
+        ok = false;
+      }
+      doc.body.removeChild(area);
+      return ok;
+    };
+    const copied = function (button: Json, ok: boolean): void {
+      const label = button.textContent;
+      button.textContent = ok ? 'Copied' : 'Copy failed';
+      setTimeout(function () {
+        button.textContent = label;
+      }, 1500);
+    };
     for (let i = 0; i < buttons.length; i++) {
       const button = buttons[i];
       button.hidden = false;
       button.addEventListener('click', function () {
-        if (nav && nav.clipboard) {
-          nav.clipboard.writeText(button.getAttribute('data-copy') || '');
+        const text = button.getAttribute('data-copy') || '';
+        if (nav && nav.clipboard && nav.clipboard.writeText) {
+          nav.clipboard.writeText(text).then(function () {
+            copied(button, true);
+          }, function () {
+            copied(button, fallback(text));
+          });
+          return;
         }
+        copied(button, fallback(text));
       });
     }
   }
