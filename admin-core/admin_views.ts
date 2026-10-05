@@ -6635,7 +6635,13 @@ class AdminViews {
               " drifting member(s).");
     return {
       profile: profile, drift: drift, capabilities: capabilities,
-      json: Object.assign({ found: true }, profile, { drift: drift })
+      // What the page draws beside the profile (#446): the effective
+      // capabilities, and the member catalogue its two menus are built from.
+      json: Object.assign({ found: true }, profile, {
+        drift: drift, capabilities: capabilities,
+        members: authorizationServers.MEMBERS,
+        memberGroups: authorizationServers.GROUPS
+      })
     };
   }
 

@@ -330,6 +330,14 @@ function childMain() {
          (/\brequire\([^)]*\)/.exec(code) || [''])[0]);
 
     // --- D. a converted page is one page -------------------------------------
+    // SOMETHING FOR THE DRILL-DOWNS TO OPEN: a fresh process names no
+    // authorization server, so one is made with an override and a removal,
+    // and its drill-down is drawn with rows rather than only as missing.
+    const servers = require(ROOT_DIR + '/oauth-oidc/authorization_servers');
+    servers.create({ id: 'webcheck', label: 'drawn by the bundle check' });
+    servers.setMember('webcheck', 'code_challenge_methods_supported',
+                      '["S256"]');
+    servers.removeMember('webcheck', 'request_uri_parameter_supported');
     const unviewed = [];
     const differing = [];
     const drilled = [];

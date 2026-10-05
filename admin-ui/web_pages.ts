@@ -127,6 +127,16 @@ const PAGES: WebPage[] = [
     render: AttributeSourcesPage.render },
   { path: '/admin/authorization-servers', title: 'Authorization servers',
     operation: '/admin-api/authorization-servers',
+    drill: {
+      param: 'profile',
+      sample: function (list: Json): string | null {
+        const rows = list.authorizationServers || [];
+        return rows[0] ? rows[0].id : null;
+      },
+      render: function (view: Json, ctx?: Json): string {
+        return AuthorizationServersPage.detail(ctx || WebKit.context(), view);
+      }
+    },
     render: function (view: Json, ctx?: Json): string {
       return AuthorizationServersPage.body(ctx || WebKit.context(), view);
     } },
