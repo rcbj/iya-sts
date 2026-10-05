@@ -398,7 +398,10 @@ function childMain() {
     const EXAMPLES = {
       '/admin/delegation/chain': { chain: dAct ? dAct.chainKey : '' },
       // The person the act named, rather than the catalogue's first.
-      '/admin/delegation/user': { user: 'webcheck-alice' }
+      '/admin/delegation/user': { user: 'webcheck-alice' },
+      // An identifier neither register holds is a lineage of one generation
+      // that says so, which draws every section but the picture's content.
+      '/admin/tokens/credential': { id: 'webcheck-credential' }
     };
     const exampled = [];
     const unviewed = [];

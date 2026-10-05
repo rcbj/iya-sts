@@ -164,6 +164,9 @@ import delegationMap = require('../admin-ui/delegation_map');
 // delegation pages' person chooser. A library (rule 3p) that registers no
 // route.
 import userGraph = require('../common/user_graph');
+// ONE CREDENTIAL'S LINEAGE (#446), for `/admin/tokens/credential`. A
+// library in `common/` that registers no route.
+import credentialGraph = require('../common/credential_graph');
 import authnPolicy = require('../common/authn_policy');
 // Four more with the second batch: the audit log the audit view pages, the
 // delegation register the delegation view reads, the Kerberos principal
@@ -523,6 +526,7 @@ interface AdminViewsDeps {
   delegation: typeof delegation;
   delegationMap: typeof delegationMap;
   userGraph: typeof userGraph;
+  credentialGraph: typeof credentialGraph;
   delegationPolicy: typeof delegationPolicy;
   krb5Principals: typeof krb5Principals;
   krb5PersonKeys: typeof krb5PersonKeys;
@@ -632,6 +636,7 @@ class AdminViews {
       delegation: delegation,
       delegationMap: delegationMap,
       userGraph: userGraph,
+      credentialGraph: credentialGraph,
       delegationPolicy: delegationPolicy,
       krb5Principals: krb5Principals,
       krb5PersonKeys: krb5PersonKeys,
@@ -4707,6 +4712,91 @@ class AdminViews {
     }
     log.debug("Leaving AdminViews.delegationUserModel(). " +
               model.credentials.length + " credential(s).");
+    return model;
+  }
+
+  // ---------------------------------------------------------------------------
+  // ONE CREDENTIAL AND EVERY GENERATION BEHIND IT, AS ONE ANSWER (#446).
+  //
+  // `/admin/tokens/credential?id=`: the lineage `credentialGraph.lineageOf()`
+  // walks, drawn — the page's own JSON with the looks (the box the
+  // credential ended up at marked in its tooltip), the drawing, and what the
+  // page asked the registers for while it drew: each generation's holder and
+  // the label of the grant or flow at its origin (`holder`, `originLabel`
+  // on each generation), the key the credential's person is filed under
+  // (`subjectKey`), the cap on the walk, and the facts.
+  // ---------------------------------------------------------------------------
+  /**
+   * Builds one credential's lineage as one answer.
+   *
+   * @param query - the page's query: `id`, the credential's identifier
+   * @param options - `links` (true by default): false draws the document
+   *   with no links in it, as `?format=svg` answers
+   * @returns the lineage, the graph and the drawing
+   */
+  credentialLineageModel(query, options?) {
+    const { log, stats, delegation, delegationMap, userGraph,
+            credentialGraph } = this.deps;
+    log.debug("Entering AdminViews.credentialLineageModel().");
+    const asked = String((query || {}).id || '').trim();
+    const lineage = asked ? credentialGraph.lineageOf(asked) : null;
+    const graph = lineage ? lineage.graph : delegation.graph([]);
+    const look = this.delegationLooks(graph, this.knownUserKeys());
+    // WHICH BOX IS THE ONE THIS CREDENTIAL IS AT NOW, appended to what
+    // `delegationNodeLook()` said, as the person's picture appends its own.
+    const holder = lineage && lineage.credential
+      ? stats.identityKeyOf(userGraph.holderOf(lineage.credential)) : '';
+    if (holder && look.looks[holder]) {
+      look.looks[holder].title = look.looks[holder].title +
+        '\nTHIS IS WHERE THE CREDENTIAL THIS PAGE IS ABOUT ENDED UP: ' +
+        (lineage.credential.kind || 'a credential') + ' ' + asked + '.';
+    }
+    const label = lineage
+      ? 'How ' +
+        (lineage.credential ? lineage.credential.kind : 'this credential') +
+        ' ' + asked + ' came to exist'
+      : 'One credential, and every generation behind it';
+    const drawn = delegationMap.render(graph, {
+      resolve: look.resolve, labelOf: look.labelOf,
+      links: !(options && options.links === false), id: 'delmap', label: label
+    });
+    const model: any = {
+      identifier: asked || null,
+      held: lineage ? lineage.held : null,
+      credential: lineage ? lineage.credential : null,
+      counts: lineage ? lineage.counts : null,
+      generations: lineage
+        ? lineage.generations.map(function (row) {
+          const one = row.credential;
+          return Object.assign({}, row, {
+            holder: one ? userGraph.holderOf(one) || '' : '',
+            originLabel: row.act ? '' : (one && one.family === 'token'
+              ? userGraph.flowRow(one.grant).label
+              : (one ? userGraph.artifactFlowRow(one.kind).label
+                     : 'nothing here produced it'))
+          });
+        })
+        : [],
+      origins: lineage ? lineage.origins : [],
+      issuances: lineage ? lineage.issuances : [],
+      walls: lineage ? lineage.walls : [],
+      truncated: lineage ? lineage.truncated : false,
+      acts: lineage ? lineage.acts : [],
+      graph: graph,
+      maxGenerations: credentialGraph.MAX_GENERATIONS,
+      drawing: { width: drawn.width, height: drawn.height,
+                 failed: drawn.failed || null },
+      looks: look.looks, label: label, svg: drawn.svg
+    };
+    const credential = model.credential;
+    model.subjectKey = credential && credential.family === 'token' &&
+      (credential.username || credential.sub)
+      ? stats.identityKeyOf(credential.username || credential.sub) : '';
+    if (!(options && options.links === false)) {
+      model.facts = this.delegationFacts(model);
+    }
+    log.debug("Leaving AdminViews.credentialLineageModel(). " +
+              model.generations.length + " generation(s).");
     return model;
   }
 
@@ -11686,6 +11776,7 @@ export = {
   delegationLooks: slot.forward('delegationLooks'),
   delegationMapModel: slot.forward('delegationMapModel'),
   delegationMapKey: slot.forward('delegationMapKey'),
+  credentialLineageModel: slot.forward('credentialLineageModel'),
   delegationUserModel: slot.forward('delegationUserModel'),
   delegationApplicationModel: slot.forward('delegationApplicationModel'),
   delegationChainModel: slot.forward('delegationChainModel'),

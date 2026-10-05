@@ -3084,6 +3084,231 @@ class DelegationPage {
       '/admin-api/users</code>.');
 
   }
+
+  // ---------------------------------------------------------------------------
+  // /admin/tokens/credential, FROM `GET /admin-api/tokens/credential` (#446).
+  //
+  // One credential and every generation behind it: the sentence, the
+  // generations newest first, the walls a line stops at, the picture, its
+  // parties and lines, and the acts — or, with nothing named, how to get
+  // here.
+  // ---------------------------------------------------------------------------
+  /**
+   * Draws `/admin/tokens/credential` from its answer.
+   *
+   * @param ctx - the render context (`WebKit.context()`)
+   * @param json - the answer of `GET /admin-api/tokens/credential`
+   * @returns the body as HTML
+   */
+  static credential(ctx: Json, json: Json): string {
+    const listView = kit.listViewOf('/admin/tokens', ctx.query);
+    const upHref = '/admin/tokens' + kit.queryWith(listView, {});
+    const back = kit.note('<a class="btn" href="' + kit.esc(upHref) +
+      '">&larr; Back to the tokens table</a>');
+    const credential = json.credential;
+    const labelOf = function (id) {
+      return json.looks[id] ? json.looks[id].label : id;
+    };
+    if (!json.counts) {
+    return back +
+      kit.note('<strong>Name a credential.</strong> This page draws ONE ' +
+      'of them and the way to it is a link on <a href="' +
+      kit.esc(upHref) +
+      '">the tokens table</a> — every identifier there is one. It is ' +
+      'keyed on the identifier the protocol gave the credential (a ' +
+      '<code>jti</code>, an <code>AssertionID</code>), which is the only ' +
+      'thing the issued register and the delegation register both hold ' +
+      'about the same object, and is the reason a Kerberos ticket has no ' +
+      'link: that protocol has no identifier to quote.');
+    }
+    const parties = json.graph.nodes.filter(function (node) {
+      return node.kind !== 'sts';
+    });
+
+    // THE ONE SENTENCE THIS PAGE OPENS WITH. A reader arriving from a row of
+    // a ten-column table has to be told immediately that they are looking at
+    // the same credential — and then the one fact the row could not tell
+    // them, which is whether anything is behind it.
+    const sentence = kit.note('<strong><code>' + kit.esc(json.identifier) +
+      '</code></strong> — ' +
+      (credential
+        ? kit.esc(credential.kind) + ', issued ' +
+          kit.esc(kit.whenText(credential.issuedAt)) +
+          ', <span class="' + TokensPage.stateClass(credential.state) + '">' +
+          kit.esc(credential.state) + '</span>'
+        : '<span class="state-expired" title="' +
+          kit.esc('The issued register is capped and drops the oldest, so ' +
+                   'a credential a delegation act still names can be one ' +
+                   'this service can no longer describe. That is a bounded ' +
+                   'store working as intended rather than a gap in the ' +
+                   'recording.') +
+          '">no longer held in the issued register</span>') +
+      '. ' +
+      (json.counts.exchanges
+        ? '<strong>' + kit.esc(json.counts.exchanges) + ' ' +
+          'exchange(s)</strong> are behind it, so it is generation ' +
+          kit.esc(json.generations.length - 1) + ' of a line that ' +
+          'starts at an ordinary issuance.'
+        : '<strong>Nothing was exchanged to get it.</strong> It was issued ' +
+          'directly, which is the ordinary case: three of the sixteen ' +
+          'protocol families here can delegate at all.'));
+
+    return back +
+      '<div class="tiles">' +
+        kit.tile(json.counts.generations, 'generations') +
+        kit.tile(json.counts.exchanges, 'exchanges behind it') +
+        kit.tile(json.counts.parties, 'parties involved') +
+        kit.tile(json.counts.acts, 'delegation acts') +
+      '</div>' +
+
+      sentence +
+
+      (json.truncated
+        ? '<p class="note state-expired"><strong>The line is longer than ' +
+          kit.esc(json.maxGenerations) + ' generations and ' +
+          'the rest was not walked.</strong> What is drawn below is the ' +
+          'newest ' +
+          kit.esc(json.maxGenerations) + ' of it, so the ' +
+          'oldest box on this picture is NOT the origin. Said rather than ' +
+          'left to be assumed, because a lineage that stops quietly reads ' +
+          'as an issuance that never happened.</p>'
+        : '') +
+
+      '<h2>How it came to exist</h2>' +
+      kit.note('One row per generation, newest first: the credential ' +
+      'itself, then whatever was handed in to get it, and so on. ' +
+      '<strong>The last row is the origin</strong> — the row with no ' +
+      'exchange behind it, which is the issuance the whole line rests on.') +
+      '<table><tr><th class="num">Gen</th><th>Identifier</th><th>Kind</th>' +
+      '<th>Held by</th><th>In whose name</th><th>Issued</th>' +
+      '<th>How it was got</th></tr>' +
+      json.generations.map(function (row) {
+        const held = row.credential;
+        return '<tr>' +
+          '<td class="num">' + kit.esc(row.generation) + '</td>' +
+          '<td class="who">' + kit.shortened(row.identifier, 14) +
+            (row.identifier === json.identifier
+              ? '<br><span class="state-none">this page</span>' : '') +
+                '</td>' +
+          '<td>' + (held ? kit.esc(held.kind)
+            : '<span class="state-none" title="' +
+              kit.esc('Named by a delegation act, and no longer in the ' +
+                       'issued register — the two stores are capped ' +
+                       'separately.') +
+              '">not held</span>') + '</td>' +
+          '<td class="who">' + (held
+            ? kit.esc(row.holder || '—') : '<span ' +
+              'class="state-none">&mdash;</span>') + '</td>' +
+          '<td class="who">' + (held
+            ? kit.esc((held.family === 'token' ? (held.username || held.sub)
+                                                : held.subject) || '—')
+            : '<span class="state-none">&mdash;</span>') + '</td>' +
+          '<td>' + (held ? kit.esc(kit.whenText(held.issuedAt))
+            : '<span class="state-none">&mdash;</span>') + '</td>' +
+          '<td>' + (row.act
+            ? '<code>' + kit.esc(row.act.type) + '</code><br>' +
+              '<span class="state-none">' + kit.esc(row.act.typeLabel) +
+              '</span><br><a href="' + kit.esc('/admin/delegation/chain' +
+                kit.queryWith({}, { chain: row.act.chainKey })) +
+              '">the relationship</a>'
+            : '<strong>the origin</strong><br><span class="state-none">' +
+              kit.esc(row.originLabel) + '</span>') +
+                          '</td>' +
+          '</tr>';
+      }).join('') + '</table>' +
+
+      (json.walls.length
+        ? kit.note('<strong>One line stops at a credential this service ' +
+          'cannot name.</strong> ' +
+          json.walls.map(function (wall) {
+            return kit.esc(wall.credential.kind) + ' — ' +
+              kit.esc(wall.credential.note || 'no identifier');
+          }).join('; ') +
+          '. That is a different answer from "this is the origin": ' +
+          'something was presented and exchanged, and the protocol gave it ' +
+          'nothing this register could write down. A Kerberos ticket has ' +
+          'no identifier at all, and WS-Trust consumes the requester\'s ' +
+          'WS-Security credential, which this service never issued.')
+        : '') +
+
+      '<h2>The whole line, as one picture</h2>' +
+      kit.note('Every actor and every relationship behind this one ' +
+      'credential. <strong>The hexagon is this service</strong>; a dashed ' +
+      'grey line from it is a credential being handed to whoever asked. An ' +
+      '<em>issued for</em> line is an ordinary grant — this client holds a ' +
+      'credential naming that person — and it is the console\'s neutral ' +
+      'indigo, because an authorization code grant claims neither ' +
+      'impersonation nor delegation. <em>acts for</em> and ' +
+      '<em>reaches</em> are the delegation picture\'s own two claims and ' +
+      'are coloured by mode where a delegation is what produced them, ' +
+      'exactly as they are on <a href="/admin/delegation/map">the map</a>. ' +
+      'A <em>reaches</em> line out of an ordinary grant takes no mode and ' +
+      'stays indigo, for the reason the <em>issued for</em> line beside it ' +
+      'does: what a token is ADDRESSED to is a relationship this service ' +
+      'granted, and nothing was impersonated to get it. The audience the ' +
+      'token carries is in that line\'s tooltip, because the box is named ' +
+      'after whichever application registered it.') +
+      DelegationPage.drawing(json, '/admin/tokens/credential',
+        Object.assign({}, listView, { id: json.identifier })) +
+
+      '<h2>The parties</h2>' +
+      kit.note('Every box on the picture. A party can appear because it ' +
+      'held one of these credentials, because it exchanged one, or both — ' +
+      'the middle tier of a chain is the TARGET of one generation and the ' +
+      'INTERMEDIARY of the next, which is what makes the two hops one line ' +
+      'rather than two pictures.') +
+      '<table><tr><th>Label</th><th>Drawn as</th><th>Identity</th>' +
+      '<th>Roles it played</th><th>Acts</th><th>Protocols</th></tr>' +
+      (parties.map(function (node) {
+        return DelegationPage.delegationNodeRow(node, json.facts,
+                                               json.looks[node.id]);
+      }).join('') || '<tr><td colspan="6">No parties.</td></tr>') +
+        '</table>' +
+
+      '<h2>Every line, in words</h2>' +
+      kit.note('The picture read as a table, because a diagram nobody can ' +
+      'quote is a diagram nobody can put in a bug report.') +
+      '<table><tr><th>From</th><th>To</th><th>Relationship</th><th>' +
+      'Mechanism ' +
+      'or grant</th><th>Kind</th><th>Acts</th><th>Credentials</th><th>What ' +
+      'came out</th></tr>' +
+      (json.graph.edges.map(function (edge) {
+        return DelegationPage.userEdgeRow(edge, labelOf);
+      }).join('') || '<tr><td colspan="8">No lines.</td></tr>') + '</table>' +
+
+      (json.acts.length
+        ? '<h2>Every delegation act in the line</h2>' +
+          kit.note('The rows <a href="/admin/delegation">the delegation ' +
+          'table</a> holds for this lineage, in order, not paged.') +
+          '<table><tr><th class="num">#</th><th>When</th><th>Mechanism</th>' +
+          '<th>Kind</th><th>Outcome</th><th>Initial identity</th>' +
+          '<th>Intermediary</th><th>Target</th><th>Authorized by / why ' +
+          'not</th><th>Credentials</th></tr>' +
+          json.acts.map(function (row) {
+            return DelegationPage.delegationRow(row, json.facts,
+                                             { listView: {} });
+          }).join('') + '</table>'
+        : '') +
+
+      (credential && credential.family === 'token' &&
+       (credential.username || credential.sub)
+        ? kit.note('<a href="' + kit.esc('/admin/delegation/user' +
+            kit.queryWith({}, { user: json.subjectKey })) +
+          '">Everything this service has done in that person\'s name</a> ' +
+          'is the other picture: this one is one credential and its ' +
+          'ancestors, that one is one person and everything ever issued ' +
+          'naming them.')
+        : '') +
+
+      kit.note('<code>?format=json</code> carries the lineage — every ' +
+      'generation with the act that produced it, the acts, the origins and ' +
+      'the graph behind the picture; <code>?format=svg</code> is the ' +
+      'document alone. There is no form on this page and therefore no ' +
+      'operation on <code>/admin-api</code>: the acts are in <code>GET ' +
+      '/admin-api/delegation</code> and the credentials are in <code>GET ' +
+      '/admin-api/tokens</code>.');
+
+  }
 }
 
 export = DelegationPage;

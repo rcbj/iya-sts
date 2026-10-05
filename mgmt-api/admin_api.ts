@@ -8497,6 +8497,59 @@ class AdminApi {
             responseDescription: 'Whether a factor was turned off.' }
         ] },
 
+      // ONE CREDENTIAL'S LINEAGE (#446): the console page had no
+      // operation, having no form; see
+      // `AdminViews.credentialLineageModel()`.
+      { method: 'GET', path: BASE + '/tokens/credential', tag: 'Tokens',
+        operationId: 'getCredentialLineage',
+        summary: 'One credential and every generation behind it',
+        description: 'The credential a protocol identifier names (a ' +
+                     '`jti`, an `AssertionID`) and how it came to exist: ' +
+                     'one generation per exchange behind it, newest ' +
+                     'first, down to the issuance the line rests on — ' +
+                     'each with the act that produced it, the party that ' +
+                     'holds it (`holder`) and, at the origin, the grant or ' +
+                     'flow (`originLabel`). `walls` are the lines that ' +
+                     'stop at a credential this service cannot name; ' +
+                     '`truncated` says the walk stopped at ' +
+                     '`maxGenerations`. The graph and, as for ' +
+                     '`/delegation/map`, `looks`, the drawing (`svg`) and ' +
+                     'its size come with it.\n\nWith no `id` the answer ' +
+                     'names nothing (`counts: null`).\n\nWith ' +
+                     '`format=svg` the answer is the SVG document alone, ' +
+                     'with no links in it, as `image/svg+xml`.',
+        mirrors: 'GET /admin/tokens/credential',
+        parameters: [
+          { name: 'id', in: 'query', required: false,
+            schema: { type: 'string' },
+            description: 'The credential\'s identifier, as the tokens ' +
+                         'table shows it.' },
+          { name: 'format', in: 'query', required: false,
+            schema: { type: 'string', enum: ['json', 'svg'] },
+            description: '`svg` answers the drawing alone, as a document ' +
+                         'with no links in it. `json`, the default, ' +
+                         'answers everything.' }
+        ],
+        responseDescription: 'The credential, its generations, the graph, ' +
+                             'every node\'s look and the drawing.',
+        handler: function (req, res) {
+          log.debug("Entering the management API credential lineage " +
+                    "endpoint.");
+          if (String((req.query || {}).format || '') === 'svg') {
+            const bare = adminViews.credentialLineageModel(req.query,
+                                                           { links: false });
+            res.status(200).set('Cache-Control', 'no-store')
+               .type('image/svg+xml').send(bare.svg);
+            log.debug("Leaving the management API credential lineage " +
+                      "endpoint. Answered SVG.");
+            return;
+          }
+          self.sendJson(res, 200,
+                        adminViews.credentialLineageModel(req.query));
+          log.debug("Leaving the management API credential lineage " +
+                    "endpoint.");
+        } },
+
       { method: 'GET', path: BASE + '/tokens', tag: 'Tokens',
         operationId: 'getIssued',
         summary: 'Everything issued, grouped into what came back in one reply',

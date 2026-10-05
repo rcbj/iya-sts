@@ -624,6 +624,11 @@ const PAGES: WebPage[] = [
     render: function (view: Json, ctx?: Json): string {
       return TokenLifetimesPage.body(ctx || WebKit.context(), view);
     } },
+  { path: '/admin/tokens/credential', title: 'Tokens — one credential',
+    operation: '/admin-api/tokens/credential',
+    render: function (view: Json, ctx?: Json): string {
+      return DelegationPage.credential(ctx || WebKit.context(), view);
+    } },
   { path: '/admin/tokens', title: 'Tokens',
     operation: '/admin-api/tokens',
     render: function (view: Json, ctx?: Json): string {
