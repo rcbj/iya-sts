@@ -4821,6 +4821,105 @@ class AdminConsole {
    *
    * @returns the bundle's text
    */
+  // WHICH ENCODING A RESPONSE TAKES (rcbj, 2026-10-05): brotli where the
+  // request accepts it, else gzip, else none — `q=0` refuses one. Only the
+  // console's own files are compressed (`sendConsoleFile()`); an /admin-api
+  // or protocol answer can carry a secret beside text its caller chose,
+  // which is what BREACH reads through compression.
+  /**
+   * The content coding to answer a request with.
+   *
+   * @param header - the request's Accept-Encoding
+   * @returns `br`, `gzip` or '' for none
+   */
+  static acceptedEncoding(header: any): string {
+    const offered = {};
+    String(header || '').split(',').forEach(function (part) {
+      const bits = part.trim().split(';');
+      const name = bits[0].trim().toLowerCase();
+      const q = /q=([0-9.]+)/.exec(bits.slice(1).join(';'));
+      if (name) {
+        offered[name] = q ? Number(q[1]) : 1;
+      }
+    });
+    const takes = function (name) {
+      const q = name in offered ? offered[name] : offered['*'];
+      return q !== undefined && q > 0;
+    };
+    return takes('br') ? 'br' : (takes('gzip') ? 'gzip' : '');
+  }
+
+  // ONE OF THE CONSOLE'S FILES, COMPRESSED WHERE THE REQUEST ACCEPTS IT:
+  // `packed` is a build's precompressed bytes, used when present; anything
+  // else is compressed now, at a level that costs about a millisecond for
+  // the stylesheet and the document. `finish` is what the realm middleware's
+  // `send()` does to an HTML string (its links prefixed with the realm's),
+  // done here first because compressed bytes pass that override untouched
+  // — and NOT done to the plain string, which the override still rewrites.
+  /**
+   * Sends a console file, compressed when the request accepts it.
+   *
+   * @param req - the request
+   * @param res - the response, its type and caching already set
+   * @param text - the file as served uncompressed
+   * @param packed - precompressed forms, or null
+   * @param finish - what the realm middleware would do to the text, or null
+   * @returns nothing
+   */
+  sendConsoleFile(req, res, text: string, packed: any, finish: any): void {
+    const { log } = this.deps;
+    log.debug("Entering AdminConsole.sendConsoleFile().");
+    const zlib = require('zlib');
+    res.vary('Accept-Encoding');
+    const encoding = AdminConsole.acceptedEncoding(
+      req.headers && req.headers['accept-encoding']);
+    if (!encoding) {
+      res.send(text);
+      log.debug("Leaving AdminConsole.sendConsoleFile(). Uncompressed.");
+      return;
+    }
+    let bytes = packed && packed[encoding];
+    if (!bytes) {
+      const final = Buffer.from(finish ? finish(text) : text, 'utf8');
+      bytes = encoding === 'br'
+        ? zlib.brotliCompressSync(final, { params: {
+            [zlib.constants.BROTLI_PARAM_QUALITY]: 5,
+            [zlib.constants.BROTLI_PARAM_SIZE_HINT]: final.length } })
+        : zlib.gzipSync(final, { level: 6 });
+    }
+    res.set('Content-Encoding', encoding).send(bytes);
+    log.debug("Leaving AdminConsole.sendConsoleFile(). " + encoding + ", " +
+              bytes.length + " bytes.");
+  }
+
+  /**
+   * The console script's precompressed forms, read once.
+   *
+   * @returns `{ br, gzip }`, each a Buffer or null
+   */
+  consoleScriptPacked(): { br: Buffer | null, gzip: Buffer | null } {
+    const { log } = this.deps;
+    log.debug("Entering AdminConsole.consoleScriptPacked().");
+    if (consoleScriptPacked === null) {
+      const fs = require('fs');
+      const base = require('path').join(__dirname, 'console.js');
+      const read = function (suffix) {
+        try {
+          return fs.readFileSync(base + suffix);
+        } catch (e) {
+          // A build without them (a checkout's tests): that encoding is
+          // compressed per request instead.
+          log.debug("Caught in consoleScriptPacked(): " +
+                    ((e && e.message) || e));
+          return null;
+        }
+      };
+      consoleScriptPacked = { br: read('.br'), gzip: read('.gz') };
+    }
+    log.debug("Leaving AdminConsole.consoleScriptPacked().");
+    return consoleScriptPacked;
+  }
+
   consoleScript(): string {
     const { log, errorCodes } = this.deps;
     log.debug("Entering AdminConsole.consoleScript().");
@@ -8481,14 +8580,15 @@ class AdminConsole {
     // -------------------------------------------------------------------------
     app.get('/admin/console.js', function (req, res) {
       log.debug("Entering the static console's script.");
-      res.set('Cache-Control', 'no-cache')
-         .type('application/javascript').send(self.consoleScript());
+      res.set('Cache-Control', 'no-cache').type('application/javascript');
+      self.sendConsoleFile(req, res, self.consoleScript(),
+                           self.consoleScriptPacked(), null);
       log.debug("Leaving the static console's script.");
     });
     app.get('/admin/console.css', function (req, res) {
       log.debug("Entering the static console's stylesheet.");
-      res.set('Cache-Control', 'no-cache').type('text/css')
-         .send(self.stylesheet());
+      res.set('Cache-Control', 'no-cache').type('text/css');
+      self.sendConsoleFile(req, res, self.stylesheet(), null, null);
       log.debug("Leaving the static console's stylesheet.");
     });
     // ONE HANDLER, ON TWO PATHS — `/admin` itself and everything under it —
@@ -8551,8 +8651,11 @@ class AdminConsole {
         'connect-src': "'self'",
         'style-src': "'self' 'unsafe-inline'"
       }));
-      res.status(200).type('text/html').set('Cache-Control', 'no-store')
-         .send(self.shellDocument(registered));
+      res.status(200).type('text/html').set('Cache-Control', 'no-store');
+      self.sendConsoleFile(req, res, self.shellDocument(registered), null,
+        function (html) {
+          return app.withRealmLinks(html, realms.currentPrefix());
+        });
       log.debug("Leaving the static console shell.");
     };
     // GET (and with it HEAD) for the document, and the methods a form or a
@@ -9017,6 +9120,11 @@ WIRE_STEPS.push(function (instance: AdminConsole): void {
 // ---------------------------------------------------------------------------
 // The static console's bundle, read once (`consoleScript()`).
 let consoleScriptText: string | null = null;
+// The script's precompressed forms (`build-typescript.sh` writes them beside
+// it), read once; a missing one is null and that encoding is compressed per
+// request instead.
+let consoleScriptPacked: { br: Buffer | null, gzip: Buffer | null } | null =
+  null;
 
 const REALM_SWITCH_PATH = '/admin/realm-switch';
 

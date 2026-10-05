@@ -194,3 +194,33 @@ if [ "$STRIP" = true ]; then
   # tests/package.json, installed by the caller with the compiler.
   node tests/tools/strip-comments.js .
 fi
+
+# ---------------------------------------------------------------------------
+# THE CONSOLE'S SCRIPT, PRECOMPRESSED (rcbj, 2026-10-05). `admin-ui/
+# console.js.br` (brotli, quality 11) and `console.js.gz` (gzip, level 9) are
+# written beside it, LAST — after the comment strip above, which rewrites the
+# script, so each is the script exactly as it is served. `AdminConsole`
+# serves whichever the request's Accept-Encoding takes, with `Vary:
+# Accept-Encoding`; nothing is compressed per request for this file, which is
+# the one large thing a browser downloads (1.47 MB; 322 KB as brotli and
+# 419 KB as gzip on 2026-10-05).
+# Only the console's own files are compressed: an /admin-api or protocol
+# answer often carries a secret beside text the caller chose, which is what
+# BREACH reads through compression.
+# ---------------------------------------------------------------------------
+if [ -f admin-ui/console.js ]; then
+  node -e '
+    const fs = require("fs");
+    const zlib = require("zlib");
+    const file = "admin-ui/console.js";
+    const raw = fs.readFileSync(file);
+    fs.writeFileSync(file + ".br", zlib.brotliCompressSync(raw, { params: {
+      [zlib.constants.BROTLI_PARAM_QUALITY]: 11,
+      [zlib.constants.BROTLI_PARAM_SIZE_HINT]: raw.length } }));
+    fs.writeFileSync(file + ".gz", zlib.gzipSync(raw, { level: 9 }));
+    console.log("build-typescript.sh: precompressed " + file + ": " +
+                raw.length + " bytes, " +
+                fs.statSync(file + ".br").size + " as brotli, " +
+                fs.statSync(file + ".gz").size + " as gzip");
+  '
+fi
