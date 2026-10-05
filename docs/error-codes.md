@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4066** of them, in **41** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4067** of them, in **41** subsystems.
 
 ## Where a code appears
 
@@ -64,7 +64,7 @@ is an ordinary outcome.
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 26
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 47
 * [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 255
-* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 692
+* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 693
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 97
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 25
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 16
@@ -2047,6 +2047,7 @@ Raised from: oauth-oidc/, common/person_assertions.js.
 | `STS-OAUTH-0919` | Limits lowered on the consent screen no longer meet the authorization detail type's limits schema (#432 phase 5). | HTTP 400 invalid_request (the consent form) |
 | `STS-OAUTH-0936` | An authorization request's authorization_details carry a type whose catalogue entry requires an authentication level, and the session — after one sign-in for it — does not meet it (#432 phase 6, RFC 9470). | RFC 9470 section 5 (unmet_authentication_requirements) |
 | `STS-OAUTH-0937` | A token request would issue authorization_details of a type whose catalogue entry requires an authentication level the grant's authentication does not meet — or a grant with no person behind it (#432 phase 6). | RFC 9396 (invalid_authorization_details, HTTP 400) |
+| `STS-OAUTH-0938` | An OID4VCI pre-authorized code was redeemed for a person the directory holds no entry for (the offer recorded no subject and none could be resolved at redemption), so there is no subject to issue a token about (#158). | invalid_grant (HTTP 400) |
 
 ## STS-SAML
 

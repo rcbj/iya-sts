@@ -2548,9 +2548,9 @@ curl -X POST https://127.0.0.1:38081/oauth2/token \
 ```json
 {
   "iss": "https://127.0.0.1:38081",
-  "sub": "",
+  "sub": "urn:uuid:<diploma.student's entryUUID>",
   "aud": "https://127.0.0.1:38081/resource",
-  "client_id": "",
+  "client_id": "urn:sts:oid4vci:anonymous-wallet",
   "typ": "Bearer",
   "jti": "ge_28dKJ77xm4FJRc0QjpA",
   "iat": 1790111821,
@@ -2562,8 +2562,15 @@ curl -X POST https://127.0.0.1:38081/oauth2/token \
 }
 ```
 
-The empty `sub` and `client_id` are a bug,
-[#158](https://github.com/rcbj/iya-sts/issues/158).
+`sub` is the offered person's subject, the same `urn:uuid:` value their ID
+Token carries. It is resolved when the code is redeemed, so it is set even when
+the offer was made before the person had a directory entry. (This sample was
+captured before [#158](https://github.com/rcbj/iya-sts/issues/158) was fixed,
+when both claims were empty strings, so `sub` is shown as a placeholder.) The
+wallet named no client, which OpenID4VCI section 6.1 allows. RFC 9068 section
+2.2 still requires `client_id`, so the token carries
+`urn:sts:oid4vci:anonymous-wallet`. A wallet that sends a `client_id` gets
+that value instead.
 
 ### Token Status List as a CWT (`statuslist+cwt`)
 

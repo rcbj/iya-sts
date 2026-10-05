@@ -523,6 +523,13 @@ const JOBS = [
   // approving session, and in product the OpenID4VCI offer. `local: true`:
   // this repository's own transmitter.
   { file: 'sts_caep_oauth_grants.js',    browser: false, local: true },
+  // AN OPENID4VCI PRE-AUTHORIZED CODE NAMES ITS PERSON (#158, 2026-10-05): a
+  // cross-device offer redeemed by an anonymous wallet gives an access token
+  // whose `sub` is the person's ID Token `sub` — in development for an
+  // offer made before the person had an entry — and whose `client_id` is
+  // the anonymous wallet's defined value. `local: true`: this repository's
+  // own credential issuer.
+  { file: 'sts_oid4vci_preauth_subject.js', browser: false, local: true },
   // RISC ON ITS OWN (#146, 2026-09-22): a reset link marked compromised
   // (account-credential-change-required, recovery-activated,
   // credential-compromise), a disable's reason, an address recycled, and the

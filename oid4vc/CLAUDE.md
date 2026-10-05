@@ -789,6 +789,22 @@ second catalogue. What is more than a number, and what
   the fixed test person reads no session and sends nothing, and neither does a
   same-device offer. `docs/caep-events.md` no longer says that OpenID4VCI is
   never a session event.
+* **THE PERSON IS RESOLVED WHEN THE CODE IS REDEEMED, NOT TAKEN FROM THE OFFER
+  (#158, 2026-10-05).** The offer records `userFor()` when it is MINTED. In
+  development that person is `oid4vci.offerUsername`, who may have no entry
+  yet, so the record held `sub: ''`, and that empty value went into the access
+  token. `oauth2.ts`'s pre-authorized grant now records the authentication
+  first, which creates the entry, and then asks `provisionedPerson()`, the way
+  the password and assertion grants do. A directory that still holds nobody
+  refuses the grant with `invalid_grant` (`STS-OAUTH-0938`). An offer made on a
+  session keeps the session's subject, so a rename after the offer cannot move
+  it. **An anonymous wallet is named `urn:sts:oid4vci:anonymous-wallet` in the
+  TOKEN only** (`ANONYMOUS_WALLET_CLIENT_ID`, passed as `token_client_id`):
+  RFC 9068 section 2.2 requires `client_id`, and section 6.1 lets the wallet
+  omit it. The scope policy, the lifetime and the token registry still read the
+  unnamed client, because giving them a defined value would judge an
+  unregistered client as if it were one. `tests/vendored/sts_oid4vci_preauth_subject.js`
+  holds both.
 * **THE `wallet` PARAMETER IS AN OPEN REDIRECT IN PRODUCT** and is refused unless
   it is the configured wallet or listed in `oid4vci.allowedWalletUrls` /
   `oid4vp.allowedWalletUrls` (`mode.acceptsUnregisteredAddresses()`).
