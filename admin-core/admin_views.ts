@@ -4949,6 +4949,72 @@ class AdminViews {
   }
 
   // ---------------------------------------------------------------------------
+  // ONE GROUP OF APPLICATIONS JOINED BY PERMISSIONS, AS ONE ANSWER (#446).
+  //
+  // `/admin/delegation/cluster?application=`: the group an application is
+  // in (`appPermissions.clusterFor()`, exact equality on the identifier),
+  // drawn. `permissionGroupsView()` — what the page answered before and
+  // `GET /admin-api/permissions/groups` answers — with the group whole, its
+  // grants and permissions paged, the looks and the drawing, the register
+  // and clusters the chooser searches, the groups paged for the bare page,
+  // and `apps`: each member the registry holds, with its name.
+  // ---------------------------------------------------------------------------
+  /**
+   * Builds `/admin/delegation/cluster`'s answer.
+   *
+   * @param query - the page's query: `application`
+   * @param options - `links` (true by default): false draws the document
+   *   with no links in it, as `?format=svg` answers
+   * @returns the group, its pages, the chooser's data and the drawing
+   */
+  delegationClusterModel(query, options?) {
+    const { log, delegationMap, appPermissions } = this.deps;
+    log.debug("Entering AdminViews.delegationClusterModel().");
+    const asked = String((query || {}).application || '').trim();
+    const permissions = this.permissionsView();
+    const groups = permissions.clusters;
+    const group = asked ? appPermissions.clusterFor(asked, groups) : null;
+    const graph = appPermissions.graph(group ? group.grants : []);
+    const look = this.delegationLooks(graph, this.knownUserKeys());
+    const label = group
+      ? 'Delegated permissions across the ' + group.counts.applications +
+        ' application(s) joined to ' + asked
+      : 'Applications joined by delegated permissions';
+    const drawn = delegationMap.render(graph, {
+      resolve: look.resolve, labelOf: look.labelOf,
+      links: !(options && options.links === false), id: 'delmap', label: label
+    });
+    const model: any = Object.assign({},
+      this.permissionGroupsView(query || {}, permissions), {
+        asked: asked, graph: graph,
+        drawing: { width: drawn.width, height: drawn.height,
+                   failed: drawn.failed || null },
+        looks: look.looks, label: label, svg: drawn.svg
+      });
+    if (!(options && options.links === false)) {
+      const page = function (rows, name, noun) {
+        const one = this.pagedRows(query || {}, rows,
+                                   { name: name, noun: noun });
+        return { shown: one.shown, paging: this.pagingJson(one.paging) };
+      }.bind(this);
+      model.cluster = group;
+      model.register = permissions.register;
+      model.clusters = groups;
+      if (group) {
+        model.grantPage = page(group.grants, 'groupGrants', 'grants');
+        model.permissionPage = page(group.permissions, 'groupPermissions',
+                                    'permissions');
+      } else {
+        model.groupPage = page(groups.clusters, 'groups', 'groups');
+      }
+      model.facts = this.delegationFacts(model);
+      model.apps = model.facts.apps;
+    }
+    log.debug("Leaving AdminViews.delegationClusterModel().");
+    return model;
+  }
+
+  // ---------------------------------------------------------------------------
   // A DELEGATION CHOOSER'S PANE, SEARCHED AND PAGED HERE (#446).
   //
   // The console drew both choosers from the whole catalogue — every
@@ -11924,6 +11990,7 @@ export = {
   delegationLooks: slot.forward('delegationLooks'),
   delegationMapModel: slot.forward('delegationMapModel'),
   delegationMapKey: slot.forward('delegationMapKey'),
+  delegationClusterModel: slot.forward('delegationClusterModel'),
   delegationAllowedModel: slot.forward('delegationAllowedModel'),
   permissionsListStateOf: slot.forward('permissionsListStateOf'),
   delegationSettingsModel: slot.forward('delegationSettingsModel'),

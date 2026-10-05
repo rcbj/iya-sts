@@ -401,7 +401,10 @@ function childMain() {
       '/admin/delegation/user': { user: 'webcheck-alice' },
       // An identifier neither register holds is a lineage of one generation
       // that says so, which draws every section but the picture's content.
-      '/admin/tokens/credential': { id: 'webcheck-credential' }
+      '/admin/tokens/credential': { id: 'webcheck-credential' },
+      // A name the permissions register does not hold: the group page's
+      // other answer, with the chooser and the groups.
+      '/admin/delegation/cluster': { application: 'webcheck-no-group' }
     };
     const exampled = [];
     const unviewed = [];

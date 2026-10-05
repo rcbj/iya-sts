@@ -18493,6 +18493,55 @@ class AdminApi {
           log.debug("Leaving the management API delegation map endpoint.");
         } },
 
+      // ONE GROUP OF APPLICATIONS, DRAWN (#446): the console page had no
+      // operation, having no form; see `AdminViews.delegationClusterModel()`.
+      { method: 'GET', path: BASE + '/delegation/cluster', tag: 'Delegation',
+        operationId: 'getDelegationCluster',
+        summary: 'One group of applications joined by permissions, drawn',
+        description: 'The group an application is in — the applications ' +
+                     'reachable from it by following delegated ' +
+                     'permissions either way — as `GET ' +
+                     '/admin-api/permissions/groups?application=` answers ' +
+                     'it, with the group whole (`cluster`), its grants and ' +
+                     'permissions paged (`groupGrantsPage`, ' +
+                     '`groupPermissionsPage`), the graph and, as for ' +
+                     '`/delegation/map`, `looks`, the drawing (`svg`) and ' +
+                     'its size. With no application, or one the register ' +
+                     'does not hold, the groups are paged instead ' +
+                     '(`groupPage`).\n\nWith `format=svg` the answer is ' +
+                     'the SVG document alone, with no links in it, as ' +
+                     '`image/svg+xml`.',
+        mirrors: 'GET /admin/delegation/cluster',
+        parameters: ([] as any[]).concat([
+          { name: 'application', in: 'query', required: false,
+            schema: { type: 'string' },
+            description: 'The application\'s identifier, exactly.' },
+          { name: 'format', in: 'query', required: false,
+            schema: { type: 'string', enum: ['json', 'svg'] },
+            description: '`svg` answers the drawing alone, as a document ' +
+                         'with no links in it. `json`, the default, ' +
+                         'answers everything.' }
+        ], self.pagingParameters()),
+        responseDescription: 'The group, its pages, the chooser\'s data ' +
+                             'and the drawing.',
+        handler: function (req, res) {
+          log.debug("Entering the management API delegation cluster " +
+                    "endpoint.");
+          if (String((req.query || {}).format || '') === 'svg') {
+            const bare = adminViews.delegationClusterModel(req.query,
+                                                           { links: false });
+            res.status(200).set('Cache-Control', 'no-store')
+               .type('image/svg+xml').send(bare.svg);
+            log.debug("Leaving the management API delegation cluster " +
+                      "endpoint. Answered SVG.");
+            return;
+          }
+          self.sendJson(res, 200,
+                        adminViews.delegationClusterModel(req.query));
+          log.debug("Leaving the management API delegation cluster " +
+                    "endpoint.");
+        } },
+
       // THE ALLOWED MAPPINGS, DRAWN (#446): the console page had no
       // operation, having no form; see `AdminViews.delegationAllowedModel()`.
       { method: 'GET', path: BASE + '/delegation/allowed', tag: 'Delegation',

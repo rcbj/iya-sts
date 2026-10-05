@@ -267,6 +267,11 @@ const PAGES: WebPage[] = [
     render: function (view: Json, ctx?: Json): string {
       return DelegationPage.user(ctx || WebKit.context(), view);
     } },
+  { path: '/admin/delegation/cluster', title: 'Delegation — one group',
+    operation: '/admin-api/delegation/cluster',
+    render: function (view: Json, ctx?: Json): string {
+      return DelegationPage.cluster(ctx || WebKit.context(), view);
+    } },
   { path: '/admin/delegation/chain', title: 'Delegation — one relationship',
     operation: '/admin-api/delegation/chain',
     render: function (view: Json, ctx?: Json): string {
