@@ -5104,11 +5104,16 @@ other client are untouched, and the API explorer's unbound token still works.
 `tests/sender_constraints.js` and `tests/fapi2_units.js` hold both lists to
 "the admin console, nothing else".
 
+**THE BOOTSTRAP ADMINISTRATOR'S CLAIM (#103) IS MADE AT ISSUANCE**, by
+`issueAuthorizationResponse()` calling `rolePermissions.noteConsoleSignIn()`
+before it narrows the gated scopes, with the session's `amr` and
+`authn.latestAuthorityOf()`. `common/CLAUDE.md` (beside *A role authorizes
+permissions*) argues it. It changes nothing today: the server-rendered
+console's flow asks for no admin scope.
+
 **NOT DONE YET, AND OWED BEFORE THE CUTOVER**: the seed itself (the entry
 becoming `none`), the sign-in the browser runs (authorization code, PKCE, a
-WebCrypto key), the registration-time check for the seeded row, and the
-bootstrap administrator's claim at issuance (#103), which today is made by
-the console's own callback.
+WebCrypto key), and the registration-time check for the seeded row.
 
 `tests/console_public_client.js` holds the rule end to end, with the entry
 declared public in a child process.

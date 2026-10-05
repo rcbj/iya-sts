@@ -117,6 +117,11 @@ interface RolePermissionsDeps {
   adminRbac: typeof adminRbac;
 }
 
+// The admin console's own client, whose issuance is a sign-in to the console
+// (`noteConsoleSignIn()`, #446). `common/applications.js` seeds it in every
+// realm under this identifier.
+const CONSOLE_CLIENT_ID = 'sts-admin-console';
+
 // Who a decision is about: `roles.rolesOf()`'s context, less the scopes.
 interface Subject {
   kind?: string;
@@ -354,6 +359,72 @@ class RolePermissions {
       return { all: builtIn.concat(configured), configured: configured,
                why: why };
     });
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE BOOTSTRAP ADMINISTRATOR'S CLAIM, AT ISSUANCE (#446, 2026-10-05).
+  //
+  // The bootstrap administrator holds its console roles only once it has
+  // CLAIMED the console (#103): signed in to it, and in product with a
+  // password this service verified. The server-rendered console made that
+  // claim itself, from its own callback, on the first request of its session
+  // (`admin-ui/admin_rbac.ts`'s `noteConsoleSignIn()`). A console that is a
+  // static client of `/admin-api` has no callback on the server, and until
+  // the claim is made `heldRoles()` above gives that account no console role
+  // — so the authorization endpoint would narrow `admin:read` and
+  // `admin:write` off the very token the console needs, and nobody could
+  // ever make the claim.
+  //
+  // So the claim is made HERE, by the authorization endpoint, when the
+  // CONSOLE'S OWN CLIENT asks for a gated permission for somebody: that is
+  // the moment a sign-in to the console happens, as the callback was. It is
+  // the same function and so the same rule — in product only a `pwd` sign-in
+  // this service itself vouched for claims anything, and any other sign-in
+  // as that account claims nothing and is then narrowed as before.
+  //
+  // ONLY THE CONSOLE'S CLIENT. Another application asking for `admin:read`
+  // on the bootstrap administrator's session is not a sign-in to the
+  // console, and must not close the window or be handed the roles.
+  // ---------------------------------------------------------------------------
+  /**
+   * Makes the bootstrap administrator's claim of the console when the
+   * console's own client is being issued a gated permission for them.
+   *
+   * @param subject - `{ kind, name, authenticated }`
+   * @param signIn - `{ clientId, amr, signInAuthority }`: the client asking,
+   *   how the person authenticated and who vouched for it
+   * @returns true when this call closed the bootstrap window
+   */
+  noteConsoleSignIn(subject: Subject, signIn: any): boolean {
+    const { log, adminRbac, realms } = this.deps;
+    log.debug("Entering RolePermissions.noteConsoleSignIn().");
+    const who = subject || {};
+    const how = signIn || {};
+    if (String(how.clientId || '') !== CONSOLE_CLIENT_ID ||
+        who.kind === 'application' || who.authenticated === false ||
+        !String(who.name || '').trim()) {
+      log.debug("Leaving RolePermissions.noteConsoleSignIn(). Not a " +
+                "sign-in to the console.");
+      return false;
+    }
+    let closed = false;
+    try {
+      closed = adminRbac.noteConsoleSignIn(String(who.name), {
+        derivedFromRealm: realms.currentId(),
+        amr: Array.isArray(how.amr) ? how.amr.slice(0) : [],
+        signInAuthority: String(how.signInAuthority || '')
+      }, realms.DEFAULT_ID) === true;
+    } catch (e) {
+      // A roster that cannot be written claims nothing: the narrowing that
+      // follows then gives the account no console role, which is the safe
+      // direction.
+      log.debug("Caught in RolePermissions.noteConsoleSignIn(): " +
+                ((e && e.message) || e));
+      closed = false;
+    }
+    log.debug("Leaving RolePermissions.noteConsoleSignIn(). " +
+              (closed ? 'Claimed.' : 'Nothing claimed.'));
+    return closed;
   }
 
   // The configured roles of a subject, for the PIP's role designator. The
@@ -660,6 +731,8 @@ export = {
   heldRoles: slot.forward('heldRoles'),
   configuredRolesOf: slot.forward('configuredRolesOf'),
   narrowScope: slot.forward('narrowScope'),
+  noteConsoleSignIn: slot.forward('noteConsoleSignIn'),
+  CONSOLE_CLIENT_ID: CONSOLE_CLIENT_ID,
   isClientToken: slot.forward('isClientToken'),
   effectiveRoles: slot.forward('effectiveRoles')
 };

@@ -7768,6 +7768,18 @@ class OAuth2Server {
     // tokenSet() asks again, as the backstop. See
     // `common/role_permissions.ts`.
     if (rolePermissions.asksForGated(scope)) {
+      // THE BOOTSTRAP ADMINISTRATOR'S CLAIM (#446), made here when the
+      // console's own client asks, because a console that is a static client
+      // of /admin-api has no callback of its own to make it from. Asked
+      // BEFORE the narrowing, which reads the roster the claim changes. A
+      // no-op for every other client and every other person; see
+      // `role_permissions.ts`'s `noteConsoleSignIn()`.
+      rolePermissions.noteConsoleSignIn(person, {
+        clientId: query.client_id,
+        amr: amr,
+        signInAuthority: self.deps.authn.latestAuthorityOf(
+          sessionId ? self.deps.authn.sessionById(String(sessionId)) : null)
+      });
       const narrowed = rolePermissions.narrowScope(scope, person,
         { clientId: query.client_id, grant: 'authorization_code' });
       if (narrowed.emptied) {

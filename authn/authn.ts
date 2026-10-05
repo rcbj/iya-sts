@@ -12714,6 +12714,9 @@ export = {
   // gave a service provider a NameID.
   sessionsMatching: slot.forward('sessionsMatching'),
   sessionById: slot.forward('sessionById'),
+  // Who vouched for a session's latest sign-in — asked by the authorization
+  // endpoint for the bootstrap administrator's claim at issuance (#446).
+  latestAuthorityOf: slot.forward('latestAuthorityOf'),
   endSessionById: slot.forward('endSessionById'),
   afterSignIn: slot.forward('afterSignIn'),
   endEverySessionIn: slot.forward('endEverySessionIn'),
