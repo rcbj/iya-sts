@@ -90,6 +90,7 @@ import SsfTransmittersPage = require('../ssf/web_ssf_transmitters');
 import TlsTrustPage = require('../tls/web_tls_trust');
 import TokenLifetimesPage = require('./web_token_lifetimes');
 import TokensPage = require('./web_tokens');
+import UsedAssertionsPage = require('./web_used_assertions');
 import UsersPage = require('./web_users');
 import VcStatusPage = require('./web_vc_status');
 import VcVerifierConfigPage =
@@ -516,6 +517,11 @@ const PAGES: WebPage[] = [
     operation: '/admin-api/tokens/set',
     render: function (view: Json, ctx?: Json): string {
       return TokensPage.setBody(ctx || WebKit.context(), view);
+    } },
+  { path: '/admin/used-assertions', title: 'Used assertions',
+    operation: '/admin-api/used-assertions',
+    render: function (view: Json, ctx?: Json): string {
+      return UsedAssertionsPage.body(ctx || WebKit.context(), view);
     } },
   { path: '/admin/users', title: 'Users', operation: '/admin-api/users',
     render: function (view: Json, ctx?: Json): string {

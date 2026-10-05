@@ -856,6 +856,7 @@ import RbacPage = require('./web_rbac');
 import RealmsPage = require('./web_realms');
 import SpiffePage = require('../spiffe/web_spiffe');
 import LogoutPage = require('../logout/web_logout');
+import UsedAssertionsPage = require('./web_used_assertions');
 
 // REQUIRED FOR THE ORDER THEY WERE ALWAYS REQUIRED IN, AND READ NOWHERE HERE
 // (#50). TypeScript drops an `import … = require()` whose name nothing reads,
@@ -11061,6 +11062,33 @@ class AdminConsole {
     out.query = Object.assign({}, req.query || {}, names);
     log.debug("Leaving AdminConsole.withQuery().");
     return out;
+  }
+
+  // ---------------------------------------------------------------------------
+  // GET /admin/used-assertions's body, out of its route (#446) so that it can
+  // be drawn from the answer alone: the route reads the view, which is
+  // asynchronous, and hands it here.
+  // ---------------------------------------------------------------------------
+  /**
+   * Draws `/admin/used-assertions` from its view.
+   *
+   * @param req - the request
+   * @param view - `admin_views.usedAssertionsView()`'s result
+   * @returns the page body as HTML (`inner`) and its JSON view (`json`)
+   */
+  usedAssertionsPage(req, view) {
+    const { log } = this.deps;
+    log.debug("Entering AdminConsole.usedAssertionsPage().");
+    const json = view.json;
+    // Drawn by `web_used_assertions.ts` (#446).
+    const inner = this.messagesOf(req) +
+      UsedAssertionsPage.body(this.renderContext(req),
+        JSON.parse(JSON.stringify(json)));
+    log.debug("Leaving AdminConsole.usedAssertionsPage().");
+    return {
+      inner: inner,
+      json: json
+    };
   }
 
   // What a `web_` renderer is told beside its view (#446; `WebKit.context()`
@@ -27005,138 +27033,9 @@ class AdminConsole {
     app.get('/admin/used-assertions', function (req, res) {
       log.debug("Entering the admin used assertions page.");
       usedAssertionsView(req.query).then(function (view) {
-        const json = view.json;
-        const paging = view.paging;
-        const filter = view.filter;
-        const filterParams = { q: filter.q, format: filter.format,
-                               use: filter.use,
-                               state: filter.state,
-                               per: req.query.per ? paging.perPage : '' };
-        const nav = self.pageNavPair('/admin/used-assertions', filterParams,
-                                     paging);
-
-        const optionsOf = function (table, chosen, allLabel) {
-          log.debug("Entering optionsOf().");
-          log.debug("Leaving optionsOf().");
-          return '<option value=""' + (chosen ? '' : ' selected') + '>' +
-            self.esc(allLabel) + '</option>' +
-            Object.keys(table).map(function (id) {
-              return '<option value="' + self.esc(id) + '"' +
-                     (id === chosen ? ' selected' : '') + '>' + self.esc(id) +
-                     ' — ' +
-                     self.esc(table[id]) + '</option>';
-            }).join('');
-        };
-
-        const rows = view.rows.map(function (row) {
-          return '<tr><td>' + self.esc(self.whenText(row.usedAt)) + '</td>' +
-            '<td>' + self.esc(row.format === 'saml' ? 'SAML 2.0' : 'JWT') +
-            '</td><td>' + self.esc(row.use === 'authorization-grant' ? 'grant'
-              : row.use === 'request-object' ? 'request object'
-                : 'client auth') +
-            '</td>' +
-            '<td class="who">' + self.shortened(row.issuer, 40) + '</td>' +
-            '<td class="who">' + self.shortened(row.identifier, 32) + '</td>' +
-            '<td class="who">' +
-            (row.clientId ? self.shortened(row.clientId, 32)
-              : '<span class="state-none">—</span>') + '</td>' +
-            '<td class="who">' + (row.subject ? self.shortened(row.subject, 32)
-              : '<span class="state-none">—</span>') + '</td>' +
-            '<td>' + (row.state === 'spent' ? 'spent'
-              : '<span class="state-none" title="' +
-                self.esc(json.states.reserved) + '">in flight</span>') +
-                '</td>' +
-            '<td>' + self.esc(self.whenText(row.expiresAt)) + '</td></tr>';
-        }).join('');
-
-        const filtering = filter.q || filter.format || filter.use ||
-                          filter.state;
-        const storeSentence = json.persistent
-          ? self.note('<strong>Held in the <code>' + self.esc(json.store) +
-                      '</code> store</strong>, so it survives a restart' +
-                      (json.atomicAcrossProcesses
-                        ? ', and recording a use is one atomic claim in that ' +
-                          'database, so every process against it agrees at ' +
-                          'once.'
-                        : '. That store does not coordinate processes, and a ' +
-                          'service that dispatches refuses to start without ' +
-                          'one that does.'))
-          : self.warn('<strong>Held in this process only.</strong> ' +
-                      self.esc(json.storeNote),
-                      'Not persisted');
-
-        const inner = self.messagesOf(req) +
-          '<div class="tiles">' +
-            self.tile(json.live, 'unexpired rows in this realm') +
-            self.tile(json.cap, 'the most it will hold') +
-            self.tile(json.matched, filtering ? 'match' : 'listed') +
-            self.tile(json.store, 'store') +
-          '</div>' +
-          (json.searchNote ? self.warn(self.esc(json.searchNote),
-                                       'A search of the newest rows') : '') +
-
-          self.note('Every <strong>RFC 7523</strong> JWT and <strong>RFC ' +
-          '7522</strong> SAML assertion this realm has accepted — to ' +
-          'authenticate a client (<code>client_assertion</code>) or as an ' +
-          'authorization grant (<code>assertion</code>) — and that has not ' +
-          'yet expired. <strong>An assertion is accepted once, ' +
-          'ever</strong>: this is ONE history for both uses and both ' +
-          'profiles, keyed by the document\'s format, its issuer and its ' +
-          '<code>jti</code> or <code>ID</code>, so a JWT that authenticated ' +
-          'a client cannot then be spent as a grant. The assertion itself is ' +
-          'never stored.') +
-
-          self.note('<strong>In flight</strong> is an assertion that was ' +
-          'accepted on a token request whose response has not finished; a ' +
-          'replay racing it is refused exactly as on a spent one. It becomes ' +
-          '<strong>spent</strong> only when that response is a 2xx — tokens ' +
-          'were issued — and a request that failed for another reason (a bad ' +
-          'code, an invalid scope, the issuance gate) RELEASES it, because ' +
-          'an assertion that bought nothing has not been used.') +
-
-          storeSentence +
-
-          self.note('A row is kept until the assertion would have expired — ' +
-          'its <code>exp</code> or <code>NotOnOrAfter</code> plus the clock ' +
-          'skew allowed when it was read — and not a moment longer. When ' +
-          '<code>oauth2.assertionReplayCacheSize</code> unexpired rows are ' +
-          'held, the next assertion is REFUSED rather than a live row ' +
-          'forgotten.') +
-
-          '<form method="get" action="/admin/used-assertions"><div ' +
-          'class="formrow">' +
-            '<label for="q">Text</label>' +
-            '<input type="text" id="q" name="q" size="28" value="' +
-            self.esc(filter.q) + '" placeholder="an issuer, a jti, a client">' +
-            '<label for="format">Format</label><select id="format" ' +
-            'name="format">' +
-            optionsOf(json.formats, filter.format, 'both') + '</select>' +
-            '<label for="use">Use</label><select id="use" name="use">' +
-            optionsOf(json.uses, filter.use, 'both') + '</select>' +
-            '<label for="state">State</label><select id="state" name="state">' +
-            optionsOf(json.states, filter.state, 'both') + '</select>' +
-            '<label for="per">Per page</label><select id="per" name="per">' +
-            self.perPageOptions(paging.perPage) + '</select>' +
-            '<button class="secondary">Filter</button>' +
-            (filtering ? ' <a href="/admin/used-assertions">clear</a>' : '') +
-          '</div></form>' +
-          nav.head +
-          '<table><tr><th>Used</th><th>Format</th><th>As</th><th>Issuer</th>' +
-          '<th>jti / ID</th><th>Client</th><th>Subject</th><th>State</th>' +
-          '<th>Remembered until</th></tr>' +
-          (rows || '<tr><td colspan="9">' + (filtering ? 'Nothing matches.'
-            : 'No assertion has been accepted in this realm, or every one ' +
-              'has expired.') + '</td></tr>') +
-          '</table>' +
-          nav.foot +
-
-          self.note('This list is <code>GET ' +
-          '/admin-api/used-assertions</code> with the same parameters. ' +
-          'Paging is <code>?page=</code> and <code>?per=</code> (at most ' +
-          MAX_ROWS + ' rows a page).');
-
-        self.respond(req, res, json, 'Used assertions',
-                     '/admin/used-assertions', inner);
+        const page = self.usedAssertionsPage(req, view);
+        self.respond(req, res, page.json, 'Used assertions',
+                     '/admin/used-assertions', page.inner);
         log.debug("Leaving the admin used assertions page.");
       }).catch(function (e) {
         log.error(errorCodes.tag('STS-ADMIN-0643') + 'admin: the ' +

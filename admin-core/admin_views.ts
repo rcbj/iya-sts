@@ -3507,7 +3507,10 @@ class AdminViews {
         formats: usedAssertions.FORMATS,
         uses: usedAssertions.USES,
         states: usedAssertions.STATES,
-        rows: page.rows
+        rows: page.rows,
+        // The paging control's own object as well as its members spread
+        // below, as every other answer carries it (#446).
+        paging: self.pagingJson(read.paging)
       }, self.pagingJson(read.paging));
       return { json: json, rows: page.rows, paging: read.paging,
                filter: page.filter, summary: summary, live: page.live };
