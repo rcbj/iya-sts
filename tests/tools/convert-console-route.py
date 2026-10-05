@@ -124,7 +124,7 @@ def dedent(text, n):
 # line and its last `return {` ends what is drawn, `inner` being the markup.
 METHOD = route.startswith('method:')
 if METHOD:
-    m = re.search(r"^  (?:private )?%s\(req\)(?:: [^{]*)? \{\n" %
+    m = re.search(r"^  (?:private )?%s\(req(?:, \w+)*\)(?:: [^{]*)? \{\n" %
                   re.escape(route[len('method:'):]), src, re.M)
 else:
     m = re.search(r"app\.get\((['\"])%s\1, function \(req, res\) \{\n" %
@@ -276,7 +276,7 @@ def convert(text):
 
     def call(mm):
         name = mm.group(1)
-        if name in helpers:
+        if name in helpers or name in ALREADY:
             return page_class + '.' + name + '('
         if name in KIT:
             return 'kit.' + name + '('
@@ -288,7 +288,7 @@ def convert(text):
         name = mm.group(1)
         if name in KIT:
             return 'kit.' + name
-        if name not in helpers:
+        if name not in helpers and name not in ALREADY:
             UNKNOWN.add(name)
         return page_class + '.' + name
     text = re.sub(r'\b(?:self|this)\.([A-Za-z_]\w*)\b', ref, text)
@@ -300,6 +300,9 @@ def convert(text):
 
 UNKNOWN = set()
 USES_SETTINGS = []
+# Helpers an earlier conversion already moved into this page class, whose
+# console methods are delegates now: called on the class, not moved again.
+ALREADY = set(h for h in os.environ.get('ALREADY', '').split(',') if h)
 moved_helpers = []
 for name in helpers:
     d, st, e = span(name)

@@ -1493,6 +1493,27 @@ class WebKit {
     return parts.join(' ');
   }
 
+  // The FILTER half of a carried list view — everything except the two
+  // parameters that describe how the list was being paged. Written once because
+  // both of the controls that need it need the same half: a form that changes
+  // the page size, and anything else that lands the reader at the top of a list
+  // rather than where they were in it.
+  /**
+   * Returns a list view without its `page` and `per` parameters.
+   *
+   * @param view - the list view's parameters
+   * @returns a new object holding every other parameter
+   */
+  static filterOnly(view) {
+    const out = {};
+    Object.keys(view || {}).forEach(function (key) {
+      if (key !== 'page' && key !== 'per') {
+        out[key] = view[key];
+      }
+    });
+    return out;
+  }
+
   // A query's VIEW parameters — every one but the three that are not part
   // of what is being looked at (`format`, and the `notice` and `error` a
   // redirect brought back) — first value each. `admin_views.ts`'s, which

@@ -6790,7 +6790,11 @@ class AdminViews {
     const info = groupReader(wantedDn);
     if (!info.found) {
       log.debug("Leaving AdminViews.groupDetailJson(). Not a group.");
-      return { info: info, json: Object.assign({ found: false }, info) };
+      return { info: info, json: Object.assign({ found: false }, info, {
+        wanted: wantedDn,
+        adminGroups: { read: config.value('admin.readGroup'),
+                       write: config.value('admin.writeGroup') }
+      }) };
     }
     const group = info.group;
     const known = this.knownUserKeys();
@@ -6818,6 +6822,16 @@ class AdminViews {
     const pagedGroup = Object.assign({}, group, {
       members: memberPage.shown, claimed: claimedPage.shown
     });
+    // WHO OF THIS PAGE HAS AUTHENTICATED HERE (#446): the users-page links
+    // are drawn only for them, and the page is drawn from this answer. Only
+    // the names on this page, because the register is every person who ever
+    // signed in and the page needs a dozen of them.
+    const knownHere: Record<string, boolean> = {};
+    memberPage.shown.concat(claimedPage.shown).forEach(function (one) {
+      if (one.userKey && known[one.userKey]) {
+        knownHere[one.userKey] = true;
+      }
+    });
     log.debug("Leaving AdminViews.groupDetailJson().");
     return {
       info: info, group: group, known: known, params: params,
@@ -6826,7 +6840,10 @@ class AdminViews {
         canWrite: !!groupWriter,
         group: pagedGroup,
         membersPaging: this.pagingJson(memberPage.paging),
-        claimedPaging: this.pagingJson(claimedPage.paging)
+        claimedPaging: this.pagingJson(claimedPage.paging),
+        known: knownHere,
+        adminGroups: { read: config.value('admin.readGroup'),
+                       write: config.value('admin.writeGroup') }
       })
     };
   }

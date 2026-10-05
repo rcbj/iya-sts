@@ -101,6 +101,16 @@ interface WebPage {
   // Other operations whose answers the view is composed with, by the member
   // each goes in: asked only when the page's query asks for it (#446).
   compose?: Record<string, string>;
+  // THE DRILL-DOWN AT THE SAME PATH (#446): `/admin/groups?group=<dn>` is
+  // one group, answered by the same operation asked with the same query, so
+  // a drill-down is not a page of its own but a second renderer chosen when
+  // the query names `param`. `sample` picks an item off the list's answer,
+  // which is how the bundle check draws one without knowing the data.
+  drill?: {
+    param: string;
+    sample: (listView: Json) => string | null;
+    render: (view: Json, ctx?: Json) => string;
+  };
   render: (view: Json, ctx?: Json) => string;
 }
 
@@ -204,6 +214,15 @@ const PAGES: WebPage[] = [
   { path: '/admin/grants', title: 'Grants', operation: '/admin-api/grants',
     render: GrantsPage.render },
   { path: '/admin/groups', title: 'Groups', operation: '/admin-api/groups',
+    drill: {
+      param: 'group',
+      sample: function (list: Json): string | null {
+        return list.groups && list.groups[0] ? list.groups[0].dn : null;
+      },
+      render: function (view: Json, ctx?: Json): string {
+        return GroupsPage.detail(ctx || WebKit.context(), view);
+      }
+    },
     render: function (view: Json, ctx?: Json): string {
       return GroupsPage.body(ctx || WebKit.context(), view);
     } },
@@ -441,7 +460,8 @@ class WebPages {
   }
 
   /**
-   * Draws a converted page's body from its operation's answer.
+   * Draws a converted page's body from its operation's answer — its
+   * drill-down's, when the query names the item the drill-down is of.
    *
    * @param path - the console path
    * @param view - the operation's answer
@@ -452,7 +472,14 @@ class WebPages {
    */
   static render(path: string, view: Json, ctx?: Json): string | null {
     const page = WebPages.pageFor(path);
-    return page ? page.render(view, ctx || WebKit.context()) : null;
+    const context = ctx || WebKit.context();
+    if (!page) {
+      return null;
+    }
+    if (page.drill && context.query && context.query[page.drill.param]) {
+      return page.drill.render(view, context);
+    }
+    return page.render(view, context);
   }
 }
 

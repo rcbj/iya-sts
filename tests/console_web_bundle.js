@@ -332,6 +332,7 @@ function childMain() {
     // --- D. a converted page is one page -------------------------------------
     const unviewed = [];
     const differing = [];
+    const drilled = [];
     for (let i = 0; i < WebPages.PAGES.length; i++) {
       const page = WebPages.PAGES[i];
       let view = null;
@@ -349,6 +350,37 @@ function childMain() {
         differing.push(page.path + ' (' + String(mine).length + ' against ' +
                        String(theirs).length + ')');
       }
+      if (!page.drill) {
+        continue;
+      }
+      // THE DRILL-DOWN, twice: of an item the list named, when it named
+      // one, and of one that is not there — the answer a link drawn a
+      // moment ago gets once somebody deleted what it names.
+      drilled.push(page.path);
+      const items = [page.drill.sample(view), 'cn=not-there-' + i]
+        .filter(Boolean);
+      for (let k = 0; k < items.length; k++) {
+        const query = { per: '10' };
+        query[page.drill.param] = items[k];
+        const label = page.path + '?' + page.drill.param + '=' + items[k];
+        let one = null;
+        try {
+          one = await viewOf(page, query);
+        } catch (e) {
+          unviewed.push(label + ': ' + String((e && e.message) || e));
+          continue;
+        }
+        const dctx = WebKit.context(query, true);
+        const a = WebPages.render(page.path, one, dctx);
+        const b = StsConsole ? StsConsole.render(page.path, one, dctx) : null;
+        // Not the list again: a drill that fell through to the list's
+        // renderer would draw the same page for every item.
+        if (typeof a !== 'string' || a.length < 100 || a !== b ||
+            a === mine) {
+          differing.push(label + ' (' + String(a).length + ' against ' +
+                         String(b).length + ')');
+        }
+      }
     }
     note(unviewed.length === 0,
          'D0. the operation of every converted page answers a view, ' +
@@ -356,7 +388,8 @@ function childMain() {
     note(differing.length === 0,
          'D1. every converted page drawn by the bundle is, to the byte, ' +
          'what this process draws from the same view (' +
-         WebPages.PAGES.length + ' page(s))', differing.join(', '));
+         WebPages.PAGES.length + ' page(s), and the drill-downs of ' +
+         drilled.length + ')', differing.join(', '));
     const report = mode.report();
     const here = WebPages.render('/admin/mode',
                                  JSON.parse(JSON.stringify(report)));
