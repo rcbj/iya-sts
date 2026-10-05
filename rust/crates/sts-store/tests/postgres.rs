@@ -352,9 +352,7 @@ async fn data_keys_on_postgres() {
         );
         return;
     };
-    raw_exec(&url, "DELETE FROM sts_keys")
-        .await
-        .unwrap();
+    raw_exec(&url, "DELETE FROM sts_keys").await.unwrap();
     let kek = b"a test key-encryption key, never a real one".to_vec();
     let keys = |url: &str| {
         let driver: Arc<dyn Driver> =

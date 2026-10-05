@@ -296,7 +296,9 @@ fn the_thumbprint_is_rfc_7638s() {
 
 #[tokio::test]
 async fn a_made_key_set_is_whole() {
-    use sts_store::key_sets::{generate_key_set, kid_of, KeySet, KeySets};
+    use sts_store::key_sets::{
+        generate_key_set, jwks_document, kid_of, KeySet, KeySets,
+    };
     let blob = generate_key_set(1_791_000_000_000).unwrap();
     let set = KeySet {
         realm: "default".into(),
@@ -350,6 +352,15 @@ async fn a_made_key_set_is_whole() {
         .as_str()
         .unwrap()
         .starts_with("sts-rt-secret-"));
+    // The JWKS: the RSA key first, no alg, its certificate in x5c; the
+    // curve keys; the request object encryption keys last.
+    let jwks = jwks_document(&set).unwrap();
+    let list = jwks["keys"].as_array().unwrap();
+    assert_eq!(list.len(), 9);
+    assert_eq!(list[0]["kid"], json!(set.kid()));
+    assert!(list[0].get("alg").is_none());
+    assert_eq!(list[0]["x5c"], json!([set.cert_b64()]));
+    assert_eq!(list[8]["use"], "enc");
     assert!(blob["vciRequestEncKey"]["publicJwk"]["kid"]
         .as_str()
         .unwrap()
@@ -375,7 +386,8 @@ async fn a_made_key_set_is_whole() {
     std::fs::write(
         PathBuf::from(&out).join("expected.json"),
         json!({ "kid": set.kid(), "curveKids": curves.iter().map(|c| c.public_jwk["kid"].clone()).collect::<Vec<_>>(),
-                "vciKid": blob["vciRequestEncKey"]["publicJwk"]["kid"] }).to_string(),
+                "vciKid": blob["vciRequestEncKey"]["publicJwk"]["kid"],
+                "jwks": sts_store::key_sets::jwks_document(&set).unwrap() }).to_string(),
     )
     .unwrap();
 }

@@ -72,6 +72,53 @@ fn store_mode(settings: &Settings) -> Result<StoreMode, String> {
     }
 }
 
+/// `GET /oauth2/jwks`: the ambient realm's published keys, served
+/// `no-store` like every document that carries a key, pretty-printed as
+/// Node's `JSON.stringify(…, null, 2)`. A realm with no set held — in
+/// development, where this runtime makes none yet — is answered 500 with
+/// `STS-OAUTH-0184`, Node's answer when the JWKS cannot be built.
+fn jwks(persistence: Weak<Persistence>) -> axum::response::Response {
+    use axum::http::{header, StatusCode};
+    use axum::response::IntoResponse;
+    let realm = sts_core::realm::current_id();
+    let built = persistence
+        .upgrade()
+        .and_then(|p| p.key_sets())
+        .and_then(|sets| sets.open(&realm))
+        .ok_or_else(|| "no key set is held for this realm".to_string())
+        .and_then(|set| sts_store::key_sets::jwks_document(&set))
+        .and_then(|doc| {
+            serde_json::to_string_pretty(&doc).map_err(|e| e.to_string())
+        });
+    match built {
+        Ok(body) => (
+            StatusCode::OK,
+            [
+                (header::CONTENT_TYPE, "application/json; charset=utf-8"),
+                (header::CACHE_CONTROL, "no-store"),
+            ],
+            body,
+        )
+            .into_response(),
+        Err(e) => {
+            tracing::error!(
+                "{}could not publish the JWKS: {}",
+                tag(codes::STS_OAUTH_0184),
+                e
+            );
+            sts_http::mark(
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    [(header::CONTENT_TYPE, "application/json; charset=utf-8")],
+                    serde_json::json!({ "error": e }).to_string(),
+                )
+                    .into_response(),
+                codes::STS_OAUTH_0184,
+            )
+        }
+    }
+}
+
 impl Stack {
     /// Builds the shared services from the settings. Nothing is opened or
     /// started here; [`Stack::start`] does that.
@@ -347,7 +394,15 @@ impl Stack {
 
     /// Every route, behind the HTTP layer.
     pub fn router(&self) -> axum::Router {
-        sts_http::layered(axum::Router::new(), self.registry.clone())
+        let persistence = Arc::downgrade(&self.persistence);
+        let routes = axum::Router::new().route(
+            "/oauth2/jwks",
+            axum::routing::get(move || {
+                let persistence = persistence.clone();
+                async move { jwks(persistence) }
+            }),
+        );
+        sts_http::layered(routes, self.registry.clone())
     }
 
     /// Writes what is pending and closes the store.
@@ -406,6 +461,23 @@ mod tests {
             .to_str()
             .unwrap()
             .contains("frame-ancestors 'none'"));
+        stack.stop().await;
+    }
+
+    #[tokio::test]
+    async fn the_jwks_without_a_held_set_is_nodes_failure() {
+        let stack = Stack::build(settings(
+            json!({ "persistence": { "mode": "memory" } }),
+        ))
+        .unwrap();
+        stack.start().await.unwrap();
+        let response = stack
+            .router()
+            .oneshot(Request::get("/oauth2/jwks").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(response.status(), 500);
+        assert_eq!(sts_http::code_of(&response), Some(codes::STS_OAUTH_0184));
         stack.stop().await;
     }
 
