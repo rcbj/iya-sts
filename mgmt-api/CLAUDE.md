@@ -1240,6 +1240,36 @@ is who did it.
 
 `tests/admin_api_actor.js` holds it.
 
+## A TOKEN DIES WITH THE SIGN-ON SESSION IT WAS ISSUED ON (#446, 2026-10-05)
+
+The server-rendered console held a relying-party session that named the
+sign-on session it came from and ended with it, so a sign-out or an expiry
+closed the console at once. A console that is a client of this API holds a
+token instead, and a token is good until it expires unless somebody asks. The
+gate asks, straight after the revoked-or-disabled check
+(`AdminApi.endedSessionOf()`, 401 `invalid_token`, `STS-API-0126`).
+
+* **NO TOKEN CARRIES A SESSION IDENTIFIER**, and none was added. The token
+  registry was told which session an issuance ran on (`signJwt()`'s third
+  argument) and is asked by `jti` (`stats.sessionIdOfJti()`); the session is
+  asked of `authn/` through `oauth2.sessionIsLive()`. Both in the realm that
+  issued the token, which is where the code flow ran.
+* **IT IS FOR EVERY CLIENT, NOT THE CONSOLE'S ALONE.** An administrative token
+  a person was issued through a sign-in should not outlive that sign-in,
+  whichever application asked for it.
+* **A TOKEN ISSUED ON NO SESSION IS NOT REFUSED**: `client_credentials`, and
+  the API explorer's until the cutover. There is nothing to end.
+* **NOR IS ONE THE REGISTRY NO LONGER HOLDS.** The registry is capped and
+  drops the oldest, and a token it forgot answers no session and is honoured
+  until it expires. Refusing it would turn a cache's eviction into a
+  sign-out. The access token's own lifetime is the bound on that window.
+* **`oauth2` IS REQUIRED BY THIS MODULE FOR THAT ONE QUESTION.** It is built
+  at 9 and this at 19, so it is a cache hit that moves nothing.
+
+`tests/admin_api_session_bound.js` holds it: the same token before and after
+its session ends, a second session of the same person that goes on working,
+and a token issued on no session.
+
 ## `GET /admin-api/me` — WHAT THE GATE DECIDED FOR THE CALLER (#446, 2026-10-05)
 
 The console is becoming a static application whose only knowledge of its

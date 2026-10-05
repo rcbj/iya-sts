@@ -20883,6 +20883,54 @@ class AdminApi {
   }
 
   // ---------------------------------------------------------------------------
+  // A TOKEN DIES WITH THE SIGN-ON SESSION IT WAS ISSUED ON (#446, 2026-10-05).
+  //
+  // The server-rendered console held a relying-party session that named the
+  // sign-on session it came from and ended with it (`common/oidc_rp.ts`), so
+  // signing out, or a session running out, closed the console at once. A
+  // console that is a client of this API holds a TOKEN instead, and a token
+  // is good until it expires unless somebody asks — so this gate asks.
+  //
+  // No token carries a session identifier (`common/admin_stats.js`,
+  // `signJwt()`'s third argument): the token registry was told which session
+  // an issuance ran on, and is asked by `jti`. The session is then asked of
+  // `authn/`, through `oauth2.sessionIsLive()`, the one answer to "is this
+  // session live" a token-bearing door uses. Both in the realm that issued
+  // the token, which is where the code flow ran.
+  //
+  // TWO THINGS IT DELIBERATELY DOES NOT REFUSE. A token issued on NO session
+  // — `client_credentials`, and the API explorer's — has nothing to end. And
+  // a token the registry no longer holds (it is capped, and drops the oldest)
+  // answers no session and is honoured until it expires: refusing what the
+  // registry forgot would turn a cache's eviction into a sign-out.
+  // ---------------------------------------------------------------------------
+  /**
+   * Returns the sign-on session a token was issued on when that session has
+   * ended.
+   *
+   * @param claims - the token's verified claims
+   * @param tokenRealm - the id of the realm that issued the token
+   * @returns the session's id, or '' when the token was issued on no session,
+   *   the registry does not hold it, or its session is live
+   */
+  endedSessionOf(claims, tokenRealm): string {
+    const { log, realms, stats } = this.deps;
+    log.debug("Entering AdminApi.endedSessionOf().");
+    const jti = String((claims && claims.jti) || '');
+    if (!jti) {
+      log.debug("Leaving AdminApi.endedSessionOf(). No jti.");
+      return '';
+    }
+    const ended = realms.run(realms.get(tokenRealm), function () {
+      const sid = String(stats.sessionIdOfJti(jti) || '');
+      return sid && !oauth2.sessionIsLive(sid) ? sid : '';
+    });
+    log.debug("Leaving AdminApi.endedSessionOf(). " +
+              (ended ? 'Ended.' : 'Live, or none.'));
+    return ended;
+  }
+
+  // ---------------------------------------------------------------------------
   // WHO IS CALLING, FOR AN AUDIT ROW (#446, 2026-10-05).
   //
   // The gate leaves the verified token's subject on `res.locals.apiCaller`.
@@ -21216,6 +21264,20 @@ class AdminApi {
           return self.sendJson(res, 401, { error: 'invalid_token', errors: [
             'That access token has been revoked, or the account it was ' +
             'issued to is disabled.'] });
+        }
+        // AND A TOKEN WHOSE SIGN-ON SESSION HAS ENDED (#446, 2026-10-05) —
+        // see `endedSessionOf()`. `invalid_token`, as for a revoked one: to
+        // the caller it is the same fact, a credential that stopped being
+        // one, and the code says which.
+        const endedSession = self.endedSessionOf(claims, tokenRealm);
+        if (endedSession) {
+          errorCodes.mark(res, 'STS-API-0126');
+          res.set('WWW-Authenticate',
+                  'Bearer error="invalid_token", scope="' + scopesWanted + '"');
+          return self.sendJson(res, 401, { error: 'invalid_token', errors: [
+            'That access token was issued on a sign-on session that has ' +
+            'since ended, by a sign-out or by running out. Sign in again ' +
+            'to be issued another.'] });
         }
         // RFC 9068 SECTION 4, STEPS 1 AND 3, in its order: the TYPE before the
         // issuer, and both before the audience. Every token this service signs
@@ -21674,6 +21736,11 @@ const DEVICE_COMPLIANCE_PATH = '/device-compliance';
 import accessGate = require('../common/access_gate');
 // The mode. A LEAF (rule 3): registers nothing, requires only `config`.
 import mode = require('../common/mode');
+// THE AUTHORIZATION SERVER, for the one question the gate asks it (#446):
+// whether the sign-on session a token was issued on is still live. Built at
+// 9 and this module at 19, so this is a cache hit that moves nothing; since
+// #50's R1 a require of a converted module registers no route either.
+import oauth2 = require('../oauth-oidc/oauth2');
 import InstanceSlot = require('../common/instance_slot');
 
 // ---------------------------------------------------------------------------

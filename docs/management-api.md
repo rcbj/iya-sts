@@ -125,6 +125,17 @@ or a realm administrator, the scopes and roles in effect, whether it may read
 and write, and the console pages it may reach. The roles are read on every
 call, so a role granted or revoked since the token was minted shows at once.
 
+## A token ends with its sign-on session
+
+An access token issued to a person through a sign-in is tied to that sign-on
+session. When the session ends, by a sign-out or by running out, the API
+refuses the token (`401 invalid_token`), even though the token itself has not
+expired. A person's other sessions, and the tokens issued on them, are not
+affected.
+
+A token that no sign-in is behind is not tied to anything: a
+`client_credentials` token works until it expires or is revoked.
+
 ## What it covers
 
 ### Every console control, for a machine

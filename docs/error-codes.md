@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4094** of them, in **41** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4095** of them, in **41** subsystems.
 
 ## Where a code appears
 
@@ -85,7 +85,7 @@ is an ordinary outcome.
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 88
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 34
 * [Admin console (`STS-ADMIN`)](#sts-admin) — 220
-* [Management API (`STS-API`)](#sts-api) — 75
+* [Management API (`STS-API`)](#sts-api) — 76
 * [User portal (`STS-PORTAL`)](#sts-portal) — 83
 * [Sign-out (`STS-LOGOUT`)](#sts-logout) — 7
 * [Registries (`STS-REG`)](#sts-reg) — 150
@@ -4334,6 +4334,7 @@ Raised from: mgmt-api/.
 | `STS-API-0123` | A management API access token carried the admin scope an operation needs, and the client it was issued to does not declare that scope in its oauthAllowedScope (in the realm that issued it). | HTTP 403 forbidden |
 | `STS-API-0124` | A management API query parameter held a value outside the closed set its operation's enum declares (#86). | HTTP 400 { ok: false, errors } |
 | `STS-API-0125` | A management API access token carried the admin scope an operation needs, and its subject — a person, or the application on a client_credentials token — no longer holds a role authorizing it in the realm that issued it (#302, #303). | HTTP 403 forbidden |
+| `STS-API-0126` | A management API access token was issued on a sign-on session that has since ended, by a sign-out or by running out, so the token is no longer honoured (#446). | invalid_token (HTTP 401) |
 
 ## STS-PORTAL
 

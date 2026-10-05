@@ -18531,6 +18531,11 @@ const CODES = [
       'a client_credentials token — no longer holds a role authorizing it ' +
       'in the realm that issued it (#302, #303).',
     spec: 'HTTP 403 forbidden' },
+  { code: 'STS-API-0126',
+    summary: 'A management API access token was issued on a sign-on ' +
+      'session that has since ended, by a sign-out or by running out, so ' +
+      'the token is no longer honoured (#446).',
+    spec: 'invalid_token (HTTP 401)' },
   { code: 'STS-PORTAL-0001',
     summary: 'A user portal request\'s query string or form body did not ' +
       'match the shape its route accepts, and was refused before ' +
