@@ -174,3 +174,7 @@ spiffe/native/*.node
 # Fetched at image build by tests/tools/fetch-vectors.sh, never sent
 # from a host (a local copy would otherwise overwrite the checked one).
 tests/vectors
+
+# Cargo's build output for the Rust conversion (#444): gigabytes, and never
+# what an image is built from — an image builds its own.
+rust/target

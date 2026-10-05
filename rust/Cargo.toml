@@ -1,0 +1,41 @@
+# SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+# SPDX-License-Identifier: BUSL-1.1
+#
+# The Rust runtime's workspace (#444). rust/DESIGN.md is the design it is
+# held to; a crate is added here in the phase that ports it.
+
+[workspace]
+resolver = "2"
+members = [
+  "crates/sts-xacml",
+]
+
+[workspace.package]
+edition = "2021"
+license = "BUSL-1.1"
+rust-version = "1.85"
+publish = false
+
+# Every third-party version is pinned once, here, and a member names it with
+# `workspace = true` — so two crates cannot quietly disagree about which
+# release of a library the service runs.
+[workspace.dependencies]
+base64 = "0.23"
+indexmap = "2.14"
+num-bigint = "0.5"
+num-traits = "0.2"
+regex = "1.13"
+roxmltree = "0.21"
+thiserror = "2.0"
+tracing = "0.1"
+
+[workspace.lints.rust]
+# The one exception (rust/DESIGN.md section 6) is the openssl-sys wrapper in
+# sts-crypto, which will say so with an `allow` of its own.
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+# No swallowed error and no panic in service code (DESIGN.md section 4.5).
+unwrap_used = "deny"
+expect_used = "deny"
+let_underscore_must_use = "deny"
