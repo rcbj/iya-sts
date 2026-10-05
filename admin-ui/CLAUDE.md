@@ -7323,6 +7323,7 @@ module always was, and imports the kit by its relative path.
 | `web_audit.ts` | The body of `/admin/audit` and its five cell helpers. It drew from the view's server-side half (the wanted filters, the rows, a paging object, the whole known-user set) until #446, and draws from the JSON the API answers now, which gained `paging`, `knownActors` (which actors on the page have a user page) and `settings`. |
 | `web_tokens.ts` | The body of `/admin/tokens` and the fourteen cell helpers a set's row is drawn with (the console delegates to them, as the user and session drill-downs draw the same rows). It draws from the JSON `GET /admin-api/tokens` answers since #446 (`filter`, `sets`, `heldByFamily`, `families`, and `paging`, added), where it read the view's server-side half. |
 | `../oauth-oidc/web_consent.ts` | The body of `/admin/consent` with its two row helpers, drawn from the JSON `GET /admin-api/consent` answers since #446 (the register's members, a page of each list with its paging, and `applicationChoices`, added). |
+| `../logout/web_sessions.ts` | The body of `/admin/sessions` and its row and cell helpers, drawn from the JSON `GET /admin-api/sessions` answers since #446. That JSON gained the protocol filter's `protocols`, `paging`, `unauthenticatedKept` (the setting the page states), and the fields each unauthenticated row is drawn with; its relative times are measured from the view's own `at`. |
 | `web_vc_status.ts` | The body of `/admin/vc-status`; its Suspend, Reinstate and Revoke buttons are drawn only when `ctx.write` says so, and its paging is drawn from the view's `rowsPaging`. |
 | `../attribute-sources/web_attribute_sources.ts` | The body of `/admin/attribute-sources`. Its operation answered the register WITHOUT the page's `settings` until #446; both now answer `attributeSourcesView()`. |
 | `../debugger/web_debugger.ts` | The body of `/admin/debugger` — **the first page whose Settings block comes out of its own view** (`SettingsForms.forms(json.settings, PAGE_PATH)`). |
@@ -7398,7 +7399,7 @@ the view.
 
 **NOT BUILT YET**: the runtime that signs in (authorization code, PKCE, a
 non-extractable DPoP key), fetches, routes and draws the shell; the static
-route that serves it; and every page but the sixty-five above.
+route that serves it; and every page but the sixty-six above.
 
 **THE PAGING CONTROL IS DRAWN FROM THE PAGING A CALLER RECEIVES.**
 `pageNavPair(path, params, pg)` read two members of the console's own paging

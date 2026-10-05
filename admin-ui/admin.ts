@@ -835,6 +835,7 @@ import SsfDeadLettersPage = require('../ssf/web_ssf_dead_letters');
 import AuditPage = require('./web_audit');
 import TokensPage = require('./web_tokens');
 import ConsentPage = require('../oauth-oidc/web_consent');
+import SessionsPage = require('../logout/web_sessions');
 
 // REQUIRED FOR THE ORDER THEY WERE ALWAYS REQUIRED IN, AND READ NOWHERE HERE
 // (#50). TypeScript drops an `import … = require()` whose name nothing reads,
@@ -7646,11 +7647,7 @@ class AdminConsole {
   // ---------------------------------------------------------------------------
 
 
-  // WHEN THIS SESSION ENDS, AND HOW THAT IS WORKED OUT. Several answers rather
-  // than one, because the kinds are genuinely different and a column that
-  // showed only a timestamp would be read as one rule with several values. The
-  // rule is the row's `expiryRule`, which `logout.ts`'s SESSION_EXPIRY_RULES
-  // writes.
+  // Drawn by `web_sessions.ts` (#446).
   /**
    * Draws when a session ends, with the rule for its kind as the title.
    *
@@ -7663,39 +7660,11 @@ class AdminConsole {
   sessionExpiryCell(row, nowMs) {
     const { log } = this.deps;
     log.debug("Entering AdminConsole.sessionExpiryCell().");
-    const rule = row.expiryRule || '';
-    if (!row.expiresAt) {
-      log.debug("Leaving AdminConsole.sessionExpiryCell().");
-      return '<td class="sub" title="' + this.esc(rule) + '"><strong>no ' +
-        'expiry</strong><div class="sub">it ends when something ends ' +
-        'it</div></td>';
-    }
-    const left = row.expiresAt - nowMs;
-    if (left <= 0) {
-      log.debug("Leaving AdminConsole.sessionExpiryCell().");
-      // Live rows only reach here in a race — the list was built a moment ago —
-      // and saying so is better than a negative countdown.
-      return '<td class="state-expired" title="' + this.esc(rule) +
-             '">expired' +
-        '<div class="sub">' + this.esc(this.whenText(row.expiresAt)) +
-        '</div></td>';
-    }
     log.debug("Leaving AdminConsole.sessionExpiryCell().");
-    return '<td' + (left < 5 * 60 * 1000 ? ' class="state-expired"' : '') +
-      ' title="' + this.esc(rule) + '">in ' +
-      this.esc(this.durationText(left)) +
-      '<div class="sub">' + this.esc(this.whenText(row.expiresAt)) +
-      '</div></td>';
+    return SessionsPage.sessionExpiryCell(row, nowMs);
   }
 
-  // WHAT CAME OUT OF THIS SESSION, as a link into /admin/tokens.
-  //
-  // Only a browser sign-on session has a join: a token records the `sessionId`
-  // it was issued under, and nothing else here does. A Kerberos row therefore
-  // links to its FAMILY — the TGT on this row is in that table and this service
-  // keeps no handle on one, which is a fact about Kerberos rather than a gap —
-  // and an LDAP connection links nowhere at all, because a bind issues no
-  // credential.
+  // Drawn by `web_sessions.ts` (#446).
   /**
    * Draws where to find what a session issued.
    *
@@ -7706,38 +7675,13 @@ class AdminConsole {
    * @returns a <td> as HTML
    */
   sessionCredentialsCell(row) {
-    const { log, queryWith } = this.deps;
+    const { log } = this.deps;
     log.debug("Entering AdminConsole.sessionCredentialsCell().");
-    if (row.family === 'session') {
-      log.debug("Leaving AdminConsole.sessionCredentialsCell().");
-      return '<td><a href="' + this.esc('/admin/tokens' +
-        queryWith({ session: row.sessionId }, {})) +
-        '" title="' + this.esc('Every credential issued under this session') +
-        '">issued on it</a></td>';
-    }
-    if (row.family === 'krb5') {
-      log.debug("Leaving AdminConsole.sessionCredentialsCell().");
-      return '<td><a href="' + this.esc('/admin/tokens' +
-        queryWith({ family: 'ticket' }, {})) +
-        '" title="' + this.esc('Every Kerberos ticket this KDC has minted. ' +
-          'There is no per-session link: a ticket carries no identifier this ' +
-          'service keeps a handle on.') + '">the ticket table</a></td>';
-    }
-    if (row.family === 'gnap') {
-      // A GNAP GRANT (#432): its tokens are in GNAP's own store, listed with
-      // the grant on Protocols → GNAP.
-      log.debug("Leaving AdminConsole.sessionCredentialsCell().");
-      return '<td><a href="' + this.esc('/admin/gnap' +
-        queryWith({ state: 'approved' }, {})) +
-        '" title="' + this.esc('The grants this authorization server holds, ' +
-          'with the tokens each issued') + '">the grant list</a></td>';
-    }
     log.debug("Leaving AdminConsole.sessionCredentialsCell().");
-    return '<td class="sub" title="' +
-           this.esc('A Bind issues no credential. It sets the authorization ' +
-      'state of a connection, and that state is this row.') + '">none</td>';
+    return SessionsPage.sessionCredentialsCell(row);
   }
 
+  // Drawn by `web_sessions.ts` (#446).
   /**
    * Draws one row of the sessions page, with its Revoke form.
    *
@@ -7752,52 +7696,9 @@ class AdminConsole {
    */
   sessionRow(row, nowMs, canWrite, back) {
     const { log } = this.deps;
-    log.debug("Entering AdminConsole.sessionRow(). " + row.id);
-    const revoke = row.terminable && canWrite
-      ? '<form method="post" action="/admin/sessions">' +
-        '<input type="hidden" name="action" value="revoke">' +
-        '<input type="hidden" name="key" value="' + this.esc(row.key) + '">' +
-        '<input type="hidden" name="select" value="' + this.esc(row.id) + '">' +
-        '<input type="hidden" name="back" value="' + this.esc(back) + '">' +
-        '<button class="danger"' +
-        (row.why ? ' title="' + this.esc(row.why) + '"' : '') +
-        '>Revoke</button></form>'
-      : (canWrite
-          ? '<span class="state-none" title="' + this.esc(row.why) +
-            '">cannot</span>'
-          : '<span class="state-none" title="' +
-            this.esc('Ending a session needs the Admin Write role.') +
-            '">—</span>');
-    const out = '<tr>' +
-      '<td>' + this.esc(row.kind) +
-      '<div class="sub">' + this.shortened(row.handle, 28) + '</div></td>' +
-      '<td>' + this.esc(row.protocol) +
-      (row.acr ? '<div class="sub">acr ' + this.esc(row.acr) +
-        (row.amr.length ? ', amr ' + this.esc(row.amr.join(' ')) : '') +
-        '</div>' :
-       '') +
-      '</td>' +
-      '<td>' + this.esc(row.username || '(unknown)') +
-      (row.sub ? '<div class="sub"><code>' + this.esc(row.sub) +
-       '</code></div>' :
-       '') +
-      '</td>' +
-      '<td class="sub">' +
-      (row.startedAt ? this.esc(this.whenText(row.startedAt))
-                     : '<span title="' +
-                       this.esc('Nothing recorded when this one ' +
-                       'started. A connection bound before this service ' +
-                       'began stamping the instant reads this way.') +
-                       '">not ' +
-                           'recorded</span>') +
-      '</td>' +
-      this.sessionExpiryCell(row, nowMs) +
-      '<td class="sub">' + this.esc(row.detail || '—') + '</td>' +
-      this.sessionCredentialsCell(row) +
-      '<td>' + revoke + '</td>' +
-      '</tr>';
+    log.debug("Entering AdminConsole.sessionRow().");
     log.debug("Leaving AdminConsole.sessionRow().");
-    return out;
+    return SessionsPage.sessionRow(row, nowMs, canWrite, back);
   }
 
   // ---------------------------------------------------------------------------
@@ -32378,239 +32279,13 @@ class AdminConsole {
 
     app.get('/admin/sessions', function (req, res) {
       log.debug("Entering the admin sessions page.");
-      const view = sessionsView(req);
-      const gate = gateStateFor(req);
-
-      if (!view.installed) {
-        const inner = self.messagesOf(req) +
-          '<div class="err"><strong>The logout reader is not installed in ' +
-          'this process</strong>, so nothing here can say what is live. ' +
-          'Every row on this page is read from ' +
-          '<code>logout/logout.ts</code>, which is the one model of what a ' +
-          'session IS across protocol families.</div>';
-        self.respond(req, res, view.json, 'Sessions', '/admin/sessions', inner);
-        log.debug("Leaving the admin sessions page. No reader.");
-        return;
-      }
-
-      const nowMs = Date.now();
-      const paging = view.paging;
-      // What every paging link carries with it. The page number is not in here
-      // — pageNavPair() supplies that per link — and neither is `format`,
-      // because JSON has no links in it.
-      const filterParams = { q: view.wantedText, protocol: view.wantedProtocol,
-                             per: req.query.per ? paging.perPage : '' };
-      const nav = self.pageNavPair('/admin/sessions', filterParams, paging);
-      // Where a Revoke sends the reader back to: THIS page of THIS filter,
-      // because the row above and below the one they ended is what they were
-      // reading.
-      const back = queryWith(filterParams, { page: paging.page });
-
-      const protocolOptions = ['<option value=""' +
-          (view.wantedProtocol ? '' : ' selected') + '>any protocol</option>']
-        .concat(view.protocols.map(function (name) {
-          return '<option value="' + self.esc(name) + '"' +
-                 (name === view.wantedProtocol ? ' selected' : '') + '>' +
-                 self.esc(name) + '</option>';
-        })).join('');
-
-      const rows = view.shown.length
-        ? view.shown.map(function (row) {
-            return self.sessionRow(row, nowMs, gate.write, back);
-          }).join('')
-        : '<tr><td colspan="8">' +
-          (view.all.length
-            ? 'Nothing matches. ' + view.all.length + ' session(s) are live ' +
-              'under other names or other protocols.'
-            : 'Nothing is signed in. Sign somebody in &mdash; an OIDC flow, ' +
-              'a SAML 2.0 sign-in, an <code>ldapsearch</code> that binds, a ' +
-              '<code>kinit</code> &mdash; and a row appears here.') +
-          '</td></tr>';
-
-      const inner = self.messagesOf(req) +
-
-        self.note('<strong>Every session this service is holding right ' +
-        'now</strong>, across the three protocols that have one. A session ' +
-        'is state THIS SERVICE holds that makes somebody currently ' +
-        'authenticated; a token, an assertion, a ticket and an SVID are ' +
-        'things it has HANDED OUT, they outlive every session here, and they ' +
-        'are <a href="/admin/tokens">Tokens</a>. Keeping the two apart is ' +
-        'the whole point of a page of each.') +
-
-        '<div class="tiles">' +
-        self.tile(view.all.length, 'live sessions') +
-        self.tile(view.byKind.session || 0, 'browser sign-on') +
-        self.tile(view.byKind.krb5 || 0, 'Kerberos TGTs') +
-        self.tile(view.byKind.ldap || 0, 'LDAP connections') +
-        // The fifth tile is a SLICE of the first four rather than a fifth kind,
-        // so the four above it still add up to `live sessions` and this one
-        // does not join that sum. It earns a tile anyway: it is the number
-        // somebody scans this page for, and a zero here is as informative as a
-        // non-zero.
-        self.tile(view.unauthenticated.length, 'unauthenticated') +
-        '</div>' +
-
-        self.note('<strong>The three are not variants of one thing and their ' +
-        'expiries are worked out differently</strong>, which is why the ' +
-        'Expires column carries the rule as well as the time &mdash; hover ' +
-        'it on any row:') +
-        '<ul><li><strong>The browser sign-on session</strong> &mdash; the ' +
-        'cookie from <code>/authn/login</code>, which OAuth 2.0 / OIDC, ' +
-        'WS-Federation, SAML 2.0, SAML 1.1 and this console all read. It ' +
-        'expires at an ABSOLUTE instant fixed when it was created ' +
-        '(<code>authn.sessionLifetimeS</code>) and <strong>using it does not ' +
-        'extend it</strong>. An idle timeout ' +
-        '(<code>authn.sessionIdleTimeoutS</code>) ends it earlier when it ' +
-        'goes unused; it is off by default, and then a session in constant ' +
-        'use dies at the same moment as one nobody has touched. The ' +
-        '<em>Carries</em> column is what has signed in ON it, which is what ' +
-        'makes ending one reach further than it looks.</li><li><strong>The ' +
-        'Kerberos ticket-granting ticket</strong> &mdash; a TGT IS the ' +
-        'Kerberos session and a service ticket is one use of it. It expires ' +
-        'at the <code>endtime</code> the KDC sealed INTO the ticket, and ' +
-        'nothing here can move it or take it back: a ticket is valid because ' +
-        'it decrypts and its endtime has not passed. Short lifetimes are the ' +
-        'whole of Kerberos\'s revocation model.</li><li><strong>The LDAP ' +
-        'connection</strong> &mdash; RFC 4511 section 4.2 makes a Bind the ' +
-        'authorization state of a CONNECTION, so in LDAP the connection is ' +
-        'the session and closing it is the only sign-out the protocol has. ' +
-        'It has <strong>no expiry at all</strong>: it lasts until the next ' +
-        'Bind, an Unbind, or the socket closing.</li></ul>' +
-
-        self.warn('<strong>Revoke is not one act either.</strong> On a ' +
-        'browser session it ends that session and everything hanging off it ' +
-        '&mdash; the relying parties are notified, the refresh tokens issued ' +
-        'on it are revoked. On an LDAP row it closes the socket, which the ' +
-        'client sees as its connection dropping mid-conversation. On a ' +
-        'Kerberos row <strong>it does more than the row it is on</strong>: ' +
-        'it stamps a sign-out instant on the PRINCIPAL, so every ' +
-        'ticket-granting ticket that principal authenticated before now is ' +
-        'refused &mdash; and it still reaches no service ticket already in a ' +
-        'cache, because accepting one never contacts this KDC. Every button ' +
-        'carries its own sentence; hover it before pressing it. All three go ' +
-        'through the same termination <a href="/logout">the ' +
-        'protocol-independent sign-out</a> performs, so they write the same ' +
-        'audit row and honour the same two settings.') +
-
-        '<h2>Live sessions</h2>' +
-        // No `page` input in this form, and that is the point: changing the
-        // filter or the page size sends the reader back to page 1. Carrying the
-        // old page number over would land somebody on page 6 of a two-page
-        // result.
-        '<form method="get" action="/admin/sessions"><div class="formrow">' +
-          '<label for="q">Search</label>' +
-          '<input type="text" id="q" name="q" size="28" value="' +
-          self.esc(view.wantedText) + '" placeholder="a username, a subject, ' +
-          'a DN or a session id">' +
-          '<label for="protocol">Protocol</label>' +
-          '<select id="protocol" name="protocol">' + protocolOptions +
-          '</select><label for="per">Per page</label><select id="per" ' +
-          'name="per">' + self.perPageOptions(paging.perPage) +
-          '</select>' +
-          '<button class="secondary">Filter</button>' +
-          (view.wantedText || view.wantedProtocol
-            ? ' <a href="/admin/sessions">clear</a>' : '') +
-        '</div></form>' +
-        self.note('The search matches the username, the subject, the session ' +
-        'id, the bind DN and the principal name together, because a reader ' +
-        'arrives holding exactly one of those. The protocol is the one the ' +
-        'sign-in came THROUGH and not the only one the session serves: every ' +
-        'browser family here reads the same session, so a row saying ' +
-        '<code>SAML 2.0</code> may well be carrying OIDC relying parties too ' +
-        '&mdash; which is what the <em>Carries</em> column says.') +
-        nav.head +
-        '<table><tr><th>Kind</th><th>Protocol</th><th>Who</th><th>Since</th>' +
-        '<th>Expires</th><th>Carries</th><th>Credentials</th><th></th></tr>' +
-        rows + '</table>' +
-        nav.foot +
-        self.note(view.filtered.length + ' row(s) match' +
-        (paging.pages > 1
-          ? ', of which rows ' + paging.firstRow + '&ndash;' + paging.lastRow +
-            ' are on this page (' + paging.page + ' of ' + paging.pages + ')'
-          : '') +
-        '; ' + view.all.length + ' live in total. Newest first. Everything ' +
-        'here is read live from the module that owns it every time this page ' +
-        'is drawn &mdash; there is no cache, deliberately, because a cached ' +
-        'answer to <em>is this still live</em> would be the half a reader is ' +
-        'about to press a button on.') +
-
-        // ---------------------------------------------------------------------
-        // THE UNAUTHENTICATED SESSIONS (2026-09-05).
-        //
-        // A section rather than a column, for the reason `sessionsView()`
-        // gives: the answer is almost always "none", and a column that says the
-        // same thing on every row for weeks stops being read.
-        //
-        // It draws whether or not the setting that CREATES these is on, and
-        // that is deliberate — a service that had the setting on this morning
-        // and off now may still be holding sessions it minted then, and a
-        // section that disappeared with the setting would hide exactly those.
-        // What changes with the setting is the sentence, not the presence.
-        // ---------------------------------------------------------------------
-        '<h2>Unauthenticated sessions</h2>' +
-
-        self.note('<strong>A session where nobody authenticated.</strong> ' +
-        'Somebody pressed <em>Continue without signing in</em> at ' +
-        '<code>/authn/login</code>, so this service holds a real session for ' +
-        'them &mdash; it has a cookie, it satisfies a flow already in ' +
-        'progress, and tokens can be issued on it &mdash; and it records ' +
-        'that no credential was ever checked. They are the ' +
-        '<code>anonymous</code> principal, which is one directory entry ' +
-        'however many of these there are.') +
-
-        self.note('<strong>This is the only place the difference between two ' +
-        'of the built-in roles is visible.</strong> Every session in the ' +
-        'table above holds <code>EVERYBODY</code> <em>and</em> ' +
-        '<code>ALL_AUTHENTICATED_USERS</code>; every session in this one ' +
-        'holds <code>EVERYBODY</code> and ' +
-        '<code>ALL_UNAUTHENTICATED_USERS</code> instead. So an application ' +
-        'whose <code>appRequiredRole</code> is ' +
-        '<code>ALL_AUTHENTICATED_USERS</code> refuses these with ' +
-        '<code>access_denied</code>, and one that names no role at all ' +
-        '&mdash; which requires <code>EVERYBODY</code> &mdash; does not. <a ' +
-        'href="/admin/roles">The role register</a> is where that is ' +
-        'configured.') +
-
-        (config.value('authn.unauthenticatedSessions')
-          ? self.note('<strong><code>authn.unauthenticatedSessions</code> is ' +
-            'ON</strong> in this realm, so the sign-in screen is offering ' +
-            'the third button. <a href="/admin/roles">Turn it off</a> and no ' +
-            'new ones can be started; any already here stay until they ' +
-            'expire or are ended.')
-          : self.warn('<strong><code>authn.unauthenticatedSessions</code> is ' +
-            'OFF</strong> in this realm, so no new ones can be started and ' +
-            'this section will stay empty. It is off by default because it ' +
-            'puts a third button on every sign-in screen in the service. <a ' +
-            'href="/admin/roles">Turn it on</a> to make ' +
-            '<code>ALL_UNAUTHENTICATED_USERS</code> reachable.')) +
-
-        (view.unauthenticated.length
-          ? '<table><tr><th>Kind</th><th>Protocol</th><th>Who</th><th>Since' +
-            '</th>' +
-            '<th>Expires</th><th>Carries</th><th>Credentials</th><th></th>' +
-            '</tr>' +
-            view.unauthenticated.map(function (row) {
-              return self.sessionRow(row, nowMs, gate.write, back);
-            }).join('') + '</table>' +
-            self.note(view.unauthenticated.length + ' unauthenticated ' +
-              'session(s), of ' +
-            view.all.length + ' live. <strong>Not filtered and not ' +
-            'paged</strong>, unlike the table above &mdash; the question ' +
-            'this section answers is about the whole service, and a search ' +
-            'box somebody had left set could hide the one row that matters.')
-          : self.note('<strong>None.</strong> Every session this service is ' +
-            'holding right now had a credential accepted for it.')) +
-
-        self.note('<a href="/admin/logout">What ONE person is still signed ' +
-        'into</a>, which is this question asked the other way round and ' +
-        'reaches seven more families &middot; <a href="/admin/tokens">what ' +
-        'has been issued</a> &middot; <a href="/admin/caep-sessions">what ' +
-        'has been SAID about these sessions</a> over Shared Signals &middot; ' +
-        '<a href="/admin/metrics">the counts</a> &middot; <a ' +
-        'href="/admin/sessions?format=json">this page as JSON</a> &middot; ' +
-        '<a href="/admin-api/sessions">the same over the management API</a>');
-
-      self.respond(req, res, view.json, 'Sessions', '/admin/sessions', inner);
+      // The JSON `GET /admin-api/sessions` answers (#446).
+      const json = sessionsView(req).json;
+      self.respond(req, res, json, 'Sessions', '/admin/sessions',
+        // Drawn by `web_sessions.ts` (#446).
+        self.messagesOf(req) +
+        SessionsPage.body(self.renderContext(req),
+          JSON.parse(JSON.stringify(json))));
       log.debug("Leaving the admin sessions page.");
     });
 

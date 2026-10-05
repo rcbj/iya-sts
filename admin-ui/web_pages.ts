@@ -70,6 +70,7 @@ import SchedulerPage = require('./web_scheduler');
 import ScimPage = require('../scim/web_scim');
 import ScepPage = require('../scep/web_scep');
 import SecretsPage = require('./web_secrets');
+import SessionsPage = require('../logout/web_sessions');
 import SettingsForms = require('./web_settings');
 import SignalsPage = require('../ssf/web_signals');
 import SsfDeadLettersPage = require('../ssf/web_ssf_dead_letters');
@@ -266,6 +267,11 @@ const PAGES: WebPage[] = [
     } },
   { path: '/admin/secrets', title: 'Secret store',
     operation: '/admin-api/secrets', render: SecretsPage.render },
+  { path: '/admin/sessions', title: 'Sessions',
+    operation: '/admin-api/sessions',
+    render: function (view: Json, ctx?: Json): string {
+      return SessionsPage.body(ctx || WebKit.context(), view);
+    } },
   { path: '/admin/signals', title: 'Signals',
     operation: '/admin-api/signals',
     render: function (view: Json, ctx?: Json): string {

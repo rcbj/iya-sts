@@ -3307,7 +3307,7 @@ class AdminViews {
    * @returns the view
    */
   sessionsView(req) {
-    const { log } = this.deps;
+    const { log, config } = this.deps;
     const self = this;
     log.debug("Entering AdminViews.sessionsView().");
     const query = req.query || {};
@@ -3376,7 +3376,12 @@ class AdminViews {
                    sub: row.sub, protocol: row.protocol,
                    sessionId: row.sessionId,
                    startedAt: row.startedAt, expiresAt: row.expiresAt,
-                   carries: row.carries, key: row.key };
+                   carries: row.carries, key: row.key,
+                   // What the page's row draws too (#446).
+                   kind: row.kind, handle: row.handle, acr: row.acr,
+                   amr: row.amr, detail: row.detail,
+                   terminable: row.terminable, why: row.why,
+                   expiryRule: row.expiryRule };
         }),
         filter: { q: wantedText || null, protocol: wantedProtocol || null },
         // The clamped values, not what was asked for: `?page=999` on a two-page
@@ -3389,7 +3394,14 @@ class AdminViews {
         // arithmetics produced it, and every row already says which family it
         // is.
         expiryRules: logoutReader.SESSION_EXPIRY_RULES || {},
-        sessions: shown
+        sessions: shown,
+        // What the page draws from beside the rows (#446): the protocol
+        // filter's choices and the paging.
+        protocols: this.sessionProtocolsIn(all),
+        // Whether sessions that authenticated nobody are kept, which the
+        // page says beside them.
+        unauthenticatedKept: !!config.value('authn.unauthenticatedSessions'),
+        paging: this.pagingJson(paging)
       }
     };
   }
