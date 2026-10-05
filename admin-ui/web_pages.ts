@@ -42,6 +42,7 @@ import DatabasePage = require('./web_database');
 import DebuggerPage = require('../debugger/web_debugger');
 import DevicesPage = require('./web_devices');
 import EncryptionPage = require('./web_encryption');
+import ErrorCodesPage = require('./web_error_codes');
 import EstPage = require('../est/web_est');
 import GeolocationPage = require('./web_geolocation');
 import GnapPage = require('../gnap/web_gnap');
@@ -53,6 +54,7 @@ import MetricsPage = require('./web_metrics');
 import ModePage = require('./web_mode');
 import NodeHealthPage = require('./web_node_health');
 import PkiPage = require('./web_pki');
+import PoliciesPage = require('./web_policies');
 import OidfedPage = require('../oidfed/web_oidfed');
 import ProviderCommandsPage =
   require('../oauth-oidc/web_provider_commands');
@@ -64,6 +66,7 @@ import ScimPage = require('../scim/web_scim');
 import ScepPage = require('../scep/web_scep');
 import SecretsPage = require('./web_secrets');
 import SettingsForms = require('./web_settings');
+import SignalsPage = require('../ssf/web_signals');
 import SsfPage = require('../ssf/web_ssf');
 import SsfTransmittersPage = require('../ssf/web_ssf_transmitters');
 import TokenLifetimesPage = require('./web_token_lifetimes');
@@ -134,6 +137,11 @@ const PAGES: WebPage[] = [
     } },
   { path: '/admin/encryption', title: 'Encryption',
     operation: '/admin-api/encryption', render: EncryptionPage.render },
+  { path: '/admin/error-codes', title: 'Error codes',
+    operation: '/admin-api/error-codes',
+    render: function (view: Json, ctx?: Json): string {
+      return ErrorCodesPage.body(ctx || WebKit.context(), view);
+    } },
   { path: '/admin/est', title: 'EST', operation: '/admin-api/est',
     render: EstPage.render },
   { path: '/admin/est/monitor', title: 'EST enrollments',
@@ -181,6 +189,11 @@ const PAGES: WebPage[] = [
     render: OAuth2MonitorPage.render },
   { path: '/admin/pki', title: 'PKI', operation: '/admin-api/pki',
     render: PkiPage.render },
+  { path: '/admin/policies', title: 'Policies',
+    operation: '/admin-api/policies',
+    render: function (view: Json, ctx?: Json): string {
+      return PoliciesPage.body(ctx || WebKit.context(), view);
+    } },
   { path: '/admin/risc', title: 'RISC',
     operation: '/admin-api/risc',
     render: function (view: Json, ctx?: Json): string {
@@ -221,6 +234,11 @@ const PAGES: WebPage[] = [
     } },
   { path: '/admin/secrets', title: 'Secret store',
     operation: '/admin-api/secrets', render: SecretsPage.render },
+  { path: '/admin/signals', title: 'Signals',
+    operation: '/admin-api/signals',
+    render: function (view: Json, ctx?: Json): string {
+      return SignalsPage.body(ctx || WebKit.context(), view);
+    } },
   { path: '/admin/ssf', title: 'Shared Signals',
     operation: '/admin-api/ssf',
     render: function (view: Json, ctx?: Json): string {

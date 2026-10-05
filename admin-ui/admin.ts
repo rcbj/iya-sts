@@ -825,6 +825,9 @@ import SamlAssertionsPage = require('./web_saml_assertions');
 import SsfPage = require('../ssf/web_ssf');
 import ScimPage = require('../scim/web_scim');
 import CaepRiscPage = require('../ssf/web_caep_risc');
+import PoliciesPage = require('./web_policies');
+import SignalsPage = require('../ssf/web_signals');
+import ErrorCodesPage = require('./web_error_codes');
 
 // REQUIRED FOR THE ORDER THEY WERE ALWAYS REQUIRED IN, AND READ NOWHERE HERE
 // (#50). TypeScript drops an `import … = require()` whose name nothing reads,
@@ -3563,14 +3566,7 @@ class AdminConsole {
     return WebKit.codeList(names);
   }
 
-  // The list AS THE READER LEFT IT, picked out of a query by that table.
-  //
-  // This is what makes the trail a way back to where somebody was rather than
-  // to the top of an unfiltered list. A drill-down link carries it, every
-  // control on the drill-down carries it onward (pageParamsOf() takes the whole
-  // query through), and the trail's section crumb spends it. Nothing on the
-  // drill-down reads these keys for anything else: their names belong to the
-  // list's filter form, and a page showing one application has no `q`.
+  // The kit's (#446), where its reasoning went with it.
   /**
    * Picks a list page's filter and page parameters out of a query.
    *
@@ -3583,33 +3579,12 @@ class AdminConsole {
    */
   listViewOf(section, query) {
     const { log } = this.deps;
-    log.debug("Entering AdminConsole.listViewOf(). section=" + section);
-    const out = {};
-    (LIST_PARAMS[section] || []).forEach(function (key) {
-      const raw = (query || {})[key];
-      // Express hands back an array when a parameter is repeated, and String()
-      // on one is "a,b" — a filter nothing matches, reached by a link somebody
-      // clicked twice. The same first-wins rule pageParamsOf() uses.
-      const value = Array.isArray(raw) ? raw[0] : raw;
-      if (value !== undefined && value !== null && String(value) !== '') {
-        out[key] = String(value);
-      }
-    });
-    log.debug("Leaving AdminConsole.listViewOf(). " + Object.keys(out).length +
-              " " +
-        "parameter(s) carried.");
-    return out;
+    log.debug("Entering AdminConsole.listViewOf().");
+    log.debug("Leaving AdminConsole.listViewOf().");
+    return WebKit.listViewOf(section, query);
   }
 
-  // The same thing out of a form's `back` field, which is a query string a
-  // browser sent us rather than one we are looking at.
-  //
-  // It is REBUILT and never echoed: the names come from LIST_PARAMS, the values
-  // are re-encoded by queryWith(), and anything else in the field is dropped.
-  // That is the guarantee backTo() gives the tokens page and it is needed here
-  // for the same reason — a redirect target taken out of a request body is an
-  // open redirect, and one carrying a newline is a header injection. The worst
-  // a hand-written `back` can now reach is another page of the same list.
+  // The kit's (#446), where its reasoning went with it.
   /**
    * Rebuilds a list view from a form's `back` query string.
    *
@@ -3622,27 +3597,9 @@ class AdminConsole {
    */
   listViewFromBack(section, raw) {
     const { log } = this.deps;
-    log.debug("Entering AdminConsole.listViewFromBack(). section=" + section);
-    let params = null;
-    try {
-      params = new URLSearchParams(String(raw || '').replace(/^\?/, ''));
-    } catch (e) {
-      // Unparseable; the bare list is the right answer and is what a form
-      // carrying no `back` at all gets anyway.
-      log.debug("Leaving AdminConsole.listViewFromBack(). Unparseable: " +
-                e.message);
-      return {};
-    }
-    const query = {};
-    params.forEach(function (value, key) {
-      // First wins, for the reason listViewOf() takes the first of a repeated
-      // parameter: a field sent twice is one value, not "a,b".
-      if (!Object.prototype.hasOwnProperty.call(query, key)) {
-        query[key] = value;
-      }
-    });
+    log.debug("Entering AdminConsole.listViewFromBack().");
     log.debug("Leaving AdminConsole.listViewFromBack().");
-    return this.listViewOf(section, query);
+    return WebKit.listViewFromBack(section, raw);
   }
 
   // The section a DRILL-DOWN hangs under: where "back" goes, what that section
@@ -24145,33 +24102,7 @@ class AdminConsole {
       '<button type="submit">Save</button></form></details>';
   }
 
-  // ---------------------------------------------------------------------------
-  // /admin/policies (2026-09-12) — DIRECTORY → POLICIES, and the PASSWORD
-  // POLICY is the first kind of policy on it.
-  //
-  // ONE COMPUTATION, TWO RENDERINGS: `adminViews.policiesView()` is the
-  // model, this route draws it, and `GET /admin-api/policies` hands the same
-  // model back. The writes are `adminActions.policiesAction()`,
-  // which `POST /admin-api/policies/{action}` calls too — rule 7 by
-  // construction.
-  //
-  // **THE FORM CARRIES EVERY FIELD**, because a save replaces the whole
-  // profile; the action is told it came from the console so that an unticked
-  // checkbox — which posts nothing — reads as "no" here and as a refusal from
-  // an API caller that forgot one.
-  //
-  // **THE RESET IS ITS OWN FORM, NOT A SECOND BUTTON IN THE SAVE FORM**, for
-  // `/admin/users/new`'s reason: two submit buttons named `action` make
-  // `form.elements.action` a RadioNodeList whose value is empty, and the
-  // console suite finds every form it presses by the action it posts.
-  // ---------------------------------------------------------------------------
-  //
-  // **ONE ROW RENDERER FOR EVERY KIND (#64)**, told the id prefix of its form
-  // (`pp-` for the password policy, as the console suite finds it). A field
-  // the view marks `disabled` — an email mechanism in a realm that cannot send
-  // mail — is drawn DISABLED WITH THE REASON BESIDE IT, `configRow()`'s
-  // pattern, rather than left out: a control that vanished would read as a
-  // mechanism this service does not have.
+  // Drawn by `web_policies.ts` (#446).
   /**
    * Draws one field of a policy profile form as a table row: its control,
    * attribute, built-in default and source.
@@ -24185,47 +24116,8 @@ class AdminConsole {
   policyFieldRow(field, prefix) {
     const { log } = this.deps;
     log.debug("Entering AdminConsole.policyFieldRow().");
-    const id = String(prefix || 'pp-') + field.key;
-    const hint = this.tip(field.what, Infinity);
-    const off = field.disabled ? ' disabled' : '';
-    let control;
-    if (field.type === 'bool') {
-      control = '<input type="checkbox" id="' + this.esc(id) + '" name="' +
-        this.esc(field.key) + '" value="TRUE"' +
-        (field.value ? ' checked' : '') + off +
-        hint + '>' +
-        (field.disabled
-          ? ' <span class="off">' + this.esc(field.disabledWhy) + '</span>'
-          : '');
-    } else if (field.type === 'enum') {
-      control = '<select id="' + this.esc(id) + '" name="' +
-        this.esc(field.key) + '"' + off + hint + '>' +
-        (field.values || []).map((value) => {
-          return '<option value="' + this.esc(value) + '"' +
-            (String(field.value) === String(value) ? ' selected' : '') +
-            '>' + this.esc(value) + '</option>';
-        }).join('') + '</select>';
-    } else {
-      control = '<input type="number" id="' + this.esc(id) + '" name="' +
-        this.esc(field.key) + '" min="' + this.esc(field.min) + '" max="' +
-        this.esc(field.max) +
-        '" step="1" required value="' + this.esc(field.value) + '"' + off +
-        hint + '> <span class="sub">' + this.esc(field.unit) + '</span>';
-    }
     log.debug("Leaving AdminConsole.policyFieldRow().");
-    return '<tr><td><label for="' + this.esc(id) + '"' + hint + '>' +
-      this.esc(field.label) +
-      '</label></td><td>' + control + '</td>' +
-      '<td><code>' + this.esc(field.attribute) + '</code></td>' +
-      '<td>' + this.esc(field.type === 'bool' ? (field.default ? 'yes' : 'no')
-                                              : String(field.default)) +
-                                                '</td>' +
-      '<td class="' + (field.source === 'directory' ? '' : 'state-none') +
-      '">' +
-      this.esc(field.source === 'directory' ? 'this profile'
-        : field.source === 'default realm' ? 'the default realm\'s profile'
-          : 'built-in default') +
-      '</td></tr>';
+    return PoliciesPage.policyFieldRow(field, prefix);
   }
 
   // A DISABLED FIELD POSTS NOTHING, so a console save made while this realm
@@ -24241,79 +24133,31 @@ class AdminConsole {
   // module alone, which is what makes a future policy cost no page.
   // ---------------------------------------------------------------------------
 
-  // The save form and the reset form every kind has. The reset is its own
-  // form, for the reason in the header above.
+  // Drawn by `web_policies.ts` (#446).
   private policyForms(kind, member, prefix, intro) {
     const { log } = this.deps;
-    log.debug("Entering AdminConsole.policyForms(). " + kind.id);
-    const profile = member.profile;
-    const saveAction = kind.actions[0];
-    const resetAction = kind.actions[1];
-    const out = '<form method="post" action="/admin/policies">' +
-      '<input type="hidden" name="action" value="' + this.esc(saveAction) +
-      '">' +
-      '<input type="hidden" name="profile" value="' + this.esc(profile.name) +
-      '">' +
-      this.wideTable('The default ' + kind.label.toLowerCase() + ' profile',
-        '<table><tr><th>Rule</th><th>Value</th><th>Attribute</th>' +
-        '<th>Built-in default</th><th>Source</th></tr>' +
-        member.fields.map((field) => {
-          return this.policyFieldRow(field, prefix);
-        }).join('') +
-        '<tr><td><label for="' + this.esc(prefix) + 'description">' +
-        'Description</label></td>' +
-        '<td colspan="4"><input type="text" id="' + this.esc(prefix) +
-        'description" name="description" size="60" maxlength="1024" ' +
-        'value="' + this.esc(profile.description) + '" placeholder="what ' +
-        'this profile is for"></td></tr></table>') +
-      '<p><button>Save the profile</button></p>' + (intro || '') +
-      '</form>' +
-      (profile.stored
-        ? '<form method="post" action="/admin/policies" class="inline">' +
-          '<input type="hidden" name="action" value="' +
-          this.esc(resetAction) + '"><input type="hidden" ' +
-          'name="profile" value="' + this.esc(profile.name) + '"><button ' +
-          'class="secondary">Remove this realm\'s profile</button></form>'
-        : '');
+    log.debug("Entering AdminConsole.policyForms().");
     log.debug("Leaving AdminConsole.policyForms().");
-    return out;
+    return PoliciesPage.policyForms(kind, member, prefix, intro);
   }
 
+  // Drawn by `web_policies.ts` (#446).
   private policySchemaTables(schema) {
     const { log } = this.deps;
     log.debug("Entering AdminConsole.policySchemaTables().");
-    const out = '<table><tr><th>Object class</th><th>What it is</th></tr>' +
-      schema.objectClasses.map((row) => {
-        return '<tr><td><code>' + this.esc(row.name) + '</code></td><td>' +
-          this.esc(row.what) + '</td></tr>';
-      }).join('') + '</table>' +
-      '<table><tr><th>Attribute</th><th>On</th><th>What it holds</th></tr>' +
-      schema.attributes.map((row) => {
-        return '<tr><td><code>' + this.esc(row.name) +
-               '</code></td><td>the profile</td><td>' + this.esc(row.what) +
-               '</td></tr>';
-      }).join('') +
-      (schema.personAttributes || []).map((row) => {
-        return '<tr><td><code>' + this.esc(row.name) + '</code></td><td>a ' +
-          'person</td><td>' + this.esc(row.what) + '</td></tr>';
-      }).join('') + '</table>';
     log.debug("Leaving AdminConsole.policySchemaTables().");
-    return out;
+    return PoliciesPage.policySchemaTables(schema);
   }
 
+  // Drawn by `web_policies.ts` (#446).
   private policyProblems(profile) {
     const { log } = this.deps;
     log.debug("Entering AdminConsole.policyProblems().");
     log.debug("Leaving AdminConsole.policyProblems().");
-    return profile.problems.length
-      ? this.warn('<strong>The stored profile has ' +
-                  profile.problems.length +
-        ' problem(s), and the built-in default is in force for each ' +
-        'field named:</strong> ' +
-        profile.problems.map(this.esc.bind(this)).join(' '))
-      : '';
+    return PoliciesPage.policyProblems(profile);
   }
 
+  // Drawn by `web_policies.ts` (#446).
   /**
    * Draws the password policy section of /admin/policies: enforcement, the
    * save and reset forms, the current rules, the doors that enforce it, the
@@ -24325,114 +24169,11 @@ class AdminConsole {
   passwordPolicySection(view) {
     const { log } = this.deps;
     log.debug("Entering AdminConsole.passwordPolicySection().");
-    const self = this;
-    const kind = view.kinds.filter(function (k) {
-      return k.id === 'password';
-    })[0];
-    const pw = view.password;
-    const profile = pw.profile;
-    const out =
-      '<h2 id="password">Password policy — the default profile</h2>' +
-      self.note('What a password set in this realm must look like. It is ' +
-      'stored as <code>' +
-      self.esc(profile.dn || ('cn=default,ou=passwordPolicies,…')) +
-      '</code>, in the shape of draft-behera-ldap-password-policy (the ' +
-      'schema OpenLDAP\'s ppolicy overlay reads), so an ' +
-      '<code>ldapsearch</code> finds it and an <code>ldapmodify</code> ' +
-      'changes it.') +
-
-      (view.enforced
-        ? '<div class="ok">' + self.esc(view.enforcement) + '</div>'
-        : self.warn(self.esc(view.enforcement) + ' Switch the realm with ' +
-          '<code>global.mode</code> on <a ' +
-          'href="/admin/config">Configuration</a>.')) +
-
-      self.policyProblems(profile) +
-
-      self.note(profile.stored
-        ? 'This profile is <strong>stored</strong> at <code>' +
-          self.esc(profile.dn) +
-          '</code>. Saving replaces it; removing it deletes it, after which ' +
-          'the built-in defaults below are in force.'
-        : '<strong>Nothing is stored yet, so the built-in defaults are in ' +
-          'force.</strong> Saving this form writes <code>cn=default</code> ' +
-          'under <code>ou=passwordPolicies</code> in this realm\'s ' +
-          'directory. A realm created later starts with the same built-in ' +
-          'defaults rather than a copy of this one — the profile is not ' +
-          'seeded, so it cannot be missing from a realm nobody seeded.') +
-
-      self.policyForms(kind, pw, 'pp-', self.note('Every field is checked ' +
-      'before anything is written, and two rules relate fields to each ' +
-      'other: a generated password must be at least the minimum length, and ' +
-      'at least twice the symbol count plus two — a generator asked for ' +
-      'more symbols than that would be drawing for a very long time. ' +
-      '<strong>A change applies to the NEXT password set in this ' +
-      'realm</strong>; nothing already stored is re-checked, because a ' +
-      'stored password is a hash and there is nothing left to check it ' +
-      'against.')) +
-
-      '<h3 id="rules">What a password must be, right now</h3>' +
-      self.note('The rules as the <a href="/portal/password">user ' +
-      'portal</a> and the activation page print them to the person ' +
-      'choosing a password, so the page they read and the rule this ' +
-      'service applies are one sentence.') +
-      '<ul>' + pw.rules.map(function (rule) {
-        return '<li>' + self.esc(rule) + '</li>';
-      }).join('') + '</ul>' +
-
-      '<h3 id="doors">Where it is enforced</h3>' +
-      self.note('Every door that sets a password ends in one function in ' +
-      '<code>common/credentials.ts</code>, which is what makes the list ' +
-      'below complete rather than a list somebody remembered. ' +
-      self.esc(pw.notDoors)) +
-      '<table><tr><th>Door</th><th>Reaches</th></tr>' +
-      pw.doors.map(function (row) {
-        return '<tr><td>' + self.esc(row.door) + '</td><td><code>' +
-               self.esc(row.via) +
-          '</code></td></tr>';
-      }).join('') + '</table>' +
-
-      '<h3 id="history">The history, and what it costs</h3>' +
-      self.note('<strong>A remembered password is the scrypt hash it was ' +
-      'already stored as</strong>, moved into <code>pwdHistory</code> on ' +
-      'the person\'s own entry when the next one replaces it — no new hash ' +
-      'is made, and the password itself is never kept. Checking a new ' +
-      'password costs one scrypt comparison per remembered one, about 70ms ' +
-      'each on this thread, so a history of ' + self.esc(profile.history) +
-      ' is up to ' +
-      self.esc((profile.history + 1) * 70) + 'ms at a password change. A ' +
-      'generated password skips the comparison, because nothing drawn at ' +
-      'random is a previous password. <code>pwdHistory</code> and ' +
-      '<code>pwdChangedTime</code> are maintained by this service and an ' +
-      'LDAP modify naming either is refused in product mode.') +
-
-      '<h3 id="generator">The generator</h3>' +
-      self.note('<strong>New users created from the console or ' +
-      '<code>/admin-api</code> get a generated password by ' +
-      'default</strong>, shown or returned ONCE. It is drawn by ' +
-      '<code>' + self.esc(pw.generator.module) + '</code>' +
-      (pw.generator.version ? ' ' + self.esc(pw.generator.version) : '') +
-      ' from ' +
-      self.esc(pw.generator.source) + ', using ' +
-      self.esc(pw.generator.pools.join(', ')) +
-      ' (leaving out ' + pw.generator.excluded.map(function (one) {
-        return '<code>' + self.esc(one) + '</code>';
-      }).join(' and ') + ', which silently end or change a string pasted ' +
-      'into a shell or a JSON body), and it draws until ' +
-      self.esc(pw.generator.drawsUntil) +
-      '.') +
-
-      '<h3 id="schema">Schema</h3>' +
-      self.note('This directory is schemaless, so a container of entries ' +
-      'carrying invented attributes says what they mean here. The ' +
-      '<code>pwd*</code> names are draft-behera-ldap-password-policy\'s; ' +
-      'the <code>stsPwd*</code> ones are this service\'s own, because the ' +
-      'draft delegates composition rules to the server and defines none.') +
-      self.policySchemaTables(pw.schema);
     log.debug("Leaving AdminConsole.passwordPolicySection().");
-    return out;
+    return PoliciesPage.passwordPolicySection(view);
   }
 
+  // Drawn by `web_policies.ts` (#446).
   /**
    * Draws the authentication policy section of /admin/policies: the mail and
    * NIST warnings, where the profile comes from, the forms, and which
@@ -24444,84 +24185,11 @@ class AdminConsole {
   authnPolicySection(view) {
     const { log } = this.deps;
     log.debug("Entering AdminConsole.authnPolicySection().");
-    const self = this;
-    const kind = view.kinds.filter(function (k) {
-      return k.id === 'authn';
-    })[0];
-    const ap = view.authn;
-    const profile = ap.profile;
-    const yesNo = function (value, active) {
-      log.debug("Entering yesNo().");
-      log.debug("Leaving yesNo().");
-      return value === null ? '<span class="off">—</span>'
-        : value ? (active ? 'yes' : 'yes — <strong>inactive</strong>')
-          : 'no';
-    };
-    const out =
-      '<h2 id="authn">Authentication policy — the default profile</h2>' +
-      self.note('Which ways of signing in this realm accepts as a FIRST ' +
-      'factor and as a SECOND, and when a second factor is required. ' +
-      'Asked at every sign-in door, in both modes: this policy decides what ' +
-      'the sign-in screen offers, not whether a credential is checked.') +
-
-      (ap.mail.usable ? ''
-        : self.warn('<strong>This realm cannot send mail</strong>, so the ' +
-          'two email mechanisms are drawn disabled below and are never ' +
-          'offered. Configure a transport on <a href="/admin/mail">Server ' +
-          'configuration → Mail</a>.')) +
-
-      self.warn('<strong>Email as an authenticator.</strong> ' +
-        self.esc(ap.nistWarning)) +
-
-      self.policyProblems(profile) +
-
-      self.note(profile.from === 'realm'
-        ? 'This realm\'s own profile is <strong>stored</strong> at <code>' +
-          self.esc(profile.dn) + '</code>. Removing it puts this realm back ' +
-          'to the default realm\'s profile, or to the built-in defaults ' +
-          'where the default realm has none.'
-        : profile.from === 'default-realm'
-          ? '<strong>This realm has no profile of its own, and follows the ' +
-            'default realm\'s</strong> (<code>' + self.esc(profile.dn) +
-            '</code>). Saving this form writes this realm\'s own, which ' +
-            'overrides it here and nowhere else.'
-          : '<strong>Nothing is stored, so the built-in defaults are in ' +
-            'force.</strong> Saving this form writes <code>cn=default</code> ' +
-            'under <code>ou=authnPolicies</code>. Saved in the DEFAULT ' +
-            'realm, it is the policy of every realm that has none of its ' +
-            'own.') +
-
-      self.policyForms(kind, ap, 'ap-', self.note('Every field is checked ' +
-      'before anything is written. At least one mechanism must be accepted ' +
-      'as a first factor, and if a second factor is required of everybody ' +
-      'at least one must be accepted as a second. <strong>A person who ' +
-      'HOLDS a second factor is asked for it whatever this says</strong>: ' +
-      'there is no setting that skips a held factor.')) +
-
-      '<h3 id="authn-now">What this realm accepts, right now</h3>' +
-      '<ul>' + ap.rules.map(function (rule) {
-        return '<li>' + self.esc(rule) + '</li>';
-      }).join('') + '</ul>' +
-      '<table><tr><th>Mechanism</th><th>First factor</th>' +
-      '<th>Second factor</th></tr>' +
-      ap.mechanisms.map(function (m) {
-        return '<tr><td>' + self.esc(m.label) + '</td><td>' +
-          yesNo(m.primary, m.active) + '</td><td>' +
-          yesNo(m.secondFactor, m.active) + '</td></tr>';
-      }).join('') + '</table>' +
-      self.note('A dash is a role the mechanism cannot have: an ' +
-      'authenticator app or a recovery code is never a first factor, and ' +
-      'a certificate, a Kerberos ticket, a wallet or a federation partner ' +
-      'is never asked for second.') +
-
-      '<h3 id="authn-schema">Schema</h3>' +
-      self.policySchemaTables(ap.schema);
     log.debug("Leaving AdminConsole.authnPolicySection().");
-    return out;
+    return PoliciesPage.authnPolicySection(view);
   }
 
-  // A kind this console has nothing particular to say about: its fields,
-  // its rules and its schema, from its module.
+  // Drawn by `web_policies.ts` (#446).
   /**
    * Draws the section of /admin/policies for a kind of policy with nothing
    * particular to say: its forms, rules and schema, from its module.
@@ -24532,21 +24200,9 @@ class AdminConsole {
    */
   genericPolicySection(view, kind) {
     const { log } = this.deps;
-    log.debug("Entering AdminConsole.genericPolicySection(). " + kind.id);
-    const self = this;
-    const member = view[kind.id];
-    const out = '<h2 id="' + self.esc(kind.id) + '">' +
-      self.esc(kind.label) + ' — the default profile</h2>' +
-      self.note('Governs ' + self.esc(kind.governs) + '. Stored under ' +
-      '<code>' + self.esc(kind.container) + '</code>.') +
-      self.policyProblems(member.profile) +
-      self.policyForms(kind, member, kind.id + '-', '') +
-      '<ul>' + member.rules.map(function (rule) {
-        return '<li>' + self.esc(rule) + '</li>';
-      }).join('') + '</ul>' +
-      self.policySchemaTables(member.schema);
+    log.debug("Entering AdminConsole.genericPolicySection().");
     log.debug("Leaving AdminConsole.genericPolicySection().");
-    return out;
+    return PoliciesPage.genericPolicySection(view, kind);
   }
 
   // The page's own URL with the preview user on it. Every form on this page
@@ -35006,148 +34662,11 @@ class AdminConsole {
       log.debug("Entering the admin error codes page.");
       const view = errorCodesView(req.query);
       const json = view.json;
-      const paging = view.paging;
-      const filterParams = { subsystem: view.wantedSubsystem,
-                             q: view.wantedText,
-                             seen: view.wantedSeen ? '1' : '',
-                             per: req.query.per ? paging.perPage : '' };
-      const nav = self.pageNavPair('/admin/error-codes', filterParams, paging);
-
-      const subsystemOptions = '<option value=""' +
-        (view.wantedSubsystem ? '' : ' ' +
-          'selected') +
-        '>every subsystem</option>' +
-        view.subsystems.map(function (sub) {
-          return '<option value="' + self.esc(sub.id) + '"' +
-                 (sub.id === view.wantedSubsystem ? ' selected' : '') + '>' +
-                 self.esc(sub.prefix + ' — ' + sub.label) + ' (' + sub.codes +
-                 ')</option>';
-        }).join('');
-
-      const subsystemRows = view.subsystems.map(function (sub) {
-        return '<tr><td><a href="/admin/error-codes?subsystem=' +
-               encodeURIComponent(sub.id) + '"><code>' + self.esc(sub.prefix) +
-               '</code></a></td><td>' + self.esc(sub.label) + '</td><td ' +
-               'class="num">' + self.esc(sub.codes) + '</td>' +
-               '<td class="num">' + (sub.seen
-                 ? '<a href="/admin/audit?code=' +
-                   encodeURIComponent(sub.prefix) +
-                   '">' +
-                   self.esc(sub.seen) + '</a>'
-                 : '<span class="state-none">0</span>') + '</td>' +
-               '<td class="who">' + self.esc(sub.where) + '</td></tr>';
-      }).join('');
-
-      const codeRows = view.shown.map(function (row) {
-        return '<tr id="' + self.esc(row.code) + '">' +
-          '<td><code>' + self.esc(row.code) + '</code>' +
-            (row.retired ? '<br><span class="state-none">retired</span>' : '') +
-          '</td><td>' + self.esc(row.summary) + '</td><td>' +
-          (row.spec ? self.esc(row.spec) : '<span ' +
-                'class="state-none">—</span>') + '</td><td ' +
-          'class="num">' + (row.seen
-            ? '<a href="/admin/audit?code=' + encodeURIComponent(row.code) +
-              '">' +
-              self.esc(row.seen) + '</a><br><span class="state-none">last ' +
-              self.esc(self.whenText(row.lastSeenAt)) + '</span>'
-            : '<span class="state-none">0</span>') + '</td>' +
-          '</tr>';
-      }).join('');
-
-      const unregistered = view.unregisteredSeen.length
-        ? '<h3>Codes on audit rows that the table does not hold</h3>' +
-          self.note('These were recorded as given rather than dropped, so ' +
-          'that the row saying the table is incomplete survives. Each one is ' +
-          'a failure site whose code was never added to ' +
-          '<code>common/error_codes.js</code>.') +
-          '<table><tr><th>Code</th><th class="num">Rows</th></tr>' +
-          view.unregisteredSeen.map(function (u) {
-            return '<tr><td><a href="/admin/audit?code=' +
-                   encodeURIComponent(u.code) +
-                   '"><code>' + self.esc(u.code) +
-                   '</code></a></td><td class="num">' +
-                   self.esc(u.seen) + '</td></tr>';
-          }).join('') + '</table>'
-        : '';
-
-      const filtering = view.wantedSubsystem || view.wantedText ||
-                        view.wantedSeen;
-
-      const inner = self.messagesOf(req) +
-        '<div class="tiles">' +
-          self.tile(json.registered, 'codes') +
-          self.tile(json.subsystemCount, 'subsystems') +
-          self.tile(json.distinctCodesSeen, 'codes on held audit rows') +
-          self.tile(json.auditRowsWithCode, 'audit rows with a code') +
-          self.tile(json.unregisteredSeen.length, 'unregistered codes seen') +
-        '</div>' +
-
-        self.note('Every way this service can fail or refuse has a code of ' +
-        'the form <code>STS-&lt;SUBSYSTEM&gt;-&lt;NNNN&gt;</code>. It is ' +
-        'recorded on the audit row for the event and at the front of the ' +
-        'service\'s log line, and <strong>it is never sent to a ' +
-        'client</strong> — not in a body, a header or a redirect. Each ' +
-        'protocol here already defines how it reports an error, and a client ' +
-        'under test must see exactly that: the <em>Client sees</em> column ' +
-        'says what it is sent, and the code changes nothing about it.') +
-
-        self.note('<strong>Seen</strong> counts the rows <a ' +
-        'href="/admin/audit">the audit log</a> holds in this realm right now ' +
-        '(' + self.esc(json.auditRowsHeld) + '), ' +
-        'so it falls as that log\'s cap discards the oldest, and it is zero ' +
-        'for a failure recorded only as a log line — one that stops the ' +
-        'service starting, and everything the remote PEP container records, ' +
-        'since that container has no audit log of its own. A zero here is ' +
-        'not "never happens".') +
-
-        self.note('<code>STS-HTTP-0002</code> and <code>STS-HTTP-0003</code> ' +
-        'are what the HTTP call log records for a 4xx or 5xx response no ' +
-        'handler gave a more specific code. <strong>A row carrying either ' +
-        'names a failure site that is missing its own code.</strong> ' +
-        '<code>STS-HTTP-0001</code> is an unrouted path, which is an ' +
-        'ordinary outcome.') +
-
-        '<h2>Subsystems</h2>' +
-        '<table><tr><th>Prefix</th><th>Subsystem</th><th ' +
-        'class="num">Codes</th><th class="num">Seen</th><th>Raised ' +
-        'from</th></tr>' + subsystemRows +
-        '</table><h2>Codes</h2><form ' +
-        'method="get" action="/admin/error-codes"><div ' +
-        'class="formrow"><label for="subsystem">Subsystem</label><select ' +
-        'id="subsystem" name="subsystem">' +
-            subsystemOptions + '</select>' +
-          '<label for="q">Text</label>' +
-          '<input type="text" id="q" name="q" size="30" value="' +
-        self.esc(view.wantedText) +
-            '" placeholder="a code, a word, invalid_grant">' +
-          '<label for="seen"><input type="checkbox" id="seen" name="seen" ' +
-          'value="1"' +
-            (view.wantedSeen ? ' checked' : '') + '> only codes on held ' +
-          'rows</label><label for="per">Per page</label><select id="per" ' +
-          'name="per">' +
-            self.perPageOptions(paging.perPage) + '</select>' +
-          '<button class="secondary">Filter</button>' +
-          (filtering ? ' <a href="/admin/error-codes">clear</a>' : '') +
-        '</div></form>' +
-        nav.head +
-        '<table><tr><th>Code</th><th>What failed</th><th>Client sees</th>' +
-        '<th class="num">Seen</th></tr>' +
-        (codeRows || '<tr><td colspan="4">Nothing matches.</td></tr>') +
-        '</table>' +
-        nav.foot +
-        unregistered +
-
-        self.note('The table is <code>common/error_codes.js</code> and this ' +
-        'page has no control: a code is never renumbered or reused, because ' +
-        'it ends up in alert rules and saved searches, and a condition that ' +
-        'stops existing keeps its row marked retired. The same table is ' +
-        'published as <code>docs/error-codes.md</code>, generated from the ' +
-        'source, and this list is at <code>GET /admin-api/error-codes</code> ' +
-        'with the same parameters. Paging is <code>?page=</code> and ' +
-        '<code>?per=</code> (at most ' +
-        MAX_ROWS + ' rows a page).');
-
-      self.respond(req, res, json, 'Error codes', '/admin/error-codes', inner);
+      self.respond(req, res, json, 'Error codes', '/admin/error-codes',
+        // Drawn by `web_error_codes.ts` (#446).
+        self.messagesOf(req) +
+        ErrorCodesPage.body(self.renderContext(req),
+          JSON.parse(JSON.stringify(json))));
       log.debug("Leaving the admin error codes page.");
     });
 
@@ -39412,77 +38931,11 @@ class AdminConsole {
     app.get('/admin/policies', function (req, res) {
       log.debug("Entering the admin policies page.");
       const view = adminViews.policiesView(req.query);
-      const listedNav = self.pageNavPair('/admin/policies',
-                                         pageParamsOf(req.query),
-                                         pagingOf(req.query,
-                                                  view.paging.total));
-      const kindLabel = {};
-      view.kinds.forEach(function (kind) {
-        kindLabel[kind.id] = kind.label;
-      });
-
-      const inner = self.messagesOf(req) +
-        '<div class="tiles">' +
-          self.tile(view.kinds.length, 'kind of policy') +
-          self.tile(view.paging.total, 'profile') +
-          self.tile(view.enforced ? 'yes' : 'no',
-                    'password policy enforced in this realm') +
-        '</div>' +
-
-        self.note('<strong>A policy here is a rule this realm holds a ' +
-        'credential to.</strong> Each kind below is a SEPARATE policy with ' +
-        'its own entry in its own container, and each has one profile — ' +
-        '<code>default</code> — which applies to every person in this ' +
-        'realm. ' +
-        view.kinds.map(function (kind) {
-          return '<a href="#' + self.esc(kind.id) + '">' +
-            self.esc(kind.label) + '</a> (<code>' +
-            self.esc(kind.container) + '</code>)';
-        }).join(', ') + '. <strong>This is not the XACML policy ' +
-        'repository</strong>: <a href="/admin/xacml/policies">that one</a> ' +
-        'holds documents a PDP evaluates, in <code>ou=policies</code>.') +
-
-        view.kinds.map(function (kind) {
-          if (kind.id === 'password') {
-            return self.passwordPolicySection(view);
-          }
-          if (kind.id === 'authn') {
-            return self.authnPolicySection(view);
-          }
-          return self.genericPolicySection(view, kind);
-        }).join('') +
-
-        '<h2 id="profiles">Profiles</h2>' +
-        self.note('One profile of each kind today, and the list is paged ' +
-        'like every list in this console. A second profile of a kind cannot ' +
-        'be created yet: nothing assigns a profile to a person, so a second ' +
-        'one would decide nothing while looking exactly like one that does.') +
-        listedNav.head +
-        '<table><tr><th>Kind</th><th>Profile</th><th>Stored at</th>' +
-        '<th>Problems</th></tr>' +
-        view.profiles.map(function (row) {
-          return '<tr><td>' + self.esc(kindLabel[row.kind] || row.kind) +
-            '</td><td><a href="#' + self.esc(row.kind) + '">' +
-            self.esc(row.name) + '</a></td><td>' +
-            (row.stored ? '<code>' + self.esc(row.dn) + '</code>'
-              : row.inherited
-                ? 'inherited from the default realm: <code>' +
-                  self.esc(row.dn) + '</code>'
-                : '<span class="state-none">not stored — built-in ' +
-                  'defaults</span>') +
-            '</td><td>' + self.esc(String(row.problems.length)) + '</td></tr>';
-        }).join('') + '</table>' +
-        listedNav.foot +
-
-        self.note('The same over JSON is ' +
-        '<code>/admin/policies?format=json</code> and <code>GET ' +
-        '/admin-api/policies</code>; the actions on this page are ' +
-        view.actions.map(function (action) {
-          return '<code>POST /admin-api/policies/' + self.esc(action) +
-                 '</code>';
-        }).join(', ') + '.');
-
-      self.respond(req, res, view, 'Policies', '/admin/policies', inner);
+      self.respond(req, res, view, 'Policies', '/admin/policies',
+        // Drawn by `web_policies.ts` (#446).
+        self.messagesOf(req) +
+        PoliciesPage.body(self.renderContext(req),
+          JSON.parse(JSON.stringify(view))));
       log.debug("Leaving the admin policies page.");
     });
 
@@ -40350,236 +39803,10 @@ class AdminConsole {
     app.get('/admin/signals', function (req, res) {
       log.debug("Entering the admin signals page.");
       const json = signalsJson(req);
-      const st: any = json.status || {};
-      const stream = st.stream;
-
-      const tiles = '<div class="tiles">' +
-        self.tile(json.total, 'delivered here') +
-        self.tile(stream ? stream.caepDelivered : 0, 'CAEP types') +
-        self.tile(stream ? stream.riscDelivered : 0, 'RISC types') +
-        self.tile(stream ? stream.counters.delivered : 0, 'pushes accepted') +
-        self.tile(stream ? stream.counters.failed : 0, 'pushes failed') +
-        self.tile(stream ? stream.queued : 0, 'still queued') +
-        '</div>';
-
-      // WHY NOTHING IS HERE, ABOVE THE TABLE AND NOT BELOW IT. An empty inbox
-      // has five causes and only one of them is "nothing has happened";
-      // `status()` works out which apply and this draws them in the order a
-      // reader should check them. It is drawn even when rows ARE present,
-      // because a stream that has been paused since this morning explains a
-      // page that stops rather than a page that is empty.
-      const why = st.why && st.why.length
-        ? '<div class="err"><p><strong>Some or all of this console\'s ' +
-          'signals are not arriving.</strong></p><ul>' +
-          st.why.map(function (line) {
-            return '<li>' + self.esc(line) + '</li>';
-          }).join('') + '</ul></div>'
-        : '';
-
-      const streamBlock = stream
-        ? '<table>' +
-          '<tr><th>Stream</th><td><code>' + self.esc(stream.stream_id) +
-          '</code></td></tr><tr><th>Audience</th><td><code>' +
-          self.esc(String(stream.aud)) + '</code> ' +
-          '<span class="sub">' +
-          self.esc('This console checks for this name in every SET\'s aud ' +
-                   'and refuses one addressed to anybody else with ' +
-                   'invalid_audience — recording it either way, so a ' +
-                   'misaddressed event is visible rather than merely absent.') +
-                   '</span></td></tr>' +
-          '<tr><th>Issuer</th><td><code>' + self.esc(String(stream.iss)) +
-          '</code></td></tr><tr><th>Delivered ' +
-          'to</th><td><code>' +
-          self.esc(stream.endpoint_url) + '</code> <span class="sub">' +
-          self.esc('RFC 8935 push, over the loopback interface, with this ' +
-                   'service\'s own TLS certificate pinned. It is a real HTTP ' +
-                   'request on purpose: handing the event to the page in ' +
-                   'process would skip the body, the media type, the ' +
-                   'authorization header and the signature.') +
-          '</span></td></tr>' +
-          '<tr><th>Event types</th><td>' + self.esc(String(stream.delivers)) +
-          ' delivered of ' + self.esc(String(stream.requested)) + ' ' +
-          'requested <span class="sub">' +
-          self.esc('The difference is the intersection SSF 1.0 section 7.1.1 ' +
-                   'defines: a type this transmitter does not support is ' +
-                   'answered by its absence from events_delivered rather ' +
-                   'than by a refusal.') +
-          '</span></td></tr>' +
-          '<tr><th>Status</th><td><span class="' +
-          (stream.status === 'enabled' ? '' : 'state-invalid') + '">' +
-          self.esc(stream.status) + '</span> <span class="sub">' +
-          self.esc(stream.statusReason) + '</span></td></tr>' +
-          '<tr><th>Last push</th><td>' +
-          (stream.lastPushAt
-            ? self.esc(stream.lastPushAt) +
-              (stream.lastPushError
-                ? ' <span class="state-invalid">' +
-                  self.esc(stream.lastPushError) +
-                  '</span>'
-                : '')
-            : '<span class="sub">nothing has been pushed here yet</span>') +
-          '</td></tr></table>'
-        : self.note('<strong>There is no stream for this console in the ' +
-          '&ldquo;' +
-          self.esc(st.realm) + '&rdquo; realm.</strong> It is seeded at ' +
-          'startup and is an ORDINARY stream — if it was paused, narrowed or ' +
-          'deleted at <a href="/admin/ssf">Shared Signals</a> or through ' +
-          '<code>/admin-api/ssf</code>, it stays that way until a restart. ' +
-          'That is the same rule this service\'s seeded application entries ' +
-          'follow.');
-
-      const search = self.sectionSearchForm({
-        path: '/admin/signals', param: 'sigq', pageParam: 'receivedPage',
-        query: req.query, label: 'Find',
-        placeholder: 'alice, session-revoked, a jti, a stream id',
-        what: 'Over the event name, the type URI, the subject as this ' +
-              'receiver read it, the issuer, the audience, the jti and the ' +
-              'stream — because a reader arrives holding one of those and ' +
-              'does not know which column it is in.' });
-
-      const nav = self.pageNavPair('/admin/signals', pageParamsOf(req.query),
-                                   json.paging.received);
-
-      const rows = json.received.map(function (row) {
-        return '<tr>' +
-          '<td class="sub">' + self.esc(self.whenText(Date.parse(row.at))) +
-          '</td><td><code>' + self.esc(row.vocabulary) + '</code> ' +
-          self.esc(row.name) +
-          (row.types.length > 1
-            ? ' <span class="sub">and ' +
-              self.esc(String(row.types.length - 1)) +
-              ' more in the same SET</span>'
-            : '') +
-          '<div class="sub"><code>' + self.esc(row.types[0] || '(none)') +
-          '</code></div></td>' +
-          '<td>' + (row.subject
-            ? self.esc(row.subject)
-            : '<span class="sub" title="' +
-              self.esc('SSF\'s own two events are about the STREAM rather ' +
-                       'than about anybody, so they carry no subject at all. ' +
-                       'Every CAEP and RISC event does.') +
-                       '">&mdash;</span>') + '</td>' +
-          '<td>' + (row.verified
-            ? '<span title="' + self.esc(row.verificationNote) +
-              '">verified</span>'
-            : '<span class="state-invalid" title="' +
-              self.esc(row.verificationNote) + '">not verified</span>') +
-          (row.audienceOk
-            ? ''
-            : '<div class="state-invalid" title="' +
-              self.esc('This receiver is "' + String(st.audience) +
-                       '" and that name is not in this token\'s aud. It was ' +
-                       'refused with invalid_audience and recorded anyway, ' +
-                       'because what arrived is the question being asked.') +
-                       '">wrong audience</div>') +
-          (row.correctMediaType
-            ? ''
-            : '<div class="sub" title="' +
-              self.esc('RFC 8935 section 2.1 says application/secevent+jwt. ' +
-                       'This one said "' +
-                       String(row.contentType || '(nothing)') + '". It was ' +
-                       'accepted — a receiver that refused would be testing ' +
-                       'the transmitter\'s pedantry — and it is said out ' +
-                       'loud rather than passed over.') +
-                       '">media type</div>') +
-          // WHAT THIS CONSOLE DID WITH IT (#62): the signal-response
-          // policy's reactions, taken, observed or failed.
-          (row.reactions || []).map(function (r) {
-            return '<div class="signal-reaction ' +
-              (r.failed ? 'state-invalid' : 'sub') + '">' + (r.failed
-                ? 'could not end its sessions'
-                : r.skipped ? 'ended nothing: ' + self.esc(r.skipped)
-                : (r.observed ? 'would end this console\'s sessions ' +
-                                '(development observes)'
-                              : 'ended ' + self.esc(String(r.ended)) +
-                                ' console session(s)')) + '</div>';
-          }).join('') +
-          '</td>' +
-          '<td class="sub"><code>' + self.esc(row.jti) + '</code>' +
-          '<div><code>' + self.esc(row.stream || '') + '</code></div></td>' +
-          '<td>' + (Object.keys(row.payload).length
-            ? '<details><summary>' +
-              self.esc(String(Object.keys(row.payload).length) + ' member(s)') +
-              '</summary><pre>' +
-              self.esc(JSON.stringify(row.payload, null, 2)) +
-              '</pre></details>'
-            : '<span class="sub" title="' +
-              self.esc('Eleven of RISC\'s fourteen event types have no ' +
-                       'payload members at all — the SUBJECT carries the ' +
-                       'entire message, which is why a subject naming the ' +
-                       'wrong person is a wholly wrong event rather than a ' +
-                       'partly wrong one.') + '">no members</span>') +
-          '</td></tr>';
-      }).join('') || '<tr><td colspan="6">' +
-        self.esc(json.filter.received
-          ? 'Nothing delivered here matches that search.'
-          : 'Nothing has been delivered to this console yet.') +
-        '</td></tr>';
-
-      const inner = '<h1>Signals received</h1><p>Every Security Event Token ' +
-        '<strong>delivered to this console</strong> in the ' +
-        '&ldquo;' + self.esc(st.realm) + '&rdquo; realm. This console is a ' +
-        'registered Shared Signals receiver: it has a stream of its own, it ' +
-        'is POSTed each event over RFC 8935 push at <code>' +
-        self.esc(st.receivePath) + '</code>, and it verifies the signature ' +
-        'and the audience before recording anything.</p>' +
-        why +
-        tiles +
-        self.note('<strong>This is not the transmitter\'s copy.</strong> ' +
-        '<a href="/admin/ssf">Shared Signals</a> shows every stream this ' +
-        'service holds and what it has SENT on each; <a ' +
-        'href="/admin/caep-sessions">CAEP sessions</a> and <a ' +
-        'href="/admin/risc-accounts">RISC accounts</a> show what it BELIEVES ' +
-        'about a session and an account. This page shows what came back ' +
-        'through the door — which is the only one of the four that goes ' +
-        'empty when delivery is broken, and is therefore the only one that ' +
-        'can tell you it is.') +
-
-        '<h2>This console\'s stream</h2>' +
-        streamBlock +
-
-        '<h2 id="find-sigq">Delivered events</h2>' +
-        search +
-        nav.head +
-        '<table><tr><th>When</th><th>Event</th><th>Subject</th>' +
-        '<th>How it arrived</th><th>Identifiers</th><th>Payload</th></tr>' +
-        rows + '</table>' +
-        nav.foot +
-
-        // THE ONE CONTROL, and it is drawn only when there is something to
-        // clear: a button that would drop nothing is a button somebody presses
-        // to find out what it does. The CSRF token is put into this form by
-        // `withCsrf()` on the way out, like every other form on this console —
-        // rule 8's arrangement, so a page author does neither half.
-        (json.total
-          ? '<h2>Clear</h2>' +
-            self.note('This drops what is HELD HERE and nothing else. The ' +
-            'stream is untouched and goes on delivering, and the <a ' +
-            'href="/admin/audit">audit log</a>\'s record of each delivery ' +
-            'cannot be cleared — which is the point of it being the durable ' +
-            'half.') +
-            '<form method="post" action="/admin/signals">' +
-            '<input type="hidden" name="back" value="' +
-            self.esc(queryWith(self.listViewFromBack('/admin/signals',
-                                                     queryOne(req.query,
-                                                         'back')), {})) +
-            '">' +
-            '<div class="formrow">' +
-            '<input type="hidden" name="action" value="clear">' +
-            '<button type="submit" class="secondary" title="' +
-            self.esc('Drops the ' + json.total + ' delivered event(s) held ' +
-                     'in this console\'s inbox in this realm.') +
-            '">Clear this inbox</button></div></form>'
-          : '') +
-
-        self.note('<a href="/admin/signals?format=json">this page as ' +
-        'JSON</a> &middot; <a href="/admin-api/signals">the same over the ' +
-        'management API</a> &middot; <a href="/admin/ssf">the streams and ' +
-        'the settings</a> &middot; <a href="/portal/signals">what a person ' +
-        'sees about themselves</a> &middot; <a href="/admin/audit">the ' +
-        'durable record</a>');
-
-      self.respond(req, res, json, 'Signals received', '/admin/signals', inner);
+      self.respond(req, res, json, 'Signals received', '/admin/signals',
+        // Drawn by `web_signals.ts` (#446).
+        SignalsPage.body(self.renderContext(req),
+          JSON.parse(JSON.stringify(json))));
       log.debug("Leaving the admin signals page.");
     });
 
@@ -43483,172 +42710,10 @@ WIRE_STEPS.push(function (instance: AdminConsole): void {
 // since #446; `bullet()` below still reads the first.
 const ONE_LINE_CHARS = WebKit.ONE_LINE_CHARS;
 
-// WHICH QUERY PARAMETERS BELONG TO A SECTION'S LIST rather than to the page
-// under it — the filter the reader typed and the page they had reached.
-//
-// It is a WHITELIST per section rather than "everything that is not ours", for
-// the same reason the tokens page rebuilds its `back` field from a list of
-// names instead of echoing it: what comes out of here is put into a URL this
-// service hands to a browser, so the set of names has to be one this file
-// wrote. It is also why a section that cannot be drilled into has no row —
-// carrying a filter through a page nothing hangs under would be state nobody
-// can get back to.
-const LIST_PARAMS = {
-  // `factor` arrived on 2026-09-10 with the second-factor roster /admin/mfa
-  // used to draw. It is a VIEW of this list like `q` and `protocol` — a
-  // narrowing somebody chose and expects to still be there after they clear
-  // an enrolment — so it is carried through the Clear buttons on the
-  // drill-down like the other two.
-  '/admin/users': ['q', 'protocol', 'factor', 'per', 'page'],
-  '/admin/groups': ['q', 'per', 'page'],
-  // `application`, `subject`, `subjectKind` and `kind` are the PREVIEW's own
-  // parameters and are deliberately NOT here: they are a question somebody
-  // asked once, not a view, so carrying them through a Remove button would
-  // re-ask it on every write and put a stale answer above the table. The same
-  // reasoning NOT_A_VIEW applies to `notice` and `error`.
-  '/admin/roles': ['q', 'per', 'page'],
-  '/admin/policies': ['per', 'page'],
-  '/admin/applications': ['q', 'kind', 'per', 'page'],
-  '/admin/saml2': ['q', 'per', 'page'],
-  '/admin/saml11': ['q', 'per', 'page'],
-  '/admin/authorization-servers': ['per', 'page'],
-  // GNAP's two lists and the grant state filter (gnap/gnap_admin.ts).
-  '/admin/gnap': ['state', 'per', 'grantsPage', 'resourcesPage'],
-  '/admin/gnap/monitor': ['per', 'page'],
-  // ===== certificate enrollment list params (2026-09-13) =====
-  '/admin/acme': ['per', 'certificatesPage', 'credentialsPage',
-                  'accountsPage', 'hostNamesPage'],
-  '/admin/acme/monitor': ['per', 'page'],
-  '/admin/est': ['per', 'certificatesPage'],
-  '/admin/est/monitor': ['per', 'page'],
-  '/admin/scep': ['per', 'certificatesPage', 'credentialsPage'],
-  '/admin/scep/monitor': ['per', 'page'],
-  // The pushed-request filter and both lists' paging (2026-09-13). The page
-  // rebuilds a Withdraw's `back` from its own copy of this list, because
-  // `listViewFromBack()` is not exported; the two must name the same keys.
-  '/admin/oauth2/monitor': ['state', 'client_id', 'per', 'page',
-                            'clientsPage'],
-  '/admin/spiffe/entries': ['q', 'origin', 'per', 'page'],
-  '/admin/spiffe/agents': ['q', 'per', 'page'],
-  '/admin/spiffe/brokers': ['q', 'per', 'page'],
-  // `personq` and `personfrom` are the grant pane's search (2026-09-13), so a
-  // grant or a Revoke lands back on the results the reader was working
-  // through. `person` is deliberately NOT here: it is the one they picked, and
-  // carrying it through the grant it was picked FOR would redraw a grant form
-  // for somebody who already holds the role.
-  '/admin/rbac': ['q', 'role', 'personq', 'personfrom', 'per', 'page'],
-  // `family` rather than `q`: this page's filter is a family and there are ten
-  // of them, so it is chosen by clicking a row of the summary table rather than
-  // typed. `user` is deliberately NOT here — it is the drill-down's own leaf,
-  // not the list's filter, and carrying it in the section crumb would make the
-  // way back point at the page the reader is already on.
-  // The delegation table's five filters and its paging. `/admin/delegation/map`
-  // is the drill-down that spends them, and it carries the filters onward
-  // through a form of its own — the picture and the table are filtered by one
-  // control, so a reader who narrowed the table and then drew it gets the
-  // picture of what they were looking at.
-  // The four names after `page` are the two CHOOSER SEARCHES and their offsets
-  // (chooserPane(), 2026-08-26). They are in here for the same reason `q` is:
-  // a reader who searched for `esb` and clicked the one result should come back
-  // from the drill-down to the page they left, and the drill-down's own copy of
-  // the chooser should open holding the search they were in the middle of. It
-  // is also what keeps the two searches independent of each other — each names
-  // its own pair, so paging one cannot move the other.
-  //
-  // The eight names after those are the SEVEN LISTS' page numbers and the two
-  // section searches (2026-09-01). Every list on that page is paged separately
-  // and they share one `per`, so each needs a parameter of its own — and every
-  // one of them has to survive a drill-down for the reason `page` does: a
-  // reader who paged the grants table to 4, clicked a client and came back
-  // should come back to page 4 of the grants table and not to the top of a
-  // page they have already read three screens of.
-  // Protocols → Delegation (2026-10-01): the register's two searches and two
-  // pagings, the same names they have on Monitoring → Delegation, so a
-  // Remove or Revoke answers on the page and the search it was pressed on.
-  '/admin/delegation-settings': ['per', 'permq', 'grantq', 'permissionsPage',
-                                 'grantsPage'],
-  '/admin/delegation': ['type', 'mode', 'outcome', 'protocol', 'q', 'per',
-                        'page',
-                        'appq', 'appfrom', 'userq', 'userfrom',
-                        'permq', 'grantq',
-                        'chainsPage', 'permissionsPage', 'grantsPage',
-                        'pairsPage', 'flagsPage', 'mechanismsPage'],
-  // The tokens page's own three filters and its paging, here since 2026-08-26
-  // because that page now HAS a drill-down: every identifier links to
-  // /admin/tokens/credential, and without this entry the way back from it
-  // landed on page 1 of an unfiltered list of everything this service has ever
-  // issued. `session` joined the tokens page's three filters on 2026-09-04,
-  // when /admin/sessions started linking to it: every row there links to the
-  // credentials issued on that session, and there was no way to ask for them.
-  '/admin/tokens': ['family', 'kind', 'state', 'session', 'per', 'page'],
-  '/admin/sessions': ['q', 'protocol', 'per', 'page'],
-  // The Shared Signals inbox's own search and paging (2026-09-10). It has no
-  // drill-down, so the only thing that spends these is the Clear button's
-  // `back` — which is enough on its own: a reader who searched for a username,
-  // read what came back and pressed Clear should not be returned to an
-  // unfiltered page 1 of a list that is now empty for two different reasons.
-  '/admin/signals': ['sigq', 'per', 'receivedPage'],
-  // The dead letters' two exact narrowings, their search and their paging
-  // (2026-09-14). No control on that page posts, so what spends these is the
-  // links between its own tables — a stream row's letters, a cause's letters
-  // — each of which keeps the rest of the view as the reader left it.
-  '/admin/ssf/dead-letters': ['dlq', 'dlstream', 'dlcause', 'per',
-                              'lettersPage'],
-  // The truststore's one list (2026-09-12). Spent by the Remove button's
-  // `back`, so removing the last row on page 3 lands on page 3 — clamped to the
-  // last page there is — rather than on page 1.
-  '/admin/tls/trust': ['per', 'page'],
-  // The Kerberos principals' two lists (2026-09-12), paged separately and
-  // sharing one `per`. Spent by every row button's `back`.
-  '/admin/kerberos/principals': ['per', 'peoplePage', 'servicesPage'],
-  // The back-channel deliveries' filter, search and paging (2026-09-17),
-  // spent by the Retry button's `back`.
-  '/admin/logout': ['family', 'per', 'page', 'deliveryState', 'deliveryq',
-                    'backchannelDeliveriesPage'],
-  '/admin/realms': ['per', 'page'],
-  '/admin/federation': ['q', 'role', 'per', 'page'],
-  '/admin/oidfed': [],
-  // TWO lists on one page — the global overrides and the recorded answers —
-  // so each gets a page parameter of its own and they share one `per`, which
-  // is the arrangement /admin/delegation already has and pagingOf()'s
-  // `options.name` exists for. `q` searches the recorded half only; the
-  // overrides table is one row per (application, scope) and is short by
-  // construction, because somebody typed every one of them.
-  '/admin/consent': ['q', 'per', 'page', 'globalsPage', 'usersPage'],
-  // The CAEP page's SESSION CHOOSER (2026-09-03), which replaced a
-  // `<select name="session_id">` for the reason chooserPane() gives about the
-  // application one: a control here must be the same size whatever the
-  // register holds, and this register grows by one row per sign-in for the
-  // life of the process. `sessq` is the search, `sessfrom` its offset, and
-  // `session` the one the reader picked — all three carried, because every
-  // control on this page is a GET that reloads it and a reader who searched
-  // for a username, paged to the second twenty and picked a session must not
-  // lose any of that to pressing Emit.
-  '/admin/caep': ['sessq', 'sessfrom', 'session'],
-  // The CAEP SESSIONS list (2026-09-04), which has a drill-down of its own
-  // since the per-session detail moved off it: every session identifier on
-  // that table links to /admin/caep-sessions/session. `sessq` is the search
-  // over that one table and `sessionsPage` its page, named after the list for
-  // pagingOf()'s reason — that page carries a second table (the streams) and
-  // a bare `page` could not serve both. `per` is shared, as it is everywhere
-  // a page holds more than one list.
-  // The RISC pages, on exactly the CAEP pair's terms. `acctq2` is the
-  // chooser's search on the settings page and `acctq` the search on the
-  // monitoring one — two names because the two are different controls on two
-  // pages, and a shared name would carry a chooser's offset into a table's
-  // filter. `rappq` and `rapplicationsPage` are the per-receiver section's,
-  // named apart from the CAEP page's `appq` for the same reason.
-  '/admin/risc': ['acctq2', 'acctfrom'],
-  '/admin/risc-accounts': ['acctq', 'per', 'accountsPage',
-                           'rappq', 'rapplicationsPage'],
-  '/admin/caep-sessions': ['sessq', 'per', 'sessionsPage',
-                          // The per-receiver section's own search and page
-                          // (2026-09-04). Carried for the reason every other
-                          // list's are: a reader who narrowed that table and
-                          // then opened a session should come back to what
-                          // they were reading.
-                          'appq', 'applicationsPage']
-};
+// THE LIST PARAMETERS each section's drill-down carries back: the kit's
+// since #446 (`web_kit.ts`, with its reasoning), so a page drawn in a
+// browser carries the same names.
+const LIST_PARAMS = WebKit.LIST_PARAMS;
 
 // One page's link. Split out of navBar() when groups arrived so that a page
 // draws the same way at either depth — the active-tab-is-a-link rule above is

@@ -3537,7 +3537,10 @@ class AdminViews {
         neverSentToClients: true,
         subsystems: subsystems,
         unregisteredSeen: unregisteredSeen,
-        codes: shown
+        codes: shown,
+        // The paging a page draws its pager from (#446), as every paged
+        // answer carries it.
+        paging: this.pagingJson(paging)
       }
     };
   }

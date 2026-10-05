@@ -105,6 +105,173 @@ const TIP_CHARS = 190;
 // ---------------------------------------------------------------------------
 const CLIP_CHARS = 46;
 
+// WHICH QUERY PARAMETERS BELONG TO A SECTION'S LIST rather than to the page
+// under it — the filter the reader typed and the page they had reached.
+//
+// It is a WHITELIST per section rather than "everything that is not ours", for
+// the same reason the tokens page rebuilds its `back` field from a list of
+// names instead of echoing it: what comes out of here is put into a URL this
+// service hands to a browser, so the set of names has to be one this file
+// wrote. It is also why a section that cannot be drilled into has no row —
+// carrying a filter through a page nothing hangs under would be state nobody
+// can get back to.
+const LIST_PARAMS = {
+  // `factor` arrived on 2026-09-10 with the second-factor roster /admin/mfa
+  // used to draw. It is a VIEW of this list like `q` and `protocol` — a
+  // narrowing somebody chose and expects to still be there after they clear
+  // an enrolment — so it is carried through the Clear buttons on the
+  // drill-down like the other two.
+  '/admin/users': ['q', 'protocol', 'factor', 'per', 'page'],
+  '/admin/groups': ['q', 'per', 'page'],
+  // `application`, `subject`, `subjectKind` and `kind` are the PREVIEW's own
+  // parameters and are deliberately NOT here: they are a question somebody
+  // asked once, not a view, so carrying them through a Remove button would
+  // re-ask it on every write and put a stale answer above the table. The same
+  // reasoning NOT_A_VIEW applies to `notice` and `error`.
+  '/admin/roles': ['q', 'per', 'page'],
+  '/admin/policies': ['per', 'page'],
+  '/admin/applications': ['q', 'kind', 'per', 'page'],
+  '/admin/saml2': ['q', 'per', 'page'],
+  '/admin/saml11': ['q', 'per', 'page'],
+  '/admin/authorization-servers': ['per', 'page'],
+  // GNAP's two lists and the grant state filter (gnap/gnap_admin.ts).
+  '/admin/gnap': ['state', 'per', 'grantsPage', 'resourcesPage'],
+  '/admin/gnap/monitor': ['per', 'page'],
+  // ===== certificate enrollment list params (2026-09-13) =====
+  '/admin/acme': ['per', 'certificatesPage', 'credentialsPage',
+                  'accountsPage', 'hostNamesPage'],
+  '/admin/acme/monitor': ['per', 'page'],
+  '/admin/est': ['per', 'certificatesPage'],
+  '/admin/est/monitor': ['per', 'page'],
+  '/admin/scep': ['per', 'certificatesPage', 'credentialsPage'],
+  '/admin/scep/monitor': ['per', 'page'],
+  // The pushed-request filter and both lists' paging (2026-09-13). The page
+  // rebuilds a Withdraw's `back` from its own copy of this list, because
+  // `listViewFromBack()` is not exported; the two must name the same keys.
+  '/admin/oauth2/monitor': ['state', 'client_id', 'per', 'page',
+                            'clientsPage'],
+  '/admin/spiffe/entries': ['q', 'origin', 'per', 'page'],
+  '/admin/spiffe/agents': ['q', 'per', 'page'],
+  '/admin/spiffe/brokers': ['q', 'per', 'page'],
+  // `personq` and `personfrom` are the grant pane's search (2026-09-13), so a
+  // grant or a Revoke lands back on the results the reader was working
+  // through. `person` is deliberately NOT here: it is the one they picked, and
+  // carrying it through the grant it was picked FOR would redraw a grant form
+  // for somebody who already holds the role.
+  '/admin/rbac': ['q', 'role', 'personq', 'personfrom', 'per', 'page'],
+  // `family` rather than `q`: this page's filter is a family and there are ten
+  // of them, so it is chosen by clicking a row of the summary table rather than
+  // typed. `user` is deliberately NOT here — it is the drill-down's own leaf,
+  // not the list's filter, and carrying it in the section crumb would make the
+  // way back point at the page the reader is already on.
+  // The delegation table's five filters and its paging. `/admin/delegation/map`
+  // is the drill-down that spends them, and it carries the filters onward
+  // through a form of its own — the picture and the table are filtered by one
+  // control, so a reader who narrowed the table and then drew it gets the
+  // picture of what they were looking at.
+  // The four names after `page` are the two CHOOSER SEARCHES and their offsets
+  // (chooserPane(), 2026-08-26). They are in here for the same reason `q` is:
+  // a reader who searched for `esb` and clicked the one result should come back
+  // from the drill-down to the page they left, and the drill-down's own copy of
+  // the chooser should open holding the search they were in the middle of. It
+  // is also what keeps the two searches independent of each other — each names
+  // its own pair, so paging one cannot move the other.
+  //
+  // The eight names after those are the SEVEN LISTS' page numbers and the two
+  // section searches (2026-09-01). Every list on that page is paged separately
+  // and they share one `per`, so each needs a parameter of its own — and every
+  // one of them has to survive a drill-down for the reason `page` does: a
+  // reader who paged the grants table to 4, clicked a client and came back
+  // should come back to page 4 of the grants table and not to the top of a
+  // page they have already read three screens of.
+  // Protocols → Delegation (2026-10-01): the register's two searches and two
+  // pagings, the same names they have on Monitoring → Delegation, so a
+  // Remove or Revoke answers on the page and the search it was pressed on.
+  '/admin/delegation-settings': ['per', 'permq', 'grantq', 'permissionsPage',
+                                 'grantsPage'],
+  '/admin/delegation': ['type', 'mode', 'outcome', 'protocol', 'q', 'per',
+                        'page',
+                        'appq', 'appfrom', 'userq', 'userfrom',
+                        'permq', 'grantq',
+                        'chainsPage', 'permissionsPage', 'grantsPage',
+                        'pairsPage', 'flagsPage', 'mechanismsPage'],
+  // The tokens page's own three filters and its paging, here since 2026-08-26
+  // because that page now HAS a drill-down: every identifier links to
+  // /admin/tokens/credential, and without this entry the way back from it
+  // landed on page 1 of an unfiltered list of everything this service has ever
+  // issued. `session` joined the tokens page's three filters on 2026-09-04,
+  // when /admin/sessions started linking to it: every row there links to the
+  // credentials issued on that session, and there was no way to ask for them.
+  '/admin/tokens': ['family', 'kind', 'state', 'session', 'per', 'page'],
+  '/admin/sessions': ['q', 'protocol', 'per', 'page'],
+  // The Shared Signals inbox's own search and paging (2026-09-10). It has no
+  // drill-down, so the only thing that spends these is the Clear button's
+  // `back` — which is enough on its own: a reader who searched for a username,
+  // read what came back and pressed Clear should not be returned to an
+  // unfiltered page 1 of a list that is now empty for two different reasons.
+  '/admin/signals': ['sigq', 'per', 'receivedPage'],
+  // The dead letters' two exact narrowings, their search and their paging
+  // (2026-09-14). No control on that page posts, so what spends these is the
+  // links between its own tables — a stream row's letters, a cause's letters
+  // — each of which keeps the rest of the view as the reader left it.
+  '/admin/ssf/dead-letters': ['dlq', 'dlstream', 'dlcause', 'per',
+                              'lettersPage'],
+  // The truststore's one list (2026-09-12). Spent by the Remove button's
+  // `back`, so removing the last row on page 3 lands on page 3 — clamped to the
+  // last page there is — rather than on page 1.
+  '/admin/tls/trust': ['per', 'page'],
+  // The Kerberos principals' two lists (2026-09-12), paged separately and
+  // sharing one `per`. Spent by every row button's `back`.
+  '/admin/kerberos/principals': ['per', 'peoplePage', 'servicesPage'],
+  // The back-channel deliveries' filter, search and paging (2026-09-17),
+  // spent by the Retry button's `back`.
+  '/admin/logout': ['family', 'per', 'page', 'deliveryState', 'deliveryq',
+                    'backchannelDeliveriesPage'],
+  '/admin/realms': ['per', 'page'],
+  '/admin/federation': ['q', 'role', 'per', 'page'],
+  '/admin/oidfed': [],
+  // TWO lists on one page — the global overrides and the recorded answers —
+  // so each gets a page parameter of its own and they share one `per`, which
+  // is the arrangement /admin/delegation already has and pagingOf()'s
+  // `options.name` exists for. `q` searches the recorded half only; the
+  // overrides table is one row per (application, scope) and is short by
+  // construction, because somebody typed every one of them.
+  '/admin/consent': ['q', 'per', 'page', 'globalsPage', 'usersPage'],
+  // The CAEP page's SESSION CHOOSER (2026-09-03), which replaced a
+  // `<select name="session_id">` for the reason chooserPane() gives about the
+  // application one: a control here must be the same size whatever the
+  // register holds, and this register grows by one row per sign-in for the
+  // life of the process. `sessq` is the search, `sessfrom` its offset, and
+  // `session` the one the reader picked — all three carried, because every
+  // control on this page is a GET that reloads it and a reader who searched
+  // for a username, paged to the second twenty and picked a session must not
+  // lose any of that to pressing Emit.
+  '/admin/caep': ['sessq', 'sessfrom', 'session'],
+  // The CAEP SESSIONS list (2026-09-04), which has a drill-down of its own
+  // since the per-session detail moved off it: every session identifier on
+  // that table links to /admin/caep-sessions/session. `sessq` is the search
+  // over that one table and `sessionsPage` its page, named after the list for
+  // pagingOf()'s reason — that page carries a second table (the streams) and
+  // a bare `page` could not serve both. `per` is shared, as it is everywhere
+  // a page holds more than one list.
+  // The RISC pages, on exactly the CAEP pair's terms. `acctq2` is the
+  // chooser's search on the settings page and `acctq` the search on the
+  // monitoring one — two names because the two are different controls on two
+  // pages, and a shared name would carry a chooser's offset into a table's
+  // filter. `rappq` and `rapplicationsPage` are the per-receiver section's,
+  // named apart from the CAEP page's `appq` for the same reason.
+  '/admin/risc': ['acctq2', 'acctfrom'],
+  '/admin/risc-accounts': ['acctq', 'per', 'accountsPage',
+                           'rappq', 'rapplicationsPage'],
+  '/admin/caep-sessions': ['sessq', 'per', 'sessionsPage',
+                          // The per-receiver section's own search and page
+                          // (2026-09-04). Carried for the reason every other
+                          // list's are: a reader who narrowed that table and
+                          // then opened a session should come back to what
+                          // they were reading.
+                          'appq', 'applicationsPage']
+};
+
 /**
  * The console's rendering kit: escaping, the statistics tile, and the prose
  * helpers that fold a paragraph longer than a line. Loadable in a browser;
@@ -730,6 +897,10 @@ class WebKit {
 
   static readonly MAX_ROWS = 300;
 
+  // Each section's list parameters, by the section's path: see the table's
+  // own comment above the class.
+  static readonly LIST_PARAMS = LIST_PARAMS;
+
   // How many results a chooser pane shows at a time: one number for the
   // console and for the replies that page the same list, so a page and its
   // resource cannot come to show different twenties. `admin_views.ts` reads
@@ -1158,7 +1329,7 @@ class WebKit {
     // typing or by clicking `previous`.
     const paging = WebKit.pageParamsOf(query);
     const pageLink = function (at, label, title) {
-      // WebKit.pageNavPair()'s own idiom, and for its reason: the control's OWN
+      // pageNavPair()'s own idiom, and for its reason: the control's OWN
       // parameter is the only one it sets, so the other chooser's offset and
       // the table's page stay where the reader left them.
       const move = {};
@@ -1227,6 +1398,80 @@ class WebKit {
       (count || more.length
         ? '<p class="note">' + count + more.join(' &middot; ') + '</p>'
         : '');
+  }
+
+  // The list AS THE READER LEFT IT, picked out of a query by that table.
+  //
+  // This is what makes the trail a way back to where somebody was rather than
+  // to the top of an unfiltered list. A drill-down link carries it, every
+  // control on the drill-down carries it onward (pageParamsOf() takes
+  // the whole
+  // query through), and the trail's section crumb spends it. Nothing on the
+  // drill-down reads these keys for anything else: their names belong to the
+  // list's filter form, and a page showing one application has no `q`.
+  /**
+   * Picks a list page's filter and page parameters out of a query.
+   *
+   * Only the keys LIST_PARAMS names for the section are kept; the first of a
+   * repeated parameter wins.
+   *
+   * @param section - the list page's path
+   * @param query - the request's query object
+   * @returns the list view, as parameter names to strings
+   */
+  static listViewOf(section, query) {
+    const out = {};
+    (LIST_PARAMS[section] || []).forEach(function (key) {
+      const raw = (query || {})[key];
+      // Express hands back an array when a parameter is repeated, and String()
+      // on one is "a,b" — a filter nothing matches, reached by a link somebody
+      // clicked twice. The same first-wins rule pageParamsOf() uses.
+      const value = Array.isArray(raw) ? raw[0] : raw;
+      if (value !== undefined && value !== null && String(value) !== '') {
+        out[key] = String(value);
+      }
+    });
+    return out;
+  }
+
+  // The same thing out of a form's `back` field, which is a query string a
+  // browser sent us rather than one we are looking at.
+  //
+  // It is REBUILT and never echoed: the names come from LIST_PARAMS, the values
+  // are re-encoded by queryWith(), and anything else in the field is
+  // dropped.
+  // That is the guarantee backTo() gives the tokens page and it is needed here
+  // for the same reason — a redirect target taken out of a request body is an
+  // open redirect, and one carrying a newline is a header injection. The worst
+  // a hand-written `back` can now reach is another page of the same list.
+  /**
+   * Rebuilds a list view from a form's `back` query string.
+   *
+   * It is rebuilt through listViewOf() and never echoed, so it cannot carry
+   * an open redirect or a header injection.
+   *
+   * @param section - the list page's path
+   * @param raw - the `back` field's value
+   * @returns the list view; empty when the field cannot be parsed
+   */
+  static listViewFromBack(section, raw) {
+    let params = null;
+    try {
+      params = new URLSearchParams(String(raw || '').replace(/^\?/, ''));
+    } catch (e) {
+      // Unparseable; the bare list is the right answer and is what a form
+      // carrying no `back` at all gets anyway.
+      return {};
+    }
+    const query = {};
+    params.forEach(function (value, key) {
+      // First wins, for the reason listViewOf() takes the first of a repeated
+      // parameter: a field sent twice is one value, not "a,b".
+      if (!Object.prototype.hasOwnProperty.call(query, key)) {
+        query[key] = value;
+      }
+    });
+    return WebKit.listViewOf(section, query);
   }
 
   // A query's VIEW parameters — every one but the three that are not part
