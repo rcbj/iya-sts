@@ -27,8 +27,8 @@
 #     `SettingsForms.forms(json.settings, PAGE)` — the Settings block drawn from
 #     the view's own `settings` member by `admin-ui/web_settings.ts`. The
 #     page's view must carry that member (`admin.configSettingsJson(PAGE)`),
-#     and a block drawn outside the entry method is refused: only the entry
-#     holds the view;
+#     and a block drawn by a method not handed the view as `json` is
+#     refused;
 #   * A METHOD THAT TAKES THE REQUEST TAKES THE RENDER CONTEXT INSTEAD
 #     (`WebKit.context()`: the page's query and whether the reader may
 #     write). `req: Req` becomes `ctx: Json`, `req.query` becomes
@@ -171,8 +171,9 @@ for doc, start, end, name in spans:
     # THE SETTINGS BLOCK, from the view. Only the entry method holds the
     # view (its parameter is `json`, asserted below), so only there.
     if 'admin.configFormsFor(' in block:
-        assert name == entry, ('a settings block outside the entry method',
-                               name)
+        # The method draws from the view, so it is told the view as `json`.
+        assert re.search(r'\bjson\b', lines[[sp for sp in spans if sp[3] == name][0][1]]), (
+            'a settings block in a method not given the view as json', name)
         block = block.replace('admin.configFormsFor(',
                               'SettingsForms.forms(json.settings, ')
         USES_SETTINGS.append(name)

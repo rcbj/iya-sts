@@ -39,6 +39,7 @@ import ListenersPage = require('./web_listeners');
 import ModePage = require('./web_mode');
 import NodeHealthPage = require('./web_node_health');
 import OAuth2MonitorPage = require('../oauth-oidc/web_oauth2_monitor');
+import SchedulerPage = require('./web_scheduler');
 import SecretsPage = require('./web_secrets');
 import SettingsForms = require('./web_settings');
 import SsfTransmittersPage = require('../ssf/web_ssf_transmitters');
@@ -78,6 +79,8 @@ const PAGES: WebPage[] = [
   { path: '/admin/oauth2/monitor', title: 'OAuth 2.0 / OIDC activity',
     operation: '/admin-api/oauth2/monitor',
     render: OAuth2MonitorPage.render },
+  { path: '/admin/scheduler', title: 'Scheduler',
+    operation: '/admin-api/scheduler', render: SchedulerPage.render },
   { path: '/admin/secrets', title: 'Secret store',
     operation: '/admin-api/secrets', render: SecretsPage.render },
   { path: '/admin/ssf/transmitters', title: 'Signals from partners',

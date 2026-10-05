@@ -875,6 +875,32 @@ class WebKit {
       }).join('') + '</div>';
   }
 
+  // A DURATION AS A READER SAYS IT: "4 min 12 s", "2 h 5 min", "90 d" —
+  // two units at most. `cluster/scheduler.ts`'s until #446, whose
+  // `Scheduler.span()` now calls this.
+  /**
+   * Formats a duration in at most two units, such as "4 min 12 s".
+   *
+   * @param ms - the duration in milliseconds
+   * @returns the text
+   */
+  static span(ms: number): string {
+    const s = Math.max(0, Math.round(ms / 1000));
+    const units: Array<[number, string]> = [[86400, 'd'], [3600, 'h'],
+                                             [60, 'min'], [1, 's']];
+    const parts: string[] = [];
+    let left = s;
+    units.forEach(function (unit: [number, string]): void {
+      if (parts.length < 2 && (left >= unit[0] ||
+                               (unit[0] === 1 && !parts.length))) {
+        const n = Math.floor(left / unit[0]);
+        left -= n * unit[0];
+        parts.push(n + ' ' + unit[1]);
+      }
+    });
+    return parts.join(' ');
+  }
+
   // A query's VIEW parameters — every one but the three that are not part
   // of what is being looked at (`format`, and the `notice` and `error` a
   // redirect brought back) — first value each. `admin_views.ts`'s, which

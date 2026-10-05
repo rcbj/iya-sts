@@ -56,6 +56,8 @@ import errorCodes = require('../common/error_codes');
 import realms = require('../common/realms');
 import InstanceSlot = require('../common/instance_slot');
 import schedulerModule = require('../cluster/scheduler');
+// The page's renderer (#446): a `web_` module, loadable in a browser.
+import SchedulerPage = require('./web_scheduler');
 
 type Req = any;
 type Res = any;
@@ -65,12 +67,6 @@ type Json = any;
  * The console path of Monitoring → Scheduler.
  */
 const PAGE = '/admin/scheduler';
-
-// What each state is called on the page.
-const STATE_WORDS: Json = {
-  succeeded: 'succeeded', failed: 'failed', abandoned: 'abandoned',
-  running: 'running now', queued: 'queued'
-};
 
 interface SchedulerAdminDeps {
   log: typeof helpers.log;
@@ -117,16 +113,6 @@ class SchedulerAdmin {
       scheduler: schedulerModule,
       parseBody: helpers.parseBody
     };
-  }
-
-  // A repeated parameter arrives as an array; the first one wins.
-  private firstOf(value: unknown): string {
-    const { log } = this.deps;
-    log.debug("Entering SchedulerAdmin.firstOf().");
-    const one = Array.isArray(value) ? value[0] : value;
-    log.debug("Leaving SchedulerAdmin.firstOf().");
-    return one === undefined || one === null || typeof one === 'object'
-      ? '' : String(one).trim();
   }
 
   // The realm a request is confined to: a realm administrator's own, or ''
@@ -191,17 +177,18 @@ class SchedulerAdmin {
    * @returns the report or the one run
    */
   async schedulerView(req: Req, query?: Json): Promise<Json> {
-    const { log, scheduler, adminViews } = this.deps;
+    const { log, scheduler, adminViews, admin } = this.deps;
     log.debug("Entering SchedulerAdmin.schedulerView().");
     const q = query || {};
     const realm = this.confinedRealm(req);
-    const runId = this.firstOf(q.run);
+    const runId = SchedulerPage.firstOf(q.run);
     const report: Json = await scheduler.status({
-      realm: realm, job: this.firstOf(q.job), outcome: this.firstOf(q.outcome)
+      realm: realm, job: SchedulerPage.firstOf(q.job),
+      outcome: SchedulerPage.firstOf(q.outcome)
     });
     report.confinedToRealm = realm || null;
-    report.filters = { job: this.firstOf(q.job) || null,
-                       outcome: this.firstOf(q.outcome) || null };
+    report.filters = { job: SchedulerPage.firstOf(q.job) || null,
+                       outcome: SchedulerPage.firstOf(q.outcome) || null };
     if (runId) {
       const run = scheduler.findRun(runId);
       const visible = run && (!realm || run.realm === realm ||
@@ -236,6 +223,12 @@ class SchedulerAdmin {
     report.jobs = pagedJobs.shown;
     report.jobsPaging = adminViews.pagingJson(pagedJobs.paging);
     report.jobIds = everyJobId;
+    // The page's settings, as every page that owns settings answers them
+    // (#446): the page is drawn from this view alone. A realm's own
+    // administrator is shown none, as the page never drew them one.
+    if (!realm) {
+      report.settings = admin.configSettingsJson(PAGE);
+    }
     Object.defineProperty(report, 'jobsPagingRaw', {
       value: pagedJobs.paging, enumerable: false });
     log.debug("Leaving SchedulerAdmin.schedulerView(). " +
@@ -342,380 +335,17 @@ class SchedulerAdmin {
           errors: [answer.why] };
   }
 
-  // -------------------------------------------------------------------------
-  // THE DRAWING.
-  // -------------------------------------------------------------------------
-  private when(iso: string | null, inMs?: number | null): string {
+  // DRAWN BY `web_scheduler.ts` (#446): this page is converted for the static
+  // console, and its renderer is a module a browser can load. Until the
+  // cutover this process still draws it, handing the renderer the view passed
+  // THROUGH JSON, so it is held to what the API's caller receives.
+  private body(req: Req, json: Json): string {
     const { log, admin } = this.deps;
-    log.debug("Entering SchedulerAdmin.when().");
-    if (!iso) {
-      log.debug("Leaving SchedulerAdmin.when(). None.");
-      return '—';
-    }
-    const rel = inMs === undefined || inMs === null ? ''
-      : (inMs <= 0 ? 'now' : 'in ' + schedulerModule.Scheduler.span(inMs)) +
-        '<br>';
-    log.debug("Leaving SchedulerAdmin.when().");
-    return rel + '<small><code>' + admin.esc(iso) + '</code></small>';
-  }
-
-  private outcomeText(run: Json): string {
-    const { log, admin } = this.deps;
-    log.debug("Entering SchedulerAdmin.outcomeText().");
-    const word = STATE_WORDS[run.state] || run.state;
-    let text = '<strong>' + admin.esc(word) + '</strong>';
-    if (run.errorCode) {
-      text += ' <code>' + admin.esc(run.errorCode) + '</code>';
-    }
-    if (run.why) {
-      text += '<br><small>' + admin.esc(run.why) + '</small>';
-    }
-    log.debug("Leaving SchedulerAdmin.outcomeText().");
-    return text;
-  }
-
-  private lastRunCell(job: Json): string {
-    const { log, admin } = this.deps;
-    log.debug("Entering SchedulerAdmin.lastRunCell().");
-    const parts: string[] = [];
-    if (job.running) {
-      parts.push('<strong>running now</strong> since <code>' +
-                 admin.esc(job.running.startedAt || '') + '</code> on ' +
-                 admin.esc(job.running.nodeName || job.running.host) +
-                 ' (pid ' + admin.esc(job.running.pid) + ', attempt ' +
-                 job.running.attempt + ')');
-    }
-    const last = job.lastRun;
-    if (last) {
-      parts.push('<a href="' + admin.esc(PAGE + '?run=' +
-                                         encodeURIComponent(last.runId)) +
-                 '">' + this.outcomeText(last).replace(/<br>.*$/, '') +
-                 '</a><br><small>' + admin.esc(last.startedAt || '') +
-                 ' → ' + admin.esc(last.endedAt || '') +
-                 (last.durationMs !== null ? ', ' +
-                  admin.esc(schedulerModule.Scheduler.span(last.durationMs)) +
-                  ' (' + last.durationMs + ' ms)' : '') + ', ' +
-                 admin.esc(last.trigger) + ', on ' +
-                 admin.esc(last.nodeName || last.host || '?') + '</small>' +
-                 (last.why ? '<br><small>' + admin.esc(last.why) +
-                  '</small>' : ''));
-    }
-    if (!parts.length) {
-      parts.push('<em>never run</em>');
-    }
-    log.debug("Leaving SchedulerAdmin.lastRunCell().");
-    return parts.join('<br>');
-  }
-
-  private nextRunCell(job: Json): string {
-    const { log, admin } = this.deps;
-    log.debug("Entering SchedulerAdmin.nextRunCell().");
-    let text: string;
-    switch (job.nextRunState) {
-      case 'off':
-        text = '—';
-        break;
-      case 'manual-only':
-        text = '<em>on demand only</em>';
-        break;
-      case 'queued':
-        text = '<strong>queued</strong> (manual run requested by ' +
-               admin.esc(job.queued[0].requestedBy || 'somebody') + ')<br>' +
-               '<small><code>' + admin.esc(job.queued[0].queuedAt || '') +
-               '</code></small>';
-        break;
-      case 'due':
-        text = '<strong>due now</strong> — waiting for the leader\'s next ' +
-               'tick<br><small><code>' + admin.esc(job.nextRunAt) +
-               '</code></small>';
-        break;
-      case 'overdue':
-        text = '<strong>overdue since</strong> <code>' +
-               admin.esc(job.overdueSince) + '</code><br><small>' +
-               admin.esc(job.overdueWhy || '') + '</small>';
-        break;
-      case 'running':
-        text = 'after this run; next slot ' +
-               this.when(job.nextRunAt, job.nextRunInMs);
-        break;
-      default:
-        text = this.when(job.nextRunAt, job.nextRunInMs);
-    }
-    log.debug("Leaving SchedulerAdmin.nextRunCell().");
-    return text;
-  }
-
-  private runNowCell(job: Json, canWrite: boolean): string {
-    const { log, admin } = this.deps;
-    log.debug("Entering SchedulerAdmin.runNowCell().");
-    if (!canWrite || !job.manual || job.readOnly || job.state === 'off') {
-      log.debug("Leaving SchedulerAdmin.runNowCell(). No control.");
-      return job.state === 'off' && job.manual
-        ? '<small>off</small>' : '—';
-    }
-    log.debug("Leaving SchedulerAdmin.runNowCell().");
-    return '<form method="post" action="' + PAGE + '" class="inline">' +
-      '<input type="hidden" name="action" value="run">' +
-      '<input type="hidden" name="job" value="' + admin.esc(job.id) + '">' +
-      '<input type="hidden" name="realm" value="' + admin.esc(job.realm) +
-      '">' +
-      '<button type="submit" id="scheduler-run-' + admin.esc(job.id) + '-' +
-      admin.esc(job.realm) + '">Run now</button></form>';
-  }
-
-  private jobsTable(json: Json, canWrite: boolean, query: Json): string {
-    const { log, admin, adminViews } = this.deps;
-    const self = this;
-    log.debug("Entering SchedulerAdmin.jobsTable().");
-    const nav = admin.pageNavPair(PAGE, adminViews.pageParamsOf(query),
-                                  json.jobsPagingRaw);
-    const rows = json.jobs.map(function (job: Json): string {
-      const state = job.state === 'off'
-        ? '<strong>off</strong><br><small>' + admin.esc(job.offReason) +
-          '</small>'
-        : 'enabled' + (job.readOnly ? '<br><small>read-only here: a ' +
-                       'service job</small>' : '');
-      const head = '<tr id="job-' + admin.esc(job.id) + '-' +
-        admin.esc(job.realm) + '">' +
-        '<td><a href="' + admin.esc(PAGE + '?job=' +
-                                    encodeURIComponent(job.id)) +
-        '"><code>' + admin.esc(job.id) + '</code></a><br>' +
-        admin.esc(job.title) + '<br><small>' + admin.esc(job.describe) +
-        '</small><br><small>owner <code>' + admin.esc(job.owner) +
-        '</code></small></td>' +
-        '<td>' + admin.esc(job.kind) + '<br><small>' +
-        admin.esc(job.scope) + (job.scope === 'realm'
-          ? ': <code>' + admin.esc(job.realm) + '</code>' : '') +
-        '</small></td>' +
-        '<td>' + admin.esc(job.schedule.text) + '</td>' +
-        '<td>' + state + '</td>' +
-        '<td>' + (job.kind === 'per-process'
-          ? '<em>per process, below</em>' : self.lastRunCell(job)) + '</td>' +
-        '<td>' + self.nextRunCell(job) + '</td>' +
-        '<td>' + self.runNowCell(job, canWrite) + '</td></tr>';
-      const subs = (job.processes || []).map(function (p: Json): string {
-        return '<tr class="sub"><td colspan="4"><small>↳ ' +
-          admin.esc(p.nodeName || p.host) + ', pid ' + admin.esc(p.pid) +
-          (p.worker ? ' (request worker)' : ' (front process)') +
-          (p.stale ? ' — <strong>no run for two slots; the process has ' +
-           'probably gone</strong>' : '') + '</small></td><td>' +
-          self.outcomeText(p) + '<br><small>' +
-          admin.esc(p.startedAt || '') + '</small></td><td>' +
-          self.when(p.nextRunAt, p.nextRunInMs) + '</td><td></td></tr>';
-      }).join('');
-      const noProcess = job.kind === 'per-process' &&
-        !(job.processes || []).length
-        ? '<tr class="sub"><td colspan="7"><small>↳ no process has run ' +
-          'it yet</small></td></tr>' : '';
-      return head + subs + noProcess;
-    }).join('');
-    log.debug("Leaving SchedulerAdmin.jobsTable(). " + json.jobs.length +
-              " row(s).");
-    return nav.head + '<table class="grid"><thead><tr><th>Job</th>' +
-      '<th>Kind and scope</th><th>Schedule</th><th>State</th>' +
-      '<th>Last run</th><th>Time to next run</th><th>Run now</th>' +
-      '</tr></thead><tbody>' +
-      (rows || '<tr><td colspan="7">No job is registered.</td></tr>') +
-      '</tbody></table>' + nav.foot;
-  }
-
-  private leaderBlock(json: Json, canWrite: boolean): string {
-    const { log, admin } = this.deps;
-    log.debug("Entering SchedulerAdmin.leaderBlock().");
-    const l = json.leader || {};
-    let who: string;
-    if (!l.known) {
-      who = '<strong>No process has led the scheduler yet.</strong> The ' +
-            'leader writes a row when it takes the lead and at every tick.';
-    } else {
-      who = (l.thisProcess ? '<strong>This process</strong> — ' : '') +
-        '<strong>' + admin.esc(l.nodeName || l.host) + '</strong>, pid ' +
-        admin.esc(l.pid) + (l.clustered
-          ? ', node <code>' + admin.esc(l.node) + '</code>, lease token ' +
-            admin.esc(l.token) : ' — <em>not clustered</em>: the one front ' +
-            'process leads, and nothing else could') +
-        '<br><small>leading since <code>' + admin.esc(l.since || '?') +
-        '</code>' + (l.leaseAcquiredAt ? ' (the lease was acquired ' +
-        '<code>' + admin.esc(l.leaseAcquiredAt) + '</code>)' : '') +
-        '; last tick <code>' + admin.esc(l.lastTickAt || '?') + '</code>' +
-        (l.lastTickAgoMs !== null ? ', ' +
-         admin.esc(schedulerModule.Scheduler.span(l.lastTickAgoMs)) +
-         ' ago' : '') + '</small>' +
-        (l.live ? '' : admin.warn('The leader has not ticked for longer ' +
-                                  'than three ticks. No job is running on ' +
-                                  'schedule until a node leads again.'));
-    }
-    const stepDown = canWrite && l.clustered && !json.confinedToRealm
-      ? '<form method="post" action="' + PAGE + '" class="inline">' +
-        '<input type="hidden" name="action" value="step-down">' +
-        '<button type="submit" id="scheduler-step-down">Step down</button>' +
-        '</form> <small>asks the leader to hand the scheduler to another ' +
-        'node; it stands down at its next tick</small>'
-      : '';
-    log.debug("Leaving SchedulerAdmin.leaderBlock().");
-    return '<h3>Leader</h3><p>' + who + '</p>' + stepDown;
-  }
-
-  private runsTable(json: Json, query: Json): string {
-    const { log, admin, adminViews } = this.deps;
-    const self = this;
-    log.debug("Entering SchedulerAdmin.runsTable().");
-    const params = adminViews.pageParamsOf(query);
-    ['job', 'outcome'].forEach(function (name: string): void {
-      const value = self.firstOf(query[name]);
-      if (value) {
-        params[name] = value;
-      }
-    });
-    const nav = admin.pageNavPair(PAGE, params, json.paging);
-    const jobOptions = ['<option value="">every job</option>'].concat(
-      ((json.jobIds || []) as string[]).map(function (id: string): string {
-        return '<option value="' + admin.esc(id) + '"' +
-          (json.filters.job === id ? ' selected' : '') + '>' +
-          admin.esc(id) + '</option>';
-      })).join('');
-    const outcomeOptions = ['', 'succeeded', 'failed', 'abandoned',
-                            'running', 'queued'].map(function (o: string) {
-      return '<option value="' + o + '"' +
-        ((json.filters.outcome || '') === o ? ' selected' : '') + '>' +
-        (o || 'every outcome') + '</option>';
-    }).join('');
-    const filter = '<form method="get" action="' + PAGE + '" class="inline">' +
-      '<label>Job <select name="job">' + jobOptions + '</select></label> ' +
-      '<label>Outcome <select name="outcome">' + outcomeOptions +
-      '</select></label> <button type="submit">Filter</button></form>';
-    const rows = json.runs.map(function (r: Json): string {
-      return '<tr><td><a href="' + admin.esc(PAGE + '?run=' +
-                                             encodeURIComponent(r.runId)) +
-        '"><code>' + admin.esc(r.runId) + '</code></a></td>' +
-        '<td><code>' + admin.esc(r.jobId || '') + '</code></td>' +
-        '<td><code>' + admin.esc(r.realm || '') + '</code></td>' +
-        '<td>' + admin.esc(r.trigger) + '</td>' +
-        '<td>' + admin.esc(r.nodeName || r.host || '—') +
-        (r.pid ? ' <small>pid ' + admin.esc(r.pid) + '</small>' : '') +
-        '</td><td class="num">' + (r.fenceAt || '—') + '</td>' +
-        '<td class="num">' + r.attempt + '</td>' +
-        '<td>' + self.outcomeText(r) + '</td>' +
-        '<td class="num">' + (r.durationMs === null ? '—'
-                               : r.durationMs + ' ms') + '</td>' +
-        '<td><small>' + admin.esc(r.startedAt || r.queuedAt || '') +
-        '</small></td></tr>';
-    }).join('');
-    log.debug("Leaving SchedulerAdmin.runsTable().");
-    return '<h3>Recent runs</h3>' + filter + nav.head +
-      '<table class="grid"><thead><tr><th>Run</th><th>Job</th>' +
-      '<th>Realm</th><th>Trigger</th><th>Node</th><th>Fence</th>' +
-      '<th>Attempt</th><th>Outcome</th><th>Duration</th><th>Started</th>' +
-      '</tr></thead><tbody>' +
-      (rows || '<tr><td colspan="10">No run is recorded.</td></tr>') +
-      '</tbody></table>' + nav.foot;
-  }
-
-  private listHtml(req: Req, json: Json): string {
-    const { log, admin } = this.deps;
-    log.debug("Entering SchedulerAdmin.listHtml().");
-    const canWrite = admin.mayWrite(req);
-    const off = json.jobs.filter(function (j: Json): boolean {
-      return j.state === 'off';
-    }).length;
-    const failing = json.jobs.filter(function (j: Json): boolean {
-      return j.lastRun && j.lastRun.state === 'failed';
-    }).length;
-    const tiles = '<div class="tiles">' +
-      admin.tile(String(json.jobs.length), 'job rows') +
-      admin.tile(String(off), 'off') +
-      admin.tile(String(failing), 'last run failed') +
-      admin.tile(String(json.tickS) + ' s', 'tick') +
-      '</div>';
-    const asOf = '<p><small>As of <code>' + admin.esc(json.generatedAt) +
-      '</code> by ' + admin.esc(json.clock) + '\'s clock, drawn by ' +
-      admin.esc(json.answeredBy.nodeName || json.answeredBy.host) +
-      ', pid ' + admin.esc(json.answeredBy.pid) + '. <a href="' + PAGE +
-      '">Refresh</a> — the times below do not count down.</small></p>';
-    const what = admin.note(
-      '<p>This page answers <strong>whether the background work is ' +
-      'happening</strong>. Every periodic job in this service is registered ' +
-      'with one scheduler and is listed here, including the ones that are ' +
-      'off. A <em>cluster</em> job runs once for the whole service, on the ' +
-      'scheduler\'s leader; a <em>per-process</em> job runs in every process ' +
-      'that holds what it cleans, and has a row per process.</p>' +
-      '<p>A job runs once per <strong>slot</strong> — a multiple of its ' +
-      'interval by the database\'s clock, or an occurrence of its cron ' +
-      'expression — so a slot missed while no node led runs once when one ' +
-      'does. A run is claimed before it starts, and the claim\'s time is ' +
-      'its <strong>fence</strong>: a node that paused past its claim cannot ' +
-      'write an outcome over the attempt that took it over, which is shown ' +
-      'as <em>abandoned</em>.</p>', 'What this page is');
-    const unknown = json.unknownDisabledIds.length
-      ? admin.warn('<code>scheduler.disabledJobs</code> names ' +
-                   json.unknownDisabledIds.map(function (id: string) {
-                     return '<code>' + admin.esc(id) + '</code>';
-                   }).join(', ') + ', which no job is called.')
-      : '';
-    const disabled = json.enabled ? ''
-      : admin.warn('<code>scheduler.enabled</code> is off: no job runs, on ' +
-                   'its schedule or by hand.');
-    const commands = json.commands.length
-      ? '<h3>Commands</h3><table class="grid"><thead><tr><th>Command</th>' +
-        '<th>State</th><th>Requested</th><th>By</th><th>Obeyed by</th>' +
-        '</tr></thead><tbody>' + json.commands.map(function (c: Json) {
-          return '<tr><td>' + admin.esc(c.command) + '</td><td>' +
-            admin.esc(c.state) + '</td><td><small>' +
-            admin.esc(c.queuedAt || '') + '</small></td><td>' +
-            admin.esc(c.requestedBy || '—') + '</td><td>' +
-            admin.esc(c.obeyedBy ? (c.obeyedBy.nodeName || c.obeyedBy.host) +
-                      ' pid ' + c.obeyedBy.pid : '—') + '</td></tr>';
-        }).join('') + '</tbody></table>'
-      : '';
-    log.debug("Leaving SchedulerAdmin.listHtml().");
-    return admin.messagesOf(req) + tiles + asOf + disabled + unknown + what +
-      this.leaderBlock(json, canWrite) + '<h3>Jobs</h3>' +
-      this.jobsTable(json, canWrite, req.query || {}) +
-      this.runsTable(json, req.query || {}) +
-      commands + (json.confinedToRealm ? ''
-        : '<h2>Settings</h2>' + admin.configFormsFor(PAGE));
-  }
-
-  private detailHtml(json: Json): string {
-    const { log, admin } = this.deps;
-    log.debug("Entering SchedulerAdmin.detailHtml().");
-    if (!json.found) {
-      log.debug("Leaving SchedulerAdmin.detailHtml(). No such run.");
-      return admin.warn('There is no run <code>' + admin.esc(json.run) +
-        '</code> here. <a href="' + PAGE + '">Every recent run</a> is ' +
-        'listed on the Scheduler page.');
-    }
-    const r = json.detail;
-    const row = function (label: string, value: string): string {
-      return '<tr><th>' + label + '</th><td>' + value + '</td></tr>';
-    };
-    log.debug("Leaving SchedulerAdmin.detailHtml().");
-    return '<table class="grid"><tbody>' +
-      row('Run', '<code>' + admin.esc(r.runId) + '</code>') +
-      row('Job', '<code>' + admin.esc(r.jobId || '') + '</code>') +
-      row('Realm', '<code>' + admin.esc(r.realm || '') + '</code>') +
-      row('Trigger', admin.esc(r.trigger) +
-          (r.requestedBy ? ' by ' + admin.esc(r.requestedBy) : '') +
-          (r.requestedVia ? ' at ' + admin.esc(r.requestedVia) : '')) +
-      row('Outcome', this.outcomeText(r)) +
-      row('Attempt', String(r.attempt) + (r.takenOver
-        ? ' (it took over an attempt that lost its claim)' : '')) +
-      row('Fence', String(r.fenceAt || '—')) +
-      row('Node', admin.esc(r.nodeName || r.host || '—') + (r.pid
-        ? ', pid ' + admin.esc(r.pid) : '')) +
-      row('Due', '<code>' + admin.esc(r.dueAt || '—') + '</code>') +
-      row('Queued', '<code>' + admin.esc(r.queuedAt || '—') + '</code>') +
-      row('Started', '<code>' + admin.esc(r.startedAt || '—') + '</code>') +
-      row('Ended', '<code>' + admin.esc(r.endedAt || '—') + '</code>') +
-      row('Duration', r.durationMs === null ? '—' : r.durationMs + ' ms') +
-      row('Parameters', r.params ? '<code>' +
-          admin.esc(JSON.stringify(r.params)) + '</code>' : '—') +
-      row('Result', r.result ? '<code>' + admin.esc(String(r.result)) +
-          '</code>' : '—') +
-      (r.abandonedOf ? row('Abandoned attempt of', '<a href="' +
-        admin.esc(PAGE + '?run=' + encodeURIComponent(r.abandonedOf)) +
-        '"><code>' + admin.esc(r.abandonedOf) + '</code></a>') : '') +
-      '</tbody></table>';
+    log.debug("Entering SchedulerAdmin.body().");
+    const drawn = SchedulerPage.render(JSON.parse(JSON.stringify(json)),
+      admin.renderContext(req));
+    log.debug("Leaving SchedulerAdmin.body().");
+    return drawn;
   }
 
   private async renderScheduler(req: Req, res: Res): Promise<void> {
@@ -724,7 +354,7 @@ class SchedulerAdmin {
     const json: Json = await this.schedulerView(req, req.query);
     if (json.run === undefined) {
       admin.respond(req, res, json, 'Scheduler', PAGE,
-                    this.listHtml(req, json));
+                    admin.messagesOf(req) + this.body(req, json));
       log.debug("Leaving SchedulerAdmin.renderScheduler(). The list.");
       return;
     }
@@ -733,7 +363,7 @@ class SchedulerAdmin {
       errorCodes.mark(res, 'STS-SCHED-0016');
     }
     admin.respond(req, res, json, 'Scheduler — ' + title, PAGE,
-                  this.detailHtml(json), admin.upTo(PAGE, title, {}));
+                  this.body(req, json), admin.upTo(PAGE, title, {}));
     log.debug("Leaving SchedulerAdmin.renderScheduler(). One run.");
   }
 
