@@ -348,6 +348,29 @@ const ajv = new Ajv({ strict: false, allErrors: true, coerceTypes: false,
                       verbose: true });
 addFormats(ajv);
 
+// THE FIELD GRID'S OWN SHAPE (#446), which the two `update-fields` actions
+// read beside a JSON `fields` object (`applicationFieldsFrom()`,
+// `fieldsCoveredBy()`): one box per value, `field.<attribute>.<n>`, or one
+// `field.<attribute>` holding a value per line, and `present` naming every
+// field the form drew so an emptied one is cleared. Declared so the static
+// console can send its form as drawn — a member a closed schema does not
+// name is one the console would have to leave out, and a box left out is a
+// value the reader typed and lost.
+const FIELD_GRID_MEMBERS = {
+  present: { type: ['string', 'array'], items: { type: 'string' },
+             description: 'The fields the console\'s form drew, by ' +
+                          'attribute name, space or comma separated or as a ' +
+                          'list: each one is cleared when the form carries ' +
+                          'no value for it.' }
+};
+const FIELD_GRID_PATTERN = {
+  '^field\\.': { type: ['string', 'array'], items: { type: 'string' },
+                   description: 'The console form\'s boxes: ' +
+                                '`field.<attribute>.<n>` one value each, in ' +
+                                'box order, or `field.<attribute>` with a ' +
+                                'value per line. Merged over `fields`.' }
+};
+
 // ---------------------------------------------------------------------------
 // THE COMPONENTS THE DOCUMENT DEFINES, SO A `$ref` INTO THEM RESOLVES.
 //
@@ -4798,6 +4821,49 @@ class AdminApi {
           log.debug("Leaving the management API key list endpoint.");
         } },
 
+      { method: 'GET', path: BASE + '/keys/history/certificate',
+        tag: 'Service',
+        operationId: 'getKeyHistoryCertificate',
+        summary: 'One signing key\'s certificate chain, as PEM',
+        description: 'The certificate a signing key was published with, and ' +
+                     'the chain to the realm\'s root, leaf first — a ' +
+                     'public document, and the half of a retired key worth ' +
+                     'keeping. Named by `unit` and `kid`, as GET ' +
+                     '/admin-api/keys/history lists them (#446: it was ' +
+                     '/admin/keys/history/certificate).',
+        mirrors: 'GET /admin/keys/history',
+        parameters: [
+          { name: 'unit', in: 'query', required: true,
+            schema: { type: 'string' },
+            description: 'The signing unit, `jose:RS256` and the like.' },
+          { name: 'kid', in: 'query', required: true,
+            schema: { type: 'string' },
+            description: 'The key\'s identifier.' }
+        ],
+        responseDescription: 'The chain, as application/pem-certificate-chain.',
+        handler: function (req, res) {
+          log.debug("Entering the management API key certificate endpoint.");
+          const q = req.query || {};
+          const pem = adminViews.signingHistoryCertificate(
+            String(q.unit || ''), String(q.kid || ''));
+          if (!pem) {
+            errorCodes.mark(res, 'STS-KEYS-0068');
+            self.sendJson(res, 404, { ok: false, errors: [
+              'This realm has no certificate recorded for that key.'] });
+            log.debug("Leaving the management API key certificate " +
+                      "endpoint. None held.");
+            return;
+          }
+          res.status(200)
+             .set('Content-Type', 'application/pem-certificate-chain')
+             .set('Cache-Control', 'no-store')
+             .set('Content-Disposition', 'attachment; filename="' +
+                  String(q.kid || 'certificate').replace(/[^A-Za-z0-9._-]/g,
+                                                        '_') + '.pem"')
+             .send(pem);
+          log.debug("Leaving the management API key certificate endpoint.");
+        } },
+
       { method: 'GET', path: BASE + '/keys/history', tag: 'Service',
         operationId: 'getKeyHistory',
         summary: 'Every signing key this realm has ever held',
@@ -5574,13 +5640,49 @@ class AdminApi {
                      'acme\'s `ou=users` and a person created there ' +
                      'is invisible to every other realm.',
         mirrors: 'GET /admin/users/new',
+        parameters: [
+          { name: 'invent', in: 'query', required: false,
+            schema: { type: 'string', maxLength: 256 },
+            description: 'A username: the answer carries `invented`, the ' +
+                         'attribute values this service would invent for ' +
+                         'that person, which the console\'s Fill button ' +
+                         'puts into every box nobody has typed in. **In ' +
+                         'development mode only** — elsewhere `invented` is ' +
+                         'null and `inventRefused` says why. It creates ' +
+                         'nobody.' }
+        ],
         responseDescription: 'The attribute catalogue, the credential ' +
                              'options, the container and the realm.',
         responseSchema: { $ref: '#/components/schemas/NewUserForm' },
         handler: function (req, res) {
           log.debug("Entering the management API new-user endpoint.");
           // STRAIGHT TO THE LAYER, like the new-application resource beside it.
-          self.sendJson(res, 200, adminViews.newUserJson(req));
+          const answer: any = adminViews.newUserJson(req);
+          // FILL (#446): what the server-rendered form's Fill button
+          // answered in its own POST, asked for here because the static
+          // console has no other door to it. Refused as well as undrawn in
+          // product: a control that is only hidden is not a control that
+          // is off.
+          if (req.query.invent !== undefined) {
+            const name = String(req.query.invent || '').trim();
+            if (!answer.offersExampleData) {
+              errorCodes.mark(res, 'STS-ADMIN-0016');
+              answer.invented = null;
+              answer.inventRefused = 'Example data is a development-mode ' +
+                'convenience and this service is running as a product ' +
+                '(global.mode=product), so nothing was filled in. Type what ' +
+                'you know.';
+            } else if (!name) {
+              errorCodes.mark(res, 'STS-ADMIN-0017');
+              answer.invented = null;
+              answer.inventRefused = 'Type a username first. The example ' +
+                'person is seeded FROM the username, so there is nothing ' +
+                'to invent until there is a name to invent it from.';
+            } else {
+              answer.invented = adminViews.inventedFieldValues(name);
+            }
+          }
+          self.sendJson(res, 200, answer);
           log.debug("Leaving the management API new-user endpoint.");
         } },
 
@@ -5621,6 +5723,13 @@ class AdminApi {
                                                // link is built on (2026-09-13).
                                                base: baseUrlOf(req) });
             held.settle(!!result.ok);
+            // A CREATE'S ACTIVATION LINK, ABSOLUTE as well (#446): it is
+            // pasted into a message, and the address it is built on —
+            // `global.publicBaseUrl` where one is pinned — is the server's
+            // to know, not a browser's.
+            if (result.ok && /^\//.test(String(result.activationUrl || ''))) {
+              result.activationLink = baseUrlOf(req) + result.activationUrl;
+            }
             if (!result.ok) {
               errorCodes.mark(res, errorCodes.codeOf(result) || 'STS-API-0030');
             }
@@ -6286,9 +6395,11 @@ class AdminApi {
                             description: 'Accepted for `user`.' },
                 fields: { type: 'object',
                           description: 'Attribute name to a string or an ' +
-                                       'array of strings; empty clears it.' }
+                                       'array of strings; empty clears it.' },
+                present: FIELD_GRID_MEMBERS.present
               },
-              required: ['user', 'fields'],
+              patternProperties: FIELD_GRID_PATTERN,
+              required: ['user'],
               examples: [{ user: 'alice',
                            fields: { title: 'Principal Engineer',
                                      mobile: ['+46 70 000 00 00'] } }],
@@ -11776,7 +11887,24 @@ class AdminApi {
           // field arrives as whichever value came last and every other one is
           // silently gone. Ignored by every action but `create`, which is where
           // the vocabulary is validated.
-          const protocols = self.namesOf(req, body, 'protocol', 'protocols');
+          //
+          // A COMBINED CHOICE (`vc`) stands for the families it names, which
+          // is how the console's checkbox column posts it (#446: the static
+          // console sends that form here, where the console's own handler
+          // expanded it).
+          const protocols = applications.familiesOfChoices(
+            self.namesOf(req, body, 'protocol', 'protocols'));
+          // AN RFC 9728 DOCUMENT THE CREATE FORM LOADED (#446): the third
+          // tab's document, as the reader left it, into the attribute the
+          // create writes — what `/admin/applications/new`'s handler did
+          // before calling this action.
+          if (String(req.params.action || body.action || '') === 'create' &&
+              body.metadata) {
+            const stored = resourceMetadata.documentFromForm(body);
+            if (stored) {
+              body['field.oauthResourceMetadata'] = stored;
+            }
+          }
           const result = adminActions.applicationsAction(self.withAction(req,
               body),
                                                          protocols, {
@@ -12085,8 +12213,16 @@ class AdminApi {
               properties: {
                 application: { type: 'string' },
                 fields: { type: 'object' },
-                protocols: { type: 'array', items: { type: 'string' } }
+                protocols: { type: 'array', items: { type: 'string' } },
+                protocolsPresent: { type: ['string', 'boolean'],
+                                    description: 'Set by the console\'s ' +
+                                      'form, which draws the families as ' +
+                                      'checkboxes: `protocols` is then the ' +
+                                      'whole list, and none ticked means ' +
+                                      'none.' },
+                present: FIELD_GRID_MEMBERS.present
               },
+              patternProperties: FIELD_GRID_PATTERN,
               required: ['application'],
               examples: [{ application: 'my-web-app',
                            fields: { oauthRedirectUri: [
@@ -12316,13 +12452,19 @@ class AdminApi {
           { action: 'reveal-secret',
             operationId: 'revealApplicationSecret',
             summary: 'Hand back one credential of an application: a client ' +
-                     'secret by its id, or the registration access token',
+                     'secret by its id, the registration access token, or ' +
+                     'a sealed key by its attribute',
             description: 'The one way to read a credential this registry ' +
                          'holds: `GET /admin-api/applications` answers each ' +
                          'secret\'s id and expiry and never its value. ' +
                          '`secret` is a client secret\'s id (the ids are in ' +
                          'the application\'s `credentials.clientSecret' +
-                         '.secrets`) or `registration-access-token`. It ' +
+                         '.secrets`), `registration-access-token`, or the ' +
+                         'attribute of a sealed credential the application ' +
+                         'holds: `oauthAssertionPrivateKey` or ' +
+                         '`oauthSamlAssertionPrivateKey` (the RFC 7523 and ' +
+                         'RFC 7522 signing keys `/admin-api/pki/issue` put ' +
+                         'there), `gnapSymmetricKey`, `gnapMacaroonKey`. It ' +
                          'needs `admin:write` and writes an audit row naming ' +
                          'what was revealed — never the value. Nothing is ' +
                          'changed.',
@@ -12886,8 +13028,8 @@ class AdminApi {
                          '3.3), or is not https, is refused; development ' +
                          'mode reports both in `warnings` and answers. A ' +
                          'malformed document is refused in both ' +
-                         'modes.\n\nThe console\'s upload posts ' +
-                         'the document as a multipart `file`; a JSON ' +
+                         'modes.\n\nThe console sends an uploaded ' +
+                         'document as `file` (its name and text); a JSON ' +
                          'caller sends `document` instead.',
             requestBodyRequired: true,
             requestBody: {
@@ -12901,7 +13043,14 @@ class AdminApi {
                        description: 'Where the document is published, ' +
                                     'usually `https://<host>' +
                                     resourceMetadata.WELL_KNOWN +
-                                    '[/<path>]`.' }
+                                    '[/<path>]`.' },
+                file: { type: 'object',
+                        properties: { name: { type: 'string' },
+                                      text: { type: 'string' } },
+                        required: ['text'], additionalProperties: false,
+                        description: 'An uploaded document: its file name ' +
+                                     'and its text, which is how the ' +
+                                     'console sends the file it was given.' }
               },
               examples: [{ document: {
                 resource: 'https://api.example.com',
@@ -13535,6 +13684,10 @@ class AdminApi {
                             'A new PolicySetId or PolicyId. Any URI.' },
                 description: { type: 'string',
                           description: 'The document\'s own <Description>.' },
+                version: { type: 'string',
+                          description: 'The document\'s Version: ' +
+                                       'dot-separated numbers, "1" or ' +
+                                       '"1.0". Empty leaves it as it is.' },
                 combiningAlgId: { type: 'string',
                           description: 'One of the rule-combining algorithms ' +
                                        'this editor offers; anything else is ' +
@@ -13630,7 +13783,18 @@ class AdminApi {
                 mustBePresent: { type: 'boolean',
                           description: 'Whether an absent attribute is an ' +
                                        'empty bag (false) or makes the whole ' +
-                                       'expression Indeterminate (true).' }
+                                       'expression Indeterminate (true).' },
+                referenceKind: { type: 'string',
+                          enum: ['designator', 'selector'],
+                          description: 'Whether the Match names its ' +
+                                       'attribute by an AttributeDesignator ' +
+                                       '(the default) or reads it with an ' +
+                                       'AttributeSelector\'s XPath `path`.' },
+                contextSelectorId: { type: 'string',
+                          description: 'A selector\'s ContextSelectorId.' },
+                issuer: { type: 'string',
+                          description: 'A designator\'s Issuer; empty ' +
+                                       'clears it.' }
               },
               required: ['policy', 'path'],
               examples: [{
@@ -16140,6 +16304,13 @@ class AdminApi {
                          'identifier, the profile, the key handle or a ' +
                          'declared issuer. `issuedPaging.total` is then the ' +
                          'count that matched, and `issuedSearch` echoes it.' },
+          { name: 'rows', in: 'query', required: false,
+            schema: { type: 'string', enum: ['all', 'shown'] },
+            description: '`shown` reads each key pair\'s certificate — its ' +
+                         '`pqc` member — for the rows of the requested ' +
+                         'pages only, which is what the console draws; the ' +
+                         'other rows carry no `pqc`. `all`, the default, ' +
+                         'reads every row\'s.' },
           { name: 'personsq', in: 'query', required: false,
             schema: { type: 'string', maxLength: 200 },
             description: 'Narrows the People table before it is paged: a ' +
@@ -16170,7 +16341,12 @@ class AdminApi {
                              'beside them.',
         handler: function (req, res) {
           log.debug("Entering the management API PKI endpoint.");
-          self.sendJson(res, 200, pkiAdmin.pkiView(req));
+          // `rows=shown` IS THE CONSOLE'S OWN CALL (#352, #446): each key
+          // pair's certificate is read for the rows the page's two tables
+          // draw and no others.
+          self.sendJson(res, 200, pkiAdmin.pkiView(req, undefined,
+            String(req.query.rows || '') === 'shown'
+              ? { shownOnly: true } : undefined));
           log.debug("Leaving the management API PKI endpoint.");
         } },
 
@@ -16278,7 +16454,14 @@ class AdminApi {
             if (!result.ok) {
               errorCodes.mark(res, errorCodes.codeOf(result) || 'STS-API-0055');
             }
-            self.sendJson(res, result.ok ? 200 : 400, result);
+            // A PANE ACTION'S NEXT DRAFT, as the workbench draws it (#446):
+            // the console draws the pane again from `workbench`, refused or
+            // not. `authoring.view()` carries no private key.
+            const answered = result && result.draft
+              ? Object.assign({}, result,
+                              { workbench: pkiAdmin.workbenchOf(result.draft) })
+              : result;
+            self.sendJson(res, result.ok ? 200 : 400, answered);
             log.debug("Leaving the management API PKI action endpoint.");
           }).catch(function (e) {
             errorCodes.mark(res, 'STS-API-0021');
@@ -16959,12 +17142,12 @@ class AdminApi {
             description: 'The same export `/admin/keys` uses ' +
                          '(`common/vendored/key_material.js`), so a `.p12` ' +
                          'from here imports identically into keytool, ' +
-                         'OpenSSL, Windows and macOS.\n\n**THE CONSOLE DOES ' +
-                         'NOT COME THROUGH HERE**: `POST /admin/pki/export` ' +
-                         'answers with the FILE, because that is what a ' +
-                         'browser asked for. This arm answers JSON with the ' +
-                         'bytes base64’d, which is what a machine asked for. ' +
-                         'One function underneath either way.\n\n**IT HANDS ' +
+                         'OpenSSL, Windows and macOS.\n\nThe answer is ' +
+                         'JSON with the bytes base64’d and named, and the ' +
+                         'console\'s Download button comes through here ' +
+                         'too since #446: it saves each named file as the ' +
+                         'attachment the server-rendered console sent.' +
+                         '\n\n**IT HANDS ' +
                          'OVER A PRIVATE KEY**, so like ' +
                          'every other such door here it needs ' +
                          '`admin:write` rather than `admin:read`.',
@@ -22143,6 +22326,13 @@ class AdminApi {
           roles: held.slice(0),
           expiresAt: claims.exp ? Number(claims.exp) : null
         };
+        // ON THE REQUEST TOO (#446): the views a page is drawn from ask
+        // `adminViews.gateStateFor(req)` who is looking — a realm
+        // administrator's view leaves out what belongs to the service — and
+        // that read the console's own session. The static console has none;
+        // its token is the session, so the caller this gate verified is
+        // who they are asked about.
+        req.adminApiCaller = res.locals.apiCaller;
         return next();
       }
       // ---------------------------------------------------------------------
@@ -22543,5 +22733,10 @@ export = {
   /**
    * Forwards to `AdminApi.operationSummaries()` on the installed instance.
    */
-  operationSummaries: slot.forward('operationSummaries')
+  operationSummaries: slot.forward('operationSummaries'),
+  /**
+   * Forwards to `AdminApi.checkRequestBody()` on the installed instance: a
+   * test asks it what a body sent to an operation would be refused for.
+   */
+  checkRequestBody: slot.forward('checkRequestBody')
 };

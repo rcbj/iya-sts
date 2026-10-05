@@ -376,29 +376,6 @@ class SchedulerAdmin {
     const { log, admin, errorCodes, parseBody } = this.deps;
     const self = this;
     log.debug("Entering SchedulerAdmin.registerRoutes().");
-    app.get(PAGE, function (req: Req, res: Res, next: Function): void {
-      log.debug('Entering GET ' + PAGE + '.');
-      self.renderScheduler(req, res).catch(function (e: Json): void {
-        log.debug('Caught in GET ' + PAGE + ': ' + ((e && e.message) || e));
-        next(e);
-      });
-      log.debug('Leaving GET ' + PAGE + '.');
-    });
-    app.post(PAGE, function (req: Req, res: Res): void {
-      log.debug('Entering POST ' + PAGE + '.');
-      if (!admin.mayWrite(req)) {
-        errorCodes.mark(res, 'STS-ADMIN-0012');
-        admin.respondToAction(req, res, PAGE, { ok: false, errors: [
-          'This console session may read but not write.'] });
-        log.debug('Leaving POST ' + PAGE + '. Read-only.');
-        return;
-      }
-      const result = self.schedulerAction(req, parseBody(req),
-                                          'the admin console');
-      admin.respondToAction(req, res, result.ok && result.href
-        ? result.href : PAGE, result);
-      log.debug('Leaving POST ' + PAGE + '.');
-    });
     log.debug("Leaving SchedulerAdmin.registerRoutes().");
   }
 }

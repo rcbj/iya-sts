@@ -141,41 +141,6 @@ class AttributeSourcesAdmin {
     const { log, parseBody, admin, sources, errorCodes } = this.deps;
     const self = this;
     log.debug("Entering AttributeSourcesAdmin.registerRoutes().");
-    app.get(PAGE, function (req: Json, res: Json): void {
-      log.debug("Entering the admin attribute sources page.");
-      const json = self.attributeSourcesView();
-      const inner = (typeof admin.messagesOf === 'function'
-        ? admin.messagesOf(req) : '') + self.body(json);
-      admin.respond(req, res, json, 'Attribute sources', PAGE, inner);
-      log.debug("Leaving the admin attribute sources page.");
-    });
-    app.post(PAGE, function (req: Json, res: Json): void {
-      log.debug("Entering the admin attribute sources action.");
-      Promise.resolve().then(function (): Json {
-        const body = parseBody(req);
-        // THE REFRESH MODES ARE CHECKBOXES, one `refresh` repeated, and the
-        // body parser keeps the last: the console's own reader takes them
-        // all. An update that ticked none says so rather than keeping the
-        // old modes — the form always shows every box.
-        if (body.action === 'add-source' || body.action === 'update-source') {
-          body.refresh = admin.listField(req, body, 'refresh');
-          // An unticked box posts nothing: on this form that means off.
-          body.trustPublicRoots = body.trustPublicRoots === 'true';
-          body.caCertificates = String(body.caCertificates || '');
-        }
-        return sources.act(body, { via: 'console',
-                                   actor: self.actorOf(req) });
-      }).catch(function (e: any): Json {
-        log.error(errorCodes.tag('STS-ATTR-0002') + 'attribute sources: a ' +
-                  'console action failed: ' + ((e && e.stack) || e));
-        return errorCodes.mark({ ok: false, errors:
-                                   ['The action could not be completed.'] },
-                               'STS-ATTR-0002');
-      }).then(function (result: Json): void {
-        admin.respondToAction(req, res, PAGE, result);
-        log.debug("Leaving the admin attribute sources action.");
-      });
-    });
     log.debug("Leaving AttributeSourcesAdmin.registerRoutes().");
   }
 }

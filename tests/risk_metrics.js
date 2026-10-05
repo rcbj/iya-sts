@@ -57,7 +57,6 @@ function childMain() {
     require(ROOT + '/common/protocol_stack');
     const riskStore = require(ROOT + '/risk/risk_store');
     const riskAdmin = require(ROOT + '/admin-ui/risk_admin');
-    const admin = require(ROOT + '/admin-ui/admin');
 
     const now = Date.now();
     const DAY = 86400000;
@@ -240,33 +239,10 @@ function childMain() {
             JSON.stringify(tuned.calibration.invalidFactors));
 
     // --- F. the page ---------------------------------------------------------
-    const res = { statusCode: 200, headers: {}, body: '',
-      status: function (c) { this.statusCode = c; return this; },
-      set: function (k, v) { this.headers[String(k).toLowerCase()] = v;
-                             return this; },
-      setHeader: function (k, v) { this.headers[String(k).toLowerCase()] = v; },
-      getHeader: function (k) { return this.headers[String(k).toLowerCase()]; },
-      type: function () { return this; },
-      send: function (b) { this.body = String(b); return this; },
-      end: function (b) { this.body = String(b || ''); return this; } };
-    let html = '';
-    const original = admin.respond;
-    try {
-      admin.respond = function (req, r, json, title, active, inner) {
-        html = inner;
-      };
-      await new Promise(function (resolve) {
-        const app = { get: function (p2, h) {
-          if (p2 === riskAdmin.METRICS_PAGE) {
-            Promise.resolve(h({ query: { window: '7d' }, headers: {} }, res))
-              .then(function () { setTimeout(resolve, 200); });
-          }
-        }, post: function () {} };
-        riskAdmin.registerRoutes(app);
-      });
-    } finally {
-      admin.respond = original;
-    }
+    // Its operation's answer drawn by its renderer, as the static console
+    // draws it (#446).
+    const html = (await require(ROOT + '/tests/tools/console_page.js')
+      .consolePage(ROOT).draw(riskAdmin.METRICS_PAGE, { window: '7d' })).html;
     t.check(/id="risk-timeline"/.test(html) &&
             /id="risk-by-level"/.test(html) &&
             /background:#d93025/.test(html) &&

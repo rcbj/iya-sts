@@ -41,6 +41,22 @@ const ROOT = path.join(__dirname, '..');
 function childMain() {
   /* eslint-disable no-console */
   const ROOT_DIR = process.env.AG_ROOT;
+  // The console's DPoP key (#446): its tokens are bound since the cutover.
+  // Made when first used, once the stack is built: requiring the key's
+  // modules first would build their instances before the composition root.
+  let dpopKit = null;
+  const DPOP = {
+    get jkt() {
+      dpopKit = dpopKit || require(ROOT_DIR + '/tests/tools/console_dpop')
+        .consoleDpop(ROOT_DIR);
+      return dpopKit.jkt;
+    },
+    headers: function (method, url, token) {
+      dpopKit = dpopKit || require(ROOT_DIR + '/tests/tools/console_dpop')
+        .consoleDpop(ROOT_DIR);
+      return dpopKit.headers(method, url, token);
+    }
+  };
   const OUT = process.env.AG_OUT;
   const http = require('http');
   const findings = [];
@@ -126,11 +142,13 @@ function childMain() {
     const token = await inDefault(function () {
       return oauth2.accessTokenAsync(base, {
         audience: base + '/admin-api', scope: 'admin:read',
-        client_id: 'sts-admin-console', username: READER, sub: READER });
+        client_id: 'sts-admin-console', username: READER, sub: READER,
+        // DPoP-bound, as every console token is since the cutover (#446).
+        jkt: DPOP.jkt });
     });
     const get = function (urlPath) {
       return request(port, 'GET', urlPath, null,
-                     { authorization: 'Bearer ' + token });
+                     DPOP.headers('GET', base + urlPath.split('?')[0], token));
     };
     const MAP = '/admin-api/delegation/map';
 

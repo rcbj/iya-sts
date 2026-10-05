@@ -558,12 +558,242 @@ function childMain() {
         m = re.exec(one.html);
       }
     });
+    // A SUBMIT BUTTON WITH A NAME OF ITS OWN was an act of its own on the
+    // server (#446): the handler read the pressed button's name before the
+    // form's hidden `action` — "+" and the bin, the workbench's Generate,
+    // Fill. Sent as the form, each would be the form's action (a create, an
+    // issue). So each is a round trip `web_answers.ts` draws, or names its
+    // own act in a `formaction`, or is one the runtime asks for (Fill), or
+    // is listed here with what it is.
+    const WebAnswersMod = require(ROOT_DIR + '/admin-ui/web_answers');
+    const BUTTON_NAMES_SENT_AS_FIELDS = {
+      // The pressed button's value is a field the operation reads: the
+      // signing keys' Rotate all is `units=all`, which `rotate` takes.
+      units: '/admin/keys/rotate\'s units'
+    };
+    const unhandledButtons = {};
+    drawnPages.forEach(function (one) {
+      const re = /<form\b[^>]*>[\s\S]*?<\/form>/gi;
+      let m = re.exec(one.html);
+      while (m) {
+        const form = m[0];
+        const head = /^<form\b[^>]*>/i.exec(form)[0];
+        const path = ((/action="([^"]*)"/i.exec(head) || [])[1] || '')
+          .replace(/[?#].*$/, '');
+        const hiddenAction = (/<input\b[^>]*\bname="action"[^>]*\bvalue="([^"]*)"/i
+          .exec(form) || [])[1] || '';
+        const buttons = /<button\b[^>]*>/gi;
+        let b = buttons.exec(form);
+        while (b) {
+          const name = (/\bname="([^"]*)"/i.exec(b[0]) || [])[1];
+          // A BUTTON THAT POSTS ELSEWHERE resolves where it posts: its
+          // `formaction`'s path, with the action its query names in place
+          // of the form's (the PKI workbench's Download was refused for
+          // want of this).
+          const formaction = (/\bformaction="([^"]*)"/i.exec(b[0]) || [])[1];
+          if (formaction) {
+            const fa = new URL(formaction.replace(/&amp;/g, '&'),
+                               'https://sts.example');
+            const faAction = fa.searchParams.get('action') || hiddenAction;
+            if (!WebForms.resolve(formTable, fa.pathname, faAction)) {
+              const key = fa.pathname + ' ' + faAction + ' (formaction)';
+              unhandledButtons[key] = unhandledButtons[key] || one.path;
+            }
+          }
+          if (name && name !== 'action' &&
+              !/\bformaction="/i.test(b[0]) &&
+              !(path === '/admin/users/new' && name === 'fill') &&
+              !BUTTON_NAMES_SENT_AS_FIELDS[name]) {
+            const fieldsOf = {};
+            fieldsOf[name] = 'x';
+            if (!WebAnswersMod.isRoundTrip(path, fieldsOf)) {
+              const key = path + ' ' + name;
+              unhandledButtons[key] = unhandledButtons[key] || one.path;
+            }
+          }
+          b = buttons.exec(form);
+        }
+        m = re.exec(one.html);
+      }
+    });
+    note(Object.keys(unhandledButtons).length === 0,
+         'F0b. no named button is sent as its form\'s action by mistake, ' +
+         'and every formaction resolves to an operation',
+         Object.keys(unhandledButtons).map(function (k) {
+           return k + ' (on ' + unhandledButtons[k] + ')';
+         }).join('; '));
     note(forms > 300 && Object.keys(unresolved).length === 0,
          'F0. every POST form a converted page draws resolves to one ' +
          '/admin-api operation (web_forms.ts, off GET /admin-api)',
          forms + ' form action(s), ' + Object.keys(unresolved).length +
          ' unresolved: ' + Object.keys(unresolved).map(function (k) {
            return k + ' (on ' + unresolved[k] + ')';
+         }).join('; '));
+
+    // AND WHAT EACH FORM SENDS IS A BODY ITS OPERATION TAKES (#446): the
+    // fields the browser would send — every named input as drawn, a
+    // checkbox only when checked, a select's selected option — shaped by
+    // the runtime's own `shapeFields()` against this process's OpenAPI
+    // document, and asked of the API's own `checkRequestBody()`. A member
+    // the schema does not name, or a value of a type it does not take, is a
+    // form the static console could not send. A missing REQUIRED value is
+    // not counted: a form drawn empty is filled in by its reader.
+    const ConsoleRuntime = require(ROOT_DIR + '/admin-ui/web_runtime');
+    const specModule = require(ROOT_DIR + '/mgmt-api/admin_api_spec');
+    const shaper = new ConsoleRuntime({ location: { pathname: '/admin' } });
+    shaper.spec = specModule.buildSpec(adminApi.ROUTES, adminApi.specOptions({
+      headers: { host: 'sts.example' }, protocol: 'https', secure: true,
+      get: function () { return ''; } }));
+    const routeOf = function (operation) {
+      const action = operation.split('/').pop();
+      const entry = adminApi.ROUTES.filter(function (one) {
+        return one.method === 'POST' && (one.path === operation ||
+          (!!one.route && (one.actions || []).some(function (a) {
+            return one.route.replace(':action', a.action) === operation;
+          })));
+      })[0];
+      return entry ? { route: entry.route || entry.path,
+                       action: entry.route ? action : '',
+                       owns: !!entry.handlerOwnsBody } : null;
+    };
+    const fieldsOfForm = function (form, action) {
+      const fields = {};
+      const add = function (name, value) {
+        if (Object.prototype.hasOwnProperty.call(fields, name)) {
+          fields[name] = [].concat(fields[name], [value]);
+        } else {
+          fields[name] = value;
+        }
+      };
+      const inputs = /<input\b[^>]*>/gi;
+      let m = inputs.exec(form);
+      while (m) {
+        const tag = m[0];
+        const name = (/\bname="([^"]*)"/i.exec(tag) || [])[1];
+        const type = ((/\btype="([^"]*)"/i.exec(tag) || [])[1] || 'text')
+          .toLowerCase();
+        const value = (/\bvalue="([^"]*)"/i.exec(tag) || [])[1];
+        if (name && name !== 'action' && type !== 'submit' &&
+            type !== 'file' &&
+            ((type !== 'checkbox' && type !== 'radio') ||
+             /\bchecked\b/i.test(tag))) {
+          add(name, value === undefined ? (type === 'checkbox' ? 'on' : '')
+                                        : value.replace(/&amp;/g, '&')
+                                                .replace(/&quot;/g, '"')
+                                                .replace(/&lt;/g, '<')
+                                                .replace(/&gt;/g, '>'));
+        }
+        m = inputs.exec(form);
+      }
+      const selects = /<select\b[^>]*\bname="([^"]*)"[^>]*>([\s\S]*?)<\/select>/gi;
+      m = selects.exec(form);
+      while (m) {
+        if (m[1] !== 'action') {
+          const chosen = /<option\b[^>]*\bselected\b[^>]*value="([^"]*)"|<option\b[^>]*value="([^"]*)"[^>]*\bselected\b/i.exec(m[2]) ||
+            /<option\b[^>]*value="([^"]*)"/i.exec(m[2]);
+          if (chosen) {
+            add(m[1], chosen[1] !== undefined ? chosen[1] : chosen[2]);
+          }
+        }
+        m = selects.exec(form);
+      }
+      const areas = /<textarea\b[^>]*\bname="([^"]*)"[^>]*>([\s\S]*?)<\/textarea>/gi;
+      m = areas.exec(form);
+      while (m) {
+        add(m[1], m[2]);
+        m = areas.exec(form);
+      }
+      fields.action = action;
+      return fields;
+    };
+    const refusedBodies = {};
+    // The fields only the server-rendered console read: where to send the
+    // browser after, and its CSRF token. The static console needs none.
+    const CONSOLE_ONLY = ['back', 'from', 'csrf_token', 'where', 'anchor'];
+    // And per operation: the tab a field grid's Save came back to, and the
+    // view a create form was drawn in, which only a redraw reads.
+    const CONSOLE_ONLY_AT = {
+      '/admin-api/users/update-fields': ['group'],
+      '/admin-api/applications/update-fields': ['group'],
+      '/admin-api/users/create': ['view'],
+      '/admin-api/applications/create': ['view']
+    };
+    const droppedFields = {};
+    let bodies = 0;
+    for (let i = 0; i < drawnPages.length; i++) {
+      const one = drawnPages[i];
+      const re = /<form\b[^>]*>[\s\S]*?<\/form>/gi;
+      let m = re.exec(one.html);
+      while (m) {
+        const form = m[0];
+        const head = /^<form\b[^>]*>/i.exec(form)[0];
+        if (/method="post"/i.test(head) &&
+            !/multipart\/form-data/i.test(head)) {
+          const path = ((/action="([^"]*)"/i.exec(head) || [])[1] || '')
+            .replace(/[?#].*$/, '');
+          const hidden = /<input\b[^>]*\bname="action"[^>]*\bvalue="([^"]*)"/i
+            .exec(form);
+          const action = hidden ? hidden[1] : '';
+          const operation = WebForms.resolve(formTable, path, action);
+          const route = operation ? routeOf(operation) : null;
+          if (route && !route.owns) {
+            bodies++;
+            const sent = fieldsOfForm(form, action);
+            const shaped = shaper.shapeFields(sent,
+              await shaper.requestSchema(operation));
+            delete shaped.action;
+            // WHAT THE SHAPING DROPPED, beside what it refused: a member the
+            // schema does not name is left out without a word, and a box the
+            // reader typed in that is left out is a value lost.
+            Object.keys(sent).forEach(function (name) {
+              // A column of checkboxes is carried into the list member its
+              // operation takes (`attribute` into `attributes`).
+              if (name === 'action' || CONSOLE_ONLY.indexOf(name) >= 0 ||
+                  (CONSOLE_ONLY_AT[operation] || []).indexOf(name) >= 0 ||
+                  Object.prototype.hasOwnProperty.call(shaped, name) ||
+                  Object.prototype.hasOwnProperty.call(shaped, name + 's')) {
+                return;
+              }
+              // An empty box is left out on purpose where the schema could
+              // not take an empty string: it is an absent value.
+              const carried = [].concat(sent[name]).filter(function (v) {
+                return String(v) !== '';
+              });
+              if (!carried.length) {
+                return;
+              }
+              const key = operation + ': ' + name.replace(/\.\d+$/, '.N');
+              droppedFields[key] = droppedFields[key] || one.path;
+            });
+            const checked = adminApi.checkRequestBody({
+              __adminApiRoute: route.route,
+              params: { action: route.action },
+              body: JSON.stringify(shaped),
+              headers: { 'content-type': 'application/json' } });
+            const real = (checked.errors || []).filter(function (e) {
+              return !/is required\.$/.test(e);
+            });
+            if (!checked.ok && real.length) {
+              const key = operation + ': ' + real[0];
+              refusedBodies[key] = refusedBodies[key] || one.path;
+            }
+          }
+        }
+        m = re.exec(one.html);
+      }
+    }
+    note(Object.keys(droppedFields).length === 0,
+         'F1b. and nothing a form carries is dropped on the way',
+         Object.keys(droppedFields).length + ' dropped: ' +
+         Object.keys(droppedFields).map(function (k) {
+           return k + ' (on ' + droppedFields[k] + ')';
+         }).join('; '));
+    note(bodies > 300 && Object.keys(refusedBodies).length === 0,
+         'F1. what each form sends is a body its operation takes',
+         bodies + ' form(s) checked, ' +
+         Object.keys(refusedBodies).length + ' refused: ' +
+         Object.keys(refusedBodies).map(function (k) {
+           return k + ' (on ' + refusedBodies[k] + ')';
          }).join('; '));
 
     // THE DRIFT CHECK, IN PROCESS (#446): `/admin/sts-metadata`'s answer
@@ -583,7 +813,7 @@ function childMain() {
          'description ' +
          'names a route that is not registered',
          meta ? JSON.stringify({ undocumented: meta.undocumentedPaths,
-                                 stale: meta.stalePaths }).slice(0, 600)
+                                 stale: meta.stalePaths }).slice(0, 20000)
               : 'no metadata answer');
     note(unviewed.length === 0,
          'D0. the operation of every converted page answers a view, ' +

@@ -127,32 +127,6 @@ class GrantManagementAdmin {
     const { log, parseBody, admin, grants, errorCodes } = this.deps;
     const self = this;
     log.debug("Entering GrantManagementAdmin.registerRoutes().");
-    app.get(PAGE, function (req: Json, res: Json): void {
-      log.debug("Entering the admin grants page.");
-      const json = { grants: grants.list(String((req.query || {}).client_id ||
-                                                '').slice(0, 256) ||
-                                         undefined) };
-      const inner = (typeof admin.messagesOf === 'function'
-        ? admin.messagesOf(req) : '') + self.body(json);
-      admin.respond(req, res, json, 'Grants', PAGE, inner);
-      log.debug("Leaving the admin grants page.");
-    });
-    app.post(PAGE, function (req: Json, res: Json): void {
-      log.debug("Entering the admin grants action.");
-      let result: Json = null;
-      try {
-        result = grants.act(parseBody(req), { via: 'console',
-                                              actor: self.actorOf(req) });
-      } catch (e: any) {
-        log.error(errorCodes.tag('STS-OAUTH-0674') + 'oauth2: a console ' +
-                  'grants action failed: ' + ((e && e.stack) || e));
-        result = errorCodes.mark({ ok: false, errors:
-                                     ['The action could not be completed.'] },
-                                 'STS-OAUTH-0674');
-      }
-      admin.respondToAction(req, res, PAGE, result);
-      log.debug("Leaving the admin grants action.");
-    });
     log.debug("Leaving GrantManagementAdmin.registerRoutes().");
   }
 }

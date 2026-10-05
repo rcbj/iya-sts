@@ -217,31 +217,6 @@ class VcStatusAdmin {
     const { log, admin, errorCodes, parseBody } = this.deps;
     const self = this;
     log.debug("Entering VcStatusAdmin.registerRoutes().");
-    app.get(PAGE, function (req: Req, res: Res): void {
-      log.debug('Entering GET ' + PAGE + '.');
-      const view = self.statusView(req, req.query);
-      admin.respond(req, res, view.json, 'Credential status', PAGE,
-                    admin.messagesOf(req) +
-                    self.html(req, view.json));
-      log.debug('Leaving GET ' + PAGE + '.');
-    });
-    app.post(PAGE, function (req: Req, res: Res): void {
-      log.debug('Entering POST ' + PAGE + '.');
-      if (!admin.mayWrite(req)) {
-        errorCodes.mark(res, 'STS-VC-0082');
-        admin.respondToAction(req, res, PAGE, { ok: false, errors: [
-          'This console session may read but not write.'] });
-        log.debug('Leaving POST ' + PAGE + '. Read-only.');
-        return;
-      }
-      const result = self.statusAction(parseBody(req),
-                                       'the admin console');
-      if (!result.ok) {
-        errorCodes.mark(res, 'STS-VC-0082');
-      }
-      admin.respondToAction(req, res, PAGE, result);
-      log.debug('Leaving POST ' + PAGE + '.');
-    });
     log.debug("Leaving VcStatusAdmin.registerRoutes().");
   }
 }

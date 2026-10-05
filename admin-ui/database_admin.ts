@@ -411,11 +411,6 @@ class DatabaseAdmin {
     const { log } = this.deps;
     const self = this;
     log.debug("Entering DatabaseAdmin.registerRoutes().");
-    app.get('/admin/database', function (req, res) {
-      log.debug('Entering GET /admin/database.');
-      self.renderDatabase(req, res);
-      log.debug('Leaving GET /admin/database.');
-    });
     log.debug("Leaving DatabaseAdmin.registerRoutes().");
   }
 }

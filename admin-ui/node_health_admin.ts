@@ -1517,29 +1517,6 @@ class NodeHealthAdmin {
     this.deps.snapshots().provide('nodeHealth', function (): Promise<Json> {
       return self.localView();
     });
-    app.get(PAGE, function (req: Req, res: Res): void {
-      log.debug('Entering GET ' + PAGE + '.');
-      self.nodeHealthView({ node: req.query && req.query.node
-                                    ? String(req.query.node) : '' })
-        .then(function (json: Json): void {
-          if (json.notFound) {
-            errorCodes.mark(res, 'STS-CORE-0126');
-            res.status(404).type('text/plain')
-              .send('There is no node named ' + json.notFound + '.');
-            return;
-          }
-          admin.respond(req, res, json, 'Node health', PAGE,
-                        admin.messagesOf(req) + self.clusterHtml(json));
-        }).catch(function (e: any): void {
-        log.debug("Caught in GET " + PAGE + ": " + ((e && e.message) || e));
-        log.error(errorCodes.tag('STS-CORE-0124') + 'The node health ' +
-                  'report could not be built: ' + ((e && e.message) || e));
-        errorCodes.mark(res, 'STS-CORE-0124');
-        res.status(500).type('text/plain')
-          .send('The node health report could not be built.');
-      });
-      log.debug('Leaving GET ' + PAGE + '.');
-    });
     log.debug("Leaving NodeHealthAdmin.registerRoutes().");
   }
 }

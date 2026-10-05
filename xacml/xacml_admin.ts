@@ -1382,131 +1382,14 @@ class XacmlAdmin {
     const { log, parseBody, errorCodes, admin, store, editor, esc } = this.deps;
     log.debug("Entering XacmlAdmin.registerRoutes().");
 
-    app.get('/admin/xacml', function (req, res) {
-      log.debug('Entering the admin XACML page.');
-      const json = self.overviewJson();
-      admin.respond(req, res, json, 'XACML', '/admin/xacml',
-                    self.overviewBody(req, json));
-      log.debug('Leaving the admin XACML page.');
-    });
 
-    app.get('/admin/xacml/policies', function (req, res) {
-      log.debug('Entering the admin XACML policies page.');
-      const json = self.policiesJson();
-      admin.respond(req, res, json, 'XACML policies', '/admin/xacml/policies',
-                    XacmlPage.policiesBody(admin.renderContext(req),
-                      JSON.parse(JSON.stringify(json))), '/admin/xacml');
-      log.debug('Leaving the admin XACML policies page.');
-    });
 
-    app.get('/admin/xacml/peps', function (req, res) {
-      log.debug('Entering the admin XACML remote PEPs page.');
-      const json = self.pepsJson();
-      admin.respond(req, res, json, 'Remote PEPs', '/admin/xacml/peps',
-                    XacmlPage.pepsBody(admin.renderContext(req),
-                      JSON.parse(JSON.stringify(json))), '/admin/xacml');
-      log.debug('Leaving the admin XACML remote PEPs page.');
-    });
 
-    app.get('/admin/xacml/monitor', function (req, res) {
-      log.debug('Entering the admin XACML monitor page.');
-      const json = self.monitorJson();
-      admin.respond(req, res, json, 'XACML decisions', '/admin/xacml/monitor',
-                    XacmlPage.monitorBody(admin.renderContext(req),
-                      JSON.parse(JSON.stringify(json))));
-      log.debug('Leaving the admin XACML monitor page.');
-    });
 
-    app.post('/admin/xacml/peps', function (req, res) {
-      log.debug('Entering the admin XACML remote PEPs action.');
-      const body = parseBody(req);
-      if (!admin.mayWrite(req)) {
-        errorCodes.mark(res, 'STS-XACML-0031');
-        admin.respondToAction(req, res, '/admin/xacml/peps',
-                              { ok: false,
-                                why: 'This console session may read but ' +
-                                     'not write.' });
-        log.debug('Leaving the admin XACML remote PEPs action. Read-only.');
-        return;
-      }
-      if (String(body.action || '') === 'issue-pep-certificate') {
-        self.issueFromConsole(req, res, body);
-        log.debug('Leaving the admin XACML remote PEPs action. Issuing.');
-        return;
-      }
-      const result = self.pepAction(body);
-      if (!result.ok) {
-        errorCodes.mark(res, errorCodes.codeOf(result) || 'STS-XACML-0038');
-      }
-      admin.respondToAction(req, res, '/admin/xacml/peps', result);
-      log.debug('Leaving the admin XACML remote PEPs action.');
-    });
 
-    app.post('/admin/xacml/policies', function (req, res) {
-      log.debug('Entering the admin XACML policies action endpoint.');
-      const body = parseBody(req);
-      if (!admin.mayWrite(req)) {
-        errorCodes.mark(res, 'STS-XACML-0031');
-        admin.respondToAction(req, res, '/admin/xacml/policies',
-                              { ok: false,
-                                why: 'This console session holds Admin ' +
-                                     'Read and not Admin Write.' });
-        log.debug('Leaving the admin XACML policies action endpoint. ' +
-                  'Read-only.');
-        return;
-      }
-      const result = self.policyAction(body, req);
-      if (!result.ok) {
-        errorCodes.mark(res, errorCodes.codeOf(result) || 'STS-XACML-0028');
-      }
-      admin.respondToAction(req, res, '/admin/xacml/policies', result);
-      log.debug('Leaving the admin XACML policies action endpoint.');
-    });
 
-    app.get('/admin/xacml/editor', function (req, res) {
-      log.debug('Entering the admin XACML editor page.');
-      const name = String(req.query.policy || '');
-      const json = self.editorJson(name);
-      // Drawn by `web_xacml.ts` (#446), from this answer alone: each tree
-      // row carries what its edit form is drawn from, and the answer the
-      // menus, so the page no longer parses the document itself.
-      admin.respond(req, res, json, 'Policy editor', '/admin/xacml/editor',
-                    XacmlPage.editorBody(admin.renderContext(req),
-                                         JSON.parse(JSON.stringify(json))),
-                    '/admin/xacml');
-      log.debug('Leaving the admin XACML editor page.');
-    });
 
-    app.post('/admin/xacml/editor', function (req, res) {
-      log.debug('Entering the admin XACML editor action endpoint.');
-      const body = parseBody(req);
-      if (!admin.mayWrite(req)) {
-        errorCodes.mark(res, 'STS-XACML-0031');
-        admin.respondToAction(req, res, '/admin/xacml/editor',
-                              { ok: false,
-                                why: 'This console session holds Admin ' +
-                                     'Read and not Admin Write.' });
-        log.debug('Leaving the admin XACML editor action endpoint. Read-only.');
-        return;
-      }
-      const result = self.editorAction(body);
-      if (!result.ok) {
-        errorCodes.mark(res, errorCodes.codeOf(result) || 'STS-XACML-0035');
-      }
-      admin.respondToAction(req, res, '/admin/xacml/editor?policy=' +
-                            encodeURIComponent(String(body.policy || '')),
-                            result);
-      log.debug('Leaving the admin XACML editor action endpoint.');
-    });
 
-    app.get('/admin/xacml/decide', function (req, res) {
-      log.debug('Entering the admin XACML decide page.');
-      const json = self.decideJson(req.query);
-      admin.respond(req, res, json, 'Try a decision', '/admin/xacml/decide',
-                    XacmlPage.decideBody(admin.renderContext(req),
-                      JSON.parse(JSON.stringify(json))), '/admin/xacml');
-      log.debug('Leaving the admin XACML decide page.');
-    });
 
     log.debug("Leaving XacmlAdmin.registerRoutes().");
   }

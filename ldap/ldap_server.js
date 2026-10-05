@@ -16047,13 +16047,6 @@ function ldapServiceView(req) {
   return { title: 'The directory service', inner: inner, json: payload };
 }
 
-app.get('/admin/ldap/service', function (req, res) {
-  log.debug('Entering GET /admin/ldap/service.');
-  const view = ldapServiceView(req);
-  admin.respond(req, res, view.json, view.title, '/admin/ldap/service',
-                view.inner);
-  log.debug('Leaving GET /admin/ldap/service.');
-});
 
 // ---------------------------------------------------------------------------
 // GET /admin/ldap/directory — every entry, paged.
@@ -16254,13 +16247,6 @@ function ldapDirectoryView(req) {
   };
 }
 
-app.get('/admin/ldap/directory', function (req, res) {
-  log.debug('Entering GET /admin/ldap/directory.');
-  const view = ldapDirectoryView(req);
-  admin.respond(req, res, view.json, view.title, '/admin/ldap/directory',
-                view.inner);
-  log.debug('Leaving GET /admin/ldap/directory.');
-});
 
 // ---------------------------------------------------------------------------
 // Starting the listener.
@@ -19855,13 +19841,6 @@ function ldapSpiffeView(req) {
            json: payload };
 }
 
-app.get('/admin/ldap/spiffe', function (req, res) {
-  log.debug('Entering GET /admin/ldap/spiffe.');
-  const view = ldapSpiffeView(req);
-  admin.respond(req, res, view.json, view.title, '/admin/ldap/spiffe',
-                view.inner);
-  log.debug('Leaving GET /admin/ldap/spiffe.');
-});
 
 // ---------------------------------------------------------------------------
 // GET /admin/ldap/applications — the registry, and the schema that defines it.
@@ -19943,13 +19922,6 @@ function ldapApplicationsView(req) {
   return { title: 'Application entries', inner: inner, json: payload };
 }
 
-app.get('/admin/ldap/applications', function (req, res) {
-  log.debug('Entering GET /admin/ldap/applications.');
-  const view = ldapApplicationsView(req);
-  admin.respond(req, res, view.json, view.title, '/admin/ldap/applications',
-                view.inner);
-  log.debug('Leaving GET /admin/ldap/applications.');
-});
 
 // ---------------------------------------------------------------------------
 // GET /admin/ldap/federations — the register as the directory sees it.
@@ -20041,13 +20013,6 @@ function ldapFederationsView(req) {
   return { title: 'Federation entries', inner: inner, json: payload };
 }
 
-app.get('/admin/ldap/federations', function (req, res) {
-  log.debug('Entering GET /admin/ldap/federations.');
-  const view = ldapFederationsView(req);
-  admin.respond(req, res, view.json, view.title, '/admin/ldap/federations',
-                view.inner);
-  log.debug('Leaving GET /admin/ldap/federations.');
-});
 
 // ---------------------------------------------------------------------------
 // GET /admin/ldap/devices — THE DEVICE REGISTER AS THE DIRECTORY HOLDS IT
@@ -20128,13 +20093,6 @@ function ldapDevicesView(req) {
   return { title: 'Device entries', inner: inner, json: payload };
 }
 
-app.get('/admin/ldap/devices', function (req, res) {
-  log.debug('Entering GET /admin/ldap/devices.');
-  const view = ldapDevicesView(req);
-  admin.respond(req, res, view.json, view.title, '/admin/ldap/devices',
-                view.inner);
-  log.debug('Leaving GET /admin/ldap/devices.');
-});
 
 // ---------------------------------------------------------------------------
 // GET /admin/ldap/roles — the role register as the directory sees it.
@@ -20229,13 +20187,6 @@ function ldapRolesView(req) {
   return { title: 'Role entries', inner: inner, json: payload };
 }
 
-app.get('/admin/ldap/roles', function (req, res) {
-  log.debug('Entering GET /admin/ldap/roles.');
-  const view = ldapRolesView(req);
-  admin.respond(req, res, view.json, view.title, '/admin/ldap/roles',
-                view.inner);
-  log.debug('Leaving GET /admin/ldap/roles.');
-});
 
 // ---------------------------------------------------------------------------
 // GET /admin/ldap/policies — the XACML policy repository as the directory
@@ -20328,13 +20279,6 @@ function ldapPoliciesView(req) {
   return { title: 'Policy entries', inner: inner, json: payload };
 }
 
-app.get('/admin/ldap/policies', function (req, res) {
-  log.debug('Entering GET /admin/ldap/policies.');
-  const view = ldapPoliciesView(req);
-  admin.respond(req, res, view.json, view.title, '/admin/ldap/policies',
-                view.inner);
-  log.debug('Leaving GET /admin/ldap/policies.');
-});
 
 // ---------------------------------------------------------------------------
 // GET /admin/ldap/peps — the registered remote Policy Enforcement Points.
@@ -20426,13 +20370,6 @@ function ldapPepsView(req) {
   return { title: 'PEP entries', inner: inner, json: payload };
 }
 
-app.get('/admin/ldap/peps', function (req, res) {
-  log.debug('Entering GET /admin/ldap/peps.');
-  const view = ldapPepsView(req);
-  admin.respond(req, res, view.json, view.title, '/admin/ldap/peps',
-                view.inner);
-  log.debug('Leaving GET /admin/ldap/peps.');
-});
 
 // ---------------------------------------------------------------------------
 // THE NINTH SLOT ON admin.js, FILLED HERE.

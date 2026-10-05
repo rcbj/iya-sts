@@ -459,37 +459,6 @@ class GeolocationAdmin {
     const { log, admin, errorCodes } = this.deps;
     const self = this;
     log.debug("Entering GeolocationAdmin.registerRoutes().");
-    app.get(PAGE, function (req: Req, res: Res): void {
-      log.debug('Entering GET ' + PAGE + '.');
-      self.geoView(req.query).then(function (view: Json): void {
-        if (!view.ok) {
-          errorCodes.mark(res, 'STS-RISK-0042');
-          res.status(400).type('text/html').set('Cache-Control', 'no-store')
-             .send(admin.page('Bad request', PAGE, '<div class="card">' +
-               '<h2>Bad request</h2><p>' + admin.esc(view.errors.join(' ')) +
-               '</p><p><a href="' + PAGE + '">The world map</a></p></div>',
-               null, null, req));
-          log.debug('Leaving GET ' + PAGE + '. Refused.');
-          return;
-        }
-        const up = view.level === 'world' ? undefined
-          : admin.upTo(PAGE, view.country ? view.country.name
-                                          : view.continent.name,
-                       view.window === DEFAULT_WINDOW ? {}
-                         : { window: view.window });
-        admin.respond(req, res, view, 'Geolocation', PAGE,
-                      admin.messagesOf(req) + self.html(view), up);
-        log.debug('Leaving GET ' + PAGE + '.');
-      }).catch(function (e: Json): void {
-        log.warn(errorCodes.tag('STS-RISK-0041') + 'geolocation: the page ' +
-                 'could not be drawn: ' + ((e && e.stack) || e));
-        errorCodes.mark(res, 'STS-RISK-0041');
-        res.status(500).type('text/plain')
-           .send('The geolocation page could not be drawn: ' +
-                 ((e && e.message) || e));
-        log.debug('Leaving GET ' + PAGE + '. Failed.');
-      });
-    });
     log.debug("Leaving GeolocationAdmin.registerRoutes().");
   }
 }

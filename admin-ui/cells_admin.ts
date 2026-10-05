@@ -471,46 +471,6 @@ class CellsAdmin {
     const { log, admin } = this.deps;
     const self = this;
     log.debug("Entering CellsAdmin.registerRoutes().");
-    app.get(PAGE, function (req: Req, res: Res): void {
-      log.debug('Entering GET ' + PAGE + '.');
-      self.cellsPageView(req.query).then(function (json: Json) {
-        admin.respond(req, res, json, 'Cells', PAGE,
-                      admin.messagesOf(req) + self.html(json));
-        log.debug('Leaving GET ' + PAGE + '.');
-      }, function (err: any) {
-        log.error(errorCodes.tag('STS-CELL-0190') + 'cells: ' + PAGE +
-                  ' could not be drawn: ' + ((err && err.message) || err));
-        errorCodes.mark(res, 'STS-CELL-0190');
-        res.status(500).type('text/plain').send('The cell map could not ' +
-                                                'be read.\n');
-      });
-    });
-    app.post(PAGE, function (req: Req, res: Res): void {
-      log.debug('Entering POST ' + PAGE + '.');
-      if (!admin.mayWrite(req)) {
-        admin.respondToAction(req, res, PAGE, { ok: false, errors: [
-          'This console session may read but not write.'] });
-        log.debug('Leaving POST ' + PAGE + '. Read-only.');
-        return;
-      }
-      const body = helpers.parseBody(req) || {};
-      if (String(body.action || '') !== 'rehome') {
-        admin.respondToAction(req, res, PAGE, { ok: false, errors: [
-          'Unknown action.'] });
-        log.debug('Leaving POST ' + PAGE + '. Unknown action.');
-        return;
-      }
-      // The console's signed-in administrator, as every other console act
-      // names its actor (`admin-core/admin_views.ts`' gateStateFor()).
-      const state = require('../admin-core/admin_views').gateStateFor(req);
-      self.rehomeAction(String(body.username || ''),
-                        String(body.target || ''),
-                        String((state && state.username) || 'administrator'))
-        .then(function (result: Json) {
-          admin.respondToAction(req, res, PAGE, result);
-          log.debug('Leaving POST ' + PAGE + '.');
-        });
-    });
     const channel = require('../common/cell_channel');
     channel.registerOp('cell-ping', function () {
       return { cell: cells.id(), jurisdiction: cells.jurisdiction(),

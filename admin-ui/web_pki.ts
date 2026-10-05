@@ -576,7 +576,8 @@ class PkiPage {
                        wb.profiles.map(function (one) {
                          return { value: one.id, label: one.label };
                        })) +
-      '<button type="submit" name="defaults" value="1"' +
+      '<button type="submit" name="defaults" value="1" ' +
+        'formaction="/admin/pki/certificate?action=apply-profile"' +
         kit.tip('Rewrite the extension boxes, the default validity and the ' +
                   'profile\'s Common Name from the profile chosen beside ' +
                   'this button. Nothing is issued and a name you typed is ' +
@@ -609,7 +610,8 @@ class PkiPage {
                        wb.pqModes.map(function (one) {
                          return { value: one.id, label: one.label };
                        })) +
-      '<button type="submit" name="defaults" value="1"' +
+      '<button type="submit" name="defaults" value="1" ' +
+        'formaction="/admin/pki/certificate?action=apply-profile"' +
         kit.tip('Redraw the two algorithm menus for the approach chosen ' +
                   'beside this button. It is the same button as the one ' +
                   'above it: with no script on this console, narrowing a ' +
@@ -722,7 +724,8 @@ class PkiPage {
                       'this says, because these two boxes are also the INPUT ' +
                       'for a reuse and a round trip through a representation ' +
                       'this encoder cannot read back would lose the key.') +
-      '<button type="submit" name="generate" value="1"' +
+      '<button type="submit" name="generate" value="1" ' +
+        'formaction="/admin/pki/certificate?action=generate-keys"' +
         kit.tip('Generate a key pair into the two boxes below WITHOUT ' +
                   'issuing anything, and tick nothing. It exists because ' +
                   'generating a post-quantum pair takes seconds: making one ' +
@@ -824,7 +827,8 @@ class PkiPage {
       self.checkField(draft, 'pki_alt_reuse_key', 'reuse the pair below',
                       'Certify the alternative pair already in the boxes ' +
                       'instead of generating a new one.') +
-      '<button type="submit" name="generatealt" value="1"' +
+      '<button type="submit" name="generatealt" value="1" ' +
+        'formaction="/admin/pki/certificate?action=generate-alt-keys"' +
         kit.tip('Generate the alternative key pair now. Issuing under the ' +
                   'Hybrid approach generates one anyway if these boxes are ' +
                   'empty.') + '>Generate the alternative pair</button>' +
@@ -873,10 +877,10 @@ class PkiPage {
                       'the file, which is what makes a PKCS#12 importable as ' +
                       'an identity rather than as a bare key.') +
       '<button type="submit" name="export" value="1" ' +
-        'formaction="/admin/pki/export"' +
-        kit.tip('Download the key pair. This button posts the same form to ' +
-                  'a different endpoint, because the answer is a FILE rather ' +
-                  'than a page.') + '>Download</button>' +
+        'formaction="/admin/pki/certificate?action=export"' +
+        kit.tip('Download the key pair. This button sends the same form to ' +
+                  'the export, whose answer is the FILE the browser saves ' +
+                  'rather than a page.') + '>Download</button>' +
       '</div>' +
       '</div>';
     return html;
@@ -1014,14 +1018,18 @@ class PkiPage {
           : '<em>no — it cannot sign or be exported</em>') + '</td>' +
         '<td>' +
           (one.hasPrivateKey
-            ? '<button type="submit" name="use" value="' + esc(one.id) + '"' +
+            ? '<button type="submit" name="use" value="' + esc(one.id) +
+              '" formaction="' + esc('/admin/pki/certificate?action=use-key&objectId=' +
+                                     encodeURIComponent(one.id)) + '"' +
               kit.tip('Load this key pair into the boxes above and tick ' +
                         '"reuse the key pair below", so the next issue ' +
                         'certifies THIS key — a CA renewing its own ' +
                         'certificate. Everything else on the form is kept.') +
               '>Use this key pair</button> '
             : '') +
-          '<button type="submit" name="remove" value="' + esc(one.id) + '"' +
+          '<button type="submit" name="remove" value="' + esc(one.id) +
+          '" formaction="' + esc('/admin/pki/certificate?action=remove-object&objectId=' +
+                                 encodeURIComponent(one.id)) + '"' +
           kit.tip('Remove this object. Anything it issued is KEPT — those ' +
                     'certificates are still valid documents — and will say ' +
                     'that their issuer is missing.') + '>Remove</button>' +
@@ -1038,7 +1046,8 @@ class PkiPage {
       '<th>Serial</th><th>Expires</th><th>Key / signature</th>' +
       '<th>Private key</th><th></th></tr></thead><tbody>' + rows + '</tbody>' +
       '</table>' +
-      '<div class="pki-row"><button type="submit" name="clearstore" value="1"' +
+      '<div class="pki-row"><button type="submit" name="clearstore" ' +
+      'value="1" formaction="/admin/pki/certificate?action=clear-store"' +
       kit.tip('Discard every key pair and certificate this pane has issued ' +
                 'in this realm. The hierarchy above is NOT touched.') +
       '>Clear the store</button></div>';
@@ -1091,6 +1100,11 @@ class PkiPage {
         'otherwise.</p>',
         'What this pane is, and how it differs from the page it is ' +
         'modelled on') +
+      // EVERY BUTTON BUT ISSUE NAMES ITS ACTION IN ITS `formaction` (#446):
+      // the server read the pressed button's NAME first (`paneActionFrom()`),
+      // and the static console sends the form to the operation its action
+      // names, the query of a `formaction` taking the place of the hidden
+      // `issue-certificate` — so Generate cannot be sent as an issue.
       '<form method="post" action="/admin/pki/certificate">' +
       '<input type="hidden" name="action" value="issue-certificate">' +
       '<div class="pki-cols">' +

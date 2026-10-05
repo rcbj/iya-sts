@@ -2025,7 +2025,7 @@ const CODES = [
     summary: 'Server configuration -> Cells (/admin/cells) could not be ' +
       'drawn: the cell map or its peers could not be read; the page answers ' +
       '500 and the reason is logged.',
-    spec: '' },
+    spec: '', retired: true },
   { code: 'STS-CELL-0191',
     summary: 'GET /admin-api/cells could not read the cell map; the call ' +
       'answers 500 server_error.',
@@ -3382,13 +3382,14 @@ const CODES = [
   { code: 'STS-PKI-0101',
     summary: 'A PKI console action or export was attempted by a session ' +
       'without Admin Write.',
-    spec: 'HTTP 403 text/plain (export) or console refusal banner' },
+    spec: 'HTTP 403 text/plain (export) or console refusal banner',
+    retired: true },
   { code: 'STS-PKI-0102',
     summary: 'A PKI console action threw an unexpected exception.',
-    spec: 'Console refusal banner or page' },
+    spec: 'Console refusal banner or page', retired: true },
   { code: 'STS-PKI-0103',
     summary: 'The PKI console key-pair export threw an unexpected exception.',
-    spec: 'Console refusal page' },
+    spec: 'Console refusal page', retired: true },
   { code: 'STS-PKI-0104',
     summary: 'After the Root CA was replaced, a branch could not be rebuilt ' +
       'under it.',
@@ -14642,7 +14643,7 @@ const CODES = [
   { code: 'STS-MAIL-0026',
     summary: 'A console session that may read but not write posted a mail ' +
       'action.',
-    spec: 'HTTP 400' },
+    spec: 'HTTP 400', retired: true },
   { code: 'STS-MAIL-0027',
     summary: 'A test message was asked for by an administrator whose own ' +
       'entry has no usable mail address.',
@@ -15992,7 +15993,7 @@ const CODES = [
     spec: 'HTTP 400 text/plain' },
   { code: 'STS-GNAP-0664',
     summary: 'A GNAP console action form post failed validation.',
-    spec: 'Console error notice' },
+    spec: 'Console error notice', retired: true },
   { code: 'STS-GNAP-0665',
     summary: 'A GNAP management API action was refused and the refusal ' +
       'carried no more specific code.',
@@ -16480,7 +16481,7 @@ const CODES = [
   { code: 'STS-DEVICE-0014',
     summary: 'A console session with Admin Read only posted to ' +
       '/admin/devices (#218).',
-    spec: 'HTTP 303 with error=' },
+    spec: 'HTTP 303 with error=', retired: true },
   { code: 'STS-DEVICE-0015',
     summary: 'A WebAuthn key named for a device is not a security key its ' +
       'owner enrolled, or the device\'s owner is an application ' +
@@ -16808,7 +16809,7 @@ const CODES = [
     summary: 'An XACML console action was refused because the console ' +
       'session holds Admin Read and not Admin Write.',
     spec: '303 back to the page with error=…, or HTTP 400 { ok: false, ' +
-      'why } for a JSON post' },
+      'why } for a JSON post', retired: true },
   { code: 'STS-XACML-0032',
     summary: 'An XACML console or management API action named an action that ' +
       'does not exist.',
@@ -17257,11 +17258,11 @@ const CODES = [
   { code: 'STS-ADMIN-0003',
     summary: 'A console request that cannot be redirected to sign in (a JSON ' +
       'caller, or a form POST) carried no console session.',
-    spec: 'HTTP 401 login_required' },
+    spec: 'HTTP 401 login_required', retired: true },
   { code: 'STS-ADMIN-0004',
     summary: 'A console sign-out was refused because the form did not carry ' +
       'this session\'s CSRF token.',
-    spec: 'HTTP 403 csrf' },
+    spec: 'HTTP 403 csrf', retired: true },
   { code: 'STS-ADMIN-0005',
     summary: 'A console write (a non-GET request) was refused because it did ' +
       'not carry this session\'s CSRF token.',
@@ -17270,29 +17271,29 @@ const CODES = [
     summary: 'The access policy (the XACML access-control document) refused ' +
       'a console request for a person who holds the console role it ' +
       'needs.',
-    spec: 'HTTP 403 policy_denied' },
+    spec: 'HTTP 403 policy_denied', retired: true },
   { code: 'STS-ADMIN-0007',
     summary: 'A signed-in person without the Admin Read role tried to read a ' +
       'console page.',
-    spec: 'HTTP 403 insufficient_role' },
+    spec: 'HTTP 403 insufficient_role', retired: true },
   { code: 'STS-ADMIN-0008',
     summary: 'A signed-in person without the Admin Write role tried to post ' +
       'a console form.',
-    spec: 'HTTP 403 insufficient_role' },
+    spec: 'HTTP 403 insufficient_role', retired: true },
   { code: 'STS-ADMIN-0009',
     summary: 'A console request\'s query string failed validation (an ' +
       'over-long, repeated or malformed parameter).',
-    spec: 'HTTP 400 page' },
+    spec: 'HTTP 400 page', retired: true },
   { code: 'STS-ADMIN-0010',
     summary: 'The admin console\'s OIDC callback refused the authorization ' +
       'response (state, code redemption, ID Token verification or ' +
       'session establishment failed).',
-    spec: 'HTTP 400 page' },
+    spec: 'HTTP 400 page', retired: true },
   { code: 'STS-ADMIN-0011',
     summary: 'The admin console\'s OIDC callback threw rather than ' +
       'resolving; this is a defect in the relying-party code, not something ' +
       'a request can cause.',
-    spec: 'HTTP 500 page' },
+    spec: 'HTTP 500 page', retired: true },
   { code: 'STS-ADMIN-0012',
     summary: 'A console action was refused (its result was not ok) and the ' +
       'action named no more specific code.',
@@ -17301,7 +17302,8 @@ const CODES = [
     summary: 'An asynchronous console action (Shared Signals, CAEP, RISC or ' +
       'SPIFFE) rejected instead of resolving a refusal; it is ' +
       'answered as a refused action.',
-    spec: 'HTTP 303 back to the page with error=, or HTTP 400 JSON' },
+    spec: 'HTTP 303 back to the page with error=, or HTTP 400 JSON',
+    retired: true },
   { code: 'STS-ADMIN-0014',
     summary: 'A console inverted-hook slot was offered an incomplete filler ' +
       'at startup and refused it whole; the pages and operations ' +
@@ -17323,16 +17325,17 @@ const CODES = [
   { code: 'STS-ADMIN-0018',
     summary: 'The new-user form was posted with an action other than create ' +
       'or fill.',
-    spec: 'HTTP 200 form page with a warning, or HTTP 400 JSON' },
+    spec: 'HTTP 200 form page with a warning, or HTTP 400 JSON',
+    retired: true },
   { code: 'STS-ADMIN-0019',
     summary: 'The admin console\'s Shared Signals receive endpoint refused a ' +
       'pushed Security Event Token and the receiver named no more ' +
       'specific code.',
-    spec: 'HTTP 4xx/5xx per RFC 8935, as the receiver decided' },
+    spec: 'HTTP 4xx/5xx per RFC 8935, as the receiver decided', retired: true },
   { code: 'STS-ADMIN-0020',
     summary: 'The realm switcher named a trust realm that is not defined; ' +
       'the browser was sent back to the current realm.',
-    spec: 'HTTP 303 to the current realm' },
+    spec: 'HTTP 303 to the current realm', retired: true },
   { code: 'STS-ADMIN-0021',
     summary: 'A console drill-down named a record that does not exist: an ' +
       'application, an authorization server profile, a trust realm, ' +
@@ -17342,7 +17345,7 @@ const CODES = [
     summary: 'The realm switcher was given a return path that is not a ' +
       'single-slash-rooted path (a possible open redirect); /admin ' +
       'was used instead.',
-    spec: 'HTTP 303 to /admin in the chosen realm' },
+    spec: 'HTTP 303 to /admin in the chosen realm', retired: true },
   { code: 'STS-ADMIN-0500',
     summary: 'An admin console control or management API action named an ' +
       'operation its resource does not have.',
@@ -17686,7 +17689,7 @@ const CODES = [
   { code: 'STS-ADMIN-0588',
     summary: 'A key pair export was refused because the caller does not hold ' +
       'Admin Write.',
-    spec: 'HTTP 403' },
+    spec: 'HTTP 403', retired: true },
   { code: 'STS-ADMIN-0589',
     summary: 'A key pair export named a key this realm does not hold.',
     spec: 'HTTP 400 (JSON or API) or a 303 with error=' },
@@ -17707,7 +17710,7 @@ const CODES = [
     spec: 'HTTP 400 (JSON or API) or a 303 with error=' },
   { code: 'STS-ADMIN-0594',
     summary: 'A key pair export threw unexpectedly.',
-    spec: 'HTTP 400 (JSON) or a 303 with error=' },
+    spec: 'HTTP 400 (JSON) or a 303 with error=', retired: true },
   { code: 'STS-ADMIN-0595',
     summary: 'The crypto report was handed a malformed protocol family list ' +
       'and ignored it; its drift check does not run.',
@@ -17796,7 +17799,7 @@ const CODES = [
   { code: 'STS-ADMIN-0643',
     summary: 'The used-assertion history page could not be drawn, because ' +
       'the store holding the history could not be read.',
-    spec: 'the page with a warning saying so' },
+    spec: 'the page with a warning saying so', retired: true },
   { code: 'STS-ADMIN-0644',
     summary: 'An RFC 9728 protected resource metadata import was refused ' +
       '(load-resource-metadata), where the library named no code of its own.',
@@ -17805,7 +17808,7 @@ const CODES = [
     summary: 'A create from an imported RFC 9728 document was refused on ' +
       '/admin/applications/new, where the create named no code of its own, ' +
       'and the page was redrawn with the reason.',
-    spec: '/admin/applications/new redrawn with the reason' },
+    spec: '/admin/applications/new redrawn with the reason', retired: true },
   { code: 'STS-ADMIN-0646',
     summary: 'A software statement was asked to be issued for an application ' +
       'that is not in the registry.',
@@ -17858,7 +17861,7 @@ const CODES = [
   { code: 'STS-ADMIN-0705',
     summary: 'An OAuth 2.0 monitoring console action threw; nothing is known ' +
       'to have changed and the log line carries the stack.',
-    spec: 'a 303 back to /admin/oauth2/monitor with error=' },
+    spec: 'a 303 back to /admin/oauth2/monitor with error=', retired: true },
   { code: 'STS-ADMIN-0706',
     summary: 'The bootstrap administrator could not be created in the ' +
       'default realm, or could not be given both console roles, at startup.',
@@ -17883,7 +17886,7 @@ const CODES = [
   { code: 'STS-ADMIN-0724',
     summary: 'An asynchronous applications action on the console threw; ' +
       'nothing is known to have changed and the log line carries the stack.',
-    spec: 'the console\'s refusal (a redirect with the error)' },
+    spec: 'the console\'s refusal (a redirect with the error)', retired: true },
   // THE PASSWORD AND SECOND-FACTOR CONTROLS ON A PERSON'S PAGE (2026-09-13).
   { code: 'STS-ADMIN-0780',
     summary: 'Resetting somebody\'s password was refused by the password ' +
@@ -17911,7 +17914,7 @@ const CODES = [
   { code: 'STS-ADMIN-0786',
     summary: 'A realm administrator reached the console in a realm other than ' +
       'the one they signed in through, where they hold no role.',
-    spec: 'HTTP 403 on /admin' },
+    spec: 'HTTP 403 on /admin', retired: true },
   { code: 'STS-ADMIN-0787',
     summary: 'A realm administrator was refused a service-wide console page ' +
       'or action (the store, the listeners, the service Root, the realm ' +
@@ -18068,7 +18071,7 @@ const CODES = [
   { code: 'STS-ADMIN-0820',
     summary: 'A console form POST held a value outside the closed set the ' +
       'mirroring /admin-api operation\'s enum declares (#86).',
-    spec: 'HTTP 400 page' },
+    spec: 'HTTP 400 page', retired: true },
   { code: 'STS-ADMIN-0821',
     summary: 'A permission gated by role — admin:read, admin:write, or an ' +
       'application permission its resource lists in ' +
@@ -18179,6 +18182,15 @@ const CODES = [
       'or it holds no client secret with that id, or no registration ' +
       'access token (#446).',
     spec: 'none (a management API refusal, HTTP 400)' },
+  { code: 'STS-ADMIN-0843',
+    summary: 'A request other than GET reached /admin: the console is a ' +
+      'static application since #446, and its acts are /admin-api ' +
+      'operations.',
+    spec: 'none (HTTP 404)' },
+  { code: 'STS-ADMIN-0844',
+    summary: 'The static console\'s script, admin-ui/console.js, could not ' +
+      'be read; the shell loads one that says so (#446).',
+    spec: 'none (logged)' },
   { code: 'STS-API-0001',
     summary: 'A management API request carried no Bearer access token while ' +
       'adminApi.authRequired is on.',

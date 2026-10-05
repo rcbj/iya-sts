@@ -157,27 +157,6 @@ class DebuggerAdmin {
     const { log, errorCodes, admin } = this.deps;
     const self = this;
     log.debug("Entering DebuggerAdmin.registerRoutes().");
-    app.get(PAGE_PATH, function (req, res) {
-      log.debug("Entering GET " + PAGE_PATH + ".");
-      let json = null;
-      try {
-        json = self.debuggerView();
-      } catch (e) {
-        log.error(errorCodes.tag('STS-DBG-0023') + 'debugger_admin: the page ' +
-                  'threw: ' + ((e && e.stack) || e));
-        errorCodes.mark(res, 'STS-DBG-0023');
-        admin.respond(req, res,
-                      { ok: false, error: String((e && e.message) || e) },
-                      'Protocol debugger', PAGE_PATH,
-                      admin.warn(admin.esc(String((e && e.message) || e)),
-                                 'This page could not be drawn'));
-        log.debug("Leaving GET " + PAGE_PATH + ". It threw.");
-        return;
-      }
-      admin.respond(req, res, json, 'Protocol debugger', PAGE_PATH,
-                    self.body(json));
-      log.debug("Leaving GET " + PAGE_PATH + ".");
-    });
     log.debug("Leaving DebuggerAdmin.registerRoutes().");
   }
 }

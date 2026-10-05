@@ -804,41 +804,6 @@ class DevicesAdmin {
     const { log, admin, errorCodes, parseBody } = this.deps;
     const self = this;
     log.debug("Entering DevicesAdmin.registerRoutes().");
-    app.get(LIST, function (req: Req, res: Res): void {
-      log.debug('Entering GET ' + LIST + '.');
-      const json = self.listView(req, req.query);
-      if (req.query && req.query.device !== undefined) {
-        if (!json.found) {
-          errorCodes.mark(res, 'STS-DEVICE-0007');
-        }
-        admin.respond(req, res, json, 'Device ' + (json.device
-          ? json.device.label : String(req.query.device)), LIST,
-          admin.messagesOf(req) + self.listBody(req, json),
-          admin.upTo(LIST, json.device ? json.device.label : 'Device', {}));
-        log.debug('Leaving GET ' + LIST + '. One device.');
-        return;
-      }
-      admin.respond(req, res, json, 'Devices', LIST,
-                    admin.messagesOf(req) + self.listBody(req, json));
-      log.debug('Leaving GET ' + LIST + '.');
-    });
-    app.post(LIST, function (req: Req, res: Res): void {
-      log.debug('Entering POST ' + LIST + '.');
-      const body = parseBody(req);
-      if (!admin.mayWrite(req)) {
-        errorCodes.mark(res, 'STS-DEVICE-0014');
-        admin.respondToAction(req, res, LIST, { ok: false, errors: [
-          'This console session may read but not write.'] });
-        log.debug('Leaving POST ' + LIST + '. Read-only.');
-        return;
-      }
-      const result = self.action(body, self.actorOf(req), 'the admin console');
-      if (!result.ok) {
-        errorCodes.mark(res, errorCodes.codeOf(result) || 'STS-DEVICE-0013');
-      }
-      admin.respondToAction(req, res, self.backTo(body, result), result);
-      log.debug('Leaving POST ' + LIST + '.');
-    });
     // THE COMPLIANCE TEST CONTROL (#164 decision 9): development answers
     // anybody, as every test control there does; product refuses it, and
     // the MDM feed under `device:compliance` is the door that remains.
@@ -865,24 +830,6 @@ class DevicesAdmin {
       }
       res.status(result.ok ? 200 : 400).json(result);
       log.debug('Leaving POST ' + TEST_CONTROL + '.');
-    });
-    app.get(REGISTRATION, function (req: Req, res: Res): void {
-      log.debug('Entering GET ' + REGISTRATION + '.');
-      const json = self.registrationView(req);
-      admin.respond(req, res, json, 'Device registration', REGISTRATION,
-                    admin.messagesOf(req) +
-                    // Drawn by `web_devices.ts` (#446), as the list is.
-                    DevicesPage.registrationHtml(
-                      JSON.parse(JSON.stringify(json))));
-      log.debug('Leaving GET ' + REGISTRATION + '.');
-    });
-    app.get(MONITOR, function (req: Req, res: Res): void {
-      log.debug('Entering GET ' + MONITOR + '.');
-      const json = self.monitorView(req, req.query);
-      admin.respond(req, res, json, 'Devices (monitoring)', MONITOR,
-                    admin.messagesOf(req) +
-                    DevicesPage.monitorHtml(JSON.parse(JSON.stringify(json))));
-      log.debug('Leaving GET ' + MONITOR + '.');
     });
     log.debug("Leaving DevicesAdmin.registerRoutes().");
   }

@@ -145,59 +145,6 @@ class ProviderCommandsAdmin {
             baseUrlOf } = this.deps;
     const self = this;
     log.debug("Entering ProviderCommandsAdmin.registerRoutes().");
-    app.get(PAGE, function (req: Json, res: Json): void {
-      log.debug("Entering the admin commands page.");
-      const json = commands.report({ q: req.query.q, state: req.query.state });
-      const inner = (typeof admin.messagesOf === 'function'
-        ? admin.messagesOf(req) : '') + self.commandsBody(json);
-      admin.respond(req, res, json, 'OpenID Provider Commands', PAGE, inner);
-      log.debug("Leaving the admin commands page.");
-    });
-    app.post(PAGE, function (req: Json, res: Json): void {
-      log.debug("Entering the admin commands action.");
-      let result: Json;
-      try {
-        const body = parseBody(req) || {};
-        result = body.action === 'retry'
-          ? outbound.kindRetry(String(body.kind || 'provider-commands'),
-                               String(body.delivery || ''),
-                               self.actorOf(req))
-          : commands.act(body, { via: 'console', actor: self.actorOf(req),
-                                 base: baseUrlOf(req) });
-      } catch (e: any) {
-        log.error(errorCodes.tag('STS-OAUTH-0776') + 'provider commands: a ' +
-                  'console action failed: ' + ((e && e.stack) || e));
-        result = errorCodes.mark({ ok: false, errors:
-          ['The action could not be completed.'] }, 'STS-OAUTH-0776');
-      }
-      admin.respondToAction(req, res, PAGE, result);
-      log.debug("Leaving the admin commands action.");
-    });
-    app.get(DELIVERIES, function (req: Json, res: Json): void {
-      log.debug("Entering the admin deliveries page.");
-      const json = outbound.kindReport({ state: String(req.query.state || ''),
-                                         q: req.query.q,
-                                         kind: req.query.kind });
-      const inner = (typeof admin.messagesOf === 'function'
-        ? admin.messagesOf(req) : '') +
-        // Drawn by `web_provider_commands.ts` (#446), as the page above is.
-        ProviderCommandsPage.deliveriesBody(admin.renderContext(req),
-                                            JSON.parse(JSON.stringify(json)));
-      admin.respond(req, res, json, 'Outbound deliveries', DELIVERIES, inner);
-      log.debug("Leaving the admin deliveries page.");
-    });
-    app.post(DELIVERIES, function (req: Json, res: Json): void {
-      log.debug("Entering the admin deliveries action.");
-      const body = parseBody(req) || {};
-      const result = String(body.action || '') === 'retry'
-        ? outbound.kindRetry(String(body.kind || ''),
-                             String(body.delivery || ''), self.actorOf(req))
-        : errorCodes.mark({ ok: false, errors: ['Unknown action "' +
-            String(body.action || '') + '". The 1 is: retry.'] },
-            'STS-OAUTH-0774');
-      admin.respondToAction(req, res, DELIVERIES, result);
-      log.debug("Leaving the admin deliveries action.");
-    });
     log.debug("Leaving ProviderCommandsAdmin.registerRoutes().");
   }
 }

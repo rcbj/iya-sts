@@ -159,68 +159,8 @@ class GnapAdmin {
             consoleModel } = this.deps;
     log.debug("Entering GnapAdmin.registerRoutes().");
 
-    // -----------------------------------------------------------------------
-    // GET /admin/gnap
-    // -----------------------------------------------------------------------
-    app.get('/admin/gnap', function (req, res) {
-      log.debug("Entering the admin GNAP page.");
-      if (self.queryRefused(req, res)) {
-        log.debug("Leaving the admin GNAP page. Bad query.");
-        return;
-      }
-      const json = consoleModel.gnapView(req);
-      const inner = (typeof admin.messagesOf === 'function' ?
-                     admin.messagesOf(req) : '') + self.body(req, json);
-      admin.respond(req, res, json, 'GNAP', '/admin/gnap', inner);
-      log.debug("Leaving the admin GNAP page.");
-    });
 
-    // -----------------------------------------------------------------------
-    // POST /admin/gnap
-    // -----------------------------------------------------------------------
-    app.post('/admin/gnap', function (req, res) {
-      log.debug("Entering the admin GNAP action.");
-      const body = parseBody(req);
-      const posted = validation.checkParsed(body, 'body', ACTION_FORM);
-      if (!posted.ok) {
-        log.debug("Leaving the admin GNAP action. Malformed.");
-        const result = errorCodes.mark({ ok: false, errors: [posted.detail] },
-                                       'STS-GNAP-0664');
-        return admin.respondToAction(req, res, '/admin/gnap', result);
-      }
-      const result = consoleModel.gnapAction(posted.value,
-                                             { via: 'console', req: req });
-      // From a person's page (#432 phase 7): back to its GNAP grants tab, at
-      // the section heading inside it, which shows the tab again
-      // (`tabbedPanels()`).
-      const target = posted.value.user
-        ? '/admin/users?user=' + encodeURIComponent(posted.value.user) +
-          '#gnap-grants'
-        : '/admin/gnap';
-      admin.respondToAction(req, res, target, result);
-      log.debug("Leaving the admin GNAP action. ok=" + result.ok);
-      return undefined;
-    });
 
-    // -----------------------------------------------------------------------
-    // GET /admin/gnap/monitor
-    // -----------------------------------------------------------------------
-    app.get('/admin/gnap/monitor', function (req, res) {
-      log.debug("Entering the admin GNAP monitor page.");
-      if (self.queryRefused(req, res)) {
-        log.debug("Leaving the admin GNAP monitor page. Bad query.");
-        return;
-      }
-      const json = consoleModel.gnapMonitorView(req);
-      const inner = (typeof admin.messagesOf === 'function' ?
-                     admin.messagesOf(req) : '') +
-        // Drawn by `web_gnap.ts` (#446), as the GNAP page is.
-        GnapPage.monitorBody(admin.renderContext(req),
-                             JSON.parse(JSON.stringify(json)));
-      admin.respond(req, res, json, 'GNAP grants', '/admin/gnap/monitor',
-                    inner);
-      log.debug("Leaving the admin GNAP monitor page.");
-    });
 
     log.debug("Leaving GnapAdmin.registerRoutes().");
   }

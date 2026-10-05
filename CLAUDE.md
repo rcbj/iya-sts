@@ -150,7 +150,7 @@ the exceptions, and each is argued where it lives.
 |---|---|---|
 | `/scim/v2` | a credential in any of RFC 7644 section 2's six schemes; the OAuth ones need `scim:read` or `scim:write` | `scim/CLAUDE.md` |
 | the SPIRE Server API | an X509-SVID over mutual TLS, authorized against SPIRE's per-method table | `spiffe/CLAUDE.md` |
-| `/admin` | a session of its own, got through the OIDC code flow, and one of two roles held through directory groups | `admin-ui/CLAUDE.md` |
+| `/admin` | since #446 a STATIC page whose data is `/admin-api`'s: an access token got through the code flow with PKCE as the public client `sts-admin-console`, always DPoP-bound, and one of two roles held through directory groups | `admin-ui/CLAUDE.md`, `mgmt-api/CLAUDE.md` |
 | `/federation/acs/{id}` | a signature verifying against the relationship's certificate — **not a turnstile, cannot be made permissive** | `federation/CLAUDE.md` |
 | `/authn/spnego` | a Kerberos ticket verified against a real long-term key — **not a refusal at all** | `kerberos/CLAUDE.md` |
 | the SPIFFE Broker API (`spiffe.brokerPort`) | an X509-SVID over mutual TLS naming a broker in `spiffe.brokers`, and a reference type that broker may use; the workload it references is attested here (#170) | `spiffe/CLAUDE.md` |
@@ -322,13 +322,22 @@ outside it:
 
 ## This service's own two surfaces are clients of its own authorization server
 
-`/admin` and `/portal` are **OpenID Connect relying parties** of this service
-(since 2026-09-06): seeded confidential clients, a real back-channel HTTP request
-to `/oauth2/token`, a relying-party session that names the sign-on session it
-came from and dies with it, and a Sign out on each that ends both.
-`common/CLAUDE.md` (`oidc_rp.js`) carries the design, the realm split and the
-`Location`-header bug; `authn/CLAUDE.md` the two kinds of session;
-`admin-ui/CLAUDE.md` and `portal/CLAUDE.md` the gate exemptions and sign-out.
+`/portal` is an **OpenID Connect relying party** of this service (since
+2026-09-06): a seeded confidential client, a real back-channel HTTP request to
+`/oauth2/token`, a relying-party session that names the sign-on session it came
+from and dies with it, and a Sign out that ends both. `common/CLAUDE.md`
+(`oidc_rp.js`) carries the design, the realm split and the `Location`-header
+bug; `authn/CLAUDE.md` the two kinds of session; `portal/CLAUDE.md` the gate
+exemptions and sign-out.
+
+**`/admin` was one too until the cutover of #446 (2026-10-05), and is now a
+STATIC application**: every `/admin/*` path answers one document and
+`/admin/console.js`, which signs in IN THE BROWSER as the public client
+`sts-admin-console` (the code flow with PKCE S256, `resource` the realm's
+`/admin-api`), holds a DPoP-bound token in memory only, renews it with the
+refresh grant, and draws every page from its `/admin-api` operation and sends
+every form there. The console holds no session of its own; its Sign out is
+`/logout`. `admin-ui/CLAUDE.md` (`web_runtime.ts`) argues it.
 
 ## What an authenticated identity is
 
@@ -659,7 +668,7 @@ repository where failing to open something stops the process.
 ## `frame-ancestors` is the one CSP clause a page may not drop
 
 RFC 9700 section 4.14. `app.js` sets the policy on every response, and a
-growing number of routes relax it — the thirteen kinds of scripted page below, and others
+growing number of routes relax it — the twelve kinds of scripted page below, and others
 that widen `img-src`, `style-src`, `frame-src` or `connect-src` — by SETTING
 THE WHOLE HEADER, so each of them could lose the framing clause with nothing
 failing: the page works, the script runs, and the protection is gone.
@@ -694,23 +703,25 @@ argues it.
 silently.
 
 
-## Thirteen kinds of page here have a script on them, and each is the same exception
+## Twelve kinds of page here have a script on them, and each is the same exception
 
 `app.js` sets `script-src 'none'` for the whole service, and the reason is in its
 own comment: it is what makes the family of reflected-content problems moot rather
-than merely unlikely. Thirteen kinds of page need a script and each takes the SAME shape of
+than merely unlikely. Twelve kinds of page need a script and each takes the SAME shape of
 exception — `script-src 'self'` naming one resource, never `'unsafe-inline'` —
-and **each but the OP iframe and the Copy buttons carries a REAL SUBMIT BUTTON
-as well**, because with the script blocked the button is the whole mechanism.
-The OP iframe has no person in front of it and nothing to submit, and a Copy
-button submits nothing either; their arguments are their rows.
+and **each but the OP iframe and the admin console carries a REAL SUBMIT
+BUTTON as well**, because with the script blocked the button is the whole
+mechanism. The OP iframe has no person in front of it and nothing to submit,
+and the console IS a script — an application that reaches this service only
+through `/admin-api` — so with script blocked it says so and does nothing;
+their arguments are their rows.
 
 | Page | Script | Argued in |
 |---|---|---|
 | `/authn/webauthn` | `/authn/webauthn.js` | `authn/CLAUDE.md` |
 | WS-Federation's sign-in response | `/wsfed/autopost.js` | `ws-federation/CLAUDE.md` |
 | `response_mode=form_post` | `/oauth2/autopost.js` | `oauth-oidc/CLAUDE.md` |
-| `/admin/api-explorer` — the one console page with a script of its own (the Protocols pages share the copy script) | the explorer | `mgmt-api/CLAUDE.md`, `admin-ui/CLAUDE.md` |
+| `/admin` and every `/admin/*` path — **the admin console, a static application since #446 (2026-10-05)** | `/admin/console.js` — the console's runtime: it signs in (PKCE, a DPoP key WebCrypto will not export), draws every page from its `/admin-api` operation, sends every form there, writes a Copy button's URL to the clipboard, and loads the API explorer's own script (`/admin/api-explorer/explorer.js`) when that page is drawn. **No submit button stands in for it**: a form has nowhere to post but the API, which takes a token a page without script cannot hold, so the shell's `<noscript>` says the console needs its script and nothing else is drawn. `connect-src 'self'` beside `script-src 'self'` | `admin-ui/CLAUDE.md`, `mgmt-api/CLAUDE.md` |
 | the SAML 2.0 HTTP POST binding | `/saml2/autopost.js` | `saml/CLAUDE.md` |
 | the SAML 1.1 Browser/POST profile | `/saml11/autopost.js` | `saml/CLAUDE.md` |
 | `/portal/keys` | `/authn/webauthn.js` — the SAME resource, not a copy | `portal/CLAUDE.md` |
@@ -718,7 +729,6 @@ button submits nothing either; their arguments are their rows.
 | `/portal/devices`, **only while a WebAuthn link ceremony is armed** (#164 phase 2) | `/authn/webauthn.js` in `get` mode — a fresh assertion links a platform credential to a device; the page's key-proof form beside it runs no script | `portal/CLAUDE.md` |
 | `/authn/wallet/wait` (2026-09-17) | `/authn/wallet.js` — the W3C Digital Credentials API call, which no markup can make | `oid4vc/CLAUDE.md`, `authn/CLAUDE.md` |
 | the sign-in screen `/authn/login`, **only while `risk.fingerprinting` is on in the realm** (#62 P6, off by default) | `/authn/fingerprint.js` — FingerprintJS (MIT, served with its notice) computing a browser identifier, which no markup can; the form works with it blocked, the field simply empty | `authn/CLAUDE.md`, `risk/CLAUDE.md` |
-| every Protocols page's *Endpoints* section (2026-10-01), **only on a page that draws a Copy button** | `/admin/copy.js` — `navigator.clipboard.writeText()`, with the select-and-`execCommand('copy')` fallback the parent project's `copyField()` uses outside a secure context; writing to the clipboard on a click is what no markup can do. The buttons are drawn `hidden` and the script reveals them, so with script blocked the page is the page it was, the URLs still selectable text — the second page with no submit button, because nothing is submitted | `admin-ui/CLAUDE.md` |
 | `/oauth2/check_session` (#121, 2026-09-23, off by default) | `/oauth2/check_session.js` — it answers a relying party's `postMessage`, which no markup can; so it is the one page here with **NO submit button**, and with script off a relying party's question simply goes unanswered | `oauth-oidc/CLAUDE.md` |
 
 **The embedded debugger's pages are NOT on this list, because they are not on

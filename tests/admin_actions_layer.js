@@ -179,7 +179,15 @@ function checkOneLayerIsALibrary(t, layer) {
   // the request (headers, cookies, the body, a session) is the console's.
   const reads = (code.match(/(?:^|[^.\w$])req\.[a-zA-Z]+/g) || [])
     .map(function (r) { return r.trim(); });
-  const illegal = reads.filter(function (r) { return !/req\.query$/.test(r); });
+  // ONE MORE SINCE THE CUTOVER (#446): `req.adminApiCaller`, the caller
+  // `/admin-api`'s gate verified and left on the request. It is not a header
+  // or a cookie: it is the gate's answer to "who is asking", which the
+  // views' `gateStateFor()` reads so a realm administrator's token is drawn
+  // the realm administrator's view — the static console has no session to
+  // read instead.
+  const illegal = reads.filter(function (r) {
+    return !/req\.(query|adminApiCaller)$/.test(r);
+  });
   if (/admin_actions/.test(layer)) {
     t.check(reads.length === 0,
             'and it never touches req either — an action takes a parsed body',

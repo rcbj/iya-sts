@@ -104,6 +104,7 @@ import DelegationPage = require('./web_delegation');
 import DashboardPage = require('./web_dashboard');
 import StsMetadataPage = require('./web_sts_metadata');
 import ExplorerPage = require('./web_explorer');
+import WebAnswers = require('./web_answers');
 
 type Json = any;
 
@@ -128,6 +129,9 @@ interface WebPage {
   // ?session=` — maps the page's name to the operation's here, and the
   // page is asked for with the operation's.
   params?: Record<string, string>;
+  // WHAT THE PAGE ALWAYS ASKS ITS OPERATION, beside its own query: the PKI
+  // page's `rows=shown`, so the API reads only what the page draws.
+  fixed?: Record<string, string>;
   drill?: {
     param: string;
     sample: (listView: Json) => string | null;
@@ -475,8 +479,10 @@ const PAGES: WebPage[] = [
   { path: '/admin/oauth2/monitor', title: 'OAuth 2.0 / OIDC activity',
     operation: '/admin-api/oauth2/monitor',
     render: OAuth2MonitorPage.render },
+  // `rows=shown`: the page's own call reads the certificates of the rows
+  // it draws and no others (#352).
   { path: '/admin/pki', title: 'PKI', operation: '/admin-api/pki',
-    render: PkiPage.render },
+    fixed: { rows: 'shown' }, render: PkiPage.render },
   { path: '/admin/policies', title: 'Policies',
     operation: '/admin-api/policies',
     render: function (view: Json, ctx?: Json): string {
@@ -813,6 +819,13 @@ class WebPages {
   static readonly settings = SettingsForms;
 
   /**
+   * What a form's answer draws where a notice is not enough
+   * (`web_answers.ts`): in the bundle so a protocol job can draw a secret
+   * shown once as the console does.
+   */
+  static readonly answers = WebAnswers;
+
+  /**
    * Finds the converted page at a console path.
    *
    * @param path - the realm-relative console path, such as `/admin/mode`
@@ -852,6 +865,10 @@ class WebPages {
     Object.keys(query || {}).forEach(function (name) {
       const mapped = page && page.params && page.params[name];
       out[mapped || name] = query[name];
+    });
+    // What the page always asks its operation, whatever its own query.
+    Object.keys((page && page.fixed) || {}).forEach(function (name) {
+      out[name] = page.fixed[name];
     });
     return out;
   }

@@ -184,76 +184,8 @@ class ScepAdmin {
     const { log, parseBody, consoleModel, admin, esc, errorCodes } = this.deps;
     const self = this;
     log.debug("Entering ScepAdmin.registerRoutes().");
-    app.get('/admin/scep', function (req, res) {
-      log.debug("Entering the admin SCEP page.");
-      if (self.queryRefused(req, res)) {
-        log.debug("Leaving the admin SCEP page. Bad query.");
-        return;
-      }
-      self.drawScep(req, res, '');
-      log.debug("Leaving the admin SCEP page.");
-    });
 
-    // -------------------------------------------------------------------------
-    // POST /admin/scep
-    // -------------------------------------------------------------------------
-    app.post('/admin/scep', function (req, res) {
-      log.debug("Entering the admin SCEP action.");
-      const body = parseBody(req);
-      consoleModel.scepAction(body, { via: 'console',
-                                      actor: consoleModel.actorOf(req),
-                                      req: req })
-        .then(function (result) {
-          // A form on an application's page comes back there (2026-10-01).
-          const back = admin.enrollmentReturnTo(body, '/admin/scep');
-          const json = /json/i.test(String(req.headers['content-type'] || ''));
-          if (result.ok && result.challenge && !json) {
-            // THE ONE-TIME SECRET, on a 200 page — see the header.
-            const shown = admin.warn('<strong>The challenge password for ' +
-              esc(result.entryUri) + ' (' + esc(result.profile) + '). It is ' +
-              'shown once and cannot be shown again.</strong>') +
-              '<table class="kv"><tr><th>Challenge</th><td>' +
-              ScepPage.code(result.challenge) +
-              '</td></tr><tr><th>Expires</th><td>' +
-              esc(result.expiresAt) + '</td></tr><tr><th>SCEP URL</th><td>' +
-              ScepPage.code(result.url) +
-              '</td></tr><tr><th>Plain-HTTP SCEP URL</th><td>' +
-              ScepPage.code(result.plainUrl) +
-              '</td></tr></table><h3>With sscep</h3><pre>' +
-              esc(result.hint) + '</pre>' + (back === '/admin/scep' ? ''
-                : '<p class="links"><a href="' + esc(back) + '">Back to ' +
-                  'the application</a></p>');
-            self.drawScep(req, res, shown);
-            log.debug("Leaving the admin SCEP action. A challenge shown once.");
-            return;
-          }
-          admin.respondToAction(req, res, back, result);
-          log.debug("Leaving the admin SCEP action. ok=" + result.ok);
-        })
-        .catch(function (e) {
-          log.error(errorCodes.tag('STS-SCEP-0061') +
-                    'scep: a console action failed: ' + ((e && e.stack) || e));
-          admin.respondToAction(req, res, '/admin/scep', errorCodes.mark(
-            { ok: false, errors: ['The action could not be completed.'] },
-            'STS-SCEP-0061'));
-        });
-      log.debug("Leaving the admin SCEP action handler.");
-    });
 
-    app.get('/admin/scep/monitor', function (req, res) {
-      log.debug("Entering the admin SCEP monitor page.");
-      if (self.queryRefused(req, res)) {
-        log.debug("Leaving the admin SCEP monitor page. Bad query.");
-        return;
-      }
-      const json = consoleModel.scepMonitorView(req);
-      // Drawn by `web_scep.ts` (#446), as the SCEP page is.
-      const inner = ScepPage.monitorBody(admin.renderContext(req),
-                                         JSON.parse(JSON.stringify(json)));
-      admin.respond(req, res, json, 'SCEP enrollments', '/admin/scep/monitor',
-                    inner);
-      log.debug("Leaving the admin SCEP monitor page.");
-    });
     log.debug("Leaving ScepAdmin.registerRoutes().");
   }
 }

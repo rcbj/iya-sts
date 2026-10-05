@@ -3673,8 +3673,9 @@ class ApplicationsPage {
   // role entry: the forms post to /admin/roles as add-member and
   // remove-member with `kind=application`, the same act as on that page and
   // audited the same (`roles.grant`, `roles.revoke`); granting here is the
-  // administrator's consent, and there is no second step. `from` and `client`
-  // bring the browser back to this section.
+  // administrator's consent, and there is no second step. The static console
+  // (#446) comes back to the page the form was on, so the `from` and `client`
+  // the server-rendered console returned by are gone.
   // ---------------------------------------------------------------------------
   /**
    * Draws an application's application permissions: the roles it holds as
@@ -3692,9 +3693,7 @@ class ApplicationsPage {
     const hidden = function (action, role) {
       return carryBack +
         '<input type="hidden" name="action" value="' + action + '">' +
-        '<input type="hidden" name="from" value="/admin/applications">' +
-        '<input type="hidden" name="client" value="' + kit.esc(identifier) +
-        '"><input type="hidden" name="kind" value="application">' +
+        '<input type="hidden" name="kind" value="application">' +
         '<input type="hidden" name="member" value="' + kit.esc(identifier) +
         '">' + (role === null ? '' : '<input type="hidden" name="role" ' +
         'value="' + kit.esc(role) + '">');

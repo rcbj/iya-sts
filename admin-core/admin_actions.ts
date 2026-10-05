@@ -4870,6 +4870,14 @@ class AdminActions {
       if (entry && asked === 'registration-access-token') {
         value = String([].concat(fields.appRegistrationAccessToken || [])[0] ||
                        '');
+      } else if (entry && asked !== 'didPrivateKeys' &&
+                 (applications.SEALED_FIELDS || []).indexOf(asked) >= 0) {
+        // A SEALED CREDENTIAL BY ITS ATTRIBUTE (#446): an RFC 7523 or RFC
+        // 7522 signing key an operator collects to sign the assertions,
+        // GNAP's shared key or macaroon root key. The registry opens it; the
+        // answers that list the application never carry it. A DID's private
+        // keys are handed over when they are generated, and only then.
+        value = String([].concat(fields[asked] || [])[0] || '');
       } else if (entry && asked) {
         applications.clientSecretRecordsOf(fields).forEach(function (rec) {
           if (rec.id === asked) {
@@ -4886,8 +4894,11 @@ class AdminActions {
                  : 'This application holds no ' +
                    (asked === 'registration-access-token'
                      ? 'registration access token.'
-                     : 'client secret with the id "' + asked + '". The ids ' +
-                       'are in its credentials.clientSecret.secrets.')] });
+                     : (applications.SEALED_FIELDS || []).indexOf(asked) >= 0
+                       ? asked + ' that can be revealed.'
+                       : 'client secret with the id "' + asked + '". The ' +
+                         'ids are in its credentials.clientSecret' +
+                         '.secrets.')] });
       }
       auditLog.record({ category: 'application',
         action: 'application.secret-revealed',
@@ -6838,6 +6849,9 @@ class AdminActions {
       log.debug("Leaving AdminActions.realmsAction(). create ok, " +
                 Object.keys(result.realm.overrides).length + " setting(s).");
       return { ok: true, realm: result.realm.id,
+               // Where its endpoints answer, for a link to its console: the
+               // static console cannot ask `realms.prefixOf()` (#446).
+               prefix: realms.prefixOf(result.realm),
                bootstrap: seeded.ran
                  ? { username: seeded.username, created: !!seeded.created,
                      passwordResetRequired: !!seeded.created }
@@ -6990,6 +7004,65 @@ class AdminActions {
       'The five are: create, update, set, unset, remove.'] });
   }
 
+  // Moved here from the console's `POST /admin/config` (#446): the static
+  // console sends a settings form as it is drawn, to the operation, so the
+  // fold is the action's — and a machine sending the same fields gets the
+  // same answer.
+  // THE FOLD, for a form that drew `orderedChoiceControl()`: the ticked
+  // values sorted by their numbers (a number that does not read as one goes
+  // last; a tie keeps the order the form posted), joined into the setting's
+  // value, and the per-value fields removed so `set-many` sees only real
+  // keys. Ticking nothing is refused (STS-ADMIN-0840) rather than saved as
+  // an empty list, which the setting would silently replace with its
+  // fallback. Anything else the setting does not take is `checkWrite()`'s
+  // to refuse, as for every other row.
+  /**
+   * Folds an ordered choice's checkbox and order fields into the setting's
+   * one comma-separated value.
+   *
+   * @param body - the parsed form body, changed in place
+   * @returns a refusal, or null
+   */
+  foldOrderedChoices(body) {
+    const { log, errorCodes } = this.deps;
+    log.debug("Entering AdminActions.foldOrderedChoices().");
+    const markers = Object.keys(body || {}).filter(function (name) {
+      return /\.ordered$/.test(name);
+    });
+    let refusal = null;
+    markers.forEach(function (marker) {
+      const key = marker.slice(0, -'.ordered'.length);
+      const picks = [];
+      Object.keys(body).forEach(function (name, n) {
+        if (name.indexOf(key + '.pick.') === 0) {
+          const value = name.slice((key + '.pick.').length);
+          const rank = Number(body[key + '.rank.' + value]);
+          picks.push({ value: value, n: n,
+                       rank: Number.isFinite(rank) ? rank : Infinity });
+        }
+      });
+      Object.keys(body).forEach(function (name) {
+        if (name === marker || name.indexOf(key + '.pick.') === 0 ||
+            name.indexOf(key + '.rank.') === 0) {
+          delete body[name];
+        }
+      });
+      if (!picks.length) {
+        refusal = refusal || errorCodes.mark({ ok: false, errors: [key +
+          ': choose at least one. A list with nothing in it is not saved; ' +
+          'the setting would fall back to a default nobody chose.'] },
+          'STS-ADMIN-0840');
+        return;
+      }
+      picks.sort(function (a, b) {
+        return a.rank - b.rank || a.n - b.n;
+      });
+      body[key] = picks.map(function (one) { return one.value; }).join(',');
+    });
+    log.debug("Leaving AdminActions.foldOrderedChoices(). " +
+              markers.length + " folded.");
+    return refusal;
+  }
   // The action switch. `set` and `reset` name one setting; `set-many` is what a
   // section's Save posts, and it is not a convenience — a section is how a
   // person changes configuration, and turning that into one call per field
@@ -7009,6 +7082,23 @@ class AdminActions {
     const self = this;
     log.debug("Entering AdminActions.configAction(). action=" + (body &&
                                                                  body.action));
+    // A SECTION'S RESET BUTTON names its setting in `reset` (it was the
+    // `?reset=` of the console's own URL, which the static console carries
+    // into the fields it sends), whatever action the section's form posts.
+    // And an ordered choice's checkboxes and numbers are folded into its one
+    // value first: that is the shape the form is drawn in.
+    const resetKey = body && body.reset !== undefined
+      ? String(body.reset || '').trim() : '';
+    if (resetKey) {
+      body = { action: 'reset', key: resetKey, from: body.from };
+    } else if (body) {
+      const refused = this.foldOrderedChoices(body);
+      if (refused) {
+        log.debug("Leaving AdminActions.configAction(). An ordered choice " +
+                  "was refused.");
+        return refused;
+      }
+    }
     const action = String((body && body.action) || '').trim();
 
     if (action === 'set') {

@@ -302,55 +302,18 @@ function inRealm(fn) {
   return realms.run(realms.get(REALM), fn);
 }
 
-function pageHandler() {
-  log.debug("Entering pageHandler().");
-  const layer = (app._router.stack || []).filter(function (one) {
-    return one.route && one.route.path === '/admin/pki' &&
-           one.route.methods.get;
-  })[0];
-  log.debug("Leaving pageHandler().");
-  return layer ? layer.route.stack[0].handle : null;
-}
+// THE PAGE AS THE STATIC CONSOLE DRAWS IT (#446): its `/admin-api`
+// operation's answer, drawn by its renderer (`tests/tools/console_page.js`),
+// where it was the console route's handler until the cutover.
+const drawer = require('./tools/console_page.js')
+  .consolePage(__dirname + '/..');
 
-function drawPage(query) {
+async function drawPage(query) {
   log.debug("Entering drawPage().");
-  let body = '';
-  const res = {
-    set: function () {
-      return this;
-    },
-    status: function () {
-      return this;
-    },
-    type: function () {
-      return this;
-    },
-    send: function (text) {
-      body = String(text);
-      return this;
-    },
-    get: function () {
-      return undefined;
-    },
-    getHeader: function () {
-      return undefined;
-    },
-    setHeader: function () {
-      return undefined;
-    },
-    locals: {}
-  };
-  const req = { query: query, headers: {}, method: 'GET', cookies: {},
-                url: '/admin/pki', originalUrl: '/admin/pki',
-                path: '/admin/pki',
-                get: function () {
-                  return '';
-                } };
-  pageHandler()(req, res, function (e) {
-    log.debug("The PKI page handler called next(): " + ((e && e.message) || e));
-  });
-  log.debug("Leaving drawPage().");
-  return body;
+  const drawn = await drawer.draw('/admin/pki', query);
+  log.debug("Leaving drawPage(). " + drawn.html.length +
+            " character(s).");
+  return drawn.html;
 }
 
 // Writes an issued key pair to a person with the private half SEALED, as it
@@ -486,9 +449,9 @@ async function claimB(t) {
     opens = 0;
     certificateViews.forgetFacts();
     const drawn = await counting(certificateViews, 'pqcOf', function () {
-      return inRealm(function () {
+      return inRealm(async function () {
         const began = process.hrtime.bigint();
-        const body = drawPage({});
+        const body = await drawPage({});
         t.log.info('/admin/pki page, after: ' + elapsed(began));
         return body;
       });

@@ -45,6 +45,23 @@ const ROOT = path.join(__dirname, '..');
 function childMain() {
   /* eslint-disable no-console */
   const ROOT_DIR = process.env.AG_ROOT;
+  // The console's DPoP key, and the tokens minted bound to it (#446).
+  // Made when first used, once the stack is built: requiring the key's
+  // modules first would build their instances before the composition root.
+  let dpopKit = null;
+  const DPOP = {
+    get jkt() {
+      dpopKit = dpopKit || require(ROOT_DIR + '/tests/tools/console_dpop')
+        .consoleDpop(ROOT_DIR);
+      return dpopKit.jkt;
+    },
+    headers: function (method, url, token) {
+      dpopKit = dpopKit || require(ROOT_DIR + '/tests/tools/console_dpop')
+        .consoleDpop(ROOT_DIR);
+      return dpopKit.headers(method, url, token);
+    }
+  };
+  const BOUND = {};
   const OUT = process.env.AG_OUT;
   const http = require('http');
   const findings = [];
@@ -56,7 +73,13 @@ function childMain() {
     return new Promise(function (resolve, reject) {
       const text = body === undefined ? null : JSON.stringify(body);
       const headers = { accept: 'application/json' };
-      if (token) {
+      // A CONSOLE token is DPoP-bound since the cutover (#446) and goes
+      // with its proof; any other is a Bearer token as it always was.
+      if (token && BOUND[token]) {
+        Object.assign(headers, DPOP.headers(method, 'http://127.0.0.1:' +
+                                            port + urlPath.split('?')[0],
+                                            token));
+      } else if (token) {
         headers.authorization = 'Bearer ' + token;
       }
       if (text) {
@@ -130,11 +153,17 @@ function childMain() {
     const port = server.address().port;
     const base = 'http://127.0.0.1:' + port;
     const SCOPE = 'admin:read admin:write';
-    const mint = function (claims) {
-      return inDefault(function () {
-        return oauth2.accessTokenAsync(base, Object.assign({
+    const mint = async function (claims) {
+      const bound = claims.client_id === 'sts-admin-console';
+      const token = await inDefault(function () {
+        return oauth2.accessTokenAsync(base, Object.assign(bound
+          ? { jkt: DPOP.jkt } : {}, {
           audience: base + '/admin-api', scope: SCOPE }, claims));
       });
+      if (bound) {
+        BOUND[token] = true;
+      }
+      return token;
     };
     const writer = await mint({ client_id: 'sts-admin-console',
                                 username: WRITER, sub: WRITER });

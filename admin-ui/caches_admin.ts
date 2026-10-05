@@ -493,11 +493,6 @@ class CachesAdmin {
     const { log } = this.deps;
     const self = this;
     log.debug("Entering CachesAdmin.registerRoutes().");
-    app.get(PAGE, function (req: Req, res: Res): void {
-      log.debug('Entering GET ' + PAGE + '.');
-      self.renderCaches(req, res);
-      log.debug('Leaving GET ' + PAGE + '.');
-    });
     log.debug("Leaving CachesAdmin.registerRoutes().");
   }
 }

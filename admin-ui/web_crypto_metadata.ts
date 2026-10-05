@@ -828,11 +828,13 @@ class CryptoMetadataPage {
         '<td>' + (cert
           ? '<code>' + esc(cert.serialHex) + '</code><br>' +
             esc(cert.notBefore) + ' &ndash; ' + esc(cert.notAfter) +
+            // An /admin-api resource since #446: the console's runtime
+            // fetches it with its own token and saves it.
             '<br><a href="' +
-            esc('/admin/keys/history/certificate?unit=' +
+            esc('/admin-api/keys/history/certificate?unit=' +
                 encodeURIComponent(view.unit) + '&kid=' +
-                encodeURIComponent(row.kid)) + '">The certificate and its ' +
-            'chain (PEM)</a>'
+                encodeURIComponent(row.kid)) + '" download>The certificate ' +
+            'and its chain (PEM)</a>'
           : 'none') + '</td></tr>';
     }).join('');
     const out = lead + '<h2>' + esc(view.unit) + '</h2>' + nav.head +

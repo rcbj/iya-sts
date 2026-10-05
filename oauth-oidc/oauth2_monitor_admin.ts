@@ -203,47 +203,7 @@ class OAuth2MonitorAdmin {
     const { log, parseBody, errorCodes, admin, consoleModel } = this.deps;
     const self = this;
     log.debug("Entering OAuth2MonitorAdmin.registerRoutes().");
-    // -------------------------------------------------------------------------
-    // GET /admin/oauth2/monitor
-    // -------------------------------------------------------------------------
-    app.get('/admin/oauth2/monitor', function (req, res) {
-      log.debug("Entering the admin OAuth 2.0 monitor page.");
-      if (self.queryRefused(req, res)) {
-        log.debug("Leaving the admin OAuth 2.0 monitor page. Bad query.");
-        return;
-      }
-      const json = consoleModel.monitorView(req);
-      const inner = self.messagesOf(req) + self.body(req, json);
-      admin.respond(req, res, json, 'OAuth 2.0 / OIDC activity', PAGE, inner);
-      log.debug("Leaving the admin OAuth 2.0 monitor page.");
-    });
 
-    // -------------------------------------------------------------------------
-    // POST /admin/oauth2/monitor — Withdraw. The gate has already checked CSRF
-    // and Admin Write; the action decides and writes the audit row.
-    // -------------------------------------------------------------------------
-    app.post('/admin/oauth2/monitor', function (req, res) {
-      log.debug("Entering the admin OAuth 2.0 monitor action.");
-      const body = parseBody(req);
-      const target = PAGE +
-                     consoleModel.queryWith(self.listViewFromBack(body.back),
-                                            {}) +
-                     '#held';
-      let result = null;
-      try {
-        result = consoleModel.monitorAction(body, {
-          via: 'console', actor: consoleModel.consoleActorOf(req) });
-      } catch (e) {
-        log.error(errorCodes.tag('STS-ADMIN-0705') + 'oauth2 monitor console ' +
-                  'action threw: ' + ((e && e.stack) || e));
-        result = errorCodes.mark({ ok: false,
-                                   errors: ['The action could not be ' +
-                                            'completed.'] },
-                                 'STS-ADMIN-0705');
-      }
-      admin.respondToAction(req, res, target, result);
-      log.debug("Leaving the admin OAuth 2.0 monitor action. ok=" + result.ok);
-    });
 
     log.debug("Leaving OAuth2MonitorAdmin.registerRoutes().");
   }

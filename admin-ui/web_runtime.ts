@@ -57,6 +57,7 @@ import kit = require('./web_kit');
 import WebPages = require('./web_pages');
 import WebShell = require('./web_shell');
 import WebForms = require('./web_forms');
+import WebAnswers = require('./web_answers');
 
 type Json = any;
 
@@ -88,6 +89,7 @@ class ConsoleRuntime {
   private me: Json;
   private formTable: Json;
   private view: Json;
+  private spec: Json;
 
   /**
    * Makes the runtime.
@@ -111,6 +113,7 @@ class ConsoleRuntime {
     this.me = null;
     this.formTable = null;
     this.view = null;
+    this.spec = null;
   }
 
   // --- paths ---------------------------------------------------------------
@@ -482,6 +485,11 @@ class ConsoleRuntime {
       if (body !== undefined && body !== null) {
         if (typeof FormData !== 'undefined' && body instanceof FormData) {
           payload = body;
+        } else if (body.rawUpload) {
+          // A FILE AS THE BODY, for an operation that takes bytes rather
+          // than JSON (`multipartBody()`).
+          headers['Content-Type'] = body.contentType;
+          payload = body.rawUpload;
         } else if (typeof body === 'string') {
           headers['Content-Type'] = 'application/json';
           payload = body;
@@ -584,14 +592,18 @@ class ConsoleRuntime {
    * @param up - a drill-down's way up, or null
    * @returns nothing
    */
-  draw(title: string, active: string, inner: string, up: Json): void {
+  draw(title: string, active: string, inner: string, up: Json,
+       banner?: string): void {
     const query = ConsoleRuntime.queryOf(this.env.location.search);
     const notice = String(query.notice || '').slice(0, 500);
     const error = String(query.error || '').slice(0, 500);
-    const messages = kit.flash((notice ? '<div class="ok">' +
-                                kit.esc(notice) + '</div>' : '') +
-                               (error ? '<div class="err">' +
-                                kit.esc(error) + '</div>' : ''));
+    // A PAGE DRAWN IN PLACE from an act's answer says what the act did
+    // itself, and the location's notice belongs to an earlier one.
+    const messages = banner !== undefined ? banner
+      : kit.flash((notice ? '<div class="ok">' + kit.esc(notice) + '</div>'
+                          : '') +
+                  (error ? '<div class="err">' + kit.esc(error) + '</div>'
+                         : ''));
     const shell = this.shell || { gate: null, sections: [], realm: { id: '',
       name: '' }, navLabels: {}, version: {}, persistence: {} };
     this.env.document.title = title + ' — IYA STS admin';
@@ -699,7 +711,7 @@ class ConsoleRuntime {
    * @param state - for the page's view: what the act answered, or null
    * @returns nothing
    */
-  drawView(state: Json): void {
+  drawView(state: Json, banner?: string): void {
     const page = this.view.page;
     const query = this.view.query;
     const json = state
@@ -717,7 +729,7 @@ class ConsoleRuntime {
       : null;
     this.draw(drilled ? page.title + ' ' + query[page.drill.param]
                       : page.title,
-              page.path, WebPages.render(page.path, json, ctx), up);
+              page.path, WebPages.render(page.path, json, ctx), up, banner);
   }
 
   /**
@@ -763,6 +775,226 @@ class ConsoleRuntime {
     return out;
   }
 
+  // WHAT AN OPERATION TAKES. A form carries fields only the server-rendered
+  // console read — `back` and `from` (where to send the browser after),
+  // `csrf_token` — and every field as a string, and the management API
+  // refuses a member its schema does not name and checks each one's type.
+  // So a form's fields are shaped by the operation's own request schema,
+  // read from the OpenAPI document (fetched once): only the members it
+  // declares, a lone value given where it takes a list, a checkbox's value
+  // where it takes a boolean, a number where it takes only a number.
+  /**
+   * The request schema of a POST operation, from the OpenAPI document.
+   *
+   * @param operation - the operation's path, `/admin-api/groups/create`
+   * @returns the schema with its `$ref` resolved, or null
+   */
+  async requestSchema(operation: string): Promise<Json> {
+    if (!this.spec) {
+      const answer = await this.apiJson('GET', '/admin-api/openapi.json');
+      this.spec = answer && answer.status === 200 && answer.json
+        ? answer.json : {};
+    }
+    const op = ((this.spec.paths || {})[operation] || {}).post;
+    const schema = op && op.requestBody && op.requestBody.content &&
+      op.requestBody.content['application/json'] &&
+      op.requestBody.content['application/json'].schema;
+    return schema ? this.deref(schema) : null;
+  }
+
+  // A FORM THAT CARRIES A FILE (#446): the server-rendered console read its
+  // multipart body in the page's own handler, and no operation takes
+  // multipart. So it is sent as its operation takes it: an operation whose
+  // only bodies are bytes (the risk dataset upload) is sent the FILE as the
+  // body, typed by its name, with the form's other fields as query
+  // parameters; a JSON operation is sent the fields, each file as
+  // `{ name, text }` under its input's name (the RFC 9728 document).
+  /**
+   * The operation and body a multipart form is sent as.
+   *
+   * @param operation - the operation's path
+   * @param data - the form's FormData, the submitter's value in it
+   * @returns `{ operation, body }` for `api()`
+   */
+  async multipartBody(operation: string, data: Json): Promise<Json> {
+    if (!this.spec) {
+      await this.requestSchema(operation);
+    }
+    const op = ((this.spec.paths || {})[operation] || {}).post || {};
+    const content = (op.requestBody && op.requestBody.content) || {};
+    const fields: Json = {};
+    const files: Json[] = [];
+    data.forEach(function (value, name) {
+      if (value && typeof value === 'object' && 'size' in value &&
+          'name' in value) {
+        if (value.size > 0) {
+          files.push({ name: name, file: value });
+        }
+        return;
+      }
+      fields[name] = name in fields
+        ? ([] as any[]).concat(fields[name], value) : value;
+    });
+    if (!content['application/json'] && Object.keys(content).length) {
+      const types = Object.keys(content);
+      const file = files.length ? files[0].file : null;
+      const fileName = file ? String(file.name || '') : '';
+      const type = /\.gz$/i.test(fileName) &&
+                   types.indexOf('application/gzip') >= 0
+        ? 'application/gzip'
+        : (/\.zip$/i.test(fileName) && types.indexOf('application/zip') >= 0
+          ? 'application/zip'
+          : (types.indexOf('application/octet-stream') >= 0
+            ? 'application/octet-stream' : types[0]));
+      const query = new URLSearchParams();
+      Object.keys(fields).forEach(function (name) {
+        if (name === 'action') {
+          return;
+        }
+        [].concat(fields[name]).forEach(function (value) {
+          if (String(value) !== '') {
+            query.append(name, String(value));
+          }
+        });
+      });
+      const qs = query.toString();
+      return { operation: operation + (qs ? '?' + qs : ''),
+               body: file ? { rawUpload: file, contentType: type } : '' };
+    }
+    for (let i = 0; i < files.length; i++) {
+      fields[files[i].name] = { name: String(files[i].file.name || ''),
+                                text: await files[i].file.text() };
+    }
+    return { operation: operation,
+             body: this.shapeFields(fields,
+                                    await this.requestSchema(operation)) };
+  }
+
+  /**
+   * Resolves a `$ref` into the OpenAPI document's components.
+   *
+   * @param schema - a schema, or a `{ $ref }`
+   * @returns the schema it names
+   */
+  deref(schema: Json): Json {
+    let one = schema;
+    for (let i = 0; i < 5 && one && one.$ref; i++) {
+      const parts = String(one.$ref).replace(/^#\//, '').split('/');
+      let at = this.spec;
+      parts.forEach(function (part) {
+        at = at ? at[part] : null;
+      });
+      one = at;
+    }
+    return one || null;
+  }
+
+  /**
+   * Shapes a form's fields to an operation's request schema.
+   *
+   * @param fields - the form's fields
+   * @param schema - the operation's request schema, or null for none
+   * @returns the body to send
+   */
+  shapeFields(fields: Json, schema: Json): Json {
+    const self = this;
+    if (!schema || !schema.properties) {
+      return fields;
+    }
+    const out = {};
+    const has = function (name) {
+      return Object.prototype.hasOwnProperty.call(schema.properties, name);
+    };
+    // A MEMBER A PATTERN NAMES (`patternProperties`): the field grid's
+    // `field.<attribute>.<n>` boxes, which no list of properties could
+    // name one by one.
+    const patterned = function (name) {
+      const patterns = schema.patternProperties || {};
+      const key = Object.keys(patterns).filter(function (one) {
+        return new RegExp(one).test(name);
+      })[0];
+      return key ? patterns[key] : null;
+    };
+    // A REPEATED CHECKBOX IS THE LIST MEMBER: a column of boxes named
+    // `attribute` (or `claim`, or `protocol`) posts one value per ticked
+    // box, and the operation takes them as `attributes`. Left out, an
+    // operation that REPLACES a selection would be sent none and empty it.
+    const fieldsIn = {};
+    Object.keys(fields).forEach(function (name) {
+      const plural = name + 's';
+      if (!has(name) && has(plural) && !patterned(name)) {
+        const prop = self.deref(schema.properties[plural]) || {};
+        if ([].concat(prop.type || []).indexOf('array') >= 0) {
+          fieldsIn[plural] = ([] as any[]).concat(fieldsIn[plural] || [],
+                                                  fields[name]);
+          return;
+        }
+      }
+      fieldsIn[name] = name in fieldsIn
+        ? ([] as any[]).concat(fieldsIn[name], fields[name])
+        : fields[name];
+    });
+    Object.keys(fieldsIn).forEach(function (name) {
+      const pattern = has(name) ? null : patterned(name);
+      if (!has(name) && !pattern) {
+        if (schema.additionalProperties !== false) {
+          out[name] = fieldsIn[name];
+        }
+        return;
+      }
+      const prop = self.deref(pattern || schema.properties[name]) || {};
+      const types = [].concat(prop.type || []);
+      let value = fieldsIn[name];
+      // AN EMPTY BOX IS AN ABSENT VALUE where the schema could not take an
+      // empty string — a pattern, a minimum length, a type that is not a
+      // string — as the server-rendered console's form parser read it. It
+      // is kept where a string is all the schema asks, so a field can still
+      // be cleared.
+      if (value === '' && (prop.pattern || prop.minLength > 0 ||
+                           (types.length && types.indexOf('string') < 0))) {
+        return;
+      }
+      // JSON IN A TEXT AREA where the schema takes an object, or a list of
+      // objects: what the form calls a document is a value.
+      const items = prop.items ? self.deref(prop.items) || {} : {};
+      const wantsObject = types.indexOf('object') >= 0 &&
+                          types.indexOf('string') < 0;
+      const wantsObjects = types.indexOf('array') >= 0 &&
+                           [].concat(items.type || []).indexOf('object') >= 0;
+      if (typeof value === 'string' && (wantsObject || wantsObjects)) {
+        try {
+          const parsed = JSON.parse(value);
+          if (parsed && typeof parsed === 'object') {
+            value = parsed;
+          }
+        } catch (e) {
+          // Not JSON: sent as typed, and the operation names what it is.
+          value = fieldsIn[name];
+        }
+      }
+      if (types.indexOf('array') >= 0 && types.indexOf('string') < 0 &&
+          !Array.isArray(value)) {
+        value = value === '' ? [] : [value];
+      } else if (Array.isArray(value) && types.length &&
+                 types.indexOf('array') < 0) {
+        value = value[value.length - 1];
+      }
+      if (typeof value === 'string' && types.length &&
+          types.indexOf('string') < 0) {
+        if (types.indexOf('boolean') >= 0 &&
+            /^(true|false|on|off|1|0|yes|no)$/i.test(value)) {
+          value = /^(true|on|1|yes)$/i.test(value);
+        } else if ((types.indexOf('integer') >= 0 ||
+                    types.indexOf('number') >= 0) && value !== '' &&
+                   isFinite(Number(value))) {
+          value = Number(value);
+        }
+      }
+      out[name] = value;
+    });
+    return out;
+  }
+
   // WHAT AN ACT'S ANSWER DRAWS, as `respondToAction()` drew it: the page the
   // form was on, again, with `notice` or `error` in the strip — and, for
   // the two kinds of answer that page would otherwise lose, the credential
@@ -776,16 +1008,59 @@ class ConsoleRuntime {
    * @returns nothing
    */
   async submit(form: Json, submitter: Json): Promise<void> {
-    const target = new URL(form.getAttribute('action') || this.here(),
-                           this.env.location.href);
+    // A BUTTON MAY POST ELSEWHERE (`formaction`), and a section's Reset
+    // does: its own address names the setting in its query, which is
+    // carried into the fields the operation is sent.
+    const posted = (submitter && submitter.getAttribute &&
+                    submitter.getAttribute('formaction')) ||
+                   form.getAttribute('action') || this.here();
+    const target = new URL(posted, this.env.location.href);
     const page = this.consolePath(target.pathname);
     const data = this.formDataOf(form);
+    // THE PRESSED BUTTON'S VALUE WINS over a field of the same name: a
+    // create form's Generate secret is `action=generate-secret` beside the
+    // form's hidden `action=create`, and the server-rendered console read
+    // the last of the two. Taking the first would create the application.
     if (submitter && submitter.name) {
+      data.delete(submitter.name);
       data.append(submitter.name, submitter.value);
     }
+    // A `formaction`'s query TAKES THE PLACE of the form's field of the same
+    // name — the PKI workbench's Generate names `action=generate-keys` over
+    // the form's hidden `issue-certificate` — rather than joining it.
+    const named = {};
+    target.searchParams.forEach(function (value, name) {
+      if (!named[name]) {
+        named[name] = true;
+        data.delete(name);
+      }
+      data.append(name, value);
+    });
     const fields = ConsoleRuntime.fieldsOf(data);
     const action = Array.isArray(fields.action) ? fields.action[0]
                                                 : String(fields.action || '');
+    // A ROUND TRIP WRITES NOTHING: "+", a bin, a view switch. Drawn again
+    // here from what the form holds, and never sent — each of those forms'
+    // hidden `action` is the write (`web_answers.ts`).
+    if (page && this.view && WebAnswers.isRoundTrip(page, fields)) {
+      this.view.json = WebAnswers.roundTrip(page, fields, this.view.json);
+      this.drawView(null, '');
+      return;
+    }
+    // FILL asks for the invented person and writes nothing either.
+    if (page === '/admin/users/new' && this.view &&
+        fields.fill !== undefined) {
+      const invent = await this.apiJson('GET', '/admin-api/users/new?' +
+        new URLSearchParams({ invent: String(fields.username || '') })
+          .toString());
+      if (!invent) {
+        return;
+      }
+      const drawn = WebAnswers.filled(fields, invent.json, this.view.json);
+      this.view.json = drawn.json;
+      this.drawView(null, drawn.banner);
+      return;
+    }
     const operation = page ? WebForms.resolve(this.formTable, page, action)
                            : null;
     const back = this.here().replace(/([?&])(notice|error)=[^&]*/g, '$1')
@@ -799,7 +1074,11 @@ class ConsoleRuntime {
     }
     const multipart = /multipart\/form-data/i.test(
       String(form.getAttribute('enctype') || ''));
-    const res = await this.api('POST', operation, multipart ? data : fields);
+    const sent = multipart
+      ? await this.multipartBody(operation, data)
+      : { operation: operation,
+          body: this.shapeFields(fields, await this.requestSchema(operation)) };
+    const res = await this.api('POST', sent.operation, sent.body);
     if (!res) {
       return;
     }
@@ -812,9 +1091,55 @@ class ConsoleRuntime {
     const json = await res.json().catch(function () {
       return { ok: res.status < 400 };
     });
+    // FILES IN THE ANSWER (the key exports): what the server-rendered
+    // console answered with an attachment, the operation answers as named
+    // base64, and each is saved as the attachment was.
+    if (json && json.ok && Array.isArray(json.files) && json.files.length &&
+        json.files.every(function (one) {
+          return one && typeof one.base64 === 'string' && one.name;
+        })) {
+      for (let i = 0; i < json.files.length; i++) {
+        this.saveBase64(String(json.files[i].name),
+                        String(json.files[i].mime ||
+                               'application/octet-stream'),
+                        json.files[i].base64);
+      }
+      return;
+    }
     if (json && json.ok && action === 'reveal-secret' && this.view) {
       this.drawView({ revealed: { secret: fields.secret,
                                   value: json.value } });
+      return;
+    }
+    // A SECRET SHOWN ONCE is drawn in place — never on a URL, never in the
+    // history — and is gone when the reader moves on.
+    const once = WebAnswers.once(page, action, fields, json, {
+      back: back, base: this.env.location.origin + this.prefix,
+      realmRoot: (this.shell && this.shell.realmRoot) ||
+                 this.env.location.origin });
+    if (once) {
+      this.view = null;
+      this.draw(once.title, once.active, once.html, null, '');
+      return;
+    }
+    // A REDRAW FROM THE ANSWER: a refused create or edit with every box as
+    // it was, a generated secret or a loaded document in its form, the
+    // workbench's next draft, a resolution under the form that asked.
+    const again = this.view
+      ? WebAnswers.redraw(page, action, fields, json, this.view.json) : null;
+    if (again) {
+      this.view.json = again.json;
+      this.drawView(null, again.banner);
+      return;
+    }
+    // A NEW APPLICATION is looked at next, as the server-rendered console
+    // sent its create: to the entry, not back to an empty form.
+    if (json && json.ok && page === '/admin/applications/new' &&
+        action === 'create' && json.application &&
+        json.application.identifier) {
+      await this.go('/admin/applications?' + new URLSearchParams({
+        application: String(json.application.identifier),
+        notice: String(json.message || 'Created.') }).toString());
       return;
     }
     const key = json && json.ok ? 'notice' : 'error';
@@ -834,6 +1159,30 @@ class ConsoleRuntime {
    * @param disposition - its Content-Disposition
    * @returns nothing
    */
+  /**
+   * Saves a file an answer carried as base64.
+   *
+   * @param name - its file name
+   * @param mime - its media type
+   * @param base64 - its bytes
+   * @returns nothing
+   */
+  saveBase64(name: string, mime: string, base64: string): void {
+    const binary = atob(base64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) {
+      bytes[i] = binary.charCodeAt(i);
+    }
+    const href = URL.createObjectURL(new Blob([bytes], { type: mime }));
+    const a = this.env.document.createElement('a');
+    a.href = href;
+    a.download = name.replace(/[\/\\]/g, '_');
+    this.env.document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(href);
+  }
+
   async save(res: Json, disposition: string): Promise<void> {
     const name = (/filename="?([^";]+)"?/i.exec(disposition) || [])[1] ||
       'download';
@@ -885,15 +1234,28 @@ class ConsoleRuntime {
     while (el && el.tagName !== 'A') {
       el = el.parentElement;
     }
-    if (!el || el.target === '_blank' || el.hasAttribute('download')) {
+    if (!el) {
       return;
     }
     const url = new URL(el.getAttribute('href') || '', this.env.location.href);
     if (url.origin !== this.env.location.origin) {
       return;
     }
+    // A RESOURCE OF THE API — a certificate, a page's document — needs this
+    // console's token, which a navigation cannot carry: it is fetched with
+    // the token and a proof, and saved.
+    const apiPath = url.pathname.indexOf(this.prefix + '/admin-api') === 0
+      ? url.pathname.slice(this.prefix.length) : null;
     const page = this.consolePath(url.pathname);
-    if (!page || url.search.indexOf('format=') >= 0) {
+    const format = url.searchParams.get('format');
+    if (apiPath || (page && format)) {
+      event.preventDefault();
+      this.fetchAndSave(apiPath ? apiPath + url.search
+                                : this.documentOf(page, url, format),
+                        el.getAttribute('download') || '');
+      return;
+    }
+    if (el.target === '_blank' || el.hasAttribute('download') || !page) {
       return;
     }
     event.preventDefault();
@@ -910,6 +1272,57 @@ class ConsoleRuntime {
         }
       }
     });
+  }
+
+  // A PAGE'S OTHER FORMS — `?format=json`, `?format=svg` — were the
+  // server-rendered page answered in another shape. The same is the page's
+  // operation asked with that format: the answer as JSON, or the drawing.
+  /**
+   * The operation path a page's `?format=` link names.
+   *
+   * @param page - the console path
+   * @param url - the link
+   * @param format - `json` or `svg`
+   * @returns the operation's path and query
+   */
+  documentOf(page: string, url: Json, format: string): string {
+    const row = WebPages.PAGES.filter(function (one) {
+      return one.path === page;
+    })[0];
+    if (!row) {
+      return '/admin-api';
+    }
+    const query = ConsoleRuntime.queryOf(url.search);
+    delete query.format;
+    const mapped = WebPages.operationQuery(row.path, query);
+    if (format === 'svg') {
+      mapped.format = 'svg';
+    }
+    const qs = new URLSearchParams(mapped).toString();
+    return row.operation + (qs ? '?' + qs : '');
+  }
+
+  /**
+   * Fetches an API resource with this console's token and saves it.
+   *
+   * @param path - the path and query under the realm, `/admin-api/...`
+   * @param name - the file name a `download` attribute gave, or ''
+   * @returns nothing
+   */
+  async fetchAndSave(path: string, name: string): Promise<void> {
+    const res = await this.api('GET', path);
+    if (!res) {
+      return;
+    }
+    const disposition = String((res.headers && res.headers.get &&
+                                res.headers.get('Content-Disposition')) || '');
+    const type = String((res.headers && res.headers.get &&
+                         res.headers.get('Content-Type')) || '');
+    const fallback = name ||
+      (path.split('?')[0].split('/').pop() || 'download') +
+      (/svg/.test(type) ? '.svg' : (/json/.test(type) ? '.json' : ''));
+    await this.save(res, disposition ||
+                    'attachment; filename="' + fallback + '"');
   }
 
   // A GET form navigates to its query (the realm switcher is one, and is

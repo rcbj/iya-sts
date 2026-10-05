@@ -101,15 +101,6 @@ class SsfTransmittersAdmin {
     const { log, admin, transmitters } = this.deps;
     const self = this;
     log.debug("Entering SsfTransmittersAdmin.registerRoutes().");
-    app.get(PAGE, function (req: Json, res: Json): void {
-      log.debug("Entering the admin partners' signals page.");
-      const json = transmitters.report({
-        relationship: req.query.relationship });
-      const inner = (typeof admin.messagesOf === 'function'
-        ? admin.messagesOf(req) : '') + self.body(json);
-      admin.respond(req, res, json, 'Signals from partners', PAGE, inner);
-      log.debug("Leaving the admin partners' signals page.");
-    });
     log.debug("Leaving SsfTransmittersAdmin.registerRoutes().");
   }
 }

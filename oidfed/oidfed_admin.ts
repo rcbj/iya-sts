@@ -159,39 +159,6 @@ class OidfedAdmin {
     const { log, parseBody, admin, oidfed, errorCodes } = this.deps;
     const self = this;
     log.debug("Entering OidfedAdmin.registerRoutes().");
-    app.get('/admin/oidfed', function (req: Json, res: Json): void {
-      log.debug("Entering the admin OpenID Federation page.");
-      self.draw(req, res, '', null).catch(function (e: any): void {
-        log.error(errorCodes.tag('STS-OIDFED-0050') + 'oidfed: the console ' +
-                  'page failed: ' + ((e && e.stack) || e));
-        errorCodes.mark(res, 'STS-OIDFED-0050');
-        res.status(500).type('text/plain').send('The page failed.');
-      });
-      log.debug("Leaving the admin OpenID Federation page.");
-    });
-    app.post('/admin/oidfed', function (req: Json, res: Json): void {
-      log.debug("Entering the admin OpenID Federation action.");
-      const body = parseBody(req);
-      oidfed.act(body, { via: 'console', actor: self.actorOf(req), req: req })
-        .then(function (result: Json): Promise<void> | void {
-          const json = /json/i.test(String(req.headers['content-type'] || ''));
-          if (result.ok && result.resolution && !json) {
-            // A RESOLUTION is shown in full on the page, rather than as a
-            // one-line message on a redirect.
-            return self.draw(req, res, admin.note(esc(result.message)),
-                             result.resolution);
-          }
-          admin.respondToAction(req, res, '/admin/oidfed', result);
-        })
-        .catch(function (e: any): void {
-          log.error(errorCodes.tag('STS-OIDFED-0050') + 'oidfed: a console ' +
-                    'action failed: ' + ((e && e.stack) || e));
-          admin.respondToAction(req, res, '/admin/oidfed', errorCodes.mark(
-            { ok: false, errors: ['The action could not be completed.'] },
-            'STS-OIDFED-0050'));
-        });
-      log.debug("Leaving the admin OpenID Federation action handler.");
-    });
     log.debug("Leaving OidfedAdmin.registerRoutes().");
   }
 }

@@ -221,73 +221,8 @@ class AcmeAdmin {
             errorCodes } = this.deps;
     const self = this;
     log.debug("Entering AcmeAdmin.registerRoutes().");
-    // -------------------------------------------------------------------------
-    // GET /admin/acme
-    // -------------------------------------------------------------------------
-    app.get('/admin/acme', function (req, res) {
-      log.debug("Entering the admin ACME page.");
-      if (self.queryRefused(req, res)) {
-        log.debug("Leaving the admin ACME page. Bad query.");
-        return;
-      }
-      const json = consoleModel.acmeView(req);
-      const inner = self.body(req, json);
-      admin.respond(req, res, json, 'ACME', '/admin/acme', inner);
-      log.debug("Leaving the admin ACME page.");
-    });
 
-    // -------------------------------------------------------------------------
-    // POST /admin/acme
-    // -------------------------------------------------------------------------
-    app.post('/admin/acme', function (req, res) {
-      log.debug("Entering the admin ACME action.");
-      const body = parseBody(req);
-      const posted = validation.checkParsed({ action: body.action,
-                                              csrf_token: body.csrf_token },
-                                            'body', ACTION_FORM);
-      if (!posted.ok) {
-        log.debug("Leaving the admin ACME action. Malformed.");
-        const result = errorCodes.mark({ ok: false, errors: [posted.detail] },
-                                       'STS-ACME-0091');
-        return admin.respondToAction(req, res, '/admin/acme', result);
-      }
-      const actor = consoleModel.consoleActorOf(req);
-      Promise.resolve(consoleModel.acmeAction(body, { via: 'console',
-                                                     actor: actor, req: req }))
-        .then(function (result) {
-          // A form on an application's page comes back there (2026-10-01).
-          const back = admin.enrollmentReturnTo(body, '/admin/acme');
-          if (result.ok && body.action === 'create-eab') {
-            return self.createdEabPage(req, res, result,
-              back === '/admin/acme' ? '' : back);
-          }
-          return admin.respondToAction(req, res, back, result);
-        }).catch(function (e) {
-          log.error(errorCodes.tag('STS-ACME-0095') + 'acme console action ' +
-                    'threw: ' + ((e && e.stack) || e));
-          admin.respondToAction(req, res, '/admin/acme',
-                                errorCodes.mark({ ok: false, errors: ['The ' +
-                                  'action could not be completed.'] },
-                                                'STS-ACME-0095'));
-        });
-      log.debug("Leaving the admin ACME action.");
-      return undefined;
-    });
 
-    app.get('/admin/acme/monitor', function (req, res) {
-      log.debug("Entering the admin ACME monitor page.");
-      if (self.queryRefused(req, res)) {
-        log.debug("Leaving the admin ACME monitor page. Bad query.");
-        return;
-      }
-      const json = consoleModel.acmeMonitorView(req);
-      // Drawn by `web_acme.ts` (#446), as the ACME page is.
-      const inner = AcmePage.monitorBody(admin.renderContext(req),
-                                         JSON.parse(JSON.stringify(json)));
-      admin.respond(req, res, json, 'ACME enrollments', '/admin/acme/monitor',
-                    inner);
-      log.debug("Leaving the admin ACME monitor page.");
-    });
     log.debug("Leaving AcmeAdmin.registerRoutes().");
   }
 }

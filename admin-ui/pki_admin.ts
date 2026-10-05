@@ -824,6 +824,22 @@ class PkiAdmin {
   // than this file's: `describe()` drops every one of them on the way out, so a
   // caller here could not leak the Root's key by forgetting.
   // ---------------------------------------------------------------------------
+  // THE WORKBENCH ALONE, for a draft a pane action answered (#446): the
+  // static console draws the pane again from it, where the server-rendered
+  // console drew the whole page around `pkiJson(req, draft)`.
+  /**
+   * The certificate workbench's model for one draft.
+   *
+   * @param draft - the pane's draft
+   * @returns `authoring.view()` of it, which carries no private key
+   */
+  workbenchOf(draft: Json) {
+    const { log, authoring } = this.deps;
+    log.debug('Entering PkiAdmin.workbenchOf().');
+    log.debug('Leaving PkiAdmin.workbenchOf().');
+    return authoring.view(undefined, draft);
+  }
+
   /**
    * Builds the page's model, which `GET /admin-api/pki` also answers: the
    * hierarchy, the issued key pairs, the pane, revocation and pinned signers.
@@ -2426,10 +2442,10 @@ class PkiAdmin {
     }
 
     if (action === 'export') {
-      // **THE CONSOLE DOES NOT COME THROUGH HERE** — `POST /admin/pki/export`
-      // calls the model directly, because the answer there is the FILE. This
-      // arm is `/admin-api`'s, where a caller wants JSON: the same export, with
-      // the bytes base64'd and named. One function underneath either way.
+      // The export, as JSON with the bytes base64'd and named. The console's
+      // Download button comes through here too since #446, and its runtime
+      // saves each named file as the attachment the deleted
+      // `POST /admin/pki/export` route sent.
       const written = await authoring.exportKeys(undefined,
                                                  authoring.draftFrom(body),
                                                  self.objectIdOf(body));
@@ -2885,338 +2901,10 @@ class PkiAdmin {
             certificateDialog, admin, esc } = this.deps;
     const self = this;
     log.debug("Entering PkiAdmin.registerRoutes().");
-    app.get('/admin/pki', function (req, res) {
-      log.debug('Entering the admin PKI page.');
-      if (!certificateDialog.requested(req)) {
-        self.renderPki(req, res, null, '');
-        log.debug('Leaving the admin PKI page.');
-        return;
-      }
-      // A CERTIFICATE'S DETAILS OVER THE PAGE (2026-09-13). Asynchronous
-      // because verifying a chain is Web Crypto; the page is drawn once the
-      // answer is in. A refusal still opens the dialog, which says why, and is
-      // marked — an open that cannot be answered is a refused lookup, not a
-      // page that failed.
-      certificateViews.detailsView(req).then(function (view) {
-        if (!view.ok) {
-          errorCodes.mark(res, errorCodes.codeOf(view) || 'STS-ADMIN-0641');
-        }
-        self.renderPki(req, res, null, '', '', view);
-        log.debug('Leaving the admin PKI page. With a certificate dialog.');
-      }).catch(function (e) {
-        log.error(errorCodes.tag('STS-ADMIN-0642') + 'pki_admin: the ' +
-                  'certificate details view failed: ' + e.message);
-        errorCodes.mark(res, 'STS-ADMIN-0642');
-        self.renderPki(req, res, null, '', '', { ok: false, errors: [
-          'The certificate could not be opened: ' + e.message] });
-      });
-    });
 
-    // -------------------------------------------------------------------------
-    // THE PANE'S POST, WHICH ANSWERS WITH A PAGE AND NOT A REDIRECT.
-    //
-    // Every other control in this console goes through `respondToAction()`,
-    // which 303s back with a message on the query string. This one cannot: what
-    // it has to hand back is the FORM — the profile applied, the key pair
-    // generated, the refusal with every field still in it — and a query string
-    // is not where a hundred and fifteen fields go. `/admin/users/new` made
-    // exactly this argument first and for the same reason.
-    //
-    // **A JSON CALLER STILL GETS JSON**, so `/admin-api`'s behaviour is
-    // unchanged and a test may drive either door.
-    // -------------------------------------------------------------------------
-    app.post('/admin/pki/certificate', function (req, res) {
-      log.debug('Entering the admin PKI pane action.');
-      const body = parseBody(req);
-      if (!admin.mayWrite(req)) {
-        errorCodes.mark(res, 'STS-PKI-0101');
-        admin.respondToAction(req, res, '/admin/pki',
-                              self.refuse('This console session may read but ' +
-                                          'not write.', 'STS-PKI-0101'));
-        log.debug('Leaving the admin PKI pane action. Read-only.');
-        return;
-      }
-      // WHICH BUTTON, then the action it means. The console never sends an
-      // `action` of its own for this form bar the hidden one behind the Issue
-      // button, so the pressed button wins.
-      const pressed = self.paneActionFrom(body);
-      const asked = Object.assign({}, body, { action: pressed.action },
-                                  pressed.objectId
-                                    ? { objectId: pressed.objectId } : {});
-      self.pkiAction(asked).then(function (result) {
-        self.markRefusal(res, result, 'STS-PKI-0105');
-        if (/json/i.test(String(req.headers['content-type'] || ''))) {
-          res.status(result.ok ? 200 : 400).type('application/json')
-             .set('Cache-Control', 'no-store')
-             .send(JSON.stringify(result, null, 2));
-          log.debug('Leaving the admin PKI pane action. Answered JSON.');
-          return;
-        }
-        const message = result.ok ? String(result.why || 'Done.')
-          : ((result.errors || []).join(' ') || String(result.why || ''));
-        const banner = result.ok ? admin.note(esc(message))
-                                 : admin.warn(esc(message), 'That was refused');
-        // The draft a refusal carries where it has one, and what was posted
-        // where it does not — a refusal that redrew the form empty would be
-        // worse than the refusal.
-        self.renderPki(req, res, result.draft || authoring.draftFrom(body),
-                       banner);
-        log.debug('Leaving the admin PKI pane action. ' + pressed.action + '.');
-      }).catch(function (e) {
-        log.error(errorCodes.tag('STS-PKI-0102') + 'pki_admin: the pane\'s ' +
-            pressed.action + ' ' +
-            'action threw: ' +
-                  (e && e.stack ? e.stack : e));
-        errorCodes.mark(res, 'STS-PKI-0102');
-        self.renderPki(req, res, authoring.draftFrom(body),
-                       admin.warn(esc('That action failed: ' +
-                                      (e && e.message ? e.message : e)),
-                                  'That was refused'));
-        log.debug('Leaving the admin PKI pane action. It threw.');
-      });
-    });
 
-    // -------------------------------------------------------------------------
-    // THE EXPORT, WHICH ANSWERS WITH A FILE.
-    //
-    // The one form on this page whose answer is not a page. It is the same
-    // arrangement `/admin/keys/export` has and for its reasons, including the
-    // two that are easy to skip:
-    //
-    //   * **ADMIN WRITE, asked for explicitly.** Reading this console needs
-    //     Admin Read; taking a private key out of it needs the other role. It
-    //     is a GET-shaped act done as a POST for exactly that reason.
-    //   * **ONE FILE IS THE BODY; SEVERAL ARE A ZIP THIS SERVICE WILL NOT
-    //     BUILD.** The DER export is two files (private and public) and the
-    //     private one is sent, with the reply saying the public half comes out
-    //     of it with one openssl command.
-    //
-    // A REFUSAL IS A PAGE, so a bad password or an impossible format reads like
-    // every other refusal here rather than as a broken download.
-    // -------------------------------------------------------------------------
-    app.post('/admin/pki/export', function (req, res) {
-      log.debug('Entering the admin PKI export.');
-      const body = parseBody(req);
-      if (!admin.mayWrite(req)) {
-        errorCodes.mark(res, 'STS-PKI-0101');
-        res.status(403).type('text/plain').set('Cache-Control', 'no-store')
-           .send('Exporting a key pair needs the Admin Write role. Reading ' +
-                 'this console needs Admin Read; taking a private key out of ' +
-                 'it needs the other one.');
-        log.debug('Leaving the admin PKI export. Refused: no Admin Write.');
-        return;
-      }
-      const draft = authoring.draftFrom(body);
-      authoring.exportKeys(undefined, draft, self.objectIdOf(body))
-        .then(function (written) {
-          if (!written.ok) {
-            self.markRefusal(res, written, 'STS-PKI-0100');
-            self.renderPki(req, res, draft,
-                           admin.warn(esc(written.errors.join(' ')),
-                                      'That export was refused'));
-            log.debug('Leaving the admin PKI export. Refused.');
-            return;
-          }
-          const file = written.files[0];
-          const data = Buffer.isBuffer(file.data) ? file.data
-            : (typeof file.data === 'string' ? Buffer.from(file.data, 'utf8')
-               : Buffer.from(file.data));
-          res.status(200)
-             .set('Content-Type', file.mime || 'application/octet-stream')
-             .set('Content-Disposition', 'attachment; filename="' +
-                  String(file.name).replace(/[^A-Za-z0-9._-]/g, '_') + '"')
-             .set('Cache-Control', 'no-store')
-             .send(data);
-          log.debug('Leaving the admin PKI export. Sent ' + file.name + ', ' +
-                    data.length + ' bytes.');
-        }).catch(function (e) {
-          log.error(errorCodes.tag('STS-PKI-0103') +
-                    'pki_admin: the export threw: ' +
-                    (e && e.stack ? e.stack : e));
-          errorCodes.mark(res, 'STS-PKI-0103');
-          self.renderPki(req, res, draft,
-                         admin.warn(esc('That export failed: ' +
-                                        (e && e.message ? e.message : e)),
-                                    'That export was refused'));
-          log.debug('Leaving the admin PKI export. It threw.');
-        });
-    });
 
-    app.post('/admin/pki', function (req, res) {
-      log.debug('Entering the admin PKI action.');
-      const body = parseBody(req);
-      if (!admin.mayWrite(req)) {
-        errorCodes.mark(res, 'STS-PKI-0101');
-        admin.respondToAction(req, res, '/admin/pki',
-                              self.refuse('This console session may read but ' +
-                                          'not write.', 'STS-PKI-0101'));
-        log.debug('Leaving the admin PKI action. Read-only.');
-        return;
-      }
-      // **AWAITED, AND THE HANDLER IS WRAPPED.** Express 4 does not look at
-      // what a handler returns, so a promise that rejects here would be an
-      // unhandled rejection and a request that never gets an answer — the same
-      // trap the token endpoint's wrapper exists for, met again by the second
-      // asynchronous action function in this console.
-      self.pkiAction(body).then(function (result) {
-        self.markRefusal(res, result, 'STS-PKI-0105');
-        // A SUCCESS HERE SAYS WHAT IT DID IN `why`, and `respondToAction()`
-        // puts `message` on the redirect — so every notice from this handler
-        // read `undefined`. This page draws no notice and nobody saw it; the
-        // application page this handler now also answers to draws one.
-        const answered = result && result.ok && result.message === undefined &&
-                         result.why
-          ? Object.assign({}, result, { message: result.why }) : result;
-        admin.respondToAction(req, res, self.pkiReturnTo(body), answered);
-        log.debug('Leaving the admin PKI action.');
-      }).catch(function (e) {
-        log.error(errorCodes.tag('STS-PKI-0102') + 'pki_admin: the ' +
-                  String(body && body.action) + ' ' +
-                  'action threw: ' + (e && e.stack ? e.stack : e));
-        errorCodes.mark(res, 'STS-PKI-0102');
-        admin.respondToAction(req, res, '/admin/pki',
-                              self.refuse('That action failed: ' +
-                                          (e && e.message ? e.message : e),
-                                          'STS-PKI-0102'));
-        log.debug('Leaving the admin PKI action. It threw.');
-      });
-    });
 
-    // -------------------------------------------------------------------------
-    // THE PERSON FORM'S POST, WHICH ANSWERS WITH A PAGE FOR A DIFFERENT REASON
-    // FROM THE PANE'S (2026-09-11).
-    //
-    // The pane's POST renders a page because what it hands back is a FORM with
-    // a hundred and fifteen fields in it. This one renders a page because what
-    // it hands back is **a private key**, and `admin.respondToAction()` 303s
-    // with its message on the query string — which would put that key in the
-    // browser history, in this service's own access log, and in the `Referer`
-    // header of the next request the browser makes.
-    //
-    // It is the SAME `issue` action with `target=person`, so
-    // `/admin-api/pki/issue` drives it too and rule 7 is satisfied without a
-    // second operation. **A JSON caller still gets JSON**, exactly as the
-    // pane's route does.
-    // -------------------------------------------------------------------------
-    app.post('/admin/pki/person', function (req, res) {
-      log.debug('Entering the admin PKI person action.');
-      const body = parseBody(req);
-      if (!admin.mayWrite(req)) {
-        errorCodes.mark(res, 'STS-PKI-0101');
-        admin.respondToAction(req, res, '/admin/pki',
-                              self.refuse('This console session may read but ' +
-                                          'not write.', 'STS-PKI-0101'));
-        log.debug('Leaving the admin PKI person action. Read-only.');
-        return;
-      }
-      // The TARGET is forced rather than read. This route exists for one
-      // control and a body that arrived here naming `application` would
-      // otherwise be answered by the application branch — which writes onto an
-      // entry this form never mentioned, and would then render the page with an
-      // application's private key on it, which is the one thing the route was
-      // written to keep off a query string and is no better on this page.
-      const asked = Object.assign({}, body,
-                                  { action: 'issue', target: 'person' });
-      self.pkiAction(asked).then(function (result) {
-        self.markRefusal(res, result, 'STS-PKI-0105');
-        if (/json/i.test(String(req.headers['content-type'] || ''))) {
-          res.status(result.ok ? 200 : 400).type('application/json')
-             .set('Cache-Control', 'no-store')
-             .send(JSON.stringify(result, null, 2));
-          log.debug('Leaving the admin PKI person action. Answered JSON.');
-          return;
-        }
-        const message = result.ok ? String(result.why || 'Done.')
-          : ((result.errors || []).join(' ') || String(result.why || ''));
-        const banner = result.ok
-          ? admin.note(esc(message).replace(/\*\*(.+?)\*\*/g,
-                                            '<strong>$1</strong>'))
-          : admin.warn(esc(message), 'That was refused');
-        // THE KEY ITSELF, in a block of its own under the banner. It is HERE
-        // and nowhere else in this console — see `issueToPerson()`'s header for
-        // why there is no read door for it, and `app.js` for why this response,
-        // like every document here that publishes a key, is `no-store`.
-        const saml = result.ok && result.purpose === 'saml';
-        const keyBlock = result.ok
-          ? admin.warn(
-            '<p>This is the only time this service will show you this key. ' +
-            'It is sealed on <code>' + esc(String(result.person)) +
-            '</code>’s entry ' + 'as <code>' +
-            (saml ? 'stsSamlAssertionPrivateKey' : 'stsAssertionPrivateKey') +
-            '</code> and nothing in this console or in ' +
-            '<code>/admin-api</code> opens it again. Copy it now; issuing ' +
-            'again replaces it.</p>' +
-            (saml
-              // THE RFC 7522 SHAPE (2026-09-13): what the person signs is an
-              // <Assertion>, so the paragraph names its elements rather than a
-              // JWT's claims.
-              ? '<p>The assertion it signs carries an <code>&lt;Issuer&gt;' +
-                '</code> and a <code>&lt;Subject&gt;</code> of <code>' +
-                esc(String(result.issuer)) + '</code>, an ' +
-                '<code>&lt;AudienceRestriction&gt;</code> naming this ' +
-                'service’s token endpoint, a bearer ' +
-                '<code>&lt;SubjectConfirmation&gt;</code>, a ' +
-                '<code>NotOnOrAfter</code> and an <code>ID</code>, is signed ' +
-                'with an XML Signature over the ' +
-                '<code>&lt;Assertion&gt;</code>, and is presented as ' +
-                '<code>grant_type=urn:ietf:params:oauth:grant-type:' +
-                'saml2-bearer</code> with ' +
-                '<code>assertion=&lt;base64url&gt;</code>. The ' +
-                'certificate’s thumbprint is <code>' +
-                esc(String(result.thumbprint)) + '</code>.</p>'
-              : '<p>The assertion it signs carries <code>iss</code> and ' +
-                '<code>sub</code> of <code>' + esc(String(result.issuer)) +
-                '</code>, an <code>aud</code> of this service’s token ' +
-                'endpoint or issuer, an <code>exp</code> and a ' +
-                '<code>jti</code>, and is presented as ' +
-                '<code>grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer' +
-                '</code> with <code>assertion=&lt;the JWT&gt;</code>. ' +
-                '<code>kid</code> is <code>' + esc(String(result.kid)) +
-                '</code> and the algorithm is <code>' +
-                esc(String(result.jwsAlg)) + '</code>.</p>') +
-            '<pre>' + esc(String(result.privateKeyPem)) + '</pre>' +
-            '<p>The certificate, which is public and is also on the ' +
-            'entry:</p><pre>' + esc(String(result.certificatePem)) + '</pre>',
-            'The private key, once')
-          : '';
-        res.set('Cache-Control', 'no-store');
-        // FROM A PERSON'S OWN PAGE (2026-09-13) the answer is drawn in the
-        // console shell with a way back to that person, rather than as the PKI
-        // page: the reader was looking at one person and the next thing they do
-        // is look at them again. `back` is rebuilt by the console from the
-        // name, never echoed.
-        if (String(body.from || '') === '/admin/users' &&
-            typeof admin.userReturnTo === 'function' && body.identifier) {
-          const returnTo = admin.userReturnTo(body,
-                                              String(body.identifier).trim(),
-                                              '#credentials');
-          admin.respond(req, res, { ok: !!result.ok }, 'Signing key pair',
-                        '/admin/users',
-                        banner + keyBlock +
-                        '<p><a class="btn" href="' + esc(returnTo) +
-                        '">Back to ' +
-                        esc(String(body.identifier).trim()) + '</a></p>',
-                        admin.upTo ? admin.upTo('/admin/users',
-                                                'Signing key pair', {}) : null);
-          log.debug('Leaving the admin PKI person action. Drawn for the ' +
-                    'person page. ' + (result.ok ? 'Issued.' : 'Refused.'));
-          return;
-        }
-        self.renderPki(req, res, authoring.draftFrom(body), banner, keyBlock);
-        log.debug('Leaving the admin PKI person action. ' +
-                  (result.ok ? 'Issued.' : 'Refused.'));
-      }).catch(function (e) {
-        log.error(errorCodes.tag('STS-PKI-0102') + 'pki_admin: the person ' +
-                                                   'issue action threw: ' +
-                  (e && e.stack ? e.stack : e));
-        errorCodes.mark(res, 'STS-PKI-0102');
-        self.renderPki(req, res, authoring.draftFrom(body),
-                       admin.warn(esc('That action failed: ' +
-                                      (e && e.message ? e.message : e)),
-                                  'That was refused'));
-        log.debug('Leaving the admin PKI person action. It threw.');
-      });
-    });
 
     log.debug("Leaving PkiAdmin.registerRoutes().");
   }
@@ -3267,6 +2955,7 @@ export = {
   // the console does not.
   pkiView: slot.forward('pkiJson'),
   pkiAction: slot.forward('pkiAction'),
+  workbenchOf: slot.forward('workbenchOf'),
   pkiActionNames: slot.forward('pkiActionNames'),
   // For `tests/pki_authoring.js` ONLY, and it is worth saying why a renderer
   // is exported at all. The pane's field table is declared in

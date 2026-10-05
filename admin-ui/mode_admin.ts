@@ -140,13 +140,6 @@ class ModeAdmin {
     const { log, admin } = this.deps;
     const self = this;
     log.debug("Entering ModeAdmin.registerRoutes().");
-    app.get(PAGE, function (req: Req, res: Res): void {
-      log.debug('Entering GET ' + PAGE + '.');
-      const json = self.modeView();
-      admin.respond(req, res, json, 'Mode', PAGE,
-                    admin.messagesOf(req) + self.html(json));
-      log.debug('Leaving GET ' + PAGE + '.');
-    });
     log.debug("Leaving ModeAdmin.registerRoutes().");
   }
 }

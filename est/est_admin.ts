@@ -220,69 +220,8 @@ class EstAdmin {
     const { log, consoleModel, admin, parseBody, errorCodes, esc } = this.deps;
     const self = this;
     log.debug("Entering EstAdmin.registerRoutes().");
-    // -------------------------------------------------------------------------
-    // GET /admin/est
-    // -------------------------------------------------------------------------
-    app.get('/admin/est', function (req, res) {
-      log.debug("Entering the admin EST page.");
-      if (self.queryRefused(req, res)) {
-        log.debug("Leaving the admin EST page. Bad query.");
-        return;
-      }
-      const json = consoleModel.estView(req);
-      admin.respond(req, res, json, 'EST', '/admin/est',
-                    self.messages(req) + self.estPageBody(req, json));
-      log.debug("Leaving the admin EST page.");
-    });
 
-    // -------------------------------------------------------------------------
-    // POST /admin/est
-    // -------------------------------------------------------------------------
-    app.post('/admin/est', function (req, res) {
-      log.debug("Entering the admin EST action.");
-      const body = parseBody(req);
-      consoleModel.estAction(body, { via: 'console', req: req })
-        .then(function (result) {
-          // A form on an application's page comes back there (2026-10-01).
-          const back = admin.enrollmentReturnTo(body, '/admin/est');
-          if (result && result.ok && result.privateKeyPem) {
-            admin.respond(req, res, result, 'EST — a server-generated key',
-                          '/admin/est', self.issuedKeyPage(result,
-                            back === '/admin/est' ? '' : back));
-            log.debug("Leaving the admin EST action. A one-time key page.");
-            return;
-          }
-          if (result && !result.ok) {
-            errorCodes.mark(res, errorCodes.codeOf(result) || 'STS-EST-0031');
-          }
-          admin.respondToAction(req, res, back, result);
-          log.debug("Leaving the admin EST action. ok=" + !!(result &&
-                                                             result.ok));
-        }, function (e) {
-          log.error(errorCodes.tag('STS-EST-0020') +
-                    'est console: the action failed: ' + ((e && e.stack) || e));
-          const failed = errorCodes.mark({ ok: false, errors: ['The action ' +
-            'could not be completed.'] }, 'STS-EST-0020');
-          admin.respondToAction(req, res, '/admin/est', failed);
-          log.debug("Leaving the admin EST action. Threw.");
-        });
-    });
 
-    app.get('/admin/est/monitor', function (req, res) {
-      log.debug("Entering the admin EST monitor page.");
-      if (self.queryRefused(req, res)) {
-        log.debug("Leaving the admin EST monitor page. Bad query.");
-        return;
-      }
-      const json = consoleModel.estMonitorView(req);
-      // Drawn by `web_est.ts` (#446), as the EST page is.
-      const inner = self.messages(req) +
-        EstPage.monitorBody(admin.renderContext(req),
-                            JSON.parse(JSON.stringify(json)));
-      admin.respond(req, res, json, 'EST enrollments', '/admin/est/monitor',
-                    inner);
-      log.debug("Leaving the admin EST monitor page.");
-    });
     log.debug("Leaving EstAdmin.registerRoutes().");
   }
 }

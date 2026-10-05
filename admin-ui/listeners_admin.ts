@@ -299,13 +299,6 @@ class ListenersAdmin {
     const { log, admin } = this.deps;
     const self = this;
     log.debug("Entering ListenersAdmin.registerRoutes().");
-    app.get(PAGE, function (req: Req, res: Res): void {
-      log.debug('Entering GET ' + PAGE + '.');
-      const json = self.listenersView();
-      admin.respond(req, res, json, 'Listeners', PAGE,
-                    admin.messagesOf(req) + self.html(json));
-      log.debug('Leaving GET ' + PAGE + '.');
-    });
     log.debug("Leaving ListenersAdmin.registerRoutes().");
   }
 }

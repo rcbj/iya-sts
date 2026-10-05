@@ -955,6 +955,52 @@ class AdminViews {
       : null;
   }
 
+  // ---------------------------------------------------------------------------
+  // THE GATE AS A TOKEN DECIDED IT (#446). `/admin-api`'s gate verifies the
+  // caller's token, decides the roles its subject holds in the realm that
+  // issued it, and leaves that caller on the request (`adminApiCaller`). A
+  // view drawn for such a request is drawn for THAT caller: the token's
+  // realm is the realm the person is of — a realm administrator's own
+  // realm, confined there — and its roles are the console's two. Without
+  // this every view asked about an API request found no console session
+  // and answered as for the service.
+  // ---------------------------------------------------------------------------
+  /**
+   * Describes the gate for a request the management API authenticated.
+   *
+   * @param caller - the API gate's caller: `kind`, `name`, `realm`, `roles`
+   * @returns the gate state, in `gateStateFor()`'s shape
+   */
+  apiGateStateOf(caller) {
+    const { log, config, realms, rbac } = this.deps;
+    log.debug("Entering AdminViews.apiGateStateOf().");
+    const identityRealm = String(caller.realm || realms.DEFAULT_ID);
+    const authority = identityRealm === realms.DEFAULT_ID ? 'service'
+                                                          : 'realm';
+    const outsideRealm = authority === 'realm' &&
+                         realms.currentId() !== identityRealm;
+    const roles = (caller.roles || []).map(function (role) {
+      return role === 'ADMIN_READ' ? 'read'
+        : (role === 'ADMIN_WRITE' ? 'write' : String(role).toLowerCase());
+    });
+    const read = !outsideRealm && roles.indexOf('read') >= 0;
+    const write = !outsideRealm && roles.indexOf('write') >= 0;
+    log.debug("Leaving AdminViews.apiGateStateOf(). " + authority + ".");
+    return {
+      enforced: true, available: rbac.available(), session: true,
+      username: String(caller.name || ''), authority: authority,
+      identityRealm: identityRealm, outsideRealm: outsideRealm,
+      readGroup: config.value('admin.readGroup'),
+      writeGroup: config.value('admin.writeGroup'),
+      sessionRealm: identityRealm, foreignSession: false,
+      read: read || write, write: write,
+      roles: outsideRealm ? [] : roles,
+      open: false, closed: false, windowOpens: true, empty: false,
+      bootstrapPasswordRequired: false, windowWithheld: false,
+      bootstrap: null, viaApi: true
+    };
+  }
+
   // Everything the banner and the guard both need, worked out ONCE per request.
   //
   // Both were written separately at first and disagreed within the hour: the
@@ -972,6 +1018,10 @@ class AdminViews {
   gateStateFor(req) {
     const { log, config, mode, realms, rbac } = this.deps;
     log.debug("Entering AdminViews.gateStateFor().");
+    if (req && req.adminApiCaller) {
+      log.debug("Leaving AdminViews.gateStateFor(). The API's caller.");
+      return this.apiGateStateOf(req.adminApiCaller);
+    }
     // THE MODE, since 2026-09-06, where this read `admin.authRequired`. That
     // setting is gone: "is authentication required here" had four answers
     // across this service and now has one. See common/mode.js.
@@ -3127,6 +3177,40 @@ class AdminViews {
       // is every page of the static console — could not draw the control.
       param: pg.param, noun: pg.noun
     };
+  }
+
+  // ONE RETIRED KEY'S CERTIFICATE, as the chain a reader saves (#446): what
+  // `/admin/keys/history/certificate` served while the console was drawn on
+  // the server, for `GET /admin-api/keys/history/certificate` now. A
+  // certificate is a public document — the half of a retired key worth
+  // keeping — so this is a read.
+  /**
+   * Returns one signing key's certificate chain, leaf first, as PEM.
+   *
+   * @param unit - the signing unit (`jose:RS256`)
+   * @param kid - the key's identifier
+   * @returns the chain, or null when this realm holds none for that key
+   */
+  signingHistoryCertificate(unit, kid) {
+    const { log, realms, signingHistory: history } = this.deps;
+    log.debug("Entering AdminViews.signingHistoryCertificate().");
+    const id = realms.currentId();
+    let row = null;
+    try {
+      history.observe(id, { reason: 'observed' });
+      row = history.rowsOf(id, String(unit || '')).filter(function (one) {
+        return String(one.kid) === String(kid || '');
+      })[0] || null;
+    } catch (e) {
+      log.debug("Caught in AdminViews.signingHistoryCertificate(): " +
+                ((e && e.message) || e));
+      row = null;
+    }
+    const one = row && row.certificate ? row.certificate : null;
+    log.debug("Leaving AdminViews.signingHistoryCertificate(). " +
+              (one && one.certificatePem ? "Held." : "None."));
+    return one && one.certificatePem
+      ? [one.certificatePem].concat(one.chainPem || []).join('\n') : null;
   }
 
   // The slice, with the paging that produced it. Written once because seven
@@ -7347,6 +7431,35 @@ class AdminViews {
   // `/admin-api` publishes were the same computation written twice in one
   // function, with a form between them.
   // ---------------------------------------------------------------------------
+  // THE INVENTED PERSON FOR A USERNAME, as Fill puts it into the new-user
+  // form (moved here from the console with #446, so the API answers it):
+  // `vcClaims.personaFor()` keyed by the attribute each field is stored in.
+  /**
+   * The attribute values this service would invent for a username.
+   *
+   * @param username - the username
+   * @returns the values, by LDAP attribute name
+   */
+  inventedFieldValues(username) {
+    const { log, vcClaims } = this.deps;
+    log.debug("Entering AdminViews.inventedFieldValues().");
+    const persona = vcClaims.personaFor(String(username || '').trim());
+    const out = {};
+    vcClaims.personFields().forEach(function (row) {
+      if (!row.from) {
+        return;
+      }
+      const value = persona[row.from];
+      if (value === undefined || value === null || value === '') {
+        return;
+      }
+      out[row.ldap] = String(value);
+    });
+    log.debug("Leaving AdminViews.inventedFieldValues(). " +
+              Object.keys(out).length + " value(s).");
+    return out;
+  }
+
   /**
    * Builds `/admin/users/new`'s JSON: the attribute catalogue and credential
    * choices.
@@ -12286,6 +12399,7 @@ export = {
   CREDENTIAL_CHOICES: CREDENTIAL_CHOICES,
   newUserContainer: slot.forward('newUserContainer'),
   newUserJson: slot.forward('newUserJson'),
+  inventedFieldValues: slot.forward('inventedFieldValues'),
   typedField: slot.forward('typedField'),
   newApplicationJson: slot.forward('newApplicationJson'),
   spiffeSelectorText: slot.forward('spiffeSelectorText'),
@@ -12331,6 +12445,8 @@ export = {
   delegationLooks: slot.forward('delegationLooks'),
   delegationMapModel: slot.forward('delegationMapModel'),
   delegationMapKey: slot.forward('delegationMapKey'),
+  apiGateStateOf: slot.forward('apiGateStateOf'),
+  signingHistoryCertificate: slot.forward('signingHistoryCertificate'),
   federationMapModel: slot.forward('federationMapModel'),
   federationMapKey: slot.forward('federationMapKey'),
   federationMapLooks: slot.forward('federationMapLooks'),

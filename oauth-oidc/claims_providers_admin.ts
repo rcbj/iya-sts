@@ -122,34 +122,6 @@ class ClaimsProvidersAdmin {
             baseUrlOf } = this.deps;
     const self = this;
     log.debug("Entering ClaimsProvidersAdmin.registerRoutes().");
-    app.get(PAGE, function (req: Json, res: Json): void {
-      log.debug("Entering the admin claim providers page.");
-      // What `GET /admin-api/claim-providers` answers, the redirect URI
-      // included: the page is drawn from it alone (#446).
-      const view = providers.view();
-      const json = Object.assign({
-        redirectUri: baseUrlOf(req) + view.callbackPath }, view);
-      const inner = (typeof admin.messagesOf === 'function'
-        ? admin.messagesOf(req) : '') + self.body(json);
-      admin.respond(req, res, json, 'Claims Providers', PAGE, inner);
-      log.debug("Leaving the admin claim providers page.");
-    });
-    app.post(PAGE, function (req: Json, res: Json): void {
-      log.debug("Entering the admin claim providers action.");
-      Promise.resolve().then(function (): Json {
-        return providers.act(parseBody(req), { via: 'console',
-                                               actor: self.actorOf(req) });
-      }).catch(function (e: any): Json {
-        log.error(errorCodes.tag('STS-OAUTH-0686') + 'oauth2: a console ' +
-                  'Claims Provider action failed: ' + ((e && e.stack) || e));
-        return errorCodes.mark({ ok: false, errors:
-                                   ['The action could not be completed.'] },
-                               'STS-OAUTH-0686');
-      }).then(function (result: Json): void {
-        admin.respondToAction(req, res, PAGE, result);
-        log.debug("Leaving the admin claim providers action.");
-      });
-    });
     log.debug("Leaving ClaimsProvidersAdmin.registerRoutes().");
   }
 }

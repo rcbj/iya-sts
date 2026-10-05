@@ -164,10 +164,13 @@ function childMain() {
     const unbound = await mintFor();
     let r = await request(port, 'GET', ME, null,
                           { authorization: 'Bearer ' + unbound });
-    note(String(seeded.token_endpoint_auth_method || '') !== 'none' &&
-         r.status === 200,
-         '1. as seeded the console is a confidential client, and an ' +
-         'unbound token issued to it is accepted at /admin-api',
+    // SEEDED PUBLIC SINCE THE CUTOVER (#446): the static console holds no
+    // credential, so an unbound token issued to it is refused from the
+    // start, not only once something declares it public.
+    note(String(seeded.token_endpoint_auth_method || '') === 'none' &&
+         r.status === 401,
+         '1. as seeded the console is a public client, and an unbound ' +
+         'token issued to it is refused at /admin-api',
          seeded.token_endpoint_auth_method + ' ' + r.status + ' ' +
          r.text.slice(0, 160));
 

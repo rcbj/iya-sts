@@ -125,41 +125,18 @@ function childMain() {
             'administrator, and has them for a service one');
 
     // --- C. the page --------------------------------------------------------
-    // The page asks `gateStateFor()` who is looking, and `mayWrite()`; both
-    // are answered here as for a realm administrator holding Admin Write.
-    const adminViews = require(ROOT + '/admin-core/admin_views');
+    // DRAWN AS THE STATIC CONSOLE DRAWS IT (#446): the page's view, for a
+    // realm administrator (`realmOnly`, which the API decides from their
+    // token), drawn by its renderer — there is no console route to call.
+    const WebPages = require(ROOT + '/admin-ui/web_pages');
+    const WebKit = require(ROOT + '/admin-ui/web_kit');
     const draw = async function (pagePath) {
-      let html = '';
-      const saved = { respond: admin.respond, mayWrite: admin.mayWrite,
-                      gate: adminViews.gateStateFor };
-      try {
-        admin.respond = function (req, r, json, title, active, inner) {
-          html = inner;
-        };
-        admin.mayWrite = function () {
-          return true;
-        };
-        adminViews.gateStateFor = function () {
-          return state;
-        };
-        let handler = null;
-        riskAdmin.registerRoutes({ get: function (p2, h) {
-          if (p2 === pagePath) {
-            handler = h;
-          }
-        }, post: function () {} });
-        realms.run(realms.get(REALM), function () {
-          handler({ query: {}, headers: {} }, {});
-        });
-        for (let i = 0; i < 100 && !html; i++) {
-          await new Promise(function (r) { setTimeout(r, 20); });
-        }
-      } finally {
-        admin.respond = saved.respond;
-        admin.mayWrite = saved.mayWrite;
-        adminViews.gateStateFor = saved.gate;
-      }
-      return html;
+      const view = await realms.run(realms.get(REALM), function () {
+        return pagePath === riskAdmin.PAGE
+          ? riskAdmin.riskView({}, true) : riskAdmin.metricsView({}, true);
+      });
+      return WebPages.render(pagePath, JSON.parse(JSON.stringify(view)),
+                             WebKit.context({}, true));
     };
     const page = await draw(riskAdmin.PAGE);
     t.check(page.length > 0 && page.indexOf('Whose data, on what terms') < 0 &&

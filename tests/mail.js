@@ -1273,18 +1273,23 @@ async function consolePages(t) {
     const page = new mailAdminModule.MailAdmin(Object.assign(
       mailAdminModule.MailAdmin.defaultDeps(), { admin: shell,
                                                  adminViews: views }));
-    const routes = {};
-    page.registerRoutes({
-      get: function (path, fn) {
-        routes['GET ' + path] = fn;
-      },
-      post: function (path, fn) {
-        routes['POST ' + path] = fn;
-      }
-    });
+    // THE PAGES AS THE STATIC CONSOLE DRAWS THEM (#446): each page's view —
+    // what its operation answers — drawn by its renderer; there are no
+    // console routes to call since the cutover. `up` says whether a
+    // drill-down's way back would be drawn (the item its parameter names).
+    const WebPages = require('../admin-ui/web_pages');
+    const WebKit = require('../admin-ui/web_kit');
     const get = function (path, query) {
-      routes['GET ' + path]({ query: query || {}, headers: {} }, {});
-      return drawn[drawn.length - 1];
+      const q = query || {};
+      const req = { query: q, headers: {} };
+      const view = path === '/admin/mail' ? page.settingsView(req, q)
+                                          : page.outboxView(req, q);
+      return {
+        json: view,
+        html: WebPages.render(path, JSON.parse(JSON.stringify(view)),
+                              WebKit.context(q, true)),
+        up: q.template || q.message || null
+      };
     };
     const settings = get('/admin/mail');
     t.check(settings && /capture/.test(settings.html) &&

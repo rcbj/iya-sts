@@ -483,6 +483,15 @@ function childMain() {
     config.setOverride('risk.enforceInDevelopment', true);
     const audit = require(ROOT + '/common/audit');
     const CONSOLE = 'sts-admin-console';
+    // THE CONSOLE'S SIGN-IN STARTS IN THE BROWSER since the cutover (#446):
+    // the shell is asked for first (it registers the callback), then the
+    // authorize endpoint as the public client with PKCE.
+    const consoleAuthorize = '/oauth2/authorize?' + new URLSearchParams({
+      client_id: CONSOLE, response_type: 'code',
+      redirect_uri: 'http://127.0.0.1:' + port + '/admin/callback',
+      scope: 'openid admin:read admin:write', state: 's',
+      code_challenge: 'E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM',
+      code_challenge_method: 'S256' }).toString();
     const onConsole = function (name, satisfied) {
       return gate.check({
         application: CONSOLE, kind: gate.ISSUANCE.SESSION,
@@ -557,7 +566,8 @@ function childMain() {
       const u = new URL(String(location || ''), 'http://127.0.0.1');
       return u.pathname + u.search;
     };
-    let ivyAt = await ivy.go('GET', '/admin');
+    await ivy.go('GET', '/admin');
+    let ivyAt = await ivy.go('GET', consoleAuthorize);
     for (let i = 0; i < 4 && ivyAt.status >= 300 && ivyAt.status < 400 &&
          !/\/authn\/login\?/.test(String(ivyAt.headers.location || ''));
          i++) {
@@ -607,7 +617,8 @@ function childMain() {
       return row.action === 'xacml.issuance.alarm' && row.actor === 'rd-jay';
     }).length;
     const jay = browser(port, CHROME);
-    let jayAt = await jay.go('GET', '/admin');
+    await jay.go('GET', '/admin');
+    let jayAt = await jay.go('GET', consoleAuthorize);
     for (let i = 0; i < 4 && jayAt.status >= 300 && jayAt.status < 400 &&
          !/\/authn\/login\?/.test(String(jayAt.headers.location || ''));
          i++) {

@@ -881,6 +881,42 @@ class OidcRelyingParty {
     return String(publicBase).replace(/^https?:\/\//i, '').split('/')[0];
   }
 
+  // ---------------------------------------------------------------------------
+  // THE STATIC CONSOLE'S CALLBACK (#446, the cutover). The console signs in
+  // in the browser now, as the public client, and comes back to the realm's
+  // `/admin/callback`; this service runs no flow for it. What it still owes
+  // is the address on the entry: `ensureRedirectUri()`'s three answers — a
+  // pinned base learns nothing, development learns the address it is
+  // reached at, product refuses one nobody registered — asked when the
+  // shell is served, which is the moment a sign-in is about to start.
+  // ---------------------------------------------------------------------------
+  /**
+   * Makes sure the console's client entry carries the callback the static
+   * console is about to sign in with, in the realm the request is under.
+   *
+   * @param req - the request for the shell
+   * @returns `{ ok, why }`, as `ensureRedirectUri()` answers
+   */
+  ensureConsoleCallback(req: any): any {
+    const { log } = this.deps;
+    const self = this;
+    log.debug('Entering OidcRelyingParty.ensureConsoleCallback().');
+    const surface = SURFACES.admin;
+    const answer = this.inFlowRealm(surface, function () {
+      const found = self.clientOf(surface);
+      if (!found.ok) {
+        return found;
+      }
+      const base = self.cellConsoleBase(req, surface) ||
+                   self.publicBaseOf(req);
+      return self.ensureRedirectUri(surface, found.client,
+                                    base + surface.callbackPath);
+    });
+    log.debug('Leaving OidcRelyingParty.ensureConsoleCallback(). ' +
+              (answer && answer.ok !== false ? 'Registered.' : 'Refused.'));
+    return answer;
+  }
+
   // -------------------------------------------------------------------------
   // THE CLIENT'S OWN REGISTRATION, READ FROM THE REGISTRY AT THE MOMENT IT IS
   // USED.
@@ -3470,6 +3506,7 @@ export = {
   instanceOrigin: (): string => slot.origin(),
   SURFACES: SURFACES,
   surfaceOf: slot.forward('surfaceOf'),
+  ensureConsoleCallback: slot.forward('ensureConsoleCallback'),
   beginSignIn: slot.forward('beginSignIn'),
   handleCallback: slot.forward('handleCallback'),
   sessionFor: slot.forward('sessionFor'),

@@ -432,11 +432,6 @@ class SecretsAdmin {
     const { log } = this.deps;
     const self = this;
     log.debug("Entering SecretsAdmin.registerRoutes().");
-    app.get('/admin/secrets', function (req, res) {
-      log.debug('Entering GET /admin/secrets.');
-      self.renderSecrets(req, res);
-      log.debug('Leaving GET /admin/secrets.');
-    });
     log.debug("Leaving SecretsAdmin.registerRoutes().");
   }
 }

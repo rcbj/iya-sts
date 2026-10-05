@@ -986,34 +986,6 @@ class EncryptionAdmin {
     const { log, admin } = this.deps;
     const self = this;
     log.debug("Entering EncryptionAdmin.registerRoutes().");
-    app.get('/admin/encryption', function (req, res) {
-      log.debug('Entering GET /admin/encryption.');
-      self.renderEncryption(req, res);
-      log.debug('Leaving GET /admin/encryption.');
-    });
-    // THE DATA-KEY ACTS (#391 P2). Admin Write; a service page, so a realm's
-    // own administrator never reaches it (`admin_scope.ts`).
-    app.post('/admin/encryption/data-keys', function (req, res) {
-      log.debug('Entering POST /admin/encryption/data-keys.');
-      if (!admin.mayWrite(req)) {
-        require('../common/error_codes').mark(res, 'STS-ADMIN-0012');
-        admin.respondToAction(req, res, '/admin/encryption', { ok: false,
-          errors: ['Rotating data encryption keys needs the Admin Write ' +
-                   'role.'] });
-        log.debug('Leaving POST /admin/encryption/data-keys. Read-only.');
-        return;
-      }
-      const result = self.dataKeysAction(req, helpers.parseBody(req),
-                                         'the admin console');
-      if (!result.ok) {
-        require('../common/error_codes').mark(res,
-          result.errorCode || 'STS-ADMIN-0012');
-      }
-      admin.respondToAction(req, res,
-                            result.ok ? result.href : '/admin/encryption',
-                            result);
-      log.debug('Leaving POST /admin/encryption/data-keys. ' + result.ok);
-    });
     log.debug("Leaving EncryptionAdmin.registerRoutes().");
   }
 }
