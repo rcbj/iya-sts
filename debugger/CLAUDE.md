@@ -11,6 +11,7 @@ behind an access token only a console administrator is issued.
 | `debugger_api_process.ts` | The api as a forked child on a unix socket: the environment it is given, the allow-list, start, restart with backoff, give up, stop. |
 | `debugger_access.ts` | Who may use it: `narrowScope()` at issuance and `isAdministrator()` at the gate. A library (rule 3). |
 | `debugger_admin.ts` | `/admin/debugger`, and the view `GET /admin-api/debugger` answers (rule 7). |
+| `web_debugger.ts` | The page's renderer since #446: a `web_` module a browser can load, drawing `/admin/debugger` from that view alone (`admin-ui/CLAUDE.md`, *The static console's renderers*). `debugger_admin.ts` calls it with the view passed through JSON until the console's cutover. |
 | `embedded/` | **Not source.** The debugger project's embedded build output, gitignored and dockerignored — see *Where the built tree comes from*. |
 
 ## The eight decisions, and they were rcbj's

@@ -30,9 +30,11 @@
 
 import WebKit = require('./web_kit');
 import DatabasePage = require('./web_database');
+import DebuggerPage = require('../debugger/web_debugger');
 import GrantsPage = require('../oauth-oidc/web_grants');
 import ModePage = require('./web_mode');
 import NodeHealthPage = require('./web_node_health');
+import OAuth2MonitorPage = require('../oauth-oidc/web_oauth2_monitor');
 import SecretsPage = require('./web_secrets');
 import SettingsForms = require('./web_settings');
 import SsfTransmittersPage = require('../ssf/web_ssf_transmitters');
@@ -47,18 +49,23 @@ interface WebPage {
   path: string;
   title: string;
   operation: string;
-  render: (view: Json) => string;
+  render: (view: Json, ctx?: Json) => string;
 }
 
 const PAGES: WebPage[] = [
   { path: '/admin/database', title: 'Database',
     operation: '/admin-api/database', render: DatabasePage.render },
+  { path: '/admin/debugger', title: 'Protocol debugger',
+    operation: '/admin-api/debugger', render: DebuggerPage.render },
   { path: '/admin/grants', title: 'Grants', operation: '/admin-api/grants',
     render: GrantsPage.render },
   { path: '/admin/mode', title: 'Mode', operation: '/admin-api/mode',
     render: ModePage.render },
   { path: '/admin/node-health', title: 'Node health',
     operation: '/admin-api/node-health', render: NodeHealthPage.render },
+  { path: '/admin/oauth2/monitor', title: 'OAuth 2.0 / OIDC activity',
+    operation: '/admin-api/oauth2/monitor',
+    render: OAuth2MonitorPage.render },
   { path: '/admin/secrets', title: 'Secret store',
     operation: '/admin-api/secrets', render: SecretsPage.render },
   { path: '/admin/ssf/transmitters', title: 'Signals from partners',
@@ -112,11 +119,14 @@ class WebPages {
    *
    * @param path - the console path
    * @param view - the operation's answer
+   * @param ctx - optional; the render context (`WebKit.context()`): the
+   *   page's query and whether the reader may write. A reader with no query
+   *   who may not write when left out.
    * @returns the body as HTML, or null when the page is not converted
    */
-  static render(path: string, view: Json): string | null {
+  static render(path: string, view: Json, ctx?: Json): string | null {
     const page = WebPages.pageFor(path);
-    return page ? page.render(view) : null;
+    return page ? page.render(view, ctx || WebKit.context()) : null;
   }
 }
 

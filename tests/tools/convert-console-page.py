@@ -22,7 +22,21 @@
 #     `admin`, so no moved line grows past 80 columns); `this` and `self`
 #     stay, a static method called on its class having the class for `this`;
 #   * the ENTRY method stays on the page's class as a delegate that calls the
-#     new module's `render()` with the view passed through JSON.
+#     new module's `render()` with the view passed through JSON;
+#   * `admin.configFormsFor(PAGE)` in the entry method becomes
+#     `settings.forms(json.settings, PAGE)` — the Settings block drawn from
+#     the view's own `settings` member by `admin-ui/web_settings.ts`. The
+#     page's view must carry that member (`admin.configSettingsJson(PAGE)`),
+#     and a block drawn outside the entry method is refused: only the entry
+#     holds the view;
+#   * A METHOD THAT TAKES THE REQUEST TAKES THE RENDER CONTEXT INSTEAD
+#     (`WebKit.context()`: the page's query and whether the reader may
+#     write). `req: Req` becomes `ctx: Json`, `req.query` becomes
+#     `ctx.query`, `admin.mayWrite(req)` becomes `ctx.write`, and a `req`
+#     handed on becomes `ctx`. Anything else read off the request — a body, a
+#     header, a session — is refused: a browser has no request. The entry
+#     method may be `(json)` or `(req, json)`; its delegate hands the
+#     renderer `admin.renderContext(req)`.
 #
 # IT REFUSES RATHER THAN GUESSES: a helper the kit does not have, a call to a
 # method that was not named, or anything of `deps` or `log` left behind stops
@@ -116,9 +130,6 @@ copied = []
 # A module that says `const esc = admin.esc;` calls the console's escaping
 # by its bare name. The new file says the same of the kit's, so no moved
 # line changes.
-if BARE_ESC:
-    copied.append("// The console's escaping, under the name the moved code "
-                  "calls it by.\nconst esc = kit.esc;\n")
 for const in COPY:
     m = re.search(r'((?:^(?://|/\*\*| \*)[^\n]*\n)*)^const %s = [^;]*;\n'
                   % re.escape(const), '\n'.join(lines), re.M)
@@ -126,24 +137,52 @@ for const in COPY:
     copied.append(m.group(0))
 spans = sorted((span(n) + (n,) for n in names))
 blocks = []
+USES_SETTINGS = []
+DEPS_ESC = []
 for doc, start, end, name in spans:
     block = '\n'.join(lines[doc:end + 1])
     block = re.sub(r'^  (?:private |static )?%s\(' % re.escape(name),
                    '  static %s(' % name, block, flags=re.M)
     block = strip_logs(block)
-    kept = []
-    for l in block.split('\n'):
-        if re.match(r'^\s*const \{ log(?:, admin)? \} = this\.deps;$', l) or \
-           re.match(r'^\s*const \{ admin(?:, log)? \} = this\.deps;$', l):
-            continue
-        kept.append(l)
-    block = '\n'.join(kept)
+    # What `this.deps` handed the method. `log` goes with its lines, `admin`
+    # becomes the kit, `esc` becomes the kit's under its bare name; anything
+    # else the moved code still names is caught below (a module-level name
+    # is reported, a call into `deps` refused).
+    def undeps(m):
+        for one in re.split(r'[,\s]+', m.group(1).strip()):
+            if one == 'esc':
+                DEPS_ESC.append(name)
+        return ''
+    block = re.sub(r'^[ \t]*const \{([^}]*)\} = this\.deps;\n', undeps,
+                   block, flags=re.M)
+    # THE REQUEST BECOMES THE RENDER CONTEXT.
+    block = block.replace('admin.mayWrite(req)', 'ctx.write')
+    block = re.sub(r'\breq: Req\b', 'ctx: Json', block)
+    block = re.sub(r'\breq\.query\b', 'ctx.query', block)
+    code = '\n'.join(l for l in block.split('\n')
+                     if not re.match(r'^\s*(//|\*|/\*)', l))
+    assert not re.search(r'\breq\.', code), (
+        'reads the request, which a browser has not', name,
+        re.findall(r'\breq\.\w+', code)[:4])
+    block = re.sub(r'(?<![\w$.\'"`/-])req(?![\w$\'"`/:-])', 'ctx', block)
+    # THE SETTINGS BLOCK, from the view. Only the entry method holds the
+    # view (its parameter is `json`, asserted below), so only there.
+    if 'admin.configFormsFor(' in block:
+        assert name == entry, ('a settings block outside the entry method',
+                               name)
+        block = block.replace('admin.configFormsFor(',
+                              'settings.forms(json.settings, ')
+        USES_SETTINGS.append(name)
     # `this` and `self` stay: a static method called on its class has the
     # class for `this`. The kit is imported as `kit`, shorter than `admin`,
     # so no line the move touches grows.
     block = re.sub(r'\badmin\.', 'kit.', block)
     blocks.append(block)
 body = '\n\n'.join(blocks)
+if BARE_ESC or DEPS_ESC:
+    BARE_ESC = True
+    copied.insert(0, "// The console's escaping, under the name the moved "
+                  "code calls it by.\nconst esc = kit.esc;\n")
 assert '.deps' not in body, [l for l in body.split('\n') if '.deps' in l][:3]
 assert not re.search(r'\blog\.', body), [l for l in body.split('\n') if re.search(r'\blog\.', l)][:3]
 used = set(re.findall(r'\bkit\.([A-Za-z_]+)', body))
@@ -153,20 +192,27 @@ assert used <= KIT, ('helpers not in the kit', sorted(used - KIT))
 # answer differs each time (copy a constant, move a table, put a fact in the
 # view) and `tsc` would only say the same thing after an image build.
 top = set(re.findall(r'^(?:const|let|function|class|import) ([A-Za-z_$][\w$]*)',
-                     '\n'.join(lines), re.M)) - {'kit', 'WebKit'}
+                     '\n'.join(lines), re.M)) - {'kit', 'WebKit', 'settings'}
 top -= set(COPY)
 if BARE_ESC:
     top.discard('esc')
 code_only = '\n'.join(l for l in body.split('\n')
                       if not re.match(r'^\s*(//|\*|/\*)', l))
 left = sorted(n for n in top
-              if re.search(r'(?<![\w$.\'"`-])%s(?![\w$\'"`-])' % re.escape(n),
+              if re.search(r'(?<![\w$.\'"`/-])%s(?![\w$\'"`/-])' % re.escape(n),
                            code_only))
 if left:
     sys.stderr.write('STAYS BEHIND, and the moved code names it: ' +
                      ', '.join(left) + '\n')
 called = set(re.findall(r'\b(?:this|self)\.([A-Za-z_]+)\(', body))
 assert called <= set(names), ('calls a method that did not move', sorted(called - set(names)))
+entry_sig = lines[[sp for sp in spans if sp[3] == entry][0][1]]
+m = re.match(r'^  (?:private |static )?\w+\((.*)\)(?:: \w+)? \{$', entry_sig)
+assert m, entry_sig
+ENTRY_PARAMS = [one.split(':')[0].strip() for one in m.group(1).split(',')]
+assert ENTRY_PARAMS in (['json'], ['req', 'json']), ENTRY_PARAMS
+if ENTRY_PARAMS == ['req', 'json']:
+    ENTRY_PARAMS = ['ctx', 'json']
 import textwrap
 def wrap(prefix, text):
     return '\n'.join(prefix + l for l in textwrap.wrap(
@@ -176,6 +222,13 @@ kit_path = os.path.relpath(root + '/admin-ui/web_kit',
                            os.path.dirname(root + '/' + web_file))
 if not kit_path.startswith('.'):
     kit_path = './' + kit_path
+settings_import = ''
+if USES_SETTINGS:
+    settings_path = os.path.relpath(root + '/admin-ui/web_settings',
+                                    os.path.dirname(root + '/' + web_file))
+    if not settings_path.startswith('.'):
+        settings_path = './' + settings_path
+    settings_import = "\nimport settings = require('%s');" % settings_path
 web = """// SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
 // SPDX-License-Identifier: BUSL-1.1
 
@@ -191,7 +244,7 @@ web = """// SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
 %s
 // ---------------------------------------------------------------------------
 
-import kit = require('%s');
+import kit = require('%s');%s
 
 type Json = any;
 %s
@@ -204,11 +257,11 @@ class %s {
   /**
    * Draws the page's body from its view.
    *
-   * @param view - the answer of the page's management API operation
+   * @param view - the answer of the page's management API operation%s
    * @returns the body as HTML
    */
-  static render(view: Json): string {
-    return %s.%s(view);
+  static render(view: Json%s): string {
+    return %s.%s(%s);
   }
 
 %s
@@ -222,9 +275,22 @@ export = %s;
             source + "`, moved with their comments; that module still draws the "
             "page until the console's cutover, by calling `render()` with its "
             "view passed through JSON."),
-       kit_path, ('\n' + '\n'.join(copied)) if copied else '',
-       wrap(' * ', what), page_class, page_class, entry, body, page_class)
+       kit_path, settings_import,
+       ('\n' + '\n'.join(copied)) if copied else '',
+       wrap(' * ', what), page_class,
+       ('\n   * @param ctx - the render context: the page\'s query and '
+        'whether\n   *   the reader may write (`WebKit.context()`)')
+       if ENTRY_PARAMS == ['ctx', 'json'] else '',
+       ', ctx: Json' if ENTRY_PARAMS == ['ctx', 'json'] else '',
+       page_class, entry,
+       'ctx, view' if ENTRY_PARAMS == ['ctx', 'json'] else 'view',
+       body, page_class)
 open(root + '/' + web_file, 'w').write(web)
+# A moved line can only have grown where the settings block was rewritten.
+for n, l in enumerate(web.split('\n')):
+    if len(l) > 80:
+        sys.stderr.write('OVER 80 COLUMNS, %s line %d: reflow it\n'
+                         % (leaf, n + 1))
 
 # the source module: the methods go, the entry stays as the round trip
 for doc, start, end, name in sorted(spans, reverse=True):
@@ -235,14 +301,19 @@ for doc, start, end, name in sorted(spans, reverse=True):
             "module a browser can load. Until the cutover this process still "
             "draws it, handing the renderer the view passed THROUGH JSON, so it "
             "is held to what the API's caller receives.").split('\n') + [
-            sig,
+            sig] + ([
             "    const { log } = this.deps;",
             "    log.debug(\"Entering %s.%s().\");" % (src_class, entry),
             "    const drawn = %s.render(JSON.parse(JSON.stringify(json)));" % page_class,
+            ] if ENTRY_PARAMS == ['json'] else [
+            "    const { log, admin } = this.deps;",
+            "    log.debug(\"Entering %s.%s().\");" % (src_class, entry),
+            "    const drawn = %s.render(JSON.parse(JSON.stringify(json))," % page_class,
+            "      admin.renderContext(req));",
+            ]) + [
             "    log.debug(\"Leaving %s.%s().\");" % (src_class, entry),
             "    return drawn;",
             "  }"]
-        assert re.search(r'\(json(: Json)?\)(: string)? \{$', sig), sig
     else:
         del lines[doc:end + 2]
 out = '\n'.join(lines)

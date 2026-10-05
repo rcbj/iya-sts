@@ -722,6 +722,42 @@ class WebKit {
     };
   }
 
+  // -------------------------------------------------------------------------
+  // WHAT A RENDERER IS TOLD BESIDE ITS VIEW (#446).
+  //
+  // A page is drawn from the answer of its management API operation. Two
+  // things a page draws are not in that answer and are not this process's
+  // either — they belong to the READER:
+  //
+  //   * `query` — the page's own query parameters: which page of a list, a
+  //     filter, a drill-down. A paging link has to carry the others forward,
+  //     and a Withdraw has to come back to the page the reader was on.
+  //   * `write` — whether the reader may write, which decides whether a
+  //     control is drawn at all. It is `GET /admin-api/me`'s `write`.
+  //     DRAWING A BUTTON IS NOT WHAT REFUSES THE ACT: the operation behind it
+  //     checks the role, here as in the console.
+  //
+  // The server-rendered console builds one from its request
+  // (`AdminConsole.renderContext()`); the static console's runtime builds
+  // one from the address bar and its `me` answer. Nothing else belongs in
+  // it: a fact about the SERVICE goes in the view, where a caller of the
+  // API can read it too.
+  // -------------------------------------------------------------------------
+  /**
+   * Builds the render context a page's renderer takes beside its view.
+   *
+   * @param query - the page's query parameters, by name
+   * @param write - whether the reader may write
+   * @returns `{ query, write }`, the query copied and `write` a boolean
+   */
+  static context(query?, write?) {
+    const copy = {};
+    Object.keys(query || {}).forEach(function (name) {
+      copy[name] = query[name];
+    });
+    return { query: copy, write: write === true };
+  }
+
   // A list of names, each in its own <code>. Written as a function because the
   // obvious one-liner — join with the markup and escape the result — escapes
   // the markup too, and the page then shows the tags it was supposed to render.

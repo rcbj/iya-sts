@@ -7277,7 +7277,8 @@ directory:
 
 A file whose name begins `web_`. Most are in this directory; **a page drawn
 by a protocol family's own module has its renderer beside that module**
-(`oauth-oidc/web_grants.ts`, `ssf/web_ssf_transmitters.ts`), as its page
+(`oauth-oidc/web_grants.ts`, `oauth-oidc/web_oauth2_monitor.ts`,
+`ssf/web_ssf_transmitters.ts`, `debugger/web_debugger.ts`), as its page
 module always was, and imports the kit by its relative path.
 
 | File | What it is |
@@ -7289,6 +7290,8 @@ module always was, and imports the kit by its relative path.
 | `web_secrets.ts` | The body of `/admin/secrets`. |
 | `../oauth-oidc/web_grants.ts` | The body of `/admin/grants`, its Revoke form included. |
 | `../ssf/web_ssf_transmitters.ts` | The body of `/admin/ssf/transmitters`. |
+| `../oauth-oidc/web_oauth2_monitor.ts` | The body of `/admin/oauth2/monitor` — **the first page that takes the render context**: its paging links carry the query forward and its Withdraw carries the list parameters back. It owns `PAGE_PATH`, `STATES` and `BACK_PARAMS`, which `oauth2_monitor_console.ts` and `oauth2_monitor_admin.ts` read from it. |
+| `../debugger/web_debugger.ts` | The body of `/admin/debugger` — **the first page whose Settings block comes out of its own view** (`settings.forms(json.settings, PAGE_PATH)`). |
 | `web_node_health.ts` | The body of `/admin/node-health`. It was `NodeHealthAdmin`'s nine drawing methods; it carries its own `MIB` and `round1()`, which the view's module has too, because it may not require that module. |
 | `web_settings.ts` | **The Settings block of every page that owns settings** — `forms()`, `section()`, `row()`, `orderedChoiceControl()`, `sourceNote()`, `sharedNote()` — from the `settings` member of that page's operation. Not a page: `web_pages.ts` carries it as `StsConsole.settings`. See *The settings block*, below. |
 | `web_pages.ts` | The table of converted pages (path, title, operation, renderer), and the ENTRY of the browser bundle. |
@@ -7359,7 +7362,7 @@ the view.
 
 **NOT BUILT YET**: the runtime that signs in (authorization code, PKCE, a
 non-extractable DPoP key), fetches, routes and draws the shell; the static
-route that serves it; and every page but the seven above.
+route that serves it; and every page but the nine above.
 
 **THE PAGING CONTROL IS DRAWN FROM THE PAGING A CALLER RECEIVES.**
 `pageNavPair(path, params, pg)` read two members of the console's own paging
@@ -7368,6 +7371,31 @@ moves the list, and `noun`, what its rows are counted in. Every paging answer
 carries both now (`admin-core/admin_views.ts`), so a renderer hands the kit
 `view.paging` and draws what the console drew — which
 `tests/console_web_bundle.js` holds, page by page of a list of 431 rows.
+
+### The render context
+
+**A RENDERER TAKES TWO THINGS: ITS VIEW, AND WHAT IS THE READER'S.**
+`render(view, ctx)`, where `ctx` is `WebKit.context(query, write)`:
+
+* `ctx.query` — the page's own query parameters. A paging link carries the
+  others forward (`pageNavPair(PAGE, ctx.query, paging)`), and a form that
+  has to come back to where the reader was builds its return from them.
+* `ctx.write` — whether the reader may write: `GET /admin-api/me`'s `write`
+  in the browser, `mayWrite(req)` here. It decides whether a control is
+  DRAWN. It refuses nothing: the operation behind the control checks the
+  role.
+
+`AdminConsole.renderContext(req)` builds it for a page module, with the
+query passed through JSON. **Nothing else belongs in it.** A fact about the
+service goes in the view, where a caller of the API can read it too; the
+context is only what differs between two readers of one answer. **A
+renderer may read nothing else of a request**, and the conversion tool
+refuses a method that does (a body, a header, a session).
+
+**THE NOTICE AND ERROR BANNER IS NOT IN A RENDERER.** `messagesOf(req)` draws
+what a redirect brought back after an action; in the static console the
+runtime that sent the action draws its result. A page module adds it
+outside `render()`, as `oauth2_monitor_admin.ts` does.
 
 ### The settings block
 

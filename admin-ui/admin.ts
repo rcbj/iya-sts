@@ -12430,6 +12430,24 @@ class AdminConsole {
     return !!state.write;
   }
 
+  // What a `web_` renderer is told beside its view (#446; `WebKit.context()`
+  // argues what belongs in it): this request's query, passed through JSON
+  // so the renderer sees what an address bar would give it, and the gate's
+  // answer on Admin Write.
+  /**
+   * Builds the render context of a request for a converted page's renderer.
+   *
+   * @param req - the express request
+   * @returns `{ query, write }`
+   */
+  renderContext(req) {
+    const { log } = this.deps;
+    log.debug("Entering AdminConsole.renderContext().");
+    const query = JSON.parse(JSON.stringify((req && req.query) || {}));
+    log.debug("Leaving AdminConsole.renderContext().");
+    return WebKit.context(query, this.mayWrite(req));
+  }
+
   /**
    * Installs the logout reader behind /admin/logout and /admin/sessions,
    * here and in the action and read layers.
@@ -48764,6 +48782,7 @@ const consoleExports = {
   // are different acts, and only the second needs Admin Write.
   // For crypto_metadata.js's export route, which is the only caller.
   mayWrite: slot.forward('mayWrite'),
+  renderContext: slot.forward('renderContext'),
   // The sign-out page's view and its four actions, for admin_api.js. Rule 7:
   // the API calls exactly these, so an action added to that switch is most of
   // adding it there — and the refusal sentence that names the four is what the

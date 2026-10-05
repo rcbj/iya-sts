@@ -92,11 +92,20 @@ function childMain() {
       '/admin/database': function () {
         return database.databaseView();
       },
+      '/admin/debugger': function () {
+        return Promise.resolve(
+          require(ROOT_DIR + '/debugger/debugger_admin').debuggerView());
+      },
       '/admin/secrets': function () {
         return secretsPage.secretsView();
       },
       '/admin/mode': function () {
         return Promise.resolve(mode.report());
+      },
+      '/admin/oauth2/monitor': function () {
+        return Promise.resolve(
+          require(ROOT_DIR + '/oauth-oidc/oauth2_monitor_console')
+            .monitorView({ query: {} }));
       },
       '/admin/node-health': function () {
         return nodeHealth.nodeHealthView({});
@@ -287,8 +296,10 @@ function childMain() {
         continue;
       }
       const view = JSON.parse(JSON.stringify(await VIEWS[page.path]()));
-      const mine = WebPages.render(page.path, view);
-      const theirs = StsConsole ? StsConsole.render(page.path, view) : null;
+      const ctx = WebKit.context({ per: '10', q: 'a b' }, true);
+      const mine = WebPages.render(page.path, view, ctx);
+      const theirs = StsConsole
+        ? StsConsole.render(page.path, view, ctx) : null;
       if (typeof mine !== 'string' || mine.length < 100 || mine !== theirs) {
         differing.push(page.path + ' (' + String(mine).length + ' against ' +
                        String(theirs).length + ')');
@@ -314,6 +325,42 @@ function childMain() {
           report.developmentOnlySettings.length));
     note(WebPages.render('/admin/not-converted', {}) === null,
          'D3. a page that is not converted is not drawn', '');
+    // THE RENDER CONTEXT: what a page draws that is the reader's and not
+    // the service's — the query it was asked with and whether they may
+    // write.
+    const made = WebKit.context({ page: '2' }, 'yes');
+    const bare = WebKit.context();
+    const monitorView = JSON.parse(JSON.stringify(
+      await VIEWS['/admin/oauth2/monitor']()));
+    const parSection = monitorView.sections.filter(function (section) {
+      return section.id === 'par';
+    })[0];
+    parSection.pushedRequests.items = [{
+      request_uri: 'urn:ietf:params:oauth:request_uri:abcdefghijklmnop',
+      client_id: 'client-<1>', authorization_server: '', state: 'live',
+      created_at: '2026-10-05T00:00:00Z', expires_at: '2026-10-05T00:01:00Z',
+      expires_in: 60, reads: 1, client_authenticated: true,
+      authentication_method: 'private_key_jwt', source: 'form',
+      redirect_uri: 'https://rp.example/cb', response_type: 'code',
+      scope: 'openid', dpop_jkt: '' }];
+    const heldPage = WebPages.render('/admin/oauth2/monitor', monitorView,
+      WebKit.context({ state: 'live', page: '2', notAListParameter: 'x',
+                       client_id: 'a&b' }, true));
+    const backField = (/name="back" value="([^"]*)"/.exec(heldPage) ||
+                       ['', ''])[1];
+    note(made.write === false && made.query.page === '2' &&
+         bare.write === false && Object.keys(bare.query).length === 0 &&
+         WebKit.context({}, true).write === true &&
+         backField.indexOf('state=live') >= 0 &&
+         backField.indexOf('page=2') >= 0 &&
+         backField.indexOf('client_id=a%26b') >= 0 &&
+         backField.indexOf('notAListParameter') < 0 &&
+         heldPage.indexOf('client-&lt;1&gt;') > 0 &&
+         heldPage.indexOf('value="delete-pushed-request"') > 0,
+         'D4. the render context is the query and a boolean and nothing ' +
+         'else, and a page that takes it draws from it — a Withdraw on ' +
+         'the OAuth activity page carries back the list parameters of the ' +
+         'query it was drawn with and no other', backField);
 
     // --- E. the table is true ------------------------------------------------
     const consolePages = admin.consoleJson().pages;
