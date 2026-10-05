@@ -109,11 +109,53 @@ function run(t) {
   if (fs.existsSync(path.join(VECTORS, 'xmldsig-rust.json'))) {
     xmlSignatures(t, read('xmldsig-rust.json'));
   }
+  if (fs.existsSync(path.join(VECTORS, 'secrets-rust.json'))) {
+    secretsFromRust(t, read('secrets-rust.json'));
+  }
   if (fs.existsSync(path.join(VECTORS, 'xmlenc-rust.json')) &&
       fs.existsSync(path.join(VECTORS, 'xmlenc-node.json'))) {
     xmlEncryption(t, read('xmlenc-rust.json'), read('xmlenc-node.json'));
   }
   log.debug("Leaving run().");
+}
+
+// SECRETS: every scrypt hash Rust made verifies here (and a wrong secret
+// does not), every envelope Rust sealed opens under its data key, and every
+// data key Rust wrapped unwraps under the key-encryption key and AAD.
+/**
+ * @param {any} t - the runner's check collector
+ * @param {any} vectors - secrets-rust.json
+ */
+function secretsFromRust(t, vectors) {
+  log.debug("Entering secretsFromRust().");
+  vectors.hashes.forEach(function (row) {
+    t.check(crypto.verifySecret(row.plain, row.stored) &&
+            !crypto.verifySecret(row.plain + 'x', row.stored),
+            'a scrypt hash Rust made verifies in Node, and only for its ' +
+            'secret');
+  });
+  vectors.envelopes.forEach(function (row) {
+    let opened = null;
+    try {
+      opened = crypto.decryptWithDek(Buffer.from(row.key, 'base64'),
+                                     row.sealed, 'vectors');
+    } catch (e) {
+      log.debug("Caught in secretsFromRust(): " + ((e && e.message) || e));
+    }
+    t.check(opened === row.plain, row.alg + ': an envelope Rust sealed ' +
+            'opens in Node');
+  });
+  vectors.wraps.forEach(function (row) {
+    let dek = null;
+    try {
+      dek = crypto.unwrapDek(row.kek, row.wrapped, row.aad);
+    } catch (e) {
+      log.debug("Caught in secretsFromRust(): " + ((e && e.message) || e));
+    }
+    t.check(!!dek && dek.toString('base64') === row.dek,
+            'a data key Rust wrapped unwraps in Node');
+  });
+  log.debug("Leaving secretsFromRust().");
 }
 
 // XML ENCRYPTION: every element Rust encrypted — an RSA recipient in each
