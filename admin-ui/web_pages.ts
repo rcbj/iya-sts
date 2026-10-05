@@ -603,6 +603,19 @@ const PAGES: WebPage[] = [
       return ClaimsPage.userinfoClaimsBody(ctx || WebKit.context(), view);
     } },
   { path: '/admin/users', title: 'Users', operation: '/admin-api/users',
+    drill: {
+      param: 'user',
+      sample: function (list: Json): string | null {
+        const rows = list.users || [];
+        return rows[0] ? rows[0].key : null;
+      },
+      // `known: false` is the third answer, a name nothing here knows.
+      render: function (view: Json, ctx?: Json): string {
+        return view.known === false
+          ? UsersPage.unknown(ctx || WebKit.context(), view)
+          : UsersPage.detail(ctx || WebKit.context(), view);
+      }
+    },
     render: function (view: Json, ctx?: Json): string {
       return UsersPage.body(ctx || WebKit.context(), view);
     } },

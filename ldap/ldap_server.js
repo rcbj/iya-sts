@@ -8000,8 +8000,19 @@ stats.setUserObserver(observeIdentity);
 // not a function` thrown at require time, which would take the whole service
 // down over one section of one page. A directory whose entries nobody renders
 // is still a working directory.
+//
+// THE READER HANDS OVER NO CREDENTIAL (#446, rcbj 2026-10-05). What it
+// answers is the person page's directory entry and `GET /admin-api/users?
+// user=`'s `ldap`, and until then that carried the entry as stored: the
+// password hash, the TOTP seed, the recovery codes, the assertion private
+// keys. `withoutSecrets()` masks them as it does for the `/admin/ldap/*`
+// answers; nothing that reads the slot needs a value.
 if (typeof admin.setDirectoryReader === 'function') {
-  admin.setDirectoryReader(objectFor);
+  admin.setDirectoryReader(function readEntry(name) {
+    log.debug("Entering readEntry().");
+    log.debug("Leaving readEntry().");
+    return withoutSecrets(objectFor(name));
+  });
 } else {
   log.warn('ldap: the admin console offers no setDirectoryReader(), so a ' +
            'user page will not show that user\'s directory entry. The ' +

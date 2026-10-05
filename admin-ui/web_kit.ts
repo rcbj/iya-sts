@@ -2028,6 +2028,31 @@ class WebKit {
     return { query: copy, write: write === true };
   }
 
+  /**
+   * Draws panels as sub-tabs: a bar of links, then each panel with something
+   * in it, the first shown when no fragment picks one. `tabbedPanels()`'s
+   * mechanism one level down.
+   *
+   * @param label - what the bar is, for a screen reader
+   * @param panels - `{ id, label, html }` in tab order
+   * @returns the sub-tabs as HTML
+   */
+  static subTabbedPanels(label, panels) {
+    const shown = panels.filter(function (one) {
+      return String(one.html || '').trim() !== '';
+    });
+    return '<div class="subtabs"><nav class="tabbar subbar" aria-label="' +
+      WebKit.esc(label) + '">' +
+      shown.map(function (one, n) {
+        return '<a' + (n === 0 ? ' class="first"' : '') + ' href="#' +
+          WebKit.esc(one.id) + '">' + WebKit.esc(one.label) + '</a>';
+      }).join('') + '</nav>' +
+      shown.map(function (one, n) {
+        return '<div class="subpanel' + (n === 0 ? ' first' : '') + '" id="' +
+          WebKit.esc(one.id) + '">' + one.html + '</div>';
+      }).join('') + '</div>';
+  }
+
   // A list of names, each in its own <code>. Written as a function because the
   // obvious one-liner — join with the markup and escape the result — escapes
   // the markup too, and the page then shows the tags it was supposed to render.

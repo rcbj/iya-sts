@@ -124,7 +124,8 @@ def dedent(text, n):
 # line and its last `return {` ends what is drawn, `inner` being the markup.
 METHOD = route.startswith('method:')
 if METHOD:
-    m = re.search(r"^  (?:private )?%s\(req(?:, \w+\??)*\)(?:: [^{]*)? \{\n" %
+    m = re.search(r"^  (?:private )?%s\(req(?:, \w+\??(?:: \w+)?)*\)"
+                  r"(?:: [^{]*)? \{\n" %
                   re.escape(route[len('method:'):]), src, re.M)
 else:
     m = re.search(r"app\.get\((['\"])%s\1, function \(req, res\) \{\n" %

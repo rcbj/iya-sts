@@ -19,12 +19,15 @@
 //   4. The application's GET answer still carries no value, and neither do
 //      the directory's own pages (`/admin/ldap/applications`,
 //      `/admin/ldap/directory`), which show the attribute masked.
+//   5. A PERSON's answer (`GET /admin-api/users?user=`) carries their entry
+//      as `ldap`, and since #446 without the password hash.
 // ---------------------------------------------------------------------------
 
 delete process.env.CONFIG_FILE;
 
 const applications = require('../common/applications');
-require('../ldap/ldap_server');
+const ldap = require('../ldap/ldap_server');
+const credentials = require('../common/credentials');
 const adminActions = require('../admin-core/admin_actions');
 const adminViews = require('../admin-core/admin_views');
 const audit = require('../common/audit');
@@ -114,6 +117,18 @@ function run(t) {
             '4c. nor does /admin-api/ldap/' + page + '\'s',
             body.length + ' characters');
   });
+
+  const person = 'reveal-person-' + process.pid;
+  ldap.createUser(person, { invent: false });
+  credentials.setPassword(person, 'Reveal-Secret-' + process.pid + '!x');
+  const personAnswer = adminViews.userDetailJson({ query: {}, headers: {} },
+                                                 person).json;
+  const attrs = (personAnswer.ldap && personAnswer.ldap.entry &&
+                 personAnswer.ldap.entry.attributes) || {};
+  const held = attrs.userPassword || [];
+  t.check(held.length === 1 && held[0] === '(set — not returned)',
+          '5. a person\'s answer shows their password masked, never its hash',
+          JSON.stringify(held));
 
   adminActions.applicationsAction({ action: 'forget', application: ID });
   log.debug("Leaving run().");

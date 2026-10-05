@@ -9994,7 +9994,7 @@ class AdminViews {
     // the grant and this person.
     const gnapGrants = this.gnapGrantsOf(req.query, key);
     log.debug("Leaving AdminViews.userDetailJson().");
-    return {
+    const answer = {
       detail: detail, row: row, sessionRows: sessionRows, live: live,
       split: split,
       // `back` is handed over with the rest: the page's sign-out and revoke
@@ -10008,7 +10008,7 @@ class AdminViews {
                                                                 artifactPage,
       federationLinkPage: federationLinkPage, kerberos: kerberos,
       attributeEditor: attributeEditor, gnapGrants: gnapGrants,
-      json: (function () {
+      json: (function (): any {
       return {
           user: row,
           // THE PERSON'S SUBJECT (2026-09-14): `urn:uuid:<entryUUID>`, the
@@ -10078,6 +10078,101 @@ class AdminViews {
       };
       }())
     };
+    answer.json.page = this.userPageData(key, answer, risk);
+    return answer;
+  }
+
+  // ---------------------------------------------------------------------------
+  // WHAT THE PERSON'S PAGE READS BEYOND THE RECORD (#446).
+  //
+  // The page's thirteen sections read the credential store, three mechanisms'
+  // settings, the federation register, the mode and the registry's caps while
+  // they draw. A page drawn from the answer alone, which is what the static
+  // console draws, reads them here instead. The answer carries them as `page`,
+  // the member name the application drill-down uses for the same purpose.
+  // **None of it is a credential**: the keys are the public half, the app
+  // passwords are their views (no hash), and the key-pair state is the
+  // `personCredentialsState()` that already leaves the private keys out.
+  // ---------------------------------------------------------------------------
+  /**
+   * Builds what `/admin/users?user=` draws beyond the person's record.
+   *
+   * @param key - the person's name
+   * @param view - what `userDetailJson()` built
+   * @param risk - the person's standing as `riskFor()` read it; undefined
+   *   when it was not asked, which draws no badge
+   * @returns the page's data
+   */
+  userPageData(key, view, risk?: any) {
+    const { log, stats, credentials, totp, webauthnPolicy, backupCodes, mode,
+            federation } = this.deps;
+    log.debug("Entering AdminViews.userPageData(). key=" + key);
+    const storable = credentials.storable();
+    let mfa: any = { storable: storable };
+    if (storable) {
+      const mech = credentials.mechanismsFor(key);
+      mfa = {
+        storable: true,
+        mech: Object.assign({}, mech, {
+          keys: (mech.keys || []).map(function (one) {
+            return Object.assign({}, one,
+                                 { algorithm: credentials.keyAlgorithm(one) });
+          })
+        }),
+        totp: totp.settings(),
+        webauthn: webauthnPolicy.settings(),
+        recovery: backupCodes.settings(),
+        appPasswords: credentials.appPasswordsOf(key),
+        doors: this.passwordOnlyDoorsFor(key),
+        verifications: this.verificationsJson({ user: key, per: 100 }),
+        inventsClaimValues: mode.inventsClaimValues(),
+        devices: this.devicesJson({ user: key }),
+        selfIssued: this.selfIssuedSubjectsJson({ user: key }),
+        // The address and the emailed second factor (#64), and the account
+        // ids clients know them by (#148).
+        mail: {
+          status: require('../common/mail_factor').status(key),
+          usable: require('../common/authn_policy').mailUsable(),
+          audSubs: credentials.audSubsOf(key)
+        }
+      };
+    }
+    const keyPairs = Object.assign({}, view.credentialsState);
+    delete keyPairs.json;
+    const page = {
+      // The name the page was asked for, which every form on it posts back.
+      key: key,
+      // Whether the risk standing was read: `risk: null` then means never
+      // assessed, and the page says so; unread, it draws no badge.
+      riskAsked: risk !== undefined,
+      counts: {
+        live: view.live.length,
+        tokens: view.detail.tokens.length,
+        valid: view.valid,
+        expired: view.expired,
+        artifacts: view.detail.artifacts.length,
+        ended: view.split.ended.length,
+        sessionless: view.split.sessionless.length
+      },
+      back: view.back,
+      params: view.params,
+      blocksPerPage: DEFAULT_BLOCKS_PER_PAGE,
+      perPage: DEFAULT_PER_PAGE,
+      maxEventsPerUser: stats.MAX_EVENTS_PER_USER,
+      directoryLoaded: !!directoryReader,
+      mfa: mfa,
+      // The Attributes tab's sub-tabs, in order (`person_editor.ts`).
+      fieldGroups: this.deps.personEditor.FIELD_GROUPS,
+      // Who may act for them (#108): `stsNotDelegated` and `stsMayAct`.
+      delegation: credentials.delegationFactsFor(key) || {},
+      keyPairs: keyPairs,
+      serviceProviders: (federation.inRole('service-provider') || [])
+        .map(function (one) {
+          return { fedId: one.fedId, fedPeer: one.fedPeer || '' };
+        })
+    };
+    log.debug("Leaving AdminViews.userPageData().");
+    return page;
   }
 
   // One route, three answers, and the choice between them is here rather than
@@ -10139,7 +10234,7 @@ class AdminViews {
    * @returns the JSON
    */
   usersJson(req, risk?: any) {
-    const { log } = this.deps;
+    const { log, stats } = this.deps;
     log.debug("Entering AdminViews.usersJson().");
     const wanted = String((req.query || {}).user || '').trim();
     if (!wanted) {
@@ -10149,7 +10244,8 @@ class AdminViews {
     const detail = this.userDetailJson(req, wanted, risk);
     if (!detail) {
       log.debug("Leaving AdminViews.usersJson().");
-      return { user: wanted, known: false };
+      // `registryKeeps` is what the page says about forgetting (#446).
+      return { user: wanted, known: false, registryKeeps: stats.MAX_USERS };
     }
     log.debug("Leaving AdminViews.usersJson().");
     return Object.assign({ known: true }, detail.json);
