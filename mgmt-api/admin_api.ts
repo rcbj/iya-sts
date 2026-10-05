@@ -3754,10 +3754,15 @@ class AdminApi {
             schema: { type: 'string',
                       enum: ['compliant', 'not-compliant', 'unknown'] },
             description: 'Only devices in this compliance state.' },
+          // THE THREE LEVELS `common/devices.ts` records (#446 found the
+          // third missing here, when the console's own filter, which offers
+          // all three, began reaching this operation): `bearer` is a
+          // remembered browser holding no key of its own.
           { name: 'attestation', in: 'query', required: false,
             schema: { type: 'string',
-                      enum: ['attested', 'self-asserted'] },
-            description: 'Only attested, or self-asserted, devices.' },
+                      enum: ['attested', 'self-asserted', 'bearer'] },
+            description: 'Only attested, self-asserted or bearer devices ' +
+                         '(a remembered browser, with no key of its own).' },
           { name: 'keyKind', in: 'query', required: false,
             schema: { type: 'string',
                       enum: ['x509', 'jwk', 'webauthn', 'native-sso'] },

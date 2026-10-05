@@ -371,7 +371,9 @@ function childMain() {
     const seededEntry = spiffeRegistry.createEntry({
       spiffeId: 'spiffe://' + td + '/webcheck',
       parentId: 'spiffe://' + td + '/spire/server',
-      selectors: [{ type: 'unix', value: 'uid:1000' }] }, 'test', td, 'test');
+      // `api`: an origin a real door records, so the page's origin filter
+      // offers only values its operation takes (F2).
+      selectors: [{ type: 'unix', value: 'uid:1000' }] }, 'api', td, 'test');
     note(seededEntry && seededEntry.ok, 'D-seed-spiffe. an entry is made',
          JSON.stringify((seededEntry && seededEntry.errors) || []));
     note(seeded && seeded.ok && seeded11 && seeded11.ok,
@@ -787,6 +789,69 @@ function childMain() {
          Object.keys(droppedFields).length + ' dropped: ' +
          Object.keys(droppedFields).map(function (k) {
            return k + ' (on ' + droppedFields[k] + ')';
+         }).join('; '));
+    // AND EVERY GET FORM'S CHOICES ARE VALUES ITS OPERATION TAKES (#446):
+    // a filter's <select> offers values, and since the cutover each is sent
+    // to the page's operation, which refuses a query value its declared
+    // enum does not name. The server-rendered page never validated its own
+    // query, so an option the API refuses (the Devices page's attestation
+    // `bearer`) was a filter that silently did nothing; now it is a 400.
+    const refusedChoices = {};
+    let choicesChecked = 0;
+    drawnPages.forEach(function (one) {
+      const re = /<form\b[^>]*>[\s\S]*?<\/form>/gi;
+      let m = re.exec(one.html);
+      while (m) {
+        const form = m[0];
+        const head = /^<form\b[^>]*>/i.exec(form)[0];
+        const method = ((/method="([^"]*)"/i.exec(head) || [])[1] || 'get')
+          .toLowerCase();
+        const target = ((/action="([^"]*)"/i.exec(head) || [])[1] ||
+                        one.path).replace(/[?#].*$/, '');
+        const page = method === 'get' ? WebPages.pageFor(target) : null;
+        const op = page && shaper.spec.paths[page.operation] &&
+                   shaper.spec.paths[page.operation].get;
+        if (op) {
+          const params = {};
+          (op.parameters || []).forEach(function (p) {
+            params[p.name] = shaper.deref(p.schema || {}) || {};
+          });
+          const selects = /<select\b[^>]*\bname="([^"]*)"[^>]*>([\s\S]*?)<\/select>/gi;
+          let sel = selects.exec(form);
+          while (sel) {
+            const mapped = Object.keys(WebPages.operationQuery(page.path,
+              (function () {
+                const q = {};
+                q[sel[1]] = 'x';
+                return q;
+              })())).filter(function (k) {
+                return k !== 'rows';
+              })[0];
+            const schema = params[mapped];
+            const opts = /<option\b[^>]*value="([^"]*)"/gi;
+            let o = opts.exec(sel[2]);
+            while (o) {
+              if (o[1] !== '' && schema && Array.isArray(schema.enum)) {
+                choicesChecked++;
+                if (schema.enum.indexOf(o[1]) < 0) {
+                  const key = page.operation + ' ' + mapped + '=' + o[1];
+                  refusedChoices[key] = refusedChoices[key] || one.path;
+                }
+              }
+              o = opts.exec(sel[2]);
+            }
+            sel = selects.exec(form);
+          }
+        }
+        m = re.exec(one.html);
+      }
+    });
+    note(choicesChecked > 0 && Object.keys(refusedChoices).length === 0,
+         'F2. every choice a GET form offers is a value its operation takes',
+         choicesChecked + ' choice(s) checked, ' +
+         Object.keys(refusedChoices).length + ' refused: ' +
+         Object.keys(refusedChoices).map(function (k) {
+           return k + ' (on ' + refusedChoices[k] + ')';
          }).join('; '));
     note(bodies > 300 && Object.keys(refusedBodies).length === 0,
          'F1. what each form sends is a body its operation takes',
