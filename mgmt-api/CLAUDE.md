@@ -1249,12 +1249,16 @@ enough when the console is a static client of this API: such a page shows
 things only this process knows.
 
 **`GET /admin-api/delegation/map` is the first, and the pattern for the
-rest.** It answers `AdminConsole.delegationMapModel()`: the page's own JSON
+rest.** It answers `AdminViews.delegationMapModel()`, in `admin-core/` as
+`tests/admin_actions_layer.js` requires of anything this API asks (it was
+written on the console first, and that test refused it): the page's own JSON
 (the graph, the filter, the counts) plus the three things the browser cannot
 work out —
 
 * `looks`, what each node IS (label, shape, identifier, console link), which
-  `delegationLooks()` asks the directory and the application registry;
+  `delegationLooks()` asks the directory and the application registry — moved
+  to `admin-core/admin_views.ts` with `delegationNodeLook()`, the console's
+  methods of those names now delegates;
 * `svg`, the drawing, laid out by dagre on the server, with its links;
 * `summary`, the counts the filter's choices show.
 

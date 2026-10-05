@@ -772,6 +772,11 @@ import issuanceGate = require('../common/issuance_gate');
 // there. Its own header weighs the dependency and argues why the layout is not
 // hand-rolled.
 import delegationMap = require('./delegation_map');
+// THE CONSOLE'S RENDERING KIT (#446): the prose helpers — note(), warn(),
+// tip() and what they stand on — as a module the browser can load. This
+// file's methods of those names are delegates. Pure, requires nothing of
+// this service but `common/html`'s kind of leaf, so it cannot join a cycle.
+import WebKit = require('./web_kit');
 // ONE PERSON, END TO END: the same picture drawn of everything this service has
 // done in one identity's name — the delegation acts naming them AND the
 // ordinary OAuth 2.0, OIDC, SAML, Kerberos and SPIFFE issuance that no
@@ -6604,8 +6609,7 @@ class AdminConsole {
     const { log } = this.deps;
     log.debug("Entering AdminConsole.tile().");
     log.debug("Leaving AdminConsole.tile().");
-    return '<div class="tile"><div class="n">' + this.esc(n) +
-           '</div><div class="l">' + this.esc(label) + '</div></div>';
+    return WebKit.tile(n, label);
   }
 
   // ---------------------------------------------------------------------------
@@ -6662,21 +6666,6 @@ class AdminConsole {
   // ---------------------------------------------------------------------------
 
 
-  // The visible text of a fragment of markup — tags removed, whitespace
-  // collapsed, AND ENTITIES LEFT EXACTLY AS THEY WERE.
-  //
-  // Leaving them is the whole of the fix for a bug this had twice: `&apos;` and
-  // `&rarr;` appeared in summaries as themselves. Decoding an entity here and
-  // escaping the result on the way into a <summary> turns `&apos;` into
-  // `&amp;apos;`, and the escaping cannot be dropped without deciding whether
-  // the text was escaped in the first place.
-  //
-  // So the rule is the other one, and it holds for every caller in this file:
-  // WHAT COMES IN IS A VALID HTML FRAGMENT — prose written as markup, or a
-  // value already through esc() — so what comes out is valid HTML text and goes
-  // into a <summary> UNESCAPED. A caller that hands this an unescaped `<` loses
-  // it to the tag stripper either way, which is the same thing escaping would
-  // have done to it.
   /**
    * Returns a fragment's visible text: tags removed, whitespace collapsed.
    *
@@ -6686,15 +6675,9 @@ class AdminConsole {
    * @returns the text
    */
   plainTextOf(html) {
-    return String(html == null ? '' : html)
-      .replace(/<[^>]*>/g, '')
-      .replace(/\s+/g, ' ')
-      .trim();
+    return WebKit.plainTextOf(html);
   }
 
-  // How long that text READS, which is not its length: `&mdash;` is one dash
-  // and seven characters. Only the two measurements use this — what goes on the
-  // page is always plainTextOf()'s own output.
   /**
    * Measures how long text reads, counting each entity as one character.
    *
@@ -6702,27 +6685,9 @@ class AdminConsole {
    * @returns the length
    */
   visibleLength(text) {
-    return text.replace(/&(?:#\d+|#x[0-9a-fA-F]+|[a-zA-Z][a-zA-Z0-9]*);/g,
-                        '-').length;
+    return WebKit.visibleLength(text);
   }
 
-  // Where the opening sentence ends, as an offset INTO THE MARKUP — or -1 if it
-  // cannot be cut there.
-  //
-  // The cut has to be at element depth zero and nowhere else. A sentence that
-  // ends inside a `<strong>` is the ordinary case in this file's prose
-  // ("<strong> This is not a second door. It posts to…</strong>"), and cutting
-  // there would hand the summary an unclosed tag and the body an unopened one —
-  // which no browser reports and every browser renders differently. So depth is
-  // tracked and a boundary inside anything is refused; the caller then falls
-  // back to a truncation, which repeats the opening in the body and is merely
-  // untidy rather than broken.
-  //
-  // A boundary is a full stop, question or exclamation mark followed by
-  // whitespace. The whitespace is what keeps `oauth2.rfc9700` and `RFC 7644`
-  // out of it: an abbreviation's stop is followed by a letter, not a space. The
-  // thirty-character minimum is what keeps a leading "e.g. " — or any other
-  // short opener — from becoming the whole summary.
   /**
    * Finds where the opening sentence ends, as an offset into the markup.
    *
@@ -6732,43 +6697,9 @@ class AdminConsole {
    * @returns the offset after the sentence's stop, or -1
    */
   sentenceEnd(html) {
-    let depth = 0;
-    for (let i = 0; i < html.length; i++) {
-      const c = html[i];
-      if (c === '<') {
-        const close = html.indexOf('>', i);
-        if (close < 0) {
-          return -1;
-        }
-        const tag = html.slice(i, close + 1);
-        if (/^<\//.test(tag)) {
-          depth -= 1;
-        } else if (!/\/>$/.test(tag) &&
-                   !/^<(br|hr|img|input|meta|link)\b/i.test(tag)) {
-          depth += 1;
-        }
-        i = close;
-        continue;
-      }
-      // A COLON IS NOT A SENTENCE END HERE, though it looks like one. It almost
-      // always INTRODUCES the rest — "The same two halves for the assertions:
-      // ..." — so cutting there produced summaries that were a fragment with
-      // nothing after them, which is worse than no summary at all. A colon
-      // still ends a headline (see foldOf), because a title ending in one is a
-      // title.
-      if (depth === 0 && i >= 30 && /[.!?]/.test(c) &&
-          /^\s/.test(html.slice(i + 1, i + 2))) {
-        return i + 1;
-      }
-    }
-    return -1;
+    return WebKit.sentenceEnd(html);
   }
 
-  // The opening sentence, cut short at a word boundary if it is longer than a
-  // summary line. The ellipsis is not decoration: it is what tells a reader
-  // that the words in the summary are the words the body opens with, so that
-  // the repetition below reads as *read more* rather than as the same sentence
-  // printed twice.
   /**
    * Cuts text to a summary line at a word boundary, ending in an ellipsis.
    *
@@ -6777,38 +6708,9 @@ class AdminConsole {
    * @returns the text, cut if it was longer
    */
   teaserOf(text, max?) {
-    const limit = max || SUMMARY_CHARS;
-    if (this.visibleLength(text) <= limit) {
-      return text;
-    }
-    let cut = text.slice(0, limit);
-    const space = cut.lastIndexOf(' ');
-    if (space > 40) {
-      cut = cut.slice(0, space);
-    }
-    // ---------------------------------------------------------------------
-    // A CUT CAN LAND INSIDE AN ENTITY — `&mda` — which a browser renders
-    // literally, so the half is dropped rather than shown.
-    //
-    // **AND IT CAN LAND IMMEDIATELY AFTER A WHOLE ONE, WHICH IS THE CASE THIS
-    // MISSED UNTIL 2026-09-11.** The two replacements ran in the order
-    // entity-then-punctuation, and `;` is in the punctuation class — so a cut
-    // ending `&mdash;` survived the first replacement intact (it is complete),
-    // lost its semicolon to the second, and reached the page as the literal
-    // text `&mdash`. Nothing on this console had ever been cut in that exact
-    // place before `/admin/spiffe`'s authority note, which is why a bug in a
-    // function every folded note goes through went years without being seen.
-    //
-    // The `;?` is the whole fix: a trailing entity is taken WHOLE where there
-    // is one, and the punctuation strip then only ever sees ordinary text.
-    // ---------------------------------------------------------------------
-    return cut.replace(/&[a-zA-Z0-9#]*;?$/, '').replace(/[\s,.;:—-]+$/, '') +
-           '&hellip;';
+    return WebKit.teaserOf(text, max);
   }
 
-  // The entities a title attribute cannot show, resolved. Only tip() needs it —
-  // see the comment in there. `&amp;` is resolved LAST so that `&amp;lt;` comes
-  // out as the four characters somebody wrote rather than as a `<`.
   /**
    * Resolves the entities a title attribute cannot show.
    *
@@ -6816,51 +6718,9 @@ class AdminConsole {
    * @returns the text with those entities resolved, `&amp;` last
    */
   unescapeText(text) {
-    return String(text)
-      .replace(/&mdash;|&ndash;/g, '\u2014')
-      .replace(/&middot;/g, '\u00b7')
-      .replace(/&rarr;/g, '\u2192')
-      .replace(/&hellip;/g, '\u2026')
-      .replace(/&nbsp;/g, ' ')
-      .replace(/&lt;/g, '<')
-      .replace(/&gt;/g, '>')
-      .replace(/&quot;|&ldquo;|&rdquo;/g, '"')
-      .replace(/&#39;|&apos;|&rsquo;|&lsquo;/g, "'")
-      .replace(/&amp;/g, '&');
+    return WebKit.unescapeText(text);
   }
 
-  // A TOOLTIP, AS AN ATTRIBUTE READY TO GO INTO A TAG — including its leading
-  // space, so a caller can drop it into markup without deciding whether one is
-  // needed.
-  //
-  // This is the other half of the folds and it answers the other half of the
-  // problem: prose long enough to be an argument folds, and prose short enough
-  // to be a caption belongs ON the control it captions rather than under it.
-  // Every label in this console that grows one gets the dotted underline and
-  // the help cursor from a `label[title]` rule in page(), so the affordance
-  // arrives with the tooltip and cannot be forgotten separately.
-  //
-  // NOTHING IS EVER SAID ONLY IN A TOOLTIP, and that is the rule to hold on to
-  // rather than the mechanism: a title attribute is unreachable from a
-  // keyboard, invisible on a touch screen and unread by most screen readers.
-  // What goes in one is a shorter saying of something the page still carries —
-  // which is why shortened() above, this console's first tooltip, puts the FULL
-  // value in the title and the truncation on the page rather than the other way
-  // round. `max` OVERRIDES THE 190-CHARACTER TEASER, AND A CALLER THAT PASSES
-  // ONE IS SAYING THIS TOOLTIP IS THE ONLY COPY (2026-09-05).
-  //
-  // The default truncates, which was right while everything a tooltip carried
-  // was also in a fold under the control — a teaser is a preview of something
-  // the reader can go and read. **A field whose fold has been removed has no
-  // such thing**, so truncating there would not be hiding the rest of the
-  // sentence, it would be DELETING it: the median setting description is 384
-  // characters and the default teaser is 190, so more than half of every one
-  // would have left the product rather than the screen.
-  //
-  // So a field that is tooltip-only passes `Infinity` and the title carries the
-  // whole text. Browsers wrap a long title perfectly well; the reason the
-  // default is short is that a teaser competes with the fold under it, and
-  // where there is no fold there is nothing to compete with.
   /**
    * Builds a `title` attribute, with its leading space, from prose.
    *
@@ -6870,24 +6730,9 @@ class AdminConsole {
    * @returns the attribute; empty when there is no text
    */
   tip(text, max?) {
-    const plain = this.plainTextOf(text);
-    if (!plain) {
-      return '';
-    }
-    // Escaped, unlike a summary: a title attribute is TEXT rather than markup —
-    // a browser shows `&mdash;` in one literally — and this is also the one
-    // helper here that is handed raw strings out of config.js as often as it is
-    // handed markup. esc() on an already-escaped fragment would double it, so
-    // the entities are resolved for this one path.
-    return ' title="' +
-           this.esc(this.unescapeText(this.teaserOf(plain, max || TIP_CHARS))) +
-           '"';
+    return WebKit.tip(text, max);
   }
 
-  // The summary and the body of one collapsed block. Where the opening sentence
-  // could be cut out of the markup cleanly it becomes the summary and the body
-  // is what is left, so nothing is said twice; where it could not, the summary
-  // is a truncation and the body is the whole note.
   /**
    * Splits a note into the summary and the body of a fold.
    *
@@ -6896,44 +6741,9 @@ class AdminConsole {
    * @returns the `summary` and `body`, both as HTML
    */
   foldOf(html, label) {
-    if (label) {
-      // A LABEL IS THE ONE THING THAT IS ESCAPED. Everything else here is text
-      // taken out of markup the caller already built; a label is a plain string
-      // a caller passed — a setting's own name, most often — and has been
-      // through nothing.
-      return { summary: this.esc(label), body: html };
-    }
-    // THE COMMONEST SHAPE IN THIS FILE IS A BOLDED HEADLINE AND THEN THE
-    // ARGUMENT FOR IT — `<strong>This is not a second door.</strong> The form
-    // below posts to…` — and that headline is a better summary than any
-    // sentence-splitting could find, because somebody wrote it to be one. It is
-    // taken only when it ends in sentence punctuation: a bolded PHRASE opening
-    // a sentence that runs on ("<strong>THE KEY</strong>, exactly as…") is part
-    // of the first sentence rather than a title for the paragraph. A headline
-    // under about two dozen characters is a PREFIX rather than a title —
-    // `<strong>Restart to apply:</strong>` is the one that showed it, and
-    // taking it left a fold whose summary was two words and whose body held the
-    // reason somebody opened it for.
-    const headline = /^\s*<(strong|b|em)>([\s\S]*?)<\/\1>/.exec(html);
-    if (headline) {
-      const title = this.plainTextOf(headline[2]);
-      if (title.length >= 24 && title.length <= SUMMARY_CHARS &&
-          /[.:!?]$/.test(title)) {
-        return { summary: title,
-                 body: html.slice(headline[0].length).replace(/^\s+/, '') };
-      }
-    }
-    const cut = this.sentenceEnd(html);
-    const head = cut > 0 ? this.plainTextOf(html.slice(0, cut)) : '';
-    if (head && head.length <= SUMMARY_CHARS) {
-      return { summary: head, body: html.slice(cut).replace(/^\s+/, '') };
-    }
-    return { summary: this.teaserOf(this.plainTextOf(html)), body: html };
+    return WebKit.foldOf(html, label);
   }
 
-  // A paragraph of explanation. Short ones are the paragraph they always were;
-  // long ones fold. `label` overrides the derived summary and forces the fold,
-  // because a caller that bothered to name a block wanted the block.
   /**
    * Draws a paragraph of explanation, folded when longer than a line.
    *
@@ -6942,24 +6752,9 @@ class AdminConsole {
    * @returns the note as HTML
    */
   note(html, label?) {
-    // Coerced once, here: a caller may hand this a number of rows or a
-    // fragment built by a .map(), and everything below slices and measures.
-    html = String(html == null ? '' : html);
-    const text = this.plainTextOf(html);
-    if (!label && this.visibleLength(text) <= ONE_LINE_CHARS) {
-      return '<p class="note">' + html + '</p>';
-    }
-    const fold = this.foldOf(html, label);
-    return '<details class="note fold"><summary>' + fold.summary +
-           '</summary><div class="foldbody">' + fold.body + '</div></details>';
+    return WebKit.note(html, label);
   }
 
-  // The same, for the amber box. A warning folds like anything else and for the
-  // same reason — most of them here are a headline and three sentences of why —
-  // but the box KEEPS ITS COLOUR CLOSED, so a page with a caveat on it still
-  // looks like a page with a caveat on it. Folding a warning into something
-  // that looks like body text would be the one case where this change hid a
-  // fact rather than tidying it.
   /**
    * Draws a warning box, folded when longer than a line.
    *
@@ -6968,32 +6763,9 @@ class AdminConsole {
    * @returns the warning as HTML
    */
   warn(html, label?) {
-    // Coerced once, here: a caller may hand this a number of rows or a
-    // fragment built by a .map(), and everything below slices and measures.
-    html = String(html == null ? '' : html);
-    const text = this.plainTextOf(html);
-    if (!label && this.visibleLength(text) <= ONE_LINE_CHARS) {
-      return '<div class="warn">' + html + '</div>';
-    }
-    const fold = this.foldOf(html, label);
-    return '<details class="warn fold"><summary>' + fold.summary +
-           '</summary><div class="foldbody">' + fold.body + '</div></details>';
+    return WebKit.warn(html, label);
   }
 
-  // A TABLE TOO WIDE FOR THE CARD, IN A BOX THAT SCROLLS SIDEWAYS. The caller
-  // hands over the whole `<table>…</table>` and gets it back inside the
-  // scroller `.wide` describes.
-  //
-  // `tabindex="0"` is not decoration: a scroll container that only a pointer
-  // can move leaves the columns past its right-hand edge unreachable from a
-  // keyboard, and this console has no script to give them back. Making the box
-  // focusable is what lets the arrow keys move it, and it is the whole reason
-  // this is a helper rather than a `<div class="wide">` written at each call
-  // site — the attribute is the part somebody copying the markup would drop.
-  //
-  // `aria-label` names WHICH table, because a page with two of these otherwise
-  // announces two identical regions and the label is the only thing telling a
-  // reader arriving in one of them which it is.
   /**
    * Wraps a wide table in a focusable box that scrolls sideways.
    *
@@ -7002,8 +6774,7 @@ class AdminConsole {
    * @returns the wrapped table as HTML
    */
   wideTable(label, html) {
-    return '<div class="wide" tabindex="0" role="region" aria-label="' +
-      this.esc(label) + '">' + html + '</div>';
+    return WebKit.wideTable(label, html);
   }
 
   // One item of a prose list — the *what it deliberately does not do* lists,
@@ -10964,23 +10735,8 @@ class AdminConsole {
   // anyway.
   // ---------------------------------------------------------------------------
 
-  // WHAT A BOX IS, WHICH IS THE ONE QUESTION `delegation_map.js` DELIBERATELY
-  // CANNOT ANSWER. It is handed this function and asks it once per node.
-  //
-  // The three states are `delegationPartyCell()`'s three states, and they are
-  // the same three on purpose: a name this console can resolve, a name it could
-  // file somebody under and never has, and a name for something the registry
-  // has never seen. What the picture does with them is what a picture can do
-  // and a table cannot — the first two get a SHAPE and the third gets a DASHED
-  // one — and the row under the diagram still draws the cell, so nothing that
-  // was linkable in the table stops being linkable here.
-  //
-  // **THE LABEL IS THE CN WHERE THERE IS ONE.** A directory entry's `cn` and an
-  // application entry's `appName` are what somebody CALLED this thing, and the
-  // identifier is what a protocol spelled it as; on a diagram the first is
-  // worth more than the second, and the second is one line below it and in the
-  // tooltip. Where there is no entry there is no cn, and the identifier is all
-  // there is.
+  // MOVED TO `admin-core/admin_views.ts` (#446): what a box IS is a
+  // view, and the management API answers it too. A delegate.
   /**
    * Works out how the delegation picture draws one node.
    *
@@ -10993,214 +10749,10 @@ class AdminConsole {
    *   and dashed; the service's own node has no identifier
    */
   delegationNodeLook(node, known) {
-    const { log, applications, queryWith } = this.deps;
+    const { log } = this.deps;
     log.debug("Entering AdminConsole.delegationNodeLook().");
-    if (node.kind === 'sts') {
-      log.debug("Leaving AdminConsole.delegationNodeLook().");
-      // The one box that is not a party. It carries the REALM because a realm
-      // is a whole logical copy of this service — two realms' pictures are two
-      // different services' pictures — and it says `default` rather than
-      // nothing in the realm that has no prefix, since a hexagon labelled only
-      // `IYA STS` would be silent about the one thing this box is here to say.
-      return {
-        shape: 'sts',
-        label: 'IYA STS',
-        sublabel: 'realm: ' + (node.realm ? node.realm.name : 'Default') +
-                  (node.realm && !node.realm.isDefault ?
-                   ' (' + node.realm.id + ')' : ''),
-        title: 'THIS SERVICE, in the trust realm ' +
-          (node.realm ? node.realm.name + ' (' + node.realm.id + ')' :
-           'default') +
-          '.\nIssuer: ' + (node.issuer || '(unset)') +
-          '\nEvery line in this picture exists because this service issued ' +
-          'or refused a credential: ' + node.issued + ' issued, ' +
-          node.refused +
-          ' refused.\nThe dashed lines leaving it go to whoever ASKED — the ' +
-          'intermediary where a chain has one, the initial identity where it ' +
-          'does not.',
-        href: '/admin/realms',
-        dashed: false
-      };
-    }
-
-    // The directory's own answer about a PERSON. `directoryReader` is a slot
-    // and is empty in a build with no `ldap_server.js`, which is a state this
-    // console reports everywhere else rather than guessing through — so with no
-    // directory every party falls back to the role's shape, dashed, and the
-    // page says why.
-    let entry = null;
-    if (directoryReader && node.key) {
-      const info = directoryReader(node.key);
-      entry = info && info.found ? info.entry : null;
-    }
-    // The registry's answer about an APPLICATION. Looked up by the identifier
-    // the ACT carried rather than by the node's id: the id is normalised (see
-    // `nodeIdOf()` in delegation.js) and `ou=applications` is keyed by what a
-    // caller actually presented.
-    const application = node.application ? applications.get(node.application) :
-                        null;
-
-    const isPerson = !!entry;
-    const isApplication = !!application;
-    const shape = isPerson && isApplication ? 'both'
-                : isApplication ? 'application'
-                : isPerson ? 'person'
-                // Nothing is known. The ROLE decides, which is the ROLES table
-                // read as a drawing: an initial identity is a person, a target
-                // is an application, and an intermediary is drawn as an
-                // application because that is what a front-end service is.
-                : node.chiefRole === 'initial' ? 'person' : 'application';
-
-    const cn = entry ? this.firstAttributeValue(entry, 'cn') : '';
-    const appName = application ? (application.name || application.dnLabel) :
-                    '';
-    const label = cn || appName || node.id;
-
-    // WHAT A PROTOCOL WOULD HAVE TO PRESENT TO REACH THIS BOX. Added
-    // 2026-08-27, and it exists because of the paragraph above it: the label is
-    // the CN where there is one, so a rectangle reading `Acme Web` said nothing
-    // anywhere on the diagram about the string a request would have to carry.
-    // That is the fact somebody opens a delegation picture to get — the
-    // `client_id` they are about to put in a token request, the `AppliesTo` in
-    // the RequestSecurityToken they are about to send — and it was in the
-    // tooltip, which is not a place a diagram pasted into a ticket keeps.
-    //
-    // The list comes from `applications.identifiersOf()` rather than from a
-    // walk of the entry here: which attribute is a family's identifier and what
-    // the specification calls it are that module's statements, and a picture
-    // holding a second opinion about either is drift nothing can see.
-    //
-    // **THE SPELLING IS OF THE NAME THE ACT ACTUALLY CARRIED**, not of the
-    // first identifier the entry happens to hold. An application answering to a
-    // client_id AND an entityID is one box, and which of the two is on the line
-    // is what the act says; naming the other one would put a string on the
-    // picture that nothing in this picture ever presented. The rest are in the
-    // tooltip, where "it also answers to" belongs.
-    const identifiers = application ? applications.identifiersOf(application) :
-                        [];
-    const presented = node.application ? String(node.application) : '';
-    // GROUPED BY VALUE AND NOT BY ATTRIBUTE, because one string is commonly two
-    // families' identifier and the box has room for one line: an application
-    // declared for WS-Trust and SAML 2.0 carries `https://esb.example.com` on
-    // `wstrustAppliesTo` AND on `samlEntityId`, and drawing the first of those
-    // would pick one of two true answers. `AppliesTo / entityID:
-    // https://esb.example.com` is the whole fact and is one line.
-    //
-    // Exact equality throughout, because `applications.js` does not case-fold
-    // an identifier anywhere else either — an audience that differs by a
-    // character is a different audience, and matching loosely here would be
-    // this page deciding a comparison rule on that module's behalf.
-    const byValue = [];
-    identifiers.forEach(function (row) {
-      row.values.forEach(function (value) {
-        const already =
-            byValue.filter(function (one) { return one.value === value; })[0];
-        if (already) {
-          if (already.names.indexOf(row.name) < 0) already.names.push(row.name);
-          return;
-        }
-        byValue.push({ value: value, names: [row.name] });
-      });
-    });
-    // WHICH ONE GOES ON THE BOX. The name the ACT carried wins, because that is
-    // the string on the line the reader is following; where the act's name is
-    // not an identifier attribute at all — the registry key of an entry made by
-    // hand, or an application reached through an audience it registered — the
-    // first declared identifier is drawn instead, since a box that named only
-    // the key would be silent about the one thing somebody opened the picture
-    // to get. Everything not drawn is in the tooltip.
-    const chosen =
-        byValue.filter(function (one) { return one.value === presented; })[0] ||
-                   byValue[0] || null;
-    // Nothing at all where the drawn name IS the identifier and no family
-    // claims it: the string is already on the box, and a second line repeating
-    // it is the same fact drawn twice. Where a family DOES claim it, the word
-    // alone is drawn — `client_id` under `acme-web` says what kind of name that
-    // is, which the box could not otherwise say.
-    const identifierLine = chosen
-      ? chosen.names.join(' / ') +
-        (chosen.value === label ? '' : ': ' + chosen.value)
-      : (presented && presented !== label ? presented : '');
-
-    const parts = [];
-    if (isPerson) parts.push('person');
-    if (isApplication) parts.push('application');
-    // WHICH STORE HAS NOT HEARD OF IT, and the two are different sentences. A
-    // target drawn as a rectangle is missing from `ou=applications` — the
-    // REGISTRY — and an initial identity drawn as a figure is missing from
-    // `ou=users` — the DIRECTORY. One word for both would send half the readers
-    // to the wrong page to look for it, which is the mistake
-    // `delegationPartyCell()` avoids by drawing up to two links rather than
-    // one.
-    const missing = shape === 'person' ? 'not in the directory' : 'not in ' +
-        'the registry';
-    const sublabel = parts.length ? parts.join(' + ')
-                   : (node.chiefRole ? node.chiefRole + ', ' + missing :
-                      missing);
-
-    // Where the box goes when it is clicked. ONE link, where the table draws up
-    // to two — an SVG shape can be inside one anchor and the party table under
-    // the picture carries both, which is where a reader who wants the other one
-    // looks. The person's page wins when this console has SEEN them
-    // authenticate, because that page answers the question a delegation raises
-    // (what else was issued in their name); the application page otherwise.
-    let href = '';
-    if (node.key && known[node.key]) {
-      href = '/admin/users' + queryWith({ user: node.key }, {});
-    } else if (isApplication) {
-      href = '/admin/applications' +
-             queryWith({ application: node.application }, {});
-    }
-
-    const title = [
-      label === node.id ? node.id : label + ' — ' + node.id,
-      node.presented && node.presented !== node.id
-        ? 'presented as ' + node.presented : '',
-      node.application && node.application !== node.id
-        ? 'named as an application: ' + node.application : '',
-      entry ? 'In the directory at ' + entry.dn + '.'
-            : (node.key ? 'No entry under ou=users names this.' : ''),
-      application ? 'In the applications registry' +
-        (application.dn ? ' at ' + application.dn : '') + '.'
-        : (node.application ? 'NOT in the applications registry — the ' +
-           'registry holds what this service has been ASKED ABOUT, and a ' +
-           'delegation naming something nobody has otherwise mentioned is ' +
-           'ordinary for an RFC 8693 audience.' : ''),
-      // EVERY name it answers to, family by family, because the box has room
-      // for one. This is where an application that is a client_id in one
-      // protocol and an entityID in another says so.
-      identifiers.length
-        ? 'It answers to: ' + identifiers.map(function (row) {
-            return row.name + ' ' + row.values.join(', ') +
-                   ' (' + row.families.join(', ') + ')';
-          }).join('; ') + '.'
-        : '',
-      (presented && chosen && chosen.value !== presented)
-        ? 'THE NAME ON THE BOX IS NOT THE NAME THIS ACT PRESENTED. It ' +
-          'presented "' +
-          presented + '", which none of the identifier attributes above ' +
-          'carries — so which family spells it that way cannot be said, and ' +
-          'the first declared identifier is drawn instead. An entry created ' +
-          'by a protocol sighting carries that family\'s attribute; one made ' +
-          'by hand, or reached through an audience it registered, need not.'
-        : '',
-      'Roles: initial ' + node.roles.initial + ', intermediary ' +
-        node.roles.intermediary + ', target ' + node.roles.target + '.',
-      node.selfTarget
-        ? 'Some act named this party as BOTH the intermediary and the target ' +
-          '— a ticket to ITSELF, which is what S4U2Self is. There is no line ' +
-          'for it because an arrow leaving a box and coming back is a ' +
-          'drawing of nothing.'
-        : '',
-      node.protocols.length ? 'Seen over: ' + node.protocols.join(', ') + '.' :
-      '',
-      node.what || ''
-    ].filter(Boolean).join('\n');
-
     log.debug("Leaving AdminConsole.delegationNodeLook().");
-    return { shape: shape, label: label, sublabel: sublabel,
-             identifier: identifierLine, title: title,
-             href: href, dashed: !isPerson && !isApplication };
+    return adminViews.delegationNodeLook(node, known);
   }
 
   // One attribute off an entry the directory reader handed back, canonically
@@ -12179,10 +11731,6 @@ class AdminConsole {
   // have no way to tell that from two boxes that really are different parties.
   // ---------------------------------------------------------------------------
 
-  // What every box is called and how it is drawn, worked out once per page.
-  // `labelOf` is separate because a `reaches` line names a party that is
-  // NEITHER of its ends — see the map route's call — and the renderer has no
-  // `resolve()` answer for it.
   /**
    * Works out every box's look (label, shape, identifier) once for a
    * picture page.
@@ -12194,27 +11742,9 @@ class AdminConsole {
    */
   delegationLooks(graph, known) {
     const { log } = this.deps;
-    const self = this;
     log.debug("Entering AdminConsole.delegationLooks().");
-    const looks = {};
-    graph.nodes.forEach(function (node) {
-      looks[node.id] = self.delegationNodeLook(node, known);
-    });
-    log.debug("Leaving AdminConsole.delegationLooks(). " + graph.nodes.length +
-              " box(es).");
-    return {
-      looks: looks,
-      resolve: function (node) {
-        log.debug("Entering resolve().");
-        log.debug("Leaving resolve().");
-        return looks[node.id];
-      },
-      labelOf: function (id) {
-        log.debug("Entering labelOf().");
-        log.debug("Leaving labelOf().");
-        return looks[id] ? looks[id].label : id;
-      }
-    };
+    log.debug("Leaving AdminConsole.delegationLooks().");
+    return adminViews.delegationLooks(graph, known);
   }
 
   // One credential that came out of an act in the picture. `extra` is an
@@ -12330,60 +11860,6 @@ class AdminConsole {
     res.set('Cache-Control', 'no-store').type('image/svg+xml').send(bare.svg);
     log.debug("Leaving AdminConsole.sendDelegationSvg(). " + bare.svg.length +
               " bytes.");
-  }
-
-  // What a ROLE is called on this console, off `delegation.ROLES` rather than
-  // out of a list here — the same rule the mechanism filter follows. A role
-  // that existed in the store and was unnamed on a page would be a blank cell.
-  // ---------------------------------------------------------------------------
-  // THE WHOLE PICTURE AS ONE ANSWER, FOR THE MANAGEMENT API (#446, 2026-10-05).
-  //
-  // `/admin/delegation/map` had no operation, by rule 7 read exactly: it has
-  // no form. A console that is a static client of `/admin-api` needs one all
-  // the same, because three things on that page are known only to this
-  // process: what each box IS (`delegationLooks()` asks the directory and the
-  // application registry), where each box GOES (dagre, laid out on the
-  // server), and the markup of the drawing. So the answer is the page's own
-  // JSON — the graph, the filter, the counts — with `looks` and `svg` added.
-  //
-  // IT IS THE SAME FOUR CALLS THE PAGE'S ROUTE MAKES, in its order, and
-  // deliberately not yet the route's own source of them: the route is left as
-  // it is until its page is converted (#446 step 3), when both will be this.
-  // ---------------------------------------------------------------------------
-  /**
-   * Builds the delegation picture as one answer: the graph, every box's look,
-   * the counts and the drawing.
-   *
-   * @param query - the page's query: the delegation filter
-   * @param options - `links` (true by default): false draws the document
-   *   with no links in it, as `?format=svg` answers
-   * @returns the page's JSON with `summary`, `looks`, `label` and `svg`
-   */
-  delegationMapModel(query, options?) {
-    const { log, delegationMap } = this.deps;
-    log.debug("Entering AdminConsole.delegationMapModel().");
-    const view = delegationView(query || {});
-    const graph = view.graph;
-    const look = this.delegationLooks(graph, knownUserKeys());
-    const label = 'Delegation relationships in this service, as a diagram';
-    const drawn = delegationMap.render(graph, {
-      resolve: look.resolve, labelOf: look.labelOf,
-      links: !(options && options.links === false), id: 'delmap', label: label
-    });
-    const model = Object.assign({}, graph, {
-      filter: view.json.filter,
-      matched: view.filtered.length,
-      held: view.summary.held,
-      summary: view.summary,
-      drawing: { width: drawn.width, height: drawn.height,
-                 failed: drawn.failed || null },
-      looks: look.looks,
-      label: label,
-      svg: drawn.svg
-    });
-    log.debug("Leaving AdminConsole.delegationMapModel(). " + drawn.width +
-              "x" + drawn.height + ".");
-    return model;
   }
 
   /**
@@ -47125,23 +46601,9 @@ WIRE_STEPS.push(function (instance: AdminConsole): void {
 // definition beside the function throws `Cannot access before
 // initialization` while the module is still loading, which takes the whole
 // service down (rule 1).
-// About one rendered line of `.note` text in this console's content column.
-// The column is 62rem at `.note`'s .78em, so a line is nearer 130 characters
-// than this; the number is deliberately under that, because the test worth
-// applying is "does this read as a paragraph" rather than "does it wrap".
-const ONE_LINE_CHARS = 110;
-
-// A summary has to fit on one line beside its marker, whatever the note it
-// opens. Past this the opening sentence is truncated rather than allowed to
-// become the wall of text this exists to fold away.
-const SUMMARY_CHARS = 96;
-
-// A tooltip may run to a couple of lines where a summary may not: it is drawn
-// over the page rather than in it, so length costs a reader nothing until they
-// ask for it. Past this it is truncated, because a browser renders a title of
-// any length and one of them will happily draw a paragraph the width of the
-// screen.
-const TIP_CHARS = 190;
+// The three measures a fold is decided against are `admin-ui/web_kit.ts`'s
+// since #446; `bullet()` below still reads the first.
+const ONE_LINE_CHARS = WebKit.ONE_LINE_CHARS;
 
 // WHICH QUERY PARAMETERS BELONG TO A SECTION'S LIST rather than to the page
 // under it — the filter the reader typed and the page they had reached.
@@ -49893,8 +49355,6 @@ const consoleExports = {
   },
   // above consoleJson().
   consoleJson: slot.forward('consoleJson'),
-  // The delegation picture as one answer, for `/admin-api` (#446).
-  delegationMapModel: slot.forward('delegationMapModel'),
   // The audit log's view is the whole function rather than a JSON builder, for
   // the reason the block above consoleJson() gives: the filtering and the
   // paging are work both the page and the API need, and two copies of it would

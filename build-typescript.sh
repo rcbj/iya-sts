@@ -107,6 +107,55 @@ else
   echo "build-typescript.sh: no .ts sources; nothing to compile"
 fi
 
+# ---------------------------------------------------------------------------
+# THE ADMIN CONSOLE'S BROWSER BUNDLE (#446, 2026-10-05).
+#
+# The console is being converted into a static application that draws its
+# pages in the browser from /admin-api's JSON. Its page renderers are the
+# `admin-ui/web_*.ts` modules — the same functions this service draws those
+# pages with until the cutover — and this is where they are bundled into the
+# ONE file a browser loads: `admin-ui/console.bundle.js`, an IIFE whose value
+# is the global `StsConsole` (`admin-ui/web_pages.ts`, the entry).
+#
+# esbuild, as a BUNDLER and nothing else (rcbj's choice on #446): no
+# framework, no transform of what the pages are. It is run FOR A BROWSER, and
+# that is the check: a `web_` module that reaches a server module, or one of
+# node's, does not resolve and the image does not build.
+#
+# Bundled from the .ts sources, which tsc has just type-checked, and BEFORE
+# the strip below removes them. Like every compiled file it is written inside
+# an image build only, and the strip takes its comments with the rest.
+#
+# esbuild is `tests/package.json`'s, as the compiler is: a build tool the
+# typescript stage installs and the service image never carries.
+# ---------------------------------------------------------------------------
+BUNDLE_ENTRY=admin-ui/web_pages.ts
+BUNDLE_OUT=admin-ui/console.bundle.js
+if [ -f "$BUNDLE_ENTRY" ]; then
+  ESBUILD=tests/node_modules/.bin/esbuild
+  if [ ! -x "$ESBUILD" ]; then
+    echo "build-typescript.sh: $ESBUILD is missing; install" \
+         "tests/package.json first (npm install --prefix tests)." >&2
+    exit 1
+  fi
+  echo "build-typescript.sh: bundling the admin console for a browser" \
+       "(esbuild $BUNDLE_ENTRY)"
+  # The bundle is this repository's own source in another shape, so it opens
+  # with the two SPDX lines every source file here carries
+  # (tests/copyright_notices.js reads them in the tests image).
+  BUNDLE_OWNER="2026 Iya CyberSecurity Solutions, LLC"
+  BUNDLE_BANNER="// SPDX-FileCopyrightText: ${BUNDLE_OWNER}
+// SPDX-License-Identifier: BUSL-1.1"
+  "$ESBUILD" "$BUNDLE_ENTRY" --bundle --platform=browser --format=iife \
+    --global-name=StsConsole --target=es2022 --charset=ascii \
+    --legal-comments=none --log-level=warning \
+    --banner:js="$BUNDLE_BANNER" --outfile="$BUNDLE_OUT"
+  if [ ! -s "$BUNDLE_OUT" ]; then
+    echo "build-typescript.sh: esbuild wrote no $BUNDLE_OUT" >&2
+    exit 1
+  fi
+fi
+
 if [ "$STRIP" = true ]; then
   # The list is taken BEFORE anything is deleted, so the count is honest.
   STRIPPED="$(sources | wc -l | tr -d ' ')"

@@ -18353,7 +18353,7 @@ class AdminApi {
       // operation — it has no form — and a console that is a static client
       // of this API needs what only this process knows about it: what each
       // box IS, where it GOES, and the drawing's markup. See
-      // `AdminConsole.delegationMapModel()`.
+      // `AdminViews.delegationMapModel()`.
       { method: 'GET', path: BASE + '/delegation/map', tag: 'Delegation',
         operationId: 'getDelegationMap',
         summary: 'The delegation picture: the graph, each box, the drawing',
@@ -18386,14 +18386,15 @@ class AdminApi {
         handler: function (req, res) {
           log.debug("Entering the management API delegation map endpoint.");
           if (String((req.query || {}).format || '') === 'svg') {
-            const bare = admin.delegationMapModel(req.query, { links: false });
+            const bare = adminViews.delegationMapModel(req.query,
+                                                       { links: false });
             res.status(200).set('Cache-Control', 'no-store')
                .type('image/svg+xml').send(bare.svg);
             log.debug("Leaving the management API delegation map endpoint. " +
                       "Answered SVG.");
             return;
           }
-          self.sendJson(res, 200, admin.delegationMapModel(req.query));
+          self.sendJson(res, 200, adminViews.delegationMapModel(req.query));
           log.debug("Leaving the management API delegation map endpoint.");
         } },
 

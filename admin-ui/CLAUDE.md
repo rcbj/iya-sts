@@ -7256,3 +7256,79 @@ and the users resource's `mirrors` names `POST /admin/users/edit`.
 `tests/person_fields.js` holds all of it in process. The browser job opens a
 hidden form's tab by the id of the panel it is in, which works for a sub-tab
 too.
+
+## THE STATIC CONSOLE'S RENDERERS ARE THE `web_*.ts` MODULES (#446, 2026-10-05)
+
+This console is being converted into a static application that draws its
+pages in the browser from `/admin-api`'s JSON, as a public client of this
+service (#446; `rust/DESIGN.md` section 2). rcbj's decisions shape this
+directory:
+
+* **THE PAGES ARE NOT REWRITTEN.** A page here is a function from a view to a
+  string of markup already. Those functions are kept, moved into modules a
+  browser can load, and bundled with esbuild — no framework.
+* **ONE CUTOVER.** Until it, this process still serves every page. A converted
+  page is drawn by calling its `web_` renderer with the view passed THROUGH
+  JSON, so the renderer is held to drawing from what a caller of the API
+  receives. Nothing serves the bundle before the cutover, and converted pages
+  are exercised node-side only.
+
+### What a `web_` module is
+
+A file in this directory whose name begins `web_`. Three of them exist:
+
+| File | What it is |
+|---|---|
+| `web_kit.ts` | The rendering kit: `esc()`, `tile()`, and the prose helpers `note()`, `warn()`, `tip()`, `foldOf()` and what they stand on, moved VERBATIM out of `AdminConsole`. The methods of those names in `admin.ts` are delegates. |
+| `web_mode.ts` | The body of `/admin/mode`, from `GET /admin-api/mode`'s answer. It was `ModeAdmin.html()`. |
+| `web_pages.ts` | The table of converted pages (path, title, operation, renderer), and the ENTRY of the browser bundle. |
+
+**A `web_` MODULE MAY REQUIRE ANOTHER `web_` MODULE AND NOTHING ELSE.** No
+logger, no `config`, no `realms`, no store, nothing of node's: it runs in a
+browser too. Three things hold that:
+
+* `build-typescript.sh` runs esbuild FOR A BROWSER over `web_pages.ts`, so a
+  module that reaches a server module does not resolve and the image does not
+  build;
+* `tests/console_web_bundle.js` reads the sources for a require that is not
+  `./web_…` and for node's names;
+* the same test runs the built bundle in a context with no `require`,
+  `process`, `module` or `Buffer`.
+
+**THEY LOG NOTHING**, on the code style's two exemptions at once: they run in
+a browser, and the kit is the console's hot path (`note()` is called about
+three hundred times to draw `/admin/config`).
+
+**`WebKit.esc()` IS `helpers.xmlEscape()` WRITTEN OUT**, because the kit may
+not require it: an apostrophe is `&apos;`, where `common/html.ts` writes
+`&#39;`. The difference is invisible in a browser and visible in a byte
+comparison, and a page drawn by a `web_` module must be the page this console
+drew. The test compares the two functions.
+
+### The bundle
+
+`admin-ui/console.bundle.js`, written by `build-typescript.sh` inside an
+image build only, like every compiled file: an IIFE whose value is the global
+`StsConsole` (the `WebPages` class). It opens with the two SPDX lines, as a
+banner, because it is this repository's source in another shape; the service
+image's strip takes its comments with the rest. esbuild is
+`tests/package.json`'s, pinned exactly, and never reaches the service image.
+
+### Converting a page
+
+1. **The view carries everything the page shows.** Whatever the page's
+   renderer reads from this process — the directory, the registry, a setting,
+   a layout done on the server — becomes part of the JSON its `/admin-api`
+   operation answers. `GET /admin-api/delegation/map` is the worked example of
+   a hard one (`mgmt-api/CLAUDE.md`).
+2. **The renderer moves to a `web_` module**, taking its helpers from
+   `web_kit.ts`. A helper it needs that is still an `AdminConsole` method
+   moves to the kit first, verbatim, leaving a delegate.
+3. **The page's own module calls it through `JSON.parse(JSON.stringify(view))`**
+   until the cutover. `mode_admin.ts` is the pattern.
+4. **A row in `web_pages.ts`.**
+
+**NOT BUILT YET**: the runtime that signs in (authorization code, PKCE, a
+non-extractable DPoP key), fetches, routes and draws the shell; the static
+route that serves it; and every page but `/admin/mode`.
+

@@ -151,6 +151,11 @@ import passwordPolicy = require('../common/password_policy');
 // THE KINDS OF POLICY ON THAT PAGE (#64): the password policy, the
 // authentication policy, and whatever is defined next. A library.
 import policyKinds = require('./policy_kinds');
+// THE DELEGATION PICTURE'S RENDERER (#446), for `delegationMapModel()`. A
+// LIBRARY (rule 3): it registers nothing and requires nothing of this
+// service but `helpers.js`, so it cannot move a route or join a cycle —
+// the terms `admin_rbac` above is required on.
+import delegationMap = require('../admin-ui/delegation_map');
 import authnPolicy = require('../common/authn_policy');
 // Four more with the second batch: the audit log the audit view pages, the
 // delegation register the delegation view reads, the Kerberos principal
@@ -472,6 +477,7 @@ interface AdminViewsDeps {
   errorCodes: typeof errorCodes;
   usedAssertions: typeof usedAssertions;
   delegation: typeof delegation;
+  delegationMap: typeof delegationMap;
   delegationPolicy: typeof delegationPolicy;
   krb5Principals: typeof krb5Principals;
   krb5PersonKeys: typeof krb5PersonKeys;
@@ -579,6 +585,7 @@ class AdminViews {
       errorCodes: errorCodes,
       usedAssertions: usedAssertions,
       delegation: delegation,
+      delegationMap: delegationMap,
       delegationPolicy: delegationPolicy,
       krb5Principals: krb5Principals,
       krb5PersonKeys: krb5PersonKeys,
@@ -3594,6 +3601,369 @@ class AdminViews {
         events: shown
       }
     };
+  }
+
+  // One attribute off an entry the directory reader handed back, canonically
+  // spelled or not. `objectFor()` returns them canonically spelled and a caller
+  // asking for `cn` should not have to know that.
+  /**
+   * Returns an entry's first value of an attribute, matched case-insensitively.
+   *
+   * @param entry - a directory entry with an `attributes` object
+   * @param name - the attribute name
+   * @returns the first value as a string, or an empty string
+   */
+  firstAttributeValue(entry, name) {
+    const { log } = this.deps;
+    log.debug("Entering AdminViews.firstAttributeValue().");
+    if (!entry || !entry.attributes) {
+      log.debug("Leaving AdminViews.firstAttributeValue().");
+      return '';
+    }
+    const wanted = String(name).toLowerCase();
+    const key = Object.keys(entry.attributes).filter(function (one) {
+      return String(one).toLowerCase() === wanted;
+    })[0];
+    const values = key ? entry.attributes[key] : null;
+    log.debug("Leaving AdminViews.firstAttributeValue().");
+    return (values && values.length) ? String(values[0]) : '';
+  }
+
+  // WHAT A BOX IS, WHICH IS THE ONE QUESTION `delegation_map.js` DELIBERATELY
+  // CANNOT ANSWER. It is handed this function and asks it once per node.
+  //
+  // The three states are `delegationPartyCell()`'s three states, and they are
+  // the same three on purpose: a name this console can resolve, a name it could
+  // file somebody under and never has, and a name for something the registry
+  // has never seen. What the picture does with them is what a picture can do
+  // and a table cannot — the first two get a SHAPE and the third gets a DASHED
+  // one — and the row under the diagram still draws the cell, so nothing that
+  // was linkable in the table stops being linkable here.
+  //
+  // **THE LABEL IS THE CN WHERE THERE IS ONE.** A directory entry's `cn` and an
+  // application entry's `appName` are what somebody CALLED this thing, and the
+  // identifier is what a protocol spelled it as; on a diagram the first is
+  // worth more than the second, and the second is one line below it and in the
+  // tooltip. Where there is no entry there is no cn, and the identifier is all
+  // there is.
+  /**
+   * Works out how the delegation picture draws one node.
+   *
+   * The shape comes from whether the directory and the registry know the
+   * party, and the label is its cn or application name where there is one.
+   *
+   * @param node - a node of the delegation graph
+   * @param known - the usernames this console has seen, as object keys
+   * @returns an object of shape, label, sublabel, identifier, title, href
+   *   and dashed; the service's own node has no identifier
+   */
+  delegationNodeLook(node, known) {
+    const { log, applications } = this.deps;
+    const self = this;
+    log.debug("Entering AdminViews.delegationNodeLook().");
+    if (node.kind === 'sts') {
+      log.debug("Leaving AdminViews.delegationNodeLook().");
+      // The one box that is not a party. It carries the REALM because a realm
+      // is a whole logical copy of this service — two realms' pictures are two
+      // different services' pictures — and it says `default` rather than
+      // nothing in the realm that has no prefix, since a hexagon labelled only
+      // `IYA STS` would be silent about the one thing this box is here to say.
+      return {
+        shape: 'sts',
+        label: 'IYA STS',
+        sublabel: 'realm: ' + (node.realm ? node.realm.name : 'Default') +
+                  (node.realm && !node.realm.isDefault ?
+                   ' (' + node.realm.id + ')' : ''),
+        title: 'THIS SERVICE, in the trust realm ' +
+          (node.realm ? node.realm.name + ' (' + node.realm.id + ')' :
+           'default') +
+          '.\nIssuer: ' + (node.issuer || '(unset)') +
+          '\nEvery line in this picture exists because this service issued ' +
+          'or refused a credential: ' + node.issued + ' issued, ' +
+          node.refused +
+          ' refused.\nThe dashed lines leaving it go to whoever ASKED — the ' +
+          'intermediary where a chain has one, the initial identity where it ' +
+          'does not.',
+        href: '/admin/realms',
+        dashed: false
+      };
+    }
+
+    // The directory's own answer about a PERSON. `directoryReader` is a slot
+    // and is empty in a build with no `ldap_server.js`, which is a state this
+    // console reports everywhere else rather than guessing through — so with no
+    // directory every party falls back to the role's shape, dashed, and the
+    // page says why.
+    let entry = null;
+    if (directoryReader && node.key) {
+      const info = directoryReader(node.key);
+      entry = info && info.found ? info.entry : null;
+    }
+    // The registry's answer about an APPLICATION. Looked up by the identifier
+    // the ACT carried rather than by the node's id: the id is normalised (see
+    // `nodeIdOf()` in delegation.js) and `ou=applications` is keyed by what a
+    // caller actually presented.
+    const application = node.application ? applications.get(node.application) :
+                        null;
+
+    const isPerson = !!entry;
+    const isApplication = !!application;
+    const shape = isPerson && isApplication ? 'both'
+                : isApplication ? 'application'
+                : isPerson ? 'person'
+                // Nothing is known. The ROLE decides, which is the ROLES table
+                // read as a drawing: an initial identity is a person, a target
+                // is an application, and an intermediary is drawn as an
+                // application because that is what a front-end service is.
+                : node.chiefRole === 'initial' ? 'person' : 'application';
+
+    const cn = entry ? this.firstAttributeValue(entry, 'cn') : '';
+    const appName = application ? (application.name || application.dnLabel) :
+                    '';
+    const label = cn || appName || node.id;
+
+    // WHAT A PROTOCOL WOULD HAVE TO PRESENT TO REACH THIS BOX. Added
+    // 2026-08-27, and it exists because of the paragraph above it: the label is
+    // the CN where there is one, so a rectangle reading `Acme Web` said nothing
+    // anywhere on the diagram about the string a request would have to carry.
+    // That is the fact somebody opens a delegation picture to get — the
+    // `client_id` they are about to put in a token request, the `AppliesTo` in
+    // the RequestSecurityToken they are about to send — and it was in the
+    // tooltip, which is not a place a diagram pasted into a ticket keeps.
+    //
+    // The list comes from `applications.identifiersOf()` rather than from a
+    // walk of the entry here: which attribute is a family's identifier and what
+    // the specification calls it are that module's statements, and a picture
+    // holding a second opinion about either is drift nothing can see.
+    //
+    // **THE SPELLING IS OF THE NAME THE ACT ACTUALLY CARRIED**, not of the
+    // first identifier the entry happens to hold. An application answering to a
+    // client_id AND an entityID is one box, and which of the two is on the line
+    // is what the act says; naming the other one would put a string on the
+    // picture that nothing in this picture ever presented. The rest are in the
+    // tooltip, where "it also answers to" belongs.
+    const identifiers = application ? applications.identifiersOf(application) :
+                        [];
+    const presented = node.application ? String(node.application) : '';
+    // GROUPED BY VALUE AND NOT BY ATTRIBUTE, because one string is commonly two
+    // families' identifier and the box has room for one line: an application
+    // declared for WS-Trust and SAML 2.0 carries `https://esb.example.com` on
+    // `wstrustAppliesTo` AND on `samlEntityId`, and drawing the first of those
+    // would pick one of two true answers. `AppliesTo / entityID:
+    // https://esb.example.com` is the whole fact and is one line.
+    //
+    // Exact equality throughout, because `applications.js` does not case-fold
+    // an identifier anywhere else either — an audience that differs by a
+    // character is a different audience, and matching loosely here would be
+    // this page deciding a comparison rule on that module's behalf.
+    const byValue = [];
+    identifiers.forEach(function (row) {
+      row.values.forEach(function (value) {
+        const already =
+            byValue.filter(function (one) { return one.value === value; })[0];
+        if (already) {
+          if (already.names.indexOf(row.name) < 0) already.names.push(row.name);
+          return;
+        }
+        byValue.push({ value: value, names: [row.name] });
+      });
+    });
+    // WHICH ONE GOES ON THE BOX. The name the ACT carried wins, because that is
+    // the string on the line the reader is following; where the act's name is
+    // not an identifier attribute at all — the registry key of an entry made by
+    // hand, or an application reached through an audience it registered — the
+    // first declared identifier is drawn instead, since a box that named only
+    // the key would be silent about the one thing somebody opened the picture
+    // to get. Everything not drawn is in the tooltip.
+    const chosen =
+        byValue.filter(function (one) { return one.value === presented; })[0] ||
+                   byValue[0] || null;
+    // Nothing at all where the drawn name IS the identifier and no family
+    // claims it: the string is already on the box, and a second line repeating
+    // it is the same fact drawn twice. Where a family DOES claim it, the word
+    // alone is drawn — `client_id` under `acme-web` says what kind of name that
+    // is, which the box could not otherwise say.
+    const identifierLine = chosen
+      ? chosen.names.join(' / ') +
+        (chosen.value === label ? '' : ': ' + chosen.value)
+      : (presented && presented !== label ? presented : '');
+
+    const parts = [];
+    if (isPerson) parts.push('person');
+    if (isApplication) parts.push('application');
+    // WHICH STORE HAS NOT HEARD OF IT, and the two are different sentences. A
+    // target drawn as a rectangle is missing from `ou=applications` — the
+    // REGISTRY — and an initial identity drawn as a figure is missing from
+    // `ou=users` — the DIRECTORY. One word for both would send half the readers
+    // to the wrong page to look for it, which is the mistake
+    // `delegationPartyCell()` avoids by drawing up to two links rather than
+    // one.
+    const missing = shape === 'person' ? 'not in the directory' : 'not in ' +
+        'the registry';
+    const sublabel = parts.length ? parts.join(' + ')
+                   : (node.chiefRole ? node.chiefRole + ', ' + missing :
+                      missing);
+
+    // Where the box goes when it is clicked. ONE link, where the table draws up
+    // to two — an SVG shape can be inside one anchor and the party table under
+    // the picture carries both, which is where a reader who wants the other one
+    // looks. The person's page wins when this console has SEEN them
+    // authenticate, because that page answers the question a delegation raises
+    // (what else was issued in their name); the application page otherwise.
+    let href = '';
+    if (node.key && known[node.key]) {
+      href = '/admin/users' + self.queryWith({ user: node.key }, {});
+    } else if (isApplication) {
+      href = '/admin/applications' +
+             self.queryWith({ application: node.application }, {});
+    }
+
+    const title = [
+      label === node.id ? node.id : label + ' — ' + node.id,
+      node.presented && node.presented !== node.id
+        ? 'presented as ' + node.presented : '',
+      node.application && node.application !== node.id
+        ? 'named as an application: ' + node.application : '',
+      entry ? 'In the directory at ' + entry.dn + '.'
+            : (node.key ? 'No entry under ou=users names this.' : ''),
+      application ? 'In the applications registry' +
+        (application.dn ? ' at ' + application.dn : '') + '.'
+        : (node.application ? 'NOT in the applications registry — the ' +
+           'registry holds what this service has been ASKED ABOUT, and a ' +
+           'delegation naming something nobody has otherwise mentioned is ' +
+           'ordinary for an RFC 8693 audience.' : ''),
+      // EVERY name it answers to, family by family, because the box has room
+      // for one. This is where an application that is a client_id in one
+      // protocol and an entityID in another says so.
+      identifiers.length
+        ? 'It answers to: ' + identifiers.map(function (row) {
+            return row.name + ' ' + row.values.join(', ') +
+                   ' (' + row.families.join(', ') + ')';
+          }).join('; ') + '.'
+        : '',
+      (presented && chosen && chosen.value !== presented)
+        ? 'THE NAME ON THE BOX IS NOT THE NAME THIS ACT PRESENTED. It ' +
+          'presented "' +
+          presented + '", which none of the identifier attributes above ' +
+          'carries — so which family spells it that way cannot be said, and ' +
+          'the first declared identifier is drawn instead. An entry created ' +
+          'by a protocol sighting carries that family\'s attribute; one made ' +
+          'by hand, or reached through an audience it registered, need not.'
+        : '',
+      'Roles: initial ' + node.roles.initial + ', intermediary ' +
+        node.roles.intermediary + ', target ' + node.roles.target + '.',
+      node.selfTarget
+        ? 'Some act named this party as BOTH the intermediary and the target ' +
+          '— a ticket to ITSELF, which is what S4U2Self is. There is no line ' +
+          'for it because an arrow leaving a box and coming back is a ' +
+          'drawing of nothing.'
+        : '',
+      node.protocols.length ? 'Seen over: ' + node.protocols.join(', ') + '.' :
+      '',
+      node.what || ''
+    ].filter(Boolean).join('\n');
+
+    log.debug("Leaving AdminViews.delegationNodeLook().");
+    return { shape: shape, label: label, sublabel: sublabel,
+             identifier: identifierLine, title: title,
+             href: href, dashed: !isPerson && !isApplication };
+  }
+
+  // What every box is called and how it is drawn, worked out once per page.
+  // `labelOf` is separate because a `reaches` line names a party that is
+  // NEITHER of its ends — see the map route's call — and the renderer has no
+  // `resolve()` answer for it.
+  /**
+   * Works out every box's look (label, shape, identifier) once for a
+   * picture page.
+   *
+   * @param graph - the graph from delegation.graph()
+   * @param known - the identities and applications the console knows
+   * @returns an object of looks (by node id), resolve (for the renderer)
+   *   and labelOf (an id's label)
+   */
+  delegationLooks(graph, known) {
+    const { log } = this.deps;
+    const self = this;
+    log.debug("Entering AdminViews.delegationLooks().");
+    const looks = {};
+    graph.nodes.forEach(function (node) {
+      looks[node.id] = self.delegationNodeLook(node, known);
+    });
+    log.debug("Leaving AdminViews.delegationLooks(). " + graph.nodes.length +
+              " box(es).");
+    return {
+      looks: looks,
+      resolve: function (node) {
+        log.debug("Entering resolve().");
+        log.debug("Leaving resolve().");
+        return looks[node.id];
+      },
+      labelOf: function (id) {
+        log.debug("Entering labelOf().");
+        log.debug("Leaving labelOf().");
+        return looks[id] ? looks[id].label : id;
+      }
+    };
+  }
+
+  // What a ROLE is called on this console, off `delegation.ROLES` rather than
+  // out of a list here — the same rule the mechanism filter follows. A role
+  // that existed in the store and was unnamed on a page would be a blank cell.
+  // ---------------------------------------------------------------------------
+  // THE WHOLE PICTURE AS ONE ANSWER, FOR THE MANAGEMENT API (#446, 2026-10-05).
+  //
+  // `/admin/delegation/map` had no operation, by rule 7 read exactly: it has
+  // no form. A console that is a static client of `/admin-api` needs one all
+  // the same, because three things on that page are known only to this
+  // process: what each box IS (`delegationLooks()` asks the directory and the
+  // application registry), where each box GOES (dagre, laid out on the
+  // server), and the markup of the drawing. So the answer is the page's own
+  // JSON — the graph, the filter, the counts — with `looks` and `svg` added.
+  //
+  // IT IS THE SAME FOUR CALLS THE PAGE'S ROUTE MAKES, in its order, and
+  // deliberately not yet the route's own source of them: the route is left as
+  // it is until its page is converted (#446 step 3), when both will be this.
+  //
+  // IT IS HERE AND NOT ON THE CONSOLE (`admin-ui/admin.ts`), where it was
+  // written first: `tests/admin_actions_layer.js` holds the management API to
+  // asking this layer, and what a box IS (`delegationNodeLook()`, moved with
+  // it) is a view both surfaces answer.
+  // ---------------------------------------------------------------------------
+  /**
+   * Builds the delegation picture as one answer: the graph, every box's look,
+   * the counts and the drawing.
+   *
+   * @param query - the page's query: the delegation filter
+   * @param options - `links` (true by default): false draws the document
+   *   with no links in it, as `?format=svg` answers
+   * @returns the page's JSON with `summary`, `looks`, `label` and `svg`
+   */
+  delegationMapModel(query, options?) {
+    const { log, delegationMap } = this.deps;
+    log.debug("Entering AdminViews.delegationMapModel().");
+    const view = this.delegationView(query || {});
+    const graph = view.graph;
+    const look = this.delegationLooks(graph, this.knownUserKeys());
+    const label = 'Delegation relationships in this service, as a diagram';
+    const drawn = delegationMap.render(graph, {
+      resolve: look.resolve, labelOf: look.labelOf,
+      links: !(options && options.links === false), id: 'delmap', label: label
+    });
+    const model = Object.assign({}, graph, {
+      filter: view.json.filter,
+      matched: view.filtered.length,
+      held: view.summary.held,
+      summary: view.summary,
+      drawing: { width: drawn.width, height: drawn.height,
+                 failed: drawn.failed || null },
+      looks: look.looks,
+      label: label,
+      svg: drawn.svg
+    });
+    log.debug("Leaving AdminViews.delegationMapModel(). " + drawn.width +
+              "x" + drawn.height + ".");
+    return model;
   }
 
   // The whole view, filtered and paged, for the page AND for
@@ -9530,6 +9900,9 @@ export = {
   errorCodesView: slot.forward('errorCodesView'),
   usedAssertionsView: slot.forward('usedAssertionsView'),
   delegationView: slot.forward('delegationView'),
+  delegationNodeLook: slot.forward('delegationNodeLook'),
+  delegationLooks: slot.forward('delegationLooks'),
+  delegationMapModel: slot.forward('delegationMapModel'),
   delegationPolicyView: slot.forward('delegationPolicyView'),
   clusterSummary: slot.forward('clusterSummary'),
   permissionGroupsView: slot.forward('permissionGroupsView'),
