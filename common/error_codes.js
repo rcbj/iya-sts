@@ -8966,6 +8966,16 @@ const CODES = [
       'response had begun writing before it ended (#178).',
     spec: 'none: the response is sent unsigned, and a client requiring a ' +
       'signature refuses it' },
+  { code: 'STS-OAUTH-0943',
+    summary: 'The admin console, declared as a public client, asked the ' +
+      'token endpoint for tokens with no DPoP proof. Every token issued to ' +
+      'it as a public client is bound to a key it proves (#446).',
+    spec: 'invalid_dpop_proof (HTTP 400)' },
+  { code: 'STS-OAUTH-0944',
+    summary: 'An access token issued to the admin console as a public ' +
+      'client was presented at a resource carrying no cnf.jkt. Such a token ' +
+      'is honoured only DPoP-bound (#446).',
+    spec: 'invalid_token (HTTP 401)' },
   { code: 'STS-SAML-0001',
     summary: 'A SAML 2.0 sign-in resumed with a held-request id that is ' +
       'unknown or has expired (saml2.requestTtlMin), so there is no ' +

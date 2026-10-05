@@ -21329,8 +21329,22 @@ class AdminApi {
         // #34's two settings, asked of this surface as of every other. The
         // answer is one function, so an operator who turns them on cannot find
         // that one door out of nine kept its own opinion.
+        // #446: a token issued to the admin console as a PUBLIC client is
+        // honoured only DPoP-bound — `senderConstraints` argues it. The
+        // client's entry is read in the realm that issued the token, and
+        // only for a client that rule names.
+        const issuedTo = String(claims.client_id || '');
+        const clientBound =
+          senderConstraints.DPOP_BOUND_PUBLIC_CLIENTS.indexOf(issuedTo) >= 0 &&
+          realms.run(realms.get(tokenRealm), function () {
+            // The registry's client view, whose shape is its own.
+            const entry: any = applications.clientConfigOf(issuedTo) || {};
+            return senderConstraints.dpopBoundPublicClient(
+              issuedTo, entry.token_endpoint_auth_method);
+          });
         const required = senderConstraints.accessTokenRefusal({
           where: 'the management API',
+          clientBound: clientBound,
           boundJkt: boundJkt,
           proofOk: proofOk,
           boundThumbprint: mtls.boundThumbprintOf(claims),

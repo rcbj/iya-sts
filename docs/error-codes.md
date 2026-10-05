@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4092** of them, in **41** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4094** of them, in **41** subsystems.
 
 ## Where a code appears
 
@@ -64,7 +64,7 @@ is an ordinary outcome.
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 26
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 47
 * [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 255
-* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 697
+* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 699
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 98
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 25
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 16
@@ -2101,6 +2101,8 @@ Raised from: oauth-oidc/, common/person_assertions.js.
 | `STS-OAUTH-0940` | A resource server refused a request whose fapi-2-request signature or Content-Digest did not hold, where the refusal carried no more specific STS-KEYS code (#178). | HTTP 401, invalid_request |
 | `STS-OAUTH-0941` | A resource server refused a signed request whose access token names no client registered here, so no key could verify the signature (#178). | HTTP 401, invalid_request |
 | `STS-OAUTH-0942` | A resource response that FAPI 2.0 HTTP Signatures should sign went out unsigned: the realm holds no key for oauth2.httpSignatureResponseAlg, the signature was refused, or the response had begun writing before it ended (#178). | none: the response is sent unsigned, and a client requiring a signature refuses it |
+| `STS-OAUTH-0943` | The admin console, declared as a public client, asked the token endpoint for tokens with no DPoP proof. Every token issued to it as a public client is bound to a key it proves (#446). | invalid_dpop_proof (HTTP 400) |
+| `STS-OAUTH-0944` | An access token issued to the admin console as a public client was presented at a resource carrying no cnf.jkt. Such a token is honoured only DPoP-bound (#446). | invalid_token (HTTP 401) |
 
 ## STS-SAML
 

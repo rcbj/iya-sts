@@ -5059,3 +5059,56 @@ Tests: `tests/http_signatures.js` (the mechanism, RFC 9421's vectors including
 section 2.4's), `tests/fapi_http_signatures.js` (this policy, section by
 section), `tests/vendored/sts_fapi_http_signatures.js` (`local: true`, over
 HTTP with its own RFC 9421 signer and verifier).
+
+## 3cb. THE ADMIN CONSOLE AS A PUBLIC CLIENT (#446, 2026-10-05)
+
+The console is becoming a static application in the browser that calls
+`/admin-api` with the signed-in person's own token: a PUBLIC client, where it
+was a confidential relying party run by this process (`common/oidc_rp.ts`).
+rcbj reversed #444's D9 for the console on the condition that its tokens are
+bound to a key the browser cannot export. Two rules follow. Both are about
+that ONE client and neither is a setting.
+
+**UNTIL THE CUTOVER NEITHER APPLIES.** The seeded `sts-admin-console` entry
+still declares `private_key_jwt`. Each rule tests the client's id AND its
+declared method (`none`), so the confidential console, the portal and every
+other client are untouched, and the API explorer's unbound token still works.
+
+* **DPoP IS MANDATORY FOR IT** (`sender_constraints.js`:
+  `DPOP_BOUND_PUBLIC_CLIENTS`, `dpopBoundPublicClient()`).
+  * The token endpoint refuses a request from it with no DPoP proof
+    (`publicClientIssuanceRefusal()`, `STS-OAUTH-0943`, `invalid_dpop_proof`).
+    The check is in `tokenGrant()`'s `issue()` closure, which every grant
+    mints through, beside the role gate and #34's two settings.
+  * Its refresh token needs no new rule: RFC 9449 section 5 already binds a
+    public client's refresh token to the proof's key.
+  * A resource refuses an UNBOUND access token issued to it
+    (`accessTokenRefusal({ clientBound })`, `STS-OAUTH-0944`). `/admin-api`'s
+    gate passes `clientBound`, reading the client's entry in the realm that
+    issued the token, and only for a client the list names. A BOUND token
+    presented without its proof was already refused by every resource.
+  * `oauth2.accessTokenRequireDpop` and `oauth2.refreshTokenRequireDpop` stay
+    the realm's own question for everybody else (rule 3ao).
+* **IT IS THE ONE PUBLIC CLIENT A CONFIDENTIAL-ONLY FAPI PROFILE ALLOWS**
+  (`fapi.js`: `PUBLIC_CLIENT_EXEMPT`, `publicClientExempt()`).
+  `clientAuthenticationRefusal(method, clientId)` lets it past at the token
+  and PAR endpoints; the CIBA endpoint passes no client and so exempts
+  nobody. FAPI 1.0 Advanced and FAPI 2.0 support no public client, and
+  refusing it would leave such a realm with no console. **The console does
+  not conform to the profile there**: the two requirement rows
+  (`no-public-clients`, `confidential-only`) say so, and so do
+  `docs/oauth-security.md` and `docs/spec-departures.md`. This qualifies 3av's
+  *the hosted surfaces conforming*: the portal still does.
+
+**THE PORTAL IS IN NEITHER LIST.** It keeps its backend-for-frontend.
+`tests/sender_constraints.js` and `tests/fapi2_units.js` hold both lists to
+"the admin console, nothing else".
+
+**NOT DONE YET, AND OWED BEFORE THE CUTOVER**: the seed itself (the entry
+becoming `none`), the sign-in the browser runs (authorization code, PKCE, a
+WebCrypto key), the registration-time check for the seeded row, and the
+bootstrap administrator's claim at issuance (#103), which today is made by
+the console's own callback.
+
+`tests/console_public_client.js` holds the rule end to end, with the entry
+declared public in a child process.

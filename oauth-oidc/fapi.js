@@ -384,7 +384,11 @@ const ADVANCED_REQUIREMENTS = [
     enforced: 'yes',
     title: 'Public clients are not supported',
     note: 'token_endpoint_auth_method none is refused at registration and ' +
-          'at the token and PAR endpoints.' },
+          'at the token and PAR endpoints.' +
+          ' ONE EXCEPTION (#446): the seeded sts-admin-console client, ' +
+          'when it is a public client, may use the token and PAR ' +
+          'endpoints. Every token issued to it is DPoP-bound, and the ' +
+          'console does not conform to this profile.' },
   { id: 'par-pkce', section: '5.2.2 item 18', level: 'SHALL',
     enforced: 'yes',
     title: 'A pushed request uses PKCE with S256',
@@ -414,7 +418,11 @@ const FAPI2_REQUIREMENTS = [
   { id: 'confidential-only', section: '5.3.2.1 item 3', level: 'SHALL',
     enforced: 'yes', title: 'Confidential clients only',
     note: 'A public client is refused at registration and at the token and ' +
-          'PAR endpoints (STS-OAUTH-0580, STS-REG-0174).' },
+          'PAR endpoints (STS-OAUTH-0580, STS-REG-0174).' +
+          ' ONE EXCEPTION (#446): the seeded sts-admin-console client, ' +
+          'when it is a public client, may use the token and PAR ' +
+          'endpoints. Every token issued to it is DPoP-bound, and the ' +
+          'console does not conform to this profile.' },
   { id: 'sender-constrained', section: '5.3.2.1 items 4-5', level: 'SHALL',
     enforced: 'yes',
     title: 'Only sender-constrained access tokens, by mTLS or DPoP',
@@ -965,19 +973,61 @@ function clientIdentifierRefusal(ids) {
 // THE CLIENT'S AUTHENTICATION at the token and PAR endpoints. `method` is
 // what the client's entry declares (`bcp.observeClientAuthentication()`'s
 // `method`); `none` is a public client, which section 5.2.3 allows.
+//
+// THE ONE PUBLIC CLIENT THE CONFIDENTIAL-ONLY PROFILES ALLOW (#446,
+// 2026-10-05): the admin console. It is becoming a static application in
+// the browser — a public client whose every token is DPoP-bound
+// (`sender_constraints.js`'s `DPOP_BOUND_PUBLIC_CLIENTS`) — and FAPI 1.0
+// Advanced and FAPI 2.0 support no public client at all. Refusing it would
+// leave a realm with one of those profiles on with no console, so rcbj's
+// decision is a named exception: the seeded console client, and only when it
+// IS public, is let past this check. **The console does not conform to the
+// profile there, and the two requirement rows above and the documentation
+// say so**; every other client of the realm is held to the profile as
+// before, and the console's own tokens are still sender-constrained, which
+// is the half of the profile's intent that survives.
 // ---------------------------------------------------------------------------
+/**
+ * The hosted clients allowed to be public clients under a profile that
+ * supports none: the admin console.
+ */
+const PUBLIC_CLIENT_EXEMPT = ['sts-admin-console'];
+
+/**
+ * Tells whether a client is the public client the confidential-only profiles
+ * make an exception for.
+ *
+ * @param clientId - the client
+ * @param method - the method its entry declares
+ * @returns true for the admin console declared as a public client
+ */
+function publicClientExempt(clientId, method) {
+  log.debug("Entering publicClientExempt().");
+  const answer = String(method || '') === 'none' &&
+    PUBLIC_CLIENT_EXEMPT.indexOf(String(clientId || '')) >= 0;
+  log.debug("Leaving publicClientExempt(). " + answer);
+  return answer;
+}
+
 /**
  * Refuses, at the token and PAR endpoints, a client authentication method the
  * profile in force does not allow.
  *
  * @param method - the method the client's entry declares
+ * @param clientId - optional; the client, for the one public client the
+ *   confidential-only profiles allow
  * @returns null, or `{ ok: false, errorCode, error, requirement, description }`
  */
-function clientAuthenticationRefusal(method) {
+function clientAuthenticationRefusal(method, clientId) {
   log.debug("Entering clientAuthenticationRefusal(). " + method);
   const used = String(method || '');
   if (!enabled() || !used) {
     log.debug("Leaving clientAuthenticationRefusal(). Nothing to judge.");
+    return null;
+  }
+  if (publicClientExempt(clientId, used)) {
+    log.debug("Leaving clientAuthenticationRefusal(). The admin console, " +
+              "the one public client allowed.");
     return null;
   }
   const allowed = allowedMethods();
@@ -1776,6 +1826,8 @@ module.exports = {
   senderConstraintRefusal: senderConstraintRefusal,
   authorizationRefusal: authorizationRefusal,
   clientAuthenticationRefusal: clientAuthenticationRefusal,
+  PUBLIC_CLIENT_EXEMPT: PUBLIC_CLIENT_EXEMPT,
+  publicClientExempt: publicClientExempt,
   cibaRefusal: cibaRefusal,
   clientIdentifierRefusal: clientIdentifierRefusal,
   keyBits: keyBits,
