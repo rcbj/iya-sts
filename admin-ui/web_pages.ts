@@ -415,6 +415,16 @@ const PAGES: WebPage[] = [
     } },
   { path: '/admin/spiffe/agents', title: 'SPIFFE agents',
     operation: '/admin-api/spiffe/agents',
+    drill: {
+      param: 'agent',
+      sample: function (list: Json): string | null {
+        const rows = list.agents || [];
+        return rows[0] ? rows[0].id : null;
+      },
+      render: function (view: Json, ctx?: Json): string {
+        return SpiffePage.agent(ctx || WebKit.context(), view);
+      }
+    },
     render: function (view: Json, ctx?: Json): string {
       return SpiffePage.agents(ctx || WebKit.context(), view);
     } },
@@ -425,6 +435,16 @@ const PAGES: WebPage[] = [
     } },
   { path: '/admin/spiffe/entries', title: 'SPIFFE entries',
     operation: '/admin-api/spiffe/entries',
+    drill: {
+      param: 'entry',
+      sample: function (list: Json): string | null {
+        const rows = list.entries || [];
+        return rows[0] ? rows[0].id : null;
+      },
+      render: function (view: Json, ctx?: Json): string {
+        return SpiffePage.entry(ctx || WebKit.context(), view);
+      }
+    },
     render: function (view: Json, ctx?: Json): string {
       return SpiffePage.entries(ctx || WebKit.context(), view);
     } },

@@ -301,6 +301,221 @@ class SpiffePage {
       'domain\'s bundle.') + '</div></form>';
     return inner;
   }
+
+  /**
+   * Draws the page's body from its view.
+   *
+   * @param ctx - the render context (`WebKit.context()`)
+   * @param json - the answer of the page's management API operation
+   * @returns the body as HTML
+   */
+  static entry(ctx, json) {
+    const entry = json.found ? json.entry : null;
+    const listView = kit.listViewOf('/admin/spiffe/entries', ctx.query);
+    const back = kit.queryWith(listView, {});
+    let inner;
+    if (!entry) {
+      inner = kit.note('No registration entry has the id <code>' +
+                           kit.esc(json.id) +
+                 '</code>. It may have been deleted &mdash; from this page, ' +
+                 'with <code>BatchDeleteEntry</code>, or with an ' +
+                 '<code>ldapdelete</code> under ' +
+                 '<code>ou=entries,ou=spiffe</code>, which are three doors ' +
+                 'onto one store.') +
+                 '<p><a href="/admin/spiffe/entries' + kit.esc(back) +
+                 '">Back to the entries</a>.</p>';
+    } else {
+      const attributeRows = Object.keys(entry.attributes || {}).sort()
+        .map(function (name) {
+          const value = entry.attributes[name];
+          return '<tr><td><code>' + kit.esc(name) + '</code></td><td>' +
+            kit.esc(Array.isArray(value) ? value.join(' | ') : String(value)) +
+            '</td></tr>';
+        }).join('');
+      const carried = '<input type="hidden" name="back" value="' +
+                      kit.esc(back) +
+                      '"><input ' +
+                      'type="hidden" name="entry" value="' + kit.esc(entry.id) +
+                      '">';
+      inner = SpiffePage.spiffePostureNote(json.serverApiAuthenticated) +
+        '<h2><code>' + kit.esc(entry.spiffeId) + '</code></h2>' +
+        kit.note('Entry <code>' + kit.esc(entry.id) + '</code>, revision ' +
+        kit.esc(entry.revisionNumber) + ', created by <code>' +
+        kit.esc(entry.origin) +
+        '</code>. It lives at <code>' + kit.esc(entry.dn) + '</code>' +
+        (entry.expired ? ' and <strong>has expired</strong> &mdash; it is ' +
+          'kept ' +
+          'and reported rather than deleted, because an entry that vanished ' +
+            'is ' +
+          'indistinguishable from one nobody created' : '') + '.') +
+        '<table><tr><th>Field</th><th>Value</th></tr>' +
+        '<tr><td>Parent</td><td><code>' + kit.esc(entry.parentId) +
+        '</code></td></tr><tr><td>Selectors</td><td>' +
+        kit.esc(entry.selectorTexts.join(', ') ||
+                 '(none — this entry matches every workload)') + '</td></tr>' +
+        '<tr><td>DNS names</td><td>' +
+        kit.esc(entry.dnsNames.join(', ') || '—') +
+        '</td></tr>' +
+        '<tr><td>Federates with</td><td>' +
+        kit.esc(entry.federatesWith.join(', ') || '—') + '</td></tr>' +
+        '<tr><td>X509-SVID TTL</td><td>' +
+        (entry.x509SvidTtl ||
+         ('default (' + kit.esc(json.defaults.x509SvidTtl) + ')')) +
+        '</td></tr>' +
+        '<tr><td>JWT-SVID TTL</td><td>' +
+        (entry.jwtSvidTtl ||
+         ('default (' + kit.esc(json.defaults.jwtSvidTtl) + ')')) +
+        '</td></tr>' +
+        '<tr><td>Hint</td><td>' + kit.esc(entry.hint || '—') + '</td></tr>' +
+        '<tr><td>admin / downstream / storeSvid</td><td>' +
+        (entry.admin ? 'admin' : '') + (entry.downstream ? ' downstream' : '') +
+        (entry.storeSvid ? ' storeSvid' : '') +
+        ((entry.admin || entry.downstream || entry.storeSvid) ? '' : '—') +
+        ' <span class="note">recorded and never read &mdash; nothing here ' +
+        'decides anything on one</span></td></tr><tr><td>SVIDs ' +
+        'issued</td><td>' + entry.svidsIssued +
+        (entry.lastSvidAt ? ', most recently ' + kit.esc(entry.lastSvidAt) :
+         '') +
+        '</td></tr></table>' +
+
+        '<h3>Change it</h3>' +
+        kit.note('Only the DECLARED half is editable here &mdash; what the ' +
+        'entry may DO. The derived half (the revision number, the SVID ' +
+        'counter, when it was created) is what HAPPENED, and a form that ' +
+          'could ' +
+        'rewrite it would make this page lie about the service\'s own ' +
+        'behaviour. <code>ldapmodify</code> reaches everything: refusing it ' +
+        'here is the difference between offering an operation and merely not ' +
+        'preventing it.') +
+        '<form method="post" action="/admin/spiffe/entries"><div ' +
+        'class="formrow"><input type="hidden" name="action" value="update">' +
+        carried +
+        '<label for="u-field">Field</label>' +
+        '<select id="u-field" name="field">' +
+        ['spiffeId', 'parentId', 'selectors', 'dnsNames', 'federatesWith',
+         'x509SvidTtl', 'jwtSvidTtl', 'hint', 'expiresAt', 'admin',
+           'downstream',
+         'storeSvid'].map(function (name) {
+          return '<option value="' + kit.esc(name) + '">' + kit.esc(name) +
+                 '</option>';
+        }).join('') + '</select>' +
+        '<label for="u-value">Value</label>' +
+        '<input id="u-value" name="value" size="40">' +
+        '<button>Set</button>' +
+        '<span class="note">A list field takes comma-separated values and an ' +
+        'empty value clears it. A boolean takes true or false.</span>' +
+        '</div></form>' +
+        '<form method="post" action="/admin/spiffe/entries"><div ' +
+        'class="formrow"><input type="hidden" name="action" value="delete">' +
+        carried +
+        '<button class="danger">Delete this entry</button>' +
+        kit.note('Whatever holds an SVID minted from it keeps that SVID ' +
+          'until ' +
+        'it expires. SPIFFE has no revocation &mdash; the answer is a short ' +
+        'lifetime, which is why the default is an hour.') + '</div></form>' +
+
+        '<h3>The directory entry</h3>' +
+        '<p>Every attribute, operational ones included. This is the store ' +
+        'rather than a description of it.</p>' +
+        '<table><tr><th>Attribute</th><th>Value</th></tr>' + attributeRows +
+        '</table>';
+    }
+    return inner;
+  }
+
+  /**
+   * Draws the page's body from its view.
+   *
+   * @param ctx - the render context (`WebKit.context()`)
+   * @param json - the answer of the page's management API operation
+   * @returns the body as HTML
+   */
+  static agent(ctx, json) {
+    const agent = json.found ? json.agent : null;
+    const listView = kit.listViewOf('/admin/spiffe/agents', ctx.query);
+    const back = kit.queryWith(listView, {});
+    let inner;
+    if (!agent) {
+      inner = '<p>No agent has attested here as <code>' +
+                 kit.esc(json.id) +
+                 '</code>.</p><p><a href="/admin/spiffe/agents' +
+                 kit.esc(back) +
+                 '">Back to the agents</a>.</p>';
+    } else {
+      const attributeRows = Object.keys(agent.attributes || {}).sort()
+        .map(function (name) {
+          const value = agent.attributes[name];
+          return '<tr><td><code>' + kit.esc(name) + '</code></td><td>' +
+            kit.esc(Array.isArray(value) ? value.join(' | ') : String(value)) +
+            '</td></tr>';
+        }).join('');
+      const carried = '<input type="hidden" name="back" value="' +
+                      kit.esc(back) +
+                      '"><input ' +
+                      'type="hidden" name="agent" value="' + kit.esc(agent.id) +
+                      '">';
+      inner = SpiffePage.spiffePostureNote(json.serverApiAuthenticated) +
+        '<h2><code>' + kit.esc(agent.id) + '</code></h2>' +
+        kit.note('Attested with <code>' + kit.esc(agent.attestationType) +
+                  '</code>, ' +
+        kit.esc(agent.attestations) + ' time(s), first at ' +
+        kit.esc(agent.firstSeen) +
+        ' and most recently at ' + kit.esc(agent.lastSeen) + '. It lives at ' +
+          '<code>' +
+        kit.esc(agent.dn) + '</code> &mdash; the RDN is a digest of the ' +
+        'SPIFFE ID, because a SPIFFE ID is too long for a readable one, so ' +
+        '<strong>the cn is not the identity here</strong>: ' +
+        '<code>spiffeAgentId</code> is.') +
+        '<table><tr><th>Field</th><th>Value</th></tr>' +
+        '<tr><td>State</td><td>' + (agent.banned
+          ? '<strong>banned</strong> — AttestAgent refuses it, which is one ' +
+            'of ' +
+            'the few refusals in this service and is what keeps the button ' +
+            'below from being a lie'
+          : 'active') + '</td></tr>' +
+        '<tr><td>Its directory entry</td><td>' +
+        'Every identity this trust domain issues an X509-SVID to has one ' +
+          'under ' +
+        '<code>ou=users</code>, carrying the current certificate as the same ' +
+        'six <code>x509*</code> attributes a verified TLS client certificate ' +
+        'writes. Banning or deleting this agent marks that entry ' +
+        '<code>spiffeCredentialStatus: revoked</code> and never removes it; ' +
+        'unbanning marks it active again. <span class="note">That is not a ' +
+        'certificate status. SPIFFE has no revocation, nothing reads the ' +
+          'flag ' +
+        'back, and whatever SVID this agent holds keeps working until it ' +
+        'expires.</span></td></tr>' +
+        '<tr><td>Can reattest</td><td>' + (agent.canReattest ? 'yes' : 'no') +
+        '</td></tr>' +
+        '<tr><td>Selectors</td><td>' +
+        kit.esc(agent.selectorTexts.join(', ') || '—') +
+        ' <span class="note">claimed, never verified</span></td></tr>' +
+        '<tr><td>SVID</td><td>' + kit.esc(agent.svidHash || '—') +
+        (agent.expiresAt ? ', expires ' +
+          kit.esc(new Date(agent.expiresAt * 1000).toISOString()) : '') +
+        '</td></tr></table>' +
+        '<form method="post" action="/admin/spiffe/agents"><div ' +
+        'class="formrow"><input type="hidden" name="action" value="' +
+        (agent.banned ? 'unban' : 'ban') + '">' + carried +
+        '<button class="' + (agent.banned ? 'secondary' : 'danger') + '">' +
+        (agent.banned ? 'Unban' : 'Ban') + ' this agent</button>' +
+        kit.note('A banned agent is refused at <code>AttestAgent</code> with ' +
+        '<code>PermissionDenied</code>. Whatever SVID it already holds keeps ' +
+        'working until it expires &mdash; there is no revocation in SPIFFE.') +
+        '</div></form>' +
+        '<form method="post" action="/admin/spiffe/agents"><div ' +
+        'class="formrow"><input type="hidden" name="action" value="delete">' +
+        carried +
+        '<button class="danger">Delete this agent</button>' +
+        kit.note('It reappears the next time it attests, because ' +
+        'attestation is not checked &mdash; deleting is forgetting, not ' +
+        'revoking.') + '</div></form>' +
+        '<h3>The directory entry</h3>' +
+        '<table><tr><th>Attribute</th><th>Value</th></tr>' + attributeRows +
+        '</table>';
+    }
+    return inner;
+  }
 }
 
 export = SpiffePage;

@@ -362,6 +362,17 @@ function childMain() {
                                       peer: 'https://idp.webcheck.example' });
     note(fedSp && fedSp.ok !== false, 'D-seed-fed. a relationship is made',
          JSON.stringify((fedSp && fedSp.errors) || []));
+    // And a SPIFFE registration entry. No agent is made: one exists only
+    // by attesting, and its drill-down is drawn as missing.
+    const spiffeCa = require(ROOT_DIR + '/spiffe/spiffe_ca');
+    const spiffeRegistry = require(ROOT_DIR + '/spiffe/spiffe_registry');
+    const td = spiffeCa.trustDomain();
+    const seededEntry = spiffeRegistry.createEntry({
+      spiffeId: 'spiffe://' + td + '/webcheck',
+      parentId: 'spiffe://' + td + '/spire/server',
+      selectors: [{ type: 'unix', value: 'uid:1000' }] }, 'test', td, 'test');
+    note(seededEntry && seededEntry.ok, 'D-seed-spiffe. an entry is made',
+         JSON.stringify((seededEntry && seededEntry.errors) || []));
     note(seeded && seeded.ok && seeded11 && seeded11.ok,
          'D-seed. the service provider and the relying party are made',
          JSON.stringify([(seeded && seeded.errors) || [],

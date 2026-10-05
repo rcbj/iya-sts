@@ -5643,6 +5643,70 @@ class AdminViews {
     return { json: json, paging: pg };
   }
 
+  // ONE REGISTRATION ENTRY AND ONE AGENT (#446), for the two drill-downs and
+  // for the `entry` and `agent` parameters `GET /admin-api/spiffe/entries`
+  // and `/agents` have always documented and, until now, ignored — they
+  // answered the list. Each carries its selectors as text and what its page
+  // states beside it; one that is not there answers `found: false`.
+  /**
+   * Builds one registration entry's drill-down JSON.
+   *
+   * @param id - the entry's id
+   * @returns the JSON
+   */
+  spiffeEntryJson(id) {
+    const { log, spiffeRegistry } = this.deps;
+    const self = this;
+    log.debug("Entering AdminViews.spiffeEntryJson(). id=" + id);
+    const entry = spiffeRegistry.entryById(id);
+    const serverApiAuthenticated = spiffeAuth.authRequired();
+    if (!entry) {
+      log.debug("Leaving AdminViews.spiffeEntryJson(). Not here.");
+      return { found: false, id: id,
+               error: 'No registration entry has the id ' + id,
+               serverApiAuthenticated: serverApiAuthenticated };
+    }
+    log.debug("Leaving AdminViews.spiffeEntryJson().");
+    return {
+      found: true,
+      entry: Object.assign({}, entry, {
+        selectorTexts: entry.selectors.map(self.spiffeSelectorText.bind(self))
+      }),
+      editable: spiffeRegistry.EDITABLE,
+      serverApiAuthenticated: serverApiAuthenticated,
+      defaults: { x509SvidTtl: config.text('spiffe.svidTtl'),
+                  jwtSvidTtl: config.text('spiffe.jwtSvidTtl') }
+    };
+  }
+
+  /**
+   * Builds one attested agent's drill-down JSON.
+   *
+   * @param id - the agent's SPIFFE ID
+   * @returns the JSON
+   */
+  spiffeAgentJson(id) {
+    const { log, spiffeRegistry } = this.deps;
+    const self = this;
+    log.debug("Entering AdminViews.spiffeAgentJson(). id=" + id);
+    const agent = spiffeRegistry.agentById(id);
+    const serverApiAuthenticated = spiffeAuth.authRequired();
+    if (!agent) {
+      log.debug("Leaving AdminViews.spiffeAgentJson(). Not here.");
+      return { found: false, id: id,
+               error: 'No agent has attested here as ' + id,
+               serverApiAuthenticated: serverApiAuthenticated };
+    }
+    log.debug("Leaving AdminViews.spiffeAgentJson().");
+    return {
+      found: true,
+      agent: Object.assign({}, agent, {
+        selectorTexts: agent.selectors.map(self.spiffeSelectorText.bind(self))
+      }),
+      serverApiAuthenticated: serverApiAuthenticated
+    };
+  }
+
   /**
    * Writes a selector as `type:value`.
    *
@@ -10233,6 +10297,8 @@ export = {
   spiffeListeners: slot.forward('spiffeListeners'),
   spiffeJson: slot.forward('spiffeJson'),
   spiffeEntriesJson: slot.forward('spiffeEntriesJson'),
+  spiffeEntryJson: slot.forward('spiffeEntryJson'),
+  spiffeAgentJson: slot.forward('spiffeAgentJson'),
   spiffeAgentsJson: slot.forward('spiffeAgentsJson'),
   spiffeBrokersJson: slot.forward('spiffeBrokersJson'),
   setSignalsReporter: slot.forward('setSignalsReporter'),

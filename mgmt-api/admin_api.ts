@@ -20033,7 +20033,11 @@ class AdminApi {
                             'Registration entries and their paging.' },
         handler: function (req, res) {
           log.debug("Entering the management API SPIFFE entries endpoint.");
-          self.sendJson(res, 200, adminViews.spiffeEntriesJson(req).json);
+          // `entry` names one, as the parameter above has always said.
+          const entry = String(req.query.entry || '').trim();
+          self.sendJson(res, 200,
+                        entry ? adminViews.spiffeEntryJson(entry)
+                              : adminViews.spiffeEntriesJson(req).json);
           log.debug("Leaving the management API SPIFFE entries endpoint.");
         } },
 
@@ -20340,7 +20344,11 @@ class AdminApi {
                           description: 'Attested agents and their paging.' },
         handler: function (req, res) {
           log.debug("Entering the management API SPIFFE agents endpoint.");
-          self.sendJson(res, 200, adminViews.spiffeAgentsJson(req).json);
+          // `agent` names one, as the parameter above has always said.
+          const agent = String(req.query.agent || '').trim();
+          self.sendJson(res, 200,
+                        agent ? adminViews.spiffeAgentJson(agent)
+                              : adminViews.spiffeAgentsJson(req).json);
           log.debug("Leaving the management API SPIFFE agents endpoint.");
         } },
 
