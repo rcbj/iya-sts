@@ -443,7 +443,12 @@ async function setSetting(key, value) {
   if (!(key in changedSettings)) {
     const before = await request('GET', '/admin-api/config');
     const all = JSON.parse(before.body);
-    const row = (all.settings || []).filter(function (s) { return s.key === key; })[0];
+    // The rows are the groups' `settings`; a top-level `settings` is the
+    // page's settings BLOCK since #446 (an object), not a list of rows.
+    const row = (all.groups || []).reduce(function (rows, g) {
+      return rows.concat(g.settings || []);
+    }, Array.isArray(all.settings) ? all.settings : [])
+      .filter(function (s) { return s.key === key; })[0];
     changedSettings[key] = { value: row ? row.value : undefined,
                              wasOverride: !!row && row.source === 'override' };
   }
