@@ -155,6 +155,7 @@ import policyKinds = require('./policy_kinds');
 // LIBRARY (rule 3): it registers nothing and requires nothing of this
 // service but `helpers.js`, so it cannot move a route or join a cycle —
 // the terms `admin_rbac` above is required on.
+import WebKit = require('../admin-ui/web_kit');
 import delegationMap = require('../admin-ui/delegation_map');
 import authnPolicy = require('../common/authn_policy');
 // Four more with the second batch: the audit log the audit view pages, the
@@ -6712,21 +6713,11 @@ class AdminViews {
   pageParamsOf(query) {
     const { log } = this.deps;
     log.debug("Entering AdminViews.pageParamsOf().");
-    const out: Record<string, any> = {};
-    Object.keys(query || {}).forEach(function (key) {
-      if (NOT_A_VIEW.indexOf(key) >= 0) {
-        return;
-      }
-      // Express hands back an array when a parameter is repeated. The first is
-      // taken rather than String()'d, because String(['2','5']) is "2,5" — a
-      // page number nothing can parse, silently reached by a link somebody
-      // clicked twice.
-      const value = Array.isArray(query[key]) ? query[key][0] : query[key];
-      out[key] = value == null ? '' : String(value);
-    });
-    log.debug("Leaving AdminViews.pageParamsOf(). " + Object.keys(out).length +
-              " " +
-        "parameter(s).");
+    // The kit's since #446, with its reasoning: a renderer in a browser
+    // names the same view parameters this does.
+    const out = WebKit.pageParamsOf(query);
+    log.debug("Leaving AdminViews.pageParamsOf(). " +
+              Object.keys(out).length + " parameter(s).");
     return out;
   }
 

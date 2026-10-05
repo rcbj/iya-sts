@@ -24,7 +24,7 @@
 #   * the ENTRY method stays on the page's class as a delegate that calls the
 #     new module's `render()` with the view passed through JSON;
 #   * `admin.configFormsFor(PAGE)` in the entry method becomes
-#     `settings.forms(json.settings, PAGE)` — the Settings block drawn from
+#     `SettingsForms.forms(json.settings, PAGE)` — the Settings block drawn from
 #     the view's own `settings` member by `admin-ui/web_settings.ts`. The
 #     page's view must carry that member (`admin.configSettingsJson(PAGE)`),
 #     and a block drawn outside the entry method is refused: only the entry
@@ -165,13 +165,16 @@ for doc, start, end, name in spans:
         'reads the request, which a browser has not', name,
         re.findall(r'\breq\.\w+', code)[:4])
     block = re.sub(r'(?<![\w$.\'"`/-])req(?![\w$\'"`/:-])', 'ctx', block)
+    block = re.sub(r'@param ctx - the (express )?request[^\n]*',
+                   '@param ctx - the render context (`WebKit.context()`)',
+                   block)
     # THE SETTINGS BLOCK, from the view. Only the entry method holds the
     # view (its parameter is `json`, asserted below), so only there.
     if 'admin.configFormsFor(' in block:
         assert name == entry, ('a settings block outside the entry method',
                                name)
         block = block.replace('admin.configFormsFor(',
-                              'settings.forms(json.settings, ')
+                              'SettingsForms.forms(json.settings, ')
         USES_SETTINGS.append(name)
     # `this` and `self` stay: a static method called on its class has the
     # class for `this`. The kit is imported as `kit`, shorter than `admin`,
@@ -192,7 +195,7 @@ assert used <= KIT, ('helpers not in the kit', sorted(used - KIT))
 # answer differs each time (copy a constant, move a table, put a fact in the
 # view) and `tsc` would only say the same thing after an image build.
 top = set(re.findall(r'^(?:const|let|function|class|import) ([A-Za-z_$][\w$]*)',
-                     '\n'.join(lines), re.M)) - {'kit', 'WebKit', 'settings'}
+                     '\n'.join(lines), re.M)) - {'kit', 'WebKit', 'SettingsForms'}
 top -= set(COPY)
 if BARE_ESC:
     top.discard('esc')
@@ -228,7 +231,8 @@ if USES_SETTINGS:
                                     os.path.dirname(root + '/' + web_file))
     if not settings_path.startswith('.'):
         settings_path = './' + settings_path
-    settings_import = "\nimport settings = require('%s');" % settings_path
+    settings_import = ("\nimport SettingsForms = require('%s');"
+                       % settings_path)
 web = """// SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
 // SPDX-License-Identifier: BUSL-1.1
 

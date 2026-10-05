@@ -634,9 +634,13 @@ function claimEight(t) {
             return typeof c.maxEntries === 'number';
           }),
           'each carries every store\'s figures and how old they are');
-  // The drawing of that section, by the same instance (`private` is a
-  // compile-time word; the method is there at run time).
-  const html = view['otherProcessesHtml'](others);
+  // The drawing of that section, by the page's renderer (#446:
+  // `web_caches.ts`), from the rows passed through JSON as a browser gets
+  // them.
+  const CachesPage = require(path.join(__dirname, '..', 'admin-ui',
+                                       'web_caches'));
+  const html = CachesPage.otherProcessesHtml(
+    JSON.parse(JSON.stringify(others)));
   t.check(html.indexOf('Node other') >= 0 &&
           /This node(&apos;|&#39;|&#x27;|')s front process/.test(html) &&
           html.indexOf('gone-host') < 0,

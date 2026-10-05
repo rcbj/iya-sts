@@ -21,7 +21,7 @@
 // ---------------------------------------------------------------------------
 
 import kit = require('../admin-ui/web_kit');
-import settings = require('../admin-ui/web_settings');
+import SettingsForms = require('../admin-ui/web_settings');
 
 type Json = any;
 
@@ -144,7 +144,8 @@ class DebuggerPage {
                'api no allow-list') +
       '</table>';
     return tiles + what + warning + listener + process +
-           '<h2>Settings</h2>' + settings.forms(json.settings, PAGE_PATH);
+           '<h2>Settings</h2>' +
+           SettingsForms.forms(json.settings, PAGE_PATH);
   }
 }
 

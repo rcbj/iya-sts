@@ -722,6 +722,187 @@ class WebKit {
     };
   }
 
+  // The paging sizes the rows-per-page select offers: `admin_views.ts`'s
+  // DEFAULT_PER_PAGE and MAX_ROWS, which argue the numbers. Written out
+  // because this module may require no server module;
+  // `tests/console_web_bundle.js` holds them equal.
+  static readonly DEFAULT_PER_PAGE = 50;
+
+  static readonly MAX_ROWS = 300;
+
+  // The per-page select, written once because five surfaces offer it and a
+  // sixth written by hand is the one that forgets to add a hand-typed size to
+  // the list.
+  //
+  // MAX_ROWS is offered as the largest choice so the old behaviour — everything
+  // on one page, up to the cap — is still one click away for anyone who wants
+  // to search the table with the browser's own find.
+  //
+  // A hand-typed `?per=7` is ADDED to the list rather than ignored, or the
+  // select would show a size that is not the one being used and would silently
+  // change it on the next Filter — which is a control that lies about the page
+  // it is on.
+  /**
+   * Draws the options of the rows-per-page select.
+   *
+   * A size that is not one of the offered choices is added to the list.
+   *
+   * @param perPage - the page size in use, which is marked selected
+   * @returns the <option> elements as HTML
+   */
+  static perPageOptions(perPage) {
+    const choices = [25, WebKit.DEFAULT_PER_PAGE, 100, WebKit.MAX_ROWS];
+    if (choices.indexOf(perPage) < 0) {
+      choices.push(perPage);
+      choices.sort(function (a, b) { return a - b; });
+    }
+    return choices.map(function (n) {
+      return '<option value="' + n + '"' + (n === perPage ? ' selected' : '') +
+             '>' +
+             n + ' rows</option>';
+    }).join('');
+  }
+
+  // The same control as a form of its own, for the two DRILL-DOWNS — which have
+  // no filter form to hang it on, and which need it more than the lists do
+  // because they carry several tables at once.
+  //
+  // Submitting it drops every page parameter, which is deliberate rather than
+  // an oversight of the hidden inputs: a GET form posts its own fields and
+  // nothing else, and page 4 of fifty-row pages is not page 4 of anything after
+  // the size changes. Going back to the top of each list is the only answer
+  // that is true of all of them.
+  //
+  // `carry` is the list's FILTER, and it has to be spelt out as hidden inputs
+  // for the reason above: a GET form posts its own fields and nothing else, so
+  // without them this control quietly empties the breadcrumb's way back to the
+  // list the reader came from. Its PAGE is deliberately not carried — `per` is
+  // the thing this form changes, and page 4 of fifty-row pages is not page 4 of
+  // anything afterwards, which is the same sentence as the paragraph above
+  // about the tables below.
+  /**
+   * Draws a stand-alone rows-per-table form for a drill-down page.
+   *
+   * Submitting it resets every table's page to the first.
+   *
+   * @param path - the page the form submits to
+   * @param key - the name of the hidden parameter that selects the drill-down
+   * @param value - that parameter's value
+   * @param perPage - the page size in use
+   * @param extraNote - optional; a sentence added to the form's note
+   * @param carry - optional; the list filter to carry as hidden inputs
+   * @returns the form as HTML
+   */
+  static perPageForm(path, key, value, perPage, extraNote?, carry?) {
+    const carried = Object.keys(carry || {}).map(function (name) {
+      return '<input type="hidden" name="' + WebKit.esc(name) + '" value="' +
+             WebKit.esc(carry[name]) + '">';
+    }).join('');
+    const html = '<form method="get" action="' + WebKit.esc(path) + '"><div ' +
+      'class="formrow"><input type="hidden" ' +
+      'name="' + WebKit.esc(key) + '" value="' + WebKit.esc(value) + '">' +
+      carried +
+      '<label for="per">Rows per table</label>' +
+      '<select id="per" name="per">' + WebKit.perPageOptions(perPage) +
+      '</select><button class="secondary">Apply</button>' +
+      WebKit.note('Every table below is paged separately and they share this ' +
+      'size. Changing it starts each of them at its first page.' +
+      (extraNote ? ' ' + extraNote : '')) +
+      '</div></form>';
+    return html;
+  }
+
+  // A COPY BUTTON BESIDE A VALUE (rcbj, 2026-10-01), first beside every
+  // endpoint in a Protocols page's Endpoints section. The button is drawn
+  // HIDDEN and carries the value it copies: `/admin/copy.js` reveals it and
+  // copies on a click. With the script blocked the page is exactly what it
+  // was, and the value beside it can still be selected by hand. `respond()`
+  // sees the attribute and is what adds the script and relaxes the policy,
+  // for that page only.
+  /**
+   * Draws a hidden Copy button for a value, which `/admin/copy.js` reveals.
+   *
+   * @param value - the text the button copies
+   * @returns the markup
+   */
+  static copyButton(value) {
+    return ' <button type="button" class="copybtn" hidden data-copy="' +
+      WebKit.esc(String(value == null ? '' : value)) + '" title="Copy ' +
+      'to the clipboard">Copy</button>';
+  }
+
+  // The drill-down. Its one list is the ATTRIBUTE table, which is paged under a
+  // name of its own (`attributesPage`) rather than the bare `page` — the
+  // convention pagingOf()'s header describes for a view that holds more than
+  // the list views do, and the shape to grow into when this page gains a second
+  // list.
+  // ---------------------------------------------------------------------------
+  // TABS WITH NO SCRIPT (2026-10-01).
+  //
+  // rcbj asked for an application's page to be tabs across the top, one per
+  // section, so a reader does not scroll past a dozen sections to reach one.
+  // This console is `script-src 'none'`, so a tab is a LINK to its panel's
+  // fragment and the stylesheet shows the panel that is `:target`, or holds
+  // the target (`:has(:target)`), and the first one when nothing is targeted.
+  // That is what makes every control on a tab come back to it: a form's
+  // answer lands at a fragment inside its own panel (withReturnAnchors(), or
+  // the anchor its handler names), so the panel is shown and the page opens
+  // where the button was. Every panel is in the page, so a search of the
+  // page, a printout and a browser without `:has()` (which shows them all)
+  // see everything. A panel with nothing in it gets no tab.
+  // ---------------------------------------------------------------------------
+  /**
+   * Draws panels as tabs: a bar of links, then each panel with something in
+   * it, the first shown when no fragment picks one.
+   *
+   * @param cls - an extra class for the container
+   * @param panels - `{ id, label, html }` in tab order
+   * @returns the tabs as HTML
+   */
+  static tabbedPanels(cls, panels) {
+    const shown = panels.filter(function (one) {
+      return String(one.html || '').trim() !== '';
+    });
+    return '<div class="tabs ' + WebKit.esc(cls) + '">' +
+      '<nav class="tabbar" aria-label="Sections of this page">' +
+      shown.map(function (one, n) {
+        return '<a' + (n === 0 ? ' class="first"' : '') + ' href="#' +
+          WebKit.esc(one.id) + '">' + WebKit.esc(one.label) + '</a>';
+      }).join('') + '</nav>' +
+      shown.map(function (one, n) {
+        return '<section class="tabpanel' + (n === 0 ? ' first' : '') +
+          '" id="' + WebKit.esc(one.id) + '">' + one.html + '</section>';
+      }).join('') + '</div>';
+  }
+
+  // A query's VIEW parameters — every one but the three that are not part
+  // of what is being looked at (`format`, and the `notice` and `error` a
+  // redirect brought back) — first value each. `admin_views.ts`'s, which
+  // calls this one (#446): a renderer carries a page's parameters on its
+  // links and must name the same ones the server does.
+  /**
+   * Returns a query's view parameters, first value each, without `format`,
+   * `notice` and `error`.
+   *
+   * @param query - the query
+   * @returns the parameters
+   */
+  static pageParamsOf(query): Record<string, any> {
+    const out: Record<string, any> = {};
+    Object.keys(query || {}).forEach(function (key) {
+      if (['format', 'notice', 'error'].indexOf(key) >= 0) {
+        return;
+      }
+      // Express hands back an array when a parameter is repeated. The first
+      // is taken rather than String()'d, because String(['2','5']) is "2,5"
+      // — a page number nothing can parse, silently reached by a link
+      // somebody clicked twice.
+      const value = Array.isArray(query[key]) ? query[key][0] : query[key];
+      out[key] = value == null ? '' : String(value);
+    });
+    return out;
+  }
+
   // -------------------------------------------------------------------------
   // WHAT A RENDERER IS TOLD BESIDE ITS VIEW (#446).
   //

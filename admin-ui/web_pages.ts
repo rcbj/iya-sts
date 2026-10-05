@@ -31,9 +31,11 @@
 import WebKit = require('./web_kit');
 import AttributeSourcesPage =
   require('../attribute-sources/web_attribute_sources');
+import CachesPage = require('./web_caches');
 import DatabasePage = require('./web_database');
 import DebuggerPage = require('../debugger/web_debugger');
 import GrantsPage = require('../oauth-oidc/web_grants');
+import ListenersPage = require('./web_listeners');
 import ModePage = require('./web_mode');
 import NodeHealthPage = require('./web_node_health');
 import OAuth2MonitorPage = require('../oauth-oidc/web_oauth2_monitor');
@@ -59,12 +61,16 @@ const PAGES: WebPage[] = [
   { path: '/admin/attribute-sources', title: 'Attribute sources',
     operation: '/admin-api/attribute-sources',
     render: AttributeSourcesPage.render },
+  { path: '/admin/caches', title: 'Caches', operation: '/admin-api/caches',
+    render: CachesPage.render },
   { path: '/admin/database', title: 'Database',
     operation: '/admin-api/database', render: DatabasePage.render },
   { path: '/admin/debugger', title: 'Protocol debugger',
     operation: '/admin-api/debugger', render: DebuggerPage.render },
   { path: '/admin/grants', title: 'Grants', operation: '/admin-api/grants',
     render: GrantsPage.render },
+  { path: '/admin/listeners', title: 'Listeners',
+    operation: '/admin-api/listeners', render: ListenersPage.render },
   { path: '/admin/mode', title: 'Mode', operation: '/admin-api/mode',
     render: ModePage.render },
   { path: '/admin/node-health', title: 'Node health',

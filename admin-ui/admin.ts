@@ -5961,13 +5961,7 @@ class AdminConsole {
   // the lead notes and warnings that say what the page is, before the first
   // section of what it holds. A page with no heading gets it at the foot.
   // ---------------------------------------------------------------------------
-    // A COPY BUTTON BESIDE A VALUE (rcbj, 2026-10-01), first beside every
-  // endpoint in a Protocols page's Endpoints section. The button is drawn
-  // HIDDEN and carries the value it copies: `/admin/copy.js` reveals it and
-  // copies on a click. With the script blocked the page is exactly what it
-  // was, and the value beside it can still be selected by hand. `respond()`
-  // sees the attribute and is what adds the script and relaxes the policy,
-  // for that page only.
+  // The kit's (#446), where its reasoning went with it.
   /**
    * Draws a hidden Copy button for a value, which `/admin/copy.js` reveals.
    *
@@ -5978,9 +5972,7 @@ class AdminConsole {
     const { log } = this.deps;
     log.debug("Entering AdminConsole.copyButton().");
     log.debug("Leaving AdminConsole.copyButton().");
-    return ' <button type="button" class="copybtn" hidden data-copy="' +
-      this.esc(String(value == null ? '' : value)) + '" title="Copy ' +
-      'to the clipboard">Copy</button>';
+    return WebKit.copyButton(value);
   }
 
 /**
@@ -7623,18 +7615,7 @@ class AdminConsole {
       (spec.what ? this.note(spec.what) : '');
   }
 
-  // The per-page select, written once because five surfaces offer it and a
-  // sixth written by hand is the one that forgets to add a hand-typed size to
-  // the list.
-  //
-  // MAX_ROWS is offered as the largest choice so the old behaviour — everything
-  // on one page, up to the cap — is still one click away for anyone who wants
-  // to search the table with the browser's own find.
-  //
-  // A hand-typed `?per=7` is ADDED to the list rather than ignored, or the
-  // select would show a size that is not the one being used and would silently
-  // change it on the next Filter — which is a control that lies about the page
-  // it is on.
+  // The kit's (#446), where its reasoning went with it.
   /**
    * Draws the options of the rows-per-page select.
    *
@@ -7644,38 +7625,13 @@ class AdminConsole {
    * @returns the <option> elements as HTML
    */
   perPageOptions(perPage) {
-    const { log, DEFAULT_PER_PAGE, MAX_ROWS } = this.deps;
+    const { log } = this.deps;
     log.debug("Entering AdminConsole.perPageOptions().");
-    const choices = [25, DEFAULT_PER_PAGE, 100, MAX_ROWS];
-    if (choices.indexOf(perPage) < 0) {
-      choices.push(perPage);
-      choices.sort(function (a, b) { return a - b; });
-    }
     log.debug("Leaving AdminConsole.perPageOptions().");
-    return choices.map(function (n) {
-      return '<option value="' + n + '"' + (n === perPage ? ' selected' : '') +
-             '>' +
-             n + ' rows</option>';
-    }).join('');
+    return WebKit.perPageOptions(perPage);
   }
 
-  // The same control as a form of its own, for the two DRILL-DOWNS — which have
-  // no filter form to hang it on, and which need it more than the lists do
-  // because they carry several tables at once.
-  //
-  // Submitting it drops every page parameter, which is deliberate rather than
-  // an oversight of the hidden inputs: a GET form posts its own fields and
-  // nothing else, and page 4 of fifty-row pages is not page 4 of anything after
-  // the size changes. Going back to the top of each list is the only answer
-  // that is true of all of them.
-  //
-  // `carry` is the list's FILTER, and it has to be spelt out as hidden inputs
-  // for the reason above: a GET form posts its own fields and nothing else, so
-  // without them this control quietly empties the breadcrumb's way back to the
-  // list the reader came from. Its PAGE is deliberately not carried — `per` is
-  // the thing this form changes, and page 4 of fifty-row pages is not page 4 of
-  // anything afterwards, which is the same sentence as the paragraph above
-  // about the tables below.
+  // The kit's (#446), where its reasoning went with it.
   /**
    * Draws a stand-alone rows-per-table form for a drill-down page.
    *
@@ -7691,25 +7647,9 @@ class AdminConsole {
    */
   perPageForm(path, key, value, perPage, extraNote?, carry?) {
     const { log } = this.deps;
-    const self = this;
-    log.debug("Entering AdminConsole.perPageForm(). path=" + path);
-    const carried = Object.keys(carry || {}).map(function (name) {
-      return '<input type="hidden" name="' + self.esc(name) + '" value="' +
-             self.esc(carry[name]) + '">';
-    }).join('');
-    const html = '<form method="get" action="' + this.esc(path) + '"><div ' +
-      'class="formrow"><input type="hidden" ' +
-      'name="' + this.esc(key) + '" value="' + this.esc(value) + '">' +
-      carried +
-      '<label for="per">Rows per table</label>' +
-      '<select id="per" name="per">' + this.perPageOptions(perPage) +
-      '</select><button class="secondary">Apply</button>' +
-      this.note('Every table below is paged separately and they share this ' +
-      'size. Changing it starts each of them at its first page.' +
-      (extraNote ? ' ' + extraNote : '')) +
-      '</div></form>';
+    log.debug("Entering AdminConsole.perPageForm().");
     log.debug("Leaving AdminConsole.perPageForm().");
-    return html;
+    return WebKit.perPageForm(path, key, value, perPage, extraNote, carry);
   }
 
   // The FILTER half of a carried list view — everything except the two
@@ -20871,26 +20811,7 @@ class AdminConsole {
       publisherHtml + issuedHtml + registeredHtml;
   }
 
-  // The drill-down. Its one list is the ATTRIBUTE table, which is paged under a
-  // name of its own (`attributesPage`) rather than the bare `page` — the
-  // convention pagingOf()'s header describes for a view that holds more than
-  // the list views do, and the shape to grow into when this page gains a second
-  // list.
-  // ---------------------------------------------------------------------------
-  // TABS WITH NO SCRIPT (2026-10-01).
-  //
-  // rcbj asked for an application's page to be tabs across the top, one per
-  // section, so a reader does not scroll past a dozen sections to reach one.
-  // This console is `script-src 'none'`, so a tab is a LINK to its panel's
-  // fragment and the stylesheet shows the panel that is `:target`, or holds
-  // the target (`:has(:target)`), and the first one when nothing is targeted.
-  // That is what makes every control on a tab come back to it: a form's
-  // answer lands at a fragment inside its own panel (withReturnAnchors(), or
-  // the anchor its handler names), so the panel is shown and the page opens
-  // where the button was. Every panel is in the page, so a search of the
-  // page, a printout and a browser without `:has()` (which shows them all)
-  // see everything. A panel with nothing in it gets no tab.
-  // ---------------------------------------------------------------------------
+  // The kit's (#446), where its reasoning went with it.
   /**
    * Draws panels as tabs: a bar of links, then each panel with something in
    * it, the first shown when no fragment picks one.
@@ -20901,23 +20822,9 @@ class AdminConsole {
    */
   tabbedPanels(cls, panels) {
     const { log } = this.deps;
-    const self = this;
     log.debug("Entering AdminConsole.tabbedPanels().");
-    const shown = panels.filter(function (one) {
-      return String(one.html || '').trim() !== '';
-    });
-    log.debug("Leaving AdminConsole.tabbedPanels(). " + shown.length +
-              " tab(s).");
-    return '<div class="tabs ' + this.esc(cls) + '">' +
-      '<nav class="tabbar" aria-label="Sections of this page">' +
-      shown.map(function (one, n) {
-        return '<a' + (n === 0 ? ' class="first"' : '') + ' href="#' +
-          self.esc(one.id) + '">' + self.esc(one.label) + '</a>';
-      }).join('') + '</nav>' +
-      shown.map(function (one, n) {
-        return '<section class="tabpanel' + (n === 0 ? ' first' : '') +
-          '" id="' + self.esc(one.id) + '">' + one.html + '</section>';
-      }).join('') + '</div>';
+    log.debug("Leaving AdminConsole.tabbedPanels().");
+    return WebKit.tabbedPanels(cls, panels);
   }
 
   /**

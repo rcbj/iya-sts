@@ -178,6 +178,9 @@ function childMain() {
       const code = text.split('\n').filter(function (line) {
         return !/^\s*(\/\/|\*|\/\*)/.test(line);
       }).join('\n');
+      // Without its quoted strings, for A3: a page's prose says "this
+      // process." and is not naming node's `process`.
+      const unquoted = code.replace(/'(?:[^'\\\n]|\\.)*'/g, "''");
       const requires = /require\(\s*['"]([^'"]+)['"]\s*\)/g;
       let found = requires.exec(code);
       while (found) {
@@ -187,9 +190,11 @@ function childMain() {
         found = requires.exec(code);
       }
       // As identifiers: `global.mode`, the setting, is prose in a page.
-      [/\bprocess\./, /\bBuffer\./, /\b__dirname\b/, /\b__filename\b/,
+      // Node's own, not a member of a view (`json.process`).
+      [/(^|[^.\w$])process\./, /(^|[^.\w$])Buffer\./, /\b__dirname\b/,
+       /\b__filename\b/,
        /\bglobalThis\b/].forEach(function (one) {
-        if (one.test(code)) {
+        if (one.test(unquoted)) {
           nodeNames.push(name + ' names ' + String(one));
         }
       });
@@ -280,6 +285,12 @@ function childMain() {
                           pageNumber);
       }
     });
+    // The paging sizes the kit writes out, since it may not require the
+    // module that decides them.
+    if (WebKit.DEFAULT_PER_PAGE !== adminViews.DEFAULT_PER_PAGE ||
+        WebKit.MAX_ROWS !== adminViews.MAX_ROWS) {
+      proseDiffers.push('DEFAULT_PER_PAGE or MAX_ROWS');
+    }
     note(proseDiffers.length === 0 &&
          WebKit.note(long).indexOf('<details class="note fold">') === 0 &&
          WebKit.note(short) === '<p class="note">' + short + '</p>',
