@@ -1033,6 +1033,60 @@ async function theRootIsReplacedLast(doc) {
 // path prefix is that every one of these operations already works per realm
 // without any of them having been edited.
 // ---------------------------------------------------------------------------
+// GET /keys/history/certificate, driven with a key the history says has a
+// certificate. A realm made a moment ago may have none recorded yet (its
+// unit's `withCertificate` is 0), so the default realm is asked next; where
+// neither holds one, the documented refusal is what is driven — a 404 that
+// says no certificate is recorded. A chain that comes back is held to PEM.
+async function aKeysCertificateChain() {
+  log.debug("Entering aKeysCertificateChain().");
+  let chosen = null;
+  for (const root of [false, true]) {
+    const index = await get("/keys/history", root);
+    assert.strictEqual(index.status, 200,
+      "GET /keys/history answered " + index.status + " " +
+      String(index.raw).slice(0, 200));
+    const unit = ((index.body && index.body.units) || []).filter(function (u) {
+      return u && u.unit && Number(u.withCertificate) > 0;
+    })[0];
+    if (!unit) {
+      continue;
+    }
+    const view = await get("/keys/history?unit=" +
+                           encodeURIComponent(unit.unit), root);
+    const row = ((view.body && view.body.rows) || []).filter(function (r) {
+      return r && r.kid && r.certificate;
+    })[0];
+    if (row) {
+      chosen = { unit: unit.unit, kid: String(row.kid), root: root };
+      break;
+    }
+  }
+  if (!chosen) {
+    const refused = await get("/keys/history/certificate?unit=" +
+                              "jose%3ARS256&kid=none");
+    assert.strictEqual(refused.status, 404,
+      "GET /keys/history/certificate for a key with no certificate should " +
+      "answer 404; it answered " + refused.status + " " +
+      String(refused.raw).slice(0, 200));
+    log.info("[reads] no realm here has a certified signing key yet, so " +
+             "GET /keys/history/certificate was driven by its 404.");
+    log.debug("Leaving aKeysCertificateChain(). Refusal driven.");
+    return;
+  }
+  const reply = await get("/keys/history/certificate?unit=" +
+                          encodeURIComponent(chosen.unit) + "&kid=" +
+                          encodeURIComponent(chosen.kid), chosen.root);
+  assert.strictEqual(reply.status, 200,
+    "GET /keys/history/certificate for " + chosen.unit + " " + chosen.kid +
+    " should answer 200; it answered " + reply.status + " " +
+    String(reply.raw).slice(0, 200));
+  assert.ok(/^-----BEGIN CERTIFICATE-----/.test(String(reply.raw)),
+    "GET /keys/history/certificate should answer a PEM chain; it answered " +
+    String(reply.raw).slice(0, 120));
+  log.debug("Leaving aKeysCertificateChain().");
+}
+
 async function everyReadAnswersAboutThisRealm(doc) {
   log.debug("Entering everyReadAnswersAboutThisRealm().");
   log.info("=== Every read operation, under the realm prefix ===");
@@ -1056,6 +1110,16 @@ async function everyReadAnswersAboutThisRealm(doc) {
     // operation here answers JSON, which is what this walk was always really
     // asserting, so it now has no exception at all. `admin_api.js` next door
     // still owns the CSP half, at the page's new address.
+    // ONE READ NAMES ITS SUBJECT AND ANSWERS PEM, NOT JSON (#446):
+    // GET /keys/history/certificate takes the `unit` and `kid` GET
+    // /keys/history lists and answers application/pem-certificate-chain, so
+    // with no query it is a 404 ("no certificate recorded"). It is driven
+    // here the way a client drives it — a key out of the history that HAS a
+    // certificate — and held to the chain rather than to a JSON object.
+    if (path === "/keys/history/certificate") {
+      await aKeysCertificateChain();
+      continue;
+    }
     const reply = await get(path);
     assert.strictEqual(reply.status, 200,
       "GET " + api + path + " should answer 200; it answered " + reply.status +

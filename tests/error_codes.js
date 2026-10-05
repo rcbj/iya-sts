@@ -111,6 +111,13 @@ const VENDORED_FILES = ['kerberos/krb5_asn1.js', 'kerberos/krb5_crypto.js',
                         'kerberos/krb5_primitives.js',
                         'kerberos/krb5_spnego.js'];
 
+// The two console bundles (#446) are esbuild's output of the `web_` modules
+// this scan already reads; `console.js` is MINIFIED since 2026-10-05, so one
+// of its lines holds a code literal beside a call that writes the page, and
+// the response-line check read that as a code reaching a client.
+// tests/jose_certificate_header.js skips the same two for the same reason.
+const GENERATED_FILES = ['admin-ui/console.bundle.js', 'admin-ui/console.js'];
+
 function sourceFiles() {
   log.debug("Entering sourceFiles().");
   const out = [];
@@ -132,6 +139,7 @@ function sourceFiles() {
       const rust = rel.indexOf('rust/') === 0 && /\.rs$/.test(entry.name);
       if (!rust && !isSourceFile(entry.name, names)) return;
       if (VENDORED_FILES.indexOf(rel) >= 0) return;
+      if (GENERATED_FILES.indexOf(rel) >= 0) return;
       out.push(rel);
     });
     log.debug("Leaving walk().");
