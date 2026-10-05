@@ -14474,6 +14474,7 @@ class AdminConsole {
       ? require('../common/mail').available() : available);
   }
 
+  // Drawn by `web_users.ts` (#446).
   /**
    * Draws one way in a new person can be given as a radio-button row.
    *
@@ -14484,80 +14485,34 @@ class AdminConsole {
   credentialChoiceRow(choice, chosen) {
     const { log } = this.deps;
     log.debug("Entering AdminConsole.credentialChoiceRow().");
-    const id = 'cred-' + choice.id;
     log.debug("Leaving AdminConsole.credentialChoiceRow().");
-    return '<tr><td><input type="radio" id="' + this.esc(id) +
-           '" name="credential" ' +
-                                                          'value="' +
-      this.esc(choice.id) + '"' + (chosen === choice.id ? ' checked' : '') +
-      '></td><td><label for="' + this.esc(id) + '"><strong>' +
-      this.esc(choice.label) +
-                                                          '</strong></label>' +
-                                                          '</td><td ' +
-      'class="why">' + this.note(choice.what) + '</td></tr>';
+    return UsersPage.credentialChoiceRow(choice, chosen);
   }
 
+  // Drawn by `web_users.ts` (#446).
   /**
    * The fields `/admin/users/new` draws, as field grid rows: every attribute
    * a person's Attributes tab edits, and the credential catalogue's others
    * (the address), each with its group, example and tooltip.
    *
+   * @param json - the form's answer, whose `fieldRows` are every field
    * @param view - `simple` or `advanced`
    * @returns the rows, in group order
    */
-  newUserFieldRows(view) {
-    const { log, vcClaims } = this.deps;
-    log.debug("Entering AdminConsole.newUserFieldRows(). view=" + view);
-    const catalogue = vcClaims.personFields();
-    const claimOf = {};
-    catalogue.forEach(function (row) {
-      claimOf[row.ldap.toLowerCase()] = row.claim.join('.');
-    });
-    const rows = personEditor.editableAttributes().map(function (row) {
-      return { name: row.name, label: row.label, schema: row.schema,
-               multi: row.multi, must: row.must, note: row.note,
-               group: row.group, example: row.example, simple: row.simple };
-    });
-    catalogue.forEach(function (row) {
-      const known = rows.some(function (one) {
-        return one.name.toLowerCase() === row.ldap.toLowerCase();
-      });
-      if (!known) {
-        rows.push({ name: row.ldap, label: row.label, schema: row.schema,
-                    multi: false, must: false, note: '',
-                    group: personEditor.groupOf(row.ldap) === 'other' &&
-                      row.ldap.toLowerCase() === 'mail'
-                      ? 'contact' : personEditor.groupOf(row.ldap),
-                    example: personEditor.FIELD_EXAMPLES[
-                      row.ldap.toLowerCase()] || '',
-                    simple: row.ldap.toLowerCase() === 'mail' });
-      }
-    });
-    const shown = rows.filter(function (row) {
-      return view === 'advanced' || row.simple;
-    }).map(function (row) {
-      const claim = claimOf[row.name.toLowerCase()];
-      return {
-        attribute: row.name,
-        type: row.multi ? 'array' : 'string',
-        what: row.label + ' — ' + row.schema + '.' +
-              (row.note ? ' It takes ' + row.note + '.' : '') +
-              (row.multi ? '' : ' It holds one value.') +
-              (claim ? ' It reaches a credential as ' + claim + '.' : ''),
-        example: row.example,
-        forText: row.label,
-        families: [], everyFamily: true, group: row.group
-      };
-    });
-    log.debug("Leaving AdminConsole.newUserFieldRows(). " + shown.length +
-              " field(s).");
-    return shown;
+  newUserFieldRows(json, view) {
+    const { log } = this.deps;
+    log.debug("Entering AdminConsole.newUserFieldRows().");
+    log.debug("Leaving AdminConsole.newUserFieldRows().");
+    return UsersPage.newUserFieldRows(json, view);
   }
 
+
+  // Drawn by `web_users.ts` (#446).
   /**
    * Draws `/admin/users/new`'s field grid: the view's fields under the
    * person field groups' headings.
    *
+   * @param json - the form's answer (`fieldRows`, `fieldGroups`)
    * @param view - `simple` or `advanced`
    * @param values - the boxes' values by attribute
    * @param draft - the posted form of a redraw, or null on a first draw. A
@@ -14566,48 +14521,11 @@ class AdminConsole {
    *   value; a list the form did draw keeps its boxes as posted
    * @returns the grid as HTML
    */
-  newUserFieldGrid(view, values, draft) {
+  newUserFieldGrid(json, view, values, draft) {
     const { log } = this.deps;
-    const self = this;
     log.debug("Entering AdminConsole.newUserFieldGrid().");
-    const rows = this.newUserFieldRows(view);
-    // ONE BOX FOR A LIST ON THE FIRST DRAW: cn, sn and the telephone numbers
-    // are multi-valued in their RFCs, and a form showing only "+" for the
-    // names a person is created with reads as a form with no name boxes.
-    const drawn = {};
-    Object.keys(draft || {}).forEach(function (key) {
-      if (key.indexOf('field.') === 0) {
-        drawn[key.slice('field.'.length).replace(/\.\d+$/, '')] = true;
-      }
-    });
-    if (draft && draft.grow) {
-      drawn[String(draft.grow)] = true;
-    }
-    if (draft && draft.drop) {
-      drawn[String(draft.drop).replace(/\.\d+$/, '')] = true;
-    }
-    rows.forEach(function (row) {
-      if (row.type === 'array' && !drawn[row.attribute] &&
-          !(values[row.attribute] || []).length) {
-        values[row.attribute] = [''];
-      }
-    });
-    const html = personEditor.FIELD_GROUPS.map(function (group) {
-      const mine = rows.filter(function (row) {
-        return row.group === group.id;
-      });
-      if (!mine.length) {
-        return '';
-      }
-      return '<div class="fg-group"><h3' + self.tip(group.what) + '>' +
-        self.esc(group.label) + '</h3><div class="fg">' +
-        mine.map(function (row) {
-          return self.fieldGridCell(row, values,
-                                    { redraw: '/admin/users/new' });
-        }).join('') + '</div></div>';
-    }).join('');
     log.debug("Leaving AdminConsole.newUserFieldGrid().");
-    return html;
+    return UsersPage.newUserFieldGrid(json, view, values, draft);
   }
 
   // THE PAGE. `prefill` is what to put back in the boxes — absent on a first
@@ -14625,285 +14543,21 @@ class AdminConsole {
    * @returns an object of inner (the page body as HTML) and json
    */
   newUserPage(req, prefill?) {
-    const { log, adminViews, realms, newUserContainer, vcClaims, mode,
-            CREDENTIAL_CHOICES, persistence } = this.deps;
-    const self = this;
+    const { log, adminViews } = this.deps;
     log.debug("Entering AdminConsole.newUserPage().");
-    // ONE COMPUTATION, TWO RENDERINGS (2026-09-12) — see
-    // admin-core/admin_views.ts. The attribute catalogue below is the one this
-    // form draws its boxes from AND the one /admin-api publishes.
-    //
-    // `prefill` goes WITH the request, because it is what was posted and
-    // refused: the answer describes the form as it will be drawn, boxes filled,
-    // and a json half that ignored it would describe a form nobody is looking
-    // at.
-    const json = adminViews.newUserJson(req, prefill);
-    const given = prefill || {};
-    const values = given.fields || {};
-    const username = String(given.username === undefined
-      ? (req.query.user || '') : given.username).trim();
-    const credential = String(given.credential ||
-                              adminViews.DEFAULT_CREDENTIAL);
-    const realm = realms.current();
-    const container = directoryReader ? newUserContainer() : null;
-    const fields = vcClaims.personFields();
-    const development = mode.isDevelopment();
-    const view = String(given.view || '') === 'advanced' ? 'advanced'
-      : 'simple';
-    // THE BOXES' VALUES: a redraw ("+", the bin, the view switch) keeps every
-    // box as it was, an empty one included; otherwise what was posted, or
-    // what Fill invented.
-    const gridValues = given.draft ? this.gridValuesFromDraft(given.draft)
-      : {};
-    if (!given.draft) {
-      Object.keys(values).forEach(function (name) {
-        gridValues[name] = [].concat(values[name] === undefined ||
-                                     values[name] === null
-          ? [] : values[name]).map(String);
-      });
-    }
-
-    // NO DIRECTORY IN THIS PROCESS. The form is left OUT rather than drawn and
-    // refused, which is `newApplicationPage()`'s shape and is right for the
-    // same reason: `createUser()` would answer with exactly this sentence, and
-    // a form whose only possible outcome is that message is a control that lies
-    // about what it does.
-    if (!directoryWriter || !container) {
-      log.debug("Leaving AdminConsole.newUserPage(). There is no directory.");
-      return {
-        inner: this.messagesOf(req) +
-          this.warn('<strong>There is no embedded LDAP directory loaded in ' +
-          'this process</strong>, so there is no <code>ou=users</code> ' +
-          'container to put a person in and this form is not drawn. That is ' +
-          'a build of this service without <code>ldap/ldap_server.js</code> ' +
-          'rather than a fault — every other page is unaffected, and <a ' +
-          'href="/admin/users">Users</a> still reports what this service has ' +
-          'SEEN, which does not come from the directory.'),
-        json: json
-      };
-    }
-
+    // WHAT WAS POSTED AND REFUSED rides on the view the page is drawn from
+    // (#446), not on the answer: GET /admin-api/users/new has no posted form,
+    // and the browser holds a refused create's values itself.
+    const answer = adminViews.newUserJson(req, prefill);
+    const json = Object.assign({ prefill: prefill || null }, answer);
+    // Drawn by `web_users.ts` (#446).
     const inner = this.messagesOf(req) +
-      '<div class="tiles">' +
-        this.tile(this.newUserFieldRows('advanced').length,
-                  'fields you may fill') +
-        this.tile(1, 'that is required') +
-        this.tile(CREDENTIAL_CHOICES.length, 'ways in to choose from') +
-        this.tile(development ? 'yes' : 'no', 'example data offered') +
-      '</div>' +
-
-      this.note('<strong>The entry lands in this realm\'s directory, at ' +
-                '<code>uid=&lt;name&gt;,' +
-      this.esc(container) + '</code>.</strong> The console shows one trust ' +
-      'realm at a time and this form writes the one it is showing — ' +
-      '<strong>' + this.esc(realm ? realm.name : 'Default') +
-      '</strong> — because the realm is taken from the path this request ' +
-      'arrived on. People are NOT shared between realms: an ' +
-      '<code>ldapsearch</code> with that base DN sees exactly what this ' +
-      'creates, and another realm has never heard of them.') +
-
-      this.note('<strong>This is not a second store.</strong> The form posts ' +
-      '<code>action=create</code> to this page, which calls the same ' +
-      'function <code>POST /admin-api/users/create</code>, a SCIM create and ' +
-      'an <code>ldapadd</code> under <code>ou=users</code> all reach — so ' +
-      'what a username may be, and the refusal of one that is already here, ' +
-      'mean the same thing at every door. <strong>One entry per ' +
-      'person</strong> is the rule it keeps, whichever protocol brought them ' +
-      'and whatever attribute their entry happens to be named by.') +
-
-      this.warn('<strong>An empty box records NO VALUE. It does not fall ' +
-      'back to an invented one.</strong> That is the difference between this ' +
-      'page and the single Create box that used to be on <a ' +
-      'href="/admin/users">Users</a>: that button invented a whole person — ' +
-      'a name, an email address, a date of birth, a street, a nationality — ' +
-      'behind whatever username was typed. Here nothing is made up unless ' +
-      'you press the button that makes it up. What that costs is that an ' +
-      'issued credential asserting <code>birthdate</code> for somebody with ' +
-      'no <code>schacDateOfBirth</code> falls back to the invented value at ' +
-      'ISSUANCE time (<code>vc_claims.js</code> does that so a credential is ' +
-      'never empty), so the credential and the directory will disagree until ' +
-      'somebody fills the attribute in. <a href="/admin/vc">Credential ' +
-      'claims</a> is where that fallback is described.') +
-
-      '<form method="post" action="/admin/users/new" class="newapp"><input ' +
-      'type="hidden" name="action" value="create"><h2>Who they are</h2><div ' +
-      'class="formrow"><label for="new-username">Username</label><input ' +
-      'type="text" id="new-username" name="username" size="28" ' +
-      'maxlength="256" required ' +
-      'value="' + this.esc(username) + '" placeholder="the name they ' +
-      'sign in as"></div>' +
-      this.note('<strong>The only required field.</strong> It is the string ' +
-      'they will type at a sign-in screen, the <code>sub</code> of every ' +
-      'token issued for them, the <code>uid</code> on the entry and the name ' +
-      'of the entry itself. It may not be a DN, a <code>did:</code>, a ' +
-      'SPIFFE identity or carry a character RFC 4514 reserves in a DN ' +
-      '(<code>, = + &lt; &gt; # ; " \\</code>) — those name entries that ' +
-      'reach this directory by being PRESENTED rather than created, and the ' +
-      'refusal names which one you sent. Case is never collapsed: nothing in ' +
-      'this service treats <code>Alice</code> and <code>alice</code> as one ' +
-      'person.') +
-
-      '<h2>How they get in</h2>' +
-      '<table><tr><th>Choose</th><th>Option</th><th>What it means</th></tr>' +
-      CREDENTIAL_CHOICES.map(function (choice) {
-        return self.credentialChoiceRow(choice, credential);
-      }).join('') +
-      '</table><div class="formrow"><label ' +
-      'for="new-password">Password</label><input type="password" ' +
-      'id="new-password" name="password" size="28" maxlength="1024" ' +
-      'autocomplete="new-password"><label ' +
-      'for="new-password-confirm">Again</label><input type="password" ' +
-      'id="new-password-confirm" name="passwordConfirm" size="28" ' +
-      'maxlength="1024" autocomplete="new-password"></div>' +
-      this.note('Read ONLY when <em>A password I type</em> is chosen above; ' +
-      'ignored otherwise, so a value left in these boxes cannot become a ' +
-      'credential nobody meant to set. The two must match. <strong>It must ' +
-      'meet this realm\'s <a href="/admin/policies">password ' +
-      'policy</a>' + (json.passwordPolicy && json.passwordPolicy.enforced
-        ? '</strong>, which is enforced here: ' +
-          this.esc(json.passwordPolicy.rules.join('; ')) + '.'
-        : ' in product mode</strong>, and this realm is in development mode, ' +
-          'where no password is checked at any door — so the rule is not ' +
-          'applied to what you type here. A <em>generated</em> password ' +
-          'meets it in both modes.') +
-      ' If the password is refused the person is still created, with no ' +
-      'credential, and the page says why.') +
-      this.mailLinkBox('the activation link') +
-
-      // THE FIELD GRID (rcbj, 2026-10-01): the same typed fields, under the
-      // same group headings, as a person's Attributes tab, drawn from
-      // `ldap/person_editor.ts` and the credential catalogue — so this form
-      // and the tab cannot offer different attributes, and a create holds
-      // every value to the rules an edit does. The simplified view is the
-      // names and contact details somebody creating a person usually has; the
-      // advanced view is every field. The switch, "+" and the bin are submit
-      // buttons that redraw this form with everything typed kept.
-      '<h2>' + (view === 'advanced' ? 'Everything known about them'
-                                    : 'What is known about them') + '</h2>' +
-      this.note('Every attribute here is one a person in this directory can ' +
-      'carry, and an attribute in the <a href="/admin/vc">Credential ' +
-      'claims</a> catalogue is the value an issued credential asserts — its ' +
-      'tooltip says which claim. <strong>Fill in as few or as many as you ' +
-      'like.</strong> A list takes one box per value, with + to add one and ' +
-      'the bin to delete one; an empty box records nothing.') +
-      (development
-        ? this.note('<strong><code>uid</code> is not on this list and that ' +
-          'is not an omission.</strong> It is the username, asked for once ' +
-          'at the top; a second box for it would let one form create ' +
-          '<code>uid=alice</code> whose uid says <code>bob</code>.')
-        : '') +
-      '<input type="hidden" name="view" value="' + this.esc(view) + '">' +
-      '<div class="formrow fg-view"><span class="sub">' +
-      (view === 'advanced'
-        ? 'Advanced view: every attribute a person here can carry.'
-        : 'Simplified view: the names and contact details most people ' +
-          'need.') +
-      '</span><button type="submit" class="secondary" name="switchview" ' +
-      'value="' + (view === 'advanced' ? 'simple' : 'advanced') +
-      '" formaction="/admin/users/new" formnovalidate' +
-      this.tip('Draw the other view of this form. Nobody is created, and ' +
-               'everything typed so far is kept.') + '>' +
-      (view === 'advanced' ? 'Show the simplified view'
-        : 'Show every field (advanced view)') + '</button></div>' +
-      this.newUserFieldGrid(view, gridValues, given.draft || null) +
-
-      // TWO SUBMITS, AND ONLY ONE OF THEM CARRIES A NAME. `action=create` is a
-      // HIDDEN FIELD, the way every other form on this console spells its
-      // action, and Create is an ordinary unnamed button; Fill carries
-      // `fill=yes` of its own and the handler reads that FIRST, so a press of
-      // it cannot be mistaken for a create even though `action` still says
-      // create.
-      //
-      // **THE ALTERNATIVE — TWO BUTTONS BOTH NAMED `action` — LOOKS TIDIER AND
-      // BREAKS TWO THINGS.** A form with two controls of one name has a
-      // `RadioNodeList` at `form.elements.action` rather than an element, and
-      // `.value` on one of those is empty unless they are radios: so anything
-      // that finds a form by the action it posts — which is how this console's
-      // own browser suite finds every form it presses — stops finding this one.
-      // And a browser that submitted BOTH values (a hidden field plus a named
-      // button) would post `action` twice, which is precisely the ambiguity
-      // `common/validation.js` refuses everywhere else rather than resolving.
-      '<div class="formrow">' +
-        '<button type="submit">Create the user</button>' +
-        (development
-          ? ' <button type="submit" name="fill" value="yes" ' +
-            'class="secondary">Fill with example data</button>'
-          : '') +
-      '</div>' +
-
-      (development
-        ? this.note('<strong>Fill with example data</strong> puts the ' +
-          'invented person for the username you typed into the boxes you ' +
-          'have left EMPTY, and touches nothing you have already filled in. ' +
-          'It creates nobody — you land back on this form with the values in ' +
-          'it, to edit or clear before pressing Create. <strong>It is the ' +
-          'same invented person</strong> this service would have made up on ' +
-          'its own, seeded from the username, so it shows you what you would ' +
-          'have got rather than a second fiction. Type the username first: ' +
-          'change it afterwards and the example person is somebody else. ' +
-          '<code>description</code> stays empty because this service writes ' +
-          'that one itself.')
-        : this.warn('<strong>There is no <em>Fill with example data</em> ' +
-          'button because this service is in PRODUCT mode</strong> ' +
-          '(<code>global.mode=product</code>). Inventing a person\'s date of ' +
-          'birth, address and nationality is a development convenience; on a ' +
-          'service running as a product it would put fictions into a ' +
-          'directory somebody else reads as fact, and there would be nothing ' +
-          'on the entry afterwards to say which values were made up. Type ' +
-          'what you know and leave the rest empty. <code>global.mode</code> ' +
-          'is on <a href="/admin/config">Configuration</a>, with the rest of ' +
-          'the settings that belong to no one protocol.')) +
-
-      // THE INVENTION SWITCH, AND IT IS A HIDDEN FIELD RATHER THAN A CHOICE.
-      // This page's whole promise is that nothing is made up unless the button
-      // that makes it up was pressed, so `invent=no` is what it always sends;
-      // the invented person is reachable from here through Fill, where it is
-      // visible and editable, and through the API for a caller that wants the
-      // old behaviour.
-      '<input type="hidden" name="invent" value="no">' +
-      '</form>' +
-
-      this.note('<strong>Nothing about this create is persisted unless this ' +
-      'service is persisting the directory.</strong> A person here IS a ' +
-      'directory entry, so they survive a restart exactly when it does — see ' +
-      '<a href="/admin/persistence">Persistence</a>, which is off by ' +
-      'default. That is a property of the whole service rather than of this ' +
-      'page.' +
-      (persistence.status().persistsDirectory
-        ? ' This process is running with <code>persistence.mode=' +
-          this.esc(persistence.status().mode) +
-          '</code>, so this entry WILL survive.'
-        : ' This process is not persisting anything, so it will not.')) +
-
-      this.warn('<strong>A person created here is not on the Users table ' +
-      'until they authenticate.</strong> That table is who this service has ' +
-      'SEEN; this writes what the directory HOLDS, and the two are different ' +
-      'questions on purpose. They are counted under &ldquo;seen only as a ' +
-      'subject&rdquo; the moment they exist, and <a ' +
-      'href="/admin/ldap/directory">the directory</a> shows the entry ' +
-      'immediately.') +
-
-      this.note('<strong>Leaving a field empty is not a promise it stays ' +
-      'empty.</strong> The Populate button on <a href="/admin/vc">Credential ' +
-      'claims</a> — and the sweep that runs when a trust realm is created — ' +
-      'fills every MISSING selected attribute on every person under ' +
-      '<code>ou=users</code>, and it does not know which of them were typed ' +
-      'by hand. That is the right behaviour for the sweep, whose whole job ' +
-      'is that the directory and an issued credential agree; it means ' +
-      '&ldquo;no value recorded&rdquo; is a statement about this create ' +
-      'rather than a permanent property of the entry.') +
-
-      this.note('<a href="/admin/users">Users</a> &middot; <a ' +
-      'href="/admin/ldap/directory">Every entry in the directory</a> ' +
-      '&middot; <a href="/admin/vc">Credential claims</a> &middot; <a ' +
-      'href="/admin-api/docs#operation/createUser">The same act over ' +
-      '/admin-api</a>.');
-
-    log.debug("Leaving AdminConsole.newUserPage(). " + fields.length +
-              " field(s) offered.");
+      UsersPage.newUserBody(this.renderContext(req),
+        JSON.parse(JSON.stringify(json)));
+    log.debug("Leaving AdminConsole.newUserPage().");
     return {
       inner: inner,
-      json: json
+      json: answer
     };
   }
 

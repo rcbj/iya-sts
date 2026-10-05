@@ -544,6 +544,11 @@ const PAGES: WebPage[] = [
     render: function (view: Json, ctx?: Json): string {
       return UsersPage.body(ctx || WebKit.context(), view);
     } },
+  { path: '/admin/users/new', title: 'New user',
+    operation: '/admin-api/users/new',
+    render: function (view: Json, ctx?: Json): string {
+      return UsersPage.newUserBody(ctx || WebKit.context(), view);
+    } },
   { path: '/admin/vc', title: 'Credential claims',
     operation: '/admin-api/credential-claims',
     render: function (view: Json, ctx?: Json): string {

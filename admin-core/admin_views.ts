@@ -5889,6 +5889,64 @@ class AdminViews {
     };
   }
 
+  // EVERY FIELD THE NEW-USER FORM CAN DRAW (#446), as the console's
+  // `newUserFieldRows()` built them while drawing: the person editor's
+  // attributes, then any credential-catalogue attribute it does not hold,
+  // each with the sentence its tooltip says and whether the simplified view
+  // offers it. The page filters by view; this is all of them.
+  /**
+   * Lists the fields the new-user form's grid can draw.
+   *
+   * @returns the rows, each with `simple`
+   */
+  newUserFieldRows() {
+    const { log, vcClaims } = this.deps;
+    log.debug("Entering AdminViews.newUserFieldRows().");
+    const catalogue = vcClaims.personFields();
+    const claimOf: Record<string, string> = {};
+    catalogue.forEach(function (row) {
+      claimOf[row.ldap.toLowerCase()] = row.claim.join('.');
+    });
+    const rows = personEditor.editableAttributes().map(function (row) {
+      return { name: row.name, label: row.label, schema: row.schema,
+               multi: row.multi, must: row.must, note: row.note,
+               group: row.group, example: row.example, simple: row.simple };
+    });
+    catalogue.forEach(function (row) {
+      const known = rows.some(function (one) {
+        return one.name.toLowerCase() === row.ldap.toLowerCase();
+      });
+      if (!known) {
+        rows.push({ name: row.ldap, label: row.label, schema: row.schema,
+                    multi: false, must: false, note: '',
+                    group: personEditor.groupOf(row.ldap) === 'other' &&
+                      row.ldap.toLowerCase() === 'mail'
+                      ? 'contact' : personEditor.groupOf(row.ldap),
+                    example: personEditor.FIELD_EXAMPLES[
+                      row.ldap.toLowerCase()] || '',
+                    simple: row.ldap.toLowerCase() === 'mail' });
+      }
+    });
+    const out = rows.map(function (row) {
+      const claim = claimOf[row.name.toLowerCase()];
+      return {
+        attribute: row.name,
+        type: row.multi ? 'array' : 'string',
+        what: row.label + ' — ' + row.schema + '.' +
+              (row.note ? ' It takes ' + row.note + '.' : '') +
+              (row.multi ? '' : ' It holds one value.') +
+              (claim ? ' It reaches a credential as ' + claim + '.' : ''),
+        example: row.example,
+        forText: row.label,
+        families: [], everyFamily: true, group: row.group,
+        simple: !!row.simple
+      };
+    });
+    log.debug("Leaving AdminViews.newUserFieldRows(). " + out.length +
+              " field(s).");
+    return out;
+  }
+
   // ---------------------------------------------------------------------------
   // THE NEW-PERSON FORM'S ANSWER (2026-09-12). Split from newUserPage() the way
   // newApplicationJson() was split from its own page, and for the same reason:
@@ -5905,7 +5963,8 @@ class AdminViews {
    * @returns the JSON
    */
   newUserJson(req, prefill?) {
-    const { log, credentials, mode, realms, vcClaims } = this.deps;
+    const { log, credentials, mode, realms, vcClaims, applications } =
+      this.deps;
     log.debug("Entering AdminViews.newUserJson().");
     const given = prefill || {};
     const values = given.fields || {};
@@ -5965,8 +6024,19 @@ class AdminViews {
                  simple: row.simple, takes: row.note || 'text' };
       }),
       credentials: CREDENTIAL_CHOICES.map(function (one) {
-        return { id: one.id, label: one.label };
+        return { id: one.id, label: one.label, what: one.what };
       }),
+      // WHAT THE FORM DRAWS BESIDE (#446): the username it was asked with,
+      // every field its grid can draw (each saying whether the simplified
+      // view offers it), the attributes one box holds whole, whether a link
+      // can be mailed, and whether a create survives a restart.
+      username: username,
+      fieldRows: this.newUserFieldRows(),
+      longTextAttributes: applications.LONG_TEXT_ATTRIBUTES || [],
+      mailAvailable: require('../common/mail').available(),
+      persistence: { persistsDirectory:
+                       !!persistence.status().persistsDirectory,
+                     mode: persistence.status().mode },
       // WHAT A CREATE THAT NAMES NO CREDENTIAL GETS (2026-09-12), and the rules
       // a typed or generated password meets — published so that a caller learns
       // both from the document rather than from a refusal.
