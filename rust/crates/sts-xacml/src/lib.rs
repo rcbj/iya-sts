@@ -32,6 +32,7 @@ pub mod builder;
 pub mod combining;
 pub mod datatypes;
 pub mod functions;
+pub mod json;
 pub mod model;
 pub mod pdp;
 pub mod policy;
