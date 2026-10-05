@@ -226,6 +226,9 @@ def convert(text):
                       '.context || {})', text)
     # The kit's constants (the page-size cap, the line and tooltip lengths),
     # which the console reads as module constants of the same names.
+    # A kit helper the console reached through its deps by a bare name.
+    for kname in sorted(k for k in KIT if not k.isupper()):
+        text = re.sub(r'(?<![\w.$])%s\(' % kname, 'kit.%s(' % kname, text)
     # The console's own name for the kit.
     text = re.sub(r'\bWebKit\.', 'kit.', text)
     for const in sorted(c for c in KIT if c.isupper()):

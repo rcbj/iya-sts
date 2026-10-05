@@ -293,9 +293,10 @@ let truststore = null;
 // (chooserPane()) and for the replies that page the same list, so a page and
 // its resource cannot come to show different twenties.
 /**
- * The most matches a chooser lists.
+ * The most matches a chooser lists: the kit's, which the chooser it draws
+ * reads (#446).
  */
-const CHOOSER_HITS = 20;
+const CHOOSER_HITS = WebKit.CHOOSER_HITS;
 
 // Rows per page when nobody said. Small enough that the table is the first
 // thing on screen rather than the last, and the paging controls above and below
@@ -4379,17 +4380,11 @@ class AdminViews {
   chooserMatches(names, wanted) {
     const { log } = this.deps;
     log.debug("Entering AdminViews.chooserMatches().");
-    if (!wanted) {
-      log.debug("Leaving AdminViews.chooserMatches().");
-      return true;
-    }
-    const needle = wanted.toLowerCase();
     log.debug("Leaving AdminViews.chooserMatches().");
-    return (names || []).some(function (name) {
-      return String(name == null ? '' : name).toLowerCase().indexOf(needle) >=
-             0;
-    });
+    // The kit's since #446: a chooser drawn in a browser matches the same way.
+    return WebKit.chooserMatches(names, wanted);
   }
+
 
   // ---------------------------------------------------------------------------
   // WHAT A CLAIMS REQUEST WOULD RETURN, for the person being previewed.

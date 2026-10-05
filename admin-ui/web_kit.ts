@@ -730,6 +730,12 @@ class WebKit {
 
   static readonly MAX_ROWS = 300;
 
+  // How many results a chooser pane shows at a time: one number for the
+  // console and for the replies that page the same list, so a page and its
+  // resource cannot come to show different twenties. `admin_views.ts` reads
+  // it from here (#446).
+  static readonly CHOOSER_HITS = 20;
+
   // The per-page select, written once because five surfaces offer it and a
   // sixth written by hand is the one that forgets to add a hand-typed size to
   // the list.
@@ -1029,6 +1035,198 @@ class WebKit {
     const days = n / 86400;
     return (Number.isInteger(days) ? days :
             days.toFixed(1)) + ' day' + (days === 1 ? '' : 's');
+  }
+
+  // Does one catalogue entry match what was typed? Case-insensitive, over
+  // every spelling the entry has. `admin_views.ts`'s, which calls this
+  // (#446); its reasoning is there.
+  /**
+   * Answers whether any of an entry's names contains what was typed.
+   *
+   * @param names - every spelling of the entry
+   * @param wanted - what was typed; '' matches everything
+   * @returns true when it matches
+   */
+  static chooserMatches(names, wanted) {
+    if (!wanted) {
+      return true;
+    }
+    const needle = wanted.toLowerCase();
+    return (names || []).some(function (name) {
+      return String(name == null ? '' : name).toLowerCase().indexOf(needle) >=
+             0;
+    });
+  }
+
+  // The search box, the scrolling pane of results and the line under it, for
+  // either kind of party. Written once because it is drawn six times — the two
+  // choosers on /admin/delegation, both again on /admin/delegation/map, and one
+  // each on the two drill-downs — and six hand-written copies of a control with
+  // an offset in it is five chances to page one list with another's parameter.
+  //
+  // `spec`:
+  //   here        { path, query } — THE PAGE THIS IS DRAWN ON, not the page a
+  //               result opens. The form submits back to here, so a search
+  //               neither leaves the page nor loses the table's filter, its
+  //               paging or the other chooser's search: everything in the
+  //               current query rides along as hidden inputs.
+  //   param       the search box's name — `appq` / `userq`
+  //   fromParam   the offset's name — `appfrom` / `userfrom`
+  //   label       the box's label; `placeholder` what to type in it
+  //   entries     the catalogue, each { key, names, label, detail, href }
+  //   selectedKey the entry this page is already showing, marked in the pane
+  //   nothing     what to say when the search matched none of them
+  /**
+   * Draws a search box and a paged, scrolling pane of matching entries,
+   * shared by every chooser on the console.
+   *
+   * The form submits back to the page it is drawn on, carrying the rest of
+   * the query, with a fragment that returns the reader to the pane; a
+   * stale offset is clamped to the first page.
+   *
+   * @param spec - here, param, fromParam, label, placeholder, entries,
+   *   selectedKey and nothing, as the comment above describes
+   * @returns the form, the pane and its paging note as HTML
+   */
+  static chooserPane(spec) {
+    const esc = WebKit.esc;
+    const query = (spec.here && spec.here.query) || {};
+    const path = (spec.here && spec.here.path) || '';
+    const wanted = WebKit.queryOne(query, spec.param).trim();
+
+    // WHERE THE READER IS STANDING, SPELT AS A FRAGMENT SO THAT SEARCHING DOES
+    // NOT MOVE THEM.
+    //
+    // Every control in this pane is a GET that reloads the page, and a reload
+    // lands at the top of the document — so a reader who had scrolled past four
+    // hundred rows of the table to reach this chooser was thrown back to the
+    // heading by the very click that answered them, with the results they asked
+    // for now somewhere below the fold. It got worse the longer the page was,
+    // which is the same complaint the sidebar had.
+    //
+    // A fragment on the form's own action is the fix, and there is no other one
+    // available here: this console runs no script (see app.js's `script-src
+    // 'none'`), so nothing can restore a scroll offset after the navigation.
+    // What the fragment CAN do is put this pane back under the reader's eyes,
+    // which is what they were looking at when they pressed the button.
+    //
+    // It works because of a detail of the HTML form algorithm that is easy to
+    // doubt and was checked in a browser rather than assumed: submitting a GET
+    // form replaces the action URL's QUERY and leaves its FRAGMENT alone, so
+    // `action="/admin/delegation#find-appq"` arrives as
+    // `/admin/delegation?appq=x#find-appq`. That is the "mutate action URL"
+    // step of the HTML standard, which sets `url`'s query and touches nothing
+    // else — so a hidden input cannot do this job and there is nowhere else to
+    // put the fragment.
+    //
+    // The name is the search box's own parameter, which is what makes it unique
+    // on a page that draws this control twice — `appq` and `userq` never appear
+    // in one pane, and the two panes must not send each other's readers to the
+    // wrong half of the page.
+    const anchor = 'find-' + spec.param;
+    const matched = spec.entries.filter(function (entry) {
+      return WebKit.chooserMatches(entry.names, wanted);
+    });
+
+    // A STALE OFFSET IS CLAMPED RATHER THAN OBEYED. `?appfrom=40` is a link the
+    // reader followed when 57 matched; narrowing the search to 6 would
+    // otherwise answer with an empty pane under a line saying 6 matched, which
+    // reads as the search being broken by the term that worked.
+    let from = parseInt(WebKit.queryOne(query, spec.fromParam), 10);
+    if (!isFinite(from) || from < 0 || from >= matched.length) {
+      from = 0;
+    }
+    const shown = matched.slice(from, from + WebKit.CHOOSER_HITS);
+
+    // What every control here carries with it. Two names come OUT of it and
+    // each for its own reason: the search term, because the text input re-emits
+    // it and a hidden input beside it would submit the old one; and the offset,
+    // because a NEW search starts at the first twenty — carrying 40 into a
+    // two-hit search is the stale-offset case above, arrived at by typing
+    // rather than by clicking.
+    const carried = WebKit.pageParamsOf(query);
+    delete carried[spec.param];
+    delete carried[spec.fromParam];
+    const hidden = Object.keys(carried).map(function (name) {
+      return '<input type="hidden" name="' + esc(name) + '" value="' +
+             esc(carried[name]) + '">';
+    }).join('');
+
+    // The pager's own base keeps the search term — it is paging THESE results —
+    // and overrides only the offset. An offset of nothing rather than of 0, so
+    // the first page of a search is the same URL whether it was reached by
+    // typing or by clicking `previous`.
+    const paging = WebKit.pageParamsOf(query);
+    const pageLink = function (at, label, title) {
+      // WebKit.pageNavPair()'s own idiom, and for its reason: the control's OWN
+      // parameter is the only one it sets, so the other chooser's offset and
+      // the table's page stay where the reader left them.
+      const move = {};
+      move[spec.fromParam] = at > 0 ? at : '';
+      // The anchor for the reason above: paging the results is the same click
+      // as searching them, and it is a page reload just as much.
+      return '<a href="' + esc(path + WebKit.queryWith(paging, move)) + '#' +
+        esc(anchor) +
+        '" title="' + esc(title) + '">' + label + '</a>';
+    };
+
+    const rows = shown.map(function (entry) {
+      return '<li' + (entry.key && entry.key === spec.selectedKey
+                        ? ' class="on"' : '') + '>' +
+        '<a href="' + esc(entry.href) + '">' + esc(entry.label) +
+        '</a>' +
+        (entry.detail
+          ? '<span class="hitwhat">' + esc(entry.detail) + '</span>' :
+            '') +
+        '</li>';
+    }).join('');
+
+    const pane = '<div class="chooser">' +
+      (rows
+        ? '<ul class="hits">' + rows + '</ul>'
+        : '<p class="none">' + esc(spec.nothing) + '</p>') +
+      '</div>';
+
+    const noun = wanted
+      ? (matched.length === 1 ? 'match' : 'matches')
+      : 'in the list';
+    const count = matched.length
+      ? (matched.length > WebKit.CHOOSER_HITS
+          ? 'Showing ' + (from + 1) + '&ndash;' + (from + shown.length) +
+            ' of ' + matched.length + ' ' + noun + '. '
+          : matched.length + ' ' + noun + '. ')
+      : '';
+    const more = [];
+    if (from > 0) {
+      more.push(pageLink(from - WebKit.CHOOSER_HITS, '&larr; previous ' +
+        WebKit.CHOOSER_HITS,
+        'The twenty before these'));
+    }
+    if (from + WebKit.CHOOSER_HITS < matched.length) {
+      more.push(pageLink(from + WebKit.CHOOSER_HITS,
+                         'next ' + WebKit.CHOOSER_HITS + ' &rarr;',
+        'The twenty after these'));
+    }
+
+    return '<form method="get" id="' + esc(anchor) +
+           '" class="finder" action="' +
+      esc(path) + '#' + esc(anchor) + '">' +
+      '<div class="formrow">' + hidden +
+        '<label for="' + esc(spec.param) + '">' + esc(spec.label) +
+        '</label><input type="text" id="' + esc(spec.param) + '" name="' +
+          esc(spec.param) + '" size="32" value="' + esc(wanted) +
+          '" placeholder="' + esc(spec.placeholder) + '">' +
+        '<button class="secondary">Search</button>' +
+        (wanted
+          ? ' <a href="' + esc(path + WebKit.queryWith(carried, {})) + '#' +
+            esc(anchor) +
+            '">clear</a>'
+          : '') +
+      '</div></form>' +
+      pane +
+      (count || more.length
+        ? '<p class="note">' + count + more.join(' &middot; ') + '</p>'
+        : '');
   }
 
   // A query's VIEW parameters — every one but the three that are not part

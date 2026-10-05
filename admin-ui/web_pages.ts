@@ -33,6 +33,7 @@ import AcmePage = require('../acme/web_acme');
 import AttributeSourcesPage =
   require('../attribute-sources/web_attribute_sources');
 import CachesPage = require('./web_caches');
+import CaepRiscPage = require('../ssf/web_caep_risc');
 import CellsPage = require('./web_cells');
 import ClaimsProvidersPage =
   require('../oauth-oidc/web_claims_providers');
@@ -95,6 +96,11 @@ const PAGES: WebPage[] = [
     render: AttributeSourcesPage.render },
   { path: '/admin/caches', title: 'Caches', operation: '/admin-api/caches',
     render: CachesPage.render },
+  { path: '/admin/caep', title: 'CAEP',
+    operation: '/admin-api/caep',
+    render: function (view: Json, ctx?: Json): string {
+      return CaepRiscPage.caepBody(ctx || WebKit.context(), view);
+    } },
   { path: '/admin/cells', title: 'Cells', operation: '/admin-api/cells',
     render: CellsPage.render },
   { path: '/admin/claim-providers', title: 'Claims Providers',
@@ -175,6 +181,11 @@ const PAGES: WebPage[] = [
     render: OAuth2MonitorPage.render },
   { path: '/admin/pki', title: 'PKI', operation: '/admin-api/pki',
     render: PkiPage.render },
+  { path: '/admin/risc', title: 'RISC',
+    operation: '/admin-api/risc',
+    render: function (view: Json, ctx?: Json): string {
+      return CaepRiscPage.riscBody(ctx || WebKit.context(), view);
+    } },
   { path: '/admin/risk', title: 'Risk', operation: '/admin-api/risk',
     render: RiskPage.render },
   { path: '/admin/risk-scoring', title: 'Risk scoring',
