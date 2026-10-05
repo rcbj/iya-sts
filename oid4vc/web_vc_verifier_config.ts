@@ -10,7 +10,7 @@
 // 2026-10-05).
 //
 // Draws the Verifier request from the answer of `GET
-// /admin-api/vc-verifier-config`: which claims the mock Verifier asks for, in
+// /admin-api/verifier-request`: which claims the mock Verifier asks for, in
 // which format, and the DCQL query it builds.
 //
 // A `web_` MODULE, on `web_kit.ts`'s terms: it requires other `web_` modules
@@ -26,7 +26,7 @@ type Json = any;
 
 /**
  * Draws the Verifier request from the answer of `GET
- * /admin-api/vc-verifier-config`: which claims the mock Verifier asks for, in
+ * /admin-api/verifier-request`: which claims the mock Verifier asks for, in
  * which format, and the DCQL query it builds.
  *
  * A static utility class; it holds no state and takes no dependencies.
