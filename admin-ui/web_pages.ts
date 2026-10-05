@@ -29,6 +29,8 @@
 // ---------------------------------------------------------------------------
 
 import WebKit = require('./web_kit');
+import AttributeSourcesPage =
+  require('../attribute-sources/web_attribute_sources');
 import DatabasePage = require('./web_database');
 import DebuggerPage = require('../debugger/web_debugger');
 import GrantsPage = require('../oauth-oidc/web_grants');
@@ -38,6 +40,7 @@ import OAuth2MonitorPage = require('../oauth-oidc/web_oauth2_monitor');
 import SecretsPage = require('./web_secrets');
 import SettingsForms = require('./web_settings');
 import SsfTransmittersPage = require('../ssf/web_ssf_transmitters');
+import VcStatusPage = require('./web_vc_status');
 import WorkerPoolsPage = require('./web_worker_pools');
 
 type Json = any;
@@ -53,6 +56,9 @@ interface WebPage {
 }
 
 const PAGES: WebPage[] = [
+  { path: '/admin/attribute-sources', title: 'Attribute sources',
+    operation: '/admin-api/attribute-sources',
+    render: AttributeSourcesPage.render },
   { path: '/admin/database', title: 'Database',
     operation: '/admin-api/database', render: DatabasePage.render },
   { path: '/admin/debugger', title: 'Protocol debugger',
@@ -71,6 +77,8 @@ const PAGES: WebPage[] = [
   { path: '/admin/ssf/transmitters', title: 'Signals from partners',
     operation: '/admin-api/ssf/transmitters',
     render: SsfTransmittersPage.render },
+  { path: '/admin/vc-status', title: 'Credential status',
+    operation: '/admin-api/vc-status', render: VcStatusPage.render },
   { path: '/admin/worker-pools', title: 'Worker pools',
     operation: '/admin-api/worker-pools', render: WorkerPoolsPage.render }
 ];

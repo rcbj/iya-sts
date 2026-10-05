@@ -27,8 +27,9 @@
 //      — and answers the page table.
 //   D. A CONVERTED PAGE IS ONE PAGE. Every page of the table, drawn by the
 //      bundle from its view passed through JSON, is to the byte what this
-//      process's own module draws — and `VIEWS` below must name a view for
-//      each, so a page cannot be converted without joining this check.
+//      process's own module draws — from the view its operation's HANDLER
+//      answers, called here, so a page whose operation lacks something the
+//      page draws fails rather than agreeing with itself.
 //      `/admin/mode` is also held to carrying every requirement and setting
 //      of the report.
 //   E. THE TABLE IS TRUE. Every converted page is a page of the console, and
@@ -73,47 +74,82 @@ function childMain() {
     const adminApi = require(ROOT_DIR + '/mgmt-api/admin_api');
     const WebKit = require(ROOT_DIR + '/admin-ui/web_kit');
     const WebPages = require(ROOT_DIR + '/admin-ui/web_pages');
-    const workerPools = require(ROOT_DIR + '/admin-ui/worker_pools_admin');
-    const nodeHealth = require(ROOT_DIR + '/admin-ui/node_health_admin');
-    const database = require(ROOT_DIR + '/admin-ui/database_admin');
-    const secretsPage = require(ROOT_DIR + '/admin-ui/secrets_admin');
-    // THE VIEW OF EVERY CONVERTED PAGE, as its management API operation
-    // answers it. A page added to `web_pages.ts` owes a row here: D0 fails
-    // otherwise.
-    const VIEWS = {
-      '/admin/grants': function () {
-        return Promise.resolve({
-          grants: require(ROOT_DIR + '/oauth-oidc/grant_management').list() });
-      },
-      '/admin/ssf/transmitters': function () {
-        return Promise.resolve(
-          require(ROOT_DIR + '/ssf/ssf_transmitters').report({}));
-      },
-      '/admin/database': function () {
-        return database.databaseView();
-      },
-      '/admin/debugger': function () {
-        return Promise.resolve(
-          require(ROOT_DIR + '/debugger/debugger_admin').debuggerView());
-      },
-      '/admin/secrets': function () {
-        return secretsPage.secretsView();
-      },
-      '/admin/mode': function () {
-        return Promise.resolve(mode.report());
-      },
-      '/admin/oauth2/monitor': function () {
-        return Promise.resolve(
-          require(ROOT_DIR + '/oauth-oidc/oauth2_monitor_console')
-            .monitorView({ query: {} }));
-      },
-      '/admin/node-health': function () {
-        return nodeHealth.nodeHealthView({});
-      },
-      '/admin/worker-pools': function () {
-        return workerPools.workerPoolsView({});
+    // THE VIEW OF EVERY CONVERTED PAGE IS WHAT ITS OPERATION'S HANDLER
+    // ANSWERS — the handler itself, called with a request that carries
+    // nothing but a query, and not the function this test supposes the
+    // handler calls. It was a table of those functions until a page was
+    // found whose console JSON carried `settings` and whose operation did
+    // not (`/admin/attribute-sources`): a table like that agrees with the
+    // page module and proves nothing about the API. The gate is not in the
+    // way here; it is `tests/vendored/admin_api.js`'s to hold.
+    function apiAnswer(operation, query) {
+      return new Promise(function (resolve, reject) {
+        const entry = adminApi.ROUTES.filter(function (one) {
+          return one.method === 'GET' && one.path === operation &&
+                 typeof one.handler === 'function';
+        })[0];
+        if (!entry) {
+          reject(new Error('no GET operation at ' + operation));
+          return;
+        }
+        const headers = { host: 'sts.example', accept: 'application/json' };
+        const req = {
+          method: 'GET', query: query || {}, headers: headers, body: {},
+          protocol: 'https', secure: true, hostname: 'sts.example',
+          path: operation, url: operation, originalUrl: operation,
+          socket: { encrypted: true }, connection: {},
+          get: function (name) {
+            return headers[String(name).toLowerCase()];
+          }
+        };
+        const res = {
+          locals: {}, statusCode: 200,
+          status: function (code) {
+            this.statusCode = code;
+            return this;
+          },
+          type: function () {
+            return this;
+          },
+          set: function () {
+            return this;
+          },
+          setHeader: function () {
+            return this;
+          },
+          json: function (body) {
+            resolve({ status: this.statusCode, body: body });
+            return this;
+          },
+          send: function (body) {
+            let parsed = body;
+            try {
+              parsed = typeof body === 'string' ? JSON.parse(body) : body;
+            } catch (e) {
+              // Not JSON: answered as the text it is, and D0 reports it.
+              parsed = { notJson: String((e && e.message) || e) };
+            }
+            resolve({ status: this.statusCode, body: parsed });
+            return this;
+          },
+          end: function () {
+            resolve({ status: this.statusCode, body: null });
+            return this;
+          }
+        };
+        Promise.resolve().then(function () {
+          return entry.handler(req, res);
+        }).catch(reject);
+      });
+    }
+    async function viewOf(page, query) {
+      const answer = await apiAnswer(page.operation, query);
+      if (answer.status !== 200 || !answer.body ||
+          typeof answer.body !== 'object') {
+        throw new Error(page.operation + ' answered ' + answer.status);
       }
-    };
+      return JSON.parse(JSON.stringify(answer.body));
+    }
     const dir = pathC.join(ROOT_DIR, 'admin-ui');
 
     // --- A. the sources ---------------------------------------------------
@@ -283,19 +319,17 @@ function childMain() {
          (/\brequire\([^)]*\)/.exec(code) || [''])[0]);
 
     // --- D. a converted page is one page -------------------------------------
-    const unviewed = WebPages.PAGES.filter(function (page) {
-      return typeof VIEWS[page.path] !== 'function';
-    }).map(function (page) { return page.path; });
-    note(unviewed.length === 0,
-         'D0. this test has a view for every converted page',
-         unviewed.join(', '));
+    const unviewed = [];
     const differing = [];
     for (let i = 0; i < WebPages.PAGES.length; i++) {
       const page = WebPages.PAGES[i];
-      if (typeof VIEWS[page.path] !== 'function') {
+      let view = null;
+      try {
+        view = await viewOf(page, { per: '10' });
+      } catch (e) {
+        unviewed.push(page.path + ': ' + String((e && e.message) || e));
         continue;
       }
-      const view = JSON.parse(JSON.stringify(await VIEWS[page.path]()));
       const ctx = WebKit.context({ per: '10', q: 'a b' }, true);
       const mine = WebPages.render(page.path, view, ctx);
       const theirs = StsConsole
@@ -305,6 +339,9 @@ function childMain() {
                        String(theirs).length + ')');
       }
     }
+    note(unviewed.length === 0,
+         'D0. the operation of every converted page answers a view, ' +
+         'called as a handler', unviewed.join('; '));
     note(differing.length === 0,
          'D1. every converted page drawn by the bundle is, to the byte, ' +
          'what this process draws from the same view (' +
@@ -330,8 +367,8 @@ function childMain() {
     // write.
     const made = WebKit.context({ page: '2' }, 'yes');
     const bare = WebKit.context();
-    const monitorView = JSON.parse(JSON.stringify(
-      await VIEWS['/admin/oauth2/monitor']()));
+    const monitorView = await viewOf(
+      WebPages.pageFor('/admin/oauth2/monitor'), {});
     const parSection = monitorView.sections.filter(function (section) {
       return section.id === 'par';
     })[0];

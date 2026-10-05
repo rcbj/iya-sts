@@ -7291,6 +7291,8 @@ module always was, and imports the kit by its relative path.
 | `../oauth-oidc/web_grants.ts` | The body of `/admin/grants`, its Revoke form included. |
 | `../ssf/web_ssf_transmitters.ts` | The body of `/admin/ssf/transmitters`. |
 | `../oauth-oidc/web_oauth2_monitor.ts` | The body of `/admin/oauth2/monitor` — **the first page that takes the render context**: its paging links carry the query forward and its Withdraw carries the list parameters back. It owns `PAGE_PATH`, `STATES` and `BACK_PARAMS`, which `oauth2_monitor_console.ts` and `oauth2_monitor_admin.ts` read from it. |
+| `web_vc_status.ts` | The body of `/admin/vc-status`; its Suspend, Reinstate and Revoke buttons are drawn only when `ctx.write` says so, and its paging is drawn from the view's `rowsPaging`. |
+| `../attribute-sources/web_attribute_sources.ts` | The body of `/admin/attribute-sources`. Its operation answered the register WITHOUT the page's `settings` until #446; both now answer `attributeSourcesView()`. |
 | `../debugger/web_debugger.ts` | The body of `/admin/debugger` — **the first page whose Settings block comes out of its own view** (`settings.forms(json.settings, PAGE_PATH)`). |
 | `web_node_health.ts` | The body of `/admin/node-health`. It was `NodeHealthAdmin`'s nine drawing methods; it carries its own `MIB` and `round1()`, which the view's module has too, because it may not require that module. |
 | `web_settings.ts` | **The Settings block of every page that owns settings** — `forms()`, `section()`, `row()`, `orderedChoiceControl()`, `sourceNote()`, `sharedNote()` — from the `settings` member of that page's operation. Not a page: `web_pages.ts` carries it as `StsConsole.settings`. See *The settings block*, below. |
@@ -7345,9 +7347,9 @@ image's strip takes its comments with the rest. esbuild is
    moves to the kit first, verbatim, leaving a delegate.
 3. **The page's own module calls it through `JSON.parse(JSON.stringify(view))`**
    until the cutover. `mode_admin.ts` is the pattern.
-4. **A row in `web_pages.ts`**, and the page's view in
-   `tests/console_web_bundle.js`'s `VIEWS`, which fails for a converted page
-   it has no view of.
+4. **A row in `web_pages.ts`.** `tests/console_web_bundle.js` calls the
+   row's operation's HANDLER for the view and draws the page from that, so a
+   page whose operation lacks something the page draws fails there.
 
 **`tests/tools/convert-console-page.py` DOES STEP 2 AND 3** for a page whose
 renderer is already methods that take the view: it moves the named methods
@@ -7362,7 +7364,7 @@ the view.
 
 **NOT BUILT YET**: the runtime that signs in (authorization code, PKCE, a
 non-extractable DPoP key), fetches, routes and draws the shell; the static
-route that serves it; and every page but the nine above.
+route that serves it; and every page but the eleven above.
 
 **THE PAGING CONTROL IS DRAWN FROM THE PAGING A CALLER RECEIVES.**
 `pageNavPair(path, params, pg)` read two members of the console's own paging
