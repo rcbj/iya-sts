@@ -1433,7 +1433,7 @@ class AdminViews {
    * @returns the page's JSON
    */
   consentPageView(query) {
-    const { log } = this.deps;
+    const { log, applications } = this.deps;
     log.debug("Entering AdminViews.consentPageView().");
     const asked = query || {};
     const register = this.consentView();
@@ -1461,7 +1461,15 @@ class AdminViews {
       matched: matched.length,
       globalsPaging: this.pagingJson(globalPage.paging),
       usersPaging: this.pagingJson(consentPage.paging),
-      query: { q: q }
+      query: { q: q },
+      // Where a withdrawal is recorded on a person's entry, which the page
+      // names (#446).
+      withdrawnAttribute: consent.WITHDRAWN_ATTRIBUTE,
+      // The applications the page's forms offer (#446), as the page read
+      // the register for them while it drew.
+      applicationChoices: applications.list().map(function (row) {
+        return { identifier: row.identifier, name: row.name || '' };
+      })
     });
     log.debug("Leaving AdminViews.consentPageView(). " +
               globalPage.shown.length + " of " + register.globals.length +
