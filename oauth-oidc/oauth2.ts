@@ -862,6 +862,12 @@ const EXCHANGE_TOKEN_TYPES = {
   'urn:ietf:params:oauth:token-type:saml1': 'saml1'
 };
 const DEVICE_SECRET_TYPE = 'urn:openid:params:token-type:device-secret';
+// The `client_id` an access token carries when a wallet redeemed an OID4VCI
+// pre-authorized code without naming a client (section 6.1's anonymous
+// access), because RFC 9068 section 2.2 requires the claim (#158). A URN in
+// this service's namespace, so it can never be a client_id this service
+// assigned, and not `urn:sts:client:<id>`, which is a client's SUBJECT.
+const ANONYMOUS_WALLET_CLIENT_ID = 'urn:sts:oid4vci:anonymous-wallet';
 const ID_TOKEN_TYPE = 'urn:ietf:params:oauth:token-type:id_token';
 
 // A cap, for the reason every other cap in this file has one: the parsed object
@@ -3924,7 +3930,10 @@ class OAuth2Server {
     const payload: Json = {
       iss: self.issuerOf(base), sub: opts.sub || user.sub,
       aud: opts.audience || jwtAccessToken.defaultAudienceFor(base),
-      client_id: opts.client_id, typ: 'Bearer',
+      // `token_client_id` where a grant has no client to name and RFC 9068
+      // still requires one — the anonymous wallet of OID4VCI's pre-authorized
+      // code (#158, ANONYMOUS_WALLET_CLIENT_ID).
+      client_id: opts.token_client_id || opts.client_id, typ: 'Bearer',
       // Stamped with the minting cell (#98 D10): a resource that checks the
       // token, or a UserInfo request, reaches the cell that holds its
       // session through this.
@@ -13853,6 +13862,15 @@ class OAuth2Server {
         return self.oauthError(res, 400, 'invalid_grant',
                                preAuthSpent.description);
       }
+      // RFC 9068 section 2.2 makes `client_id` REQUIRED in the access token,
+      // and OID4VCI section 6.1 lets a wallet redeem this grant without naming
+      // one (#158). An empty string satisfies neither, so an unnamed wallet is
+      // named ANONYMOUS_WALLET_CLIENT_ID in the TOKEN and nowhere else: the
+      // scope policy, the lifetime and the token registry go on reading the
+      // unnamed client they always read, because a defined value there would
+      // be a client nobody registered being judged as one.
+      const tokenClientId = String(client.client_id || '') ||
+        ANONYMOUS_WALLET_CLIENT_ID;
       // The End-User was identified out of band, so there is a subject and no
       // sign-on session — and the users page has to be able to say that
       // difference rather than report a missing session as an unknown one.
@@ -13862,10 +13880,32 @@ class OAuth2Server {
         method: 'pre-authorized code' + (record.txCode ? ' ' +
             'with a Transaction Code' : ''),
         sub: (record.user && record.user.sub) || '',
-        client_id: client.client_id,
+        client_id: tokenClientId,
         note: 'Identified out of band when the Credential Offer was made; no ' +
               'browser session exists.'
       });
+      // THE PERSON, RESOLVED NOW AND NOT TAKEN FROM THE OFFER (#158). The
+      // offer records whom it is for when it is MINTED, and an offer made for
+      // `oid4vci.offerUsername` before that person had an entry recorded
+      // `sub: ''` — which went into the token as it stood, an anonymous token
+      // about a named person. The authentication recorded just above is what
+      // makes the directory create the entry, so the subject is asked for
+      // after it, as the password and assertion grants ask
+      // (`provisionedPerson()`). An offer made on a signed-in session carries
+      // the session's subject already, and that is the one kept: it named the
+      // entry when the person signed in, and a rename since must not move it.
+      const preAuthUser = record.user && record.user.sub
+        ? record.user
+        : self.provisionedPerson((record.user && record.user.username) || '');
+      if (!preAuthUser) {
+        errorCodes.mark(res, 'STS-OAUTH-0938');
+        log.debug("Leaving OAuth2Server.tokenGrant(). The offered person has " +
+                  "no entry.");
+        return self.oauthError(res, 400, 'invalid_grant',
+          'There is no directory entry for the person this Credential Offer ' +
+          'was made for, so there is no subject to issue a token about; the ' +
+          'person has to be provisioned first.');
+      }
       // OID4VCI section 6.1.1: the Wallet MAY send authorization_details in the
       // Token Request, in the Pre-Authorized Code Flow as well as the
       // Authorization Code one — and here it is the ONLY place it can, because
@@ -13903,7 +13943,8 @@ class OAuth2Server {
       }
       const issued = await issue({
         jkt: dpopJkt,
-        user: record.user, client_id: client.client_id, scope: VCI_SCOPE,
+        user: preAuthUser, client_id: client.client_id, scope: VCI_SCOPE,
+        token_client_id: tokenClientId,
         withRefresh: false,
         // RFC 8707 on an OpenID4VCI Token Request, which OID4VCI section 6.1
         // inherits from RFC 6749 along with everything else about this
@@ -13914,7 +13955,7 @@ class OAuth2Server {
         // the parameter and threw it away would be the bug this closes.
         audience: self.audienceClaim(requestedResources),
         grant: 'pre-authorized code',
-        authorization_details: grantIdentifiers(askedFor.details, record.user)
+        authorization_details: grantIdentifiers(askedFor.details, preAuthUser)
       });
       // Remember which access token belongs to a deferred issuance, so the
       // credential endpoint knows to answer 202 rather than a credential.

@@ -8649,6 +8649,12 @@ const CODES = [
       'authentication does not meet — or a grant with no person behind it ' +
       '(#432 phase 6).',
     spec: 'RFC 9396 (invalid_authorization_details, HTTP 400)' },
+  { code: 'STS-OAUTH-0938',
+    summary: 'An OID4VCI pre-authorized code was redeemed for a person the ' +
+      'directory holds no entry for (the offer recorded no subject and none ' +
+      'could be resolved at redemption), so there is no subject to issue a ' +
+      'token about (#158).',
+    spec: 'invalid_grant (HTTP 400)' },
   { code: 'STS-SAML-0001',
     summary: 'A SAML 2.0 sign-in resumed with a held-request id that is ' +
       'unknown or has expired (saml2.requestTtlMin), so there is no ' +

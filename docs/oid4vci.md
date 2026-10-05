@@ -108,7 +108,13 @@ means the whole configured set.
   code once. The Transaction Code has `oid4vci.txCodeLength` digits, drawn from
   a CSPRNG and compared in constant time. The token request may carry
   `authorization_details`, because the pre-authorized flow has no authorization
-  request to send them in.
+  request to send them in. The access token's `sub` is the offered person's
+  `urn:uuid:` subject, resolved at redemption. A wallet may redeem the code
+  without a `client_id` (section 6.1). Because RFC 9068 section 2.2 requires
+  the claim, the token then carries `client_id`
+  `urn:sts:oid4vci:anonymous-wallet`, never an empty string. If the directory
+  holds no entry for the offered person, the grant is refused with
+  `invalid_grant` (`STS-OAUTH-0938`).
 
 ### The Credential Request
 
