@@ -57,6 +57,7 @@ import ProviderCommandsPage =
   require('../oauth-oidc/web_provider_commands');
 import OAuth2MonitorPage = require('../oauth-oidc/web_oauth2_monitor');
 import RiskPage = require('./web_risk');
+import SamlAssertionsPage = require('./web_saml_assertions');
 import SchedulerPage = require('./web_scheduler');
 import ScepPage = require('../scep/web_scep');
 import SecretsPage = require('./web_secrets');
@@ -178,6 +179,11 @@ const PAGES: WebPage[] = [
     operation: '/admin-api/risk/metrics',
     render: function (view: Json): string {
       return RiskPage.metricsHtml(view);
+    } },
+  { path: '/admin/saml-assertions', title: 'SAML assertions',
+    operation: '/admin-api/saml-assertions',
+    render: function (view: Json, ctx?: Json): string {
+      return SamlAssertionsPage.body(ctx || WebKit.context(), view);
     } },
   { path: '/admin/scep', title: 'SCEP', operation: '/admin-api/scep',
     render: ScepPage.render },

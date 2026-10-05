@@ -2578,6 +2578,17 @@ class AdminViews {
     // a page drawn from this answer cannot ask the process for.
     const block = this.settingsBlockOf('/admin/saml-assertions');
     (json as any).context = (block && block.context) || null;
+    // The table the page lays its rows out by, and each lifetime in seconds
+    // (#446): what the page asked `admin_actions` and the settings while it
+    // drew.
+    const self = this;
+    (json as any).rows = SAML_ASSERTION_SETTINGS.map(function (row) {
+      return Object.assign({}, row);
+    });
+    (json as any).seconds = {};
+    SAML_ASSERTION_SETTINGS.forEach(function (row) {
+      (json as any).seconds[row.key] = self.samlAssertionSeconds(row.key);
+    });
     return json;
   }
 
