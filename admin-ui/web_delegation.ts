@@ -3810,6 +3810,601 @@ class DelegationPage {
       'operation with <code>?application=' + kit.esc(json.asked) + '</code>.');
 
   }
+
+  // One configured pair. `setOn` is the column to read first and is why the two
+  // mechanisms are in ONE table rather than two: the messages are identical,
+  // the KDC options are identical, and the whole difference is which of the two
+  // accounts carries the permission. Two tables would have let a reader learn
+  // one of them without ever meeting that fact. FIVE COLUMNS, and `requires` is
+  // not one of them although the JSON carries it per pair. It is a property of
+  // the MECHANISM rather than of the pair — every classic row has the same
+  // sentence and every resource-based row has the other — so as a column it was
+  // the same two paragraphs repeated down the table, squeezing the three
+  // columns that DO differ per row into unreadable shreds. It is said once
+  // above the table instead. The API keeps it on every pair, because a caller
+  // reading one pair should not have to know that.
+  /**
+   * Draws one configured Kerberos delegation pair.
+   *
+   * @param pair - a pair from the Kerberos delegation policy
+   * @returns a <tr> as HTML
+   */
+  static policyPairRow(pair) {
+    return '<tr>' +
+      '<td><code>' + kit.esc(pair.mechanism) +
+      '</code><br><span class="state-none">' +
+        kit.esc(pair.type) + '</span></td>' +
+      '<td class="who"><code>' + kit.esc(pair.frontEnd) + '</code></td>' +
+      '<td class="who"><code>' + kit.esc(pair.target) + '</code>' +
+        (pair.targetKnown ? ''
+          : '<br><span class="state-revoked">no such principal here</span>') +
+      '</td>' +
+      '<td class="who"><code>' + kit.esc(pair.attribute) + '</code><br>' +
+        '<span class="state-none">on the ' + kit.esc(pair.setOnRole) + ', ' +
+          '<code>' +
+        kit.esc(pair.setOn) + '</code></span></td>' +
+      '<td>' + (pair.warning
+                ? '<span class="state-expired">' + kit.esc(pair.warning) +
+                  '</span>'
+                : '<span class="state-valid">nothing else is missing</span>') +
+      '</td>' +
+      '</tr>';
+  }
+
+  /**
+   * Draws one Kerberos account's delegation flags and their effects.
+   *
+   * @param account - an account row from the Kerberos delegation policy
+   * @returns a <tr> as HTML
+   */
+  static policyAccountRow(account) {
+    const flags = [];
+    // The entry's attribute, then Active Directory's name for it (#186).
+    if (account.notDelegated) {
+      flags.push('appNotDelegated (NOT_DELEGATED)');
+    }
+    if (account.trustedToAuthenticateForDelegation) {
+      flags.push('appDelegationSemantics: impersonation ' +
+                 '(TRUSTED_TO_AUTHENTICATE_FOR_DELEGATION)');
+    }
+    if (account.okAsDelegate) {
+      flags.push('krb5TrustedForDelegation (ok-as-delegate)');
+    }
+    return '<tr>' +
+      '<td class="who"><code>' + kit.esc(account.principal) + '</code></td>' +
+      '<td>' + flags.map(function (f) {
+        return '<code>' + kit.esc(f) + '</code>';
+      }).join('<br>') + '</td>' +
+      '<td>' + account.effects.map(function (e) {
+        return kit.esc(e);
+      }).join('<br><br>') + '</td>' +
+      '</tr>';
+  }
+
+  // ---------------------------------------------------------------------------
+  // /admin/delegation, FROM `GET /admin-api/delegation` (#446).
+  //
+  // The acts filtered and paged, the chains, the configured permissions
+  // register (read-only here), the Kerberos policy, the WS-Trust and
+  // token-exchange policy, and the mechanisms — every list on a page
+  // parameter of its own, every control carrying the others.
+  // ---------------------------------------------------------------------------
+  /**
+   * Draws `/admin/delegation` from its answer.
+   *
+   * @param ctx - the render context (`WebKit.context()`)
+   * @param json - the answer of `GET /admin-api/delegation`
+   * @returns the body as HTML
+   */
+  static acts(ctx: Json, json: Json): string {
+    const filter = json.filter || {};
+    const wanted = { type: filter.type || '', mode: filter.mode || '',
+                     outcome: filter.outcome || '',
+                     protocol: filter.protocol || '', q: filter.q || '' };
+    const listView = kit.listViewOf('/admin/delegation', ctx.query);
+    // What every paging link on this page carries: the whole query, each
+    // control overriding its OWN list's page and nothing else.
+    const navParams = kit.pageParamsOf(ctx.query);
+    const nav = kit.pageNavPair('/admin/delegation', navParams, json.paging);
+    const chainsNav = kit.pageNavPair('/admin/delegation', navParams,
+                                      json.chainPage.paging);
+    const pairsNav = kit.pageNavPair('/admin/delegation', navParams,
+                                     json.pairPage.paging);
+    const flagsNav = kit.pageNavPair('/admin/delegation', navParams,
+                                     json.flagPage.paging);
+    const mechanismsNav = kit.pageNavPair('/admin/delegation', navParams,
+                                          json.mechanismPage.paging);
+    const rows = json.acts.map(function (row) {
+      return DelegationPage.delegationRow(row, json.facts,
+                                          { listView: listView });
+    }).join('');
+
+    // Grouped by protocol and built from the SAME table the filter offers, so
+    // the two cannot come to disagree about which mechanism belongs to which
+    // family.
+    const protocolsInOrder = [];
+    json.types.forEach(function (entry) {
+      if (protocolsInOrder.indexOf(entry.protocol) < 0) {
+        protocolsInOrder.push(entry.protocol);
+      }
+    });
+    const typeOptions = '<option value=""' +
+      (wanted.type ? '' : ' selected') +
+      '>any mechanism</option>' +
+      protocolsInOrder.map(function (protocol) {
+        return '<optgroup label="' + kit.esc(protocol) + '">' +
+          json.types.filter(function (entry) {
+            return entry.protocol === protocol;
+          }).map(function (entry) {
+            return '<option value="' + kit.esc(entry.type) + '"' +
+                   (entry.type === wanted.type ? ' selected' : '') + '>' +
+                   kit.esc(entry.label) + ' (' +
+                   (json.byType[entry.type] || 0) +
+                   ')</option>';
+          }).join('') + '</optgroup>';
+      }).join('');
+
+    const modeOptions = ['<option value=""' +
+                         (wanted.mode ? '' : ' selected') +
+                         '>either kind</option>']
+      .concat(json.modes.map(function (entry) {
+        return '<option value="' + kit.esc(entry.mode) + '"' +
+               (entry.mode === wanted.mode ? ' selected' : '') + '>' +
+               kit.esc(entry.label) + ' (' +
+               (json.byMode[entry.mode] || 0) +
+               ')</option>';
+      })).join('');
+
+    const outcomeOptions = ['<option value=""' +
+                            (wanted.outcome ? '' : ' ' +
+        'selected') +
+                            '>any outcome</option>']
+      .concat(json.outcomes.map(function (name) {
+        return '<option value="' + kit.esc(name) + '"' +
+               (name === wanted.outcome ? ' selected' : '') + '>' +
+               kit.esc(name) +
+               ' (' + (json.byOutcome[name] || 0) + ')</option>';
+      })).join('');
+
+    const perOptions = kit.perPageOptions(json.paging.perPage);
+
+    const filtering = wanted.type || wanted.mode ||
+                      wanted.outcome ||
+                      wanted.protocol || wanted.q;
+
+    return (
+      '<div class="tiles">' +
+        kit.tile(json.held, 'acts held') +
+        kit.tile(json.chains.length, 'distinct chains') +
+        kit.tile(json.byMode.impersonation || 0, 'impersonations') +
+        kit.tile(json.byMode.delegation || 0, 'delegations') +
+        kit.tile(json.byOutcome.refused || 0, 'refused') +
+        kit.tile(json.policy.pairs.length, 'configured pairs') +
+      '</div>' +
+
+      kit.note('<strong>Who acted on whose behalf, through what, to reach ' +
+      'what.</strong> Three of the protocol families here can delegate and ' +
+      'each calls it something different — Kerberos has S4U2Self, two ' +
+      'flavours of S4U2Proxy and a forwarded ticket-granting ticket; ' +
+      'WS-Trust has <code>OnBehalfOf</code> and <code>ActAs</code>; OAuth ' +
+      '2.0 Token Exchange has impersonation and delegation. This page ' +
+      'records all eight against one model, because the question people ' +
+      'arrive with is protocol-independent: <em>alice never touched the ' +
+      'back end, so why is there a ticket to it in her name, and who asked ' +
+      'for it?</em>') +
+
+      kit.note('<strong>The three columns in the middle are the layers of ' +
+      'the architecture</strong>, and the names are this page\'s own ' +
+      'rather than any protocol\'s — a Kerberos front end, a WS-Trust ' +
+      'requester and an OAuth client doing an exchange are the same ' +
+      'position in the same picture:') +
+      '<ul>' + json.roles.map(function (entry) {
+        return '<li><strong>' + kit.esc(entry.label) + '</strong> — ' +
+               kit.esc(entry.what) +
+               '</li>';
+      }).join('') + '</ul>' +
+      kit.note('A party can be a <em>person</em>, an ' +
+      '<em>application</em>, or both, and the middle one routinely is ' +
+      'both: <code>HTTP/frontend.example.com</code> has an entry under ' +
+      '<code>ou=users</code> (it authenticates, so this service files it ' +
+      'with the people) and an entry under <code>ou=applications</code> ' +
+      '(tickets are issued FOR it). Each cell links to whichever of the ' +
+      'two exist. An application marked <em>not in the registry</em> is ' +
+      'not an error — the registry holds what this service has been ASKED ' +
+      'ABOUT, and an RFC 8693 <code>audience</code> nobody has otherwise ' +
+      'mentioned is exactly that.') +
+
+      kit.note('<strong>Impersonation and delegation are the axis worth ' +
+      'filtering on</strong>, and they are not a matter of degree. Under a ' +
+      'delegation the credential CARRIES the chain — an <code>act</code> ' +
+      'claim, a composite <code>ActAs</code>, ' +
+      '<code>S4U_DELEGATION_INFO</code> in the PAC — so the far end can ' +
+      'see who is really asking and can decide differently because of it. ' +
+      'Under an impersonation nothing does, which means <strong>this page ' +
+      'is the only place it will ever be visible</strong>: no reading of ' +
+      'the token afterwards, at the resource server or in a log, can ' +
+      'recover the fact that a middle tier was involved.') +
+
+      kit.note('<strong>Refusals are recorded and are most of what this ' +
+      'page is for.</strong> A delegation that worked tells you the ' +
+      'plumbing is connected. A delegation that was refused names the two ' +
+      'accounts, the two attributes and which of them was missing, at the ' +
+      'moment the KDC decided — and the text in the <em>Authorized by / ' +
+      'why not</em> column is the KDC\'s OWN words, the same sentence the ' +
+      'client was sent, rather than a second wording that could come to ' +
+      'disagree with it.') +
+
+      // THE WAY TO THE PICTURE, ABOVE THE TABLE RATHER THAN UNDER IT. The
+      // chains table lower down is what the diagram is drawn from and the
+      // obvious place to put this link is beside it — which is most of a page
+      // below the fold on a busy day. A reader who wants the shape of things
+      // wants it before they have read four hundred rows, so the offer is
+      // here and is repeated where the chains are.
+      //
+      // It carries the CURRENT FILTER AND NOT THE PAGE: the picture has no
+      // paging (see that route's header) and a `page` in its query would be a
+      // parameter that does nothing.
+      kit.note('<a class="btn" href="' +
+        kit.esc('/admin/delegation/map' + kit.queryWith({ type: wanted.type,
+          mode: wanted.mode, outcome: wanted.outcome,
+          protocol: wanted.protocol, q: wanted.q }, {})) +
+        '">See this as a picture &rarr;</a> <strong>The same acts drawn as ' +
+      'a diagram</strong> — a stick figure per person, a rectangle per ' +
+      'application, a hexagon for this service in this trust realm, and a ' +
+      'line per relationship: who acts for whom, and what each credential ' +
+      'was FOR. ' + (filtering
+        ? 'It opens with the filter you have set here.'
+        : 'Filter first if this list is long — the picture is drawn from ' +
+          'everything that matches, not from one page.')) +
+
+      // THE SECOND WAY IN, BESIDE THE PICTURE AND ABOVE THE TABLE. The
+      // picture link answers "what does all of this look like"; this answers
+      // "what has this one application got itself into", which is the other
+      // question a person arrives with and the one the tables below cannot be
+      // sorted into. Both are here rather than at the foot, because a reader
+      // who wants either wants it before reading four hundred rows.
+      kit.note('<strong>Or pivot on an application.</strong> A delegation ' +
+      'has three parties and an application can be two of them — the ' +
+      '<em>intermediary</em> that acts on somebody\'s behalf, and the ' +
+      '<em>target</em> the credential is for. Search for one and click it, ' +
+      'and see everything that has been delegated through it or to it, in ' +
+      'either role, with every credential that came out. <strong>The ' +
+      'search follows the filter above and the page it opens does ' +
+      'not</strong>: it shows everything that application has ever been ' +
+      'part of, because <em>what exists because of this thing</em> is not ' +
+      'a question a half-answer is useful for. Any part of a name matches, ' +
+      'EVERY spelling an act presented is searched, and twenty are shown ' +
+      'at a time with the rest a click away.') +
+      DelegationPage.delegationApplicationChooser(json.applicationChooser,
+        '', { path: '/admin/delegation', query: ctx.query }) +
+
+      // AND THE THIRD WAY IN, which is the other half of the same question.
+      // The application chooser answers *what has this thing got itself
+      // into*; this one answers *what has this service done in somebody's
+      // NAME* — and it is the only one of the three that leaves this
+      // register: a person's picture draws their ordinary OAuth 2.0, OIDC,
+      // SAML, Kerberos and SPIFFE issuance too, because most of what happens
+      // in somebody's name is not a delegation and a page drawn from these
+      // acts alone would be empty for anybody who merely signed in. See that
+      // route's header.
+      kit.note('<strong>Or pivot on a person.</strong> Everything issued ' +
+      'in their name, end to end: every grant and flow with the exact one ' +
+      'labelled, every assertion, ticket and SVID, the applications ' +
+      'holding all of it, and the sign-ins it rests on — with any ' +
+      'delegation naming them drawn in the same picture. <strong>The list ' +
+      'includes people nothing was ever issued to</strong>, because an ' +
+      'S4U2Self or an <code>OnBehalfOf</code> names somebody who was never ' +
+      'present, and that is the row worth opening. Search it the same way ' +
+      '— any part of a name, every spelling they arrived under, twenty at ' +
+      'a time — and clicking a result IS the choice.') +
+      DelegationPage.delegationUserChooser(json.userChooser, '',
+        { path: '/admin/delegation', query: ctx.query }) +
+
+      '<h2>What happened</h2>' +
+      // No `page` input in this form, deliberately: changing a filter or the
+      // page size returns to page 1. Carrying the old page number over would
+      // land somebody on page 6 of a two-page result and the clamp in
+      // pagingOf() would then move them again, which reads as the form
+      // ignoring them. THE ANCHOR, for the reason chooserPane() gives at
+      // length: this is a GET that reloads the page, and without it a reader
+      // who had scrolled down to the filter was thrown back to the top of the
+      // document by the click that answered them — on the longest page in
+      // this console. It lands on the form rather than on the first row of
+      // the table because the reader has usually just CHANGED a control and
+      // wants to see what they set beside what came back; `scroll-margin-top`
+      // then keeps the `What happened` heading above it on screen, so the
+      // answer arrives with its question.
+      '<form method="get" id="filter-acts" class="finder" ' +
+        'action="/admin/delegation#filter-acts"><div class="formrow">' +
+        DelegationPage.chooserCarry(ctx.query) +
+        '<label for="type">Mechanism</label><select id="type" name="type">' +
+          typeOptions + '</select>' +
+        '<label for="mode">Kind</label><select id="mode" name="mode">' +
+          modeOptions + '</select>' +
+        '<label for="outcome">Outcome</label><select id="outcome" ' +
+        'name="outcome">' +
+          outcomeOptions + '</select>' +
+        '<label for="per">Per page</label><select id="per" name="per">' +
+      perOptions +
+          '</select>' +
+      '</div><div class="formrow">' +
+        '<label for="q">Text</label>' +
+        '<input type="text" id="q" name="q" size="40" value="' +
+      kit.esc(wanted.q) +
+          '" placeholder="a person, an SPN, a client_id, an attribute">' +
+        '<button class="secondary">Filter</button>' +
+        (filtering
+          ? ' <a href="/admin/delegation#filter-acts">clear</a>'
+          : '') +
+      '</div></form>' +
+      kit.note('The text box searches every party of the chain and both ' +
+      'explanations at once, because the fact somebody arrives with names ' +
+      'one of them and they do not know which column it will be in.') +
+      kit.note('The <strong>chain</strong> link under each row\'s number ' +
+      'draws THAT RELATIONSHIP on its own — the whole chain the act ' +
+      'belongs to, with everything else in the service left out. It goes ' +
+      'to the chain rather than to the act because an act has no picture ' +
+      'of its own: a diagram has the times taken out, and four acts a ' +
+      'second apart between the same three parties are one line.') +
+      nav.head +
+      '<table><tr><th class="num">#</th><th>When</th><th>Mechanism</th>' +
+      '<th>Kind</th><th>Outcome</th><th>Initial identity</th>' +
+      '<th>Intermediary</th><th>Target</th><th>Authorized by / why not</th>' +
+      '<th>Credentials</th></tr>' +
+      (rows || '<tr><td colspan="10">' +
+        (json.all
+          ? 'Nothing matches this filter.'
+          : 'Nothing has delegated anything yet. Three things put a row ' +
+            'here: a Kerberos S4U2Self, S4U2Proxy or forwarded-TGT request ' +
+            'at the KDC; a WS-Trust <code>RequestSecurityToken</code> ' +
+            'carrying <code>&lt;wst:OnBehalfOf&gt;</code> or ' +
+            '<code>&lt;wst14:ActAs&gt;</code>; and an RFC 8693 token ' +
+            'exchange at <code>/oauth2/token</code>. A REFUSED attempt ' +
+            'counts — the delegation page in the debugger will produce one ' +
+            'on purpose.') +
+        '</td></tr>') + '</table>' +
+      nav.foot +
+
+      kit.note(json.matched + ' act(s) match' +
+      (json.paging.pages > 1 ?
+       ', of which rows ' + json.paging.firstRow + '&ndash;' +
+       json.paging.lastRow +
+                          ' are on this page (' + json.paging.page + ' of ' +
+                          json.paging.pages + ')' : '') +
+      '; ' + json.held + ' held' +
+      // ---------------------------------------------------------------------
+      // ONE PROCESS OR SEVERAL, AND THE TWO NUMBERS ARE NOT COMPARABLE WHEN
+      // IT IS SEVERAL (2026-09-11). `held` is every process's acts, fanned in
+      // by `delegation.merged()`; `recorded` is a plain counter in THIS
+      // process and there is no store to fan in. So "N held of M recorded"
+      // reads as nonsense the moment N exceeds M, which in `dispatch` mode it
+      // routinely does. The sentence says which is which instead of quietly
+      // putting them in one comparison.
+      // ---------------------------------------------------------------------
+      (json.processes > 1
+        ? ' across ' + json.processes + ' process(es), ' +
+          json.heldHere +
+          ' of them here; ' + json.recorded + ' recorded by this one ' +
+          'since it started'
+        : ' of ' + json.recorded +
+          ' recorded since this process started') +
+      (json.dropped
+        ? ', and <strong>' + json.dropped + ' dropped</strong> — this ' +
+          'page holds at ' +
+          'most ' + json.maxRecords + ' acts and discards the oldest ' +
+          'first. Raise <code>delegation.maxRecords</code> on <a ' +
+          'href="/admin/delegation-settings">Protocols &rsaquo; ' +
+          'Delegation</a> if that is losing something you need.'
+        : '. The cap is ' + json.maxRecords + ' acts and nothing has ' +
+          'been dropped yet.') +
+      ' The <strong>#</strong> column is a sequence number and is ' +
+      'monotonic and never reused, including across a drop, so ' +
+      '<code>?format=json</code>\'s <code>oldestSeq</code> and ' +
+      '<code>newestSeq</code> let a caller poll this without guessing what ' +
+      'it missed.') +
+
+      '<h2>The chains</h2>' +
+      kit.note('The same acts with the time and the credentials taken ' +
+      'out: one row per distinct <em>(mechanism, initial, intermediary, ' +
+      'target)</em>. <a href="/admin/delegation/map">This is what the ' +
+      'picture is drawn from</a> — one edge per row, and up to TWO lines ' +
+      'per row, because a chain has three parties. It is already the more ' +
+      'useful answer to <em>what talks to what</em>. The outcome is ' +
+      'deliberately NOT part of a chain\'s identity, so a chain refused ' +
+      'nine times and then fixed is one row that changes rather than two ' +
+      'that do not meet. <strong>The last column draws one row ' +
+      'alone</strong>, which is the answer to <em>what is this one, ' +
+      'exactly</em> on a service that has been driven for an afternoon and ' +
+      'whose whole picture is forty boxes.') +
+      chainsNav.head +
+      '<table><tr><th>Mechanism</th><th>Kind</th><th>Initial identity</th>' +
+      '<th>Intermediary</th><th>Target</th><th>Acts</th><th>Last seen</th>' +
+      '<th>Just this one</th></tr>' +
+      (json.chainPage.shown.map(function (chain) {
+        return '<tr>' +
+          '<td><code>' + kit.esc(chain.type) + '</code></td>' +
+          '<td>' + DelegationPage.modeCell(chain.mode) + '</td>' +
+          '<td class="who">' +
+          DelegationPage.delegationPartyCell(chain.initial, json.facts) +
+          '</td><td class="who">' +
+          DelegationPage.delegationPartyCell(chain.intermediary, json.facts) +
+          '</td><td ' +
+          'class="who">' +
+          DelegationPage.delegationPartyCell(chain.target, json.facts) +
+          '</td><td ' +
+          'class="num">' + kit.esc(chain.acts) + ' — ' +
+            '<span class="state-valid">' + kit.esc(chain.issued) +
+          ' issued</span>, ' +
+            (chain.refused
+              ? '<span class="state-revoked">' + kit.esc(chain.refused) +
+                ' ' +
+                  'refused</span>'
+              : '<span class="state-none">0 refused</span>') + '</td>' +
+          '<td>' + kit.esc(kit.whenText(chain.lastAt)) + '</td>' +
+          // An eighth column here where the acts table above puts the same
+          // link inside its `#` cell, and the difference is width: this
+          // table's five party columns are already narrow, but it has seven
+          // of them against that one's ten and none of the long explanation
+          // cells. A column can be afforded here and cannot be there.
+          '<td><a href="' + kit.esc('/admin/delegation/chain' +
+            kit.queryWith(listView, { chain: chain.chainKey })) +
+            '">picture &rarr;</a></td>' +
+          '</tr>';
+      }).join('') || '<tr><td colspan="8">No chains yet.</td></tr>') +
+      '</table>' +
+      chainsNav.foot +
+
+      DelegationPage.permissionsSection(ctx, json.permissionsView,
+                                        listView, false) +
+
+      '<h2>Who may delegate to whom &mdash; Kerberos</h2>' +
+      kit.note('<strong>The KDC\'s view of the ONE delegation policy ' +
+      '(#186).</strong> Kerberos, WS-Trust and the RFC 8693 token ' +
+      'exchange are decided by the same issuance policy from the same ' +
+      'controls on the directory\'s entries — the section below lists ' +
+      'them for every protocol; this one lists the Kerberos services, ' +
+      'whose entries are named <code>SPN@REALM</code>. The KDC refuses ' +
+      'in BOTH modes, as it always has (in development the fixture ' +
+      'services\' rules are seeded onto their entries so every refusal ' +
+      'can be reached); WS-Trust and the token exchange are enforced in ' +
+      'product mode and, in development, recorded as what would have ' +
+      'been refused. Every row says what allowed it, in the same column ' +
+      'for all three families.') +
+      kit.note('The relationship rests on two attributes on two OPPOSITE ' +
+      'entries — appAllowedToDelegateTo on the front end, ' +
+      'appAllowedToActOnBehalfOf on the back end — which is why they ' +
+      'are in one table with a column saying which entry carries the ' +
+      'permission. Same messages, ' +
+      'same KDC options, opposite direction of trust — and the second one ' +
+      'turns <em>I can write to this computer object</em> into <em>I can ' +
+      'reach this service as anybody</em>.') +
+      kit.note('Each mechanism needs one thing BEYOND the attribute, and ' +
+      'it is the same thing on every row of that kind, so it is here ' +
+      'rather than in a column: <strong>classic</strong> needs a ' +
+      'FORWARDABLE evidence ticket, which S4U2Self returns only where the ' +
+      'policy allows the impersonation — <code>impersonation</code> in the ' +
+      'service\'s <code>appDelegationSemantics</code> (Active ' +
+      'Directory\'s <code>TRUSTED_TO_AUTHENTICATE_FOR_DELEGATION</code>) ' +
+      'and a user who is not protected; ' +
+      '<strong>resource-based</strong> needs <code>PA-PAC-OPTIONS</code> ' +
+      '(padata type 167) carrying the resource-based bit, and [MS-SFU] ' +
+      'requires a KDC to answer <code>KDC_ERR_BADOPTION</code> without it ' +
+      '— an error that says nothing about padata. Resource-based needs no ' +
+      'forwardable evidence and no flag on the front end at all, which is ' +
+      'why it is the easier path.') +
+      pairsNav.head +
+      '<table><tr><th>Mechanism</th><th>Front end (who acts)</th>' +
+      '<th>Target (what is reached)</th><th>Attribute, and where it ' +
+      'lives</th><th>Anything missing?</th></tr>' +
+      (json.pairPage.shown.map(DelegationPage.policyPairRow).join('') ||
+        '<tr><td colspan="5">No principal here is configured for ' +
+        'constrained delegation of either kind.</td></tr>') + '</table>' +
+      pairsNav.foot +
+
+      '<h3>Account flags</h3>' +
+      kit.note('Two of these three STOP delegation rather than permit it, ' +
+      'and the third is not a control at all. An account appears here ' +
+      'whether or not any pair above names it, because an account named in ' +
+      'no pair is precisely the one somebody is wondering about.') +
+      flagsNav.head +
+      '<table><tr><th>Principal</th><th>Flags</th><th>What each one ' +
+      'does</th></tr>' +
+      (json.flagPage.shown.map(DelegationPage.policyAccountRow).join('') ||
+        '<tr><td colspan="3">No principal here carries one of these ' +
+        'flags.</td></tr>') +
+      '</table>' +
+      flagsNav.foot +
+
+      DelegationPage.delegationPolicySection(ctx,
+                                             json.exchangePolicyView) +
+
+      '<h3>The mechanisms</h3>' +
+      kit.note('Read off the same table this page records against, so a ' +
+      'mechanism cannot be recordable and undocumented, nor described here ' +
+      'and never occur.') +
+      mechanismsNav.head +
+      '<ul>' + json.mechanismPage.shown.map(function (entry) {
+        // The mechanism, its id, its specification and how many have been
+        // recorded stay on the row; the paragraph saying what it IS folds
+        // under them. Folding the whole item would have put the count — the
+        // one figure that changes while somebody watches this page — behind a
+        // click.
+        return '<li><strong>' + kit.esc(entry.label) + '</strong> (<code>' +
+          kit.esc(entry.type) + '</code>, ' + kit.esc(entry.protocol) +
+          ', ' +
+          kit.esc(entry.spec) + ' — ' + (json.byType[entry.type] || 0) +
+          ' ' +
+              'recorded) ' +
+          kit.note(kit.esc(entry.what) +
+            (entry.policed
+              ? ' <strong>This service decides who may do it.</strong>'
+              : ' <strong>Nothing here checks who may do it.</strong>')) +
+          '</li>';
+      }).join('') + '</ul>' +
+      mechanismsNav.foot +
+
+      kit.note('<strong>It is in memory and dies with the ' +
+      'process</strong>, like the counters, the audit log, the sessions ' +
+      'and the signing key. It also has no clear button and no way to add ' +
+      'a row by hand, which is a decision rather than an omission: every ' +
+      'row here is something that actually happened, and a table mixing ' +
+      'those with typed-in ones would be worth much less than either. ' +
+      'Restarting the service is how you get an empty one.') +
+
+      kit.note('<strong>A delegation that SUCCEEDED also appears on <a ' +
+      'href="/admin/audit">the audit log</a></strong> as an ordinary ' +
+      '<code>authentication</code> row, and on <a href="/admin/users">the ' +
+      'users page</a> as a credential accepted for the initial identity — ' +
+      'which is right: this service did accept one. A delegation that was ' +
+      'REFUSED appears in NEITHER, because nothing was accepted, and that ' +
+      'gap is the reason this page keeps its own list rather than a filter ' +
+      'over one of theirs.') +
+
+      // THE ONE SETTING THIS PAGE HAD, `delegation.maxRecords`, is on
+      // Protocols → Delegation since 2026-10-01 with every other control
+      // that was here (rcbj): this page reads, and that one configures.
+      kit.note('<strong>Nothing on this page changes anything ' +
+      '(2026-10-01).</strong> The register\'s controls and ' +
+      '<code>delegation.maxRecords</code> are on <a ' +
+      'href="/admin/delegation-settings">Protocols &rsaquo; ' +
+      'Delegation</a>, and one application\'s permissions on its own ' +
+      'Permissions tab.') +
+
+      kit.note('<strong>Every table on this page is paged, at ' +
+      json.delegationPerPage + ' rows, and they share one size.</strong> ' +
+      'There are seven of them here with several screens of prose between, ' +
+      'so fifty rows apiece — which is what every other page in this ' +
+      'console uses — would put the last heading tens of thousands of ' +
+      'pixels down. <code>?per=</code> changes all seven together (at ' +
+      'most ' + kit.MAX_ROWS + ' rows a page) and the control above the acts ' +
+      'table is the one that sets it. Each table then has a page parameter ' +
+      'of ITS OWN, so moving one leaves the other six where you left them: ' +
+      '<code>?page=</code> for the acts, and <code>?chainsPage=</code>, ' +
+      '<code>?permissionsPage=</code>, <code>?grantsPage=</code>, ' +
+      '<code>?pairsPage=</code>, <code>?flagsPage=</code> and ' +
+      '<code>?mechanismsPage=</code> for the rest. The two searches over ' +
+      'the configured register are <code>?permq=</code> and ' +
+      '<code>?grantq=</code>, and a new search starts that table at its ' +
+      'first page.') +
+
+      kit.note('<strong><code>?format=json</code> carries the WHOLE of ' +
+      'every list and not the page you are looking at, and that is ' +
+      'deliberate rather than an oversight.</strong> The acts are the ' +
+      'exception and always were: they are capped at ' +
+      '<code>delegation.maxRecords</code> and can be thousands, so the ' +
+      'reply pages them and carries <code>page</code>, <code>pages</code> ' +
+      'and <code>matched</code> for a caller to walk them with. Everything ' +
+      'else — <code>chains</code>, the configured <code>policy</code> and ' +
+      'the whole of <code>allowed</code> — comes back entire, because each ' +
+      'is derived from something already bounded and because <code>GET ' +
+      '/admin-api/permissions</code> answers with that same register under ' +
+      'its own name. A caller that had to walk seven pagings to read a ' +
+      'register a page draws in one screen would be paying for this ' +
+      'page\'s layout. <code>allowed.filter</code> and ' +
+      '<code>allowed.paging</code> report what the BROWSER was shown, so ' +
+      'nothing here is silent about the difference. The acts are also at ' +
+      '<code>GET /admin-api/delegation</code> with the same parameters.'));
+  }
 }
 
 export = DelegationPage;

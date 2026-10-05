@@ -18440,7 +18440,10 @@ class AdminApi {
         responseSchema: { $ref: '#/components/schemas/DelegationList' },
         handler: function (req, res) {
           log.debug("Entering the management API delegation endpoint.");
-          self.sendJson(res, 200, adminViews.delegationView(req.query).json);
+          // The page's model since #446: the acts as before, and beside
+          // them what /admin/delegation draws (`allowed`,
+          // `delegationPolicy`, its other lists and the two choosers).
+          self.sendJson(res, 200, adminViews.delegationPageModel(req.query));
           log.debug("Leaving the management API delegation endpoint.");
         } },
 

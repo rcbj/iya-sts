@@ -5015,6 +5015,94 @@ class AdminViews {
   }
 
   // ---------------------------------------------------------------------------
+  // MONITORING → DELEGATION, AS ONE ANSWER (#446).
+  //
+  // `/admin/delegation`: the acts, filtered and paged (`delegationView()`,
+  // what `GET /admin-api/delegation` answered alone), the configured
+  // permissions register as `allowed` and the WS-Trust and token-exchange
+  // policy as `delegationPolicy` — the page's `?format=json` before — and
+  // what the page draws beyond them: its other six lists paged, the two
+  // choosers' panes, the two sections' views, and the facts.
+  // ---------------------------------------------------------------------------
+  /**
+   * Builds `/admin/delegation`'s answer.
+   *
+   * @param query - the page's query: the delegation filter, the searches
+   *   and every list's page
+   * @returns the acts and everything the page draws beside them
+   */
+  delegationPageModel(query) {
+    const { log, delegation, userGraph, applications } = this.deps;
+    const self = this;
+    log.debug("Entering AdminViews.delegationPageModel().");
+    const q = query || {};
+    const view = this.delegationView(q);
+    const permissions = this.permissionsView();
+    const listState = this.permissionsListStateOf(q, permissions.register);
+    const exchangePolicy = this.delegationPolicyView(q);
+    const policy = view.policy;
+    const page = function (rows, name, noun) {
+      const one = self.pagedRows(q, rows, { name: name, noun: noun,
+                                            defaultPer: DELEGATION_PER_PAGE });
+      return { shown: one.shown, paging: self.pagingJson(one.paging) };
+    };
+    const carry = WebKit.listViewOf('/admin/delegation', q);
+    const model: any = Object.assign({}, view.json, {
+      // UNDER A MEMBER OF ITS OWN AND NOT MERGED INTO THE ACTS: different
+      // registers, and `allowed` is the word the page uses.
+      allowed: {
+        resources: permissions.register.resources,
+        permissions: permissions.register.permissions,
+        grants: permissions.register.grants,
+        counts: permissions.register.counts,
+        graph: permissions.graph,
+        // What the browser was shown, beside the whole lists.
+        filter: { permissions: listState.permWanted || null,
+                  grants: listState.grantWanted || null },
+        paging: { permissions: listState.permPage.paging,
+                  grants: listState.grantPage.paging }
+      },
+      // WS-Trust and token exchange (#108), paged as GET
+      // /admin-api/delegation/policy pages it.
+      delegationPolicy: exchangePolicy.json,
+      all: view.all.length,
+      paging: this.pagingJson(view.paging),
+      // The size every list here starts at, which the page states.
+      delegationPerPage: DELEGATION_PER_PAGE,
+      // The page's other lists, each on a parameter of its own.
+      chainPage: page(view.chains, 'chains', 'chains'),
+      pairPage: page(policy.pairs, 'pairs', 'pairs'),
+      flagPage: page(policy.accounts, 'flags', 'accounts'),
+      mechanismPage: page(delegation.TYPES, 'mechanisms', 'mechanisms'),
+      applicationChooser: this.delegationChooser('application', q,
+                                                 view.applications, carry),
+      userChooser: this.delegationChooser('user', q, userGraph.userList(),
+                                          carry),
+      // What `permissionsSection()` and `delegationPolicySection()` draw.
+      permissionsView: {
+        register: permissions.register, listState: listState,
+        allApplications: applications.list().map(function (row) {
+          return { identifier: row.identifier, name: row.name || '' };
+        })
+      },
+      exchangePolicyView: {
+        register: exchangePolicy.register,
+        pairs: { shown: exchangePolicy.pairs.shown,
+                 paging: this.pagingJson(exchangePolicy.pairs.paging) },
+        intermediaries: {
+          shown: exchangePolicy.intermediaries.shown,
+          paging: this.pagingJson(exchangePolicy.intermediaries.paging) },
+        people: { shown: exchangePolicy.people.shown,
+                  paging: this.pagingJson(exchangePolicy.people.paging) }
+      }
+    });
+    model.facts = this.delegationFacts({ acts: model.acts,
+                                         chains: model.chainPage.shown });
+    log.debug("Leaving AdminViews.delegationPageModel().");
+    return model;
+  }
+
+  // ---------------------------------------------------------------------------
   // A DELEGATION CHOOSER'S PANE, SEARCHED AND PAGED HERE (#446).
   //
   // The console drew both choosers from the whole catalogue — every
@@ -11990,6 +12078,7 @@ export = {
   delegationLooks: slot.forward('delegationLooks'),
   delegationMapModel: slot.forward('delegationMapModel'),
   delegationMapKey: slot.forward('delegationMapKey'),
+  delegationPageModel: slot.forward('delegationPageModel'),
   delegationClusterModel: slot.forward('delegationClusterModel'),
   delegationAllowedModel: slot.forward('delegationAllowedModel'),
   permissionsListStateOf: slot.forward('permissionsListStateOf'),
