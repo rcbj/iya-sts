@@ -2,12 +2,12 @@
 // SPDX-License-Identifier: BUSL-1.1
 
 //! The XACML 3.0 engine — model, datatypes, function library, combining
-//! algorithms, PDP, static validation, the XML reader and writer and the JSON Profile — with no I/O. A
-//! port of the eight engine files in `xacml/` (#444, phase 1).
+//! algorithms, PDP, static validation, the XML reader and writer, and the
+//! JSON Profile — with no I/O. A port of the engine files in `xacml/` (#444,
+//! phase 1).
 //!
-//! It is shared by the runtime's PDP and by the remote PEP container, as the
-//! JavaScript engine is today: the PEP copies these files at build time,
-//! and here it depends on this crate. Nothing in it may reach a socket, a
+//! It is shared by the runtime's PDP and by the remote PEP container: the
+//! PEP depends on this crate, as the runtime will. Nothing in it may reach a socket, a
 //! file or a clock other than through [`pdp::EvaluationOptions`].
 //!
 //! ```
