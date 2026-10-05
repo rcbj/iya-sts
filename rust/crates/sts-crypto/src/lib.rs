@@ -8,7 +8,11 @@
 
 #![deny(unsafe_code)]
 
+pub mod b64;
 pub mod error;
+pub mod jws;
+pub mod jws_alg;
+pub mod keys;
 pub mod pq;
 
 pub use error::{CryptoError, CryptoResult};
