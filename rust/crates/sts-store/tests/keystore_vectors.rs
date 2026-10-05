@@ -282,3 +282,100 @@ async fn key_sets_are_nodes() {
     let refused = KeySets::new(driver, wrong).load().await.unwrap_err();
     assert!(refused.contains("STS-KEYS-0029"), "{}", refused);
 }
+
+#[test]
+fn the_thumbprint_is_rfc_7638s() {
+    // RFC 7638 section 3.1's example key and thumbprint.
+    let jwk = json!({ "kty": "RSA", "e": "AQAB", "alg": "RS256", "kid": "2011-04-29",
+        "n": "0vx7agoebGcQSuuPiLJXZptN9nndrQmbXEps2aiAFbWhM78LhWx4cbbfAAtVT86zwu1RK7aPFFxuhDR1L6tSoc_BJECPebWKRXjBZCiFV4n3oknjhMstn64tZ_2W-5JsGY4Hc5n9yBXArwl93lqt7_RN5w6Cf0h4QyQ5v-65YGjQR0_FDW2QvzqY368QQMicAtaSqzs8KJZgnYb9c7d0zgdAZHzu6qMQvRL5hajrn1n91CbOpbISD08qNLyrdkt-bFTWhAI4vMQFh6WeZu0fM4lFd2NcRwr3XPksINHaQ-G_xBniIqbw0Ls1jF44-csFCur-kEgU8awapJzKnqDKgw" });
+    assert_eq!(
+        sts_store::key_sets::jwk_thumbprint(&jwk, 64),
+        "NzbLsXh8uDCcd-6MNwXF4W_7noWXFZAfHkxZsRGC9Xs"
+    );
+}
+
+#[tokio::test]
+async fn a_made_key_set_is_whole() {
+    use sts_store::key_sets::{generate_key_set, kid_of, KeySet, KeySets};
+    let blob = generate_key_set(1_791_000_000_000).unwrap();
+    let set = KeySet {
+        realm: "default".into(),
+        blob: blob.clone(),
+    };
+    assert_eq!(set.kid(), Some(kid_of(set.cert_b64().unwrap())));
+    use base64::Engine;
+    let cert = openssl::x509::X509::from_der(
+        &base64::engine::general_purpose::STANDARD
+            .decode(set.cert_b64().unwrap())
+            .unwrap(),
+    )
+    .unwrap();
+    let key = openssl::pkey::PKey::private_key_from_pem(
+        set.private_key_pem().unwrap().as_bytes(),
+    )
+    .unwrap();
+    assert!(cert.public_key().unwrap().public_eq(&key));
+    assert!(set
+        .private_key_pem()
+        .unwrap()
+        .starts_with("-----BEGIN RSA PRIVATE KEY-----\r\n"));
+    let cn = cert
+        .subject_name()
+        .entries()
+        .next()
+        .unwrap()
+        .data()
+        .to_string()
+        .unwrap()
+        .to_string();
+    assert_eq!(cn, "ws-trust-sts");
+    assert_eq!(cert.serial_number().to_bn().unwrap().to_vec()[0], 0x02);
+    let curves = set.curve_keys();
+    let kids: Vec<String> = curves
+        .iter()
+        .map(|c| c.public_jwk["kid"].as_str().unwrap()[..8].to_string())
+        .collect();
+    assert_eq!(
+        kids,
+        [
+            "sts-es25", "sts-es38", "sts-es51", "sts-es25", "sts-edds",
+            "sts-ed44"
+        ]
+    );
+    for c in &curves {
+        openssl::pkey::PKey::private_key_from_pem(c.private_key_pem.as_bytes())
+            .unwrap();
+    }
+    assert!(blob["refreshTokenEncKeys"]["secretKid"]
+        .as_str()
+        .unwrap()
+        .starts_with("sts-rt-secret-"));
+    assert!(blob["vciRequestEncKey"]["publicJwk"]["kid"]
+        .as_str()
+        .unwrap()
+        .starts_with("sts-req-enc-"));
+
+    // Written for Node to read, where asked: the vectors' KEK, an ldif store.
+    let Ok(out) = std::env::var("STS_KEYSET_OUT") else {
+        return;
+    };
+    let Some((dir, v)) = vectors() else {
+        return;
+    };
+    let (kek, _) = DataKeys::read_kek_file(
+        dir.join(v["kekFile"].as_str().unwrap()).to_str().unwrap(),
+    )
+    .unwrap();
+    let driver: Arc<dyn Driver> =
+        Arc::new(LdifDriver::new(PathBuf::from(&out)));
+    let keys = DataKeys::durable(kek, true, driver.clone(), None).unwrap();
+    keys.ensure_digest_key().await;
+    let sets = KeySets::new(driver, keys);
+    sets.save("", &blob).await.unwrap();
+    std::fs::write(
+        PathBuf::from(&out).join("expected.json"),
+        json!({ "kid": set.kid(), "curveKids": curves.iter().map(|c| c.public_jwk["kid"].clone()).collect::<Vec<_>>(),
+                "vciKid": blob["vciRequestEncKey"]["publicJwk"]["kid"] }).to_string(),
+    )
+    .unwrap();
+}

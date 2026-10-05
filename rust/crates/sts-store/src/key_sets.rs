@@ -318,3 +318,293 @@ impl KeySets {
         })))
     }
 }
+
+// ---------------------------------------------------------------------------
+// MAKING A KEY SET (`helpers.js`'s makeStsKeys()), in the blob's own shape:
+// every member a fresh Node set carries, each `kid` by Node's recipe, so a
+// set made here is a set Node reads and publishes the same names for. The
+// post-quantum keys, the KEM keys, the BBS key, the signer groups and the
+// generations are made lazily by Node, after the set exists, and are left
+// empty here as Node leaves them.
+// ---------------------------------------------------------------------------
+
+use base64::engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD};
+use base64::Engine;
+use openssl::bn::{BigNum, BigNumContext};
+use openssl::ec::{EcGroup, EcKey};
+use openssl::hash::MessageDigest;
+use openssl::nid::Nid;
+use openssl::pkey::{PKey, Private};
+use openssl::rsa::Rsa;
+use openssl::x509::{X509Builder, X509NameBuilder};
+use serde_json::json;
+
+type Made<T> = Result<T, String>;
+
+/// A curve key's `alg`, its curve where the `alg` does not say, and its maker.
+type CurveSpec = (
+    &'static str,
+    Option<&'static str>,
+    Box<dyn Fn() -> Made<PKey<Private>>>,
+);
+
+fn ossl<T>(r: Result<T, openssl::error::ErrorStack>) -> Made<T> {
+    r.map_err(|e| e.to_string())
+}
+
+fn b64u(bytes: &[u8]) -> String {
+    URL_SAFE_NO_PAD.encode(bytes)
+}
+
+/// RFC 7638's thumbprint (`jwkThumbprint()`), base64url, truncated.
+pub fn jwk_thumbprint(jwk: &Json, truncate: usize) -> String {
+    let members: &[&str] = match jwk.get("kty").and_then(Json::as_str) {
+        Some("RSA") => &["e", "kty", "n"],
+        Some("EC") => &["crv", "kty", "x", "y"],
+        Some("OKP") => &["crv", "kty", "x"],
+        _ => &["kty"],
+    };
+    let canonical = format!(
+        "{{{}}}",
+        members
+            .iter()
+            .map(|m| format!(
+                "\"{}\":{}",
+                m,
+                jwk.get(*m).cloned().unwrap_or(Json::Null)
+            ))
+            .collect::<Vec<_>>()
+            .join(",")
+    );
+    let digest = b64u(&sha256(canonical.as_bytes()));
+    digest[..truncate.min(digest.len())].to_string()
+}
+
+/// The public JWK node's `export({ format: 'jwk' })` gives, in its member
+/// order: EC coordinates at the field's full width, an Edwards key raw.
+fn public_jwk_of(key: &PKey<Private>) -> Made<Json> {
+    if let Ok(rsa) = key.rsa() {
+        return Ok(json!({ "kty": "RSA", "n": b64u(&rsa.n().to_vec()),
+                          "e": b64u(&rsa.e().to_vec()) }));
+    }
+    if let Ok(ec) = key.ec_key() {
+        let group = ec.group();
+        let (crv, width) = match group.curve_name() {
+            Some(Nid::X9_62_PRIME256V1) => ("P-256", 32),
+            Some(Nid::SECP384R1) => ("P-384", 48),
+            Some(Nid::SECP521R1) => ("P-521", 66),
+            Some(Nid::SECP256K1) => ("secp256k1", 32),
+            _ => return Err("an EC key on a curve JOSE does not name".into()),
+        };
+        let mut x = ossl(BigNum::new())?;
+        let mut y = ossl(BigNum::new())?;
+        let mut ctx = ossl(BigNumContext::new())?;
+        ossl(
+            ec.public_key()
+                .affine_coordinates(group, &mut x, &mut y, &mut ctx),
+        )?;
+        let pad = |n: &BigNum| ossl(n.to_vec_padded(width));
+        return Ok(
+            json!({ "kty": "EC", "x": b64u(&pad(&x)?), "y": b64u(&pad(&y)?), "crv": crv }),
+        );
+    }
+    let crv = match key.id() {
+        openssl::pkey::Id::ED25519 => "Ed25519",
+        openssl::pkey::Id::ED448 => "Ed448",
+        _ => return Err("a key of a kind JOSE does not publish".into()),
+    };
+    Ok(
+        json!({ "crv": crv, "x": b64u(&ossl(key.raw_public_key())?), "kty": "OKP" }),
+    )
+}
+
+/// `Object.assign(publicJwk, extra)`: the extra members after the key's.
+fn with(mut jwk: Json, extra: Json) -> Json {
+    if let (Some(base), Some(more)) = (jwk.as_object_mut(), extra.as_object()) {
+        for (k, v) in more {
+            base.insert(k.clone(), v.clone());
+        }
+    }
+    jwk
+}
+
+fn pkcs8(key: &PKey<Private>) -> Made<String> {
+    String::from_utf8(ossl(key.private_key_to_pem_pkcs8())?)
+        .map_err(|e| e.to_string())
+}
+
+fn ec_key(nid: Nid) -> Made<PKey<Private>> {
+    let group = ossl(EcGroup::from_curve_name(nid))?;
+    ossl(PKey::from_ec_key(ossl(EcKey::generate(&group))?))
+}
+
+fn rsa_key(bits: u32) -> Made<PKey<Private>> {
+    ossl(PKey::from_rsa(ossl(Rsa::generate(bits))?))
+}
+
+/// forge's PEM: CRLF line endings, 64 columns.
+fn crlf(pem: &[u8]) -> Made<String> {
+    Ok(String::from_utf8(pem.to_vec())
+        .map_err(|e| e.to_string())?
+        .replace("\r\n", "\n")
+        .replace('\n', "\r\n"))
+}
+
+/// `selfSignedRsaCertificate()`: an RSA-2048 key and a certificate over it,
+/// subject and issuer `CN=<cn>`, a 16-byte serial led by `prefix` (top bit
+/// clear), five years, SHA-256, no extensions. `(privateKeyPem PKCS#1,
+/// certPem, certB64)`.
+fn self_signed_rsa(
+    cn: &str,
+    prefix: u8,
+    now_ms: i64,
+) -> Made<(String, String, String)> {
+    let rsa = ossl(Rsa::generate(2048))?;
+    let key = ossl(PKey::from_rsa(rsa.clone()))?;
+    let mut serial = [0u8; 16];
+    ossl(openssl::rand::rand_bytes(&mut serial[1..]))?;
+    serial[0] = (prefix & 0x7f).max(1);
+    let mut name = ossl(X509NameBuilder::new())?;
+    ossl(name.append_entry_by_nid(Nid::COMMONNAME, cn))?;
+    let name = name.build();
+    let mut b = ossl(X509Builder::new())?;
+    ossl(b.set_version(2))?;
+    let serial = ossl(ossl(BigNum::from_slice(&serial))?.to_asn1_integer())?;
+    ossl(b.set_serial_number(&serial))?;
+    ossl(b.set_subject_name(&name))?;
+    ossl(b.set_issuer_name(&name))?;
+    ossl(b.set_pubkey(&key))?;
+    let start = chrono::DateTime::from_timestamp_millis(now_ms)
+        .ok_or("a time out of range")?;
+    let end = start
+        .checked_add_months(chrono::Months::new(60))
+        .ok_or("a time out of range")?;
+    let not_before =
+        ossl(openssl::asn1::Asn1Time::from_unix(start.timestamp()))?;
+    let not_after = ossl(openssl::asn1::Asn1Time::from_unix(end.timestamp()))?;
+    ossl(b.set_not_before(&not_before))?;
+    ossl(b.set_not_after(&not_after))?;
+    ossl(b.sign(&key, MessageDigest::sha256()))?;
+    let cert = b.build();
+    let der = ossl(cert.to_der())?;
+    Ok((
+        crlf(&ossl(rsa.private_key_to_pem())?)?,
+        crlf(&ossl(cert.to_pem())?)?,
+        STANDARD.encode(der),
+    ))
+}
+
+/// The curve signing keys (`CURVE_KEY_SPECS`), each `kid` naming its curve
+/// and the first eight hex digits of the SHA-256 of `[crv, x, y]`.
+fn curve_keys() -> Made<Vec<Json>> {
+    let specs: [CurveSpec; 6] = [
+        ("ES256", None, Box::new(|| ec_key(Nid::X9_62_PRIME256V1))),
+        ("ES384", None, Box::new(|| ec_key(Nid::SECP384R1))),
+        ("ES512", None, Box::new(|| ec_key(Nid::SECP521R1))),
+        ("ES256K", None, Box::new(|| ec_key(Nid::SECP256K1))),
+        ("EdDSA", None, Box::new(|| ossl(PKey::generate_ed25519()))),
+        (
+            "EdDSA",
+            Some("Ed448"),
+            Box::new(|| ossl(PKey::generate_ed448())),
+        ),
+    ];
+    let mut out = Vec::new();
+    for (alg, curve, make) in specs.iter() {
+        let key = make()?;
+        let jwk = public_jwk_of(&key)?;
+        let material = serde_json::to_string(&json!([
+            jwk["crv"],
+            jwk["x"],
+            jwk.get("y").cloned().unwrap_or(json!(""))
+        ]))
+        .map_err(|e| e.to_string())?;
+        let hex: String = sha256(material.as_bytes())
+            .iter()
+            .map(|b| format!("{:02x}", b))
+            .collect();
+        let kid = format!(
+            "sts-{}-{}",
+            curve.unwrap_or(alg).to_lowercase(),
+            &hex[..8]
+        );
+        out.push(json!({
+            "alg": alg,
+            "privateKeyPem": pkcs8(&key)?,
+            "publicJwk": with(with(json!({ "use": "sig", "alg": alg }), jwk), json!({ "kid": kid })),
+        }));
+    }
+    Ok(out)
+}
+
+/// An encryption pair whose `kid` is `<prefix>-<kind>-<thumbprint>`.
+fn enc_pair(key: PKey<Private>, kid: String, extra: Json) -> Made<Json> {
+    let jwk = public_jwk_of(&key)?;
+    Ok(json!({ "privateKeyPem": pkcs8(&key)?,
+               "publicJwk": with(with(jwk, json!({ "kid": kid })), extra) }))
+}
+
+fn thumb_of(key: &PKey<Private>) -> Made<String> {
+    Ok(jwk_thumbprint(&public_jwk_of(key)?, 16))
+}
+
+/// A new key set's blob (`makeStsKeys()` then `serialise()`), made at
+/// `now_ms`.
+pub fn generate_key_set(now_ms: i64) -> Result<Json, String> {
+    let (private_key_pem, cert_pem, cert_b64) =
+        self_signed_rsa("ws-trust-sts", 0x02, now_ms)?;
+    let (xml_pem, xml_cert_pem, xml_cert_b64) =
+        self_signed_rsa("ws-trust-sts-xml", 0x04, now_ms)?;
+
+    let vci = rsa_key(2048)?;
+    let vci_kid = format!("sts-req-enc-{}", thumb_of(&vci)?);
+    let vci = enc_pair(
+        vci,
+        vci_kid,
+        json!({ "alg": "RSA-OAEP-256", "use": "enc", "key_ops": ["encrypt"] }),
+    )?;
+
+    let pair = |prefix: &str| -> Made<Json> {
+        let rsa = rsa_key(2048)?;
+        let ec = ec_key(Nid::X9_62_PRIME256V1)?;
+        let rsa_kid = format!("{}-rsa-{}", prefix, thumb_of(&rsa)?);
+        let ec_kid = format!("{}-ec-{}", prefix, thumb_of(&ec)?);
+        Ok(
+            json!({ "rsa": enc_pair(rsa, rsa_kid, json!({ "use": "enc" }))?,
+                   "ec": enc_pair(ec, ec_kid, json!({ "use": "enc" }))? }),
+        )
+    };
+    let mut refresh = pair("sts-rt")?;
+    let mut secret = [0u8; 64];
+    ossl(openssl::rand::rand_bytes(&mut secret))?;
+    refresh["secret"] = json!(STANDARD.encode(secret));
+    refresh["secretKid"] =
+        json!(format!("sts-rt-secret-{}", &b64u(&sha256(&secret))[..16]));
+    let request_object = pair("sts-ro")?;
+
+    let device = |using: &str, alg: &str| -> Made<Json> {
+        let key = ec_key(Nid::X9_62_PRIME256V1)?;
+        let kid = format!("sts-bd-{}-{}", using, thumb_of(&key)?);
+        enc_pair(key, kid, json!({ "use": using, "alg": alg }))
+    };
+    let browser = json!({ "sign": device("sig", "ES256")?, "enc": device("enc", "ECDH-ES+A256KW")? });
+
+    Ok(json!({
+        "version": 1,
+        "createdAt": now_ms,
+        "privateKeyPem": private_key_pem,
+        "certPem": cert_pem,
+        "certB64": cert_b64,
+        "pqKeys": [],
+        "extraKeys": curve_keys()?,
+        "vciRequestEncKey": vci,
+        "refreshTokenEncKeys": refresh,
+        "requestObjectEncKeys": request_object,
+        "browserDeviceKeys": browser,
+        "kemEncKeys": [],
+        "xmlKey": { "privateKeyPem": xml_pem, "certPem": xml_cert_pem, "certB64": xml_cert_b64 },
+        "bbsKey": null,
+        "signerGroups": null,
+        "generations": null,
+    }))
+}
