@@ -20,6 +20,7 @@ pub mod ldif_driver;
 pub mod memory;
 pub mod merge;
 pub mod model;
+pub mod persistence;
 pub mod shadow;
 
 pub use driver::{Driver, StoreError, StoreFuture, StoreResult};
