@@ -4596,6 +4596,121 @@ class AdminViews {
   }
 
   // ---------------------------------------------------------------------------
+  // EVERYTHING DONE IN ONE PERSON'S NAME, AS ONE ANSWER (#446).
+  //
+  // `/admin/delegation/user?user=`: the identity register and the
+  // delegation register unioned for one person (`userGraph.activityFor()`)
+  // — every credential with the grant that produced it, the sign-ins, the
+  // acts naming them — drawn. The page's own JSON with the looks (the
+  // issuance half appended to each tooltip), the drawing, the key with the
+  // person picture's own three rows, the chooser's pane and the facts. A
+  // name neither register holds is `user: null`, with the catalogue.
+  // ---------------------------------------------------------------------------
+  /**
+   * Builds everything done in one person's name as one answer.
+   *
+   * @param query - the page's query: `user`, as presented or normalised
+   * @param options - `links` (true by default): false draws the document
+   *   with no links in it, as `?format=svg` answers
+   * @returns the person, their credentials, flows, acts and graph, and the
+   *   drawing
+   */
+  delegationUserModel(query, options?) {
+    const { log, stats, delegation, delegationMap, userGraph } = this.deps;
+    log.debug("Entering AdminViews.delegationUserModel().");
+    const asked = String((query || {}).user || '').trim();
+    // Normalised the way the identity register normalises one, so a link
+    // carrying `alice@STS.MOCK` finds the same person the chooser's does.
+    const key = stats.identityKeyOf(asked);
+    const catalogue = userGraph.userList();
+    const activity = key ? userGraph.activityFor(key) : null;
+    // An empty graph rather than none when nobody is selected.
+    const graph = activity ? activity.graph : delegation.graph([]);
+    const look = this.delegationLooks(graph, this.knownUserKeys());
+
+    // WHAT THE ISSUANCE HALF ADDS TO A TOOLTIP. `delegationNodeLook()` is the
+    // one answer to "what is this box" and must stay that way — it is what
+    // keeps this page, the map and the two other drill-downs drawing one
+    // party one way — so the credentials are APPENDED to what it said rather
+    // than folded into it.
+    graph.nodes.forEach(function (node) {
+      const entry = look.looks[node.id];
+      if (!entry || node.kind === 'sts') {
+        return;
+      }
+      // A CLIENT IS DRAWN AS AN APPLICATION, and only where neither store has
+      // an opinion. `delegationNodeLook()`'s fallback is the shape the ROLE
+      // implies and the subject of this page is an initial identity, so a
+      // `client_credentials` client — which is a client BY ITS OWN SAYING, at
+      // the one funnel that can know — was coming out as a stick figure.
+      // Where the directory or the registry DOES know it, that answer stands:
+      // the fallback is what is being corrected, not the stores.
+      if (node.isClient && entry.dashed) {
+        entry.shape = 'application';
+        entry.sublabel = 'a client, not a person';
+      }
+      const extra = [];
+      if (node.isSubject) {
+        extra.push('THIS IS THE PERSON THIS PAGE IS ABOUT.');
+      }
+      if (node.isClient) {
+        extra.push('It is a CLIENT rather than a person: something ' +
+                   'authenticated under this name and said the client is ' +
+                   'the identity, which the client_credentials grant is ' +
+                   'the usual way of doing.');
+      }
+      if (node.credentials) {
+        extra.push(node.credentials + ' credential(s) issued' +
+                   (node.isSubject ? ' naming them' : ' to it') +
+                   (node.kinds.length ? ': ' + node.kinds.join(', ') : '') +
+                   '.');
+      }
+      if (node.flows.length) {
+        extra.push('By: ' + node.flows.join(', ') + '.');
+      }
+      if (node.authentications) {
+        extra.push(node.authentications + ' authentication(s) here.');
+      }
+      if (extra.length) {
+        entry.title = entry.title + '\n' + extra.join('\n');
+      }
+    });
+
+    const label = activity
+      ? 'Everything issued in the name of ' + activity.key
+      : 'People and the credentials issued in their name';
+    const drawn = delegationMap.render(graph, {
+      resolve: look.resolve, labelOf: look.labelOf,
+      links: !(options && options.links === false), id: 'delmap', label: label
+    });
+    const model: any = {
+      user: activity ? activity.entry : null,
+      asked: asked || null, key: key,
+      // The whole model, so a test can assert what the page draws without
+      // parsing an SVG.
+      credentials: activity ? activity.credentials : [],
+      flows: activity ? activity.flows : [],
+      onDelegationLines: activity ? activity.onDelegationLines : 0,
+      acts: activity ? activity.acts : [],
+      graph: graph,
+      counts: activity ? activity.counts : null,
+      users: catalogue,
+      drawing: { width: drawn.width, height: drawn.height,
+                 failed: drawn.failed || null },
+      looks: look.looks, label: label, svg: drawn.svg
+    };
+    if (!(options && options.links === false)) {
+      model.chooser = this.delegationChooser('user', query, catalogue,
+        WebKit.listViewOf('/admin/delegation', query || {}));
+      model.mapKey = this.delegationMapKey({ issuance: true });
+      model.facts = this.delegationFacts(model);
+    }
+    log.debug("Leaving AdminViews.delegationUserModel(). " +
+              model.credentials.length + " credential(s).");
+    return model;
+  }
+
+  // ---------------------------------------------------------------------------
   // A DELEGATION CHOOSER'S PANE, SEARCHED AND PAGED HERE (#446).
   //
   // The console drew both choosers from the whole catalogue — every
@@ -11571,6 +11686,7 @@ export = {
   delegationLooks: slot.forward('delegationLooks'),
   delegationMapModel: slot.forward('delegationMapModel'),
   delegationMapKey: slot.forward('delegationMapKey'),
+  delegationUserModel: slot.forward('delegationUserModel'),
   delegationApplicationModel: slot.forward('delegationApplicationModel'),
   delegationChainModel: slot.forward('delegationChainModel'),
   delegationChooser: slot.forward('delegationChooser'),

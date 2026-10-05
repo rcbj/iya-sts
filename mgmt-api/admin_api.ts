@@ -18440,6 +18440,54 @@ class AdminApi {
           log.debug("Leaving the management API delegation map endpoint.");
         } },
 
+      // EVERYTHING DONE IN ONE PERSON'S NAME (#446): the console page had
+      // no operation, having no form; see
+      // `AdminViews.delegationUserModel()`.
+      { method: 'GET', path: BASE + '/delegation/user', tag: 'Delegation',
+        operationId: 'getDelegationUser',
+        summary: 'Everything issued and delegated in one person\'s name',
+        description: 'The identity register and the delegation register ' +
+                     'UNIONED for one person: every credential issued ' +
+                     'naming them with the grant or flow that produced it ' +
+                     '(`credentials`, `flows`), their sign-ins, every act ' +
+                     'naming them in any role (`acts`), the graph and, as ' +
+                     'for `/delegation/map`, `looks`, the drawing (`svg`) ' +
+                     'and its size. `users` is everybody either register ' +
+                     'holds, which is what the page\'s chooser searches.' +
+                     '\n\nA name neither register holds is answered with ' +
+                     '`user: null`, not an error.\n\nWith `format=svg` the ' +
+                     'answer is the SVG document alone, with no links in ' +
+                     'it, as `image/svg+xml`.',
+        mirrors: 'GET /admin/delegation/user',
+        parameters: [
+          { name: 'user', in: 'query', required: false,
+            schema: { type: 'string' },
+            description: 'The person, under any spelling this service has ' +
+                         'seen them under.' },
+          { name: 'format', in: 'query', required: false,
+            schema: { type: 'string', enum: ['json', 'svg'] },
+            description: '`svg` answers the drawing alone, as a document ' +
+                         'with no links in it. `json`, the default, ' +
+                         'answers everything.' }
+        ],
+        responseDescription: 'The person, their credentials, flows and ' +
+                             'acts, the graph, every node\'s look and the ' +
+                             'drawing.',
+        handler: function (req, res) {
+          log.debug("Entering the management API delegation user endpoint.");
+          if (String((req.query || {}).format || '') === 'svg') {
+            const bare = adminViews.delegationUserModel(req.query,
+                                                        { links: false });
+            res.status(200).set('Cache-Control', 'no-store')
+               .type('image/svg+xml').send(bare.svg);
+            log.debug("Leaving the management API delegation user " +
+                      "endpoint. Answered SVG.");
+            return;
+          }
+          self.sendJson(res, 200, adminViews.delegationUserModel(req.query));
+          log.debug("Leaving the management API delegation user endpoint.");
+        } },
+
       // ONE APPLICATION'S DELEGATIONS (#446): the console page had no
       // operation, having no form; see
       // `AdminViews.delegationApplicationModel()`.

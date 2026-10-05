@@ -371,7 +371,7 @@ class DelegationPage {
           ? '<span class="state-revoked">' + kit.esc(node.refused) +
             ' refused</span>'
           : '<span class="state-none">0 refused</span>') + '</td>' +
-      '<td>' + (node.protocols.map(kit.esc.bind(this)).join('<br>') ||
+      '<td>' + (node.protocols.map(kit.esc.bind(kit)).join('<br>') ||
                 '<span class="state-none">&mdash;</span>') + '</td>' +
       '</tr>';
   }
@@ -843,7 +843,7 @@ class DelegationPage {
       '<td class="num">' + (node.credentials
         ? '<strong>' + kit.esc(node.credentials) + '</strong>'
         : '<span class="state-none">0</span>') + '</td>' +
-      '<td>' + (node.flows.map(kit.esc.bind(this)).join('<br>') ||
+      '<td>' + (node.flows.map(kit.esc.bind(kit)).join('<br>') ||
                 '<span class="state-none">&mdash;</span>') + '</td>' +
       '<td>' + (roles.join('<br>') || '<span class="state-none" title="This ' +
         'box is in no delegation at all — it holds credentials from an ' +
@@ -857,7 +857,7 @@ class DelegationPage {
                 'refused</span>'
             : '')
         : '<span class="state-none">0</span>') + '</td>' +
-      '<td>' + (node.protocols.map(kit.esc.bind(this)).join('<br>') ||
+      '<td>' + (node.protocols.map(kit.esc.bind(kit)).join('<br>') ||
                 '<span class="state-none">&mdash;</span>') + '</td>' +
       '</tr>';
   }
@@ -1124,7 +1124,7 @@ class DelegationPage {
               ? ', <span class="state-revoked">' + kit.esc(entry.refused) +
                 ' refused</span>' : '')
           : '<span class="state-none">0</span>') + '</td>' +
-        '<td>' + (entry.protocols.map(kit.esc.bind(self)).join('<br>') ||
+        '<td>' + (entry.protocols.map(kit.esc.bind(kit)).join('<br>') ||
                   '<span class="state-none">&mdash;</span>') + '</td>' +
         '<td>' + kit.esc(kit.whenText(entry.lastAt)) + '</td>' +
         '</tr>';
@@ -2815,6 +2815,273 @@ class DelegationPage {
       'page and therefore no operation on <code>/admin-api</code> — the ' +
       'acts are in <code>GET /admin-api/delegation</code>, where a caller ' +
       'can filter them by the same free text.');
+
+  }
+
+  // ---------------------------------------------------------------------------
+  // /admin/delegation/user, FROM `GET /admin-api/delegation/user` (#446).
+  //
+  // Everything this service has done in one person's name: the picture of
+  // the ordinary issuance and the delegations together, the grants used,
+  // every credential, the parties, the lines and the acts — or, for a name
+  // neither register holds, the chooser and the catalogue.
+  // ---------------------------------------------------------------------------
+  /**
+   * Draws `/admin/delegation/user` from its answer.
+   *
+   * @param ctx - the render context (`WebKit.context()`)
+   * @param json - the answer of `GET /admin-api/delegation/user`
+   * @returns the body as HTML
+   */
+  static user(ctx: Json, json: Json): string {
+    const listView = kit.listViewOf('/admin/delegation', ctx.query);
+    const upHref = '/admin/delegation' + kit.queryWith(listView, {});
+    const back = kit.note('<a class="btn" href="' + kit.esc(upHref) +
+      '">&larr; Back to the delegation table</a>');
+    const chooser = DelegationPage.delegationUserChooser(json.chooser,
+      json.key, { path: '/admin/delegation/user', query: ctx.query });
+    const entry = json.user;
+    const labelOf = function (id) {
+      return json.looks[id] ? json.looks[id].label : id;
+    };
+    if (!entry) {
+    return back +
+      (json.asked
+        ? kit.note('<strong>Neither register names ' +
+          '<code>' + kit.esc(json.asked) + '</code>.</strong> Three things ' +
+          'could be true and they are different: nothing has ever ' +
+          'authenticated, been issued anything or been delegated under ' +
+          'that name; something did and the records have been DROPPED, ' +
+          'because each of these stores keeps a bounded number and ' +
+          'discards the oldest; or the name is spelled differently from ' +
+          'the way a protocol presented it. The list below is every ' +
+          'identity either register actually holds, which settles the ' +
+          'third.')
+        : '') +
+      kit.note('<strong>Choose a person to see everything this service ' +
+      'has done in their name.</strong> Not just the delegations — this ' +
+      'is the one picture here that also draws the ordinary issuance: ' +
+      'every OAuth 2.0 grant and OIDC flow, every SAML assertion, every ' +
+      'Kerberos ticket and every SVID, each labelled with exactly what ' +
+      'produced it, beside the applications that hold them and the ' +
+      'sign-ins the whole lot rests on.') +
+      chooser +
+      DelegationPage.delegationUserTable(json.users, json.facts,
+                                        listView) +
+      kit.note('The list is the identity register and the delegation ' +
+      'register UNIONED, which is why a row can say <em>never ' +
+      'authenticated here</em>: a delegation names somebody who was not ' +
+      'present and proved nothing — that is what S4U2Self and ' +
+      '<code>OnBehalfOf</code> ARE — so their name exists here and in no ' +
+      'other list this console keeps.');
+    }
+    const parties = json.graph.nodes.filter(function (node) {
+      return node.kind !== 'sts';
+    });
+
+    return back +
+      '<div class="tiles">' +
+        kit.tile(json.counts.credentials, 'credentials issued') +
+        kit.tile(json.counts.authentications, 'sign-ins') +
+        kit.tile(json.flows.length, 'grants used') +
+        kit.tile(json.counts.applications, 'other parties') +
+        kit.tile(json.counts.acts, 'delegation acts') +
+        kit.tile(json.counts.chains, 'delegation relationships') +
+      '</div>' +
+
+      kit.note('<strong><code>' + kit.esc(json.key) +
+                '</code></strong> — ' +
+      (entry.authenticated
+        ? 'they have <a href="' + kit.esc('/admin/users' +
+            kit.queryWith({ user: json.key }, {})) + '">authenticated ' +
+              'here</a> ' +
+          kit.esc(entry.authentications) + ' time(s)'
+        : '<span class="state-expired" title="Nothing has ever presented a ' +
+          'credential under this name in this process. Something was ' +
+          'issued in it, or somebody delegated using it — which is exactly ' +
+          'the state this page exists to make visible.">they have NEVER ' +
+          'authenticated here</span>') +
+      (entry.isClient
+        ? '. It is a <strong>client rather than a person</strong>: ' +
+          'something authenticated under this name and said so, which the ' +
+          '<code>client_credentials</code> grant is the usual way of doing'
+        : '') +
+      (entry.forms.length > 1
+        ? '. They have been spelled ' + entry.forms.length + ' ways and ' +
+          'they are one person here: ' + kit.codeList(entry.forms) +
+          '. Two spellings of one identity is two people, so the console ' +
+          'collapses them on the same normalisation the picture uses'
+        : '') +
+      '. Protocols: ' +
+      (entry.protocols.length ? kit.codeList(entry.protocols) : 'none') +
+      '. Last seen ' + kit.esc(kit.whenText(entry.lastAt)) + '.') +
+
+      '<h2>Everything, as one picture</h2>' +
+      kit.note('<strong>This is the page.</strong> The dotted line into ' +
+      'the hexagon is them SIGNING IN, and it is why anything else here ' +
+      'was allowed. Every solid indigo line is a credential issued NAMING ' +
+      'them, labelled with the exact grant or flow that produced it: out ' +
+      'of THEM it went to that application, out of an APPLICATION it is ' +
+      'the resource that application may reach with it, and out of the ' +
+      'HEXAGON nobody else holds it — a <code>client_credentials</code> ' +
+      'token is about the client itself and an X509-SVID has no audience. ' +
+      'The amber and green lines, where there are any, are delegations — ' +
+      'somebody acting on their behalf — and they are the only lines here ' +
+      'that carry a mode, because impersonation and delegation are ' +
+      'properties of a delegation mechanism and an ordinary grant makes ' +
+      'neither claim.') +
+      DelegationPage.drawing(json, '/admin/delegation/user',
+        Object.assign({}, listView, { user: json.key })) +
+
+      '<h2>The key</h2>' +
+      kit.note('The shapes are drawn by the same functions the picture ' +
+      'uses, so a legend cannot come to describe a diagram this service no ' +
+      'longer draws. The last three rows are this page\'s own — no other ' +
+      'picture in this console has a line for an ordinary grant, because ' +
+      'no other picture is drawn from anything but the delegation ' +
+      'register.') +
+      json.mapKey +
+
+      '<h2>What was used to get a credential</h2>' +
+      kit.note('<strong>Exactly which OAuth 2.0 grant or OpenID Connect ' +
+      'flow, with the section that defines it.</strong> Only the ones this ' +
+      'person\'s credentials actually used are here; the rest of the table ' +
+      'is on no page, because a list of eight grants under a person who ' +
+      'used one is a list nobody reads. A SAML assertion, a Kerberos ' +
+      'ticket and an SVID have no grant at all and are not in this table — ' +
+      'the credentials below say what their own specifications call the ' +
+      'mechanism instead.') +
+      (json.flows.length
+        ? '<table><tr><th>Grant</th><th>OpenID Connect calls ' +
+          'it</th><th>Specification</th><th>Through a browser</th><th>What ' +
+          'it is</th></tr>' +
+          json.flows.map(function (flow) {
+            return '<tr>' +
+              '<td><code>' + kit.esc(flow.flow) + '</code><br>' +
+                '<strong>' + kit.esc(flow.label) + '</strong></td>' +
+              '<td>' + (flow.oidc ? kit.esc(flow.oidc)
+                : '<span class="state-none" title="OpenID Connect defines ' +
+                  'no flow of its own for this grant — it is OAuth 2.0\'s, ' +
+                  'used as it is.">&mdash;</span>') + '</td>' +
+              '<td>' + kit.esc(flow.spec) + '</td>' +
+              '<td>' + (flow.browser
+                ? '<span class="state-valid" title="The person was at an ' +
+                  'authorization endpoint in a browser, so this issuance ' +
+                  'can be put under a sign-on session.">yes</span>'
+                : '<span class="state-none" title="A direct grant: there ' +
+                  'is no browser anywhere in it, which is why its ' +
+                  'credentials are listed with no session.">no</span>') +
+                  '</td>' +
+              '<td>' + kit.esc(flow.what) +
+                (flow.delegating
+                  ? ' <strong>It is also a delegation act</strong>, so its ' +
+                    'credentials are drawn on the delegation line rather ' +
+                    'than twice.'
+                  : '') + '</td>' +
+              '</tr>';
+          }).join('') + '</table>'
+        : kit.note('No credential of theirs states a grant. That is the ' +
+          'ordinary state for somebody who has only ever been issued ' +
+          'assertions, tickets or SVIDs — none of those protocols has a ' +
+          'grant — and for a JWT minted outside the token endpoint.')) +
+
+      '<h2>Every credential issued in their name</h2>' +
+      kit.note('<strong>The issued register: every JWT, assertion, ' +
+      'ticket, SVID and verifiable credential this service has minted ' +
+      'naming them, newest first.</strong> <strong>NO CREDENTIAL IS EVER ' +
+      'HERE, only its kind and its identifier</strong> — the rule the ' +
+      'audit log follows — and a Kerberos ticket genuinely has none to ' +
+      'quote. <em>Went to</em> is the application that holds it: a ' +
+      'token\'s <code>client_id</code>, an assertion\'s audience, the ' +
+      'service principal a ticket was cut for. Nothing holds an X509-SVID, ' +
+      'which is why some rows have none.' +
+      (json.onDelegationLines
+        ? ' <strong>' + kit.esc(json.onDelegationLines) + ' more are ' +
+          'not in this table</strong> and are not missing: a token ' +
+          'exchange writes a row in BOTH registers for one credential, so ' +
+          'those are listed under the delegation acts below, where the row ' +
+          'says more — it names the actor and whether the far end can see ' +
+          'them.'
+        : '')) +
+      '<table><tr><th>When</th><th>Credential</th><th>What issued it</th>' +
+      '<th>Went to</th><th>State</th><th>Session</th></tr>' +
+      (json.credentials.map(function (credential) {
+        return DelegationPage.userCredentialRow(credential, json.facts);
+      }).join('') ||
+        '<tr><td colspan="6">Nothing has been issued naming them. ' +
+        'For somebody only a delegation names — an S4U2Self subject, an ' +
+        '<code>OnBehalfOf</code> — that is the expected state and not a ' +
+        'broken one.</td></tr>') + '</table>' +
+      kit.note('The same rows with their revoke buttons, grouped by the ' +
+      'sign-on session each was issued on, are on <a href="' +
+      kit.esc('/admin/users' + kit.queryWith({ user: json.key }, {})) +
+      '">their page in the identity register</a>. This page draws the ' +
+      'RELATIONSHIPS; that one is where a token is acted on.') +
+
+      '<h2>The parties</h2>' +
+      kit.note('Every box in the picture above, including them. A box ' +
+      'with credentials and no delegation roles is an ordinary client — it ' +
+      'has never been part of a delegation, which is a fact about the ' +
+      'other register rather than a gap here.') +
+      '<table><tr><th>Label</th><th>Drawn as</th><th>Identity</th>' +
+      '<th>Credentials</th><th>By</th><th>Delegation ' +
+      'roles</th><th>Acts</th><th>Protocols</th></tr>' +
+      (parties.map(function (node) {
+        return DelegationPage.userNodeRow(node, json.facts,
+                                          json.looks[node.id]);
+      }).join('') || '<tr><td colspan="8">No parties.</td></tr>') +
+        '</table>' +
+
+      '<h2>Every line, in words</h2>' +
+      kit.note('The picture read as a table, because a diagram nobody can ' +
+      'quote is a diagram nobody can put in a bug report. <strong>Acts and ' +
+      'credentials are different units</strong> and have their own ' +
+      'columns: an act is one delegation exchange, a credential is one ' +
+      'thing that came out of the issued register, and a line can carry ' +
+      'either, both or — a refused delegation — acts and nothing else.') +
+      '<table><tr><th>From</th><th>To</th><th>Relationship</th><th>' +
+      'Mechanism ' +
+      'or grant</th><th>Kind</th><th>Acts</th><th>Credentials</th><th>What ' +
+      'came out</th></tr>' +
+      (json.graph.edges.map(function (edge) {
+        return DelegationPage.userEdgeRow(edge, labelOf);
+      }).join('') || '<tr><td colspan="8">No lines.</td></tr>') + '</table>' +
+
+      (json.acts.length
+        ? '<h2>Every delegation act naming them</h2>' +
+          kit.note('The rows <a href="' + kit.esc(upHref) +
+                    '">the delegation ' +
+          'table</a> holds, narrowed to this person and not paged — in ANY ' +
+          'of the three roles, because the whole reason to look somebody ' +
+          'up in a delegation register is that their name appears in ' +
+          'exchanges they were never present for. This is where the ' +
+          'REFUSALS are: a refusal produced no credential, so it is in ' +
+          'this table and in none of the ones above.') +
+          '<table><tr><th class="num">#</th><th>When</th><th>Mechanism</th>' +
+          '<th>Kind</th><th>Outcome</th><th>Initial identity</th>' +
+          '<th>Intermediary</th><th>Target</th><th>Authorized by / why ' +
+          'not</th><th>Credentials</th></tr>' +
+          json.acts.map(function (row) {
+            return DelegationPage.delegationRow(row, json.facts,
+                                             { listView: listView });
+          }).join('') + '</table>'
+        : '<h2>Delegation</h2>' +
+          kit.note('No delegation act names them, in any role. Everything ' +
+          'above was issued to them directly — which is the ordinary ' +
+          'state, since three of the sixteen families here can delegate at ' +
+          'all.')) +
+
+      '<h2>Somebody else</h2>' + chooser +
+      DelegationPage.delegationUserTable(json.users, json.facts,
+                                          listView) +
+
+      kit.note('<code>?format=json</code> carries this person, their ' +
+      'credentials with the grant on each, their acts and the graph behind ' +
+      'the picture; <code>?format=svg</code> is the document alone. There ' +
+      'is no form that changes anything on this page and therefore no ' +
+      'operation on <code>/admin-api</code> — the acts are in <code>GET ' +
+      '/admin-api/delegation</code> and the tokens in <code>GET ' +
+      '/admin-api/users</code>.');
 
   }
 }

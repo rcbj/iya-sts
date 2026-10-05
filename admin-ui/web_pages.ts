@@ -242,6 +242,21 @@ const PAGES: WebPage[] = [
     render: function (view: Json, ctx?: Json): string {
       return DelegationPage.application(ctx || WebKit.context(), view);
     } },
+  { path: '/admin/delegation/user', title: 'Delegation — one person',
+    operation: '/admin-api/delegation/user',
+    drill: {
+      param: 'user',
+      sample: function (list: Json): string | null {
+        const rows = list.users || [];
+        return rows[0] ? rows[0].key : null;
+      },
+      render: function (view: Json, ctx?: Json): string {
+        return DelegationPage.user(ctx || WebKit.context(), view);
+      }
+    },
+    render: function (view: Json, ctx?: Json): string {
+      return DelegationPage.user(ctx || WebKit.context(), view);
+    } },
   { path: '/admin/delegation/chain', title: 'Delegation — one relationship',
     operation: '/admin-api/delegation/chain',
     render: function (view: Json, ctx?: Json): string {

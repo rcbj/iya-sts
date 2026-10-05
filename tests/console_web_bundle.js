@@ -396,7 +396,9 @@ function childMain() {
     // THE QUERIES A PAGE IS ALSO DRAWN WITH, beside its bare one: a page
     // whose interesting half needs a parameter no list of its own names.
     const EXAMPLES = {
-      '/admin/delegation/chain': { chain: dAct ? dAct.chainKey : '' }
+      '/admin/delegation/chain': { chain: dAct ? dAct.chainKey : '' },
+      // The person the act named, rather than the catalogue's first.
+      '/admin/delegation/user': { user: 'webcheck-alice' }
     };
     const exampled = [];
     const unviewed = [];
