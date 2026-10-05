@@ -117,6 +117,33 @@ pub enum Schedule {
     ManualOnly,
 }
 
+/// A future a job's run answers, boxed so a job is an ordinary value.
+pub type BoxFuture<'a, T> =
+    std::pin::Pin<Box<dyn std::future::Future<Output = T> + Send + 'a>>;
+
+/// What a run is handed.
+#[derive(Clone)]
+pub struct RunContext {
+    pub realm: String,
+    pub run_id: String,
+    pub trigger: String,
+    pub params: Json,
+    /// True while this attempt still owns its run: this process still
+    /// leads, the run has not timed out, its realm is defined, and the row
+    /// still carries this attempt's fence. A job asks before each step it
+    /// cannot take back.
+    pub still_owner: Arc<dyn Fn() -> bool + Send + Sync>,
+    /// The database's clock, carried by this process's since the tick.
+    pub now_ms: Arc<dyn Fn() -> f64 + Send + Sync>,
+}
+
+/// Runs a job: a small JSON summary, which the run row keeps, or why not.
+pub type JobRun = Arc<
+    dyn Fn(RunContext) -> BoxFuture<'static, Result<Json, String>>
+        + Send
+        + Sync,
+>;
+
 pub type OffCheck = Arc<dyn Fn(&str) -> Result<String, String> + Send + Sync>;
 
 /// A registered job's description. The runner adds what it runs.
@@ -139,6 +166,8 @@ pub struct JobSpec {
     /// Why the job is off in a realm, or `''`; an `Err` is its own check
     /// failing.
     pub off: Option<OffCheck>,
+    /// What the job does; registration refuses a job without it.
+    pub run: Option<JobRun>,
 }
 
 impl JobSpec {
@@ -163,6 +192,7 @@ impl JobSpec {
             manual: true,
             timeout_s: None,
             off: None,
+            run: None,
         }
     }
 
@@ -393,6 +423,9 @@ impl Schedules {
             if value.trim().is_empty() {
                 problems.push(format!("a {}", name));
             }
+        }
+        if spec.run.is_none() {
+            problems.push("a run() function".to_string());
         }
         if let Some(expr) = spec.cron() {
             if let Err(e) = parse_cron(expr) {

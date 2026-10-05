@@ -91,6 +91,7 @@ fn spec_of(d: &Json) -> JobSpec {
     if d["scope"] == "realm" {
         spec.scope = Scope::Realm;
     }
+    spec.run = Some(Arc::new(|_| Box::pin(async { Ok(Json::Null) })));
     spec.quiet = d["quiet"].as_bool().unwrap_or(false);
     if let Some(t) = d["timeoutS"].as_f64() {
         spec.timeout_s = Some(Arc::new(move || t));
