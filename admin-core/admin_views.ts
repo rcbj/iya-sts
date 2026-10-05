@@ -160,6 +160,10 @@ import policyKinds = require('./policy_kinds');
 // the terms `admin_rbac` above is required on.
 import WebKit = require('../admin-ui/web_kit');
 import delegationMap = require('../admin-ui/delegation_map');
+// THE UNION OF THE IDENTITY AND DELEGATION REGISTERS (#446), for the
+// delegation pages' person chooser. A library (rule 3p) that registers no
+// route.
+import userGraph = require('../common/user_graph');
 import authnPolicy = require('../common/authn_policy');
 // Four more with the second batch: the audit log the audit view pages, the
 // delegation register the delegation view reads, the Kerberos principal
@@ -518,6 +522,7 @@ interface AdminViewsDeps {
   usedAssertions: typeof usedAssertions;
   delegation: typeof delegation;
   delegationMap: typeof delegationMap;
+  userGraph: typeof userGraph;
   delegationPolicy: typeof delegationPolicy;
   krb5Principals: typeof krb5Principals;
   krb5PersonKeys: typeof krb5PersonKeys;
@@ -626,6 +631,7 @@ class AdminViews {
       usedAssertions: usedAssertions,
       delegation: delegation,
       delegationMap: delegationMap,
+      userGraph: userGraph,
       delegationPolicy: delegationPolicy,
       krb5Principals: krb5Principals,
       krb5PersonKeys: krb5PersonKeys,
@@ -4155,6 +4161,227 @@ class AdminViews {
   // What a ROLE is called on this console, off `delegation.ROLES` rather than
   // out of a list here — the same rule the mechanism filter follows. A role
   // that existed in the store and was unnamed on a page would be a blank cell.
+  // Moved here from the console (#446): the key is markup drawn out of the
+  // layout module's glyphs, which only this process holds, so an answer
+  // carries it as it carries the drawing (`mapKey`).
+  // THE KEY. Drawn out of `delegation_map.js`'s own glyph functions and its own
+  // palette rather than out of a second set of shapes written for the legend,
+  // because a legend that is drawn separately is a legend that will eventually
+  // describe a picture this service no longer draws. `options.issuance` adds
+  // the two lines only the person's picture has. It is a parameter rather than
+  // two more rows for everybody, because a legend must describe the diagram
+  // beside it: a reader of /admin/delegation/map looking for a dotted `signed
+  // in` line would never find one, and a key that lists shapes a page does not
+  // draw teaches a reader to stop trusting it.
+  /**
+   * Draws the key to the delegation pictures, one row per shape or line,
+   * using delegation_map.js's own glyphs and palette.
+   *
+   * @param options - optional; `issuance` adds the lines only the person's
+   *   picture draws (signed in, ordinary grant, addressed to)
+   * @returns the key as an HTML table
+   */
+  delegationMapKey(options?) {
+    const { log, delegationMap } = this.deps;
+    log.debug("Entering AdminViews.delegationMapKey().");
+    const swatch = function (inner, width) {
+      log.debug("Entering swatch().");
+      log.debug("Leaving swatch().");
+      return '<svg width="' + width + '" height="40" viewBox="0 0 ' + width +
+        ' 40" aria-hidden="true">' + inner + '</svg>';
+    };
+    const C = delegationMap.COLOURS;
+    // Drawn by `delegation_map.js` rather than here, so that the round end and
+    // the pointed end in the key are the ones the picture actually puts on a
+    // line. The arrowhead used to be drawn on this side and the tail disc would
+    // have made that two shapes to keep in step instead of one.
+    const line = function (colour, dash) {
+      log.debug("Entering line().");
+      log.debug("Leaving line().");
+      return delegationMap.edgeSample(colour, dash);
+    };
+    const items = [
+      { art: swatch(delegationMap.personGlyph(9, 3, C.indigo, false, 1), 44),
+        what: '<strong>A person.</strong> Something with an entry under ' +
+              '<code>ou=users</code> — anybody this service has ' +
+              'authenticated, in any of the sixteen families.' },
+      { art: swatch('<rect x="3" y="9" width="56" height="22" rx="5" fill="' +
+                    C.panel +
+                    '" stroke="' + C.indigo + '" stroke-width="1.5"/>', 64),
+        what: '<strong>An application.</strong> Something with an entry ' +
+              'under <code>ou=applications</code> — an OAuth client, a ' +
+              'service provider, a Kerberos service, a WS-Trust relying ' +
+              'party.' },
+      { art: swatch('<rect x="3" y="4" width="56" height="32" rx="5" fill="' +
+                    C.panel +
+                    '" stroke="' + C.indigo + '" stroke-width="1.5"/>' +
+                    delegationMap.personGlyph(7, 3, C.indigo, false, 0.85), 64),
+        what: '<strong>Both, which the middle tier usually is.</strong> ' +
+              '<code>HTTP/frontend.example.com</code> authenticates (so the ' +
+              'funnel files it with the people) AND has tickets issued FOR ' +
+              'it (so the registry has it). Two entries, one party.' },
+      { art: swatch('<path d="' + delegationMap.hexPath(3, 6, 58, 28) +
+                    '" fill="' +
+                    C.wash + '" stroke="' + C.indigo + '" stroke-width="1.8"/>',
+                    64),
+        what: '<strong>This service, in one trust realm.</strong> Every line ' +
+              'here exists because it issued or refused a credential. The ' +
+              'realm is on the box because a realm is a whole logical copy ' +
+              'of this service.' },
+      // Wider than every other swatch here, and it has to be: the whole point
+      // of the row is the THIRD line, and an identifier is the one thing on a
+      // box that is as long as a protocol allows. At 80 the sample ran out
+      // through its own rectangle, which is precisely the mistake this row is
+      // teaching a reader to look for.
+      { art: swatch('<rect x="3" y="2" width="104" height="36" rx="5" fill="' +
+                    C.panel +
+                    '" stroke="' + C.indigo + '" stroke-width="1.5"/>' +
+                    '<text x="55" y="15" text-anchor="middle" font-size="10" ' +
+                    'font-weight="600" fill="' + C.ink + '">Acme ' +
+                    'Web</text><text x="55" y="25" text-anchor="middle" ' +
+                    'font-size="8" fill="' +
+                    C.quiet + '">application</text><text x="55" y="34" ' +
+                    'text-anchor="middle" font-size="8" fill="' +
+                    C.quiet + '">client_id: acme-web</text>', 110),
+        what: '<strong>The two small lines under a name are different ' +
+              'sentences.</strong> The first is what the box IS &mdash; ' +
+              'which of the two stores knows it, or the role its shape was ' +
+              'guessed from. The second is <strong>the identifier a protocol ' +
+              'would have to present to reach it, with that protocol\'s own ' +
+              'word for it</strong>: a <code>client_id</code> for OAuth 2.0 ' +
+              'and OpenID Connect, an <code>entityID</code> for either SAML ' +
+              'profile, a <code>wtrealm</code> for WS-Federation, an ' +
+              '<code>AppliesTo</code> for WS-Trust, an <code>SPN</code> for ' +
+              'Kerberos. The NAME on the box is what somebody CALLED this ' +
+              'thing &mdash; a <code>cn</code>, an <code>appName</code> ' +
+              '&mdash; and is no use in a request you are about to build, ' +
+              'which is why the identifier is on the picture and not only in ' +
+              'the tooltip. Where the two are the same string only the word ' +
+              'is drawn, because the value is already the label; where ONE ' +
+              'string is two families\' identifier both words are drawn ' +
+              '(<code>AppliesTo / entityID</code>); and where the ' +
+              'application answers to several DIFFERENT names, the one drawn ' +
+              'is the one this act actually carried &mdash; or, if the act ' +
+              'carried something no identifier attribute holds, the first ' +
+              'declared one, with the tooltip saying so. Every name it ' +
+              'answers to is in that tooltip either way.' },
+      { art: swatch(delegationMap.personGlyph(9, 3, C.grey, true, 1), 44),
+        what: '<strong>A dashed outline is something neither store ' +
+              'knows.</strong> It is drawn in the shape its ROLE implies and ' +
+              'is not an error: an RFC 8693 <code>audience</code> nobody has ' +
+              'otherwise mentioned is exactly this.' },
+      { art: swatch(line(C.indigo, ''), 64),
+        what: '<strong>Which way a line goes is at BOTH of its ' +
+              'ends.</strong> It leaves the box with the round end and ' +
+              'arrives at the box with the arrowhead &mdash; so the question ' +
+              'a reader actually asks, standing at one box: <em>is this line ' +
+              'mine, or somebody\'s on me?</em>, is answered where they are ' +
+              'standing rather than at the far end of a curve that crosses ' +
+              'three others on the way. Every line here has both marks, and ' +
+              'no line here is two-way: two applications that reach each ' +
+              'other are drawn as two lines.' },
+      { art: swatch(line(C.amber, ''), 64),
+        what: '<strong>acts for &mdash; an IMPERSONATION.</strong> What came ' +
+              'out names the initial identity and nothing else, so nothing ' +
+              'at the far end can tell an intermediary was involved. Amber ' +
+              'because this picture is the only place that fact will ever ' +
+              'exist.' },
+      { art: swatch(line(C.green, ''), 64),
+        what: '<strong>acts for &mdash; a DELEGATION.</strong> What came out ' +
+              'CARRIES the chain: an <code>act</code> claim, a composite ' +
+              '<code>ActAs</code>, <code>S4U_DELEGATION_INFO</code> in the ' +
+              'PAC.' },
+      { art: swatch(line(C.indigo, ''), 64),
+        what: '<strong>reaches &mdash; the TRUST relationship.</strong> What ' +
+              'the credential is FOR: the back-end service, the ' +
+              '<code>AppliesTo</code>, the audience or resource. The label ' +
+              'says whose name it carries.' },
+      { art: swatch(line(C.indigo, '7 4'), 64),
+        what: '<strong>A broken line jumps a party nobody named.</strong> A ' +
+              'forwarded ticket-granting ticket has no intermediary and ' +
+              'cannot have one — the client gives it to whichever service it ' +
+              'chooses and this KDC is never told which.' },
+      // #186: the configured pairs, beside the acts.
+      { art: swatch(line(C.indigo, '6 4'), 64),
+        what: '<strong>may delegate &mdash; a CONFIGURED relationship, ' +
+              'DASHED until an act has used it.</strong> One line per pair ' +
+              'an entry allows: <code>appAllowedToDelegateTo</code> on the ' +
+              'source (constrained) or ' +
+                '<code>appAllowedToActOnBehalfOf</code> ' +
+              'on the target (resource-based) &mdash; the same controls for ' +
+              'the OAuth 2.0 token exchange, WS-Trust and Kerberos. Solid ' +
+              'once an act has crossed it. Drawn unless the acts are ' +
+              'narrowed by outcome, type or text.' },
+      { art: swatch(line(C.red, '5 3'), 64),
+        what: '<strong>Red is a chain nothing was ever issued on.</strong> ' +
+              'The tooltip carries the KDC\'s own words for why, which is ' +
+              'the same sentence the client was sent.' },
+      { art: swatch(line(C.grey, '4 3'), 64),
+        what: '<strong>Grey and dashed, from the hexagon: this service ' +
+              'ISSUED to that party.</strong> It goes to whoever ASKED — the ' +
+              'intermediary where a chain has one, the initial identity ' +
+              'where it does not.' }
+    ];
+    if (options && options.issuance) {
+      items.push(
+        { art: swatch(line(C.indigo, '2 3'), 64),
+          what: '<strong>Dotted, into the hexagon: this person AUTHENTICATED ' +
+                'here.</strong> The label is the protocol family and the ' +
+                'tooltip is the method — the sign-in screen, an AS-REQ, a ' +
+                'UsernameToken, a federated assertion. It is why everything ' +
+                'else on the picture was allowed.' },
+        { art: swatch(line(C.indigo, ''), 64),
+          what: '<strong>Solid indigo: an ORDINARY GRANT, and the label is ' +
+                'the exact one</strong> — <code>authorization_code</code>, ' +
+                '<code>refresh_token</code>, ' +
+                '<code>client_credentials</code>, with the specification ' +
+                'section in the tooltip. Out of the PERSON it means a ' +
+                'credential naming them went to that application; out of the ' +
+                'HEXAGON it means nobody else holds it — a ' +
+                '<code>client_credentials</code> token is about the client ' +
+                'itself and an X509-SVID has no audience, so the subject and ' +
+                'the holder are one box and there is one line rather than ' +
+                'two. It takes no amber or green, because impersonation and ' +
+                'delegation are properties of a delegation mechanism and a ' +
+                'grant claims neither.' },
+        { art: swatch(line(C.indigo, ''), 64),
+          what: '<strong>Solid indigo out of an APPLICATION is that same ' +
+                'relationship one step further on: what the credential it ' +
+                'holds is ADDRESSED to.</strong> It is the <em>reaches</em> ' +
+                'line above, said about an ordinary grant instead of about a ' +
+                'delegation — an access token issued to a web front end and ' +
+                'addressed to an API gateway is this service saying the ' +
+                'first may reach the second in this person\'s name, with ' +
+                'nothing exchanged to get there. The mechanism on the label ' +
+                'is what tells the two apart: a grant, or <code>Token ' +
+                'exchange</code>. The audience the token actually carries is ' +
+                'in the tooltip, because the box is named after whichever ' +
+                'application registered that audience. <strong>The line ' +
+                'under it names the DELEGATED PERMISSIONS on that ' +
+                'token</strong> — the values on its <code>scope</code> claim ' +
+                'that the resource at the far end has DEFINED, which is what ' +
+                'a client asks for by sending the whole permission ' +
+                'identifier (the resource\'s base URI followed by the name) ' +
+                'as a scope. <strong><code>default permissions</code> means ' +
+                'the token named the resource and asked for none of ' +
+                'them</strong>: that is what a scope naming the resource\'s ' +
+                'own <code>client_id</code> produces, since that value ' +
+                'becomes the audience and comes off the scope claim. It says ' +
+                'what was ISSUED and not what was GRANTED — <a ' +
+                'href="/admin/delegation/allowed">the configured ' +
+                'register</a> is the other question, and ' +
+                'in development <code>oauth2.delegatedPermissionsEnforced' +
+                '</code> is off by default, so a token can carry a ' +
+                'permission its client was never granted (product mode ' +
+                'refuses one).' });
+    }
+    log.debug("Leaving AdminViews.delegationMapKey().");
+    return '<table class="key"><tr><th>Shape</th><th>What it means</th></tr>' +
+      items.map(function (one) {
+        return '<tr><td class="art">' + one.art + '</td><td>' + one.what +
+               '</td></tr>';
+      }).join('') + '</table>';
+  }
   // ---------------------------------------------------------------------------
   // THE WHOLE PICTURE AS ONE ANSWER, FOR THE MANAGEMENT API (#446, 2026-10-05).
   //
@@ -4195,7 +4422,7 @@ class AdminViews {
       resolve: look.resolve, labelOf: look.labelOf,
       links: !(options && options.links === false), id: 'delmap', label: label
     });
-    const model = Object.assign({}, graph, {
+    const model: any = Object.assign({}, graph, {
       filter: view.json.filter,
       matched: view.filtered.length,
       held: view.summary.held,
@@ -4206,9 +4433,173 @@ class AdminViews {
       label: label,
       svg: drawn.svg
     });
+    if (!(options && options.links === false)) {
+      // WHAT THE PAGE DRAWS AROUND THE PICTURE (#446): how many acts are
+      // held at all, the filter's vocabulary, the two choosers' panes, the
+      // key, whether a directory resolves the boxes, and the facts its
+      // cells ask about the names in it.
+      const carry = WebKit.listViewOf('/admin/delegation', query || {});
+      model.all = view.all.length;
+      model.types = view.json.types;
+      model.modes = view.json.modes;
+      model.outcomes = view.json.outcomes;
+      model.applicationChooser = this.delegationChooser('application',
+        query, view.applications, carry);
+      model.userChooser = this.delegationChooser('user', query,
+        this.deps.userGraph.userList(), carry);
+      model.mapKey = this.delegationMapKey();
+      model.directoryLoaded = !!directoryReader;
+      model.facts = this.delegationFacts(model);
+    }
     log.debug("Leaving AdminViews.delegationMapModel(). " + drawn.width +
               "x" + drawn.height + ".");
     return model;
+  }
+
+  // ---------------------------------------------------------------------------
+  // A DELEGATION CHOOSER'S PANE, SEARCHED AND PAGED HERE (#446).
+  //
+  // The console drew both choosers from the whole catalogue — every
+  // application an act named, every identity either register knows — and
+  // `WebKit.chooserPane()` searched and paged it while it drew. An answer
+  // carries the page of results instead (`chooserPane()`'s `slice`), because
+  // the person catalogue is everybody this service has seen. The entries
+  // are the console's, link and all; `carry` is the delegation table's
+  // filter, kept in every result's link.
+  // ---------------------------------------------------------------------------
+  /**
+   * Searches and pages one of the two delegation choosers.
+   *
+   * @param kind - `application` (searched by `appq`, paged by `appfrom`) or
+   *   `user` (`userq`, `userfrom`)
+   * @param query - the page's query
+   * @param catalogue - the delegation register's applications, or
+   *   `userGraph.userList()`
+   * @param carry - the delegation table's filter
+   * @returns `total`, the pane's `entries` and its `slice`
+   */
+  delegationChooser(kind, query, catalogue, carry) {
+    const { log } = this.deps;
+    log.debug("Entering AdminViews.delegationChooser(). kind=" + kind);
+    const isApplication = kind === 'application';
+    const entries = (catalogue || []).map(function (entry) {
+      if (isApplication) {
+        const roles = [];
+        if (entry.roles.intermediary) {
+          roles.push(entry.roles.intermediary + ' as the intermediary');
+        }
+        if (entry.roles.target) {
+          roles.push(entry.roles.target + ' as the target');
+        }
+        if (entry.roles.initial) {
+          roles.push(entry.roles.initial + ' as the initial identity');
+        }
+        return {
+          key: entry.key,
+          names: [entry.identifier].concat(entry.spellings || []),
+          label: entry.identifier,
+          detail: entry.acts + ' act(s): ' + roles.join(', '),
+          href: '/admin/delegation/application' +
+                WebKit.queryWith(carry || {},
+                                 { application: entry.identifier })
+        };
+      }
+      const facts = [];
+      if (entry.authentications) {
+        facts.push(entry.authentications + ' sign-in(s)');
+      }
+      if (entry.tokens.issued) {
+        facts.push(entry.tokens.issued + ' token(s)');
+      }
+      if (entry.artifacts) {
+        facts.push(entry.artifacts + ' artifact(s)');
+      }
+      if (entry.acts) {
+        facts.push(entry.acts + ' delegation act(s)');
+      }
+      return {
+        key: entry.key,
+        names: [entry.key, entry.presented].concat(entry.forms || []),
+        label: entry.key + (entry.isClient ? ' (a client)' : ''),
+        detail: facts.length ? facts.join(', ') : 'nothing yet',
+        href: '/admin/delegation/user' +
+              WebKit.queryWith(carry || {}, { user: entry.key })
+      };
+    });
+    const param = isApplication ? 'appq' : 'userq';
+    const fromParam = isApplication ? 'appfrom' : 'userfrom';
+    const wanted = WebKit.queryOne(query || {}, param).trim();
+    const matched = entries.filter(function (entry) {
+      return WebKit.chooserMatches(entry.names, wanted);
+    });
+    // The clamp `chooserPane()` applies, applied where the slice is cut.
+    let from = parseInt(WebKit.queryOne(query || {}, fromParam), 10);
+    if (!isFinite(from) || from < 0 || from >= matched.length) {
+      from = 0;
+    }
+    log.debug("Leaving AdminViews.delegationChooser(). " + matched.length +
+              " of " + entries.length + " matched.");
+    return {
+      total: entries.length,
+      entries: matched.slice(from, from + WebKit.CHOOSER_HITS),
+      slice: { matched: matched.length, from: from }
+    };
+  }
+
+  // ---------------------------------------------------------------------------
+  // WHAT A DELEGATION PAGE'S CELLS ASK ABOUT ITS NAMES (#446).
+  //
+  // A party is drawn linked to the users page when this console has seen
+  // the person, and to the application page when the registry holds the
+  // application. The console asked `knownUserKeys()` and
+  // `applications.get()` while it drew; an answer carries the answers, for
+  // the names in it only — every string in the answer that is a known user
+  // key goes into `users`, every one the registry holds into `apps` with
+  // its name. Read off the answer itself, so nothing the page draws is
+  // missing and nothing it does not draw is sent.
+  // ---------------------------------------------------------------------------
+  /**
+   * Works out which names in a delegation page's answer are known people
+   * and registered applications.
+   *
+   * @param answer - the page's answer, before `facts` is added
+   * @returns `users` (key → true) and `apps` (identifier → `name`,
+   *   `dnLabel`)
+   */
+  delegationFacts(answer) {
+    const { log, applications } = this.deps;
+    log.debug("Entering AdminViews.delegationFacts().");
+    const known = this.knownUserKeys();
+    const users = {};
+    const apps = {};
+    const seen = {};
+    const visit = function (value) {
+      if (typeof value === 'string') {
+        if (seen[value] || value.length > 512) {
+          return;
+        }
+        seen[value] = true;
+        if (known[value]) {
+          users[value] = true;
+        }
+        const entry = applications.get(value);
+        if (entry) {
+          apps[value] = { name: entry.name || '',
+                          dnLabel: entry.dnLabel || '' };
+        }
+      } else if (Array.isArray(value)) {
+        value.forEach(visit);
+      } else if (value && typeof value === 'object') {
+        Object.keys(value).forEach(function (key) {
+          visit(value[key]);
+        });
+      }
+    };
+    visit(answer);
+    log.debug("Leaving AdminViews.delegationFacts(). " +
+              Object.keys(users).length + " person(s), " +
+              Object.keys(apps).length + " application(s).");
+    return { users: users, apps: apps };
   }
 
   // The whole view, filtered and paged, for the page AND for
@@ -11040,6 +11431,9 @@ export = {
   delegationNodeLook: slot.forward('delegationNodeLook'),
   delegationLooks: slot.forward('delegationLooks'),
   delegationMapModel: slot.forward('delegationMapModel'),
+  delegationMapKey: slot.forward('delegationMapKey'),
+  delegationChooser: slot.forward('delegationChooser'),
+  delegationFacts: slot.forward('delegationFacts'),
   delegationPolicyView: slot.forward('delegationPolicyView'),
   clusterSummary: slot.forward('clusterSummary'),
   permissionGroupsView: slot.forward('permissionGroupsView'),

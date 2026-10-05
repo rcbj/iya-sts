@@ -100,6 +100,7 @@ import VcVerifierConfigPage =
   require('../oid4vc/web_vc_verifier_config');
 import XacmlPage = require('../xacml/web_xacml');
 import WorkerPoolsPage = require('./web_worker_pools');
+import DelegationPage = require('./web_delegation');
 
 type Json = any;
 
@@ -225,6 +226,11 @@ const PAGES: WebPage[] = [
     } },
   { path: '/admin/crypto-metadata', title: 'Cryptography',
     operation: '/admin-api/crypto', render: CryptoMetadataPage.render },
+  { path: '/admin/delegation/map', title: 'Delegation — the picture',
+    operation: '/admin-api/delegation/map',
+    render: function (view: Json, ctx?: Json): string {
+      return DelegationPage.map(ctx || WebKit.context(), view);
+    } },
   { path: '/admin/database', title: 'Database',
     operation: '/admin-api/database', render: DatabasePage.render },
   { path: '/admin/debugger', title: 'Protocol debugger',
