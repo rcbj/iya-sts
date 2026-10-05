@@ -120,13 +120,16 @@ function child() {
          '— it logged one per exchange, reading the word "undefined" as ' +
          'base64', flagged.join(' | '));
 
-    // 2. With openid: an ID Token, still no error.
+    // 2. With openid: an ID Token, still no error. A SELF exchange, with no
+    // audience: since #156 an exchange answers an ID Token only when the
+    // token it issued still carries `openid`, and RFC 9068's audience plan
+    // takes `openid` off a token for a foreign audience.
     flagged.length = 0;
     const withId = await post(port, Object.assign({
       grant_type: 'urn:ietf:params:oauth:grant-type:token-exchange',
       subject_token: subject.json.access_token,
       subject_token_type: 'urn:ietf:params:oauth:token-type:access_token',
-      audience: 'https://txj-api.example', scope: 'openid profile' },
+      scope: 'openid profile' },
     client));
     note(withId.status === 200 && withId.json.id_token,
          '2a. an exchange with openid answers an ID Token',
