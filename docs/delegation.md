@@ -215,6 +215,21 @@ mode — are listed in [XACML](xacml.html).
   (`exchange-widens-scope`): in product, a scope outside the subject token's
   `scope` is `invalid_scope`. A subject token with no `scope` claim (an ID
   Token, a WS-Trust JWT) has nothing to compare against.
+* **No `scope` on the exchange carries the subject token's forward.** The
+  issued token is asked for the `scope` sent, else the subject token's `scope`
+  claim, else nothing — the same rule for every kind of subject token. Either
+  way it is then narrowed as every grant here is: to the scopes the client
+  declares, the roles that authorize them, and — for an `audience` or
+  `resource` that is not this service — without the OpenID Connect scopes
+  (`openid`, `profile`, …), which belong to this service's own UserInfo
+  (RFC 9068 section 2.2.3).
+* **The response says what was issued.** `scope` names the scopes the access
+  token carries and is left out when it carries none (RFC 6749 section 3.3
+  has no empty value). An `id_token` comes back beside it only when the
+  issued token's scope carries `openid` — so an exchange for another resource
+  server returns an access token and nothing else, whatever the subject
+  token's scope was. `issued_token_type` is always
+  `urn:ietf:params:oauth:token-type:access_token`.
 * **Refusals** are spoken as RFC 8693 section 2.2.2 says:
 
 | Refusal | Error |

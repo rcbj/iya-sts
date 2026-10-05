@@ -5297,8 +5297,16 @@ class OAuth2Server {
       // issued, and this one no longer carries the value that became its
       // audience. It is therefore not identical to what was requested, which is
       // the case that section makes the member REQUIRED rather than optional —
-      // it is always sent here, so nothing changes about when.
-      scope: issuing.scope || ''
+      // it is sent whenever the token carries a scope.
+      //
+      // AND LEFT OUT WHEN IT CARRIES NONE (#156). Section 3.3 defines the
+      // value as one or more space-delimited tokens, so `"scope": ""` is not
+      // a value at all — and it was what came back whenever the audience plan
+      // above took every scope off, an exchange for another resource server
+      // carrying `openid profile` being the case found. No scope is said by
+      // no member, as the access token says it by no `scope` claim
+      // (accessToken()).
+      ...(issuing.scope ? { scope: String(issuing.scope) } : {})
     };
     if (opts.authorization_details) body.authorization_details =
         opts.authorization_details;
@@ -5413,7 +5421,23 @@ class OAuth2Server {
                   'of the token response stands.');
       }
     }
-    if (hasScope(opts.scope, 'openid')) {
+    // AN EXCHANGE'S ID TOKEN FOLLOWS THE TOKEN IT ISSUED (#156). Every other
+    // grant here is an OpenID Connect request when it asks for `openid`, and
+    // its ID Token stands even when the audience plan left `openid` off an
+    // access token for another resource server (RFC 9068 section 2.2.3) —
+    // the client asked to learn who signed in. An RFC 8693 exchange asks
+    // for one token, described by `issued_token_type`, and its scope is
+    // usually inherited from the subject_token rather than asked for; an ID
+    // Token beside an access token whose `scope` names no `openid` is a
+    // credential the response does not account for. So an exchange gets one
+    // only when the token it issued carries `openid`.
+    const exchangeWithoutOpenid = !!opts.idTokenFollowsIssuedScope &&
+      !hasScope(issuing.scope, 'openid');
+    if (exchangeWithoutOpenid) {
+      log.debug("tokenSet(): the exchanged token's scope carries no " +
+                "openid, so no ID Token.");
+    }
+    if (hasScope(opts.scope, 'openid') && !exchangeWithoutOpenid) {
       // From `opts` and not from `issuing`: an ID Token carries no scope claim
       // and its audience is the CLIENT, so neither of the two things above
       // applies to it. Passing the derived audience here would readdress it to
@@ -8193,8 +8217,11 @@ class OAuth2Server {
       // read through section 4.2.2 — and the code beside it in a hybrid
       // response is unaffected: `authzCodes` above holds the scope as
       // AUTHORIZED, so redeeming it derives the same audience again at the
-      // token endpoint.
-      out.scope = audiencePlan.scope;
+      // token endpoint. Left out when the token carries none, as tokenSet()
+      // leaves it out (#156): an empty string is not a scope (section 3.3).
+      if (audiencePlan.scope) {
+        out.scope = audiencePlan.scope;
+      }
     }
     if (types.indexOf('id_token') >= 0) {
       out.id_token = await self.idToken(base, {
@@ -15869,7 +15896,20 @@ class OAuth2Server {
         user: Object.assign(userFor(subject.username),
                             subject.sub ? { sub: subject.sub } : {}),
         client_id: client.client_id,
+        // AN EXCHANGE THAT NAMES NO `scope` CARRIES THE SUBJECT'S FORWARD
+        // (#156). RFC 8693 section 2.1 leaves the scope of the new token to
+        // the server's policy, and this server's is the one rule for every
+        // exchange — an access, refresh or ID Token, a JWT or SAML assertion
+        // (#114): the `scope` asked for, which may narrow and never widen
+        // (above); else the subject_token's `scope` claim; else none. Either
+        // way it then goes through tokenSet()'s narrowing like every other
+        // grant — the client's declared scopes (#110), the roles (#302), and
+        // RFC 9068's audience plan, which takes the OpenID Connect scopes off
+        // a token for another resource server. What survives is the response's
+        // `scope` member, left out when nothing did, and an ID Token comes
+        // back only when `openid` survived (idTokenFollowsIssuedScope).
         scope: String(body.scope || subject.scope || ''),
+        idTokenFollowsIssuedScope: true,
         audience: self.audienceClaim(issuedAudiences), act: act,
         // RFC 9396 on an exchange: the details asked for, as for a direct
         // grant. The audience rule is tokenSet()'s backstop, as the header

@@ -324,6 +324,11 @@ const JOBS = [
   // SAML Recipient under forwarding. `local: true`: the feature is ours. Its
   // realm is left standing.
   { file: 'sts_token_exchange_assertions.js', browser: false, local: true },
+  // WHAT AN EXCHANGE ANSWERS (#156, 2026-10-05): no `"scope": ""`, no
+  // id_token beside a token whose scope names no openid, and the subject's
+  // scope carried forward when the exchange asks for none. `local: true`:
+  // the response is ours. Its realm is left standing.
+  { file: 'sts_token_exchange_response.js', browser: false, local: true },
   { file: 'sts_dpop.js',                 browser: false },
   // GNAP (2026-09-12). `local: true` on the second of tests/CLAUDE.md's
   // reasons: GNAP exists in this repository and nowhere else, so there is no

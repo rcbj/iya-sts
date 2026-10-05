@@ -281,8 +281,6 @@ curl -X POST https://127.0.0.1:38081/oauth2/token \
   "access_token": "eyJhbGciOiJSUzI1NiIsInR5cCI6Im…WgQY_nzkzS2Jvz3aUyWg",
   "token_type": "Bearer",
   "expires_in": 3600,
-  "scope": "",
-  "id_token": "eyJhbGciOiJSUzI1NiIsInR5cCI6Ik…pbF4jTS4SWDAXv04ZEig",
   "issued_token_type": "urn:ietf:params:oauth:token-type:access_token"
 }
 ```
@@ -308,8 +306,13 @@ curl -X POST https://127.0.0.1:38081/oauth2/token \
 }
 ```
 
-The empty `scope` and the unrequested `id_token` are a bug,
-[#156](https://github.com/rcbj/iya-sts/issues/156).
+No `scope` was asked for, so the exchange carried the subject token's
+`openid profile` forward. Those are OpenID Connect scopes, which belong to
+this service's own UserInfo, so they are not put on a token for another API
+(RFC 9068 section 2.2.3). The token therefore carries no scope. The response
+leaves the `scope` member out, and no `id_token` comes back
+([#156](https://github.com/rcbj/iya-sts/issues/156)). See
+[Delegation and impersonation](delegation.html#oauth-20-token-exchange-rfc-8693).
 
 ### Introspection response as a JWT (RFC 9701)
 
