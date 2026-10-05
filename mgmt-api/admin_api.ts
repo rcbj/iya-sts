@@ -18493,6 +18493,50 @@ class AdminApi {
           log.debug("Leaving the management API delegation map endpoint.");
         } },
 
+      // THE ALLOWED MAPPINGS, DRAWN (#446): the console page had no
+      // operation, having no form; see `AdminViews.delegationAllowedModel()`.
+      { method: 'GET', path: BASE + '/delegation/allowed', tag: 'Delegation',
+        operationId: 'getDelegationAllowed',
+        summary: 'The configured delegated permissions, drawn, and groups',
+        description: 'Every delegated permission somebody configured — a ' +
+                     'client granted a permission a resource exposes — as ' +
+                     'a graph with, as for `/delegation/map`, `looks`, the ' +
+                     'drawing (`svg`) and its size. `groups` are the sets ' +
+                     'of applications the grants join, paged on ' +
+                     '`groupsPage` as `GET /admin-api/permissions/groups` ' +
+                     'summarises them; `shownGroups` are those groups in ' +
+                     'full and `clusters` all of them, which is what the ' +
+                     'page\'s chooser searches.\n\nWith `format=svg` the ' +
+                     'answer is the SVG document alone, with no links in ' +
+                     'it, as `image/svg+xml`.',
+        mirrors: 'GET /admin/delegation/allowed',
+        parameters: ([] as any[]).concat(self.pagingParameters(), [
+          { name: 'format', in: 'query', required: false,
+            schema: { type: 'string', enum: ['json', 'svg'] },
+            description: '`svg` answers the drawing alone, as a document ' +
+                         'with no links in it. `json`, the default, ' +
+                         'answers everything.' }
+        ]),
+        responseDescription: 'The graph, the groups, the register and the ' +
+                             'drawing.',
+        handler: function (req, res) {
+          log.debug("Entering the management API allowed delegation " +
+                    "endpoint.");
+          if (String((req.query || {}).format || '') === 'svg') {
+            const bare = adminViews.delegationAllowedModel(req.query,
+                                                           { links: false });
+            res.status(200).set('Cache-Control', 'no-store')
+               .type('image/svg+xml').send(bare.svg);
+            log.debug("Leaving the management API allowed delegation " +
+                      "endpoint. Answered SVG.");
+            return;
+          }
+          self.sendJson(res, 200,
+                        adminViews.delegationAllowedModel(req.query));
+          log.debug("Leaving the management API allowed delegation " +
+                    "endpoint.");
+        } },
+
       // PROTOCOLS → DELEGATION (#446): what the page draws, as the page
       // answers it; see `AdminViews.delegationSettingsModel()`. The register
       // alone is `GET /admin-api/permissions`.

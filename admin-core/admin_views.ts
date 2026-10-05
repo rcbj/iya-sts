@@ -4887,6 +4887,68 @@ class AdminViews {
   }
 
   // ---------------------------------------------------------------------------
+  // THE ALLOWED MAPPINGS, AS ONE ANSWER (#446).
+  //
+  // `/admin/delegation/allowed`: every configured delegated permission
+  // drawn, and the groups of applications the grants join, paged. The
+  // page's own JSON with the looks, the drawing, the register and the
+  // clusters its chooser searches, the groups on this page in full (the
+  // table spells their members out), and `apps`: each member the registry
+  // holds, with its name.
+  // ---------------------------------------------------------------------------
+  /**
+   * Builds `/admin/delegation/allowed`'s answer.
+   *
+   * @param query - the page's query
+   * @param options - `links` (true by default): false draws the document
+   *   with no links in it, as `?format=svg` answers
+   * @returns the graph, the groups, the register and the drawing
+   */
+  delegationAllowedModel(query, options?) {
+    const { log, delegationMap } = this.deps;
+    const self = this;
+    log.debug("Entering AdminViews.delegationAllowedModel().");
+    const permissions = this.permissionsView();
+    const graph = permissions.graph;
+    const look = this.delegationLooks(graph, this.knownUserKeys());
+    const label = 'Delegated permissions between applications, as a diagram';
+    const drawn = delegationMap.render(graph, {
+      resolve: look.resolve, labelOf: look.labelOf,
+      links: !(options && options.links === false), id: 'delmap', label: label
+    });
+    const groups = permissions.clusters;
+    // THE GROUPS, PAGED, on a parameter of their own (`groupsPage`).
+    const groupPage = this.pagedRows(query || {}, groups.clusters,
+                                     { name: 'groups', noun: 'groups' });
+    const model: any = {
+      graph: graph, counts: permissions.register.counts,
+      grants: permissions.register.grants,
+      // The groups on this page through the SAME `clusterSummary()` that
+      // `GET /admin-api/permissions/groups` answers with: the counts, not
+      // the rows.
+      groups: groupPage.shown.map(function (group) {
+        return self.clusterSummary(group);
+      }),
+      groupCounts: groups.counts,
+      groupsPaging: this.pagingJson(groupPage.paging),
+      drawing: { width: drawn.width, height: drawn.height,
+                 failed: drawn.failed || null },
+      looks: look.looks, label: label, svg: drawn.svg
+    };
+    if (!(options && options.links === false)) {
+      // What the page draws beyond that: the register and the clusters the
+      // chooser searches, and the shown groups whole.
+      model.register = permissions.register;
+      model.clusters = groups;
+      model.shownGroups = groupPage.shown;
+      model.facts = this.delegationFacts(model);
+      model.apps = model.facts.apps;
+    }
+    log.debug("Leaving AdminViews.delegationAllowedModel().");
+    return model;
+  }
+
+  // ---------------------------------------------------------------------------
   // A DELEGATION CHOOSER'S PANE, SEARCHED AND PAGED HERE (#446).
   //
   // The console drew both choosers from the whole catalogue — every
@@ -11862,6 +11924,7 @@ export = {
   delegationLooks: slot.forward('delegationLooks'),
   delegationMapModel: slot.forward('delegationMapModel'),
   delegationMapKey: slot.forward('delegationMapKey'),
+  delegationAllowedModel: slot.forward('delegationAllowedModel'),
   permissionsListStateOf: slot.forward('permissionsListStateOf'),
   delegationSettingsModel: slot.forward('delegationSettingsModel'),
   credentialLineageModel: slot.forward('credentialLineageModel'),

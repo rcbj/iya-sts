@@ -226,6 +226,11 @@ const PAGES: WebPage[] = [
     } },
   { path: '/admin/crypto-metadata', title: 'Cryptography',
     operation: '/admin-api/crypto', render: CryptoMetadataPage.render },
+  { path: '/admin/delegation/allowed', title: 'The allowed mappings',
+    operation: '/admin-api/delegation/allowed',
+    render: function (view: Json, ctx?: Json): string {
+      return DelegationPage.allowed(ctx || WebKit.context(), view);
+    } },
   { path: '/admin/delegation/application',
     title: 'Delegation — one application',
     operation: '/admin-api/delegation/application',

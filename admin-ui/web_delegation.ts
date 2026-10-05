@@ -3340,6 +3340,170 @@ class DelegationPage {
       DelegationPage.permissionsSection(ctx, json, listView, true) +
       SettingsForms.forms(json.settings, '/admin/delegation-settings');
   }
+
+  // ---------------------------------------------------------------------------
+  // /admin/delegation/allowed, FROM `GET /admin-api/delegation/allowed`
+  // (#446): what is ALLOWED, drawn, and the groups the grants join.
+  // ---------------------------------------------------------------------------
+  /**
+   * Draws `/admin/delegation/allowed` from its answer.
+   *
+   * @param ctx - the render context (`WebKit.context()`)
+   * @param json - the answer of `GET /admin-api/delegation/allowed`
+   * @returns the body as HTML
+   */
+  static allowed(ctx: Json, json: Json): string {
+    const listView = kit.listViewOf('/admin/delegation', ctx.query);
+    const groupNav = kit.pageNavPair('/admin/delegation/allowed',
+                                     kit.pageParamsOf(ctx.query),
+                                     json.groupsPaging);
+    // What a link OUT of this page carries: the acts list's state, and this
+    // page's own search (`allowedChooserState()` says why).
+    const onward = Object.assign({}, listView,
+                                 DelegationPage.allowedChooserState(ctx.query));
+    return (
+      kit.note('<strong>What is ALLOWED, not what happened.</strong> ' +
+      'Every line here is a delegated permission somebody configured: a ' +
+      'client application has been granted a permission that a resource ' +
+      'application exposes, and a request naming it in a ' +
+      '<code>scope</code> would be issued an access token audienced to ' +
+      'that resource. Not one of these lines has been issued anything. <a ' +
+      'href="/admin/delegation/map">The other picture</a> is the one that ' +
+      'draws what actually happened.') +
+
+      kit.note('<strong>Every box is an application and there is no ' +
+      'person on this diagram</strong>, which is the visual difference ' +
+      'between the two and the reason they are not one drawing. A ' +
+      'delegation ACT has three layers and the first of them is somebody — ' +
+      'a stick figure, the person on whose behalf it happened. A ' +
+      'permission has nobody in it: it says <em>this client may reach that ' +
+      'API as whoever is signed in</em>, and there is no whoever yet. ' +
+      '<strong>This service is not on it either</strong>, for the same ' +
+      'reason the hexagon is on the other one: every line there exists ' +
+      'because this service issued or refused something, and none of these ' +
+      'has been asked for.') +
+
+      kit.note('<strong>A line leaves the box with the ROUND end and ' +
+      'arrives at the box with the ARROWHEAD.</strong> That is worth ' +
+      'saying on this page in particular, because it is the one where ' +
+      'nearly every box is at both ends of something: an application here ' +
+      'is usually a client of one and a resource of another, and the ' +
+      'question is always <em>which of the lines touching this box are its ' +
+      'own?</em> Both marks are on every line, and each one has a berth of ' +
+      'its own on the box\'s edge, so a grant this application holds and a ' +
+      'grant somebody holds on it never start from the same point. No line ' +
+      'here is two-way: where two applications may reach each other, that ' +
+      'is two grants and it is drawn as two lines.') +
+
+      kit.note('<strong>A DASHED line is a grant nobody has ever ' +
+      'used</strong> and a solid one has been asked for at least once — ' +
+      'read off the client\'s own <code>oauthScope</code>, which records ' +
+      'the scopes it has requested. That one bit is what a configured ' +
+      'picture can say and an acts diagram cannot: a grant nobody needed ' +
+      'draws no act at all, so it is invisible on the other one. It is ' +
+      'evidence rather than proof — that attribute records what was ASKED ' +
+      'FOR, not what was issued.') +
+
+      (json.counts.dangling
+        ? kit.note('<strong>' + json.counts.dangling +
+          ' grant(s) are DANGLING ' +
+          'and are not drawn.</strong> They name a permission no ' +
+          'application in this registry defines, so there is no box at the ' +
+          'far end to reach — and a line to nowhere would be a drawing of ' +
+          'a resource that is there. They are in the table on <a ' +
+          'href="/admin/delegation#allowed">the register</a>, which is ' +
+          'where that state belongs.')
+        : '') +
+
+      DelegationPage.drawing(json, '/admin/delegation/allowed', {}) +
+
+      '<div class="tiles">' +
+        kit.tile(json.counts.grants, 'grants') +
+        kit.tile(json.counts.permissions, 'permissions defined') +
+        kit.tile(json.counts.unused, 'never asked for') +
+        kit.tile(json.counts.dangling, 'dangling, not drawn') +
+      '</div>' +
+
+      '<h2 id="groups">The groupings: which applications are joined to ' +
+      'each other</h2>' +
+
+      kit.note('<strong>A GROUP IS A SET OF APPLICATIONS THAT CAN BE ' +
+      'REACHED FROM ONE ANOTHER BY FOLLOWING GRANTS, IGNORING WHICH WAY ' +
+      'EACH ONE POINTS.</strong> That is the whole definition, and the ' +
+      'direction is dropped ON PURPOSE. A grant is directed — a client is ' +
+      'granted a permission a resource exposes, which is why every line ' +
+      'above has a round end and a pointed one — but following the arrows ' +
+      'would answer <em>what can this client eventually reach</em>, and a ' +
+      'permission register has no chains in it: holding a permission on an ' +
+      'API does not grant that API\'s permissions to anybody. Following a ' +
+      'grant EITHER WAY answers the question somebody actually arrives ' +
+      'with — <em>which applications are in the same conversation as this ' +
+      'one</em> — and it is the only reading under which an API and the ' +
+      'three front ends holding permissions on it come out as ONE group ' +
+      'rather than as four. Every picture still draws every line with its ' +
+      'direction on it, so what is dropped is direction as a test of ' +
+      'MEMBERSHIP, never direction as a fact.') +
+
+      kit.note('<strong>This is what the whole-register picture above ' +
+      'stops being able to say.</strong> One canvas is the right drawing ' +
+      'of five applications and the wrong drawing of eighty, where the ' +
+      'interesting reading is almost never the whole of it. Search for an ' +
+      'application below and the picture you get is its group and nothing ' +
+      'else — the applications it is joined to, however many hops away, ' +
+      'and none of the ones it is not.') +
+
+      DelegationPage.allowedApplicationChooser(json, '', onward,
+        { path: '/admin/delegation/allowed', query: ctx.query }) +
+
+      // This page has no filter form to hang `per` on, which is the case
+      // perPageForm() exists for. The leaf it carries is the CHOOSER'S SEARCH
+      // rather than a selected thing, because that is the only state on this
+      // page a reader would lose by changing the size.
+      kit.perPageForm('/admin/delegation/allowed', 'permappq',
+                       kit.queryOne(ctx.query, 'permappq'),
+                       json.groupsPaging.perPage,
+                       'There is one table below. The drawing above is ' +
+                       'never paged: paging a picture draws the pagination ' +
+                       'rather than the service.',
+                       kit.filterOnly(listView)) +
+
+      groupNav.head +
+      DelegationPage.allowedClusterTable(json.clusters, json.shownGroups,
+                                       onward, json.apps) +
+      groupNav.foot +
+
+      '<div class="tiles">' +
+        kit.tile(json.clusters.counts.clusters, 'groups') +
+        kit.tile(json.clusters.counts.joined, 'with more than one in them') +
+        kit.tile(json.clusters.counts.alone, 'of one application') +
+        kit.tile(json.clusters.counts.largest, 'in the largest') +
+      '</div>' +
+
+      kit.note('<strong>A group of ONE is a real answer and not an empty ' +
+      'row.</strong> Three different things produce one and they are worth ' +
+      'telling apart: an application carrying a base URI and permissions ' +
+      'that nobody has been granted — somebody described an API and ' +
+      'nothing may reach it; a client holding only DANGLING grants, which ' +
+      'name permissions no application defines, so there is no far end to ' +
+      'be in a group with; and an application granted its OWN permission, ' +
+      'which is one application however it is drawn. The last two columns ' +
+      'say which.') +
+
+      kit.note('The register itself, with the forms that change it, is on ' +
+      '<a href="/admin/delegation#allowed">the delegation page</a>. ' +
+      '<strong>Nothing on this page changes anything</strong> — the search ' +
+      'above is the only control, and it narrows nothing here: it opens a ' +
+      'picture of its own. There is still no FILTER over the drawing at ' +
+      'the top, because this register has no dimension to narrow on the ' +
+      'way the acts have a mechanism, a mode and an outcome — the one ' +
+      'division it does have is which applications can reach each other at ' +
+      'all, and that is the list above rather than a filter. ' +
+      '<code>?format=json</code> is the graph and the groups, ' +
+      '<code>?format=svg</code> is the document alone, and the graph is ' +
+      'also in the <code>allowed.graph</code> member of <code>GET ' +
+      '/admin-api/delegation</code> with the groups at <code>GET ' +
+      '/admin-api/permissions/groups</code>.'));
+  }
 }
 
 export = DelegationPage;
