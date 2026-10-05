@@ -13,5 +13,6 @@
 
 #![forbid(unsafe_code)]
 
+pub mod membership;
 pub mod schedule;
 pub mod scheduler;
