@@ -480,6 +480,10 @@ class ProtocolStack {
     this.build('oauth-oidc/step_up', require('../oauth-oidc/step_up'),
                'StepUp');
     this.build('oauth-oidc/dpop', require('../oauth-oidc/dpop'), 'Dpop');
+    // FAPI 2.0 HTTP Signatures at the resource servers (#178): a library
+    // `dpop.ts` asks lazily and `oauth2.ts` registers the key prefetch of.
+    this.build('oauth-oidc/http_signatures',
+               require('../oauth-oidc/http_signatures'), 'HttpSignatures');
     this.build('oauth-oidc/software_statement',
                require('../oauth-oidc/software_statement'),
                'SoftwareStatement');

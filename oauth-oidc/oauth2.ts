@@ -121,6 +121,9 @@ import app = require('../common/app');
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
 import dpop = require('./dpop');
+// FAPI 2.0 HTTP Signatures at the resource servers (#178): only its key
+// prefetch is registered here; `dpop.ts` asks the rest.
+import httpSignatures = require('./http_signatures');
 // WHICH `kid` A JWK SET NAMES EACH SIGNING KEY UNDER (2026-09-13). A LEAF over
 // `config`, `crypto` and `error_codes`; `sendJwks()` is the one reader here.
 import joseKid = require('../common/jose_kid');
@@ -452,6 +455,7 @@ interface OAuth2ServerDeps {
   LEGACY_SUBJECT_PREFIX: typeof helpers.LEGACY_SUBJECT_PREFIX;
   requestObjectKeysFor: typeof helpers.requestObjectKeysFor;
   dpop: typeof dpop;
+  httpSignatures: typeof httpSignatures;
   joseKid: typeof joseKid;
   mtls: typeof mtls;
   clientAuth: typeof clientAuth;
@@ -1660,6 +1664,7 @@ class OAuth2Server {
       LEGACY_SUBJECT_PREFIX: helpers.LEGACY_SUBJECT_PREFIX,
       requestObjectKeysFor: helpers.requestObjectKeysFor,
       dpop: dpop,
+      httpSignatures: httpSignatures,
       joseKid: joseKid,
       mtls: mtls,
       clientAuth: clientAuth,
@@ -19247,7 +19252,8 @@ class OAuth2Server {
             allSigningKeys, allSigningKeysAsync, signJwtAsAsync, userFor,
             hasScope, signingKeyFor, certificateHeaderFor, publishedKidFor,
             nameForSubject, hasSubjectResolver, LEGACY_SUBJECT_PREFIX,
-            requestObjectKeysFor, dpop, joseKid, mtls, clientAuth,
+            requestObjectKeysFor, dpop, httpSignatures, joseKid, mtls,
+            clientAuth,
             assertionGrant, softwareStatement, samlAssertionGrant, mode,
             authorizationServers, stats, VCI_CONFIGS, VCI_CONFIG_ID, VCI_SCOPE,
             vciFormatOf, vcClaims, deferredAccessTokens, issuerStates,
@@ -19273,6 +19279,10 @@ class OAuth2Server {
     // `verifyProof()` is argued above `PROOF_CLAIM` in `dpop.ts`.
     // -------------------------------------------------------------------------
     app.use(dpop.proofClaims());
+    // FAPI 2.0 HTTP Signatures (#178): a signing client's jwks_uri, fetched
+    // on arrival so the synchronous check at the resource servers finds its
+    // keys. It decides nothing (`oauth-oidc/http_signatures.ts`).
+    app.use(httpSignatures.keyPrefetch());
 
     // -------------------------------------------------------------------------
     // A CLIENT'S `jwks_uri`, FETCHED BEFORE AN ENDPOINT THAT MAY ENCRYPT TO IT

@@ -8940,6 +8940,28 @@ const CODES = [
       'could be resolved at redemption), so there is no subject to issue a ' +
       'token about (#158).',
     spec: 'invalid_grant (HTTP 400)' },
+  { code: 'STS-OAUTH-0939',
+    summary: 'A resource server refused an unsigned request where FAPI 2.0 ' +
+      'HTTP Signatures requires a signed one (oauth2.httpSignatures is ' +
+      'require-requests, or the client set oauthHttpSignedRequests) (#178).',
+    spec: 'HTTP 401, invalid_request' },
+  { code: 'STS-OAUTH-0940',
+    summary: 'A resource server refused a request whose fapi-2-request ' +
+      'signature or Content-Digest did not hold, where the refusal carried ' +
+      'no more specific STS-KEYS code (#178).',
+    spec: 'HTTP 401, invalid_request' },
+  { code: 'STS-OAUTH-0941',
+    summary: 'A resource server refused a signed request whose access token ' +
+      'names no client registered here, so no key could verify the ' +
+      'signature (#178).',
+    spec: 'HTTP 401, invalid_request' },
+  { code: 'STS-OAUTH-0942',
+    summary: 'A resource response that FAPI 2.0 HTTP Signatures should sign ' +
+      'went out unsigned: the realm holds no key for ' +
+      'oauth2.httpSignatureResponseAlg, the signature was refused, or the ' +
+      'response had begun writing before it ended (#178).',
+    spec: 'none: the response is sent unsigned, and a client requiring a ' +
+      'signature refuses it' },
   { code: 'STS-SAML-0001',
     summary: 'A SAML 2.0 sign-in resumed with a held-request id that is ' +
       'unknown or has expired (saml2.requestTtlMin), so there is no ' +
@@ -19125,7 +19147,8 @@ const CODES = [
     spec: 'invalid_client_metadata (HTTP 400)' },
   { code: 'STS-REG-0121',
     summary: 'A console or /admin-api write put a value other than TRUE or ' +
-      'FALSE on oauthRequirePushedAuthorizationRequests.',
+      'FALSE on oauthRequirePushedAuthorizationRequests or (#178) ' +
+      'oauthHttpSignedRequests.',
     spec: 'the caller\'s refusal (errors on a console or /admin-api reply)' },
   { code: 'STS-REG-0130',
     summary: 'A registration gave an RFC 8705 certificate subject parameter a ' +

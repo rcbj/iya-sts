@@ -2270,7 +2270,31 @@ const SPECS: Spec[] = [
               'responses signed (5.5). Section 5.2\'s non-repudiation is ' +
               'guidance, answered in docs/oauth-security.md. The console, ' +
               'portal and debugger conform. RFC 9421 HTTP signatures are NOT ' +
-              'part of the final specification and are #178.' },
+              'part of the final specification: they are FAPI 2.0 Http ' +
+              'Signatures, the next entry (#178).' },
+  { id: 'fapi2-http-signatures', name: 'FAPI 2.0 Http Signatures (draft of ' +
+                                       '26 June 2026)',
+    where: 'OpenID Foundation',
+    url: 'https://openid.bitbucket.io/fapi/fapi-2_0-http-signatures.html',
+    coverage: 'full for the resource servers, OFF BY DEFAULT for unsigned ' +
+              'requests (#178): at UserInfo, the step-up resource, the ' +
+              'OpenID4VCI endpoints, /scim/v2, the Shared Signals endpoints, ' +
+              'Grant Management and VC-API, a fapi-2-request signature is ' +
+              'verified in every setting with the key its keyid names in ' +
+              'the token\'s client\'s jwks or jwks_uri, covering @method, ' +
+              '@target-uri, authorization, dpop when present and ' +
+              'content-digest with a body, created within ' +
+              'oauth2.httpSignatureMaxAgeS, every failure 401 (5.3.1.2); ' +
+              'oauth2.httpSignatures=require-requests (or a client\'s ' +
+              'oauthHttpSignedRequests) refuses an unsigned request; a ' +
+              'fapi-2-response signature by the realm key ' +
+              'oauth2.httpSignatureResponseAlg names, covering @status, ' +
+              'content-type, content-digest and, by ;req, the request\'s ' +
+              '@method, @target-uri, content-digest, every component its ' +
+              'signature covered and its Signature and Signature-Input ' +
+              'members (5.3.2.1). The draft has no examples; RFC 9421\'s ' +
+              'own vectors hold the mechanism. NOT covered: the client ' +
+              'roles (5.3.1.1, 5.3.2.2), which are the relying party\'s.' },
   { id: 'fapi-ciba', name: 'FAPI: Client Initiated Backchannel ' +
                           'Authentication Profile',
     where: 'OpenID Foundation',
@@ -10593,7 +10617,7 @@ const ENDPOINTS: EndpointEntry[] = [
   { path: '/oauth2/fapi', group: 'OAuth 2.0 / OIDC',
     name: 'FAPI profile report (not a spec endpoint)',
     specs: ['fapi1-baseline', 'fapi1-advanced', 'fapi2-security',
-            'fapi2-message-signing'],
+            'fapi2-message-signing', 'fapi2-http-signatures'],
     what: 'NON-SPEC: FAPI defines no document saying which profile a server ' +
           'follows. The profile in force (oauth2.fapi, off by default), ' +
           'every requirement of FAPI 1.0 Part 1 section 5.2.2 by item, and ' +
@@ -10618,7 +10642,8 @@ const ENDPOINTS: EndpointEntry[] = [
   { path: '/oauth2/userinfo', group: 'OAuth 2.0 / OIDC', name: 'UserInfo ' +
       'endpoint',
     specs: ['oidc', 'oidc-ida-claims', 'oidc-ida', 'rfc6750', 'rfc9449',
-            'rfc7591', 'oidc-ephemeral',
+            'rfc7591', 'oidc-ephemeral', 'fapi2-http-signatures', 'rfc9421',
+            'rfc9530',
             'rfc8705', 'rfc8707',
             'rfc9068', 'rfc9470'],
     effect: 'answers 401 with a WWW-Authenticate challenge when followed ' +

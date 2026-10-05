@@ -1394,7 +1394,11 @@ class CryptoMetadata {
                '`token-introspection+jwt`, in RS256 or the ' +
                '`introspection_signed_response_alg` the resource server ' +
                'registered — the same table and the HMAC family, never ' +
-               '`none`.',
+               '`none`. **AND A RESOURCE RESPONSE** (#178): an RFC 9421 ' +
+               'HTTP message signature tagged `fapi-2-response`, with the ' +
+               'realm key `oauth2.httpSignatureResponseAlg` names (ES256 by ' +
+               'default; ML-DSA offered), over the response and, by `;req`, ' +
+               'the request it answers.',
         verifies: 'A REQUEST OBJECT (RFC 9101, 2026-09-13), signed by the ' +
                   'client with a key it registered or with its secret, and ' +
                   'DECRYPTS one encrypted to this realm\'s published `use: ' +
@@ -1413,7 +1417,11 @@ class CryptoMetadata {
                   'one that merely chains to this realm\'s CA — which is ' +
                   'stricter than the `x5c` path RFC 7523 allows, because a ' +
                   'chain proves the realm issued a key and says nothing ' +
-                  'about which application holds it.',
+                  'about which application holds it. **AND A SIGNED ' +
+                  'RESOURCE REQUEST** (#178): an RFC 9421 signature tagged ' +
+                  '`fapi-2-request` at every resource server, with the key ' +
+                  'its keyid names in the client\'s registered jwks or ' +
+                  'jwks_uri, and the request\'s RFC 9530 Content-Digest.',
         encrypts: 'A UserInfo response for a client that registered ' +
                   '`userinfo_encrypted_response_alg`, and a JWT ' +
                   'introspection response for one that registered ' +
@@ -1439,16 +1447,20 @@ class CryptoMetadata {
                 '`cnf["x5t#S256"]` is the SHA-256 of the client ' +
                 'certificate\'s DER.',
         whatItDoesNot: 'It verifies no access token it did not issue, except ' +
-                       'at UserInfo, and it follows no `jwks_uri` — an ' +
-                       'inline `jwks` on the registration is the only key it ' +
-                       'will read.',
+                       'at UserInfo. A client\'s `jwks_uri` is fetched ' +
+                       '(#120) only under the outbound policy, and only for ' +
+                       'a client that registered no inline `jwks`.',
         envelopes: ['jws', 'jwe', 'jwk', 'jwt', 'thumbprint', 'dpop', 'mtls',
-                    'pkce'],
+                    'pkce', 'httpsig'],
         algorithms: function () {
           log.debug("Entering algorithms().");
           log.debug("Leaving algorithms().");
           return [
             ['Tokens this service mints by default', ['RS256']],
+            ['Resource response signatures (RFC 9421, ' +
+             'oauth2.httpSignatureResponseAlg)',
+             [String(config.value('oauth2.httpSignatureResponseAlg') ||
+                     'ES256')]],
             ['ID Token, when a client registers one',
              oauth2.ID_TOKEN_SIGNING_ALGS],
             ['UserInfo response', oauth2.USERINFO_SIGNING_ALGS],

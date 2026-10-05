@@ -380,6 +380,9 @@ var config = {
     refreshTokenRotation: false,                   // Rotate refresh tokens
     refreshTokenRequireDpop: false,                // Require DPoP on refresh tokens
     refreshTokenRequireMtls: false,                // Require mutual TLS on refresh tokens
+    httpSignatures: "off",                         // FAPI 2.0 HTTP Signatures at the resource servers
+    httpSignatureMaxAgeS: 60,                      // Signed request age limit (s)
+    httpSignatureResponseAlg: "ES256",             // Signed response algorithm
     accessTokenRequireDpop: false,                 // Require DPoP for every access token
     accessTokenRequireMtls: false,                 // Require mutual TLS for every access token
     openRegistration: false,                       // Open dynamic client registration (product mode)

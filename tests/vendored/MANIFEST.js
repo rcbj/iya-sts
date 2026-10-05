@@ -889,6 +889,12 @@ const JOBS = [
   // `/portal/mfa`, and the challenge the stand-in resource and UserInfo send.
   // After the monitor job, in a throwaway realm it leaves standing.
   { file: 'sts_step_up.js',              browser: false, local: true },
+  // FAPI 2.0 HTTP Signatures at the resource servers (#178): a signed
+  // request verified at /scim/v2 in a throwaway realm, its signed answer
+  // verified by the job's own RFC 9421 code with the realm's published key,
+  // the refusals, oauth2.httpSignatures and the client's
+  // oauthHttpSignedRequests, both written through /admin-api.
+  { file: 'sts_fapi_http_signatures.js', browser: false, local: true },
   { file: 'sts_roles.js',              browser: false, local: true },
   { file: 'sts_roles_builtin.js',        browser: false, local: true },
   { file: 'sts_saml11.js',               browser: false },

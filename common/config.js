@@ -4887,6 +4887,61 @@ const SETTINGS = [
                  'over a loopback call from this process to itself, where ' +
                  'there is no certificate story to tell.' },
 
+  // FAPI 2.0 HTTP SIGNATURES AT THE RESOURCE SERVERS (#178, 2026-10-05).
+  // THE DRAFT OF 26 JUNE 2026 SAYS NOTHING ABOUT ADOPTION: requests and
+  // responses "can be signed". rcbj's decision on #178 is a setting of its
+  // own rather than a FAPI profile value, and a client flag beside it
+  // (`oauthHttpSignedRequests`). `oauth-oidc/http_signatures.ts` reads all
+  // three. A `fapi-2-request` signature a client SENDS is verified whatever
+  // this is set to: a signature this service ignored would be one a client
+  // believed protected its request.
+  { key: 'oauth2.httpSignatures', group: 'OAuth 2.0 / OIDC',
+    label: 'FAPI 2.0 HTTP Signatures at the resource servers',
+    env: 'STS_OAUTH2_HTTP_SIGNATURES', type: 'enum',
+    enumValues: ['off', 'sign-responses', 'require-requests'], dflt: 'off',
+    runtime: true,
+    description: 'The FAPI 2.0 HTTP Signatures profile (RFC 9421 with RFC ' +
+                 '9530) at every resource server that takes an OAuth access ' +
+                 'token: UserInfo, the RFC 9470 step-up resource, the ' +
+                 'OpenID4VCI endpoints, /scim/v2, the Shared Signals ' +
+                 'endpoints, Grant Management and the VC-API test ' +
+                 'endpoints. `off` signs no response; `sign-responses` ' +
+                 'signs every response to a request whose access token was ' +
+                 'accepted, with tag "fapi-2-response" and the realm\'s ' +
+                 'key named by oauth2.httpSignatureResponseAlg; ' +
+                 '`require-requests` does that and also refuses, with 401, ' +
+                 'a request carrying no valid "fapi-2-request" signature by ' +
+                 'a key in the client\'s registered jwks or jwks_uri. A ' +
+                 'signature a client sends is verified in every setting. A ' +
+                 'client can require signed requests of itself alone with ' +
+                 'oauthHttpSignedRequests on its entry.' },
+  { key: 'oauth2.httpSignatureMaxAgeS', group: 'OAuth 2.0 / OIDC',
+    label: 'Signed request age limit (s)',
+    env: 'STS_OAUTH2_HTTP_SIGNATURE_MAX_AGE_S', type: 'int', dflt: 60,
+    min: 1, max: 600, runtime: true,
+    description: 'How far a signed resource request\'s `created` may be ' +
+                 'from this server\'s clock, in either direction, before ' +
+                 'the request is refused with 401. The FAPI 2.0 HTTP ' +
+                 'Signatures draft recommends 1 minute (section 5.3.1.2).' },
+  { key: 'oauth2.httpSignatureResponseAlg', group: 'OAuth 2.0 / OIDC',
+    label: 'Signed response algorithm',
+    env: 'STS_OAUTH2_HTTP_SIGNATURE_RESPONSE_ALG', type: 'enum',
+    // The algorithms whose realm key is published in the JWKS with exactly
+    // this `alg`, so a client that reads the key by its keyid also learns
+    // the algorithm (RFC 9421 section 3.3.7 forbids the `alg` signature
+    // parameter for a JWS name). The RSA key is published as RS256, which
+    // FAPI 2.0 does not allow, and SLH-DSA signs too slowly for a response.
+    enumValues: ['ES256', 'ES384', 'EdDSA', 'ML-DSA-44', 'ML-DSA-65',
+                 'ML-DSA-87'],
+    dflt: 'ES256', runtime: true,
+    description: 'Which of the realm\'s signing keys signs a resource ' +
+                 'response, by its JWS algorithm (RFC 9421 section 3.3.7). ' +
+                 'The signature names the key by its published kid, and ' +
+                 'the key is in /oauth2/jwks with this alg. ES256 is one of ' +
+                 'the three FAPI 2.0 allows; EdDSA is its Ed25519 variant ' +
+                 'only (oauth2.eddsaCurve must be Ed25519). The ML-DSA ' +
+                 'choices are post-quantum, and a client must support RFC ' +
+                 '9964 to verify them.' },
   { key: 'oauth2.accessTokenRequireDpop', group: 'OAuth 2.0 / OIDC',
     label: 'Require DPoP for every access token',
     env: 'STS_OAUTH2_ACCESS_TOKEN_REQUIRE_DPOP', type: 'bool', dflt: false,
