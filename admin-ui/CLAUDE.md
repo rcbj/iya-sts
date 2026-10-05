@@ -7282,6 +7282,8 @@ A file in this directory whose name begins `web_`:
 | `web_kit.ts` | The rendering kit: `esc()`, `tile()`, the prose helpers `note()`, `warn()`, `tip()`, `foldOf()` and what they stand on, and `whenText()`, `shortened()`, `clipped()`, `clippedValues()` and `pageNavPair()`, all moved VERBATIM out of `AdminConsole`; and `queryWith()`, which is `admin-core/admin_views.ts`'s written out. The methods of those names in `admin.ts` are delegates. |
 | `web_mode.ts` | The body of `/admin/mode`, from `GET /admin-api/mode`'s answer. It was `ModeAdmin.html()`. |
 | `web_worker_pools.ts` | The body of `/admin/worker-pools`. It was `WorkerPoolsAdmin`'s four drawing methods. |
+| `web_database.ts` | The body of `/admin/database`, and the table of its `SECTIONS`, which `database_admin.ts` now reads from here: the table is what the page is drawn from, and this module may not require that one. |
+| `web_secrets.ts` | The body of `/admin/secrets`. |
 | `web_node_health.ts` | The body of `/admin/node-health`. It was `NodeHealthAdmin`'s nine drawing methods; it carries its own `MIB` and `round1()`, which the view's module has too, because it may not require that module. |
 | `web_pages.ts` | The table of converted pages (path, title, operation, renderer), and the ENTRY of the browser bundle. |
 
@@ -7337,12 +7339,15 @@ renderer is already methods that take the view: it moves the named methods
 into a new `web_` file as static methods, drops what only a server has (the
 `deps` destructuring, every `log.debug()`), turns `admin.` into `kit.`, and
 leaves the entry method behind as the round-trip delegate. It refuses a
-helper the kit lacks rather than guessing. `tsc` then reports what it cannot
-see: a module constant or a static of the old class that the moved code read.
+helper the kit lacks rather than guessing, and it REPORTS every module-level
+name of the old file the moved code still reads (`STAYS BEHIND`). Each of
+those is a decision: a constant is copied, a table the page is drawn from
+moves with the renderer and is read back by the old module, a fact goes into
+the view.
 
 **NOT BUILT YET**: the runtime that signs in (authorization code, PKCE, a
 non-extractable DPoP key), fetches, routes and draws the shell; the static
-route that serves it; and every page but the three above.
+route that serves it; and every page but the five above.
 
 **THE PAGING CONTROL IS DRAWN FROM THE PAGING A CALLER RECEIVES.**
 `pageNavPair(path, params, pg)` read two members of the console's own paging

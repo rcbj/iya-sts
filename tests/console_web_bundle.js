@@ -69,10 +69,18 @@ function childMain() {
     const WebPages = require(ROOT_DIR + '/admin-ui/web_pages');
     const workerPools = require(ROOT_DIR + '/admin-ui/worker_pools_admin');
     const nodeHealth = require(ROOT_DIR + '/admin-ui/node_health_admin');
+    const database = require(ROOT_DIR + '/admin-ui/database_admin');
+    const secretsPage = require(ROOT_DIR + '/admin-ui/secrets_admin');
     // THE VIEW OF EVERY CONVERTED PAGE, as its management API operation
     // answers it. A page added to `web_pages.ts` owes a row here: D0 fails
     // otherwise.
     const VIEWS = {
+      '/admin/database': function () {
+        return database.databaseView();
+      },
+      '/admin/secrets': function () {
+        return secretsPage.secretsView();
+      },
       '/admin/mode': function () {
         return Promise.resolve(mode.report());
       },

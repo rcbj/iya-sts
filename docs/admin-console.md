@@ -255,7 +255,9 @@ in the JSON reply.
 **The management API pages the same way.** `GET /admin-api/users` and
 `GET /admin-api/groups` take the same parameters and reply with a
 `<name>Paging` object beside each array — `sessionsPaging`, `membersPaging`, and
-so on — carrying `page`, `pages`, `perPage`, `firstRow`, `lastRow` and `total`.
+so on — carrying `page`, `pages`, `perPage`, `firstRow`, `lastRow` and `total`,
+with `param` (the query parameter that moves that list) and `noun` (what its
+rows are counted in).
 Each session carries its own `tokensPaging`. The counts around them stay counts
 of the whole list: a group's `memberCount`, `presentCount` and `danglingCount`.
 The `session-<id>Page` parameter is described in the operation's prose rather

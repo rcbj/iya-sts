@@ -124,6 +124,20 @@ assert '.deps' not in body, [l for l in body.split('\n') if '.deps' in l][:3]
 assert not re.search(r'\blog\.', body), [l for l in body.split('\n') if re.search(r'\blog\.', l)][:3]
 used = set(re.findall(r'\bkit\.([A-Za-z_]+)', body))
 assert used <= KIT, ('helpers not in the kit', sorted(used - KIT))
+# What the moved code reads that stays behind: a module-level name of the
+# source file, or a static of its class. Reported, not refused, because the
+# answer differs each time (copy a constant, move a table, put a fact in the
+# view) and `tsc` would only say the same thing after an image build.
+top = set(re.findall(r'^(?:const|let|function|class|import) ([A-Za-z_$][\w$]*)',
+                     '\n'.join(lines), re.M)) - {'kit', 'WebKit'}
+code_only = '\n'.join(l for l in body.split('\n')
+                      if not re.match(r'^\s*(//|\*|/\*)', l))
+left = sorted(n for n in top
+              if re.search(r'(?<![\w$.\'"`-])%s(?![\w$\'"`-])' % re.escape(n),
+                           code_only))
+if left:
+    sys.stderr.write('STAYS BEHIND, and the moved code names it: ' +
+                     ', '.join(left) + '\n')
 called = set(re.findall(r'\b(?:this|self)\.([A-Za-z_]+)\(', body))
 assert called <= set(names), ('calls a method that did not move', sorted(called - set(names)))
 import textwrap

@@ -28,8 +28,10 @@
 // ---------------------------------------------------------------------------
 
 import WebKit = require('./web_kit');
+import DatabasePage = require('./web_database');
 import ModePage = require('./web_mode');
 import NodeHealthPage = require('./web_node_health');
+import SecretsPage = require('./web_secrets');
 import WorkerPoolsPage = require('./web_worker_pools');
 
 type Json = any;
@@ -45,10 +47,14 @@ interface WebPage {
 }
 
 const PAGES: WebPage[] = [
+  { path: '/admin/database', title: 'Database',
+    operation: '/admin-api/database', render: DatabasePage.render },
   { path: '/admin/mode', title: 'Mode', operation: '/admin-api/mode',
     render: ModePage.render },
   { path: '/admin/node-health', title: 'Node health',
     operation: '/admin-api/node-health', render: NodeHealthPage.render },
+  { path: '/admin/secrets', title: 'Secret store',
+    operation: '/admin-api/secrets', render: SecretsPage.render },
   { path: '/admin/worker-pools', title: 'Worker pools',
     operation: '/admin-api/worker-pools', render: WorkerPoolsPage.render }
 ];
