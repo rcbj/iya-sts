@@ -20,3 +20,8 @@ pub fn iso(at: DateTime<Utc>) -> String {
 pub fn iso_seconds(at: DateTime<Utc>) -> String {
     at.to_rfc3339_opts(SecondsFormat::Secs, true)
 }
+
+/// Milliseconds since the epoch, as `Date.now()` answers.
+pub fn now_ms_f64() -> f64 {
+    Utc::now().timestamp_millis() as f64
+}
