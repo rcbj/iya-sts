@@ -10,6 +10,7 @@
 pub mod errors;
 pub mod log;
 pub mod mode;
+pub mod realm;
 pub mod settings;
 pub mod time;
 pub mod version;

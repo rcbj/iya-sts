@@ -1234,8 +1234,11 @@ name = "sts-core"
 version = "0.1.0"
 dependencies = [
  "chrono",
+ "idna",
+ "indexmap",
  "serde",
  "serde_json",
+ "tokio",
  "tracing",
  "tracing-subscriber",
 ]

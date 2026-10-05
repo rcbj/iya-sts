@@ -2166,6 +2166,83 @@ function pkiTbs(der) {
   return pkijs.Certificate.fromBER(new Uint8Array(der)).tbsView;
 }
 
+// TRUST REALMS (`common/realms.js`): with realms really created here, Node's
+// answer for every id, domain and path question `sts-core::realm` answers —
+// under three values of `realms.pathSegment`, the EST label position
+// included.
+function realmsVectors() {
+  const config = require(path.join(ROOT, 'common', 'config.js'));
+  const realms = require(path.join(ROOT, 'common', 'realms.js'));
+  const profiles = require(path.join(ROOT, 'common',
+                                     'enrollment_profiles.js'));
+  const created = [
+    realms.create({ id: 'acme', name: 'Acme', domain: 'Acme.Example.COM.' }),
+    realms.create({ id: 'dev', name: 'Dev', domain: 'dev.acme.example.com' }),
+    realms.create({ id: 'x1', name: 'X1' }),
+    realms.create({ id: 'bücher', name: 'bad' }),
+    realms.create({ id: 'zz', name: 'bad domain', domain: 'acme.example.com' })
+  ].map(function (r) {
+    return { ok: r.ok, errors: r.errors,
+             realm: r.realm ? { id: r.realm.id, domain: r.realm.domain }
+                            : null };
+  });
+  const ids = ['acme', 'default', 'Upper', '-lead', 'a'.repeat(31),
+               'a'.repeat(32), 'ok-1', 'x1', 'simpleenroll', '', 'b_c'];
+  const domains = ['example.com', 'acme.example.com', 'new.example.org',
+                   'nodot', '123.456', 'a..b', '-x.com', 'x-.com',
+                   'é.example', 'x.' + 'a'.repeat(64) + '.com', ''];
+  const paths = ['/', '/realm/acme/oauth2/token', '/realm/acme',
+                 '/realm/acme/', '/realm/nope/oauth2/token', '/acme/x',
+                 '/t/acme/x', '/.well-known/est/acme/simpleenroll',
+                 '/.well-known/est/simpleenroll',
+                 '/.well-known/est/newrealm/cacerts',
+                 '/.well-known/est/tls-server/simpleenroll', '/realm/x1',
+                 '/realm/Bad/x', '/oauth2/token', '/dev/a/b'];
+  const bySegment = [];
+  for (const segment of ['realm', '', '/t/']) {
+    config.setOverride('realms.pathSegment', segment);
+    bySegment.push({
+      segment: segment,
+      prefixes: realms.list().map(function (r) {
+        return realms.prefixOf(r);
+      }),
+      matches: paths.map(function (p) {
+        const m = realms.matchPath(p);
+        return { path: p, match: m ? { realm: m.realm.id, rest: m.rest,
+                                       est: m.form === 'est-label' } : null,
+                 unknown: realms.unknownRealmPath(p) };
+      }),
+      hrefs: realms.run(realms.get('acme'), function () {
+        return ['/oauth2/token', '/realm/acme/x', 'https://a/b', 'rel',
+                realms.currentPrefix()].map(realms.href);
+      })
+    });
+  }
+  config.clearOverride('realms.pathSegment');
+  return {
+    globalDomain: config.value('global.domain'),
+    estLabels: profiles.EST_LABELS,
+    created: created,
+    ids: ids.map(function (id) {
+      return { id: id, errors: realms.validateId(id) };
+    }),
+    domains: domains.map(function (d) {
+      return { raw: d, normalized: realms.normalizeDomain(d),
+               errors: realms.validateDomain(realms.normalizeDomain(d),
+                                             'new') };
+    }),
+    baseDns: realms.list().map(function (r) {
+      return { id: r.id, domain: realms.domainOf(r),
+               baseDn: realms.baseDnOf(r),
+               est: realms.estLabelPath(r) };
+    }),
+    mail: realms.run(realms.get('dev'), function () {
+      return ['alice', 'bob@x.org', '@lead'].map(realms.inventedMailOf);
+    }),
+    bySegment: bySegment
+  };
+}
+
 const VECTORS = [{ file: 'jws-node.json', build: jws },
                  { file: 'jwe-node.json', build: jwe },
                  { file: 'c14n-node.json', build: c14n },
@@ -2179,7 +2256,8 @@ const VECTORS = [{ file: 'jws-node.json', build: jws },
                  { file: 'sigstore-node.json', build: sigstore },
                  { file: 'x509-node.json', build: x509Vectors },
                  { file: 'limbo-node.json', build: limbo },
-                 { file: 'foreign-node.json', build: foreign }];
+                 { file: 'foreign-node.json', build: foreign },
+                 { file: 'realms-node.json', build: realmsVectors }];
 
 if (require.main === module) {
   fs.mkdirSync(OUT, { recursive: true });
