@@ -1247,6 +1247,10 @@ class WebKit {
   //   entries     the catalogue, each { key, names, label, detail, href }
   //   selectedKey the entry this page is already showing, marked in the pane
   //   nothing     what to say when the search matched none of them
+  //   slice       optional, { matched, from }: `entries` is then the pane's
+  //               results already searched and paged — by the view, for a
+  //               catalogue too big to send whole (#446) — and these say how
+  //               many matched and where the page starts
   /**
    * Draws a search box and a paged, scrolling pane of matching entries,
    * shared by every chooser on the console.
@@ -1295,19 +1299,25 @@ class WebKit {
     // in one pane, and the two panes must not send each other's readers to the
     // wrong half of the page.
     const anchor = 'find-' + spec.param;
-    const matched = spec.entries.filter(function (entry) {
+    const sliced = spec.slice || null;
+    const matched = sliced ? [] : spec.entries.filter(function (entry) {
       return WebKit.chooserMatches(entry.names, wanted);
     });
+    const matchedCount = sliced ? sliced.matched : matched.length;
 
     // A STALE OFFSET IS CLAMPED RATHER THAN OBEYED. `?appfrom=40` is a link the
     // reader followed when 57 matched; narrowing the search to 6 would
     // otherwise answer with an empty pane under a line saying 6 matched, which
     // reads as the search being broken by the term that worked.
     let from = parseInt(WebKit.queryOne(query, spec.fromParam), 10);
-    if (!isFinite(from) || from < 0 || from >= matched.length) {
+    if (!isFinite(from) || from < 0 || from >= matchedCount) {
       from = 0;
     }
-    const shown = matched.slice(from, from + WebKit.CHOOSER_HITS);
+    if (sliced) {
+      from = sliced.from;
+    }
+    const shown = sliced ? spec.entries
+                         : matched.slice(from, from + WebKit.CHOOSER_HITS);
 
     // What every control here carries with it. Two names come OUT of it and
     // each for its own reason: the search term, because the text input re-emits
@@ -1359,13 +1369,13 @@ class WebKit {
       '</div>';
 
     const noun = wanted
-      ? (matched.length === 1 ? 'match' : 'matches')
+      ? (matchedCount === 1 ? 'match' : 'matches')
       : 'in the list';
-    const count = matched.length
-      ? (matched.length > WebKit.CHOOSER_HITS
+    const count = matchedCount
+      ? (matchedCount > WebKit.CHOOSER_HITS
           ? 'Showing ' + (from + 1) + '&ndash;' + (from + shown.length) +
-            ' of ' + matched.length + ' ' + noun + '. '
-          : matched.length + ' ' + noun + '. ')
+            ' of ' + matchedCount + ' ' + noun + '. '
+          : matchedCount + ' ' + noun + '. ')
       : '';
     const more = [];
     if (from > 0) {
@@ -1373,7 +1383,7 @@ class WebKit {
         WebKit.CHOOSER_HITS,
         'The twenty before these'));
     }
-    if (from + WebKit.CHOOSER_HITS < matched.length) {
+    if (from + WebKit.CHOOSER_HITS < matchedCount) {
       more.push(pageLink(from + WebKit.CHOOSER_HITS,
                          'next ' + WebKit.CHOOSER_HITS + ' &rarr;',
         'The twenty after these'));

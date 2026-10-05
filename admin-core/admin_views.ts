@@ -5839,7 +5839,6 @@ class AdminViews {
     const { log, realms, rbac } = this.deps;
     const self = this;
     log.debug("Entering AdminViews.rbacListJson().");
-    log.debug("Entering rbacListPage().");
     // The roster of the realm being read (2026-09-14, #32): the service roster
     // in the default realm, that realm's own anywhere else.
     const info = rbac.describe(realms.currentId());
@@ -5952,6 +5951,29 @@ class AdminViews {
     filterParams.personq = personWanted;
     filterParams.personfrom = this.queryOne(req.query, 'personfrom');
     filterParams.person = personAsked;
+    // THE PANE'S OWN SLICE (#446), by the chooser's rule rather than the
+    // reply's paging: `personfrom` clamped as `chooserPane()` clamps it and
+    // CHOOSER_HITS at a time whatever `per` says, so a page drawn from this
+    // answer shows what the pane drawn from the whole catalogue showed.
+    let paneFrom = parseInt(this.queryOne(req.query, 'personfrom'), 10);
+    if (!isFinite(paneFrom) || paneFrom < 0 ||
+        paneFrom >= candidateMatched.length) {
+      paneFrom = 0;
+    }
+    const candidatePane = {
+      from: paneFrom, matched: candidateMatched.length,
+      shown: candidateMatched.slice(paneFrom, paneFrom + CHOOSER_HITS)
+    };
+    // Who of the grants on this page has authenticated here, for the
+    // member cell's link — the page's people only, as the group drill-down
+    // carries them.
+    const knownHere: Record<string, boolean> = {};
+    shown.forEach(function (row) {
+      if (row.userKey && knownKeys[row.userKey]) {
+        knownHere[row.userKey] = true;
+      }
+    });
+    const pagingJson = this.pagingJson(paging);
     log.debug("Leaving AdminViews.rbacListJson(). " + candidateMatched.length +
               " of " +
               candidates.length + " candidate(s) match.");
@@ -6016,7 +6038,12 @@ class AdminViews {
           },
           picked: personAsked
             ? { asked: personAsked, candidate: picked }
-            : null
+            : null,
+          // What the page draws beside (#446): its paging, the pane's slice,
+          // the people on the page who have signed in here, and the two
+          // roles a grant can name.
+          paging: pagingJson, candidatePane: candidatePane, known: knownHere,
+          roleChoices: rbac.ROLES
       };
       }())
     };
