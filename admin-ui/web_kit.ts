@@ -1544,6 +1544,269 @@ class WebKit {
     }).join('<br>');
   }
 
+  /**
+   * The trash-can icon a list box's delete button carries, inline so the
+   * console still makes no image request.
+   *
+   * @returns the SVG as HTML
+   */
+  static trashIcon() {
+    return '<svg viewBox="0 0 16 16" width="14" height="14" ' +
+      'aria-hidden="true" ' +
+      'focusable="false"><path fill="currentColor" d="M6 1h4l1 1h3v2H2V2h3z' +
+      'M3 5h10l-1 10H4zm3 2v6h1V7zm3 0v6h1V7z"/></svg>';
+  }
+
+  // The classes that make a block appear only when one of its families is
+  // ticked. `pf` is what the stylesheet hides; each `pf-<id>` is what a checked
+  // box shows. A block serving several families carries several, and appears
+  // when ANY of them is ticked — which is what `samlEntityId` needs, since it
+  // is the identifier of both SAML profiles.
+  //
+  // A block with NO families is not given `pf` at all: it is unconditional, and
+  // tagging it would hide it forever.
+  /**
+   * Returns the CSS classes that show a block only while one of its
+   * families is ticked.
+   *
+   * @param ids - the family ids the block serves
+   * @returns `pf pf-<id> ...`, or an empty string for an unconditional block
+   */
+  static familyClasses(ids) {
+    const list = (ids || []).filter(function (id) { return !!id; });
+    if (!list.length) {
+      return '';
+    }
+    return 'pf ' + list.map(function (id) { return 'pf-' + id; }).join(' ');
+  }
+
+  /**
+   * Draws one field of the grid: its name (with its sentence as a tooltip),
+   * the families it belongs to, and the control its type needs.
+   *
+   * @param row - the field's row, typed by `gridFieldTyped()`
+   * @param values - the grid's values by attribute
+   * @param options - `redraw` (the route "+" and delete post to), `showSet`
+   *   (show a cell holding a value whatever is ticked), `generateSecret`,
+   *   and `protocols`, the families a cell's labels are named from
+   * @returns the cell as HTML
+   */
+  static fieldGridCell(row, values, options) {
+    const opts = options || {};
+    const name = 'field.' + row.attribute;
+    const id = 'fg-' + row.attribute;
+    const held = values[row.attribute] || [];
+    const first = held.length ? String(held[0]) : '';
+    const hint = WebKit.tip(row.what || row.attribute);
+    const defaultText = row.described
+      ? 'default — currently ' + row.described.text : '';
+    // THE GUIDANCE IN AN EMPTY BOX (rcbj, 2026-10-01): an example of a valid
+    // value, as a placeholder — grey, and gone as soon as somebody types — and
+    // for a setting override the default beside it. `applications.
+    // fieldExample()` is the one table of them.
+    const guidance = row.example
+      ? 'e.g. ' + row.example + (defaultText ? ' (' + defaultText + ')' : '')
+      : (defaultText || 'not set');
+    let control = '';
+    // A VALUE THAT IS NOT ONE OF THE CHOICES (an older write, an
+    // ldapmodify) is still offered, marked, so a save does not drop it
+    // silently.
+    const offered = function (choices) {
+      return choices.concat(held.filter(function (one) {
+        return String(one).trim() !== '' && choices.indexOf(String(one)) < 0;
+      }).map(String));
+    };
+    const outside = function (choices, value) {
+      return choices.indexOf(value) < 0
+        ? ' <span class="state-none">(not one of the allowed values)</span>'
+        : '';
+    };
+    if (row.type === 'array' && row.choices && row.choices.length) {
+      // A LIST FROM A CLOSED SET is a checkbox per value. An unticked box
+      // posts nothing, so no box can be empty, and the form's `present` list
+      // is what clears the attribute when every box is unticked.
+      control = '<div class="fg-checks" role="group"' + hint +
+        ' aria-label="' + WebKit.esc(row.attribute) + '">' +
+        offered(row.choices).map(function (value, n) {
+          return '<label class="fg-radio"><input type="checkbox" name="' +
+            WebKit.esc(name + '.' + n) + '" value="' + WebKit.esc(value) + '"' +
+            (held.map(String).indexOf(value) >= 0 ? ' checked' : '') + '>' +
+            WebKit.esc(value) + outside(row.choices, value) + '</label>';
+        }).join('') + '</div>';
+    } else if (row.type === 'array') {
+      control = '<div class="fg-list">' + held.map(function (value, n) {
+        return '<div class="fg-item"><input type="text" id="' +
+          WebKit.esc(id + '-' + n) + '" name="' + WebKit.esc(name + '.' + n) +
+          '" value="' + WebKit.esc(value) + '"' + hint +
+          (row.example ? ' placeholder="' + WebKit.esc('e.g. ' + row.example) +
+                         '"' : '') + ' aria-label="' +
+          WebKit.esc(row.attribute + ' value ' + (n + 1)) + '">' +
+          '<button type="submit" class="secondary fg-drop" name="drop" ' +
+          'value="' + WebKit.esc(row.attribute + '.' + n) + '" formaction="' +
+          WebKit.esc(opts.redraw + '#fgc-' + row.attribute) +
+            '" formnovalidate ' +
+          'title="Delete this ' +
+          'value" aria-label="Delete value ' + (n + 1) + ' of ' +
+          WebKit.esc(row.attribute) + '">' + WebKit.trashIcon() +
+          '</button></div>';
+      }).join('') +
+      (held.length ? '' : '<span class="state-none">no values</span>') +
+      '<button type="submit" class="secondary fg-grow" name="grow" value="' +
+      WebKit.esc(row.attribute) + '" formaction="' +
+      WebKit.esc(opts.redraw + '#fgc-' + row.attribute) +
+      '" formnovalidate title="Add a value" aria-label="Add a value to ' +
+      WebKit.esc(row.attribute) + '">+</button></div>';
+    } else if (row.type === 'boolean') {
+      const upper = first.toUpperCase();
+      const radio = function (value, label) {
+        return '<label class="fg-radio"><input type="radio" name="' +
+          WebKit.esc(name) + '" value="' + value + '"' +
+          (upper === value ? ' checked' : '') + '>' + WebKit.esc(label) +
+          '</label>';
+      };
+      control = '<div class="fg-bool" role="radiogroup"' + hint +
+        ' aria-label="' + WebKit.esc(row.attribute) + '">' +
+        radio('TRUE', 'true') +
+        radio('FALSE', 'false') +
+        radio('', defaultText || 'not set') + '</div>';
+    } else if (row.type === 'enum') {
+      // ONE VALUE FROM A CLOSED SET is a radio per value, and a last one for
+      // none (the setting's default, for an override), the boolean's shape.
+      control = '<div class="fg-bool fg-choices" role="radiogroup"' +
+        hint + ' aria-label="' + WebKit.esc(row.attribute) + '">' +
+        offered(row.choices || []).map(function (value) {
+          return '<label class="fg-radio"><input type="radio" name="' +
+            WebKit.esc(name) + '" value="' + WebKit.esc(value) + '"' +
+            (value === first ? ' checked' : '') + '>' + WebKit.esc(value) +
+            outside(row.choices || [], value) + '</label>';
+        }).join('') +
+        '<label class="fg-radio"><input type="radio" name="' +
+        WebKit.esc(name) + '" value=""' + (first === '' ? ' checked' : '') +
+        '>' + WebKit.esc(defaultText || 'not set') + '</label></div>';
+    } else if (row.long) {
+      control = '<textarea id="' + WebKit.esc(id) + '" name="' +
+        WebKit.esc(name) + '" rows="3"' + hint + ' placeholder="' +
+        WebKit.esc(guidance) + '">' +
+        WebKit.esc(held.join('\n')) + '</textarea>';
+    } else {
+      const d = row.described;
+      control = '<input type="' + (row.type === 'int' ? 'number' : 'text') +
+        '" id="' + WebKit.esc(id) + '" name="' + WebKit.esc(name) +
+        '" value="' +
+        WebKit.esc(first) + '"' + hint +
+        (d && typeof d.min === 'number' ? ' min="' + d.min + '"' : '') +
+        (d && typeof d.max === 'number' ? ' max="' + d.max + '"' : '') +
+        ' placeholder="' + WebKit.esc(guidance) + '">' +
+        (row.attribute === 'oauthClientSecret' && opts.generateSecret
+          ? ' <button type="submit" class="secondary" name="action" ' +
+            'value="generate-secret" formaction="' +
+            WebKit.esc(opts.generateSecret) + '" formnovalidate' +
+            WebKit.tip('Mint a client secret the way POST /oauth2/register ' +
+                     'does and put it in this box. Nothing is written until ' +
+                     'the application is created. Everything else you have ' +
+                     'typed on this page is kept.') +
+            '>Generate Secret</button>'
+          : '');
+    }
+    const labels = row.forText !== undefined ? String(row.forText)
+      : row.everyFamily ? 'every protocol'
+      : row.families.map(function (family) {
+        const known = (opts.protocols || []).filter(function (one) {
+          return one.id === family;
+        })[0];
+        return known ? known.label : family;
+      }).join(', ');
+    const conditional = !row.everyFamily && row.families.length &&
+      !(opts.showSet && held.some(function (one) {
+        return String(one).trim() !== '';
+      }));
+    // The cell's id is what "+" and the bin come back to (withReturnAnchors()).
+    return '<div id="fgc-' + WebKit.esc(row.attribute) + '" class="fg-cell' +
+      (conditional
+        ? ' ' + WebKit.esc(WebKit.familyClasses(row.families)) : '') + '">' +
+      // A label names one control; a list and a radio group are several, so
+      // their name is a heading of the cell rather than a label.
+      (row.type === 'array' || row.type === 'boolean'
+        ? '<span class="fg-name"' + hint + '><code>' +
+          WebKit.esc(row.attribute) + '</code></span>'
+        : '<label class="fg-name" for="' + WebKit.esc(id) + '"' + hint +
+          '><code>' + WebKit.esc(row.attribute) + '</code></label>') +
+      '<span class="fg-for">' + WebKit.esc(labels) +
+      (row.type === 'array' ? ' &middot; a list' : '') +
+      (row.sensitive ? ' &middot; a credential' : '') + '</span>' +
+      control + '</div>';
+  }
+
+  /**
+   * Reads the grid's values out of a posted form, keeping every list box —
+   * an empty one included — in box order, and applies a "+" or a delete.
+   *
+   * @param draft - the posted form
+   * @param longText - optional; the attributes one box holds whole
+   *   (`applications.LONG_TEXT_ATTRIBUTES`)
+   * @returns the values by attribute
+   */
+  static gridValuesFromDraft(draft, longText?) {
+    const out = {};
+    const boxes = {};
+    const long = longText || [];
+    Object.keys(draft || {}).forEach(function (key) {
+      if (key.indexOf('field.') !== 0) {
+        return;
+      }
+      const name = key.slice('field.'.length);
+      const value = String(draft[key] === undefined ? '' : draft[key]);
+      const box = /^(.+)\.(\d+)$/.exec(name);
+      if (box) {
+        (boxes[box[1]] = boxes[box[1]] || []).push({ n: Number(box[2]),
+                                                     value: value });
+        return;
+      }
+      // A box of the older shape — one value per line — or a single value.
+      out[name] = long.indexOf(name) >= 0 ? [value]
+        : value.split(/\r?\n/).filter(function (one) {
+          return one.trim() !== '';
+        });
+    });
+    Object.keys(boxes).forEach(function (name) {
+      out[name] = boxes[name].sort(function (a, b) { return a.n - b.n; })
+        .map(function (one) { return one.value; });
+    });
+    const grow = String((draft && draft.grow) || '');
+    if (grow) {
+      out[grow] = (out[grow] || []).concat(['']);
+    }
+    const drop = /^(.+)\.(\d+)$/.exec(String((draft && draft.drop) || ''));
+    if (drop && out[drop[1]]) {
+      out[drop[1]].splice(Number(drop[2]), 1);
+    }
+    return out;
+  }
+
+  // THE "MAIL IT TO THEM" BOX (#63): `deliver=mail` on the reset link and
+  // the activation link, TICKED when the realm has a mail transport — an
+  // administrator who never sees a person's link cannot be the one who used
+  // it — and absent, with the reason, when it has none.
+  /**
+   * Draws the ticked "mail it to them" checkbox (`deliver=mail`) for a
+   * link, or a note that the realm has no mail transport.
+   *
+   * @param what - what is mailed, as the sentence names it
+   * @param available - optional; whether the realm has a mail transport
+   * @returns the box or the note as HTML
+   */
+  static mailLinkBox(what, available?) {
+    if (!available) {
+      return WebKit.note('This realm has no mail transport ' +
+        '(<a href="/admin/mail">Mail</a>), so ' + WebKit.esc(what) + ' is ' +
+        'shown to you to pass on.');
+    }
+    return '<div class="formrow"><label><input type="checkbox" ' +
+      'name="deliver" value="mail" checked> mail ' + WebKit.esc(what) +
+      ' to the address on their entry, and do not show it to me</label>' +
+      '</div>';
+  }
+
   // A query's VIEW parameters — every one but the three that are not part
   // of what is being looked at (`format`, and the `notice` and `error` a
   // redirect brought back) — first value each. `admin_views.ts`'s, which
