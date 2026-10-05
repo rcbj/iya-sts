@@ -20,6 +20,7 @@
 //! container did before it had a PIP — reported on `GET /`.
 
 use std::collections::{HashMap, HashSet};
+use sts_core::errors::codes;
 
 use indexmap::IndexMap;
 use reqwest::Method;
@@ -347,7 +348,7 @@ impl AttributeResolver for RemoteResolver {
                         tracing::warn!(
                             "{}pip: the PDP answered \"{}\" for {}, which is \
                              not a valid {}: {}",
-                            tag("STS-XPEP-0028"),
+                            tag(codes::STS_XPEP_0028),
                             lexical,
                             designator.attribute_id,
                             designator.data_type,
@@ -421,7 +422,7 @@ impl RemotePip {
                  fetched and every designator will resolve to an empty bag. \
                  Split the policy, or turn PEP_PIP off and assert the \
                  attributes in the request.",
-                tag("STS-XPEP-0024"),
+                tag(codes::STS_XPEP_0024),
                 count,
                 MAX_DESIGNATORS
             );
@@ -461,9 +462,9 @@ impl RemotePip {
                  which is what this PEP did before it had a PIP at all — so \
                  it goes on deciding, on less information, and says so.",
                 tag(if answered.error.is_some() {
-                    "STS-XPEP-0025"
+                    codes::STS_XPEP_0025
                 } else {
-                    "STS-XPEP-0026"
+                    codes::STS_XPEP_0026
                 }),
                 why
             );
@@ -476,7 +477,7 @@ impl RemotePip {
                 tracing::warn!(
                     "{}pip: the PDP's answer would not parse ({}), so every \
                      designator resolves to an empty bag.",
-                    tag("STS-XPEP-0027"),
+                    tag(codes::STS_XPEP_0027),
                     error
                 );
                 return none(json!({ "used": false, "subject": subject,

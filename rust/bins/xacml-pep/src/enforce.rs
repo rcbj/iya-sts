@@ -15,6 +15,7 @@
 //! `xacml-pep/enforcement_cases.json` is the table both this and the
 //! embedded PEP (`xacml.js`'s `enforce()`) are held to.
 
+use sts_core::errors::codes;
 use sts_core::log::tag;
 use sts_xacml::model::Decision;
 use sts_xacml::request::ResolvedObligation;
@@ -100,7 +101,7 @@ impl Enforcer {
             tracing::warn!(
                 "{}xacml-pep: refusing a {} that carries obligation(s) this \
                  PEP cannot discharge: {}.",
-                tag("STS-XPEP-0004"),
+                tag(codes::STS_XPEP_0004),
                 decision,
                 list
             );

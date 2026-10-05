@@ -7,6 +7,7 @@
 //! console to change them while it runs.
 
 use std::path::{Path, PathBuf};
+use sts_core::errors::codes;
 
 use sts_core::log::tag;
 
@@ -87,7 +88,7 @@ fn file_from_env(name: &str) -> Option<Vec<u8>> {
                  Carrying on WITHOUT it, which means this PEP registers \
                  unauthenticated if the PDP allows that and is refused if it \
                  does not.",
-                tag("STS-XPEP-0003"),
+                tag(codes::STS_XPEP_0003),
                 name,
                 path,
                 error

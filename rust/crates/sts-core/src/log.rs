@@ -15,7 +15,8 @@
 //! poll and would otherwise say Entering a dozen times.
 //!
 //! An error code goes at the front of the message, as `tag()` puts it there
-//! in Node: `tracing::error!("{}could not start", tag("STS-XPEP-0013"))`.
+//! in Node — `tag(codes::STS_XPEP_0013)`, the constant from
+//! [`crate::errors::codes`], in `tracing::error!("{}could not start", …)`.
 
 use std::fmt;
 use std::io::Write;
@@ -54,8 +55,8 @@ pub fn parse_level(name: &str) -> u8 {
 
 /// The `[STS-…] ` prefix a coded log line starts with — the registry's own
 /// format (`common/error_codes.js` `tag()`).
-pub fn tag(code: &str) -> String {
-    format!("[{}] ", code)
+pub fn tag(code: impl AsRef<str>) -> String {
+    format!("[{}] ", code.as_ref())
 }
 
 /// Collects an event's message and its other fields.
@@ -217,7 +218,10 @@ mod tests {
 
     #[tracing::instrument(level = "debug")]
     fn decide_something() {
-        tracing::info!("{}said something", tag("STS-XPEP-0013"));
+        tracing::info!(
+            "{}said something",
+            tag(crate::errors::codes::STS_XPEP_0013)
+        );
     }
 
     #[test]

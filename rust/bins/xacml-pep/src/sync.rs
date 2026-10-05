@@ -15,6 +15,7 @@
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, MutexGuard};
+use sts_core::errors::{codes, ErrorCode};
 
 use reqwest::Method;
 use serde_json::{json, Value};
@@ -193,7 +194,7 @@ impl Sync {
                 }))),
             )
             .await;
-        let complain = |code: &str, why: &str| {
+        let complain = |code: ErrorCode, why: &str| {
             if first {
                 tracing::warn!("{}xacml-pep: {}", tag(code), why);
             } else {
@@ -208,7 +209,7 @@ impl Sync {
                  retried on every poll (attempt {}).",
                 error, attempts
             );
-            complain("STS-XPEP-0015", &why);
+            complain(codes::STS_XPEP_0015, &why);
             self.lock().registration = Registration {
                 name: o.name.clone(),
                 attempts,
@@ -237,7 +238,7 @@ impl Sync {
                  {}).",
                 answer.status, said, attempts
             );
-            complain("STS-XPEP-0016", &why);
+            complain(codes::STS_XPEP_0016, &why);
             self.lock().registration = Registration {
                 name: o.name.clone(),
                 attempts,
@@ -336,7 +337,7 @@ impl Sync {
         if let Some(error) = &answer.error {
             self.keep(
                 &format!("Could not reach the PDP: {}", error),
-                "STS-XPEP-0017",
+                codes::STS_XPEP_0017,
             );
             return;
         }
@@ -357,7 +358,7 @@ impl Sync {
                 .unwrap_or_default();
             self.keep(
                 &format!("The PDP answered {}{}.", answer.status, detail),
-                "STS-XPEP-0018",
+                codes::STS_XPEP_0018,
             );
             return;
         }
@@ -366,7 +367,7 @@ impl Sync {
             self.keep(
                 "The PDP answered 200 with something that is not a \
                        policy set. Keeping the previous one.",
-                "STS-XPEP-0019",
+                codes::STS_XPEP_0019,
             );
             return;
         };
@@ -432,7 +433,7 @@ impl Sync {
             tracing::warn!(
                 "{}xacml-pep: {} of {} pulled policy(ies) would not load here \
                  and were left out: {}",
-                tag("STS-XPEP-0020"),
+                tag(codes::STS_XPEP_0020),
                 refused.len(),
                 count,
                 list.join("; ")
@@ -462,7 +463,7 @@ impl Sync {
             if has_root {
                 String::new()
             } else {
-                tag("STS-XPEP-0021")
+                tag(codes::STS_XPEP_0021)
             },
             count,
             state.held.sync_token,
@@ -473,7 +474,7 @@ impl Sync {
     /// A failed pull keeps what is held. `lastPullAt` is NOT touched: it
     /// means "when did this PEP last confirm it was current", and `stale` is
     /// computed from that gap.
-    fn keep(&self, why: &str, code: &str) {
+    fn keep(&self, why: &str, code: ErrorCode) {
         let mut state = self.lock();
         state.held.last_pull_ok = false;
         state.held.last_pull_why = if state.held.loaded {
@@ -539,9 +540,9 @@ impl Sync {
             tracing::debug!(
                 "{}xacml-pep: heartbeat not delivered: {}",
                 tag(if answer.error.is_some() {
-                    "STS-XPEP-0022"
+                    codes::STS_XPEP_0022
                 } else {
-                    "STS-XPEP-0023"
+                    codes::STS_XPEP_0023
                 }),
                 answer.error.unwrap_or_else(|| answer.status.to_string())
             );

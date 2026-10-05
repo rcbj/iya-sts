@@ -4,7 +4,7 @@
 [package]
 name = "sts-core"
 version = "0.1.0"
-description = "What every crate shares: the bunyan log, the version."
+description = "What every crate shares: the bunyan log, the version, the error codes."
 edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
@@ -16,6 +16,9 @@ serde.workspace = true
 serde_json.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
+
+[build-dependencies]
+serde_json.workspace = true
 
 [lints]
 workspace = true
