@@ -159,39 +159,6 @@ class AcmeAdmin {
     return false;
   }
 
-  // The page that answers `create-eab`: the key, once.
-  /**
-   * Answers `create-eab` with an uncached page showing the new key and its
-   * certbot line, once.
-   *
-   * @param req - the request
-   * @param res - its response
-   * @param result - the action's answer
-   */
-  createdEabPage(req, res, result, backHref?) {
-    const { log, admin, esc } = this.deps;
-    log.debug("Entering AcmeAdmin.createdEabPage().");
-    const inner = admin.warn('<strong>Copy the HMAC key now.</strong> It is ' +
-        'stored sealed on the entry and is never shown again; this page is ' +
-        'not cached.') +
-      '<table class="kv"><tr><th>For</th><td>' +
-      AcmePage.code(result.targetUri) +
-      '</td></tr><tr><th>Directory</th><td>' +
-      AcmePage.code(result.directory) +
-      '</td></tr><tr><th>Key id (--eab-kid)</th><td>' +
-      AcmePage.code(result.kid) +
-      '</td></tr><tr><th>HMAC key (--eab-hmac-key)</th><td>' +
-      AcmePage.code(result.hmacKey) + '</td></tr><tr><th>MAC</th><td>' +
-      AcmePage.code(result.alg) + '</td></tr><tr><th>Unused until</th><td>' +
-      esc(result.expiresAt) + '</td></tr></table>' +
-      '<h2>certbot</h2><pre>' + esc(result.certbot) + '</pre>' +
-      '<p class="links">' + (backHref
-        ? '<a href="' + esc(backHref) + '">Back to the application</a> · '
-        : '') + '<a href="/admin/acme#eab">Back to ACME</a></p>';
-    admin.respond(req, res, result, 'ACME — EAB key', '/admin/acme', inner);
-    log.debug("Leaving AcmeAdmin.createdEabPage().");
-  }
-
   // DRAWN BY `web_acme.ts` (#446): this page is converted for the static
   // console, and its renderer is a module a browser can load. Until the
   // cutover this process still draws it, handing the renderer the view passed

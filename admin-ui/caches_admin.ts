@@ -464,26 +464,6 @@ class CachesAdmin {
     return drawn;
   }
 
-  private renderCaches(req: Req, res: Res): void {
-    const { log, admin, errorCodes } = this.deps;
-    const self = this;
-    log.debug("Entering CachesAdmin.renderCaches().");
-    const json = self.publicJson(self.cachesJson(req.query));
-    if (json.cache === undefined) {
-      admin.respond(req, res, json, 'Caches', PAGE, self.body(req, json));
-      log.debug("Leaving CachesAdmin.renderCaches(). The list.");
-      return;
-    }
-    const title = json.found ? json.summary.title : 'No such cache';
-    const up = admin.upTo(PAGE, title, {});
-    if (!json.found) {
-      errorCodes.mark(res, 'STS-ADMIN-0021');
-    }
-    admin.respond(req, res, json, 'Caches — ' + title, PAGE,
-                  self.body(req, json), up);
-    log.debug("Leaving CachesAdmin.renderCaches(). One cache.");
-  }
-
   /**
    * Registers `GET /admin/caches`, the page and its `?format=json`.
    *

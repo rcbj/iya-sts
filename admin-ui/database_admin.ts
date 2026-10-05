@@ -364,32 +364,6 @@ class DatabaseAdmin {
     return SECTIONS.slice();
   }
 
-  // =========================================================================
-  // THE PAGE.
-  // =========================================================================
-  private renderDatabase(req: Req, res: Res): void {
-    const { log, admin, errorCodes } = this.deps;
-    const self = this;
-    log.debug('Entering DatabaseAdmin.renderDatabase().');
-    self.databaseJson().then(function (json) {
-      admin.respond(req, res, json, 'Database', '/admin/database',
-                    self.body(json));
-      log.debug('Leaving DatabaseAdmin.renderDatabase().');
-    }).catch(function (e) {
-      log.error(errorCodes.tag('STS-ADMIN-0598') + 'database_admin: the ' +
-                                                   'page threw: ' +
-                (e && e.stack ? e.stack : e));
-      errorCodes.mark(res, 'STS-ADMIN-0598');
-      admin.respond(req, res,
-                    { ok: false, error: String(e && e.message || e) },
-                    'Database', '/admin/database',
-                    admin.warn('This page could not be drawn: ' +
-                               admin.esc(String(e && e.message || e)),
-                               'It threw'));
-    });
-    log.debug("Leaving DatabaseAdmin.renderDatabase().");
-  }
-
   // DRAWN BY `web_database.ts` (#446): this page is converted for the static
   // console, and its renderer is a module a browser can load. Until the
   // cutover this process still draws it, handing the renderer the view passed

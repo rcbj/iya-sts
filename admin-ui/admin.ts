@@ -9393,33 +9393,6 @@ class AdminConsole {
     return out;
   }
 
-  // ---------------------------------------------------------------------------
-  // GET /admin/used-assertions's body, out of its route (#446) so that it can
-  // be drawn from the answer alone: the route reads the view, which is
-  // asynchronous, and hands it here.
-  // ---------------------------------------------------------------------------
-  /**
-   * Draws `/admin/used-assertions` from its view.
-   *
-   * @param req - the request
-   * @param view - `admin_views.usedAssertionsView()`'s result
-   * @returns the page body as HTML (`inner`) and its JSON view (`json`)
-   */
-  usedAssertionsPage(req, view) {
-    const { log } = this.deps;
-    log.debug("Entering AdminConsole.usedAssertionsPage().");
-    const json = view.json;
-    // Drawn by `web_used_assertions.ts` (#446).
-    const inner = this.messagesOf(req) +
-      UsedAssertionsPage.body(this.renderContext(req),
-        JSON.parse(JSON.stringify(json)));
-    log.debug("Leaving AdminConsole.usedAssertionsPage().");
-    return {
-      inner: inner,
-      json: json
-    };
-  }
-
   // What a `web_` renderer is told beside its view (#446; `WebKit.context()`
   // argues what belongs in it): this request's query, passed through JSON
   // so the renderer sees what an address bar would give it, and the gate's
@@ -10476,85 +10449,6 @@ class AdminConsole {
     return ApplicationsPage.applicationRegisteredCell(row);
   }
 
-  // WHERE A FINISHED APPLICATION ACTION LANDS. Extracted from the route on
-  // 2026-08-27 when `refresh-metadata` became asynchronous and needed the same
-  // answer from a callback — two copies of this would be two opinions about
-  // where a form goes back to, and the one added later would be the one that
-  // forgot the list state.
-  /**
-   * Answers a finished application action, sending the reader back to the
-   * application's page (and the section the form was in) with the list
-   * state its `back` field carried.
-   *
-   * A create lands on the entry named in the result, so a refused create
-   * cannot point at an entry that was never made.
-   *
-   * @param req - the request
-   * @param res - the response
-   * @param body - the posted form body
-   * @param result - the action's result
-   */
-  respondToApplicationAction(req, res, body, result) {
-    const { log, queryWith } = this.deps;
-    log.debug("Entering AdminConsole.respondToApplicationAction().");
-    // Back to the drill-down the form was posted from, when there was one, so a
-    // reader who has just added a redirect URI is looking at the entry that now
-    // carries it rather than at the top of the list — and carrying the list
-    // state that came in on the form's `back` field either way, so the
-    // breadcrumb on the page they land on still offers the filter and page they
-    // came from. Without that, editing an application silently costs the reader
-    // their place in the list, which is exactly what the trail exists to keep.
-    //
-    // `create` IS THE ONE ACTION THAT CANNOT NAME ITS APPLICATION IN THE BODY:
-    // its field is `identifier`, because the entry does not exist yet. So a
-    // create went to the top of the list and left the reader hunting for the
-    // row they had just described — which /admin/applications/new made worse,
-    // since that page has nothing else on it to go back to. The identifier is
-    // taken off the RESULT rather than off the body, so this cannot point at an
-    // entry that was refused, and `forget` still lands where it always did (on
-    // a drill-down that says the application is gone, which is the honest
-    // answer to "what did that do").
-    const listView = this.listViewFromBack('/admin/applications', body.back);
-    const made = result.ok && result.application
-      ? String(result.application.identifier || '') : '';
-    const claimAction = String(body.action || '') === 'set-custom-claim' ||
-      String(body.action || '') === 'remove-custom-claim' ||
-      // The Access types tab (#432 phase 4) comes back to itself the same
-      // way, refused or not.
-      String(body.action || '') === 'set-access-type' ||
-      String(body.action || '') === 'remove-access-type';
-    // A claim action comes back to its section whether it was refused or
-    // not (2026-10-01): the refusal is about one row, and the reader is
-    // still working on that application.
-    const named = made ||
-      (result.ok !== false || claimAction
-        ? String(body.application || '').trim() : '');
-    const back = named
-      ? '/admin/applications' + queryWith(listView, { application: named }) +
-        // Back to the section the button was in, which is four screens down.
-        (['regenerate-secret', 'rotate-secret', 'add-secret',
-          'remove-secret'].indexOf(String(body.action || '')) >= 0
-          ? '#credentials'
-          : (String(body.action || '') === 'issue-software-statement'
-            ? '#software-statements'
-            : (String(body.action || '') === 'revoke-tls-client-certificate' ||
-               String(body.action || '') === 'issue-tls-client-certificate'
-              ? '#credentials-tls-client'
-              : (String(body.action || '') === 'generate-did-key' ||
-                 String(body.action || '') === 'sign-domain-linkage'
-                ? (String(body.from || '') === 'credentials'
-                  ? '#credentials-did' : '#cfg-did')
-                : (claimAction
-                  ? (/-access-type$/.test(String(body.action || ''))
-                    ? '#tab-access-types'
-                    : (['saml2', 'saml11'].indexOf(String(body.set || '')) >= 0
-                      ? '#cfg-saml-attributes' : '#cfg-oauth-claims'))
-                  : '')))))
-      : '/admin/applications' + queryWith(listView, {});
-    this.respondToAction(req, res, back, result);
-    log.debug("Leaving the admin applications action endpoint.");
-  }
-
   // Drawn by `web_applications.ts` (#446).
   /**
    * Draws the DID block on an application's Decentralized Identifier
@@ -10656,100 +10550,6 @@ class AdminConsole {
     return this.applicationReturnTo(body, id,
       String(body.where || '') === 'config' ? '#cfg-enroll'
                                             : '#credentials-enroll');
-  }
-
-  // ---------------------------------------------------------------------------
-  // THE ONE-TIME ANSWER TO AN ISSUED APPLICATION TLS CLIENT CERTIFICATE
-  // (RFC 8705, 2026-09-13).
-  //
-  // Three downloads — the PKCS#12, the encrypted PEM key and the chain — as
-  // `data:` links, which is how `/portal/signing-key` hands a person theirs and
-  // needs no script. `no-store`, for the rule every document here that carries
-  // a key follows. What the application does with it is said beside it: present
-  // it at the token endpoint with `token_endpoint_auth_method=tls_client_auth`,
-  // and every access token it is issued is bound to it.
-  // ---------------------------------------------------------------------------
-  /**
-   * Answers an issued RFC 8705 TLS client certificate with a page of three
-   * one-time downloads (PKCS#12, encrypted PEM key, chain) and how to use
-   * them, served `no-store`.
-   *
-   * The private key is not kept, so this page is the only copy.
-   *
-   * @param req - the request
-   * @param res - the response
-   * @param body - the posted form body, for the application and `back`
-   * @param answer - the issue's result: files, certificate and application
-   */
-  answerIssuedTlsClientCertificate(req, res, body, answer) {
-    const { log, queryWith } = this.deps;
-    log.debug("Entering AdminConsole.answerIssuedTlsClientCertificate().");
-    const files = answer.files;
-    const cert = answer.certificate;
-    const identifier = String((answer.application &&
-                               answer.application.identifier) ||
-                              body.application || '');
-    const dataUri = function (mime, base64) {
-      log.debug("Entering dataUri().");
-      log.debug("Leaving dataUri().");
-      return 'data:' + mime + ';base64,' + base64;
-    };
-    const b64 = function (text) {
-      log.debug("Entering b64().");
-      log.debug("Leaving b64().");
-      return Buffer.from(String(text), 'utf8').toString('base64');
-    };
-    const listView = this.listViewFromBack('/admin/applications', body.back);
-    const back = '/admin/applications' +
-      queryWith(listView, { application: identifier }) +
-      '#credentials-tls-client';
-    const html = this.warn('<p><strong>This is the only time these files can ' +
-      'be downloaded.</strong> The private key is not kept by this service — ' +
-      'not on the application&rsquo;s entry, not in the certificate register ' +
-      '— and nothing on this console or on <code>/admin-api</code> hands it ' +
-      'out again. If it is lost, revoke the certificate and issue ' +
-      'another.</p><p><a class="btn" download="' + this.esc(files.pkcs12.name) +
-      '" href="' +
-      this.esc(dataUri(files.pkcs12.mime, files.pkcs12.base64)) +
-      '">Download ' +
-      this.esc(files.pkcs12.name) + '</a> <a class="btn" download="' +
-      this.esc(files.key.name) + '" href="' +
-      this.esc(dataUri(files.key.mime, b64(files.key.text))) + '">Download ' +
-      this.esc(files.key.name) + '</a> <a class="btn" download="' +
-      this.esc(files.chain.name) + '" href="' +
-      this.esc(dataUri(files.chain.mime, b64(files.chain.text))) +
-      '">Download ' +
-      this.esc(files.chain.name) + '</a></p>', 'The private key, once') +
-      '<table><tr><th>Issued to</th><td><code>' + this.esc(cert.subject) +
-      '</code><div class="sub">subjectAltName <code>' +
-      this.esc(cert.implicitName) + '</code></div></td></tr>' +
-      '<tr><th>Serial</th><td><code>' + this.esc(cert.serialHex) +
-      '</code></td></tr><tr><th>SHA-256 thumbprint</th><td><code>' +
-      this.esc(cert.thumbprint) + '</code></td></tr><tr><th>Key</th><td>' +
-      this.esc(cert.keyAlg) + '</td></tr><tr><th>Good until</th><td><code>' +
-      this.esc(cert.notAfter) + '</code></td></tr></table>' +
-      this.note('<strong>How the application uses it.</strong> Present it on ' +
-      'the TLS connection to the token endpoint with <code>client_id=' +
-      this.esc(identifier) + '</code> and a <code>token_endpoint_auth_method' +
-      '</code> of <code>tls_client_auth</code> on the entry: RFC 8705 ' +
-      'section 2.1 authenticates it because this realm issued it to this ' +
-      'application, with nothing else registered. Every access token issued ' +
-      'on that connection carries <code>cnf["x5t#S256"]</code> of this ' +
-      'certificate (section 3), so the application presents the same ' +
-      'certificate to the resource servers. <code>curl --cert ' +
-      this.esc(files.chain.name) +
-      ' --key ' + this.esc(files.key.name) + ' --pass &lt;file password&gt; ' +
-      '-d grant_type=client_credentials -d client_id=' + this.esc(identifier) +
-      ' &lt;base&gt;/oauth2/token</code>') +
-      '<p><a class="btn" href="' + this.esc(back) + '">Back to ' +
-      this.esc(identifier) +
-      '</a></p>';
-    res.set('Cache-Control', 'no-store');
-    this.respond(req, res, { ok: true }, 'TLS client certificate',
-                 '/admin/applications', html,
-                 this.upTo('/admin/applications', 'TLS client certificate',
-                           listView));
-    log.debug("Leaving AdminConsole.answerIssuedTlsClientCertificate().");
   }
 
   // Drawn by `web_applications.ts` (#446).
@@ -12355,25 +12155,6 @@ class AdminConsole {
     log.debug("Entering AdminConsole.genericPolicySection().");
     log.debug("Leaving AdminConsole.genericPolicySection().");
     return PoliciesPage.genericPolicySection(view, kind);
-  }
-
-  // The page's own URL with the preview user on it. Every form on this page
-  // posts to THIS rather than to the bare path, so that the 303 after an action
-  // lands back on the person the reader was looking at. A form that dropped the
-  // parameter would answer "what did that do?" with somebody else's values,
-  // which reads as the action having done something it did not.
-  /**
-   * Builds the /admin/claims URL carrying the preview user, which every form
-   * on that page posts to.
-   *
-   * @param query - the request's query
-   * @returns the page's path and query
-   */
-  claimsPageUrl(query) {
-    const { log, claimsPreviewUser } = this.deps;
-    log.debug("Entering AdminConsole.claimsPageUrl().");
-    log.debug("Leaving AdminConsole.claimsPageUrl().");
-    return '/admin/claims?user=' + encodeURIComponent(claimsPreviewUser(query));
   }
 
   // Drawn by `web_claims.ts` (#446).
@@ -15090,29 +14871,6 @@ class AdminConsole {
     log.debug("Entering AdminConsole.spiffeListenerRows().");
     log.debug("Leaving AdminConsole.spiffeListenerRows().");
     return SpiffePage.spiffeListenerRows(bindings, what);
-  }
-
-  /**
-   * Builds /admin/spiffe: the trust domain's authorities, bundle,
-   * listeners, federated bundles and settings.
-   *
-   * @param req - the request
-   * @returns `json`, `inner` (the page body as HTML) and `title`
-   */
-  spiffePage(req) {
-    const { log, spiffeJson } = this.deps;
-    log.debug("Entering AdminConsole.spiffePage().");
-    const json: any = spiffeJson(req);
-    // Drawn by `web_spiffe.ts` (#446).
-    const inner = this.messagesOf(req) +
-      SpiffePage.overview(this.renderContext(req),
-        JSON.parse(JSON.stringify(json)));
-    log.debug("Leaving AdminConsole.spiffePage().");
-    return {
-      json: json,
-      inner: inner,
-      title: 'SPIFFE'
-    };
   }
 
   /**
@@ -18246,7 +18004,6 @@ const consoleExports = {
   // The three SPIFFE views and their three action handlers. admin_api.js calls
   // exactly these — rule 7 again: the API decides nothing the console does not,
   // and an action added to one of these switches is most of adding it there.
-  spiffeView: slot.forward('spiffePage'),
   spiffeEntriesView: slot.forward('spiffeEntriesView'),
   spiffeAgentsView: slot.forward('spiffeAgentsView'),
   authorizationServersView: slot.forward('authorizationServersView'),

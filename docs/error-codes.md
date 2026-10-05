@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4069** of them, in **41** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4066** of them, in **41** subsystems.
 
 ## Where a code appears
 
@@ -524,7 +524,7 @@ Raised from: cluster/scheduler.ts, admin-ui/scheduler_admin.ts.
 | `STS-SCHED-0013` | The scheduler's tick failed unexpectedly; it is tried again at the next tick. | — |
 | `STS-SCHED-0014` | The scheduler's leader could not stand down; its lease expires on its own. | — |
 | `STS-SCHED-0015` | A per-process job's run in this process threw or rejected; its row for this process says so, and it runs again at its next slot. | — |
-| `STS-SCHED-0016` | A run was asked for that does not exist (an unknown run id). | — |
+| `STS-SCHED-0016` *(retired)* | A run was asked for that does not exist (an unknown run id). | — |
 | `STS-SCHED-0017` | Purging the scheduler's run history past its bound (scheduler.runHistoryCount, scheduler.runHistoryHours) failed; the rows stay until the next run of scheduler.history, and a start still skips the ones past their expiry. | — |
 | `STS-SCHED-0018` | A run of a realm job was not started, or its outcome not written, because its trust realm was removed; nothing is run for a removed realm, and nothing is written back into it. | — |
 
@@ -4150,8 +4150,8 @@ Raised from: admin-ui/ (except pki_admin.js), admin-core/.
 | `STS-ADMIN-0595` | The crypto report was handed a malformed protocol family list and ignored it; its drift check does not run. | — |
 | `STS-ADMIN-0596` | This build of the admin console offers no crypto reporter slot, so the management API cannot mirror the crypto and key pages. | — |
 | `STS-ADMIN-0597` | The API explorer could not mint an access token for the reader; the page draws and Try it will be refused. | — |
-| `STS-ADMIN-0598` | The /admin/database page threw while being drawn. | HTTP 200 page saying it could not be drawn |
-| `STS-ADMIN-0599` | The /admin/secrets page threw while being drawn. | HTTP 200 page saying it could not be drawn |
+| `STS-ADMIN-0598` *(retired)* | The /admin/database page threw while being drawn. | HTTP 200 page saying it could not be drawn |
+| `STS-ADMIN-0599` *(retired)* | The /admin/secrets page threw while being drawn. | HTTP 200 page saying it could not be drawn |
 | `STS-ADMIN-0600` | The delegation map picture could not be laid out; the page drew without it. | — |
 | `STS-ADMIN-0601` | The federation map picture could not be laid out; the page drew without it. | — |
 | `STS-ADMIN-0602` | A Kerberos principals action named an action the page does not have. | HTTP 400 { ok: false, errors } / 303 with error= |

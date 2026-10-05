@@ -176,36 +176,6 @@ class EstAdmin {
     return drawn;
   }
 
-  // The one-time page for a server-generated key.
-  /**
-   * Draws the one-time page for a certificate issued with a server-generated
-   * key: the private key, the certificate and its chain.
-   *
-   * @param result - the issue action's result
-   * @returns the HTML
-   */
-  issuedKeyPage(result, backHref?) {
-    const { log, admin, esc } = this.deps;
-    log.debug("Entering EstAdmin.issuedKeyPage().");
-    log.debug("Leaving EstAdmin.issuedKeyPage().");
-    return admin.warn('<strong>' + esc(result.message) + '</strong> Copy the ' +
-      'private key now: this page is not stored, and nothing on this console ' +
-      'will show it again.') +
-      '<h2>Private key (PKCS#8)</h2><pre>' + esc(result.privateKeyPem) +
-      '</pre><h2>Certificate</h2><table class="kv"><tr><th>Serial</th><td>' +
-      '<code>' + esc(result.record.serialHex) + '</code></td></tr><tr><th>' +
-      'Profile</th><td>' + esc(result.record.profile) + '</td></tr><tr><th>' +
-      'Names</th><td>' + result.record.names.map(function (n) {
-        return '<code>' + esc(n) + '</code>';
-      }).join('<br>') + '</td></tr><tr><th>Expires</th><td>' +
-      esc(result.record.notAfter) + '</td></tr></table><pre>' +
-      esc(result.certificatePem) + '</pre><h3>Chain</h3><pre>' +
-      esc((result.chainPem || []).join('')) + '</pre>' +
-      '<p class="links">' + (backHref
-        ? '<a href="' + esc(backHref) + '">Back to the application</a> · '
-        : '') + '<a href="/admin/est">Back to EST</a></p>';
-  }
-
   // THE ROUTES, registered where they always were: the module exports
   // this, and `common/protocol_stack.ts` calls it (#50, R1) at the point
   // where requiring the module used to register them, so the route order

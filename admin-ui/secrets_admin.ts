@@ -368,32 +368,6 @@ class SecretsAdmin {
     });
   }
 
-  // ===========================================================================
-  // THE PAGE.
-  // ===========================================================================
-  private renderSecrets(req: Req, res: Res): void {
-    const { log, admin, errorCodes } = this.deps;
-    const self = this;
-    log.debug('Entering SecretsAdmin.renderSecrets().');
-    self.secretsJson().then(function (json) {
-      admin.respond(req, res, json, 'Secret store', '/admin/secrets',
-                    self.body(json));
-      log.debug('Leaving SecretsAdmin.renderSecrets().');
-    }).catch(function (e) {
-      log.error(errorCodes.tag('STS-ADMIN-0599') + 'secrets_admin: the ' +
-                                                   'page threw: ' +
-                (e && e.stack ? e.stack : e));
-      errorCodes.mark(res, 'STS-ADMIN-0599');
-      admin.respond(req, res,
-                    { ok: false, error: String(e && e.message || e) },
-                    'Secret store', '/admin/secrets',
-                    admin.warn('This page could not be drawn: ' +
-                               admin.esc(String(e && e.message || e)),
-                               'It threw'));
-    });
-    log.debug("Leaving SecretsAdmin.renderSecrets().");
-  }
-
   // DRAWN BY `web_secrets.ts` (#446): this page is converted for the static
   // console, and its renderer is a module a browser can load. Until the
   // cutover this process still draws it, handing the renderer the view passed

@@ -2171,7 +2171,7 @@ const CODES = [
     spec: '' },
   { code: 'STS-SCHED-0016',
     summary: 'A run was asked for that does not exist (an unknown run id).',
-    spec: '' },
+    spec: '', retired: true },
   { code: 'STS-SCHED-0017',
     summary: 'Purging the scheduler\'s run history past its bound ' +
       '(scheduler.runHistoryCount, scheduler.runHistoryHours) failed; the ' +
@@ -17726,10 +17726,10 @@ const CODES = [
     spec: '' },
   { code: 'STS-ADMIN-0598',
     summary: 'The /admin/database page threw while being drawn.',
-    spec: 'HTTP 200 page saying it could not be drawn' },
+    spec: 'HTTP 200 page saying it could not be drawn', retired: true },
   { code: 'STS-ADMIN-0599',
     summary: 'The /admin/secrets page threw while being drawn.',
-    spec: 'HTTP 200 page saying it could not be drawn' },
+    spec: 'HTTP 200 page saying it could not be drawn', retired: true },
   { code: 'STS-ADMIN-0600',
     summary: 'The delegation map picture could not be laid out; the page ' +
       'drew without it.',

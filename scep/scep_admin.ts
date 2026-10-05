@@ -135,28 +135,6 @@ class ScepAdmin {
     return false;
   }
 
-  // ---------------------------------------------------------------------------
-  // GET /admin/scep
-  // ---------------------------------------------------------------------------
-  /**
-   * Draws `GET /admin/scep`.
-   *
-   * @param req - the request
-   * @param res - the response
-   * @param extraTop - markup to put first, such as a created challenge shown
-   *   once
-   */
-  drawScep(req, res, extraTop) {
-    const { log, consoleModel, admin } = this.deps;
-    log.debug("Entering ScepAdmin.drawScep().");
-    const json = consoleModel.scepView(req);
-    const inner = (extraTop || '') +
-      (typeof admin.messagesOf === 'function' ? admin.messagesOf(req) : '') +
-      this.body(req, json);
-    admin.respond(req, res, json, 'SCEP', '/admin/scep', inner);
-    log.debug("Leaving ScepAdmin.drawScep().");
-  }
-
   // DRAWN BY `web_scep.ts` (#446): this page is converted for the static
   // console, and its renderer is a module a browser can load. Until the
   // cutover this process still draws it, handing the renderer the view passed

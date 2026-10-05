@@ -683,17 +683,6 @@ class PkiAdmin {
                        errorCodes.codeOf(result) || fallback);
   }
 
-  // Mark the response a PKI route is about to send with the code its result
-  // carries. A result that succeeded carries none and marks nothing.
-  private markRefusal(res: Json, result: Json, fallback: Json) {
-    const { log, errorCodes } = this.deps;
-    log.debug("Entering PkiAdmin.markRefusal().");
-    if (result && result.ok === false) {
-      errorCodes.mark(res, errorCodes.codeOf(result) || fallback);
-    }
-    log.debug("Leaving PkiAdmin.markRefusal().");
-  }
-
   // WHICH SCOPE AN ACTION IS ABOUT. A missing one means the realm the request
   // arrived in, which is what every other control on this console means by
   // saying nothing — the console shows one realm at a time and the switcher is
@@ -2787,32 +2776,6 @@ class PkiAdmin {
     };
     log.debug("Leaving PkiAdmin.listNameOf().");
     return 'ca-' + clean(scopeSegment) + '-' + clean(caId);
-  }
-
-  // `extra` is the FIFTH argument and the only caller that passes one is the
-  // person form's POST: a private key is handed over once and a banner is not
-  // where a PEM block goes. Every other caller passes nothing and the page is
-  // what it was.
-  //
-  // `certificate` is the SIXTH, and it is the details view the GET route
-  // resolved for `?certificate=` (2026-09-13): its answer goes on the JSON as
-  // `certificateDetails` and its dialog is drawn over the page. Absent, both
-  // are absent, and the page is byte for byte what it was.
-  private renderPki(req: Json, res: Json, draft: Json, banner: Json,
-                    extra?: Json, certificate?: Json) {
-    const { log, config, pki, certificateDialog, pqcBadge, adminViews, admin,
-            esc } = this.deps;
-    const self = this;
-    log.debug('Entering PkiAdmin.renderPki().');
-    // THE PAGE'S OWN CALL reads the certificates of the rows it draws and no
-    // others (#352); see the end of `pkiJson()`.
-    const json = self.pkiJson(req, draft, { shownOnly: true });
-    if (certificate) {
-      json.certificateDetails = certificate;
-    }
-    admin.respond(req, res, json, 'PKI', '/admin/pki',
-                  (banner || '') + (extra || '') + self.body(req, json));
-    log.debug('Leaving PkiAdmin.renderPki().');
   }
 
   // DRAWN BY `web_pki.ts` (#446): this page is converted for the static

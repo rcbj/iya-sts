@@ -348,25 +348,6 @@ class SchedulerAdmin {
     return drawn;
   }
 
-  private async renderScheduler(req: Req, res: Res): Promise<void> {
-    const { log, admin, errorCodes } = this.deps;
-    log.debug("Entering SchedulerAdmin.renderScheduler().");
-    const json: Json = await this.schedulerView(req, req.query);
-    if (json.run === undefined) {
-      admin.respond(req, res, json, 'Scheduler', PAGE,
-                    admin.messagesOf(req) + this.body(req, json));
-      log.debug("Leaving SchedulerAdmin.renderScheduler(). The list.");
-      return;
-    }
-    const title = json.found ? 'Run ' + json.run : 'No such run';
-    if (!json.found) {
-      errorCodes.mark(res, 'STS-SCHED-0016');
-    }
-    admin.respond(req, res, json, 'Scheduler — ' + title, PAGE,
-                  this.body(req, json), admin.upTo(PAGE, title, {}));
-    log.debug("Leaving SchedulerAdmin.renderScheduler(). One run.");
-  }
-
   /**
    * Registers `GET /admin/scheduler` and its actions.
    *

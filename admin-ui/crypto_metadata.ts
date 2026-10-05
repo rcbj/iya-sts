@@ -3598,28 +3598,6 @@ class CryptoMetadata {
     log.debug("Leaving CryptoMetadata.registerRoutes().");
   }
 
-  // A refusal from the export, answered the way the caller asked. A JSON caller
-  // gets JSON; a browser gets sent back to the page with the reason on the
-  // query string, which is what `respondToAction()` does for every other form
-  // here.
-  private respondToKeyRefusal(req, res, message) {
-    const { log } = this.deps;
-    log.debug("Entering CryptoMetadata.respondToKeyRefusal().");
-    const type = String(req.headers['content-type'] || '');
-    if (/json/i.test(type)) {
-      // error-code: none — a transport helper; both callers mark the response
-      // with the specific code first
-      res.status(400).type('application/json').set('Cache-Control', 'no-store')
-         .send(JSON.stringify({ ok: false, errors: [message] }, null, 2));
-      log.debug("Leaving CryptoMetadata.respondToKeyRefusal(). Answered JSON.");
-      return;
-    }
-    res.set('Cache-Control', 'no-store')
-       .redirect(303, '/admin/keys?error=' +
-                 encodeURIComponent(String(message).slice(0, 500)));
-    log.debug("Leaving CryptoMetadata.respondToKeyRefusal(). Redirected.");
-  }
-
   // ===========================================================================
   // THE KEY PAIRS, AND TAKING THEM AWAY (2026-08-30)
   // ===========================================================================
@@ -4105,44 +4083,6 @@ class CryptoMetadata {
     return require('../common/signing_history');
   }
 
-  // ---------------------------------------------------------------------------
-  // THE KEY-PAIR HISTORY SUB-PAGE'S MODEL (2026-09-22, #42's follow-up).
-  //
-  // `/admin/keys/history` with no `unit` is the index — every unit this realm
-  // has a record for — and with one is that unit's generations, newest first,
-  // PAGED (`admin-ui/CLAUDE.md`: *every list that can grow without a bound is
-  // paged*; this one grows by a row per unit per rotation, for ever).
-  //
-  // **IT OBSERVES BEFORE IT READS, AND THAT IS A GET THAT MAY WRITE.** The
-  // history is a projection of the realm's key set, so a node that has just
-  // restarted, or a development-mode service whose keys are new this start and
-  // whose rotation jobs are off, holds keys no row describes yet — and a page
-  // that read the store alone would report a realm as having no history when
-  // what it has is no OBSERVATION. The write is idempotent: `observe()` sets a
-  // row only where one is missing or has changed, so in the steady state this
-  // GET writes nothing at all.
-  // ---------------------------------------------------------------------------
-  /**
-   * Builds `/admin/keys/history`'s view: the index of signing units, or one
-   * unit's generations, newest first and paged.
-   *
-   * It observes the key set before it reads, so this GET may write the history
-   * rows it lacks.
-   * @param req - the console request
-   * @returns the history view
-   */
-  historyJson(req) {
-    const { log, adminViews } = this.deps;
-    log.debug("Entering CryptoMetadata.historyJson().");
-    // The model is `admin-core/admin_views.ts`'s, because `GET
-    // /admin-api/keys/history` answers out of the same one — see its header
-    // for the observation this read makes and why.
-    const view = adminViews.signingHistoryView((req && req.query) || {});
-    log.debug("Leaving CryptoMetadata.historyJson(). " + view.rows.length +
-              " of " + view.total + ".");
-    return view;
-  }
-
   /**
    * Reads the signing-key rotation state of a realm.
    *
@@ -4241,49 +4181,6 @@ class CryptoMetadata {
       admin.renderContext(req));
     log.debug("Leaving CryptoMetadata.cryptoBody().");
     return drawn;
-  }
-
-  // One generation's certificate, as a file. The PEM is PUBLIC — it is what
-  // the JWKS and the metadata documents published while the key was live — so
-  // unlike `/admin/keys/export` this needs only Admin Read, which the console
-  // gate has already asked for by the time a handler runs.
-  /**
-   * Answers one generation's certificate, observing the key set first so a link
-   * the console just drew never answers 404.
-   *
-   * @param realmId - the realm id
-   * @param unit - the signing unit
-   * @param kid - the generation's key id
-   * @returns the certificate PEM, or null
-   */
-  historyCertificate(realmId, unit, kid) {
-    const { log } = this.deps;
-    log.debug("Entering CryptoMetadata.historyCertificate().");
-    let row = null;
-    try {
-      // OBSERVE FIRST, exactly as the page that drew the link does
-      // (`admin-core/admin_views.ts`'s signingHistoryView()). The rows are a
-      // persisted store, so with request workers the page and the link it
-      // draws are answered by DIFFERENT PROCESSES and the one that gets the
-      // link may not have replicated the other's rows yet — which is a 404
-      // on a link the console itself drew a moment earlier, and is what
-      // `sts_admin_console`'s link crawl found in `single-node`. Observing
-      // rebuilds this process's own rows from the key set, so the answer does
-      // not wait on replication; it writes nothing when they are already
-      // there.
-      this.signingHistory().observe(realmId, { reason: 'observed' });
-      row = this.signingHistory().rowsOf(realmId, String(unit || ''))
-        .filter(function (one) {
-          return String(one.kid) === String(kid || '');
-        })[0] || null;
-    } catch (e) {
-      log.debug("Caught in CryptoMetadata.historyCertificate(): " +
-                ((e && e.message) || e));
-      row = null;
-    }
-    log.debug("Leaving CryptoMetadata.historyCertificate(). " +
-              (row && row.certificate ? "Held." : "None."));
-    return row && row.certificate ? row.certificate : null;
   }
 
   /**
