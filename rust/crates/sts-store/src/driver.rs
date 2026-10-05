@@ -153,6 +153,43 @@ pub trait Driver: Send + Sync {
             )))
         })
     }
+    /// Whether this store can hold minted rows: the ldif one cannot, since
+    /// it writes whole files.
+    fn mints(&self) -> bool {
+        false
+    }
+    /// Every minted row the filter keeps.
+    fn load_minted(
+        &self,
+        _filter: MintedFilter,
+    ) -> StoreFuture<'_, Vec<MintedRow>> {
+        Box::pin(async { Ok(Vec::new()) })
+    }
+    /// One transaction for a flush: upserts and deletes in one lock order.
+    fn save_minted(
+        &self,
+        _upserts: Vec<MintedWrite>,
+        _deletes: Vec<MintedWrite>,
+    ) -> StoreFuture<'_, MintedDecided> {
+        Box::pin(async move {
+            Err(StoreError::new(format!(
+                "the {} store holds no minted rows",
+                self.name()
+            )))
+        })
+    }
+    /// The rows `(handle, realm, key)` names, in one round trip; a
+    /// tombstone is not a row.
+    fn read_minted_many(
+        &self,
+        _refs: Vec<(String, String, String)>,
+    ) -> StoreFuture<'_, Vec<MintedRow>> {
+        Box::pin(async { Ok(Vec::new()) })
+    }
+    /// Removes every minted row written before `before_ms`.
+    fn purge_minted(&self, _before_ms: i64) -> StoreFuture<'_, u64> {
+        Box::pin(async { Ok(0) })
+    }
     /// Whether [`Driver::merge_keys`] decides under the row's lock.
     fn merges_keys(&self) -> bool {
         false
@@ -173,6 +210,69 @@ pub trait Driver: Send + Sync {
             )))
         })
     }
+}
+
+/// One stored minted row (`loadMinted()`), its body sealed.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MintedRow {
+    pub handle: String,
+    pub realm: String,
+    /// The keyed digest of the name, or the name where nothing seals.
+    pub key: String,
+    /// The name, sealed (#222); empty for a row whose key is its name.
+    pub key_sealed: String,
+    pub body: String,
+    /// When it was written, in milliseconds.
+    pub written_at: i64,
+    pub expires_at: Option<i64>,
+}
+
+/// What `loadMinted()` reads: only what is still worth having (#333).
+#[derive(Clone, Debug, Default)]
+pub struct MintedFilter {
+    /// The realm partitions that exist.
+    pub realms: Vec<String>,
+    /// The instant a row's own expiry is compared with.
+    pub now_ms: i64,
+    /// A short-lived store's row with no expiry written before this is
+    /// dropped; 0 keeps every one.
+    pub stale_before: i64,
+    pub age_handles: Vec<String>,
+}
+
+/// An in-place edit's merge (`mergerFor()`): handed the stored body, it
+/// answers the body to write and its expiry, or `None` to write this
+/// process's copy as it is.
+pub type MintedMerge =
+    Box<dyn FnOnce(&str) -> Option<(String, Option<i64>)> + Send>;
+
+/// One minted row to write or delete.
+pub struct MintedWrite {
+    pub handle: String,
+    pub realm: String,
+    pub key: String,
+    pub key_sealed: String,
+    /// The name the journal holds it under, for the caller.
+    pub journal_key: String,
+    /// The sealed body; empty for a delete.
+    pub body: String,
+    pub expires_at: Option<i64>,
+    /// A `merge: own` store's row: a change row of its own kind.
+    pub own: bool,
+    /// A delete leaves a tombstone, and an upsert of a key holding one is
+    /// refused.
+    pub tombstone: bool,
+    pub merge: Option<MintedMerge>,
+}
+
+/// What the store decided for rows another node had changed.
+#[derive(Clone, Debug, Default)]
+pub struct MintedDecided {
+    /// `(handle, realm, journal key)` of an upsert a tombstone refused.
+    pub refused: Vec<(String, String, String)>,
+    /// `(handle, realm, journal key, body)` of an upsert merged with the
+    /// stored row.
+    pub merged: Vec<(String, String, String, String)>,
 }
 
 /// What [`Driver::merge_keys`] decides with.

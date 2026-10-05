@@ -28,6 +28,8 @@
 
 use std::sync::Arc;
 
+use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+use base64::Engine;
 use deadpool_postgres::{Manager, ManagerConfig, Pool, RecyclingMethod};
 use openssl::ssl::{SslConnector, SslMethod, SslVerifyMode};
 use postgres_openssl::MakeTlsConnector;
@@ -42,8 +44,8 @@ use tokio_postgres::Row;
 
 use crate::codec;
 use crate::driver::{
-    ChangeLog, ChangeRow, Directory, Driver, KeyMerge, StoreError, StoreFuture,
-    StoreResult,
+    ChangeLog, ChangeRow, Directory, Driver, KeyMerge, MintedDecided,
+    MintedFilter, MintedRow, MintedWrite, StoreError, StoreFuture, StoreResult,
 };
 use crate::merge::{merge_entry, Outcome};
 use crate::model::{
@@ -292,6 +294,22 @@ impl PostgresDriver {
     }
 }
 
+/// What a delete leaves in a tombstoned store's row.
+pub const TOMBSTONE: &str = "$tombstone$1";
+
+fn minted_row(row: &Row) -> MintedRow {
+    let key_sealed: Option<String> = row.get("key_sealed");
+    MintedRow {
+        handle: row.get("handle"),
+        realm: row.get("realm"),
+        key: row.get("key"),
+        key_sealed: key_sealed.unwrap_or_default(),
+        body: row.get("body"),
+        written_at: row.get::<_, Option<i64>>("written_ms").unwrap_or(0),
+        expires_at: row.get("expires_at"),
+    }
+}
+
 impl Driver for PostgresDriver {
     fn name(&self) -> &'static str {
         "postgres"
@@ -332,6 +350,250 @@ impl Driver for PostgresDriver {
 
     fn merges_keys(&self) -> bool {
         true
+    }
+
+    fn mints(&self) -> bool {
+        true
+    }
+
+    // ONLY WHAT IS STILL WORTH HAVING (#333): the realms that exist, a
+    // row's own expiry against the caller's clock (the stores computed it
+    // on theirs), and a short-lived store's row with no expiry by its age.
+    fn load_minted(
+        &self,
+        filter: MintedFilter,
+    ) -> StoreFuture<'_, Vec<MintedRow>> {
+        Box::pin(async move {
+            let client = self.client().await?;
+            let aged =
+                filter.stale_before > 0 && !filter.age_handles.is_empty();
+            let base = "SELECT handle, realm, key, body, (extract(epoch from written_at) * 1000)::bigint AS \
+                        written_ms, expires_at, key_sealed FROM sts_minted WHERE body <> $1 AND realm = \
+                        ANY($2::text[]) AND (expires_at IS NULL OR expires_at > $3)";
+            let rows = if aged {
+                client
+                    .query(
+                        &format!(
+                            "{} AND NOT (expires_at IS NULL AND handle = ANY($4::text[]) AND written_at < \
+                             to_timestamp($5 / 1000.0))",
+                            base
+                        ),
+                        &[
+                            &TOMBSTONE,
+                            &filter.realms,
+                            &filter.now_ms,
+                            &filter.age_handles,
+                            &(filter.stale_before as f64),
+                        ],
+                    )
+                    .await
+            } else {
+                client
+                    .query(base, &[&TOMBSTONE, &filter.realms, &filter.now_ms])
+                    .await
+            }
+            .map_err(err)?;
+            Ok(rows.iter().map(minted_row).collect())
+        })
+    }
+
+    // ONE TRANSACTION FOR THE WHOLE BATCH, IN ONE ORDER BY PRIMARY KEY,
+    // upserts and deletes interleaved: every transaction takes its row
+    // locks in the same order, which makes a deadlock impossible rather
+    // than rare. A tombstoned store's delete leaves TOMBSTONE behind and an
+    // upsert of it is refused; a merging store's row is read FOR UPDATE
+    // and handed to its merge.
+    fn save_minted(
+        &self,
+        upserts: Vec<MintedWrite>,
+        deletes: Vec<MintedWrite>,
+    ) -> StoreFuture<'_, MintedDecided> {
+        Box::pin(async move {
+            let mut statements: Vec<(MintedWrite, bool)> = upserts
+                .into_iter()
+                .map(|w| (w, true))
+                .chain(deletes.into_iter().map(|w| (w, false)))
+                .collect();
+            statements.sort_by(|a, b| {
+                (&a.0.handle, &a.0.realm, &a.0.key).cmp(&(
+                    &b.0.handle,
+                    &b.0.realm,
+                    &b.0.key,
+                ))
+            });
+            let mut decided = MintedDecided::default();
+            let mut client = self.client().await?;
+            let tx = client.transaction().await.map_err(err)?;
+            let mut changes: Vec<(String, String, String)> = Vec::new();
+            for (mut row, upsert) in statements {
+                let change_key = format!(
+                    "{}.{}",
+                    URL_SAFE_NO_PAD.encode(row.handle.as_bytes()),
+                    if row.key_sealed.is_empty() {
+                        URL_SAFE_NO_PAD.encode(row.key.as_bytes())
+                    } else {
+                        row.key_sealed.clone()
+                    }
+                );
+                let kind = if row.own { "minted-own" } else { "minted" };
+                if !upsert {
+                    if row.tombstone {
+                        // A TOMBSTONE HAS NO EXPIRY OF ITS OWN: it lives for
+                        // persistence.mintedRetention.
+                        tx.execute(
+                            "INSERT INTO sts_minted (handle, realm, key, body, written_at, expires_at, key_sealed) \
+                             VALUES ($1, $2, $3, $4, now(), NULL, $5) ON CONFLICT (handle, realm, key) DO UPDATE \
+                             SET body = EXCLUDED.body, written_at = now(), expires_at = NULL, key_sealed = \
+                             EXCLUDED.key_sealed",
+                            &[&row.handle, &row.realm, &row.key, &TOMBSTONE, &row.key_sealed],
+                        )
+                        .await
+                        .map_err(err)?;
+                    } else {
+                        tx.execute(
+                            "DELETE FROM sts_minted WHERE handle = $1 AND realm = $2 AND key = $3",
+                            &[&row.handle, &row.realm, &row.key],
+                        )
+                        .await
+                        .map_err(err)?;
+                    }
+                    changes.push((
+                        kind.to_string(),
+                        row.realm.clone(),
+                        change_key,
+                    ));
+                    continue;
+                }
+                let mut guarded = row.tombstone;
+                if let Some(merge) = row.merge.take() {
+                    guarded = true;
+                    let found: Option<String> = tx
+                        .query_opt(
+                            "SELECT body FROM sts_minted WHERE handle = $1 AND realm = $2 AND key = $3 FOR UPDATE",
+                            &[&row.handle, &row.realm, &row.key],
+                        )
+                        .await
+                        .map_err(err)?
+                        .map(|r| r.get(0));
+                    if found.as_deref() == Some(TOMBSTONE) {
+                        decided.refused.push((
+                            row.handle,
+                            row.realm,
+                            row.journal_key,
+                        ));
+                        continue;
+                    }
+                    if let Some(stored) = found.filter(|f| *f != row.body) {
+                        if let Some((body, expires)) = merge(&stored) {
+                            if body != row.body {
+                                row.body = body;
+                                row.expires_at = expires;
+                                decided.merged.push((
+                                    row.handle.clone(),
+                                    row.realm.clone(),
+                                    row.journal_key.clone(),
+                                    row.body.clone(),
+                                ));
+                            }
+                        }
+                    }
+                }
+                let expires = row.expires_at.filter(|e| *e > 0);
+                let sql = format!(
+                    "INSERT INTO sts_minted (handle, realm, key, body, written_at, expires_at, key_sealed) VALUES \
+                     ($1, $2, $3, $4, now(), $5, $6) ON CONFLICT (handle, realm, key) DO UPDATE SET body = \
+                     EXCLUDED.body, written_at = now(), expires_at = EXCLUDED.expires_at, key_sealed = \
+                     EXCLUDED.key_sealed{}",
+                    if guarded { " WHERE sts_minted.body <> $7" } else { "" }
+                );
+                let written = if guarded {
+                    tx.execute(
+                        &sql,
+                        &[
+                            &row.handle,
+                            &row.realm,
+                            &row.key,
+                            &row.body,
+                            &expires,
+                            &row.key_sealed,
+                            &TOMBSTONE,
+                        ],
+                    )
+                    .await
+                } else {
+                    tx.execute(
+                        &sql,
+                        &[
+                            &row.handle,
+                            &row.realm,
+                            &row.key,
+                            &row.body,
+                            &expires,
+                            &row.key_sealed,
+                        ],
+                    )
+                    .await
+                }
+                .map_err(err)?;
+                if guarded && written == 0 {
+                    // A REFUSED UPSERT CHANGED NOTHING, so it tells nobody.
+                    decided.refused.push((
+                        row.handle,
+                        row.realm,
+                        row.journal_key,
+                    ));
+                    continue;
+                }
+                changes.push((kind.to_string(), row.realm.clone(), change_key));
+            }
+            let refs: Vec<(&str, &str, &str)> = changes
+                .iter()
+                .map(|(k, r, y)| (k.as_str(), r.as_str(), y.as_str()))
+                .collect();
+            self.record_changes(&tx, &refs).await?;
+            tx.commit().await.map_err(err)?;
+            Ok(decided)
+        })
+    }
+
+    fn read_minted_many(
+        &self,
+        refs: Vec<(String, String, String)>,
+    ) -> StoreFuture<'_, Vec<MintedRow>> {
+        Box::pin(async move {
+            if refs.is_empty() {
+                return Ok(Vec::new());
+            }
+            let handles: Vec<&str> =
+                refs.iter().map(|r| r.0.as_str()).collect();
+            let realms: Vec<&str> = refs.iter().map(|r| r.1.as_str()).collect();
+            let keys: Vec<&str> = refs.iter().map(|r| r.2.as_str()).collect();
+            let client = self.client().await?;
+            let rows = client
+                .query(
+                    "SELECT m.handle, m.realm, m.key, m.body, (extract(epoch from m.written_at) * 1000)::bigint AS \
+                     written_ms, m.expires_at, m.key_sealed FROM sts_minted m JOIN unnest($1::text[], $2::text[], \
+                     $3::text[]) AS w(handle, realm, key) ON m.handle = w.handle AND m.realm = w.realm AND m.key = \
+                     w.key WHERE m.body <> $4",
+                    &[&handles, &realms, &keys, &TOMBSTONE],
+                )
+                .await
+                .map_err(err)?;
+            Ok(rows.iter().map(minted_row).collect())
+        })
+    }
+
+    fn purge_minted(&self, before_ms: i64) -> StoreFuture<'_, u64> {
+        Box::pin(async move {
+            let client = self.client().await?;
+            client
+                .execute(
+                    "DELETE FROM sts_minted WHERE written_at < to_timestamp($1 / 1000.0)",
+                    &[&(before_ms as f64)],
+                )
+                .await
+                .map_err(err)
+        })
     }
 
     // Under the row's lock: two processes making a data key for one class
