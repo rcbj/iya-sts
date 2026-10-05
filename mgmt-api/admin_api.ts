@@ -2692,12 +2692,26 @@ class AdminApi {
                      'served here), `sessions` (projections held here and ' +
                      'exports made from here) and `settings`.',
         mirrors: 'GET /admin/cells',
+        // THE PAGE'S DRILL-DOWN TOO (#446): with `people`, the answer also
+        // carries that cell's residents as `people` — what
+        // `GET /admin-api/cells/people` answers — so the page is drawn from
+        // one answer, as the console's own JSON always was.
+        parameters: [
+          { name: 'people', in: 'query', required: false,
+            schema: { type: 'string' },
+            description: 'A cell whose residents to list, under its release ' +
+                         'policy.' },
+          { name: 'after', in: 'query', required: false,
+            schema: { type: 'string' },
+            description: 'With `people`: the last name of the previous ' +
+                         'page.' }
+        ],
         responseDescription: 'The cell map.',
         responseSchema: { type: 'object',
           description: 'As described above.' },
         handler: function (req, res) {
           log.debug("Entering the management API cells endpoint.");
-          cellsAdmin.cellsView().then(function (view) {
+          cellsAdmin.cellsPageView(req.query).then(function (view) {
             self.sendJson(res, 200, view);
             log.debug("Leaving the management API cells endpoint.");
           }, function (e) {

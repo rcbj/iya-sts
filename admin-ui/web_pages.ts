@@ -32,6 +32,7 @@ import WebKit = require('./web_kit');
 import AttributeSourcesPage =
   require('../attribute-sources/web_attribute_sources');
 import CachesPage = require('./web_caches');
+import CellsPage = require('./web_cells');
 import ClaimsProvidersPage =
   require('../oauth-oidc/web_claims_providers');
 import DatabasePage = require('./web_database');
@@ -72,6 +73,8 @@ const PAGES: WebPage[] = [
     render: AttributeSourcesPage.render },
   { path: '/admin/caches', title: 'Caches', operation: '/admin-api/caches',
     render: CachesPage.render },
+  { path: '/admin/cells', title: 'Cells', operation: '/admin-api/cells',
+    render: CellsPage.render },
   { path: '/admin/claim-providers', title: 'Claims Providers',
     operation: '/admin-api/claim-providers',
     render: ClaimsProvidersPage.render },
