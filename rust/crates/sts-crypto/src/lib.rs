@@ -21,6 +21,7 @@ pub mod krb5_prf;
 pub mod pq;
 pub mod pq_x509;
 pub mod random;
+pub mod raw_sig;
 pub mod secrets;
 pub mod xmldsig;
 pub mod xmlenc;

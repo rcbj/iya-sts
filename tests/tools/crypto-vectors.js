@@ -889,6 +889,157 @@ async function pqX509() {
   return out;
 }
 
+// SIGNATURES OVER RAW BYTES AND THE TPM (section 8): Node's verdict from
+// verifyRawSignature() on a signature in every family and encoding — and on
+// the same signature tampered with, under the wrong key and under the
+// wrong salt — which Rust must give; TPM KDFa (deterministic, so Rust's
+// bytes); MakeCredential's output with the endorsement key's private half,
+// which Rust activates; and CMS SignedData made by the openssl command
+// line, with the signer's certificate embedded and (AWS's shape) without.
+async function rawSignatures() {
+  const pqcX509 = require(path.join(ROOT, 'common', 'vendored',
+                                    'pqc_x509.js'));
+  const data = Buffer.from('a challenge the attestor signs');
+  const spkiOf = function (pub) {
+    return pub.export({ type: 'spki', format: 'der' });
+  };
+  const rows = [];
+  const add = async function (name, scheme, spki, sig, wrongSpki) {
+    const verdict = function (bytes, key) {
+      return crypto.verifyRawSignature(scheme, crypto.publicKeyFromSpki(key),
+                                       data, bytes);
+    };
+    const tampered = Buffer.from(sig);
+    tampered[tampered.length - 1] ^= 1;
+    rows.push({ name: name, scheme: scheme,
+                spki: Buffer.from(spki).toString('base64'),
+                wrongSpki: Buffer.from(wrongSpki).toString('base64'),
+                signature: Buffer.from(sig).toString('base64'),
+                ok: await verdict(sig, spki),
+                tampered: await verdict(tampered, spki),
+                wrongKey: await verdict(sig, wrongSpki) });
+  };
+  const rsa = nodeCrypto.generateKeyPairSync('rsa', { modulusLength: 2048 });
+  const ed = nodeCrypto.generateKeyPairSync('ed25519');
+  const ed448 = nodeCrypto.generateKeyPairSync('ed448');
+  for (const hash of ['sha1', 'sha256', 'sha384', 'sha512']) {
+    await add('rsa-pkcs1 ' + hash, { family: 'rsa-pkcs1', hash: hash },
+              spkiOf(rsa.publicKey), nodeCrypto.sign(hash, data,
+                { key: rsa.privateKey,
+                  padding: nodeCrypto.constants.RSA_PKCS1_PADDING }),
+              spkiOf(ed.publicKey));
+  }
+  for (const salt of [[20, 'auto'], [32, 32], [20, 32]]) {
+    await add('rsa-pss sha256 salt ' + salt.join('/'),
+              { family: 'rsa-pss', hash: 'sha256', saltLength: salt[1] },
+              spkiOf(rsa.publicKey), nodeCrypto.sign('sha256', data,
+                { key: rsa.privateKey,
+                  padding: nodeCrypto.constants.RSA_PKCS1_PSS_PADDING,
+                  saltLength: salt[0] }), spkiOf(ed.publicKey));
+  }
+  for (const curve of [['prime256v1', 'sha256'], ['secp384r1', 'sha384'],
+                       ['secp521r1', 'sha512']]) {
+    const ec = nodeCrypto.generateKeyPairSync('ec', { namedCurve: curve[0] });
+    for (const encoding of ['der', 'p1363']) {
+      await add('ecdsa ' + curve[0] + ' ' + encoding,
+                { family: 'ecdsa', hash: curve[1], encoding: encoding },
+                spkiOf(ec.publicKey), nodeCrypto.sign(curve[1], data,
+                  { key: ec.privateKey,
+                    dsaEncoding: encoding === 'der' ? 'der'
+                                                    : 'ieee-p1363' }),
+                spkiOf(rsa.publicKey));
+    }
+  }
+  await add('eddsa ed25519', { family: 'eddsa' }, spkiOf(ed.publicKey),
+            nodeCrypto.sign(null, data, ed.privateKey), spkiOf(ed448.publicKey));
+  await add('eddsa ed448', { family: 'eddsa' }, spkiOf(ed448.publicKey),
+            nodeCrypto.sign(null, data, ed448.privateKey),
+            spkiOf(ed.publicKey));
+  for (const id of ['ML-DSA-44', 'SLH-DSA-SHA2-128f',
+                    'mldsa65-rsa3072-pss-sha512', 'mldsa44-ed25519-sha512']) {
+    const pair = await pqcX509.generateKeyPair(id);
+    await add('pq ' + id, { family: 'pq' }, pqcX509.encodeSpki(id, pair.pub),
+              await pqcX509.sign(id, data, pair.priv), spkiOf(rsa.publicKey));
+  }
+  const kdfa = [];
+  [['sha256', 'STORAGE', 128], ['sha256', 'INTEGRITY', 256],
+   ['sha1', 'X', 17], ['sha384', 'IDENTITY', 300]].forEach(function (r) {
+    const key = nodeCrypto.randomBytes(16);
+    const u = nodeCrypto.randomBytes(34);
+    const v = nodeCrypto.randomBytes(5);
+    kdfa.push({ hash: r[0], label: r[1], bits: r[2],
+                key: key.toString('base64'), u: u.toString('base64'),
+                v: v.toString('base64'),
+                out: crypto.tpmKdfa(r[0], key, r[1], u, v, r[2])
+                  .toString('base64') });
+  });
+  const ek = nodeCrypto.generateKeyPairSync('rsa', { modulusLength: 2048 });
+  const akName = Buffer.concat([Buffer.from([0, 0x0b]),
+                                nodeCrypto.randomBytes(32)]);
+  const made = crypto.tpmMakeCredential(akName, ek.publicKey, 16,
+                                        Buffer.from('the challenge'),
+                                        'sha256');
+  const credential = {
+    akName: akName.toString('base64'),
+    ekPrivatePem: ek.privateKey.export({ type: 'pkcs8', format: 'pem' }),
+    ekPublicPem: ek.publicKey.export({ type: 'spki', format: 'pem' }),
+    secret: 'the challenge', credential: made.credential.toString('base64'),
+    encryptedSecret: made.secret.toString('base64')
+  };
+  const integers = [['prime256v1', '0001', '02'], ['secp384r1', 'ff', '00ff'],
+                    ['secp521r1', '01' + 'ab'.repeat(65), '7f'],
+                    ['prime256v1', '01'.repeat(33), '02']].map(function (r) {
+    const out = crypto.ecdsaIntegersToP1363(r[0], Buffer.from(r[1], 'hex'),
+                                            Buffer.from(r[2], 'hex'));
+    return { curve: r[0], r: r[1], s: r[2],
+             out: out ? out.toString('hex') : null };
+  });
+  // CMS from the openssl command line.
+  const os = require('os');
+  const childProcess = require('child_process');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cms-'));
+  const pkcs7 = [];
+  try {
+    const run = function (args) {
+      childProcess.execFileSync('openssl', args, { cwd: dir,
+                                                   stdio: 'ignore' });
+    };
+    run(['req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-keyout',
+         'key.pem', '-out', 'cert.pem', '-subj', '/CN=instance signer',
+         '-days', '2']);
+    fs.writeFileSync(path.join(dir, 'doc.json'),
+                     '{"instanceId":"i-0123456789abcdef0","region":"eu-west-1"}');
+    run(['cms', '-sign', '-nodetach', '-binary', '-in', 'doc.json',
+         '-signer', 'cert.pem', '-inkey', 'key.pem', '-outform', 'DER',
+         '-out', 'with.der']);
+    run(['cms', '-sign', '-nodetach', '-binary', '-nocerts', '-in',
+         'doc.json', '-signer', 'cert.pem', '-inkey', 'key.pem',
+         '-outform', 'DER', '-out', 'without.der']);
+    const certDer = new nodeCrypto.X509Certificate(
+      fs.readFileSync(path.join(dir, 'cert.pem'))).raw;
+    for (const c of [['embedded', 'with.der', []],
+                     ['given', 'without.der', [certDer]],
+                     ['missing', 'without.der', []]]) {
+      const der = fs.readFileSync(path.join(dir, c[1]));
+      const v = await crypto.verifyPkcs7SignedData(der,
+                                                   { certificates: c[2] });
+      pkcs7.push({ name: c[0], der: der.toString('base64'),
+                   certificates: c[2].map(function (x) {
+                     return Buffer.from(x).toString('base64');
+                   }),
+                   ok: v.ok, content: v.content
+                     ? v.content.toString('base64') : null,
+                   signer: v.signerDer ? v.signerDer.toString('base64')
+                                       : null,
+                   embedded: (v.embeddedDers || []).length });
+    }
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+  return { signatures: rows, kdfa: kdfa, credential: credential,
+           integers: integers, pkcs7: pkcs7 };
+}
+
 const VECTORS = [{ file: 'jws-node.json', build: jws },
                  { file: 'jwe-node.json', build: jwe },
                  { file: 'c14n-node.json', build: c14n },
@@ -896,7 +1047,8 @@ const VECTORS = [{ file: 'jws-node.json', build: jws },
                  { file: 'xmlenc-node.json', build: xmlenc },
                  { file: 'secrets-node.json', build: secrets },
                  { file: 'krb5-dkim-node.json', build: kerberosAndDkim },
-                 { file: 'pq-x509-node.json', build: pqX509 }];
+                 { file: 'pq-x509-node.json', build: pqX509 },
+                 { file: 'raw-sig-node.json', build: rawSignatures }];
 
 if (require.main === module) {
   fs.mkdirSync(OUT, { recursive: true });
