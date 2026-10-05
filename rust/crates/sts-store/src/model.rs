@@ -22,18 +22,47 @@ pub struct StoredEntry {
     pub modified_at: Option<String>,
 }
 
+/// One entry a flush writes: where, what, and what the change was based on
+/// (the shadow's JSON, or `None` when this process believed the DN held
+/// nothing). A database merges against the base; a snapshot driver ignores
+/// it.
+#[derive(Clone, Debug, PartialEq)]
+pub struct DirectoryUpsert {
+    pub realm: String,
+    /// The normalised DN.
+    pub key: String,
+    pub entry: StoredEntry,
+    pub base: Option<String>,
+}
+
+/// One entry a flush deletes.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DirectoryDelete {
+    pub realm: String,
+    pub key: String,
+}
+
 /// One flush of the directory: the per-entry diff a database uses, and the
-/// whole live picture a snapshot driver writes from.
+/// whole picture of the touched realms a snapshot driver writes from.
 #[derive(Clone, Debug, Default)]
 pub struct DirectoryChange {
-    /// Realm id to the entries written or changed, keyed by DN.
-    pub upserts: BTreeMap<String, Vec<StoredEntry>>,
-    /// Realm id to the DNs deleted.
-    pub deletes: BTreeMap<String, Vec<String>>,
+    pub upserts: Vec<DirectoryUpsert>,
+    pub deletes: Vec<DirectoryDelete>,
     /// The realms something happened in.
     pub touched: Vec<String>,
     /// The realms that are gone, every row of them.
     pub removed_realms: Vec<String>,
-    /// Realm id to every entry it holds now.
+    /// Realm id to every entry it holds now, for the touched realms.
     pub all: BTreeMap<String, Vec<StoredEntry>>,
+}
+
+/// What the store decided for a row another node had changed
+/// (`directory_merge.js`'s outcomes): the live directory takes it.
+#[derive(Clone, Debug, PartialEq)]
+pub struct DirectoryOutcome {
+    pub realm: String,
+    pub key: String,
+    pub outcome: crate::merge::Outcome,
+    /// The entry the store now holds; `None` when deleted.
+    pub entry: Option<StoredEntry>,
 }

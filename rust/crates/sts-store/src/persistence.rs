@@ -57,6 +57,10 @@ pub trait LiveDirectory: EntryLookup + Send + Sync {
     fn realm_entries(&self, realm: &str) -> IndexMap<String, StoredEntry>;
     /// Replaces a realm's whole directory with what the store held.
     fn replace_realm(&self, realm: &str, entries: Vec<StoredEntry>);
+    /// Puts what the store decided into the live directory, without
+    /// journalling it: an entry another node's write left there, or `None`
+    /// for one it deleted.
+    fn apply_entry(&self, realm: &str, key: &str, entry: Option<StoredEntry>);
 }
 
 /// `persistence.mode`.
@@ -476,13 +480,13 @@ impl Persistence {
             .send(
                 driver.as_ref(),
                 diff.as_ref(),
-                realm_delta.is_some(),
+                realm_delta.as_ref(),
                 config_delta.as_ref(),
                 &config_live,
             )
             .await;
         match outcome {
-            Ok(()) => {
+            Ok(outcomes) => {
                 {
                     let mut shadow = self.shadow();
                     if let Some(d) = &diff {
@@ -494,6 +498,9 @@ impl Persistence {
                     if let Some(d) = &config_delta {
                         shadow.advance_appconfig(d);
                     }
+                }
+                if let Some(d) = &diff {
+                    self.apply_outcomes(d, outcomes);
                 }
                 {
                     let mut st = self.state();
@@ -549,10 +556,11 @@ impl Persistence {
         &self,
         driver: &dyn Driver,
         diff: Option<&crate::shadow::Diff>,
-        realms: bool,
+        realms: Option<&crate::shadow::RealmsDelta>,
         config: Option<&crate::shadow::AppconfigDelta>,
         config_live: &Map<String, Json>,
-    ) -> Result<(), String> {
+    ) -> Result<Vec<crate::model::DirectoryOutcome>, String> {
+        let mut outcomes = Vec::new();
         if let Some(d) =
             diff.filter(|d| !d.is_empty() || !d.removed_realms.is_empty())
         {
@@ -561,20 +569,24 @@ impl Persistence {
                 removed_realms: d.removed_realms.clone(),
                 ..DirectoryChange::default()
             };
-            for u in &d.upserts {
-                change
-                    .upserts
-                    .entry(u.realm.clone())
-                    .or_default()
-                    .push(u.entry.clone());
-            }
-            for x in &d.deletes {
-                change
-                    .deletes
-                    .entry(x.realm.clone())
-                    .or_default()
-                    .push(x.key.clone());
-            }
+            change.upserts = d
+                .upserts
+                .iter()
+                .map(|u| crate::model::DirectoryUpsert {
+                    realm: u.realm.clone(),
+                    key: u.key.clone(),
+                    entry: u.entry.clone(),
+                    base: u.base.clone(),
+                })
+                .collect();
+            change.deletes = d
+                .deletes
+                .iter()
+                .map(|x| crate::model::DirectoryDelete {
+                    realm: x.realm.clone(),
+                    key: x.key.clone(),
+                })
+                .collect();
             // A snapshot driver rewrites a file per realm touched, so it is
             // handed those realms whole.
             let mut all = BTreeMap::new();
@@ -592,24 +604,75 @@ impl Persistence {
                 }
             }
             change.all = all;
-            driver
+            outcomes = driver
                 .save_directory(&change)
                 .await
                 .map_err(|e| e.to_string())?;
         }
-        if realms {
+        if let Some(delta) = realms {
             driver
-                .save_realms(&self.lifecycle.rows())
+                .save_realms_delta(&self.lifecycle.rows(), delta)
                 .await
                 .map_err(|e| e.to_string())?;
         }
-        if config.is_some() {
+        if let Some(delta) = config {
             driver
-                .save_overrides(config_live)
+                .save_overrides_delta(config_live, delta)
                 .await
                 .map_err(|e| e.to_string())?;
         }
-        Ok(())
+        Ok(outcomes)
+    }
+
+    /// What the store decided, applied here: the live directory takes the
+    /// stored entry and the shadow is set to it, so the next diff compares
+    /// against the truth. A local write made while the flush was out is
+    /// marked again and written by the next flush (`STS-STORE-0052` and
+    /// `0053` are the store's verdicts).
+    fn apply_outcomes(
+        &self,
+        diff: &crate::shadow::Diff,
+        outcomes: Vec<crate::model::DirectoryOutcome>,
+    ) {
+        for one in outcomes {
+            let sent = diff
+                .upserts
+                .iter()
+                .find(|u| u.realm == one.realm && u.key == one.key)
+                .map(|u| u.json.clone());
+            let live = self
+                .directory
+                .entry_at(&one.realm, &one.key)
+                .map(|e| crate::merge::entry_json(&e).to_string());
+            let moved = live.is_some() && live != sent;
+            match &one.entry {
+                Some(entry) => {
+                    self.shadow().set_entry(
+                        &one.realm,
+                        &one.key,
+                        crate::merge::entry_json(entry).to_string(),
+                    );
+                    if !moved {
+                        self.directory.apply_entry(
+                            &one.realm,
+                            &one.key,
+                            Some(entry.clone()),
+                        );
+                    }
+                }
+                None => {
+                    self.shadow().forget_entry(&one.realm, &one.key);
+                    if !moved {
+                        self.directory.apply_entry(&one.realm, &one.key, None);
+                    }
+                }
+            }
+            if moved {
+                // Changed here while the flush was out: written again
+                // against what the store now holds.
+                self.directory_changed(Some(&one.key));
+            }
+        }
     }
 
     // -----------------------------------------------------------------
@@ -902,5 +965,18 @@ impl LiveDirectory for MemoryDirectory {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .insert(realm.to_string(), rows);
+    }
+    fn apply_entry(&self, realm: &str, key: &str, entry: Option<StoredEntry>) {
+        let mut realms =
+            self.realms.lock().unwrap_or_else(PoisonError::into_inner);
+        let rows = realms.entry(realm.to_string()).or_default();
+        match entry {
+            Some(e) => {
+                rows.insert(key.to_string(), e);
+            }
+            None => {
+                rows.shift_remove(key);
+            }
+        }
     }
 }

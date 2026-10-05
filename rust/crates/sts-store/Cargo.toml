@@ -19,10 +19,18 @@ serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
+tokio-postgres.workspace = true
+deadpool-postgres.workspace = true
+postgres-openssl.workspace = true
+openssl.workspace = true
+sts-cluster.workspace = true
 tracing.workspace = true
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util"] }
+postgres-openssl.workspace = true
+tokio-postgres.workspace = true
+openssl.workspace = true
 
 [lints]
 workspace = true

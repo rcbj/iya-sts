@@ -34,8 +34,8 @@ impl Driver for MemoryDriver {
     fn save_directory<'a>(
         &'a self,
         _change: &'a DirectoryChange,
-    ) -> StoreFuture<'a, ()> {
-        Box::pin(async { Ok(()) })
+    ) -> StoreFuture<'a, Vec<crate::model::DirectoryOutcome>> {
+        Box::pin(async { Ok(Vec::new()) })
     }
     fn save_realms<'a>(&'a self, _rows: &'a [Json]) -> StoreFuture<'a, ()> {
         Box::pin(async { Ok(()) })
