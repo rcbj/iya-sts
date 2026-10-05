@@ -1474,6 +1474,25 @@ class WebKit {
     return WebKit.listViewOf(section, query);
   }
 
+  /**
+   * Formats a duration as days, hours, minutes and seconds.
+   *
+   * @param ms - the duration in milliseconds
+   * @returns the text, such as `1d 2h 3m 4s`
+   */
+  static durationText(ms) {
+    const s = Math.floor((ms || 0) / 1000);
+    const days = Math.floor(s / 86400);
+    const hours = Math.floor((s % 86400) / 3600);
+    const minutes = Math.floor((s % 3600) / 60);
+    const parts = [];
+    if (days) parts.push(days + 'd');
+    if (days || hours) parts.push(hours + 'h');
+    parts.push(minutes + 'm');
+    parts.push((s % 60) + 's');
+    return parts.join(' ');
+  }
+
   // A query's VIEW parameters — every one but the three that are not part
   // of what is being looked at (`format`, and the `notice` and `error` a
   // redirect brought back) — first value each. `admin_views.ts`'s, which

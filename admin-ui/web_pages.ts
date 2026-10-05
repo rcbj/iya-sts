@@ -70,6 +70,7 @@ import ScepPage = require('../scep/web_scep');
 import SecretsPage = require('./web_secrets');
 import SettingsForms = require('./web_settings');
 import SignalsPage = require('../ssf/web_signals');
+import SsfDeadLettersPage = require('../ssf/web_ssf_dead_letters');
 import SsfPage = require('../ssf/web_ssf');
 import SsfTransmittersPage = require('../ssf/web_ssf_transmitters');
 import TlsTrustPage = require('../tls/web_tls_trust');
@@ -261,6 +262,11 @@ const PAGES: WebPage[] = [
     operation: '/admin-api/ssf',
     render: function (view: Json, ctx?: Json): string {
       return SsfPage.body(ctx || WebKit.context(), view);
+    } },
+  { path: '/admin/ssf/dead-letters', title: 'Dead letters',
+    operation: '/admin-api/ssf/dead-letters',
+    render: function (view: Json, ctx?: Json): string {
+      return SsfDeadLettersPage.body(ctx || WebKit.context(), view);
     } },
   { path: '/admin/ssf/transmitters', title: 'Signals from partners',
     operation: '/admin-api/ssf/transmitters',

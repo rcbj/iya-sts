@@ -97,7 +97,7 @@ class MetricsPage {
         kit.tile(liveSignOn.length, 'sign-on sessions') +
         kit.tile(snap.sessions.distinctSubjects,
                   'subjects with a live artifact') +
-        kit.tile(MetricsPage.durationText(snap.uptimeMs), 'uptime') +
+        kit.tile(kit.durationText(snap.uptimeMs), 'uptime') +
       '</div>' +
       kit.note('Since <code>' + kit.esc(kit.whenText(snap.startedAt)) +
                 '</code>. Every ' +
@@ -183,25 +183,6 @@ class MetricsPage {
       'of it. Counting both would report the same session twice.');
 
     return inner;
-  }
-
-  /**
-   * Formats a duration as days, hours, minutes and seconds.
-   *
-   * @param ms - the duration in milliseconds
-   * @returns the text, such as `1d 2h 3m 4s`
-   */
-  static durationText(ms) {
-    const s = Math.floor((ms || 0) / 1000);
-    const days = Math.floor(s / 86400);
-    const hours = Math.floor((s % 86400) / 3600);
-    const minutes = Math.floor((s % 3600) / 60);
-    const parts = [];
-    if (days) parts.push(days + 'd');
-    if (days || hours) parts.push(hours + 'h');
-    parts.push(minutes + 'm');
-    parts.push((s % 60) + 's');
-    return parts.join(' ');
   }
 
   /**
