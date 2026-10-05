@@ -480,6 +480,10 @@ class ProtocolStack {
     this.build('oauth-oidc/step_up', require('../oauth-oidc/step_up'),
                'StepUp');
     this.build('oauth-oidc/dpop', require('../oauth-oidc/dpop'), 'Dpop');
+    // FAPI 2.0 HTTP Signatures at the resource servers (#178): a library
+    // `dpop.ts` asks lazily and `oauth2.ts` registers the key prefetch of.
+    this.build('oauth-oidc/http_signatures',
+               require('../oauth-oidc/http_signatures'), 'HttpSignatures');
     this.build('oauth-oidc/software_statement',
                require('../oauth-oidc/software_statement'),
                'SoftwareStatement');
@@ -1699,9 +1703,9 @@ class ProtocolStack {
     require('../gnap/gnap');
     this.build('gnap/gnap_store', require('../gnap/gnap_store'), 'GnapStore');
     this.build('gnap/gnap_keys', require('../gnap/gnap_keys'), 'GnapKeys');
-    this.build('gnap/gnap_sf', require('../gnap/gnap_sf'), 'GnapSf');
-    this.build('gnap/gnap_httpsig', require('../gnap/gnap_httpsig'),
-               'GnapHttpsig');
+    // RFC 9421 and RFC 8941 were `gnap_httpsig` and `gnap_sf` here until #178:
+    // they are `common/crypto.js` section 14 and `common/structured_fields.ts`
+    // now, neither of which has an instance to build.
     this.build('gnap/gnap_proof', require('../gnap/gnap_proof'), 'GnapProof');
     this.build('gnap/gnap_schemas', require('../gnap/gnap_schemas'),
                'GnapSchemas');

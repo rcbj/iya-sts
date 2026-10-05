@@ -108,7 +108,6 @@
 // when the module loads.
 // ---------------------------------------------------------------------------
 
-import nodeCrypto = require('crypto');
 import config = require('../common/config');
 import helpers = require('../common/helpers');
 // The one random-value section (#65): user codes, drawn uniformly.
@@ -1098,9 +1097,8 @@ class GnapGrants {
     const { log } = this.deps;
     log.debug("Entering GnapGrants.digestTokenOf().");
     log.debug("Leaving GnapGrants.digestTokenOf().");
-    return 'gnap:' + nodeCrypto.createHash('sha256')
-        .update(this.canonicalJson(right), 'utf8').digest('base64url').slice(0,
-        22);
+    return 'gnap:' + stsCrypto.digest('sha256', this.canonicalJson(right),
+                                      'base64url').slice(0, 22);
   }
 
   // ---------------------------------------------------------------------------
@@ -1827,9 +1825,9 @@ class GnapGrants {
     const { log, request } = this.deps;
     log.debug("Entering GnapGrants.interactionHash().");
     const spec = request.HASH_METHODS[hashMethod || 'sha-256'];
-    const digest = nodeCrypto.createHash(spec.node)
-      .update([clientNonce, serverNonce, interactRef, grantEndpoint].join('\n'),
-              'ascii').digest();
+    const digest = stsCrypto.digest(spec.node,
+      Buffer.from([clientNonce, serverNonce, interactRef,
+                   grantEndpoint].join('\n'), 'ascii'));
     log.debug("Leaving GnapGrants.interactionHash().");
     return digest.subarray(0, spec.bits / 8).toString('base64url');
   }

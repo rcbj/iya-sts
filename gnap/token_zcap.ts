@@ -190,7 +190,7 @@
 // module without the root builds a default instance when the module loads.
 // ---------------------------------------------------------------------------
 
-import crypto = require('crypto');
+import stsCrypto = require('../common/crypto');
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
 import errorCodes = require('../common/error_codes');
@@ -207,7 +207,7 @@ interface TokenZcapDeps {
   errorCodes: { tag(code: string): string };
   // `gnap_access`: the model, its refusals and its presentation checks.
   access: any;
-  crypto: { createPublicKey(key: any): any };
+  stsCrypto: { publicKeyOf(key: any): any };
   // `oid4vc/vc_data_integrity`: the JCS cryptosuites (see the header).
   dataIntegrity: any;
   // Loads the ZCAP libraries; called once, lazily (see the header).
@@ -746,7 +746,7 @@ class TokenZcap {
    * @returns the document, or a refusal when the keys are unusable
    */
   async controllerDocument(keys: any): Promise<any> {
-    const { log, crypto } = this.deps;
+    const { log, stsCrypto } = this.deps;
     log.debug("Entering TokenZcap.controllerDocument().");
     const chosen = this.suiteOf(keys);
     if (!chosen.ok) {
@@ -766,7 +766,7 @@ class TokenZcap {
     }
     const publicKeys = Object.assign({}, keys || {});
     if (!publicKeys.publicKey && publicKeys.privateKey) {
-      publicKeys.publicKey = crypto.createPublicKey(publicKeys.privateKey);
+      publicKeys.publicKey = stsCrypto.publicKeyOf(publicKeys.privateKey);
     }
     const pair = await this.keyPairOf(libs.lib, publicKeys, false);
     if (!pair.ok) {
@@ -971,7 +971,7 @@ class TokenZcap {
    * @returns `{ value, format, jti }`, or a refusal
    */
   async mint(model: any, keys: any): Promise<any> {
-    const { log, errorCodes, access, crypto } = this.deps;
+    const { log, errorCodes, access, stsCrypto } = this.deps;
     log.debug("Entering TokenZcap.mint().");
     const valid = access.validateModel(model);
     if (!valid.ok) {
@@ -1006,7 +1006,7 @@ class TokenZcap {
         return signing;
       }
       const publicKeys = Object.assign({}, keys,
-                                       { publicKey: crypto.createPublicKey(
+                                       { publicKey: stsCrypto.publicKeyOf(
                                            keys.privateKey) });
       const verifying = await this.keyPairOf(lib, publicKeys, false);
       suiteObject = new lib.Ed25519Signature2020({
@@ -1375,7 +1375,7 @@ class TokenZcap {
       },
       errorCodes: errorCodes,
       access: gnapAccess,
-      crypto: crypto,
+      stsCrypto: stsCrypto,
       dataIntegrity: dataIntegrity,
       importLibraries: function () {
         return Promise.all([

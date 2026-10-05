@@ -75,7 +75,6 @@
 // when the module loads.
 // ---------------------------------------------------------------------------
 
-import nodeCrypto = require('crypto');
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
 import stsCrypto = require('../common/crypto');
@@ -204,9 +203,8 @@ class GnapTokens {
     log.debug("Entering GnapTokens.realmDerived().");
     const secret = helpers.refreshTokenKeysFor().secret;
     log.debug("Leaving GnapTokens.realmDerived().");
-    return Buffer.from(nodeCrypto.hkdfSync('sha256', secret, Buffer.alloc(0),
-                                           Buffer.from(info, 'utf8'),
-                                           length || 32));
+    return this.deps.stsCrypto.hkdf('sha256', secret, Buffer.alloc(0), info,
+                                    length || 32);
   }
 
   private jweSecret(): Buffer {
@@ -261,7 +259,7 @@ class GnapTokens {
     }
     log.debug("Leaving GnapTokens.ed25519Keys().");
     return { privateKey: found.privateKey,
-             publicKey: nodeCrypto.createPublicKey(found.privateKey),
+             publicKey: this.deps.stsCrypto.publicKeyOf(found.privateKey),
              publicJwk: found.publicJwk };
   }
 
@@ -280,7 +278,7 @@ class GnapTokens {
    */
   ed25519Generations(): Array<{ publicKey: any; publicJwk: any }> {
     const { log } = this;
-    const { helpers } = this.deps;
+    const { helpers, stsCrypto } = this.deps;
     log.debug("Entering GnapTokens.ed25519Generations().");
     const current = this.ed25519Keys();
     const out = [{ publicKey: current.publicKey,
@@ -293,8 +291,8 @@ class GnapTokens {
              Number(one.retiredUntil) <= now)) {
           return;
         }
-        out.push({ publicKey: nodeCrypto.createPublicKey({
-          key: one.publicJwk, format: 'jwk' }), publicJwk: one.publicJwk });
+        out.push({ publicKey: stsCrypto.publicKeyFromJwk(one.publicJwk),
+                   publicJwk: one.publicJwk });
       });
     log.debug("Leaving GnapTokens.ed25519Generations(). " + out.length + ".");
     return out;

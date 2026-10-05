@@ -2635,6 +2635,291 @@ const CODES = [
     summary: 'Counting the values sealed under each data encryption key ' +
       'failed; the counts shown are the previous ones (#391).',
     spec: '' },
+  { code: 'STS-KEYS-0107',
+    summary: 'A Content-Digest algorithm this service was asked to compute ' +
+      'or accept is not sha-256 or sha-512 (for example a key\'s ' +
+      'content-digest-alg).',
+    spec: 'the caller\'s: GNAP answers HTTP 401 invalid_client (400 ' +
+      'invalid_resource_server at the RS-facing endpoints), a FAPI ' +
+      'resource server HTTP 401' },
+  { code: 'STS-KEYS-0108',
+    summary: 'A GNAP request with content carries no Content-Digest field.',
+    spec: 'the caller\'s: GNAP answers HTTP 401 invalid_client (400 ' +
+      'invalid_resource_server at the RS-facing endpoints), a FAPI ' +
+      'resource server HTTP 401' },
+  { code: 'STS-KEYS-0109',
+    summary: 'A Content-Digest field is not a Structured Field Dictionary.',
+    spec: 'the caller\'s: GNAP answers HTTP 401 invalid_client (400 ' +
+      'invalid_resource_server at the RS-facing endpoints), a FAPI ' +
+      'resource server HTTP 401' },
+  { code: 'STS-KEYS-0110',
+    summary: 'A Content-Digest member is not a Byte Sequence.',
+    spec: 'the caller\'s: GNAP answers HTTP 401 invalid_client (400 ' +
+      'invalid_resource_server at the RS-facing endpoints), a FAPI ' +
+      'resource server HTTP 401' },
+  { code: 'STS-KEYS-0111',
+    summary: 'A Content-Digest does not match the request content.',
+    spec: 'the caller\'s: GNAP answers HTTP 401 invalid_client (400 ' +
+      'invalid_resource_server at the RS-facing endpoints), a FAPI ' +
+      'resource server HTTP 401' },
+  { code: 'STS-KEYS-0112',
+    summary: 'A Content-Digest field carries no digest in an accepted ' +
+      'algorithm.',
+    spec: 'the caller\'s: GNAP answers HTTP 401 invalid_client (400 ' +
+      'invalid_resource_server at the RS-facing endpoints), a FAPI ' +
+      'resource server HTTP 401' },
+  { code: 'STS-KEYS-0113',
+    summary: 'An HTTP message signature\'s covered component identifier is ' +
+      'malformed, or the covered components are not an Inner List.',
+    spec: 'the caller\'s: GNAP answers HTTP 401 invalid_client (400 ' +
+      'invalid_resource_server at the RS-facing endpoints), a FAPI ' +
+      'resource server HTTP 401' },
+  { code: 'STS-KEYS-0114',
+    summary: 'A covered component carries a parameter that is not ' +
+      'understood or is of the wrong type.',
+    spec: 'the caller\'s: GNAP answers HTTP 401 invalid_client (400 ' +
+      'invalid_resource_server at the RS-facing endpoints), a FAPI ' +
+      'resource server HTTP 401' },
+  { code: 'STS-KEYS-0115',
+    summary: 'A covered component carries ;req in a signature over a ' +
+      'request message, which RFC 9421 section 2.4 forbids.',
+    spec: 'the caller\'s: GNAP answers HTTP 401 invalid_client (400 ' +
+      'invalid_resource_server at the RS-facing endpoints), a FAPI ' +
+      'resource server HTTP 401' },
+  { code: 'STS-KEYS-0116',
+    summary: 'An HTTP message signature covers a derived component this ' +
+      'verifier does not understand.',
+    spec: 'the caller\'s: GNAP answers HTTP 401 invalid_client (400 ' +
+      'invalid_resource_server at the RS-facing endpoints), a FAPI ' +
+      'resource server HTTP 401' },
+  { code: 'STS-KEYS-0117',
+    summary: 'An HTTP message signature covers @status (or another ' +
+      'response-only component) on a request, or a response status is ' +
+      'malformed.',
+    spec: 'the caller\'s: GNAP answers HTTP 401 invalid_client (400 ' +
+      'invalid_resource_server at the RS-facing endpoints), a FAPI ' +
+      'resource server HTTP 401' },
+  { code: 'STS-KEYS-0118',
+    summary: 'A request has no method or no absolute target URI to derive ' +
+      'a covered component from.',
+    spec: 'the caller\'s: GNAP answers HTTP 401 invalid_client (400 ' +
+      'invalid_resource_server at the RS-facing endpoints), a FAPI ' +
+      'resource server HTTP 401' },
+  { code: 'STS-KEYS-0119',
+    summary: 'A covered @query-param has no name parameter, or names a ' +
+      'parameter the target URI does not have.',
+    spec: 'the caller\'s: GNAP answers HTTP 401 invalid_client (400 ' +
+      'invalid_resource_server at the RS-facing endpoints), a FAPI ' +
+      'resource server HTTP 401' },
+  { code: 'STS-KEYS-0120',
+    summary: 'A covered @query-param names a parameter that occurs more ' +
+      'than once.',
+    spec: 'the caller\'s: GNAP answers HTTP 401 invalid_client (400 ' +
+      'invalid_resource_server at the RS-facing endpoints), a FAPI ' +
+      'resource server HTTP 401' },
+  { code: 'STS-KEYS-0121',
+    summary: 'A covered component carries ;tr, and trailers are not part ' +
+      'of the message this verifier is given.',
+    spec: 'the caller\'s: GNAP answers HTTP 401 invalid_client (400 ' +
+      'invalid_resource_server at the RS-facing endpoints), a FAPI ' +
+      'resource server HTTP 401' },
+  { code: 'STS-KEYS-0122',
+    summary: 'A covered component combines ;bs with ;sf or ;key.',
+    spec: 'the caller\'s: GNAP answers HTTP 401 invalid_client (400 ' +
+      'invalid_resource_server at the RS-facing endpoints), a FAPI ' +
+      'resource server HTTP 401' },
+  { code: 'STS-KEYS-0123',
+    summary: 'A covered HTTP field is not present in the message.',
+    spec: 'the caller\'s: GNAP answers HTTP 401 invalid_client (400 ' +
+      'invalid_resource_server at the RS-facing endpoints), a FAPI ' +
+      'resource server HTTP 401' },
+  { code: 'STS-KEYS-0124',
+    summary: 'A covered component asks for ;sf or ;key on a field whose ' +
+      'Structured Field type is unknown or is not a Dictionary.',
+    spec: 'the caller\'s: GNAP answers HTTP 401 invalid_client (400 ' +
+      'invalid_resource_server at the RS-facing endpoints), a FAPI ' +
+      'resource server HTTP 401' },
+  { code: 'STS-KEYS-0125',
+    summary: 'A covered ;key names a Dictionary member the field does not ' +
+      'have.',
+    spec: 'the caller\'s: GNAP answers HTTP 401 invalid_client (400 ' +
+      'invalid_resource_server at the RS-facing endpoints), a FAPI ' +
+      'resource server HTTP 401' },
+  { code: 'STS-KEYS-0126',
+    summary: 'A covered field does not parse as its Structured Field type.',
+    spec: 'the caller\'s: GNAP answers HTTP 401 invalid_client (400 ' +
+      'invalid_resource_server at the RS-facing endpoints), a FAPI ' +
+      'resource server HTTP 401' },
+  { code: 'STS-KEYS-0127',
+    summary: 'An HTTP message signature lists @signature-params among its ' +
+      'covered components.',
+    spec: 'the caller\'s: GNAP answers HTTP 401 invalid_client (400 ' +
+      'invalid_resource_server at the RS-facing endpoints), a FAPI ' +
+      'resource server HTTP 401' },
+  { code: 'STS-KEYS-0128',
+    summary: 'A covered component\'s value contains a newline or a ' +
+      'character outside ASCII.',
+    spec: 'the caller\'s: GNAP answers HTTP 401 invalid_client (400 ' +
+      'invalid_resource_server at the RS-facing endpoints), a FAPI ' +
+      'resource server HTTP 401' },
+  { code: 'STS-KEYS-0129',
+    summary: 'A signature parameter is of the wrong type or is a negative ' +
+      'timestamp, or the signature parameters cannot be serialized.',
+    spec: 'the caller\'s: GNAP answers HTTP 401 invalid_client (400 ' +
+      'invalid_resource_server at the RS-facing endpoints), a FAPI ' +
+      'resource server HTTP 401' },
+  { code: 'STS-KEYS-0130',
+    summary: 'An HTTP message signature covers the same component more ' +
+      'than once.',
+    spec: 'the caller\'s: GNAP answers HTTP 401 invalid_client (400 ' +
+      'invalid_resource_server at the RS-facing endpoints), a FAPI ' +
+      'resource server HTTP 401' },
+  { code: 'STS-KEYS-0131',
+    summary: 'The key for an HTTP message signature algorithm is the ' +
+      'wrong kind, too weak or unreadable (a shared secret shorter than its ' +
+      'hash, an asymmetric key of the wrong type, an RSA key under 2048 ' +
+      'bits or with a forgeable exponent or modulus, a JWK whose use is ' +
+      'not sig, a post-quantum key in the wrong form).',
+    spec: 'the caller\'s: GNAP answers HTTP 401 invalid_client (400 ' +
+      'invalid_resource_server at the RS-facing endpoints), a FAPI ' +
+      'resource server HTTP 401' },
+  { code: 'STS-KEYS-0132',
+    summary: 'A signature label handed to the HTTP message signer is not a ' +
+      'valid Dictionary key.',
+    spec: 'the caller\'s: GNAP answers HTTP 401 invalid_client (400 ' +
+      'invalid_resource_server at the RS-facing endpoints), a FAPI ' +
+      'resource server HTTP 401' },
+  { code: 'STS-KEYS-0133',
+    summary: 'No signature algorithm could be determined: neither the key ' +
+      'nor an alg parameter names one.',
+    spec: 'the caller\'s: GNAP answers HTTP 401 invalid_client (400 ' +
+      'invalid_resource_server at the RS-facing endpoints), a FAPI ' +
+      'resource server HTTP 401' },
+  { code: 'STS-KEYS-0134',
+    summary: 'A signature algorithm, or a signature\'s alg parameter, is ' +
+      'not one this verifier supports.',
+    spec: 'the caller\'s: GNAP answers HTTP 401 invalid_client (400 ' +
+      'invalid_resource_server at the RS-facing endpoints), a FAPI ' +
+      'resource server HTTP 401' },
+  { code: 'STS-KEYS-0135',
+    summary: 'A JWS algorithm was signalled with the alg parameter, or an ' +
+      'alg parameter disagrees with the key\'s algorithm.',
+    spec: 'the caller\'s: GNAP answers HTTP 401 invalid_client (400 ' +
+      'invalid_resource_server at the RS-facing endpoints), a FAPI ' +
+      'resource server HTTP 401' },
+  { code: 'STS-KEYS-0136',
+    summary: 'Signing or verifying an HTTP message signature failed inside ' +
+      'the cryptographic library.',
+    spec: 'the caller\'s: GNAP answers HTTP 401 invalid_client (400 ' +
+      'invalid_resource_server at the RS-facing endpoints), a FAPI ' +
+      'resource server HTTP 401' },
+  { code: 'STS-KEYS-0137',
+    summary: 'An HTTP message signature could not be appended to a ' +
+      'message: it is not a successful sign() result, or its label is ' +
+      'already used.',
+    spec: 'the caller\'s: GNAP answers HTTP 401 invalid_client (400 ' +
+      'invalid_resource_server at the RS-facing endpoints), a FAPI ' +
+      'resource server HTTP 401' },
+  { code: 'STS-KEYS-0138',
+    summary: 'A Signature or Signature-Input field is not a Structured ' +
+      'Field Dictionary.',
+    spec: 'the caller\'s: GNAP answers HTTP 401 invalid_client (400 ' +
+      'invalid_resource_server at the RS-facing endpoints), a FAPI ' +
+      'resource server HTTP 401' },
+  { code: 'STS-KEYS-0139',
+    summary: 'A Signature or Signature-Input field uses one label more ' +
+      'than once.',
+    spec: 'the caller\'s: GNAP answers HTTP 401 invalid_client (400 ' +
+      'invalid_resource_server at the RS-facing endpoints), a FAPI ' +
+      'resource server HTTP 401' },
+  { code: 'STS-KEYS-0140',
+    summary: 'A GNAP request proved by httpsig carries no HTTP message ' +
+      'signature (no Signature-Input and no Signature field).',
+    spec: 'the caller\'s: GNAP answers HTTP 401 invalid_client (400 ' +
+      'invalid_resource_server at the RS-facing endpoints), a FAPI ' +
+      'resource server HTTP 401' },
+  { code: 'STS-KEYS-0141',
+    summary: 'A signature label is present in only one of the Signature ' +
+      'and Signature-Input fields.',
+    spec: 'the caller\'s: GNAP answers HTTP 401 invalid_client (400 ' +
+      'invalid_resource_server at the RS-facing endpoints), a FAPI ' +
+      'resource server HTTP 401' },
+  { code: 'STS-KEYS-0142',
+    summary: 'A Signature-Input member is not an Inner List of string ' +
+      'component identifiers, or a Signature member is not a Byte ' +
+      'Sequence.',
+    spec: 'the caller\'s: GNAP answers HTTP 401 invalid_client (400 ' +
+      'invalid_resource_server at the RS-facing endpoints), a FAPI ' +
+      'resource server HTTP 401' },
+  { code: 'STS-KEYS-0143',
+    summary: 'The message carries no HTTP message signature with the label ' +
+      'the verifier asked for.',
+    spec: 'the caller\'s: GNAP answers HTTP 401 invalid_client (400 ' +
+      'invalid_resource_server at the RS-facing endpoints), a FAPI ' +
+      'resource server HTTP 401' },
+  { code: 'STS-KEYS-0144',
+    summary: 'No HTTP message signature carries the required tag ' +
+      '(tag="gnap").',
+    spec: 'the caller\'s: GNAP answers HTTP 401 invalid_client (400 ' +
+      'invalid_resource_server at the RS-facing endpoints), a FAPI ' +
+      'resource server HTTP 401' },
+  { code: 'STS-KEYS-0145',
+    summary: 'An HTTP message signature carries the alg parameter, which ' +
+      'RFC 9635 section 7.3.1 forbids.',
+    spec: 'the caller\'s: GNAP answers HTTP 401 invalid_client (400 ' +
+      'invalid_resource_server at the RS-facing endpoints), a FAPI ' +
+      'resource server HTTP 401' },
+  { code: 'STS-KEYS-0146',
+    summary: 'An HTTP message signature has no created parameter.',
+    spec: 'the caller\'s: GNAP answers HTTP 401 invalid_client (400 ' +
+      'invalid_resource_server at the RS-facing endpoints), a FAPI ' +
+      'resource server HTTP 401' },
+  { code: 'STS-KEYS-0147',
+    summary: 'An HTTP message signature is older than the allowed age ' +
+      '(gnap.signatureMaxAgeS).',
+    spec: 'the caller\'s: GNAP answers HTTP 401 invalid_client (400 ' +
+      'invalid_resource_server at the RS-facing endpoints), a FAPI ' +
+      'resource server HTTP 401' },
+  { code: 'STS-KEYS-0148',
+    summary: 'An HTTP message signature claims a created time further in ' +
+      'the future than the allowed clock skew.',
+    spec: 'the caller\'s: GNAP answers HTTP 401 invalid_client (400 ' +
+      'invalid_resource_server at the RS-facing endpoints), a FAPI ' +
+      'resource server HTTP 401' },
+  { code: 'STS-KEYS-0149',
+    summary: 'An HTTP message signature has passed its expires parameter.',
+    spec: 'the caller\'s: GNAP answers HTTP 401 invalid_client (400 ' +
+      'invalid_resource_server at the RS-facing endpoints), a FAPI ' +
+      'resource server HTTP 401' },
+  { code: 'STS-KEYS-0150',
+    summary: 'An HTTP message signature does not cover a required ' +
+      'component (@method, @target-uri, content-digest, authorization).',
+    spec: 'the caller\'s: GNAP answers HTTP 401 invalid_client (400 ' +
+      'invalid_resource_server at the RS-facing endpoints), a FAPI ' +
+      'resource server HTTP 401' },
+  { code: 'STS-KEYS-0151',
+    summary: 'No verification key is known for an HTTP message signature ' +
+      '(its tag or keyid does not name the presented key).',
+    spec: 'the caller\'s: GNAP answers HTTP 401 invalid_client (400 ' +
+      'invalid_resource_server at the RS-facing endpoints), a FAPI ' +
+      'resource server HTTP 401' },
+  { code: 'STS-KEYS-0152',
+    summary: 'An HTTP message signature uses an algorithm the verifier ' +
+      'does not allow.',
+    spec: 'the caller\'s: GNAP answers HTTP 401 invalid_client (400 ' +
+      'invalid_resource_server at the RS-facing endpoints), a FAPI ' +
+      'resource server HTTP 401' },
+  { code: 'STS-KEYS-0153',
+    summary: 'An HTTP message signature does not verify over the signature ' +
+      'base rebuilt from the message.',
+    spec: 'the caller\'s: GNAP answers HTTP 401 invalid_client (400 ' +
+      'invalid_resource_server at the RS-facing endpoints), a FAPI ' +
+      'resource server HTTP 401' },
+  { code: 'STS-KEYS-0154',
+    summary: 'A response signature covers a ;req component, and no ' +
+      'request message was given to read it from (RFC 9421 section 2.4).',
+    spec: 'the caller\'s: a signing resource server\'s defect, logged; ' +
+      'a client verifying a response refuses it' },
   { code: 'STS-PKI-0001',
     summary: 'A certificate-authority use case prefers a key algorithm this ' +
       'service cannot use, so its Issuing CA was built with the ' +
@@ -8655,6 +8940,28 @@ const CODES = [
       'could be resolved at redemption), so there is no subject to issue a ' +
       'token about (#158).',
     spec: 'invalid_grant (HTTP 400)' },
+  { code: 'STS-OAUTH-0939',
+    summary: 'A resource server refused an unsigned request where FAPI 2.0 ' +
+      'HTTP Signatures requires a signed one (oauth2.httpSignatures is ' +
+      'require-requests, or the client set oauthHttpSignedRequests) (#178).',
+    spec: 'HTTP 401, invalid_request' },
+  { code: 'STS-OAUTH-0940',
+    summary: 'A resource server refused a request whose fapi-2-request ' +
+      'signature or Content-Digest did not hold, where the refusal carried ' +
+      'no more specific STS-KEYS code (#178).',
+    spec: 'HTTP 401, invalid_request' },
+  { code: 'STS-OAUTH-0941',
+    summary: 'A resource server refused a signed request whose access token ' +
+      'names no client registered here, so no key could verify the ' +
+      'signature (#178).',
+    spec: 'HTTP 401, invalid_request' },
+  { code: 'STS-OAUTH-0942',
+    summary: 'A resource response that FAPI 2.0 HTTP Signatures should sign ' +
+      'went out unsigned: the realm holds no key for ' +
+      'oauth2.httpSignatureResponseAlg, the signature was refused, or the ' +
+      'response had begun writing before it ended (#178).',
+    spec: 'none: the response is sent unsigned, and a client requiring a ' +
+      'signature refuses it' },
   { code: 'STS-SAML-0001',
     summary: 'A SAML 2.0 sign-in resumed with a held-request id that is ' +
       'unknown or has expired (saml2.requestTtlMin), so there is no ' +
@@ -14673,232 +14980,326 @@ const CODES = [
   { code: 'STS-GNAP-0200',
     summary: 'A Content-Digest algorithm this service was asked to compute ' +
       'or accept is not sha-256 or sha-512 (for example a key\'s ' +
-      'content-digest-alg).',
+      'content-digest-alg).' +
+      ' Retired 2026-10-05 (#178): the code moved to common/crypto.js, ' +
+      'which raises STS-KEYS-0107.',
     spec: 'HTTP 401 GNAP invalid_client (400 invalid_resource_server at ' +
-      'the RS-facing endpoints)' },
+      'the RS-facing endpoints)', retired: true },
   { code: 'STS-GNAP-0201',
-    summary: 'A GNAP request with content carries no Content-Digest field.',
+    summary: 'A GNAP request with content carries no Content-Digest field.' +
+      ' Retired 2026-10-05 (#178): the code moved to common/crypto.js, ' +
+      'which raises STS-KEYS-0108.',
     spec: 'HTTP 401 GNAP invalid_client (400 invalid_resource_server at ' +
-      'the RS-facing endpoints)' },
+      'the RS-facing endpoints)', retired: true },
   { code: 'STS-GNAP-0202',
-    summary: 'A Content-Digest field is not a Structured Field Dictionary.',
+    summary: 'A Content-Digest field is not a Structured Field Dictionary.' +
+      ' Retired 2026-10-05 (#178): the code moved to common/crypto.js, ' +
+      'which raises STS-KEYS-0109.',
     spec: 'HTTP 401 GNAP invalid_client (400 invalid_resource_server at ' +
-      'the RS-facing endpoints)' },
+      'the RS-facing endpoints)', retired: true },
   { code: 'STS-GNAP-0203',
-    summary: 'A Content-Digest member is not a Byte Sequence.',
+    summary: 'A Content-Digest member is not a Byte Sequence.' +
+      ' Retired 2026-10-05 (#178): the code moved to common/crypto.js, ' +
+      'which raises STS-KEYS-0110.',
     spec: 'HTTP 401 GNAP invalid_client (400 invalid_resource_server at ' +
-      'the RS-facing endpoints)' },
+      'the RS-facing endpoints)', retired: true },
   { code: 'STS-GNAP-0204',
-    summary: 'A Content-Digest does not match the request content.',
+    summary: 'A Content-Digest does not match the request content.' +
+      ' Retired 2026-10-05 (#178): the code moved to common/crypto.js, ' +
+      'which raises STS-KEYS-0111.',
     spec: 'HTTP 401 GNAP invalid_client (400 invalid_resource_server at ' +
-      'the RS-facing endpoints)' },
+      'the RS-facing endpoints)', retired: true },
   { code: 'STS-GNAP-0205',
     summary: 'A Content-Digest field carries no digest in an accepted ' +
-      'algorithm.',
+      'algorithm.' +
+      ' Retired 2026-10-05 (#178): the code moved to common/crypto.js, ' +
+      'which raises STS-KEYS-0112.',
     spec: 'HTTP 401 GNAP invalid_client (400 invalid_resource_server at ' +
-      'the RS-facing endpoints)' },
+      'the RS-facing endpoints)', retired: true },
   { code: 'STS-GNAP-0206',
     summary: 'An HTTP message signature\'s covered component identifier is ' +
-      'malformed, or the covered components are not an Inner List.',
+      'malformed, or the covered components are not an Inner List.' +
+      ' Retired 2026-10-05 (#178): the code moved to common/crypto.js, ' +
+      'which raises STS-KEYS-0113.',
     spec: 'HTTP 401 GNAP invalid_client (400 invalid_resource_server at ' +
-      'the RS-facing endpoints)' },
+      'the RS-facing endpoints)', retired: true },
   { code: 'STS-GNAP-0207',
     summary: 'A covered component carries a parameter that is not ' +
-      'understood or is of the wrong type.',
+      'understood or is of the wrong type.' +
+      ' Retired 2026-10-05 (#178): the code moved to common/crypto.js, ' +
+      'which raises STS-KEYS-0114.',
     spec: 'HTTP 401 GNAP invalid_client (400 invalid_resource_server at ' +
-      'the RS-facing endpoints)' },
+      'the RS-facing endpoints)', retired: true },
   { code: 'STS-GNAP-0208',
     summary: 'A covered component carries ;req, which a request verifier ' +
-      'has no related request to resolve.',
+      'has no related request to resolve.' +
+      ' Retired 2026-10-05 (#178): the code moved to common/crypto.js, ' +
+      'which raises STS-KEYS-0115.',
     spec: 'HTTP 401 GNAP invalid_client (400 invalid_resource_server at ' +
-      'the RS-facing endpoints)' },
+      'the RS-facing endpoints)', retired: true },
   { code: 'STS-GNAP-0209',
     summary: 'An HTTP message signature covers a derived component this ' +
-      'verifier does not understand.',
+      'verifier does not understand.' +
+      ' Retired 2026-10-05 (#178): the code moved to common/crypto.js, ' +
+      'which raises STS-KEYS-0116.',
     spec: 'HTTP 401 GNAP invalid_client (400 invalid_resource_server at ' +
-      'the RS-facing endpoints)' },
+      'the RS-facing endpoints)', retired: true },
   { code: 'STS-GNAP-0210',
     summary: 'An HTTP message signature covers @status (or another ' +
       'response-only component) on a request, or a response status is ' +
-      'malformed.',
+      'malformed.' +
+      ' Retired 2026-10-05 (#178): the code moved to common/crypto.js, ' +
+      'which raises STS-KEYS-0117.',
     spec: 'HTTP 401 GNAP invalid_client (400 invalid_resource_server at ' +
-      'the RS-facing endpoints)' },
+      'the RS-facing endpoints)', retired: true },
   { code: 'STS-GNAP-0211',
     summary: 'A request has no method or no absolute target URI to derive ' +
-      'a covered component from.',
+      'a covered component from.' +
+      ' Retired 2026-10-05 (#178): the code moved to common/crypto.js, ' +
+      'which raises STS-KEYS-0118.',
     spec: 'HTTP 401 GNAP invalid_client (400 invalid_resource_server at ' +
-      'the RS-facing endpoints)' },
+      'the RS-facing endpoints)', retired: true },
   { code: 'STS-GNAP-0212',
     summary: 'A covered @query-param has no name parameter, or names a ' +
-      'parameter the target URI does not have.',
+      'parameter the target URI does not have.' +
+      ' Retired 2026-10-05 (#178): the code moved to common/crypto.js, ' +
+      'which raises STS-KEYS-0119.',
     spec: 'HTTP 401 GNAP invalid_client (400 invalid_resource_server at ' +
-      'the RS-facing endpoints)' },
+      'the RS-facing endpoints)', retired: true },
   { code: 'STS-GNAP-0213',
     summary: 'A covered @query-param names a parameter that occurs more ' +
-      'than once.',
+      'than once.' +
+      ' Retired 2026-10-05 (#178): the code moved to common/crypto.js, ' +
+      'which raises STS-KEYS-0120.',
     spec: 'HTTP 401 GNAP invalid_client (400 invalid_resource_server at ' +
-      'the RS-facing endpoints)' },
+      'the RS-facing endpoints)', retired: true },
   { code: 'STS-GNAP-0214',
     summary: 'A covered component carries ;tr, and trailers are not part ' +
-      'of the message this verifier is given.',
+      'of the message this verifier is given.' +
+      ' Retired 2026-10-05 (#178): the code moved to common/crypto.js, ' +
+      'which raises STS-KEYS-0121.',
     spec: 'HTTP 401 GNAP invalid_client (400 invalid_resource_server at ' +
-      'the RS-facing endpoints)' },
+      'the RS-facing endpoints)', retired: true },
   { code: 'STS-GNAP-0215',
-    summary: 'A covered component combines ;bs with ;sf or ;key.',
+    summary: 'A covered component combines ;bs with ;sf or ;key.' +
+      ' Retired 2026-10-05 (#178): the code moved to common/crypto.js, ' +
+      'which raises STS-KEYS-0122.',
     spec: 'HTTP 401 GNAP invalid_client (400 invalid_resource_server at ' +
-      'the RS-facing endpoints)' },
+      'the RS-facing endpoints)', retired: true },
   { code: 'STS-GNAP-0216',
-    summary: 'A covered HTTP field is not present in the message.',
+    summary: 'A covered HTTP field is not present in the message.' +
+      ' Retired 2026-10-05 (#178): the code moved to common/crypto.js, ' +
+      'which raises STS-KEYS-0123.',
     spec: 'HTTP 401 GNAP invalid_client (400 invalid_resource_server at ' +
-      'the RS-facing endpoints)' },
+      'the RS-facing endpoints)', retired: true },
   { code: 'STS-GNAP-0217',
     summary: 'A covered component asks for ;sf or ;key on a field whose ' +
-      'Structured Field type is unknown or is not a Dictionary.',
+      'Structured Field type is unknown or is not a Dictionary.' +
+      ' Retired 2026-10-05 (#178): the code moved to common/crypto.js, ' +
+      'which raises STS-KEYS-0124.',
     spec: 'HTTP 401 GNAP invalid_client (400 invalid_resource_server at ' +
-      'the RS-facing endpoints)' },
+      'the RS-facing endpoints)', retired: true },
   { code: 'STS-GNAP-0218',
     summary: 'A covered ;key names a Dictionary member the field does not ' +
-      'have.',
+      'have.' +
+      ' Retired 2026-10-05 (#178): the code moved to common/crypto.js, ' +
+      'which raises STS-KEYS-0125.',
     spec: 'HTTP 401 GNAP invalid_client (400 invalid_resource_server at ' +
-      'the RS-facing endpoints)' },
+      'the RS-facing endpoints)', retired: true },
   { code: 'STS-GNAP-0219',
-    summary: 'A covered field does not parse as its Structured Field type.',
+    summary: 'A covered field does not parse as its Structured Field type.' +
+      ' Retired 2026-10-05 (#178): the code moved to common/crypto.js, ' +
+      'which raises STS-KEYS-0126.',
     spec: 'HTTP 401 GNAP invalid_client (400 invalid_resource_server at ' +
-      'the RS-facing endpoints)' },
+      'the RS-facing endpoints)', retired: true },
   { code: 'STS-GNAP-0220',
     summary: 'An HTTP message signature lists @signature-params among its ' +
-      'covered components.',
+      'covered components.' +
+      ' Retired 2026-10-05 (#178): the code moved to common/crypto.js, ' +
+      'which raises STS-KEYS-0127.',
     spec: 'HTTP 401 GNAP invalid_client (400 invalid_resource_server at ' +
-      'the RS-facing endpoints)' },
+      'the RS-facing endpoints)', retired: true },
   { code: 'STS-GNAP-0221',
     summary: 'A covered component\'s value contains a newline or a ' +
-      'character outside ASCII.',
+      'character outside ASCII.' +
+      ' Retired 2026-10-05 (#178): the code moved to common/crypto.js, ' +
+      'which raises STS-KEYS-0128.',
     spec: 'HTTP 401 GNAP invalid_client (400 invalid_resource_server at ' +
-      'the RS-facing endpoints)' },
+      'the RS-facing endpoints)', retired: true },
   { code: 'STS-GNAP-0222',
     summary: 'A signature parameter is of the wrong type or is a negative ' +
-      'timestamp, or the signature parameters cannot be serialized.',
+      'timestamp, or the signature parameters cannot be serialized.' +
+      ' Retired 2026-10-05 (#178): the code moved to common/crypto.js, ' +
+      'which raises STS-KEYS-0129.',
     spec: 'HTTP 401 GNAP invalid_client (400 invalid_resource_server at ' +
-      'the RS-facing endpoints)' },
+      'the RS-facing endpoints)', retired: true },
   { code: 'STS-GNAP-0223',
     summary: 'An HTTP message signature covers the same component more ' +
-      'than once.',
+      'than once.' +
+      ' Retired 2026-10-05 (#178): the code moved to common/crypto.js, ' +
+      'which raises STS-KEYS-0130.',
     spec: 'HTTP 401 GNAP invalid_client (400 invalid_resource_server at ' +
-      'the RS-facing endpoints)' },
+      'the RS-facing endpoints)', retired: true },
   { code: 'STS-GNAP-0224',
     summary: 'The key for a signature algorithm is the wrong kind or too ' +
       'weak (a shared secret shorter than its hash, an asymmetric key of ' +
-      'the wrong type, an RSA key under 2048 bits).',
+      'the wrong type, an RSA key under 2048 bits).' +
+      ' Retired 2026-10-05 (#178): the code moved to common/crypto.js, ' +
+      'which raises STS-KEYS-0131.',
     spec: 'HTTP 401 GNAP invalid_client (400 invalid_resource_server at ' +
-      'the RS-facing endpoints)' },
+      'the RS-facing endpoints)', retired: true },
   { code: 'STS-GNAP-0225',
     summary: 'A signature label handed to the HTTP message signer is not a ' +
-      'valid Dictionary key.',
-    spec: '' },
+      'valid Dictionary key.' +
+      ' Retired 2026-10-05 (#178): the code moved to common/crypto.js, ' +
+      'which raises STS-KEYS-0132.',
+    spec: '', retired: true },
   { code: 'STS-GNAP-0226',
     summary: 'No signature algorithm could be determined: neither the key ' +
-      'nor an alg parameter names one.',
+      'nor an alg parameter names one.' +
+      ' Retired 2026-10-05 (#178): the code moved to common/crypto.js, ' +
+      'which raises STS-KEYS-0133.',
     spec: 'HTTP 401 GNAP invalid_client (400 invalid_resource_server at ' +
-      'the RS-facing endpoints)' },
+      'the RS-facing endpoints)', retired: true },
   { code: 'STS-GNAP-0227',
     summary: 'A signature algorithm, or a signature\'s alg parameter, is ' +
-      'not one this verifier supports.',
+      'not one this verifier supports.' +
+      ' Retired 2026-10-05 (#178): the code moved to common/crypto.js, ' +
+      'which raises STS-KEYS-0134.',
     spec: 'HTTP 401 GNAP invalid_client (400 invalid_resource_server at ' +
-      'the RS-facing endpoints)' },
+      'the RS-facing endpoints)', retired: true },
   { code: 'STS-GNAP-0228',
     summary: 'A JWS algorithm was signalled with the alg parameter, or an ' +
-      'alg parameter disagrees with the key\'s algorithm.',
+      'alg parameter disagrees with the key\'s algorithm.' +
+      ' Retired 2026-10-05 (#178): the code moved to common/crypto.js, ' +
+      'which raises STS-KEYS-0135.',
     spec: 'HTTP 401 GNAP invalid_client (400 invalid_resource_server at ' +
-      'the RS-facing endpoints)' },
+      'the RS-facing endpoints)', retired: true },
   { code: 'STS-GNAP-0229',
     summary: 'Signing or verifying an HTTP message signature failed inside ' +
-      'the cryptographic library.',
+      'the cryptographic library.' +
+      ' Retired 2026-10-05 (#178): the code moved to common/crypto.js, ' +
+      'which raises STS-KEYS-0136.',
     spec: 'HTTP 401 GNAP invalid_client (400 invalid_resource_server at ' +
-      'the RS-facing endpoints)' },
+      'the RS-facing endpoints)', retired: true },
   { code: 'STS-GNAP-0230',
     summary: 'An HTTP message signature could not be appended to a ' +
       'message: it is not a successful sign() result, or its label is ' +
-      'already used.',
-    spec: '' },
+      'already used.' +
+      ' Retired 2026-10-05 (#178): the code moved to common/crypto.js, ' +
+      'which raises STS-KEYS-0137.',
+    spec: '', retired: true },
   { code: 'STS-GNAP-0231',
     summary: 'A Signature or Signature-Input field is not a Structured ' +
-      'Field Dictionary.',
+      'Field Dictionary.' +
+      ' Retired 2026-10-05 (#178): the code moved to common/crypto.js, ' +
+      'which raises STS-KEYS-0138.',
     spec: 'HTTP 401 GNAP invalid_client (400 invalid_resource_server at ' +
-      'the RS-facing endpoints)' },
+      'the RS-facing endpoints)', retired: true },
   { code: 'STS-GNAP-0232',
     summary: 'A Signature or Signature-Input field uses one label more ' +
-      'than once.',
+      'than once.' +
+      ' Retired 2026-10-05 (#178): the code moved to common/crypto.js, ' +
+      'which raises STS-KEYS-0139.',
     spec: 'HTTP 401 GNAP invalid_client (400 invalid_resource_server at ' +
-      'the RS-facing endpoints)' },
+      'the RS-facing endpoints)', retired: true },
   { code: 'STS-GNAP-0233',
     summary: 'A GNAP request proved by httpsig carries no HTTP message ' +
-      'signature (no Signature-Input and no Signature field).',
+      'signature (no Signature-Input and no Signature field).' +
+      ' Retired 2026-10-05 (#178): the code moved to common/crypto.js, ' +
+      'which raises STS-KEYS-0140.',
     spec: 'HTTP 401 GNAP invalid_client (400 invalid_resource_server at ' +
-      'the RS-facing endpoints)' },
+      'the RS-facing endpoints)', retired: true },
   { code: 'STS-GNAP-0234',
     summary: 'A signature label is present in only one of the Signature ' +
-      'and Signature-Input fields.',
+      'and Signature-Input fields.' +
+      ' Retired 2026-10-05 (#178): the code moved to common/crypto.js, ' +
+      'which raises STS-KEYS-0141.',
     spec: 'HTTP 401 GNAP invalid_client (400 invalid_resource_server at ' +
-      'the RS-facing endpoints)' },
+      'the RS-facing endpoints)', retired: true },
   { code: 'STS-GNAP-0235',
     summary: 'A Signature-Input member is not an Inner List of string ' +
       'component identifiers, or a Signature member is not a Byte ' +
-      'Sequence.',
+      'Sequence.' +
+      ' Retired 2026-10-05 (#178): the code moved to common/crypto.js, ' +
+      'which raises STS-KEYS-0142.',
     spec: 'HTTP 401 GNAP invalid_client (400 invalid_resource_server at ' +
-      'the RS-facing endpoints)' },
+      'the RS-facing endpoints)', retired: true },
   { code: 'STS-GNAP-0236',
     summary: 'The message carries no HTTP message signature with the label ' +
-      'the verifier asked for.',
+      'the verifier asked for.' +
+      ' Retired 2026-10-05 (#178): the code moved to common/crypto.js, ' +
+      'which raises STS-KEYS-0143.',
     spec: 'HTTP 401 GNAP invalid_client (400 invalid_resource_server at ' +
-      'the RS-facing endpoints)' },
+      'the RS-facing endpoints)', retired: true },
   { code: 'STS-GNAP-0237',
     summary: 'No HTTP message signature carries the required tag ' +
-      '(tag="gnap").',
+      '(tag="gnap").' +
+      ' Retired 2026-10-05 (#178): the code moved to common/crypto.js, ' +
+      'which raises STS-KEYS-0144.',
     spec: 'HTTP 401 GNAP invalid_client (400 invalid_resource_server at ' +
-      'the RS-facing endpoints)' },
+      'the RS-facing endpoints)', retired: true },
   { code: 'STS-GNAP-0238',
     summary: 'An HTTP message signature carries the alg parameter, which ' +
-      'RFC 9635 section 7.3.1 forbids.',
+      'RFC 9635 section 7.3.1 forbids.' +
+      ' Retired 2026-10-05 (#178): the code moved to common/crypto.js, ' +
+      'which raises STS-KEYS-0145.',
     spec: 'HTTP 401 GNAP invalid_client (400 invalid_resource_server at ' +
-      'the RS-facing endpoints)' },
+      'the RS-facing endpoints)', retired: true },
   { code: 'STS-GNAP-0239',
-    summary: 'An HTTP message signature has no created parameter.',
+    summary: 'An HTTP message signature has no created parameter.' +
+      ' Retired 2026-10-05 (#178): the code moved to common/crypto.js, ' +
+      'which raises STS-KEYS-0146.',
     spec: 'HTTP 401 GNAP invalid_client (400 invalid_resource_server at ' +
-      'the RS-facing endpoints)' },
+      'the RS-facing endpoints)', retired: true },
   { code: 'STS-GNAP-0240',
     summary: 'An HTTP message signature is older than the allowed age ' +
-      '(gnap.signatureMaxAgeS).',
+      '(gnap.signatureMaxAgeS).' +
+      ' Retired 2026-10-05 (#178): the code moved to common/crypto.js, ' +
+      'which raises STS-KEYS-0147.',
     spec: 'HTTP 401 GNAP invalid_client (400 invalid_resource_server at ' +
-      'the RS-facing endpoints)' },
+      'the RS-facing endpoints)', retired: true },
   { code: 'STS-GNAP-0241',
     summary: 'An HTTP message signature claims a created time further in ' +
-      'the future than the allowed clock skew.',
+      'the future than the allowed clock skew.' +
+      ' Retired 2026-10-05 (#178): the code moved to common/crypto.js, ' +
+      'which raises STS-KEYS-0148.',
     spec: 'HTTP 401 GNAP invalid_client (400 invalid_resource_server at ' +
-      'the RS-facing endpoints)' },
+      'the RS-facing endpoints)', retired: true },
   { code: 'STS-GNAP-0242',
-    summary: 'An HTTP message signature has passed its expires parameter.',
+    summary: 'An HTTP message signature has passed its expires parameter.' +
+      ' Retired 2026-10-05 (#178): the code moved to common/crypto.js, ' +
+      'which raises STS-KEYS-0149.',
     spec: 'HTTP 401 GNAP invalid_client (400 invalid_resource_server at ' +
-      'the RS-facing endpoints)' },
+      'the RS-facing endpoints)', retired: true },
   { code: 'STS-GNAP-0243',
     summary: 'An HTTP message signature does not cover a required ' +
-      'component (@method, @target-uri, content-digest, authorization).',
+      'component (@method, @target-uri, content-digest, authorization).' +
+      ' Retired 2026-10-05 (#178): the code moved to common/crypto.js, ' +
+      'which raises STS-KEYS-0150.',
     spec: 'HTTP 401 GNAP invalid_client (400 invalid_resource_server at ' +
-      'the RS-facing endpoints)' },
+      'the RS-facing endpoints)', retired: true },
   { code: 'STS-GNAP-0244',
     summary: 'No verification key is known for an HTTP message signature ' +
-      '(its tag or keyid does not name the presented key).',
+      '(its tag or keyid does not name the presented key).' +
+      ' Retired 2026-10-05 (#178): the code moved to common/crypto.js, ' +
+      'which raises STS-KEYS-0151.',
     spec: 'HTTP 401 GNAP invalid_client (400 invalid_resource_server at ' +
-      'the RS-facing endpoints)' },
+      'the RS-facing endpoints)', retired: true },
   { code: 'STS-GNAP-0245',
     summary: 'An HTTP message signature uses an algorithm the verifier ' +
-      'does not allow.',
+      'does not allow.' +
+      ' Retired 2026-10-05 (#178): the code moved to common/crypto.js, ' +
+      'which raises STS-KEYS-0152.',
     spec: 'HTTP 401 GNAP invalid_client (400 invalid_resource_server at ' +
-      'the RS-facing endpoints)' },
+      'the RS-facing endpoints)', retired: true },
   { code: 'STS-GNAP-0246',
     summary: 'An HTTP message signature does not verify over the signature ' +
-      'base rebuilt from the message.',
+      'base rebuilt from the message.' +
+      ' Retired 2026-10-05 (#178): the code moved to common/crypto.js, ' +
+      'which raises STS-KEYS-0153.',
     spec: 'HTTP 401 GNAP invalid_client (400 invalid_resource_server at ' +
-      'the RS-facing endpoints)' },
+      'the RS-facing endpoints)', retired: true },
   { code: 'STS-GNAP-0260',
     summary: 'A GNAP request\'s content is a JWS whose payload is not a ' +
       'JSON object.',
@@ -18746,7 +19147,8 @@ const CODES = [
     spec: 'invalid_client_metadata (HTTP 400)' },
   { code: 'STS-REG-0121',
     summary: 'A console or /admin-api write put a value other than TRUE or ' +
-      'FALSE on oauthRequirePushedAuthorizationRequests.',
+      'FALSE on oauthRequirePushedAuthorizationRequests or (#178) ' +
+      'oauthHttpSignedRequests.',
     spec: 'the caller\'s refusal (errors on a console or /admin-api reply)' },
   { code: 'STS-REG-0130',
     summary: 'A registration gave an RFC 8705 certificate subject parameter a ' +

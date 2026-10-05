@@ -3,18 +3,24 @@
 
 'use strict';
 //
-// File: gnap_httpsig.js
+// File: http_signatures.js
 //
 // ===========================================================================
-// GNAP'S `httpsig` PROOF, HELD TO THE PUBLISHED VECTORS: RFC 9421 (HTTP MESSAGE
-// SIGNATURES), RFC 9530 (CONTENT-DIGEST) AND RFC 8941 (STRUCTURED FIELDS).
+// HTTP MESSAGE SIGNATURES, HELD TO THE PUBLISHED VECTORS: RFC 9421, RFC 9530
+// (CONTENT-DIGEST) AND RFC 8941 (STRUCTURED FIELDS).
+//
+// It was `tests/gnap_httpsig.js` until #178 moved the code it holds from
+// `gnap/gnap_httpsig.ts` and `gnap/gnap_sf.ts` into `common/crypto.js`
+// (section 14) and `common/structured_fields.ts`. The checks are the same,
+// with the codes renumbered from STS-GNAP-0200..0246 to STS-KEYS-0107..0153.
+// #178 added three sections: section 2.4's `;req` examples, section 3.3.7
+// for every JWS algorithm (post-quantum included), and keys given as JWKs.
 //
 // ---------------------------------------------------------------------------
 // WHY IN PROCESS, WHICH IS THE QUESTION tests/CLAUDE.md ASKS FIRST.
 //
-// `gnap/gnap_sf.ts` and `gnap/gnap_httpsig.ts` are route-free libraries, and
-// every claim worth making about them is a comparison with an answer somebody
-// ELSE published:
+// Both modules are route-free libraries, and every claim worth making about
+// them is a comparison with an answer somebody ELSE published:
 //
 //   * **A SIGNATURE BASE IS A STRING NEITHER PARTY SENDS.** Over HTTP the only
 //     observable is that a signature verified — and a signer and verifier
@@ -32,8 +38,9 @@
 //     in one field and not the other, a component listed twice, a Signature
 //     member that is a Token. Choosing the message is the whole test.
 //
-// The GNAP policy over these libraries — which components a grant request
-// must cover, which key a `keyid` names — is `gnap/gnap_proof.ts`'s and is not
+// The policy over these libraries — which components a GNAP grant request or
+// a FAPI resource request must cover, which key a `keyid` names — is
+// `gnap/gnap_proof.ts`'s and `oauth-oidc/http_signatures.ts`'s, and is not
 // asserted here.
 // ---------------------------------------------------------------------------
 // THREE THINGS THE RFCs THEMSELVES GET WRONG, recorded where they are asserted
@@ -57,13 +64,13 @@ delete process.env.CONFIG_FILE;
 
 const nodeCrypto = require('crypto');
 const errorCodes = require('../common/error_codes');
-const sf = require('../gnap/gnap_sf');
-const httpsig = require('../gnap/gnap_httpsig');
+const sf = require('../common/structured_fields');
+const stsCrypto = require('../common/crypto');
 
 // This file's own logger, for the Entering/Leaving lines and the handled
 // exceptions the code style asks for. Its level is LOG_LEVEL, which is also
 // what the harness's assertion logger reads.
-const log = require('bunyan').createLogger({ name: 'gnap_httpsig',
+const log = require('bunyan').createLogger({ name: 'http_signatures',
   level: process.env.LOG_LEVEL || 'info' });
 
 // ---------------------------------------------------------------------------
@@ -481,67 +488,67 @@ function contentDigests(t) {
              'algorithm must match" ===');
   const hello = '{"hello": "world"}';
   const helloLf = hello + '\n';
-  t.equal(httpsig.contentDigest(hello, 'sha-512'), REQUEST_DIGEST,
+  t.equal(stsCrypto.contentDigest(hello, 'sha-512'), REQUEST_DIGEST,
           'RFC 9421 B.2 test-request Content-Digest (sha-512 of {"hello": ' +
           '"world"})');
-  t.equal(httpsig.contentDigest(Buffer.from('{"message": "good dog"}'),
+  t.equal(stsCrypto.contentDigest(Buffer.from('{"message": "good dog"}'),
                                 'sha-512'), RESPONSE_DIGEST,
           'RFC 9421 B.2 test-response Content-Digest (sha-512)');
-  t.equal(httpsig.contentDigest(helloLf),
+  t.equal(stsCrypto.contentDigest(helloLf),
           'sha-256=:RK/0qy18MlBSVnWgjwz6lZEWjP/lF5HF9bvEF8FabDg=:',
           'RFC 9530 B.1: sha-256 is the default, over the body with its LF');
-  t.equal(httpsig.contentDigest(''),
+  t.equal(stsCrypto.contentDigest(''),
           'sha-256=:47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU=:',
           'RFC 9530 B.2: empty content');
-  t.equal(httpsig.contentDigest('"world"}\n'),
+  t.equal(stsCrypto.contentDigest('"world"}\n'),
           'sha-256=:jjcgBDWNAtbYUXI37CVG3gRuGOAjaaDRGpIUFsdyepQ=:',
           'RFC 9530 B.3: partial content');
-  t.equal(httpsig.contentDigest(helloLf, 'sha-512'),
+  t.equal(stsCrypto.contentDigest(helloLf, 'sha-512'),
           'sha-512=:YMAam51Jz/jOATT6/zvHrLVgOYTGFy1d6GJiOHTohq4yP+pgk4vf2aCsyRZOtw8MjkM7iw7yZ/WkppmM44T3qg==:',
           'RFC 9530 section 2: the single sha-512 example');
-  const both = httpsig.contentDigest(helloLf, ['sha-256', 'sha-512']);
+  const both = stsCrypto.contentDigest(helloLf, ['sha-256', 'sha-512']);
   t.check(/^sha-256=:RK\/0[^:]+:, sha-512=:YMAam[^:]+:$/.test(both),
           'several algorithms serialize as one Dictionary, in the order asked',
           both);
 
   let thrown = null;
   try {
-    httpsig.contentDigest(hello, 'md5');
+    stsCrypto.contentDigest(hello, 'md5');
   } catch (e) {
     thrown = e;
   }
-  t.check(thrown && thrown.errorCode === 'STS-GNAP-0200' &&
-          errorCodes.codeOf(thrown) === 'STS-GNAP-0200',
+  t.check(thrown && thrown.errorCode === 'STS-KEYS-0107' &&
+          errorCodes.codeOf(thrown) === 'STS-KEYS-0107',
           'a Deprecated algorithm cannot be computed, and the throw carries ' +
-          'STS-GNAP-0200',
+          'STS-KEYS-0107',
           thrown ? thrown.message : 'no throw');
 
-  const good = httpsig.verifyContentDigest('sha-256=:RK/0qy18MlBSVnWgjwz6lZEWjP/lF5HF9bvEF8FabDg=:', helloLf);
+  const good = stsCrypto.verifyContentDigest('sha-256=:RK/0qy18MlBSVnWgjwz6lZEWjP/lF5HF9bvEF8FabDg=:', helloLf);
   t.check(good.ok && good.algorithms.join() === 'sha-256', 'B.1 verifies',
           JSON.stringify(good));
   refused(t,
-          httpsig.verifyContentDigest('sha-256=:RK/0qy18MlBSVnWgjwz6lZEWjP/lF5HF9bvEF8FabDg=:',
+          stsCrypto.verifyContentDigest('sha-256=:RK/0qy18MlBSVnWgjwz6lZEWjP/lF5HF9bvEF8FabDg=:',
                                          '{"hello": "WORLD"}\n'),
-          'STS-GNAP-0204', 'a tampered body');
-  refused(t, httpsig.verifyContentDigest(undefined, helloLf), 'STS-GNAP-0201',
+          'STS-KEYS-0111', 'a tampered body');
+  refused(t, stsCrypto.verifyContentDigest(undefined, helloLf), 'STS-KEYS-0108',
           'no ' +
       'Content-Digest at all');
-  refused(t, httpsig.verifyContentDigest('sha-256=:@@@:', helloLf),
-          'STS-GNAP-0202', 'a ' +
+  refused(t, stsCrypto.verifyContentDigest('sha-256=:@@@:', helloLf),
+          'STS-KEYS-0109', 'a ' +
       'malformed Dictionary');
-  refused(t, httpsig.verifyContentDigest('sha-256=RK', helloLf),
-          'STS-GNAP-0203', 'a ' +
+  refused(t, stsCrypto.verifyContentDigest('sha-256=RK', helloLf),
+          'STS-KEYS-0110', 'a ' +
       'member that is a Token');
   refused(t,
-          httpsig.verifyContentDigest('md5=:XrY7u+Ae7tCTyyK7j1rNww==:',
-                                      helloLf), 'STS-GNAP-0205',
+          stsCrypto.verifyContentDigest('md5=:XrY7u+Ae7tCTyyK7j1rNww==:',
+                                      helloLf), 'STS-KEYS-0112',
           'only an unknown algorithm present');
   refused(t,
-          httpsig.verifyContentDigest('sha-256=:RK/0qy18MlBSVnWgjwz6lZEWjP/lF5HF9bvEF8FabDg=:', helloLf,
+          stsCrypto.verifyContentDigest('sha-256=:RK/0qy18MlBSVnWgjwz6lZEWjP/lF5HF9bvEF8FabDg=:', helloLf,
                                          { accepted: ['md5'] }),
-          'STS-GNAP-0200',
+          'STS-KEYS-0107',
           'a verifier configured with an unsupported algorithm');
-  const ignored = httpsig.verifyContentDigest(
+  const ignored = stsCrypto.verifyContentDigest(
     'md5=:XrY7u+Ae7tCTyyK7j1rNww==:, ' +
     'sha-256=:RK/0qy18MlBSVnWgjwz6lZEWjP/lF5HF9bvEF8FabDg=:', helloLf);
   t.check(ignored.ok && ignored.algorithms.join() === 'sha-256',
@@ -553,15 +560,15 @@ function contentDigests(t) {
   // refused, and with sha-512 alone it verifies. The refusal is the property.
   const section2 = 'sha-256=:d435Qo+nKZ+gLcUHn7GQtQ72hiBVAgqoLsZnZPiTGPk=:, ' +
     'sha-512=:YMAam51Jz/jOATT6/zvHrLVgOYTGFy1d6GJiOHTohq4yP+pgk4vf2aCsyRZOtw8MjkM7iw7yZ/WkppmM44T3qg==:';
-  refused(t, httpsig.verifyContentDigest(section2, helloLf), 'STS-GNAP-0204',
+  refused(t, stsCrypto.verifyContentDigest(section2, helloLf), 'STS-KEYS-0111',
           'RFC 9530 section 2\'s two-member example with both accepted (its ' +
           'sha-256 does not match)');
-  t.check(httpsig.verifyContentDigest(section2, helloLf,
+  t.check(stsCrypto.verifyContentDigest(section2, helloLf,
                                       { accepted: ['sha-512'] }).ok,
           'the same example with only sha-512 accepted verifies');
   refused(t,
-          httpsig.verifyContentDigest('sha-256=:RK/0qy18MlBSVnWgjwz6lZEWjP/lF5HF9bvEF8FabDg==:', helloLf),
-          'STS-GNAP-0202', 'RFC 9530 B.5\'s over-padded value is malformed ' +
+          stsCrypto.verifyContentDigest('sha-256=:RK/0qy18MlBSVnWgjwz6lZEWjP/lF5HF9bvEF8FabDg==:', helloLf),
+          'STS-KEYS-0109', 'RFC 9530 B.5\'s over-padded value is malformed ' +
                            'base64');
   log.debug("Leaving contentDigests().");
 }
@@ -571,7 +578,7 @@ function contentDigests(t) {
 // ===========================================================================
 function value(message, component, options) {
   log.debug("Entering value().");
-  const result = httpsig.componentValue(message, component, options);
+  const result = stsCrypto.httpSignatureComponentValue(message, component, options);
   log.debug("Leaving value().");
   return result.ok ? result.value : result;
 }
@@ -708,63 +715,63 @@ function componentValues(t) {
   t.equal(value(testResponse(), '@status'), '200', '2.2.9: @status on a ' +
                                                    'response');
 
-  refused(t, httpsig.componentValue(post, '@status'), 'STS-GNAP-0210',
+  refused(t, stsCrypto.httpSignatureComponentValue(post, '@status'), 'STS-KEYS-0117',
           '@status ' +
       'on a request');
-  refused(t, httpsig.componentValue(testResponse(), '@method'), 'STS-GNAP-0210',
+  refused(t, stsCrypto.httpSignatureComponentValue(testResponse(), '@method'), 'STS-KEYS-0117',
           'a ' +
       'request component on a response');
-  refused(t, httpsig.componentValue(post, '@nonsense'), 'STS-GNAP-0209', 'an ' +
+  refused(t, stsCrypto.httpSignatureComponentValue(post, '@nonsense'), 'STS-KEYS-0116', 'an ' +
       'unknown derived component');
-  refused(t, httpsig.componentValue(post, '"@method";req'), 'STS-GNAP-0208',
+  refused(t, stsCrypto.httpSignatureComponentValue(post, '"@method";req'), 'STS-KEYS-0115',
           ';req ' +
       'on a request');
-  refused(t, httpsig.componentValue(post, '"host";tr'), 'STS-GNAP-0214', ';tr');
-  refused(t, httpsig.componentValue(fields, '"example-dict";bs;sf', types),
-          'STS-GNAP-0215', ';bs ' +
+  refused(t, stsCrypto.httpSignatureComponentValue(post, '"host";tr'), 'STS-KEYS-0121', ';tr');
+  refused(t, stsCrypto.httpSignatureComponentValue(fields, '"example-dict";bs;sf', types),
+          'STS-KEYS-0122', ';bs ' +
       'with ;sf');
-  refused(t, httpsig.componentValue(post, 'x-missing'), 'STS-GNAP-0216', 'a ' +
+  refused(t, stsCrypto.httpSignatureComponentValue(post, 'x-missing'), 'STS-KEYS-0123', 'a ' +
       'covered field that is absent');
-  refused(t, httpsig.componentValue(fields, '"x-ows-header";sf'),
-          'STS-GNAP-0217', ';sf ' +
+  refused(t, stsCrypto.httpSignatureComponentValue(fields, '"x-ows-header";sf'),
+          'STS-KEYS-0124', ';sf ' +
       'on a field of unknown type');
-  refused(t, httpsig.componentValue(keyed2, '"example-dict";key="zz"', types),
-          'STS-GNAP-0218', 'a ' +
+  refused(t, stsCrypto.httpSignatureComponentValue(keyed2, '"example-dict";key="zz"', types),
+          'STS-KEYS-0125', 'a ' +
       ';key member that is absent');
   refused(t,
-          httpsig.componentValue({ method: 'GET',
+          stsCrypto.httpSignatureComponentValue({ method: 'GET',
                                    targetUri: 'https://x.example/',
                                    headers: { 'example-dict': 'a=(' } },
                                     '"example-dict";sf', types),
-          'STS-GNAP-0219', ';sf ' +
+          'STS-KEYS-0126', ';sf ' +
                                         'over a malformed value');
-  refused(t, httpsig.componentValue(post, '@signature-params'), 'STS-GNAP-0220',
+  refused(t, stsCrypto.httpSignatureComponentValue(post, '@signature-params'), 'STS-KEYS-0127',
           '@signature-params ' +
       'as a component');
   refused(t,
-          httpsig.componentValue({ method: 'GET',
+          stsCrypto.httpSignatureComponentValue({ method: 'GET',
                                    targetUri: 'https://x.example/',
                                    headers: { 'x-name': 'café' } }, 'x-name'),
-          'STS-GNAP-0221', 'a field value outside ASCII without ;bs');
-  refused(t, httpsig.componentValue(post, 'Content-Type'), 'STS-GNAP-0206',
+          'STS-KEYS-0128', 'a field value outside ASCII without ;bs');
+  refused(t, stsCrypto.httpSignatureComponentValue(post, 'Content-Type'), 'STS-KEYS-0113',
           'a ' +
       'field name that is not lowercased');
-  refused(t, httpsig.componentValue(post, '"host";foo'), 'STS-GNAP-0207', 'a ' +
+  refused(t, stsCrypto.httpSignatureComponentValue(post, '"host";foo'), 'STS-KEYS-0114', 'a ' +
       'parameter nobody defined');
-  refused(t, httpsig.componentValue(post, '"host";sf=?0'), 'STS-GNAP-0207',
+  refused(t, stsCrypto.httpSignatureComponentValue(post, '"host";sf=?0'), 'STS-KEYS-0114',
           'a ' +
       'flag parameter set to false');
   refused(t,
-          httpsig.componentValue({ method: 'GET',
+          stsCrypto.httpSignatureComponentValue({ method: 'GET',
                                    targetUri: 'https://x.example/?a=1&a=2' },
                                  '"@query-param";name="a"'),
-          'STS-GNAP-0213', 'a query parameter that occurs twice');
-  refused(t, httpsig.componentValue(qp, '"@query-param";name="nope"'),
-          'STS-GNAP-0212', 'a ' +
+          'STS-KEYS-0120', 'a query parameter that occurs twice');
+  refused(t, stsCrypto.httpSignatureComponentValue(qp, '"@query-param";name="nope"'),
+          'STS-KEYS-0119', 'a ' +
       'query parameter that is absent');
   refused(t,
-          httpsig.componentValue({ method: 'GET', targetUri: '/relative' },
-                                 '@path'), 'STS-GNAP-0211', 'a ' +
+          stsCrypto.httpSignatureComponentValue({ method: 'GET', targetUri: '/relative' },
+                                 '@path'), 'STS-KEYS-0118', 'a ' +
       'target URI that is not absolute');
   log.debug("Leaving componentValues().");
 }
@@ -805,14 +812,14 @@ const B26 = withSignature(testRequest(),
 
 function publishedBase(message, label) {
   log.debug("Entering publishedBase().");
-  const parsed = httpsig.parseSignatures(message);
+  const parsed = stsCrypto.parseHttpSignatures(message);
   if (!parsed.ok) {
     log.debug("Leaving publishedBase().");
     return parsed;
   }
   const entry = parsed.signatures.filter(function (
       s) { return s.label === label; })[0];
-  const built = httpsig.signatureBase(message, entry.components,
+  const built = stsCrypto.httpSignatureBase(message, entry.components,
                                       entry.paramList);
   log.debug("Leaving publishedBase().");
   return built.ok ? built.base : built;
@@ -888,7 +895,7 @@ function appendixB(t) {
     ['sig-b26', B26, KEYS.edPublic, 'ed25519']
   ];
   cases.forEach(function (row) {
-    const result = httpsig.verify(row[1],
+    const result = stsCrypto.verifyHttpMessage(row[1],
                                   { keyFor: keyed(row[2], row[3]),
                                     now: 1618884473, maxAgeS: 60 });
     t.check(result.ok && result.verified.length === 1 &&
@@ -897,7 +904,7 @@ function appendixB(t) {
                                               'key', JSON.stringify(result));
   });
   // The deterministic two are PRODUCED, not only checked.
-  const hmac = httpsig.sign(testRequest(), {
+  const hmac = stsCrypto.signHttpMessage(testRequest(), {
     label: 'sig-b25', components: ['date', '@authority', 'content-type'],
     params: { created: 1618884473, keyid: 'test-shared-secret' },
     key: SHARED_SECRET, algorithm: 'hmac-sha256'
@@ -908,26 +915,26 @@ function appendixB(t) {
   // answers true passes every positive vector above.
   const otherSecret = Buffer.from(SHARED_SECRET);
   otherSecret[63] ^= 0x01;
-  refused(t, httpsig.verify(B25, { keyFor: keyed(otherSecret, 'hmac-sha256') }),
-          'STS-GNAP-0246',
+  refused(t, stsCrypto.verifyHttpMessage(B25, { keyFor: keyed(otherSecret, 'hmac-sha256') }),
+          'STS-KEYS-0153',
           'B.2.5 under a secret differing in its last bit');
-  refused(t, httpsig.verify(withSignature(testRequest({ date: 'Tue, 20 Apr ' +
+  refused(t, stsCrypto.verifyHttpMessage(withSignature(testRequest({ date: 'Tue, 20 Apr ' +
       '2021 02:07:56 GMT' }),
                                           B25.headers['signature-input'],
                                           B25.headers.signature),
                             { keyFor: keyed(SHARED_SECRET, 'hmac-sha256') }),
-          'STS-GNAP-0246',
+          'STS-KEYS-0153',
           'B.2.5 with its covered Date header changed by one second');
   refused(t,
-          httpsig.verify(withSignature(testRequest(),
+          stsCrypto.verifyHttpMessage(withSignature(testRequest(),
                                        B25.headers['signature-input'],
                                        'sig-b25=:pxcQw6G3AjtMBQjwo8Xzkg==:'),
                             { keyFor: keyed(SHARED_SECRET,
-                                            'hmac-sha256') }), 'STS-GNAP-0246',
+                                            'hmac-sha256') }), 'STS-KEYS-0153',
           'B.2.5 with a truncated MAC');
   t.equal(hmac.signatureInput, B25.headers['signature-input'], 'B.2.5: ' +
       'signing reproduces the published Signature-Input');
-  const ed = httpsig.sign(testRequest(), {
+  const ed = stsCrypto.signHttpMessage(testRequest(), {
     label: 'sig-b26',
     components: ['date', '@method', '@path', '@authority', 'content-type',
                  'content-length'],
@@ -955,7 +962,7 @@ function appendixB(t) {
     '"content-length" ' +
     '"content-type");created=1618884473;keyid="test-key-rsa-pss"'
   ].join('\n'), 'section 2.5 Figure 1: the signature base');
-  t.check(httpsig.verify(fig, {
+  t.check(stsCrypto.verifyHttpMessage(fig, {
     keyFor: keyed(KEYS.pssPublic, 'rsa-pss-sha512'),
     requireComponents: ['@method', '@authority', '@path', 'content-digest',
                         'content-length', 'content-type']
@@ -982,7 +989,7 @@ function appendixB(t) {
         'proxy_sig=:S6ZzPXSdAMOPjN/6KXfXWNO/f7V6cHm7BXYUh3YD/fRad4BCaRZxP+JH+8XY1I6+8Cy+CM5g92iHgxtRPz+MjniOaYmdkDcnL9cCpXJleXsOckpURl49GwiyUpZ10KHgOEe11sx3G2gxI8S0jnxQB+Pu68U9vVcasqOWAEObtNKKZd8tSFu7LB5YAv0RAGhB8tmpv7sFnIm9y+7X5kXQfi8NMaZaA8i2ZHwpBdg7a6CMfwnnrtflzvZdXAsD3LH2TwevU+/PBPv0B6NMNk93wUs/vfJvye+YuI87HU38lZHowtznbLVdp770I6VHR6WfgS9ddzirrswsE1w5o0LV/g==:'
     }
   };
-  const proxyResult = httpsig.verify(proxied,
+  const proxyResult = stsCrypto.verifyHttpMessage(proxied,
                                      { label: 'proxy_sig', now: 1618884500,
                                        keyFor: keyed(KEYS.rsaPublic) });
   t.check(proxyResult.ok &&
@@ -990,11 +997,11 @@ function appendixB(t) {
           'section 4.3: proxy_sig verifies, the algorithm taken from its alg ' +
           'parameter', JSON.stringify(proxyResult));
   refused(t,
-          httpsig.verify(proxied,
+          stsCrypto.verifyHttpMessage(proxied,
                          { label: 'proxy_sig', now: 1618884540,
                            keyFor: keyed(KEYS.rsaPublic) }),
-          'STS-GNAP-0242', 'section 4.3: proxy_sig at its expires instant');
-  const proxySigned = httpsig.sign(proxied, {
+          'STS-KEYS-0149', 'section 4.3: proxy_sig at its expires instant');
+  const proxySigned = stsCrypto.signHttpMessage(proxied, {
     label: 'proxy_sig',
     components: ['@method', '@authority', '@path', 'content-digest',
                  'content-type', 'content-length', 'forwarded'],
@@ -1009,18 +1016,18 @@ function appendixB(t) {
           proxySigned.signature && proxySigned.signature.slice(0, 40));
   const clientOriginal = Object.assign({}, proxied,
                                        { targetUri: 'https://example.com/foo?param=Value&Pet=dog' });
-  t.check(httpsig.verify(clientOriginal,
+  t.check(stsCrypto.verifyHttpMessage(clientOriginal,
                          { label: 'sig1',
                            keyFor: keyed(KEYS.eccPublic,
                                          'ecdsa-p256-sha256') }).ok,
           'section 4.3: the client\'s sig1 verifies over the message as the ' +
           'client sent it');
   refused(t,
-          httpsig.verify(proxied,
+          stsCrypto.verifyHttpMessage(proxied,
                          { label: 'sig1',
                            keyFor: keyed(KEYS.eccPublic,
                                          'ecdsa-p256-sha256') }),
-          'STS-GNAP-0246', 'section 4.3: sig1 after the proxy changed ' +
+          'STS-KEYS-0153', 'section 4.3: sig1 after the proxy changed ' +
                            '@authority');
 
   // B.3: the TLS-terminating proxy's signature over Client-Cert.
@@ -1045,7 +1052,7 @@ function appendixB(t) {
     '"@signature-params": ("@path" "@query" "@method" "@authority" ' +
     '"client-cert");created=1618884473;keyid="test-key-ecc-p256"'
   ].join('\n'), 'B.3: the TLS-terminating proxy\'s signature base');
-  t.check(httpsig.verify(ttrp,
+  t.check(stsCrypto.verifyHttpMessage(ttrp,
                          { keyFor: keyed(KEYS.eccPublic,
                                          'ecdsa-p256-sha256') }).ok, 'B.3: ' +
       'ttrp verifies');
@@ -1073,35 +1080,37 @@ function appendixB(t) {
     '"@signature-params": ("@method" "@path" "@authority" ' +
     '"accept");created=1618884473;keyid="test-key-ed25519"'
   ].join('\n'), 'B.4: the signature base');
-  t.check(httpsig.verify(original, edKey).ok, 'B.4: the original message ' +
+  t.check(stsCrypto.verifyHttpMessage(original, edKey).ok, 'B.4: the original message ' +
                                               'verifies');
-  t.check(httpsig.verify(transform('GET',
+  t.check(stsCrypto.verifyHttpMessage(transform('GET',
     'https://example.org/demo?name1=Value1&Name2=value2&param=added',
     { host: 'example.org', date: 'Fri, 15 Jul 2022 14:24:55 GMT',
       accept: ['application/json', '*/*'],
       'accept-language': 'en-US,en;q=0.5' }), edKey).ok, 'B.4: an added ' +
           'header and query parameter do not break it');
-  t.check(httpsig.verify(transform('GET',
+  t.check(stsCrypto.verifyHttpMessage(transform('GET',
     'https://example.org/demo?name1=Value1&Name2=value2',
     { host: 'example.org', referer: 'https://developer.example.org/demo',
       accept: 'application/json, ' +
         '*/*' }), edKey).ok,
     'B.4: Date removed and Accept collapsed onto one line do not break it');
   refused(t,
-    httpsig.verify(transform('POST',
+    stsCrypto.verifyHttpMessage(transform('POST',
     'https://example.com/demo?name1=Value1&Name2=value2',
     { host: 'example.com', date: 'Fri, 15 Jul 2022 14:24:55 GMT',
       accept: ['application/json', '*/*'] }), edKey),
-    'STS-GNAP-0246', 'B.4: a changed method and authority');
+    'STS-KEYS-0153', 'B.4: a changed method and authority');
   refused(t,
-    httpsig.verify(transform('GET',
+    stsCrypto.verifyHttpMessage(transform('GET',
     'https://example.org/demo?name1=Value1&Name2=value2',
     { host: 'example.org', date: 'Fri, 15 Jul 2022 14:24:55 GMT',
       accept: ['*/*', 'application/json'] }), edKey),
-    'STS-GNAP-0246', 'B.4: the two Accept lines reordered');
+    'STS-KEYS-0153', 'B.4: the two Accept lines reordered');
 
-  // Section 2.4's response examples use ;req, which this verifier refuses.
-  refused(t, httpsig.verify({
+  // A response with a ;req component and no request beside it: the value
+  // cannot be read (section 2.4 is implemented since #178; see
+  // requestBinding() for its two examples).
+  refused(t, stsCrypto.verifyHttpMessage({
     status: 503,
     headers: {
       'content-type': 'application/json',
@@ -1109,9 +1118,9 @@ function appendixB(t) {
                          'created=1618884479;keyid="test-key-ecc-p256"',
       signature: 'reqres=:dMT/A/76ehrdBTD/2Xx8QuKV6FoyzEP/I9hdzKN8LQJLNgzU4W767HK05rx1i8meNQQgQPgQp8wq2ive3tV5Ag==:'
     }
-  }, { keyFor: keyed(KEYS.eccPublic, 'ecdsa-p256-sha256') }), 'STS-GNAP-0208',
-          'section ' +
-      '2.4: a ;req component');
+  }, { keyFor: keyed(KEYS.eccPublic, 'ecdsa-p256-sha256') }), 'STS-KEYS-0154',
+          'section 2.4: a ;req component on a response given without its ' +
+          'request');
 
   // RFC 9635 section 7.3.1's own example, a PS512 JWK named by its alg.
   const gnapKey = nodeCrypto.createPublicKey({ format: 'jwk',
@@ -1131,7 +1140,7 @@ function appendixB(t) {
       signature: 'sig1=:c2uwTa6ok3iHZsaRKl1ediKlgd5cCAYztbym68XgX8gSOgK0Bt+zLJ19oGjSAHDjJxX2gXP2iR6lh9bLMTfPzbFVn4Eh+5UlceP+0Z5mES7v0R1+eHeOqBl0YlYKaSQ11YT7n+cwPnCSdv/6+62m5zwXEEftnBeA1ECorfTuPtau/yrTYEvD9A/JqR2h9VzAE17kSlSSsDHYA6ohsFqcRJavX29duPZDfYgkZa76u7hJ23yVxoUpu2J+7VUdedN/72N3u3/z2dC8vQXbzCPTOiLru12lb6vnBZoDbUGsRR/zHPauxhj9T+218o5+tgwYXw17othJSxIIOZ9PkIgz4g==:'
     }
   };
-  const gnapResult = httpsig.verify(gnapRequest, {
+  const gnapResult = stsCrypto.verifyHttpMessage(gnapRequest, {
     keyFor: keyed(gnapKey, 'PS512'), requireTag: 'gnap', forbidAlgParam: true,
     requireComponents: ['@method', '@target-uri', 'content-digest'],
     now: 1618884480, maxAgeS: 60
@@ -1139,8 +1148,8 @@ function appendixB(t) {
   t.check(gnapResult.ok && gnapResult.verified[0].algorithm === 'PS512',
           'RFC 9635 section 7.3.1: the example request verifies under the ' +
           'JWK\'s PS512', JSON.stringify(gnapResult));
-  refused(t, httpsig.verify(gnapRequest, { keyFor: keyed(gnapKey, 'PS256') }),
-          'STS-GNAP-0246',
+  refused(t, stsCrypto.verifyHttpMessage(gnapRequest, { keyFor: keyed(gnapKey, 'PS256') }),
+          'STS-KEYS-0153',
           'the same request under PS256 (salt length and hash both wrong)');
   log.debug("Leaving appendixB().");
 }
@@ -1177,7 +1186,7 @@ function everyAlgorithm(t) {
     ['HS512', SHARED_SECRET, SHARED_SECRET, 64]
   ];
   rows.forEach(function (row) {
-    const signed = httpsig.sign(testRequest(), {
+    const signed = stsCrypto.signHttpMessage(testRequest(), {
       label: 'sig', components: ['@method', '@target-uri', 'content-digest'],
       params: { created: 1700000000, keyid: 'k', tag: 'gnap' }, key: row[1],
       algorithm: row[0]
@@ -1191,7 +1200,7 @@ function everyAlgorithm(t) {
             (/ecdsa|ES/.test(row[0]) ? ' (raw r||s, not DER)' : ''));
     const message = withSignature(testRequest(), signed.signatureInput,
                                   signed.signature);
-    const verified = httpsig.verify(message,
+    const verified = stsCrypto.verifyHttpMessage(message,
                                     { keyFor: keyed(row[2], row[0]),
                                       requireTag: 'gnap',
                                       forbidAlgParam: true });
@@ -1204,7 +1213,7 @@ function everyAlgorithm(t) {
   // a wrong salt length would agree with each other above.
   [['PS256', 'sha256', 32], ['PS384', 'sha384', 48], ['PS512', 'sha512', 64],
    ['rsa-pss-sha512', 'sha512', 64]].forEach(function (row) {
-    const signed = httpsig.sign(testRequest(),
+    const signed = stsCrypto.signHttpMessage(testRequest(),
                                 { label: 's', components: ['@method'],
       params: {},
       key: row[0] === 'rsa-pss-sha512' ? KEYS.pssPrivate :
@@ -1226,7 +1235,7 @@ function everyAlgorithm(t) {
         'other=' + other);
   });
   // And ECDSA is IEEE P1363, checked by node with the encoding named.
-  const es = httpsig.sign(testRequest(),
+  const es = stsCrypto.signHttpMessage(testRequest(),
                           { label: 's', components: ['@method'], params: {},
                             key: KEYS.eccPrivate, algorithm: 'ES256' });
   t.check(nodeCrypto.verify('sha256', Buffer.from(es.base, 'ascii'),
@@ -1238,9 +1247,9 @@ function everyAlgorithm(t) {
   const derMessage = withSignature(testRequest(), es.signatureInput,
                                    's=:' + der.toString('base64') + ':');
   refused(t,
-          httpsig.verify(derMessage,
+          stsCrypto.verifyHttpMessage(derMessage,
                          { keyFor: keyed(KEYS.eccPublic, 'ES256') }),
-          'STS-GNAP-0246',
+          'STS-KEYS-0153',
           'a DER-encoded ECDSA signature of the right base');
   log.debug("Leaving everyAlgorithm().");
 }
@@ -1252,7 +1261,7 @@ function refusals(t) {
   log.debug("Entering refusals().");
   t.log.info('=== the refusals, one at a time ===');
   const base = testRequest();
-  const good = httpsig.sign(base,
+  const good = stsCrypto.signHttpMessage(base,
                             { label: 'sig1',
     components: ['@method', '@target-uri', 'content-digest'],
     params: { created: 1700000000, keyid: 'test-key-ecc-p256',
@@ -1260,7 +1269,7 @@ function refusals(t) {
                                                      'ecdsa-p256-sha256' });
   const signed = withSignature(base, good.signatureInput, good.signature);
   const eccKey = keyed(KEYS.eccPublic, 'ecdsa-p256-sha256');
-  t.check(httpsig.verify(signed,
+  t.check(stsCrypto.verifyHttpMessage(signed,
                          { keyFor: eccKey, now: 1700000010, maxAgeS: 300,
                                    requireTag: 'gnap',
                                    requireComponents: ['@method', '@target-uri',
@@ -1271,114 +1280,114 @@ function refusals(t) {
   // Body tampering: the SIGNATURE still verifies (it covers the header), and
   // the Content-Digest check is what catches it — the two checks are separate
   // on purpose, and GNAP requires both.
-  t.check(httpsig.verify(signed, { keyFor: eccKey }).ok, 'a tampered body ' +
+  t.check(stsCrypto.verifyHttpMessage(signed, { keyFor: eccKey }).ok, 'a tampered body ' +
       'leaves the signature over the header valid');
   refused(t,
-          httpsig.verifyContentDigest(signed.headers['content-digest'],
+          stsCrypto.verifyContentDigest(signed.headers['content-digest'],
                                       '{"hello": ' +
-      '"mallory"}'), 'STS-GNAP-0204',
+      '"mallory"}'), 'STS-KEYS-0111',
           'a tampered body fails its Content-Digest');
 
   refused(t,
-          httpsig.verify(signed,
+          stsCrypto.verifyHttpMessage(signed,
                          { keyFor: eccKey,
                            requireComponents: ['authorization'] }),
-          'STS-GNAP-0243',
+          'STS-KEYS-0150',
           'a required component the signature does not cover');
   refused(t,
-          httpsig.verify(signed,
+          stsCrypto.verifyHttpMessage(signed,
                          { keyFor: eccKey,
                            requireComponents: ['"content-digest";sf'] }),
-          'STS-GNAP-0243',
+          'STS-KEYS-0150',
           'a required component that differs only by a parameter');
   refused(t,
-          httpsig.verify(signed,
+          stsCrypto.verifyHttpMessage(signed,
                          { keyFor: eccKey, now: 1700000301, maxAgeS: 300 }),
-          'STS-GNAP-0240', 'a ' +
+          'STS-KEYS-0147', 'a ' +
       'stale created');
   refused(t,
-          httpsig.verify(signed,
+          stsCrypto.verifyHttpMessage(signed,
                          { keyFor: eccKey, now: 1699999000, maxAgeS: 300 }),
-          'STS-GNAP-0241', 'a ' +
+          'STS-KEYS-0148', 'a ' +
       'created too far in the future');
   refused(t,
-          httpsig.verify(signed,
+          stsCrypto.verifyHttpMessage(signed,
                          { keyFor: eccKey, label: 'sig1',
-                           requireTag: 'gnap-rotate' }), 'STS-GNAP-0237',
+                           requireTag: 'gnap-rotate' }), 'STS-KEYS-0144',
           'the ' +
       'wrong tag on a labelled signature');
-  refused(t, httpsig.verify(signed, { keyFor: eccKey, requireTag: 'other' }),
-          'STS-GNAP-0237', 'no ' +
+  refused(t, stsCrypto.verifyHttpMessage(signed, { keyFor: eccKey, requireTag: 'other' }),
+          'STS-KEYS-0144', 'no ' +
       'signature with the required tag');
   refused(t,
-          httpsig.verify(signed,
+          stsCrypto.verifyHttpMessage(signed,
                          { keyFor: keyed(
                              nodeCrypto.generateKeyPairSync('ec',
                                                             { namedCurve: 'P-256' }).publicKey,
                                                     'ecdsa-p256-sha256') }),
-          'STS-GNAP-0246', 'the ' +
+          'STS-KEYS-0153', 'the ' +
                                                         'wrong key of the ' +
                                                         'right type');
   refused(t,
-          httpsig.verify(signed,
+          stsCrypto.verifyHttpMessage(signed,
                          { keyFor: keyed(KEYS.edPublic, 'ecdsa-p256-sha256') }),
-          'STS-GNAP-0224', 'a ' +
+          'STS-KEYS-0131', 'a ' +
       'key of the wrong type');
-  refused(t, httpsig.verify(signed, { keyFor: function () {
+  refused(t, stsCrypto.verifyHttpMessage(signed, { keyFor: function () {
     log.debug("Entering keyFor().");
     log.debug("Leaving keyFor().");
     return null;
-  } }), 'STS-GNAP-0244', 'no key for the signature');
-  refused(t, httpsig.verify(signed, { keyFor: function () {
+  } }), 'STS-KEYS-0151', 'no key for the signature');
+  refused(t, stsCrypto.verifyHttpMessage(signed, { keyFor: function () {
     log.debug("Entering keyFor().");
     log.debug("Leaving keyFor().");
     throw new Error('boom');
-  } }), 'STS-GNAP-0244', 'a key lookup that throws');
-  refused(t, httpsig.verify(signed, {}), 'STS-GNAP-0244', 'no keyFor at all');
-  refused(t, httpsig.verify(signed, { keyFor: keyed(KEYS.eccPublic) }),
-          'STS-GNAP-0226', 'no ' +
+  } }), 'STS-KEYS-0151', 'a key lookup that throws');
+  refused(t, stsCrypto.verifyHttpMessage(signed, {}), 'STS-KEYS-0151', 'no keyFor at all');
+  refused(t, stsCrypto.verifyHttpMessage(signed, { keyFor: keyed(KEYS.eccPublic) }),
+          'STS-KEYS-0133', 'no ' +
       'algorithm from the key or the parameters');
   refused(t,
-          httpsig.verify(signed,
+          stsCrypto.verifyHttpMessage(signed,
                          { keyFor: eccKey, allowedAlgorithms: ['ed25519'] }),
-          'STS-GNAP-0245', 'an ' +
+          'STS-KEYS-0152', 'an ' +
       'algorithm policy does not allow');
-  refused(t, httpsig.verify(signed, { keyFor: keyed(KEYS.eccPublic, 'ES999') }),
-          'STS-GNAP-0227', 'an ' +
+  refused(t, stsCrypto.verifyHttpMessage(signed, { keyFor: keyed(KEYS.eccPublic, 'ES999') }),
+          'STS-KEYS-0134', 'an ' +
       'unknown algorithm');
-  refused(t, httpsig.verify(signed, { keyFor: eccKey, label: 'nope' }),
-          'STS-GNAP-0236', 'a ' +
+  refused(t, stsCrypto.verifyHttpMessage(signed, { keyFor: eccKey, label: 'nope' }),
+          'STS-KEYS-0143', 'a ' +
       'label the message does not carry');
-  const expiring = httpsig.sign(base,
+  const expiring = stsCrypto.signHttpMessage(base,
                                 { label: 'e', components: ['@method'],
     params: { created: 1700000000, expires: 1700000060 },
     key: KEYS.eccPrivate, algorithm: 'ES256' });
   const expiringMessage = withSignature(base, expiring.signatureInput,
                                         expiring.signature);
-  t.check(httpsig.verify(expiringMessage,
+  t.check(stsCrypto.verifyHttpMessage(expiringMessage,
                          { keyFor: keyed(KEYS.eccPublic, 'ES256'),
                            now: 1700000059 }).ok,
           'a signature one second before its expires verifies');
   refused(t,
-          httpsig.verify(expiringMessage,
+          stsCrypto.verifyHttpMessage(expiringMessage,
                          { keyFor: keyed(KEYS.eccPublic, 'ES256'),
-                           now: 1700000060 }), 'STS-GNAP-0242',
+                           now: 1700000060 }), 'STS-KEYS-0149',
           'a signature at its expires');
   refused(t,
-          httpsig.verify(withSignature(base, 'n=("@method")', 'n=:AAAA:'),
+          stsCrypto.verifyHttpMessage(withSignature(base, 'n=("@method")', 'n=:AAAA:'),
                          { keyFor: eccKey, requireCreated: true }),
-          'STS-GNAP-0239', 'requireCreated with no created');
+          'STS-KEYS-0146', 'requireCreated with no created');
 
   // Duplicate components: on signing, and in a received Signature-Input.
   refused(t,
-          httpsig.sign(base,
+          stsCrypto.signHttpMessage(base,
                        { label: 'd', components: ['@method', '@method'],
                                   params: {}, key: KEYS.eccPrivate,
                                   algorithm:
-                                    'ES256' }), 'STS-GNAP-0223', 'signing ' +
+                                    'ES256' }), 'STS-KEYS-0130', 'signing ' +
                                       'with a component listed twice');
   refused(t,
-          httpsig.sign(base,
+          stsCrypto.signHttpMessage(base,
                        { label: 'd',
                                   components: ['"content-digest";sf;' +
                                                'key="sha-512"',
@@ -1386,182 +1395,182 @@ function refusals(t) {
                                                    'key="sha-512";sf'],
                                   params: {}, key: KEYS.eccPrivate,
                                   algorithm: 'ES256' }),
-          'STS-GNAP-0223', 'two identifiers equal but for parameter order');
-  refused(t, httpsig.verify(withSignature(base, 'sig1=("@method" ' +
+          'STS-KEYS-0130', 'two identifiers equal but for parameter order');
+  refused(t, stsCrypto.verifyHttpMessage(withSignature(base, 'sig1=("@method" ' +
                                                 '"@method");created=1700000000',
                                           good.signature),
-                            { keyFor: eccKey }), 'STS-GNAP-0223', 'a ' +
+                            { keyFor: eccKey }), 'STS-KEYS-0130', 'a ' +
                                 'received Signature-Input listing a ' +
                                 'component twice');
 
   // Label and field shapes.
   refused(t,
-          httpsig.verify(withSignature(base, good.signatureInput,
+          stsCrypto.verifyHttpMessage(withSignature(base, good.signatureInput,
                                        'other=:AAAA:'), { keyFor: eccKey }),
-          'STS-GNAP-0234', 'a label in Signature-Input and not in Signature');
-  refused(t, httpsig.verify(withSignature(base, good.signatureInput + ', ' +
+          'STS-KEYS-0141', 'a label in Signature-Input and not in Signature');
+  refused(t, stsCrypto.verifyHttpMessage(withSignature(base, good.signatureInput + ', ' +
       'sig1=()', good.signature), { keyFor: eccKey }),
-          'STS-GNAP-0232', 'a label used twice');
+          'STS-KEYS-0139', 'a label used twice');
   refused(t,
-          httpsig.verify(withSignature(base, [good.signatureInput, 'sig1=()'],
+          stsCrypto.verifyHttpMessage(withSignature(base, [good.signatureInput, 'sig1=()'],
                                        good.signature), { keyFor: eccKey }),
-          'STS-GNAP-0232', 'a label used again on a second field line');
+          'STS-KEYS-0139', 'a label used again on a second field line');
   refused(t,
-          httpsig.verify(withSignature(base, 'sig1=("@method" oops',
+          stsCrypto.verifyHttpMessage(withSignature(base, 'sig1=("@method" oops',
                                        good.signature), { keyFor: eccKey }),
-          'STS-GNAP-0231', 'a Signature-Input that is not a Dictionary');
+          'STS-KEYS-0138', 'a Signature-Input that is not a Dictionary');
   refused(t,
-          httpsig.verify(withSignature(base, 'sig1=token', good.signature),
+          stsCrypto.verifyHttpMessage(withSignature(base, 'sig1=token', good.signature),
                          { keyFor: eccKey }),
-          'STS-GNAP-0235',
+          'STS-KEYS-0142',
           'a Signature-Input member that is not an Inner List');
   refused(t,
-          httpsig.verify(withSignature(base, 'sig1=(method authority)',
+          stsCrypto.verifyHttpMessage(withSignature(base, 'sig1=(method authority)',
                                        good.signature), { keyFor: eccKey }),
-          'STS-GNAP-0235',
+          'STS-KEYS-0142',
           'component identifiers that are Tokens, not Strings');
   refused(t,
-          httpsig.verify(withSignature(base, good.signatureInput, 'sig1="abc"'),
+          stsCrypto.verifyHttpMessage(withSignature(base, good.signatureInput, 'sig1="abc"'),
                          { keyFor: eccKey }),
-          'STS-GNAP-0235', 'a Signature member that is not a Byte Sequence');
-  refused(t, httpsig.verify(base, { keyFor: eccKey }), 'STS-GNAP-0233', 'a ' +
+          'STS-KEYS-0142', 'a Signature member that is not a Byte Sequence');
+  refused(t, stsCrypto.verifyHttpMessage(base, { keyFor: eccKey }), 'STS-KEYS-0140', 'a ' +
       'message with no signature');
   refused(t,
-          httpsig.verify(withSignature(base, 'sig1=();created="1700000000"',
+          stsCrypto.verifyHttpMessage(withSignature(base, 'sig1=();created="1700000000"',
                                        'sig1=:AAAA:'), { keyFor: eccKey }),
-          'STS-GNAP-0222', 'a created parameter that is a String');
+          'STS-KEYS-0129', 'a created parameter that is a String');
   refused(t,
-          httpsig.verify(withSignature(base, 'sig1=("@method");keyid="k"',
+          stsCrypto.verifyHttpMessage(withSignature(base, 'sig1=("@method");keyid="k"',
                                        'sig1=:AAAA:'),
                          { keyFor: eccKey, maxAgeS: 60 }),
-          'STS-GNAP-0239', 'no created when the age is checked');
+          'STS-KEYS-0146', 'no created when the age is checked');
   refused(t,
-          httpsig.verify(withSignature(base,
+          stsCrypto.verifyHttpMessage(withSignature(base,
                                        'sig1=("@signature-params");created=1',
                                        'sig1=:AAAA:'), { keyFor: eccKey }),
-          'STS-GNAP-0220', '@signature-params listed as a covered component');
+          'STS-KEYS-0127', '@signature-params listed as a covered component');
 
   // alg: forbidden, conflicting, and a JWS name where only the registry may go.
-  const withAlg = httpsig.sign(base,
+  const withAlg = stsCrypto.signHttpMessage(base,
                                { label: 'a', components: ['@method'],
     params: { created: 1700000000, alg: 'ecdsa-p256-sha256' },
     key: KEYS.eccPrivate, algorithm: 'ecdsa-p256-sha256' });
   const withAlgMessage = withSignature(base, withAlg.signatureInput,
                                        withAlg.signature);
-  t.check(httpsig.verify(withAlgMessage, { keyFor: keyed(KEYS.eccPublic) }).ok,
+  t.check(stsCrypto.verifyHttpMessage(withAlgMessage, { keyFor: keyed(KEYS.eccPublic) }).ok,
           'an ' +
       'alg parameter alone names the algorithm');
   refused(t,
-          httpsig.verify(withAlgMessage,
+          stsCrypto.verifyHttpMessage(withAlgMessage,
                          { keyFor: eccKey, forbidAlgParam: true }),
-          'STS-GNAP-0238', 'an ' +
+          'STS-KEYS-0145', 'an ' +
       'alg parameter when it is forbidden');
   refused(t,
-          httpsig.verify(withAlgMessage,
+          stsCrypto.verifyHttpMessage(withAlgMessage,
                          { keyFor: keyed(KEYS.eccPublic, 'ES256') }),
-          'STS-GNAP-0228', 'an ' +
+          'STS-KEYS-0135', 'an ' +
       'alg parameter disagreeing with the key');
   refused(t,
-          httpsig.sign(base,
+          stsCrypto.signHttpMessage(base,
                        { label: 'a', components: [], params: { alg: 'ES256' },
                          key: KEYS.eccPrivate, algorithm: 'ES256' }),
-          'STS-GNAP-0228', 'signing a JWS algorithm with an alg parameter');
+          'STS-KEYS-0135', 'signing a JWS algorithm with an alg parameter');
   refused(t,
-          httpsig.sign(base,
+          stsCrypto.signHttpMessage(base,
                        { label: 'a', components: [],
                                   params: { alg: 'rsa-v1_5-sha256' },
                                   key: KEYS.eccPrivate,
                                   algorithm: 'ecdsa-p256-sha256' }),
-          'STS-GNAP-0228', 'signing ' +
+          'STS-KEYS-0135', 'signing ' +
                                       'with an alg parameter naming another ' +
                                       'algorithm');
   refused(t,
-          httpsig.verify(withSignature(base, 'a=("@method");alg="ES256"',
+          stsCrypto.verifyHttpMessage(withSignature(base, 'a=("@method");alg="ES256"',
                                        withAlg.signature),
-                            { keyFor: keyed(KEYS.eccPublic) }), 'STS-GNAP-0227',
+                            { keyFor: keyed(KEYS.eccPublic) }), 'STS-KEYS-0134',
           'a ' +
                                 'JWS name carried as the alg parameter');
 
   // Sign-side input problems.
   refused(t,
-          httpsig.sign(base,
+          stsCrypto.signHttpMessage(base,
                        { label: 'Bad Label', components: [], params: {},
                          key: SHARED_SECRET, algorithm: 'hmac-sha256' }),
-          'STS-GNAP-0225', 'a label that is not a Dictionary key');
+          'STS-KEYS-0132', 'a label that is not a Dictionary key');
   refused(t,
-          httpsig.sign(base,
+          stsCrypto.signHttpMessage(base,
                        { label: 'x', components: [], params: {},
-                         key: SHARED_SECRET }), 'STS-GNAP-0226', 'no ' +
+                         key: SHARED_SECRET }), 'STS-KEYS-0133', 'no ' +
       'algorithm named');
   refused(t,
-          httpsig.sign(base,
+          stsCrypto.signHttpMessage(base,
                        { label: 'x', components: [], params: {},
                          key: SHARED_SECRET, algorithm: 'none' }),
-          'STS-GNAP-0227', 'the JWS "none" algorithm');
+          'STS-KEYS-0134', 'the JWS "none" algorithm');
   refused(t,
-          httpsig.sign(base,
+          stsCrypto.signHttpMessage(base,
                        { label: 'x', components: [], params: {},
                          key: SHARED_SECRET.slice(0, 16),
                          algorithm: 'hmac-sha256' }),
-          'STS-GNAP-0224', 'an HMAC secret shorter than its hash');
+          'STS-KEYS-0131', 'an HMAC secret shorter than its hash');
   refused(t,
-          httpsig.sign(base,
+          stsCrypto.signHttpMessage(base,
                        { label: 'x', components: [], params: {},
                          key: KEYS.eccPublic, algorithm: 'ES256' }),
-          'STS-GNAP-0224', 'signing with a public key');
+          'STS-KEYS-0131', 'signing with a public key');
   const small = nodeCrypto.generateKeyPairSync('rsa', { modulusLength: 1024 });
   refused(t,
-          httpsig.sign(base,
+          stsCrypto.signHttpMessage(base,
                        { label: 'x', components: [], params: {},
                          key: small.privateKey, algorithm: 'RS256' }),
-          'STS-GNAP-0224', 'an RSA key under 2048 bits');
+          'STS-KEYS-0131', 'an RSA key under 2048 bits');
   refused(t,
-          httpsig.sign(base,
+          stsCrypto.signHttpMessage(base,
                        { label: 'x', components: [], params: {},
                          key: KEYS.pssPrivate, algorithm: 'rsa-v1_5-sha256' }),
-          'STS-GNAP-0224', 'an RSASSA-PSS-only key under PKCS#1 v1.5');
+          'STS-KEYS-0131', 'an RSASSA-PSS-only key under PKCS#1 v1.5');
   refused(t,
-          httpsig.sign(base,
+          stsCrypto.signHttpMessage(base,
                        { label: 'x', components: [], params: { created: 1.5 },
                          key: SHARED_SECRET, algorithm: 'hmac-sha256' }),
-          'STS-GNAP-0222', 'a created that is not an Integer');
+          'STS-KEYS-0129', 'a created that is not an Integer');
   refused(t,
-          httpsig.sign(base,
+          stsCrypto.signHttpMessage(base,
                        { label: 'x', components: [], params: { nonce: {} },
                          key: SHARED_SECRET, algorithm: 'hmac-sha256' }),
-          'STS-GNAP-0222', 'a parameter value that is not a bare item');
+          'STS-KEYS-0129', 'a parameter value that is not a bare item');
   refused(t,
-          httpsig.sign(base,
+          stsCrypto.signHttpMessage(base,
                        { label: 'x', components: [42], params: {},
                          key: SHARED_SECRET, algorithm: 'hmac-sha256' }),
-          'STS-GNAP-0206', 'a component that is not an identifier');
+          'STS-KEYS-0113', 'a component that is not an identifier');
 
   // 'all' against 'any' when one of two signatures is bad.
-  const second = httpsig.sign(base,
+  const second = stsCrypto.signHttpMessage(base,
                               { label: 'sig2', components: ['@method'],
     params: { created: 1700000000, tag: 'gnap' },
     key: KEYS.edPrivate, algorithm: 'ed25519' });
-  const two = httpsig.appendSignature(signed, second).message;
+  const two = stsCrypto.appendHttpSignature(signed, second).message;
   const onlyEcc = function (parsed) {
     log.debug("Entering onlyEcc().");
     log.debug("Leaving onlyEcc().");
     return parsed.label === 'sig1' ?
            { key: KEYS.eccPublic, algorithm: 'ecdsa-p256-sha256' } : null;
   };
-  refused(t, httpsig.verify(two, { keyFor: onlyEcc, requireTag: 'gnap' }),
-          'STS-GNAP-0244', "require " +
+  refused(t, stsCrypto.verifyHttpMessage(two, { keyFor: onlyEcc, requireTag: 'gnap' }),
+          'STS-KEYS-0151', "require " +
       "'all' (the default) with one unverifiable signature");
-  const anyResult = httpsig.verify(two,
+  const anyResult = stsCrypto.verifyHttpMessage(two,
                                    { keyFor: onlyEcc, requireTag: 'gnap',
                                      require: 'any' });
   t.check(anyResult.ok && anyResult.verified.length === 1 &&
           anyResult.verified[0].label === 'sig1',
           "require 'any' accepts the one that verifies", JSON.stringify(
               anyResult));
-  refused(t, httpsig.appendSignature(two, second), 'STS-GNAP-0230',
+  refused(t, stsCrypto.appendHttpSignature(two, second), 'STS-KEYS-0137',
           'appending ' +
       'a label already in the message');
-  refused(t, httpsig.appendSignature(base, { ok: false }), 'STS-GNAP-0230',
+  refused(t, stsCrypto.appendHttpSignature(base, { ok: false }), 'STS-KEYS-0137',
           'appending ' +
       'something that is not a signature');
   log.debug("Leaving refusals().");
@@ -1583,21 +1592,21 @@ function rotation(t) {
     headers: {
       host: 'server.example.com',
       authorization: 'GNAP 4398.34-12-asvDa.a',
-      'content-digest': httpsig.contentDigest(body, 'sha-512')
+      'content-digest': stsCrypto.contentDigest(body, 'sha-512')
     }
   };
-  const oldSig = httpsig.sign(request, {
+  const oldSig = stsCrypto.signHttpMessage(request, {
     label: 'old-key',
     components: ['@method', '@target-uri', 'content-digest', 'authorization'],
     params: { created: 1618884475, keyid: 'test-key-ecc-p256',
               tag: 'gnap' }, key: KEYS.eccPrivate,
     algorithm: 'ecdsa-p256-sha256'
   });
-  const afterOld = httpsig.appendSignature(request, oldSig);
+  const afterOld = stsCrypto.appendHttpSignature(request, oldSig);
   t.check(afterOld.ok, 'the old key\'s signature is appended');
   t.check(request.headers['signature-input'] === undefined, 'appendSignature ' +
       'returns a new message and leaves the old one alone');
-  const newSig = httpsig.sign(afterOld.message, {
+  const newSig = stsCrypto.signHttpMessage(afterOld.message, {
     label: 'new-key',
     components: ['@method', '@target-uri', 'content-digest', 'authorization',
                  { name: 'signature', params: { key: 'old-key' } },
@@ -1618,7 +1627,7 @@ function rotation(t) {
           'created=1618884475;keyid="test-key-ecc-p256";tag="gnap"',
           'the base carries "signature-input";key="old-key" in RFC 9635\'s ' +
           'own spelling');
-  const rotated = httpsig.appendSignature(afterOld.message, newSig).message;
+  const rotated = stsCrypto.appendHttpSignature(afterOld.message, newSig).message;
   t.check(/^old-key=\([^)]*\);[^,]*, new-key=\(/.test(
       rotated.headers['signature-input']) &&
           /^old-key=:[^:]+:, new-key=:[^:]+:$/.test(rotated.headers.signature),
@@ -1634,13 +1643,13 @@ function rotation(t) {
                                                algorithm: 'ecdsa-p256-sha256' };
   };
   const common = ['@method', '@target-uri', 'content-digest', 'authorization'];
-  t.check(httpsig.verify(rotated,
+  t.check(stsCrypto.verifyHttpMessage(rotated,
                          { label: 'old-key', requireTag: 'gnap', keyFor: keyFor,
                                     forbidAlgParam: true,
                                     requireComponents: common, now: 1618884490,
                                     maxAgeS: 60 }).ok,
           'the old-key signature verifies under tag gnap');
-  t.check(httpsig.verify(rotated,
+  t.check(stsCrypto.verifyHttpMessage(rotated,
                          { label: 'new-key', requireTag: 'gnap-rotate',
     keyFor: keyFor, forbidAlgParam: true,
     requireComponents: common.concat(['"signature";key="old-key"',
@@ -1648,7 +1657,7 @@ function rotation(t) {
     now: 1618884490, maxAgeS: 60 }).ok,
           'the new-key signature verifies under tag gnap-rotate, covering ' +
           'the old one');
-  const both = httpsig.verify(rotated, { keyFor: keyFor });
+  const both = stsCrypto.verifyHttpMessage(rotated, { keyFor: keyFor });
   t.check(both.ok &&
           both.verified.map(function (v) { return v.label; })
                        .join() === 'old-key,new-key',
@@ -1658,7 +1667,7 @@ function rotation(t) {
   // Replace the old signature with another VALID ECDSA signature of the same
   // base: old-key still verifies, and new-key must not, because what it signed
   // was the other bytes.
-  const resigned = httpsig.sign(request, {
+  const resigned = stsCrypto.signHttpMessage(request, {
     label: 'old-key',
     components: ['@method', '@target-uri', 'content-digest', 'authorization'],
     params: { created: 1618884475, keyid: 'test-key-ecc-p256',
@@ -1670,24 +1679,24 @@ function rotation(t) {
     signature: rotated.headers.signature.replace(/^old-key=:[^:]+:/,
                                                  resigned.signature)
   }) });
-  t.check(httpsig.verify(swapped, { label: 'old-key', keyFor: keyFor }).ok,
+  t.check(stsCrypto.verifyHttpMessage(swapped, { label: 'old-key', keyFor: keyFor }).ok,
           'a re-made old-key signature is still a valid old-key signature');
-  refused(t, httpsig.verify(swapped, { label: 'new-key', keyFor: keyFor }),
-          'STS-GNAP-0246',
+  refused(t, stsCrypto.verifyHttpMessage(swapped, { label: 'new-key', keyFor: keyFor }),
+          'STS-KEYS-0153',
           'the new-key signature no longer verifies once the old signature ' +
           'it covered is swapped');
   refused(t,
-          httpsig.verify(rotated,
+          stsCrypto.verifyHttpMessage(rotated,
                          { label: 'new-key', requireTag: 'gnap',
-                           keyFor: keyFor }), 'STS-GNAP-0237',
+                           keyFor: keyFor }), 'STS-KEYS-0144',
           'the rotation signature does not pass as an ordinary gnap signature');
   const noOld = Object.assign({}, rotated,
                               { headers: Object.assign({}, rotated.headers, {
     'signature-input': rotated.headers['signature-input'].replace(
         /^old-key=\([^)]*\)[^,]*, /, 'renamed=(), ')
   }) });
-  refused(t, httpsig.verify(noOld, { label: 'new-key', keyFor: keyFor }),
-          'STS-GNAP-0234',
+  refused(t, stsCrypto.verifyHttpMessage(noOld, { label: 'new-key', keyFor: keyFor }),
+          'STS-KEYS-0141',
           'renaming the old signature in one field only is a label mismatch');
 
   // RFC 9635's printed example: both printed old-key values verify under the
@@ -1707,13 +1716,297 @@ function rotation(t) {
     const message = Object.assign({}, printed,
                                   { headers: Object.assign({}, printed.headers,
                                                            { signature: 'old-key=:' + value + ':' }) });
-    t.check(httpsig.verify(message,
+    t.check(stsCrypto.verifyHttpMessage(message,
                            { keyFor: keyed(KEYS.eccPublic, 'ecdsa-p256-sha256'),
                              requireTag: 'gnap' }).ok,
             'RFC 9635 7.3.1.1: printed old-key value ' + (k + 1) + ' of 2 ' +
                 'verifies under test-key-ecc-p256');
   });
   log.debug("Leaving rotation().");
+}
+
+// ---------------------------------------------------------------------------
+// RFC 9421 SECTION 2.4: `;req`, A RESPONSE SIGNATURE OVER THE REQUEST IT
+// ANSWERS (#178). The two published examples are reproduced: the signature
+// bases byte for byte, and the published ECDSA signatures verified, so the
+// `;req` derivation is checked against the RFC and not against itself. Then
+// the refusals: no request given, a tampered request, `;req` on a request,
+// and `@status;req`. Then a response covering a SIGNED request's
+// `signature` and `signature-input` by `;key`, which FAPI 2.0 HTTP Signatures
+// section 5.3.2.1 requires.
+// ---------------------------------------------------------------------------
+const SECTION_2_4_RESPONSE_DIGEST = 'sha-512=:0Y6iCBzGg5rZtoXS95Ijz03mslf6KAMCloESHObfwnHJDbkkWWQz6PhhU9kxsTbARtY2PTBOzq24uJFpHsMuAg==:';
+
+function section24Response(request) {
+  log.debug("Entering section24Response().");
+  log.debug("Leaving section24Response().");
+  return {
+    status: 503,
+    headers: {
+      date: 'Tue, 20 Apr 2021 02:07:56 GMT',
+      'content-type': 'application/json',
+      'content-length': '62',
+      'content-digest': SECTION_2_4_RESPONSE_DIGEST
+    },
+    request: request
+  };
+}
+
+function requestBinding(t) {
+  log.debug("Entering requestBinding().");
+  t.log.info('=== ;req: a response signature covers the request it ' +
+             'answers (RFC 9421 section 2.4) ===');
+  const params = [['created', 1618884479], ['keyid', 'test-key-ecc-p256']];
+
+  // The first example.
+  const first = ['@status', 'content-digest', 'content-type',
+                 '"@authority";req', '"@method";req', '"@path";req',
+                 '"content-digest";req'];
+  const firstBase = stsCrypto.httpSignatureBase(
+    section24Response(testRequest()), first, params);
+  t.equal(firstBase.ok && firstBase.base, [
+    '"@status": 503',
+    '"content-digest": ' + SECTION_2_4_RESPONSE_DIGEST,
+    '"content-type": application/json',
+    '"@authority";req: example.com',
+    '"@method";req: POST',
+    '"@path";req: /foo',
+    '"content-digest";req: ' + REQUEST_DIGEST,
+    '"@signature-params": ("@status" "content-digest" "content-type" ' +
+      '"@authority";req "@method";req "@path";req "content-digest";req)' +
+      ';created=1618884479;keyid="test-key-ecc-p256"'].join('\n'),
+          'section 2.4\'s first signature base, byte for byte');
+  const firstSigned = withSignature(section24Response(testRequest()),
+    'reqres=("@status" "content-digest" "content-type" "@authority";req ' +
+    '"@method";req "@path";req "content-digest";req)' +
+    ';created=1618884479;keyid="test-key-ecc-p256"',
+    'reqres=:dMT/A/76ehrdBTD/2Xx8QuKV6FoyzEP/I9hdzKN8LQJLNgzU4W767HK05rx1' +
+    'i8meNQQgQPgQp8wq2ive3tV5Ag==:');
+  const firstVerified = stsCrypto.verifyHttpMessage(firstSigned,
+    { keyFor: keyed(KEYS.eccPublic, 'ecdsa-p256-sha256') });
+  t.check(firstVerified.ok, 'section 2.4\'s first published signature ' +
+          'verifies', JSON.stringify(firstVerified));
+
+  // The second example adds the query and two request headers.
+  const second = ['@status', 'content-digest', 'content-type',
+                  '"@authority";req', '"@method";req', '"@path";req',
+                  '"@query";req', '"content-digest";req',
+                  '"content-type";req', '"content-length";req'];
+  const secondBase = stsCrypto.httpSignatureBase(
+    section24Response(testRequest()), second, params);
+  t.equal(secondBase.ok && secondBase.base.split('\n').slice(3, 10)
+                                         .join('\n'), [
+    '"@authority";req: example.com',
+    '"@method";req: POST',
+    '"@path";req: /foo',
+    '"@query";req: ?param=Value&Pet=dog',
+    '"content-digest";req: ' + REQUEST_DIGEST,
+    '"content-type";req: application/json',
+    '"content-length";req: 18'].join('\n'),
+          'section 2.4\'s second signature base reads every ;req ' +
+          'component from the request');
+  const secondSigned = withSignature(section24Response(testRequest()),
+    'reqres=("@status" "content-digest" "content-type" "@authority";req ' +
+    '"@method";req "@path";req "@query";req "content-digest";req ' +
+    '"content-type";req "content-length";req)' +
+    ';created=1618884479;keyid="test-key-ecc-p256"',
+    'reqres=:C73J41GVKc+TYXbSobvZf0CmNcptRiWN+NY1Or0A36ISg6ymdRN6ZgR2Qfrt' +
+    'opFNzqAyv+CeWrMsNbcV2Ojsgg==:');
+  const secondVerified = stsCrypto.verifyHttpMessage(secondSigned,
+    { keyFor: keyed(KEYS.eccPublic, 'ecdsa-p256-sha256') });
+  t.check(secondVerified.ok, 'section 2.4\'s second published signature ' +
+          'verifies', JSON.stringify(secondVerified));
+
+  // The request is what the signature covers: change it and the response
+  // signature no longer verifies, although the response is untouched.
+  const tampered = Object.assign({}, firstSigned,
+    { request: testRequest() });
+  tampered.request.method = 'PUT';
+  refused(t, stsCrypto.verifyHttpMessage(tampered,
+    { keyFor: keyed(KEYS.eccPublic, 'ecdsa-p256-sha256') }), 'STS-KEYS-0153',
+          'a response verified against a different request');
+  const orphan = Object.assign({}, firstSigned);
+  delete orphan.request;
+  refused(t, stsCrypto.verifyHttpMessage(orphan,
+    { keyFor: keyed(KEYS.eccPublic, 'ecdsa-p256-sha256') }), 'STS-KEYS-0154',
+          'a ;req component with no request to read it from');
+  refused(t, stsCrypto.httpSignatureComponentValue(
+    section24Response(testRequest()), '"@status";req'), 'STS-KEYS-0117',
+          '@status;req, which reads a status from a request');
+  refused(t, stsCrypto.httpSignatureComponentValue(testRequest(),
+    '"content-digest";req'), 'STS-KEYS-0115',
+          ';req on a field of a request message');
+
+  // The same name with and without ;req is two components (section 2.4:
+  // "the same component name MAY be included with and without the req
+  // parameter in a single signature base").
+  const both = stsCrypto.httpSignatureBase(section24Response(testRequest()),
+    ['content-digest', '"content-digest";req'], []);
+  t.check(both.ok && /"content-digest": sha-512=:0Y6i/.test(both.base) &&
+          /"content-digest";req: sha-512=:WZDP/.test(both.base),
+          'content-digest and content-digest;req are two components, ' +
+          'each from its own message', JSON.stringify(both));
+
+  // A signed request, and a response covering its signature by ;key.
+  const requestSigned = stsCrypto.signHttpMessage(testRequest(), {
+    label: 'sig1', components: ['@method', '@target-uri', 'content-digest'],
+    params: { created: 1618884475, keyid: 'test-key-ed25519' },
+    key: KEYS.edPrivate, algorithm: 'ed25519' });
+  const request = stsCrypto.appendHttpSignature(testRequest(),
+                                                requestSigned).message;
+  const covering = ['@status', '"@method";req', '"@target-uri";req',
+                    '"content-digest";req',
+                    '"signature";req;key="sig1"',
+                    '"signature-input";req;key="sig1"'];
+  const responseSigned = stsCrypto.signHttpMessage(
+    section24Response(request), {
+      label: 'res', components: covering,
+      params: { created: 1618884479, tag: 'fapi-2-response' },
+      key: KEYS.eccPrivate, algorithm: 'ecdsa-p256-sha256' });
+  t.check(responseSigned.ok &&
+          responseSigned.base.indexOf('"signature";req;key="sig1": :') >= 0 &&
+          responseSigned.base.indexOf('"signature-input";req;key="sig1": ' +
+            '("@method" "@target-uri" "content-digest")') >= 0,
+          'a response signature covers the request\'s Signature and ' +
+          'Signature-Input members by ;req;key', responseSigned.base);
+  const response = stsCrypto.appendHttpSignature(section24Response(request),
+                                                 responseSigned).message;
+  const ok = stsCrypto.verifyHttpMessage(response,
+    { keyFor: keyed(KEYS.eccPublic, 'ecdsa-p256-sha256'),
+      requireTag: 'fapi-2-response', requireCreated: true,
+      requireComponents: covering });
+  t.check(ok.ok, 'the response verifies with the signed request beside it',
+          JSON.stringify(ok));
+  // A different request signature under the same label is a different
+  // request, and the response does not verify against it.
+  const resigned = stsCrypto.signHttpMessage(testRequest(), {
+    label: 'sig1', components: ['@method', '@target-uri', 'content-digest'],
+    params: { created: 1618884476, keyid: 'test-key-ed25519' },
+    key: KEYS.edPrivate, algorithm: 'ed25519' });
+  const other = Object.assign({}, response, {
+    request: stsCrypto.appendHttpSignature(testRequest(), resigned).message });
+  refused(t, stsCrypto.verifyHttpMessage(other,
+    { keyFor: keyed(KEYS.eccPublic, 'ecdsa-p256-sha256') }), 'STS-KEYS-0153',
+          'a response verified against a request signed differently');
+  log.debug("Leaving requestBinding().");
+}
+
+// ---------------------------------------------------------------------------
+// RFC 9421 SECTION 3.3.7 FOR EVERY JWS ALGORITHM THIS SERVICE SPEAKS (#178):
+// ES256K and the post-quantum and composite ones, which `crypto.js` signs and
+// verifies with the functions that do it inside a JWS. Each signs a base,
+// the signature verifies, and a changed message does not. The alg parameter
+// is refused beside each of them, as section 3.3.7 says.
+// ---------------------------------------------------------------------------
+function jwsAndPostQuantum(t) {
+  log.debug("Entering jwsAndPostQuantum().");
+  t.log.info('=== section 3.3.7: ES256K and the post-quantum and composite ' +
+             'JWS algorithms ===');
+  const pqJose = require('../common/pq_jose');
+  const k1 = nodeCrypto.generateKeyPairSync('ec', { namedCurve: 'secp256k1' });
+  const rows = [['ES256K', k1.privateKey, k1.publicKey]];
+  // SLH-DSA's "s" sets take seconds a signature; the "f" set of the
+  // smallest size stands for the family.
+  ['ML-DSA-44', 'ML-DSA-65', 'ML-DSA-87', 'SLH-DSA-SHA2-128f',
+   'ML-DSA-65-ES256', 'ML-DSA-44-Ed25519'].forEach(function (alg) {
+    if (pqJose.PQ_ALGS.indexOf(alg) < 0) {
+      return;
+    }
+    const pair = pqJose.generate(alg);
+    rows.push([alg, Buffer.from(pair.priv),
+               pqJose.akpPublicJwk(alg, pair.pub, 'pq-' + alg)]);
+  });
+  t.check(rows.length >= 5, 'the post-quantum algorithms are in the table',
+          rows.map(function (r) { return r[0]; }).join(', '));
+  rows.forEach(function (row) {
+    t.check(!!stsCrypto.HTTP_SIGNATURE_ALGORITHMS[row[0]] &&
+            stsCrypto.HTTP_SIGNATURE_ALGORITHMS[row[0]].registry === 'jws',
+            row[0] + ' is an HTTP signature algorithm by section 3.3.7');
+    const signed = stsCrypto.signHttpMessage(testRequest(), {
+      label: 'sig', components: ['@method', '@target-uri', 'content-digest'],
+      params: { created: 1700000000, keyid: 'k', tag: 'fapi-2-request' },
+      key: row[1], algorithm: row[0] });
+    if (!t.check(signed.ok, row[0] + ' signs', JSON.stringify(signed))) {
+      return;
+    }
+    const message = withSignature(testRequest(), signed.signatureInput,
+                                  signed.signature);
+    t.check(stsCrypto.verifyHttpMessage(message,
+      { keyFor: keyed(row[2], row[0]), requireTag: 'fapi-2-request' }).ok,
+            row[0] + ' verifies what it signed');
+    const changed = Object.assign({}, message, { method: 'PUT' });
+    refused(t, stsCrypto.verifyHttpMessage(changed,
+      { keyFor: keyed(row[2], row[0]) }), 'STS-KEYS-0153',
+            row[0] + ' does not verify a changed message');
+    refused(t, stsCrypto.signHttpMessage(testRequest(), {
+      label: 'sig', components: ['@method'], params: { alg: row[0] },
+      key: row[1], algorithm: row[0] }), 'STS-KEYS-0135',
+            row[0] + ' with the alg parameter (section 3.3.7)');
+  });
+  // A post-quantum public key where a private one belongs.
+  if (rows.length > 1) {
+    refused(t, stsCrypto.signHttpMessage(testRequest(), {
+      label: 'sig', components: ['@method'], params: {},
+      key: rows[1][2], algorithm: rows[1][0] }), 'STS-KEYS-0131',
+            'a post-quantum AKP public JWK offered as a signing key');
+  }
+  log.debug("Leaving jwsAndPostQuantum().");
+}
+
+// ---------------------------------------------------------------------------
+// KEYS AS JWKs (#178): a resource server holds a client's registered JWKS and
+// the realm's signer as JWKs, and section 14 reads them. A JWK whose `use`
+// says it is not for signatures is refused, as `verifyCompactJws()` refuses
+// it; an `oct` JWK is the secret; and a forgeable RSA public key is refused
+// by the same checks every RSA verification here makes.
+// ---------------------------------------------------------------------------
+function jwkKeys(t) {
+  log.debug("Entering jwkKeys().");
+  t.log.info('=== keys given as JWKs ===');
+  const publicJwk = KEYS.eccPublic.export({ format: 'jwk' });
+  const privateJwk = KEYS.eccPrivate.export({ format: 'jwk' });
+  const signed = stsCrypto.signHttpMessage(testRequest(), {
+    label: 'sig', components: ['@method', '@target-uri'],
+    params: { created: 1700000000 }, key: privateJwk, algorithm: 'ES256' });
+  t.check(signed.ok, 'a private JWK signs', JSON.stringify(signed));
+  const message = withSignature(testRequest(), signed.signatureInput,
+                                signed.signature);
+  t.check(stsCrypto.verifyHttpMessage(message,
+    { keyFor: keyed(publicJwk, 'ES256') }).ok, 'a public JWK verifies');
+  refused(t, stsCrypto.verifyHttpMessage(message,
+    { keyFor: keyed(Object.assign({ use: 'enc' }, publicJwk), 'ES256') }),
+          'STS-KEYS-0131', 'a public JWK whose use is enc');
+  const oct = { kty: 'oct', k: SHARED_SECRET.toString('base64url') };
+  const mac = stsCrypto.signHttpMessage(testRequest(), {
+    label: 'sig', components: ['@method'], params: {}, key: oct,
+    algorithm: 'hmac-sha256' });
+  t.check(mac.ok && stsCrypto.verifyHttpMessage(
+    withSignature(testRequest(), mac.signatureInput, mac.signature),
+    { keyFor: keyed(SHARED_SECRET, 'hmac-sha256') }).ok,
+          'an oct JWK is the HMAC secret');
+  // e = 1 makes every signature verify; the key is refused before it is
+  // used.
+  const rsaJwk = KEYS.rsaPublic.export({ format: 'jwk' });
+  let weak = null;
+  try {
+    weak = nodeCrypto.createPublicKey({ key: Object.assign({}, rsaJwk,
+                                        { e: 'AQ' }), format: 'jwk' });
+  } catch (e) {
+    log.debug("Caught in jwkKeys(): " + ((e && e.message) || e));
+    // This node refuses the key itself, which is the same answer.
+    weak = null;
+  }
+  if (weak) {
+    const rsaSigned = stsCrypto.signHttpMessage(testRequest(), {
+      label: 'sig', components: ['@method'], params: {},
+      key: KEYS.rsaPrivate, algorithm: 'RS256' });
+    refused(t, stsCrypto.verifyHttpMessage(
+      withSignature(testRequest(), rsaSigned.signatureInput,
+                    rsaSigned.signature),
+      { keyFor: keyed(weak, 'RS256') }), 'STS-KEYS-0131',
+            'an RSA public key with an exponent of 1');
+  }
+  log.debug("Leaving jwkKeys().");
 }
 
 function run(t) {
@@ -1725,17 +2018,22 @@ function run(t) {
   everyAlgorithm(t);
   refusals(t);
   rotation(t);
+  requestBinding(t);
+  jwsAndPostQuantum(t);
+  jwkKeys(t);
   // A FLOOR on the check count, for sts_admin_console.js's reason: a section
   // that stops being called takes its assertions with it and the run still
   // says "passed".
-  t.check(t.passed() >= 300, 'the file made at least 300 passing checks',
+  t.check(t.passed() >= 340, 'the file made at least 340 passing checks',
           'made ' + t.passed());
   log.debug("Leaving run().");
 }
 
 module.exports = {
-  name: 'gnap_httpsig',
-  describe: 'GNAP httpsig: RFC 9421 Appendix B vectors, RFC 9530 digests, ' +
-            'RFC 8941 parsing, refusals and key rotation',
+  name: 'http_signatures',
+  describe: 'RFC 9421 (common/crypto.js section 14): Appendix B and section ' +
+            '2.4 vectors, every JWS and post-quantum algorithm, JWK keys, ' +
+            'RFC 9530 digests, RFC 8941 parsing, refusals and GNAP key ' +
+            'rotation',
   run: run
 };

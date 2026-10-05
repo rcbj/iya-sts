@@ -28,14 +28,28 @@ as **digest tokens** (`gnap:<22 chars of base64url SHA-256 over the canonical
 JSON of one access right>`) — rcbj approved that shape — and **every GNAP
 endpoint validates its body against a JSON Schema and sanitises it**.
 
+## No cryptography in this directory (#178, 2026-10-05)
+
+**rcbj, 2026-10-05: "All crypto operations across all protocols and use
+cases are to be centralized in a common module."** Nothing in `gnap/` calls
+node's `crypto`. HTTP message signatures, the detached-JWS check
+(`crypto.jwsSignatureValid()`), digests (`crypto.digest()`), the realm HKDF
+(`crypto.hkdf()`), key import and export (`crypto.publicKeyFromJwk()`,
+`publicKeyOf()`, `spkiDerOf()`) and certificate parsing
+(`pki.certificateFromDer()`) are all in `common/`. A new GNAP feature that
+needs a cryptographic operation adds it to `common/crypto.js` (or `pki.js`)
+and calls it from here. The three token libraries (`macaroon`,
+`jsonld-signatures` for zcap, and the biscuit engine) still perform their
+formats' own cryptography inside the library; whether those move behind
+`crypto.js` is an open question on #453.
+
 ## The modules
 
 Route-free libraries, each require-able from an in-process test:
 
 | Module | What it is |
 |---|---|
-| `gnap_sf.ts` | RFC 8941 structured fields, written out here — the signature base is the thing both ends must build byte for byte |
-| `gnap_httpsig.ts` | RFC 9421 sign and verify, RFC 9530 Content-Digest. `tests/gnap_httpsig.js` holds it to the RFC's Appendix B vectors |
+| ~~`gnap_sf.ts`~~, ~~`gnap_httpsig.ts`~~ | **Moved out of `gnap/` by #178 (2026-10-05)**. RFC 8941 is `common/structured_fields.ts`; RFC 9421 and RFC 9530 are `common/crypto.js` section 14, shared with the FAPI 2.0 HTTP Signatures profile at the OAuth resource servers. `tests/http_signatures.js` holds them to the RFC's vectors. The codes they raised, STS-GNAP-0200 to 0246, are retired as STS-KEYS-0107 to 0153 |
 | `gnap_keys.ts` | key formats, proof method normalisation, thumbprints, the key descriptor every other module takes |
 | `gnap_proof.ts` | verifies a request's proof — httpsig, mtls, jwsd, jws, and the nested proofs of a key rotation |
 | `gnap_schemas.ts` | the six ajv 2020-12 JSON Schemas. Types, bounds, URI formats, and **no control character in any string**. No `required` or `enum`: those are the walker's, so a refusal names the RFC section |
@@ -873,7 +887,7 @@ failure patterns.
 
 | File | What it holds |
 |---|---|
-| `tests/gnap_httpsig.js` | RFC 9421 / 9530 / 8941, including the Appendix B vectors |
+| `tests/http_signatures.js` | RFC 9421 / 9530 / 8941, including the Appendix B and section 2.4 vectors (it was `tests/gnap_httpsig.js` until #178) |
 | `tests/gnap_token_formats.js` | one matrix over all five formats (the JWT two through an adapter), and attenuation for the three that attenuate; since #432 the full model carries a two-link `act` chain every format round-trips, an `act` appended to a macaroon by a holder is refused (0316), and the chain's grammar; since phase 5 a right with every kind of limit and the model's `grant` round-trip too |
 | `tests/gnap_request.js` | which layer refuses what — the schemas, control characters, the walkers — RFC 7638's thumbprint and RFC 9635's two interaction hash vectors |
 | `tests/realm_isolation.js` | the GNAP stores are per realm and purged with it, and no module-scope Map |

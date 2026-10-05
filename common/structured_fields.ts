@@ -3,22 +3,30 @@
 
 'use strict';
 //
-// File: gnap_sf.ts
+// File: structured_fields.ts
 //
 // ---------------------------------------------------------------------------
 // RFC 8941 STRUCTURED FIELD VALUES FOR HTTP, PARSED AND SERIALIZED EXACTLY AS
 // SECTION 4 WRITES THE ALGORITHMS DOWN.
 //
-// GNAP's key proofing (RFC 9635 section 7.3.1) is HTTP Message Signatures
-// (RFC 9421), and every byte of an RFC 9421 signature base that is not a raw
-// header value is a Structured Field serialization: the component identifiers
-// are sf-strings with parameters, `@signature-params` is an Inner List, the
-// Signature-Input and Signature fields are Dictionaries, `;sf` and `;key=`
-// re-serialize a field value, `;bs` wraps one in Byte Sequences, and the
-// Content-Digest field (RFC 9530) is a Dictionary of Byte Sequences. So this
-// module is not a convenience beside the signature code — it IS most of the
-// signature code, and a parser that is lenient in one place is a signature
-// base that differs from the signer's in that place.
+// HTTP Message Signatures (RFC 9421) are built out of Structured Fields: every
+// byte of a signature base that is not a raw header value is a Structured
+// Field serialization. The component identifiers are sf-strings with
+// parameters, `@signature-params` is an Inner List, the Signature-Input and
+// Signature fields are Dictionaries, `;sf` and `;key=` re-serialize a field
+// value, `;bs` wraps one in Byte Sequences, and the Content-Digest field (RFC
+// 9530) is a Dictionary of Byte Sequences. So this module is not a convenience
+// beside the signature code. It IS most of the signature code, and a parser
+// that is lenient in one place is a signature base that differs from the
+// signer's in that place.
+//
+// IT WAS `gnap/gnap_sf.ts` UNTIL #178 (2026-10-05), when the RFC 9421 engine
+// moved into `common/crypto.js` so that the OAuth resource servers could sign
+// and verify FAPI 2.0 HTTP Signatures with the same code GNAP proves keys
+// with (rcbj's crypto rule). The codec came to `common/` beside it rather
+// than INTO `crypto.js` (rcbj's decision on #178): a Structured Field is a
+// header syntax and not a cryptographic operation, and other headers use the
+// same syntax (Priority, Cache-Status, Proxy-Status, Client-Cert).
 //
 // ---------------------------------------------------------------------------
 // WHY STRICT, WHICH IS THE SPECIFICATION'S WORD AND NOT THIS FILE'S.
@@ -72,26 +80,37 @@
 // thousand, where every legal value is an exact integer.
 //
 // ---------------------------------------------------------------------------
-// IT IS A LIBRARY (rule 3). It registers no route and requires `helpers.js` for
-// the logger and nothing else in this repository, so it cannot join a cycle and
-// a test can drive it with strings. A parse failure THROWS an Error whose
-// message is a sentence naming the rule that was broken; callers catch it and
-// map it to an error code of their own, because the same malformed value is a
-// different failure in a Content-Digest check than in a Signature-Input check.
+// IT IS A LEAF LIBRARY (rule 3). It registers no route and requires nothing
+// of this service but `config`, for the log level, because `common/crypto.js`
+// requires it and `crypto.js` is a leaf that may never reach `helpers.js`
+// (rule 3r). Its logger is its own bunyan logger, as `crypto.js`'s is. A test
+// can drive it with strings. A parse failure THROWS an Error whose message is
+// a sentence naming the rule that was broken. Callers catch it and map it to
+// an error code of their own, because the same malformed value is a different
+// failure in a Content-Digest check than in a Signature-Input check.
 // ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
-// TYPESCRIPT, AS A CLASS (#50, 2026-09-16) — `common/realm_chooser.ts`'s
-// shape: `GnapSf` takes the logger through its constructor, and every helper
-// of the parser and the serializer is one of its private methods. The module
-// still exports the thirteen old names as FACADES forwarding to the instance
-// the composition root builds (#50, R2), for `gnap_httpsig.ts` and the tests,
-// which require it by those names. A process that loads this module without
-// the root builds a default instance when the module loads.
+// A UTILITY CLASS OF STATIC METHODS, NOT AN INSTANCE (#178). As
+// `gnap/gnap_sf.ts` it was a class on #50's R2 pattern, with an instance the
+// composition root built. That pattern cannot hold a module `crypto.js`
+// requires. `crypto.js` is loaded by `helpers.js` before the root calls
+// `InstanceSlot.deferToRoot()`, so the module would build its own default
+// instance at load, and the root's origin check would then refuse to start the
+// service. The codec has no dependency but its logger and holds no state, which
+// is the case the style rule gives a static utility class for
+// (`common/html.ts`'s `Html.esc()`). The thirteen names are exported bound to
+// the class, so every caller's `sf.parseItem(...)` is unchanged.
 // ---------------------------------------------------------------------------
 
-import helpers = require('../common/helpers');
-import InstanceSlot = require('../common/instance_slot');
+import bunyan = require('bunyan');
+import config = require('./config');
+
+// Its own logger, for `crypto.js`'s reason: a leaf cannot reach `helpers.js`.
+const log = bunyan.createLogger({
+  name: 'structured_fields',
+  level: config.value('global.logLevel')
+});
 
 // A parsed value, in the data model the header describes.
 type SfValue = any;
@@ -106,10 +125,6 @@ interface ParseOptions {
   onDuplicate?(key: string): void;
 }
 
-interface GnapSfDeps {
-  log: { debug(message: string): void };
-}
-
 // tchar = "!" / "#" / "$" / "%" / "&" / "'" / "*" / "+" / "-" / "." /
 //         "^" / "_" / "`" / "|" / "~" / DIGIT / ALPHA        (RFC 9110 5.6.2)
 const TCHAR_PUNCT = "!#$%&'*+-.^_`|~";
@@ -122,54 +137,39 @@ const TCHAR_PUNCT = "!#$%&'*+-.^_`|~";
  * Parameters and Dictionaries are ordered arrays of `[key, value]` pairs,
  * because order is signed. A failure throws an Error naming the rule broken.
  */
-class GnapSf {
-  /**
-   * Builds the parser and serializer around a logger.
-   *
-   * @param deps - the logger the composition root passes
-   */
-  constructor(private readonly deps: GnapSfDeps) {
-    deps.log.debug("Entering GnapSf.constructor().");
-    deps.log.debug("Leaving GnapSf.constructor().");
-  }
-
+class StructuredFields {
   // ---------------------------------------------------------------------------
   // CHARACTER CLASSES, from the ABNF of RFC 8941 section 3 and RFC 9110's
   // tchar.
   // ---------------------------------------------------------------------------
-  private isDigit(c: string): boolean {
-    const { log } = this.deps;
-    log.debug("Entering GnapSf.isDigit().");
-    log.debug("Leaving GnapSf.isDigit().");
+  private static isDigit(c: string): boolean {
+    log.debug("Entering StructuredFields.isDigit().");
+    log.debug("Leaving StructuredFields.isDigit().");
     return c >= '0' && c <= '9';
   }
 
-  private isLcalpha(c: string): boolean {
-    const { log } = this.deps;
-    log.debug("Entering GnapSf.isLcalpha().");
-    log.debug("Leaving GnapSf.isLcalpha().");
+  private static isLcalpha(c: string): boolean {
+    log.debug("Entering StructuredFields.isLcalpha().");
+    log.debug("Leaving StructuredFields.isLcalpha().");
     return c >= 'a' && c <= 'z';
   }
 
-  private isAlpha(c: string): boolean {
-    const { log } = this.deps;
-    log.debug("Entering GnapSf.isAlpha().");
-    log.debug("Leaving GnapSf.isAlpha().");
+  private static isAlpha(c: string): boolean {
+    log.debug("Entering StructuredFields.isAlpha().");
+    log.debug("Leaving StructuredFields.isAlpha().");
     return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');
   }
 
-  private isTchar(c: string): boolean {
-    const { log } = this.deps;
-    log.debug("Entering GnapSf.isTchar().");
-    log.debug("Leaving GnapSf.isTchar().");
+  private static isTchar(c: string): boolean {
+    log.debug("Entering StructuredFields.isTchar().");
+    log.debug("Leaving StructuredFields.isTchar().");
     return this.isAlpha(c) || this.isDigit(c) ||
            (c.length === 1 && TCHAR_PUNCT.indexOf(c) >= 0);
   }
 
-  private isKeyChar(c: string): boolean {
-    const { log } = this.deps;
-    log.debug("Entering GnapSf.isKeyChar().");
-    log.debug("Leaving GnapSf.isKeyChar().");
+  private static isKeyChar(c: string): boolean {
+    log.debug("Entering StructuredFields.isKeyChar().");
+    log.debug("Leaving StructuredFields.isKeyChar().");
     return this.isLcalpha(c) || this.isDigit(c) || c === '_' || c === '-' ||
            c === '.' || c === '*';
   }
@@ -179,52 +179,46 @@ class GnapSf {
   // front of `input_string`; an index over an immutable string is the same
   // algorithm without copying the remainder on every character.
   // ---------------------------------------------------------------------------
-  private cursor(text: string): Cursor {
-    const { log } = this.deps;
-    log.debug("Entering GnapSf.cursor().");
-    log.debug("Leaving GnapSf.cursor().");
+  private static cursor(text: string): Cursor {
+    log.debug("Entering StructuredFields.cursor().");
+    log.debug("Leaving StructuredFields.cursor().");
     return { s: text, i: 0 };
   }
 
-  private peek(cur: Cursor): string {
-    const { log } = this.deps;
-    log.debug("Entering GnapSf.peek().");
-    log.debug("Leaving GnapSf.peek().");
+  private static peek(cur: Cursor): string {
+    log.debug("Entering StructuredFields.peek().");
+    log.debug("Leaving StructuredFields.peek().");
     return cur.i < cur.s.length ? cur.s[cur.i] : '';
   }
 
-  private empty(cur: Cursor): boolean {
-    const { log } = this.deps;
-    log.debug("Entering GnapSf.empty().");
-    log.debug("Leaving GnapSf.empty().");
+  private static empty(cur: Cursor): boolean {
+    log.debug("Entering StructuredFields.empty().");
+    log.debug("Leaving StructuredFields.empty().");
     return cur.i >= cur.s.length;
   }
 
-  private discardSP(cur: Cursor): void {
-    const { log } = this.deps;
-    log.debug("Entering GnapSf.discardSP().");
+  private static discardSP(cur: Cursor): void {
+    log.debug("Entering StructuredFields.discardSP().");
     while (!this.empty(cur) && this.peek(cur) === ' ') {
       cur.i++;
     }
-    log.debug("Leaving GnapSf.discardSP().");
+    log.debug("Leaving StructuredFields.discardSP().");
   }
 
   // OWS = *( SP / HTAB ), RFC 9110 5.6.3. Lists and Dictionaries allow a tab
   // between members because some implementations combine field lines with one.
-  private discardOWS(cur: Cursor): void {
-    const { log } = this.deps;
-    log.debug("Entering GnapSf.discardOWS().");
+  private static discardOWS(cur: Cursor): void {
+    log.debug("Entering StructuredFields.discardOWS().");
     while (!this.empty(cur) && (this.peek(cur) === ' ' ||
                                 this.peek(cur) === '\t')) {
       cur.i++;
     }
-    log.debug("Leaving GnapSf.discardOWS().");
+    log.debug("Leaving StructuredFields.discardOWS().");
   }
 
-  private fail(sentence: string): never {
-    const { log } = this.deps;
-    log.debug("Entering GnapSf.fail().");
-    log.debug("Leaving GnapSf.fail().");
+  private static fail(sentence: string): never {
+    log.debug("Entering StructuredFields.fail().");
+    log.debug("Leaving StructuredFields.fail().");
     throw new Error('RFC 8941: ' + sentence);
   }
 
@@ -235,18 +229,17 @@ class GnapSf {
   // accepting it would put a non-ASCII byte into an RFC 9421 signature base,
   // which section 2.5 step 4 of that document forbids.
   // ---------------------------------------------------------------------------
-  private parseTop(input: unknown, fieldType: string,
+  private static parseTop(input: unknown, fieldType: string,
                    options?: ParseOptions): SfValue {
-    const { log } = this.deps;
-    log.debug("Entering GnapSf.parseTop(). " + fieldType);
+    log.debug("Entering StructuredFields.parseTop(). " + fieldType);
     if (typeof input !== 'string') {
-      log.debug("Leaving GnapSf.parseTop(). Not a string.");
+      log.debug("Leaving StructuredFields.parseTop(). Not a string.");
       this.fail('the field value to parse is not a string.');
     }
     for (let k = 0; k < input.length; k++) {
       const code = input.charCodeAt(k);
       if (code > 0x7f) {
-        log.debug("Leaving GnapSf.parseTop(). Non-ASCII.");
+        log.debug("Leaving StructuredFields.parseTop(). Non-ASCII.");
         this.fail('the field value contains a character outside ASCII at ' +
                   'offset ' + k + ' (section 4.2 step 1).');
       }
@@ -261,69 +254,66 @@ class GnapSf {
     } else if (fieldType === 'item') {
       output = this.parseItemAt(cur);
     } else {
-      log.debug("Leaving GnapSf.parseTop(). Unknown field type.");
+      log.debug("Leaving StructuredFields.parseTop(). Unknown field type.");
       this.fail('"' + fieldType +
                 '" is not a Structured Field type; it must be list, ' +
                 'dictionary or item.');
     }
     this.discardSP(cur);
     if (!this.empty(cur)) {
-      log.debug("Leaving GnapSf.parseTop(). Trailing characters.");
+      log.debug("Leaving StructuredFields.parseTop(). Trailing characters.");
       this.fail('unexpected "' + this.peek(cur) + '" at offset ' + cur.i +
                 ' after the ' + fieldType + ' ended (section 4.2 step 7).');
     }
-    log.debug("Leaving GnapSf.parseTop().");
+    log.debug("Leaving StructuredFields.parseTop().");
     return output;
   }
 
   // Section 4.2.1.
-  private parseListAt(cur: Cursor): SfValue[] {
-    const { log } = this.deps;
-    log.debug("Entering GnapSf.parseListAt().");
+  private static parseListAt(cur: Cursor): SfValue[] {
+    log.debug("Entering StructuredFields.parseListAt().");
     const members = [];
     while (!this.empty(cur)) {
       members.push(this.parseItemOrInnerListAt(cur));
       this.discardOWS(cur);
       if (this.empty(cur)) {
-        log.debug("Leaving GnapSf.parseListAt(). " + members.length +
+        log.debug("Leaving StructuredFields.parseListAt(). " + members.length +
                   " member(s).");
         return members;
       }
       if (this.peek(cur) !== ',') {
-        log.debug("Leaving GnapSf.parseListAt(). Expected a comma.");
+        log.debug("Leaving StructuredFields.parseListAt(). Expected a comma.");
         this.fail('expected "," between List members at offset ' + cur.i +
                   ', found "' + this.peek(cur) + '" (section 4.2.1 step 2.4).');
       }
       cur.i++;
       this.discardOWS(cur);
       if (this.empty(cur)) {
-        log.debug("Leaving GnapSf.parseListAt(). Trailing comma.");
+        log.debug("Leaving StructuredFields.parseListAt(). Trailing comma.");
         this.fail('the List ends with a trailing comma (section 4.2.1 step ' +
                   '2.6).');
       }
     }
-    log.debug("Leaving GnapSf.parseListAt(). Empty.");
+    log.debug("Leaving StructuredFields.parseListAt(). Empty.");
     return members;
   }
 
   // Section 4.2.1.1.
-  private parseItemOrInnerListAt(cur: Cursor): SfValue {
-    const { log } = this.deps;
-    log.debug("Entering GnapSf.parseItemOrInnerListAt().");
+  private static parseItemOrInnerListAt(cur: Cursor): SfValue {
+    log.debug("Entering StructuredFields.parseItemOrInnerListAt().");
     if (this.peek(cur) === '(') {
-      log.debug("Leaving GnapSf.parseItemOrInnerListAt().");
+      log.debug("Leaving StructuredFields.parseItemOrInnerListAt().");
       return this.parseInnerListAt(cur);
     }
-    log.debug("Leaving GnapSf.parseItemOrInnerListAt().");
+    log.debug("Leaving StructuredFields.parseItemOrInnerListAt().");
     return this.parseItemAt(cur);
   }
 
   // Section 4.2.1.2.
-  private parseInnerListAt(cur: Cursor): SfValue {
-    const { log } = this.deps;
-    log.debug("Entering GnapSf.parseInnerListAt().");
+  private static parseInnerListAt(cur: Cursor): SfValue {
+    log.debug("Entering StructuredFields.parseInnerListAt().");
     if (this.peek(cur) !== '(') {
-      log.debug("Leaving GnapSf.parseInnerListAt(). No parenthesis.");
+      log.debug("Leaving StructuredFields.parseInnerListAt(). No parenthesis.");
       this.fail('an Inner List must begin with "(" (section 4.2.1.2 step 1).');
     }
     cur.i++;
@@ -333,23 +323,25 @@ class GnapSf {
       if (this.peek(cur) === ')') {
         cur.i++;
         const params = this.parseParametersAt(cur);
-        log.debug("Leaving GnapSf.parseInnerListAt(). " + innerList.length +
+        log.debug("Leaving StructuredFields.parseInnerListAt(). " +
+                  "" + innerList.length +
                   " item(s).");
         return { type: 'innerList', value: innerList, params: params };
       }
       innerList.push(this.parseItemAt(cur));
       const next = this.peek(cur);
       if (next !== ' ' && next !== ')') {
-        log.debug("Leaving GnapSf.parseInnerListAt(). Bad separator.");
+        log.debug("Leaving StructuredFields.parseInnerListAt(). Bad " +
+                  "separator.");
         this.fail('Inner List items must be separated by a space; found "' +
                   next +
                   '" at offset ' + cur.i + ' (section 4.2.1.2 step 3.5).');
       }
     }
-    log.debug("Leaving GnapSf.parseInnerListAt(). Unterminated.");
+    log.debug("Leaving StructuredFields.parseInnerListAt(). Unterminated.");
     this.fail('the Inner List is not closed with ")" (section 4.2.1.2 step ' +
               '4).');
-    log.debug("Leaving GnapSf.parseInnerListAt().");
+    log.debug("Leaving StructuredFields.parseInnerListAt().");
     return null;
   }
 
@@ -357,9 +349,9 @@ class GnapSf {
   // value with member" in an ordered map keeps the first position. The note
   // under the algorithm says all but the last instance are ignored, and it is
   // the VALUE that is ignored, not the slot.
-  private parseDictionaryAt(cur: Cursor, options: ParseOptions): SfValue[] {
-    const { log } = this.deps;
-    log.debug("Entering GnapSf.parseDictionaryAt().");
+  private static parseDictionaryAt(cur: Cursor,
+                                   options: ParseOptions): SfValue[] {
+    log.debug("Entering StructuredFields.parseDictionaryAt().");
     const dictionary = [];
     while (!this.empty(cur)) {
       const thisKey = this.parseKeyAt(cur);
@@ -382,54 +374,54 @@ class GnapSf {
       }
       this.discardOWS(cur);
       if (this.empty(cur)) {
-        log.debug("Leaving GnapSf.parseDictionaryAt(). " + dictionary.length +
+        log.debug("Leaving StructuredFields.parseDictionaryAt(). " +
+                  "" + dictionary.length +
                   " member(s).");
         return dictionary;
       }
       if (this.peek(cur) !== ',') {
-        log.debug("Leaving GnapSf.parseDictionaryAt(). Expected a comma.");
+        log.debug("Leaving StructuredFields.parseDictionaryAt(). Expected a " +
+                  "comma.");
         this.fail('expected "," between Dictionary members at offset ' + cur.i +
                   ', found "' + this.peek(cur) + '" (section 4.2.2 step 2.8).');
       }
       cur.i++;
       this.discardOWS(cur);
       if (this.empty(cur)) {
-        log.debug("Leaving GnapSf.parseDictionaryAt(). Trailing comma.");
+        log.debug("Leaving StructuredFields.parseDictionaryAt(). Trailing " +
+                  "comma.");
         this.fail('the Dictionary ends with a trailing comma (section 4.2.2 ' +
                   'step 2.10).');
       }
     }
-    log.debug("Leaving GnapSf.parseDictionaryAt(). Empty.");
+    log.debug("Leaving StructuredFields.parseDictionaryAt(). Empty.");
     return dictionary;
   }
 
-  private indexOfKey(pairs: SfValue[], key: string): number {
-    const { log } = this.deps;
-    log.debug("Entering GnapSf.indexOfKey().");
+  private static indexOfKey(pairs: SfValue[], key: string): number {
+    log.debug("Entering StructuredFields.indexOfKey().");
     for (let k = 0; k < pairs.length; k++) {
       if (pairs[k][0] === key) {
-        log.debug("Leaving GnapSf.indexOfKey().");
+        log.debug("Leaving StructuredFields.indexOfKey().");
         return k;
       }
     }
-    log.debug("Leaving GnapSf.indexOfKey().");
+    log.debug("Leaving StructuredFields.indexOfKey().");
     return -1;
   }
 
   // Section 4.2.3.
-  private parseItemAt(cur: Cursor): SfValue {
-    const { log } = this.deps;
-    log.debug("Entering GnapSf.parseItemAt().");
+  private static parseItemAt(cur: Cursor): SfValue {
+    log.debug("Entering StructuredFields.parseItemAt().");
     const bare = this.parseBareItemAt(cur);
     bare.params = this.parseParametersAt(cur);
-    log.debug("Leaving GnapSf.parseItemAt().");
+    log.debug("Leaving StructuredFields.parseItemAt().");
     return bare;
   }
 
   // Section 4.2.3.1.
-  private parseBareItemAt(cur: Cursor): SfValue {
-    const { log } = this.deps;
-    log.debug("Entering GnapSf.parseBareItemAt().");
+  private static parseBareItemAt(cur: Cursor): SfValue {
+    log.debug("Entering StructuredFields.parseBareItemAt().");
     const c = this.peek(cur);
     let result;
     if (c === '-' || this.isDigit(c)) {
@@ -443,19 +435,18 @@ class GnapSf {
     } else if (c === '?') {
       result = { type: 'boolean', value: this.parseBooleanAt(cur) };
     } else {
-      log.debug("Leaving GnapSf.parseBareItemAt(). Unrecognised.");
+      log.debug("Leaving StructuredFields.parseBareItemAt(). Unrecognised.");
       this.fail((c === '' ? 'the value ended where an Item was expected'
                           : 'no Item type begins with "' + c + '"') +
                 ' at offset ' + cur.i + ' (section 4.2.3.1 step 6).');
     }
-    log.debug("Leaving GnapSf.parseBareItemAt(). " + result.type);
+    log.debug("Leaving StructuredFields.parseBareItemAt(). " + result.type);
     return result;
   }
 
   // Section 4.2.3.2.
-  private parseParametersAt(cur: Cursor): SfValue[] {
-    const { log } = this.deps;
-    log.debug("Entering GnapSf.parseParametersAt().");
+  private static parseParametersAt(cur: Cursor): SfValue[] {
+    log.debug("Entering StructuredFields.parseParametersAt().");
     const params = [];
     while (!this.empty(cur)) {
       if (this.peek(cur) !== ';') {
@@ -476,18 +467,17 @@ class GnapSf {
         params.push([key, value]);
       }
     }
-    log.debug("Leaving GnapSf.parseParametersAt(). " + params.length +
+    log.debug("Leaving StructuredFields.parseParametersAt(). " + params.length +
               " parameter(s).");
     return params;
   }
 
   // Section 4.2.3.3.
-  private parseKeyAt(cur: Cursor): string {
-    const { log } = this.deps;
-    log.debug("Entering GnapSf.parseKeyAt().");
+  private static parseKeyAt(cur: Cursor): string {
+    log.debug("Entering StructuredFields.parseKeyAt().");
     const first = this.peek(cur);
     if (!(this.isLcalpha(first) || first === '*')) {
-      log.debug("Leaving GnapSf.parseKeyAt(). Bad first character.");
+      log.debug("Leaving StructuredFields.parseKeyAt(). Bad first character.");
       this.fail('a key must begin with a lowercase letter or "*"; found "' +
                 first + '" at offset ' + cur.i + ' (section 4.2.3.3 step 1).');
     }
@@ -495,7 +485,7 @@ class GnapSf {
     while (!this.empty(cur) && this.isKeyChar(this.peek(cur))) {
       cur.i++;
     }
-    log.debug("Leaving GnapSf.parseKeyAt().");
+    log.debug("Leaving StructuredFields.parseKeyAt().");
     return cur.s.slice(start, cur.i);
   }
 
@@ -504,9 +494,8 @@ class GnapSf {
   // rather than being read whole and rejected afterwards — which matters only
   // for the error message, and the error message is the whole of what a caller
   // debugging a client has to go on.
-  private parseNumberAt(cur: Cursor): SfValue {
-    const { log } = this.deps;
-    log.debug("Entering GnapSf.parseNumberAt().");
+  private static parseNumberAt(cur: Cursor): SfValue {
+    log.debug("Entering StructuredFields.parseNumberAt().");
     let type = 'integer';
     let sign = 1;
     let inputNumber = '';
@@ -515,12 +504,12 @@ class GnapSf {
       sign = -1;
     }
     if (this.empty(cur)) {
-      log.debug("Leaving GnapSf.parseNumberAt(). Empty.");
+      log.debug("Leaving StructuredFields.parseNumberAt(). Empty.");
       this.fail('a "-" with no digits after it is not a number (section ' +
                 '4.2.4 step 5).');
     }
     if (!this.isDigit(this.peek(cur))) {
-      log.debug("Leaving GnapSf.parseNumberAt(). Not a digit.");
+      log.debug("Leaving StructuredFields.parseNumberAt(). Not a digit.");
       this.fail('a number must begin with a digit; found "' + this.peek(cur) +
                 '" at offset ' + cur.i + ' (section 4.2.4 step 6).');
     }
@@ -531,7 +520,8 @@ class GnapSf {
         cur.i++;
       } else if (type === 'integer' && c === '.') {
         if (inputNumber.length > 12) {
-          log.debug("Leaving GnapSf.parseNumberAt(). Decimal integer part " +
+          log.debug("Leaving StructuredFields.parseNumberAt(). Decimal " +
+                    "integer part " +
                     "too long.");
           this.fail('a Decimal has at most 12 digits before "." (section ' +
                     '4.2.4 step 7.3.1).');
@@ -543,39 +533,40 @@ class GnapSf {
         break;
       }
       if (type === 'integer' && inputNumber.length > 15) {
-        log.debug("Leaving GnapSf.parseNumberAt(). Integer too long.");
+        log.debug("Leaving StructuredFields.parseNumberAt(). Integer too " +
+                  "long.");
         this.fail('an Integer has at most 15 digits (section 4.2.4 step 7.5).');
       }
       if (type === 'decimal' && inputNumber.length > 16) {
-        log.debug("Leaving GnapSf.parseNumberAt(). Decimal too long.");
+        log.debug("Leaving StructuredFields.parseNumberAt(). Decimal too " +
+                  "long.");
         this.fail('a Decimal has at most 16 characters (section 4.2.4 step ' +
                   '7.6).');
       }
     }
     if (type === 'integer') {
-      log.debug("Leaving GnapSf.parseNumberAt(). integer");
+      log.debug("Leaving StructuredFields.parseNumberAt(). integer");
       return { type: 'integer', value: sign * parseInt(inputNumber, 10) };
     }
     if (inputNumber[inputNumber.length - 1] === '.') {
-      log.debug("Leaving GnapSf.parseNumberAt(). Ends in a point.");
+      log.debug("Leaving StructuredFields.parseNumberAt(). Ends in a point.");
       this.fail('a Decimal may not end with "." (section 4.2.4 step 9.1).');
     }
     if (inputNumber.length - inputNumber.indexOf('.') - 1 > 3) {
-      log.debug("Leaving GnapSf.parseNumberAt(). Fraction too long.");
+      log.debug("Leaving StructuredFields.parseNumberAt(). Fraction too long.");
       this.fail('a Decimal has at most 3 digits after "." (section 4.2.4 ' +
                 'step 9.2).');
     }
-    log.debug("Leaving GnapSf.parseNumberAt(). decimal");
+    log.debug("Leaving StructuredFields.parseNumberAt(). decimal");
     return { type: 'decimal', value: sign * parseFloat(inputNumber) };
   }
 
   // Section 4.2.5.
-  private parseStringAt(cur: Cursor): string {
-    const { log } = this.deps;
-    log.debug("Entering GnapSf.parseStringAt().");
+  private static parseStringAt(cur: Cursor): string {
+    log.debug("Entering StructuredFields.parseStringAt().");
     let output = '';
     if (this.peek(cur) !== '"') {
-      log.debug("Leaving GnapSf.parseStringAt(). No quote.");
+      log.debug("Leaving StructuredFields.parseStringAt(). No quote.");
       this.fail('a String must begin with DQUOTE (section 4.2.5 step 2).');
     }
     cur.i++;
@@ -583,24 +574,26 @@ class GnapSf {
       const c = cur.s[cur.i++];
       if (c === '\\') {
         if (this.empty(cur)) {
-          log.debug("Leaving GnapSf.parseStringAt(). Dangling escape.");
+          log.debug("Leaving StructuredFields.parseStringAt(). Dangling " +
+                    "escape.");
           this.fail('a String ends with a lone backslash (section 4.2.5 step ' +
                     '4.2.1).');
         }
         const next = cur.s[cur.i++];
         if (next !== '"' && next !== '\\') {
-          log.debug("Leaving GnapSf.parseStringAt(). Bad escape.");
+          log.debug("Leaving StructuredFields.parseStringAt(). Bad escape.");
           this.fail('only DQUOTE and "\\" may be escaped in a String; found ' +
                     '"\\' + next + '" (section 4.2.5 step 4.2.3).');
         }
         output += next;
       } else if (c === '"') {
-        log.debug("Leaving GnapSf.parseStringAt().");
+        log.debug("Leaving StructuredFields.parseStringAt().");
         return output;
       } else {
         const code = c.charCodeAt(0);
         if (code <= 0x1f || code >= 0x7f) {
-          log.debug("Leaving GnapSf.parseStringAt(). Control character.");
+          log.debug("Leaving StructuredFields.parseStringAt(). Control " +
+                    "character.");
           this.fail('a String may contain only printable ASCII; found ' +
                     'character 0x' +
                     code.toString(16) + ' (section 4.2.5 step 4.4).');
@@ -608,19 +601,19 @@ class GnapSf {
         output += c;
       }
     }
-    log.debug("Leaving GnapSf.parseStringAt(). Unterminated.");
+    log.debug("Leaving StructuredFields.parseStringAt(). Unterminated.");
     this.fail('a String is not closed with DQUOTE (section 4.2.5 step 5).');
-    log.debug("Leaving GnapSf.parseStringAt().");
+    log.debug("Leaving StructuredFields.parseStringAt().");
     return null;
   }
 
   // Section 4.2.6.
-  private parseTokenAt(cur: Cursor): string {
-    const { log } = this.deps;
-    log.debug("Entering GnapSf.parseTokenAt().");
+  private static parseTokenAt(cur: Cursor): string {
+    log.debug("Entering StructuredFields.parseTokenAt().");
     const first = this.peek(cur);
     if (!(this.isAlpha(first) || first === '*')) {
-      log.debug("Leaving GnapSf.parseTokenAt(). Bad first character.");
+      log.debug("Leaving StructuredFields.parseTokenAt(). Bad first " +
+                "character.");
       this.fail('a Token must begin with a letter or "*" (section 4.2.6 step ' +
                 '1).');
     }
@@ -632,7 +625,7 @@ class GnapSf {
       }
       cur.i++;
     }
-    log.debug("Leaving GnapSf.parseTokenAt().");
+    log.debug("Leaving StructuredFields.parseTokenAt().");
     return cur.s.slice(start, cur.i);
   }
 
@@ -640,24 +633,23 @@ class GnapSf {
   // is never trusted to refuse anything: `Buffer.from(x, 'base64')` silently
   // skips characters it does not like, which is exactly the leniency step 6 and
   // the last paragraph of the section forbid.
-  private parseBytesAt(cur: Cursor): Buffer {
-    const { log } = this.deps;
-    log.debug("Entering GnapSf.parseBytesAt().");
+  private static parseBytesAt(cur: Cursor): Buffer {
+    log.debug("Entering StructuredFields.parseBytesAt().");
     if (this.peek(cur) !== ':') {
-      log.debug("Leaving GnapSf.parseBytesAt(). No colon.");
+      log.debug("Leaving StructuredFields.parseBytesAt(). No colon.");
       this.fail('a Byte Sequence must begin with ":" (section 4.2.7 step 1).');
     }
     cur.i++;
     const end = cur.s.indexOf(':', cur.i);
     if (end < 0) {
-      log.debug("Leaving GnapSf.parseBytesAt(). Unterminated.");
+      log.debug("Leaving StructuredFields.parseBytesAt(). Unterminated.");
       this.fail('a Byte Sequence is not closed with ":" (section 4.2.7 step ' +
                 '3).');
     }
     const b64 = cur.s.slice(cur.i, end);
     cur.i = end + 1;
     const decoded = this.decodeBase64Strict(b64);
-    log.debug("Leaving GnapSf.parseBytesAt(). " + decoded.length +
+    log.debug("Leaving StructuredFields.parseBytesAt(). " + decoded.length +
               " octet(s).");
     return decoded;
   }
@@ -666,11 +658,10 @@ class GnapSf {
   // 4.2.7 asks for (missing padding, non-zero pad bits) and none it does not.
   // Padding, where present, must be the padding that belongs: one or two `=` at
   // the end, and the whole a multiple of four.
-  private decodeBase64Strict(b64: string): Buffer {
-    const { log } = this.deps;
-    log.debug("Entering GnapSf.decodeBase64Strict().");
+  private static decodeBase64Strict(b64: string): Buffer {
+    log.debug("Entering StructuredFields.decodeBase64Strict().");
     if (!/^[A-Za-z0-9+/=]*$/.test(b64)) {
-      log.debug("Leaving GnapSf.decodeBase64Strict(). Alphabet.");
+      log.debug("Leaving StructuredFields.decodeBase64Strict(). Alphabet.");
       this.fail('a Byte Sequence contains a character outside the base64 ' +
                 'alphabet (section 4.2.7 step 6).');
     }
@@ -678,50 +669,52 @@ class GnapSf {
     const body = firstPad < 0 ? b64 : b64.slice(0, firstPad);
     const pad = firstPad < 0 ? '' : b64.slice(firstPad);
     if (!/^={0,2}$/.test(pad)) {
-      log.debug("Leaving GnapSf.decodeBase64Strict(). Padding placement.");
+      log.debug("Leaving StructuredFields.decodeBase64Strict(). Padding " +
+                "placement.");
       this.fail('base64 padding may only be one or two "=" at the end (RFC ' +
                 '4648 section 3.2; RFC 8941 section 4.2.7 step 7).');
     }
     if (body.length % 4 === 1) {
-      log.debug("Leaving GnapSf.decodeBase64Strict(). Impossible length.");
+      log.debug("Leaving StructuredFields.decodeBase64Strict(). Impossible " +
+                "length.");
       this.fail('a base64 value of ' + body.length +
                 ' characters before padding cannot be decoded (RFC 8941 ' +
                 'section 4.2.7 step 7).');
     }
     if (pad.length > 0 && b64.length % 4 !== 0) {
-      log.debug("Leaving GnapSf.decodeBase64Strict(). Wrong padding.");
+      log.debug("Leaving StructuredFields.decodeBase64Strict(). Wrong " +
+                "padding.");
       this.fail('base64 padding does not complete a four-character group: "' +
                 pad + '" after ' + body.length +
                 ' characters (RFC 4648 section 3.2).');
     }
-    log.debug("Leaving GnapSf.decodeBase64Strict().");
+    log.debug("Leaving StructuredFields.decodeBase64Strict().");
     return Buffer.from(body, 'base64');
   }
 
   // Section 4.2.8.
-  private parseBooleanAt(cur: Cursor): boolean {
-    const { log } = this.deps;
-    log.debug("Entering GnapSf.parseBooleanAt().");
+  private static parseBooleanAt(cur: Cursor): boolean {
+    log.debug("Entering StructuredFields.parseBooleanAt().");
     if (this.peek(cur) !== '?') {
-      log.debug("Leaving GnapSf.parseBooleanAt(). No question mark.");
+      log.debug("Leaving StructuredFields.parseBooleanAt(). No question mark.");
       this.fail('a Boolean must begin with "?" (section 4.2.8 step 1).');
     }
     cur.i++;
     const c = this.peek(cur);
     if (c === '1') {
       cur.i++;
-      log.debug("Leaving GnapSf.parseBooleanAt(). true");
+      log.debug("Leaving StructuredFields.parseBooleanAt(). true");
       return true;
     }
     if (c === '0') {
       cur.i++;
-      log.debug("Leaving GnapSf.parseBooleanAt(). false");
+      log.debug("Leaving StructuredFields.parseBooleanAt(). false");
       return false;
     }
-    log.debug("Leaving GnapSf.parseBooleanAt(). Neither.");
+    log.debug("Leaving StructuredFields.parseBooleanAt(). Neither.");
     this.fail('a Boolean is "?1" or "?0"; found "?' + c +
               '" (section 4.2.8 step 5).');
-    log.debug("Leaving GnapSf.parseBooleanAt().");
+    log.debug("Leaving StructuredFields.parseBooleanAt().");
     return null;
   }
 
@@ -737,10 +730,9 @@ class GnapSf {
    * @returns the members, each an item or an inner list
    * @throws Error when the value is not a valid List
    */
-  parseList(input: unknown): SfValue[] {
-    const { log } = this.deps;
-    log.debug("Entering GnapSf.parseList().");
-    log.debug("Leaving GnapSf.parseList().");
+  static parseList(input: unknown): SfValue[] {
+    log.debug("Entering StructuredFields.parseList().");
+    log.debug("Leaving StructuredFields.parseList().");
     return this.parseTop(input, 'list');
   }
 
@@ -760,10 +752,9 @@ class GnapSf {
    * @returns the members, each `[key, value]`
    * @throws Error when the value is not a valid Dictionary
    */
-  parseDictionary(input: unknown, options?: ParseOptions): SfValue[] {
-    const { log } = this.deps;
-    log.debug("Entering GnapSf.parseDictionary().");
-    log.debug("Leaving GnapSf.parseDictionary().");
+  static parseDictionary(input: unknown, options?: ParseOptions): SfValue[] {
+    log.debug("Entering StructuredFields.parseDictionary().");
+    log.debug("Leaving StructuredFields.parseDictionary().");
     return this.parseTop(input, 'dictionary', options);
   }
 
@@ -774,10 +765,9 @@ class GnapSf {
    * @returns the item: a bare item with its `params`
    * @throws Error when the value is not a valid Item
    */
-  parseItem(input: unknown): SfValue {
-    const { log } = this.deps;
-    log.debug("Entering GnapSf.parseItem().");
-    log.debug("Leaving GnapSf.parseItem().");
+  static parseItem(input: unknown): SfValue {
+    log.debug("Entering StructuredFields.parseItem().");
+    log.debug("Leaving StructuredFields.parseItem().");
     return this.parseTop(input, 'item');
   }
 
@@ -796,11 +786,10 @@ class GnapSf {
    * @returns the serialization
    * @throws Error when the value cannot be serialized
    */
-  serializeList(list: SfValue[]): string {
-    const { log } = this.deps;
-    log.debug("Entering GnapSf.serializeList().");
+  static serializeList(list: SfValue[]): string {
+    log.debug("Entering StructuredFields.serializeList().");
     if (!Array.isArray(list)) {
-      log.debug("Leaving GnapSf.serializeList(). Not an array.");
+      log.debug("Leaving StructuredFields.serializeList(). Not an array.");
       this.fail('a List to serialize must be an array of members.');
     }
     const out = list.map((member) => {
@@ -808,7 +797,7 @@ class GnapSf {
         ? this.serializeInnerList(member)
         : this.serializeItem(member);
     }).join(', ');
-    log.debug("Leaving GnapSf.serializeList().");
+    log.debug("Leaving StructuredFields.serializeList().");
     return out;
   }
 
@@ -820,18 +809,18 @@ class GnapSf {
    * @returns the serialization
    * @throws Error when the value cannot be serialized
    */
-  serializeInnerList(innerList: SfValue): string {
-    const { log } = this.deps;
-    log.debug("Entering GnapSf.serializeInnerList().");
+  static serializeInnerList(innerList: SfValue): string {
+    log.debug("Entering StructuredFields.serializeInnerList().");
     if (!innerList || !Array.isArray(innerList.value)) {
-      log.debug("Leaving GnapSf.serializeInnerList(). Not an inner list.");
+      log.debug("Leaving StructuredFields.serializeInnerList(). Not an inner " +
+                "list.");
       this.fail('an Inner List to serialize must carry an array of items as ' +
                 '`value`.');
     }
     const out = '(' +
       innerList.value.map((item) => this.serializeItem(item)).join(' ') +
       ')' + this.serializeParams(innerList.params);
-    log.debug("Leaving GnapSf.serializeInnerList().");
+    log.debug("Leaving StructuredFields.serializeInnerList().");
     return out;
   }
 
@@ -845,15 +834,14 @@ class GnapSf {
    * @returns the serialization
    * @throws Error when the value cannot be serialized
    */
-  serializeParams(params: SfValue[] | null | undefined): string {
-    const { log } = this.deps;
-    log.debug("Entering GnapSf.serializeParams().");
+  static serializeParams(params: SfValue[] | null | undefined): string {
+    log.debug("Entering StructuredFields.serializeParams().");
     if (params === undefined || params === null) {
-      log.debug("Leaving GnapSf.serializeParams(). None.");
+      log.debug("Leaving StructuredFields.serializeParams(). None.");
       return '';
     }
     if (!Array.isArray(params)) {
-      log.debug("Leaving GnapSf.serializeParams(). Not an array.");
+      log.debug("Leaving StructuredFields.serializeParams(). Not an array.");
       this.fail('Parameters to serialize must be an ordered array of [key, ' +
                 'bareItem] pairs.');
     }
@@ -868,7 +856,7 @@ class GnapSf {
         out += '=' + this.serializeBareItem(value);
       }
     });
-    log.debug("Leaving GnapSf.serializeParams().");
+    log.debug("Leaving StructuredFields.serializeParams().");
     return out;
   }
 
@@ -880,27 +868,27 @@ class GnapSf {
    * @returns the serialization
    * @throws Error when the key is not a valid key
    */
-  serializeKey(key: unknown): string {
-    const { log } = this.deps;
-    log.debug("Entering GnapSf.serializeKey().");
+  static serializeKey(key: unknown): string {
+    log.debug("Entering StructuredFields.serializeKey().");
     if (typeof key !== 'string' || key.length === 0) {
-      log.debug("Leaving GnapSf.serializeKey(). Empty.");
+      log.debug("Leaving StructuredFields.serializeKey(). Empty.");
       this.fail('a key must be a non-empty string.');
     }
     if (!(this.isLcalpha(key[0]) || key[0] === '*')) {
-      log.debug("Leaving GnapSf.serializeKey(). Bad first character.");
+      log.debug("Leaving StructuredFields.serializeKey(). Bad first " +
+                "character.");
       this.fail('the key "' + key +
                 '" must begin with a lowercase letter or "*" (section ' +
                 '4.1.1.3 step 3).');
     }
     for (let k = 1; k < key.length; k++) {
       if (!this.isKeyChar(key[k])) {
-        log.debug("Leaving GnapSf.serializeKey(). Bad character.");
+        log.debug("Leaving StructuredFields.serializeKey(). Bad character.");
         this.fail('the key "' + key + '" contains "' + key[k] +
                   '", which a key may not (section 4.1.1.3 step 2).');
       }
     }
-    log.debug("Leaving GnapSf.serializeKey().");
+    log.debug("Leaving StructuredFields.serializeKey().");
     return key;
   }
 
@@ -914,11 +902,11 @@ class GnapSf {
    * @returns the serialization
    * @throws Error when the value cannot be serialized
    */
-  serializeDictionary(dictionary: SfValue[]): string {
-    const { log } = this.deps;
-    log.debug("Entering GnapSf.serializeDictionary().");
+  static serializeDictionary(dictionary: SfValue[]): string {
+    log.debug("Entering StructuredFields.serializeDictionary().");
     if (!Array.isArray(dictionary)) {
-      log.debug("Leaving GnapSf.serializeDictionary(). Not an array.");
+      log.debug("Leaving StructuredFields.serializeDictionary(). Not an " +
+                "array.");
       this.fail('a Dictionary to serialize must be an ordered array of [key, ' +
                 'member] pairs.');
     }
@@ -937,7 +925,7 @@ class GnapSf {
       }
       return text;
     }).join(', ');
-    log.debug("Leaving GnapSf.serializeDictionary().");
+    log.debug("Leaving StructuredFields.serializeDictionary().");
     return out;
   }
 
@@ -949,14 +937,13 @@ class GnapSf {
    * @returns the serialization
    * @throws Error when the value cannot be serialized
    */
-  serializeItem(item: SfValue): string {
-    const { log } = this.deps;
-    log.debug("Entering GnapSf.serializeItem().");
+  static serializeItem(item: SfValue): string {
+    log.debug("Entering StructuredFields.serializeItem().");
     if (!item || typeof item !== 'object') {
       this.fail('an Item to serialize must be an object with a type and a ' +
                 'value.');
     }
-    log.debug("Leaving GnapSf.serializeItem().");
+    log.debug("Leaving StructuredFields.serializeItem().");
     return this.serializeBareItem(item) + this.serializeParams(item.params);
   }
 
@@ -969,11 +956,10 @@ class GnapSf {
    * @returns the serialization
    * @throws Error when the value cannot be serialized
    */
-  serializeBareItem(item: SfValue): string {
-    const { log } = this.deps;
-    log.debug("Entering GnapSf.serializeBareItem().");
+  static serializeBareItem(item: SfValue): string {
+    log.debug("Entering StructuredFields.serializeBareItem().");
     if (!item || typeof item !== 'object') {
-      log.debug("Leaving GnapSf.serializeBareItem(). Not an object.");
+      log.debug("Leaving StructuredFields.serializeBareItem(). Not an object.");
       this.fail('a bare Item to serialize must be an object with a type and ' +
                 'a value.');
     }
@@ -998,24 +984,24 @@ class GnapSf {
         out = this.serializeBoolean(item.value);
         break;
       default:
-        log.debug("Leaving GnapSf.serializeBareItem(). Unknown type.");
+        log.debug("Leaving StructuredFields.serializeBareItem(). Unknown " +
+                  "type.");
         this.fail('"' + item.type +
                   '" is not a bare Item type (section 4.1.3.1 step 7).');
     }
-    log.debug("Leaving GnapSf.serializeBareItem(). " + item.type);
+    log.debug("Leaving StructuredFields.serializeBareItem(). " + item.type);
     return out;
   }
 
   // Section 4.1.4.
-  private serializeInteger(value: unknown): string {
-    const { log } = this.deps;
-    log.debug("Entering GnapSf.serializeInteger().");
+  private static serializeInteger(value: unknown): string {
+    log.debug("Entering StructuredFields.serializeInteger().");
     if (typeof value !== 'number' || !Number.isInteger(value) ||
         value < -999999999999999 || value > 999999999999999) {
       this.fail('an Integer must be a whole number of at most 15 digits; got ' +
                 String(value) + ' (section 4.1.4 step 1).');
     }
-    log.debug("Leaving GnapSf.serializeInteger().");
+    log.debug("Leaving StructuredFields.serializeInteger().");
     return (value < 0 ? '-' : '') + String(Math.abs(value));
   }
 
@@ -1024,11 +1010,10 @@ class GnapSf {
   // a double such as 0.0005 * 1000 is 0.49999999999999994 — a value whose
   // author wrote exactly one half, and for whom "half to even" was the rule
   // promised.
-  private serializeDecimal(value: unknown): string {
-    const { log } = this.deps;
-    log.debug("Entering GnapSf.serializeDecimal().");
+  private static serializeDecimal(value: unknown): string {
+    log.debug("Entering StructuredFields.serializeDecimal().");
     if (typeof value !== 'number' || !Number.isFinite(value)) {
-      log.debug("Leaving GnapSf.serializeDecimal(). Not a number.");
+      log.debug("Leaving StructuredFields.serializeDecimal(). Not a number.");
       this.fail('a Decimal must be a finite number; got ' + String(value) +
                 ' (section 4.1.5 step 1).');
     }
@@ -1044,7 +1029,7 @@ class GnapSf {
     const integerPart = Math.floor(thousandths / 1000);
     const fraction = thousandths % 1000;
     if (String(integerPart).length > 12) {
-      log.debug("Leaving GnapSf.serializeDecimal(). Too large.");
+      log.debug("Leaving StructuredFields.serializeDecimal(). Too large.");
       this.fail('a Decimal has at most 12 digits before "."; got ' +
                 String(value) + ' (section 4.1.5 step 3).');
     }
@@ -1053,16 +1038,15 @@ class GnapSf {
       fractionText = String(fraction).padStart(3, '0').replace(/0+$/, '');
     }
     const negative = value < 0 && thousandths !== 0;
-    log.debug("Leaving GnapSf.serializeDecimal().");
+    log.debug("Leaving StructuredFields.serializeDecimal().");
     return (negative ? '-' : '') + String(integerPart) + '.' + fractionText;
   }
 
   // Section 4.1.6.
-  private serializeString(value: unknown): string {
-    const { log } = this.deps;
-    log.debug("Entering GnapSf.serializeString().");
+  private static serializeString(value: unknown): string {
+    log.debug("Entering StructuredFields.serializeString().");
     if (typeof value !== 'string') {
-      log.debug("Leaving GnapSf.serializeString(). Not a string.");
+      log.debug("Leaving StructuredFields.serializeString(). Not a string.");
       this.fail('a String must be a string; got ' + typeof value +
                 ' (section 4.1.6 step 1).');
     }
@@ -1071,59 +1055,57 @@ class GnapSf {
       const c = value[k];
       const code = value.charCodeAt(k);
       if (code <= 0x1f || code >= 0x7f) {
-        log.debug("Leaving GnapSf.serializeString(). Not printable.");
+        log.debug("Leaving StructuredFields.serializeString(). Not printable.");
         this.fail('a String may contain only printable ASCII; character 0x' +
                   code.toString(16) + ' at offset ' + k +
                   ' (section 4.1.6 step 2).');
       }
       out += (c === '\\' || c === '"') ? '\\' + c : c;
     }
-    log.debug("Leaving GnapSf.serializeString().");
+    log.debug("Leaving StructuredFields.serializeString().");
     return out + '"';
   }
 
   // Section 4.1.7.
-  private serializeToken(value: unknown): string {
-    const { log } = this.deps;
-    log.debug("Entering GnapSf.serializeToken().");
+  private static serializeToken(value: unknown): string {
+    log.debug("Entering StructuredFields.serializeToken().");
     if (typeof value !== 'string' || value.length === 0 ||
         !(this.isAlpha(value[0]) || value[0] === '*')) {
-      log.debug("Leaving GnapSf.serializeToken(). Bad first character.");
+      log.debug("Leaving StructuredFields.serializeToken(). Bad first " +
+                "character.");
       this.fail('a Token must be a string beginning with a letter or "*"; ' +
                 'got ' + JSON.stringify(value) + ' (section 4.1.7 step 2).');
     }
     for (let k = 1; k < value.length; k++) {
       const c = value[k];
       if (!(this.isTchar(c) || c === ':' || c === '/')) {
-        log.debug("Leaving GnapSf.serializeToken(). Bad character.");
+        log.debug("Leaving StructuredFields.serializeToken(). Bad character.");
         this.fail('the Token ' + JSON.stringify(value) + ' contains "' + c +
                   '", which a Token may not (section 4.1.7 step 2).');
       }
     }
-    log.debug("Leaving GnapSf.serializeToken().");
+    log.debug("Leaving StructuredFields.serializeToken().");
     return value;
   }
 
   // Section 4.1.8. Padded, as the section requires; node's encoder pads.
-  private serializeBytes(value: unknown): string {
-    const { log } = this.deps;
-    log.debug("Entering GnapSf.serializeBytes().");
+  private static serializeBytes(value: unknown): string {
+    log.debug("Entering StructuredFields.serializeBytes().");
     if (!Buffer.isBuffer(value) && !(value instanceof Uint8Array)) {
       this.fail('a Byte Sequence must be a Buffer (section 4.1.8 step 1).');
     }
-    log.debug("Leaving GnapSf.serializeBytes().");
+    log.debug("Leaving StructuredFields.serializeBytes().");
     return ':' + Buffer.from(value).toString('base64') + ':';
   }
 
   // Section 4.1.9.
-  private serializeBoolean(value: unknown): string {
-    const { log } = this.deps;
-    log.debug("Entering GnapSf.serializeBoolean().");
+  private static serializeBoolean(value: unknown): string {
+    log.debug("Entering StructuredFields.serializeBoolean().");
     if (typeof value !== 'boolean') {
       this.fail('a Boolean must be true or false; got ' +
                 JSON.stringify(value) + ' (section 4.1.9 step 1).');
     }
-    log.debug("Leaving GnapSf.serializeBoolean().");
+    log.debug("Leaving StructuredFields.serializeBoolean().");
     return value ? '?1' : '?0';
   }
 
@@ -1140,15 +1122,14 @@ class GnapSf {
    * @param key - the key
    * @returns the bare item, or undefined
    */
-  param(params: SfValue, key: string): SfValue {
-    const { log } = this.deps;
-    log.debug("Entering GnapSf.param().");
+  static param(params: SfValue, key: string): SfValue {
+    log.debug("Entering StructuredFields.param().");
     if (!Array.isArray(params)) {
-      log.debug("Leaving GnapSf.param().");
+      log.debug("Leaving StructuredFields.param().");
       return undefined;
     }
     const at = this.indexOfKey(params, key);
-    log.debug("Leaving GnapSf.param().");
+    log.debug("Leaving StructuredFields.param().");
     return at < 0 ? undefined : params[at][1];
   }
 
@@ -1159,11 +1140,10 @@ class GnapSf {
    * @param key - the key
    * @returns the value, or undefined
    */
-  paramValue(params: SfValue, key: string): any {
-    const { log } = this.deps;
-    log.debug("Entering GnapSf.paramValue().");
+  static paramValue(params: SfValue, key: string): any {
+    log.debug("Entering StructuredFields.paramValue().");
     const bare = this.param(params, key);
-    log.debug("Leaving GnapSf.paramValue().");
+    log.debug("Leaving StructuredFields.paramValue().");
     return bare === undefined ? undefined : bare.value;
   }
 
@@ -1174,86 +1154,51 @@ class GnapSf {
    * @param key - the key
    * @returns the member's value, or undefined
    */
-  member(dictionary: SfValue, key: string): SfValue {
-    const { log } = this.deps;
-    log.debug("Entering GnapSf.member().");
+  static member(dictionary: SfValue, key: string): SfValue {
+    log.debug("Entering StructuredFields.member().");
     if (!Array.isArray(dictionary)) {
-      log.debug("Leaving GnapSf.member().");
+      log.debug("Leaving StructuredFields.member().");
       return undefined;
     }
     const at = this.indexOfKey(dictionary, key);
-    log.debug("Leaving GnapSf.member().");
+    log.debug("Leaving StructuredFields.member().");
     return at < 0 ? undefined : dictionary[at][1];
-  }
-
-  // What the composition root passes (#50, R2): the real modules, as the
-  // module built its own instance from before.
-  /**
-   * Returns the real logger the instance was built with before the composition
-   * root (#50, R2) passed it.
-   *
-   * @returns the default dependencies
-   */
-  static defaultDeps(): GnapSfDeps {
-    helpers.log.debug("Entering GnapSf.defaultDeps().");
-    helpers.log.debug("Leaving GnapSf.defaultDeps().");
-    return {
-      log: helpers.log
-    };
   }
 }
 
-// ---------------------------------------------------------------------------
-// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds
-// no instance of its own: `common/protocol_stack.ts` builds one and calls
-// `installInstance()`. The exports below are FACADES that forward to that
-// instance, for the JavaScript that still calls this module through
-// `require()`; a process that never runs the root gets a default instance,
-// built from `defaultDeps()` (see `common/instance_slot.ts`).
-// ---------------------------------------------------------------------------
-const slot = new InstanceSlot<GnapSf>(
-  'gnap/gnap_sf',
-  () => new GnapSf(GnapSf.defaultDeps()),
-  null,
-  helpers.log);
-
-// Standalone, build the default now, as loading this module always did.
-slot.buildNowUnlessDeferred();
-
 /**
- * RFC 8941 Structured Field Values for HTTP, parsed and serialized as section 4
- * writes the algorithms.
- *
- * A library that registers no route; the signature code of GNAP's key proofing
- * is built on it.
+ * RFC 8941 Structured Field Values for HTTP, parsed and serialized as section
+ * 4 writes the algorithms. A leaf library that registers no route; the HTTP
+ * Message Signatures of `common/crypto.js` are built on it.
  *
  * @namespace
  */
 export = {
-  GnapSf: GnapSf,
-  /**
-   * Installs the instance the composition root built (#50, R2).
-   *
-   * @param instance - the instance the facades forward to
-   */
-  installInstance: (instance: GnapSf): void => slot.install(instance),
-  /**
-   * Says where the installed instance came from: `root`, `default`, or `none`.
-   *
-   * @returns the origin label
-   */
-  instanceOrigin: (): string => slot.origin(),
-  parseList: slot.forward('parseList'),
-  parseDictionary: slot.forward('parseDictionary'),
-  parseItem: slot.forward('parseItem'),
-  serializeList: slot.forward('serializeList'),
-  serializeDictionary: slot.forward('serializeDictionary'),
-  serializeItem: slot.forward('serializeItem'),
-  serializeInnerList: slot.forward('serializeInnerList'),
-  serializeParams: slot.forward('serializeParams'),
-  serializeBareItem: slot.forward('serializeBareItem'),
-  serializeKey: slot.forward('serializeKey'),
-  param: slot.forward('param'),
-  paramValue: slot.forward('paramValue'),
-  member: slot.forward('member')
+  StructuredFields: StructuredFields,
+  parseList:
+    StructuredFields.parseList.bind(StructuredFields),
+  parseDictionary:
+    StructuredFields.parseDictionary.bind(StructuredFields),
+  parseItem:
+    StructuredFields.parseItem.bind(StructuredFields),
+  serializeList:
+    StructuredFields.serializeList.bind(StructuredFields),
+  serializeDictionary:
+    StructuredFields.serializeDictionary.bind(StructuredFields),
+  serializeItem:
+    StructuredFields.serializeItem.bind(StructuredFields),
+  serializeInnerList:
+    StructuredFields.serializeInnerList.bind(StructuredFields),
+  serializeParams:
+    StructuredFields.serializeParams.bind(StructuredFields),
+  serializeBareItem:
+    StructuredFields.serializeBareItem.bind(StructuredFields),
+  serializeKey:
+    StructuredFields.serializeKey.bind(StructuredFields),
+  param:
+    StructuredFields.param.bind(StructuredFields),
+  paramValue:
+    StructuredFields.paramValue.bind(StructuredFields),
+  member:
+    StructuredFields.member.bind(StructuredFields)
 };

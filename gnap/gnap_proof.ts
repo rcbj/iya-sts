@@ -124,9 +124,9 @@
 
 // ---------------------------------------------------------------------------
 // TYPESCRIPT, AS A CLASS (#50, 2026-09-16) — `common/realm_chooser.ts`'s
-// shape: `GnapProof` takes node's crypto, the settings reader, the logger, the
-// base-URL and clock readers, the service's crypto module, the error-code
-// table, `mtls.js`, `gnap_httpsig` and `gnap_store` through its constructor,
+// shape: `GnapProof` takes the settings reader, the logger, the base-URL and
+// clock readers, the service's crypto module, the certificate authority, the
+// error-code table, `mtls.js` and `gnap_store` through its constructor,
 // and every helper is one of its private methods. The module still exports the
 // old names as FACADES forwarding to the instance the composition root builds
 // (#50, R2), for `gnap_grants`, `gnap_rs`, `ssf/ssf_cluster.ts` and the tests,
@@ -134,7 +134,6 @@
 // the root builds a default instance when the module loads.
 // ---------------------------------------------------------------------------
 
-import nodeCrypto = require('crypto');
 import config = require('../common/config');
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
@@ -144,7 +143,8 @@ import mtls = require('../oauth-oidc/mtls');
 import applications = require('../common/applications');
 import certificateSubject = require('../common/certificate_subject');
 import revocationStatus = require('../common/revocation_status');
-import httpsig = require('./gnap_httpsig');
+import pki = require('../common/pki');
+import sf = require('../common/structured_fields');
 import store = require('./gnap_store');
 
 // A result in the one shape every GNAP library returns: `ok`, and either the
@@ -155,7 +155,6 @@ interface Result {
 }
 
 interface GnapProofDeps {
-  nodeCrypto: typeof nodeCrypto;
   config: { value(key: string): any };
   log: {
     debug(message: string): void;
@@ -169,7 +168,7 @@ interface GnapProofDeps {
     codeOf(res: unknown): string;
   };
   mtls: typeof mtls;
-  httpsig: typeof httpsig;
+  pki: { certificateFromDer(der: any): any };
   store: typeof store;
   // The trust model in force (#107): `gnapMtlsTrustFor()` only.
   applications: {
@@ -224,10 +223,10 @@ class GnapProof {
   }
 
   private sha256(bytes) {
-    const { nodeCrypto, log } = this.deps;
+    const { stsCrypto, log } = this.deps;
     log.debug("Entering GnapProof.sha256().");
     log.debug("Leaving GnapProof.sha256().");
-    return nodeCrypto.createHash('sha256').update(bytes).digest();
+    return stsCrypto.digest('sha256', bytes);
   }
 
   // The access token hash of sections 7.3.3/7.3.4: base64url SHA-256 of the
@@ -368,17 +367,22 @@ class GnapProof {
   }
 
   // ---------------------------------------------------------------------------
-  // A JWS SIGNATURE OVER AN ARBITRARY SIGNING INPUT.
+  // A JWS SIGNATURE OVER AN ARBITRARY SIGNING INPUT — `jwsd` and `jws`, whose
+  // payload is a digest of the body rather than JSON.
   //
-  // `common/crypto.js`'s `verifyCompactJws()` insists on a JSON payload, which
-  // is right for every token this service reads and wrong for a detached JWS,
-  // whose payload is a digest. So the byte check is here — for the classical
-  // families only, which is every algorithm a GNAP key can carry
-  // (`gnap_keys.ts` refuses the rest), and with node's own primitives.
+  // Until #178 this was a check of its own, on node's primitives, written when
+  // `verifyCompactJws()` was the only door into `common/crypto.js` and insisted
+  // on a JSON payload. `jwsSignatureValid()` (#202) is that check over octets
+  // the caller names, and since #178 it is the only one: rcbj's rule is that
+  // every cryptographic operation goes through `crypto.js`. The answer is the
+  // same for every algorithm a GNAP key can carry, with two differences, both
+  // of them the service-wide rules this file did not apply: an HMAC secret
+  // shorter than its hash is refused (RFC 7518 section 3.2), and an RSA key
+  // goes through the forgeable-exponent and ROCA checks.
   // ---------------------------------------------------------------------------
   /**
    * Verifies a JWS signature over an arbitrary signing input, for a detached
-   * JWS whose payload is a digest; classical algorithms only.
+   * JWS whose payload is a digest.
    *
    * @param alg - the JWS algorithm
    * @param descriptor - the key's descriptor
@@ -387,61 +391,38 @@ class GnapProof {
    * @returns true when it verifies
    */
   verifyJwsBytes(alg, descriptor, signingInput, signature) {
-    const { nodeCrypto, log, stsCrypto } = this.deps;
+    const { log, stsCrypto } = this.deps;
     log.debug("Entering GnapProof.verifyJwsBytes(). alg=" + alg);
     const spec = stsCrypto.JWS_ALGS[alg];
     if (!spec || alg === 'none') {
       log.debug("Leaving GnapProof.verifyJwsBytes(). Unknown algorithm.");
       return false;
     }
-    const data = Buffer.from(signingInput, 'ascii');
+    const key = spec.family === 'hmac' ? descriptor.secret
+                                       : descriptor.publicKey;
+    if (!key) {
+      log.debug("Leaving GnapProof.verifyJwsBytes(). No " +
+                (spec.family === 'hmac' ? "shared secret." : "public key."));
+      return false;
+    }
     try {
-      if (spec.family === 'hmac') {
-        if (!descriptor.secret) {
-          log.debug("Leaving GnapProof.verifyJwsBytes(). HMAC with no shared " +
-                    "secret.");
-          return false;
-        }
-        const mac = nodeCrypto.createHmac(spec.hash, descriptor.secret)
-                              .update(data)
-                              .digest();
-        const ok = mac.length === signature.length &&
-                   nodeCrypto.timingSafeEqual(mac, signature);
-        log.debug("Leaving GnapProof.verifyJwsBytes(). HMAC " + ok);
-        return ok;
-      }
-      if (!descriptor.publicKey) {
-        log.debug("Leaving GnapProof.verifyJwsBytes(). No public key.");
-        return false;
-      }
-      if (spec.family === 'okp') {
-        const ok = nodeCrypto.verify(null, data, descriptor.publicKey,
-                                     signature);
-        log.debug("Leaving GnapProof.verifyJwsBytes(). EdDSA " + ok);
-        return ok;
-      }
-      const options: nodeCrypto.VerifyKeyObjectInput = {
-        key: descriptor.publicKey
-      };
-      if (spec.family === 'ec') {
-        options.dsaEncoding = 'ieee-p1363';
-      }
-      if (/^PS/.test(alg)) {
-        options.padding = nodeCrypto.constants.RSA_PKCS1_PSS_PADDING;
-        options.saltLength = nodeCrypto.constants.RSA_PSS_SALTLEN_DIGEST;
-      }
-      const ok = nodeCrypto.verify(spec.hash, data, options, signature);
+      const ok = stsCrypto.jwsSignatureValid(alg, key,
+                                             Buffer.from(signingInput,
+                                                         'ascii'),
+                                             signature);
       log.debug("Leaving GnapProof.verifyJwsBytes(). " + alg + " " + ok);
       return ok;
     } catch (e) {
       log.debug("Caught in GnapProof.verifyJwsBytes(): " +
                 ((e && e.message) || e));
-      // A key that does not fit the algorithm throws inside node. That is a
-      // verification failure like any other; the message is the useful detail.
+      // A key that does not fit the algorithm, or a signature of the wrong
+      // length, throws. That is a verification failure like any other; the
+      // message is the useful detail.
       log.debug("Leaving GnapProof.verifyJwsBytes(). Threw: " + e.message);
       return false;
     }
   }
+
 
   // The algorithm a descriptor's JWS proofs must use: the JWK's alg (section
   // 7.3.3: "If the key is presented as a JWK, this MUST be equal to the alg
@@ -619,7 +600,7 @@ class GnapProof {
     return descriptor.alg;
   }
 
-  // Whether a verified signature covered a component. `gnap_httpsig.ts` reports
+  // Whether a verified signature covered a component. `crypto.verifyHttpMessage()` reports
   // covered components as their SERIALISED identifiers (RFC 9421 section 2:
   // `"signature";key="old-key"`), so the comparison is on that spelling —
   // parsed back through the structured-field parser rather than matched as
@@ -627,7 +608,6 @@ class GnapProof {
   private componentNamed(components, name, key) {
     const { log } = this.deps;
     log.debug("Entering GnapProof.componentNamed().");
-    const sf = require('./gnap_sf');
     log.debug("Leaving GnapProof.componentNamed().");
     return (components || []).some((serialised) => {
       let item;
@@ -652,7 +632,7 @@ class GnapProof {
   }
 
   private verifyHttpsig(req, descriptor, ctx) {
-    const { log, nowSec, errorCodes, httpsig, store } = this.deps;
+    const { log, nowSec, errorCodes, stsCrypto, store } = this.deps;
     log.debug("Entering GnapProof.verifyHttpsig().");
     const message = { method: ctx.method, targetUri: ctx.targetUri,
                       headers: req.headers };
@@ -660,7 +640,7 @@ class GnapProof {
       const accepted = [(descriptor.proof.params &&
                          descriptor.proof.params.contentDigestAlg) ||
                          'sha-256'];
-      const digest = httpsig.verifyContentDigest(req.headers['content-digest'],
+      const digest = stsCrypto.verifyContentDigest(req.headers['content-digest'],
                                                  ctx.raw,
                                                  { accepted: accepted });
       if (!digest.ok) {
@@ -677,7 +657,7 @@ class GnapProof {
     if (ctx.accessToken) {
       required.push('authorization');
     }
-    const result = httpsig.verify(message, {
+    const result = stsCrypto.verifyHttpMessage(message, {
       keyFor: (parsed) => {
         log.debug("Entering keyFor().");
         if (parsed.params.tag !== (ctx.tag || 'gnap')) {
@@ -742,7 +722,7 @@ class GnapProof {
   // null for the realm's own (a caller that has not named an entry).
   // ---------------------------------------------------------------------------
   private verifyMtls(req, descriptor, trust) {
-    const { nodeCrypto, log, stsCrypto, mtls, applications,
+    const { log, stsCrypto, pki, mtls, applications,
             revocationStatus } = this.deps;
     log.debug("Entering GnapProof.verifyMtls().");
     const certificate = mtls.peerCertificate(req);
@@ -791,13 +771,13 @@ class GnapProof {
     }
     if (descriptor.publicKey) {
       // A JWK proved over MTLS: the same PUBLIC KEY, compared as
-      // SubjectPublicKeyInfo.
-      const presented =
-        new nodeCrypto.X509Certificate(certificate.raw).publicKey
-          .export({ type: 'spki', format: 'der' });
-      const expected = descriptor.publicKey.export(
-          { type: 'spki', format: 'der' });
-      if (Buffer.compare(presented, expected) === 0) {
+      // SubjectPublicKeyInfo. The certificate is read by `pki.js` and both
+      // keys exported by `crypto.js` (#178): nothing here touches a key.
+      const read = pki.certificateFromDer(certificate.raw);
+      const presented = read ? stsCrypto.spkiDerOf(read.x509.publicKey)
+                             : null;
+      const expected = stsCrypto.spkiDerOf(descriptor.publicKey);
+      if (presented && Buffer.compare(presented, expected) === 0) {
         log.debug("Leaving GnapProof.verifyMtls(). JWK matches the " +
                   "certificate's key.");
         return { ok: true, thumbprint: thumbprint, trust: model };
@@ -942,7 +922,7 @@ class GnapProof {
    * @returns the outcome with its `method`, or a refusal
    */
   verifyRequest(req, body, descriptor, options) {
-    const { log, mtls, httpsig } = this.deps;
+    const { log, mtls } = this.deps;
     log.debug("Entering GnapProof.verifyRequest(). method=" +
               (descriptor && descriptor.proof &&
               descriptor.proof.method));
@@ -1288,7 +1268,6 @@ class GnapProof {
     helpers.log.debug("Entering GnapProof.defaultDeps().");
     helpers.log.debug("Leaving GnapProof.defaultDeps().");
     return {
-      nodeCrypto: nodeCrypto,
       config: config,
       log: helpers.log,
       baseUrlOf: helpers.baseUrlOf,
@@ -1296,7 +1275,7 @@ class GnapProof {
       stsCrypto: stsCrypto,
       errorCodes: errorCodes,
       mtls: mtls,
-      httpsig: httpsig,
+      pki: pki,
       store: store,
       applications: applications,
       certificateSubject: certificateSubject,

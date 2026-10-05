@@ -606,14 +606,20 @@ const STANDARDS = [
   { key: 'httpsig', name: 'HTTP Message Signatures and Digest Fields',
     specs: ['RFC 9421', 'RFC 9530', 'RFC 8941 (Structured Field Values)'],
     coverage: 'partial: request and response signing and verification with ' +
-              'every derived component and component parameter, multiple ' +
-              'signatures, and Content-Digest with sha-256 and sha-512. ' +
-              'Repr-Digest and the Want- fields are not implemented.',
-    what: 'GNAP\'s preferred key proof. THE SIGNATURE BASE IS THE THING BOTH ' +
+              'every derived component and component parameter, `;req` ' +
+              'binding a response to its request, multiple signatures, ' +
+              'every JWS algorithm this service speaks (post-quantum ' +
+              'included) beside the six registered ones, and ' +
+              'Content-Digest with sha-256 and sha-512. Repr-Digest, the ' +
+              'Want- fields and trailers are not implemented.',
+    what: 'GNAP\'s preferred key proof, and the FAPI 2.0 HTTP Signatures ' +
+          'profile at the OAuth resource servers (signed requests in, ' +
+          'signed responses out). THE SIGNATURE BASE IS THE THING BOTH ' +
           'ENDS MUST BUILD IDENTICALLY, byte for byte, from a message each ' +
           'of them parsed separately — so the structured-field serializer is ' +
-          'written out in `gnap/gnap_sf.ts` rather than borrowed, and held ' +
-          'to the RFC\'s own test vectors.' },
+          'written out in `common/structured_fields.ts` rather than ' +
+          'borrowed, and held to the RFC\'s own test vectors. Signing and ' +
+          'verifying are `common/crypto.js` section 14.' },
   { key: 'macaroon', name: 'Macaroons',
     specs: ['Macaroons (NDSS 2014)', 'libmacaroons V2 binary format'],
     coverage: 'partial: first-party caveats and attenuation. No third-party ' +
@@ -709,7 +715,6 @@ interface CryptoMetadataDeps {
   stsPki: typeof stsPki;
   // THE LAZY REQUIRES (see the header), called where the requires were.
   loadRevocationStatus: () => any;
-  loadGnapHttpsig: () => any;
   loadGnapKeys: () => any;
   loadGnapTokens: () => any;
   loadAcmeJws: () => any;
@@ -813,9 +818,6 @@ class CryptoMetadata {
       stsPki: stsPki,
       loadRevocationStatus: function () {
         return require('../common/revocation_status');
-      },
-      loadGnapHttpsig: function () {
-        return require('../gnap/gnap_httpsig');
       },
       loadGnapKeys: function () {
         return require('../gnap/gnap_keys');
@@ -938,7 +940,7 @@ class CryptoMetadata {
     const { log, config, stsCrypto, bbs2023, spiffeCa, webauthn, webauthnPolicy,
             totp, backupCodes, dpop, clientAuth, mtls, oauth2, introspectionJwt,
             applicationRegistry, tlsServer, xmldsig, scimAuth, ssfEvents,
-            ssfAuth, pki, loadRevocationStatus, loadGnapHttpsig, loadGnapKeys,
+            ssfAuth, pki, loadRevocationStatus, loadGnapKeys,
             loadGnapTokens, loadAcmeJws, loadEstCodec, loadEstKeyMaterial,
             loadScepCms } = this.deps;
     const self = this;
@@ -1272,7 +1274,6 @@ class CryptoMetadata {
           // loading them early would move nothing — but the biscuit format
           // instantiates a WebAssembly module at load, and a report nobody
           // opened should not pay it.
-          const httpsig = loadGnapHttpsig();
           const gnapKeys = loadGnapKeys();
           const gnapTokens = loadGnapTokens();
           log.debug("Leaving algorithms().");
@@ -1281,8 +1282,9 @@ class CryptoMetadata {
             ['Key proofing methods', gnapKeys.PROOF_METHODS],
             ['Key formats', gnapKeys.KEY_FORMATS.concat(['reference'])],
             ['HTTP message signature algorithms',
-             Object.keys(httpsig.ALGORITHMS)],
-            ['Content-Digest algorithms', httpsig.DIGEST_ALGORITHMS],
+             Object.keys(stsCrypto.HTTP_SIGNATURE_ALGORITHMS)],
+            ['Content-Digest algorithms',
+             stsCrypto.CONTENT_DIGEST_ALGORITHMS],
             ['jwt-encrypted content encryption, through gnap.jweEnc',
              [String(config.value('gnap.jweEnc') || 'A256GCM')]]
           ];
@@ -1392,7 +1394,11 @@ class CryptoMetadata {
                '`token-introspection+jwt`, in RS256 or the ' +
                '`introspection_signed_response_alg` the resource server ' +
                'registered — the same table and the HMAC family, never ' +
-               '`none`.',
+               '`none`. **AND A RESOURCE RESPONSE** (#178): an RFC 9421 ' +
+               'HTTP message signature tagged `fapi-2-response`, with the ' +
+               'realm key `oauth2.httpSignatureResponseAlg` names (ES256 by ' +
+               'default; ML-DSA offered), over the response and, by `;req`, ' +
+               'the request it answers.',
         verifies: 'A REQUEST OBJECT (RFC 9101, 2026-09-13), signed by the ' +
                   'client with a key it registered or with its secret, and ' +
                   'DECRYPTS one encrypted to this realm\'s published `use: ' +
@@ -1411,7 +1417,11 @@ class CryptoMetadata {
                   'one that merely chains to this realm\'s CA — which is ' +
                   'stricter than the `x5c` path RFC 7523 allows, because a ' +
                   'chain proves the realm issued a key and says nothing ' +
-                  'about which application holds it.',
+                  'about which application holds it. **AND A SIGNED ' +
+                  'RESOURCE REQUEST** (#178): an RFC 9421 signature tagged ' +
+                  '`fapi-2-request` at every resource server, with the key ' +
+                  'its keyid names in the client\'s registered jwks or ' +
+                  'jwks_uri, and the request\'s RFC 9530 Content-Digest.',
         encrypts: 'A UserInfo response for a client that registered ' +
                   '`userinfo_encrypted_response_alg`, and a JWT ' +
                   'introspection response for one that registered ' +
@@ -1437,16 +1447,20 @@ class CryptoMetadata {
                 '`cnf["x5t#S256"]` is the SHA-256 of the client ' +
                 'certificate\'s DER.',
         whatItDoesNot: 'It verifies no access token it did not issue, except ' +
-                       'at UserInfo, and it follows no `jwks_uri` — an ' +
-                       'inline `jwks` on the registration is the only key it ' +
-                       'will read.',
+                       'at UserInfo. A client\'s `jwks_uri` is fetched ' +
+                       '(#120) only under the outbound policy, and only for ' +
+                       'a client that registered no inline `jwks`.',
         envelopes: ['jws', 'jwe', 'jwk', 'jwt', 'thumbprint', 'dpop', 'mtls',
-                    'pkce'],
+                    'pkce', 'httpsig'],
         algorithms: function () {
           log.debug("Entering algorithms().");
           log.debug("Leaving algorithms().");
           return [
             ['Tokens this service mints by default', ['RS256']],
+            ['Resource response signatures (RFC 9421, ' +
+             'oauth2.httpSignatureResponseAlg)',
+             [String(config.value('oauth2.httpSignatureResponseAlg') ||
+                     'ES256')]],
             ['ID Token, when a client registers one',
              oauth2.ID_TOKEN_SIGNING_ALGS],
             ['UserInfo response', oauth2.USERINFO_SIGNING_ALGS],

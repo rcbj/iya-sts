@@ -1715,6 +1715,23 @@ const SCHEMA = {
             'from it that does not carry a request_uri issued at ' +
             '/oauth2/par, with invalid_request. FALSE or empty defers to ' +
             'oauth2.requirePushedAuthorizationRequests.' },
+    // FAPI 2.0 HTTP SIGNATURES (#178, 2026-10-05). ONE MEMBER, and no
+    // registration metadata name: the draft of 26 June 2026 defines none, and
+    // this service does not invent one for RFC 7591. So it is written through
+    // the console, the management API or by hand, never by a client. READ by
+    // `oauth-oidc/http_signatures.ts` through `httpSignaturesOf()`.
+    { name: 'oauthHttpSignedRequests', kind: 'single',
+      from: 'the console, the management API, or by hand',
+      families: ['oauth2', 'oidc'],
+      familyWhy: 'It decides whether the OAuth resource servers refuse an ' +
+        'unsigned request carrying this client\'s access token, so on an ' +
+        'entry declared for neither OAuth family it would read like a ' +
+        'requirement in force.',
+      what: 'FAPI 2.0 HTTP Signatures, for this client alone: TRUE refuses, ' +
+            'with 401, a request to a resource server with this client\'s ' +
+            'access token that does not carry a valid "fapi-2-request" ' +
+            'signature (RFC 9421) by a key in its jwks or jwks_uri. FALSE ' +
+            'or empty defers to oauth2.httpSignatures.' },
     // -------------------------------------------------------------------
     // RFC 9396, RICH AUTHORIZATION REQUESTS (2026-09-13). TWO ATTRIBUTES, and
     // they sit on DIFFERENT KINDS OF ENTRY, which is the design rcbj chose:
@@ -3775,6 +3792,8 @@ const EDITABLE = {
   oauthRequireSignedRequestObject: 'set',
   // RFC 9126's one. It holds one answer.
   oauthRequirePushedAuthorizationRequests: 'set',
+  // FAPI 2.0 HTTP Signatures' one (#178). It holds one answer.
+  oauthHttpSignedRequests: 'set',
   // RFC 9396's two. Both accumulate: a resource understands several types, and
   // a client uses several.
   oauthAuthorizationDetailsType: 'multi',
@@ -4711,7 +4730,7 @@ const BOOLEAN_ATTRIBUTES = [
   'oauthFrontchannelLogoutSessionRequired',
   'oauthBackchannelLogoutSessionRequired', 'oauthNativeSso',
   'oauthBackchannelUserCodeParameter', 'oauthRequireSignedRequestObject',
-  'oauthRequirePushedAuthorizationRequests',
+  'oauthRequirePushedAuthorizationRequests', 'oauthHttpSignedRequests',
   'oauthTlsClientCertificateBoundAccessTokens', 'oauthConfidential',
   'saml2EncryptAssertion', 'saml2EncryptLogoutNameId',
   'oauthRevokeRefreshOnLogout', 'appNotDelegated', 'appGroupsClaim',
@@ -7960,8 +7979,9 @@ function pushedAuthorizationMetadataProblem(values) {
 // `/admin-api`: TRUE or FALSE, the directory's spelling. A CLEAR is never
 // refused.
 /**
- * Checks the PAR requirement attribute written through the console or the API:
- * TRUE or FALSE. A clear is never refused.
+ * Checks the PAR requirement attribute, and the FAPI 2.0 HTTP Signatures one
+ * (#178), written through the console or the API: TRUE or FALSE. A clear is
+ * never refused.
  *
  * @param attribute - the attribute's name
  * @param value - the value written
@@ -7971,7 +7991,10 @@ function pushedAuthorizationAttributeProblem(attribute, value) {
   log.debug("Entering pushedAuthorizationAttributeProblem().");
   const text = String(value === undefined || value === null ? '' : value)
     .trim();
-  if (attribute !== 'oauthRequirePushedAuthorizationRequests' || !text) {
+  // FAPI 2.0 HTTP Signatures' flag (#178) is the same grammar, asked here so
+  // a write of it is refused for the same reason in the same two places.
+  if ((attribute !== 'oauthRequirePushedAuthorizationRequests' &&
+       attribute !== 'oauthHttpSignedRequests') || !text) {
     log.debug("Leaving pushedAuthorizationAttributeProblem(). Not asked.");
     return '';
   }
@@ -15466,6 +15489,32 @@ function nativeSsoOf(clientId) {
   return { enabled: enabled, group: enabled ? group : '' };
 }
 
+// ---------------------------------------------------------------------------
+// WHAT FAPI 2.0 HTTP SIGNATURES NEEDS OF A CLIENT (#178): whether it requires
+// signed requests of itself, and its entry's fields, from which
+// `assertion_grant.keysForParty()` reads the keys it signs with (its jwks, its
+// assertion jwks, or its fetched jwks_uri). `known` is false for a client_id
+// no entry claims, which has no keys a signature could verify against.
+// ---------------------------------------------------------------------------
+/**
+ * Says whether a client requires signed resource requests of itself, and
+ * returns its entry's fields for its keys.
+ *
+ * @param clientId - the client id
+ * @returns `{ known, required, fields }`
+ */
+function httpSignaturesOf(clientId) {
+  log.debug("Entering httpSignaturesOf().");
+  const who = String(clientId == null ? '' : clientId).trim();
+  const found = who ? (forClientId(who) || get(who)) : null;
+  const fields = (found && found.fields) || {};
+  const required = String(valuesOf(fields.oauthHttpSignedRequests)[0] || '')
+    .toUpperCase() === 'TRUE';
+  log.debug("Leaving httpSignaturesOf(). known=" + !!found + ", required=" +
+            required);
+  return { known: !!found, required: required, fields: fields };
+}
+
 /**
  * Returns the application whose `oauthClientId` lists a value, matched exactly.
  *
@@ -16379,6 +16428,7 @@ module.exports = {
   // entries with them and this module owns the schema they encode.
   attributesFor: attributesFor,
   nativeSsoOf: nativeSsoOf,
+  httpSignaturesOf: httpSignaturesOf,
   recordFromAttributes: recordFromAttributes,
   labelFor: labelFor,
   editableAttributes: editableAttributes,

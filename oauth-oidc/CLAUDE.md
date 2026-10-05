@@ -5000,3 +5000,62 @@ Tests: `tests/access_token_status.js` (in process) and
 `tests/vendored/sts_access_token_status.js` (the OAuth half over HTTP, the
 list verified and read by the job's own code); GNAP's half is
 `tests/vendored/sts_gnap_rs.js` section 8.
+
+## 3ca. FAPI 2.0 HTTP SIGNATURES AT THE RESOURCE SERVERS (2026-10-05, #178)
+
+`http_signatures.ts` holds the policy and `common/crypto.js` section 14 the
+mechanism: RFC 9421 and RFC 9530, moved there out of `gnap/` in the same
+change. The specification of record is the OpenID Foundation's *FAPI 2.0 Http
+Signatures*, **draft of 26 June 2026**, cited by date.
+
+**rcbj's four decisions (2026-10-05):**
+
+1. **The switch is a setting of its own**, `oauth2.httpSignatures`
+   (`off` | `sign-responses` | `require-requests`, default `off`), plus a
+   client flag, `oauthHttpSignedRequests`. It is not a value of `oauth2.fapi`,
+   because the draft says nothing about adoption.
+2. **Responses are signed with the realm's current signer**, the key the JWKS
+   publishes under the `alg` that `oauth2.httpSignatureResponseAlg` names
+   (`ES256` by default; ML-DSA offered). RSA is not offered: its JWK says
+   RS256, and RFC 9421 section 3.3.7 sends no `alg` parameter for a JWS name,
+   so the JWK's `alg` is the only way a client learns the algorithm.
+3. **The code lives in `common/`**: `crypto.js` section 14, and
+   `structured_fields.ts` for RFC 8941.
+4. **It applies at every resource server**, because they share one door,
+   `dpop.presentedAccessToken()`, and it is asked last there.
+
+**What is not obvious from the code:**
+
+* **A present `fapi-2-request` signature is verified whatever the setting
+  says.** The setting decides only whether an unsigned request is refused and
+  whether responses are signed. A response is signed when the setting is not
+  `off`, when the client set the flag, or when the request carried a verified
+  signature.
+* **The signer is armed on `req.res`, not on the response the check was
+  handed.** SCIM and Shared Signals hand `presentedAccessToken()` a
+  recording stand-in, so a refusal goes there and is translated, while the
+  real response is still signed. `tests/fapi_http_signatures.js` holds that.
+* **The target URI is `baseUrlOf()`'s origin plus `req.originalUrl`**, never
+  `req.url`. The realm middleware and SCIM's mounted router both rewrite
+  `req.url`, and the client signed the whole URI.
+* **The keys come from the token's client.** The key is read from the
+  `client_id` (or `azp`) of the access token that was accepted, through
+  `assertion_grant.keysForParty()`. A `jwks_uri` client's keys are fetched on
+  arrival by `keyPrefetch()`, which `oauth2.ts` registers beside
+  `dpop.proofClaims()`, because the check itself is synchronous. The prefetch
+  reads the token unverified and decides nothing.
+* **Where the draft and RFC 9421 differ.** Covering a request's Signature
+  and Signature-Input by `;req;key` is RFC 9421's NOT RECOMMENDED and the
+  draft's "shall". Both are done: the members, AND every component the
+  request signature covered, which is what section 2.4 recommends instead.
+* **A response that cannot be signed goes out unsigned**, under
+  STS-OAUTH-0942. That happens when no key exists for the algorithm, or when
+  the response began writing before it ended. A client that requires a
+  signature refuses the response, which is the draft's own answer.
+* **No registration metadata.** The draft defines none, so the client flag
+  is written through the console, `/admin-api` or LDAP, never by RFC 7591.
+
+Tests: `tests/http_signatures.js` (the mechanism, RFC 9421's vectors including
+section 2.4's), `tests/fapi_http_signatures.js` (this policy, section by
+section), `tests/vendored/sts_fapi_http_signatures.js` (`local: true`, over
+HTTP with its own RFC 9421 signer and verifier).
