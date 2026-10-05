@@ -562,6 +562,11 @@ const PAGES: WebPage[] = [
     } },
   { path: '/admin/vc-status', title: 'Credential status',
     operation: '/admin-api/vc-status', render: VcStatusPage.render },
+  { path: '/admin/xacml/editor', title: 'Policy editor',
+    operation: '/admin-api/xacml/editor',
+    render: function (view: Json, ctx?: Json): string {
+      return XacmlPage.editorBody(ctx || WebKit.context(), view);
+    } },
   { path: '/admin/xacml', title: 'XACML', operation: '/admin-api/xacml',
     render: XacmlPage.render },
   { path: '/admin/xacml/decide', title: 'Try a decision',
