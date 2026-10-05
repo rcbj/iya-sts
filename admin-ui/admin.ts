@@ -837,6 +837,7 @@ import AuditPage = require('./web_audit');
 import TokensPage = require('./web_tokens');
 import ConsentPage = require('../oauth-oidc/web_consent');
 import SessionsPage = require('../logout/web_sessions');
+import ConfigPage = require('./web_config');
 
 // REQUIRED FOR THE ORDER THEY WERE ALWAYS REQUIRED IN, AND READ NOWHERE HERE
 // (#50). TypeScript drops an `import … = require()` whose name nothing reads,
@@ -25855,6 +25856,9 @@ class AdminConsole {
     // that starts from a commit where they did. Present either way, so a caller
     // can assert on it.
     json.homeProblems = SETTING_HOME_PROBLEMS;
+    // The rows that belong to no protocol, as the settings block every page
+    // that owns settings answers (#446): the page draws its form from it.
+    json.settings = this.configSettingsJson('/admin/config');
     log.debug("Leaving AdminConsole.configJson(). " + json.settingCount +
               " setting(s).");
     return json;
@@ -26817,11 +26821,7 @@ class AdminConsole {
     return CaepRiscPage.riscApplicationRow(row, shorts, prefix);
   }
 
-  // ONE ROW OF THE INDEX: a group, its size, what is overridden in it, and the
-  // page that edits it. Built from `config.groups()` and SETTING_HOMES
-  // together, which is what makes a group with no home visible here rather than
-  // merely absent — see checkSettingHomes(), whose findings the page prints
-  // above this table.
+  // Drawn by `web_config.ts` (#446).
   /**
    * Draws one settings group's row of the configuration index: its size,
    * how many are fixed and overridden, and the pages that edit it.
@@ -26829,32 +26829,14 @@ class AdminConsole {
    * A group with no SETTING_HOMES row is drawn as homeless, in red.
    *
    * @param group - the group, as `config.groups()` describes it
+   * @param homes - the view's `homes`: each group's pages and labels
    * @returns the row as HTML
    */
-  configHomeRow(group) {
+  configHomeRow(group, homes) {
     const { log } = this.deps;
-    const self = this;
     log.debug("Entering AdminConsole.configHomeRow().");
-    const row = this.settingHomeRowOf(group.group);
-    const overridden = group.settings.filter(function (setting) {
-      return setting.overridden;
-    }).length;
-    const fixed = group.settings.filter(function (setting) {
-      return !setting.editable;
-    }).length;
-    const where = row
-      ? row.pages.map(function (path) {
-          return '<a href="' + self.esc(path) + '">' +
-                 self.esc(self.labelOfPath(path)) + '</a>';
-        }).join(' and ')
-      : '<span class="state-invalid">nowhere — this group has no row in ' +
-        'SETTING_HOMES, so nothing draws it</span>';
     log.debug("Leaving AdminConsole.configHomeRow().");
-    return '<tr><td>' + this.esc(group.group) + '</td>' +
-      '<td class="num">' + group.settings.length + '</td>' +
-      '<td class="num">' + (fixed || '') + '</td>' +
-      '<td class="num">' + (overridden || '') + '</td>' +
-      '<td>' + where + '</td></tr>';
+    return ConfigPage.configHomeRow(group, homes);
   }
 
   // ---------------------------------------------------------------------------
@@ -37278,113 +37260,14 @@ class AdminConsole {
 
     app.get('/admin/config', function (req, res) {
       log.debug("Entering the admin configuration page.");
-      const snapshot = config.snapshot();
-      const overridden = snapshot.overridden.length;
-      // What this page still edits: the groups with no protocol to belong to
-      // (`Global`, `Key material`, `Web security`). Asked for by path rather
-      // than by name, like every other page, so that moving one somewhere else
-      // one day is a row in SETTING_HOMES and not an edit here.
-      const mine = self.settingsGroupsFor('/admin/config');
-      const mineCount = mine.reduce(function (n, group) {
-        return n + group.settings.length;
-      }, 0);
-
-      const inner = self.messagesOf(req) +
-
-        (SETTING_HOME_PROBLEMS.length
-          ? '<div class="err"><strong>Some settings are not on any ' +
-            'page.</strong><ul>' +
-            SETTING_HOME_PROBLEMS.map(function (problem) {
-              return '<li>' + self.esc(problem) + '</li>';
-            }).join('') + '</ul>This is reported rather than hidden, in the ' +
-            'same spirit as <a href="/admin/sts-metadata">Service ' +
-            'metadata</a> naming a route nobody described: a setting that ' +
-            'exists and appears nowhere is worse than one that is missing, ' +
-            'because the service still reads it.</div>'
-          : '') +
-
-        self.note('<strong>Every setting this service has lives on the page ' +
-        'for the protocol it configures.</strong> This page is the index of ' +
-        'that — and the form for the ' + self.esc(String(mineCount)) + ' ' +
-        'rows that belong to no protocol, which are facts about the process ' +
-        'rather than about anything it speaks. It was ' +
-        'all ' + self.esc(String(snapshot.settingCount)) + ' of them ' +
-        'until 2026-08-27; what moved is where they are DRAWN, and nothing ' +
-        'about what they do or how they are read.') +
-
-        self.note('A value can arrive from four places and the ' +
-        '<em>Source</em> column on every one of these pages says which: a ' +
-        'runtime override set on the page, an environment variable, the ' +
-        'appconfig file this process was started with ' +
-        '(<code>' + self.esc(snapshot.configFile || '(none)') + '</code>), ' +
-        'or ' +
-        '<code>' + self.esc(snapshot.defaultsFile) + '</code> — the default ' +
-        'appconfig file that one is unioned on top of. Higher beats lower, ' +
-        'so an environment variable set on the container still wins over the ' +
-        'file — which is what keeps every existing deployment working ' +
-        'unchanged.') +
-
-        self.note('<strong>There is no fifth place.</strong> A setting with ' +
-        'no value in either appconfig file and no environment variable stops ' +
-        'this service from starting, by name, rather than falling back to a ' +
-        'constant buried in a module. So every value on these pages is one ' +
-        'somebody can find in a file — which is what makes the ' +
-        '<em>Source</em> column worth reading.') +
-
-        self.warn('<strong>Changes are in memory and are gone on ' +
-        'restart.</strong> Nothing writes to the appconfig file. That is the ' +
-        'same arrangement as the custom claims and the credential claims ' +
-        'next door, and it is deliberate: a service that edited a file ' +
-        'checked into a repository would leave a test\'s forgotten change ' +
-        'behind permanently. To make something stick, put it in ' +
-        '<code>' + self.esc(snapshot.configFile || 'env/local.js') +
-        '</code>.') +
-
-        '<h2>' + self.esc(String(snapshot.settingCount)) + ' settings, ' +
-        self.esc(String(snapshot.editableCount)) + ' of them changeable ' +
-        'while this service runs</h2>' +
-
-        (overridden
-          ? '<div class="ok">' + self.esc(String(overridden)) + ' runtime ' +
-            'override(s) in force, anywhere in the ' +
-            'service: ' + self.codeList(snapshot.overridden) + '. ' +
-            '<form method="post" action="/admin/config" ' +
-            'class="inline"><input type="hidden" name="action" ' +
-            'value="reset-all"><button class="secondary">Reset ' +
-            'all</button></form></div>'
-          : self.note('No runtime overrides are in force anywhere in this ' +
-            'service: every value is coming from the environment or from one ' +
-            'of the two appconfig files.')) +
-
-        self.note('<strong>Reset all is here and on no protocol ' +
-        'page</strong>, because it clears every override in the service and ' +
-        'not only the ones below it. A button that reached that far from the ' +
-        'Kerberos page would be the one control in this console whose blast ' +
-        'radius was invisible from where it was pressed.') +
-
-        '<h2>Where every setting is edited</h2>' +
-        self.note('The whole table, group by group, in the order ' +
-        '<code>config.js</code> declares them. The <em>Page</em> column is ' +
-        'where that group\'s form is drawn; the counts are of the group, and ' +
-        '<em>Overridden</em> is how many of them have a runtime override in ' +
-        'force right now.') +
-        '<table><thead><tr><th>Group</th><th class="num">Settings</th>' +
-        '<th class="num">Restart-only</th><th class="num">Overridden</th>' +
-        '<th>Page</th></tr></thead><tbody>' +
-        snapshot.groups.map(self.configHomeRow.bind(self)).join('') +
-        '</tbody></table>' +
-
-        self.configFormsFor('/admin/config') +
-
-        self.note('The whole table over JSON — every setting, whichever page ' +
-        'edits it — is at <code>/admin/config?format=json</code> and ' +
-        '<code>GET /admin-api/config</code>; the four actions on these pages ' +
-        'are <code>POST /admin-api/config/set</code>, ' +
-        '<code>/set-many</code>, <code>/reset</code> and ' +
-        '<code>/reset-all</code>.');
-
-      self.respond(req, res, self.configJson(), 'Configuration',
-                   '/admin/config', inner);
+      // What `GET /admin-api/config` answers (#446): the snapshot, where each
+      // group is drawn, and this page's own settings block.
+      const json = self.configJson();
+      self.respond(req, res, json, 'Configuration', '/admin/config',
+        // Drawn by `web_config.ts` (#446).
+        self.messagesOf(req) +
+        ConfigPage.body(self.renderContext(req),
+          JSON.parse(JSON.stringify(json))));
       log.debug("Leaving the admin configuration page.");
     });
 

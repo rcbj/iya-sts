@@ -36,6 +36,7 @@ import AttributeSourcesPage =
 import CachesPage = require('./web_caches');
 import CaepRiscPage = require('../ssf/web_caep_risc');
 import CellsPage = require('./web_cells');
+import ConfigPage = require('./web_config');
 import ConsentPage = require('../oauth-oidc/web_consent');
 import ClaimsProvidersPage =
   require('../oauth-oidc/web_claims_providers');
@@ -134,6 +135,11 @@ const PAGES: WebPage[] = [
     render: ClaimsProvidersPage.render },
   { path: '/admin/commands', title: 'OpenID Provider Commands',
     operation: '/admin-api/commands', render: ProviderCommandsPage.render },
+  { path: '/admin/config', title: 'Configuration',
+    operation: '/admin-api/config',
+    render: function (view: Json, ctx?: Json): string {
+      return ConfigPage.body(ctx || WebKit.context(), view);
+    } },
   { path: '/admin/consent', title: 'Consent',
     operation: '/admin-api/consent',
     render: function (view: Json, ctx?: Json): string {
