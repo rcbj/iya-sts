@@ -10,19 +10,27 @@
 // sections 6 and 10.2).
 //
 // For every algorithm in a row of the design's table, this writes what the
-// Node service produces — keys, signatures, tokens — into
-// `rust/crates/sts-crypto/vectors/*-node.json`, and `sts-crypto`'s tests
-// must verify every one of them, and match byte for byte where the scheme is
-// deterministic. The other direction is `tests/rust_crypto_vectors.js`,
-// which verifies what the Rust crate wrote into `*-rust.json`. Both files
-// are committed, so neither proof needs the other runtime to be installed.
+// Node service produces — keys, signatures, tokens, JWEs — as
+// `jws-node.json` and `jwe-node.json` in a vectors directory, and
+// `sts-crypto`'s tests must verify or decrypt every one of them, and match
+// byte for byte where the scheme is deterministic. Those tests write what the
+// Rust crate produces into the same directory (`jws-rust.json`,
+// `jwe-rust.json`), and `tests/rust_crypto_vectors.js` verifies and decrypts
+// every one of THEM in Node.
 //
-//   node tests/tools/crypto-vectors.js        rewrite the Node vectors
+// **THE DIRECTORY IS NEVER COMMITTED**: the vectors carry private keys and
+// shared secrets, and this repository commits no key material, generated or
+// borrowed (`tests/tools/fetch-vectors.sh`). It is
+// `tests/vectors/sts-crypto/` by default — gitignored and dockerignored
+// with the other external vectors — or `STS_CRYPTO_VECTORS`.
 //
-// Loading common/crypto.js needs its npm dependencies, so this runs where
-// they are installed (the tests image, or a checkout after `npm install`).
-// Regenerating changes every randomised value, which is expected; the
-// vectors are evidence, not fixtures.
+//   node tests/tools/crypto-vectors.js [directory]
+//   STS_CRYPTO_VECTORS=<dir> STS_WRITE_VECTORS=1 cargo test -p sts-crypto
+//   node tests/run.js --only=rust_crypto_vectors
+//
+// Loading common/crypto.js needs its npm dependencies and node 24 (the
+// post-quantum keys use its `raw-public` export format), as in the service
+// image.
 // ---------------------------------------------------------------------------
 
 const fs = require('fs');
@@ -30,7 +38,8 @@ const path = require('path');
 const nodeCrypto = require('crypto');
 
 const ROOT = path.join(__dirname, '..', '..');
-const OUT = path.join(ROOT, 'rust', 'crates', 'sts-crypto', 'vectors');
+const OUT = process.argv[2] || process.env.STS_CRYPTO_VECTORS ||
+  path.join(ROOT, 'tests', 'vectors', 'sts-crypto');
 
 const crypto = require(path.join(ROOT, 'common', 'crypto.js'));
 const pqJose = require(path.join(ROOT, 'common', 'pq_jose.js'));

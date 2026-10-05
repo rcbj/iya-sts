@@ -12,10 +12,13 @@
 // signed, with keys it generated, verified by the Node service's own
 // verifier.
 //
-// `rust/crates/sts-crypto/vectors/*-rust.json` is written by that crate's
-// test with `STS_WRITE_VECTORS=1` and committed, so this runs without a Rust
-// toolchain. The first direction — every Node vector verified in Rust — is
-// the crate's `tests/node_vectors.rs`.
+// The vectors are written by that crate's test (`STS_WRITE_VECTORS=1`) into
+// a directory that is NEVER COMMITTED — they carry private keys, and this
+// repository commits no key material (`tests/tools/crypto-vectors.js` says
+// how to make them). With none there this test says so and checks nothing:
+// the Rust toolchain is not in the tests image yet. The first direction —
+// every Node vector verified in Rust — is the crate's
+// `tests/node_vectors.rs`.
 // ---------------------------------------------------------------------------
 
 const fs = require('fs');
@@ -27,8 +30,8 @@ const crypto = require('../common/crypto');
 const log = bunyan.createLogger({ name: 'rust_crypto_vectors',
   level: process.env.STS_LOG_LEVEL || 'info' });
 
-const VECTORS = path.join(__dirname, '..', 'rust', 'crates', 'sts-crypto',
-                          'vectors');
+const VECTORS = process.env.STS_CRYPTO_VECTORS ||
+  path.join(__dirname, 'vectors', 'sts-crypto');
 
 /**
  * @param {string} name - the vector file
@@ -46,6 +49,13 @@ function read(name) {
  */
 function run(t) {
   log.debug("Entering run().");
+  if (!fs.existsSync(path.join(VECTORS, 'jws-rust.json'))) {
+    log.info('rust_crypto_vectors: no Rust vectors in ' + VECTORS + ', so ' +
+             'nothing is checked (tests/tools/crypto-vectors.js says how ' +
+             'to make them).');
+    log.debug("Leaving run(). No vectors.");
+    return;
+  }
   const rows = read('jws-rust.json');
   t.check(rows.length === crypto.JWS_SIGNING_ALGS.length,
           'there is one Rust JWS vector per algorithm Node speaks',
