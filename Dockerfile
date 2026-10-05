@@ -348,9 +348,11 @@ RUN if [ -n "${STS_CLOUD_SDKS}" ]; \
 # ENOENT in the first ./run-tests.sh run that reached them.
 # `deploy/` (2026-09-15) is Terraform and the schema-init image's files, run
 # from a workstation or CI and never by the service.
+# `rust/` (#444, 2026-10-05) is the Rust conversion: its own images build it,
+# and this Node service runs none of it.
 RUN rm -rf ./tests ./xacml-pep ./README.md ./docker-compose.yml ./Dockerfile \
            ./.github ./docs ./docker-compose-run-tests.yml ./deploy \
-           ./build-typescript.sh
+           ./build-typescript.sh ./rust
 
 # The debugger's built tree — see the stage at the top of this file. After the
 # `rm` above and before the version stamp, and into the directory

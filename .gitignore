@@ -67,3 +67,8 @@ spiffe/native/*.node
 # and this repository commits no key material. A local copy made for a host
 # run lives here too and is ignored for the same reason.
 tests/vectors/
+
+# The remote PEP's default certificate mount (docker-compose*.yml): a
+# launcher may write a key pair here, and none is ever committed.
+xacml-pep/certs/*
+!xacml-pep/certs/.gitkeep

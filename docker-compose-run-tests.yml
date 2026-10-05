@@ -120,7 +120,8 @@ x-mirror-contexts: &mirror-contexts
   ubuntu: docker-image://${IMAGE_MIRROR:-ghcr.io/rcbj/iya-sts/mirror}/ubuntu:latest
   "node:24.16.0-bookworm-slim": docker-image://${IMAGE_MIRROR:-ghcr.io/rcbj/iya-sts/mirror}/node:24.16.0-bookworm-slim
   "node:24.16.0-bookworm": docker-image://${IMAGE_MIRROR:-ghcr.io/rcbj/iya-sts/mirror}/node:24.16.0-bookworm
-  "node:22-alpine": docker-image://${IMAGE_MIRROR:-ghcr.io/rcbj/iya-sts/mirror}/node:22-alpine
+  "rust:1.97-bookworm": docker-image://${IMAGE_MIRROR:-ghcr.io/rcbj/iya-sts/mirror}/rust:1.97-bookworm
+  "debian:bookworm-slim": docker-image://${IMAGE_MIRROR:-ghcr.io/rcbj/iya-sts/mirror}/debian:bookworm-slim
   "golang:1.26.8-bookworm": docker-image://${IMAGE_MIRROR:-ghcr.io/rcbj/iya-sts/mirror}/golang:1.26.8-bookworm
   "golang:1.26": docker-image://${IMAGE_MIRROR:-ghcr.io/rcbj/iya-sts/mirror}/golang:1.26
   "maven:3.9.16-eclipse-temurin-21-noble": docker-image://${IMAGE_MIRROR:-ghcr.io/rcbj/iya-sts/mirror}/maven:3.9.16-eclipse-temurin-21-noble
@@ -691,7 +692,7 @@ services:
   # into the run, and removed by it at the end — which is how the job gets a
   # repository whose whole contents it wrote without disturbing the realm every
   # other job is using. So this container comes up, fails to register, fails to
-  # pull, says so, and goes on trying: `xacml-pep/sync.js` retries its
+  # pull, says so, and goes on trying: the PEP's sync (`rust/bins/xacml-pep`) retries its
   # registration on the poll timer, so it converges on a console row the same
   # way it converges on policy. That retry exists BECAUSE of this ordering and
   # its own header argues why it is right independently of this file.
@@ -736,7 +737,7 @@ services:
       # service up and starting this container — see ./run-tests.sh,
       # which does it with `docker run` against the service image so that the
       # host still needs docker and nothing else.
-      - ${XACML_PEP_CERT_DIR:-./xacml-pep/common}:/certs:ro
+      - ${XACML_PEP_CERT_DIR:-./xacml-pep/certs}:/certs:ro
     environment:
       # BY COMPOSE DNS AND THE INTERNAL PORT, never a published one — nothing
       # in this stack publishes anything. `sts` is in the certificate's SANs.

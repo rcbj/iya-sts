@@ -217,7 +217,7 @@ mod tests {
 
     #[tracing::instrument(level = "debug")]
     fn decide_something() {
-        tracing::info!("{}said something", tag("STS-TEST-0001"));
+        tracing::info!("{}said something", tag("STS-XPEP-0013"));
     }
 
     #[test]
@@ -236,7 +236,7 @@ mod tests {
         assert_eq!(lines.len(), 3);
         assert_eq!(lines[0]["msg"], "Entering decide_something().");
         assert_eq!(lines[0]["level"], 20);
-        assert_eq!(lines[1]["msg"], "[STS-TEST-0001] said something");
+        assert_eq!(lines[1]["msg"], "[STS-XPEP-0013] said something");
         assert_eq!(lines[1]["level"], 30);
         assert_eq!(lines[2]["msg"], "Leaving decide_something().");
         let keys: Vec<&String> = lines[1].as_object().unwrap().keys().collect();

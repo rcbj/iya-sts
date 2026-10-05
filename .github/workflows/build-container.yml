@@ -142,7 +142,8 @@ jobs:
           build-args: |
             GIT_COMMIT=${{ github.sha }}
           build-contexts: |
-            node:22-alpine=docker-image://ghcr.io/rcbj/iya-sts/mirror/node:22-alpine
+            rust:1.97-bookworm=docker-image://ghcr.io/rcbj/iya-sts/mirror/rust:1.97-bookworm
+            debian:bookworm-slim=docker-image://ghcr.io/rcbj/iya-sts/mirror/debian:bookworm-slim
           cache-from: type=gha,scope=xacml-pep
           cache-to: type=gha,mode=max,scope=xacml-pep
 

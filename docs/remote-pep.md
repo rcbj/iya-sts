@@ -182,7 +182,8 @@ that has no JavaScript in it.
 docker compose --profile xacml up --build      # with the volume above
 ```
 
-or, against a checkout, with no container at all:
+or, against a checkout, with no container at all (the PEP is a Rust binary
+since 2026-10-05; `cargo` builds it from the `rust/` workspace):
 
 ```bash
 PEP_PDP_URL=https://localhost:8081 \
@@ -191,7 +192,7 @@ PEP_TLS_CERT=/tmp/pep-certs/pep.crt \
 PEP_TLS_KEY=/tmp/pep-certs/pep.key \
 PEP_TLS_INSECURE=true \
 PEP_RESOURCE=https://expenses.example.test \
-node xacml-pep/pep.js
+cargo run --manifest-path rust/Cargo.toml --release -p xacml-pep
 ```
 
 `PEP_TLS_INSECURE=true` is the ordinary setting against this mock: in
@@ -441,7 +442,8 @@ and a PEP has none.
 Point it at the realm's prefix and everything above works unchanged:
 
 ```bash
-PEP_PDP_URL=https://localhost:8081/realm/acme node xacml-pep/pep.js
+PEP_PDP_URL=https://localhost:8081/realm/acme \
+cargo run --manifest-path rust/Cargo.toml --release -p xacml-pep
 ```
 
 **The policy repository and the directory are both per realm**, so the policies
@@ -457,10 +459,12 @@ is not there.
 Two tests, on opposite halves, and it is worth knowing which is which if you
 change anything here:
 
-- **`tests/xacml_pep.js`** holds the *shape*: the engine loads with none of the
-  mock's modules present, the image copies exactly the engine's module list, and
-  the PEP's enforcement rule agrees with the mock's over seven decisions under
-  both biases. It makes no HTTP request at all.
+- **`cargo test -p xacml-pep` and `cargo test -p sts-xacml`** (in `rust/`) hold
+  the *shape*: the engine against the OASIS conformance suite, the PIP's walk,
+  the listener's reload rules, and the enforcement rule against
+  `xacml-pep/enforcement_cases.json` — the table **`tests/xacml_pep.js`** holds
+  the mock's own enforcement rule to as well, so the two agree over seven
+  decisions under both biases. None of it makes an HTTP request.
 - **`tests/vendored/sts_xacml_remote_pep.js`** holds the *deployment*: this
   container on the mock's own docker network, registering, pulling, converging,
   being nudged, reporting its counters, and going on deciding after the PDP is
@@ -470,8 +474,8 @@ change anything here:
 - **`tests/pep_listener_certificate.js`** holds the listener certificate's
   rules in process: a realm branch built before the Issuing CA existed gets it
   added rather than rebuilt, the certificate verifies through the realm's own
-  Intermediate, a reissue supersedes, and the container's reload never replaces
-  a good pair with a bad one.
+  Intermediate, and a reissue supersedes. That the container's reload never
+  replaces a good pair with a bad one is `rust/bins/xacml-pep`'s own test.
 
 ## See also
 

@@ -1032,7 +1032,7 @@ services:
       # that a plain `docker compose --profile xacml up` needs no file and no
       # variable. A launcher sets XACML_PEP_CERT_DIR to a directory it wrote
       # pep.crt and pep.key into and names them with the two variables below.
-      - ${XACML_PEP_CERT_DIR:-./xacml-pep/common}:/certs:ro
+      - ${XACML_PEP_CERT_DIR:-./xacml-pep/certs}:/certs:ro
     depends_on:
       sts:
         condition: service_healthy
@@ -1087,7 +1087,7 @@ services:
       #
       # — so the files normally do NOT exist when this container starts, and
       # the PEP re-reads these two paths until they do. EMPTY BY DEFAULT: the
-      # default mount above is xacml-pep/common in this checkout, and a
+      # default mount above is xacml-pep/certs in this checkout, and a
       # default pointing into it would invite writing a private key into the
       # source tree. A launcher points them at a directory of its own.
       - PEP_HTTPS_CERT=${XACML_PEP_HTTPS_CERT:-}

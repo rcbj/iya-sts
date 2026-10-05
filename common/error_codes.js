@@ -16514,13 +16514,13 @@ const CODES = [
       'or ../common/error_codes; the container starts anyway and ' +
       'tags its lines with a local fallback. In the image, the ' +
       'Dockerfile stopped copying common/error_codes.js.',
-    spec: '' },
+    spec: '', retired: true },
   { code: 'STS-XPEP-0002',
     summary: 'The version module could not be loaded from ./version or ' +
       '../common/version, so the PEP registers and reports its ' +
       'version as \'unknown\'. In the image, the Dockerfile stopped ' +
       'copying common/version.js and VERSION.',
-    spec: '' },
+    spec: '', retired: true },
   { code: 'STS-XPEP-0003',
     summary: 'PEP_TLS_CERT, PEP_TLS_KEY or PEP_TLS_CA names a file that ' +
       'could not be read; the PEP carries on without it, so it ' +
@@ -16546,12 +16546,12 @@ const CODES = [
   { code: 'STS-XPEP-0007',
     summary: 'A request arrived whose URL would not parse, so it could name ' +
       'none of the PEP\'s endpoints.',
-    spec: 'HTTP 400' },
+    spec: 'HTTP 400', retired: true },
   { code: 'STS-XPEP-0008',
     summary: 'Deciding a GET /protected request threw inside the PEP (the ' +
       'PIP, the engine or enforcement), so no decision was reached. A ' +
       'defect in the PEP, not a Deny.',
-    spec: 'HTTP 500 decision_failed' },
+    spec: 'HTTP 500 decision_failed', retired: true },
   { code: 'STS-XPEP-0009',
     summary: 'A request named a method and path the PEP does not answer (it ' +
       'answers GET /, GET /protected, POST /notify and GET ' +
@@ -16566,12 +16566,12 @@ const CODES = [
     summary: 'Retrying the registration on the poll timer threw ' +
       'unexpectedly; the pull still runs and the registration is ' +
       'tried again next interval.',
-    spec: '' },
+    spec: '', retired: true },
   { code: 'STS-XPEP-0012',
     summary: 'The heartbeat, or the pull it triggers when the PDP says this ' +
       'copy is behind, threw unexpectedly. Reporting only; ' +
       'enforcement is unaffected.',
-    spec: '' },
+    spec: '', retired: true },
   { code: 'STS-XPEP-0013',
     summary: 'The PEP could not start (registration, first pull, timers or ' +
       'listener setup threw) and the process exits.',
@@ -16580,7 +16580,7 @@ const CODES = [
     summary: 'The seven XACML engine modules were found neither beside ' +
       'engine.js nor one directory up, so the PEP cannot load and the ' +
       'process dies at require.',
-    spec: '' },
+    spec: '', retired: true },
   { code: 'STS-XPEP-0015',
     summary: 'The PEP could not reach the PDP to register (network, TLS, ' +
       'timeout or a PEP_PDP_URL that is not a URL). It still enforces ' +
@@ -16679,7 +16679,7 @@ const CODES = [
     summary: 'The remote XACML PEP met a promise rejection nobody handled ' +
       'after it had started, and contained it rather than exiting (#355), ' +
       'throttled as STS-XPEP-0033 is.',
-    spec: 'none — logged; the PEP carries on' },
+    spec: 'none — logged; the PEP carries on', retired: true },
   { code: 'STS-ADMIN-0001',
     summary: 'The admin console could not start a sign-in: its OIDC client ' +
       'entry (sts-admin-console) is missing, or declares a client secret ' +

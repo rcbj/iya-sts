@@ -141,8 +141,7 @@ function nobodyElseBuilds(t) {
                    'xacml/xacml_xml.js'];
   const files = fs.readdirSync(path.join(ROOT, 'xacml'))
     .filter(function (one) { return /\.(js|ts)$/.test(one); })
-    .map(function (one) { return 'xacml/' + one; })
-    .concat(['xacml-pep/pep.js', 'xacml-pep/pip.js']);
+    .map(function (one) { return 'xacml/' + one; });
   const building = files.filter(function (file) {
     return allowed.indexOf(file) < 0 &&
            /combinedDecision\s*:\s*false/.test(statementsOf(file));
@@ -151,7 +150,7 @@ function nobodyElseBuilds(t) {
           'C1. no module but the builder writes a request of its own');
   ['xacml/xacml_role_pep.ts', 'xacml/xacml_access_pep.ts',
    'xacml/xacml_risk_pep.ts', 'xacml/xacml_signal_pep.ts', 'xacml/xacml.ts',
-   'xacml/xacml_admin.ts', 'xacml-pep/pep.js'].forEach(function (file) {
+   'xacml/xacml_admin.ts'].forEach(function (file) {
     t.check(/AuthorizationRequest/.test(statementsOf(file)),
             'C2. ' + file + ' builds through AuthorizationRequest');
   });
@@ -208,16 +207,35 @@ function samePepRequests(t) {
   log.debug("Leaving samePepRequests().");
 }
 
+// THE REMOTE PEP IS A RUST BINARY SINCE #444 (2026-10-05), built on the
+// engine crate's port of this builder. So the claims are the same two, made
+// across the language line: it builds through THE builder, and the builder
+// spells the shared vocabulary as this one does — a policy written against
+// one spelling must match what both PEPs send.
 function theRemotePep(t) {
   log.debug("Entering theRemotePep().");
-  t.log.info('=== E. the remote PEP loads it ===');
-  const engine = fs.readFileSync(path.join(ROOT, 'xacml-pep/engine.js'),
-                                 'utf8');
-  const docker = fs.readFileSync(path.join(ROOT, 'xacml-pep/Dockerfile'),
-                                 'utf8');
-  t.check(/'xacml_request\.js'/.test(engine) &&
-          /COPY xacml\/xacml_request\.js \.\/xacml\//.test(docker),
-          'E1. it is in engine.js\'s MODULES and has a COPY line');
+  t.log.info('=== E. the remote PEP builds through the same builder ===');
+  const service = fs.readFileSync(
+    path.join(ROOT, 'rust/bins/xacml-pep/src/service.rs'), 'utf8');
+  t.check(/AuthorizationRequest::default\(\)/.test(service),
+          'E1. the remote PEP builds its request through the ' +
+          'AuthorizationRequest of rust/crates/sts-xacml');
+  const builder = fs.readFileSync(
+    path.join(ROOT, 'rust/crates/sts-xacml/src/builder.rs'), 'utf8');
+  const rust = {};
+  const pattern = /pub const ([A-Z_]+): &str =\s*"([^"]+)";/g;
+  let found = pattern.exec(builder);
+  while (found) {
+    rust[found[1]] = found[2];
+    found = pattern.exec(builder);
+  }
+  const V = xacmlRequest.VOCABULARY;
+  const differing = Object.keys(rust).filter(function (name) {
+    return V[name] !== rust[name];
+  });
+  t.check(Object.keys(rust).length >= 10 && differing.length === 0,
+          'E2. every identifier the Rust builder declares is spelt as ' +
+          'VOCABULARY spells it', differing.join(', '));
   log.debug("Leaving theRemotePep().");
 }
 

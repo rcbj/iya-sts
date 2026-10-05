@@ -1118,7 +1118,8 @@ realm's `pep-tls` Issuing CA.
   `combinedAction()` without awaiting.
 
 `xacml-pep/CLAUDE.md` argues the container's half — why the pair is re-read
-from disk rather than read once — and `tests/pep_listener_certificate.js` and
+from disk rather than read once — and `tests/pep_listener_certificate.js` (the
+issuing half), `rust/bins/xacml-pep/src/listener.rs`'s test (the reload) and
 section 1b of `tests/vendored/sts_xacml_remote_pep.js` pin both.
 
 ## What phase five cost outside this directory

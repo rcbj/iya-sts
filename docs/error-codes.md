@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4074** of them, in **41** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4066** of them, in **41** subsystems.
 
 ## Where a code appears
 
@@ -3909,20 +3909,20 @@ Raised from: xacml-pep/.
 
 | Code | What failed | Client sees |
 |---|---|---|
-| `STS-XPEP-0001` | The error-code registry could not be loaded from ./error_codes or ../common/error_codes; the container starts anyway and tags its lines with a local fallback. In the image, the Dockerfile stopped copying common/error_codes.js. | — |
-| `STS-XPEP-0002` | The version module could not be loaded from ./version or ../common/version, so the PEP registers and reports its version as 'unknown'. In the image, the Dockerfile stopped copying common/version.js and VERSION. | — |
+| `STS-XPEP-0001` *(retired)* | The error-code registry could not be loaded from ./error_codes or ../common/error_codes; the container starts anyway and tags its lines with a local fallback. In the image, the Dockerfile stopped copying common/error_codes.js. | — |
+| `STS-XPEP-0002` *(retired)* | The version module could not be loaded from ./version or ../common/version, so the PEP registers and reports its version as 'unknown'. In the image, the Dockerfile stopped copying common/version.js and VERSION. | — |
 | `STS-XPEP-0003` | PEP_TLS_CERT, PEP_TLS_KEY or PEP_TLS_CA names a file that could not be read; the PEP carries on without it, so it registers unauthenticated or is refused. | — |
 | `STS-XPEP-0004` | The policy permitted the request but the decision carries an obligation this PEP cannot discharge, so section 7.2 turned the Permit into a refusal. | HTTP 403 from GET /protected |
 | `STS-XPEP-0005` | A decision was asked for while the PEP holds no root policy (it has never pulled one, or what it pulled had no root); the decision is NotApplicable and the bias settles it. | HTTP 403 from GET /protected when deny-biased, 200 when permit-biased |
 | `STS-XPEP-0006` | The engine answered Indeterminate for a request against the policy this PEP holds (a processing or missing-attribute error); the bias settles it. | HTTP 403 from GET /protected when deny-biased, 200 when permit-biased |
-| `STS-XPEP-0007` | A request arrived whose URL would not parse, so it could name none of the PEP's endpoints. | HTTP 400 |
-| `STS-XPEP-0008` | Deciding a GET /protected request threw inside the PEP (the PIP, the engine or enforcement), so no decision was reached. A defect in the PEP, not a Deny. | HTTP 500 decision_failed |
+| `STS-XPEP-0007` *(retired)* | A request arrived whose URL would not parse, so it could name none of the PEP's endpoints. | HTTP 400 |
+| `STS-XPEP-0008` *(retired)* | Deciding a GET /protected request threw inside the PEP (the PIP, the engine or enforcement), so no decision was reached. A defect in the PEP, not a Deny. | HTTP 500 decision_failed |
 | `STS-XPEP-0009` | A request named a method and path the PEP does not answer (it answers GET /, GET /protected, POST /notify and GET /healthcheck). | HTTP 404 not_found |
 | `STS-XPEP-0010` | A policy pull threw unexpectedly, from the nudge or from the poll timer. The policy already held is kept and the next poll tries again. | — |
-| `STS-XPEP-0011` | Retrying the registration on the poll timer threw unexpectedly; the pull still runs and the registration is tried again next interval. | — |
-| `STS-XPEP-0012` | The heartbeat, or the pull it triggers when the PDP says this copy is behind, threw unexpectedly. Reporting only; enforcement is unaffected. | — |
+| `STS-XPEP-0011` *(retired)* | Retrying the registration on the poll timer threw unexpectedly; the pull still runs and the registration is tried again next interval. | — |
+| `STS-XPEP-0012` *(retired)* | The heartbeat, or the pull it triggers when the PDP says this copy is behind, threw unexpectedly. Reporting only; enforcement is unaffected. | — |
 | `STS-XPEP-0013` | The PEP could not start (registration, first pull, timers or listener setup threw) and the process exits. | — |
-| `STS-XPEP-0014` | The seven XACML engine modules were found neither beside engine.js nor one directory up, so the PEP cannot load and the process dies at require. | — |
+| `STS-XPEP-0014` *(retired)* | The seven XACML engine modules were found neither beside engine.js nor one directory up, so the PEP cannot load and the process dies at require. | — |
 | `STS-XPEP-0015` | The PEP could not reach the PDP to register (network, TLS, timeout or a PEP_PDP_URL that is not a URL). It still enforces and retries on every poll. | — |
 | `STS-XPEP-0016` | The PDP refused the PEP's registration (a missing or unrecognised client certificate, a full register, a taken name, or remote PEPs turned off). It still enforces with what it can pull and retries on every poll. | — |
 | `STS-XPEP-0017` | A policy pull could not reach the PDP. The last good policy set is kept and enforced, and the PEP reports itself stale. | — |
@@ -3942,7 +3942,7 @@ Raised from: xacml-pep/.
 | `STS-XPEP-0031` | The HTTPS listener could not bind its port (commonly the port is taken). Plain HTTP and enforcement are unaffected. | — |
 | `STS-XPEP-0032` | The certificate the HTTPS listener is serving is expired or not yet valid, so clients that check will refuse the handshake. | — |
 | `STS-XPEP-0033` | The remote XACML PEP met an uncaught exception after it had started, and contained it rather than exiting (#355): it carries on enforcing the policy it last pulled. The line carries the stack; a distinct fault is logged at occurrences 1, 2, 3 and each power of ten. | none — logged; the PEP carries on |
-| `STS-XPEP-0034` | The remote XACML PEP met a promise rejection nobody handled after it had started, and contained it rather than exiting (#355), throttled as STS-XPEP-0033 is. | none — logged; the PEP carries on |
+| `STS-XPEP-0034` *(retired)* | The remote XACML PEP met a promise rejection nobody handled after it had started, and contained it rather than exiting (#355), throttled as STS-XPEP-0033 is. | none — logged; the PEP carries on |
 
 ## STS-ADMIN
 

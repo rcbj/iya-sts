@@ -16,7 +16,9 @@
 //! here already, so nothing else can spell it differently.
 
 use crate::model::{attribute, category, types};
-use crate::request::{Request, RequestAttribute, RequestCategory, RequestValue};
+use crate::request::{
+    Request, RequestAttribute, RequestCategory, RequestValue,
+};
 
 /// The vocabulary of #88 section 7 that is not XACML's own. URI-shaped, so
 /// the PIP never mistakes one for a directory attribute name.
@@ -140,12 +142,14 @@ impl AuthorizationRequest {
             })
             .collect();
         let include_in_result = self.include_in_result;
-        self.category(category_id).attributes.push(RequestAttribute {
-            attribute_id: attribute_id.to_string(),
-            issuer: None,
-            include_in_result,
-            values,
-        });
+        self.category(category_id)
+            .attributes
+            .push(RequestAttribute {
+                attribute_id: attribute_id.to_string(),
+                issuer: None,
+                include_in_result,
+                values,
+            });
         self
     }
 
@@ -185,7 +189,11 @@ impl AuthorizationRequest {
     pub fn principal(&mut self, name: &str, kind: Option<&str>) -> &mut Self {
         self.subject(attribute::SUBJECT_ID, [name]);
         if let Some(kind) = kind {
-            let kind = if SUBJECT_KINDS.contains(&kind) { kind } else { "user" };
+            let kind = if SUBJECT_KINDS.contains(&kind) {
+                kind
+            } else {
+                "user"
+            };
             self.subject(vocabulary::SUBJECT_KIND, [kind]);
         }
         self
@@ -200,8 +208,12 @@ impl AuthorizationRequest {
 
     /// What is being issued FOR or reached; a string unless typed.
     pub fn target(&mut self, id: &str, type_uri: Option<&str>) -> &mut Self {
-        self.attribute(category::RESOURCE, attribute::RESOURCE_ID, [id],
-                       type_uri)
+        self.attribute(
+            category::RESOURCE,
+            attribute::RESOURCE_ID,
+            [id],
+            type_uri,
+        )
     }
 
     pub fn requested_action(&mut self, id: &str) -> &mut Self {
@@ -250,8 +262,12 @@ impl AuthorizationRequest {
 
     /// The party acting between subject and resource (intermediary-subject).
     pub fn intermediary(&mut self, name: &str) -> &mut Self {
-        self.attribute(category::INTERMEDIARY_SUBJECT, attribute::SUBJECT_ID,
-                       [name], None)
+        self.attribute(
+            category::INTERMEDIARY_SUBJECT,
+            attribute::SUBJECT_ID,
+            [name],
+            None,
+        )
     }
 
     /// The request, in the engine's shape.
@@ -273,18 +289,28 @@ mod tests {
         let mut req = AuthorizationRequest::default();
         req.category(category::ACCESS_SUBJECT);
         req.category(category::ENVIRONMENT);
-        req.target("urn:x", Some(types::ANYURI)).requested_action("GET");
+        req.target("urn:x", Some(types::ANYURI))
+            .requested_action("GET");
         let built = req.build();
-        let order: Vec<&str> =
-            built.categories.iter().map(|c| c.category.as_str()).collect();
+        let order: Vec<&str> = built
+            .categories
+            .iter()
+            .map(|c| c.category.as_str())
+            .collect();
         assert_eq!(
             order,
-            [category::ACCESS_SUBJECT, category::ENVIRONMENT,
-             category::RESOURCE, category::ACTION]
+            [
+                category::ACCESS_SUBJECT,
+                category::ENVIRONMENT,
+                category::RESOURCE,
+                category::ACTION
+            ]
         );
         assert!(built.categories[0].attributes.is_empty());
-        assert_eq!(built.categories[2].attributes[0].values[0].type_uri,
-                   types::ANYURI);
+        assert_eq!(
+            built.categories[2].attributes[0].values[0].type_uri,
+            types::ANYURI
+        );
     }
 
     #[test]
@@ -293,8 +319,10 @@ mod tests {
         req.environment("x", [Fact::Boolean(true)]);
         req.subject("y", ["", "a"]);
         let built = req.build();
-        assert_eq!(built.categories[0].attributes[0].values[0].type_uri,
-                   types::BOOLEAN);
+        assert_eq!(
+            built.categories[0].attributes[0].values[0].type_uri,
+            types::BOOLEAN
+        );
         assert_eq!(built.categories[1].attributes[0].values.len(), 1);
     }
 }

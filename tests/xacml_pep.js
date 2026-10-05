@@ -6,73 +6,39 @@
 // File: xacml_pep.js
 //
 // ===========================================================================
-// PHASE FIVE: THE REMOTE PEP. THE PDP'S SIDE IN PROCESS, AND THE CONTAINER'S
-// SIDE IN A CHILD.
+// PHASE FIVE: THE REMOTE PEP. THE PDP'S SIDE IN PROCESS — AND THE ONE
+// EXPECTATION THE TWO ENFORCEMENT POINTS SHARE.
 //
-// This file is in `tests/` rather than in the parent project's suite, and the
-// line CLAUDE.md draws is "can it be asserted by driving the running service
-// over HTTP?" Most of phase five CAN be — a registration, a pull, a heartbeat
-// and a 304 are all HTTP — and those belong over there and are not here.
+// **THE CONTAINER IS A RUST BINARY SINCE #444 (2026-10-05)**,
+// `rust/bins/xacml-pep`, on the engine crate `rust/crates/sts-xacml`. What
+// this file used to hold about the CONTAINER's shape is now held where that
+// code is, and more strongly:
 //
-// WHAT IS HERE IS THE THREE THINGS THAT CANNOT BE, and each of them is about
-// the SHAPE of this repository rather than about a running service:
+//   * the engine loads with no identity service in it — the crate graph is
+//     the proof: `sts-xacml` depends on no service crate, and Cargo will not
+//     build one that does;
+//   * the engine decides as the service's does — `rust/crates/sts-xacml/
+//     tests/conformance.rs` holds it to the same OASIS suite, case for case;
+//   * the Dockerfile builds the binary rather than copying modules — checked
+//     below, because it is a comparison of FILES;
+//   * the PIP walk over the five places a designator can hide, and the HTTPS
+//     listener's reload rules — `cargo test -p xacml-pep`.
 //
-//   1. **THE ENGINE LOADS AGAINST A THIRTY-LINE SHIM.** Every engine module's
-//      header claims no I/O and no store, and every one of them requires
-//      `../common/helpers`, which in the mock pulls in the config table, the
-//      crypto module, the realm registry, node-forge and jsonwebtoken. The
-//      claim is only falsifiable by loading the engine somewhere that HAS no
-//      such helpers, which is what `xacml-pep/` is. No running service can be
-//      asked this: over there the real helpers are loaded and the question
-//      does not arise.
-//   2. **THE DOCKERFILE'S COPY SET IS THE ENGINE.** `engine.js` names seven
-//      modules and `xacml-pep/Dockerfile` copies seven files; a module added
-//      to one and not the other produces an image that fails at runtime with
-//      MODULE_NOT_FOUND. That is a comparison between two FILES and there is
-//      no endpoint that could answer it. It is this repository's own version
-//      of the standing obligation CLAUDE.md records the parent project having
-//      for its `sts/` COPY set — enforced rather than remembered.
-//   3. **THE TWO PEPs ENFORCE IDENTICALLY.** The mock's `enforce()` and the
-//      container's are two implementations of section 7.2, deliberately not
-//      shared (`pep.js` argues why), and the only way to know they agree is to
-//      run both over the same decisions in one process.
+// **WHAT STAYS HERE IS THE PDP'S SIDE** (the sync token, the register, the
+// nudge's refusals, the change observer), and the one claim that needs BOTH
+// implementations: **THE TWO PEPs ENFORCE IDENTICALLY.** The service's
+// `enforce()` and the container's are two readings of section 7.2,
+// deliberately not shared, so the table they are held to is ONE FILE,
+// `xacml-pep/enforcement_cases.json`: this file holds the embedded PEP to
+// it, and the Rust crate's own test holds the remote one to it.
 //
-// **WHAT IS NOT HERE, SINCE 2026-09-06, AND WAS NOT HERE BEFORE EITHER.** This
-// file starts no PEP, registers nothing and makes NO HTTP REQUEST — it loads
-// the container's modules and calls their functions. So `xacml-pep/sync.js`,
-// the registrar and the poller, is not loaded by it, and neither is `start()`.
-// That half is `tests/vendored/sts_xacml_remote_pep.js`, which drives the
-// real container — the one a launcher brought up, or one it builds and starts
-// itself — against a running mock and asserts that a policy deployed through
-// `/admin-api/xacml` changes what that container allows. The two are
-// complements rather than overlaps and the split is worth keeping: this file
-// can see the engine growing a dependency on the identity service, which no
-// running PEP could show; that one can see the client half being wrong, which
-// nothing here loads.
-//
-// The sync token's three properties are here too, and they are the one thing
-// on this list that is genuinely borderline — they could be driven over HTTP.
-// They are here because each of them is a claim about what the token is
-// COMPUTED FROM, and asserting that from outside means writing a policy,
-// reading a token, editing the policy back and reading it again, four requests
-// to make a claim that is one function call.
-//
-// ---------------------------------------------------------------------------
-// WHY THE CONTAINER IS DRIVEN AS A CHILD PROCESS AND NEVER REQUIRED.
-//
-// `xacml-pep/engine.js` primes `require.cache` so that `../common/helpers`
-// resolves to the container's shim — which is what makes a host run and an
-// image run the same program. In THIS process that would be poison: `run.js`
-// requires every test file into ONE process, so a shim installed here would be
-// what `xacml_service.js` and `xacml_conformance.js` got when they ran next.
-// So this file spawns `node` and asks the child. That is slower than a require
-// and it is the only correct way to ask the question.
+// This file starts no PEP, registers nothing and makes NO HTTP REQUEST. The
+// deployment — the real container against a running service — is
+// `tests/vendored/sts_xacml_remote_pep.js`.
 // ===========================================================================
-
 const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
-const { execFileSync } = require('child_process');
 
 // This file's own logger, for the Entering/Leaving lines and the handled
 // exceptions the code style asks for. Its level is LOG_LEVEL, which is also
@@ -198,581 +164,77 @@ function policyXml(id, effect) {
     '<Target/></Rule></Policy>';
 }
 
-// ---------------------------------------------------------------------------
-// THE CONTAINER, ASKED IN A CHILD PROCESS. See the header for why never a
-// require. The child prints one JSON line; anything it writes to stderr is
-// reported as the failure, because a child that could not load the engine is
-// exactly the case this test exists for and its stack is the information.
-// ---------------------------------------------------------------------------
-function askTheContainer(source) {
-  log.debug("Entering askTheContainer().");
-  const script = 'const out = (function () {\n' + source + '\n})();\n' +
-                 'process.stdout.write("<<<" + JSON.stringify(out) + ">>>");';
-  const text = execFileSync(process.execPath, ['-e', script], {
-    cwd: PEP_DIR,
-    encoding: 'utf8',
-    // The engine's own bunyan lines would otherwise be interleaved with the
-    // answer, so the shim is turned up only as far as errors.
-    env: Object.assign({}, process.env, { PEP_LOG_LEVEL: 'error' }),
-    stdio: ['ignore', 'pipe', 'pipe']
-  });
-  const found = /<<<([\s\S]*)>>>/.exec(text);
-  if (!found) {
-    throw new Error('the child produced no answer: ' + text.slice(0, 500));
-  }
-  log.debug("Leaving askTheContainer().");
-  return JSON.parse(found[1]);
-}
-
 async function run(t) {
   log.debug("Entering run().");
   // -------------------------------------------------------------------------
-  // 1. THE ENGINE LOADS IN A PROCESS WITH NO IDENTITY SERVICE IN IT.
-  // -------------------------------------------------------------------------
-  t.log.info('--- The engine, loaded against the shim ---');
-  let loaded;
-  try {
-    loaded = askTheContainer(
-      'const engine = require("./engine");\n' +
-      'const helpers = require("./common/helpers");\n' +
-      'return { modules: engine.MODULES,\n' +
-      '         shimExports: Object.keys(helpers).sort(),\n' +
-      '         decisions: Object.keys(engine.model.DECISION).length,\n' +
-      '         functions: typeof engine.functions.lookup,\n' +
-      // WHAT IS NOT IN THAT PROCESS. `require.cache` after the engine has
-      // loaded is the whole dependency closure, and the mock's own modules
-      // must not be in it — this is the assertion that the engine is a
-      // library rather than a part of the identity service.
-      '         mockModulesLoaded: Object.keys(require.cache).filter(' +
-      'function (p) { return /(common\\/(config|crypto|realms|pq_jose|app)' +
-      '|admin-ui|oauth-oidc|ldap)\\//.test(p); }) };');
-  } catch (error) {
-    t.bad('the container process could not load the XACML engine',
-          error.message);
-    loaded = null;
-  }
-  if (loaded) {
-    // EIGHT SINCE #306: the seven engine modules and the one request
-    // builder, which is engine-side so this container builds as the
-    // service does.
-    t.equal(loaded.modules.length, 8,
-            'the container carries the seven engine modules and the request ' +
-            'builder');
-    t.check(loaded.functions === 'function',
-            'the function library is usable in there',
-            'engine.functions.lookup is ' + loaded.functions);
-    t.check(loaded.decisions >= 7,
-            'all seven decision values are present, not the four external ' +
-            'ones', 'found ' + loaded.decisions);
-    t.equal(loaded.shimExports.join(','), 'log,xmlEscape',
-            'the helpers shim exports exactly what the engine needs and ' +
-            'nothing else — a third export here is a dependency the engine ' +
-            'grew, and the point of this container is that such a change is ' +
-            'visible rather than silent');
-    t.equal(loaded.mockModulesLoaded.length, 0,
-            'NOT ONE of the mock\'s own modules is loaded in that process. ' +
-            'This is what makes "the engine is a library with no I/O" a ' +
-            'checked claim rather than a comment at the top of seven files');
-  }
-
-  // -------------------------------------------------------------------------
-  // 2. THE ENGINE DECIDES THE SAME THERE AS IT DOES HERE.
+  // 1. THE IMAGE BUILDS THE RUST PEP AND STAMPS ITS VERSION.
   //
-  // Loading is not enough: an engine that loaded and then answered differently
-  // because something it needed was quietly absent would pass every assertion
-  // above. So the child evaluates a policy and the answer is compared with
-  // what the same policy decides in this process, where the REAL helpers are.
+  // A comparison of files, which no running service can answer: the
+  // Dockerfile builds the `xacml-pep` package of the Rust workspace, stamps
+  // `version.json` with that binary at image build time (the version may
+  // never be the thing that stops the container starting, and it is the
+  // number `/admin/xacml/peps` draws), and copies `VERSION` for it to read.
   // -------------------------------------------------------------------------
-  t.log.info('--- The same policy, decided in both processes ---');
-  const pdp = require('../xacml/xacml_pdp');
-  const xml = require('../xacml/xacml_xml');
-  const permit = policyXml('urn:test:agree', 'Permit');
-  const here = pdp.evaluate(xml.parsePolicy(permit), {
-    returnPolicyIdList: false, combinedDecision: false,
-    categories: [{ category: model.CATEGORY.ACCESS_SUBJECT, id: null,
-                   content: null, attributes: [] }]
-  }, {});
-  let there = null;
-  try {
-    there = askTheContainer(
-      'const engine = require("./engine");\n' +
-      'const policy = engine.xml.parsePolicy(' + JSON.stringify(permit) +
-      ');\nconst ' +
-      'answer = engine.pdp.evaluate(policy, { returnPolicyIdList: false, ' +
-      'combinedDecision: false, categories: [{ category: ' +
-      'engine.model.CATEGORY.ACCESS_SUBJECT, id: null, content: null, ' +
-      'attributes: [] }] }, {});\nreturn { decision: answer.decision, ' +
-      'status: answer.status.code };');
-  } catch (error) {
-    t.bad('the container could not evaluate a policy', error.message);
-  }
-  if (there) {
-    t.equal(there.decision, here.decision,
-            'the container and this process reach the SAME decision on the ' +
-            'same policy — which is what a remote PEP is FOR, and the one ' +
-            'thing that would make the whole feature worthless if it were ' +
-            'ever false');
-    t.equal(there.status, here.status.code,
-            'and the same status code with it');
-  }
-
-  // -------------------------------------------------------------------------
-  // 3. THE DOCKERFILE'S COPY SET IS EXACTLY THE ENGINE.
-  //
-  // The obligation CLAUDE.md records the parent project having for its `sts/`
-  // COPY set, enforced here instead of remembered. A module added to
-  // `engine.js` and not to the Dockerfile is an image that dies at load with
-  // MODULE_NOT_FOUND naming a file nobody edited.
-  // -------------------------------------------------------------------------
-  t.log.info('--- The Dockerfile against engine.js ---');
+  t.log.info('--- The Dockerfile builds the Rust PEP ---');
   const dockerfile = fs.readFileSync(path.join(PEP_DIR, 'Dockerfile'), 'utf8');
-  const copied = [];
-  dockerfile.split('\n').forEach(function (line) {
-    const found = /^COPY\s+xacml\/(\S+)\s/.exec(line.trim());
-    if (found) {
-      copied.push(found[1]);
-    }
-  });
-  const engineModules = askTheContainer(
-    'return require("./engine").MODULES;');
-  t.equal(copied.join(','), engineModules.join(','),
-          'the Dockerfile copies exactly the modules engine.js loads, in the ' +
-          'same order. A module in one and not the other is an image that ' +
-          'dies at load naming a file nobody edited');
-  engineModules.forEach(function (file) {
-    t.check(fs.existsSync(path.join(ROOT, 'xacml', file)),
-            'xacml/' + file + ' is in this tree to be copied');
-  });
-  // AND THE SHIM'S OWN DIRECTORY, because a Dockerfile that copied the engine
-  // and forgot the shim would build, start, and fail on the first require of
-  // an engine module — with a message about `../common/helpers` that names
-  // neither this container nor the file that is missing.
-  t.check(/^COPY\s+xacml-pep\/common\//m.test(dockerfile),
-          'and the helpers shim is copied too — without it every engine ' +
-          'module fails to resolve ../common/helpers in the image');
-
-  // -------------------------------------------------------------------------
-  // AND EVERY MODULE OF THIS CONTAINER'S OWN, which was NOT checked and is the
-  // same defect one directory along.
-  //
-  // The block above holds the ENGINE's copy set to `engine.js`'s list, so a
-  // module added over in `xacml/` cannot be forgotten. Nothing held the
-  // container's OWN files to anything: `pep.js`, `sync.js` and — since
-  // 2026-09-06 — `pip.js` are each named by a COPY line written by hand, and a
-  // fourth added tomorrow would build an image that dies at load with
-  // MODULE_NOT_FOUND naming a file that is plainly in the tree. That is the
-  // exact failure this section exists to prevent, and it was guarded in one
-  // direction only.
-  //
-  // The list comes from the DIRECTORY rather than from a table, because a
-  // table here would be the third place the same set is written down and the
-  // one nobody updates.
-  // -------------------------------------------------------------------------
-  const ownModules = fs.readdirSync(PEP_DIR).filter(function (name) {
-    return /\.js$/.test(name);
-  }).sort();
-  ownModules.forEach(function (name) {
-    t.check(dockerfile.indexOf('COPY xacml-pep/' + name + ' ') >= 0,
-            'the Dockerfile copies xacml-pep/' + name,
-            'every .js at the top of xacml-pep/ needs a COPY line; without ' +
-            'one the image builds and the container dies at load');
-  });
-
-  // -------------------------------------------------------------------------
-  // 3a. THE VERSION: COPIED, STAMPED, AND NOT PUT IN THE SHIM (2026-09-06).
-  //
-  // This container reports a build number now — `options.version` rides on the
-  // registration and on every heartbeat, and `/admin/xacml/peps` draws it in a
-  // column headed Version. **It was the hand-written string `'mock-sts
-  // xacml-pep, phase five'` until that day**, which is the failure worth
-  // naming: a console column that answered "which build is that enforcement
-  // point running" with the name of a development phase, unchanged since it was
-  // typed and incapable of changing, because nothing computed it.
-  //
-  // Three things have to hold and none of them can be seen from a running PEP.
-  // -------------------------------------------------------------------------
-  t.log.info('--- The version this container reports ---');
-
-  // THE TWO FILES ARE COPIED. Without them `loadVersion()` finds neither
-  // candidate and the PEP registers as `unknown` — which it is written to
-  // survive, deliberately, so nothing at runtime goes red. That is exactly why
-  // it needs a check here.
+  t.check(/cargo\s+build\b[^\n]*--release[^\n]*-p\s+xacml-pep/
+            .test(dockerfile),
+          'the Dockerfile builds the xacml-pep package of the workspace');
+  t.check(/xacml-pep\s+--stamp\s+\./.test(dockerfile),
+          'the Dockerfile stamps version.json with the binary itself');
   t.check(/^COPY\s+VERSION\s+\.\/VERSION\s*$/m.test(dockerfile),
-          'the Dockerfile copies the repo-root VERSION file',
-          'without it the image has no M.N and reports 0.0');
-  t.check(/^COPY\s+common\/version\.js\s+\.\/version\.js\s*$/m
-            .test(dockerfile),
-          'and copies common/version.js to the container ROOT as version.js',
-          'one copy of the module in this tree, the way the engine is copied ' +
-          'rather than checked in');
-
-  // THE ERROR-CODE REGISTRY, ON THE SAME ARGUMENT. Every failure this
-  // container logs leads with an `STS-XPEP-` code from `common/error_codes.js`,
-  // and `pep.js` falls back to a local tag when the module is absent — written
-  // to survive, like the version, so nothing at runtime goes red when the COPY
-  // line goes. This is where it goes red instead.
-  t.check(/^COPY\s+common\/error_codes\.js\s+\.\/error_codes\.js\s*$/m
-            .test(dockerfile),
-          'and copies common/error_codes.js to the container ROOT as ' +
-          'error_codes.js',
-          'the one table of error codes, copied at build time beside ' +
-          'version.js and never into ./common/, which is the shim');
-
-  // AND IT IS STAMPED, which is the whole reason the build number means
-  // anything: an unstamped container computes its number when the process
-  // starts, so it renumbers itself on every restart and comparing it against
-  // the PDP says nothing.
-  t.check(/node\s+version\.js\s+--stamp\s+\./.test(dockerfile),
-          'and stamps the build number into the image',
-          'without --stamp this container renumbers itself on every restart');
-
-  // -----------------------------------------------------------------------
-  // AND `./common/` IN THE IMAGE IS STILL THE SHIM AND NOTHING ELSE.
-  //
-  // **THIS IS THE ASSERTION FOR A DECISION RATHER THAN FOR A DEFECT**, and it
-  // is here because the obvious place to put `version.js` was beside
-  // `helpers.js` — one line, `COPY common/version.js ./common/`, and it would
-  // have worked. What it would have cost is the only thing that makes the shim
-  // worth having: an engine module that grew a dependency on the mock's config
-  // table, crypto module or realm registry throws at load BECAUSE THERE IS
-  // NOTHING ELSE IN THAT DIRECTORY TO RESOLVE. `version.js` reads files and
-  // shells out to git. A second file there turns "the shim is the evidence"
-  // into "the shim plus whatever else we put there", which is not evidence.
-  //
-  // So the version lives at the container root, and this pins it — a future
-  // reader tidying two version files into the directory that already has a
-  // `common/` gets a failure that says why rather than a silently weaker
-  // claim.
-  // -----------------------------------------------------------------------
-  const intoShim = dockerfile.split('\n').filter(function (line) {
-    return /^COPY\s+\S+\s+\.\/common\//.test(line.trim());
-  });
-  t.equal(intoShim.length, 1,
-          'exactly one COPY writes into the image\'s ./common/, and it is ' +
-          'the shim directory itself — nothing else may be put beside ' +
-          'helpers.js, because an empty directory is what makes "the engine ' +
-          'does no I/O" a checked claim');
-
-  // AND pep.js REPORTS M.N.O RATHER THAN A LABEL. Read out of the source
-  // because starting this container is what the vendored job does; what is
-  // checkable here is that the constant is COMPUTED at all. The regex is
-  // deliberately about the SHAPE of the assignment: `const VERSION =
-  // APP_VERSION.version`, never a string literal.
-  const pepSource = fs.readFileSync(path.join(PEP_DIR, 'pep.js'), 'utf8');
-  t.check(/const\s+VERSION\s*=\s*APP_VERSION\.version\s*;/.test(pepSource),
-          'pep.js takes its version from the loaded record',
-          'it was a hand-written phase label until 2026-09-06');
-  t.check(!/const\s+VERSION\s*=\s*['"]/.test(pepSource),
-          'and no string literal is assigned to VERSION anywhere in it',
-          'a literal here is a version that cannot change and a console ' +
-          'column that cannot be trusted');
-  t.check(/loadVersion\s*\(\)/.test(pepSource) &&
-          pepSource.indexOf("'../common/version'") >= 0 &&
-          pepSource.indexOf("'./version'") >= 0,
-          'and it resolves the module across BOTH layouts — ./version in the ' +
-          'image, ../common/version in a checkout',
-          'neither layout has both, so a single hard-coded path is broken in ' +
-          'one of the two places this file is read');
-  // AND THE REGISTRY THE SAME WAY, for the same reason — `./error_codes` is
-  // where the COPY line above puts it and `../common/error_codes` is where a
-  // checkout has it. A resolution that named one would log every failure in
-  // the other layout under the fallback tag and say so on every start.
-  t.check(/loadErrorCodes\s*\(\)/.test(pepSource) &&
-          pepSource.indexOf("'../common/error_codes'") >= 0 &&
-          pepSource.indexOf("'./error_codes'") >= 0,
-          'and it resolves the error-code registry across BOTH layouts — ' +
-          './error_codes in the image, ../common/error_codes in a checkout',
-          'neither layout has both, so a single hard-coded path is broken in ' +
-          'one of the two places this file is read');
+          'the Dockerfile copies VERSION, which the stamp reads');
+  t.check(/--healthcheck/.test(dockerfile),
+          'the image\'s HEALTHCHECK asks the binary, there being no node ' +
+          'in it');
+  t.check(fs.existsSync(path.join(ROOT, 'rust', 'bins', 'xacml-pep',
+                                  'Cargo.toml')),
+          'the package the Dockerfile names exists');
 
   // -------------------------------------------------------------------------
-  // 3b. THE PIP CLIENT'S WALK, WHICH IS THE HALF OF IT THAT NEEDS NO NETWORK.
+  // 2. THE TWO ENFORCEMENT IMPLEMENTATIONS AGREE — THROUGH ONE TABLE.
   //
-  // `xacml-pep/pip.js` has two halves and only one of them can be driven from
-  // here: the HTTP exchange needs a PDP and belongs to
-  // `tests/vendored/sts_xacml_remote_pep.js`, and the WALK is a pure function
-  // over a parsed policy. The walk is also the half most likely to go quietly
-  // wrong, because **a designator it misses is an empty bag and an empty bag
-  // is a legal answer** — so a policy element added to `xacml_xml.js` tomorrow
-  // that this walk does not know about would make the PEP decide on less
-  // information than the PDP, with nothing anywhere reporting it.
-  //
-  // Every branch of the walk is exercised on ONE document, because a separate
-  // document per branch is how a walk comes to be tested only for the elements
-  // somebody remembered.
-  //
-  // **THE FIXTURES ARE BUILT HERE AND PASSED IN AS JSON**, not written into
-  // the child's source as a quoted literal. The first attempt did that and the
-  // child would not parse: this XML is full of double quotes, it goes through
-  // a JavaScript string in this file and then through `node -e`, and three
-  // levels of escaping is a fixture nobody can edit safely. `JSON.stringify`
-  // does the one level that is actually needed.
-  // -------------------------------------------------------------------------
-  t.log.info('--- The PIP client, in the container, with no network ---');
-  const OUTER_POLICY = "<PolicySet " +
-                       "xmlns=\"urn:oasis:names:tc:xacml:3.0:core:schema:wd-17\" " +
-                       "PolicySetId=\"outer\" Version=\"1.0\" " +
-                       "PolicyCombiningAlgId=\"urn:oasis:names:tc:xacml:3.0:policy-combining-algorithm:deny-unless-permit\">" +
-                       "<Target><AnyOf><AllOf><Match " +
-                       "MatchId=\"urn:oasis:names:tc:xacml:1.0:function:string-equal\">" +
-                       "<AttributeValue " +
-                       "DataType=\"http://www.w3.org/2001/XMLSchema#string\">" +
-                       "x</AttributeValue><AttributeDesignator " +
-                       "Category=\"urn:oasis:names:tc:xacml:1.0:subject-category:access-subject\" " +
-                       "AttributeId=\"inTarget\" " +
-                       "DataType=\"http://www.w3.org/2001/XMLSchema#string\" " +
-                       "MustBePresent=\"false\"/></Match></AllOf></AnyOf>" +
-                       "</Target><Policy PolicyId=\"inner\" Version=\"1.0\" " +
-                       "RuleCombiningAlgId=\"urn:oasis:names:tc:xacml:3.0:rule-combining-algorithm:deny-unless-permit\">" +
-                       "<VariableDefinition " +
-                       "VariableId=\"v\"><AttributeDesignator " +
-                       "Category=\"urn:oasis:names:tc:xacml:1.0:subject-category:access-subject\" " +
-                       "AttributeId=\"inVariable\" " +
-                       "DataType=\"http://www.w3.org/2001/XMLSchema#string\" " +
-                       "MustBePresent=\"false\"/></VariableDefinition><Rule " +
-                       "RuleId=\"r\" Effect=\"Permit\"><Condition><Apply " +
-                       "FunctionId=\"urn:oasis:names:tc:xacml:3.0:function:any-of\">" +
-                       "<Function " +
-                       "FunctionId=\"urn:oasis:names:tc:xacml:1.0:function:string-equal\"/>" +
-                       "<AttributeValue " +
-                       "DataType=\"http://www.w3.org/2001/XMLSchema#string\">" +
-                       "y</AttributeValue><AttributeDesignator " +
-                       "Category=\"urn:oasis:names:tc:xacml:1.0:subject-category:access-subject\" " +
-                       "AttributeId=\"inCondition\" " +
-                       "DataType=\"http://www.w3.org/2001/XMLSchema#string\" " +
-                       "MustBePresent=\"false\"/></Apply></Condition>" +
-                       "<ObligationExpressions><ObligationExpression " +
-                       "ObligationId=\"o\" " +
-                       "FulfillOn=\"Permit\"><AttributeAssignmentExpression " +
-                       "AttributeId=\"a\"><AttributeDesignator " +
-                       "Category=\"urn:oasis:names:tc:xacml:1.0:subject-category:access-subject\" " +
-                       "AttributeId=\"inObligation\" " +
-                       "DataType=\"http://www.w3.org/2001/XMLSchema#string\" " +
-                       "MustBePresent=\"false\"/>" +
-                       "</AttributeAssignmentExpression>" +
-                       "</ObligationExpression></ObligationExpressions>" +
-                       "</Rule></Policy><PolicyIdReference>" +
-                       "referenced</PolicyIdReference></PolicySet>";
-  const REFERENCED_POLICY = "<Policy " +
-                            "xmlns=\"urn:oasis:names:tc:xacml:3.0:core:schema:wd-17\" " +
-                            "PolicyId=\"referenced\" Version=\"1.0\" " +
-                            "RuleCombiningAlgId=\"urn:oasis:names:tc:xacml:3.0:rule-combining-algorithm:deny-unless-permit\">" +
-                            "<Target><AnyOf><AllOf><Match " +
-                            "MatchId=\"urn:oasis:names:tc:xacml:1.0:function:anyURI-equal\">" +
-                            "<AttributeValue " +
-                            "DataType=\"http://www.w3.org/2001/XMLSchema#anyURI\">" +
-                            "r</AttributeValue><AttributeDesignator " +
-                            "Category=\"urn:oasis:names:tc:xacml:3.0:attribute-category:resource\" " +
-                            "AttributeId=\"inResource\" " +
-                            "DataType=\"http://www.w3.org/2001/XMLSchema#anyURI\" " +
-                            "MustBePresent=\"false\"/></Match></AllOf>" +
-                            "</AnyOf></Target><Rule RuleId=\"r2\" " +
-                            "Effect=\"Permit\"><Condition><Apply " +
-                            "FunctionId=\"urn:oasis:names:tc:xacml:3.0:function:any-of\">" +
-                            "<Function " +
-                            "FunctionId=\"urn:oasis:names:tc:xacml:1.0:function:string-equal\"/>" +
-                            "<AttributeValue " +
-                            "DataType=\"http://www.w3.org/2001/XMLSchema#string\">" +
-                            "z</AttributeValue><AttributeDesignator " +
-                            "Category=\"urn:oasis:names:tc:xacml:1.0:subject-category:access-subject\" " +
-                            "AttributeId=\"inReference\" " +
-                            "DataType=\"http://www.w3.org/2001/XMLSchema#string\" " +
-                            "MustBePresent=\"false\"/></Apply></Condition>" +
-                            "</Rule></Policy>";
-  const PIP_REPLY = "<?xml version=\"1.0\" encoding=\"UTF-8\"?><PIPResponse " +
-                    "xmlns=\"urn:sts:xacml:pip:1.0\"><Attributes " +
-                    "xmlns=\"urn:oasis:names:tc:xacml:3.0:core:schema:wd-17\" " +
-                    "Category=\"urn:oasis:names:tc:xacml:1.0:subject-category:access-subject\">" +
-                    "<Attribute AttributeId=\"employeeType\" " +
-                    "IncludeInResult=\"false\"><AttributeValue " +
-                    "DataType=\"http://www.w3.org/2001/XMLSchema#string\">" +
-                    "admin</AttributeValue><AttributeValue " +
-                    "DataType=\"http://www.w3.org/2001/XMLSchema#string\">" +
-                    "staff</AttributeValue></Attribute></Attributes>" +
-                    "<Unresolved><Designator " +
-                    "Category=\"urn:oasis:names:tc:xacml:1.0:subject-category:access-subject\" " +
-                    "AttributeId=\"departmentNumber\" " +
-                    "DataType=\"http://www.w3.org/2001/XMLSchema#string\" " +
-                    "MustBePresent=\"false\"><Reason>the entry does not hold " +
-                    "it</Reason></Designator></Unresolved></PIPResponse>";
-
-  const walk = askTheContainer(
-    'const pip = require("./pip");\n' +
-    'const engine = require("./engine");\n' +
-    'const root = engine.xml.parsePolicy(' + JSON.stringify(OUTER_POLICY) +
-      ');\n' +
-    'const other = engine.xml.parsePolicy(' +
-      JSON.stringify(REFERENCED_POLICY) + ');\n' +
-    'const found = pip.designatorsIn(root, { referenced: other });\n' +
-    'return { ids: found.map(function (one) { return one.attributeId; })' +
-      '.sort(),\n' +
-    '         query: pip.queryDocument("carol", found),\n' +
-    '         max: pip.MAX_DESIGNATORS };');
-
-  t.equal(walk.ids.join(','),
-          'inCondition,inObligation,inReference,inTarget,inVariable',
-          'the walk finds every access-subject designator — in a target, in ' +
-          'a condition, in a variable definition, in an obligation ' +
-          'assignment, and in a policy reached by PolicyIdReference',
-          walk.ids.join(','));
-
-  // THE RESOURCE ONE IS DELIBERATELY ABSENT, and this is the assertion that
-  // keeps the batch honest: the PDP's PIP resolves the access-subject category
-  // and nothing else, so a resource designator in the query would spend a slot
-  // on an answer that is always empty and would put a permanent entry in the
-  // <Unresolved> list of every reply.
-  t.check(walk.ids.indexOf('inResource') < 0,
-          'and does NOT ask about a RESOURCE designator, which that PIP ' +
-          'never resolves',
-          walk.ids.join(','));
-
-  t.check(walk.query.indexOf('<PIPRequest') >= 0 &&
-          walk.query.indexOf('urn:sts:xacml:pip:1.0') > 0,
-          'the query it builds is a <PIPRequest> in the PDP\'s own namespace');
-  t.check(walk.query.indexOf('subject:subject-id') > 0 &&
-          walk.query.indexOf('>carol<') > 0,
-          'carrying the subject, because the PDP reads it out of the ' +
-          '<Request> exactly as its own PDP does — which is what makes the ' +
-          'answer the answer the embedded PIP would have given');
-  t.equal((walk.query.match(/<AttributeDesignator/g) || []).length, 5,
-          'and one <AttributeDesignator> per attribute wanted, in ONE ' +
-          'document — the batch is what makes a SYNCHRONOUS engine able to ' +
-          'use a remote PIP at all');
-
-  // -------------------------------------------------------------------------
-  // 3c. THE ANSWER IS READ WITH THE ENGINE'S OWN REQUEST READER.
-  //
-  // The claim the whole endpoint rests on is that its reply is a REQUEST
-  // FRAGMENT, so this feeds `pip.js` a reply built by hand and checks that
-  // what comes out is what a designator would find — including the two cases
-  // that are easy to get wrong: a MULTI-VALUED attribute, and one that is
-  // simply absent.
-  // -------------------------------------------------------------------------
-  const read = askTheContainer(
-    'const pip = require("./pip");\n' +
-    'const out = pip.readAnswer(' + JSON.stringify(PIP_REPLY) + ');\n' +
-    'const key = Object.keys(out.answers)[0] || "";\n' +
-    'return { keys: Object.keys(out.answers).sort(),\n' +
-    '         key: key,\n' +
-    '         values: out.answers[key] || [],\n' +
-    '         unresolved: out.unresolved };');
-
-  t.equal((read.values || []).join(','), 'admin,staff',
-          'a MULTI-VALUED attribute comes back as a bag of two rather than ' +
-          'the first value — a reader that took one would make a person in ' +
-          'two roles hold one, silently',
-          JSON.stringify(read.values));
-  t.check(read.key.indexOf('employeeType') > 0 &&
-          read.key.indexOf('XMLSchema#string') > 0,
-          'and it is keyed on the CATEGORY, the AttributeId AND the DATATYPE ' +
-          'together, because the resolver answers at the designator\'s ' +
-          'declared type — the same attribute wanted as a string and as an ' +
-          'integer is two different questions with two different answers',
-          read.key);
-  t.equal(read.keys.length, 1,
-          'an attribute the PDP could not resolve produces NO entry at all ' +
-          'rather than an empty one, which is what makes an unresolved ' +
-          'designator indistinguishable from one the request never carried — ' +
-          'the property that lets the PEP need no branch for it',
-          read.keys.join(','));
-  t.equal((read.unresolved[0] || {}).attributeId, 'departmentNumber',
-          'and the reason is still readable for a person, out of the payload ' +
-          'and in the PDP\'s own namespace');
-
-  // -------------------------------------------------------------------------
-  // 3d. THE PIP QUERY TRUSTS WHAT THE PULL TRUSTS.
-  //
-  // `pip.js`'s request is not exported, so this reads the source. Until
-  // 2026-09-16 it took its anchor from `options.ca`, which nothing sets —
-  // `pep.js` stores PEP_TLS_CA as `pdpCa` — so the PIP query ignored the
-  // configured anchor that the pull beside it used.
-  // -------------------------------------------------------------------------
-  const pipSource = fs.readFileSync(path.join(PEP_DIR, 'pip.js'), 'utf8');
-  const syncSource = fs.readFileSync(path.join(PEP_DIR, 'sync.js'), 'utf8');
-  t.check(/ca:\s*options\.pdpCa\b/.test(pipSource) &&
-          /ca:\s*options\.pdpCa\b/.test(syncSource) &&
-          !/ca:\s*options\.ca\b/.test(pipSource),
-          'the PIP query and the policy pull both verify the PDP against ' +
-          'options.pdpCa, the name pep.js gives PEP_TLS_CA');
-
-  // -------------------------------------------------------------------------
-  // 4. THE TWO ENFORCEMENT IMPLEMENTATIONS AGREE.
-  //
-  // `xacml.js`'s `enforce()` and `xacml-pep/pep.js`'s are two readings of
-  // section 7.2, deliberately not shared. Two readings is the point — it is the
-  // same argument `tests/vendored/sts_dpop.js` makes for writing its own DPoP
-  // client — and it is worth nothing unless somebody checks that they agree.
-  //
-  // The container's is asked in the child, over the SEVEN cases that matter:
+  // The embedded PEP against `xacml-pep/enforcement_cases.json` here; the
+  // remote one against the same file in its own crate's test. Seven cases:
   // the two the biases agree on, the two they differ on, and the obligation
   // rule on each side.
   // -------------------------------------------------------------------------
-  t.log.info('--- Two implementations of section 7.2 ---');
+  t.log.info('--- Section 7.2, against the shared table ---');
   const xacml = require('../xacml/xacml');
   const config = require('../common/config');
-  const CASES = [
-    { decision: model.DECISION.PERMIT, obligations: [] },
-    { decision: model.DECISION.DENY, obligations: [] },
-    { decision: model.DECISION.INDETERMINATE, obligations: [] },
-    { decision: model.DECISION.NOT_APPLICABLE, obligations: [] },
-    { decision: model.DECISION.PERMIT,
-      obligations: [{ id: 'urn:sts:xacml:obligation:log',
-                      assignments: [] }] },
-    { decision: model.DECISION.PERMIT,
-      obligations: [{ id: 'urn:test:cannot-do-this', assignments: [] }] },
-    { decision: model.DECISION.DENY,
-      obligations: [{ id: 'urn:test:cannot-do-this', assignments: [] }] }
-  ];
-  ['deny-biased', 'permit-biased'].forEach(function (bias) {
-    const before = config.value('xacml.pepBias');
-    config.setOverride('xacml.pepBias', bias);
-    const mine = CASES.map(function (one) {
-      const outcome = xacml.enforce(one);
-      return outcome.allowed;
-    });
-    config.setOverride('xacml.pepBias', before);
-    let theirs = null;
-    try {
-      theirs = askTheContainer(
-        'process.env.PEP_BIAS = ' + JSON.stringify(bias) + ';\n' +
-        'const pep = require("./pep");\n' +
-        'return ' + JSON.stringify(CASES) + '.map(function (one) {\n' +
-        '  return pep.enforce(one).allowed;\n' +
-        '});');
-    } catch (error) {
-      t.bad('the container could not enforce (' + bias + ')', error.message);
-    }
-    if (theirs) {
-      t.equal(JSON.stringify(theirs), JSON.stringify(mine),
-              'the embedded PEP and the remote one enforce identically over ' +
-              'all seven cases, ' + bias + ' — including the two the biases ' +
-              'disagree about and the Permit carrying an obligation neither ' +
-              'can discharge, which section 7.2 makes a REFUSAL');
-    }
-  });
-  // AND THE ONE THAT MUST NOT AGREE: the same decision under two different
-  // biases. Without this, two implementations that both returned `true`
-  // unconditionally would pass every assertion above.
-  const denyBiased = [];
-  const permitBiased = [];
+  const table = JSON.parse(fs.readFileSync(
+    path.join(PEP_DIR, 'enforcement_cases.json'), 'utf8'));
+  const outcomes = {};
   const wasBias = config.value('xacml.pepBias');
-  config.setOverride('xacml.pepBias', 'deny-biased');
-  CASES.forEach(function (one) {
-    denyBiased.push(xacml.enforce(one).allowed);
-  });
-  config.setOverride('xacml.pepBias', 'permit-biased');
-  CASES.forEach(function (one) {
-    permitBiased.push(xacml.enforce(one).allowed);
+  ['deny-biased', 'permit-biased'].forEach(function (bias) {
+    config.setOverride('xacml.pepBias', bias);
+    outcomes[bias] = table.cases.map(function (one) {
+      return xacml.enforce({
+        decision: one.decision,
+        obligations: one.obligations.map(function (id) {
+          return { id: id, assignments: [] };
+        })
+      }).allowed;
+    });
+    t.equal(JSON.stringify(outcomes[bias]),
+            JSON.stringify(table.cases.map(function (one) {
+              return one[bias];
+            })),
+            'the embedded PEP enforces the shared table, ' + bias +
+            ' — the table the remote PEP is held to as well, including the ' +
+            'Permit carrying an obligation neither can discharge, which ' +
+            'section 7.2 makes a REFUSAL');
   });
   config.setOverride('xacml.pepBias', wasBias);
-  t.check(JSON.stringify(denyBiased) !== JSON.stringify(permitBiased),
+  // AND THE ONE THAT MUST NOT AGREE: without it, two implementations that
+  // both said yes unconditionally would pass.
+  t.check(JSON.stringify(outcomes['deny-biased']) !==
+          JSON.stringify(outcomes['permit-biased']),
           'the two biases DISAGREE somewhere, so the agreement above is a ' +
-          'real comparison rather than two functions that both say yes',
-          'deny-biased ' + JSON.stringify(denyBiased) + ' vs permit-biased ' +
-          JSON.stringify(permitBiased));
+          'real comparison');
 
   // -------------------------------------------------------------------------
-  // 5. THE SYNC TOKEN: WHAT IT IS COMPUTED FROM.
+  // 3. THE SYNC TOKEN: WHAT IT IS COMPUTED FROM.
   // -------------------------------------------------------------------------
   t.log.info('--- The sync token ---');
   // WHAT WAS THERE, so it can be put back. `tests/CLAUDE.md` records the run
@@ -832,7 +294,7 @@ async function run(t) {
   documents.two.isRoot = false;
 
   // -------------------------------------------------------------------------
-  // 6. THE REGISTER.
+  // 4. THE REGISTER.
   // -------------------------------------------------------------------------
   t.log.info('--- The register ---');
   const directory = fakeDirectory();
@@ -974,7 +436,7 @@ async function run(t) {
           'register() then refuses');
 
   // -------------------------------------------------------------------------
-  // 7. THE NUDGE'S REFUSALS, WITHOUT DIALLING ANYTHING.
+  // 5. THE NUDGE'S REFUSALS, WITHOUT DIALLING ANYTHING.
   //
   // `urlProblem()` is separate from the request precisely so this is possible
   // — and so that the console and the registration reply can tell a PEP its
@@ -1025,7 +487,7 @@ async function run(t) {
   config.setOverride('xacml.pepNotify', wasNotify);
 
   // -------------------------------------------------------------------------
-  // 8. THE STORE'S CHANGE OBSERVER IS WHAT FIRES A NUDGE.
+  // 6. THE STORE'S CHANGE OBSERVER IS WHAT FIRES A NUDGE.
   // -------------------------------------------------------------------------
   t.log.info('--- The change observer ---');
   const seen = [];
