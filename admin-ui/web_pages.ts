@@ -32,6 +32,8 @@ import WebKit = require('./web_kit');
 import AttributeSourcesPage =
   require('../attribute-sources/web_attribute_sources');
 import CachesPage = require('./web_caches');
+import ClaimsProvidersPage =
+  require('../oauth-oidc/web_claims_providers');
 import DatabasePage = require('./web_database');
 import DebuggerPage = require('../debugger/web_debugger');
 import GeolocationPage = require('./web_geolocation');
@@ -41,6 +43,8 @@ import MailPage = require('./web_mail');
 import MailOutboxPage = require('./web_mail_outbox');
 import ModePage = require('./web_mode');
 import NodeHealthPage = require('./web_node_health');
+import ProviderCommandsPage =
+  require('../oauth-oidc/web_provider_commands');
 import OAuth2MonitorPage = require('../oauth-oidc/web_oauth2_monitor');
 import SchedulerPage = require('./web_scheduler');
 import SecretsPage = require('./web_secrets');
@@ -67,10 +71,21 @@ const PAGES: WebPage[] = [
     render: AttributeSourcesPage.render },
   { path: '/admin/caches', title: 'Caches', operation: '/admin-api/caches',
     render: CachesPage.render },
+  { path: '/admin/claim-providers', title: 'Claims Providers',
+    operation: '/admin-api/claim-providers',
+    render: ClaimsProvidersPage.render },
+  { path: '/admin/commands', title: 'OpenID Provider Commands',
+    operation: '/admin-api/commands', render: ProviderCommandsPage.render },
   { path: '/admin/database', title: 'Database',
     operation: '/admin-api/database', render: DatabasePage.render },
   { path: '/admin/debugger', title: 'Protocol debugger',
     operation: '/admin-api/debugger', render: DebuggerPage.render },
+  { path: '/admin/deliveries', title: 'Outbound deliveries',
+    operation: '/admin-api/deliveries',
+    render: function (view: Json, ctx?: Json): string {
+      return ProviderCommandsPage.deliveriesBody(ctx || WebKit.context(),
+                                                 view);
+    } },
   { path: '/admin/geolocation', title: 'Geolocation',
     operation: '/admin-api/geolocation', render: GeolocationPage.render },
   { path: '/admin/grants', title: 'Grants', operation: '/admin-api/grants',
