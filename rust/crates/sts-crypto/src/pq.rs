@@ -275,6 +275,18 @@ pub fn verify_message(
     Ok(answer == 1)
 }
 
+/// Whether a key is of the named algorithm (`ML-DSA-44`,
+/// `SLH-DSA-SHA2-128s`, ...). The `openssl` crate's `Id` has no value for a
+/// post-quantum key, so its type can be asked only by name.
+pub fn is_a<T>(key: &PKeyRef<T>, algorithm: &str) -> bool {
+    let Ok(wanted) = name(algorithm) else {
+        return false;
+    };
+    // SAFETY: the key is borrowed for the call and the name outlives it;
+    // EVP_PKEY_is_a only reads both.
+    unsafe { ffi::EVP_PKEY_is_a(key.as_ptr(), wanted.as_ptr()) == 1 }
+}
+
 /// ML-KEM encapsulation to a public key: `(ciphertext, shared secret)`.
 pub fn encapsulate(key: &PKeyRef<Public>) -> CryptoResult<(Vec<u8>, Vec<u8>)> {
     let ctx = context_for(key.as_ptr())?;

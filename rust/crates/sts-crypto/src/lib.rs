@@ -16,5 +16,6 @@ pub mod jws;
 pub mod jws_alg;
 pub mod keys;
 pub mod pq;
+pub mod xmldsig;
 
 pub use error::{CryptoError, CryptoResult};

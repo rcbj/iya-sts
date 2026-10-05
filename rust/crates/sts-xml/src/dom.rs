@@ -466,7 +466,17 @@ impl Document {
                     "a DOCTYPE is not accepted: no DTD is processed, so no \
                          entity can be defined or expanded",
                 )),
-                Event::Decl(_) => {}
+                Event::Decl(decl) => {
+                    // Kept, as xmldom keeps it: a processing instruction
+                    // whose target is `xml`, written back verbatim.
+                    let raw: &str = &decl;
+                    let data = raw.strip_prefix("xml").unwrap_or(raw);
+                    let id = self.alloc(NodeKind::Pi {
+                        target: "xml".to_string(),
+                        data: data.trim_start().to_string(),
+                    });
+                    self.place(id, &stack, &mut top);
+                }
                 Event::Eof => break,
             }
         }
@@ -486,9 +496,12 @@ impl Document {
             return;
         }
         let content = std::mem::take(text);
-        // Text outside the root is whitespace in a well-formed document and
-        // belongs to no node.
-        if stack.is_empty() {
+        // Text outside the root is whitespace in a well-formed document, and
+        // it is kept as the document's own child — xmldom keeps it, and the
+        // serialized document is compared with xmldom's byte for byte. No
+        // canonical form sees it: C14N here always starts at an element.
+        // AFTER the root it is dropped, as xmldom drops it.
+        if stack.is_empty() && top.iter().any(|&n| self.element(n).is_some()) {
             return;
         }
         let id = self.alloc(NodeKind::Text(content));
