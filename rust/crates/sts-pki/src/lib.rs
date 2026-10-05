@@ -13,6 +13,7 @@
 
 pub mod der;
 pub mod error;
+pub mod path;
 pub mod x509;
 
 pub use error::{PkiError, PkiResult};

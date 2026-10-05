@@ -25,6 +25,7 @@
 // with the other external vectors — or `STS_CRYPTO_VECTORS`.
 //
 //   node tests/tools/crypto-vectors.js [directory]
+//   STS_ONLY=limbo node tests/tools/crypto-vectors.js   (one file's prefix)
 //   STS_CRYPTO_VECTORS=<dir> STS_WRITE_VECTORS=1 cargo test -p sts-crypto
 //   node tests/run.js --only=rust_crypto_vectors
 //
@@ -1717,6 +1718,48 @@ async function x509Vectors() {
            }) };
 }
 
+// PATH VALIDATION (`pki.js`'s RFC 5280 rules, #201): Node's verdict on every
+// C2SP x509-limbo case through `verifyPathToAnchors()` and
+// `verifyIssuedDirectly()`, at the case's validation time (or the instant
+// recorded beside it), for `sts-pki`'s path module to give. Only when
+// STS_X509_LIMBO_DIR names the fetched corpus
+// (`tests/tools/fetch-x509-limbo.sh`).
+async function limbo() {
+  const dir = process.env.STS_X509_LIMBO_DIR;
+  if (!dir) {
+    return null;
+  }
+  const pki = require(path.join(ROOT, 'common', 'pki.js'));
+  const bytes = require(path.join(ROOT, 'common', 'vendored',
+                                  'crypto_bytes.js'));
+  const corpus = JSON.parse(fs.readFileSync(path.join(dir, 'limbo.json'),
+                                            'utf8'));
+  const derOf = function (pem) {
+    return Buffer.from(bytes.pemToDer(pem));
+  };
+  const now = Date.now();
+  const out = [];
+  for (const t of corpus.testcases) {
+    const at = t.validation_time ? Date.parse(t.validation_time) : now;
+    const anchors = t.trusted_certs.map(function (pem) {
+      return pki.certificateFromDer(derOf(pem));
+    }).filter(Boolean);
+    const a = await pki.verifyPathToAnchors(derOf(t.peer_certificate),
+      t.untrusted_intermediates.map(derOf), anchors, { now: at });
+    const d = pki.verifyIssuedDirectly(derOf(t.peer_certificate),
+      t.trusted_certs.map(derOf), { now: at });
+    out.push({ id: t.id, now: at,
+               anchors: { ok: a.ok, check: a.check || '',
+                          reason: a.reason || '',
+                          chain: (a.chain || []).length,
+                          policies: a.policies || [] },
+               direct: { ok: d.ok, check: d.check || '',
+                         reason: d.reason || '',
+                         index: d.index === undefined ? null : d.index } });
+  }
+  return { cases: out };
+}
+
 const VECTORS = [{ file: 'jws-node.json', build: jws },
                  { file: 'jwe-node.json', build: jwe },
                  { file: 'c14n-node.json', build: c14n },
@@ -1728,14 +1771,24 @@ const VECTORS = [{ file: 'jws-node.json', build: jws },
                  { file: 'raw-sig-node.json', build: rawSignatures },
                  { file: 'webauthn-node.json', build: webauthn },
                  { file: 'sigstore-node.json', build: sigstore },
-                 { file: 'x509-node.json', build: x509Vectors }];
+                 { file: 'x509-node.json', build: x509Vectors },
+                 { file: 'limbo-node.json', build: limbo }];
 
 if (require.main === module) {
   fs.mkdirSync(OUT, { recursive: true });
   // One at a time, awaiting a builder that is asynchronous (pqX509).
   (async function () {
+    // STS_ONLY=<prefix> writes only the files it names the start of, so one
+    // family's vectors can be rewritten without changing every other key.
+    const only = process.env.STS_ONLY || '';
     for (const one of VECTORS) {
+      if (only && one.file.indexOf(only) !== 0) {
+        continue;
+      }
       const built = await one.build();
+      if (built === null) {
+        continue;
+      }
       fs.writeFileSync(path.join(OUT, one.file),
                        JSON.stringify(built, null, 1) + '\n');
       console.log('wrote ' + path.relative(ROOT, path.join(OUT, one.file)));
