@@ -1,10 +1,10 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 //
 // File: sts_admin_api_operations.js
 //
 // ---------------------------------------------------------------------------
-// EVERY OPERATION OF THE MOCK STS'S MANAGEMENT API, DRIVEN FOR REAL.
+// EVERY OPERATION OF IYA STS'S MANAGEMENT API, DRIVEN FOR REAL.
 //
 // `admin_api.js` next door asserts that the API is SHAPED right: that the
 // OpenAPI document is well formed, that every console page and every console
@@ -2613,8 +2613,8 @@ async function theSamlRegistriesRoundTrip() {
   const credentials = require("../tools/pep-credential.js");
   const minted = await credentials.mint({
     rootSubject: "CN=admin-api-operations saml2 " + REALM +
-                 ",O=mock-sts tests",
-    subject: "CN=admin-api-operations-saml2-sp,O=mock-sts tests" });
+                 ",O=iya-sts tests",
+    subject: "CN=admin-api-operations-saml2-sp,O=iya-sts tests" });
   const certificate = String(minted.anchorPem)
     .replace(/-----[^-]+-----/g, "").replace(/\s+/g, "");
   await refused("/saml2/set-signing-certificate",
@@ -3784,8 +3784,8 @@ async function theTruststoreRoundTrips() {
   const credentials = require("../tools/pep-credential.js");
   const minted = await credentials.mint({
     rootSubject: "CN=admin-api-operations truststore " + REALM +
-                 ",O=mock-sts tests",
-    subject: "CN=admin-api-operations-truststore-leaf,O=mock-sts tests" });
+                 ",O=iya-sts tests",
+    subject: "CN=admin-api-operations-truststore-leaf,O=iya-sts tests" });
   const mine = trustFingerprintOf(minted.anchorPem);
   const notMine = trustFingerprintOf(minted.issuing.pem);
 
@@ -3920,9 +3920,16 @@ async function theTruststoreRoundTrips() {
 // no more — `tests/kerberos_person_keys.js` reads the whole file with an
 // independent parser, in process.
 // ---------------------------------------------------------------------------
+// EVERY PAGE OF BOTH LISTS (#311). The resource pages `people` and
+// `services` (`per`, at most 300; `peoplePage`, `servicesPage`), and a
+// default realm a few suite runs old holds hundreds of people with keys — the
+// bulk loads leave theirs on purpose — so a person made a moment ago was on a
+// later page and the read-back found nothing ("READ BACK AFTER THE KEYTAB …:
+// null", the in-AWS runs 5 and 6). The first reply is returned with both
+// lists replaced by all of their pages.
 async function kerberosPrincipalsHeld(scopeRoot) {
   log.debug("Entering kerberosPrincipalsHeld().");
-  const reply = await get("/kerberos/principals?per=100", scopeRoot);
+  const reply = await get("/kerberos/principals?per=300", scopeRoot);
   assert.strictEqual(reply.status, 200,
     "GET /admin-api/kerberos/principals should answer 200; it answered " +
     reply.status + " " + String(reply.raw).slice(0, 300));
@@ -3930,6 +3937,19 @@ async function kerberosPrincipalsHeld(scopeRoot) {
             Array.isArray(reply.body.people),
     "the resource should list `services` and `people`: " +
     String(reply.raw).slice(0, 300));
+  const lists = [["people", "peoplePage", "peoplePaging"],
+                 ["services", "servicesPage", "servicesPaging"]];
+  for (const list of lists) {
+    const pages = Number((reply.body[list[2]] || {}).pages) || 1;
+    for (let page = 2; page <= pages; page++) {
+      const more = await get("/kerberos/principals?per=300&" + list[1] +
+                             "=" + page, scopeRoot);
+      assert.strictEqual(more.status, 200,
+        "page " + page + " of " + list[0] + " answered " + more.status);
+      reply.body[list[0]] = reply.body[list[0]].concat(
+        more.body[list[0]] || []);
+    }
+  }
   log.debug("Leaving kerberosPrincipalsHeld().");
   return reply;
 }
@@ -4757,7 +4777,7 @@ async function theConfigurationChangeReachesTheStore(candidate) {
     log.info("[persistence] The store is OFF (persistence.mode=memory), " +
              "which is the default and what the containerized stack runs. " +
              "The value round trip above is asserted; the ON-DISK half is " +
-             "not reachable from here and is asserted in mock-sts's own " +
+             "not reachable from here and is asserted in iya-sts's own " +
              "tests/appconfig_persistence.js, which drives the store in " +
              "process against a temporary directory.");
     log.debug("Leaving theConfigurationChangeReachesTheStore(). Store off.");
@@ -5052,7 +5072,22 @@ const NOT_DRIVEN_HERE = {
   // matters is checked there — the gzip expanded as it is read, the version
   // imported and activated, the size bound refused before the body arrives.
   "POST /risk/upload": "sts_admin_risk_upload.js drives it: a dataset file " +
-    "streamed as the request body, imported and read back"
+    "streamed as the request body, imported and read back",
+  // DATA ENCRYPTION KEY ROTATION (#391 P2). Driven by `sts_data_keys.js`,
+  // which follows each queued run to its end on the scheduler and reads what
+  // it did off GET /encryption — a walk asking for a 2xx cannot — and which
+  // asserts the 400 a service that derives its data keys gives.
+  "POST /encryption/rotate-data-keys": "sts_data_keys.js drives it and " +
+    "follows the run to the new keys",
+  "POST /encryption/reencrypt-data-keys": "sts_data_keys.js drives it and " +
+    "follows the run",
+  // #391 P5: a count queues a run whose result is read off GET /encryption,
+  // and a rotation of the key-encryption key is a 400 on every stack here
+  // (the key is read into the process) and would change the key where not.
+  "POST /encryption/count-data-keys": "sts_data_keys.js drives it and " +
+    "reads the counts it left",
+  "POST /encryption/rotate-kek": "sts_data_keys.js asserts the 400 every " +
+    "stack here gives, and follows the run where the key is in a KMS"
 };
 
 function everyDocumentedOperationWasDriven(doc) {
@@ -5407,7 +5442,7 @@ async function test() {
 const program = new Command();
 program
   .name("sts_admin_api_operations")
-  .description("Drive every operation of the mock STS's management API at " +
+  .description("Drive every operation of IYA STS's management API at " +
       "/admin-api for real: replay each documented example, round-trip each " +
       "write through a read, and check that a configuration change reaches " +
       "the persistence store.")

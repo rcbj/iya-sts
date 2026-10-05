@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -207,7 +207,7 @@ class HttpChallengeAttestor {
     const { log, crypto, spiffeId, rpc, outbound, lookup } = this.deps;
     log.debug("Entering HttpChallengeAttestor.attest().");
     const call = context.call;
-    const status = rpc.grpc.status;
+    const status = rpc.status;
     const s = this.settings();
     if (s.problem) {
       log.debug("Leaving HttpChallengeAttestor.attest(). Not configured.");

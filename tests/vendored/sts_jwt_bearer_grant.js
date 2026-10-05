@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 "use strict";
 //
@@ -309,13 +309,13 @@ async function test() {
   // The DEFAULT realm's hierarchy is a different one, or absent. Either way
   // this realm's leaf must not verify against it, which is section 6 below.
   await ok(realmApi + "/applications/create",
-           { identifier: CLIENT, protocols: ["oauth2"],
+           { identifier: CLIENT, protocols: ["oauth2", "oidc"],
              fields: { oauthClientId: CLIENT,
                        oauthClientSecret: CLIENT + "-secret-" + REALM,
                        oauthTokenEndpointAuthMethod: "client_secret_post" } },
            "created the asserting application");
   await ok(realmApi + "/applications/create",
-           { identifier: OTHER_CLIENT, protocols: ["oauth2"],
+           { identifier: OTHER_CLIENT, protocols: ["oauth2", "oidc"],
              fields: { oauthClientId: OTHER_CLIENT,
                        oauthClientSecret: OTHER_CLIENT + "-secret-" + REALM,
                        oauthTokenEndpointAuthMethod: "client_secret_post" } },
@@ -1068,7 +1068,7 @@ async function test() {
   const ONCE = usernameFor("onceclient");
   const CLIENT_TYPE = "urn:ietf:params:oauth:client-assertion-type:jwt-bearer";
   await ok(realmApi + "/applications/create",
-           { identifier: ONCE, protocols: ["oauth2"],
+           { identifier: ONCE, protocols: ["oauth2", "oidc"],
              fields: { oauthClientId: ONCE,
                        oauthTokenEndpointAuthMethod: "private_key_jwt" } },
            "created an application that authenticates with a JWT");

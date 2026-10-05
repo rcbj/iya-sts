@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 "use strict";
 //
@@ -409,7 +409,7 @@ async function test() {
                            mail: CAROL + "@scep.example" } },
            "created " + CAROL + " in realm B");
   await ok(realmApi + "/applications/create",
-           { identifier: APP, protocols: ["oauth2"],
+           { identifier: APP, protocols: ["oauth2", "scep"],
              fields: { oauthClientId: APP } }, "created the application");
   await ok(realmApi + "/scep/add-host-name",
            { kind: "person", identifier: ALICE, hostName: HOST },

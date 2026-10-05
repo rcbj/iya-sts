@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -60,6 +60,9 @@
 // ===========================================================================
 
 import nodeCrypto = require('crypto');
+// WHICH CELL MINTED AN ARTIFACT (#98 D10): a keyed tag appended to what
+// this module mints and read where it is presented. A leaf library.
+import cellLocator = require('../common/cell_locator');
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
 import config = require('../common/config');
@@ -76,8 +79,21 @@ import outbound = require('./outbound_delivery');
 type Json = any;
 
 // The two stores. PER TRUST REALM, persisted where minted rows are.
-const requests = realms.map({ persist: 'oauth2.cibaRequests',
-                              retain: 'age' });
+// `expiresAt` (#333): the sweep's rule for a FINISHED request — kept
+// RETENTION_MS past its end so a late poll is answered. A PENDING one has
+// none: the sweep has to expire it first, which in push mode sends the
+// client its `expired_token`, and a row a restart skipped would never be.
+const requests = realms.map({
+  persist: 'oauth2.cibaRequests',
+  retain: 'age',
+  // A hot path (every row a flush writes): no Entering/Leaving pair.
+  expiresAt: function (record: Json): number | null {
+    const ended = Number(record && (record.finishedAt || record.redeemedAt ||
+                                     record.expiresAt));
+    return record && record.state !== 'pending' && ended > 0
+      ? ended + RETENTION_MS : null;
+  }
+});
 // A notification is a row of `outbound_delivery.ts`'s shared queue (#151):
 // tombstoned and merged by rank, as every kind's store is.
 const deliveries = realms.map({ persist: 'oauth2.cibaDeliveries',
@@ -432,7 +448,9 @@ class Ciba {
     const expiresIn = asked > 0 ? Math.min(Math.floor(asked), maxExpiry) :
       Math.min(this.setting('oauth2.cibaDefaultExpiryS'), maxExpiry);
     const record = {
-      id: nodeCrypto.randomBytes(32).toString('base64url'),
+      // Stamped with the minting cell (#98 D10): the client polls the cell
+      // nearest it, which relays here.
+      id: cellLocator.stamp(nodeCrypto.randomBytes(32).toString('base64url')),
       state: 'pending',
       clientId: String(spec.clientId),
       clientName: String(spec.clientName || spec.clientId),

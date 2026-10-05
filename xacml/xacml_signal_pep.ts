@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -60,6 +60,8 @@ interface ReceivedSignal {
   family: string;
   surface: string;
   level: string;
+  // From a federation partner (#373, #374): `sign-in` or `signals-only`.
+  kind?: string;
 }
 
 interface LoadedPolicy {
@@ -177,8 +179,9 @@ class XacmlSignalPep {
   // empty bag, so a rule about a level never matches an event without one.
   /**
    * Builds the decision request for one reaction: the reaction as the
-   * action-id and the event's name, family, receiving surface and level as
-   * environment attributes, an absent value an empty bag. No subject.
+   * action-id and the event's name, family, receiving surface, level and —
+   * from a federation partner — relationship kind as environment
+   * attributes, an absent value an empty bag. No subject.
    * @param signal - what arrived, as the receiver states it
    * @param action - the reaction asked about, a `RESPONSE` value
    * @returns the request, in the model's request shape
@@ -199,7 +202,8 @@ class XacmlSignalPep {
       .environment(SIGNAL.EVENT, present(signal.event))
       .environment(SIGNAL.FAMILY, present(signal.family))
       .environment(SIGNAL.SURFACE, present(signal.surface))
-      .environment(SIGNAL.LEVEL, present(signal.level));
+      .environment(SIGNAL.LEVEL, present(signal.level))
+      .environment(SIGNAL.KIND, present(signal.kind || ''));
     log.debug("Leaving XacmlSignalPep.buildRequest().");
     return req.build();
   }

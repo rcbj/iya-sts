@@ -1,6 +1,6 @@
 #!/bin/bash
 # SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: BUSL-1.1
 #
 # run-coverage.sh — run the suite with code-coverage collection enabled and
 # render the report.
@@ -127,7 +127,7 @@ BUILD=1
 # images are named in the compose file (`image:`), so the two still share a
 # build rather than each keeping one.
 COMPOSE_FILE="docker-compose-run-tests.yml"
-COMPOSE_PROJECT="${STS_COVERAGE_PROJECT:-mock-sts-coverage}"
+COMPOSE_PROJECT="${STS_COVERAGE_PROJECT:-iya-sts-coverage}"
 COMPOSE_CMD=""
 DOCKER_SUDO=""
 COMPOSE_ENV=()
@@ -325,6 +325,22 @@ case " ${ARGS[*]-} ${STS_COVERAGE_EXTRA_ARGS-} " in
   *) ARGS+=("--timeout-scale=${STS_COVERAGE_JOB_TIMEOUT_SCALE:-3}") ;;
 esac
 
+# ---------------------------------------------------------------------------
+# THE BULK LOADS AT FIFTY PEOPLE (2026-10-02, rcbj). Coverage asks whether a
+# line ran, and the fiftieth create runs the same lines as the five
+# thousandth. This run used the library's sizes (5000 people, 50 groups,
+# 5000 memberships per door, tests/vendored/bulk_load.js) because it reads
+# nothing of tests/tools/modes.sh, and instrumented on CI's two cores the
+# /admin-api door took over twelve minutes and lost a connection
+# (sts_directory_bulk_load_api, run 36967212793). Five groups of ten, because
+# bulk_load.js puts each person in exactly one group. The STS_COVERAGE_BULK_*
+# variables still choose other sizes.
+# ---------------------------------------------------------------------------
+BULK_USERS="${STS_COVERAGE_BULK_USERS:-50}"
+BULK_GROUPS="${STS_COVERAGE_BULK_GROUPS:-5}"
+BULK_MEMBERS_PER_GROUP="${STS_COVERAGE_BULK_MEMBERS_PER_GROUP:-10}"
+export BULK_USERS BULK_GROUPS BULK_MEMBERS_PER_GROUP
+
 # The check is against "off" and not against an empty string, because the
 # default is "on" now: an unset PROTOCOL is no longer how somebody says they
 # want half a report.
@@ -374,7 +390,7 @@ else
   COMPOSE_ENV=(
     "COMPOSE_PROJECT_NAME=${COMPOSE_PROJECT}"
     "STS_NETWORK_SUBNET=${subnet}"
-    "STS_TESTS_CONTAINER_NAME=mock-sts-coverage-runner"
+    "STS_TESTS_CONTAINER_NAME=iya-sts-coverage-runner"
     "STS_CONTAINER_NAME=sts-coverage-unused"
     "CONFIG_FILE=${STS_TEST_CONFIG_FILE}"
     "STS_TEST_ARGS="
@@ -494,6 +510,9 @@ else
     # certificate there and names the same path in a `…CaFile` setting.
     -e OUTBOUND_TEST_CA_DIR=/tmp/sts-test-ca
     -e OUTBOUND_TEST_CA_FILE=/tmp/sts-test-ca/outbound-test-ca.crt
+    # AND THE ATTRIBUTE SOURCES' DATABASE (#94): the compose file names the
+    # stack's postgres, which this run does not start; empty, the job skips.
+    -e STS_TEST_ATTRIBUTE_DB_URL=
     # THE MEMORY MODE'S KEYS (2026-09-27): the throwaway service is a
     # development process with no key-encryption key, and `keys.source` left
     # at `auto` follows the AMBIENT realm's mode — so in a product-mode realm a
@@ -501,6 +520,10 @@ else
     # sts_credential_signals' EAB key was refused "could not be sealed". The
     # `memory` mode sets this for the same service (tests/tools/modes.sh).
     -e STS_KEYS_SOURCE=generated
+    # The bulk loads' sizes, set above; the compose file's own are 5000.
+    -e "BULK_USERS=${BULK_USERS}"
+    -e "BULK_GROUPS=${BULK_GROUPS}"
+    -e "BULK_MEMBERS_PER_GROUP=${BULK_MEMBERS_PER_GROUP}"
     -e "STS_TEST_CONFIG_FILE=${STS_TEST_CONFIG_FILE}"
     -e "LOG_LEVEL=${LOG_LEVEL:-info}"
   )

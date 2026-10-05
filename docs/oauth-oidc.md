@@ -260,11 +260,17 @@ product mode). The key set is cached for `oauth2.clientJwksCacheS` and fetched
 again for an unknown `kid` at most every `oauth2.clientJwksRefetchS`. The mutual TLS methods are
 described in [OAuth security](oauth-security.md#mutual-tls-rfc-8705).
 
-**Client secrets expire and rotate.** A secret past `oauthClientSecretExpiresAt`
-(or the registration's `client_secret_expires_at`) is refused in product mode.
-**Rotate secret** keeps the old secret working for `oauth2.clientSecretOverlapS`
-beside the new one, and **Regenerate secret** ends it at once. A daily scheduler
-job warns about secrets that are close to expiry.
+**An application may hold several client secrets, each with its own expiry.**
+The Credentials tab lists them with an Expires column; **Add a secret** mints
+one (with an optional lifetime in days and a description), **Remove** takes one away at
+once, and up to `oauth2.clientSecretsMax` (5 by default) are held. Any
+unexpired secret authenticates at the token endpoint; the newest unexpired one
+is what this service signs and encrypts with where a client secret is the key
+(HS256 ID Tokens, JARM). A secret past its expiry is refused in product mode.
+**Rotate secret** adds a new one and keeps the old ones working for
+`oauth2.clientSecretOverlapS`; **Regenerate secret** replaces them all at once.
+A daily scheduler job warns about secrets close to expiry and removes expired
+ones an application holds a live secret beside.
 
 #### Mutual TLS clients (RFC 8705)
 
@@ -575,7 +581,9 @@ Connect Core section 12.2). An ID Token issued on a browser session carries
 * **Encryption** (OpenID Connect Core section 10.2): a client that registers
   `id_token_encrypted_response_alg` gets a signed-then-encrypted token,
   encrypted to a key in its `jwks` or registered `jwks_uri`. Only asymmetric key management
-  is offered. A registration with no key to encrypt to is refused, and so is
+  is offered — RSA-OAEP, ECDH-ES, and the post-quantum and hybrid ML-KEM and
+  HPKE algorithms ([Post-quantum key establishment](post-quantum-encryption.md)).
+  A registration with no key to encrypt to is refused, and so is
   an issuance that cannot be encrypted. It is never sent in the clear.
 * **Subject**: `sub` is `urn:uuid:<entryUUID>` of the person's directory entry,
   the same for every `public` client. A renamed person keeps their `sub`. A
@@ -979,7 +987,9 @@ the client registered (RFC 7591, OpenID Connect Core section 5.3.2):
   table is offered: the fourteen of the JWS registry (RS, PS and ES at 256, 384
   and 512, ES256K, EdDSA, and HS256/384/512 keyed by the client's own secret)
   and the eleven post-quantum ones.
-* `userinfo_encrypted_response_alg` gives a JWE: RSA-OAEP, RSA-OAEP-256,
+* `userinfo_encrypted_response_alg` gives a JWE (ML-KEM and the HPKE
+  suites too, X-Wing among them — see
+  [Post-quantum key establishment](post-quantum-encryption.md)): RSA-OAEP, RSA-OAEP-256,
   ECDH-ES and its three key-wrapping variants, over any of the three AES-GCM
   and three AES-CBC-HMAC content encryptions. **`enc` defaults to
   `A128CBC-HS256`** when only an `alg` is registered, as the registration
@@ -1030,8 +1040,13 @@ derived from the same table, so what is advertised is what is accepted.
 **Protocols → OAuth2 / OIDC → Custom claims** says what to add to every access
 token and every ID Token issued **from now on**. There are two sets because the
 two tokens go to different readers (a resource server and a client). Each set
-takes typed claims, LDAP attribute types ticked from those found under
-`ou=users`, and the groups claim.
+takes:
+* typed claims;
+* LDAP attribute types ticked from those found under `ou=users`;
+* **directory-attribute claims**, a claim name of your choosing carrying any
+  attribute of the person's entry (#94, see
+  [the admin console](admin-console.md));
+* the groups claim.
 
 Custom claims are **additive only**. A name the protocol sets itself (`exp`,
 `scope`, `iss` and the rest) is refused when you configure it, because a
@@ -1039,6 +1054,8 @@ setting like that would produce tokens that fail to verify. Nothing already
 issued changes. The page shares one store with **Custom SAML attributes**
 (`/admin/saml-attributes`), which holds the SAML 2.0 and SAML 1.1 sets. The API
 is `/admin-api/claims`.
+
+**Per application.** A client can have claims of its own. They are added to these and win by name, on its OAuth 2.0 / OpenID Connect configuration tab: see [Applications](applications.md#custom-claims-saml-attributes-and-token-lifetimes).
 
 ### UserInfo claims — `/admin/userinfo-claims`
 
@@ -1071,6 +1088,8 @@ lifetimes, and RFC 9700 mode's refresh idle timeout and revoke-on-logout.
 `/admin-api/token-lifetimes` and `POST /admin-api/token-lifetimes/set` are the
 same controls.
 
+
+**Per application.** The four lifetimes can be overridden per client. Its OAuth 2.0 / OpenID Connect tab shows the values in force with these warnings: see [Applications](applications.md#custom-claims-saml-attributes-and-token-lifetimes).
 ### Refresh tokens
 
 Every refresh token is a **nested JWT**: signed, then encrypted as a JWE to this
@@ -1085,7 +1104,20 @@ Rotation with replay detection belongs to [OAuth security](oauth-security.md).
 Every access token is a [RFC 9068](https://www.rfc-editor.org/rfc/rfc9068) JWT
 access token, **in every mode**: header `typ: at+jwt`, the seven required claims,
 `preferred_username` for a person, and `auth_time`, `amr` and `acr` where an
-authentication is behind the grant. Every resource server here (UserInfo, the
+authentication is behind the grant. Every access token also carries a
+`status` claim, `{ "status_list": { "idx", "uri" } }`
+([Token Status List](https://datatracker.ietf.org/doc/draft-ietf-oauth-status-list/)
+section 6.1). It names the token's index in the realm's **access-token status
+list** at `/status-lists/access-tokens`. A resource server that checks tokens
+on its own fetches that list, verifies its signature against `/oauth2/jwks`,
+and reads the bit: `1` means the token was revoked, by `/oauth2/revoke`,
+`/admin/tokens`, a sign-out, or anything else that revokes. The authorization
+server metadata names the list's aggregation as
+`status_list_aggregation_endpoint` (section 9.1). The list is the realm's
+only one, and GNAP's JWT access tokens are on it too. The list is in JWT form,
+or in CWT form when `Accept` asks for `application/statuslist+cwt`. It has one
+bit per token, and `oauth2.accessTokenStatusListTtlS` (60 s) is how long a
+resource server may cache it. Every resource server here (UserInfo, the
 OpenID4VCI endpoints, SCIM, Shared Signals, `/admin-api` and the embedded
 debugger) applies section 4: the type, an issuer this service publishes **at
 the request's address**, and itself in `aud`, compared as the whole URL. A token
@@ -1145,21 +1177,18 @@ as an access token.
 An exchanged token is issued with the scope asked for, so without `openid` it
 gets 403 `insufficient_scope` at UserInfo: there is no end-user behind it.
 
-**Who may act for whom** is decided by the delegation policy (#108): the client,
-and the actor it names, must be allowed to reach every `audience` and `resource` — by
-`appAllowedToDelegateTo` on its own entry or `appAllowedToActOnBehalfOf` on the
-target's — an exchange with no `actor_token` needs `appTrustedToImpersonate`,
-the subject must be in one of the client's `appDelegationSubjectGroup` groups
-where it names any, and a person carrying `stsNotDelegated` or on the console
-roster is never delegated. The issuance policy may then Deny the action-id
-`delegate` ([XACML](xacml.md)). In **product** mode a refusal is `invalid_request`,
-or `invalid_target` for a target (RFC 8693 section 2.2.2), and a requested
-`scope` wider than the subject_token's is `invalid_scope`; in **development**
-the exchange is issued and `/admin/delegation` says what would have been
-refused. A client exchanging its own token needs nothing. The same attributes
-are edited on the application's page, through `POST
-/admin-api/applications/update`, and listed at `GET
-/admin-api/delegation/policy`.
+**Who may act for whom, and as what**, is decided by the issuance policy, with
+the same controls as WS-Trust and Kerberos — see
+[Delegation and impersonation](delegation.md). The actor is the
+`actor_token`'s subject, else the client; the subject_token's `aud` (else its
+`client_id`) is the application it was issued for; the one `audience` or
+`resource` is the target. This service's extension parameter
+`exchange_semantics=delegation|impersonation` asks for the semantics:
+delegation puts `act` on the token, impersonation does not. In **product**
+mode a refusal is `invalid_request`, or `invalid_target` for a target (RFC
+8693 section 2.2.2), and a requested `scope` wider than the subject_token's
+is `invalid_scope`; in **development** the exchange is issued and
+`/admin/delegation` says what would have been refused.
 
 **`may_act`** (section 4.4) is read in every mode: a subject_token whose
 `may_act` names somebody other than the actor (or the client, with no
@@ -1344,6 +1373,40 @@ is also accepted inside a request object.
   (`client_credentials`, `password`, the assertion grants, token exchange) is
   granted the details it asks for. `oauth2.authorizationDetailsMaxEntries` caps
   the array.
+
+**The declarations are the access-type catalogue GNAP reads too** (#432). A
+JSON definition may also say, and each is enforced here:
+
+| Member | Effect on a rich authorization request |
+|---|---|
+| `actions`, `datatypes`, `privileges` | a detail naming another value is refused (`STS-OAUTH-0456`) |
+| `required` | a detail without one of these members is refused (`STS-OAUTH-0456`) |
+| `limits` | a JSON Schema (a subset: `type`, `properties`, `required`, `additionalProperties`, `items`, `enum`, `const`, bounds, `pattern`, `format`) the detail's `limits` must meet (`STS-OAUTH-0877`); a type declaring none refuses `limits` (`STS-OAUTH-0876`) |
+| `bearer: false` | the access token must be sender-constrained by DPoP or a client certificate (`STS-OAUTH-0878`) |
+| `maxLifetimeS` | the access token lives no longer than this |
+| `introspectionClaims` | the person's claims the declaring resource server is told at `/oauth2/introspect` (as top-level members), when it authenticates there; it then sees only the details of its own types |
+
+**Limits on a detail.** A detail of a type that declares a `limits` schema
+may carry `limits` — `amount` with its `currency`, `count`, `receiver`, an
+ISO 8601 repeating `interval`, a `window` — read exactly as GNAP reads them
+(see [GNAP limits](gnap.md#limits)); unreadable ones are refused
+`invalid_authorization_details` (`STS-OAUTH-0916`). The consent screen shows
+each detail's limits as fields the person may **lower, never raise**
+(`STS-OAUTH-0918`, `0919`), and the authorization grants the lowered values.
+Every access token carrying a detail with limits has a `grant_id` claim —
+the Grant Management `grant_id` where the grant is managed, otherwise an
+identifier fixed for the authorization — that stays the same across every
+refresh, and `/oauth2/introspect` returns it. **A resource server keeps its
+running totals under that `grant_id`**, so a client cannot renew its budget
+by refreshing its token. (The demonstration resource server's
+`/gnap/rs/spend` takes GNAP tokens only; it shows what a resource server
+does with the totals.)
+
+`derivableFrom` is GNAP's (RFC 9767 derivation). `interaction`,
+`consentActions` and `acr` are recorded and enforced by a later phase of #432.
+The resource application's page has an **Access types** tab that edits the
+catalogue, and `/admin-api/applications/set-access-type` and
+`/remove-access-type` do the same. See [GNAP](gnap.md#access-types-and-the-issuance-policy).
 
 **`openid_credential` and a subset of the claims.** OpenID4VCI 1.0 puts a
 wallet's claim selection in the `claims` member of an `openid_credential`
@@ -1856,6 +1919,9 @@ on [OAuth security](oauth-security.md#configuration).
 | `oauth2.authorizationCodeTtlS` | `STS_OAUTH2_AUTHORIZATION_CODE_TTL_S` | `300` | yes | How long an authorization code may wait to be redeemed; RFC 9700 mode's transaction memory is measured from it. |
 | `oauth2.redeemedCodeCacheSize` | `STS_OAUTH2_REDEEMED_CODE_CACHE_SIZE` | `10000` | yes | How many redeemed codes are remembered so an identical repeat gets the same tokens and a different one is refused by name. |
 | `oauth2.expiredTokenRetentionS` | `STS_OAUTH2_EXPIRED_TOKEN_RETENTION_S` | `86400` | yes | How long an expired token stays in the `/admin/tokens` register before the hourly purge job deletes its record. |
+| `oauth2.accessTokenStatusListTtlS` | `STS_OAUTH2_ACCESS_TOKEN_STATUS_LIST_TTL_S` | `60` | yes | The `ttl` (and HTTP `max-age`) of the realm's access-token status list and of the revoked-biscuit list: how long a resource server that checks access tokens on its own may keep them, and so how long a revocation can take to reach it (#432). |
+| `oauth2.accessTokenStatusListLifetimeS` | `STS_OAUTH2_ACCESS_TOKEN_STATUS_LIST_LIFETIME_S` | `3600` | yes | How long after it is signed the access-token status list says it is valid (its `exp`). |
+| `oauth2.maxRevokedJtis` | `STS_OAUTH2_MAX_REVOKED_JTIS` | `100000` | yes | The most revoked token ids a realm keeps. A revocation is dropped anyway once its token expires; at the cap the one whose token expires soonest is forgotten (`STS-OAUTH-0787`), and that token is accepted again until it expires. |
 
 ### Certificate chain headers
 
@@ -1888,6 +1954,7 @@ on [OAuth security](oauth-security.md#configuration).
 
 | Setting | Environment variable | Default | Runtime? | What it does |
 |---|---|---|---|---|
+| `oauth2.tokenExchangeAudience` | `STS_OAUTH2_TOKEN_EXCHANGE_AUDIENCE` | `authorization-server` | yes | What an exchanged assertion may be addressed to: this authorization server, or also (`any-declared-relying-party`) a relying party registered here — token forwarding. See [Delegation](delegation.md#assertions-as-the-subject-or-the-actor). |
 | `oauth2.tokenExchangeRefreshToken` | `STS_OAUTH2_TOKEN_EXCHANGE_REFRESH_TOKEN` | `when-requested` | yes | Whether an RFC 8693 exchange returns a refresh token: `never`, `when-requested` or `always`. |
 | `oauth2.jwtBearerGrant` | `STS_OAUTH2_JWT_BEARER_GRANT` | `true` | yes | Offer and advertise the RFC 7523 JWT bearer grant. |
 | `oauth2.jwtBearerRequireRegisteredIssuer` | `STS_OAUTH2_JWT_BEARER_REQUIRE_REGISTERED_ISSUER` | `true` | yes | Refuse an RFC 7523 grant whose `iss` no application declares on `oauthAssertionIssuer`. |
@@ -1910,7 +1977,7 @@ on [OAuth security](oauth-security.md#configuration).
 | `oauth2.registeredClientIdPrefix` | `STS_OAUTH2_REGISTERED_CLIENT_ID_PREFIX` | `sts-client-` | yes | What a dynamically registered `client_id` starts with. |
 | `oauth2.registeredClientIdBytes` | `STS_OAUTH2_REGISTERED_CLIENT_ID_BYTES` | `8` | yes | How many random bytes follow that prefix. |
 | `oauth2.registeredSecretBytes` | `STS_OAUTH2_REGISTERED_SECRET_BYTES` | `48` | yes | How many random bytes make a registered client's secret and registration access token. 48 by default so a `client_secret_jwt` secret is long enough for HS512 (RFC 7518 section 3.2, enforced in product). **Below 24, even HS256 is refused in product.** |
-| `oauth2.registeredSecretLifetimeS` | `STS_OAUTH2_REGISTERED_SECRET_LIFETIME_S` | `0` | yes | The `client_secret_expires_at` published for a registered client, as seconds after registration; 0 is never. |
+| `oauth2.clientSecretLifetimeDays` | `STS_OAUTH2_CLIENT_SECRET_LIFETIME_DAYS` | `0` | yes | The lifetime, in days (0 to 730), of every new client secret, and the `client_secret_expires_at` published for a registered client; 0 is never. |
 | `oauth2.clientSecretOverlapS` | `STS_OAUTH2_CLIENT_SECRET_OVERLAP_S` | `604800` | yes | How long a rotated-out client secret keeps working beside the new one; 0 ends it at once. |
 | `oauth2.clientSecretExpiryWarningDays` | `STS_OAUTH2_CLIENT_SECRET_EXPIRY_WARNING_DAYS` | `14` | yes | How many days before a client secret expires the daily job warns and the console marks it. |
 

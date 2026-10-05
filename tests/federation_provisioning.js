@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -437,9 +437,13 @@ function childMain() {
       return entryOf('fp-nocreate-nobody') ||
              entryOf(REL + '~fp-nocreate-nobody');
     });
-    note(r.status === 403 && !nobody,
-         '7c. while somebody nobody provisioned is still refused and ' +
-         'nothing is created', r.status + ' ' + !!nobody);
+    // THE RELATIONSHIP'S SWITCH WINS (rcbj, 2026-09-30): fedAutocreateUsers
+    // is on here, so the newcomer is created although the realm's
+    // ldap.autocreateUsers is off. Section 2 holds the switch off refusing.
+    note(r.status === 200 && !!nobody,
+         '7c. and somebody nobody provisioned is CREATED, because the ' +
+         'relationship\'s fedAutocreateUsers overrides the realm setting',
+         r.status + ' ' + !!nobody);
     await inSp(function () {
       config.clearOverride('ldap.autocreateUsers');
     });

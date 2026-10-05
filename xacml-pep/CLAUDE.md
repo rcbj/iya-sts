@@ -1,15 +1,12 @@
 # CLAUDE.md — `xacml-pep/`
 
-**A REMOTE XACML POLICY ENFORCEMENT POINT. PHASE FIVE, AND THE ONLY DIRECTORY
-IN THIS REPOSITORY THAT IS NOT PART OF THE MOCK.**
-
-Everything else here is required by `server.js` (through
-`common/protocol_stack.ts`) and runs in the identity service's process. This is
-a **second container**: five files, two npm packages, no express, no config
-table, no directory, and no key it generates — the two pairs it can hold, its
-client certificate and (since 2026-09-13) its HTTPS listener's, are both handed
-to it. It holds its own copy of the XACML engine, PULLS the policy repository
-from the mock's PDP and decides locally.
+**A REMOTE XACML POLICY ENFORCEMENT POINT, AND A RUST BINARY SINCE #444
+(2026-10-05).** Everything the identity service runs is required by
+`server.js`; this is a **second container**, which holds its own copy of the
+XACML engine, PULLS the policy repository from the service's PDP and decides
+locally. Its code is `rust/bins/xacml-pep` on the engine crate
+`rust/crates/sts-xacml` (the runtime's engine too, `rust/DESIGN.md`); what is
+in THIS directory is its image and its one shared expectation.
 
 ```
 docker compose --profile xacml up --build
@@ -18,56 +15,47 @@ curl http://localhost:9090/
 curl "http://localhost:9090/protected?subject=alice&employeeType=staff&action=GET"
 ```
 
+**It replaced a Node container with the same contract** — the same
+environment variables and defaults, ports, endpoints, JSON bodies, log lines
+(bunyan, `Entering`/`Leaving` included, through `sts-core::log`) and error
+codes — so the suite's job and the PDP see no difference. The Node files
+(`pep.js`, `sync.js`, `pip.js`, `engine.js` and the `common/helpers.js`
+shim) are in git history.
+
 ## What is here
 
 | File | What it is |
 |---|---|
-| `engine.js` | Loads the seven engine modules — and, since #306, the one request builder `xacml_request.js` — and holds the ONE list of what "the engine" is. Pins `../common/helpers` to the shim. |
-| `common/helpers.js` | **THE SHIM, AND THE POINT OF THE CONTAINER.** `log` and `xmlEscape`, thirty lines. |
-| `sync.js` | The PDP client: register, pull, heartbeat. Holds what this PEP is enforcing. |
-| `pip.js` | **The PDP's Policy Information Point, over HTTP (2026-09-06).** Walks the policy for every access-subject designator, asks `POST /xacml/pip` for all of them in ONE query, and hands `pep.js` a SYNCHRONOUS resolver over what came back — because the engine's resolver is synchronous and an HTTP request is not. It never rejects: every failure is a resolver answering empty bags, which is what this container did before it existed. |
-| `pep.js` | The service: four endpoints, the enforcement rule, the poll and heartbeat timers — and, since 2026-09-13, the same four over an HTTPS listener whose pair it re-reads from disk. |
-| `Dockerfile` | Build context is the REPOSITORY ROOT — the engine is copied out of `xacml/` at build time. |
-| `package.json` | `@xmldom/xmldom`, `bunyan`. Nothing else. |
+| `Dockerfile` | Build context is the REPOSITORY ROOT: `cargo build --release -p xacml-pep` over `rust/`, then a `debian:bookworm-slim` image holding the binary, `VERSION` and the `version.json` the binary stamps. OpenSSL is built into the binary (D5). |
+| `enforcement_cases.json` | **Section 7.2 as a table**, the seven cases BOTH enforcement points are held to — see *The enforcement rule*. |
+| `certs/` | The compose files' default certificate mount; empty and gitignored. |
 
-**TWO tests guard this directory and they guard opposite halves of it.** Both
-live under `tests/`, with everything else:
-
-| Test | What it holds this directory to |
+| Rust module (`rust/bins/xacml-pep/src/`) | What it is (the Node file it replaces) |
 |---|---|
-| `tests/xacml_pep.js` | **The SHAPE.** The engine loads against the shim with none of the mock's modules in `require.cache`; the Dockerfile's COPY set is exactly `engine.js`'s `MODULES` **and every `.js` at the top of this directory has a COPY line** (guarded in one direction only until 2026-09-06, which is how `pip.js` could have been added and left out of the image); the two `enforce()` implementations agree over seven decisions under both biases; and **`pip.js`'s WALK is driven on one document holding a designator in five places** — a target, a condition, a variable definition, an obligation assignment and a policy reached by `PolicyIdReference` — because a designator the walk misses is an empty bag, an empty bag is a legal answer, and nothing else anywhere would report it. In process, as a child, **making no HTTP request at all** — `sync.js` is not loaded by it. |
-| `tests/vendored/sts_xacml_remote_pep.js` | **THE DEPLOYMENT.** This container, on the mock's own docker network, in the suite's stack — a service of its own in `docker-compose-run-tests.yml` under `./run-tests.sh` (and `--profile xacml` under `./local-run-tests.sh` until that launcher was removed on 2026-09-16). It registers on a LATER attempt (its realm does not exist when it starts), pulls, decides out here, converges BY POLLING on a policy deployed at the PAP with the nudge undeliverable, stops enforcing a disabled policy, empties to the bias, recovers, **is dialled at `/notify` by the PDP across the bridge**, reports its counters onto the PDP's console, believes nothing in a hostile nudge body, and goes on deciding correctly when the PDP is taken away. **AND SINCE 2026-09-06 IT DRIVES `pip.js` END TO END**: `carol` asked for with the request asserting NOTHING, permitted because the designator was resolved against her entry in the mock's embedded directory, with the PDP reaching the same answer — the inversion of what that section used to hold. **It is the only thing anywhere that loads `sync.js` or makes a real PIP query, and the only thing that runs what this Dockerfile produces.** |
+| `options.rs` | The environment, read once (`pep.js`'s `options`). |
+| `pdp_client.rs` | ONE HTTP client for every call to the PDP, with the client certificate on every call (`sync.js`'s `call()`). |
+| `sync.rs` | Register, pull, heartbeat; what is held (`sync.js`). |
+| `pip.rs` | The walk, the batched `POST /xacml/pip`, the resolver (`pip.js`). |
+| `enforce.rs` | The bias and the obligation rule (`pep.js`'s `enforce()`). |
+| `listener.rs` | The HTTPS listener whose pair is re-read from disk. |
+| `service.rs` | The one handler for both listeners, `/protected`'s decision, `GET /`. |
+| `main.rs` | Start-up, the backoff timers, the fault handler, `--stamp`, `--healthcheck`. |
 
-The split is worth keeping straight when either is edited: the first can never
-see a bug in the register/pull/heartbeat client, and the second can never see
-the engine quietly growing a dependency on the identity service.
+## The tests, and which half each guards
 
-**A THIRD SINCE 2026-09-13, `tests/pep_listener_certificate.js`**, holds the
-HTTPS listener's reload rules in a child that requires `pep.js` and starts no
-PDP client — see *The HTTPS listener* below — beside the certificate authority
-half it depends on.
+| Test | What it holds |
+|---|---|
+| `cargo test -p xacml-pep` | **The SHAPE**: the PIP walk over ONE document holding a designator in five places (a target, a condition, a variable definition, an obligation assignment, a policy reached by `PolicyIdReference`) and NOT the resource-category one beside them; the PIP answer read with the engine's own request reader; the listener's reload rules; and the enforcement rule against `enforcement_cases.json`. |
+| `cargo test -p sts-xacml` | The engine against the vendored OASIS suite, case for case as `tests/xacml_conformance.js` holds the service's. |
+| `tests/xacml_pep.js` | The PDP's side (sync token, register, nudge refusals, change observer), the Dockerfile building and stamping the Rust binary, and **the service's `enforce()` against the same `enforcement_cases.json`** — so the two readings of section 7.2 are checked against one expectation. |
+| `tests/xacml_request.js` E | The remote PEP builds through `sts-xacml`'s `AuthorizationRequest`, and every identifier that builder declares is spelt as `xacml_request.js`'s `VOCABULARY` spells it. |
+| `tests/vendored/sts_xacml_remote_pep.js` | **THE DEPLOYMENT**: this image, on the service's own docker network — registering on a later attempt, pulling, deciding out here, converging by polling and by the nudge, the PIP end to end, the HTTPS listener, deciding correctly with the PDP taken away. **The only thing that runs what this Dockerfile produces.** |
 
-**THE LAUNCHERS OWN THAT CONTAINER AND THE JOB DRIVES IT**, which is a
-constraint rather than a preference: `./run-tests.sh` runs the suite
-inside a container with no docker in it, so a job that started its own PEP could
-never run in the stack that gates this repository. Both launchers therefore
-bring one up beside the service and hand the job `XACML_PEP_URL`,
-`XACML_PEP_NAME` and `XACML_PEP_REALM`. With none of those — a bare
-`run-report.js`, a coverage run — the job builds this image and starts a
-container itself, which is the same deployment with a different owner.
+**THE LAUNCHERS OWN THAT CONTAINER AND THE JOB DRIVES IT**: `./run-tests.sh`
+brings one up beside the service and hands the job `XACML_PEP_URL`,
+`XACML_PEP_NAME` and `XACML_PEP_REALM`; with none of those the job builds this
+image and starts a container itself.
 
-**AND IT IS A CONTAINER RATHER THAN A CHILD PROCESS BECAUSE THE FIRST VERSION OF
-IT WAS NOT, FOR ONE DAY, AND ASSERTED LESS THAN IT LOOKED LIKE.** Spawning `node pep.js` on the machine running the suite exercises this
-directory's PROGRAM. It does not exercise the IMAGE — and the difference is
-where this container's whole design lives: the Dockerfile names seven engine
-modules one at a time, and on a developer's machine `engineDir()` finds them one
-directory up whether or not that list is right. Dropping `xacml_functions.js`
-from the COPY set is invisible to a host run and kills the container at load in
-under three seconds. The same is true of the shim's path inside the image, the
-two npm packages, `PEP_TLS_CA` against a certificate issued for the compose
-name, and the nudge arriving over a bridge — none of which a host run touches.
-
----
 
 ## Why this exists at all, which is not obvious
 
@@ -87,7 +75,7 @@ makes all of them reachable:
 * it can REFUSE a document the PDP accepted, and the two policy counts then
   disagree, which is what that column on the console is for;
 * it can go on enforcing correctly with the PDP stopped, which is the trade
-  `sync.js` argues and the one worth being able to watch;
+  `sync.rs` argues and the one worth being able to watch;
 * **the two ends can disagree about whether it is stale**, because they measure
   different things — this PEP counts missed polls and the PDP counts missed
   heartbeats. A PEP that is pulling happily while its heartbeats are dropped
@@ -96,101 +84,26 @@ makes all of them reachable:
 
 ---
 
-## THE SHIM IS THE POINT, AND IT IS A STRUCTURAL ASSERTION RATHER THAN A FEATURE
+## THE ENGINE IS A CRATE — WHICH IS WHAT THE SHIM USED TO PROVE
 
-Every engine module in `xacml/` opens with a header claiming **no I/O, no DOM,
-no store**. Every one of them also opens with:
+The Node container's most valuable property was a thirty-line `helpers.js`
+shim: every engine module required `../common/helpers`, which in the service
+pulls in the whole identity service, and in the image it resolved to the shim
+— so an engine module that grew a dependency on the service THREW AT LOAD.
+"The engine is a library with no I/O" was a checked claim rather than a
+comment.
 
-```js
-const { log } = require('../common/helpers');
-```
+**The crate graph makes the same claim, more strongly.** `sts-xacml` depends
+on no service crate, and Cargo will not compile one that reaches for
+something it does not depend on. The image builds exactly the crates
+`xacml-pep` needs — there is no COPY list to keep in step, and so no test
+holding one. A change that gave the engine a dependency on the runtime would
+be a visible line in `rust/crates/sts-xacml/Cargo.toml`, argued in
+`rust/DESIGN.md` or refused.
 
-and `common/helpers.js` in the mock requires `config.js`, `crypto.js`,
-`pq_jose.js`, `realms.js`, node-forge, jsonwebtoken and the vendored BBS
-module — which is to say the whole identity service. **So the claim had a
-loophole wide enough to drive anything through**, and a module that reached
-past `log` into `config.value()` or `signJwt()` would have broken nothing and
-nobody would have noticed.
+**One copy of the engine in the tree** is unchanged: it is the crate the
+runtime's PDP will use (phase 4), so the PEP and the PDP cannot drift.
 
-`common/helpers.js` here exports `log` and `xmlEscape` and nothing else, and it
-is what `../common/helpers` resolves to inside this image. An engine module that
-grows a dependency on the mock does not degrade here — **it throws at load**,
-and `tests/xacml_pep.js` fails naming it. That test also asserts that not one of
-the mock's own modules appears in the child's `require.cache` after the engine
-has loaded.
-
-So "the engine is a library" stopped being a comment at the top of seven files
-and became a thing that is checked. **That is the most valuable thing in this
-directory** and it is worth more than the feature it came with.
-
-**The shim is therefore NOT a stub to be fleshed out.** A third export is not a
-convenience — it is a dependency the engine grew, and the right response is to
-take it back out of the engine or to argue it in `xacml/CLAUDE.md`, because it
-is a change to what the engine IS.
-
-### And `require.cache` is primed, which needs saying out loud
-
-In the image, `/usr/src/pep/xacml/xacml_pdp.js` resolves `../common/helpers` to
-`/usr/src/pep/common/helpers.js` — the shim. On a developer's machine, running
-`node pep.js` out of the checkout, the same require resolves to the MOCK's
-`common/helpers.js`.
-
-That difference would make the host run and the container run **two different
-programs**, and the one CI checks would be the one nobody develops against. So
-`engine.js` resolves `common/helpers` relative to the engine's own directory and
-installs the shim under that exact path in `require.cache` before requiring
-anything. In the image the two paths are the same file and the priming is a
-no-op it says so about.
-
-Priming the module cache is a blunt instrument. It is acceptable **here** —
-this process is a PEP and nothing in it wants the mock's helpers — and it is
-why `tests/xacml_pep.js` drives this container as a **child process** and never
-requires it: `run.js` runs every test file in one process, so a shim installed
-there would be what the next test got.
-
----
-
-## THE ENGINE IS COPIED AT BUILD TIME. NOT VENDORED, NOT PACKAGED.
-
-Three ways to get seven modules into a second container, and two are wrong:
-
-* **A checked-in copy** — the `common/vendored/` shape. Refused, and the
-  difference from `common/vendored/` is the whole argument: those are ANOTHER
-  REPOSITORY'S files and the drift is between two projects, with a manifest, a
-  drift check and a sync command to manage it. These would be copies of files in
-  the same tree, edited in the same commits, stale the first time somebody fixed
-  a combining algorithm. `xacml/CLAUDE.md`'s central rule is ONE MODEL, and a
-  second copy of the evaluator is the most expensive possible way to break it.
-* **An npm package** — publishing `xacml/` and depending on a version. Refused
-  for a mock: it puts a release step between editing a function and watching the
-  PEP decide differently, which is the loop this repository is arranged around.
-* **A build-time copy** — the Dockerfile copies the seven modules out of
-  `xacml/`. One source of truth in the tree, and the image cannot drift from it.
-
-**The seven are named individually rather than `COPY xacml/ ./xacml/`**, which
-looks like the fragile choice and is the safe one: a whole-directory copy would
-put `xacml.js`, `xacml_admin.js` and `xacml_pep_registry.js` in the image, every
-one of which requires `common/app.js`, `admin-ui/admin.ts` or `common/config.js`
-— sitting there unloadable, waiting for a stack trace about express in a
-container that has no express.
-
-**And the list cannot go stale.** `tests/xacml_pep.js` parses the Dockerfile's
-`COPY` lines and asserts they name exactly `engine.js`'s `MODULES`, in order. A
-module added to the engine and not to the Dockerfile fails the suite naming
-both. That is this repository's own version of the standing obligation the root
-`CLAUDE.md` records the parent project having for its `sts/` COPY set —
-**enforced rather than remembered.**
-
-### What is deliberately NOT copied
-
-`xacml_store.js` (the repository is `ou=policies` in the mock's directory; a PEP
-holds what it pulled, in memory), `xacml_pip.js` (see below), `xacml_alfa.js`,
-`xacml_templates.js`, `xacml_editor.js` (authoring — a PEP reads policy and
-never writes it), `xacml.js` and `xacml_admin.js` (they register express routes
-against the mock's app), and `xacml_pep_registry.js` / `xacml_pep_http.js` (the
-PDP's side of phase five).
-
----
 
 ## THERE IS NO POLICY INFORMATION POINT HERE, SO IT ASKS THE ONE THAT HAS ONE
 
@@ -198,7 +111,7 @@ The mock's PIP reads attributes off a person's entry in the embedded directory.
 **This process has no directory and should not have one** — that half is
 unchanged and is the reason this section exists. What changed on 2026-09-06 is
 what happens next: the PDP publishes its PIP at `POST /xacml/pip`, and
-`pip.js` uses it.
+`pip.rs` uses it.
 
 ### Why it had to change
 
@@ -217,9 +130,9 @@ request is not that. Making the evaluator asynchronous would be a change to the
 code every one of the 455 OASIS conformance cases runs through, for the benefit
 of one deployment shape, and it was refused.
 
-So **the fetch happens before evaluation**: `pip.js` walks the policy for the
+So **the fetch happens before evaluation**: `pip.rs` walks the policy for the
 designators it could be asked about, fetches them ALL IN ONE REQUEST, and hands
-`pep.js` a synchronous resolver over what came back. That is why the PDP's
+`service.rs` a synchronous resolver over what came back. That is why the PDP's
 endpoint takes a LIST of designators — the batch is not an optimisation, it is
 what makes a synchronous engine able to use a remote PIP at all.
 
@@ -235,30 +148,29 @@ static walk cannot decide anything.**
 
 ### The degraded state is the OLD behaviour, and that is the whole safety story
 
-`pip.js` never rejects. A PDP that will not answer, a query the access policy
+`pip.rs` never rejects. A PDP that will not answer, a query the access policy
 refuses, a policy designating more attributes than one query may carry — every
 one of them comes back as a resolver answering empty bags, which is precisely
 what this container did before that file existed. So the failure mode of a
 remote PIP is *no PIP*, reported on `GET /`, rather than a PEP that stops
-deciding. Same rule `sync.js` follows about a failed pull: this component
+deciding. Same rule `sync.rs` follows about a failed pull: this component
 enforces with what it has.
 
 **IT BUILDS ITS REQUESTS WITH THE SERVICE'S BUILDER (#306).**
-`xacml/xacml_request.js` is copied beside the engine (an eighth entry in
-`MODULES`, a COPY line in the Dockerfile) and `pep.js` makes its request
-through it, so this container asks in the shape and spelling the service's
-own PEPs do; `pip.js` takes the subject-kind id from its vocabulary. It is
-engine-side on purpose: it requires the model and the shim and nothing else,
-which `tests/xacml_pep.js`'s no-mock-module check holds.
+`xacml/xacml_request.js` is ported into the engine crate
+(`sts-xacml::builder`) and `service.rs` makes its request through it, so this
+container asks in the shape and spelling the service's own PEPs do; `pip.rs`
+takes the subject-kind id from its vocabulary. `tests/xacml_request.js` holds
+the two builders' spellings to each other.
 
 **ROLES COME FROM THE PIP TOO (#303).** A policy naming `urn:sts:xacml:role`
 gets the subject's configured roles from the PDP — the roles this service
 would issue for — so a request about a subject with no scopes (a SAML
 assertion's person, a Kerberos principal) is decided on roles without the
 caller asserting any. `/protected?subject=payroll-worker&subjectKind=application`
-says the subject is an APPLICATION: `pep.js` asserts
+says the subject is an APPLICATION: `service.rs` asserts
 `urn:sts:xacml:subject-kind` (once — it is not a directory attribute, so not
-under both spellings) and `pip.js` forwards it in the PIP query, because the
+under both spellings) and `pip.rs` forwards it in the PIP query, because the
 same name could be a person holding different roles.
 
 **`PEP_PIP=false` reaches the same state on purpose**, and so does a container
@@ -289,7 +201,7 @@ request was denied by a policy that was working perfectly.
 
 ## THE ENFORCEMENT RULE IS WRITTEN OUT, NOT IMPORTED
 
-`xacml.js`'s `enforce()` is fifty lines and is not in the copy list. It is the
+`xacml.ts`'s `enforce()` is fifty lines and this PEP does not share it. It is the
 PEP's own decision — the bias and the obligation rule — and a PEP that imported
 the PDP's would be demonstrating that two processes agree because they are one
 program. That is the thing `tests/vendored/sts_dpop.js` refuses to do when it
@@ -361,7 +273,7 @@ PDP outage into a container restart loop — an outage of its own.
 
 ## What must work, and what is allowed to fail
 
-**Only the pull has to work.** Everything else in `sync.js` is subordinate to
+**Only the pull has to work.** Everything else in `sync.rs` is subordinate to
 that and the file is arranged so a failure elsewhere cannot stop it:
 
 * **Registering is optional.** It buys a row on the PDP's console and an address
@@ -404,6 +316,15 @@ that and the file is arranged so a failure elsewhere cannot stop it:
 * **The heartbeat is optional**, and its failure is logged at `debug` rather than
   `warn`: a PEP that cannot report is still enforcing correctly, and a warning on
   a sixty-second timer would fill a log with the least important failure here.
+
+* **An unexpected error is contained, not an exit (#355, 2026-09-29).** Once
+  `start()` has finished, an uncaught exception (`STS-XPEP-0033`) or unhandled
+  rejection (`STS-XPEP-0034`) is logged with its stack — a distinct fault at
+  occurrences 1, 2, 3 and each power of ten — and the PEP carries on enforcing
+  the policy it last pulled. An exit would enforce nothing until the container
+  restarted. It is a small copy of `common/fault_boundary.ts`'s process half,
+  because this image compiles no TypeScript; a failure while starting is still
+  `STS-XPEP-0013` and exit 1.
 
 ### When the pull itself fails
 
@@ -520,103 +441,34 @@ a 500 out of the registration, which section 1 fails on; the second is every
 request denied by a working policy, which is section 2 and every convergence
 after it.
 
-## The version this container reports (2026-09-06)
+## The version this container reports
 
-**`options.version` WAS THE STRING `'mock-sts xacml-pep, phase five'` AND THAT
-IS THE WHOLE REASON THIS SECTION EXISTS.** It is not a decoration: that value
-rides on the registration `sync.js` sends, and on every heartbeat after it; the
-PDP stores it as `xacmlPepVersion` on the entry in `ou=peps`; and
-`/admin/xacml/peps` draws it in a column headed **Version**. So an operator
-looking at the console to answer *which build is that enforcement point
-running* was told the name of a development phase — a label that had not
-changed since it was typed and could not, because nothing computed it.
+**It is `M.N.O` from the one `VERSION` file the service reads**, stamped into
+`version.json` at image build time by the binary itself (`xacml-pep --stamp
+.`, `sts-core::version`, a port of `common/version.js`). It rides on the
+registration and every heartbeat, the PDP stores it as `xacmlPepVersion`, and
+`/admin/xacml/peps` draws it — which is why it may never be a hand-written
+label (it was `'mock-sts xacml-pep, phase five'` until 2026-09-06). **A
+version may never stop this container starting**: an unreadable `VERSION` is
+0.0 (`STS-CORE-0040`), a corrupt stamp a computed record.
 
-It is `M.N.O` now, from the mock's own `common/version.js`, and it is on
-`GET /` here as well as on the PDP's row.
+**M.N must agree with the PDP and the build numbers need not**: two images,
+built separately, each stamped with the instant it was built unless one
+`BUILD_NUMBER` is passed to both. `GET /`'s `build.what` says so.
 
-**THE MODULE AND THE `VERSION` FILE ARE COPIED AT BUILD TIME, THE WAY THE
-ENGINE IS.** Same argument as the engine's, one directory over: a checked-in
-copy would be a second copy of a file edited in the same commits, stale the
-first time somebody touched it. So the Dockerfile takes `VERSION` and
-`common/version.js` out of the tree, and there is one of each.
+## Error codes
 
-**THEY GO TO THE CONTAINER ROOT AND NOT INTO `./common/`, AND THAT IS THE
-DECISION WORTH READING.** The obvious line is `COPY common/version.js
-./common/` — one word shorter, and it works. What it would cost is the only
-thing that makes the shim worth having. `./common/` holds `helpers.js` and
-nothing else, and the reason an engine module that grew a dependency on the
-mock's config table, crypto module or realm registry THROWS AT LOAD is that
-**there is nothing else in that directory to resolve**. `version.js` reads
-files and shells out to git. A second file there turns *the shim is the
-evidence* into *the shim plus whatever else we put there*, which is not
-evidence at all — and it would have bought nothing, because a module at the
-container root reports a build number exactly as well.
-
-`tests/xacml_pep.js` pins it rather than leaving it to be remembered: **exactly
-one COPY may write into the image's `./common/`**. A future reader tidying two
-version files into the directory that already has a `common/` gets a failure
-that says why.
-
-**`pep.js` RESOLVES IT ACROSS BOTH LAYOUTS**, `./version` in the image and
-`../common/version` in a checkout. Neither layout has both, so exactly one
-candidate hits and the other miss is normal — the two-candidate shape the
-parent project's `api/server.js` uses for its copy of the same module, for the
-same reason. Missing from BOTH is reported and answers `unknown`: a PEP that
-cannot name its build is still a PEP that enforces, and a version may not stop
-this container starting.
-
-**M.N MUST AGREE WITH THE PDP AND THE BUILD NUMBERS NEED NOT.** Both images are
-built from this one tree and read one `VERSION` file, so a difference in the
-RELEASE is not a stale container — it is a build that took its version from
-somewhere else. The BUILD NUMBER is per image: these are two artifacts, compose
-stamps each with the instant it was built, and passing one `BUILD_NUMBER` to
-both is how you say they are one release. `GET /`'s `build.what` says this on
-the page, because the question that page gets opened for is whether this PEP is
-the same release as the PDP, and two timestamps four seconds apart do not
-answer it. A difference in the build number is the ordinary case — and a PEP
-left behind across a release is exactly what that console column exists to make
-visible.
-
-**Both halves are tested and on the usual line.** `tests/xacml_pep.js` holds
-the SOURCE — that the Dockerfile copies and stamps, that `./common/` stays one
-file, that `pep.js` computes the constant rather than assigning a literal.
-`tests/vendored/sts_xacml_remote_pep.js` holds the TRIP: that the value
-survives a registration, mutual TLS, a lower-cased directory attribute and a
-read-back, and that the two containers report the same release. Every step in
-that chain can drop a field in a way that renders as an empty column rather
-than as an error.
-
-
-## ERROR CODES IN A CONTAINER WITH NO AUDIT LOG (2026-09-12)
-
-Every failure this container can hit has a code in the SAME table as the mock's
-— `common/error_codes.js`, subsystem `XPEP` — and it is recorded at the front of
-the container's log line (`[STS-XPEP-0017] …`). That is the only place it can
-be: there is no audit log and no call-log funnel here, so `mark()` would record
-nothing. A plain Deny, and a refusal decided by the bias alone, carry no code;
-they are the answer.
-
-**THE REGISTRY GOES TO THE CONTAINER ROOT, ON `version.js`'s ARGUMENT.**
-`COPY common/error_codes.js ./error_codes.js` sits beside the version COPY,
-because `./common/` is the shim and exactly one COPY may write into it.
-`tests/xacml_pep.js` pins the line, and its existing one-COPY-into-`./common/`
-assertion now guards this file as well.
-
-**`pep.js` RESOLVES IT ACROSS BOTH LAYOUTS** — `./error_codes` in the image,
-`../common/error_codes` in a checkout — exactly as it resolves the version, and
-a missing registry never stops the container: it falls back to a local tag and
-logs `STS-XPEP-0001` once. `sync.js` and `pip.js` are handed `tag` on
-`options`, the way they are handed everything else `pep.js` decides at start.
-
-**IT IS RESOLVED IN `pep.js` AND NOT IN `engine.js`**, because
-`tests/xacml_pep.js` loads the engine alone in a child and asserts none of the
-mock's modules is in its `require.cache` — and in a checkout the registry is
-one of them. `engine.js`'s one code (`STS-XPEP-0014`, its modules not found) is
-written into the thrown message as a literal for that reason.
-
-**ONE CODE IS SHARED ACROSS BOTH CONTAINERS BY CONSTRUCTION**, which is why
-there is one table and not two: an operator searching two containers' logs for
-a code must never meet one number meaning two things.
+Every failure has an `STS-XPEP-nnnn` code in the service's ONE table
+(`common/error_codes.js`), at the front of the log line through
+`sts_core::log::tag()` — the only place it can be, there being no audit log
+here, and never in a response. `tests/error_codes.js` scans `rust/`'s `.rs`
+files with the rest. **Eight codes were retired with the Node container**
+(0001, 0002, 0007, 0008, 0011, 0012, 0014, 0034): a registry or a version
+module that could not be loaded, a URL that would not parse, a decision that
+threw, a retried registration or a heartbeat that threw, the engine modules
+not found, an unhandled promise rejection — conditions a Rust binary built
+from one workspace cannot meet. A panic once started is `STS-XPEP-0033`,
+contained and throttled as before.
 
 
 ## THE HTTPS LISTENER (2026-09-13)
@@ -642,18 +494,17 @@ The certificate needs the registration, the registration needs this process
 running, and the launchers point this container at a realm the suite creates
 minutes later — so **the pair cannot exist when the container starts**, and a
 listener that read its files once, as `PEP_TLS_CERT` is read, would never get
-one. `reloadListenerPair()` re-reads both paths every
+one. `HttpsListener::reload()` re-reads both paths every
 `PEP_HTTPS_RELOAD_INTERVAL_MS`: a missing file is logged once at `info` (it is
 the ordinary state), the listener starts the first time a usable pair appears,
-and a pair that changes afterwards goes in through `setSecureContext()`, which
+and a pair that changes afterwards is swapped in for new connections, which
 is also what a renewal needs.
 
 **A BAD PAIR NEVER REPLACES A GOOD ONE.** Files are written one at a time, so
 between the writes the certificate and key disagree. A pair is checked whole —
-node parses both, `x509.checkPrivateKey()` holds, `tls.createSecureContext()`
-accepts them — before it is used; a listener already serving keeps its pair,
-and one not yet started waits. `tests/pep_listener_certificate.js` section F
-writes exactly that intermediate state.
+OpenSSL parses both, the certificate's public key is the key's, and an
+`SslAcceptor` accepts them — before it is used; a listener already serving keeps its pair,
+and one not yet started waits. `listener.rs`'s own test writes exactly that intermediate state.
 
 **The digest of the two files is the change test**, not their mtimes: a mount
 can report a new mtime for identical bytes, and a copy can keep an old one.
@@ -676,7 +527,7 @@ can report a new mtime for identical bytes, and a copy can keep an old one.
 
 ### The one handler
 
-`handle()` is shared by both listeners, so the four endpoints are decided by one
+`Pep::handle()` is shared by both listeners, so the four endpoints are decided by one
 function whatever the transport — two listeners that answered differently would
 be two enforcement points in one process. No Entering/Leaving pair on it: it is
 the hot path, and the code style's exception says so above the function.

@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -99,7 +99,10 @@ const CLAIM_SCOPE = 'devices.challenge';
 const MAX_LABEL = 128;
 
 const challenges = realms.map({ persist: 'devices.challenges',
-                                tombstone: true });
+                                tombstone: true,
+                                // #333: the challenge's `expiresAt`, ms.
+                                expiresAt: realms.expiryField('expiresAt',
+                                                              1) });
 
 function challengeTtlMs(): number {
   helpers.log.debug("Entering challengeTtlMs().");
@@ -575,7 +578,8 @@ class DeviceEnrolment {
         expectedOrigin: String(s.origin || ''),
         expectedRpId: String(s.rpId || ''),
         requireUserVerification: webauthnPolicy.requireUserVerification(),
-        previousSignCount: key.signCount });
+        previousSignCount: key.signCount,
+        allowInsecure: webauthnPolicy.insecureAlgorithmsAllowed() });
     } catch (e) {
       log.debug("Caught in DeviceEnrolment.finishLink(): " +
                 ((e && e.message) || e));

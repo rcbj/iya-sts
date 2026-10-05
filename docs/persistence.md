@@ -63,8 +63,18 @@ past its lifetime. Nothing is deleted just because it has not been written for
 a while, so configuration, accounts, the audit log and the statistics survive
 any number of restarts. The one exception is short-lived rows (nonces, codes,
 flows in progress) left behind by a process that stopped before it cleaned
-them up: those are removed at the next start once they are older than
-`persistence.mintedRetention` (7 days).
+them up.
+
+**A start reads only what is still live.** Each row is written with its own
+expiry where the thing it holds has one — a code, a nonce, a pending sign-in,
+a refresh-token family, a finished CIBA request. When a process starts it reads
+only the rows of the realms that exist, leaves out every row whose expiry has
+passed, and leaves out a short-lived row with no expiry once it is older than
+`persistence.mintedRetention` (7 days). Starting takes as long as the live state
+takes to read, not as long as everything that was ever written. The
+`persistence.minted-expiry-purge` job then deletes those rows from the database
+in batches every five minutes, together with any row left behind by a realm
+that has been removed. You can see it on Monitoring → Scheduler.
 
 **A restarted node carries on where it left off.** Each node writes its own
 share of the audit log and the statistics. When a container restarts under the
@@ -253,15 +263,40 @@ database and user parsed out of it.
 
 ## Things worth knowing before you rely on it
 
-### A failed write never fails a request
+### With postgres, a write is answered only after it has committed
 
-If the database goes away, the operation that triggered the write still
-succeeds, this service keeps answering out of memory, and the status turns red
-with the reason. The next change recomputes the same difference and tries again,
-so a failure loses nothing.
+With `persistence.mode=postgres`, a request that changes anything this service
+stores is answered only after that change has been **committed** to the
+database. This covers an HTTP request, and an LDAP add, delete, modify or
+rename. If the commit fails, the request does not get its success:
 
-That is deliberate: a database outage taking down seventeen protocol families that
-do not need a database is the one failure mode a mock must not have.
+* **HTTP:** `503 Service Unavailable` with `Retry-After: 5`, a
+  `{"error": "temporarily_unavailable"}` body, and none of the success
+  response's headers (no `Location`, no `Set-Cookie`).
+* **LDAP:** result code `unavailable` (52).
+
+A success therefore means the change is in the database. It survives a crash,
+a killed container or a lost node.
+
+The change the refused request made is still held in memory. The service keeps
+retrying the write in the background, starting after one second and backing
+off to 30 seconds, until the write lands. While that retry is still pending,
+any further write request is held until the retry commits, even if it changes
+nothing itself. A client that retries a refused `DELETE` therefore gets a `404`
+only once the delete is actually in the database. **Clients should retry a
+503 or a 52**, and treat a `404` on a retried delete, or a `409` on a retried
+create, as success. Reads are still answered from memory while the database is
+unavailable, and the status turns red with the reason.
+
+With `persistence.mode=ldif` or `memory`, a write is answered at once, as
+before. An ldif write is a whole file on a delay, and memory mode has nothing
+to wait for. A failed ldif write is retried the same way.
+
+The origin-claim renewal, the cluster heartbeat and the cluster leases run on
+a database connection of their own. A heavy write load cannot use up the
+connections these keep-alive statements need, so it cannot take a process
+down. Each process opens up to its pool size plus two connections: the change
+listener and this one. Size `max_connections` accordingly.
 
 **Startup is the opposite, and that is not an inconsistency.** A store that was
 configured and cannot be *opened* stops the service from starting, rather than
@@ -345,12 +380,58 @@ worst-case convergence lag when a notification is lost.
 `/admin/persistence` reports all of it, and `status.replication` carries it in
 the JSON.
 
+### Request workers can hold the directory as a window
+
+By default every process — the front process and each request and surface
+worker — holds the whole directory in memory, so a node's memory grows with
+the directory times the number of processes. With
+**`ldap.workerDirectory=postgres-lru`** (restart-only, off by default) each
+worker holds only:
+
+* every entry that is **not** a person or a device — the containers, groups,
+  applications, federation relationships, policies and roles — in full, as
+  before;
+* **the people and devices it read most recently**, at most
+  `ldap.workerCacheEntries` (10,000, about 2.5 KB each), and any it changed
+  and has not yet written.
+
+Anything else is read from PostgreSQL when it is asked for. The directory
+behaves the same way to every protocol; what changes is where the answer comes
+from:
+
+* **A miss costs one database round trip**, during which that worker does
+  nothing else. `ldap.workerDirectoryTimeoutMs` (2,000) bounds it; past it, or
+  when the database refuses, the request is answered **503 with
+  `Retry-After`** (`STS-LDAP-0130`, `STS-LDAP-0131`) rather than from a
+  directory that cannot say what it is missing.
+* **A walk of the people** — an LDAP subtree search, a console list — reads
+  them from the database a page at a time.
+* **A worker's writes are its own**, as before: an entry it changed is kept
+  until its flush has written it, and the store merges it with a change
+  another process made meanwhile.
+* **The front process always holds the whole directory**: it owns the LDAP
+  listener and its own writes.
+
+It needs `persistence.mode=postgres` and a single cell; otherwise the service
+does not start (`STS-LDAP-0133`). Schema version 13 adds the columns and
+indexes the lookups use — run `postgres/schema.sql` again as the owner on an
+older database. [PostgreSQL schema](postgres-schema.md) lists them.
+
 ## Checking on it
 
 `/admin/persistence` in the console, `GET /admin-api/persistence` over JSON, and
 `GET /admin/ldap/service` — which carries the same object and is not behind the console's
 sign-in — all report which mode is in force, where it writes, how much it holds,
-when it last wrote, and what went wrong if that failed.
+when it last wrote, and what went wrong if that failed. The status also
+reports:
+
+* `answersAfterCommit`: whether a write waits for its commit.
+* `commitBacklog` and `retryArmed`: whether a refused write is waiting for its
+  retry.
+* `liveness`: the keep-alive connection's counters.
+* `eventLoop`: how long the process's event loop was blocked, from the
+  `persistence.event-loop-lag` job. Over five seconds, it is also logged as
+  `STS-STORE-0068`.
 
 ## Design decisions
 

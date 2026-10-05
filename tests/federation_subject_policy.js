@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -539,18 +539,13 @@ function childMain() {
     const NEWBIE = 'fsp-new-' + MODE;
     got = await signIn(NEWBIE, {});
     const namespaced = entryOf(REL + '~' + NEWBIE);
-    if (MODE === 'product') {
-      note(got.r.status === 403 && /not been provisioned/.test(got.r.text) &&
-           !namespaced && !entryOf(NEWBIE),
-           '1m. a subject naming nobody: product creates nobody (403)',
-           got.r.status);
-    } else {
-      note(got.r.status === 200 && namespaced && !entryOf(NEWBIE) &&
-           attr(namespaced, 'federationLink').length === 1,
-           '1m. a subject naming nobody gets a NAMESPACED entry, ' +
-           REL + '~' + NEWBIE + ', linked at creation',
-           got.r.status + ' ' + !!namespaced);
-    }
+    // IN BOTH MODES since #325 (2026-09-29): product honours the
+    // relationship's fedAutocreateUsers (on here) as development does.
+    note(got.r.status === 200 && namespaced && !entryOf(NEWBIE) &&
+         attr(namespaced, 'federationLink').length === 1,
+         '1m. a subject naming nobody gets a NAMESPACED entry, ' +
+         REL + '~' + NEWBIE + ', linked at creation',
+         got.r.status + ' ' + !!namespaced);
 
     // =======================================================================
     // 2. ADMINISTRATORS
@@ -619,20 +614,13 @@ function childMain() {
     makePerson(GINA, 'local-gina@sp.example');
     got = await signIn(GINA, {});
     const ginaSpace = entryOf(REL + '~' + GINA);
-    if (MODE === 'product') {
-      note(got.r.status === 403 && !ginaSpace &&
-           JSON.stringify(attr(entryOf(GINA), 'mail')) ===
-             '["local-gina@sp.example"]',
-           '4a. jit-namespaced never reaches the existing person; product ' +
-           'creates no entry, so the sign-in is refused', got.r.status);
-    } else {
-      note(got.r.status === 200 && ginaSpace &&
-           JSON.stringify(attr(entryOf(GINA), 'mail')) ===
-             '["local-gina@sp.example"]' &&
-           attr(entryOf(GINA), 'federationLink').length === 0,
-           '4a. jit-namespaced gives the subject a NEW entry and never the ' +
-           'existing person of that name', got.r.status);
-    }
+    // IN BOTH MODES since #325, as 1m.
+    note(got.r.status === 200 && ginaSpace &&
+         JSON.stringify(attr(entryOf(GINA), 'mail')) ===
+           '["local-gina@sp.example"]' &&
+         attr(entryOf(GINA), 'federationLink').length === 0,
+         '4a. jit-namespaced gives the subject a NEW entry and never the ' +
+         'existing person of that name', got.r.status);
 
     // =======================================================================
     // 5. ANY-EXISTING (development only)

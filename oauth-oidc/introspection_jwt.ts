@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -581,17 +581,23 @@ class IntrospectionJwt {
     // A key marked for encryption if there is one, otherwise the first key of
     // the right type — `use` is optional, and a client that published one key
     // for both purposes has still told us which key it holds.
-    const wantEc = alg.indexOf('ECDH') === 0;
+    //
+    // WHICH KEY FITS IS `common/crypto.js`'s ANSWER (#82): by `kty` for
+    // RSA-OAEP and ECDH-ES as before, and for ML-KEM and HPKE the whole
+    // check — an AKP key must name exactly this alg, an HPKE EC or OKP key
+    // the curve its suite uses — so a client that published an ML-KEM-768
+    // key and registered ML-KEM-1024 is told so here rather than getting a
+    // JWE its key cannot open.
     const candidates = jwks.keys.filter(function (key) {
       if (!key || (key.use && key.use !== 'enc')) {
         return false;
       }
-      return wantEc ? key.kty === 'EC' : key.kty === 'RSA';
+      return stsCrypto.jweRecipientKeyFits(alg, key);
     });
     if (!candidates.length) {
       log.debug("Leaving IntrospectionJwt.recipientKey(). No usable key.");
       throw new Error('This client registered ' + member + '="' + alg +
-        '", which needs ' + (wantEc ? 'an EC' : 'an RSA') + ' key, and ' +
+        '", which needs ' + stsCrypto.jweRecipientKeyNeed(alg) + ', and ' +
         'its jwks has none that can be used for encryption.');
     }
     log.debug("Leaving IntrospectionJwt.recipientKey(). kid=" +
@@ -646,10 +652,8 @@ class IntrospectionJwt {
   //
   // ASYNCHRONOUS because a client may register one of the post-quantum
   // algorithms `introspection_signing_alg_values_supported` advertises, and an
-  // SLH-DSA signature is seconds of computation that `signJwtAsAsync()` moves
-  // to the worker pool. `session` is the pool's routing hint: the resource
-  // server's own client_id, so one resource server's signatures queue behind
-  // each other.
+  // SLH-DSA signature is up to a second of computation that
+  // `signJwtAsAsync()` moves to libuv's thread pool.
   //
   // SIGN, THEN ENCRYPT — section 5's "it MUST be a Nested JWT" — with the
   // outer header carrying `cty: "JWT"` (RFC 7519 section 5.2) and the same
@@ -660,8 +664,8 @@ class IntrospectionJwt {
    * Signs, and where the client registered it encrypts, an introspection
    * response for the authenticated resource server.
    *
-   * A signature may be post-quantum and slow, so it goes through the worker
-   * pool, with the client_id as the routing hint.
+   * A signature may be post-quantum and slow, so it goes through libuv's
+   * thread pool.
    *
    * @param opts - `client` (the authenticated caller's registration),
    *   `introspection`, `issuer`, `advertised` and an optional `now`
@@ -702,8 +706,7 @@ class IntrospectionJwt {
     return signJwtAsAsync(claims, protection.signAlg,
                           client.client_secret,
                           { header: { typ: TYP },
-                            certificateHeader: 'introspection',
-                            session: audience })
+                            certificateHeader: 'introspection' })
       .then(function (signed) {
         if (!protection.encAlg) {
           return { contentType: MEDIA_TYPE, body: signed,

@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -175,7 +175,9 @@ const MAX_ISSUED = 4096;
 
 // credential id -> { idx, expiresAt }. PER REALM, persisted, so a status
 // change reaches the index whichever process issued the credential.
-const issued = realms.map({ persist: 'vc_api.issued' });
+// `expiresAt` (#333): the credential's own `expiresAt`, ms.
+const issued = realms.map({ persist: 'vc_api.issued',
+                            expiresAt: realms.expiryField('expiresAt', 1) });
 
 const issuedCount = cacheRegistry.register({
   name: 'vc-api.issued',

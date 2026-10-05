@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -54,7 +54,24 @@
 //   gnap:exp<<integer seconds>              valid while now < value
 //   gnap:nbf>=<integer seconds>             optional; valid while now >= value
 //   gnap:aud=<id>[ <id>]*                   optional; single spaces
+//   gnap:grant=<string>                     optional; the grant a right's
+//                                           limits are counted against
+//   gnap:act=<b64url JSON object>           optional; the actor chain
 //   gnap:access=<b64url JSON array>         RFC 9635 section 8 rights
+//
+// `gnap:act=` (#432) is RFC 8693 section 4.1's `act` — `{ sub, act? }`, the
+// resource server that DERIVED this token (RFC 9767 section 4) outermost —
+// as the JWT formats carry it. It is a caveat because a caveat is how a
+// macaroon says anything, and it is an AUTHORITY caveat and never an
+// attenuating one: anybody can append a caveat, so a chain read from the
+// attenuation section would be a chain any holder wrote, naming whoever it
+// liked. Only the authorization server, which holds the root key, writes the
+// section before the boundary, so only there is the chain its statement.
+//
+// `gnap:grant=` (#432 phase 5) names the grant a resource server keeps a
+// right's running totals against (the limits themselves are in each right
+// of `gnap:access=`), an AUTHORITY caveat for `gnap:act=`'s reason: a grant a
+// holder could append would be a fresh budget for the asking.
 //
 // A string value is one or more characters with no control character. An
 // integer is decimal with no sign and no leading zero. `gnap:aud=` and
@@ -173,6 +190,8 @@ const CAVEATS = [
   { kind: 'exp', re: new RegExp('^gnap:exp<' + INTEGER + '$') },
   { kind: 'nbf', re: new RegExp('^gnap:nbf>=' + INTEGER + '$') },
   { kind: 'aud', re: /^gnap:aud=([^\s]+(?: [^\s]+)*)$/ },
+  { kind: 'grant', re: new RegExp('^gnap:grant=' + STRING + '$') },
+  { kind: 'act', re: /^gnap:act=([A-Za-z0-9_-]+)$/ },
   { kind: 'access', re: /^gnap:access=([A-Za-z0-9_-]+)$/ }
 ];
 
@@ -181,7 +200,8 @@ const ATTENUATING = ['exp', 'nbf', 'aud', 'access'];
 // Exactly once in the authority section.
 const REQUIRED_ONCE = ['iss', 'iat', 'client', 'exp'];
 // At most once in the authority section.
-const OPTIONAL_ONCE = ['sub', 'nbf', 'aud', 'flags', 'label'];
+const OPTIONAL_ONCE = ['sub', 'nbf', 'aud', 'flags', 'label', 'grant',
+                       'act'];
 
 const VALUE_RE = /^[A-Za-z0-9_-]+$/;
 
@@ -347,6 +367,24 @@ class TokenMacaroon {
         }
       } else if (kind === 'flags' || kind === 'aud') {
         value = value.split(kind === 'flags' ? ',' : ' ');
+      } else if (kind === 'act') {
+        const bytes = this.b64uBytes(value);
+        let parsed;
+        try {
+          parsed = bytes ? JSON.parse(bytes.toString('utf8')) : null;
+        } catch (e) {
+          log.debug("Caught in TokenMacaroon.parseCaveat(): " +
+                    ((e && e.message) || e));
+          // Not JSON; null is the refusal, and the caller names the caveat.
+          parsed = null;
+        }
+        const chain = parsed === null ? null : access.actorChain(parsed);
+        if (!chain || !chain.length) {
+          log.debug("Leaving TokenMacaroon.parseCaveat(). The actor chain " +
+                    "is not a chain.");
+          return null;
+        }
+        value = access.nestActors(chain);
       } else if (kind === 'access') {
         const bytes = this.b64uBytes(value);
         let parsed;
@@ -409,6 +447,12 @@ class TokenMacaroon {
     }
     if (model.aud.length) {
       out.push('gnap:aud=' + model.aud.join(' '));
+    }
+    if (model.grant) {
+      out.push('gnap:grant=' + model.grant);
+    }
+    if (model.act) {
+      out.push('gnap:act=' + this.b64uJson(model.act));
     }
     out.push('gnap:access=' + this.b64uJson(model.access));
     // The caveats must READ BACK as the model that was meant — through the
@@ -628,7 +672,9 @@ class TokenMacaroon {
       iat: authority.iat,
       nbf: authority.nbf === undefined ? null : authority.nbf,
       exp: authority.exp,
-      label: authority.label === undefined ? null : authority.label
+      label: authority.label === undefined ? null : authority.label,
+      act: authority.act === undefined ? null : authority.act,
+      grant: authority.grant === undefined ? null : authority.grant
     };
     const valid = access.validateModel(model);
     if (!valid.ok) {
@@ -829,7 +875,7 @@ class TokenMacaroon {
       ],
       carries: ['jti', 'iss', 'sub', 'aud', 'instanceId', 'access', 'flags',
                 'cnf',
-                'iat', 'nbf', 'exp', 'label'],
+                'iat', 'nbf', 'exp', 'label', 'act', 'grant'],
       cannot: []
     };
     log.debug("Leaving TokenMacaroon.describe().");

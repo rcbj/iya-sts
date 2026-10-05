@@ -79,7 +79,7 @@ Taken from `sts_oauth2_monitor.js` and `sts_oidc_core.js`.
    - **Where responses go back to**: `https://rp.parmon.example.test/cb`.
    - **The client secret**: click **Generate Secret**.
 4. Click **Create the application**.
-5. On the application's page, **Set** `oauthTokenEndpointAuthMethod` to `client_secret_basic`.
+5. On the application's page, **Tick** `client_secret_basic` under `oauthTokenEndpointAuthMethod`, and nothing else.
 6. Grant consent for `openid` on **Consent**, as described above.
 
 **API:**

@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -119,6 +119,11 @@ let allowListProblems = [];
 // at once rather than after a backoff.
 let replacing = false;
 let anchorReplacements = 0;
+// Monitoring → Node Health's question to the child (#329), and who is
+// waiting for an answer to it.
+const MEMORY_STATUS = 'sts-memory-status';
+let nextMemoryStatusId = 1;
+const memoryStatusWaiters = new Map();
 
 // What `DebuggerApiProcess` needs from the rest of the service: the modules
 // this file used to reach for itself, passed in so that the composition root
@@ -569,10 +574,19 @@ class DebuggerApiProcess {
     listeningAt = 0;
     state = 'starting';
     let spawned = null;
+    // THE MEMORY PRELOAD (#329): `debugger_api_status.js`, which answers
+    // Monitoring → Node Health's `sts-memory-status` over this channel — see
+    // its header. Only where it is there (compiled beside this file), so a
+    // tree without it forks the api exactly as before rather than one that
+    // fails at `--require`; Node Health then reads the child from /proc.
+    const preload = path.join(__dirname, 'debugger_api_status.js');
+    const execArgv = fs.existsSync(preload)
+      ? process.execArgv.concat(['--require', preload]) : process.execArgv;
     try {
       spawned = childProcess.fork(path.join(dir, 'server.js'), [], {
         cwd: dir,
         env: this.childEnvironment(),
+        execArgv: execArgv,
         stdio: ['ignore', 'inherit', 'inherit', 'ipc'],
         serialization: 'json'
       });
@@ -600,6 +614,10 @@ class DebuggerApiProcess {
     }, timeoutMs);
     startTimer.unref();
     spawned.on('message', function (message) {
+      if (message && message.type === MEMORY_STATUS) {
+        self.receiveMemoryStatus(message);
+        return;
+      }
       if (message && message.type === 'debugger-api-listening' &&
           child === spawned) {
         listeningAt = Date.now();
@@ -810,6 +828,74 @@ class DebuggerApiProcess {
     });
   }
 
+  // One answer to `askMemory()`, from the preload in the child.
+  receiveMemoryStatus(message) {
+    const { log } = this.deps;
+    log.debug("Entering DebuggerApiProcess.receiveMemoryStatus().");
+    const waiter = memoryStatusWaiters.get(message.id);
+    if (waiter) {
+      waiter({ pid: message.pid, memory: message.memory || null,
+               cpu: message.cpu || null,
+               uptimeS: message.uptimeS === undefined ? null
+                                                      : message.uptimeS });
+    }
+    log.debug("Leaving DebuggerApiProcess.receiveMemoryStatus().");
+  }
+
+  /**
+   * Asks the api child for its own `process.memoryUsage()`,
+   * `process.cpuUsage()` and uptime over the fork's IPC channel, answered by
+   * `debugger_api_status.ts` preloaded into it (#329). Nothing is opened on
+   * the debugger's listener.
+   *
+   * @param timeoutMs - how long to wait; 500 when omitted
+   * @returns a promise of `{ pid, memory, cpu, uptimeS }`, or null when there
+   *   is no child or it did not answer in time
+   */
+  askMemory(timeoutMs?: number): Promise<any> {
+    const { log } = this.deps;
+    log.debug("Entering DebuggerApiProcess.askMemory().");
+    const running = child;
+    if (!running || !running.connected) {
+      log.debug("Leaving DebuggerApiProcess.askMemory(). No child.");
+      return Promise.resolve(null);
+    }
+    const id = nextMemoryStatusId++;
+    const limit = timeoutMs === undefined ? 500 : timeoutMs;
+    log.debug("Leaving DebuggerApiProcess.askMemory(). Asked " +
+              running.pid + ".");
+    return new Promise(function (resolve) {
+      const finish = function (value) {
+        log.debug("Entering finish().");
+        clearTimeout(timer);
+        memoryStatusWaiters.delete(id);
+        resolve(value);
+        log.debug("Leaving finish().");
+      };
+      // Unreferenced: a page nobody is waiting on may not hold the process.
+      const timer = setTimeout(function () {
+        finish(null);
+      }, limit);
+      timer.unref();
+      memoryStatusWaiters.set(id, finish);
+      try {
+        running.send({ type: MEMORY_STATUS, id: id }, function (err) {
+          if (err) {
+            log.debug("Caught in DebuggerApiProcess.askMemory(): " +
+                      ((err && err.message) || err));
+            // The child is going; there is no answer to wait for.
+            finish(null);
+          }
+        });
+      } catch (e) {
+        log.debug("Caught in DebuggerApiProcess.askMemory(): " +
+                  ((e && e.message) || e));
+        // The channel closed between the check and the send.
+        finish(null);
+      }
+    });
+  }
+
   /**
    * Says whether the api is running and has reported listening.
    *
@@ -904,6 +990,8 @@ export = {
   ready: slot.forward('ready'),
   socketPath: slot.forward('socketPath'),
   status: slot.forward('status'),
+  // Monitoring → Node Health (#329): the child's own memory.
+  askMemory: slot.forward('askMemory'),
   updateAnchor: slot.forward('updateAnchor'),
   installedProblem: slot.forward('installedProblem'),
   // For tests/debugger_api_process.js: the two pure pieces of the allow-list.

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+// SPDX-License-Identifier: BUSL-1.1
+
 // File: oauth2_sts_endpoints.js
 //
 // The mock authorization server the STS service hosts: every endpoint its
@@ -829,19 +832,33 @@ async function testAuthorizationCode(meta, verify) {
                      "a bad code_verifier should be invalid_grant.");
   log.info("[code] OK — PKCE is verified, not just accepted.");
 
-  // ... and that refusal must NOT have consumed the code. A check that burns
-  // what it refuses answers the next attempt — the corrected one — with
-  // "already-used" instead of tokens, which is the wrong sentence at exactly
-  // the moment somebody is acting on the right one.
+  // ... and what that refusal did to the code. SINCE iya-sts #424 A CODE IS
+  // PRESENTED ONCE, WHATEVER THE OUTCOME (RFC 6749 section 4.1.2): product
+  // mode refuses the corrected attempt too, and the flow starts over. The
+  // development test stacks turn on `oauth2.codeReplayIdempotent`, the
+  // relaxation #424 kept for this job, under which a refused presentation
+  // leaves the code redeemable — a check that burned what it refused would
+  // answer the corrected attempt with "already-used" instead of tokens.
   const corrected = await postForm(meta.token_endpoint, {
     grant_type: "authorization_code", code: code, client_id: CLIENT_ID,
     redirect_uri: REDIRECT_URI, code_verifier: verifier
   });
-  assert.strictEqual(corrected.status, 200,
-    "a refused code_verifier must leave the code redeemable, so the same " +
-        "code with the RIGHT verifier should be exchanged. Got HTTP " +
-        corrected.status + ": " + corrected.raw);
-  log.info("[code] OK — a refused PKCE check does not consume the code.");
+  if (PRODUCT) {
+    assert.strictEqual(corrected.status, 400,
+      "a product-mode service presents a code once whatever the outcome " +
+          "(iya-sts #424), so the corrected attempt is refused too. Got " +
+          "HTTP " + corrected.status + ": " + corrected.raw);
+    assert.strictEqual(corrected.body.error, "invalid_grant", corrected.raw);
+    log.info("[code] OK — product mode: a code is presented once, the " +
+             "refused one included (#424).");
+  } else {
+    assert.strictEqual(corrected.status, 200,
+      "a refused code_verifier must leave the code redeemable under the " +
+          "development stack's oauth2.codeReplayIdempotent, so the same " +
+          "code with the RIGHT verifier should be exchanged. Got HTTP " +
+          corrected.status + ": " + corrected.raw);
+    log.info("[code] OK — a refused PKCE check does not consume the code.");
+  }
 
   // A fresh one for the token assertions below, so they read against a code
   // whose whole history is this exchange.
@@ -912,17 +929,26 @@ async function testAuthorizationCode(meta, verify) {
            "matching claims, and the refresh token is an encrypted, opaque " +
            "JWE that introspects as a refresh_token for the same subject.");
 
-  if (PRODUCT) {
-    // RFC 9700 section 4.5 and RFC 6749 section 10.5, which a product-mode
-    // service applies instead of the relaxation below: a code presented twice
-    // is refused, and what it bought is revoked, because two holders of one
-    // code cannot be told apart.
-    const replayed = await postForm(meta.token_endpoint, {
-      grant_type: "authorization_code", code: code2, client_id: CLIENT_ID,
-      redirect_uri: REDIRECT_URI, code_verifier: verifier2
-    });
+  // THE SAME CODE, PRESENTED A SECOND TIME — sent ONCE, and what the service
+  // did with it decides which branch below judges it. Until iya-sts #187 the
+  // mode decided: product refused a replay and development answered an
+  // identical one with the same token set. Since #187 it is refused in EVERY
+  // mode (the courtesy survives only as `oauth2.codeReplayIdempotent`, off by
+  // default), so a development service that refuses is judged exactly as a
+  // product one is, and only a 200 from a development service is read as the
+  // old courtesy.
+  const replayed = await postForm(meta.token_endpoint, {
+    grant_type: "authorization_code", code: code2, client_id: CLIENT_ID,
+    redirect_uri: REDIRECT_URI, code_verifier: verifier2
+  });
+  if (PRODUCT || replayed.status !== 200) {
+    // RFC 6749 section 4.1.2, RFC 9700 section 4.5 and RFC 6749 section
+    // 10.5: a code presented twice is refused, and what it bought is revoked,
+    // because two holders of one code cannot be told apart. Product mode has
+    // always done this; every mode does since iya-sts #187.
     assert.strictEqual(replayed.status, 400,
-      "a product-mode service must refuse a code presented twice. Got HTTP " +
+      "a service must refuse a code presented twice (every mode since " +
+          "iya-sts #187; product mode before it). Got HTTP " +
           replayed.status + ": " + replayed.raw);
     assert.strictEqual(replayed.body.error, "invalid_grant",
                        "that refusal should be invalid_grant.");
@@ -934,7 +960,7 @@ async function testAuthorizationCode(meta, verify) {
     assert.strictEqual(revoked.body.active, false,
       "the access token the replayed code bought must be revoked.");
     log.info("[code] OK — a replayed code is refused and what it bought is " +
-             "revoked (product mode).");
+             "revoked (" + (PRODUCT ? "product" : "development") + " mode).");
     // A fresh set for the sections after this one, since this one is dead.
     const third = await authorize(meta, {
       response_type: "code", client_id: CLIENT_ID, redirect_uri: REDIRECT_URI,
@@ -949,6 +975,11 @@ async function testAuthorizationCode(meta, verify) {
                        renewed.raw);
     set = renewed.body;
   } else {
+    // THE PRE-#187 DEVELOPMENT COURTESY, which the pinned sts/ gitlink still
+    // has. DELETE THIS BRANCH once the sts/ pin is past iya-sts #187: from
+    // then on a development service refuses a replay too, and the branch
+    // above judges it.
+    //
     // Single use, NON-SPEC-ally relaxed to idempotent for the rest of the code's
     // own lifetime: the identical Token Request gets the identical token set
     // back — the first answer, not a second one — because a debugging service
@@ -956,15 +987,11 @@ async function testAuthorizationCode(meta, verify) {
     // code" has told the user nothing about which of those two it was. The
     // relaxation is the mock's, is documented in docs/mock-sts.md, and RFC 6749
     // section 4.1.2 permits a real server to refuse this outright.
-    const replay = await postForm(meta.token_endpoint, {
-      grant_type: "authorization_code", code: code2, client_id: CLIENT_ID,
-      redirect_uri: REDIRECT_URI, code_verifier: verifier2
-    });
-    assert.strictEqual(replay.status, 200,
+    assert.strictEqual(replayed.status, 200,
       "the same Token Request for a code already redeemed should be answered " +
-          "with what it was answered the first time. Got HTTP " + replay.status +
-          ": " + replay.raw);
-    assert.deepStrictEqual(replay.body, set,
+          "with what it was answered the first time. Got HTTP " +
+          replayed.status + ": " + replayed.raw);
+    assert.deepStrictEqual(replayed.body, set,
       "a replay must return the SAME token set, not a newly minted one — " +
           "nothing is issued twice here.");
     log.info("[code] OK — an identical replay returns the identical tokens.");
@@ -1361,25 +1388,6 @@ async function testIntrospectionAndRevocation(meta, verify) {
   log.debug("Leaving testIntrospectionAndRevocation().");
 }
 
-// Whether this STS's application registry names `name` as an editable
-// attribute. Read from the same `editable` table sts_applications.js reads,
-// so an STS that predates the attribute is recognised rather than refused:
-// `oauthAllowedScope` arrived with iya-sts #110, the delegation policy's
-// `appTrustedToImpersonate` / `appAllowedToDelegateTo` with #108.
-async function registryEditable(base, name) {
-  log.debug("Entering registryEditable(). base=" + base + " name=" + name);
-  if (!base || !(await registry.registryAvailable(base))) {
-    log.debug("Leaving registryEditable(). No registry.");
-    return false;
-  }
-  const doc = await registry.adminGet(base, "/applications/new");
-  const found = (doc.editable || []).some(function (row) {
-    return row.name === name;
-  });
-  log.debug("Leaving registryEditable(). " + found);
-  return found;
-}
-
 async function testRegistration(meta) {
   log.debug("Entering testRegistration().");
   log.info("=== Dynamic client registration (RFC 7591 / 7592) ===");
@@ -1645,14 +1653,19 @@ async function test() {
   // attribute and refuses one it does not know, so it is added only when the
   // registry's `editable` table names it — this file runs against both.
   // ---------------------------------------------------------------------
-  var declaresScopes = await registryEditable(registry.baseOf(stsBase),
-                                             "oauthAllowedScope");
-  // THE DELEGATION POLICY (iya-sts #108): in product an RFC 8693 exchange in
-  // which this client impersonates the subject is refused unless the policy
-  // says it may — trusted to impersonate, and allowed to delegate to the API
-  // the exchange aims at. Declared only where the STS knows the attributes.
-  var declaresDelegation = await registryEditable(registry.baseOf(stsBase),
-                                                  "appTrustedToImpersonate");
+  var declaresScopes = await registry.registryEditable(
+      registry.baseOf(stsBase), "oauthAllowedScope");
+  // THE DELEGATION POLICY (iya-sts #108, #186): in product an RFC 8693
+  // exchange is refused unless the policy says this client may act for the
+  // subject toward the API the exchange aims at — appAllowedToDelegateTo on
+  // the client. Before iya-sts #186 an exchange with no actor_token was an
+  // impersonation and needed appTrustedToImpersonate too; since #186 it is a
+  // delegation by default and that attribute is gone (merged into
+  // appDelegationSemantics). Each is declared only where the STS knows it.
+  var declaresDelegation = await registry.registryEditable(
+      registry.baseOf(stsBase), "appAllowedToDelegateTo");
+  var declaresImpersonation = await registry.registryEditable(
+      registry.baseOf(stsBase), "appTrustedToImpersonate");
   var clientFields = {
     oauthClientId: CLIENT_ID,
     oauthRedirectUri: [REDIRECT_URI],
@@ -1680,8 +1693,10 @@ async function test() {
     serviceFields.oauthAllowedScope = ["api"];
   }
   if (declaresDelegation) {
-    clientFields.appTrustedToImpersonate = "TRUE";
     clientFields.appAllowedToDelegateTo = [EXCHANGE_RESOURCE];
+  }
+  if (declaresImpersonation) {
+    clientFields.appTrustedToImpersonate = "TRUE";
   }
   await registry.provision(registry.baseOf(stsBase), {
     identifier: CLIENT_ID,

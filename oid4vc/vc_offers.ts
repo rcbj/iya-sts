@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -60,6 +60,9 @@
 // default at load.
 // ---------------------------------------------------------------------------
 
+// WHICH CELL MINTED AN ARTIFACT (#98 D10): a keyed tag appended to what
+// this module mints and read where it is presented. A leaf library.
+import cellLocator = require('../common/cell_locator');
 import crypto = require('crypto');
 import qrcode = require('qrcode');
 // TRUST REALMS: the stores below are partitioned by realm. It requires
@@ -144,7 +147,10 @@ const VCI_FORMATS = Array.from(new Set(
  * issuerState, expires }`.
  */
 const credentialOffers = realms.map({ persist: 'vc_offers.credentialOffers',
-                                      retain: 'age' });
+                                      retain: 'age',
+                                      // #333: the offer's `expires`, ms.
+                                      expiresAt: realms.expiryField('expires',
+                                                                    1) });
 
 // PER TRUST REALM. `realms.map()` is a Map that holds a separate one for each
 // realm and hands out the ambient realm's — so every reader below is
@@ -157,7 +163,10 @@ const credentialOffers = realms.map({ persist: 'vc_offers.credentialOffers',
  * configurationIds, expires }`.
  */
 const issuerStates = realms.map({ persist: 'vc_offers.issuerStates',
-                                  retain: 'age' });
+                                  retain: 'age',
+                                  // #333: its `expires`, ms.
+                                  expiresAt: realms.expiryField('expires',
+                                                                1) });
 
 // Pre-authorized codes (OID4VCI Appendix H.2 / H.3): the End-User authorized
 // the issuance out of band, so there is no authorization request at all — the
@@ -176,7 +185,9 @@ const issuerStates = realms.map({ persist: 'vc_offers.issuerStates',
  * `{ configurationIds, txCode, user, deferred, expires }`.
  */
 const preAuthorizedCodes =
-    realms.map({ persist: 'vc_offers.preAuthorizedCodes', retain: 'age' });
+    realms.map({ persist: 'vc_offers.preAuthorizedCodes', retain: 'age',
+                 // #333: the code's `expires`, ms.
+                 expiresAt: realms.expiryField('expires', 1) });
 
 // Deferred issuance transactions (OID4VCI section 9): the credential endpoint
 // answered 202 with one of these instead of a credential.
@@ -191,7 +202,9 @@ const preAuthorizedCodes =
  * `transaction_id` to `{ claims, holderJwk, readyAt, expires }`.
  */
 const deferredTransactions =
-    realms.map({ persist: 'vc_offers.deferredTransactions', retain: 'age' });
+    realms.map({ persist: 'vc_offers.deferredTransactions', retain: 'age',
+                 // #333: the transaction's `expires`, ms.
+                 expiresAt: realms.expiryField('expires', 1) });
 
 // Access tokens minted from a deferred offer: the credential endpoint answers
 // 202 for these instead of issuing straight away.
@@ -788,7 +801,9 @@ class VcOffers {
     let txCodeValue = "";
 
     if (mode === 'cross-device' || mode === 'deferred') {
-      preAuthorizedCode = randomId(24);
+      // Stamped with the minting cell (#98 D10): the wallet redeems it at
+      // the cell nearest it, which relays the token request here.
+      preAuthorizedCode = cellLocator.stamp(randomId(24));
       // Numeric digits, which is what the issuer's page displays — see
       // newTxCode() for the length and the generator. The value never travels
       // in the offer — only its shape does — because the whole point is that it
@@ -1098,7 +1113,9 @@ class VcOffers {
       if (String(req.query.by || '') === 'reference') {
         // 128 bits (#65): fetching this URI hands over the offer and its
         // pre-authorized code, so it is a bearer value like the code.
-        const id = randomId(16);
+        // Stamped (#98 D10): a wallet fetches the offer from the cell
+        // nearest it, whose edge relays the fetch here.
+        const id = cellLocator.stamp(randomId(16));
         credentialOffers.set(id,
                              { offer: built.offer, expires: now +
                               this.offerTtlMs() });

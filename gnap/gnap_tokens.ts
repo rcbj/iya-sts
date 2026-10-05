@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -99,6 +99,10 @@ interface GnapTokensDeps {
   biscuit: any;
   zcap: any;
   access: any;
+  // The realm's access-token status list (#432), loaded LAZILY: it brings
+  // the cluster claims and the status-list codec, which a process that only
+  // verifies GNAP tokens (an in-process format test) never needs.
+  loadStatusList(): any;
 }
 
 // What a refused verification answers.
@@ -110,7 +114,21 @@ interface Refusal {
 
 const FORMATS = ['jwt-signed', 'jwt-encrypted', 'macaroon', 'biscuit', 'zcap'];
 
+// TWO MARKERS, and only one of them is the type (#157). The PAYLOAD's `typ`,
+// `GNAP`, is the private claim every token this service signs carries for the
+// token registry (`admin_stats.js` counts by it, as it does `Bearer`, `ID` and
+// `Refresh`) and no resource server should read it. The protected HEADER's
+// `typ` is what RFC 8725 section 3.11 means by explicit typing: every JWT this
+// realm signs is signed with the same key, so the header is what keeps a GNAP
+// access token from being accepted as an ID Token, an RFC 9068 access token or
+// a logout token, and the reverse. RFC 9767 registers no media type for a JWT
+// access token, so `gnap-at+jwt` is a PRIVATE one, built the way RFC 9068
+// built `at+jwt`, and `docs/gnap.md` says it is unregistered. Until #157 the
+// header said `JWT`, the docs said it said `GNAP`, and verification read the
+// payload.
 const JWT_TYP = 'GNAP';
+const JWT_HEADER_TYP = 'gnap-at+jwt';
+const JWT_HEADER_MEDIA_TYPE = 'application/gnap-at+jwt';
 
 /**
  * The five access token formats of RFC 9767 section 5.3 behind one mint and one
@@ -126,9 +144,31 @@ class GnapTokens {
    */
   static readonly FORMATS = FORMATS;
   /**
-   * The `typ` header of a GNAP JWT access token, `GNAP`.
+   * The private `typ` claim in a GNAP JWT access token's PAYLOAD, `GNAP`: the
+   * token registry's marker, not the token's type.
    */
   static readonly JWT_TYP = JWT_TYP;
+  /**
+   * The `typ` in a GNAP JWT access token's protected HEADER, `gnap-at+jwt`
+   * (RFC 8725 section 3.11; private, since RFC 9767 registers none).
+   */
+  static readonly JWT_HEADER_TYP = JWT_HEADER_TYP;
+
+  // RFC 7515 section 4.1.9: a `typ` is compared case-insensitively and
+  // `application/` may be omitted, so `GNAP-AT+JWT` and
+  // `application/gnap-at+jwt` are this type and `JWT` is not.
+  /**
+   * Tells whether a protected header's `typ` is a GNAP JWT access token's.
+   *
+   * @param typ - the header value
+   * @returns true for `gnap-at+jwt` or `application/gnap-at+jwt`
+   */
+  static isHeaderType(typ: unknown): boolean {
+    helpers.log.debug("Entering GnapTokens.isHeaderType().");
+    const text = String(typ || '').trim().toLowerCase();
+    helpers.log.debug("Leaving GnapTokens.isHeaderType().");
+    return text === JWT_HEADER_TYP || text === JWT_HEADER_MEDIA_TYPE;
+  }
 
   /**
    * Builds the dispatcher from the modules it reads.
@@ -173,7 +213,7 @@ class GnapTokens {
     const { log } = this;
     log.debug("Entering GnapTokens.jweSecret().");
     log.debug("Leaving GnapTokens.jweSecret().");
-    return this.realmDerived('mock-sts gnap jwt-encrypted A256GCM v1', 32);
+    return this.realmDerived('iya-sts gnap jwt-encrypted A256GCM v1', 32);
   }
 
   // The macaroon root key a resource server verifies with. `rsIdentity` is the
@@ -191,7 +231,7 @@ class GnapTokens {
     const { log } = this;
     log.debug("Entering GnapTokens.macaroonKeyFor().");
     log.debug("Leaving GnapTokens.macaroonKeyFor().");
-    return this.realmDerived('mock-sts gnap macaroon root v1|' +
+    return this.realmDerived('iya-sts gnap macaroon root v1|' +
                              String(rsIdentity || ''), 32);
   }
 
@@ -287,7 +327,7 @@ class GnapTokens {
   // The two Ed25519 suites use the realm's Ed25519 unit, as biscuits do. The
   // post-quantum ones use the realm's `jose:ML-DSA-44` or
   // `jose:SLH-DSA-SHA2-128s` unit — keys the realm already makes, publishes
-  // in its JWKS and rotates (#42), brought into being in the worker pool by
+  // in its JWKS and rotates (#42), brought into being on libuv's thread pool by
   // `allSigningKeysAsync()` on first use, which is why this is asynchronous.
   // -------------------------------------------------------------------------
   /**
@@ -351,7 +391,7 @@ class GnapTokens {
   // -------------------------------------------------------------------------
   // THE JWT CLAIMS FOR THE MODEL (RFC 9767 section 2.1's JWT mappings).
   // -------------------------------------------------------------------------
-  private claimsOf(model: any): Record<string, any> {
+  private claimsOf(model: any, statusRef?: any): Record<string, any> {
     const { log } = this;
     log.debug("Entering GnapTokens.claimsOf().");
     const claims: Record<string, any> = {
@@ -367,7 +407,16 @@ class GnapTokens {
       client_id: model.instanceId,
       access: model.access,
       flags: model.flags && model.flags.length ? model.flags : undefined,
-      label: model.label || undefined
+      label: model.label || undefined,
+      // draft-ietf-oauth-status-list section 6.1 (#432): the token's place
+      // in the realm's ONE access-token status list, which it shares with
+      // OAuth's RFC 9068 tokens (rcbj's decision 4) — how a resource server
+      // that verifies this JWT on its own sees it revoked (RFC 9767 section
+      // 6.3). Not part of the section 2.1 model: `modelOfClaims()` does not
+      // read it back, and introspection answers from the record.
+      status: statusRef ? { status_list: { idx: statusRef.idx,
+                                           uri: statusRef.uri } }
+                        : undefined
     };
     if (model.sub) {
       claims.sub = model.sub;
@@ -377,6 +426,17 @@ class GnapTokens {
     }
     if (model.cnf) {
       claims.cnf = model.cnf;
+    }
+    // RFC 8693 section 4.1's `act`, as the model holds it (#432): the
+    // resource server that derived this token, nesting each earlier one.
+    if (model.act) {
+      claims.act = model.act;
+    }
+    // The grant a right's `limits` (in `access`, as the model holds them)
+    // are counted against (#432 phase 5) — the name introspection answers
+    // it under too.
+    if (model.grant) {
+      claims.grant_id = model.grant;
     }
     Object.keys(claims).forEach(function (name) {
       if (claims[name] === undefined) {
@@ -404,7 +464,9 @@ class GnapTokens {
       iat: claims.iat || null,
       nbf: claims.nbf || null,
       exp: claims.exp || null,
-      label: claims.label || null
+      label: claims.label || null,
+      act: claims.act === undefined ? null : claims.act,
+      grant: claims.grant_id === undefined ? null : claims.grant_id
     };
   }
 
@@ -489,15 +551,25 @@ class GnapTokens {
         refused.errorCode = valid.errorCode;
         throw errorCodes.mark(refused, valid.errorCode);
       }
+      // THE STATUS-LIST INDEX (#432), claimed across the cluster before the
+      // JWS is signed, for as long as the token lives. A token that cannot
+      // be given one is not minted (the allocator's STS-OAUTH-0816 / 0817,
+      // and the caller's own code): a JWT that a resource server could never
+      // see revoked is the hole this list closes. `context.base` is the
+      // realm's base, the ZCAP controller's too.
+      const statusRef = await this.deps.loadStatusList().allocate({
+        jti: valid.model.jti, kind: 'gnap', base: context.base || '',
+        expiresAt: valid.model.exp ? Number(valid.model.exp) * 1000 : 0 });
       // `gnap.accessTokenCertificateHeader` decides the `x5c` / `x5u`, on the
       // JWS in both JWT formats — never on the JWE around jwt-encrypted, which
       // is encrypted to a resource server's key or to a secret.
-      const signed = helpers.signJwt(this.claimsOf(valid.model),
+      const signed = helpers.signJwt(this.claimsOf(valid.model, statusRef),
                                      { grant: 'gnap',
                                        setId: context.setId || null,
                                        sessionId: context.sessionId || null },
                                      { certificateHeader:
-                                         'gnap-access-token' });
+                                         'gnap-access-token',
+                                       header: { typ: JWT_HEADER_TYP } });
       if (typeof signed !== 'string' || signed.split('.').length !== 3) {
         log.debug("Leaving GnapTokens.mint(). The signer produced no JWS.");
         throw new Error('the ' + format + ' access token could not be ' +
@@ -505,7 +577,8 @@ class GnapTokens {
       }
       if (format === 'jwt-signed') {
         log.debug("Leaving GnapTokens.mint(). jwt-signed.");
-        return { value: signed, format: format, jti: model.jti };
+        return { value: signed, format: format, jti: model.jti,
+                 statusIdx: statusRef.idx };
       }
       const rsKey = context.rs && context.rs.jweKey ?
         context.rs.jweKey : null;
@@ -525,6 +598,7 @@ class GnapTokens {
       log.debug("Leaving GnapTokens.mint(). jwt-encrypted to " +
                 (rsKey ? 'the resource ' + 'server' : 'this ' + 'AS') + ".");
       return { value: value, format: format, jti: model.jti,
+               statusIdx: statusRef.idx,
                encryptedTo: rsKey ? 'resource-server' :
                  'authorization-server' };
     }
@@ -691,11 +765,26 @@ class GnapTokens {
                               (e && e.message));
         }
       }
+      // The HEADER is the type (#157), read from the JWS the signature
+      // above has already verified, so it is integrity-protected. The
+      // payload's private marker is held as well: a JWT this realm signed
+      // with the header and some other claim set is not one this module
+      // minted.
+      const header = helpers.peekJoseHeader(jws) || {};
+      if (!GnapTokens.isHeaderType(header.typ)) {
+        log.debug("Leaving GnapTokens.verify(). Header typ " +
+                  (header.typ || '(none)') + ".");
+        return this.refusal('STS-GNAP-0343',
+                            'the JWT is not a GNAP access token: its ' +
+                            'header typ is ' + (header.typ ? '"' +
+                            header.typ + '"' : 'absent') + ', and a GNAP ' +
+                            'access token\'s is "' + JWT_HEADER_TYP + '".');
+      }
       if (claims.typ !== JWT_TYP) {
         log.debug("Leaving GnapTokens.verify(). Not a GNAP JWT.");
         return this.refusal('STS-GNAP-0343',
-                            'the JWT is not a GNAP access token (typ ' +
-                            claims.typ + ').');
+                            'the JWT is not a GNAP access token (payload ' +
+                            'typ ' + claims.typ + ').');
       }
       const checked = this.checkModel(this.modelOfClaims(claims), context);
       log.debug("Leaving GnapTokens.verify(). jwt ok=" + checked.ok);
@@ -778,9 +867,16 @@ class GnapTokens {
       // decides (common/jose_kid.js) — the one this document names has to be
       // it.
       jwt: { jwks_uri: base + '/oauth2/jwks', alg: 'RS256',
-             kid: helpers.publishedKidFor(STS.kid), typ: JWT_TYP },
+             kid: helpers.publishedKidFor(STS.kid), typ: JWT_HEADER_TYP,
+             // Where a revoked JWT shows (#432): the realm's access-token
+             // status list, named in each token's `status.status_list`.
+             status_list_aggregation_endpoint:
+               this.deps.loadStatusList().aggregationUri(base) },
       biscuit: { algorithm: 'ed25519',
                  root_public_key: 'ed25519/' + raw.toString('hex'),
+                 // The revoked biscuits' identifiers (#432). Non-standard,
+                 // as `root_public_keys` below is.
+                 revocation_endpoint: base + '/gnap/biscuit/revocations',
                  jwk: keys.publicJwk,
                  // Every key a biscuit this realm minted may be signed with
                  // (#49 P5): the current one first, then its next key and the
@@ -864,7 +960,12 @@ class GnapTokens {
       macaroon: macaroon,
       biscuit: biscuit,
       zcap: zcap,
-      access: access
+      access: access,
+      loadStatusList: function loadStatusList(): any {
+        helpers.log.debug("Entering loadStatusList().");
+        helpers.log.debug("Leaving loadStatusList().");
+        return require('../oauth-oidc/access_token_status');
+      }
     };
   }
 }
@@ -908,6 +1009,8 @@ export = {
   instanceOrigin: (): string => slot.origin(),
   FORMATS: GnapTokens.FORMATS,
   JWT_TYP: GnapTokens.JWT_TYP,
+  JWT_HEADER_TYP: GnapTokens.JWT_HEADER_TYP,
+  isHeaderType: GnapTokens.isHeaderType,
   mint: slot.forward('mint'),
   verify: slot.forward('verify'),
   formatOf: slot.forward('formatOf'),

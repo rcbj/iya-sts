@@ -1,6 +1,6 @@
 // @ts-check
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -17,7 +17,7 @@
 // file that can carry a comment carries two lines near its top,
 //
 //     SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-//     SPDX-License-Identifier: MIT
+//     SPDX-License-Identifier: BUSL-1.1
 //
 // REUSE-IgnoreEnd
 //
@@ -66,8 +66,10 @@ const HEADER_WINDOW = 8;
 const SKIP_DIRS = new Set(['node_modules', '.git', '.terraform', 'coverage',
                            '__pycache__']);
 // `apidocs` is ./run-jsdoc.sh's output (2026-09-27), generated like coverage/.
+// `rust/target` is cargo's build output (#444).
 const SKIP_PATHS = ['.claude', 'node-ldapjs', 'debugger/embedded',
-                    'tests/report', 'tests/vectors', 'data', 'apidocs'];
+                    'tests/report', 'tests/vectors', 'data', 'apidocs',
+                    'rust/target'];
 
 // Trees this repository may not edit, and which therefore carry no header of
 // their own: REUSE.toml declares them.
@@ -82,7 +84,7 @@ const KERBEROS_COPIES = ['kerberos/krb5_primitives.js',
 // Which files can carry a comment, and so must carry the header.
 const COMMENTED = new Set(['js', 'ts', 'cjs', 'mjs', 'java', 'c', 'php',
                            'sql', 'sh', 'py', 'tf', 'hcl', 'yml', 'yaml',
-                           'cfg', 'conf', 'tfvars']);
+                           'cfg', 'conf', 'tfvars', 'rs']);
 
 function foreignVendoredJobs() {
   log.debug("Entering foreignVendoredJobs().");
@@ -97,8 +99,19 @@ function foreignVendoredJobs() {
   return out;
 }
 
+// This service's OWN files inside `common/vendored/` (#363, 2026-09-30):
+// they stopped being copies of the parent's, so they carry a header like
+// every other file this repository writes (`common/vendored/CLAUDE.md`).
+const OWNED_IN_VENDORED = ['common/vendored/pqc.js',
+                           'common/vendored/pqc_x509.js',
+                           'common/vendored/xmldsig.js'];
+
 function notEditedHere(rel, foreign) {
   log.debug("Entering notEditedHere().");
+  if (OWNED_IN_VENDORED.indexOf(rel) >= 0) {
+    log.debug("Leaving notEditedHere(). Owned since #363.");
+    return false;
+  }
   const answer = NOT_EDITED_HERE.some(function (d) {
     return rel.indexOf(d) === 0;
   }) || KERBEROS_COPIES.indexOf(rel) >= 0 || foreign.has(rel);
@@ -169,7 +182,7 @@ function headerOf(rel) {
         l.indexOf(HOLDER) >= 0;
     }),
     licence: lines.some(function (l) {
-      return /SPDX-License-Identifier:\s*MIT\s*$/.test(l);
+      return /SPDX-License-Identifier:\s*BUSL-1\.1\s*$/.test(l);
     }),
     any: lines.some(function (l) {
       return l.indexOf('SPDX-') >= 0;
@@ -258,7 +271,7 @@ module.exports = {
     t.check(annotations.length >= 2 && annotations[0].paths[0] === '**',
       'REUSE.toml starts with the catch-all annotation for this project',
       JSON.stringify(annotations[0]));
-    const licences = new Set(['MIT']);
+    const licences = new Set(['BUSL-1.1']);
     annotations.forEach(function (a) {
       licences.add(a.licence);
     });

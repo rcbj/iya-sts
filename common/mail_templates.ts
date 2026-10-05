@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -69,11 +69,10 @@ const CATEGORIES = [
   { id: 'notification', optional: true,
     label: 'Notifications',
     reason: 'a notification, which you can turn off on your portal',
-    what: 'Everything else this service may tell you about. Nothing sends ' +
-          'in this category yet; it is where #62\'s messages will go, and ' +
-          'declining it now is honoured then. (#64\'s sign-in codes and ' +
-          'links are SECURITY messages: declining them would be declining ' +
-          'to sign in.)' }
+    what: 'Everything else this service may tell you about: an ' +
+          'application asking for access that waits for your approval on ' +
+          'the portal (#432). (#64\'s sign-in codes and links are SECURITY ' +
+          'messages: declining them would be declining to sign in.)' }
 ];
 
 interface TemplateSpec {
@@ -209,6 +208,32 @@ const BUILT_IN: TemplateSpec[] = [
           '</strong> was changed at {{when}}, to {{address}}. This message ' +
           'went to the address it had before.</p><p>If you did not expect ' +
           'this, contact whoever manages your account now.</p>' },
+  // -------------------------------------------------------------------------
+  // #432 PHASE 6: A GNAP GRANT WAITING FOR ITS RESOURCE OWNER (RFC 9635
+  // section 1.4). A NOTIFICATION, the one category a person may decline: the
+  // request waits on /portal/ciba whether or not this is sent, nothing is
+  // approved by mail, and a person who declines notifications still finds
+  // it there. The link is the portal page, never anything the client named;
+  // the client is its REGISTERED identifier, never a name it declared.
+  // -------------------------------------------------------------------------
+  { id: 'access-request', category: 'notification',
+    title: 'An application asks for access to your resources',
+    values: ['username', 'client', 'rights', 'expiresMinutes'],
+    links: ['link'],
+    subject: '{{service}}: an application asks for access',
+    text: 'The application {{client}} asks for access on behalf of the ' +
+          'account {{username}}: {{rights}}.\n\nNothing is allowed until ' +
+          'you approve it. To approve or deny it, sign in and open this ' +
+          'page within {{expiresMinutes}} minutes:\n\n{{link}}\n\nIf you ' +
+          'do not recognise the request, deny it there or ignore this ' +
+          'message: it runs out by itself.\n',
+    html: '<p>The application <strong>{{client}}</strong> asks for access ' +
+          'on behalf of the account <strong>{{username}}</strong>: ' +
+          '{{rights}}.</p><p>Nothing is allowed until you approve it. ' +
+          '<a href="{{link}}">Approve or deny it</a> within ' +
+          '{{expiresMinutes}} minutes.</p><p>If you do not recognise the ' +
+          'request, deny it there or ignore this message: it runs out by ' +
+          'itself.</p>' },
   { id: 'administrator-alert', category: 'security',
     title: 'An act of the service, for administrators',
     values: ['username', 'when', 'act', 'why'],

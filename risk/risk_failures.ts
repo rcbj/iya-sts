@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -237,7 +237,11 @@ class RiskFailures {
     const addressSealed = sealing && address
       ? String(keystore().seal(address, 'risk.address') || '') : '';
     log.debug("Leaving RiskFailures.recordFailure().");
-    return asnOf(address, realm).catch(function (): number {
+    return asnOf(address, realm).catch(function (e: Json): number {
+      // No ASN is a row without one, not a refusal left unrecorded (#355:
+      // the reason is logged rather than dropped).
+      self.deps.log.debug('Caught in RiskFailures.recordFailure(): ' +
+                          ((e && e.message) || e) + '. Recorded with ASN 0.');
       return 0;
     }).then(function (asn: number): Promise<string> {
       return store.recordFailure({

@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -56,6 +56,8 @@ import stsCrypto = require('../common/crypto');
 // The secrets every node shares (2026-09-14, #46). A LIBRARY; see
 // nonceSecret().
 import clusterSecrets = require('../cluster/cluster_secrets');
+// Which cell this process serves (#98): a Replay-Nonce is bound to it. A leaf.
+import cells = require('../common/cells');
 import validation = require('../common/validation');
 import InstanceSlot = require('../common/instance_slot');
 
@@ -162,6 +164,7 @@ interface AcmeJwsDeps {
   stsCrypto: typeof stsCrypto;
   clusterSecrets: typeof clusterSecrets;
   validation: typeof validation;
+  cells: typeof cells;
 }
 
 /**
@@ -204,7 +207,8 @@ class AcmeJws {
       log: log,
       stsCrypto: stsCrypto,
       clusterSecrets: clusterSecrets,
-      validation: validation
+      validation: validation,
+      cells: cells
     };
   }
 
@@ -765,11 +769,26 @@ class AcmeJws {
    * @returns the 16-byte MAC
    */
   nonceMac(realmId, expiresS, random) {
-    const { log, stsCrypto } = this.deps;
+    const { log, stsCrypto, cells } = this.deps;
     log.debug("Entering AcmeJws.nonceMac().");
+    // **BOUND TO THE CELL THAT ISSUED IT (#98), IN A SERVICE DEPLOYED AS
+    // CELLS.** The secret is the global tier's, so every cell would verify
+    // every other cell's nonce — while the spent set is each cell's own
+    // (`acme.usedNonces`, and the claim beside it), so one nonce could be
+    // spent once PER CELL. Folding the cell into the MAC makes a nonce valid
+    // only where it was issued, which is what `persistence/tiers.js` says a
+    // nonce this service issued is. A request relayed to the cell that owns
+    // its account (`Acme.placeRequest()`) is then answered `badNonce` there
+    // with a Replay-Nonce of that cell, carried back through the relay; the
+    // client retries with it (RFC 8555 section 6.5), and the retry is placed
+    // on the same cell and accepted. One extra round trip each time a client
+    // moves between cells — never for a client that stays on one. A
+    // single-cell service folds in nothing, so its nonces are unchanged.
+    const scope = String(realmId || '') +
+                  (cells.isMulti() ? '\ncell:' + cells.id() : '');
     const mac = stsCrypto.deriveSharedCredential(this.nonceSecret(),
                                                  'acme-nonce',
-                                                 String(realmId || ''),
+                                                 scope,
                                                  String(expiresS),
                                                  this.b64u(random));
     log.debug("Leaving AcmeJws.nonceMac().");

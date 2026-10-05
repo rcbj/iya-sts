@@ -24,6 +24,7 @@ somebody came for is below the fold of a page about something else.
 | `/portal/signals` | authenticated | **Security activity** — what this identity provider has said about the person over CAEP and RISC (2026-09-10) |
 | `/portal/sign-ins` | authenticated | **Recent sign-ins** — the person's own risk assessments of thirty days, each with "this was me" / "this wasn't me" (#62 P6, `portal_sign_ins.ts`; `risk/CLAUDE.md` argues what each answer moves) |
 | `/portal/consents` | authenticated | **Consents** — what the person agreed each application may ask for, and a Withdraw per scope and per application that revokes what was issued under it (#172, `portal_consents.ts`) |
+| `/portal/gnap` | authenticated | **GNAP grants** — the GNAP grants the person is the resource owner of, each with its rights, tokens and why it ended, and a Revoke (#432 phase 7, `portal_gnap.ts`) |
 | `/portal/signing-key` | authenticated | **Signing keys** — RFC 7523 and RFC 7522 key pairs and TLS client certificates (2026-09-12) |
 | `/portal/certificates` | authenticated | **Certificates** — ACME / SCEP enrollment credentials and the certificates issued (2026-09-13) |
 | `/portal/callback` | — | the OIDC redirect URI |
@@ -398,14 +399,26 @@ origin from `webauthn.allowedOrigins` where it is set. The `finish` action asks
 both rather than `authn.originOf(base)`, so a key enrolled here and a key used
 at `/authn/webauthn` are held to one answer. `authn/CLAUDE.md` argues them.
 
-### What is still not done
+### `/portal/activate` runs the same ceremony (2026-10-01)
 
-**`/portal/activate`'s `key_role` radio still enrols nothing.** Choosing *a
-security key instead of a password* spends the link, says "your account is
-ready" and writes an audit row about a credential that does not exist — leaving
-an account nobody can sign in to. It needs this same ceremony on an
-UNAUTHENTICATED page, where the link is the credential that authorises it, and
-that is the next piece of work rather than a decision.
+**Until this day the activation page's `key_role` radio enrolled nothing.**
+Choosing *a security key instead of a password* spent the link, said "your
+account is ready" and sent the person to the sign-in screen to enrol on first
+use — which product mode refuses (`STS-AUTHN-0206`), so the only way through
+was to go back and set a password. Reported by rcbj as exactly that.
+
+The key is registered on the activation page now, between the password and the
+authenticator app, as a `key` step: `beginKeyEnrolment()` with the role and the
+`kind` the first page chose (`kindChoice()` is drawn there too), the ceremony
+drawn by `activationKeyForm()`, `confirmKeyEnrolment()` on the POST. **What
+authorises it is the activation link**, re-checked and claimed on that POST like
+every other; the link is spent only when the activation FINISHES, so a key that
+will not register leaves a usable link. Every failure draws a fresh ceremony
+(`STS-PORTAL-0102`). A key that cannot be started is REFUSED where it was the
+only way in (`STS-PORTAL-0101`) and skipped with a warning beside a password
+(`STS-PORTAL-0100`), the authenticator app's rule. **It is a scripted page while
+the step is drawn**, for this page's argument, through `sendKeysPage()`, with
+the same resource and a real button under it — its own row in the root table.
 
 ## THE ACTIVATION FLOW LEARNED IT TOO, AND THE LINK IS STILL SPENT LAST
 
@@ -424,9 +437,9 @@ opening it again with the box unticked completes the account. The over-HTTP job
 asserts that by RE-OPENING the link rather than by reading a flag, because what
 somebody in that state actually does is open the link a second time.
 
-**`finishActivation()` is one function because there are three ways in now** — a
-plain setup, an authenticator confirmed on the second POST, and an authenticator
-that could not be started — and each has to spend the link, write the audit row
+**`finishActivation()` is one function because there are several ways in now** —
+a plain setup, a security key registered on a second POST, an authenticator
+confirmed on a later one, and either that could not be started — and each has to spend the link, write the audit row
 and draw the same page. Three copies of that is two chances for one of them to
 leave a spent-looking link that still works.
 
@@ -611,6 +624,33 @@ Three things about it are this directory's:
   what every real relying party does, and the cascade runs the other way:
   ending the SIGN-ON session ends the portal's with it. **WHICH IS WHY THE SIGN
   OUT BUTTON ENDS BOTH** — see below.
+
+## A LIVE CONSOLE SESSION IS ADOPTED, AND THE BULLET ABOVE HAS ONE EXCEPTION (2026-09-30)
+
+**Observed on a product deployment:** an administrator followed the console's
+account-menu link here and was asked to choose a realm and then to sign in
+again. The console session outlives its sign-on session by renewing its own
+tokens (`common/oidc_rp.ts` section 4), so this portal's code flow met no
+sign-on session. rcbj decided that the portal reads the realm and the
+authenticated session from the console session. `adoptConsoleSession()`, called
+by `requireSignIn()` before the chooser, makes a portal session of this
+surface's own from it through `authn.adoptRelyingPartySession()`. The session
+has the same person and the same authentication record. It lives in the
+console session's identity realm (`derivedFromRealm`, the same answer the
+account-menu link uses). Its PARENT is the console session, so it ends with
+that session through the cascade and through the reader. A realm
+administrator at the bare `/portal` is REDIRECTED to their realm's portal,
+built from the registry and never echoed. Under another realm's prefix, or
+with a `?realm=` naming another realm, nothing is adopted. **ONE DIRECTION:**
+nothing here writes `sts_admin`. The access policy still decides.
+`POST /portal/signout` on an adopted session ends the console session and its
+sign-on session as well, for this file's own reason: otherwise the next page
+adopts again. What stops an adoption (STS-PORTAL-0098, -0099) leaves the old
+path exactly as it was. `tests/portal_adopts_console.js` holds it.
+**The bullet *A PERSON WHO SIGNED IN ELSEWHERE IS NOT SILENTLY IN THEIR
+ACCOUNT PAGE* still holds for every sign-on session. The one thing that
+opens the portal without a flow is this service's own console, which the
+person is already signed in to as themselves.**
 
 ## Two sign-outs, and they are two different acts (2026-09-06)
 
@@ -1236,6 +1276,38 @@ withdrawal does; four things are this page's:
   console's and the API's counterpart of *Withdraw everything for this
   application* is `revoke-application-consent` (rule 7).
 
+## `/portal/gnap`: THE ACCESS YOU GAVE THROUGH GNAP (2026-10-03, #432 phase 7)
+
+`portal_gnap.ts`, registered after `/portal/consents` through the same
+`register(context)`. Until it, only the client (RFC 9635 section 5.4) and an
+administrator could see or end a GNAP grant. Four things are this page's:
+
+* **A page of its own, not a section of Consents** — weighed and argued in its
+  header: a grant is a state machine with object-shaped rights, tokens, a
+  lifetime and a reason it ended, and its one control ends the whole grant;
+  the consent register holds GNAP's remembered approvals only as digests. Two
+  meanings of "withdraw" under one heading is what this navigation exists to
+  avoid. Under *Your account*, beside Consents, for Consents' reason.
+* **The same view as the console and the API**: `gnap/gnap_console.ts`'s
+  `personGrantsView()`, which the GNAP grants tab of `/admin/users` and
+  `gnapGrants` on `/admin-api/users?user=` also draw, so a person and an
+  administrator cannot see different things. Revoking is
+  `gnap_grants.ts`'s `revokeGrantBy()` through `revokeOwnGrant()` — the one
+  path the client's DELETE takes — so tokens, finalization and CAEP are the
+  same whoever ends it. The page says so above the cards.
+* **The identity is the session's.** The form names a GRANT, and
+  `revokeOwnGrant()` refuses one whose resource owner is not the signed-in
+  person, or one with nothing live left (`STS-PORTAL-0163`, 400) — the
+  `/portal/keys` credential id's arrangement. `manage-own`, CSRF on the POST,
+  and `gnap.grant.revoke` audited with the person as actor:
+  `tests/vendored/sts_gnap_core.js` section 15 asserts the ACTOR, this
+  directory's rule that only the audit row proves the write.
+* **Under cells (#98) it lists this cell's grants**, which is normally all of
+  them (a grant moves to its resource owner's home before approval), and says
+  so in a note when the service has several cells — never a partial list
+  presented as the whole. No script, twenty grants a page, no token value
+  ever drawn.
+
 ## `/portal/delegate`: WHO MAY ACT FOR YOU (2026-09-23, #108)
 
 RFC 8693 section 4.4's `may_act` "makes a statement that one party is
@@ -1371,6 +1443,35 @@ records the sign-on session it was made on (`facts.sessionId`), and the
 tokens are issued on that session, so its end revokes their refresh token. It
 is also CAEP's `session-presented`, via `OpenID Connect CIBA`. A denial
 honours nothing and sends nothing.
+
+**AND GNAP GRANTS WAITING FOR THEIR OWNER (#432 phase 6, 2026-10-03).** A
+GNAP request naming this person while somebody else was at the approval page,
+or offering no interaction (RFC 9635 sections 1.4 and 2.4, with
+`gnap.ownerApproval` on), is listed in an *Access requests* section below the
+CIBA requests. The page was chosen over a second approvals page because it IS
+the page where a person answers what a client asked while they were
+elsewhere; what is reused is its mechanism — the session is the identity, a
+form names a request (`gnap-approve` / `gnap-deny` with the request's own id,
+never a person), one answer, the step-up through the portal's sign-in with
+the acr values the rights need (`?gnapstepup=<id>`) — and NOT CIBA's store:
+the request is a GNAP grant held and continued by `gnap/`, and
+`gnap/gnap_approval.ts` lists and answers it, reached LAZILY (the portal is
+built at 8a, GNAP at 23d). Each right has the approval page's checkbox; the
+repeated `right` field is read off the raw body (`helpers.bodyValues()`), as
+the approval page reads it. A request not waiting for this person is
+`STS-PORTAL-0243`, an approval short of the rights' acr `STS-PORTAL-0244`.
+The person asking (whoever was at the page) is named on the card: an owner
+judging a request for their access needs to know who wants it.
+
+**AND THE OWNER CHECK AND THE LIMITS, AS ON THE APPROVAL PAGE (#432 phase
+5).** Each right's limits are drawn under it with the approval page's own
+controls (`common/limits_form.ts`, a static utility imported directly
+because it loads nothing of GNAP's engine), and the form's schema reads the
+post with them stripped off; `gnap_approval.answer()` is handed the request
+and a reader of the raw body, asks `grants.approverRefusal()` after the
+step-up (`STS-GNAP-0862`: a person named on a request is not thereby the
+owner of what it names) and reads the lowered limits back (`0866` raised,
+`0867` failing the type's schema), all before the answer is claimed.
 
 ## `/portal/claim-sources`: CONNECTED CLAIM SOURCES (#147, 2026-09-24)
 

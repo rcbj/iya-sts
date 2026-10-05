@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -104,8 +104,9 @@
 // method of the same name — with ONE exception each for two names the old
 // file declared TWICE (`credentialCell()`, `samlOverrideFieldRow()`): the
 // later declaration is the one JavaScript's hoisting gave every caller, so
-// it keeps the name. The earlier `samlOverrideFieldRow()` is kept as an
-// `unreached…()` method nothing calls; the earlier `credentialCell()` was
+// it keeps the name. Both `samlOverrideFieldRow()`s went with the create
+// form's per-role tables on 2026-09-30 (the field grid); the earlier
+// `credentialCell()` was
 // the delegation table's own and is `delegationCredentialCell()` since #70,
 // which fixed that table's two calls to reach it.
 //
@@ -466,6 +467,7 @@ import realms = require('../common/realms');
 // (rule 3): it registers no route, and reaches the directory module through
 // the require cache, so this require moves nothing in the route order.
 import createClaims = require('../ldap/directory_create_claims');
+import personEditor = require('../ldap/person_editor');
 import stats = require('../common/admin_stats');
 // The browser sign-on sessions, from the authentication service that creates
 // them — shared between the OAuth 2.0 / OIDC flow, WS-Federation and SAML 2.0.
@@ -808,6 +810,9 @@ import validation = require('../common/validation');
 // require in the ordinary direction, not a slot: neither calls the other.
 import closedSets = require('../common/closed_sets');
 import InstanceSlot = require('../common/instance_slot');
+// This thread's identity (#364): a request worker is a thread of this
+// process, so the pid alone no longer tells two of them apart.
+import WorkerChannel = require('../common/worker_channel');
 
 // REQUIRED FOR THE ORDER THEY WERE ALWAYS REQUIRED IN, AND READ NOWHERE HERE
 // (#50). TypeScript drops an `import … = require()` whose name nothing reads,
@@ -953,9 +958,15 @@ const MAX_WHO = 12;
 //     `upTo()`, the trail, `consoleJson().pages` — reads NAV and so cannot tell
 //     a grouped page from an ungrouped one, which is the point: grouping is a
 //     fact about the SIDEBAR, not about the pages.
-//   * NESTING STOPS HERE. A group holds pages, never another group. Nothing
-//     enforces it beyond `sectionPages()` not recursing, which is deliberate —
-//     a fourth level would be a sidebar that needs its own breadcrumb.
+//   * A GROUP MAY HOLD A GROUP, AND ONE DOES (2026-10-01, rcbj's ask):
+//     Cert issuance › SPIFFE, the four SPIFFE pages under a heading of their
+//     own inside the certificate group. It was "nesting stops here" until
+//     then, on the argument that a fourth level needs its own breadcrumb —
+//     and it does not, for the first rule's reason: a group is not a crumb,
+//     so the trail is the same at any depth. `groupPages()` is the one walk
+//     that flattens every depth; the sidebar, the guide and the realm
+//     administrator's filter each recurse. Keep it to that one case unless a
+//     heading passes the group test on its own.
 //
 // ONE PLACEMENT IN HERE IS A JUDGEMENT RATHER THAN AN OBVIOUS FACT, and it is
 // worth knowing which. `Credential claims` (`/admin/vc`) is the OID4VCI
@@ -1266,91 +1277,95 @@ const SECTIONS = [
                '/scim/v2/Users</code> and an <code>ldapadd</code> create the ' +
                'same entry and somebody provisioned over SCIM appears on ' +
                '<a href="/admin/users">Users</a>.' },
-      // UNGROUPED, beside SCIM, and for the smaller of that page's two
-      // reasons: a group of one would be a heading saying the label twice.
-      // What makes it worth its own page rather than a section of another is
-      // that it is the one family here that runs the OTHER WAY ROUND — this
-      // service delivering an event to a receiver that agreed in advance —
-      // so there is no family above it whose page it would be a corner of.
-      // FOREIGN TRANSMITTERS (#153, 2026-09-26), beside the transmitter:
-      // the same framework with this realm as the RECEIVER of another
-      // identity service. Drawn by ssf/ssf_transmitters_admin.ts.
-      { path: '/admin/ssf/transmitters', label: 'SSF transmitters',
-        blurb: 'Other identity services whose Shared Signals this realm ' +
-               'receives: each registered by its issuer, its stream there ' +
-               '(poll or push), what arrived and whether it verified, the ' +
-               'person each event named through a federation relationship, ' +
-               'and what the signal-response policy let it do here.' },
-      { path: '/admin/ssf', label: 'Shared Signals',
-        blurb: 'The <strong>Shared Signals Framework</strong> (OpenID SSF ' +
-               '1.0): the streams this transmitter has agreed, who each one ' +
-               'is about, what is queued for it and what a receiver refused. ' +
-               'It is the one protocol family here that TALKS BACK &mdash; ' +
-               'every other answers a request, and this one delivers a ' +
-               'Security Event Token nobody asked for, at the moment ' +
-               'something happens. <strong>SSF is the pipe and not the ' +
-               'vocabulary</strong>: it defines two events of its own, both ' +
-               'about the pipe, and the vocabularies are ' +
-               '<a href="/admin/caep">CAEP</a> (what happened to a SESSION) ' +
-               'and <a href="/admin/risc">RISC</a> (what happened to an ' +
-               'ACCOUNT). TWO things here generate an event on their own ' +
-               'now, and they watch different registers: CAEP, where a ' +
-               'session starting, being presented or ending sends a ' +
-               'Security Event Token with nobody having asked, and RISC, ' +
-               'where a change to the DIRECTORY does.' },
+      // SHARED SIGNALS AND ITS TWO VOCABULARIES ARE ONE GROUP (rcbj,
+      // 2026-10-01): Protocols -> SSF holds the Shared Signals page and the
+      // CAEP and RISC pages. They were three rows side by side, argued apart
+      // because SSF is the PIPE and CAEP and RISC are VOCABULARIES over it —
+      // which is still true, and is now said by the heading: a reader looking
+      // for either vocabulary finds it under the pipe it is spoken over. The
+      // paths did not move; NAV is derived, so nothing else changed.
+      { title: 'SSF',
+        what: 'The Shared Signals Framework and the two event vocabularies ' +
+              'spoken over it: CAEP, about sessions, and RISC, about ' +
+              'accounts. The streams, their receivers and every setting ' +
+              'that decides what is sent are here; what was sent is under ' +
+              'Monitoring.',
+        items: [
+          { path: '/admin/ssf', label: 'Shared Signals',
+            blurb: 'The <strong>Shared Signals Framework</strong> (OpenID ' +
+                   'SSF 1.0): the streams this transmitter has agreed, who ' +
+                   'each one is about, what is queued for it and what a ' +
+                   'receiver refused. It is the one protocol family here ' +
+                   'that TALKS BACK &mdash; every other answers a request, ' +
+                   'and this one delivers a Security Event Token nobody ' +
+                   'asked for, at the moment something happens. <strong>SSF ' +
+                   'is the pipe and not the vocabulary</strong>: it defines ' +
+                   'two events of its own, both about the pipe, and the ' +
+                   'vocabularies are <a href="/admin/caep">CAEP</a> (what ' +
+                   'happened to a SESSION) and <a ' +
+                   'href="/admin/risc">RISC</a> (what happened to an ' +
+                   'ACCOUNT). TWO things here generate an event on their own ' +
+                   'now, and they watch different registers: CAEP, where a ' +
+                   'session starting, being presented or ending sends a ' +
+                   'Security Event Token with nobody having asked, and RISC, ' +
+                   'where a change to the DIRECTORY does.' },
 
-      // BESIDE Shared Signals rather than a section of it, and the argument
-      // is the same one that made CAEP rows in `ssf_events.js` rather than a
-      // family of its own: SSF is the PIPE and CAEP is a VOCABULARY over it.
-      // They are two specifications answering two questions, and a reader
-      // looking for "what has this service said about that session" is not
-      // looking for "what streams exist", which is the whole of that page.
-      //
-      // Not a GROUP of two, because a heading saying "Shared Signals" over
-      // pages called "Shared Signals" and "CAEP" would say the label twice —
-      // which is the test this console already applied to the SSF page.
-      { path: '/admin/caep', label: 'CAEP',
-        blurb: 'The <strong>Continuous Access Evaluation Profile</strong> ' +
-               '(OpenID CAEP 1.0, final 2 September 2025): the enterprise ' +
-               'SESSION vocabulary spoken over ' +
-               '<a href="/admin/ssf">Shared Signals</a>. Eight event types ' +
-               '&mdash; session revoked, established and presented, token ' +
-               'claims change, credential change, assurance level change, ' +
-               'device compliance change, risk level change &mdash; each ' +
-               'with the members the specification gives it and the four it ' +
-               'gives them all. <strong>It is the one page here that ' +
-               'configures this service to act without being asked</strong>: ' +
-               'with <code>caep.autoEmit</code> on, a sign-in, a single ' +
-               'sign-on and a sign-out each send an event to whoever agreed ' +
-               'to be told. All eight fire on their own (device ' +
-               'compliance since #164), and this page also carries the form ' +
-               'that emits one by hand, on demand.' },
+          { path: '/admin/caep', label: 'CAEP',
+            blurb: 'The <strong>Continuous Access Evaluation ' +
+                   'Profile</strong> (OpenID CAEP 1.0, final 2 September ' +
+                   '2025): the enterprise SESSION vocabulary spoken over <a ' +
+                   'href="/admin/ssf">Shared Signals</a>. Eight event types ' +
+                   '&mdash; session revoked, established and presented, ' +
+                   'token claims change, credential change, assurance level ' +
+                   'change, device compliance change, risk level change ' +
+                   '&mdash; each with the members the specification gives it ' +
+                   'and the four it gives them all. <strong>It is the one ' +
+                   'page here that configures this service to act without ' +
+                   'being asked</strong>: with <code>caep.autoEmit</code> ' +
+                   'on, a sign-in, a single sign-on and a sign-out each send ' +
+                   'an event to whoever agreed to be told. All eight fire on ' +
+                   'their own (device compliance since #164), and this page ' +
+                   'also carries the form that emits one by hand, on demand.' },
 
-      // AND RISC BESIDE IT, for the reason CAEP is beside Shared Signals
-      // rather than inside it: they are two specifications answering two
-      // questions. CAEP is about a SESSION and RISC is about an ACCOUNT, and
-      // a reader looking for "what has been said about that person's account"
-      // is not looking for "what has been said about that session of theirs"
-      // — which is the whole of the other page.
-      { path: '/admin/risc', label: 'RISC',
-        blurb: 'The <strong>Risk Incident Sharing and Coordination</strong> ' +
-               'profile (OpenID RISC Profile Specification 1.0, published 29 ' +
-               'August 2025 and final on 2 September 2025): the ACCOUNT ' +
-               'vocabulary spoken over <a href="/admin/ssf">Shared ' +
-               'Signals</a>, and the second of the two. Fourteen event types ' +
-               '&mdash; account disabled, enabled and purged, credential ' +
-               'change required, credential compromise, identifier changed ' +
-               'and recycled, the four opt-out events, recovery activated ' +
-               'and recovery information changed, and one that RISC itself ' +
-               'deprecates in favour of a CAEP event. <strong>Eleven of them ' +
-               'carry no payload members at all</strong>, so the subject is ' +
-               'the entire message, which is what makes ' +
-               '<code>risc.subjectFormat</code> the most consequential ' +
-               'setting on the page. With <code>risc.autoEmit</code> on, a ' +
-               'person deleted from the directory, an account marked ' +
-               'inactive and a changed mail address each send an event ' +
-               '&mdash; a DIFFERENT observer from CAEP\'s, watching the ' +
-               'directory rather than the sessions.' },
+          { path: '/admin/risc', label: 'RISC',
+            blurb: 'The <strong>Risk Incident Sharing and ' +
+                   'Coordination</strong> profile (OpenID RISC Profile ' +
+                   'Specification 1.0, published 29 August 2025 and final on ' +
+                   '2 September 2025): the ACCOUNT vocabulary spoken over <a ' +
+                   'href="/admin/ssf">Shared Signals</a>, and the second of ' +
+                   'the two. Fourteen event types &mdash; account disabled, ' +
+                   'enabled and purged, credential change required, ' +
+                   'credential compromise, identifier changed and recycled, ' +
+                   'the four opt-out events, recovery activated and recovery ' +
+                   'information changed, and one that RISC itself deprecates ' +
+                   'in favour of a CAEP event. <strong>Eleven of them carry ' +
+                   'no payload members at all</strong>, so the subject is ' +
+                   'the entire message, which is what makes ' +
+                   '<code>risc.subjectFormat</code> the most consequential ' +
+                   'setting on the page. With <code>risc.autoEmit</code> on, ' +
+                   'a person deleted from the directory, an account marked ' +
+                   'inactive and a changed mail address each send an event ' +
+                   '&mdash; a DIFFERENT observer from CAEP\'s, watching the ' +
+                   'directory rather than the sessions.' },
+        ]
+      },
+
+      // PROTOCOLS → DELEGATION (2026-10-01, rcbj): every control that was on
+      // Monitoring → Delegation. Ungrouped for Federation's reason below —
+      // delegation spans three families (Kerberos, WS-Trust, RFC 8693) and
+      // the permissions it configures are OAuth scopes — and under Protocols
+      // because it is CONFIGURATION; the acts it is read against stay in
+      // Monitoring, which no longer changes anything.
+      { path: '/admin/delegation-settings', label: 'Delegation',
+        blurb: 'The delegated permissions register, configured: which ' +
+               'RESOURCE applications expose an API under a base URI, the ' +
+               'permissions each defines on it, and which CLIENT ' +
+               'applications hold them — Expose an API, Define a ' +
+               'permission, Remove and Revoke for every application — and ' +
+               '<code>delegation.maxRecords</code>, how many acts ' +
+               '<a href="/admin/delegation">Monitoring &rsaquo; ' +
+               'Delegation</a> keeps. A grant is made on an application\'s ' +
+               'own Permissions tab, from either end.' },
 
       // UNGROUPED, beside SCIM, and the placement needed the same argument the
       // delegation page needed. Federation spans FIVE protocol families, so
@@ -1653,38 +1668,50 @@ const SECTIONS = [
                    'GetCACaps, GetCACert and PKIOperation over CMS, the RA ' +
                    'certificate, and single-use challenge passwords issued ' +
                    'for one entry and one profile.' },
-          // ===== SPIFFE's three pages (spiffe/spiffe_server.ts) =====
-          { path: '/admin/spiffe', label: 'SPIFFE',
-            blurb: 'The trust domain, the signing authority behind every ' +
-                   'X509-SVID and JWT-SVID, the four sockets the Workload ' +
-                   'API and the SPIRE Server API answer on, and how a caller ' +
-                   'at the Workload API is identified — the ' +
-                   '<code>transport:</code>, <code>endpoint:</code> and ' +
-                   '<code>peer:</code> selectors, and whether an ASSERTED ' +
-                   'one is believed. A caller on the Unix socket is ' +
-                   'ATTESTED (unix, docker, k8s) and a caller over TCP is ' +
-                   'not; an agent is attested by its node attestor.' },
-          { path: '/admin/spiffe/entries', label: 'Registration entries',
-            blurb: 'Which workload gets which SPIFFE ID, and what an SVID ' +
-                   'issued against that entry carries. The store is the ' +
-                   'embedded directory under ' +
-                   '<code>ou=entries,ou=spiffe</code>, so a form here, an ' +
-                   '<code>ldapmodify</code> and the SPIRE Server API\'s ' +
-                   '<code>BatchUpdateEntry</code> are three doors onto one ' +
-                   'entry, and nothing caches it — a change takes effect on ' +
-                   'the next SVID.' },
-          { path: '/admin/spiffe/agents', label: 'Agents',
-            blurb: 'Every agent that has attested, with what it was given ' +
-                   'and when. These entries are a RECORD rather than ' +
-                   'configuration — this service wrote all of it when the ' +
-                   'agent attested — which is why nothing on an agent is ' +
-                   'editable and the ban is the only control.' },
-          { path: '/admin/spiffe/brokers', label: 'Brokers',
-            blurb: 'Who may call the SPIFFE Broker API — the node proxies ' +
-                   'and meshes that ask for a workload\'s SVIDs by ' +
-                   'referencing it — and which kinds of reference each may ' +
-                   'use. The list is <code>spiffe.brokers</code>, read on ' +
-                   'every call.' },
+          // ===== SPIFFE's four pages (spiffe/spiffe_server.ts) =====
+          // A GROUP INSIDE THE GROUP (2026-10-01, rcbj's ask): moving SPIFFE
+          // into Cert issuance on 2026-09-22 dropped its own heading, and
+          // four pages — `Registration entries`, `Agents`, `Brokers` among
+          // them — then sat beside ACME, EST and SCEP reading as more
+          // enrollment protocols. The heading names a family the pages under
+          // it are aspects of, the test any group passes.
+          { title: 'SPIFFE',
+            what: 'Workload identity: the trust domain, the entries that ' +
+                  'decide what a workload gets, the agents that ask for it ' +
+                  'and the brokers that ask on a workload\'s behalf.',
+            items: [
+            { path: '/admin/spiffe', label: 'SPIFFE',
+              blurb: 'The trust domain, the signing authority behind every ' +
+                     'X509-SVID and JWT-SVID, the four sockets the Workload ' +
+                     'API and the SPIRE Server API answer on, and how a ' +
+                     'caller at the Workload API is identified — the ' +
+                     '<code>transport:</code>, <code>endpoint:</code> and ' +
+                     '<code>peer:</code> selectors, and whether an ASSERTED ' +
+                     'one is believed. A caller on the Unix socket is ' +
+                     'ATTESTED (unix, docker, k8s) and a caller over TCP is ' +
+                     'not; an agent is attested by its node attestor.' },
+            { path: '/admin/spiffe/entries', label: 'Registration entries',
+              blurb: 'Which workload gets which SPIFFE ID, and what an SVID ' +
+                     'issued against that entry carries. The store is the ' +
+                     'embedded directory under ' +
+                     '<code>ou=entries,ou=spiffe</code>, so a form here, an ' +
+                     '<code>ldapmodify</code> and the SPIRE Server API\'s ' +
+                     '<code>BatchUpdateEntry</code> are three doors onto one ' +
+                     'entry, and nothing caches it — a change takes effect ' +
+                     'on the next SVID.' },
+            { path: '/admin/spiffe/agents', label: 'Agents',
+              blurb: 'Every agent that has attested, with what it was given ' +
+                     'and when. These entries are a RECORD rather than ' +
+                     'configuration — this service wrote all of it when the ' +
+                     'agent attested — which is why nothing on an agent is ' +
+                     'editable and the ban is the only control.' },
+            { path: '/admin/spiffe/brokers', label: 'Brokers',
+              blurb: 'Who may call the SPIFFE Broker API — the node proxies ' +
+                     'and meshes that ask for a workload\'s SVIDs by ' +
+                     'referencing it — and which kinds of reference each may ' +
+                     'use. The list is <code>spiffe.brokers</code>, read on ' +
+                     'every call.' },
+            ] },
         ] },
       { path: '/admin/tls', label: 'TLS / mutual TLS',
         blurb: 'The certificate the main port and LDAPS 636 present, ' +
@@ -1822,12 +1849,12 @@ const SECTIONS = [
                'else, and the <em>New application</em> button beside it, ' +
                'where the PROTOCOL FAMILIES the entry is declared for are ' +
                'ticked from a closed list and its per-protocol identifiers ' +
-               'and redirect URIs are typed. The declaration is a RECORD OF ' +
-               'INTENT and nothing reads it — an application declared for ' +
-               'SAML 2.0 alone is still issued an access token, because ' +
-               'refusing would remove a test case rather than add one — but ' +
-               'the redirect URIs and the secret beside it are what RFC 9700 ' +
-               'mode judges the next request against.' },
+               'and redirect URIs are typed. In product mode the ' +
+               'declaration is enforced — an application is issued nothing ' +
+               'through a family it is not declared for — and in ' +
+               'development it is a record of intent; the redirect URIs and ' +
+               'the secret beside it are what RFC 9700 mode judges the next ' +
+               'request against.' },
       // DEVICES (#164, #218, 2026-09-26): the register itself, in Directory
       // because its store is — every device is an entry under `ou=devices`,
       // owned by a person or an application entry. A destination, with a
@@ -1844,6 +1871,15 @@ const SECTIONS = [
                'compliance, and when it was last used. Click one to edit ' +
                'it, add or remove a key, give it to another owner or remove ' +
                'it; register one by hand at the foot of the list.' },
+      // ATTRIBUTE SOURCES (#94): in Directory because what they write is
+      // on people's directory entries, and the register is `ou=
+      // attributesources` in this realm's directory.
+      { path: '/admin/attribute-sources', label: 'Attribute sources',
+        blurb: 'The SQL databases this realm reads people\'s attributes ' +
+               'from, onto their entries: each source\'s database, the row ' +
+               'it reads and the columns it writes, when it reads (at ' +
+               'sign-in, once, on a schedule, on demand) and what a ' +
+               'failure does, with its status, a test and a read-now.' },
       // -------------------------------------------------------------------
       // POLICIES (2026-09-12), asked for by rcbj as *Directory → Policies*,
       // with the password policy as the first kind of policy it configures.
@@ -2126,9 +2162,11 @@ const SECTIONS = [
                'WS-Trust\'s <code>OnBehalfOf</code> and <code>ActAs</code>, ' +
                'and RFC 8693\'s impersonation and delegation — against ONE ' +
                'model, because the question a reader arrives with is ' +
-               'protocol-independent. Beside them, who MAY delegate to whom, ' +
-               'which only Kerberos polices; that asymmetry is the most ' +
-               'useful thing on the page. ' +
+               'protocol-independent. Beside them, read-only, who MAY ' +
+               'delegate to whom and the delegated permissions register; ' +
+               'both are changed elsewhere (<a ' +
+               'href="/admin/delegation-settings">Protocols &rsaquo; ' +
+               'Delegation</a>). ' +
                '<a href="/admin/delegation/map">The picture</a> draws the ' +
                'same acts as a graph, laid out on the SERVER because this ' +
                'console runs no script.' },
@@ -2227,7 +2265,23 @@ const SECTIONS = [
                    'receiver, at <a href="/portal/signals">the user ' +
                    'portal</a>.' },
 
-          // LAST IN THE GROUP, because it is what the other three cannot show:
+          // WHAT THIS REALM'S FEDERATION PARTNERS SENT (#373), beside what
+          // this console was sent: the same framework with the realm as the
+          // RECEIVER. Configured on each relationship (Protocols →
+          // Federation); this page only reads. Drawn by
+          // ssf/ssf_transmitters_admin.ts.
+          { path: '/admin/ssf/transmitters', label: 'Signals from partners',
+            blurb: 'The federation partners whose Shared Signals this ' +
+                   'realm receives: each relationship\'s stream at its ' +
+                   'partner (poll or push) and whether it is healthy, every ' +
+                   'Security Event Token that arrived and whether it ' +
+                   'verified, the person it named through the ' +
+                   'relationship, what the signal-response policy let it ' +
+                   'do here, and the sign-ins partners have blocked. ' +
+                   'Read only: a partner\'s stream is configured and acted ' +
+                   'on from its relationship\'s page.' },
+
+          // LAST IN THE GROUP, because it is what the others cannot show:
           // every one of them is full and correct while a SET is failing to
           // reach its receiver. Its own page rather than a table on
           // /admin/ssf, which already draws each stream's letters in that
@@ -2543,6 +2597,34 @@ const SECTIONS = [
                'and no control: a cache is emptied by the settings that ' +
                'bound it, not by a button. The figures are the answering ' +
                'process\'s own.' },
+      // THE WORKER POOLS (#327, 2026-09-28), after the caches and before the
+      // scheduler: one more page whose subject is the process itself — what
+      // it has forked to do its work, and how that is going. Drawn by
+      // `admin-ui/worker_pools_admin.ts` out of the two pool modules.
+      { path: '/admin/worker-pools', label: 'Worker pools',
+        blurb: 'The three pools of child processes this node runs &mdash; ' +
+               'the request workers, the console and portal\'s own ' +
+               'workers, and the post-quantum workers every process forks ' +
+               'on its first post-quantum job &mdash; each with its workers ' +
+               'now, busy and free, its maximum and initial size, how many ' +
+               'crashed or never started against how many were stopped, ' +
+               'and its average response time. A pool that is off says ' +
+               'so. <strong>The figures are this node\'s</strong>, drawn ' +
+               'by its front process; no control.' },
+      // NODE HEALTH (#329, 2026-09-28), beside the worker pools: the
+      // container they all run in — its CPU and memory from the cgroup — and
+      // the memory of every one of those processes. Drawn by
+      // `admin-ui/node_health_admin.ts`.
+      { path: '/admin/node-health', label: 'Node health',
+        blurb: 'The container this node runs in &mdash; its CPU ' +
+               'utilisation against its quota and its memory against its ' +
+               'limit, from its cgroup &mdash; and the Node.js memory of ' +
+               'every process in it: the front process, each request and ' +
+               'console worker, each post-quantum child, with the total. ' +
+               'The ECS task metadata endpoint beside them where there is ' +
+               'one. A source that is not there says so. <strong>The ' +
+               'figures are this node\'s</strong>, drawn by its front ' +
+               'process; no control.' },
       // THE SCHEDULER (2026-09-22, #49), after the caches and before the
       // audit log: the last page whose subject is the process itself, and the
       // one that says whether the background work is being DONE. Drawn by
@@ -2701,6 +2783,26 @@ const SECTIONS = [
                'which lease, and what active-active mode still refuses to ' +
                'start without. Every clustered write is fenced by the ' +
                'node\'s membership, and a node that loses it exits.' },
+      // CELLS (#98, 2026-09-28), beside Cluster: one service deployed as
+      // several cells in several jurisdictions. Drawn by
+      // `admin-ui/cells_admin.ts`.
+      // LISTENERS (#423, 2026-10-02), beside Cells: every socket, its TLS
+      // policy and client authentication, a realm's own listener, and their
+      // settings. Drawn by `admin-ui/listeners_admin.ts`.
+      { path: '/admin/listeners', label: 'Listeners',
+        blurb: 'Every socket this service answers on and what each is held ' +
+               'to: TLS 1.2 on or off, the TLS 1.3 cipher suites in order, ' +
+               'post-quantum only, the key-exchange groups, and whether it ' +
+               'asks for a client certificate, requires one, or neither. In ' +
+               'a realm with a listener of its own, that listener and its ' +
+               'settings; otherwise the default listeners it is served on.' },
+      { path: '/admin/cells', label: 'Cells',
+        blurb: 'One service deployed as several cells, each a copy of the ' +
+               'whole stack in one legal jurisdiction: which cell this is, ' +
+               'which others there are and whether they answer, the global ' +
+               'tier\'s replica lag, how many people each cell holds, the ' +
+               'sessions held away from home, and another cell\'s residents ' +
+               'where its release policy permits.' },
       // MAIL (#63, 2026-09-22), beside Cluster: how this service SENDS
       // mail — the transport, where a link points, the realm's wording of
       // each message, a test message, and the Mail settings group. Drawn by
@@ -2998,7 +3100,79 @@ type RouteApp = typeof app;
  * also answers `?format=json`. The gate is unconditional: a console session
  * of its own and one of two roles.
  */
+// The tabs of an application's page, in the order they are drawn: the ids
+// `applicationDetailPage()` gives its panels, named here because the
+// stylesheet marks the tab being read by its id.
+// THE COPY BUTTONS' SCRIPT (rcbj, 2026-10-01), served at /admin/copy.js:
+// the parent project's copyField() (client/src/tool_panes.js) — the
+// asynchronous clipboard where the browser offers it, and a selected text
+// area with execCommand('copy') where it does not, since navigator.clipboard
+// is undefined outside a secure context. It reveals the hidden buttons, so a
+// page whose script is blocked is the page it was. Browser code, served as
+// data: the code style's Entering/Leaving rule does not reach it.
+const COPY_SCRIPT = [
+  '(function () {',
+  '  "use strict";',
+  '  function fallback(text) {',
+  '    var area = document.createElement("textarea");',
+  '    area.value = text;',
+  '    area.setAttribute("readonly", "");',
+  '    area.style.position = "fixed";',
+  '    area.style.opacity = "0";',
+  '    document.body.appendChild(area);',
+  '    area.focus();',
+  '    area.select();',
+  '    var ok = false;',
+  '    try { ok = document.execCommand("copy"); } catch (e) { ok = false; }',
+  '    document.body.removeChild(area);',
+  '    return ok;',
+  '  }',
+  '  function copied(button, ok) {',
+  '    var label = button.textContent;',
+  '    button.textContent = ok ? "Copied" : "Copy failed";',
+  '    setTimeout(function () { button.textContent = label; }, 1500);',
+  '  }',
+  '  function copy(button) {',
+  '    var text = button.getAttribute("data-copy") || "";',
+  '    if (navigator.clipboard && navigator.clipboard.writeText) {',
+  '      navigator.clipboard.writeText(text).then(function () {',
+  '        copied(button, true);',
+  '      }, function () {',
+  '        copied(button, fallback(text));',
+  '      });',
+  '      return;',
+  '    }',
+  '    copied(button, fallback(text));',
+  '  }',
+  '  var buttons = document.querySelectorAll("button.copybtn[data-copy]");',
+  '  Array.prototype.forEach.call(buttons, function (button) {',
+  '    button.hidden = false;',
+  '    button.addEventListener("click", function () { copy(button); });',
+  '  });',
+  '})();',
+  ''
+].join('\n');
+
+const APPLICATION_TAB_IDS = ['tab-overview', 'tab-config', 'tab-credentials',
+  'tab-origins', 'tab-signals', 'tab-statements', 'tab-addresses',
+  'tab-permissions', 'tab-roles', 'tab-metadata', 'tab-entry', 'tab-remove'];
+
+// A PERSON'S PAGE AS TABS (rcbj, 2026-10-01), the application page's model:
+// seven tabs, the Attributes tab one sub-tab per field group (ufg-<group>,
+// each with its own Save) and the Credentials tab one per kind of credential.
+const USER_TAB_IDS = ['utab-overview', 'utab-activity', 'utab-attributes',
+  'utab-credentials', 'utab-federation', 'utab-gnap', 'utab-entry',
+  'utab-signout'];
+const USER_SUB_TAB_IDS = ['ucred-factors', 'ucred-password', 'ucred-keys',
+  'ucred-kerberos'].concat(personEditor.FIELD_GROUPS.map(function (group) {
+  return 'ufg-' + group.id;
+}));
+
 class AdminConsole {
+  // What the Cluster page's `prepare` step last read from the other cells
+  // (#361): `{ at, rows, error? }`, or null in single-cell mode.
+  peerClustersNow: any = null;
+
   /**
    * Builds the console over the given modules.
    *
@@ -3227,7 +3401,8 @@ class AdminConsole {
   }
 
   // Every PAGE in one section, in sidebar order, with a group's pages spliced
-  // in where the group sits. One level only — see the note above SECTIONS.
+  // in where the group sits — and a group inside a group spliced in the same
+  // way (Cert issuance › SPIFFE, 2026-10-01). See the note above SECTIONS.
   /**
    * Lists every page in one section, in sidebar order, groups flattened.
    *
@@ -3236,19 +3411,37 @@ class AdminConsole {
    */
   sectionPages(section) {
     const { log } = this.deps;
-    const self = this;
     log.debug("Entering AdminConsole.sectionPages(). section=" + section.title);
+    const pages = this.groupPages(section.items);
+    log.debug("Leaving AdminConsole.sectionPages(). " + pages.length +
+              " page(s).");
+    return pages;
+  }
+
+  // The pages in a list of rows, in order, every group at every depth
+  // flattened into it. The one walk `sectionPages()`, the sidebar's open
+  // state and the guide share, so none of them can stop a level short.
+  /**
+   * Lists the pages in a list of section rows, groups flattened at any depth.
+   *
+   * @param items - a section's or a group's `items`
+   * @returns the pages, in sidebar order
+   */
+  groupPages(items) {
+    const { log } = this.deps;
+    const self = this;
+    log.debug("Entering AdminConsole.groupPages().");
     const pages = [];
-    section.items.forEach(function (item) {
+    items.forEach(function (item) {
       if (self.isNavGroup(item)) {
-        item.items.forEach(function (page) {
+        self.groupPages(item.items).forEach(function (page) {
           pages.push(page);
         });
         return;
       }
       pages.push(item);
     });
-    log.debug("Leaving AdminConsole.sectionPages(). " + pages.length +
+    log.debug("Leaving AdminConsole.groupPages(). " + pages.length +
               " page(s).");
     return pages;
   }
@@ -3575,15 +3768,22 @@ class AdminConsole {
       log.debug("Leaving shown().");
       return adminScope.pageVisible(state, item.path);
     };
-    const out = SECTIONS.map(function (section) {
-      const items = section.items.map(function (item) {
+    // A group is kept with what is left of it, at any depth, and dropped when
+    // nothing is.
+    const visible = function (items) {
+      log.debug("Entering visible().");
+      const kept = items.map(function (item) {
         if (!self.isNavGroup(item)) {
           return shown(item) ? item : null;
         }
-        const pages = item.items.filter(shown);
-        return pages.length ? Object.assign({}, item, { items: pages }) : null;
+        const inner = visible(item.items);
+        return inner.length ? Object.assign({}, item, { items: inner }) : null;
       }).filter(Boolean);
-      return Object.assign({}, section, { items: items });
+      log.debug("Leaving visible().");
+      return kept;
+    };
+    const out = SECTIONS.map(function (section) {
+      return Object.assign({}, section, { items: visible(section.items) });
     }).filter(function (section) {
       return section.items.length > 0;
     });
@@ -3612,14 +3812,16 @@ class AdminConsole {
       log.debug("Leaving AdminConsole.navItem(). A page.");
       return this.navLink(item, active, up);
     }
-    const open = item.items.filter(function (page) {
+    const open = this.groupPages(item.items).filter(function (page) {
       return page.path === active;
     }).length > 0;
+    // A row of a group may itself be a group (Cert issuance › SPIFFE), so
+    // each row is drawn by this method again rather than by navLink().
     const html = '<li class="navgrp' + (open ? ' open' : '') + '">' +
       '<p class="navsub" title="' + this.esc(item.what) + '">' +
       this.esc(item.title) +
-      '</p><ul>' + item.items.map(function (page) {
-        return self.navLink(page, active, up);
+      '</p><ul>' + item.items.map(function (row) {
+        return self.navItem(row, active, up);
       }).join('') + '</ul></li>';
     log.debug("Leaving AdminConsole.navItem(). A group of " +
               item.items.length + " page(s).");
@@ -3976,6 +4178,21 @@ class AdminConsole {
   realmRoot(req) {
     const { log, baseUrlOf, realms } = this.deps;
     log.debug("Entering AdminConsole.realmRoot().");
+    // AT A CELL'S OWN CONSOLE ADDRESS, THAT ADDRESS (#361, 2026-09-30).
+    // baseUrlOf() is the pinned public name, so the realm switcher, the
+    // portal link and every other absolute URL built here sent a console
+    // opened at `https://cac1.<public name>` back to the shared name —
+    // another host, no session, a second sign-in, and (rcbj found) a
+    // passkey then refused for the wrong origin. The address is one the
+    // service is configured with (`cells.consoleUrl`), never the Host's say.
+    const cells = require('../common/cells');
+    const hit = cells.consoleOfHost(String((req && req.headers &&
+                                            req.headers.host) || ''));
+    if (hit) {
+      log.debug("Leaving AdminConsole.realmRoot(). The cell's own console " +
+                "address.");
+      return hit.consoleUrl;
+    }
     const withRealm = baseUrlOf(req);
     log.debug("Leaving AdminConsole.realmRoot().");
     return withRealm.slice(0, withRealm.length - realms.currentPrefix().length);
@@ -4419,7 +4636,7 @@ class AdminConsole {
     }
     const html =
         '<aside class="side">' +
-        '<p class="brand">Mock STS admin</p>' +
+        '<p class="brand">IYA STS admin</p>' +
         // WHAT THIS SERVICE IS AND WHICH REALM YOU ARE IN, rather than the
         // WS-Trust issuer identifier that used to be here.
         //
@@ -4462,7 +4679,7 @@ class AdminConsole {
                    'is ' + config.value('wstrust.issuer') + ', which is what ' +
                    'that protocol puts in an <Issuer> element and is not the ' +
                    'name of this service.') +
-          '">Mock STS &middot; ' + this.esc(realms.current().name) + '</p>' +
+          '">IYA STS &middot; ' + this.esc(realms.current().name) + '</p>' +
         this.navBar(active, up, req) +
         '</aside>';
     log.debug("Leaving AdminConsole.sideColumn(). " + html.length + " bytes.");
@@ -4507,7 +4724,9 @@ class AdminConsole {
     log.debug("Entering AdminConsole.runtimeFacts().");
     const facts: Record<string, any> = {};
     try {
-      const count = parseInt(config.value('workers.requestCount'), 10) || 0;
+      // The #364 rule: the default of one worker is none without a store
+      // that coordinates.
+      const count = require('../common/process_memory').requestWorkers();
       const rawDispatch = config.value('workers.dispatch');
       const dispatch = (Array.isArray(rawDispatch) ? rawDispatch
                                                    : String(rawDispatch || '')
@@ -4526,7 +4745,8 @@ class AdminConsole {
           (surfaceCount
             ? ' + ' + surfaceCount + ' for the console and portal' : '') +
           (process.env.STS_REQUEST_WORKER
-            ? '; this page from ' + pool + 'worker ' + process.pid : '') + ')'
+            ? '; this page from ' + pool + 'worker ' + WorkerChannel.id()
+            : '') + ')'
         : 'single process';
     } catch (e) {
       log.debug("Caught in AdminConsole.runtimeFacts(): " +
@@ -4669,7 +4889,7 @@ class AdminConsole {
               (up ? up.href : "none"));
     const html = '<!DOCTYPE html>\n<html lang="en"><head><meta ' +
       'charset="utf-8"><meta name="viewport" content="width=device-width, ' +
-      'initial-scale=1"><title>' + this.esc(title) + ' — mock STS ' +
+      'initial-scale=1"><title>' + this.esc(title) + ' — IYA STS ' +
       'admin</title><style>body{font-family:system-ui,-apple-system,"Segoe ' +
       'UI",Arial,sans-serif;background:#f4f4f7;margin:0;padding:2rem ' +
       '1rem;color:#222;line-height:1.45}' +
@@ -4837,8 +5057,10 @@ class AdminConsole {
       // than upper, so that two headings above one link cannot be read as two
       // sections — the section is the shout, the group is the aside.
       '.navsub{margin:0 0 3px;padding:0 6px;font-size:.78em;color:#6a6a80;' +
-      'font-weight:700;letter-spacing:.01em}.navgrp.open ' +
-      '.navsub{color:#12107c}.navgrp>ul{margin:0;padding-left:8px;' +
+      'font-weight:700;letter-spacing:.01em}.navgrp.open' +
+      // `>` and not a descendant: inside an open group, a group the page is
+      // NOT in keeps the grey heading.
+      '>.navsub{color:#12107c}.navgrp>ul{margin:0;padding-left:8px;' +
       'border-left:1px solid ' +
       '#e2e2ea}.navgrp.open>ul{border-left-color:#c3c0e0}nav ' +
       'ul{list-style:none;margin:0;padding:0}nav ' +
@@ -4887,6 +5109,14 @@ class AdminConsole {
       '14px}.err{background:#fdecea;border:1px solid ' +
       '#f5c6c2;color:#b00020;padding:8px ' +
       '11px;border-radius:5px;font-size:.85em;margin:0 0 14px}' +
+      // THE MESSAGE A PRESSED BUTTON CAME BACK WITH STAYS ON SCREEN
+      // (2026-10-01). A form's answer lands at the section the button was in
+      // (withReturnAnchors()), so a notice drawn at the top of the card would
+      // be off screen; it sticks to the top of the window instead. The
+      // sections a page is anchored at leave room under it.
+      '.flash{position:sticky;top:0;z-index:30;padding-top:6px;' +
+      'background:#fff}.flash>*:last-child{margin-bottom:10px}' +
+      'h2[id],h3[id],h4[id],.fg-cell[id]{scroll-margin-top:5rem}' +
       // A VALUE THAT EXISTS ONCE. It is drawn big, monospaced and wrapping —
       // `word-break:break-all` rather than a scroll box — because the two
       // things that land in it are a base64url password and an activation URL,
@@ -5273,6 +5503,9 @@ class AdminConsole {
       // download control has to be an <a download> — these pages run no
       // script, so nothing else can hand a browser a file — and a
       // control that saves a document should not read as a sentence.
+      // The copy buttons (2026-10-01): small, beside the value they copy.
+      'button.copybtn{padding:1px 7px;margin-left:6px;font-size:.8em;' +
+      'vertical-align:baseline}' +
       'a.btn{display:inline-block;padding:5px 10px;border-radius:5px;' +
       'border:1px solid #12107c;background:#12107c;color:#fff;font-size:.8em;' +
       'text-decoration:none}' +
@@ -5367,10 +5600,13 @@ class AdminConsole {
       // One rule per family, generated from the same PROTOCOLS table the
       // checkboxes are drawn from — so a family added there gets its rule for
       // nothing, and cannot get a checkbox without one.
-      applications.PROTOCOLS.map(function (family) {
-        return 'form.newapp:has(#proto-' + family.id + ':checked) .pf-' +
-               family.id +
-               '{display:revert}';
+      // One CHECKBOX per choice, and a combined choice (Verifiable
+      // Credentials) shows every family it stands for.
+      applications.FAMILY_CHOICES.map(function (choice) {
+        return choice.families.map(function (family) {
+          return 'form.newapp:has(#proto-' + choice.id + ':checked) .pf-' +
+                 family + '{display:revert}';
+        }).join('');
       }).join('') +
       // The prompt that replaces the fields until something is ticked, and its
       // own disappearance. Without it the page below the checkbox table is
@@ -5385,6 +5621,30 @@ class AdminConsole {
       // browsers skip when choosing the button Enter presses.
       '.default-submit{position:absolute;left:-10000px;width:1px;height:1px;' +
       'overflow:hidden}' +
+      // ---------------------------------------------------------------------
+      // THE APPLICATION FIELD GRID (2026-09-30): cells that wrap to as many
+      // columns as the card has room for, each a field's name, the families
+      // it belongs to and its control; a list's boxes each with a delete
+      // button, and a "+" under them.
+      '.fg{display:grid;grid-template-columns:repeat(auto-fill,' +
+      'minmax(19rem,1fr));gap:.6rem .8rem;margin:.4em 0 1em}' +
+      '.fg-cell{border:1px solid #e3e3ea;border-radius:8px;padding:8px 10px;' +
+      'background:#fbfbfd;min-width:0}' +
+      '.fg-name{display:block;font-weight:600;overflow-wrap:anywhere}' +
+      '.fg-for{display:block;color:#666;font-size:.78em;margin:.1em 0 .4em}' +
+      '.fg-cell input[type=text],.fg-cell input[type=number],' +
+      '.fg-cell select,.fg-cell textarea{width:100%;box-sizing:border-box;' +
+      'min-height:0}' +
+      '.fg-item{display:flex;gap:.3em;align-items:center;margin:.2em 0}' +
+      '.fg-item input{flex:1 1 auto}' +
+      'button.fg-drop,button.fg-grow{padding:2px 8px;line-height:1.2;' +
+      'min-width:0}' +
+      'button.fg-grow{font-weight:700;margin-top:.2em}' +
+      '.fg-bool,.fg-checks{display:flex;flex-wrap:wrap;gap:.2em .9em}' +
+      '.fg-radio{font-weight:400;white-space:nowrap}' +
+      '.fg-protos{display:flex;flex-wrap:wrap;gap:.3em 1em;margin:.4em 0 1em}' +
+      '.fg-proto{font-weight:400;white-space:nowrap}' +
+      '.fg-view{align-items:center;gap:.8em}' +
       // ---------------------------------------------------------------------
       // /admin/applications/new's RFC 9728 IMPORT (2026-09-13): a checkbox that
       // shows the three ways to give a document, and a pane of three TABS over
@@ -5413,6 +5673,43 @@ class AdminConsole {
       '0;cursor:pointer;color:#12107c}.prm-panel{display:none;padding:12px;' +
       'overflow-x:auto}' +
       '.prm-panel pre{white-space:pre-wrap;word-break:break-all;margin:0}' +
+      // ---------------------------------------------------------------------
+      // TABS (2026-10-01): an application's page, one tab per section, and its
+      // configuration one sub-tab per protocol. tabbedPanels() argues the
+      // mechanism: the fragment decides, through `:target` and `:has()`. A
+      // browser without `:has()` shows every panel, which is the page as it
+      // was.
+      '.tabbar{display:flex;flex-wrap:wrap;gap:4px;margin:10px 0 14px;' +
+      'border-bottom:1px solid #d5d5dd}.tabbar a{padding:6px 12px;' +
+      'border:1px solid #d5d5dd;border-bottom:0;border-radius:6px 6px 0 0;' +
+      'background:#f6f6fa;color:#12107c;text-decoration:none;' +
+      'font-size:.9em}.subbar a{font-size:.85em;padding:4px 10px}' +
+      '.tabpanel,.subpanel{scroll-margin-top:1rem}' +
+      '@supports selector(:has(*)){' +
+      '.tabs>.tabpanel,.subtabs>.subpanel{display:none}' +
+      '.tabs>.tabpanel:target,.tabs>.tabpanel:has(:target),' +
+      '.subtabs>.subpanel:target,.subtabs>.subpanel:has(:target)' +
+      '{display:block}' +
+      '.tabs:not(:has(>.tabpanel:target,>.tabpanel :target))>' +
+      '.tabpanel.first,.subtabs:not(:has(>.subpanel:target,>.subpanel ' +
+      ':target))>.subpanel.first{display:block}' +
+      '.tabs:not(:has(>.tabpanel:target,>.tabpanel :target))>.tabbar ' +
+      'a.first,.subtabs:not(:has(>.subpanel:target,>.subpanel :target))>' +
+      '.subbar a.first{background:#fff;font-weight:700;' +
+      'border-color:#12107c}' +
+      // The tab being read, one rule per tab: a selector cannot compare a
+      // link's href with the id that is targeted, so the ids are named.
+      APPLICATION_TAB_IDS.concat(applications.FIELD_GROUPS.map(function (g) {
+        return 'cfg-' + g.id;
+      }), ['cfg-families'], USER_TAB_IDS, USER_SUB_TAB_IDS).map(function (id) {
+        const sub = id.indexOf('cfg-') === 0 ||
+          USER_SUB_TAB_IDS.indexOf(id) >= 0;
+        const outer = sub ? '.subtabs' : '.tabs';
+        const bar = sub ? '.subbar' : '.tabbar';
+        return outer + ':has(#' + id + ':target,#' + id + ' :target)>' + bar +
+          ' a[href="#' + id + '"]';
+      }).join(',') + '{background:#fff;font-weight:700;' +
+      'border-color:#12107c}}' +
       ['json', 'table', 'fields'].map(function (tab) {
         return '#prm-tab-' + tab + ':checked~.prm-panel-' + tab +
                '{display:block}' +
@@ -5479,7 +5776,7 @@ class AdminConsole {
       // stamped artifact or a checkout being run. That last distinction is the
       // one worth a tooltip rather than a footnote: two instances reporting
       // different build numbers mean nothing if neither was ever built.
-      '<div title="' + this.esc(APP_BUILD_INFO) + '">mock-sts version <code>' +
+      '<div title="' + this.esc(APP_BUILD_INFO) + '">iya-sts version <code>' +
       this.esc(APP_VERSION.version) + '</code>' +
       (APP_VERSION.stamped ? '' : ' (not a stamped build — this process is a ' +
        'checkout, and the build number is when it started)') + '</div>' +
@@ -5552,6 +5849,7 @@ class AdminConsole {
     log.debug("Entering AdminConsole.withCsrf().");
     const session = consoleRpSession(req);
     const field = session ? websecurity.field(session.session.id) : '';
+    html = this.withReturnAnchors(html);
     if (!field) {
       log.debug("Leaving AdminConsole.withCsrf().");
       return html;
@@ -5559,6 +5857,86 @@ class AdminConsole {
     log.debug("Leaving AdminConsole.withCsrf().");
     return String(html).replace(/(<form\b[^>]*\bmethod\s*=\s*["']post["'][^>]*>)/gi,
                                 function (whole) { return whole + field; });
+  }
+
+  // ---------------------------------------------------------------------------
+  // A PRESSED BUTTON BRINGS THE READER BACK TO WHERE IT WAS (2026-10-01).
+  //
+  // Every form here answers with a new page — a 303 to the page it was on, or
+  // the page redrawn — and a new page opens at its top, so a button half way
+  // down a long page sent the reader back to the top every time. With no
+  // script there is no scroll position to restore; what there is, is the
+  // FRAGMENT. So every section heading (h2-h4) gets an id, and every form
+  // after one has that id appended to its `action` and to each `formaction`
+  // inside it. A redraw lands there because the fragment is in the URL that
+  // was posted to; a 303 lands there because a Location with no fragment
+  // inherits the request's (RFC 9110 section 10.2.2). A form that already
+  // names a fragment, or a redirect target that names one
+  // (`applicationReturnTo(..., '#signals')`), wins.
+  //
+  // **ONLY ROOT-RELATIVE ADDRESSES.** An absolute action (the realm switcher)
+  // leaves the page, and an empty one would be resolved against a URL this
+  // function cannot see. A form before the first section heading (the
+  // account menu, the sidebar) is the top of the page already and is left
+  // alone. Run on the finished page by withCsrf(), which every page goes out
+  // through. The message the action came back with is drawn in a strip that
+  // sticks to the top of the window (flash()), so it is seen wherever the
+  // page lands.
+  // ---------------------------------------------------------------------------
+  /**
+   * Gives every section heading an id and every form after one a fragment
+   * naming it, so a pressed button comes back to its own section.
+   *
+   * @param html - the finished page
+   * @returns the page with the ids and fragments added
+   */
+  withReturnAnchors(html) {
+    const { log } = this.deps;
+    log.debug("Entering AdminConsole.withReturnAnchors().");
+    const used: Record<string, boolean> = {};
+    String(html).replace(/\bid\s*=\s*["']([^"']+)["']/g,
+                         function (whole, id) {
+      used[id] = true;
+      return whole;
+    });
+    let current = '';
+    const slug = function (text) {
+      const base = 'sec-' + (String(text).replace(/<[^>]*>/g, '')
+        .replace(/&[a-z#0-9]+;/gi, ' ').toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
+        .slice(0, 48) || 'section');
+      let id = base;
+      for (let n = 2; used[id]; n++) {
+        id = base + '-' + n;
+      }
+      used[id] = true;
+      return id;
+    };
+    const withFragment = function (tag, attribute) {
+      return tag.replace(new RegExp('(\\b' + attribute +
+        '\\s*=\\s*")(/[^"#]*)(")', 'gi'),
+        function (whole, open, address, close) {
+          return current ? open + address + '#' + current + close : whole;
+        });
+    };
+    const out = String(html).replace(
+      /<h([2-4])\b([^>]*)>([\s\S]*?)<\/h\1>|<form\b[^>]*>|<button\b[^>]*>|<input\b[^>]*>/gi,
+      function (whole, level, attributes, text) {
+        if (level) {
+          const named = /\bid\s*=\s*["']([^"']+)["']/.exec(attributes || '');
+          if (named) {
+            current = named[1];
+            return whole;
+          }
+          current = slug(text);
+          return '<h' + level + ' id="' + current + '"' + attributes + '>' +
+            text + '</h' + level + '>';
+        }
+        return /^<form/i.test(whole) ? withFragment(whole, 'action')
+          : withFragment(whole, 'formaction');
+      });
+    log.debug("Leaving AdminConsole.withReturnAnchors().");
+    return out;
   }
 
   // ---------------------------------------------------------------------------
@@ -5582,7 +5960,29 @@ class AdminConsole {
   // the lead notes and warnings that say what the page is, before the first
   // section of what it holds. A page with no heading gets it at the foot.
   // ---------------------------------------------------------------------------
+    // A COPY BUTTON BESIDE A VALUE (rcbj, 2026-10-01), first beside every
+  // endpoint in a Protocols page's Endpoints section. The button is drawn
+  // HIDDEN and carries the value it copies: `/admin/copy.js` reveals it and
+  // copies on a click. With the script blocked the page is exactly what it
+  // was, and the value beside it can still be selected by hand. `respond()`
+  // sees the attribute and is what adds the script and relaxes the policy,
+  // for that page only.
   /**
+   * Draws a hidden Copy button for a value, which `/admin/copy.js` reveals.
+   *
+   * @param value - the text the button copies
+   * @returns the markup
+   */
+  copyButton(value) {
+    const { log } = this.deps;
+    log.debug("Entering AdminConsole.copyButton().");
+    log.debug("Leaving AdminConsole.copyButton().");
+    return ' <button type="button" class="copybtn" hidden data-copy="' +
+      this.esc(String(value == null ? '' : value)) + '" title="Copy ' +
+      'to the clipboard">Copy</button>';
+  }
+
+/**
    * Draws the Endpoints section of a Protocols page.
    *
    * @param rows - the endpoint rows protocol_endpoints.ts lists
@@ -5597,7 +5997,7 @@ class AdminConsole {
                   (row.transport || '');
       return '<tr><th>' + self.esc(row.name) + '</th><td><code>' +
              self.esc(row.url) +
-        '</code>' +
+        '</code>' + self.copyButton(row.url) +
         (how ? ' <span class="sub">' + self.esc(how) + '</span>' : '') +
         (row.registered === false ?
          ' <span class="sub">— not registered in this process</span>' : '') +
@@ -5717,6 +6117,16 @@ class AdminConsole {
          .send(JSON.stringify(json, null, 2));
       log.debug("Leaving AdminConsole.respond(). Answered JSON.");
       return;
+    }
+    // A PAGE WITH A COPY BUTTON CARRIES ONE SCRIPT (2026-10-01):
+    // `/admin/copy.js`, named by `script-src 'self'` through
+    // `app.contentSecurityPolicy()` so `frame-ancestors` and `base-uri`
+    // stay, and never inline. Every other page stays `script-src 'none'`.
+    // See copyButton().
+    if (String(html || '').indexOf('class="copybtn"') >= 0) {
+      res.set('Content-Security-Policy', app.contentSecurityPolicy({
+        'script-src': "'self'" }));
+      html = String(html) + '<script src="/admin/copy.js" defer></script>';
     }
     res.status(200).type('text/html').send(
       this.withCsrf(req,
@@ -6005,6 +6415,14 @@ class AdminConsole {
     const { log, realms, baseUrlOf } = this.deps;
     log.debug("Entering AdminConsole.defaultRealmSignInUrl().");
     log.debug("Leaving AdminConsole.defaultRealmSignInUrl().");
+    // At a cell's own console address, that address (#361): realmRoot()'s
+    // reason. The default realm's console is at its root.
+    const cells = require('../common/cells');
+    const hit = cells.consoleOfHost(String((req && req.headers &&
+                                            req.headers.host) || ''));
+    if (hit) {
+      return hit.consoleUrl + '/admin';
+    }
     return realms.run(realms.DEFAULT_REALM, function () {
       return baseUrlOf(req) + '/admin';
     });
@@ -6155,8 +6573,24 @@ class AdminConsole {
     const notice = String(req.query.notice || '').slice(0, 500);
     const error = String(req.query.error || '').slice(0, 500);
     log.debug("Leaving AdminConsole.messagesOf().");
-    return (notice ? '<div class="ok">' + this.esc(notice) + '</div>' : '') +
-           (error ? '<div class="err">' + this.esc(error) + '</div>' : '');
+    return this.flash((notice ? '<div class="ok">' + this.esc(notice) +
+                       '</div>' : '') +
+                      (error ? '<div class="err">' + this.esc(error) +
+                       '</div>' : ''));
+  }
+
+  /**
+   * Wraps the messages a pressed button came back with in the strip that
+   * stays at the top of the window, so they are seen wherever the page lands.
+   *
+   * @param html - the messages as HTML
+   * @returns the strip, or '' for no messages
+   */
+  flash(html) {
+    const { log } = this.deps;
+    log.debug("Entering AdminConsole.flash().");
+    log.debug("Leaving AdminConsole.flash().");
+    return html ? '<div class="flash" role="status">' + html + '</div>' : '';
   }
 
   /**
@@ -7842,29 +8276,35 @@ class AdminConsole {
     const out = [];
     this.visibleSections(state).forEach(function (section) {
       const items = [];
-      section.items.forEach(function (item) {
-        if (self.isNavGroup(item)) {
-          const pages = item.items.filter(function (page) {
-            return page.path !== activePath;
-          });
-          if (!pages.length) {
-            return;
-          }
-          // The group's own description folds like a page's, for the same
-          // reason: SAML's runs to five lines and sat between the heading and
-          // the three pages under it.
-          items.push('<li><span class="grp">' + self.esc(item.title) +
+      // One list of rows, a group drawn as its heading over its own rows —
+      // which may hold a group again (Cert issuance › SPIFFE) — and dropped
+      // when the page being drawn was all it held.
+      const rows = function (list, out) {
+        log.debug("Entering rows().");
+        list.forEach(function (item) {
+          if (self.isNavGroup(item)) {
+            const inner = [];
+            rows(item.items, inner);
+            if (!inner.length) {
+              return;
+            }
+            // The group's own description folds like a page's, for the same
+            // reason: SAML's runs to five lines and sat between the heading
+            // and the three pages under it.
+            out.push('<li><span class="grp">' + self.esc(item.title) +
                      '</span>' +
                      self.note(self.esc(item.what)) +
-                     '<ul>' + pages.map(self.guideItem.bind(self)).join('') +
-                     '</ul></li>');
-          return;
-        }
-        if (item.path === activePath) {
-          return;
-        }
-        items.push(self.guideItem(item));
-      });
+                     '<ul>' + inner.join('') + '</ul></li>');
+            return;
+          }
+          if (item.path === activePath) {
+            return;
+          }
+          out.push(self.guideItem(item));
+        });
+        log.debug("Leaving rows().");
+      };
+      rows(section.items, items);
       if (!items.length) {
         log.debug("consoleGuide(). Section " + section.title +
                   " is empty here.");
@@ -8256,6 +8696,15 @@ class AdminConsole {
         '" title="' + this.esc('Every Kerberos ticket this KDC has minted. ' +
           'There is no per-session link: a ticket carries no identifier this ' +
           'service keeps a handle on.') + '">the ticket table</a></td>';
+    }
+    if (row.family === 'gnap') {
+      // A GNAP GRANT (#432): its tokens are in GNAP's own store, listed with
+      // the grant on Protocols → GNAP.
+      log.debug("Leaving AdminConsole.sessionCredentialsCell().");
+      return '<td><a href="' + this.esc('/admin/gnap' +
+        queryWith({ state: 'approved' }, {})) +
+        '" title="' + this.esc('The grants this authorization server holds, ' +
+          'with the tokens each issued') + '">the grant list</a></td>';
     }
     log.debug("Leaving AdminConsole.sessionCredentialsCell().");
     return '<td class="sub" title="' +
@@ -9271,11 +9720,17 @@ class AdminConsole {
     const self = this;
     log.debug("Entering AdminConsole.policyAccountRow().");
     const flags = [];
-    if (account.notDelegated) flags.push('NOT_DELEGATED');
-    if (account.trustedToAuthenticateForDelegation) {
-      flags.push('TRUSTED_TO_AUTHENTICATE_FOR_DELEGATION');
+    // The entry's attribute, then Active Directory's name for it (#186).
+    if (account.notDelegated) {
+      flags.push('appNotDelegated (NOT_DELEGATED)');
     }
-    if (account.okAsDelegate) flags.push('ok-as-delegate');
+    if (account.trustedToAuthenticateForDelegation) {
+      flags.push('appDelegationSemantics: impersonation ' +
+                 '(TRUSTED_TO_AUTHENTICATE_FOR_DELEGATION)');
+    }
+    if (account.okAsDelegate) {
+      flags.push('krb5TrustedForDelegation (ok-as-delegate)');
+    }
     log.debug("Leaving AdminConsole.policyAccountRow().");
     return '<tr>' +
       '<td class="who"><code>' + this.esc(account.principal) + '</code></td>' +
@@ -9356,8 +9811,14 @@ class AdminConsole {
     }).join('');
     const intermediaryRows = view.intermediaries.shown.map(function (row) {
       return '<tr><td class="who">' + appLink(row.application) + '</td>' +
-        '<td>' + (row.trustedToImpersonate
-          ? '<code>appTrustedToImpersonate</code> TRUE' : '&mdash;') +
+        '<td>' + (row.semantics && row.semantics.length
+          ? row.semantics.map(function (one: string) {
+            return self.esc(one);
+          }).join(', ') : 'delegation only (empty)') +
+        (row.defaultSemantics ? '<br><span class="state-none">default ' +
+          self.esc(row.defaultSemantics) + '</span>' : '') +
+        (row.notDelegated ? '<br><code>appNotDelegated</code> — never ' +
+          'acted for' : '') +
         '</td><td>' + (row.subjectGroups.length
           ? row.subjectGroups.map(function (dn) {
             return '<code>' + self.esc(dn) + '</code>';
@@ -9370,34 +9831,40 @@ class AdminConsole {
         (row.notDelegated ? '<code>stsNotDelegated</code> — nobody may act ' +
           'for them' : '&mdash;') + '</td><td>' +
         (row.mayAct ? '<code>' + self.esc(row.mayAct) + '</code>'
-                    : '&mdash;') + '</td></tr>';
+                    : '&mdash;') + '</td><td>' +
+        ((row.semantics && row.semantics.length) || row.defaultSemantics
+          ? self.esc((row.semantics || []).join(', ') || 'both') +
+            (row.defaultSemantics ? '; default ' +
+              self.esc(row.defaultSemantics) : '')
+          : '&mdash;') + '</td></tr>';
     }).join('');
     const register = view.register;
     log.debug("Leaving AdminConsole.delegationPolicySection().");
-    return '<h2 id="delegation-policy">Who may act for whom &mdash; WS-Trust ' +
-      'and token exchange</h2>' +
-      self.note('<strong>Kerberos\'s model, on application entries</strong> ' +
-      '(#108). A WS-Trust <code>OnBehalfOf</code> or <code>ActAs</code> and ' +
-      'an RFC 8693 token exchange are decided from four attributes: ' +
-      '<code>appAllowedToDelegateTo</code> on the INTERMEDIARY names the ' +
-      'targets it may reach as somebody else (the analogue of ' +
+    return '<h2 id="delegation-policy">Who may act for whom &mdash; WS-Trust, ' +
+      'token exchange and Kerberos</h2>' +
+      self.note('<strong>Decided by the issuance policy</strong> (#186), ' +
+      'from facts on the entries — one set of settings for the three ' +
+      'protocols. <code>appAllowedToDelegateTo</code> on an application ' +
+      'names the applications it delegates to (the analogue of ' +
       '<code>msDS-AllowedToDelegateTo</code>); ' +
       '<code>appAllowedToActOnBehalfOf</code> on the TARGET names the ' +
-      'intermediaries it accepts (the resource-based one); ' +
-      '<code>appDelegationSubjectGroup</code> narrows who the intermediary ' +
-      'may act for; and <code>appTrustedToImpersonate</code> lets it ' +
-      'IMPERSONATE — <code>OnBehalfOf</code>, or an exchange with no ' +
-      '<code>actor_token</code> — as well as delegate. Only an application ' +
-      'may be an intermediary. A person carrying ' +
-      '<code>stsNotDelegated</code>, or a member of ' +
+      'actors it accepts (the resource-based one); ' +
+      '<code>appDelegationSubjectGroup</code> narrows who an actor may act ' +
+      'for; and <code>appDelegationSemantics</code> says whether it may ' +
+      'IMPERSONATE as well as delegate (empty is delegation only), with ' +
+      '<code>appDefaultDelegationSemantics</code> the default. A person ' +
+      'acting needs the role <code>delegation.actorRole</code> names. A ' +
+      'person carrying <code>stsNotDelegated</code>, an application ' +
+      'carrying <code>appNotDelegated</code>, or a member of ' +
       (register.protectedGroups.length
         ? register.protectedGroups.map(function (one) {
           return '<code>' + self.esc(one) + '</code>';
         }).join(' or ')
         : 'a console roster') +
-      ', is never delegated. When the attributes allow, the issuance policy ' +
-      'is asked about action-id <code>delegate</code> and only a Deny ' +
-      'refuses. ' + (register.enforced
+      ', is never delegated. The rules are the issuance policy\'s ' +
+      '(action-ids <code>choose-exchange-semantics</code> and ' +
+      '<code>exchange-token</code>); a realm changes them in its own ' +
+      'policy. ' + (register.enforced
         ? '<strong>This realm is in product mode, so this is ' +
           'ENFORCED</strong>: ' +
           'a refusal is <code>wst:RequestFailed</code>, ' +
@@ -9405,8 +9872,8 @@ class AdminConsole {
         : '<strong>This realm is in development mode, so nothing is ' +
           'refused</strong>: the policy is asked and each act above says ' +
           'what WOULD have been refused in product.') +
-      ' Edit an application\'s four on its own page, and a person\'s two ' +
-      'on theirs. <code>GET /admin-api/delegation/policy</code> is this ' +
+      ' Edit an application\'s on its own page, and a person\'s on ' +
+      'theirs. <code>GET /admin-api/delegation/policy</code> is this ' +
       'section as JSON.') +
       pairsNav.head +
       '<table><tr><th>Mechanism</th><th>Intermediary (who acts)</th>' +
@@ -9419,10 +9886,11 @@ class AdminConsole {
         '.</td></tr>') + '</table>' + pairsNav.foot +
       '<h3>Intermediaries</h3>' +
       intermediariesNav.head +
-      '<table><tr><th>Application</th><th>May impersonate</th>' +
+      '<table><tr><th>Application</th><th>Semantics allowed</th>' +
       '<th>May act for</th></tr>' +
       (intermediaryRows || '<tr><td colspan="3">No application carries ' +
-        '<code>appTrustedToImpersonate</code> or a subject group.</td></tr>') +
+        'delegation semantics, appNotDelegated or a subject group.' +
+        '</td></tr>') +
       '</table>' + intermediariesNav.foot +
       '<h3>People</h3>' +
       self.note('<code>stsMayAct</code> is a person\'s own choice of the ' +
@@ -9431,8 +9899,9 @@ class AdminConsole {
       'of one by anybody else is refused in every mode.') +
       peopleNav.head +
       '<table><tr><th>Person</th><th>Cannot be delegated</th>' +
-      '<th>May act for them (stsMayAct)</th></tr>' +
-      (peopleRows || '<tr><td colspan="3">Nobody carries either flag.' +
+      '<th>May act for them (stsMayAct)</th><th>Semantics allowed</th>' +
+      '</tr>' +
+      (peopleRows || '<tr><td colspan="4">Nobody carries any of them.' +
         '</td></tr>') + '</table>' + peopleNav.foot;
   }
 
@@ -9555,10 +10024,10 @@ class AdminConsole {
       // IDENTIFIER cell, not this one, and a permission with no identifier is
       // removed by exactly the same call. One form, once.
       '<td>' + (options && options.readOnly
-        ? '<a href="/admin/delegation#allowed" title="This page draws the ' +
-          'register and does not change it. The Remove button for this ' +
-          'permission is on the register itself.">on the register</a>'
-        : '<form method="post" action="/admin/delegation">' +
+        ? '<a href="/admin/delegation-settings#allowed" title="This page ' +
+          'draws the register and does not change it. The Remove button for ' +
+          'this permission is on Protocols › Delegation.">change it</a>'
+        : '<form method="post" action="/admin/delegation-settings">' +
           this.permissionsBack(listView) + '<div class="formrow">' +
           '<input type="hidden" name="action" value="remove-permission">' +
           '<input type="hidden" name="resource" value="' +
@@ -9678,10 +10147,10 @@ class AdminConsole {
           'it. A configured grant nobody has needed is exactly what this ' +
           'register is here to show.">never asked for</span>') + '</td>' +
       '<td>' + (options && options.readOnly
-        ? '<a href="/admin/delegation#allowed" title="This page draws the ' +
-          'register and does not change it. The Revoke button for this grant ' +
-          'is on the register itself.">on the register</a>'
-        : '<form method="post" action="/admin/delegation">' +
+        ? '<a href="/admin/delegation-settings#allowed" title="This page ' +
+          'draws the register and does not change it. The Revoke button for ' +
+          'this grant is on Protocols › Delegation.">change it</a>'
+        : '<form method="post" action="/admin/delegation-settings">' +
           this.permissionsBack(listView) + '<div class="formrow">' +
           '<input type="hidden" name="action" value="revoke-permission">' +
           '<input type="hidden" name="client" value="' + this.esc(one.client) +
@@ -9741,26 +10210,42 @@ class AdminConsole {
     };
   }
 
-  // The whole configured section, as it appears on /admin/delegation. Extracted
-  // into a function of its own because that page's `inner` is already the
-  // longest expression in this console and a fourth screen of string
-  // concatenation inside it would be unreadable — not because anything else
-  // draws it.
+  // The whole configured section. Extracted into a function of its own because
+  // the delegation page's `inner` is already the longest expression in this
+  // console and a fourth screen of string concatenation inside it would be
+  // unreadable.
+  //
+  // **IT IS DRAWN ON TWO PAGES SINCE 2026-10-01, AND ONLY ONE OF THEM CHANGES
+  // ANYTHING** (rcbj). Monitoring → Delegation (/admin/delegation) is what
+  // HAPPENED, and a register of what is ALLOWED drawn there is the reading the
+  // acts are compared against — so it keeps the tables, read-only, with every
+  // row button swapped for a link (the `readOnly` the picture pages already
+  // pass). Protocols → Delegation (/admin/delegation-settings) is where the
+  // register is CONFIGURED: the same tables with their Remove and Revoke
+  // buttons, Expose an API and Define a permission for any application, and
+  // the page's one setting. One function, so the two pages cannot come to
+  // disagree about what a row says; `editable` decides only the controls and
+  // which page the searches and pagings stay on.
   /**
-   * Draws the delegated permissions section of /admin/delegation.
-   *
-   * The paged permissions and grants tables, and the Expose an API and
-   * Define a permission forms.
+   * Draws the delegated permissions register: the paged permissions and
+   * grants tables, and — when editable — the Expose an API and Define a
+   * permission forms and each row's button.
    *
    * @param req - the request
    * @param view - the delegation view holding the register
    * @param listView - the list state carried into links and forms
+   * @param editable - true on Protocols → Delegation, which configures the
+   *   register; false on Monitoring → Delegation, which only reads it
    * @returns the section as HTML
    */
-  permissionsSection(req, view, listView) {
+  permissionsSection(req, view, listView, editable) {
     const { log, applications, pageParamsOf } = this.deps;
     const self = this;
-    log.debug("Entering AdminConsole.permissionsSection().");
+    log.debug("Entering AdminConsole.permissionsSection(). editable=" +
+              !!editable);
+    // The page this section is on: its searches and pagings stay there.
+    const here = editable ? '/admin/delegation-settings' : '/admin/delegation';
+    const rowOptions = editable ? undefined : { readOnly: true };
     const register = view.register;
     const counts = register.counts;
     // Every application in the registry, for the two selects. A select rather
@@ -9814,10 +10299,8 @@ class AdminConsole {
     // searches and the other table's own search all ride along. pageNavPair()
     // overrides only the one name off the paging object it is handed.
     const navParams = pageParamsOf(req.query);
-    const permNav = this.pageNavPair('/admin/delegation', navParams,
-                                     permPage.paging);
-    const grantNav = this.pageNavPair('/admin/delegation', navParams,
-                                      grantPage.paging);
+    const permNav = this.pageNavPair(here, navParams, permPage.paging);
+    const grantNav = this.pageNavPair(here, navParams, grantPage.paging);
 
     log.debug("Leaving AdminConsole.permissionsSection(). " + counts.grants +
               " grant(s), " +
@@ -9861,8 +10344,8 @@ class AdminConsole {
 
       this.note('<strong>In product mode an ungranted permission is refused ' +
       '<code>invalid_scope</code>, always. In development a grant refuses ' +
-      'nothing by default, and that is the setting at the foot of this ' +
-      'page.</strong> With ' +
+      'nothing by default, and that is a setting on <a ' +
+      'href="/admin/oauth2">OAuth 2.0 / OIDC settings</a>.</strong> With ' +
       '<code>oauth2.delegatedPermissionsEnforced</code> off &mdash; which it ' +
       'is unless somebody turned it on &mdash; an ungranted permission is ' +
       'honoured exactly as a granted one is, logged as ungranted, and marked ' +
@@ -9903,7 +10386,7 @@ class AdminConsole {
       'entries and become dangling, because tidying them would be this page ' +
       'writing to entries nobody named.') +
       this.sectionSearchForm({
-        path: '/admin/delegation', query: req.query,
+        path: here, query: req.query,
         param: 'permq', pageParam: 'permissionsPage',
         label: 'Narrow to an application',
         placeholder: 'part of an application name or identifier',
@@ -9920,7 +10403,7 @@ class AdminConsole {
       '&mdash; what a client sends</th><th>Held by</th><th>Which ' +
       'applications</th><th></th></tr>' +
       (permPage.shown.map(function (one) {
-        return self.permissionDefinitionRow(one, listView);
+        return self.permissionDefinitionRow(one, listView, rowOptions);
       }).join('') || '<tr><td colspan="6">' +
         (permWanted
           ? 'No application whose name or identifier contains <code>' +
@@ -9935,47 +10418,59 @@ class AdminConsole {
       '</table>' +
       permNav.foot +
 
-      '<h4>Expose an API</h4>' +
-      this.note('The base URI is one answer per application and everything ' +
-      'it exposes hangs off it. A trailing separator is added where there is ' +
-      'none, because the identifier is a plain concatenation and ' +
-      '<code>https://example.com</code> + <code>write</code> would otherwise ' +
-      'read as one word. Clearing it leaves the permissions on the entry ' +
-      'with no identifier at all, which the table above reports rather than ' +
-      'hides.') +
-      '<form method="post" action="/admin/delegation">' +
-      this.permissionsBack(listView) +
+      (editable ? '' :
+        this.note('<strong>This page READS the register and changes ' +
+        'none of it (2026-10-01).</strong> Exposing an API, defining and ' +
+        'removing a permission and revoking a grant are on <a ' +
+        'href="/admin/delegation-settings#allowed">Protocols &rsaquo; ' +
+        'Delegation</a>, for every application at once, and on each ' +
+        'application\'s own <em>Permissions</em> tab under <a ' +
+        'href="/admin/applications">Directory &rsaquo; Applications</a>, ' +
+        'for that one. Each row\'s last column links there instead of ' +
+        'carrying a button.')) +
+
+      (!editable ? '' :
+        '<h4>Expose an API</h4>' +
+        this.note('The base URI is one answer per application and ' +
+        'everything it exposes hangs off it. A trailing separator is added ' +
+        'where there is none, because the identifier is a plain ' +
+        'concatenation and <code>https://example.com</code> + ' +
+        '<code>write</code> would otherwise read as one word. Clearing it ' +
+        'leaves the permissions on the entry with no identifier at all, ' +
+        'which the table above reports rather than hides.') +
+        '<form method="post" action="/admin/delegation-settings">' +
+        this.permissionsBack(listView) +
         '<div class="formrow">' +
         '<input type="hidden" name="action" value="set-permission-base">' +
         '<label for="base-resource">Application</label>' +
         '<select id="base-resource" name="resource">' + applicationOptions +
-      '</select><label ' +
-        'for="baseUri">Base URI</label><input type="text" id="baseUri" ' +
-        'name="baseUri" size="34" placeholder="https://example.com/"><button ' +
-        'type="submit">Set the base URI</button></div></form><h4>Define a ' +
-        'permission</h4>' +
-      this.note('The name is what ends up on the token\'s <code>scope</code> ' +
-      'claim, so it must be a legal OAuth scope token: any printable ASCII ' +
-      'except space, double quote and backslash (RFC 6749 section 3.3), and ' +
-      'not <code>|</code>, which separates the name from the description in ' +
-      'the attribute. The description is optional and is shown wherever the ' +
-      'permission is; changing it means removing the permission and defining ' +
-      'it again, because a permission has one description and two rows with ' +
-      'one name would leave the second unreachable.') +
-      '<form method="post" action="/admin/delegation">' +
-      this.permissionsBack(listView) +
+        '</select><label for="baseUri">Base URI</label><input type="text" ' +
+        'id="baseUri" name="baseUri" size="34" ' +
+        'placeholder="https://example.com/"><button type="submit">Set the ' +
+        'base URI</button></div></form>' +
+        '<h4>Define a permission</h4>' +
+        this.note('The name is what ends up on the token\'s ' +
+        '<code>scope</code> claim, so it must be a legal OAuth scope token: ' +
+        'any printable ASCII except space, double quote and backslash (RFC ' +
+        '6749 section 3.3), and not <code>|</code>, which separates the name ' +
+        'from the description in the attribute. The description is optional ' +
+        'and is shown wherever the permission is; changing it means removing ' +
+        'the permission and defining it again, because a permission has one ' +
+        'description and two rows with one name would leave the second ' +
+        'unreachable.') +
+        '<form method="post" action="/admin/delegation-settings">' +
+        this.permissionsBack(listView) +
         '<div class="formrow">' +
         '<input type="hidden" name="action" value="define-permission">' +
         '<label for="perm-resource">Exposed by</label>' +
         '<select id="perm-resource" name="resource">' + applicationOptions +
-      '</select><label ' +
-        'for="perm-name">Name</label><input type="text" id="perm-name" ' +
-        'name="name" size="18" placeholder="write"><label ' +
+        '</select><label for="perm-name">Name</label><input type="text" ' +
+        'id="perm-name" name="name" size="18" placeholder="write"><label ' +
         'for="perm-description">Description</label><input type="text" ' +
         'id="perm-description" name="description" size="34" ' +
         'placeholder="Change widgets on somebody\'s behalf"><button ' +
-        'type="submit">Define it</button></div></form><h3 id="grants">Grants ' +
-        '&mdash; the delegation relationships</h3>' +
+        'type="submit">Define it</button></div></form>') +
+      '<h3 id="grants">Grants &mdash; the delegation relationships</h3>' +
       this.note('<strong>One row per (client, permission), and that IS the ' +
       'relationship.</strong> A client granted three permissions on one ' +
       'resource is three rows rather than one labelled <em>3</em>, because ' +
@@ -9984,7 +10479,7 @@ class AdminConsole {
       'both work here with no store of their own: three clients granted one ' +
       'permission is one value on each of three entries.') +
       this.sectionSearchForm({
-        path: '/admin/delegation', query: req.query,
+        path: here, query: req.query,
         param: 'grantq', pageParam: 'grantsPage',
         label: 'Narrow to an application',
         placeholder: 'part of an application name or identifier',
@@ -10005,7 +10500,7 @@ class AdminConsole {
       'what is reached</th><th>Permission</th><th>Identifier</th><th>What ' +
       'the access token will say</th><th>Ever asked for?</th><th></th></tr>' +
       (grantPage.shown.map(function (one) {
-        return self.permissionGrantRow(one, listView);
+        return self.permissionGrantRow(one, listView, rowOptions);
       }).join('') || '<tr><td colspan="7">' +
         (grantWanted
           ? 'No grant names an application whose name or identifier contains ' +
@@ -10035,41 +10530,39 @@ class AdminConsole {
       //
       // On an application's own page there is no first select at all: the
       // client is the entry the reader is standing on. So the control that
-      // could be half wrong became a control that cannot be. Only this one
-      // moved: the three RESOURCE-half controls stay here, because this page is
-      // where the register is and `Expose an API`, `Define a permission` and
-      // each row's `Remove` all name the resource explicitly.
-      // `revoke-permission` is drawn in BOTH places and that is not a leftover
-      // — it is a ROW BUTTON, so its two halves are the row it sits on and
-      // neither can be got wrong, which is exactly what was wrong with the
-      // grant form's two selects. Somebody tidying up works from the register;
-      // the application's own list is the read-back of the grant just made, and
-      // a table with no way to undo the write above it is half a control.
+      // could be half wrong became a control that cannot be.
       //
-      // WHAT IS DELIBERATELY UNCHANGED IS THE HANDLER. `POST /admin/delegation`
-      // still answers all five actions and PERMISSION_ACTIONS still lists all
-      // five, so rule 7's parity check reads the same sentence it always did
-      // and `POST /admin-api/permissions/grant-permission` still mirrors it.
-      // Moving a FORM is not moving an action, and making it one would have
-      // cost this feature an /admin-api operation for no reason a caller would
-      // notice.
+      // **AND SINCE 2026-10-01 THE RESOURCE'S PAGE GRANTS TOO** (rcbj): its
+      // Permissions tab offers ITS OWN permissions to another application.
+      // That is still one select of applications, but the other half — the
+      // permission, and so the resource — is settled by the page, which is
+      // the property the move above was for. The register stays without a
+      // grant form; `revoke-permission` is a ROW BUTTON here and on both
+      // applications' pages, because the row is the pair and neither half
+      // can be got wrong.
+      //
+      // THE HANDLER MOVED WITH THE CONTROLS (2026-10-01): every form that
+      // changes the register posts to `POST /admin/delegation-settings`, the
+      // Protocols page's handler, and Monitoring → Delegation has no POST.
+      // PERMISSION_ACTIONS still lists all five, and `POST
+      // /admin-api/permissions/:action` mirrors the new path.
       // -----------------------------------------------------------------------
       '<h4>Grant a permission</h4>' +
       (grantable.length
-        ? this.note('<strong>This one is on the application\'s own ' +
-          'page.</strong> A grant lands on the CLIENT\'s entry, as a value ' +
+        ? this.note('<strong>This one is on the two applications\' own ' +
+          'pages.</strong> A grant lands on the CLIENT\'s entry, as a value ' +
           'of <code>oauthDelegatedPermission</code>, because the client is ' +
           'the party that will name the permission in a <code>scope</code> — ' +
           'so the entry that answers <em>may this request be honoured</em> ' +
-          'is the entry the request identifies. That is exactly why the ' +
-          'control is drawn where that entry is: open an application under ' +
+          'is the entry the request identifies. Open an application under ' +
           '<a href="/admin/applications">Directory &rsaquo; Applications</a> ' +
-          'and its <em>Delegated permissions</em> section grants it one, ' +
-          'with the client half of the pair already settled by the page you ' +
-          'are on rather than chosen out of a list of every application ' +
-          'here. An application still cannot be granted its own permission: ' +
-          'the token would be addressed to itself, which is what an ID Token ' +
-          'already is, and that page offers it none of them.')
+          'and its <em>Permissions</em> tab grants it somebody else\'s ' +
+          'permission, or grants one of ITS OWN to another application — ' +
+          'either way one half of the pair is settled by the page you are ' +
+          'on rather than chosen out of a list of every application here. ' +
+          'An application still cannot be granted its own permission: the ' +
+          'token would be addressed to itself, which is what an ID Token ' +
+          'already is, and neither page offers it.')
         : this.note('<strong>There is nothing to grant yet.</strong> A ' +
           'permission must be defined before it can be granted, so the ' +
           'control appears — on each application\'s own page under <a ' +
@@ -10094,55 +10587,68 @@ class AdminConsole {
   // ---------------------------------------------------------------------------
   // WHERE A PERMISSION WRITE SENDS THE READER AFTERWARDS.
   //
-  // This handler serves TWO pages since 2026-09-01. Four of its five actions
-  // are drawn on /admin/delegation, where the register is; `grant-permission`
-  // and the per-row `revoke-permission` beside it are drawn on an APPLICATION's
-  // own page, because there the client half of the pair is the entry the reader
-  // is standing on rather than an option in a list of everything. See
-  // applicationPermissionsSection()'s header for why that move was worth making
-  // and why it did not become a sixth action on /admin/applications.
+  // This handler serves TWO pages. Since 2026-10-01 it is `POST
+  // /admin/delegation-settings`, the handler of Protocols → Delegation, where
+  // the whole register is configured; an APPLICATION's own Permissions tab
+  // posts here too, for the client half (grant it somebody's permission,
+  // revoke one it holds) and the resource half (its base URI, its own
+  // permissions, and granting one of them to another client). See
+  // applicationPermissionsSection()'s header for why those are drawn on the
+  // application and did not become actions on /admin/applications.
   //
   // `from` IS A NAME AND NOT A URL, and this function is why. configReturnTo()
   // makes the same argument for the settings forms on twenty-one pages: a
   // redirect target taken out of a request body is an open redirect, and one
   // carrying a newline is a header injection. So nothing here is echoed — the
-  // name is matched against the two paths this file wrote, and the application
-  // page's destination is REBUILT from `client`, which the action has just
-  // validated as an identifier in the registry. The worst a hand-written `from`
-  // can reach is the delegation page.
+  // name is matched against the one path this file wrote, and the application
+  // page's destination is REBUILT from `page` or `client`, whichever names an
+  // application in the registry. The worst a hand-written `from` can reach is
+  // the delegation settings page.
   //
-  // The FRAGMENT differs between them and that is not decoration. On
-  // /admin/delegation the configured half is four screens down, so `#allowed`
-  // is the difference between landing on the thing you just did and landing at
-  // the top of the longest page in this console; on an application's page the
-  // section has its own `#permissions` for exactly the same reason.
+  // The FRAGMENT differs between them and that is not decoration: `#allowed`
+  // on the settings page is where the register starts, and on an
+  // application's page `#permissions` is inside its Permissions tab, which is
+  // what makes that tab the one shown (`tabbedPanels()`).
   // ---------------------------------------------------------------------------
   /**
    * Works out where a permission write redirects the browser.
    *
-   * An application page when `from` names it and a client is given,
-   * else /admin/delegation; the query is rebuilt, never echoed.
+   * An application page when `from` names it and `page` or `client` is an
+   * application, else /admin/delegation-settings; the query is rebuilt,
+   * never echoed.
    *
    * @param body - the posted form body
    * @returns the path, with its query and fragment
    */
   permissionsReturnTo(body) {
-    const { log, queryWith } = this.deps;
+    const { log, queryWith, applications } = this.deps;
     log.debug("Entering AdminConsole.permissionsReturnTo(). from=" +
               ((body && body.from) || '(none)'));
     const from = String((body && body.from) || '').trim();
-    const client = String((body && body.client) || '').trim();
-    if (from === '/admin/applications' && client) {
+    // WHICH APPLICATION'S PAGE. A form on a CLIENT's page names the client;
+    // since 2026-10-01 a form on a RESOURCE's page — Expose an API, Define a
+    // permission, Remove, and a grant of its own permission to some other
+    // client — names the page it was drawn on in `page`. Either way it is a
+    // NAME, and it is spent only when the registry knows it, so a
+    // hand-written one reaches nothing but an application's page.
+    const named = [String((body && body.page) || '').trim(),
+                   String((body && body.client) || '').trim()]
+      .filter(function (one) {
+        return one !== '' && !!applications.get(one);
+      });
+    if (from === '/admin/applications' && named.length) {
       const listView = this.listViewFromBack('/admin/applications', body.back);
       log.debug("Leaving AdminConsole.permissionsReturnTo(). Back to the " +
                 "application page.");
       return '/admin/applications' +
-             queryWith(listView, { application: client }) + '#permissions';
+             queryWith(listView, { application: named[0] }) + '#permissions';
     }
-    const listView = this.listViewFromBack('/admin/delegation', body.back);
+    const listView = this.listViewFromBack('/admin/delegation-settings',
+                                           body.back);
     log.debug("Leaving AdminConsole.permissionsReturnTo(). Back to the " +
-              "delegation page.");
-    return '/admin/delegation' + queryWith(listView, {}) + '#allowed';
+              "delegation settings page.");
+    return '/admin/delegation-settings' + queryWith(listView, {}) +
+           '#allowed';
   }
 
   // ---------------------------------------------------------------------------
@@ -10495,10 +11001,10 @@ class AdminConsole {
       // is a whole logical copy of this service — two realms' pictures are two
       // different services' pictures — and it says `default` rather than
       // nothing in the realm that has no prefix, since a hexagon labelled only
-      // `mock STS` would be silent about the one thing this box is here to say.
+      // `IYA STS` would be silent about the one thing this box is here to say.
       return {
         shape: 'sts',
-        label: 'mock STS',
+        label: 'IYA STS',
         sublabel: 'realm: ' + (node.realm ? node.realm.name : 'Default') +
                   (node.realm && !node.realm.isDefault ?
                    ' (' + node.realm.id + ')' : ''),
@@ -10860,6 +11366,16 @@ class AdminConsole {
               'forwarded ticket-granting ticket has no intermediary and ' +
               'cannot have one — the client gives it to whichever service it ' +
               'chooses and this KDC is never told which.' },
+      // #186: the configured pairs, beside the acts.
+      { art: swatch(line(C.indigo, '6 4'), 64),
+        what: '<strong>may delegate &mdash; a CONFIGURED relationship, ' +
+              'DASHED until an act has used it.</strong> One line per pair ' +
+              'an entry allows: <code>appAllowedToDelegateTo</code> on the ' +
+              'source (constrained) or <code>appAllowedToActOnBehalfOf</code> ' +
+              'on the target (resource-based) &mdash; the same controls for ' +
+              'the OAuth 2.0 token exchange, WS-Trust and Kerberos. Solid ' +
+              'once an act has crossed it. Drawn unless the acts are ' +
+              'narrowed by outcome, type or text.' },
       { art: swatch(line(C.red, '5 3'), 64),
         what: '<strong>Red is a chain nothing was ever issued on.</strong> ' +
               'The tooltip carries the KDC\'s own words for why, which is ' +
@@ -13258,8 +13774,8 @@ class AdminConsole {
             adminViews, mode } = this.deps;
     const self = this;
     log.debug("Entering AdminConsole.mfaSection(). key=" + key);
-    const heading = '<h2>Second factors, and what this person can sign in ' +
-                    'with</h2>';
+    const heading = '<h2 id="second-factors">Second factors, and what this ' +
+                    'person can sign in with</h2>';
     if (!credentials.storable()) {
       log.debug("Leaving AdminConsole.mfaSection(). No credential store.");
       return {
@@ -13440,6 +13956,9 @@ class AdminConsole {
         // both, and the cell rendered the literal characters `<code title=…>`.
         '<td>' + self.shortened(one.credentialId || '', 24) + '</td>' +
         '<td class="num">' + self.esc(String(one.signCount || 0)) + '</td>' +
+        // THE SIGNATURE ALGORITHM (2026-10-01): the one this key signs with,
+        // and so the one every sign-in with it is verified with.
+        '<td>' + self.keyAlgorithmCell(one) + '</td>' +
         '<td>' + self.attestationCell(one.attestation, one.aaguid) + '</td>' +
         '<td>' +
         self.esc(one.enrolledAt ? self.whenText(one.enrolledAt) : '—') +
@@ -13461,7 +13980,8 @@ class AdminConsole {
     const keysBlock = '<h3>Security keys (WebAuthn)</h3>' +
       (allKeys.length
         ? '<table><tr><th>Label</th><th>Role</th><th>Credential id</th>' +
-          '<th class="num">Sign count</th><th>Attestation</th>' +
+          '<th class="num">Sign count</th><th>Algorithm</th>' +
+          '<th>Attestation</th>' +
           '<th>Enrolled</th><th></th></tr>' +
           allKeys.map(keyRow).join('') + '</table>' +
           this.note('<strong>The sign count is WebAuthn\'s replay ' +
@@ -14267,6 +14787,122 @@ class AdminConsole {
   }
 
   // ---------------------------------------------------------------------------
+  // THE PERSON'S GNAP GRANTS (#432 phase 7, 2026-10-03): every grant they are
+  // the resource owner of — approved at an interaction, or acted on through a
+  // verified assertion — with the rights it holds, the tokens issued under
+  // it, why it ended, and a Revoke for one with something live left. The
+  // facts are `gnap/gnap_console.ts`'s `personGrantsView()` through
+  // `admin_views.ts` (`gnapGrants` in /admin-api/users?user=), the same view
+  // the person's own /portal/gnap draws; Revoke posts to /admin/gnap's
+  // `revoke-grant` naming the person too, so a stale page cannot end a
+  // stranger's grant (STS-GNAP-0792), and lands back on this tab.
+  // ---------------------------------------------------------------------------
+  /**
+   * Draws a person's GNAP grants tab: each grant they are the resource owner
+   * of, its rights, tokens and finalization, and a Revoke (#432 phase 7).
+   *
+   * @param key - the person
+   * @param gnap - `{ rows, paging, cells }` from the view
+   * @param gate - the console gate's state for this request
+   * @param params - the page's query, for the paging links
+   * @returns the tab's HTML
+   */
+  userGnapGrantsSection(key, gnap, gate, params) {
+    const { log } = this.deps;
+    const self = this;
+    log.debug("Entering AdminConsole.userGnapGrantsSection().");
+    const view = gnap || { rows: [], paging: null, cells: null };
+    const when = function (seconds) {
+      log.debug("Entering when().");
+      log.debug("Leaving when().");
+      return seconds ? self.whenText(seconds * 1000) : '—';
+    };
+    const rightText = function (right) {
+      log.debug("Entering rightText().");
+      if (typeof right === 'string') {
+        log.debug("Leaving rightText(). A reference.");
+        return '<code>' + self.esc(right) + '</code>';
+      }
+      const parts = [];
+      ['actions', 'locations', 'datatypes', 'privileges'].forEach(
+          function (dimension) {
+        if (Array.isArray(right[dimension]) && right[dimension].length) {
+          parts.push(dimension + ': ' + right[dimension].join(', '));
+        }
+      });
+      if (right.identifier) {
+        parts.push('identifier: ' + right.identifier);
+      }
+      if (right.limits !== undefined) {
+        parts.push('limits: ' + JSON.stringify(right.limits));
+      }
+      log.debug("Leaving rightText().");
+      return '<code>' + self.esc(right.type || '') + '</code>' +
+        (parts.length ? ' <span class="sub">' + self.esc(parts.join('; ')) +
+                        '</span>' : '');
+    };
+    const heading = '<h2 id="gnap-grants">GNAP grants</h2>' +
+      this.note('Every GNAP (RFC 9635) grant this person is the resource ' +
+        'owner of: approved by them on the approval page, or acted on by a ' +
+        'trusted client presenting a verified assertion about them. ' +
+        '<strong>Revoke</strong> is the client\'s own section 5.4 act ' +
+        'performed for them: every token issued under the grant stops ' +
+        'working, the grant is finalized as <code>revoked</code> and CAEP ' +
+        '<code>session-revoked</code> is sent. The person can do the same ' +
+        'on their own <code>/portal/gnap</code>.') +
+      (view.cells && view.cells.multiCell
+        ? this.note('<strong>This cell only</strong> (' +
+                    this.esc(view.cells.cell) + '). ' +
+                    this.esc(view.cells.note))
+        : '');
+    if (!view.rows.length) {
+      log.debug("Leaving AdminConsole.userGnapGrantsSection(). None.");
+      return heading + this.note('This person is the resource owner of no ' +
+                                 'GNAP grant in this realm.');
+    }
+    const nav = view.paging
+      ? this.pageNavPair('/admin/users', params,
+                         Object.assign({}, view.paging,
+                                       { param: 'gnapGrantsPage' }))
+      : { head: '', foot: '' };
+    const rows = '<table><tr><th>Grant</th><th>Client</th><th>State</th>' +
+      '<th>Rights</th><th>Tokens</th><th>Lifetime ends</th><th></th></tr>' +
+      view.rows.map(function (row) {
+        const tokens = row.tokens.length
+          ? row.tokens.map(function (token) {
+              return self.esc((token.label ? token.label + ' · ' : '') +
+                              token.format + ' · ' + token.state) +
+                ' <span class="sub">until ' + self.esc(when(token.expiresAt)) +
+                '</span>';
+            }).join('<br>')
+          : '<span class="sub">none</span>';
+        const control = row.revocable && gate.write
+          ? '<form method="post" action="/admin/gnap">' +
+            '<input type="hidden" name="action" value="revoke-grant">' +
+            '<input type="hidden" name="grant" value="' + self.esc(row.id) +
+            '"><input type="hidden" name="user" value="' + self.esc(key) +
+            '"><button type="submit" class="danger">Revoke</button></form>'
+          : '';
+        return '<tr><td><code>' + self.esc(row.id) + '</code></td>' +
+          '<td><a href="/admin/applications?application=' +
+          encodeURIComponent(row.client || '') + '">' +
+          self.esc(row.clientName || row.client || '') + '</a></td>' +
+          '<td>' + self.esc(row.state) +
+          (row.finalization ? '<div class="sub">' +
+            self.esc(row.finalization.reason) + '</div>' : '') + '</td>' +
+          '<td>' + (row.rights.map(rightText).join('<br>') || '—') +
+          '<div class="sub">' + self.esc(row.rightsAre) + '</div></td>' +
+          '<td>' + tokens + '</td><td>' +
+          self.esc(when(row.grantExpiresAt)) + '</td><td>' + control +
+          '</td></tr>';
+      }).join('') + '</table>';
+    log.debug("Leaving AdminConsole.userGnapGrantsSection().");
+    return heading + nav.head + rows + nav.foot +
+      (gate.write ? '' : this.note('Revoking a grant needs <strong>Admin ' +
+                                   'Write</strong>.'));
+  }
+
+  // ---------------------------------------------------------------------------
   // THE PERSON'S KERBEROS ACCOUNT (#59, 2026-09-22): the principal, what this
   // realm's KDC holds for them — the PUBLIC half, never a key — and "Reset
   // password and download keytab".
@@ -14394,17 +15030,226 @@ class AdminConsole {
     return heading + state + why + form;
   }
 
+  /**
+   * Draws panels as sub-tabs: a bar of links, then each panel with something
+   * in it, the first shown when no fragment picks one. `tabbedPanels()`'s
+   * mechanism one level down.
+   *
+   * @param label - what the bar is, for a screen reader
+   * @param panels - `{ id, label, html }` in tab order
+   * @returns the sub-tabs as HTML
+   */
+  subTabbedPanels(label, panels) {
+    const { log } = this.deps;
+    const self = this;
+    log.debug("Entering AdminConsole.subTabbedPanels().");
+    const shown = panels.filter(function (one) {
+      return String(one.html || '').trim() !== '';
+    });
+    log.debug("Leaving AdminConsole.subTabbedPanels(). " + shown.length +
+              " sub-tab(s).");
+    return '<div class="subtabs"><nav class="tabbar subbar" aria-label="' +
+      this.esc(label) + '">' +
+      shown.map(function (one, n) {
+        return '<a' + (n === 0 ? ' class="first"' : '') + ' href="#' +
+          self.esc(one.id) + '">' + self.esc(one.label) + '</a>';
+      }).join('') + '</nav>' +
+      shown.map(function (one, n) {
+        return '<div class="subpanel' + (n === 0 ? ' first' : '') + '" id="' +
+          self.esc(one.id) + '">' + one.html + '</div>';
+      }).join('') + '</div>';
+  }
+
+  // ---------------------------------------------------------------------------
+  // A PERSON'S ATTRIBUTES AS A TYPED FIELD GRID (rcbj, 2026-10-01), the
+  // application page's model: one sub-tab per group of
+  // `ldap/person_editor.ts`'s FIELD_GROUPS, each its own form with its own
+  // Save, a single value a text box and a list one box per value with + and
+  // the bin, an example of a valid value as every box's placeholder and the
+  // attribute's sentence as its tooltip.
+  //
+  // **It posts to `/admin/users/edit`**, for `/admin/applications/edit`'s
+  // reason: a refused save comes back to THIS page with every box as the
+  // reader left it, and "+" and the bin redraw it with one box more or fewer
+  // and write nothing. Save is `update-fields`, the action
+  // `POST /admin-api/users/update-fields` calls, so every rule a one-attribute
+  // edit holds still holds. `present` names every field the tab drew, so a
+  // box emptied on the page clears it.
+  //
+  // **The address is not a field**: `set-mail` marks what it writes verified
+  // and tells the former address, so its form heads the Contact tab.
+  // ---------------------------------------------------------------------------
+  /**
+   * Draws a person's attributes as a typed field grid, one sub-tab per group
+   * with its own Save, and the address form on the Contact tab.
+   *
+   * @param key - the person's key
+   * @param editor - `personEditor.editorFor()`'s answer, or null
+   * @param gate - the gate state; `write` draws the forms
+   * @param back - the list to return to after an action
+   * @param state - optional; a redraw: `draft` (the posted form) and `error`
+   * @returns the section as HTML
+   */
+  personFieldsSection(key, editor, gate, back, state?) {
+    const { log } = this.deps;
+    const self = this;
+    log.debug("Entering AdminConsole.personFieldsSection(). key=" + key);
+    const heading = '<h2 id="person-fields">Their attributes</h2>';
+    if (!editor) {
+      log.debug("Leaving AdminConsole.personFieldsSection(). No entry.");
+      return heading + this.note('There is no directory entry for this ' +
+        'person here, so there is nothing to change. The Directory entry ' +
+        'tab says why.');
+    }
+    const draft = state && state.draft ? state.draft : null;
+    const values = {};
+    editor.attributes.forEach(function (row) {
+      values[row.name] = row.values.map(String);
+    });
+    if (draft) {
+      const posted = this.gridValuesFromDraft(draft);
+      String(draft.present || '').split(/[\s,]+/).forEach(function (name) {
+        if (name && Object.prototype.hasOwnProperty.call(values, name)) {
+          values[name] = posted[name] || [];
+        }
+      });
+    }
+    const naming = editor.attributes.filter(function (row) {
+      return !row.editable;
+    });
+    const gridRow = function (row) {
+      return {
+        attribute: row.name,
+        type: row.multi ? 'array' : 'string',
+        what: row.label + ' — ' + row.schema + '.' +
+              (row.note ? ' It takes ' + row.note + '.' : '') +
+              (row.must ? ' Every person must hold it.' : '') +
+              (row.multi ? '' : ' It holds one value.'),
+        example: row.example,
+        forText: row.label + (row.must ? ' · required' : ''),
+        families: [], everyFamily: true
+      };
+    };
+    const mailForm = gate.write
+      ? '<h3 id="mail">Email address</h3>' +
+        '<form method="post" action="/admin/users">' +
+        '<input type="hidden" name="action" value="set-mail">' +
+        '<input type="hidden" name="user" value="' + this.esc(key) + '">' +
+        '<input type="hidden" name="from" value="user">' +
+        '<input type="hidden" name="back" value="' + this.esc(back) + '">' +
+        '<div class="formrow"><label for="personmail"' +
+        this.tip('The address mail is sent to. Set here it is marked ' +
+                 'VERIFIED, because an administrator set it, and the ' +
+                 'former address is told it changed.') +
+        '>Set the address to</label><input type="email" id="personmail" ' +
+        'name="mail" size="34" required value="' +
+        this.esc(String(editor.mail || '')) + '" placeholder="e.g. ' +
+        'alice@example.com"><button type="submit">Set the address</button>' +
+        '<span class="sub">Verified, because an administrator set it; the ' +
+        'former address is told.</span></div></form>'
+      : '<h3 id="mail">Email address</h3>' + (editor.mail
+        ? '<p><code>' + this.esc(editor.mail) + '</code></p>'
+        : this.note('None.'));
+    const panels = personEditor.FIELD_GROUPS.map(function (group) {
+      const mine = editor.attributes.filter(function (row) {
+        return row.editable && row.group === group.id;
+      });
+      const contact = group.id === 'contact' ? mailForm : '';
+      if (!mine.length) {
+        return { id: 'ufg-' + group.id, label: group.label, html: contact };
+      }
+      if (!gate.write) {
+        return { id: 'ufg-' + group.id, label: group.label,
+          html: contact + '<table><tr><th>Attribute</th><th>What it is</th>' +
+            '<th>Values</th></tr>' + mine.map(function (row) {
+              return '<tr><td><code>' + self.esc(row.name) + '</code></td>' +
+                '<td>' + self.esc(row.label) + '</td><td>' +
+                (row.values.length
+                  ? row.values.map(function (one) {
+                    return '<code>' + self.esc(one) + '</code>';
+                  }).join('<br>')
+                  : '<span class="state-none">none</span>') + '</td></tr>';
+            }).join('') + '</table>' };
+      }
+      const cells = mine.map(function (row) {
+        return self.fieldGridCell(gridRow(row), values,
+                                  { redraw: '/admin/users/edit' });
+      }).join('');
+      return { id: 'ufg-' + group.id, label: group.label,
+        html: contact + self.note(self.esc(group.what)) +
+          '<form method="post" action="/admin/users/edit#ufg-' +
+          self.esc(group.id) + '" class="appgrid">' +
+          '<input type="hidden" name="action" value="update-fields">' +
+          '<input type="hidden" name="user" value="' + self.esc(key) + '">' +
+          '<input type="hidden" name="from" value="user">' +
+          '<input type="hidden" name="group" value="' + self.esc(group.id) +
+          '">' +
+          '<input type="hidden" name="back" value="' + self.esc(back) + '">' +
+          '<input type="hidden" name="present" value="' +
+          self.esc(mine.map(function (row) { return row.name; }).join(' ')) +
+          '">' +
+          // THE DEFAULT BUTTON, first in the form: Enter in a box presses
+          // the first submit button, which would otherwise be a "+" or a bin.
+          '<button type="submit" class="default-submit" tabindex="-1" ' +
+          'aria-hidden="true">Save</button>' +
+          '<div class="fg">' + cells + '</div>' +
+          '<div class="formrow"><button type="submit"' +
+          self.tip('Write this tab to the person\'s entry. Nothing on the ' +
+                   'other tabs changes, and a refused value is shown with ' +
+                   'what was typed kept.') + '>Save ' +
+          self.esc(group.label.toLowerCase()) + '</button></div></form>' };
+    });
+    log.debug("Leaving AdminConsole.personFieldsSection(). " +
+              editor.attributes.length + " attribute(s).");
+    return heading +
+      (state && state.error && state.error.length
+        ? this.flash('<div class="err"><strong>Not everything was saved.' +
+            '</strong><ul>' + state.error.map(function (one) {
+              return '<li>' + self.esc(one) + '</li>';
+            }).join('') + '</ul></div>')
+        : '') +
+      this.note('One tab per group, each with its own Save, writing <code>' +
+      this.esc(editor.dn) + '</code> in place as an <code>ldapmodify</code> ' +
+      'would — and the directory tells Shared Signals of the change as it ' +
+      'tells it of a SCIM or LDAP write. <strong>Save</strong> writes what ' +
+      'changed on that tab and nothing else: a single value is set, and an ' +
+      'empty one is cleared; a list has the values put in added and the ' +
+      'values taken out removed. A list shows one box per value, with + to ' +
+      'add one and the bin to delete one; every box that is there must ' +
+      'hold a value. An identity verification covers a value only while the ' +
+      'entry still holds it, so changing a verified value lets that ' +
+      'verification lapse for it.') +
+      (naming.length
+        ? this.note('<strong>Not on these tabs:</strong> ' +
+            naming.map(function (row) {
+              return '<code>' + self.esc(row.name) + '</code>, which names ' +
+                'the entry';
+            }).join('; ') + '. The password and every other credential are ' +
+            'on Credentials, and the username, binary values and group ' +
+            'memberships are not edited here.')
+        : this.note('<strong>Not on these tabs:</strong> the password and ' +
+            'every other credential (Credentials), the username, binary ' +
+            'values such as certificates and photographs, and group ' +
+            'memberships (<a href="/admin/groups">Groups</a>).')) +
+      (gate.write ? '' : this.note('Changing an attribute needs ' +
+        '<strong>Admin Write</strong>.')) +
+      this.subTabbedPanels('Their attributes', panels);
+  }
+
   // -------------------------------------------------------------------------
-  // CHANGE THEIR ATTRIBUTES (#228, 2026-09-26): the application page's three
-  // forms, for a person. What may be changed, and every refusal, are
+  // CHANGE ONE ATTRIBUTE BY NAME (#228, 2026-09-26): the application page's
+  // three forms, for a person. What may be changed, and every refusal, are
   // `ldap/person_editor.ts`'s; this draws its answer. The Set select offers
   // every attribute this entry lets be edited, Add to only the multi-valued
   // ones, and Remove from only those that hold a value — so a form cannot
-  // offer what the action would refuse for the plainest reason.
+  // offer what the action would refuse for the plainest reason. Since the
+  // page became tabs (2026-10-01) the Attributes tab is the usual door and
+  // these are on the Directory entry tab, folded, as the application page's
+  // are; the address form moved to the Attributes tab's Contact group.
   // -------------------------------------------------------------------------
   /**
-   * Draws the forms that set, add to and remove from a person's editable
-   * attributes, and set their address, from ldap/person_editor.ts's answer.
+   * Draws the forms that set, add to and remove from one of a person's
+   * editable attributes by name, from ldap/person_editor.ts's answer.
    *
    * @param key - the person's key
    * @param editor - the person editor's answer, or null with no entry
@@ -14416,7 +15261,7 @@ class AdminConsole {
     const { log } = this.deps;
     const self = this;
     log.debug("Entering AdminConsole.userAttributesSection(). key=" + key);
-    const heading = '<h2 id="attributes">Change their attributes</h2>';
+    const heading = '<h2 id="attributes">Change one attribute by name</h2>';
     if (!editor) {
       log.debug("Leaving AdminConsole.userAttributesSection(). No entry.");
       return heading + this.note('There is no directory entry for this ' +
@@ -14480,8 +15325,9 @@ class AdminConsole {
       'covers a value only while the entry still holds it, so changing a ' +
       'verified value lets that verification lapse for it.') +
       this.note('<strong>What these will not change.</strong> The password ' +
-      'and every other credential (the controls below), the address (its ' +
-      'own form, below, because a write of it is verified), the username ' +
+      'and every other credential (the Credentials tab), the address (its ' +
+      'own form on the Attributes tab, because a write of it is verified), ' +
+      'the username ' +
       'and the attribute the entry is named ' +
       'by, binary values such as certificates and photographs, group ' +
       'memberships (<a href="/admin/groups">Groups</a>), and what this ' +
@@ -14501,29 +15347,13 @@ class AdminConsole {
     });
     log.debug("Leaving AdminConsole.userAttributesSection(). " +
               usable.length + " editable.");
-    // THE ADDRESS, which the editor withholds: `set-mail` (#64) marks what it
-    // writes VERIFIED and tells the former address, which a generic Set
-    // would not. The action was the management API's alone until #228; a
-    // form here is its console half (rule 7).
-    const current = String(editor.mail || '');
-    const mailForm = '<form method="post" action="/admin/users">' +
-      '<input type="hidden" name="action" value="set-mail">' +
-      '<input type="hidden" name="user" value="' + this.esc(key) + '">' +
-      '<input type="hidden" name="from" value="user">' +
-      '<input type="hidden" name="back" value="' + this.esc(back) + '">' +
-      '<div class="formrow"><label for="personmail">Set the address to' +
-      '</label><input type="email" id="personmail" name="mail" size="34" ' +
-      'required value="' + this.esc(current) + '"><button ' +
-      'type="submit">Set the address</button><span class="sub">Verified, ' +
-      'because an administrator set it; the former address is told.' +
-      '</span></div></form>';
     return heading + explain +
       form('set-attribute', 'Set', usable, false, 'empty clears it') +
       (multi.length
         ? form('add-attribute', 'Add to', multi, true, '') : '') +
       (held.length
         ? form('remove-attribute', 'Remove from', held, true, '') : '') +
-      mailForm + listing;
+      listing;
   }
 
   /**
@@ -14743,7 +15573,29 @@ class AdminConsole {
            '<div class="formrow"><label>Delegate DN <input type="text" ' +
            'name="delegate" size="60" value="' +
            this.esc(facts.mayAct || '') + '" placeholder="uid=bob,ou=users,' +
-           '... or cn=app,ou=applications,..."></label></div>');
+           '... or cn=app,ou=applications,..."></label></div>') +
+      // AND AS WHAT (#186): the semantics this person allows, and their
+      // default — facts the exchange policy reads for WS-Trust, the token
+      // exchange and Kerberos alike. POST
+      // /admin-api/users/set-delegation-semantics is the same act.
+      form('set-delegation-semantics', 'Set the delegation semantics',
+           'Writes stsDelegationSemantics and ' +
+           'stsDefaultDelegationSemantics. Nothing ticked leaves it to the ' +
+           'policy: both are allowed for a subject, delegation only for an ' +
+           'actor.', false,
+           '<div class="formrow">' +
+           ['delegation', 'impersonation'].map(function (one) {
+             return '<label><input type="checkbox" name="semantics" value="' +
+               one + '"' + ((facts.semantics || []).indexOf(one) >= 0
+                 ? ' checked' : '') + '> ' + one + '</label> ';
+           }).join('') + '</div><div class="formrow"><label>Default ' +
+           '<select name="default">' +
+           ['', 'delegation', 'impersonation'].map(function (one) {
+             return '<option value="' + one + '"' +
+               (String(facts.defaultSemantics || '') === one
+                 ? ' selected' : '') + '>' + (one || 'none — the request ' +
+                 'or the realm decides') + '</option>';
+           }).join('') + '</select></label></div>');
     log.debug("Leaving AdminConsole.userCredentialControlsSection().");
     return heading + state + signalsNote + account + reset + passkeys + mfa +
       delegationBlock;
@@ -14807,10 +15659,12 @@ class AdminConsole {
    * @param key - the person's key
    * @param risk - optional; their risk standing as userDetailJson() takes
    *   it, undefined to draw no badge
+   * @param state - optional; a redraw of the Attributes tab's form: `draft`
+   *   (the posted form) and `error` (a refusal's sentences)
    * @returns an object of inner (the page body as HTML) and json, or null
    *   when the identity is not one this service knows
    */
-  userDetailPage(req, key, risk?: any) {
+  userDetailPage(req, key, risk?: any, state?: any) {
     const { log, adminViews, gateStateFor, queryWith, DEFAULT_BLOCKS_PER_PAGE,
             DEFAULT_PER_PAGE } = this.deps;
     const self = this;
@@ -14879,6 +15733,13 @@ class AdminConsole {
         this.tile(expired, 'tokens expired') +
         this.tile(detail.artifacts.length, 'assertions, tickets, credentials') +
       '</div>' +
+      // A PERSON'S PAGE AS TABS (rcbj, 2026-10-01), the application page's
+      // model: one tab per part of the page, the Attributes tab a typed field
+      // grid one sub-tab per group, and Credentials one sub-tab per kind of
+      // credential. `tabbedPanels()` argues the mechanism: a control's answer
+      // lands at a fragment inside its own tab, so the tab is shown again.
+      this.tabbedPanels('usertabs', [
+        { id: 'utab-overview', label: 'Overview', html:
       this.note('Everything below is about the identity <code>' +
                 this.esc(row.name) +
       '</code>, ' +
@@ -14939,8 +15800,8 @@ class AdminConsole {
           '<td>' + self.esc(self.whenText(family.lastAt)) + '</td></tr>';
       }).join('') || '<tr><td colspan="4">Never, here.</td></tr>') +
         '</table>' +
-      this.authenticationTable(row) +
-
+      this.authenticationTable(row) },
+        { id: 'utab-activity', label: 'Sessions & tokens', html:
       this.perPageForm('/admin/users', 'user', key, artifactPage.paging.perPage,
                        'The session BLOCKS below start at ' +
                        DEFAULT_BLOCKS_PER_PAGE +
@@ -15000,47 +15861,48 @@ class AdminConsole {
       'change a number on this page and nothing at all out there. The only ' +
       'distinction is whether the validity window has closed.') +
       artifactNav.head + this.userArtifactTable(artifactPage.shown) +
-      artifactNav.foot +
-
-      directory.html +
-
-      // WHAT AN ADMINISTRATOR MAY CHANGE ON THAT ENTRY (#228), directly under
-      // the entry it changes — the application page's Set / Add to / Remove
-      // from, over `ldap/person_editor.ts`'s list.
-      this.userAttributesSection(key, view.attributeEditor, gateStateFor(req),
-                                 back) +
-
-      // ---------------------------------------------------------------------
-      // AFTER THE DIRECTORY ENTRY AND BEFORE THE TWO SIGN-OUT BUTTONS
-      // (2026-09-10), which is where it belongs by what a reader is doing. The
-      // entry above says what this person IS; this says what they can sign in
-      // WITH; the buttons below end what they currently hold. A reader arriving
-      // from the Second factor column of the list lands on the section that
-      // column summarises, with the whole account above it for context.
-      // ---------------------------------------------------------------------
-      mfa.html +
-
-      // What they can SIGN a grant with (2026-09-13), after what they sign IN
-      // with and before the buttons that end what they hold.
-      this.userCredentialsSection(key, view.credentialsState, gateStateFor(req),
-                                  back) +
-
-      // WHICH PARTNERS' SUBJECTS SIGN THEM IN (#109, 2026-09-22): the links,
-      // after what they sign a grant with and before what an administrator
-      // can do to their password — a link is another way in.
-      this.userFederationLinksSection(key, view.federationLinkPage,
-                                      gateStateFor(req), back, params) +
-
-      // WHAT AN ADMINISTRATOR CAN DO TO THEIR PASSWORD AND SECOND FACTORS
-      // (2026-09-13), before the sign-out buttons, which it partly subsumes: a
-      // reset signs the person out as well.
-      this.userCredentialControlsSection(key, view.mfa.json, gateStateFor(req),
-                                         back) +
-
-      // THEIR KERBEROS ACCOUNT, AND A KEYTAB FOR IT (#59): after the password
-      // controls, because the one control here IS a password reset.
-      this.userKerberosSection(key, view.kerberos, gateStateFor(req)) +
-
+      artifactNav.foot },
+        { id: 'utab-attributes', label: 'Attributes', html:
+          this.personFieldsSection(key, view.attributeEditor,
+                                   gateStateFor(req), back, state) },
+        { id: 'utab-credentials', label: 'Credentials', html:
+          this.subTabbedPanels('Credentials', [
+            // What they sign IN with, as a second factor or alone.
+            { id: 'ucred-factors', label: 'Second factors', html: mfa.html },
+            // What an administrator can do to their password and second
+            // factors (2026-09-13); a reset signs the person out as well.
+            { id: 'ucred-password', label: 'Password',
+              html: this.userCredentialControlsSection(key, view.mfa.json,
+                                                       gateStateFor(req),
+                                                       back) },
+            // What they can SIGN a grant with (2026-09-13).
+            { id: 'ucred-keys', label: 'Key pairs',
+              html: this.userCredentialsSection(key, view.credentialsState,
+                                                gateStateFor(req), back) },
+            // Their Kerberos account, and a keytab for it (#59).
+            { id: 'ucred-kerberos', label: 'Kerberos',
+              html: this.userKerberosSection(key, view.kerberos,
+                                             gateStateFor(req)) }
+          ]) },
+        // Which partners' subjects sign them in (#109): a link is another way
+        // in, so it has a tab of its own beside Credentials.
+        { id: 'utab-federation', label: 'Federation links',
+          html: this.userFederationLinksSection(key, view.federationLinkPage,
+                                                gateStateFor(req), back,
+                                                params) },
+        // The GNAP grants they are the resource owner of (#432 phase 7): a
+        // grant is access they gave an application, so it has a tab of its
+        // own beside the links, with a Revoke per grant.
+        { id: 'utab-gnap', label: 'GNAP grants',
+          html: this.userGnapGrantsSection(key, view.gnapGrants,
+                                           gateStateFor(req), params) },
+        // Every attribute the entry holds, and the one-attribute forms the
+        // Attributes tab replaced as the usual door (#228).
+        { id: 'utab-entry', label: 'Directory entry',
+          html: directory.html +
+            this.userAttributesSection(key, view.attributeEditor,
+                                       gateStateFor(req), back) },
+        { id: 'utab-signout', label: 'Sign out', html:
       // ---------------------------------------------------------------------
       // TWO BUTTONS, AND THE ORDER IS THE ARGUMENT (2026-09-05).
       //
@@ -15118,7 +15980,8 @@ class AdminConsole {
         '<input type="hidden" name="from" value="users">' +
         '<input type="hidden" name="back" value="' + this.esc(back) + '">' +
         '<div class="formrow"><button class="danger">Revoke every token for ' +
-        this.esc(row.name) + '</button></div></form>';
+        this.esc(row.name) + '</button></div></form>' }
+      ]);
 
     log.debug("Leaving AdminConsole.userDetailPage(). " +
               sessionPage.shown.length + " session(s), " +
@@ -15367,9 +16230,10 @@ class AdminConsole {
     const perOptions = this.perPageOptions(paging.perPage);
 
     // THE SECOND-FACTOR COUNTS (2026-09-10), over the WHOLE population rather
-    // than the page — which is why peopleRows() scans rather than reading the
-    // rows being shown. A tile that counted one page of twenty would answer a
-    // question nobody asked.
+    // than the page. A tile that counted one page of twenty would answer a
+    // question nobody asked. Since #352 they come from `peopleCensus()`, one
+    // pass over the directory, and only the rows drawn below are decorated —
+    // `admin-core/CLAUDE.md`, *The users list pages before it decorates*.
     const inner = this.messagesOf(req) +
       '<div class="tiles">' +
         this.tile(all.length, 'people') +
@@ -15669,10 +16533,7 @@ class AdminConsole {
     const who = String(body.user || body.username || '').trim();
     const back = String(body.from || '') === 'user' && who
       ? this.userReturnTo(body, who,
-          /^federation-/.test(String(body.action || ''))
-            ? '#federation-links'
-            : (/-attribute$|^set-mail$/.test(String(body.action || ''))
-                ? '#attributes' : '#credential-controls'))
+          this.userActionAnchor(String(body.action || '')))
       : '/admin/users' +
         queryWith(this.listViewFromBack('/admin/users', body.back), {});
     // A ONE-TIME SECRET IS ANSWERED WITH A PAGE (2026-09-13): a reset password
@@ -15693,6 +16554,37 @@ class AdminConsole {
     }
     this.respondToAction(req, res, back, result);
     log.debug("Leaving AdminConsole.usersPost().");
+  }
+
+  // WHERE ON A PERSON'S PAGE AN ACTION'S ANSWER LANDS (2026-10-01): the
+  // anchor of the section its control is in, which is inside the tab that
+  // section is on, so the tab is shown again.
+  /**
+   * Names the section of a person's page an action's control is in.
+   *
+   * @param action - the action posted
+   * @returns the anchor, `#` and an id
+   */
+  userActionAnchor(action) {
+    const { log } = this.deps;
+    log.debug("Entering AdminConsole.userActionAnchor(). " + action);
+    let anchor = '#credential-controls';
+    if (/^federation-/.test(action)) {
+      anchor = '#federation-links';
+    } else if (action === 'set-mail') {
+      anchor = '#mail';
+    } else if (/-attribute$/.test(action)) {
+      anchor = '#attributes';
+    } else if (['clear-totp', 'clear-key', 'clear-backup-codes',
+                'clear-email-factor', 'create-app-password',
+                'revoke-app-password', 'record-verification',
+                'remove-verification', 'remove-device',
+                'enrol-self-issued-subject',
+                'remove-self-issued-subject'].indexOf(action) >= 0) {
+      anchor = '#second-factors';
+    }
+    log.debug("Leaving AdminConsole.userActionAnchor(). " + anchor);
+    return anchor;
   }
 
   // THE PAGE A RESET ANSWERS WITH (2026-09-13): the generated password or the
@@ -15887,53 +16779,6 @@ class AdminConsole {
     return out;
   }
 
-  // One attribute as a row of the form's table. `values` is what to put in the
-  // box — a prefill after a refusal, or what Fill wrote — and empty is the
-  // ordinary case.
-  //
-  // **THE FIELD NAME IS `field.<attribute>` AND THE ATTRIBUTE IS THE SCHEMA'S
-  // OWN NAME**, which is `declarationFieldRow()`'s rule applied to people. Two
-  // reasons, and the second is the load-bearing one: an `ldapsearch` on this
-  // entry shows exactly the name that was on the form, and `POST
-  // /admin-api/users/create` takes the same names in its `attributes` object —
-  // so the console and the management API are one vocabulary and somebody who
-  // learns this page can drive the API.
-  //
-  // The schema reference is drawn beside each one because this directory has NO
-  // SCHEMA: nothing here would refuse `schacDateOfBirth` on a group or `l` on
-  // an application, so where the name comes from is the only thing that makes
-  // it more than a string somebody chose. Three of them are this service's own
-  // or SCHAC's rather than an RFC's, and those say so rather than being left to
-  // look like the others.
-  /**
-   * Draws one directory attribute as a row of the new-user form, its input
-   * named `field.<attribute>`, with the claim it reaches and its schema.
-   *
-   * @param row - the attribute's catalogue row
-   * @param values - the values to put in the boxes, by attribute
-   * @returns the row as HTML
-   */
-  personFieldRow(row, values) {
-    const { log } = this.deps;
-    log.debug("Entering AdminConsole.personFieldRow().");
-    const id = 'field-' + row.ldap;
-    const value = (values || {})[row.ldap];
-    const hint = this.tip(row.label + ' — ' + row.schema + '. It reaches a ' +
-                                                           'credential as ' +
-                          row.claim.join('.') + '.');
-    log.debug("Leaving AdminConsole.personFieldRow().");
-    return '<tr><td><label for="' + this.esc(id) + '"' + hint + '><code>' +
-      this.esc(row.ldap) + '</code></label></td>' +
-      '<td>' + this.esc(row.label) + '</td>' +
-      '<td><input type="text" id="' + this.esc(id) + '" name="field.' +
-      this.esc(row.ldap) +
-      '"' +
-      hint + ' size="36" maxlength="512" placeholder="no value" value="' +
-      this.esc(value === undefined ? '' : value) + '"></td>' +
-      '<td><code>' + this.esc(row.claim.join('.')) + '</code></td>' +
-      '<td class="sub">' + this.esc(row.schema) + '</td></tr>';
-  }
-
   // THE "MAIL IT TO THEM" BOX (#63): `deliver=mail` on the reset link and
   // the activation link, TICKED when the realm has a mail transport — an
   // administrator who never sees a person's link cannot be the one who used
@@ -15985,6 +16830,119 @@ class AdminConsole {
       'class="why">' + this.note(choice.what) + '</td></tr>';
   }
 
+  /**
+   * The fields `/admin/users/new` draws, as field grid rows: every attribute
+   * a person's Attributes tab edits, and the credential catalogue's others
+   * (the address), each with its group, example and tooltip.
+   *
+   * @param view - `simple` or `advanced`
+   * @returns the rows, in group order
+   */
+  newUserFieldRows(view) {
+    const { log, vcClaims } = this.deps;
+    log.debug("Entering AdminConsole.newUserFieldRows(). view=" + view);
+    const catalogue = vcClaims.personFields();
+    const claimOf = {};
+    catalogue.forEach(function (row) {
+      claimOf[row.ldap.toLowerCase()] = row.claim.join('.');
+    });
+    const rows = personEditor.editableAttributes().map(function (row) {
+      return { name: row.name, label: row.label, schema: row.schema,
+               multi: row.multi, must: row.must, note: row.note,
+               group: row.group, example: row.example, simple: row.simple };
+    });
+    catalogue.forEach(function (row) {
+      const known = rows.some(function (one) {
+        return one.name.toLowerCase() === row.ldap.toLowerCase();
+      });
+      if (!known) {
+        rows.push({ name: row.ldap, label: row.label, schema: row.schema,
+                    multi: false, must: false, note: '',
+                    group: personEditor.groupOf(row.ldap) === 'other' &&
+                      row.ldap.toLowerCase() === 'mail'
+                      ? 'contact' : personEditor.groupOf(row.ldap),
+                    example: personEditor.FIELD_EXAMPLES[
+                      row.ldap.toLowerCase()] || '',
+                    simple: row.ldap.toLowerCase() === 'mail' });
+      }
+    });
+    const shown = rows.filter(function (row) {
+      return view === 'advanced' || row.simple;
+    }).map(function (row) {
+      const claim = claimOf[row.name.toLowerCase()];
+      return {
+        attribute: row.name,
+        type: row.multi ? 'array' : 'string',
+        what: row.label + ' — ' + row.schema + '.' +
+              (row.note ? ' It takes ' + row.note + '.' : '') +
+              (row.multi ? '' : ' It holds one value.') +
+              (claim ? ' It reaches a credential as ' + claim + '.' : ''),
+        example: row.example,
+        forText: row.label,
+        families: [], everyFamily: true, group: row.group
+      };
+    });
+    log.debug("Leaving AdminConsole.newUserFieldRows(). " + shown.length +
+              " field(s).");
+    return shown;
+  }
+
+  /**
+   * Draws `/admin/users/new`'s field grid: the view's fields under the
+   * person field groups' headings.
+   *
+   * @param view - `simple` or `advanced`
+   * @param values - the boxes' values by attribute
+   * @param draft - the posted form of a redraw, or null on a first draw. A
+   *   list the form did not draw before (a first draw, or a field the view
+   *   switch has just added) gets one empty box, which a create reads as no
+   *   value; a list the form did draw keeps its boxes as posted
+   * @returns the grid as HTML
+   */
+  newUserFieldGrid(view, values, draft) {
+    const { log } = this.deps;
+    const self = this;
+    log.debug("Entering AdminConsole.newUserFieldGrid().");
+    const rows = this.newUserFieldRows(view);
+    // ONE BOX FOR A LIST ON THE FIRST DRAW: cn, sn and the telephone numbers
+    // are multi-valued in their RFCs, and a form showing only "+" for the
+    // names a person is created with reads as a form with no name boxes.
+    const drawn = {};
+    Object.keys(draft || {}).forEach(function (key) {
+      if (key.indexOf('field.') === 0) {
+        drawn[key.slice('field.'.length).replace(/\.\d+$/, '')] = true;
+      }
+    });
+    if (draft && draft.grow) {
+      drawn[String(draft.grow)] = true;
+    }
+    if (draft && draft.drop) {
+      drawn[String(draft.drop).replace(/\.\d+$/, '')] = true;
+    }
+    rows.forEach(function (row) {
+      if (row.type === 'array' && !drawn[row.attribute] &&
+          !(values[row.attribute] || []).length) {
+        values[row.attribute] = [''];
+      }
+    });
+    const html = personEditor.FIELD_GROUPS.map(function (group) {
+      const mine = rows.filter(function (row) {
+        return row.group === group.id;
+      });
+      if (!mine.length) {
+        return '';
+      }
+      return '<div class="fg-group"><h3' + self.tip(group.what) + '>' +
+        self.esc(group.label) + '</h3><div class="fg">' +
+        mine.map(function (row) {
+          return self.fieldGridCell(row, values,
+                                    { redraw: '/admin/users/new' });
+        }).join('') + '</div></div>';
+    }).join('');
+    log.debug("Leaving AdminConsole.newUserFieldGrid().");
+    return html;
+  }
+
   // THE PAGE. `prefill` is what to put back in the boxes — absent on a first
   // visit, and on a refusal it is what was posted, so nobody retypes
   // twenty-five fields because of one bad username.
@@ -16023,6 +16981,20 @@ class AdminConsole {
     const container = directoryReader ? newUserContainer() : null;
     const fields = vcClaims.personFields();
     const development = mode.isDevelopment();
+    const view = String(given.view || '') === 'advanced' ? 'advanced'
+      : 'simple';
+    // THE BOXES' VALUES: a redraw ("+", the bin, the view switch) keeps every
+    // box as it was, an empty one included; otherwise what was posted, or
+    // what Fill invented.
+    const gridValues = given.draft ? this.gridValuesFromDraft(given.draft)
+      : {};
+    if (!given.draft) {
+      Object.keys(values).forEach(function (name) {
+        gridValues[name] = [].concat(values[name] === undefined ||
+                                     values[name] === null
+          ? [] : values[name]).map(String);
+      });
+    }
 
     // NO DIRECTORY IN THIS PROCESS. The form is left OUT rather than drawn and
     // refused, which is `newApplicationPage()`'s shape and is right for the
@@ -16046,7 +17018,8 @@ class AdminConsole {
 
     const inner = this.messagesOf(req) +
       '<div class="tiles">' +
-        this.tile(fields.length, 'fields you may fill') +
+        this.tile(this.newUserFieldRows('advanced').length,
+                  'fields you may fill') +
         this.tile(1, 'that is required') +
         this.tile(CREDENTIAL_CHOICES.length, 'ways in to choose from') +
         this.tile(development ? 'yes' : 'no', 'example data offered') +
@@ -16130,27 +17103,42 @@ class AdminConsole {
       'credential, and the page says why.') +
       this.mailLinkBox('the activation link') +
 
-      '<h2>What is known about them</h2>' +
-      this.note('Every attribute a person in this directory can carry, which ' +
-      'is the same catalogue <a href="/admin/vc">Credential claims</a> ' +
-      'chooses from — so an attribute filled in here is the value an issued ' +
-      'credential asserts, rather than a value that agrees with one by ' +
-      'coincidence. <strong>Fill in as few or as many as you like.</strong> ' +
-      'The claim column is where each one lands in a token or a credential; ' +
-      'the last column is where the attribute name comes from, which matters ' +
-      'because <strong>this directory has no schema</strong> and would not ' +
-      'refuse any of these on any entry.') +
+      // THE FIELD GRID (rcbj, 2026-10-01): the same typed fields, under the
+      // same group headings, as a person's Attributes tab, drawn from
+      // `ldap/person_editor.ts` and the credential catalogue — so this form
+      // and the tab cannot offer different attributes, and a create holds
+      // every value to the rules an edit does. The simplified view is the
+      // names and contact details somebody creating a person usually has; the
+      // advanced view is every field. The switch, "+" and the bin are submit
+      // buttons that redraw this form with everything typed kept.
+      '<h2>' + (view === 'advanced' ? 'Everything known about them'
+                                    : 'What is known about them') + '</h2>' +
+      this.note('Every attribute here is one a person in this directory can ' +
+      'carry, and an attribute in the <a href="/admin/vc">Credential ' +
+      'claims</a> catalogue is the value an issued credential asserts — its ' +
+      'tooltip says which claim. <strong>Fill in as few or as many as you ' +
+      'like.</strong> A list takes one box per value, with + to add one and ' +
+      'the bin to delete one; an empty box records nothing.') +
       (development
         ? this.note('<strong><code>uid</code> is not on this list and that ' +
           'is not an omission.</strong> It is the username, asked for once ' +
           'at the top; a second box for it would let one form create ' +
           '<code>uid=alice</code> whose uid says <code>bob</code>.')
         : '') +
-      '<table><tr><th>Attribute</th><th>What it is</th><th>Value</th>' +
-      '<th>Reaches a credential as</th><th>Defined by</th></tr>' +
-      fields.map(function (row) { return self.personFieldRow(row, values); })
-            .join('') +
-      '</table>' +
+      '<input type="hidden" name="view" value="' + this.esc(view) + '">' +
+      '<div class="formrow fg-view"><span class="sub">' +
+      (view === 'advanced'
+        ? 'Advanced view: every attribute a person here can carry.'
+        : 'Simplified view: the names and contact details most people ' +
+          'need.') +
+      '</span><button type="submit" class="secondary" name="switchview" ' +
+      'value="' + (view === 'advanced' ? 'simple' : 'advanced') +
+      '" formaction="/admin/users/new" formnovalidate' +
+      this.tip('Draw the other view of this form. Nobody is created, and ' +
+               'everything typed so far is kept.') + '>' +
+      (view === 'advanced' ? 'Show the simplified view'
+        : 'Show every field (advanced view)') + '</button></div>' +
+      this.newUserFieldGrid(view, gridValues, given.draft || null) +
 
       // TWO SUBMITS, AND ONLY ONE OF THEM CARRIES A NAME. `action=create` is a
       // HIDDEN FIELD, the way every other form on this console spells its
@@ -17290,21 +18278,719 @@ class AdminConsole {
     const listView = this.listViewFromBack('/admin/applications', body.back);
     const made = result.ok && result.application
       ? String(result.application.identifier || '') : '';
+    const claimAction = String(body.action || '') === 'set-custom-claim' ||
+      String(body.action || '') === 'remove-custom-claim' ||
+      // The Access types tab (#432 phase 4) comes back to itself the same
+      // way, refused or not.
+      String(body.action || '') === 'set-access-type' ||
+      String(body.action || '') === 'remove-access-type';
+    // A claim action comes back to its section whether it was refused or
+    // not (2026-10-01): the refusal is about one row, and the reader is
+    // still working on that application.
     const named = made ||
-      (result.ok !== false ? String(body.application || '').trim() : '');
+      (result.ok !== false || claimAction
+        ? String(body.application || '').trim() : '');
     const back = named
       ? '/admin/applications' + queryWith(listView, { application: named }) +
         // Back to the section the button was in, which is four screens down.
-        (String(body.action || '') === 'regenerate-secret' ||
-         String(body.action || '') === 'rotate-secret' ? '#credentials'
+        (['regenerate-secret', 'rotate-secret', 'add-secret',
+          'remove-secret'].indexOf(String(body.action || '')) >= 0
+          ? '#credentials'
           : (String(body.action || '') === 'issue-software-statement'
             ? '#software-statements'
             : (String(body.action || '') === 'revoke-tls-client-certificate' ||
                String(body.action || '') === 'issue-tls-client-certificate'
-              ? '#credentials-tls-client' : '')))
+              ? '#credentials-tls-client'
+              : (String(body.action || '') === 'generate-did-key' ||
+                 String(body.action || '') === 'sign-domain-linkage'
+                ? (String(body.from || '') === 'credentials'
+                  ? '#credentials-did' : '#cfg-did')
+                : (claimAction
+                  ? (/-access-type$/.test(String(body.action || ''))
+                    ? '#tab-access-types'
+                    : (['saml2', 'saml11'].indexOf(String(body.set || '')) >= 0
+                      ? '#cfg-saml-attributes' : '#cfg-oauth-claims'))
+                  : '')))))
       : '/admin/applications' + queryWith(listView, {});
     this.respondToAction(req, res, back, result);
     log.debug("Leaving the admin applications action endpoint.");
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE APPLICATION'S DID, ON ITS CONFIGURATION TAB (2026-10-01): the DID this
+  // service advertises for it, the document's address (a link, so a reader can
+  // see exactly what a resolver gets), whether it resolves yet, and the
+  // *Generate a key pair* form. The form posts `generate-did-key` to
+  // /admin/applications and is answered by a page carrying the private key
+  // once; it is drawn for Admin Write only, like every write on the page.
+  // ---------------------------------------------------------------------------
+  /**
+   * Draws the DID block on an application's Decentralized Identifier
+   * configuration tab: its DID, its document, and the key-pair form.
+   *
+   * @param req - the request, whose base URL names the DID
+   * @param row - the application's view
+   * @param carryBack - the hidden `back` field the page's forms carry
+   * @param where - `config` (the DID tab) or `credentials` (the
+   *   Credentials tab), which the Generate form returns to
+   * @returns the HTML
+   */
+  applicationDidPanel(req, row, carryBack, where?) {
+    const { log, baseUrlOf } = this.deps;
+    log.debug("Entering AdminConsole.applicationDidPanel().");
+    const self = this;
+    const vcDid = require('../oid4vc/vc_did');
+    const base = baseUrlOf(req);
+    const identifier = String(row.identifier || '');
+    const did = vcDid.applicationDid(base, identifier);
+    const url = base + '/applications/' + encodeURIComponent(identifier) +
+                '/did.json';
+    const answer = vcDid.applicationDidDocument(base, identifier);
+    const canWrite = this.mayWrite(req);
+    const algorithms = ['ES256', 'ES384', 'EdDSA'];
+    const anchor = where === 'credentials' ? '#credentials-did' : '#cfg-did';
+    // THE KEY PAIRS THE DOCUMENT PUBLISHES, one row each: the verification
+    // method, the key's type and algorithm, and its thumbprint. Only public
+    // halves exist here; the private halves were handed out when generated.
+    const keys = answer.ok ? answer.document.verificationMethod : [];
+    // Which published keys have a private half kept here, by kid: the ones
+    // Generate made. Only that a half is kept is drawn, never the half.
+    let keptKids = [];
+    try {
+      keptKids = JSON.parse(String((row.fields || {}).didPrivateKeys || '[]'))
+        .map(function (one) { return String(one && one.kid || ''); });
+    } catch (e) {
+      log.debug("Caught in AdminConsole.applicationDidPanel(): " +
+                ((e && e.message) || e));
+      keptKids = [];
+    }
+    const keyTable = keys.length
+      ? '<table><tr><th>Verification method</th><th>Key</th>' +
+        '<th>Algorithm</th><th>Private half</th></tr>' +
+        keys.map(function (m) {
+          const jwk = m.publicKeyJwk || {};
+          const kid = m.id.slice(did.length + 1);
+          return '<tr><td><code>' + self.esc('#' + kid) +
+            '</code></td><td>' + self.esc(String(jwk.kty || '') +
+              (jwk.crv ? ' ' + jwk.crv : '')) + '</td><td>' +
+            self.esc(String(jwk.alg || '—')) + '</td><td>' +
+            (keptKids.indexOf(kid) >= 0
+              ? '<span class="state-valid">kept here, sealed</span>'
+              : '<span class="state-none">not here</span>') + '</td></tr>';
+        }).join('') + '</table>' +
+        this.note('A key Generate made has its private half kept here, ' +
+        'sealed under the key-encryption key, so this service can sign the ' +
+        'Domain Linkage Credentials below. A key added to ' +
+        '<code>didPublicKeyJwk</code> by hand has only its public half here. ' +
+        'To change a key, generate a new one with <em>replace</em> ticked.')
+      : '<p class="sub">No key pair yet.</p>';
+    // THE DOMAIN LINKAGE, one per LinkedDomains origin (2026-10-01): a
+    // download of the DID Configuration resource to host at
+    // https://<origin>/.well-known/did-configuration.json, signed on request
+    // with a kept key. A POST, because signing is an act; Admin Write.
+    const origins = answer.ok ? (answer.document.service || [])
+      .filter(function (one) { return one.type === 'LinkedDomains'; })
+      .map(function (one) { return String(one.serviceEndpoint); }) : [];
+    const linkage = '<h4>Domain linkage</h4>' + (origins.length
+      ? '<table><tr><th>Origin</th><th>Host the file at</th><th></th></tr>' +
+        origins.map(function (origin) {
+          const at = origin.replace(/\/+$/, '') +
+                     '/.well-known/did-configuration.json';
+          return '<tr><td><code>' + self.esc(origin) + '</code></td><td>' +
+            '<code>' + self.esc(at) + '</code></td><td>' + (canWrite
+              ? '<form method="post" action="/admin/applications' + anchor +
+                '" class="inline">' + carryBack +
+                '<input type="hidden" name="action" ' +
+                'value="sign-domain-linkage"><input type="hidden" ' +
+                'name="application" value="' + self.esc(identifier) + '">' +
+                '<input type="hidden" name="origin" value="' +
+                self.esc(origin) + '"><input type="hidden" name="from" ' +
+                'value="' + (where === 'credentials' ? 'credentials'
+                                                     : 'config') + '">' +
+                '<button type="submit" class="secondary"' +
+                self.tip('Sign a Domain Linkage Credential for this origin ' +
+                         'with a kept DID key, and download the ' +
+                         'did-configuration.json to host at the address ' +
+                         'beside it.') +
+                '>Download did-configuration.json</button></form>'
+              : '') + '</td></tr>';
+        }).join('') + '</table>' +
+        this.note('The DIF Well-Known DID Configuration: the file proves the ' +
+        'DID and the origin are one party. It carries one Domain Linkage ' +
+        'Credential, self-issued by the DID and signed with its key, and is ' +
+        'good for <code>oid4vci.domainLinkageLifetimeS</code> (a year by ' +
+        'default); download a new one before it expires.')
+      : '<p class="sub">No LinkedDomains service yet: add one to ' +
+        '<code>didService</code>, such as ' +
+        '<code>LinkedDomains|https://app.example.com</code>, to link the DID ' +
+        'to an origin.</p>');
+    const html = '<table><tr><th>DID</th><td><code>' + this.esc(did) +
+      '</code></td></tr><tr><th>Document</th><td><a href="' + this.esc(url) +
+      '"><code>' + this.esc(url) + '</code></a><div class="sub">' +
+      (answer.ok
+        ? '<span class="state-valid">advertised</span>, ' +
+          answer.document.verificationMethod.length + ' key(s)'
+        : '<span class="state-none">not advertised yet</span>: ' +
+          this.esc(answer.why)) +
+      '</div></td></tr></table>' +
+      this.note('<code>did:web</code> under this realm&rsquo;s address: a ' +
+      'resolver turns the DID into the document&rsquo;s address above and ' +
+      'fetches it from this service. The document publishes the keys, ' +
+      'services and other names below. The DID follows the address this ' +
+      'console is reached on; pin <code>global.publicBaseUrl</code> so it ' +
+      'does not change with the host name.') + keyTable + linkage +
+      (canWrite
+        ? '<form method="post" action="/admin/applications' + anchor +
+          '">' + carryBack +
+          '<input type="hidden" name="action" value="generate-did-key">' +
+          '<input type="hidden" name="from" value="' +
+          (where === 'credentials' ? 'credentials' : 'config') + '">' +
+          '<input type="hidden" name="application" value="' +
+          this.esc(identifier) + '"><div class="formrow">' +
+          '<span>Generate a key pair:</span> ' +
+          algorithms.map(function (alg, index) {
+            return '<label' + self.tip({
+              ES256: 'ECDSA on P-256 with SHA-256: the default, and what ' +
+                     'most DID resolvers and wallets expect.',
+              ES384: 'ECDSA on P-384 with SHA-384.',
+              EdDSA: 'Ed25519. Compact, and widely supported by DID tooling.'
+            }[alg]) + '><input type="radio" name="algorithm" value="' +
+              alg + '"' + (index === 0 ? ' checked' : '') + '> ' + alg +
+              '</label>';
+          }).join(' ') +
+          ' <label' + this.tip('Take the keys already in the document off ' +
+            'first, so the new key is the only one.') + '><input ' +
+          'type="checkbox" name="replace" value="yes"> replace the keys ' +
+          'there</label> <button type="submit"' +
+          this.tip('Make a key pair, add its public key to the DID document ' +
+                   'and show the private key once.') +
+          '>Generate</button></div>' +
+          '</form>' +
+          this.note('The public key is added to the document. The private ' +
+          'key is shown once on the next page, and kept here sealed so this ' +
+          'service can sign the Domain Linkage Credentials.')
+        : '');
+    log.debug("Leaving AdminConsole.applicationDidPanel().");
+    return html;
+  }
+
+  // AN APPLICATION'S TOKEN LIFETIMES (rcbj, 2026-10-01): the realm's Token
+  // lifetimes page, for one application, at the head of its OAuth / OpenID
+  // Connect configuration tab. The four overrides were already fields on
+  // that tab (`oauthAccessTokenTtlS` and three more); this draws the value
+  // IN FORCE for each, where it came from, and the realm page's warnings
+  // over the application's own values. Clock skew stays realm-wide.
+  /**
+   * Draws the token lifetimes in force for an application, with the realm
+   * page's warnings.
+   *
+   * @param row - the application's view
+   * @returns the markup
+   */
+  applicationTokenLifetimesSection(row) {
+    const { log, adminViews } = this.deps;
+    const self = this;
+    log.debug("Entering AdminConsole.applicationTokenLifetimesSection().");
+    const state = adminViews.applicationTokenLifetimesState(row);
+    const byKey = {};
+    state.rows.forEach(function (one) { byKey[one.setting] = one; });
+    const html = '<h3 id="cfg-oauth-lifetimes">Token lifetimes</h3>' +
+      '<table><tr><th>Token</th><th>In force</th><th>From</th>' +
+      '<th>The realm\'s</th><th>Override</th></tr>' +
+      state.rows.map(function (one) {
+        return '<tr><td>' + self.esc(one.label) + '</td><td>' +
+          self.esc(self.humanSeconds(one.value)) + '</td><td>' +
+          (one.source === 'application'
+            ? '<span class="state-valid">this application</span>'
+            : '<span class="state-none">the realm</span>') + '</td><td>' +
+          self.esc(self.humanSeconds(one.realmValue)) + '</td><td>' +
+          '<code>' + self.esc(one.attribute) + '</code></td></tr>';
+      }).join('') + '</table>' +
+      this.tokenLifetimeWarnings({
+        access: byKey['oauth2.accessTokenTtlS'].value,
+        refresh: byKey['oauth2.refreshTokenTtlS'].value,
+        skew: state.skew }) +
+      this.note('Set an override in the field of that name below and press ' +
+        'Save; empty it to take the realm\'s value again (Protocols → ' +
+        'OAuth2 / OIDC → Token lifetimes). The clock skew, ' +
+        this.esc(this.humanSeconds(state.skew)) + ', is the realm\'s for ' +
+        'every application.');
+    log.debug("Leaving AdminConsole.applicationTokenLifetimesSection().");
+    return html;
+  }
+
+  // AN APPLICATION'S OWN CUSTOM CLAIMS OR SAML ATTRIBUTES (rcbj,
+  // 2026-10-01): the realm's Custom claims, UserInfo claims and Custom SAML
+  // attributes pages, for one application, on its configuration tabs. Each
+  // set shows the rows IN FORCE for it — the realm's, and its own, which are
+  // added and win by name — with a Remove on its own rows and a form to set
+  // one. Both post to `/admin/applications` (`set-custom-claim`,
+  // `remove-custom-claim`), mirrored at `/admin-api/applications/<action>`.
+  /**
+   * Draws an application's own claim sets beside the realm's, with the
+   * controls that set and remove its own rows.
+   *
+   * @param req - the request
+   * @param row - the application's view
+   * @param carryBack - the hidden `back` field
+   * @param setIds - which of the five sets to draw
+   * @param anchor - the section's id, which a form comes back to
+   * @param title - the section's heading
+   * @returns the markup
+   */
+  applicationClaimsSection(req, row, carryBack, setIds, anchor, title) {
+    const { log, adminViews } = this.deps;
+    const self = this;
+    log.debug("Entering AdminConsole.applicationClaimsSection().");
+    const canWrite = this.mayWrite(req);
+    const id = String(row.identifier || '');
+    const sets = adminViews.applicationClaimsState(row).sets
+      .filter(function (one) { return setIds.indexOf(one.id) >= 0; });
+    if (!sets.length) {
+      log.debug("Leaving AdminConsole.applicationClaimsSection(). None " +
+                "declared.");
+      return '';
+    }
+    const formOpen = function (action, setId) {
+      return '<form method="post" action="/admin/applications#' + anchor +
+        '" class="inline">' + carryBack +
+        '<input type="hidden" name="action" value="' + action + '">' +
+        '<input type="hidden" name="application" value="' + self.esc(id) +
+        '"><input type="hidden" name="set" value="' + self.esc(setId) + '">';
+    };
+    const html = '<h3 id="' + this.esc(anchor) + '">' + this.esc(title) +
+      '</h3>' +
+      this.note('The realm\'s claims are issued to this application, and its ' +
+        'own are added to them; where both name the same claim, this ' +
+        'application\'s value is the one issued. A row is a typed value, ' +
+        'whose <code>${…}</code> placeholders are expanded as on the realm\'s ' +
+        'page, or a directory attribute of the person. ' +
+        'The realm\'s rows are edited on the realm\'s page under Protocols.') +
+      sets.map(function (set) {
+        const isSaml = set.id === 'saml2' || set.id === 'saml11';
+        const rows = set.effective.length
+          ? set.effective.map(function (claim) {
+            const what = claim.attribute
+              ? 'attribute <code>' + self.esc(claim.attribute) + '</code>' +
+                (claim.multi ? ', every value' : '') +
+                (claim.type ? ', ' + self.esc(claim.type) : '')
+              : '<code>' + self.esc(claim.value) + '</code>';
+            const extra = claim.nameFormat
+              ? ' <span class="sub">' + self.esc(claim.nameFormat) + '</span>'
+              : (claim.namespace ? ' <span class="sub">' +
+                self.esc(claim.namespace) + '</span>' : '');
+            return '<tr><td><code>' + self.esc(claim.name) + '</code>' +
+              extra + '</td><td>' + what + '</td><td>' +
+              (claim.source === 'application'
+                ? '<span class="state-valid">this application</span>' +
+                  (claim.replacesRealm ? ' <span class="sub">(replaces the ' +
+                    'realm\'s)</span>' : '')
+                : '<span class="state-none">the realm</span>') + '</td><td>' +
+              (canWrite && claim.source === 'application'
+                ? formOpen('remove-custom-claim', set.id) +
+                  '<input type="hidden" name="name" value="' +
+                  self.esc(claim.name) + '"><button type="submit" ' +
+                  'class="secondary"' + self.tip('Take this application\'s ' +
+                    'row off. The realm\'s row of the same name, if there is ' +
+                    'one, is issued again.') + '>Remove</button></form>'
+                : '') + '</td></tr>';
+          }).join('')
+          : '<tr><td colspan="4" class="sub">No claims: neither the realm ' +
+            'nor this application configures any.</td></tr>';
+        const typeSelect = isSaml ? '' : ' <label' + self.tip('The JSON type ' +
+            'each value of a directory attribute becomes. A typed value is ' +
+            'issued as written.') + '>Type <select name="type">' +
+          ['string', 'number', 'boolean', 'json'].map(function (t) {
+            return '<option value="' + t + '">' + t + '</option>';
+          }).join('') + '</select></label>';
+        const samlExtra = set.id === 'saml2'
+          ? ' <label' + self.tip('The SAML 2.0 NameFormat of the attribute, ' +
+              'such as urn:oasis:names:tc:SAML:2.0:attrname-format:uri. ' +
+              'Empty leaves it unspecified.') + '>NameFormat <input ' +
+            'type="text" name="nameFormat" placeholder="urn:oasis:names:tc:' +
+            'SAML:2.0:attrname-format:uri"></label>'
+          : (set.id === 'saml11'
+            ? ' <label' + self.tip('The SAML 1.1 AttributeNamespace. Empty ' +
+                'gives the identity claims namespace.') + '>Namespace <input ' +
+              'type="text" name="namespace" placeholder="http://schemas.' +
+              'xmlsoap.org/ws/2005/05/identity/claims"></label>'
+            : '');
+        return '<h4>' + self.esc(set.label) + '</h4>' +
+          '<table><tr><th>Name</th><th>Value</th><th>From</th><th></th></tr>' +
+          rows + '</table>' + (canWrite
+            ? formOpen('set-custom-claim', set.id) + '<div class="formrow">' +
+              '<label' + self.tip('The claim or attribute name. Setting a ' +
+                'name this application already has replaces its row; a name ' +
+                'the realm has is replaced for this application.') + '>Name ' +
+              '<input type="text" name="name" required placeholder="' +
+              (isSaml ? 'department' : 'tenant') + '"></label> ' +
+              '<label' + self.tip('A typed value, with ${placeholders}. ' +
+                'Leave it empty and name an attribute instead to take the ' +
+                'value from the person\'s directory entry.') + '>Value ' +
+              '<input type="text" name="value" placeholder="' +
+              (isSaml ? '${subject}' : '${username}') + '">' +
+              '</label> <label' + self.tip('A directory attribute of the ' +
+                'person, such as departmentNumber. Takes the place of the ' +
+                'value.') + '>or attribute <input type="text" ' +
+              'name="attribute" placeholder="departmentNumber"></label> ' +
+              '<label' + self.tip('Issue every value of the attribute, not ' +
+                'only the first.') + '><input type="checkbox" name="multi" ' +
+              'value="yes"> every value</label>' + typeSelect + samlExtra +
+              ' <button type="submit"' + self.tip('Set this row on the ' +
+                'application. It is added to the realm\'s ' + set.label +
+                ' and wins by name.') + '>Set</button></div></form>'
+            : '');
+      }).join('');
+    log.debug("Leaving AdminConsole.applicationClaimsSection(). " +
+              sets.length + " set(s).");
+    return html;
+  }
+
+  // AN APPLICATION'S CERTIFICATES OVER ACME, EST AND SCEP (rcbj,
+  // 2026-10-01): generation and tracking on the application's own page, on
+  // its Credentials tab and on its Certificate enrollment configuration
+  // tab, for an application declared for any of the three. It DRAWS
+  // `adminViews.applicationEnrollmentState()` and POSTS to the three
+  // protocols' own console actions (`/admin/acme`, `/admin/est`,
+  // `/admin/scep`) — moving a form is not moving an action, so every control
+  // keeps its `/admin-api` mirror (rule 7) — each carrying `from=application`,
+  // `where` and the application, which `enrollmentReturnTo()` turns back into
+  // this page. Nothing here reads a secret: an EAB HMAC key, a challenge and
+  // a server-generated private key are shown once on the page the action
+  // answers with, which links back here.
+  /**
+   * Draws an application's certificate enrollment: the rules in force, its
+   * certificates with a Revoke each, its EAB keys and SCEP challenges, the
+   * three generation forms and its host names.
+   *
+   * @param req - the request
+   * @param row - the application's view
+   * @param carryBack - the hidden `back` field
+   * @param where - `credentials` or `config`, which tab it is drawn on
+   * @returns the markup
+   */
+  applicationEnrollmentPanel(req, row, carryBack, where) {
+    const { log, adminViews, pageParamsOf } = this.deps;
+    const self = this;
+    log.debug("Entering AdminConsole.applicationEnrollmentPanel().");
+    // TWO COPIES ON ONE PAGE, TWO PAGERS (2026-10-01). The panel is drawn on
+    // the Credentials tab and on the Certificate enrollment sub-tab, and a
+    // pager's links carry `#list-<param>`, the id of the pager above its
+    // list — which opens the tab holding it. With one paging name both
+    // copies had that id, and a next page from the Credentials tab landed on
+    // the Configuration tab's copy. Each copy pages on a name of its own.
+    const state = adminViews.applicationEnrollmentState(req, row,
+      where === 'credentials' ? 'enrolled' : 'enrolledConfig');
+    if (!state.families.length) {
+      log.debug("Leaving AdminConsole.applicationEnrollmentPanel(). Not " +
+                "declared for any of the three.");
+      return '<p class="sub">Tick ACME, EST or SCEP on the Protocol ' +
+        'families tab to issue this application certificates.</p>';
+    }
+    const id = String(row.identifier || '');
+    const canWrite = this.mayWrite(req);
+    const tab = where === 'credentials' ? 'credentials' : 'config';
+    const anchor = tab === 'credentials' ? '#credentials-enroll'
+                                         : '#cfg-enroll';
+    const source = function (one) {
+      return one === 'application'
+        ? ' <span class="sub">(this application)</span>'
+        : ' <span class="sub">(the realm)</span>';
+    };
+    // Every form here opens the same way: the protocol's action, the
+    // application named as the entry, and where to come back to.
+    const formOpen = function (family, action, extra?) {
+      return '<form method="post" action="/admin/' + family + anchor +
+        '" class="inline">' + carryBack +
+        '<input type="hidden" name="action" value="' + self.esc(action) +
+        '"><input type="hidden" name="from" value="application">' +
+        '<input type="hidden" name="where" value="' + tab + '">' +
+        '<input type="hidden" name="application" value="' + self.esc(id) +
+        '">' + (extra || '');
+    };
+    const entryFields = '<input type="hidden" name="kind" ' +
+      'value="application"><input type="hidden" name="identifier" value="' +
+      this.esc(id) + '">';
+    const profileSelect = function (rule) {
+      return '<select name="profile">' + rule.allowedProfiles.map(
+        function (one) {
+          return '<option value="' + self.esc(one) + '"' +
+            (one === rule.defaultProfile ? ' selected' : '') + '>' +
+            self.esc(one) + '</option>';
+        }).join('') + '</select>';
+    };
+    // THE RULES IN FORCE, so a reader sees what an override changed.
+    const rulesTable = '<table><tr><th>Protocol</th><th>Profiles it may be ' +
+      'issued</th><th>Default</th><th>Lifetime</th></tr>' +
+      state.rules.map(function (rule) {
+        return '<tr><td>' + self.esc(rule.label) + '</td><td>' +
+          rule.allowedProfiles.map(function (one) {
+            return '<code>' + self.esc(one) + '</code>';
+          }).join(' ') + source(rule.allowedProfilesSource) + '</td><td>' +
+          '<code>' + self.esc(rule.defaultProfile) + '</code>' +
+          source(rule.defaultProfileSource) + '</td><td>' +
+          rule.certificateLifetimeDays + ' days' +
+          source(rule.certificateLifetimeSource) + '</td></tr>';
+      }).join('') + '</table><p class="sub">Certificates it may hold ' +
+      '(ACME, EST and SCEP together): ' + state.cap.value +
+      source(state.cap.source) + '.' + (state.est
+        ? ' EST: client id and secret ' +
+          (state.est.basicAuthentication.on ? 'accepted' : 'refused') +
+          source(state.est.basicAuthentication.source) + ', certificate ' +
+          (state.est.certificateAuthentication.on ? 'accepted' : 'refused') +
+          source(state.est.certificateAuthentication.source) +
+          ', server-generated keys ' +
+          (state.est.serverKeyGeneration.on ? 'allowed' : 'refused') +
+          source(state.est.serverKeyGeneration.source) + '.'
+        : '') + ' The overrides are on the Certificate enrollment ' +
+      'configuration tab; a value set there replaces the realm\'s.</p>';
+    // THE CERTIFICATES IT WAS ISSUED, newest first, paged.
+    const nav = this.pageNavPair('/admin/applications',
+      Object.assign({}, pageParamsOf(req.query), { application: id }),
+      state.paged.paging);
+    const serialField = { acme: 'serial', est: 'serialHex', scep: 'serial' };
+    const certificateRows = state.paged.shown.length
+      ? state.paged.shown.map(function (one) {
+        const family = String(one.family || '');
+        const download = one.certificatePem
+          ? '<a download="' + self.esc(one.serialHex) + '.pem" href="' +
+            self.esc('data:application/x-pem-file;base64,' +
+              Buffer.from(String(one.certificatePem), 'utf8')
+                .toString('base64')) + '"' +
+            self.tip('Download the certificate (PEM). No private key is ' +
+                     'here.') + '>PEM</a>'
+          : '';
+        const revoke = canWrite && one.status === 'valid' &&
+          serialField[family]
+          ? formOpen(family, 'revoke-certificate',
+              '<input type="hidden" name="' + serialField[family] +
+              '" value="' + self.esc(one.serialHex) + '">') +
+            '<button type="submit" class="secondary"' +
+            self.tip('Revoke this certificate: its serial goes on the ' +
+                     'Issuing CA\'s CRL and its OCSP responder answers ' +
+                     'revoked.') + '>Revoke</button></form>'
+          : '';
+        return '<tr><td>' + self.esc(String(family).toUpperCase()) +
+          '</td><td><code>' + self.esc(one.profile || '') + '</code></td>' +
+          '<td><code>' + self.esc(one.serialHex || '') + '</code></td><td>' +
+          (one.names || []).map(function (n) {
+            return '<code>' + self.esc(n) + '</code>';
+          }).join('<br>') + '</td><td>' + self.esc(one.issuedAt || '') +
+          '</td><td>' + self.esc(one.notAfter || '') + '</td><td>' +
+          '<span class="state-' + (one.status === 'valid' ? 'valid'
+                                                           : 'none') + '">' +
+          self.esc(one.status || '') + '</span></td><td>' + download + ' ' +
+          revoke + '</td></tr>';
+      }).join('')
+      : '<tr><td colspan="8" class="sub">No certificate has been issued ' +
+        'to this application over ACME, EST or SCEP.</td></tr>';
+    const certificates = '<h4>Certificates issued to it</h4>' + nav.head +
+      '<table><tr><th>Protocol</th><th>Profile</th><th>Serial</th>' +
+      '<th>Names</th><th>Issued</th><th>Expires</th><th>Status</th>' +
+      '<th></th></tr>' + certificateRows + '</table>' + nav.foot;
+    // GENERATION, per declared protocol.
+    let generation = '';
+    if (state.families.indexOf('acme') >= 0) {
+      const eabRows = state.eabKeys.length
+        ? state.eabKeys.map(function (k) {
+          return '<tr><td><code>' + self.esc(k.kid) + '</code></td><td>' +
+            self.esc(k.createdAt || '') + '</td><td>' +
+            self.esc(k.expiresAt || '') + '</td><td>' + self.esc(k.status) +
+            (k.boundAccount ? ' <span class="sub">account ' +
+              self.esc(k.boundAccount) + '</span>' : '') + '</td><td>' +
+            (canWrite && !k.boundAccount
+              ? formOpen('acme', 'delete-eab', '<input type="hidden" ' +
+                  'name="kid" value="' + self.esc(k.kid) + '">') +
+                '<button type="submit" class="secondary">Delete</button>' +
+                '</form>'
+              : '') + '</td></tr>';
+        }).join('')
+        : '<tr><td colspan="5" class="sub">None.</td></tr>';
+      generation += '<h4>ACME: External Account Binding keys</h4>' +
+        '<table><tr><th>Key id</th><th>Created</th><th>Unused until</th>' +
+        '<th>Status</th><th></th></tr>' + eabRows + '</table>' +
+        (canWrite
+          ? formOpen('acme', 'create-eab', entryFields) +
+            '<button type="submit"' + this.tip('Make an EAB key bound to ' +
+              'this application. The HMAC key is shown once on the next ' +
+              'page; give it and the key id to the ACME client, which ' +
+              'binds one account to this application for life.') +
+            '>Create an EAB key</button></form>'
+          : '');
+    }
+    if (state.families.indexOf('est') >= 0) {
+      const rule = state.rules.filter(function (one) {
+        return one.family === 'est';
+      })[0];
+      generation += '<h4>EST: a certificate with a server-generated key</h4>' +
+        (canWrite && state.est.serverKeyGeneration.on
+          ? formOpen('est', 'issue-server-key', entryFields) +
+            '<label>Profile ' + profileSelect(rule) + '</label> ' +
+            '<label>Key <select name="keyAlg">' +
+            state.keyAlgorithms.map(function (alg) {
+              return '<option value="' + self.esc(alg) + '"' +
+                (alg === 'ec-p256' ? ' selected' : '') + '>' +
+                self.esc(alg) + '</option>';
+            }).join('') + '</select></label> ' +
+            '<button type="submit"' + this.tip('Generate a key pair here, ' +
+              'issue this application a certificate for it from the EST ' +
+              'Issuing CA, and show the private key once. A sealed copy is ' +
+              'kept on the entry.') + '>Issue</button></form>'
+          : '<p class="sub">' + (state.est.serverKeyGeneration.on
+            ? 'Needs Admin Write.'
+            : 'Server-generated keys are turned off for this application.') +
+            '</p>') +
+        '<p class="sub">An EST client authenticates as this application ' +
+        'with its client id and secret (Basic) or a certificate this realm ' +
+        'issued it.</p>';
+    }
+    if (state.families.indexOf('scep') >= 0) {
+      const rule = state.rules.filter(function (one) {
+        return one.family === 'scep';
+      })[0];
+      const challengeRows = state.challenges.length
+        ? state.challenges.map(function (c) {
+          return '<tr><td><code>' + self.esc(c.id) + '</code></td><td>' +
+            '<code>' + self.esc(c.profile || '') + '</code></td><td>' +
+            self.esc(c.createdAt || '') + '</td><td>' +
+            self.esc(c.expiresAt || '') + '</td><td>' + self.esc(c.status) +
+            '</td><td>' + (canWrite && c.status === 'unused'
+              ? formOpen('scep', 'delete-challenge', '<input type="hidden" ' +
+                  'name="id" value="' + self.esc(c.id) + '">') +
+                '<button type="submit" class="secondary">Delete</button>' +
+                '</form>'
+              : '') + '</td></tr>';
+        }).join('')
+        : '<tr><td colspan="6" class="sub">None.</td></tr>';
+      generation += '<h4>SCEP: challenge passwords</h4>' +
+        '<table><tr><th>Id</th><th>Profile</th><th>Created</th>' +
+        '<th>Expires</th><th>Status</th><th></th></tr>' + challengeRows +
+        '</table>' + (canWrite
+          ? formOpen('scep', 'create-challenge', entryFields) +
+            '<label>Profile ' + profileSelect(rule) + '</label> ' +
+            '<button type="submit"' + this.tip('Make a one-time challenge ' +
+              'password for this application and profile. It is shown once ' +
+              'on the next page, with the SCEP URL and an sscep example.') +
+            '>Create a challenge</button></form>'
+          : '');
+    }
+    // THE HOST NAMES, shared by the three: a server certificate names only a
+    // host registered here.
+    const hostFamily = state.families[0];
+    const hostRows = state.hostNames.length
+      ? state.hostNames.map(function (h) {
+        return '<li><code>' + self.esc(h) + '</code> ' + (canWrite
+          ? formOpen(hostFamily, 'remove-host-name', entryFields +
+              '<input type="hidden" name="hostName" value="' + self.esc(h) +
+              '">') + '<button type="submit" class="secondary">Remove' +
+            '</button></form>'
+          : '') + '</li>';
+      }).join('')
+      : '<li class="sub">None.</li>';
+    const hosts = '<h4>Host names</h4><ul>' + hostRows + '</ul>' + (canWrite
+      ? formOpen(hostFamily, 'add-host-name', entryFields) +
+        '<input type="text" name="hostName" placeholder="web1.example.com"' +
+        this.tip('A DNS name or IP address this application may be issued a ' +
+                 'server certificate for, over ACME, EST or SCEP.') + '> ' +
+        '<button type="submit">Add</button></form>'
+      : '') + '<p class="sub">A dNSName or iPAddress is issued only when ' +
+      'it is registered here; one registration serves all three ' +
+      'protocols.</p>';
+    log.debug("Leaving AdminConsole.applicationEnrollmentPanel().");
+    return rulesTable + certificates + generation + hosts;
+  }
+
+  // Where a form posted from an application's enrollment panel to
+  // `/admin/acme`, `/admin/est` or `/admin/scep` returns: that application's
+  // page at the tab it came from, rebuilt from the body and never echoed;
+  // the protocol page otherwise.
+  /**
+   * Returns the path a protocol's console action redirects to: the
+   * application's page when the form came from its enrollment panel, else
+   * the protocol's page.
+   *
+   * @param body - the posted form body
+   * @param fallback - the protocol page's path
+   * @returns the path
+   */
+  enrollmentReturnTo(body, fallback) {
+    const { log } = this.deps;
+    log.debug("Entering AdminConsole.enrollmentReturnTo().");
+    const id = String((body && body.application) || '');
+    if (!body || String(body.from || '') !== 'application' || !id) {
+      log.debug("Leaving AdminConsole.enrollmentReturnTo(). The protocol " +
+                "page.");
+      return fallback;
+    }
+    log.debug("Leaving AdminConsole.enrollmentReturnTo(). The application.");
+    return this.applicationReturnTo(body, id,
+      String(body.where || '') === 'config' ? '#cfg-enroll'
+                                            : '#credentials-enroll');
+  }
+
+  // The one-time answer to *Generate a key pair*: the private key, as a JWK
+  // and as PKCS#8 PEM, each a download and a read-only box, `no-store` —
+  // `answerIssuedTlsClientCertificate()`'s arrangement, because this page is
+  // the only copy.
+  /**
+   * Answers a generated DID key pair with a page carrying the private key
+   * once, served `no-store`.
+   *
+   * @param req - the request
+   * @param res - the response
+   * @param body - the posted form body, for the application and `back`
+   * @param answer - the action's result
+   */
+  answerGeneratedDidKey(req, res, body, answer) {
+    const { log, queryWith } = this.deps;
+    log.debug("Entering AdminConsole.answerGeneratedDidKey().");
+    const identifier = String((answer.application &&
+                               answer.application.identifier) ||
+                              body.application || '');
+    const listView = this.listViewFromBack('/admin/applications', body.back);
+    const back = '/admin/applications' +
+      queryWith(listView, { application: identifier }) +
+      (String(body.from || '') === 'credentials' ? '#credentials-did'
+                                                  : '#cfg-did');
+    const jwk = JSON.stringify(answer.privateJwk, null, 2);
+    const dataUri = function (mime, text) {
+      log.debug("Entering dataUri().");
+      log.debug("Leaving dataUri().");
+      return 'data:' + mime + ';base64,' +
+             Buffer.from(String(text), 'utf8').toString('base64');
+    };
+    const file = String(answer.kid || 'did-key').slice(0, 16);
+    const html = this.warn('<p><strong>This is the only time the private ' +
+      'key is shown.</strong> This service keeps it sealed, to sign the ' +
+      'application&rsquo;s Domain Linkage Credentials, and shows it on no ' +
+      'page after this one. If your copy is lost, generate another with ' +
+      '<em>replace</em> ticked.</p><p><a class="btn" download="' +
+      this.esc(file) + '.jwk.json" href="' +
+      this.esc(dataUri('application/json', jwk)) + '">Download the JWK</a> ' +
+      '<a class="btn" download="' + this.esc(file) + '.pem" href="' +
+      this.esc(dataUri('application/x-pem-file', answer.privateKeyPem)) +
+      '">Download the PEM</a></p>', 'The private key, once') +
+      '<table><tr><th>DID</th><td><code>' + this.esc(answer.did) +
+      '</code></td></tr><tr><th>Verification method</th><td><code>' +
+      this.esc(answer.verificationMethod) + '</code></td></tr>' +
+      '<tr><th>Algorithm</th><td>' + this.esc(answer.algorithm) +
+      '</td></tr><tr><th>Document</th><td><a href="' +
+      this.esc(answer.documentUrl) + '"><code>' +
+      this.esc(answer.documentUrl) + '</code></a></td></tr></table>' +
+      '<h3>Private key (JWK)</h3><textarea readonly rows="9" cols="80">' +
+      this.esc(jwk) + '</textarea>' +
+      '<h3>Private key (PKCS#8 PEM)</h3><textarea readonly rows="6" ' +
+      'cols="80">' + this.esc(answer.privateKeyPem) + '</textarea>' +
+      this.note('Sign as the DID with this key and name the verification ' +
+      'method above as the <code>kid</code>; a verifier resolves the DID ' +
+      'and finds the public key in the document.') +
+      '<p><a class="btn" href="' + this.esc(back) + '">Back to ' +
+      this.esc(identifier) + '</a></p>';
+    res.set('Cache-Control', 'no-store');
+    this.respond(req, res, { ok: true }, 'DID key pair',
+                 '/admin/applications', html,
+                 this.upTo('/admin/applications', 'DID key pair', listView));
+    log.debug("Leaving AdminConsole.answerGeneratedDidKey().");
   }
 
   // ---------------------------------------------------------------------------
@@ -17750,9 +19436,14 @@ class AdminConsole {
       'class="formrow"><input type="hidden" name="action" ' +
       'value="create"><label for="identifier">Identifier</label><input ' +
       'type="text" id="identifier" name="identifier" size="30" required ' +
-      'placeholder="client_id, wtrealm, entityID or SPN"><label ' +
-      'for="newname">Name</label><input type="text" id="newname" name="name" ' +
-      'size="18" placeholder="optional"><button ' +
+      'placeholder="e.g. my-web-app"' +
+      this.tip('The key every protocol presents for this application: a ' +
+               'client_id, wtrealm, AppliesTo, SAML entityID or Kerberos ' +
+               'SPN. At most 512 characters, no line break.') +
+      '><label for="newname">Name</label><input type="text" id="newname" ' +
+      'name="name" size="18" placeholder="e.g. My Web App (optional)"' +
+      this.tip('What pages call it. With none, the identifier is the name.') +
+      '><button ' +
       'type="submit">Add</button></div></form>' +
       this.note('This row takes the identifier and a name and nothing else ' +
       '&mdash; it is the short way in for somebody already looking at the ' +
@@ -17792,6 +19483,168 @@ class AdminConsole {
       inner: inner,
       json: view.json
     };
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE APPLICATION'S FIELD GRID (2026-09-30): the protocol families it is
+  // declared for, as a row of checkboxes, and every field of
+  // `applications.applicationFields()` the page can edit, typed, shown for the
+  // families ticked — one form, saved by `update-fields`.
+  //
+  // **It posts to `/admin/applications/edit`, not to `/admin/applications`**,
+  // because a refused save has to come back to THIS page with every box as
+  // the reader left it, and the list page's 303 cannot carry a form. The same
+  // route redraws for "+" and delete. `present` names every field drawn, so a
+  // field emptied on the page is cleared; `protocolsPresent` says the
+  // checkbox column was drawn, so unticking every box means "none".
+  //
+  // **It leaves out what has a control of its own**: credentials (the
+  // Credentials section regenerates, issues and uploads them, and a secret
+  // re-posted by every save is a secret in every request body) and what
+  // `applications.applicationFields()` already leaves out.
+  // ---------------------------------------------------------------------------
+  /**
+   * Draws an application's field grid: its declared families and every
+   * editable field for them, in one form saved by `update-fields`.
+   *
+   * @param req - the request
+   * @param row - the application's view
+   * @param carryBack - the hidden `back` field
+   * @param state - optional; a redraw: `draft`, the posted form
+   * @returns the section as HTML
+   */
+  applicationFieldsSection(req, row, carryBack, state?) {
+    const { log, applications } = this.deps;
+    const self = this;
+    log.debug("Entering AdminConsole.applicationFieldsSection().");
+    const draft = state && state.draft ? state.draft : null;
+    const rows = applications.applicationFields().filter(function (one) {
+      return !one.sensitive;
+    });
+    const names = rows.map(function (one) { return one.attribute; });
+    // WHAT THE ENTRY HOLDS, WITH WHAT WAS POSTED LAID OVER IT. A redraw is of
+    // one sub-tab's form, so only the attributes that form named (`present`)
+    // are taken from the post; every other group shows the entry.
+    const values = this.gridValuesFromEntry(row.fields, names);
+    if (draft) {
+      const posted = this.gridValuesFromDraft(draft);
+      String(draft.present || '').split(/[\s,]+/).forEach(function (name) {
+        if (name && Object.prototype.hasOwnProperty.call(values, name)) {
+          values[name] = posted[name] || [];
+        }
+      });
+    }
+    const declared = draft && draft.protocolsPresent
+      ? applications.familiesOfChoices(this.listField(req, draft, 'protocol'))
+      : [].concat(row.allowedProtocols || []);
+    // A FIELD IS SHOWN when it belongs to every family or to a family this
+    // application is declared for, and to no other (rcbj, 2026-10-01): a
+    // value an undeclared family's field still holds is inert — product mode
+    // refuses that family's requests — and stays visible on the Directory
+    // entry tab. Decided here rather than by the create page's `:has()`
+    // rules, because each group is a form of its own and the family
+    // checkboxes are in another.
+    const shown = rows.filter(function (one) {
+      return one.everyFamily || one.families.some(function (f) {
+        return declared.indexOf(f) >= 0;
+      });
+    });
+    const groups = applications.FIELD_GROUPS.filter(function (group) {
+      return shown.some(function (one) { return one.group === group.id; });
+    });
+    const saveButton = function (label) {
+      return '<div class="formrow"><button type="submit"' +
+        self.tip('Write this tab to the application. Nothing on the other ' +
+                 'tabs changes, and a refused value is shown with what was ' +
+                 'typed kept.') + '>' + self.esc(label) + '</button></div>';
+    };
+    const formOpen = function (group, present, extra?) {
+      return '<form method="post" action="/admin/applications/edit#cfg-' +
+        self.esc(group) + '" class="appgrid">' + carryBack +
+        '<input type="hidden" name="action" value="update-fields">' +
+        '<input type="hidden" name="application" value="' +
+        self.esc(row.identifier) + '">' +
+        '<input type="hidden" name="group" value="' + self.esc(group) + '">' +
+        (present ? '<input type="hidden" name="present" value="' +
+                   self.esc(present.join(' ')) + '">' : '') + (extra || '') +
+        // THE DEFAULT BUTTON, first in the form, for the reason the create
+        // form has one: Enter in a box presses the first submit button,
+        // which would otherwise be a "+" or a delete.
+        '<button type="submit" class="default-submit" tabindex="-1" ' +
+        'aria-hidden="true">Save</button>';
+    };
+    const familiesPanel = '<div class="subpanel first" id="cfg-families">' +
+      '<h3>Protocol families it is declared for</h3>' +
+      this.note('Tick the families this application speaks and press Save. ' +
+      'A family ticked here adds its tab of fields beside this one, and its ' +
+      'tab goes when it is unticked. In product mode a request through a ' +
+      'family that is not ticked is refused.') +
+      formOpen('families', null,
+               '<input type="hidden" name="protocolsPresent" value="1">') +
+      '<div class="fg-protos" role="group" ' +
+      'aria-label="Protocol families it is declared for">' +
+      // One box per CHOICE: OpenID4VCI and OpenID4VP are one, Verifiable
+      // Credentials, ticked when either is declared and declaring both.
+      applications.FAMILY_CHOICES.map(function (choice) {
+        const on = choice.families.some(function (family) {
+          return declared.indexOf(family) >= 0;
+        });
+        return '<label class="fg-proto"' + self.tip(choice.what) + '>' +
+          '<input type="checkbox" name="protocol" value="' +
+          self.esc(choice.id) + '"' + (on ? ' checked' : '') + '>' +
+          self.esc(choice.label) + '</label>';
+      }).join('') + '</div>' + saveButton('Save the families') + '</form>' +
+      '</div>';
+    const groupPanels = groups.map(function (group) {
+      const mine = shown.filter(function (one) {
+        return one.group === group.id;
+      });
+      return '<div class="subpanel" id="cfg-' + self.esc(group.id) + '">' +
+        (group.id === 'did'
+          ? self.applicationDidPanel(req, row, carryBack, 'config') : '') +
+        (group.id === 'enroll'
+          ? self.applicationEnrollmentPanel(req, row, carryBack, 'config')
+          : '') +
+        // The realm's Token lifetimes, Custom claims and UserInfo claims
+        // pages, and its Custom SAML attributes page, for this application
+        // (2026-10-01): sections at the head of the tab they belong to.
+        (group.id === 'oauth'
+          ? self.applicationTokenLifetimesSection(row) +
+            self.applicationClaimsSection(req, row, carryBack,
+              ['access_token', 'id_token', 'userinfo'], 'cfg-oauth-claims',
+              'Custom claims')
+          : '') +
+        (group.id === 'saml'
+          ? self.applicationClaimsSection(req, row, carryBack,
+              ['saml2', 'saml11'], 'cfg-saml-attributes',
+              'Custom SAML attributes')
+          : '') +
+        formOpen(group.id, mine.map(function (one) {
+          return one.attribute;
+        })) +
+        self.fieldGrid(mine, values, { redraw: '/admin/applications/edit',
+                                       showSet: true }) +
+        saveButton('Save ' + group.label) + '</form></div>';
+    }).join('');
+    const bar = '<nav class="tabbar subbar" aria-label="Configuration">' +
+      '<a class="first" href="#cfg-families">Protocol families</a>' +
+      groups.map(function (group) {
+        return '<a href="#cfg-' + self.esc(group.id) + '">' +
+          self.esc(group.label) + '</a>';
+      }).join('') + '</nav>';
+    log.debug("Leaving AdminConsole.applicationFieldsSection(). " +
+              shown.length + " field(s) in " + groups.length + " group(s).");
+    return '<h2 id="fields">Its configuration</h2>' +
+      this.note('One tab per protocol, each with its own Save, beside the ' +
+      'families this application is declared for. <strong>Save</strong> ' +
+      'writes what changed on that tab and nothing else: a single value is ' +
+      'set, and an empty one is cleared; a list has the values taken out ' +
+      'removed and the values put in added. A list shows one box per value, ' +
+      'with + to add one and the bin to delete one; every box that is there ' +
+      'must hold a value. A field with a fixed set of values offers them to ' +
+      'choose from. These write the same entry an <code>ldapmodify</code> ' +
+      'writes, and RFC 9700 mode reads it on the very next request.') +
+      '<div class="subtabs">' + bar + familiesPanel + groupPanels + '</div>';
   }
 
   // THE TWO PROTOCOL LISTS AN APPLICATION ENTRY CARRIES, SIDE BY SIDE.
@@ -17853,6 +19706,158 @@ class AdminConsole {
   // (`STS-REG-0150`) and the normalisation are there, and
   // `POST /admin-api/applications/add|remove` reaches the same function.
   // ---------------------------------------------------------------------------
+  // -------------------------------------------------------------------------
+  // THE ACCESS TYPES TAB (#432 phase 4): every type this application declares
+  // in the access-type catalogue — `oauthAuthorizationDetailsType`, one
+  // definition per value — with what each declares, a form that declares or
+  // replaces one from named fields, and a Remove per type. Both post to
+  // `/admin/applications` (`set-access-type`, `remove-access-type`), the
+  // actions `/admin-api/applications/{action}` takes too (rule 7).
+  // -------------------------------------------------------------------------
+  /**
+   * Draws an application's Access types tab: the catalogue entries it owns,
+   * and the forms that declare, replace and remove one.
+   *
+   * @param row - the application
+   * @param carryBack - the hidden field that returns to the list's view
+   * @returns the tab's HTML
+   */
+  applicationAccessTypesSection(row, carryBack) {
+    const { log, applications, mode } = this.deps;
+    const self = this;
+    log.debug("Entering AdminConsole.applicationAccessTypesSection().");
+    const held = [].concat((row.fields &&
+                            row.fields.oauthAuthorizationDetailsType) || [])
+      .map(function (one) { return String(one); })
+      .filter(function (one) { return one !== ''; });
+    const listed = function (values) {
+      log.debug("Entering listed().");
+      log.debug("Leaving listed().");
+      return values && values.length
+        ? values.map(function (one) {
+          return '<code>' + self.esc(one) + '</code>';
+        }).join(', ') : '<span class="state-none">any</span>';
+    };
+    const rows = held.map(function (stored) {
+      const d = applications.authorizationDetailsTypeOf(stored);
+      if (d.problem) {
+        return '<tr><td colspan="3"><span class="state-revoked">unusable' +
+          '</span> <code>' + self.esc(stored.slice(0, 200)) + '</code> ' +
+          '&mdash; ' + self.esc(d.problem) + '</td></tr>';
+      }
+      const facts = [
+        ['Actions', listed(d.actions)],
+        ['Datatypes', listed(d.datatypes)],
+        ['Privileges', listed(d.privileges)],
+        ['Locations', d.locations.length ? listed(d.locations)
+          : '<span class="state-none">this application\'s own addresses' +
+            '</span>'],
+        ['Required members', d.required.length ? listed(d.required)
+          : '<span class="state-none">none</span>'],
+        ['Bearer token', d.bearer === false ? 'refused' : (d.bearer === true
+          ? 'allowed' : '<span class="state-none">no rule of its own</span>')],
+        ['Maximum token lifetime', d.maxLifetimeS ? d.maxLifetimeS + ' s'
+          : '<span class="state-none">none</span>'],
+        ['Derivable from', d.derivableFrom.length ? listed(d.derivableFrom)
+          : '<span class="state-none">nothing</span>'],
+        ['Introspection claims', d.introspectionClaims.length
+          ? listed(d.introspectionClaims)
+          : '<span class="state-none">none</span>'],
+        ['Limits schema', d.limits ? '<code>' +
+          self.esc(JSON.stringify(d.limits)) + '</code>'
+          : '<span class="state-none">none: limits are refused</span>'],
+        ['Interaction (phase 6)', self.esc(d.interaction) +
+          (d.consentActions.length ? '; consent forced by ' +
+            listed(d.consentActions) : '')],
+        ['Authentication level (phase 6)', d.acr
+          ? '<code>' + self.esc(d.acr) + '</code>'
+          : '<span class="state-none">none</span>']
+      ].map(function (pair) {
+        return '<div><strong>' + pair[0] + ':</strong> ' + pair[1] + '</div>';
+      }).join('');
+      return '<tr><td><code>' + self.esc(d.type) + '</code>' +
+        (d.description ? '<div class="sub">' + self.esc(d.description) +
+                         '</div>' : '') + '</td><td>' + facts + '</td><td>' +
+        '<form method="post" action="/admin/applications" class="inline">' +
+        carryBack + '<input type="hidden" name="action" ' +
+        'value="remove-access-type"><input type="hidden" name="application" ' +
+        'value="' + self.esc(row.identifier) + '"><input type="hidden" ' +
+        'name="type" value="' + self.esc(d.type) + '"><button type="submit" ' +
+        'class="secondary">Remove</button></form></td></tr>';
+    }).join('');
+    const box = function (id, label, help, rowsN?) {
+      log.debug("Entering box().");
+      log.debug("Leaving box().");
+      return '<div class="formrow"><label for="at-' + id + '">' + label +
+        '</label>' + (rowsN
+          ? '<textarea id="at-' + id + '" name="' + id + '" rows="' + rowsN +
+            '" cols="48"></textarea>'
+          : '<input type="text" id="at-' + id + '" name="' + id +
+            '" size="40">') +
+        '<span class="sub">' + help + '</span></div>';
+    };
+    log.debug("Leaving AdminConsole.applicationAccessTypesSection(). " +
+              held.length + " type(s).");
+    return '<h2>Access types this resource server owns</h2>' +
+      '<p>The <strong>access-type catalogue</strong>: each type here is read ' +
+      'by RFC 9396 <code>authorization_details</code> at the OAuth endpoints ' +
+      'and by GNAP access rights alike, and a token carrying one is for this ' +
+      'application. They are this entry\'s ' +
+      '<code>oauthAuthorizationDetailsType</code>.</p>' +
+      this.note('A type no application declares is refused by RFC 9396 in ' +
+      'every mode, and by GNAP ' +
+      (mode.grantsUncataloguedAccess()
+        ? 'only in product mode &mdash; this realm is in development mode, ' +
+          'where it is granted as asked'
+        : 'in this realm, which is in product mode') +
+      ' (the issuance policy\'s <code>gnap-type-not-catalogued</code> ' +
+      'rule). For GNAP, interaction (always, default, never) and the ' +
+      'actions that force consent decide whether the resource owner must ' +
+      'see the approval page, and the authentication level is what their ' +
+      'session must meet before it is drawn (#432 phase 6).') +
+      '<table><tr><th>Type</th><th>What it declares</th><th></th></tr>' +
+      (rows || '<tr><td colspan="3"><span class="state-none">None.</span>' +
+       '</td></tr>') + '</table>' +
+      '<h3>Declare or replace a type</h3>' +
+      '<form method="post" action="/admin/applications">' + carryBack +
+      '<input type="hidden" name="action" value="set-access-type">' +
+      '<input type="hidden" name="application" value="' +
+      this.esc(row.identifier) + '">' +
+      box('type', 'Type', 'Required. A type of the same name is replaced.') +
+      box('description', 'Description', 'Shown on the consent and approval ' +
+          'pages.') +
+      box('actions', 'Actions', 'One per line; empty allows any.', 3) +
+      box('datatypes', 'Datatypes', 'One per line; empty allows any.', 2) +
+      box('privileges', 'Privileges', 'One per line; empty allows any.', 2) +
+      box('locations', 'Locations', 'One absolute URI per line, beside this ' +
+          'application\'s own addresses.', 2) +
+      box('requiredMembers', 'Required members', 'Member names a right ' +
+          'must carry, one per line.', 2) +
+      box('bearer', 'Bearer token', '<code>false</code> refuses a bearer ' +
+          'token carrying the type; empty sets no rule of its own.') +
+      box('maxLifetimeS', 'Maximum token lifetime (s)', 'A token carrying ' +
+          'the type lives no longer.') +
+      box('derivableFrom', 'Derivable from', 'Types a right of this one may ' +
+          'be derived from at RFC 9767 section 4, one per line.', 2) +
+      box('introspectionClaims', 'Introspection claims', 'The person\'s ' +
+          'claims this resource server is told at introspection, one per ' +
+          'line.', 2) +
+      box('schema', 'Schema', 'A JSON Schema every right of the type must ' +
+          'meet.', 4) +
+      box('limits', 'Limits schema', 'A JSON Schema (a subset: type, ' +
+          'properties, required, bounds, enum, pattern, format) a ' +
+          'right\'s <code>limits</code> must meet; none refuses limits.', 4) +
+      box('interaction', 'Interaction (phase 6)', '<code>always</code>, ' +
+          '<code>default</code> or <code>never</code>.') +
+      box('consentActions', 'Actions forcing consent (phase 6)', 'One per ' +
+          'line.', 2) +
+      box('acr', 'Authentication level (phase 6)', 'One acr value.') +
+      '<div class="formrow"><button type="submit">Save the type</button>' +
+      '</div></form>' +
+      this.note('A definition that does not read is refused with the reason ' +
+      '(<code>STS-REG-0294</code>), and the type already declared stays.');
+  }
+
   /**
    * Draws an application's CORS origins (`appCorsOrigin`), one row each with
    * a Remove button that posts the value as stored, and a form to add one.
@@ -17997,11 +20002,98 @@ class AdminConsole {
       '</table>';
   }
 
+  // ---------------------------------------------------------------------------
+  // APPLICATION PERMISSIONS (#93): the roles this application holds AS
+  // ITSELF, which its client_credentials tokens carry — beside the delegated
+  // permissions above, which it holds on a PERSON's behalf. One store, the
+  // role entry: the forms post to /admin/roles as add-member and
+  // remove-member with `kind=application`, the same act as on that page and
+  // audited the same (`roles.grant`, `roles.revoke`); granting here is the
+  // administrator's consent, and there is no second step. `from` and `client`
+  // bring the browser back to this section.
+  // ---------------------------------------------------------------------------
   /**
-   * Draws an application's delegated permissions: those it holds, with
-   * Revoke; a form to grant another; and those it exposes, read-only.
+   * Draws an application's application permissions: the roles it holds as
+   * itself, each with Remove, and a form to grant another.
    *
-   * The forms post to `/admin/delegation`.
+   * The forms post to `/admin/roles`.
+   *
+   * @param row - the application's registry view
+   * @param state - `adminViews.applicationRolesState()`
+   * @param carryBack - the hidden `back` field every form carries
+   * @returns the section as HTML
+   */
+  applicationRolesSection(row, state, carryBack) {
+    const { log } = this.deps;
+    const self = this;
+    log.debug("Entering AdminConsole.applicationRolesSection(). " +
+              "identifier=" + row.identifier);
+    const identifier = row.identifier;
+    const hidden = function (action, role) {
+      return carryBack +
+        '<input type="hidden" name="action" value="' + action + '">' +
+        '<input type="hidden" name="from" value="/admin/applications">' +
+        '<input type="hidden" name="client" value="' + self.esc(identifier) +
+        '"><input type="hidden" name="kind" value="application">' +
+        '<input type="hidden" name="member" value="' + self.esc(identifier) +
+        '">' + (role === null ? '' : '<input type="hidden" name="role" ' +
+        'value="' + self.esc(role) + '">');
+    };
+    const rows = (state.held || []).map(function (one) {
+      return '<tr><td><a href="/admin/roles#roles"><code>' +
+        self.esc(one.name) + '</code></a>' +
+        (one.displayName ? '<br><span class="sub">' +
+          self.esc(one.displayName) + '</span>' : '') + '</td>' +
+        '<td>' + (one.application
+          ? 'a token for <code>' + self.esc(one.application) + '</code>, as ' +
+            '<code>' + self.esc(one.carriedAs) + '</code>'
+          : 'every token, as <code>' + self.esc(one.carriedAs) + '</code>') +
+        '</td><td>' + (one.permissions.length
+          ? one.permissions.map(function (permission) {
+              return '<div><code>' + self.esc(permission) + '</code></div>';
+            }).join('')
+          : '<span class="state-none">none</span>') + '</td>' +
+        '<td><form method="post" action="/admin/roles">' +
+        hidden('remove-member', one.name) +
+        '<button type="submit" class="danger">Remove</button></form></td>' +
+        '</tr>';
+    }).join('');
+    const options = (state.offerable || []).map(function (name) {
+      return '<option value="' + self.esc(name) + '">' + self.esc(name) +
+             '</option>';
+    }).join('');
+    log.debug("Leaving AdminConsole.applicationRolesSection().");
+    return '<h3 id="app-roles">Application permissions</h3>' +
+      this.note('The roles <code>' + this.esc(identifier) + '</code> holds ' +
+        '<strong>as itself</strong>, which its client_credentials tokens ' +
+        'carry in the roles claim: a realm-wide role in every token, and an ' +
+        'application\'s own role only in a token for that application. ' +
+        'Delegated permissions, above, are what it holds on a person\'s ' +
+        'behalf. Granting a role here is the administrator\'s consent; it ' +
+        'is the same act as adding this application to the role on ' +
+        '<a href="/admin/roles">Roles</a>.') +
+      '<table><thead><tr><th>Role</th><th>Carried in</th><th>Authorizes' +
+      '</th><th></th></tr></thead><tbody>' +
+      (rows || '<tr><td colspan="4"><span class="state-none">It holds no ' +
+               'role.</span></td></tr>') + '</tbody></table>' +
+      (options
+        ? '<form method="post" action="/admin/roles"><div class="formrow">' +
+          hidden('add-member', null) +
+          '<label>Grant <select name="role">' + options + '</select>' +
+          '</label><button type="submit">Grant</button></div></form>'
+        : '<p class="sub">No role admits an application that it does not ' +
+          'already hold. Make one on <a href="/admin/roles#create">Roles' +
+          '</a>.</p>');
+  }
+
+  /**
+   * Draws an application's delegated permissions, both halves: those it
+   * holds, with Revoke, and a form to grant it another; and — for this
+   * application only — its base URI, the permissions it exposes, with
+   * Remove, and the grants of them to other applications, with Revoke and a
+   * form to grant one.
+   *
+   * The forms post to `/admin/delegation-settings`.
    *
    * @param req - the request, whose query carries the paging
    * @param row - the application's registry view
@@ -18028,6 +20120,94 @@ class AdminConsole {
                                      heldPage.paging);
     const exposedNav = this.pageNavPair('/admin/applications', navParams,
                                         exposedPage.paging);
+    const grantedOutPage = state.grantedOutPage;
+    const grantedNav = this.pageNavPair('/admin/applications', navParams,
+                                        grantedOutPage.paging);
+    const baseUri = this.firstFieldValue(row, 'oauthPermissionBaseUri') || '';
+    // THE RESOURCE HALF'S HIDDEN FIELDS (2026-10-01). `resource` is this
+    // entry, so no form on this tab can configure another application's
+    // permissions; `page` brings the reader back here even when the action
+    // names a different `client` (permissionsReturnTo()).
+    const resourceHidden = function (action) {
+      log.debug("Entering resourceHidden().");
+      log.debug("Leaving resourceHidden().");
+      return carryBack +
+        '<input type="hidden" name="action" value="' + action + '">' +
+        '<input type="hidden" name="from" value="/admin/applications">' +
+        '<input type="hidden" name="page" value="' + self.esc(identifier) +
+        '"><input type="hidden" name="resource" value="' +
+        self.esc(identifier) + '">';
+    };
+    // Its own permissions that a client could ask for — those with an
+    // identifier — and every other application to grant them to.
+    const grantOwnOptions = exposes.filter(function (one) {
+      return !!one.id;
+    }).map(function (one) {
+      return '<option value="' + self.esc(one.id) + '">' + self.esc(one.id) +
+             '</option>';
+    }).join('');
+    // WHO TO GRANT IT TO: A SEARCH, NOT A <select> (2026-10-01, rcbj). A
+    // registry can hold thousands of applications, and a dropdown of every
+    // one of them is a control whose size is the registry's. It is
+    // chooserPane() — the same twenty-at-a-time pane, the same clamped
+    // offset — and, as on /admin/caep, a result is a LINK back to this page
+    // with `grantto` naming the pick, which the grant form below then
+    // carries as a hidden `client`. Its three names (`granttoq`,
+    // `granttofrom`, `grantto`) are this pane's own: `q` is the application
+    // list's search, carried in the page's query, and `grantq` is the
+    // register's on the delegation pages.
+    const grantCarry = pageParamsOf(req.query);
+    delete grantCarry.grantto;
+    const grantEntries = state.clients.map(function (one) {
+      return {
+        key: one.identifier,
+        names: [one.identifier, one.name],
+        label: one.name !== one.identifier
+          ? one.name + ' — ' + one.identifier : one.identifier,
+        href: '/admin/applications' + queryWith(grantCarry,
+          { application: identifier, grantto: one.identifier }) +
+          '#find-granttoq'
+      };
+    });
+    // THE PICK, honoured only when it is still an application this page
+    // offers — another application in the registry, never this one. A
+    // hand-written `grantto` naming anything else draws no form at all.
+    const picked = String(pageParamsOf(req.query).grantto || '').trim();
+    const grantTo = state.clients.filter(function (one) {
+      return one.identifier === picked;
+    })[0] || null;
+    const grantChooser = !state.clients.length ? '' : this.chooserPane({
+      here: { path: '/admin/applications', query: req.query },
+      param: 'granttoq', fromParam: 'granttofrom',
+      label: 'Grant to',
+      placeholder: 'part of an application name or identifier',
+      entries: grantEntries, selectedKey: grantTo ? grantTo.identifier : '',
+      nothing: 'No other application in this registry has a name or ' +
+        'identifier containing that.'
+    });
+    const grantedRows = grantedOutPage.shown.map(function (one) {
+      return '<tr><td><a href="' + self.esc('/admin/applications' +
+          queryWith(self.listViewOf('/admin/applications', req.query),
+                    { application: one.client })) + '">' +
+        self.esc(one.clientName) + '</a></td>' +
+        '<td><code>' + self.esc(one.permissionName) + '</code></td>' +
+        '<td><code>' + self.esc(one.permissionId) + '</code></td>' +
+        '<td><code>aud: ' + self.esc(one.baseUri) + '</code><br>' +
+        '<code>scope: ' + self.esc(one.permissionName) + '</code></td>' +
+        '<td>' + (one.asked
+          ? '<span class="state-valid">asked for</span>'
+          : '<span class="state-none">never asked for</span>') + '</td>' +
+        '<td><form method="post" action="/admin/delegation-settings">' +
+          carryBack + '<div class="formrow">' +
+          '<input type="hidden" name="action" value="revoke-permission">' +
+          '<input type="hidden" name="from" value="/admin/applications">' +
+          '<input type="hidden" name="page" value="' + self.esc(identifier) +
+          '"><input type="hidden" name="client" value="' +
+          self.esc(one.client) + '"><input type="hidden" ' +
+          'name="permission" value="' + self.esc(one.permissionId) + '">' +
+          '<button type="submit" class="danger">Revoke</button>' +
+          '</div></form></td></tr>';
+    }).join('');
     const options = offerable.map(function (one) {
       return '<option value="' + self.esc(one.id) + '">' + self.esc(one.id) +
              ' — exposed by ' + self.esc(one.resourceName) + '</option>';
@@ -18065,10 +20245,11 @@ class AdminConsole {
           : '<span class="state-none" title="It has never asked for this ' +
             'one. A configured grant nobody has needed is exactly what this ' +
             'register is here to show.">never asked for</span>') + '</td>' +
-        // THE ROW BUTTON POSTS TO /admin/delegation TOO, for the reason the
-        // header gives — and it needs no `client` select either, because the
-        // row IS the pair.
-        '<td><form method="post" action="/admin/delegation">' + carryBack +
+        // THE ROW BUTTON POSTS TO /admin/delegation-settings TOO, for the
+        // reason the header gives — and it needs no `client` select either,
+        // because the row IS the pair.
+        '<td><form method="post" action="/admin/delegation-settings">' +
+          carryBack +
           '<div class="formrow">' +
           '<input type="hidden" name="action" value="revoke-permission">' +
           '<input type="hidden" name="from" value="/admin/applications">' +
@@ -18091,7 +20272,7 @@ class AdminConsole {
           : '<span class="state-revoked" title="This application has no ' +
             'oauthPermissionBaseUri, and a permission is named by its base ' +
             'URI followed by its name — so no client can ever ask for this ' +
-            'one. Set the base on the Delegation page and it resolves.">no ' +
+            'one. Set the base below and it resolves.">no ' +
             'identifier &mdash; this application has no base ' +
             'URI</span>') + '</td>' +
         '<td class="num">' + (one.grantedTo.length
@@ -18105,7 +20286,15 @@ class AdminConsole {
                 ' <span class="state-none" title="Granted and never asked ' +
                 'for.">(unused)</span>');
             }).join('<br>')
-          : '<span class="state-none">&mdash;</span>') + '</td></tr>';
+          : '<span class="state-none">&mdash;</span>') + '</td>' +
+        // REMOVE, for this application's own permission (2026-10-01). It
+        // does not revoke the grants naming it; they become dangling, as on
+        // the register.
+        '<td><form method="post" action="/admin/delegation-settings">' +
+        resourceHidden('remove-permission') +
+        '<input type="hidden" name="name" value="' + self.esc(one.name) +
+        '"><button type="submit" class="danger">Remove</button></form>' +
+        '</td></tr>';
     }).join('');
 
     log.debug("Leaving AdminConsole.applicationPermissionsSection(). " +
@@ -18122,10 +20311,11 @@ class AdminConsole {
       'them. The grant lands on the CLIENT\'s entry — this one — as a value ' +
       'of <code>oauthDelegatedPermission</code>, because the client is the ' +
       'party that will name the permission in a <code>scope</code>. <a ' +
-      'href="/admin/delegation#allowed">The Delegation page</a> is the whole ' +
-      'register across every application, with the picture of it; this is ' +
-      'the one entry\'s half of it, where the client is settled by the page ' +
-      'rather than chosen out of a list.') +
+      'href="/admin/delegation-settings#allowed">Protocols &rsaquo; ' +
+      'Delegation</a> is the whole register across every application, and ' +
+      '<a href="/admin/delegation/allowed">its picture</a> draws it; this is ' +
+      'the one entry\'s part of it, where one half of every pair is settled ' +
+      'by the page rather than chosen out of a list.') +
 
       this.note('<strong>Then it asks for one as an ordinary OAuth ' +
       'scope.</strong> <code>scope=openid https://example.com/write</code> ' +
@@ -18137,7 +20327,8 @@ class AdminConsole {
       'mode an ungranted permission is refused; in development it REFUSES ' +
       'nothing by default.</strong> With ' +
       '<code>oauth2.delegatedPermissionsEnforced</code> off — which it is ' +
-      'unless somebody turned it on, at the foot of the Delegation page — an ' +
+      'unless somebody turned it on, on <a href="/admin/oauth2">OAuth 2.0 ' +
+      '/ OIDC settings</a> — an ' +
       'ungranted permission is honoured exactly as a granted one is and ' +
       'merely recorded as ungranted.') +
 
@@ -18163,8 +20354,8 @@ class AdminConsole {
           'Token already is, and <code>app_permissions.js</code> refuses ' +
           'that grant however it arrives; the ones it holds are left out ' +
           'because granting a value an entry already carries writes nothing.') +
-          '<form method="post" action="/admin/delegation">' + carryBack +
-          '<div class="formrow">' +
+          '<form method="post" action="/admin/delegation-settings">' +
+          carryBack + '<div class="formrow">' +
             '<input type="hidden" name="action" value="grant-permission">' +
             // WHERE TO GO AFTERWARDS. Not a URL — a NAME, checked against a
             // table in permissionsReturnTo() and spent by rebuilding the path
@@ -18188,26 +20379,99 @@ class AdminConsole {
             : 'No application in this registry exposes an API yet. A ' +
               'permission must be DEFINED before it can be GRANTED, which is ' +
               'the one ordering rule this feature has.') +
-          ' <a href="/admin/delegation#allowed">Expose an API and define a ' +
-          'permission on the Delegation page</a>, and it appears here.')) +
+          ' Another application exposes one on its own Permissions tab, ' +
+          'or on <a href="/admin/delegation-settings#allowed">Protocols ' +
+          '&rsaquo; Delegation</a>, and it appears here.')) +
 
-      '<h3>What it exposes</h3>' +
-      this.note('The other half of the same question, and it is READ-ONLY ' +
-      'here on purpose. Giving this application a base URI and defining ' +
-      'permissions on it are configuration of the RESOURCE, which is one ' +
-      'form each on <a href="/admin/delegation#allowed">the Delegation ' +
-      'page</a> — where the reader is looking at the register rather than at ' +
-      'one entry. Everything below is <code>oauthPermissionBaseUri</code> ' +
-      'and <code>oauthPermission</code> on this entry, and the attribute ' +
-      'table above shows both raw.') +
+      '<h3 id="permissions-exposed">What it exposes</h3>' +
+      this.note('<strong>The RESOURCE half, configured here for this ' +
+      'application only</strong> (2026-10-01): its base URI, the ' +
+      'permissions it defines on it, and which OTHER applications hold ' +
+      'them. Everything below is <code>oauthPermissionBaseUri</code> and ' +
+      '<code>oauthPermission</code> on this entry, and ' +
+      '<code>oauthDelegatedPermission</code> on each client\'s. <a ' +
+      'href="/admin/delegation-settings#allowed">Protocols &rsaquo; ' +
+      'Delegation</a> is the same register across every application.') +
       exposedNav.head +
       '<table><tr><th>Permission</th><th>Identifier &mdash; what a client ' +
-      'sends</th><th>Held by</th><th>Which applications</th></tr>' +
-      (exposedRows || '<tr><td colspan="4">It exposes none. An application ' +
-        'exposes an API by being given a base URI and then having ' +
-        'permissions defined on it, both on the Delegation page.</td></tr>') +
+      'sends</th><th>Held by</th><th>Which applications</th><th></th></tr>' +
+      (exposedRows || '<tr><td colspan="5">It exposes none. Give it a base ' +
+        'URI and define a permission on it, below.</td></tr>') +
       '</table>' +
-      exposedNav.foot;
+      exposedNav.foot +
+
+      '<h4>Expose an API</h4>' +
+      this.note('The base URI is one answer per application and every ' +
+      'permission it exposes hangs off it' +
+      (baseUri
+        ? ' &mdash; this one\'s is <code>' + this.esc(baseUri) + '</code>.'
+        : '. <strong>This one has none</strong>, so no client can ask for ' +
+          'a permission it defines until it is set.') +
+      ' A trailing separator is added where there is none; clearing it ' +
+      'leaves the permissions with no identifier.') +
+      '<form method="post" action="/admin/delegation-settings">' +
+      resourceHidden('set-permission-base') +
+      '<div class="formrow"><label for="app-baseUri">Base URI</label>' +
+      '<input type="text" id="app-baseUri" name="baseUri" size="34" ' +
+      'value="' + this.esc(baseUri) + '" ' +
+      'placeholder="https://example.com/"><button type="submit">Set the ' +
+      'base URI</button></div></form>' +
+
+      '<h4>Define a permission</h4>' +
+      this.note('The name ends up on the token\'s <code>scope</code> ' +
+      'claim, so it must be a legal OAuth scope token (RFC 6749 section ' +
+      '3.3) and not contain <code>|</code>. It is defined on THIS ' +
+      'application; to define one on another, open that application.') +
+      '<form method="post" action="/admin/delegation-settings">' +
+      resourceHidden('define-permission') +
+      '<div class="formrow"><label for="app-perm-name">Name</label>' +
+      '<input type="text" id="app-perm-name" name="name" size="18" ' +
+      'placeholder="write"><label for="app-perm-description">Description' +
+      '</label><input type="text" id="app-perm-description" ' +
+      'name="description" size="34" placeholder="Change widgets on ' +
+      'somebody\'s behalf"><button type="submit">Define it</button>' +
+      '</div></form>' +
+
+      '<h4 id="permissions-granted">Grants &mdash; the delegation ' +
+      'relationships</h4>' +
+      this.note('<strong>Which other applications hold this one\'s ' +
+      'permissions</strong>, one row per (client, permission). Granting ' +
+      'here offers only permissions <code>' + this.esc(identifier) +
+      '</code> exposes, to any application but itself, found by a search ' +
+      'rather than a list of every one; the grant still ' +
+      'lands on the CLIENT\'s entry, so it reads back on that ' +
+      'application\'s own tab as something it holds.') +
+      grantedNav.head +
+      '<table><tr><th>Client &mdash; who may ask</th><th>Permission</th>' +
+      '<th>Identifier</th><th>What the access token will say</th>' +
+      '<th>Ever asked for?</th><th></th></tr>' +
+      (grantedRows || '<tr><td colspan="6">No other application holds ' +
+        'one of its permissions.</td></tr>') +
+      '</table>' +
+      grantedNav.foot +
+      (grantOwnOptions && state.clients.length
+        ? grantChooser +
+          (grantTo
+            ? '<form method="post" action="/admin/delegation-settings">' +
+              resourceHidden('grant-permission') +
+              '<input type="hidden" name="client" value="' +
+              this.esc(grantTo.identifier) + '">' +
+              '<div class="formrow"><span>Grant <strong>' +
+              this.esc(grantTo.name !== grantTo.identifier
+                ? grantTo.name + ' — ' + grantTo.identifier
+                : grantTo.identifier) +
+              '</strong></span><label for="grant-own-permission">the ' +
+              'permission</label><select id="grant-own-permission" ' +
+              'name="permission">' + grantOwnOptions + '</select>' +
+              '<button type="submit">Grant it</button></div></form>'
+            : this.note('Search for the application above and pick it; ' +
+              'the grant form appears here with it chosen.'))
+        : this.note(grantOwnOptions
+          ? 'There is no other application in this registry to grant one ' +
+            'to.'
+          : 'There is nothing of its own to grant yet: define a ' +
+            'permission above, with a base URI set, and it can be granted ' +
+            'here.'));
   }
 
   // ---------------------------------------------------------------------------
@@ -18333,7 +20597,10 @@ class AdminConsole {
     log.debug("Leaving AdminConsole.applicationReturnTo().");
     return '/admin/applications' +
            queryWith(listView, { application: String(identifier) }) +
-           (anchor === '#credentials' ? anchor : '');
+           (anchor === '#credentials' || anchor === '#fields' ||
+            anchor === '#signals' ||
+            /^#(?:tab|cfg|credentials)-[a-z0-9-]+$/.test(
+              String(anchor || '')) ? anchor : '');
   }
 
   // And a PERSON's page (2026-09-13), whose Credentials section draws the same
@@ -18354,9 +20621,13 @@ class AdminConsole {
     log.debug("Entering AdminConsole.userReturnTo(). key=" + key);
     const listView = this.listViewFromBack('/admin/users', body && body.back);
     log.debug("Leaving AdminConsole.userReturnTo().");
+    // Each anchor is inside one tab of the person's page (2026-10-01), so
+    // landing on it shows that tab.
     return '/admin/users' + queryWith(listView, { user: String(key) }) +
-           (['#credentials', '#credential-controls',
-             '#attributes'].indexOf(anchor) >= 0
+           (['#credentials', '#credential-controls', '#second-factors',
+             '#attributes', '#mail', '#person-fields',
+             '#federation-links'].indexOf(anchor) >= 0 ||
+            /^#ufg-[a-z]+$/.test(String(anchor || ''))
              ? anchor : '');
   }
 
@@ -18416,6 +20687,121 @@ class AdminConsole {
   // **NO SCRIPT.** The secret is behind a `<details>`, which is how this
   // console folds everything, and the upload is two textareas.
   // ---------------------------------------------------------------------------
+  // ---------------------------------------------------------------------------
+  // THE APPLICATION'S SHARED SIGNALS STREAMS (2026-10-01). Each stream this
+  // application created at /ssf/stream, with the members its RECEIVER set
+  // (SSF 1.0 section 8.1.1: delivery, events_requested, format,
+  // description) shown and not edited here — changing them is the
+  // receiver's act through the stream management API. What an administrator
+  // may do to a stream is its STATUS, which is a transmitter-initiated change
+  // section 8.1.2 says must be announced: Pause and Enable post the existing
+  // `status` action, which sends stream-updated first. Beneath it, every
+  // per-receiver setting in force for these streams and where it comes from;
+  // they are edited in the field grid's Shared Signals group.
+  // ---------------------------------------------------------------------------
+  /**
+   * Draws the Shared Signals section of an application's page: its streams,
+   * Pause and Enable for each, and the settings in force for them.
+   *
+   * @param view - the page's view, from `applicationDetailJson()`
+   * @param carryBack - the hidden field carrying the list's place
+   * @param writable - whether the reader holds Admin Write, which is what
+   *   draws the Pause and Enable buttons
+   * @returns the section as HTML, or '' for an application that has no
+   *   Shared Signals family declared and owns no stream
+   */
+  applicationSignalsSection(view, carryBack, writable) {
+    const { log } = this.deps;
+    const self = this;
+    log.debug("Entering AdminConsole.applicationSignalsSection().");
+    const row = view.row;
+    const state = view.signalsState;
+    const declared = (row.allowedProtocols || []).indexOf('ssf') >= 0;
+    if (!state || (!declared && !state.streams.length)) {
+      log.debug("Leaving AdminConsole.applicationSignalsSection(). Not a " +
+                "receiver.");
+      return '';
+    }
+    const statusForm = function (stream, status, label) {
+      return '<form method="post" action="/admin/ssf" class="inline">' +
+        carryBack +
+        '<input type="hidden" name="action" value="status">' +
+        '<input type="hidden" name="stream_id" value="' +
+        self.esc(stream.stream_id) + '">' +
+        '<input type="hidden" name="status" value="' + status + '">' +
+        '<input type="hidden" name="reason" value="set by an administrator ' +
+        'from the application\'s page">' +
+        '<input type="hidden" name="from" value="application">' +
+        '<input type="hidden" name="application" value="' +
+        self.esc(row.identifier) + '">' +
+        '<button type="submit" class="secondary"' +
+        self.tip(status === 'paused'
+          ? 'Stop delivering events on this stream. The receiver is told ' +
+            'the stream is paused first; events are held, not dropped.'
+          : 'Deliver events on this stream again, held ones first. The ' +
+            'receiver is told the stream is enabled.') + '>' + label +
+        '</button></form>';
+    };
+    const list = function (values) {
+      return values.length ? values.map(function (one) {
+        return '<code>' + self.esc(one) + '</code>';
+      }).join('<br>') : '<span class="state-none">none</span>';
+    };
+    const streams = state.streams.map(function (stream) {
+      return '<tr><td><code>' + self.esc(stream.stream_id) + '</code><br>' +
+        '<span class="sub">aud <code>' + self.esc(String(stream.aud)) +
+        '</code></span></td><td>' + self.esc(stream.status) +
+        (stream.statusReason
+          ? '<br><span class="sub">' + self.esc(stream.statusReason) +
+            '</span>' : '') + '</td><td><code>' +
+        self.esc((stream.delivery && stream.delivery.method) || '') +
+        '</code>' + (stream.delivery && stream.delivery.endpoint_url
+          ? '<br><code>' + self.esc(stream.delivery.endpoint_url) + '</code>'
+          : '') + '</td><td>' + list(stream.events_requested) + '</td><td>' +
+        list(stream.events_delivered) + '</td><td>' +
+        (stream.format ? '<code>' + self.esc(stream.format) + '</code>'
+          : '<span class="state-none">default</span>') +
+        (stream.description
+          ? '<br><span class="sub">' + self.esc(stream.description) +
+            '</span>' : '') + '</td><td>' +
+        (writable
+          ? (stream.status === 'enabled'
+            ? statusForm(stream, 'paused', 'Pause')
+            : statusForm(stream, 'enabled', 'Enable'))
+          : '') + '</td></tr>';
+    }).join('');
+    const settings = state.settings.map(function (one) {
+      return '<tr><td><code>' + self.esc(one.setting) + '</code></td><td>' +
+        '<code>' + self.esc(String(one.value)) + '</code></td><td>' +
+        (one.source === 'application'
+          ? 'this application (<code>' + self.esc(one.attribute) +
+            '</code>)'
+          : 'the setting') + '</td></tr>';
+    }).join('');
+    log.debug("Leaving AdminConsole.applicationSignalsSection(). " +
+              state.streams.length + " stream(s).");
+    return '<h2 id="signals">Shared Signals</h2>' +
+      this.note('The CAEP and RISC streams this application created at ' +
+        '<code>/ssf/stream</code>, matched by its identifier or its ' +
+        '<code>ssfReceiverId</code> values. The members each shows are the ' +
+        'ones its receiver set (SSF 1.0 section 8.1.1), so they are changed ' +
+        'by the receiver and not here. Pausing or enabling a stream is the ' +
+        'transmitter\'s act, and its receiver is sent a ' +
+        '<code>stream-updated</code> event first. Every new stream starts ' +
+        'from the defaults in the second table; change one in the field ' +
+        'grid\'s Shared Signals group below.') +
+      (state.installed ? '' : this.warn('ssf/ssf.ts is not loaded in this ' +
+        'process, so no stream can be listed.')) +
+      (state.streams.length
+        ? '<table><tr><th>Stream</th><th>Status</th><th>Delivery</th>' +
+          '<th>Requested</th><th>Delivered</th><th>Format</th><th></th></tr>' +
+          streams + '</table>'
+        : '<p class="sub">This application has created no stream yet.</p>') +
+      '<h3>What its streams are sent with</h3>' +
+      '<table><tr><th>Setting</th><th>In force</th><th>From</th></tr>' +
+      settings + '</table>';
+  }
+
   /**
    * Draws an application's Credentials section: the client secret with its
    * regenerate and rotate forms, the assertion profiles' key pairs with
@@ -18444,25 +20830,64 @@ class AdminConsole {
              '">';
     };
     const secret = state.clientSecret;
-    const secretHtml = '<h3 id="credentials-secret">Client secret</h3>' +
+    const isoOf = function (seconds) {
+      log.debug("Entering isoOf().");
+      log.debug("Leaving isoOf().");
+      return new Date(seconds * 1000).toISOString();
+    };
+    // ONE ROW PER SECRET (2026-10-01, rcbj): its id and description, its
+    // value behind a fold as the one secret always was, when it EXPIRES —
+    // the column this section was asked for — and a Remove button.
+    const secretRows = secret.secrets.map(function (one) {
+      const value = secret.values[one.id] || '';
+      return '<tr><td><code>' + self.esc(one.id) + '</code>' +
+        (one.primary ? ' <span class="state-valid" title="The newest ' +
+          'unexpired secret: the one this service signs and encrypts with, ' +
+          'and the client_secret RFC 7591 and 7592 return.">primary</span>'
+          : '') +
+        (one.description ? '<div class="sub">' + self.esc(one.description) +
+          '</div>' : '') +
+        (one.createdAt ? '<div class="sub">created <code>' +
+          self.esc(isoOf(one.createdAt)) + '</code></div>' : '') +
+        '</td><td><details class="fold"><summary>Show the client secret' +
+        '</summary><code>' + self.esc(value) + '</code></details></td>' +
+        '<td>' + (one.expiresAt
+          ? '<code>' + self.esc(isoOf(one.expiresAt)) + '</code>' +
+            (one.expired ? '<div class="sub warn">expired' +
+              ' &mdash; product mode refuses it</div>' : '')
+          : '<span class="state-none">never</span>') + '</td>' +
+        '<td><form method="post" action="/admin/applications">' + carryBack +
+        hidden('action', 'remove-secret') + hidden('application', id) +
+        hidden('secret', one.id) +
+        '<button type="submit" class="danger">Remove</button></form></td>' +
+        '</tr>';
+    }).join('');
+    const atCap = secret.secrets.length >= secret.max;
+    const secretHtml = '<h3 id="credentials-secret">Client secrets</h3>' +
       this.note('<code>oauthClientSecret</code> is what ' +
       '<code>client_secret_basic</code>, <code>client_secret_post</code> and ' +
       '<code>client_secret_jwt</code> authenticate with. The token endpoint ' +
-      'CHECKS it in RFC 9700 mode and in product mode. <strong>Regenerating ' +
-      'replaces it at once</strong>: the old secret stops authenticating on ' +
-      'the next request, so the client has to be given the new one before it ' +
-      'next asks for a token. The new value is minted here &mdash; ' +
+      'CHECKS it in RFC 9700 mode and in product mode. <strong>An ' +
+      'application may hold several</strong> (at most ' +
+      '<code>oauth2.clientSecretsMax</code>, ' + this.esc(String(secret.max)) +
+      '), each with its own expiry: every unexpired secret authenticates, ' +
+      'and the NEWEST unexpired one is the <em>primary</em> &mdash; the one ' +
+      'this service signs HS256 ID Tokens and JARM responses with, keys ' +
+      'symmetric encryption with, and returns as RFC 7591&rsquo;s ' +
+      '<code>client_secret</code>. A new value is minted here &mdash; ' +
       '<code>oauth2.registeredSecretBytes</code> random bytes, as a ' +
-      'registration mints one &mdash; and never typed.') +
-      '<table><tr><th>Credential</th><th>Held</th></tr>' +
-      '<tr><td><code>oauthClientSecret</code>' +
+      'registration mints one &mdash; and never typed. The daily job ' +
+      '<code>oauth2.client-secret-expiry</code> warns before one expires ' +
+      'and removes expired ones, never the last one held.') +
+      '<table><tr><th>Secret</th><th>Value</th><th>Expires</th><th></th>' +
+      '</tr>' +
+      (secretRows || '<tr><td colspan="4"><span class="state-none">This ' +
+        'application holds no client secret.</span></td></tr>') +
+      '</table>' +
       (secret.authMethod
-        ? '<div class="sub">token endpoint auth method <code>' +
-          this.esc(secret.authMethod) + '</code></div>' : '') + '</td><td>' +
-      (secret.held
-        ? '<details class="fold"><summary>Show the client secret</summary>' +
-          '<code>' + this.esc(secret.value) + '</code></details>'
-        : '<span class="state-none">none</span>') + '</td></tr>' +
+        ? '<p class="sub">Token endpoint auth method <code>' +
+          this.esc(secret.authMethod) + '</code>.</p>' : '') +
+      '<table><tr><th>Credential</th><th>Held</th></tr>' +
       '<tr><td><code>appRegistrationAccessToken</code><div class="sub">RFC ' +
       '7592&rsquo;s credential for reading and changing the registration ' +
       '&mdash; not a client secret</div></td><td>' +
@@ -18471,33 +20896,50 @@ class AdminConsole {
           '</summary><code>' + this.esc(secret.registrationAccessToken) +
           '</code></details>'
         : '<span class="state-none">none</span>') + '</td></tr></table>' +
-      '<form method="post" action="/admin/applications">' + carryBack +
-      '<div class="formrow">' + hidden('action', 'regenerate-secret') +
-      hidden('application', id) +
-      '<button type="submit"' + (secret.held ? ' class="danger"' : '') + '>' +
-      (secret.held ? 'Regenerate the client secret'
-                   : 'Generate a client secret') + '</button>' +
-      '<span class="sub">' + (secret.held
-        ? 'The current secret stops working immediately.'
-        : 'This application holds none yet.') + '</span></div></form>' +
+      // ADD ONE BESIDE THE OTHERS (2026-10-01): the new secret is the newest,
+      // so it becomes the primary; the others go on authenticating.
+      (atCap
+        ? this.note('It holds ' + secret.secrets.length + ' secret(s), ' +
+          'which is <code>oauth2.clientSecretsMax</code>. Remove one to add ' +
+          'or rotate in another.')
+        : '<form method="post" action="/admin/applications">' + carryBack +
+          '<div class="formrow">' + hidden('action', 'add-secret') +
+          hidden('application', id) +
+          '<label for="secret-lifetime">Lifetime (days)</label>' +
+          '<input type="number" id="secret-lifetime" name="lifetimeDays" ' +
+          'min="0" max="730" step="1" placeholder="' +
+          this.esc(String(secret.defaultLifetimeDays)) + '">' +
+          '<label for="secret-description">Description</label>' +
+          '<input type="text" id="secret-description" name="description" ' +
+          'size="28" maxlength="200" placeholder="what it is for">' +
+          '<button type="submit">Add a client secret</button>' +
+          '<span class="sub">Empty lifetime: ' +
+          '<code>oauth2.clientSecretLifetimeDays</code> (' +
+          (secret.defaultLifetimeDays
+            ? this.esc(String(secret.defaultLifetimeDays)) + ' days'
+            : 'never expires') + '); 0 never expires. The existing ' +
+          'secrets keep working.</span></div></form>') +
       // ROTATION WITH AN OVERLAP (#49 P5): the one to use for a client in
-      // service — the old secret keeps working while it changes over.
-      (secret.held
+      // service — the live secrets keep working while it changes over.
+      (secret.held && !atCap
         ? '<form method="post" action="/admin/applications">' + carryBack +
           '<div class="formrow">' + hidden('action', 'rotate-secret') +
           hidden('application', id) +
           '<button type="submit">Rotate the client secret</button>' +
-          '<span class="sub">A new secret; the current one goes on working ' +
-          'for oauth2.clientSecretOverlapS so the client can change over.' +
-          (secret.previousUntil
-            ? ' The secret an earlier rotation replaced works until ' +
-              this.esc(new Date(secret.previousUntil).toISOString()) + '.'
-            : '') +
-          (secret.expiresAt
-            ? ' The current secret expires at ' +
-              this.esc(new Date(secret.expiresAt * 1000).toISOString()) + '.'
-            : '') + '</span></div></form>'
-        : '');
+          '<span class="sub">A new secret; every unexpired one goes on ' +
+          'working for <code>oauth2.clientSecretOverlapS</code> (' +
+          this.esc(String(secret.overlapS)) + ' seconds) and then ' +
+          'expires.</span></div></form>'
+        : '') +
+      '<form method="post" action="/admin/applications">' + carryBack +
+      '<div class="formrow">' + hidden('action', 'regenerate-secret') +
+      hidden('application', id) +
+      '<button type="submit"' + (secret.held ? ' class="danger"' : '') + '>' +
+      (secret.held ? 'Regenerate: replace every secret'
+                   : 'Generate a client secret') + '</button>' +
+      '<span class="sub">' + (secret.held
+        ? 'Every secret it holds stops working immediately.'
+        : 'This application holds none yet.') + '</span></div></form>';
 
     const algOptions = state.ca.keyAlgorithms.map(function (one) {
       return '<option value="' + self.esc(one.id) + '">' + self.esc(one.label) +
@@ -19037,6 +21479,50 @@ class AdminConsole {
   // convention pagingOf()'s header describes for a view that holds more than
   // the list views do, and the shape to grow into when this page gains a second
   // list.
+  // ---------------------------------------------------------------------------
+  // TABS WITH NO SCRIPT (2026-10-01).
+  //
+  // rcbj asked for an application's page to be tabs across the top, one per
+  // section, so a reader does not scroll past a dozen sections to reach one.
+  // This console is `script-src 'none'`, so a tab is a LINK to its panel's
+  // fragment and the stylesheet shows the panel that is `:target`, or holds
+  // the target (`:has(:target)`), and the first one when nothing is targeted.
+  // That is what makes every control on a tab come back to it: a form's
+  // answer lands at a fragment inside its own panel (withReturnAnchors(), or
+  // the anchor its handler names), so the panel is shown and the page opens
+  // where the button was. Every panel is in the page, so a search of the
+  // page, a printout and a browser without `:has()` (which shows them all)
+  // see everything. A panel with nothing in it gets no tab.
+  // ---------------------------------------------------------------------------
+  /**
+   * Draws panels as tabs: a bar of links, then each panel with something in
+   * it, the first shown when no fragment picks one.
+   *
+   * @param cls - an extra class for the container
+   * @param panels - `{ id, label, html }` in tab order
+   * @returns the tabs as HTML
+   */
+  tabbedPanels(cls, panels) {
+    const { log } = this.deps;
+    const self = this;
+    log.debug("Entering AdminConsole.tabbedPanels().");
+    const shown = panels.filter(function (one) {
+      return String(one.html || '').trim() !== '';
+    });
+    log.debug("Leaving AdminConsole.tabbedPanels(). " + shown.length +
+              " tab(s).");
+    return '<div class="tabs ' + this.esc(cls) + '">' +
+      '<nav class="tabbar" aria-label="Sections of this page">' +
+      shown.map(function (one, n) {
+        return '<a' + (n === 0 ? ' class="first"' : '') + ' href="#' +
+          self.esc(one.id) + '">' + self.esc(one.label) + '</a>';
+      }).join('') + '</nav>' +
+      shown.map(function (one, n) {
+        return '<section class="tabpanel' + (n === 0 ? ' first' : '') +
+          '" id="' + self.esc(one.id) + '">' + one.html + '</section>';
+      }).join('') + '</div>';
+  }
+
   /**
    * Draws one application's page: its summary, every attribute of its
    * directory entry, and the sections and forms that change it.
@@ -19046,10 +21532,12 @@ class AdminConsole {
    *
    * @param req - the request
    * @param identifier - the application's identifier
+   * @param state - optional; a redraw of the field grid's own form: `draft`
+   *   (the posted form) and `error` (a refusal's sentences)
    * @returns `inner` (the page body as HTML), `json`, and `missing` when
    *   not found
    */
-  applicationDetailPage(req, identifier) {
+  applicationDetailPage(req, identifier, state?) {
     const { log, adminViews, queryWith, pageParamsOf } = this.deps;
     const self = this;
     log.debug("Entering AdminConsole.applicationDetailPage(). identifier=" +
@@ -19116,15 +21604,27 @@ class AdminConsole {
           '</td></tr>';
     }).join('');
 
-    const inner = this.messagesOf(req) +
-      '<h2><code>' + this.esc(row.identifier) + '</code></h2>' +
-      '<div class="tiles">' +
-      this.tile(row.authentications, 'Authentications') +
-      this.tile(row.sessions, 'Sessions') +
-      this.tile(row.users, 'Users') +
-      this.tile(row.registered || row.registeredBy ? 'yes' : 'no',
-                'Registered') +
-      '</div>' +
+    const refused = state && state.error && state.error.length
+      ? '<div class="warn"><strong>The save was refused.</strong><ul>' +
+        state.error.map(function (one) {
+          return '<li>' + self.esc(one) + '</li>';
+        }).join('') + '</ul></div>'
+      : '';
+    // THE PAGE IS TABS (2026-10-01), one per section that has something to
+    // show, so a reader is not scrolling past a dozen sections to reach one.
+    // `tabbedPanels()` argues the mechanism: no script, the fragment decides.
+    // A TAB FOR A PROTOCOL THIS APPLICATION IS NOT DECLARED FOR IS NOT
+    // DRAWN (rcbj, 2026-10-01): the page offers what its protocols use.
+    const declaredHere = [].concat(row.allowedProtocols || []);
+    const forFamilies = function (families, html) {
+      return families.some(function (one) {
+        return declaredHere.indexOf(one) >= 0;
+      }) ? html : '';
+    };
+    const OAUTH = ['oauth2', 'oidc', 'oid4vci', 'mtls'];
+    const panels = [
+      { id: 'tab-overview', label: 'Overview',
+        html: '<h3>What it is</h3>' +
       '<table><tr><th>Thing</th><th>Value</th></tr>' +
       // FIRST, because it is the thing this page could not previously answer:
       // where in the tree this application lives. The registry is the
@@ -19157,16 +21657,83 @@ class AdminConsole {
           .join('<br>')
         : '<span class="state-none">nothing recorded</span>') + '</td></tr>' +
       '</table>' +
-      this.protocolFamilySection(row) +
-      // WHAT BROWSER PAGES MAY CALL IT, beside what protocols it is for: both
-      // are what this application is allowed to do, and the CORS list is the
-      // one of the two a person edits value by value.
-      this.applicationCorsSection(row, carryBack) +
-      // THE CREDENTIALS, above the raw entry because they are what a reader
-      // most often opens this page to find — see the section's header.
-      this.applicationCredentialsSection(req, view, carryBack) +
-      this.applicationSoftwareStatementSection(req, view, carryBack) +
-      '<h2>Its directory entry</h2><p class="sub">Every attribute the entry ' +
+          this.protocolFamilySection(row) },
+      { id: 'tab-config', label: 'Configuration',
+        html: this.applicationFieldsSection(req, row, carryBack, state) },
+      // EVERY CREDENTIAL IN ONE PLACE (rcbj, 2026-10-01): the DID key pair is
+      // here as well as on the DID configuration tab, for an application
+      // declared for `did`.
+      { id: 'tab-credentials', label: 'Credentials',
+        html: forFamilies(OAUTH,
+          this.applicationCredentialsSection(req, view, carryBack)) +
+          forFamilies(['did'], '<h3 id="credentials-did">DID key pair</h3>' +
+            this.applicationDidPanel(req, row, carryBack, 'credentials')) +
+          forFamilies(['acme', 'est', 'scep'],
+            '<h3 id="credentials-enroll">Certificates over ACME, EST and ' +
+            'SCEP</h3>' + this.applicationEnrollmentPanel(req, row, carryBack,
+                                                          'credentials')) },
+      { id: 'tab-origins', label: 'Browser origins',
+        html: this.applicationCorsSection(row, carryBack) },
+      // THE ACCESS-TYPE CATALOGUE (#432 phase 4): the types this
+      // application, as a resource server, owns — read by RFC 9396 and GNAP
+      // alike, so drawn for either.
+      { id: 'tab-access-types', label: 'Access types',
+        html: forFamilies(OAUTH.concat(['gnap']),
+          this.applicationAccessTypesSection(row, carryBack)) },
+      { id: 'tab-signals', label: 'Shared Signals',
+        html: forFamilies(['ssf'], this.applicationSignalsSection(view,
+          carryBack, this.mayWrite(req))) },
+      { id: 'tab-statements', label: 'Software statements',
+        html: forFamilies(OAUTH, this.applicationSoftwareStatementSection(req,
+          view, carryBack)) },
+      { id: 'tab-addresses', label: 'Return addresses',
+        html: this.applicationObservedAddressesSection(req, view, carryBack) },
+      // AFTER the generic attribute editor in the page this was. The editor
+      // can already write `oauthDelegatedPermission` by hand — it is an
+      // ordinary multi-valued attribute in the EDITABLE table — so this
+      // section is a second DOOR onto it and not a second place it lives,
+      // which is the one-store rule /admin/token-lifetimes' header argues.
+      { id: 'tab-permissions', label: 'Permissions',
+        html: forFamilies(OAUTH,
+          this.applicationPermissionsSection(req, row, carryBack)) },
+      // AND WHAT IT MAY DO AS ITSELF (#93): the roles it holds.
+      { id: 'tab-roles', label: 'Roles',
+        html: this.applicationRolesSection(row, view.rolesState, carryBack) },
+      // THE METADATA REFRESH, the only control on this page that reaches off
+      // this machine, drawn only for an application that names a URL — see
+      // sp_metadata.ts.
+      { id: 'tab-metadata', label: 'SP metadata',
+        html: !forFamilies(['saml2'], 'x') ? '' : (this.firstFieldValue(row, 'samlSpMetadataUrl')
+        ? '<h2>Service provider metadata</h2>' +
+          this.note('Fetches <code>' +
+                    this.esc(this.firstFieldValue(row, 'samlSpMetadataUrl')) +
+          '</code> and CONSUMES it: the document on ' +
+          '<code>samlSpMetadata</code>, its AssertionConsumerService and ' +
+          'SingleLogoutService endpoints as REGISTERED return addresses, its ' +
+          'signing certificates as what its requests are verified against, ' +
+          'its <code>use="encryption"</code> certificate on ' +
+          '<code>samlEncryptionCertificate</code>, and its NameIDFormats, ' +
+          'AuthnRequestsSigned and WantAssertionsSigned. A fetch that fails ' +
+          'changes NOTHING, so whatever is registered stays in force. <a ' +
+          'href="/admin/saml2?sp=' + encodeURIComponent(row.identifier) +
+          '">The SAML 2.0 page</a> shows what was consumed and takes an ' +
+          'uploaded document.') +
+          '<form method="post" action="/admin/applications">' + carryBack +
+          '<div class="formrow">' +
+          '<input type="hidden" name="action" value="refresh-metadata">' +
+          '<input type="hidden" name="application" value="' +
+          this.esc(row.identifier) + '"><button ' +
+          'type="submit">Refresh the metadata</button><span class="sub">' +
+          (this.firstFieldValue(row, 'samlSpMetadataConsumedAt')
+            ? 'Metadata was last consumed ' +
+              this.esc(this.firstFieldValue(row, 'samlSpMetadataConsumedAt')) +
+              '; this replaces what it registered.'
+            : 'No metadata has been consumed yet.') +
+          ' This is one of two places in this service that dials anything at ' +
+          'all.</span></div></form>'
+        : '') },
+      { id: 'tab-entry', label: 'Directory entry',
+        html:       '<h2>Its directory entry</h2><p class="sub">Every attribute the entry ' +
       'carries &mdash; the operational ones and <code>entryDN</code> ' +
       'included, which a SEARCH would return only when asked for by name ' +
       '(RFC 4511 section 4.5.1.8) &mdash; with what each one is. This IS the ' +
@@ -19199,10 +21766,11 @@ class AdminConsole {
        'purpose.</td></tr>') +
       '</table>' +
       nav.foot +
-
-      this.applicationObservedAddressesSection(req, view, carryBack) +
-
-      '<h2>Change what it is allowed to do</h2>' +
+          // THE ONE-ATTRIBUTE FORMS reach every editable attribute by name,
+          // folded, for what the grid leaves to a control of its own and for
+          // an ldapmodify-shaped edit.
+      '<details class="fold section"><summary><h3>Change one attribute by ' +
+      'name</h3></summary>' +
       this.note('These write the same entry an <code>ldapmodify</code> ' +
       'writes, through the same functions &mdash; the console is a set of ' +
       'controls in front of this registry and not a second copy of it. A ' +
@@ -19262,58 +21830,9 @@ class AdminConsole {
       'HERE is the difference between offering an operation and merely not ' +
       'preventing it. <code>appRegistrationJson</code> is not offered either ' +
       '&mdash; edit the attributes beside it instead, which is what the ' +
-      'registration is rebuilt from.') +
-
-      // AFTER the generic attribute editor and before the metadata refresh. The
-      // editor can already write `oauthDelegatedPermission` by hand — it is an
-      // ordinary multi-valued attribute in the EDITABLE table — so this section
-      // is a second DOOR onto it and not a second place it lives, which is the
-      // one-store rule /admin/token-lifetimes' header argues. What it adds is
-      // the resolution: the raw attribute is a bare identifier, and every
-      // column beside it here (which application exposes it, what the token
-      // will say, whether it has ever been asked for) is something only the
-      // register can answer.
-      this.applicationPermissionsSection(req, row, carryBack) +
-
-
-      // THE METADATA REFRESH, and the only control on this page that reaches
-      // off this machine. It is a button rather than something issuing does,
-      // for the reason sp_metadata.ts argues at length: an assertion that had
-      // to wait on somebody else's web server would make every sign-in as
-      // reliable as that server. It is drawn only for an application that names
-      // a URL — a button whose only possible outcome is "there is no URL" is
-      // not a control.
-      (this.firstFieldValue(row, 'samlSpMetadataUrl')
-        ? '<h2>Service provider metadata</h2>' +
-          this.note('Fetches <code>' +
-                    this.esc(this.firstFieldValue(row, 'samlSpMetadataUrl')) +
-          '</code> and CONSUMES it: the document on ' +
-          '<code>samlSpMetadata</code>, its AssertionConsumerService and ' +
-          'SingleLogoutService endpoints as REGISTERED return addresses, its ' +
-          'signing certificates as what its requests are verified against, ' +
-          'its <code>use="encryption"</code> certificate on ' +
-          '<code>samlEncryptionCertificate</code>, and its NameIDFormats, ' +
-          'AuthnRequestsSigned and WantAssertionsSigned. A fetch that fails ' +
-          'changes NOTHING, so whatever is registered stays in force. <a ' +
-          'href="/admin/saml2?sp=' + encodeURIComponent(row.identifier) +
-          '">The SAML 2.0 page</a> shows what was consumed and takes an ' +
-          'uploaded document.') +
-          '<form method="post" action="/admin/applications">' + carryBack +
-          '<div class="formrow">' +
-          '<input type="hidden" name="action" value="refresh-metadata">' +
-          '<input type="hidden" name="application" value="' +
-          this.esc(row.identifier) + '"><button ' +
-          'type="submit">Refresh the metadata</button><span class="sub">' +
-          (this.firstFieldValue(row, 'samlSpMetadataConsumedAt')
-            ? 'Metadata was last consumed ' +
-              this.esc(this.firstFieldValue(row, 'samlSpMetadataConsumedAt')) +
-              '; this replaces what it registered.'
-            : 'No metadata has been consumed yet.') +
-          ' This is one of two places in this service that dials anything at ' +
-          'all.</span></div></form>'
-        : '') +
-
-      '<h2>Take it out of the registry</h2>' +
+      'registration is rebuilt from.') + '</details>' },
+      { id: 'tab-remove', label: 'Remove',
+        html:       '<h2>Take it out of the registry</h2>' +
       (row.registered
         ? '<form method="post" action="/admin/applications">' + carryBack +
           '<div class="formrow"><input type="hidden" name="action" ' +
@@ -19337,7 +21856,18 @@ class AdminConsole {
       'and takes its ' +
       row.authentications + ' recorded authentication(s) with it. It will ' +
       'reappear, empty, the next time this identifier is accepted by a ' +
-      'protocol.</span></div></form>' +
+      'protocol.</span></div></form>' }
+    ];
+    const inner = this.flash(this.messagesOf(req) + refused) +
+      '<h2><code>' + this.esc(row.identifier) + '</code></h2>' +
+      '<div class="tiles">' +
+      this.tile(row.authentications, 'Authentications') +
+      this.tile(row.sessions, 'Sessions') +
+      this.tile(row.users, 'Users') +
+      this.tile(row.registered || row.registeredBy ? 'yes' : 'no',
+                'Registered') +
+      '</div>' +
+      this.tabbedPanels('apptabs', panels) +
       APPLICATIONS_CAVEAT +
       '<p class="sub"><a href="' +
       this.esc('/admin/applications' +
@@ -19447,6 +21977,407 @@ class AdminConsole {
   // works out, and on `/realm/acme/admin/applications/new` it says `acme`'s.
   // ---------------------------------------------------------------------------
 
+  // ---------------------------------------------------------------------------
+  // THE FIELD GRID (2026-09-30): EVERY PER-APPLICATION FIELD, TYPED, ON BOTH
+  // APPLICATION PAGES.
+  //
+  // `/admin/applications/new` (its simplified and advanced views) and an
+  // application's own page draw one grid of fields out of
+  // `applications.applicationFields()`, each with the control its type needs:
+  //
+  //   * a BOOLEAN is three radio buttons — true, false, and not set (an
+  //     attribute left unset is a state of its own: for an override it means
+  //     the service-wide default, and that default is named on the button);
+  //   * a STRING is a text box (a document — JSON, PEM, XML — a box of a few
+  //     lines), an enumerated override a select, a number override a number
+  //     box;
+  //   * an ARRAY OF STRINGS is one text box per value, each with a delete
+  //     button beside it, and a "+" that adds a box. **A list with no values
+  //     is no boxes**, and every box that is there must hold a value — the
+  //     action refuses an empty one (`STS-ADMIN-0834`) rather than saving a
+  //     list one shorter than the page showed.
+  //
+  // **"+" AND DELETE ARE SUBMIT BUTTONS, NOT A SCRIPT.** `script-src 'none'`
+  // holds on both pages, and the test for an exception is that the page cannot
+  // work without one: a round trip answers it. Each button posts the whole
+  // form, through a `formaction`, to the page's redraw route with `grow` or
+  // `drop` naming the list and box; the page comes back with one box more or
+  // one fewer and every other box as it was, and nothing is written. Neither
+  // is named `action`, which is the trap `/admin/users/new` records (two
+  // submits named `action` make `form.elements.action` a RadioNodeList).
+  // `formnovalidate`, so a box left empty does not stop the round trip that
+  // is about to delete it.
+  //
+  // **WHICH FIELDS SHOW is the declared protocol families**, by the same
+  // `:has()` rules the create form has used since 2026-08-27 (the `pf` and
+  // `pf-<family>` classes): a cell belongs to the families of its attribute,
+  // and an attribute for every family is always shown. On an application's
+  // own page a field that HOLDS a value is shown whatever is ticked, so a
+  // value is never hidden from the page that edits it.
+  // ---------------------------------------------------------------------------
+  /**
+   * Reads the grid's values out of an entry's fields: each named attribute as
+   * a list of strings.
+   *
+   * @param fields - the entry's fields
+   * @param names - the attributes the grid draws
+   * @returns the values by attribute
+   */
+  gridValuesFromEntry(fields, names) {
+    const { log } = this.deps;
+    log.debug("Entering AdminConsole.gridValuesFromEntry().");
+    const out = {};
+    // ONLY THE NAMED ATTRIBUTES ARE READ: a sealed field of a view opens its
+    // key when it is read (#352), and the grid never draws one.
+    (names || []).forEach(function (name) {
+      const value = fields ? fields[name] : undefined;
+      out[name] = [].concat(value === undefined || value === null
+        ? [] : value).map(function (one) { return String(one); });
+    });
+    log.debug("Leaving AdminConsole.gridValuesFromEntry().");
+    return out;
+  }
+
+  /**
+   * Reads the grid's values out of a posted form, keeping every list box —
+   * an empty one included — in box order, and applies a "+" or a delete.
+   *
+   * @param draft - the posted form
+   * @returns the values by attribute
+   */
+  gridValuesFromDraft(draft) {
+    const { log, applications } = this.deps;
+    log.debug("Entering AdminConsole.gridValuesFromDraft().");
+    const out = {};
+    const boxes = {};
+    const long = applications.LONG_TEXT_ATTRIBUTES || [];
+    Object.keys(draft || {}).forEach(function (key) {
+      if (key.indexOf('field.') !== 0) {
+        return;
+      }
+      const name = key.slice('field.'.length);
+      const value = String(draft[key] === undefined ? '' : draft[key]);
+      const box = /^(.+)\.(\d+)$/.exec(name);
+      if (box) {
+        (boxes[box[1]] = boxes[box[1]] || []).push({ n: Number(box[2]),
+                                                     value: value });
+        return;
+      }
+      // A box of the older shape — one value per line — or a single value.
+      out[name] = long.indexOf(name) >= 0 ? [value]
+        : value.split(/\r?\n/).filter(function (one) {
+          return one.trim() !== '';
+        });
+    });
+    Object.keys(boxes).forEach(function (name) {
+      out[name] = boxes[name].sort(function (a, b) { return a.n - b.n; })
+        .map(function (one) { return one.value; });
+    });
+    const grow = String((draft && draft.grow) || '');
+    if (grow) {
+      out[grow] = (out[grow] || []).concat(['']);
+    }
+    const drop = /^(.+)\.(\d+)$/.exec(String((draft && draft.drop) || ''));
+    if (drop && out[drop[1]]) {
+      out[drop[1]].splice(Number(drop[2]), 1);
+    }
+    log.debug("Leaving AdminConsole.gridValuesFromDraft().");
+    return out;
+  }
+
+  /**
+   * Refines a field's type from the setting it overrides: a `bool` setting
+   * makes it a boolean, an `enum` a select, an `int` a number box.
+   *
+   * @param row - the field's row from `applicationFields()`
+   * @returns the row with `type`, and `choices`, `described` where they apply
+   */
+  gridFieldTyped(row) {
+    const { log, configSettingFor, config } = this.deps;
+    log.debug("Entering AdminConsole.gridFieldTyped().");
+    if (!row.overrides) {
+      // A closed set of its own (applications.attributeChoices()): one value
+      // is chosen from them, a list is ticked from them.
+      if (row.choices && row.choices.length && row.type === 'string') {
+        log.debug("Leaving AdminConsole.gridFieldTyped(). A closed set.");
+        return Object.assign({}, row, { type: 'enum' });
+      }
+      log.debug("Leaving AdminConsole.gridFieldTyped(). Not an override.");
+      return row;
+    }
+    const setting = configSettingFor(row.overrides);
+    if (!setting) {
+      log.debug("Leaving AdminConsole.gridFieldTyped(). Unknown setting.");
+      return row;
+    }
+    const described = config.describe(setting);
+    const typed = Object.assign({}, row, { described: described });
+    if (described.type === 'bool') {
+      typed.type = 'boolean';
+    } else if (described.type === 'enum') {
+      typed.type = 'enum';
+      typed.choices = (described.enumValues || []).filter(function (one) {
+        return one !== '';
+      });
+    } else if (described.type === 'int') {
+      typed.type = 'int';
+    }
+    log.debug("Leaving AdminConsole.gridFieldTyped().");
+    return typed;
+  }
+
+  /**
+   * The trash-can icon a list box's delete button carries, inline so the
+   * console still makes no image request.
+   *
+   * @returns the SVG as HTML
+   */
+  trashIcon() {
+    const { log } = this.deps;
+    log.debug("Entering AdminConsole.trashIcon().");
+    log.debug("Leaving AdminConsole.trashIcon().");
+    return '<svg viewBox="0 0 16 16" width="14" height="14" ' +
+      'aria-hidden="true" ' +
+      'focusable="false"><path fill="currentColor" d="M6 1h4l1 1h3v2H2V2h3z' +
+      'M3 5h10l-1 10H4zm3 2v6h1V7zm3 0v6h1V7z"/></svg>';
+  }
+
+  /**
+   * Draws one field of the grid: its name (with its sentence as a tooltip),
+   * the families it belongs to, and the control its type needs.
+   *
+   * @param row - the field's row, typed by `gridFieldTyped()`
+   * @param values - the grid's values by attribute
+   * @param options - `redraw` (the route "+" and delete post to), `showSet`
+   *   (show a cell holding a value whatever is ticked), `generateSecret`
+   * @returns the cell as HTML
+   */
+  fieldGridCell(row, values, options) {
+    const { log, applications } = this.deps;
+    const self = this;
+    log.debug("Entering AdminConsole.fieldGridCell(). " + row.attribute);
+    const opts = options || {};
+    const name = 'field.' + row.attribute;
+    const id = 'fg-' + row.attribute;
+    const held = values[row.attribute] || [];
+    const first = held.length ? String(held[0]) : '';
+    const hint = this.tip(row.what || row.attribute);
+    const defaultText = row.described
+      ? 'default — currently ' + row.described.text : '';
+    // THE GUIDANCE IN AN EMPTY BOX (rcbj, 2026-10-01): an example of a valid
+    // value, as a placeholder — grey, and gone as soon as somebody types — and
+    // for a setting override the default beside it. `applications.
+    // fieldExample()` is the one table of them.
+    const guidance = row.example
+      ? 'e.g. ' + row.example + (defaultText ? ' (' + defaultText + ')' : '')
+      : (defaultText || 'not set');
+    let control = '';
+    // A VALUE THAT IS NOT ONE OF THE CHOICES (an older write, an
+    // ldapmodify) is still offered, marked, so a save does not drop it
+    // silently.
+    const offered = function (choices) {
+      return choices.concat(held.filter(function (one) {
+        return String(one).trim() !== '' && choices.indexOf(String(one)) < 0;
+      }).map(String));
+    };
+    const outside = function (choices, value) {
+      return choices.indexOf(value) < 0
+        ? ' <span class="state-none">(not one of the allowed values)</span>'
+        : '';
+    };
+    if (row.type === 'array' && row.choices && row.choices.length) {
+      // A LIST FROM A CLOSED SET is a checkbox per value. An unticked box
+      // posts nothing, so no box can be empty, and the form's `present` list
+      // is what clears the attribute when every box is unticked.
+      control = '<div class="fg-checks" role="group"' + hint +
+        ' aria-label="' + this.esc(row.attribute) + '">' +
+        offered(row.choices).map(function (value, n) {
+          return '<label class="fg-radio"><input type="checkbox" name="' +
+            self.esc(name + '.' + n) + '" value="' + self.esc(value) + '"' +
+            (held.map(String).indexOf(value) >= 0 ? ' checked' : '') + '>' +
+            self.esc(value) + outside(row.choices, value) + '</label>';
+        }).join('') + '</div>';
+    } else if (row.type === 'array') {
+      control = '<div class="fg-list">' + held.map(function (value, n) {
+        return '<div class="fg-item"><input type="text" id="' +
+          self.esc(id + '-' + n) + '" name="' + self.esc(name + '.' + n) +
+          '" value="' + self.esc(value) + '"' + hint +
+          (row.example ? ' placeholder="' + self.esc('e.g. ' + row.example) +
+                         '"' : '') + ' aria-label="' +
+          self.esc(row.attribute + ' value ' + (n + 1)) + '">' +
+          '<button type="submit" class="secondary fg-drop" name="drop" ' +
+          'value="' + self.esc(row.attribute + '.' + n) + '" formaction="' +
+          self.esc(opts.redraw + '#fgc-' + row.attribute) + '" formnovalidate ' +
+          'title="Delete this ' +
+          'value" aria-label="Delete value ' + (n + 1) + ' of ' +
+          self.esc(row.attribute) + '">' + self.trashIcon() +
+          '</button></div>';
+      }).join('') +
+      (held.length ? '' : '<span class="state-none">no values</span>') +
+      '<button type="submit" class="secondary fg-grow" name="grow" value="' +
+      this.esc(row.attribute) + '" formaction="' +
+      this.esc(opts.redraw + '#fgc-' + row.attribute) +
+      '" formnovalidate title="Add a value" aria-label="Add a value to ' +
+      this.esc(row.attribute) + '">+</button></div>';
+    } else if (row.type === 'boolean') {
+      const upper = first.toUpperCase();
+      const radio = function (value, label) {
+        return '<label class="fg-radio"><input type="radio" name="' +
+          self.esc(name) + '" value="' + value + '"' +
+          (upper === value ? ' checked' : '') + '>' + self.esc(label) +
+          '</label>';
+      };
+      control = '<div class="fg-bool" role="radiogroup"' + hint +
+        ' aria-label="' + this.esc(row.attribute) + '">' +
+        radio('TRUE', 'true') +
+        radio('FALSE', 'false') +
+        radio('', defaultText || 'not set') + '</div>';
+    } else if (row.type === 'enum') {
+      // ONE VALUE FROM A CLOSED SET is a radio per value, and a last one for
+      // none (the setting's default, for an override), the boolean's shape.
+      control = '<div class="fg-bool fg-choices" role="radiogroup"' +
+        hint + ' aria-label="' + this.esc(row.attribute) + '">' +
+        offered(row.choices || []).map(function (value) {
+          return '<label class="fg-radio"><input type="radio" name="' +
+            self.esc(name) + '" value="' + self.esc(value) + '"' +
+            (value === first ? ' checked' : '') + '>' + self.esc(value) +
+            outside(row.choices || [], value) + '</label>';
+        }).join('') +
+        '<label class="fg-radio"><input type="radio" name="' +
+        this.esc(name) + '" value=""' + (first === '' ? ' checked' : '') +
+        '>' + this.esc(defaultText || 'not set') + '</label></div>';
+    } else if (row.long) {
+      control = '<textarea id="' + this.esc(id) + '" name="' +
+        this.esc(name) + '" rows="3"' + hint + ' placeholder="' +
+        this.esc(guidance) + '">' +
+        this.esc(held.join('\n')) + '</textarea>';
+    } else {
+      const d = row.described;
+      control = '<input type="' + (row.type === 'int' ? 'number' : 'text') +
+        '" id="' + this.esc(id) + '" name="' + this.esc(name) + '" value="' +
+        this.esc(first) + '"' + hint +
+        (d && typeof d.min === 'number' ? ' min="' + d.min + '"' : '') +
+        (d && typeof d.max === 'number' ? ' max="' + d.max + '"' : '') +
+        ' placeholder="' + this.esc(guidance) + '">' +
+        (row.attribute === 'oauthClientSecret' && opts.generateSecret
+          ? ' <button type="submit" class="secondary" name="action" ' +
+            'value="generate-secret" formaction="' +
+            this.esc(opts.generateSecret) + '" formnovalidate' +
+            this.tip('Mint a client secret the way POST /oauth2/register ' +
+                     'does and put it in this box. Nothing is written until ' +
+                     'the application is created. Everything else you have ' +
+                     'typed on this page is kept.') +
+            '>Generate Secret</button>'
+          : '');
+    }
+    const labels = row.forText !== undefined ? String(row.forText)
+      : row.everyFamily ? 'every protocol'
+      : row.families.map(function (family) {
+        const known = applications.PROTOCOLS.filter(function (one) {
+          return one.id === family;
+        })[0];
+        return known ? known.label : family;
+      }).join(', ');
+    const conditional = !row.everyFamily && row.families.length &&
+      !(opts.showSet && held.some(function (one) {
+        return String(one).trim() !== '';
+      }));
+    log.debug("Leaving AdminConsole.fieldGridCell().");
+    // The cell's id is what "+" and the bin come back to (withReturnAnchors()).
+    return '<div id="fgc-' + this.esc(row.attribute) + '" class="fg-cell' +
+      (conditional
+        ? ' ' + this.esc(this.familyClasses(row.families)) : '') + '">' +
+      // A label names one control; a list and a radio group are several, so
+      // their name is a heading of the cell rather than a label.
+      (row.type === 'array' || row.type === 'boolean'
+        ? '<span class="fg-name"' + hint + '><code>' +
+          this.esc(row.attribute) + '</code></span>'
+        : '<label class="fg-name" for="' + this.esc(id) + '"' + hint +
+          '><code>' + this.esc(row.attribute) + '</code></label>') +
+      '<span class="fg-for">' + this.esc(labels) +
+      (row.type === 'array' ? ' &middot; a list' : '') +
+      (row.sensitive ? ' &middot; a credential' : '') + '</span>' +
+      control + '</div>';
+  }
+
+  /**
+   * Draws the field grid: the rows grouped as `applications.FIELD_GROUPS`
+   * says, each group a heading over a grid of cells, shown while any of its
+   * cells is.
+   *
+   * @param rows - the fields to draw, from `applicationFields()`
+   * @param values - the grid's values by attribute
+   * @param options - as `fieldGridCell()` takes
+   * @returns the grid as HTML
+   */
+  fieldGrid(rows, values, options) {
+    const { log, applications } = this.deps;
+    const self = this;
+    log.debug("Entering AdminConsole.fieldGrid(). " + rows.length +
+              " field(s).");
+    const typed = rows.map(function (row) { return self.gridFieldTyped(row); });
+    const html = applications.FIELD_GROUPS.map(function (group) {
+      const mine = typed.filter(function (row) {
+        return row.group === group.id;
+      });
+      if (!mine.length) {
+        return '';
+      }
+      const cells = mine.map(function (row) {
+        return self.fieldGridCell(row, values, options);
+      });
+      // THE GROUP CARRIES THE UNION OF ITS CELLS' FAMILIES, or none when any
+      // cell is unconditional, so a
+      // group whose every cell is hidden leaves no bare heading behind.
+      const always = cells.some(function (cell) {
+        return cell.indexOf('<div class="fg-cell">') === 0;
+      });
+      const families = [];
+      mine.forEach(function (row) {
+        row.families.forEach(function (one) {
+          if (families.indexOf(one) < 0) {
+            families.push(one);
+          }
+        });
+      });
+      return '<div class="fg-group' + (always ? '' : ' ' +
+        self.esc(self.familyClasses(families))) + '"><h3>' +
+        self.esc(group.label) + '</h3><div class="fg">' + cells.join('') +
+        '</div></div>';
+    }).join('');
+    log.debug("Leaving AdminConsole.fieldGrid().");
+    return html;
+  }
+
+  /**
+   * The fields `/admin/applications/new` draws in a view: `simple` is the
+   * set the page has always offered (the declarations, the per-application
+   * setting overrides and where SAML encryption gets its key), `advanced`
+   * every field.
+   *
+   * @param view - `simple` or `advanced`
+   * @param omit - attributes another part of the page draws
+   * @returns the rows
+   */
+  newApplicationFields(view, omit) {
+    const { log, applications } = this.deps;
+    log.debug("Entering AdminConsole.newApplicationFields(). view=" + view);
+    const skip = omit || [];
+    const keySource = SAML_KEY_SOURCE_FIELDS.map(function (one) {
+      return one.attribute;
+    });
+    const rows = applications.applicationFields().filter(function (row) {
+      if (skip.indexOf(row.attribute) >= 0) {
+        return false;
+      }
+      return view === 'advanced' || row.declaration || !!row.overrides ||
+        keySource.indexOf(row.attribute) >= 0;
+    });
+    log.debug("Leaving AdminConsole.newApplicationFields(). " + rows.length +
+              " field(s).");
+    return rows;
+  }
+
   // One protocol family as a row of the checkbox table. `kind` is what the
   // registry WOULD record this application as when a protocol of that family
   // finally recognises the identifier — shown rather than written, because a
@@ -19462,7 +22393,8 @@ class AdminConsole {
    * Draws one protocol family as a checkbox row of the new-application
    * form, with the kind it would be recorded as.
    *
-   * @param row - the family's row from the PROTOCOLS table
+   * @param row - the choice's row from FAMILY_CHOICES: a family, or a
+   *   combined choice standing for several
    * @param checked - true to draw the box ticked
    * @returns the table row as HTML
    */
@@ -19486,39 +22418,12 @@ class AdminConsole {
       '<td><label for="proto-' + this.esc(row.id) + '"' + this.tip(row.what) +
       '>' +
       this.esc(row.label) + '</label></td>' +
-      '<td><code>' + this.esc(row.id) + '</code></td>' +
+      '<td><code>' + this.esc((row.families || [row.id]).join(', ')) +
+      '</code></td>' +
       '<td>' + kindCell + '</td>' +
       '<td class="why">' + this.note(this.esc(row.what)) + '</td></tr>';
   }
 
-  // ---------------------------------------------------------------------------
-  // ONE DECLARED ATTRIBUTE AS A ROW OF ONE OF THE DECLARATION TABLES
-  // (`declarationFieldRow()`, below `familyClasses()`).
-  //
-  // The rows come from `applications.declarationAttributes()`, which walks the
-  // PROTOCOLS table and dedupes by ATTRIBUTE — so this renders one field per
-  // attribute rather than one per family, and names the families each field
-  // serves underneath it. Building that list here instead was the obvious
-  // thing and would have been a second opinion about which attribute a family's
-  // identifier goes in; `createApplication()` has the first.
-  //
-  // **THE FIELD NAME IS `field.<attribute>` AND THE ATTRIBUTE IS THE SCHEMA'S
-  // OWN NAME**, not a friendly one. Two reasons, and the second is the
-  // load-bearing one: an `ldapsearch` on this entry shows exactly the name that
-  // was on the form, and `POST /admin-api/applications/create` takes the same
-  // names in its `fields` object — so the console and the management API are
-  // one vocabulary and a person who learns the page can drive the API.
-  //
-  // A `multi` attribute gets a TEXTAREA, one value per line, and a `single` one
-  // gets an input. Newline-separated rather than comma-separated because a
-  // redirect URI may legally contain a comma and may not contain a newline;
-  // splitting on commas would silently cut one URI into two that both fail to
-  // match. There was once exactly one single-valued field here — mutual TLS's
-  // `oauthTlsClientAuthSubjectDn` — and the row's note says why that one is a
-  // different shape. There are four now (`oauthClientSecret`, `gnapInstanceId`
-  // and `gnapSymmetricKey` joined it), and the note under the input still gives
-  // the RFC 8705 reason on every one of them.
-  // ---------------------------------------------------------------------------
   // The classes that make a block appear only when one of its families is
   // ticked. `pf` is what the stylesheet hides; each `pf-<id>` is what a checked
   // box shows. A block serving several families carries several, and appears
@@ -19546,483 +22451,6 @@ class AdminConsole {
     return 'pf ' + list.map(function (id) { return 'pf-' + id; }).join(' ');
   }
 
-  /**
-   * Draws one declared attribute as a form row named `field.<attribute>`:
-   * a textarea for a multi-valued attribute, an input otherwise.
-   *
-   * @param row - the attribute's row from `declarationAttributes()`
-   * @param draft - optional; the posted form, to redraw its value
-   * @returns the table row as HTML
-   */
-  declarationFieldRow(row, draft?) {
-    const { log } = this.deps;
-    const self = this;
-    log.debug("Entering AdminConsole.declarationFieldRow().");
-    // WHAT WAS POSTED, drawn back — `newApplicationPage()`'s `draft`, present
-    // only when this page is redrawn from a round trip of its own form.
-    const posted = draft ? draft['field.' + row.attribute] : undefined;
-    const value = posted == null ? '' : String(posted);
-    // A row that belongs to EVERY family (`appCorsOrigin`, 2026-09-18) has an
-    // empty `families` on purpose — that is what keeps its section
-    // unconditional — so the cell says what the emptiness means rather than
-    // being blank, which would read as "applies to nothing".
-    const families = row.everyFamily
-      ? '<strong>every family</strong> &mdash; every published endpoint'
-      : row.families.map(function (one) {
-        return self.esc(one.label);
-      }).join(', ');
-    // The attribute's sentence, on the control itself. The schema's name is
-    // unfriendly on purpose (see the header above) — it is the name an
-    // ldapsearch and the management API both use — so the one place a reader
-    // can find out what `appWsFedRealm` is for without leaving the field is a
-    // tooltip on it. The same sentence is in the last column, folded.
-    const hint = this.tip(row.what);
-    const control = row.kind === 'multi'
-      ? '<textarea id="field-' + this.esc(row.attribute) + '" name="field.' +
-        this.esc(row.attribute) +
-        '"' + hint + ' rows="3" cols="42" placeholder="one per line; leave ' +
-                     'empty for none">' + this.esc(value) + '</textarea>'
-      : '<input type="text" id="field-' + this.esc(row.attribute) +
-        '" name="field.' +
-        this.esc(row.attribute) + '"' + hint +
-        ' size="42" placeholder="optional" value="' + this.esc(value) + '">';
-    // GENERATE SECRET (2026-09-18), beside `oauthClientSecret` and no other
-    // field — the `secret` role also holds GNAP's `gnapSymmetricKey`, which
-    // is a key and not a client secret. A SUBMIT BUTTON AND NOT A SCRIPT:
-    // `script-src 'none'` holds on this page, and the test for an exception
-    // is that the page cannot work without one, which a round trip answers.
-    // Its `formaction` sends the whole form to `/admin/applications/new`
-    // with `action=generate-secret` — the button's pair comes after the
-    // hidden `action=create` in the body and `parseBody()` keeps the last —
-    // and that page is drawn again with every box as it was and a new
-    // secret in this one. `formnovalidate`, because the Identifier is
-    // `required` and a person may want the secret before they have named
-    // the application.
-    const generate = row.attribute === 'oauthClientSecret'
-      ? ' <button type="submit" class="secondary" name="action" ' +
-        'value="generate-secret" formaction="/admin/applications/new" ' +
-        'formnovalidate' +
-        this.tip('Mint a client secret the way POST /oauth2/register does ' +
-                 'and put it in this box. Nothing is written until the ' +
-                 'application is created. Everything else you have typed ' +
-                 'on this page is kept.') +
-        '>Generate Secret</button>'
-      : '';
-    const shape = row.kind === 'multi'
-      ? '<span class="note">a list &mdash; one value per line</span>'
-      : '<span class="state-none">one value only &mdash; an RFC 8705 check ' +
-        'compares this string to a certificate\'s subject by exact equality, ' +
-        'so it cannot hold a list until somebody decides what &ldquo;any of ' +
-        'these&rdquo; should mean to that check</span>';
-    log.debug("Leaving AdminConsole.declarationFieldRow().");
-    // The row is conditional on the families it serves — see familyClasses().
-    return '<tr class="' +
-           this.esc(this.familyClasses(row.families.map(function (one) {
-        return one.id;
-      }))) + '"><td><label for="field-' + this.esc(row.attribute) + '"' + hint +
-      '><code>' +
-      this.esc(row.attribute) + '</code></label></td>' +
-      '<td>' + families + '</td>' +
-      '<td>' + control + generate + '<br>' + shape + '</td>' +
-      '<td class="why">' + this.note(this.esc(row.what)) + '</td></tr>';
-  }
-
-  // ---------------------------------------------------------------------------
-  // THE PER-APPLICATION SAML SETTINGS, AS FORM FIELDS.
-  //
-  // THIS DECLARATION IS DEAD: an identical `samlOverrideFieldRow()` is declared
-  // again under *THE PER-APPLICATION SETTINGS* below, and the later function
-  // declaration is the one every caller gets. Its header is the current one.
-  // A class cannot hold two methods of one name, so under #50 this one became
-  // `unreachedSamlOverrideFieldRow()`, which nothing calls.
-  //
-  // Written when there were ten attributes, five per SAML profile, each
-  // overriding one `config.js` setting for this application alone. They are
-  // drawn from `applications.overridableSettings()` — the same table
-  // `saml2_sso.ts` resolves through and `/admin/saml-assertions` names the
-  // attribute from — so a setting added there reaches this form without anybody
-  // editing it.
-  //
-  // **EVERY FIELD IS EMPTY BY DEFAULT AND EMPTY MEANS INHERIT.** That is the
-  // whole of the interaction and it is why there is no "use the default"
-  // checkbox beside each one: the absence of the attribute IS the default, so a
-  // blank box and an unticked box would be two spellings of one state. The
-  // placeholder carries the value that would be used, read live off the
-  // setting, so somebody can see what they are overriding without opening
-  // another page.
-  //
-  // A `select` for a bool rather than a checkbox, for `configRow()`'s reason —
-  // an unticked checkbox posts NOTHING, which here is indistinguishable from
-  // "leave it alone". The empty option is what makes "inherit" expressible.
-  /**
-   * Draws one per-application setting override as a form row. Nothing calls
-   * it; `samlOverrideFieldRow()` is the live copy.
-   *
-   * @param row - the overridable setting's row
-   * @returns the table row as HTML, or an empty string for an unknown
-   *   setting
-   */
-  unreachedSamlOverrideFieldRow(row) {
-    const { log, configSettingFor, config } = this.deps;
-    const self = this;
-    log.debug("Entering AdminConsole.unreachedSamlOverrideFieldRow().");
-    const setting = configSettingFor(row.setting);
-    if (!setting) {
-      log.debug("Leaving AdminConsole.unreachedSamlOverrideFieldRow().");
-      return '';
-    }
-    const described = config.describe(setting);
-    const id = 'field-' + row.attribute;
-    const hint = this.tip(described.description);
-    const inherits = 'inherit — currently ' + described.text;
-    // A BOOL AND AN ENUM ARE THE SAME CONTROL WITH DIFFERENT OPTIONS, which is
-    // why the enum joined this branch rather than getting one of its own: both
-    // are a closed vocabulary plus the empty option that means inherit, and a
-    // bool is the two-word case of it. The options come off `enumValues` on the
-    // setting's own row, so a value added there reaches this form with nothing
-    // edited here — the same rule the section itself follows about
-    // `overridableSettings()`. A text box would have been the alternative and
-    // is the wrong one: this attribute is read back through `config.parseAs()`,
-    // so a typo is a warning in the log and the service-wide value silently in
-    // force, which is the failure a select cannot have.
-    const choices = described.type === 'bool' ? ['true', 'false']
-      : (described.type === 'enum'
-        // The empty value is the inherit option drawn first, not a second
-        // blank line (#86).
-        ? (described.enumValues || []).filter(function (option) {
-            return option !== '';
-          })
-        : null);
-    const control = choices
-      ? '<select id="' + this.esc(id) + '" name="field.' +
-        this.esc(row.attribute) + '"' +
-        hint + '><option ' +
-        'value="">' + this.esc(inherits) + '</option>' +
-        choices.map(function (option) {
-          return '<option value="' + self.esc(option) + '">' +
-                 self.esc(option) +
-                 '</option>';
-        }).join('') + '</select>'
-      : '<input type="' + (described.type === 'int' ? 'number' : 'text') + '"' +
-        ' id="' + this.esc(id) + '" name="field.' + this.esc(row.attribute) +
-        '"' + hint +
-        (typeof described.min === 'number' ? ' min="' + described.min + '"' :
-         '') +
-        (typeof described.max === 'number' ? ' max="' + described.max + '"' :
-         '') +
-        (typeof described.step === 'number' ? ' step="' + described.step + '"' :
-         '') +
-        ' size="' + (described.type === 'int' ? '10' : '42') + '"' +
-        ' placeholder="' + this.esc(inherits) + '">';
-    log.debug("Leaving AdminConsole.unreachedSamlOverrideFieldRow().");
-    return '<tr><td><label for="' + this.esc(id) + '"' + hint + '><code>' +
-      this.esc(row.attribute) + '</code></label></td>' +
-      '<td><code>' + this.esc(row.setting) + '</code></td>' +
-      '<td>' + control + '</td>' +
-      '<td class="why">' + this.note(this.esc(described.description)) +
-      '</td></tr>';
-  }
-
-  // ---------------------------------------------------------------------------
-  // THE PER-APPLICATION SETTINGS, AS FORM FIELDS.
-  //
-  // Twenty-six attributes as of 2026-09-16 — twenty-five across the five
-  // sections and `gnap.accessTokenLifetimeS`, which matches none — each
-  // overriding one `config.js` setting for this application alone. They are
-  // drawn from `applications.overridableSettings()` — the same table the
-  // protocol modules resolve through and each defaults page names the
-  // attribute from — so a setting that becomes per-application reaches this
-  // form without anybody editing it. What it DOES need is a row in
-  // OVERRIDE_SECTIONS above, and a setting whose prefix matches none of them is
-  // drawn in a section of its own at the end rather than silently dropped.
-  //
-  // **EVERY FIELD IS EMPTY BY DEFAULT AND EMPTY MEANS INHERIT.** That is the
-  // whole of the interaction and it is why there is no "use the default"
-  // checkbox beside each one: the absence of the attribute IS the default, so a
-  // blank box and an unticked box would be two spellings of one state. The
-  // placeholder carries the value that would be used, read live off the
-  // setting.
-  //
-  // A `select` for a bool rather than a checkbox, for `configRow()`'s reason —
-  // an unticked checkbox posts NOTHING, which here cannot be told from "leave
-  // it alone". The empty option is what makes "inherit" expressible.
-  /**
-   * Draws one per-application setting override as a form row, empty by
-   * default (inherit) with the inherited value as its placeholder.
-   *
-   * @param row - the overridable setting's row
-   * @param draft - optional; the posted form, to redraw its value
-   * @returns the table row as HTML, or an empty string for an unknown
-   *   setting
-   */
-  samlOverrideFieldRow(row, draft?) {
-    const { log, configSettingFor, config } = this.deps;
-    const self = this;
-    log.debug("Entering AdminConsole.samlOverrideFieldRow().");
-    // What was posted, on a redraw of this page's own form — see
-    // declarationFieldRow().
-    const posted = draft ? draft['field.' + row.attribute] : undefined;
-    const value = posted == null ? '' : String(posted);
-    const setting = configSettingFor(row.setting);
-    if (!setting) {
-      log.debug("Leaving AdminConsole.samlOverrideFieldRow().");
-      return '';
-    }
-    const described = config.describe(setting);
-    const id = 'field-' + row.attribute;
-    const hint = this.tip(described.description);
-    const inherits = 'inherit — currently ' + described.text;
-    // A BOOL AND AN ENUM ARE THE SAME CONTROL WITH DIFFERENT OPTIONS, which is
-    // why the enum joined this branch rather than getting one of its own: both
-    // are a closed vocabulary plus the empty option that means inherit, and a
-    // bool is the two-word case of it. The options come off `enumValues` on the
-    // setting's own row, so a value added there reaches this form with nothing
-    // edited here — the same rule the section itself follows about
-    // `overridableSettings()`. A text box would have been the alternative and
-    // is the wrong one: this attribute is read back through `config.parseAs()`,
-    // so a typo is a warning in the log and the service-wide value silently in
-    // force, which is the failure a select cannot have.
-    const choices = described.type === 'bool' ? ['true', 'false']
-      : (described.type === 'enum'
-        // The empty value is the inherit option drawn first, not a second
-        // blank line (#86).
-        ? (described.enumValues || []).filter(function (option) {
-            return option !== '';
-          })
-        : null);
-    const control = choices
-      ? '<select id="' + this.esc(id) + '" name="field.' +
-        this.esc(row.attribute) + '"' +
-        hint + '><option ' +
-        'value="">' + this.esc(inherits) + '</option>' +
-        choices.map(function (option) {
-          return '<option value="' + self.esc(option) + '"' +
-                 (option === value ? ' selected' : '') + '>' +
-                 self.esc(option) +
-                 '</option>';
-        }).join('') + '</select>'
-      : '<input type="' + (described.type === 'int' ? 'number' : 'text') + '"' +
-        ' id="' + this.esc(id) + '" name="field.' + this.esc(row.attribute) +
-        '"' + hint + ' value="' + this.esc(value) + '"' +
-        (typeof described.min === 'number' ? ' min="' + described.min + '"' :
-         '') +
-        (typeof described.max === 'number' ? ' max="' + described.max + '"' :
-         '') +
-        (typeof described.step === 'number' ? ' step="' + described.step + '"' :
-         '') +
-        ' size="' + (described.type === 'int' ? '10' : '42') + '"' +
-        ' placeholder="' + this.esc(inherits) + '">';
-    log.debug("Leaving AdminConsole.samlOverrideFieldRow().");
-    return '<tr><td><label for="' + this.esc(id) + '"' + hint + '><code>' +
-      this.esc(row.attribute) + '</code></label></td>' +
-      '<td><code>' + this.esc(row.setting) + '</code></td>' +
-      '<td>' + control + '</td>' +
-      '<td class="why">' + this.note(this.esc(described.description)) +
-      '</td></tr>';
-  }
-
-  /**
-   * Draws the fields saying where SAML 2.0 encryption gets the service
-   * provider's key, shown only while SAML 2.0 is ticked.
-   *
-   * @param draft - optional; the posted form, to redraw its values
-   * @returns the section as HTML
-   */
-  samlKeySourceSection(draft?) {
-    const { log } = this.deps;
-    const self = this;
-    log.debug("Entering AdminConsole.samlKeySourceSection().");
-    const rows = SAML_KEY_SOURCE_FIELDS.map(function (row) {
-      const id = 'field-' + row.attribute;
-      const hint = self.tip(row.what);
-      // What was posted, on a redraw — see declarationFieldRow().
-      const posted = draft ? draft['field.' + row.attribute] : undefined;
-      const value = posted == null ? '' : String(posted);
-      const control = row.multi
-        ? '<textarea id="' + self.esc(id) + '" name="field.' +
-          self.esc(row.attribute) +
-          '"' + hint +
-          ' rows="4" cols="42" placeholder="paste the document, or leave it ' +
-          'to Refresh">' + self.esc(value) + '</textarea>'
-        : '<input type="text" id="' + self.esc(id) + '" name="field.' +
-          self.esc(row.attribute) + '"' +
-          hint + ' size="42" placeholder="optional" value="' +
-          self.esc(value) + '">';
-      return '<tr><td><label for="' + self.esc(id) + '"' + hint + '><code>' +
-        self.esc(row.attribute) + '</code></label></td>' +
-        '<td>' + self.esc(row.label) + '</td><td>' + control + '</td>' +
-        '<td class="why">' + self.note(self.esc(row.what)) + '</td></tr>';
-    }).join('');
-    log.debug("Leaving AdminConsole.samlKeySourceSection().");
-    return '<div class="' + this.esc(this.familyClasses(['saml2'])) + '">' +
-      '<h3>Where SAML 2.0 encryption gets this service provider\'s key</h3>' +
-      this.note('Encrypting an assertion needs the RECIPIENT\'S certificate, ' +
-      'and this service does not consume metadata unless it is told to. It ' +
-      'looks in three places, most specific first: ' +
-      '<code>samlEncryptionCertificate</code> below, then a REGISTERED ' +
-      '<code>samlSigningCertificate</code>, then — in development mode only ' +
-      '— the certificate a signed AuthnRequest carried, which is recorded as ' +
-      'observed and not trusted. With none, an assertion that was meant to ' +
-      'be encrypted goes out <strong>in clear</strong> in development and ' +
-      'says so in the log, and is refused in product. A metadata document ' +
-      'pasted below is CONSUMED when the application is created.') +
-      '<table><tr><th>Attribute</th><th>What</th><th>Value</th><th>Notes</th>' +
-      '</tr>' +
-      rows + '</table></div>';
-  }
-
-  /**
-   * Draws every per-application setting override, grouped by
-   * OVERRIDE_SECTIONS, with unmatched settings in a section of their own.
-   *
-   * @param draft - optional; the posted form, to redraw its values
-   * @returns the section as HTML, or an empty string when there are none
-   */
-  samlOverrideFieldsSection(draft?) {
-    const { log, applications } = this.deps;
-    const self = this;
-    log.debug("Entering AdminConsole.samlOverrideFieldsSection().");
-    const rows = applications.overridableSettings();
-    if (!rows.length) {
-      log.debug("Leaving AdminConsole.samlOverrideFieldsSection(). Nothing " +
-                "to offer.");
-      return '';
-    }
-    const placed = {};
-    const sections = OVERRIDE_SECTIONS.map(function (group) {
-      const mine = rows.filter(function (one) {
-        return one.setting.indexOf(group.prefix) === 0;
-      });
-      mine.forEach(function (one) { placed[one.attribute] = true; });
-      if (!mine.length) return '';
-      return '<div class="' + self.esc(self.familyClasses(group.families)) +
-             '">' +
-        '<h3>' + self.esc(group.heading) + '</h3>' + self.note(group.intro) +
-        '<table><tr><th>Attribute</th><th>Overrides</th><th>Value</th>' +
-        '<th>What it is</th></tr>' +
-        mine.map(function (row) {
-          return self.samlOverrideFieldRow(row, draft);
-        }).join('') +
-        '</table></div>';
-    }).join('');
-
-    // A SETTING THAT MATCHED NO SECTION IS DRAWN ANYWAY, unconditionally, and
-    // that is the safe direction rather than a loose end: the alternative is a
-    // per-application setting that exists, is resolved by some protocol module,
-    // and has no box on the one form meant to offer every one of them. It is
-    // also visible, which is how somebody notices a row is missing from
-    // OVERRIDE_SECTIONS.
-    const leftovers =
-        rows.filter(function (one) { return !placed[one.attribute]; });
-    const extra = leftovers.length
-      ? '<h3>Other per-application settings</h3>' +
-        this.warn('These ' + leftovers.length + ' override a setting whose ' +
-        'family this page does not know, so they are shown always rather ' +
-        'than with a protocol. Add a row to <code>OVERRIDE_SECTIONS</code> ' +
-        'in <code>admin-ui/admin.ts</code> naming the families they belong ' +
-        'to.') +
-        '<table><tr><th>Attribute</th><th>Overrides</th><th>Value</th>' +
-        '<th>What it is</th></tr>' +
-        leftovers.map(function (row) {
-          return self.samlOverrideFieldRow(row, draft);
-        }).join('') +
-        '</table>'
-      : '';
-
-    log.debug("Leaving AdminConsole.samlOverrideFieldsSection(). " +
-              rows.length + " field(s), " +
-              leftovers.length + " unplaced.");
-    return '<h2>What each protocol issues for this application</h2>' +
-      this.note('These are OPTIONAL and every one of them means ' +
-      '<em>inherit</em> when left alone. Each overrides one service-wide ' +
-      'setting for this application only — the box says which, and its ' +
-      'placeholder says what would be used instead. The defaults live on <a ' +
-      'href="/admin/token-lifetimes">Token lifetimes</a> and <a ' +
-      'href="/admin/saml-assertions">SAML assertions</a>, and changing one ' +
-      'there moves every application that has not been given an answer of ' +
-      'its own.') +
-      this.note('<strong>They apply whether or not the protocol is ticked ' +
-      'above &mdash; with one exception, named below.</strong> A declaration ' +
-      'grants and refuses nothing here &mdash; an application declared for ' +
-      'nothing at all still gets a token if it asks for one &mdash; so these ' +
-      'are read whenever this service issues to this application. Ticking a ' +
-      'family only decides what this page SHOWS you. What ticking SAML 2.0 ' +
-      'or SAML 1.1 does do is give the entry a <code>samlEntityId</code> if ' +
-      'you leave that blank, so its metadata is publishable immediately.') +
-      this.note('<strong>The exception is ' +
-      '<code>oauthTokenExchangeRefreshToken</code>, and it is REFUSED rather ' +
-      'than inert on an entry declared for neither OAuth 2.0 nor OpenID ' +
-      'Connect.</strong> Every other field here is a default something reads ' +
-      'if it ever gets the chance, so writing one onto an application that ' +
-      'never reaches that protocol costs nothing and says nothing false. ' +
-      'That one decides what the <em>token endpoint</em> does for one ' +
-      '<code>client_id</code> &mdash; so on an entry no token request could ' +
-      'ever name, it would sit there reading like a policy that was in ' +
-      'force. Tick OAuth 2.0 or OpenID Connect and it is accepted. An ' +
-      '<code>ldapmodify</code> reaches the attribute either way, as it ' +
-      'reaches every attribute here.') +
-      sections + extra + this.samlKeySourceSection(draft);
-  }
-
-  // The tables, one per ROLE (`identifier`, `redirect`, `logout`, `secret`,
-  // `delivery`, `events`), split by what the attribute IS rather than drawn as
-  // one list. A reader filling this in is answering different questions — "what
-  // is this application called", "where does a response go back to" — and each
-  // of the later ones exists only for the families that have one. `omit` names
-  // attributes another part of the page already draws a box for — the RFC 9728
-  // pane draws `oauthClientId` — because two fields with one name in one form
-  // post the name twice and `parseBody()` keeps whichever came LAST, which
-  // would be the empty box below the one the reader filled in.
-  /**
-   * Draws the declared attributes of one role as a table, shown while any
-   * of its families is ticked.
-   *
-   * @param role - the role to draw (`identifier`, `redirect`, and so on)
-   * @param heading - the section's heading, as HTML
-   * @param intro - the section's introduction, as HTML
-   * @param omit - optional; attributes another part of the form draws
-   * @param draft - optional; the posted form, to redraw its values
-   * @returns the section as HTML, or an empty string when it has no rows
-   */
-  declarationFieldsSection(role, heading, intro, omit?, draft?) {
-    const { log, applications } = this.deps;
-    const self = this;
-    log.debug("Entering AdminConsole.declarationFieldsSection(). role=" + role);
-    const skip = omit || [];
-    const rows = applications.declarationAttributes().filter(function (one) {
-      return one.role === role && skip.indexOf(one.attribute) < 0;
-    });
-    if (!rows.length) {
-      // Not reachable with the table as it stands, and drawn as nothing rather
-      // than as an empty table if a family is ever the last of its kind to be
-      // removed. An empty <table> with a header row reads as data having gone
-      // missing.
-      log.debug("Leaving AdminConsole.declarationFieldsSection(). Nothing to " +
-                "offer.");
-      return '';
-    }
-    // THE SECTION carries the UNION of its rows' families, so that a table
-    // whose every row is hidden does not leave a heading and a bare header row
-    // behind — which reads as data having gone missing rather than as nothing
-    // applying.
-    const families = [];
-    rows.forEach(function (one) {
-      one.families.forEach(function (family) {
-        if (families.indexOf(family.id) < 0) families.push(family.id);
-      });
-    });
-    log.debug("Leaving AdminConsole.declarationFieldsSection(). " +
-              rows.length +
-              " field(s).");
-    return '<div class="' + this.esc(this.familyClasses(families)) + '">' +
-      '<h2>' + heading + '</h2>' + intro +
-      '<table><tr><th>Attribute</th><th>Families it serves</th><th>Value</th>' +
-      '<th>What it is</th></tr>' +
-      rows.map(function (row) {
-        return self.declarationFieldRow(row, draft);
-      }).join('') +
-      '</table></div>';
-  }
 
   // The form that gives the document. The checkbox shows the three sources; it
   // has no name, so it is never posted, and it is ticked whenever a document is
@@ -20477,6 +22905,10 @@ class AdminConsole {
     // round trips — a refused create, or Generate Secret — so that no box
     // comes back empty. Absent on a plain GET.
     const draft = given.draft || null;
+    // WHICH FIELDS: the simplified view by default, the advanced one when the
+    // switch, a redraw or `?view=advanced` says so.
+    const view = (given.view || (req.query && req.query.view)) === 'advanced'
+      ? 'advanced' : 'simple';
     const drafted = function (name) {
       const value = draft ? draft[name] : undefined;
       return value == null ? '' : String(value);
@@ -20513,9 +22945,12 @@ class AdminConsole {
     const calledSection =
       '<h2>What it is called</h2><div class="formrow"><label ' +
       'for="identifier">Identifier</label><input type="text" id="identifier" ' +
-      'name="identifier" size="42" required placeholder="client_id, wtrealm, ' +
-      'AppliesTo, entityID or SPN" value="' + this.esc(drafted('identifier')) +
-      '"></div>' +
+      'name="identifier" size="42" required placeholder="e.g. my-web-app or ' +
+      'https://sp.example.com/saml/metadata"' +
+      this.tip('The key every protocol presents for this application: a ' +
+               'client_id, wtrealm, AppliesTo, SAML entityID or Kerberos ' +
+               'SPN. At most 512 characters, no line break.') +
+      ' value="' + this.esc(drafted('identifier')) + '"></div>' +
       this.note('THE KEY, exactly as the protocol will present it. At most ' +
       '512 characters, and no line break: an entry whose <code>cn</code> ' +
       'would be longer than 64 characters is filed under <code>app-&lt;12 ' +
@@ -20523,8 +22958,9 @@ class AdminConsole {
       'attribute to search on either way.') +
       '<div class="formrow"><label for="newname">Name</label><input ' +
       'type="text" id="newname" name="name" size="24" ' +
-      'placeholder="optional" value="' + this.esc(drafted('name')) +
-      '"></div>' +
+      'placeholder="e.g. My Web App (optional)"' +
+      this.tip('What pages call it. With none, the identifier is the name.') +
+      ' value="' + this.esc(drafted('name')) + '"></div>' +
       this.note('The name is what pages call it; with none given the ' +
       'identifier is the name, because inventing a friendly name for an ' +
       'opaque id would be inventing a fact.') +
@@ -20543,7 +22979,7 @@ class AdminConsole {
     const ticked = given.protocols ||
                    (loaded ? loaded.plan.protocols : []);
 
-    const inner = this.messagesOf(req) +
+    const inner = this.flash(this.messagesOf(req) +
       (given.error && given.error.length
         ? '<div class="warn"><strong>' +
           this.esc(given.errorTitle || 'That was refused.') + '</strong><ul>' +
@@ -20553,7 +22989,7 @@ class AdminConsole {
         : '') +
       (loaded ? '<div class="ok">' + this.esc(loaded.message) + '</div>' : '') +
       (given.notice ? '<div class="ok">' + this.esc(given.notice) + '</div>' :
-       '') +
+       '')) +
       '<div class="tiles">' +
       this.tile(held, 'In the registry') +
       this.tile(applications.PROTOCOLS.length, 'Protocol families') +
@@ -20581,10 +23017,12 @@ class AdminConsole {
 
       this.resourceMetadataLoadSection(given) +
 
-      '<form method="post" action="' +
-      (loaded ? '/admin/applications/new' : '/admin/applications') +
-      '" class="newapp">' +
+      // EVERY POST OF THIS FORM COMES BACK HERE (2026-09-30), so a refused
+      // create redraws this page with every box kept rather than 303ing to the
+      // list with a message; the create itself is the same action.
+      '<form method="post" action="/admin/applications/new" class="newapp">' +
       '<input type="hidden" name="action" value="create">' +
+      '<input type="hidden" name="view" value="' + this.esc(view) + '">' +
       // THE DEFAULT BUTTON. Enter in a text box submits with the FIRST submit
       // button in the form, and since 2026-09-18 that would otherwise be
       // Generate Secret, halfway down — so a person who pressed Enter in the
@@ -20610,54 +23048,51 @@ class AdminConsole {
       'to be declared for two spellings of one thing.') +
       '<table><tr><th>For</th><th>Family</th><th>Value</th>' +
       '<th>Recorded as, when it turns up</th><th>What it means</th></tr>' +
-      applications.PROTOCOLS.map(function (row) {
-        return self.protocolChoiceRow(row, ticked.indexOf(row.id) >= 0);
+      applications.FAMILY_CHOICES.map(function (row) {
+        return self.protocolChoiceRow(row, row.families.some(function (id) {
+          return ticked.indexOf(id) >= 0;
+        }));
       }).join('') +
       '</table>' +
 
-      // THE CORS ORIGINS, ABOVE THE LINE (2026-09-18). Every section below
-      // the hint depends on which families are ticked; this one does not —
-      // its row belongs to every family, so it carries no `pf` class and is
-      // always shown — and putting it below the hint would make the hint's
-      // first sentence false.
-      this.declarationFieldsSection('cors',
-                                    'Which web origins may call it (CORS)',
-                                    NEW_APPLICATION_CORS_INTRO, [], draft) +
-
+      // THE FIELD GRID (2026-09-30): the simplified view is the fields this
+      // page has always offered — the declarations, the per-application
+      // setting overrides and where SAML 2.0 encryption gets its key — and
+      // the advanced view is every field an application has. Both are one
+      // grid, typed, shown for the families ticked; the switch is a submit
+      // button, so whatever has been typed is carried into the other view.
+      '<h2>' + (view === 'advanced' ? 'Every field' : 'Its fields') +
+      '</h2>' +
+      '<div class="formrow fg-view"><span class="sub">' +
+      (view === 'advanced'
+        ? 'Advanced view: every field an application has, for the families ' +
+          'ticked.'
+        : 'Simplified view: the fields most applications need.') +
+      '</span><button type="submit" class="secondary" name="switchview" ' +
+      'value="' + (view === 'advanced' ? 'simple' : 'advanced') +
+      '" formaction="/admin/applications/new" formnovalidate' +
+      this.tip('Draw the other view of this form. Nothing is created, and ' +
+               'everything typed so far is kept.') + '>' +
+      (view === 'advanced' ? 'Show the simplified view'
+        : 'Show every field (advanced view)') + '</button></div>' +
       // THE PROMPT THAT STANDS IN FOR THE HIDDEN FIELDS. It is inside the form
       // so the `:has()` rule that hides it can reach it, and it is always in
       // the markup: a browser without `:has()` shows it beside every field,
       // where it reads as a description of the page rather than as a broken
       // instruction.
-      '<div class="pf-hint">Everything below this line depends on which ' +
-      'families you tick above &mdash; a field appears when the protocol it ' +
-      'belongs to is selected, so an OAuth client is not asked for a SAML ' +
-      'entityID. Tick a family to see its fields. <strong>If you can see the ' +
-      'fields already</strong>, this browser does not support the ' +
-      '<code>:has()</code> selector and the form is showing everything, ' +
-      'which is the same form it was before this page could hide anything ' +
+      '<div class="pf-hint">Most fields depend on which families you tick ' +
+      'above &mdash; a field appears when the protocol it belongs to is ' +
+      'selected, so an OAuth client is not asked for a SAML entityID. Tick a ' +
+      'family to see its fields. <strong>If you can see them all ' +
+      'already</strong>, this browser does not support the ' +
+      '<code>:has()</code> selector and the form is showing everything ' +
       '&mdash; nothing you type is affected either way, because the server ' +
       'reads what was posted and not what was visible.</div>' +
-
-      this.declarationFieldsSection('identifier',
-                                    'What each protocol will call it',
-                                    NEW_APPLICATION_IDENTIFIERS_INTRO,
-                                    loaded ? RESOURCE_METADATA_OWNED : [],
-                                    draft) +
-      this.declarationFieldsSection('redirect', 'Where responses go back to',
-                                    NEW_APPLICATION_REDIRECTS_INTRO, [],
-                                    draft) +
-      this.declarationFieldsSection('logout', 'Where a sign-out goes',
-                                    NEW_APPLICATION_LOGOUT_INTRO, [], draft) +
-      this.declarationFieldsSection('secret', 'The client secret',
-                                    NEW_APPLICATION_SECRET_INTRO, [], draft) +
-      this.declarationFieldsSection('delivery', 'Where events are pushed',
-                                    NEW_APPLICATION_DELIVERY_INTRO, [],
-                                    draft) +
-      this.declarationFieldsSection('events', 'Which Shared Signals events ' +
-                                              'it may receive',
-                                    NEW_APPLICATION_EVENTS_INTRO, [], draft) +
-      this.samlOverrideFieldsSection(draft) +
+      this.fieldGrid(this.newApplicationFields(view,
+                       loaded ? RESOURCE_METADATA_OWNED : []),
+                     draft ? this.gridValuesFromDraft(draft) : {},
+                     { redraw: '/admin/applications/new',
+                       generateSecret: '/admin/applications/new' }) +
 
       '<div class="formrow"><button type="submit">Create the ' +
       'application</button>' +
@@ -22786,8 +25221,16 @@ class AdminConsole {
         this.esc(one.localName) + '</code></span>' : '') +
       (one.description ? '<br><span class="sub">' + this.esc(one.description) +
                          '</span>' : '') +
+      // ITS LABEL, WHO MAY HOLD IT AND ITS STABLE ID (#93).
+      (one.displayName ? '<br><span class="sub">shown as <b>' +
+        this.esc(one.displayName) + '</b></span>' : '') +
+      ((one.memberTypes || []).length ? '<br><span class="sub">held by ' +
+        this.esc(this.roleMemberTypesLabel(one.memberTypes)) + ' only</span>'
+        : '') +
+      (one.id ? '<br><span class="sub">id <code>' + this.esc(one.id) +
+        '</code></span>' : '') +
       '</td>' + members + permissions +
-      '<td class="act">' + (one.native
+      '<td class="act">' + this.roleEditFold(one, listView) + (one.native
         ? '<span class="sub">kept in every realm</span>'
         : '<form method="post" action="/admin/roles">' +
           this.rolesBack(listView) +
@@ -22796,6 +25239,61 @@ class AdminConsole {
           '">' +
           '<button type="submit" class="danger">Delete</button>' +
           '</form>') + '</td></tr>';
+  }
+
+  // Who a role's member types let hold it, in words (#93).
+  /**
+   * Names a role's member types for people: "people", "applications".
+   *
+   * @param types - the role's `memberTypes`
+   * @returns the words
+   */
+  roleMemberTypesLabel(types) {
+    const { log } = this.deps;
+    log.debug("Entering AdminConsole.roleMemberTypesLabel().");
+    log.debug("Leaving AdminConsole.roleMemberTypesLabel().");
+    return (types || []).map(function (one) {
+      return one === 'user' ? 'people' : 'applications';
+    }).join(' and ');
+  }
+
+  // THE EDIT FOLD (#93): describe-role's form — the description, the display
+  // name and, for any role but a console role, who may hold it. Every field
+  // is posted, filled with what the role has, so saving one change keeps the
+  // others. A `<details>`, which needs no script (the policy's rule).
+  /**
+   * Draws a role's Edit fold: its description, display name and member
+   * types, posted as describe-role.
+   *
+   * @param one - the configured role
+   * @param listView - the list view the form carries
+   * @returns the fold as HTML
+   */
+  roleEditFold(one, listView) {
+    const { log } = this.deps;
+    const self = this;
+    log.debug("Entering AdminConsole.roleEditFold().");
+    const current = (one.memberTypes || []).length === 1
+      ? one.memberTypes[0] : '';
+    const typeField = one.console ? ''
+      : '<label>May be held by <select name="memberTypes">' +
+        [['', 'people and applications'], ['user', 'people only'],
+         ['application', 'applications only']].map(function (option) {
+          return '<option value="' + option[0] + '"' +
+                 (option[0] === current ? ' selected' : '') + '>' +
+                 self.esc(option[1]) + '</option>';
+        }).join('') + '</select></label>';
+    log.debug("Leaving AdminConsole.roleEditFold().");
+    return '<details><summary>Edit</summary>' +
+      '<form method="post" action="/admin/roles">' +
+      this.rolesBack(listView) +
+      '<input type="hidden" name="action" value="describe-role">' +
+      '<input type="hidden" name="role" value="' + this.esc(one.name) + '">' +
+      '<label>Display name <input name="displayName" value="' +
+      this.esc(one.displayName || '') + '"></label>' +
+      '<label>Description <input name="description" value="' +
+      this.esc(one.description || '') + '"></label>' + typeField +
+      '<button type="submit">Save</button></form></details>';
   }
 
   // ---------------------------------------------------------------------------
@@ -23378,6 +25876,15 @@ class AdminConsole {
                     (isUserinfo ? 'UserInfo responses' : 'tokens');
     const extraHeader = isSaml2 ? '<th>NameFormat</th>' :
                         (isSaml11 ? '<th>AttributeNamespace</th>' : '');
+    // ATTRIBUTE CLAIMS' THREE HELPS (#94), from the model the /admin-api
+    // replies carry too: what each attribute row would carry for the
+    // previewed person, which partners' release lists withhold a claim, and
+    // the attributes worth offering in the form's pick-list.
+    const who = previewUser || 'alice';
+    const previewRows = adminViews.attributeClaimPreview(setId, who);
+    const lists = adminViews.releaseWithholding();
+    const withheld = adminViews.withheldFor(claims, lists);
+    const choices = adminViews.attributeClaimChoices();
 
     const rows = claims.map(function (claim) {
       const extraCell = isSaml2 ? '<td>' + self.esc(claim.nameFormat || '—') +
@@ -23387,7 +25894,33 @@ class AdminConsole {
                          '</td>' : '');
       return '<tr><td><code>' + self.esc(claim.name) + '</code></td>' +
              extraCell +
-        '<td><code>' + self.esc(claim.value) + '</code></td>' +
+        // AN ATTRIBUTE CLAIM (#94) shows where its value comes from.
+        '<td>' + (claim.attribute
+          ? '&larr; <code>' + self.esc(claim.attribute) + '</code>' +
+            '<span class="sub"> directory attribute' +
+            (claim.multi ? ', every value' : '') +
+            (claim.type && claim.type !== 'string'
+              ? ', as ' + self.esc(claim.type) : '') + '</span>'
+          : '<code>' + self.esc(claim.value) + '</code>') +
+        // WHAT IT WOULD CARRY FOR THE PREVIEWED PERSON (#94).
+        (claim.attribute ? (function () {
+          const seen = previewRows.filter(function (one) {
+            return one.name === claim.name;
+          })[0];
+          return '<br><span class="sub">for <code>' + self.esc(who) +
+            '</code>: ' + (seen && seen.carried
+              ? '<code>' + self.esc(JSON.stringify(seen.value)) + '</code>'
+              : 'nothing &mdash; their entry has no ' +
+                self.esc(claim.attribute)) + '</span>';
+        })() : '') +
+        // WHO WOULD NOT GET IT (#94): a partner whose release list does not
+        // name it.
+        (withheld[claim.name] ? '<br><span class="state-revoked">withheld ' +
+          'from ' + withheld[claim.name].map(function (id) {
+            return '<a href="/admin/federation?relationship=' +
+                   encodeURIComponent(id) + '">' + self.esc(id) + '</a>';
+          }).join(', ') + '</span><span class="sub"> &mdash; not on ' +
+          'their release list</span>' : '') + '</td>' +
         '<td><form method="post" action="' + self.esc(pageUrl) +
         '" class="inline">' +
         '<input type="hidden" name="action" value="remove">' +
@@ -23438,6 +25971,53 @@ class AdminConsole {
         '<input type="text" id="v-' + setId + '" name="value" size="28">' +
         '<button>Add</button>' +
         '</div></form>' +
+      // AN ATTRIBUTE CLAIM (#94): any directory attribute, under a name of
+      // the administrator's choosing — where the half below offers only the
+      // catalogue, under the names the catalogue fixes.
+      '<form method="post" action="' + this.esc(pageUrl) + '"><div ' +
+        'class="formrow">' +
+        '<input type="hidden" name="action" value="add-attribute-claim">' +
+        '<input type="hidden" name="set" value="' + this.esc(setId) + '">' +
+        '<label for="an-' + setId + '">Name</label>' +
+        '<input type="text" id="an-' + setId + '" name="name" size="20">' +
+        '<label for="aa-' + setId + '">from the attribute</label>' +
+        '<input type="text" id="aa-' + setId + '" name="attribute" ' +
+        'size="20" placeholder="e.g. costCenter" list="ac-' + setId + '">' +
+        // THE PICK-LIST (#94): what this realm's attribute sources and
+        // federation mappings write, so a name is chosen rather than
+        // guessed; any other name may still be typed.
+        '<datalist id="ac-' + setId + '">' + choices.map(function (one) {
+          return '<option value="' + self.esc(one.attribute) + '" label="' +
+                 self.esc(one.attribute + ' (' + one.from.join(', ') + ')') +
+                 '">';
+        }).join('') + '</datalist>' +
+        '<label><input type="checkbox" name="multi" value="true"> every ' +
+        'value</label>' +
+        (isSaml ? '' : '<label for="at-' + setId + '">as</label><select ' +
+          'id="at-' + setId + '" name="type">' +
+          ['string', 'number', 'boolean', 'json'].map(function (type) {
+            return '<option value="' + type + '">' + type + '</option>';
+          }).join('') + '</select>') +
+        '<button>Add</button></div></form>' +
+      '<p class="sub">A ' + noun + ' from a directory attribute carries ' +
+      'the value on the entry of the person the ' +
+      (isSaml ? 'assertion' : (isUserinfo ? 'response' : 'token')) +
+      ' is about &mdash; any attribute, not only the catalogue below. Only ' +
+      'the directory: a person whose entry lacks it gets none. A secret, a ' +
+      'binary value or an attribute this service keeps is refused.' +
+      (choices.length ? ' The attribute field offers the ' + choices.length +
+        ' this realm\'s attribute sources and federation mappings write.'
+                      : '') + '</p>' +
+      // THE RELEASE WARNING (#94), where it applies: a claim added here does
+      // not reach a partner whose release list does not name it.
+      (lists.length ? this.warn('<strong>' + lists.length + ' federation ' +
+        'partner(s) have a release list</strong> (' +
+        lists.map(function (one) {
+          return '<a href="/admin/federation?relationship=' +
+                 encodeURIComponent(one.id) + '">' + self.esc(one.id) +
+                 '</a>';
+        }).join(', ') + '): a ' + noun + ' added here reaches them only ' +
+        'once its name is added to their <code>fedRelease</code>.') : '') +
       (claims.length
         ? '<form method="post" action="' + this.esc(pageUrl) +
           '" class="inline">' +
@@ -25290,14 +27870,18 @@ class AdminConsole {
    * group the page owns.
    *
    * @param path - the page's path
+   * @param only - optional; the names of the groups to draw, for a page that
+   *   puts each of its groups on a tab of its own (/admin/listeners, #423)
    * @returns the block as HTML, or an empty string when the page owns no
-   *   settings group
+   *   settings group (or none of `only`)
    */
-  configFormsFor(path) {
+  configFormsFor(path, only?) {
     const { log, persistence } = this.deps;
     const self = this;
     log.debug("Entering AdminConsole.configFormsFor(). path=" + path);
-    const groups = this.settingsGroupsFor(path);
+    const groups = this.settingsGroupsFor(path).filter(function (group) {
+      return !Array.isArray(only) || only.indexOf(group.group) >= 0;
+    });
     if (!groups.length) {
       log.debug("Leaving AdminConsole.configFormsFor(). No settings live on " +
                 path + ".");
@@ -25444,6 +28028,131 @@ class AdminConsole {
     return known ? asked : '/admin/config';
   }
 
+  // ---------------------------------------------------------------------------
+  // AN ORDERED CHOICE FROM A CLOSED LIST (2026-10-01, rcbj: "explicitly
+  // choose, by checkboxes, which webauthn / ctap algorithms are requested and
+  // an order of preference"). A `csv` row marked `ordered` (only
+  // `webauthn.algorithms` today) is drawn as a table: one row per value, a
+  // checkbox that says whether it is requested and a number that says where
+  // it comes in the preference order, with the value's own note beside it.
+  // Chosen values are drawn first, in their current order, numbered 1 to N;
+  // the rest follow in the list's own order, numbered on from N + 1, so
+  // ticking one puts it last unless its number is changed.
+  //
+  // NO SCRIPT, for this console's reason: drag-and-drop or Up and Down
+  // buttons would need a script or a round trip per move, and a number per
+  // row is a whole re-ordering in one save. The fields are
+  // `<key>.pick.<value>` and `<key>.rank.<value>`, with `<key>.ordered`
+  // beside them so a save that ticks nothing is told apart from a form that
+  // does not hold this row; `foldOrderedChoices()` turns them back into the
+  // setting's one comma-separated value before the save is checked.
+  // ---------------------------------------------------------------------------
+  /**
+   * Draws an ordered choice from a closed list as a table of checkboxes and
+   * order numbers.
+   *
+   * @param setting - the described setting (`ordered`, `csvValues`)
+   * @param id - the id the row's label points at, given to the first box
+   * @returns the control as HTML
+   */
+  orderedChoiceControl(setting, id) {
+    const { log } = this.deps;
+    const self = this;
+    log.debug("Entering AdminConsole.orderedChoiceControl().");
+    const chosen = String(setting.text || '').split(',')
+      .map(function (one) { return one.trim(); })
+      .filter(function (one) {
+        return one !== '' && setting.csvValues.indexOf(one) >= 0;
+      });
+    const rest = setting.csvValues.filter(function (one) {
+      return chosen.indexOf(one) < 0;
+    });
+    const notes = setting.csvValueNotes || {};
+    const off = setting.editable ? '' : ' disabled';
+    const key = String(setting.key);
+    const rows = chosen.concat(rest).map(function (value, n) {
+      const picked = chosen.indexOf(value) >= 0;
+      return '<tr><td><input type="checkbox" name="' +
+        self.esc(key + '.pick.' + value) + '" value="1"' +
+        (n === 0 ? ' id="' + self.esc(id) + '"' : '') +
+        (picked ? ' checked' : '') + off + ' aria-label="' +
+        self.esc('Request ' + value) + '"></td>' +
+        '<td><input type="number" name="' +
+        self.esc(key + '.rank.' + value) + '" value="' + (n + 1) +
+        '" min="1" max="' + setting.csvValues.length + '" step="1" ' +
+        'style="width:4.5em"' + off + ' aria-label="' +
+        self.esc('Preference of ' + value) + '"></td>' +
+        '<td><code>' + self.esc(value) + '</code></td>' +
+        '<td class="sub">' + self.esc(notes[value] || '') + '</td></tr>';
+    }).join('');
+    log.debug("Leaving AdminConsole.orderedChoiceControl(). " +
+              chosen.length + " chosen.");
+    return '<input type="hidden" name="' + this.esc(key + '.ordered') +
+      '" value="1">' +
+      '<table class="cfg-ordered"><tr><th>Request</th><th>Order</th>' +
+      '<th>Value</th><th></th></tr>' + rows + '</table>' +
+      this.note('Tick what is requested and number it: <strong>1 is the ' +
+        'most preferred</strong>, and an authenticator uses the first it ' +
+        'supports. A number on an unticked row is ignored; two rows with ' +
+        'the same number keep the order they are drawn in.');
+  }
+
+  // THE FOLD, for a form that drew `orderedChoiceControl()`: the ticked
+  // values sorted by their numbers (a number that does not read as one goes
+  // last; a tie keeps the order the form posted), joined into the setting's
+  // value, and the per-value fields removed so `set-many` sees only real
+  // keys. Ticking nothing is refused (STS-ADMIN-0840) rather than saved as
+  // an empty list, which the setting would silently replace with its
+  // fallback. Anything else the setting does not take is `checkWrite()`'s
+  // to refuse, as for every other row.
+  /**
+   * Folds an ordered choice's checkbox and order fields into the setting's
+   * one comma-separated value.
+   *
+   * @param body - the parsed form body, changed in place
+   * @returns a refusal, or null
+   */
+  foldOrderedChoices(body) {
+    const { log, errorCodes } = this.deps;
+    log.debug("Entering AdminConsole.foldOrderedChoices().");
+    const markers = Object.keys(body || {}).filter(function (name) {
+      return /\.ordered$/.test(name);
+    });
+    let refusal = null;
+    markers.forEach(function (marker) {
+      const key = marker.slice(0, -'.ordered'.length);
+      const picks = [];
+      Object.keys(body).forEach(function (name, n) {
+        if (name.indexOf(key + '.pick.') === 0) {
+          const value = name.slice((key + '.pick.').length);
+          const rank = Number(body[key + '.rank.' + value]);
+          picks.push({ value: value, n: n,
+                       rank: Number.isFinite(rank) ? rank : Infinity });
+        }
+      });
+      Object.keys(body).forEach(function (name) {
+        if (name === marker || name.indexOf(key + '.pick.') === 0 ||
+            name.indexOf(key + '.rank.') === 0) {
+          delete body[name];
+        }
+      });
+      if (!picks.length) {
+        refusal = refusal || errorCodes.mark({ ok: false, errors: [key +
+          ': choose at least one. A list with nothing in it is not saved; ' +
+          'the setting would fall back to a default nobody chose.'] },
+          'STS-ADMIN-0840');
+        return;
+      }
+      picks.sort(function (a, b) {
+        return a.rank - b.rank || a.n - b.n;
+      });
+      body[key] = picks.map(function (one) { return one.value; }).join(',');
+    });
+    log.debug("Leaving AdminConsole.foldOrderedChoices(). " +
+              markers.length + " folded.");
+    return refusal;
+  }
+
   /**
    * Draws one setting as a table row: its key with the description as a
    * tooltip, its control, its source and, when overridden, a Reset button.
@@ -25463,7 +28172,12 @@ class AdminConsole {
     // The control carries the description as a tooltip, at the length a tooltip
     // holds. See the comment above the return.
     const hint = this.tip(setting.description, Infinity);
-    const input = setting.type === 'enum'
+    // AN ORDERED CHOICE (2026-10-01) is a checkbox and an order number per
+    // value — `orderedChoiceControl()` — rather than a text box.
+    const input = setting.type === 'csv' && setting.ordered &&
+                  Array.isArray(setting.csvValues)
+      ? this.orderedChoiceControl(setting, id)
+      : setting.type === 'enum'
       ? '<select name="' + this.esc(setting.key) + '" id="' + this.esc(id) +
         '"' + hint +
         (setting.editable ? '' : ' disabled') + '>' +
@@ -25778,13 +28492,19 @@ class AdminConsole {
    *
    * @returns the warnings as HTML, or an empty string
    */
-  tokenLifetimeWarnings() {
+  tokenLifetimeWarnings(values?) {
     const { log, config } = this.deps;
     const self = this;
     log.debug("Entering AdminConsole.tokenLifetimeWarnings().");
-    const access = config.value('oauth2.accessTokenTtlS');
-    const refresh = config.value('oauth2.refreshTokenTtlS');
-    const skew = config.value('oauth2.clockSkewS');
+    // An application's page hands in the values in force FOR IT
+    // (2026-10-01); the realm's page reads the settings.
+    const given = values || {};
+    const access = given.access !== undefined ? given.access
+      : config.value('oauth2.accessTokenTtlS');
+    const refresh = given.refresh !== undefined ? given.refresh
+      : config.value('oauth2.refreshTokenTtlS');
+    const skew = given.skew !== undefined ? given.skew
+      : config.value('oauth2.clockSkewS');
     const notes = [];
     if (access >= refresh) {
       notes.push('<strong>The access token lives at least as long as the ' +
@@ -27775,10 +30495,35 @@ class AdminConsole {
         : info.lastError
           ? '<strong>THE LAST WRITE FAILED</strong> — ' +
             this.esc(info.lastError) +
-            '. This service is unaffected and is still answering everything ' +
-            'out of memory. The next change will recompute the same ' +
-            'difference and try again, so nothing has been lost yet.'
+            '. Reads are still answered out of memory, and the write is ' +
+            'retried on its own' + (info.retryArmed ? ' (a retry is armed)'
+              : '') + '. ' + (info.answersAfterCommit
+              ? 'A request whose change was in it was answered 503 (LDAP: ' +
+                'unavailable), never its success (#351).'
+              : 'The request that made the change was answered before it.')
           : 'writing normally'],
+      // ANSWER AFTER COMMIT AND THE EVENT LOOP (#351): what
+      // persistence.status() carries for them, drawn so an operator does not
+      // need the API to see a refused write waiting or a blocked loop.
+      ['Answered after commit', off ? '—'
+        : (info.answersAfterCommit
+          ? 'yes — a request that changed the store is answered once that ' +
+            'change has committed, and 503 (LDAP: unavailable) when it has ' +
+            'not'
+          : 'no — this store is written after the answer') +
+          (info.commitBacklog
+            ? '. <strong class="bad">A REFUSED WRITE IS WAITING FOR ITS ' +
+              'RETRY</strong>; writing requests are held for it.'
+            : '.')],
+      ['Event loop', !info.eventLoop ? '—'
+        : 'worst delay ' +
+          this.esc(String((info.eventLoop.sinceReport || {}).maxMs)) +
+          ' ms since the last report' +
+          (info.eventLoop.lastReport
+            ? ', ' + this.esc(String(info.eventLoop.lastReport.maxMs)) +
+              ' ms in the window before it'
+            : '') + ' (a warning is logged over ' +
+          this.esc(String(info.eventLoop.warnAboveMs)) + ' ms).'],
       ['Written so far', off ? '—'
         : this.esc(String(info.writes)) + ' flush(es), ' +
           this.esc(String(info.failures)) +
@@ -27847,6 +30592,132 @@ class AdminConsole {
   // query, and a page that silently showed an hour-old membership would be
   // worse than one that says "as of two seconds ago".
   // ===========================================================================
+  /**
+   * The Cluster page's section on every OTHER cell's cluster (#361), from
+   * what `prepareClusterPage()` read: each cell's running members (folded
+   * by name, with their restarts), its leases and each node's worker
+   * pools; a cell that did not answer is drawn as unreachable, with why.
+   * Times are the answering cell's database clock, shown relative to the
+   * moment it answered.
+   *
+   * @returns `{ html, json }`; both empty in single-cell mode
+   */
+  otherCellsBlock() {
+    const { log } = this.deps;
+    const self = this;
+    log.debug("Entering AdminConsole.otherCellsBlock().");
+    const held = this.peerClustersNow;
+    if (!held) {
+      log.debug("Leaving AdminConsole.otherCellsBlock(). Single cell.");
+      return { html: '', json: null };
+    }
+    const agoFrom = function (at, t) {
+      if (!t) {
+        return '—';
+      }
+      const ms = at - t;
+      return ms >= 0 ? self.esc(self.durationText(ms)) + ' ago'
+                     : 'in ' + self.esc(self.durationText(-ms));
+    };
+    const sections = (held.rows || []).map(function (row) {
+      const head = '<h3>Cell <code>' + self.esc(row.cell) + '</code> (' +
+        self.esc(row.jurisdiction || '?') + ')</h3>';
+      if (!row.reachable) {
+        return head + self.warn('<strong>This cell did not answer.</strong> ' +
+          self.esc(row.error || '') + ' Its members may be running; the ' +
+          'inter-cell channel could not ask them.');
+      }
+      const sum = row.summary || {};
+      const at = Number(sum.at) || 0;
+      if (!sum.clustered) {
+        return head + self.note('Answered in ' +
+          self.esc(String(row.answeredMs)) + 'ms; it is not clustered ' +
+          '(<code>cluster.mode</code> ' + self.esc(sum.mode || 'off') +
+          ').');
+      }
+      const members = sum.members || { live: [], restarts: {}, gone: [] };
+      const restarts = members.restarts || {};
+      const live = (members.live || []).map(function (n) {
+        const r = restarts[n.name] || null;
+        return '<tr><td><strong>' + self.esc(n.name) + '</strong></td><td>' +
+          self.esc(n.mode) + '</td><td>' + self.esc(n.version || 'unknown') +
+          '</td><td>' + (n.uptimeMs
+            ? self.esc(self.durationText(n.uptimeMs)) : '—') +
+          (r ? '<br><span class="sub">restarted ' + self.esc(String(r.count)) +
+               ' time(s), the last life ended ' + agoFrom(at, r.lastEndedAt) +
+               '</span>' : '') +
+          '</td><td>' + agoFrom(at, n.heartbeatAt) +
+          (n.lastStallMs ? '<br><strong>last stall ' +
+            self.esc(String(Math.round(n.lastStallMs / 100) / 10)) +
+            's</strong>' : '') +
+          '</td><td>' + self.esc(String(n.workers || 0)) + '</td><td>' +
+          ((n.leases || []).map(function (l) {
+            return '<code>' + self.esc(l) + '</code>';
+          }).join('<br>') || 'none') + '</td><td>' +
+          (n.agrees === null ? 'not known there'
+            : n.agrees ? 'yes' : '<strong>NO</strong>') + '</td></tr>';
+      }).join('');
+      const gone = (members.gone || []).map(function (n) {
+        return '<tr><td>' + self.esc(n.name || '(no name)') + '</td><td>' +
+          self.esc(n.version || 'unknown') + '</td><td>' +
+          (n.how === 'left' ? 'left cleanly ' : '<strong>expired</strong> ') +
+          agoFrom(at, n.endedAt) + (n.earlierLives
+            ? '<br><span class="sub">and ' + self.esc(String(n.earlierLives)) +
+              ' earlier life/lives</span>' : '') + '</td></tr>';
+      }).join('');
+      const pools = (sum.pools || []).map(function (node) {
+        return (node.pools || []).map(function (p) {
+          return '<tr><td>' + self.esc(node.name) +
+            (node.state && node.state !== 'live'
+              ? ' <em>(' + self.esc(node.state) + ')</em>' : '') +
+            '</td><td>' + self.esc(p.title || p.id) + '</td><td>' +
+            self.esc(p.state || '') + '</td><td>' +
+            self.esc(String(p.currentWorkers)) + '</td><td>' +
+            self.esc(String(p.busyWorkers)) + '</td><td>' +
+            self.esc(String(p.freeWorkers)) + '</td><td>' +
+            self.esc(String(p.crashed)) + '</td><td>' +
+            self.esc(String(p.failedStarts)) + '</td></tr>';
+        }).join('');
+      }).join('');
+      return head + '<div class="tiles">' +
+        self.tile((members.live || []).length, 'running') +
+        self.tile((sum.leases || []).length, 'leases held') +
+        self.tile((members.gone || []).length, 'left or expired') +
+        '</div><p class="sub">Mode ' + self.esc(sum.mode) +
+        '; answered in ' + self.esc(String(row.answeredMs)) + 'ms. Times ' +
+        'are that cell\'s database clock, relative to when it answered.</p>' +
+        self.wideTable('Running members of cell ' + row.cell,
+          '<table><tr><th>Node</th><th>Mode</th><th>Version</th><th>Up</th>' +
+          '<th>Last seen</th><th>Request workers</th><th>Leases</th>' +
+          '<th>Settings agree</th></tr>' +
+          (live || '<tr><td colspan="8">no running members</td></tr>') +
+          '</table>') +
+        (gone ? '<details class="fold"><summary>' +
+          self.esc(String((members.gone || []).length)) + ' node name(s) ' +
+          'that have left or expired</summary><div class="foldbody">' +
+          self.wideTable('Left or expired in cell ' + row.cell,
+            '<table><tr><th>Node</th><th>Version</th><th>Ended</th></tr>' +
+            gone + '</table>') + '</div></details>' : '') +
+        (pools ? self.wideTable('Worker pools of cell ' + row.cell,
+          '<table><tr><th>Node</th><th>Pool</th><th>State</th>' +
+          '<th>Workers</th><th>Busy</th><th>Free</th><th>Crashed</th>' +
+          '<th>Failed starts</th></tr>' + pools + '</table>')
+          : (sum.poolsError ? self.note('Its worker pools could not be ' +
+              'read: ' + self.esc(sum.poolsError)) : ''));
+    }).join('');
+    const html = '<h2>The other cells</h2>' +
+      self.note('This service runs as several cells, each its own cluster ' +
+        'against its own database; the list above is this cell\'s. Each ' +
+        'other cell was asked over the inter-cell channel for its members ' +
+        'and pools when this page was drawn — names and counts only, never ' +
+        'an address.') +
+      (held.error ? self.warn(self.esc(held.error)) : '') +
+      (sections || self.note('No other cell is configured.'));
+    log.debug("Leaving AdminConsole.otherCellsBlock().");
+    return { html: html, json: { askedAt: held.at, cells: held.rows || [],
+                                 error: held.error || null } };
+  }
+
   /**
    * Describes this node, the cluster's members and leases, what
    * active-active still waits for and the shared secrets, for
@@ -27957,13 +30828,16 @@ class AdminConsole {
     // =======================================================================
     const nodes = state ? state.nodes : [];
     const now = state ? state.now : 0;
-    const isLive = function (node) {
-      return !node.leftAt && node.expiresAt > now;
-    };
-    const live = nodes.filter(isLive);
-    const gone = nodes.filter(function (node) {
-      return !isLive(node);
-    });
+    // FOLDED BY NAME (2026-09-30, `cluster.foldMembers()`): a dead row whose
+    // name has a live row is that node's restart history and is counted on
+    // its live row; only a name with no live row has left or expired, drawn
+    // once. A snapshot from an older build carries no `members`, so it is
+    // folded here from the rows.
+    const folded = (state && state.members) ||
+                   cluster.foldMembers(nodes, now);
+    const live = folded.live;
+    const gone = folded.gone;
+    const restarts = folded.restarts || {};
 
     // WHICH LEASES EACH NODE STILL HOLDS, by holder. A lapsed row is left out:
     // a released lease is expired and never deleted (the fencing token must
@@ -28026,10 +30900,17 @@ class AdminConsole {
     // only used where the node said nothing.
     const upOf = function (node) {
       const info = node.info || {};
+      const r = restarts[node.name || ''];
+      const history = r
+        ? '<br><span class="sub">restarted ' +
+          consoleSelf.esc(String(r.count)) + ' time(s), the last life ended ' +
+          ago(r.lastEndedAt) + '</span>'
+        : '';
       if (info.uptimeMs) {
-        return consoleSelf.esc(consoleSelf.durationText(info.uptimeMs));
+        return consoleSelf.esc(consoleSelf.durationText(info.uptimeMs)) +
+               history;
       }
-      return 'joined ' + ago(node.startedAt);
+      return 'joined ' + ago(node.startedAt) + history;
     };
 
     // WHEN ANYTHING LAST HEARD FROM IT, and — where the node reported one —
@@ -28092,12 +30973,21 @@ class AdminConsole {
         '</td><td>' + (node.leftAt
           ? 'left cleanly ' + ago(node.leftAt)
           : '<strong>expired</strong> ' + ago(node.expiresAt)) +
+        (node.earlierLives
+          ? '<br><span class="sub">and ' +
+            consoleSelf.esc(String(node.earlierLives)) +
+            ' earlier life/lives under this name</span>'
+          : '') +
         '</td></tr>';
     }).join('');
 
     const goneTable = !gone.length ? ''
       : '<details class="fold"><summary>' + this.esc(String(gone.length)) +
         ' node(s) that have left or expired</summary><div class="foldbody">' +
+        '<p>One row per NODE NAME with no running member: a name that is ' +
+        'running again is that node restarted, counted on its running row ' +
+        'above rather than listed here, and a name that ended several ' +
+        'times is shown once, as its latest life.</p>' +
         '<p>A node that stopped cleanly released its leases on the way out, ' +
         'so another member took them over within one heartbeat. A node that ' +
         'EXPIRED did not, and its leases waited out their lifetime — and it ' +
@@ -28205,6 +31095,7 @@ class AdminConsole {
           consoleSelf.esc(one.what) + '</td></tr>';
       }).join('') + '</table>';
 
+    const otherCells = this.otherCellsBlock();
     const html = '<h2>Right now</h2>' +
       (off ? this.note('This process is not clustered: ' +
                        '<code>cluster.mode</code> resolved to ' +
@@ -28215,15 +31106,28 @@ class AdminConsole {
       rows.map(function (row) {
         return '<tr><th>' + consoleSelf.esc(row[0]) + '</th><td>' + row[1] +
                '</td></tr>';
-      }).join('') + '</table>' + nodeTable + capabilityTable + secretTable;
+      }).join('') + '</table>' + nodeTable + otherCells.html + capabilityTable +
+      secretTable;
 
     log.debug("Leaving AdminConsole.clusterStatusBlock(). mode=" + self.mode);
     return {
       html: html,
       json: { self: self, snapshotAgeMs: snap.ageMs,
               nodes: state ? state.nodes : [],
+              // The page's reading of `nodes`, folded by name (rule 7).
+              members: state ? {
+                running: live.map(function (node) {
+                  return node.nodeId;
+                }),
+                restarts: restarts,
+                leftOrExpired: gone.map(function (node) {
+                  return { nodeId: node.nodeId, name: node.name,
+                           earlierLives: node.earlierLives || 0 };
+                })
+              } : null,
               leases: state ? state.leases : [],
               databaseNow: state ? state.now : null,
+              otherCells: otherCells.json,
               secrets: secrets, barrier: barrier }
     };
   }
@@ -28397,6 +31301,27 @@ class AdminConsole {
       'metadata names.');
     log.debug("Leaving AdminConsole.attestationPolicyBlock().");
     return html;
+  }
+
+  // A STORED KEY'S SIGNATURE ALGORITHM (2026-10-01), `credentials.
+  // keyAlgorithm()`'s answer: the JOSE name and COSE identifier, marked
+  // post-quantum (ML-DSA) or insecure (RS1).
+  /**
+   * Draws a stored security key's signature algorithm.
+   *
+   * @param key - the stored WebAuthn key
+   * @returns the cell's content as HTML
+   */
+  keyAlgorithmCell(key) {
+    const { log, credentials } = this.deps;
+    log.debug("Entering AdminConsole.keyAlgorithmCell().");
+    const algorithm = credentials.keyAlgorithm(key);
+    log.debug("Leaving AdminConsole.keyAlgorithmCell().");
+    return '<code>' + this.esc(algorithm.text) + '</code>' +
+      (algorithm.postQuantum
+        ? ' <span class="state-valid">post-quantum</span>' : '') +
+      (algorithm.insecure
+        ? ' <span class="state-revoked">insecure</span>' : '');
   }
 
   // A key's attestation, for its row (#105): what the statement proved, or
@@ -28899,6 +31824,67 @@ class AdminConsole {
     }
     log.debug("Leaving AdminConsole.protocolSettingsJsonFor().");
     return this.protocolSettingsJson(row);
+  }
+
+  /**
+   * `protocolSettingsJsonFor()` after the row's `prepare` step, for a page
+   * whose status block draws something asynchronous (the Cluster page's
+   * other cells, #361). A failed step is the block's to report.
+   *
+   * @param path - the page's console path
+   * @returns a promise of the page's JSON
+   */
+  preparedSettingsJsonFor(path) {
+    const { log } = this.deps;
+    const self = this;
+    log.debug("Entering AdminConsole.preparedSettingsJsonFor().");
+    const row = PROTOCOL_SETTINGS_PAGES.filter(function (item) {
+      return item.path === path;
+    })[0];
+    const ready = row && typeof row.prepare === 'function'
+      ? Promise.resolve().then(function () {
+        return row.prepare();
+      }).catch(function (e) {
+        log.debug("Caught in AdminConsole.preparedSettingsJsonFor(): " +
+                  ((e && e.message) || e));
+      })
+      : Promise.resolve();
+    log.debug("Leaving AdminConsole.preparedSettingsJsonFor().");
+    return ready.then(function () {
+      return self.protocolSettingsJsonFor(path);
+    });
+  }
+
+  /**
+   * The Cluster page's `prepare` (#361): asks every other cell for its
+   * cluster summary, for `clusterStatusBlock()` to draw. Single-cell
+   * mode asks nothing.
+   *
+   * @returns a promise settled when the answers (or failures) are held
+   */
+  prepareClusterPage() {
+    const { log } = this.deps;
+    const self = this;
+    log.debug("Entering AdminConsole.prepareClusterPage().");
+    const cells = require('../common/cells');
+    if (!cells.isMulti()) {
+      self.peerClustersNow = null;
+      log.debug("Leaving AdminConsole.prepareClusterPage(). Single cell.");
+      return Promise.resolve();
+    }
+    // A LAZY require: cells_admin draws with this module's shell, so it is
+    // loaded by the time any page is asked for, and a load-time require
+    // would close that cycle.
+    const cellsAdmin = require('./cells_admin');
+    log.debug("Leaving AdminConsole.prepareClusterPage().");
+    return Promise.resolve(cellsAdmin.peerClusters()).then(function (rows) {
+      self.peerClustersNow = { at: Date.now(), rows: rows || [] };
+    }, function (e) {
+      log.debug("Caught in AdminConsole.prepareClusterPage(): " +
+                ((e && e.message) || e));
+      self.peerClustersNow = { at: Date.now(), rows: [],
+                               error: String((e && e.message) || e) };
+    });
   }
 
   // ---------------------------------------------------------------------------
@@ -30133,6 +33119,53 @@ class AdminConsole {
       'verifies.');
   }
 
+  // WHAT THE PARTNER SENT AND NOTHING WROTE (#94), under the mapping it
+  // would take to keep one: a name no mapping names, or a name mapped onto an
+  // attribute no partner may write (with why). Each row carries a Map form
+  // with the name filled in, so keeping one is naming its attribute.
+  /**
+   * Draws the names a relationship's partner sent that were not written,
+   * each with a form to map it.
+   *
+   * @param row - the relationship's view
+   * @param unmapped - `federation.unmappedOf()`
+   * @param carryBack - the hidden `back` field every form carries
+   * @returns the section as HTML, or '' when there is nothing to show
+   */
+  federationUnmappedSection(row, unmapped, carryBack) {
+    const { log } = this.deps;
+    const self = this;
+    log.debug("Entering AdminConsole.federationUnmappedSection(). id=" +
+              row.id);
+    if (!unmapped.length) {
+      log.debug("Leaving AdminConsole.federationUnmappedSection(). None.");
+      return '';
+    }
+    log.debug("Leaving AdminConsole.federationUnmappedSection().");
+    return '<h3 id="unmapped">Sent and not written</h3>' +
+      this.note('Names this partner sent at a sign-in that were NOT ' +
+        'written to the directory: nothing maps them, or a mapping sends ' +
+        'them onto an attribute no partner may write. The newest first; a ' +
+        'name is kept for ' + 'as long as minted state is (' +
+        '<code>persistence.mintedRetention</code>).') +
+      '<table><tr><th>Name</th><th>Why</th><th>Last sent</th><th>Map it' +
+      '</th></tr>' +
+      unmapped.map(function (one) {
+        return '<tr><td class="who"><code>' + self.esc(one.name) +
+          '</code></td><td class="sub">' +
+          (one.refused ? self.esc(one.refused) : 'nothing maps it') +
+          '</td><td class="sub">' + self.esc(one.last) + '</td><td><form ' +
+          'method="post" action="/admin/federation"><div class="formrow">' +
+          carryBack +
+          '<input type="hidden" name="action" value="add-value">' +
+          '<input type="hidden" name="id" value="' + self.esc(row.id) +
+          '"><input type="hidden" name="field" value="fedAttributeMap">' +
+          '<input type="text" name="value" size="30" value="' +
+          self.esc(one.name + '=') + '"><button type="submit">Map' +
+          '</button></div></form></td></tr>';
+      }).join('') + '</table>';
+  }
+
   // The drill-down. It is the page that actually does the work, because a
   // relationship is configured field by field and the fields differ by role and
   // by protocol — which is why the form is BUILT from the schema rather than
@@ -30235,12 +33268,20 @@ class AdminConsole {
                                      linkPage.paging);
     const linkedSection = row.role !== 'service-provider' ? ''
       : '<h2 id="linked-people">People linked to this partner</h2>' +
-        this.note('Each person below carries a <code>federationLink</code> ' +
-          'through this relationship: the partner\'s identifier for them, ' +
-          'which is what signs them in. Under <code>fedSubjectPolicy</code> ' +
-          '<code>' + this.esc(federation.subjectPolicyOf(record)) + '</code>' +
-          '. A link is added and removed on the person\'s own page, and ' +
-          'removing one ends the sessions this partner signed them in to.') +
+        (row.signsIn
+          ? this.note('Each person below carries a <code>federationLink' +
+            '</code> through this relationship: the partner\'s identifier ' +
+            'for them, which is what signs them in. Under <code>' +
+            'fedSubjectPolicy</code> <code>' +
+            this.esc(federation.subjectPolicyOf(record)) + '</code>. A link ' +
+            'is added and removed on the person\'s own page, and removing ' +
+            'one ends the sessions this partner signed them in to.')
+          : this.note('Each person below carries a <code>federationLink' +
+            '</code> through this relationship, written by an administrator ' +
+            'on the person\'s own page: the issuer and subject the partner\'s ' +
+            'iss_sub events name them by, or <code>opaque</code> and the ' +
+            'opaque id. It signs nobody in; it is how this partner\'s ' +
+            'events find the person (#374).')) +
         linkNav.head +
         (linkPage.shown.length
           ? '<table><tr><th>Person</th><th>Issuer</th><th>Subject</th></tr>' +
@@ -30254,8 +33295,10 @@ class AdminConsole {
           : this.note('Nobody is linked to this partner yet.')) +
         linkNav.foot;
 
+    // An `ssf` relationship (#374) has no sign-in to switch; its two
+    // signals switches are in its Shared Signals section.
     const switches = ['fedEnabled'].concat(
-      row.role === 'service-provider'
+      row.role === 'service-provider' && row.signsIn
         ? ['fedAutocreateUsers', 'fedUpdateUserAttributes',
            'fedMayAssertAdministrators', 'fedAllowUnsolicited',
            'fedSignRequest', 'fedAcceptSignout', 'fedRequireSignedLogout']
@@ -30323,7 +33366,11 @@ class AdminConsole {
         (field.name === 'fedAttributeMap' ? 'incoming name=ldapAttribute'
           : (field.name === 'fedRelease' ? 'a claim or attribute name' :
              'a value')) + '"><button ' +
-        'type="submit">Add</button></div></form>';
+        'type="submit">Add</button></div></form>' +
+        (field.name === 'fedAttributeMap'
+          ? self.federationUnmappedSection(row, view.unmapped || [],
+                                           carryBack)
+          : '');
     }).join('');
 
     const inner = this.messagesOf(req) +
@@ -30373,7 +33420,9 @@ class AdminConsole {
         '</td></tr>' +
       '<tr><td>Directory entry</td><td class="who"><code>' + this.esc(row.dn) +
       '</code></td></tr></table>' +
-      (row.role === 'service-provider'
+      (row.role === 'service-provider' && !row.signsIn
+        ? this.federationSignalsSection(row, record, view, carryBack)
+        : row.role === 'service-provider'
         ? '<h2>What to configure at the partner</h2>' +
           this.note('These are the URLs to give whoever runs the identity ' +
           'provider. The assertion consumer service is the one that matters: ' +
@@ -30464,7 +33513,9 @@ class AdminConsole {
                     '">Start a federated ' +
           'sign-in through this ' +
           'partner</a> ' + (row.usable ? '' : '<span class="sub">— it will ' +
-          'refuse until this relationship is enabled and configured</span>'))
+          'refuse until this relationship is enabled and configured</span>')) +
+          // THE SAME PARTNER AS A TRANSMITTER (#373).
+          this.federationSignalsSection(row, record, view, carryBack)
         : '<h2>What this relationship does</h2>' +
           this.note('Every protocol endpoint here already issues to anybody ' +
           'that asks, so this relationship changes nothing about whether the ' +
@@ -30480,7 +33531,9 @@ class AdminConsole {
           'anything else the protocol puts in an artifact itself — those are ' +
           'what make the artifact verifiable, and a release list that could ' +
           'drop <code>iss</code> would produce tokens that fail to verify ' +
-          'with nothing pointing back at this page.')) +
+          'with nothing pointing back at this page.') +
+          // WHAT THIS SERVICE TELLS THE PARTNER (#373).
+          this.federationOutboundSection(view.outbound)) +
       '<h2>Settings</h2>' +
       '<table><tr><th>Field</th><th>Value</th><th>What it is</th></tr>' +
       fieldRows +
@@ -30511,7 +33564,9 @@ class AdminConsole {
       'It is never shown here and never written to the audit log, and ' +
       'anybody who can read this directory can authenticate as this service ' +
       'at that partner. A deployment federating with something real should ' +
-      'know that.') +
+      'know that. The Shared Signals credentials, <code>fedSignalsClient' +
+      'Secret</code> and <code>fedSignalsBearer</code>, are sealed under the ' +
+      'key-encryption key wherever keys persist (#373).') +
       FEDERATION_CAVEAT +
       '<p class="sub"><a href="' +
       this.esc('/admin/federation' +
@@ -30520,6 +33575,248 @@ class AdminConsole {
 
     log.debug("Leaving AdminConsole.federationDetailPage(). " + row.id + ".");
     return { inner: inner, json: view.json };
+  }
+
+  // ---------------------------------------------------------------------------
+  // A PARTNER'S SHARED SIGNALS (#373, #374): the configuration on the entry,
+  // the stream this realm holds at the partner and its acts, the people the
+  // partner has blocked, and the latest arrivals. Every act posts to
+  // /admin/federation as a `signals-*` action, whose API twin is
+  // `POST /admin-api/federation/signals-*` (rule 7). Never a secret.
+  // ---------------------------------------------------------------------------
+  /**
+   * Draws a service-provider-side relationship's Shared Signals section.
+   *
+   * @param row - the relationship's row
+   * @param record - the relationship
+   * @param view - the detail view: `signals`, `arrivals`, `signalSetFields`
+   * @param carryBack - the hidden `back` field carried into each form
+   * @returns the section as HTML
+   */
+  federationSignalsSection(row, record, view, carryBack) {
+    const { log, federation } = this.deps;
+    const self = this;
+    log.debug("Entering AdminConsole.federationSignalsSection().");
+    const s = view.signals;
+    if (!s) {
+      log.debug("Leaving AdminConsole.federationSignalsSection(). None.");
+      return '';
+    }
+    const act = function (action, label, extra?, danger?) {
+      log.debug("Entering act(). " + action);
+      log.debug("Leaving act().");
+      return '<form method="post" action="/admin/federation" ' +
+        'class="inline">' + carryBack +
+        '<input type="hidden" name="action" value="' + self.esc(action) +
+        '"><input type="hidden" name="id" value="' + self.esc(row.id) +
+        '">' + (extra || '') + ' <button type="submit"' +
+        (danger ? ' class="danger"' : '') + '>' + self.esc(label) +
+        '</button></form>';
+    };
+    const setRow = function (field) {
+      log.debug("Entering setRow(). " + field.name);
+      const value = record[field.name] || '';
+      log.debug("Leaving setRow().");
+      return '<tr><td><code>' + self.esc(field.name) + '</code></td><td>' +
+        '<form method="post" action="/admin/federation"><div ' +
+        'class="formrow">' + carryBack +
+        '<input type="hidden" name="action" value="set">' +
+        '<input type="hidden" name="id" value="' + self.esc(row.id) + '">' +
+        '<input type="hidden" name="field" value="' + self.esc(field.name) +
+        '">' + (Array.isArray(field.enum)
+          ? '<select name="value">' + field.enum.map(function (one) {
+              return '<option' + (String(value || 'poll') === one
+                ? ' selected' : '') + '>' + self.esc(one) + '</option>';
+            }).join('') + '</select>'
+          : '<input type="' + (field.sensitive ? 'password' : 'text') +
+            '" name="value" size="42" autocomplete="off" value="' +
+            self.esc(field.sensitive ? '' : value) + '"' +
+            (field.sensitive && value ? ' placeholder="set — not shown"'
+                                      : '') + '>') +
+        '<button type="submit">Set</button></div></form></td><td ' +
+        'class="sub">' + self.note(self.esc(field.what)) + '</td></tr>';
+    };
+    const switchRow = function (name, dflt) {
+      log.debug("Entering switchRow(). " + name);
+      const field = federation.SCHEMA.attributes.filter(function (f) {
+        return f.name === name;
+      })[0];
+      const on = federation.boolOf(record[name], dflt);
+      log.debug("Leaving switchRow().");
+      return '<tr><td><code>' + self.esc(name) + '</code></td><td class="' +
+        (on ? 'ok' : 'off') + '">' + (on ? 'TRUE' : 'FALSE') + '</td><td>' +
+        act('set', on ? 'Turn off' : 'Turn on',
+            '<input type="hidden" name="field" value="' + self.esc(name) +
+            '"><input type="hidden" name="value" value="' +
+            (on ? 'FALSE' : 'TRUE') + '">') + '</td><td class="sub">' +
+        self.esc(field ? field.what : '') + '</td></tr>';
+    };
+    const events = [].concat(record.fedSignalsEvents || []);
+    const eventRows = events.map(function (one) {
+      return '<tr><td class="who"><code>' + self.esc(one) + '</code></td>' +
+        '<td>' + act('remove-value', 'Remove',
+          '<input type="hidden" name="field" value="fedSignalsEvents">' +
+          '<input type="hidden" name="value" value="' + self.esc(one) +
+          '">', true) + '</td></tr>';
+    }).join('');
+    const streamActs = s.streamId
+      ? act('signals-read-stream', 'Read stream') +
+        act('signals-update-stream', 'Send fedSignalsEvents') +
+        act('signals-verify', 'Verify') +
+        (s.streamDelivery === 'poll' ? act('signals-poll-now', 'Poll now')
+                                     : '') +
+        act('signals-set-status', 'Pause',
+            '<input type="hidden" name="status" value="paused">') +
+        act('signals-set-status', 'Enable',
+            '<input type="hidden" name="status" value="enabled">') +
+        act('signals-delete-stream', 'Delete stream', '', true)
+      : act('signals-discover', 'Discover') +
+        act('signals-create-stream', 'Create stream');
+    const blocks = (s.blocks || []).length
+      ? '<h3 id="signal-blocks">Sign-ins this partner has blocked</h3>' +
+        '<table><tr><th>Person</th><th>Since</th><th>Event</th><th></th>' +
+        '</tr>' + s.blocks.map(function (b) {
+          return '<tr><td><a href="' + self.esc('/admin/users?user=' +
+            encodeURIComponent(b.username)) + '">' + self.esc(b.username) +
+            '</a></td><td>' + self.esc(b.at) + '</td><td><code>' +
+            self.esc(b.event) + '</code></td><td>' +
+            act('signals-unblock', 'Unblock',
+                '<input type="hidden" name="user" value="' +
+                self.esc(b.username) + '">') + '</td></tr>';
+        }).join('') + '</table>'
+      : '';
+    const arrivals = (view.arrivals || []).length
+      ? '<h3>Latest arrivals</h3><table><tr><th>When</th><th>Events</th>' +
+        '<th>Verified</th><th>Person</th><th>Reactions</th></tr>' +
+        view.arrivals.map(function (r) {
+          return '<tr><td>' + self.esc(r.receivedAt) + ' <span class="sub">' +
+            self.esc(r.via) + '</span></td><td>' + (r.events || [])
+              .map(function (e) {
+                return '<code>' + self.esc(String(e).replace(/^.*\//, '')) +
+                  '</code>';
+              }).join(' ') + '</td><td>' + (r.verified ? 'verified'
+              : '<strong>' + self.esc(r.refusal || 'unverified') +
+                '</strong>') + '</td><td>' + self.esc(r.person || '—') +
+            (r.mapping ? '<br><span class="sub">' + self.esc(r.mapping) +
+                         '</span>' : '') + '</td><td>' +
+            (r.reactions || []).map(function (x) {
+              return self.esc(x.reaction || '—') + (x.done ? ' ✓' : '') +
+                (x.observed ? ' (observed only)' : '') +
+                (x.why ? ' <span class="sub">' + self.esc(x.why) +
+                         '</span>' : '');
+            }).join('<br>') + '</td></tr>';
+        }).join('') + '</table>' +
+        this.note('Every arrival from every partner is on <a href="' +
+          '/admin/ssf/transmitters">Monitoring → Shared Signals from ' +
+          'partners</a>.')
+      : '';
+    log.debug("Leaving AdminConsole.federationSignalsSection().");
+    return '<h2 id="signals">Shared Signals from this partner</h2>' +
+      this.note(row.signsIn
+        ? 'The partner\'s CAEP and RISC events about the people it signs ' +
+          'in. A verified one is acted on as the <code>signal-response' +
+          '</code> policy permits — by default ending the sessions THIS ' +
+          'relationship started for the person, and on ' +
+          '<code>account-disabled</code> blocking its sign-ins of them until ' +
+          'its <code>account-enabled</code>. A local sign-in and every other ' +
+          'partner are untouched.'
+        : 'This partner signs nobody in: it only sends CAEP and RISC events. ' +
+          'By default they are recorded and nothing more, except a ' +
+          'device\'s compliance, which is set. Its people are the ones ' +
+          'linked to it below (<code>&lt;iss&gt; &lt;sub&gt;</code>, or ' +
+          '<code>opaque &lt;id&gt;</code>), or matched by mail where ' +
+          '<code>fedSignalEmailMatch</code> is on.') +
+      '<table><tr><th>What</th><th>Value</th></tr>' +
+      '<tr><td>Receiving</td><td class="' + (s.receiving ? 'ok' : 'off') +
+      '">' + (s.receiving ? 'yes'
+        : 'no — ' + (s.enabled ? 'fedSignalsEnabled is off'
+                               : 'the relationship is disabled')) +
+      '</td></tr>' +
+      '<tr><td>SSF issuer</td><td class="who"><code>' +
+      this.esc(s.issuer || '(none)') + '</code></td></tr>' +
+      '<tr><td>Configuration</td><td>' + (s.config
+        ? 'discovered ' + this.esc(s.discoveredAt) + ' from <code>' +
+          this.esc(s.discoveryUrl) + '</code>'
+        : '<span class="sub">not discovered yet</span>') + '</td></tr>' +
+      '<tr><td>Stream</td><td>' + (s.streamId
+        ? '<code>' + this.esc(s.streamId) + '</code> (' +
+          this.esc(s.streamDelivery) + ', aud <code>' +
+          this.esc((s.streamAud || []).join(' ')) + '</code>)' +
+          (s.verifiedAt ? ' — verified ' + this.esc(s.verifiedAt) : '')
+        : '<span class="sub">none</span>') + '</td></tr>' +
+      (s.streamDelivery === 'push' || s.delivery === 'push'
+        ? '<tr><td>Push endpoint</td><td class="who"><code>' +
+          this.esc(view.base + s.pushEndpoint) + '</code><span class="sub">' +
+          ' given to the partner with the stream</span></td></tr>' : '') +
+      '<tr><td>Counts</td><td>' + this.esc(String(s.counts.received || 0)) +
+      ' received, ' + this.esc(String(s.counts.verified || 0)) +
+      ' verified, ' + this.esc(String(s.counts.refused || 0)) +
+      ' refused, ' + this.esc(String(s.counts.acted || 0)) +
+      ' reaction(s)' + (s.lastPollAt ? '; last poll ' +
+        this.esc(s.lastPollAt) + ': ' + this.esc(s.lastPollResult) : '') +
+      '</td></tr>' +
+      (s.lastError ? '<tr><td>Last error</td><td class="warn">' +
+                     this.esc(s.lastError) + '</td></tr>' : '') +
+      (s.ready ? '' : '<tr><td>Still to set</td><td class="warn">' +
+                      this.esc(s.missing.join(', ')) + '</td></tr>') +
+      '</table>' +
+      '<p>' + streamActs + '</p>' +
+      '<table><tr><th>Field</th><th>Now</th><th></th><th>What it is</th>' +
+      '</tr>' + (row.signsIn ? switchRow('fedSignalsEnabled', false) : '') +
+      switchRow('fedSignalEmailMatch', false) + '</table>' +
+      '<table><tr><th>Field</th><th>Value</th><th>What it is</th></tr>' +
+      (view.signalSetFields || []).map(setRow).join('') + '</table>' +
+      '<h3><code>fedSignalsEvents</code></h3>' +
+      (eventRows ? '<table>' + eventRows + '</table>'
+                 : this.note('None: the stream asks for whatever the ' +
+                             'partner supports.')) +
+      '<form method="post" action="/admin/federation"><div class="formrow">' +
+      carryBack + '<input type="hidden" name="action" value="add-value">' +
+      '<input type="hidden" name="id" value="' + this.esc(row.id) + '">' +
+      '<input type="hidden" name="field" value="fedSignalsEvents">' +
+      '<input type="text" name="value" size="60" placeholder="an event ' +
+      'type URI"><button type="submit">Add</button></div></form>' +
+      blocks + arrivals;
+  }
+
+  /**
+   * Draws what this service SENDS the partner of an identity-provider-side
+   * relationship: its application's streams on this service's transmitter.
+   *
+   * @param outbound - `{ application, streams }`
+   * @returns the section as HTML
+   */
+  federationOutboundSection(outbound) {
+    const { log } = this.deps;
+    const self = this;
+    log.debug("Entering AdminConsole.federationOutboundSection().");
+    if (!outbound || !outbound.application) {
+      log.debug("Leaving AdminConsole.federationOutboundSection(). None.");
+      return '';
+    }
+    log.debug("Leaving AdminConsole.federationOutboundSection().");
+    return '<h2 id="signals-sent">Shared Signals this service sends the ' +
+      'partner</h2>' +
+      this.note('The streams on this service\'s own transmitter that the ' +
+        'partner\'s application <code>' + this.esc(outbound.application) +
+        '</code> owns. Read only: a stream belongs to the receiver that ' +
+        'created it, and is managed through SSF\'s stream management API.') +
+      ((outbound.streams || []).length
+        ? '<table><tr><th>Stream</th><th>Delivery</th><th>Status</th>' +
+          '<th>Events delivered</th><th>Last activity</th><th>Dead letters' +
+          '</th></tr>' + outbound.streams.map(function (one) {
+            return '<tr><td><code>' + self.esc(one.streamId) + '</code>' +
+              '</td><td>' + self.esc(one.delivery) + '</td><td class="' +
+              (one.dead ? 'warn' : '') + '">' + self.esc(one.status) +
+              (one.dead ? ' — not delivering' : '') + '</td><td>' +
+              (one.eventsDelivered || []).map(function (e) {
+                return '<code>' + self.esc(String(e).replace(/^.*\//, '')) +
+                  '</code>';
+              }).join(' ') + '</td><td>' +
+              self.esc(one.lastActivityAt || '—') + '</td><td>' +
+              self.esc(String(one.deadLetters)) + '</td></tr>';
+          }).join('') + '</table>'
+        : this.note('The partner\'s application holds no stream here.'));
   }
 
   // ---------------------------------------------------------------------------
@@ -30925,7 +34222,10 @@ class AdminConsole {
        '') +
       '</td>' +
       '<td>' + this.esc(row.roleLabel) + '</td>' +
-      '<td>' + this.esc(row.protocolLabel) + '</td>' +
+      '<td>' + this.esc(row.protocolLabel) +
+        (row.signsIn !== false && row.signalsEnabled
+          ? '<span class="sub">and its Shared Signals</span>' : '') +
+        '</td>' +
       '<td class="who">' + this.esc(row.peer || row.application || '') +
         (!row.peer && !row.application
           ? '<span class="sub">nothing named yet</span>' : '') + '</td>' +
@@ -33690,6 +36990,8 @@ class AdminConsole {
             self.tile(json.matched, filtering ? 'match' : 'listed') +
             self.tile(json.store, 'store') +
           '</div>' +
+          (json.searchNote ? self.warn(self.esc(json.searchNote),
+                                       'A search of the newest rows') : '') +
 
           self.note('Every <strong>RFC 7523</strong> JWT and <strong>RFC ' +
           '7522</strong> SAML assertion this realm has accepted — to ' +
@@ -34280,8 +37582,9 @@ class AdminConsole {
           ? ', and <strong>' + summary.dropped + ' dropped</strong> — this ' +
             'page holds at ' +
             'most ' + summary.maxRecords + ' acts and discards the oldest ' +
-            'first. Raise <code>delegation.maxRecords</code> in the settings ' +
-            'at the foot of this page if that is losing something you need.'
+            'first. Raise <code>delegation.maxRecords</code> on <a ' +
+            'href="/admin/delegation-settings">Protocols &rsaquo; ' +
+            'Delegation</a> if that is losing something you need.'
           : '. The cap is ' + summary.maxRecords + ' acts and nothing has ' +
             'been dropped yet.') +
         ' The <strong>#</strong> column is a sequence number and is ' +
@@ -34340,39 +37643,37 @@ class AdminConsole {
         '</table>' +
         chainsNav.foot +
 
-        self.permissionsSection(req, permissions, listView) +
+        self.permissionsSection(req, permissions, listView, false) +
 
         '<h2>Who may delegate to whom &mdash; Kerberos</h2>' +
-        self.note('<strong>The SECOND configured register on this page, and ' +
-        'the older one.</strong> Until delegated permissions arrived this ' +
-        'was the only configuration here and this paragraph said so — ' +
-        '<em>this half is configuration rather than history, and it is ' +
-        'Kerberos only</em> — which is no longer true and is worth saying ' +
-        'rather than quietly editing. What IS still true is the sentence ' +
-        'underneath it: <strong>Kerberos is the one family here that polices ' +
-        'delegation IN THE ACT</strong>. The permissions above are policy ' +
-        'this service was configured with and refuses on in product mode, ' +
-        'and in development only when ' +
-        '<code>oauth2.delegatedPermissionsEnforced</code> is set; these two ' +
-        'attributes are a KDC decision that has always been made, on every ' +
-        'S4U request, whatever anything is set to. WS-Trust and the RFC ' +
-        '8693 token exchange are decided by the same model since #108 — ' +
-        'the section below — ENFORCED in product mode and, in development, ' +
-        'asked and recorded as what would have been refused. Every row says ' +
-        'which attribute allowed it, in the same column for all three ' +
-        'families.') +
-        self.note('The whole of the KDC\'s decision rests on two attributes ' +
-        'on two OPPOSITE accounts, which is why they are in one table with a ' +
-        'column saying which account carries the permission. Same messages, ' +
+        self.note('<strong>The KDC\'s view of the ONE delegation policy ' +
+        '(#186).</strong> Kerberos, WS-Trust and the RFC 8693 token ' +
+        'exchange are decided by the same issuance policy from the same ' +
+        'controls on the directory\'s entries — the section below lists ' +
+        'them for every protocol; this one lists the Kerberos services, ' +
+        'whose entries are named <code>SPN@REALM</code>. The KDC refuses ' +
+        'in BOTH modes, as it always has (in development the fixture ' +
+        'services\' rules are seeded onto their entries so every refusal ' +
+        'can be reached); WS-Trust and the token exchange are enforced in ' +
+        'product mode and, in development, recorded as what would have ' +
+        'been refused. Every row says what allowed it, in the same column ' +
+        'for all three families.') +
+        self.note('The relationship rests on two attributes on two OPPOSITE ' +
+        'entries — appAllowedToDelegateTo on the front end, ' +
+        'appAllowedToActOnBehalfOf on the back end — which is why they ' +
+        'are in one table with a column saying which entry carries the ' +
+        'permission. Same messages, ' +
         'same KDC options, opposite direction of trust — and the second one ' +
         'turns <em>I can write to this computer object</em> into <em>I can ' +
         'reach this service as anybody</em>.') +
         self.note('Each mechanism needs one thing BEYOND the attribute, and ' +
         'it is the same thing on every row of that kind, so it is here ' +
         'rather than in a column: <strong>classic</strong> needs a ' +
-        'FORWARDABLE evidence ticket, which S4U2Self returns only to an ' +
-        'account flagged ' +
-        '<code>TRUSTED_TO_AUTHENTICATE_FOR_DELEGATION</code>; ' +
+        'FORWARDABLE evidence ticket, which S4U2Self returns only where the ' +
+        'policy allows the impersonation — <code>impersonation</code> in the ' +
+        'service\'s <code>appDelegationSemantics</code> (Active ' +
+        'Directory\'s <code>TRUSTED_TO_AUTHENTICATE_FOR_DELEGATION</code>) ' +
+        'and a user who is not protected; ' +
         '<strong>resource-based</strong> needs <code>PA-PAC-OPTIONS</code> ' +
         '(padata type 167) carrying the resource-based bit, and [MS-SFU] ' +
         'requires a KDC to answer <code>KDC_ERR_BADOPTION</code> without it ' +
@@ -34446,13 +37747,15 @@ class AdminConsole {
         'gap is the reason this page keeps its own list rather than a filter ' +
         'over one of theirs.') +
 
-        // THE ONE SETTING THIS PAGE HAS, and it is the one a reader wants
-        // exactly when the paragraph above says something was dropped. It is
-        // also the only control on a page that had none — which does not change
-        // rule 7's answer for /admin-api/delegation: the form posts `set-many`
-        // to /admin/config, which POST /admin-api/config/set-many already
-        // mirrors.
-        self.configFormsFor('/admin/delegation') +
+        // THE ONE SETTING THIS PAGE HAD, `delegation.maxRecords`, is on
+        // Protocols → Delegation since 2026-10-01 with every other control
+        // that was here (rcbj): this page reads, and that one configures.
+        self.note('<strong>Nothing on this page changes anything ' +
+        '(2026-10-01).</strong> The register\'s controls and ' +
+        '<code>delegation.maxRecords</code> are on <a ' +
+        'href="/admin/delegation-settings">Protocols &rsaquo; ' +
+        'Delegation</a>, and one application\'s permissions on its own ' +
+        'Permissions tab.') +
 
         self.note('<strong>Every table on this page is paged, at ' +
         DELEGATION_PER_PAGE + ' rows, and they share one size.</strong> ' +
@@ -34525,7 +37828,6 @@ class AdminConsole {
                     { permissions: pagingJson(allowedState.permPage.paging),
                             grants: pagingJson(allowedState.grantPage.paging) }
                 },
-                settings: self.configSettingsJson('/admin/delegation'),
                 // WS-Trust and token exchange (#108), paged as GET
                 // /admin-api/delegation/policy pages it.
                 delegationPolicy: exchangePolicy.json
@@ -34535,7 +37837,75 @@ class AdminConsole {
     });
 
     // -------------------------------------------------------------------------
-    // POST /admin/delegation — THE FIVE ACTIONS THE CONFIGURED HALF HAS.
+    // GET /admin/delegation-settings — PROTOCOLS → DELEGATION (2026-10-01).
+    //
+    // **EVERY CONTROL THAT WAS ON MONITORING → DELEGATION, AND NOTHING THAT
+    // RECORDS WHAT HAPPENED** (rcbj). That page was the one place in this
+    // console where a register of what is ALLOWED and a record of what
+    // HAPPENED shared a screen, and it carried the register's controls with
+    // them; Monitoring is where a reader goes to see what happened, and the
+    // console's rule (console-section-by-question) is that a page is filed by
+    // the question it answers. So the controls moved here, under Protocols
+    // where every other family is configured, and the Monitoring page keeps
+    // the same register READ-ONLY beside the acts it is read against.
+    //
+    // What is here: the delegated permissions register with Expose an API,
+    // Define a permission, each permission's Remove and each grant's Revoke,
+    // for EVERY application — the same `permissionsSection()` the Monitoring
+    // page draws, `editable` — and the `Delegation` settings group
+    // (`delegation.maxRecords`, SETTING_HOMES). A grant is still made on an
+    // application's own Permissions tab, from either end, for the reason that
+    // section's grant paragraph gives. Who may act for whom at Kerberos,
+    // WS-Trust and token exchange stays where it was: read-only on the
+    // Monitoring page, edited on the application and person pages, because
+    // each value is an attribute of one of them.
+    //
+    // ?format=json carries the register whole, as `allowed`, in the shape the
+    // Monitoring page's own reply always had, and the settings.
+    // -------------------------------------------------------------------------
+    app.get('/admin/delegation-settings', function (req, res) {
+      log.debug("Entering the admin delegation settings page.");
+      const permissions = permissionsView();
+      const allowedState = self.permissionsListState(req.query,
+                                                     permissions.register);
+      const listView = self.listViewOf('/admin/delegation-settings',
+                                       req.query);
+      const inner = self.messagesOf(req) +
+        self.note('<strong>Which applications may reach which, decided in ' +
+        'advance, and how much of what HAPPENED is kept.</strong> This page ' +
+        'configures; <a href="/admin/delegation">Monitoring &rsaquo; ' +
+        'Delegation</a> shows the acts &mdash; Kerberos S4U, WS-Trust ' +
+        '<code>OnBehalfOf</code> / <code>ActAs</code> and RFC 8693 token ' +
+        'exchange &mdash; with this register beside them, read-only. One ' +
+        'application\'s part of it is also on that application\'s ' +
+        '<em>Permissions</em> tab under <a href="/admin/applications">' +
+        'Directory &rsaquo; Applications</a>, which is where a grant is ' +
+        'made. Who may act for whom at Kerberos, WS-Trust and token ' +
+        'exchange is attributes of applications and people, edited on ' +
+        'their pages.') +
+        self.permissionsSection(req, permissions, listView, true) +
+        self.configFormsFor('/admin/delegation-settings');
+      self.respond(req, res, {
+        allowed: {
+          resources: permissions.register.resources,
+          permissions: permissions.register.permissions,
+          grants: permissions.register.grants,
+          counts: permissions.register.counts,
+          filter: { permissions: allowedState.permWanted || null,
+                    grants: allowedState.grantWanted || null },
+          paging: { permissions: pagingJson(allowedState.permPage.paging),
+                    grants: pagingJson(allowedState.grantPage.paging) }
+        },
+        settings: self.configSettingsJson('/admin/delegation-settings')
+      }, 'Delegation', '/admin/delegation-settings', inner);
+      log.debug("Leaving the admin delegation settings page.");
+    });
+
+    // -------------------------------------------------------------------------
+    // POST /admin/delegation-settings — THE FIVE ACTIONS THE CONFIGURED HALF
+    // HAS. It was `POST /admin/delegation` until 2026-10-01, when every
+    // control moved to Protocols → Delegation (above) and the Monitoring page
+    // stopped changing anything.
     //
     // The acts half has none and never will; see `permissionsSection()`'s
     // header, where the reversal of that route's "NO FORM, AND THAT IS A
@@ -34546,25 +37916,24 @@ class AdminConsole {
     // IT SAID "CONTROLS" AND IT SAYS "ACTIONS" NOW, and the difference stopped
     // being pedantic on 2026-09-01: the FORMS are on two pages and the ACTIONS
     // are all here. `grant-permission` is drawn on an application's own page
-    // under /admin/applications, where the client half of a grant is the entry
-    // being looked at rather than an option in a list of every application
-    // here; `revoke-permission` is drawn on both, as a row button either way.
+    // under /admin/applications — from the client's end and, since
+    // 2026-10-01, from the resource's — and every other action is drawn both
+    // here and on the application's page, where the application is settled.
     // Moving a form is not moving an action — PERMISSION_ACTIONS is unchanged,
     // and rule 7's parity check reads this handler's refusal sentence exactly
-    // as it always did. See applicationPermissionsSection()'s header for the
-    // move itself.
+    // as it always did; `POST /admin-api/permissions/:action` mirrors this
+    // path. See applicationPermissionsSection()'s header for the move itself.
     //
     // WHERE IT LANDS AFTERWARDS IS THEREFORE A DECISION AND NOT A CONSTANT.
     // permissionsReturnTo() makes it, off the `from` field the form carries:
     // `#allowed` on this page, and the application's own page at `#permissions`
     // for a form drawn there. A fragment either way, for `chooserPane()`'s
-    // reason, because this is the longest page in the console and a reader who
-    // has just granted a permission is several screens down whichever page they
-    // are on. The list state rides on `back` exactly as /admin/applications'
-    // forms carry it, and `from` is a NAME rather than a URL, which is that
-    // function's whole subject.
+    // reason: a reader who has just changed something is several screens down
+    // whichever page they are on. The list state rides on `back` exactly as
+    // /admin/applications' forms carry it, and `from` is a NAME rather than a
+    // URL, which is that function's whole subject.
     // -------------------------------------------------------------------------
-    app.post('/admin/delegation', function (req, res) {
+    app.post('/admin/delegation-settings', function (req, res) {
       log.debug("Entering the admin delegation action endpoint.");
       const body = parseBody(req);
       // The actor is the person whose session got them through the gate above,
@@ -35650,8 +39019,8 @@ class AdminConsole {
               'ordinary outcome rather than a mistake, and so is a link from ' +
               'a service that has restarted since: nothing here is ' +
               'persisted. Raise <code>delegation.maxRecords</code> on <a ' +
-              'href="/admin/delegation">the delegation page</a> if this ' +
-              'keeps happening to something you need.')
+              'href="/admin/delegation-settings">Protocols &rsaquo; ' +
+              'Delegation</a> if this keeps happening to something you need.')
             : self.note('<strong>Name a relationship.</strong> This page ' +
               'draws ONE of them, and the way to it is a link on ' +
               '<a href="' + self.esc(up.href) +
@@ -36591,6 +39960,71 @@ class AdminConsole {
       log.debug("Leaving the admin users action endpoint.");
     });
 
+    // POST /admin/users/edit — A PERSON'S FIELD GRID (2026-10-01),
+    // `/admin/applications/edit`'s arrangement. "+" and the bin redraw the
+    // page with one box more or fewer and write nothing; Save is
+    // `update-fields`, the action `POST /admin-api/users/update-fields`
+    // calls, and lands on the tab it was pressed on with a message, or —
+    // refused — redraws the page with every box as the reader left it. A
+    // JSON caller gets the action's reply.
+    app.post('/admin/users/edit', function (req, res) {
+      log.debug("Entering the admin person edit endpoint.");
+      const body = parseBody(req);
+      const wantsJson = /json/i.test(String(req.headers['content-type'] || ''));
+      const who = String(body.user || body.username || '').trim();
+      const group = /^[a-z]+$/.test(String(body.group || ''))
+        ? String(body.group) : '';
+      const redraw = function (state, code?) {
+        log.debug("Entering redraw().");
+        if (code) {
+          errorCodes.mark(res, code);
+        }
+        const detail = self.userDetailPage(req, who, undefined, state);
+        if (!detail) {
+          errorCodes.mark(res, 'STS-LDAP-0102');
+          self.respondToAction(req, res, '/admin/users' +
+            queryWith(self.listViewFromBack('/admin/users', body.back), {}),
+            { ok: false, errors: ['There is no person called "' +
+                                  who.slice(0, 80) + '" here.'] });
+          log.debug("Leaving redraw(). Nobody there.");
+          return;
+        }
+        self.respond(req, res, Object.assign({ known: true }, detail.json),
+                     'User ' + who, '/admin/users', detail.inner,
+                     self.upTo('/admin/users', who,
+                               self.listViewFromBack('/admin/users',
+                                                     body.back)));
+        log.debug("Leaving redraw().");
+      };
+      if (!wantsJson && (body.grow !== undefined || body.drop !== undefined)) {
+        redraw({ draft: body });
+        log.debug("Leaving the admin person edit endpoint. A field grid " +
+                  "round trip.");
+        return;
+      }
+      const result = usersAction(Object.assign({}, body,
+        { action: 'update-fields' }), { via: 'console',
+                                        actor: gateStateFor(req).username,
+                                        base: baseUrlOf(req) });
+      if (wantsJson) {
+        self.respondToAction(req, res, '/admin/users', result);
+        log.debug("Leaving the admin person edit endpoint. JSON.");
+        return;
+      }
+      if (!result.ok) {
+        redraw({ draft: body, error: result.errors },
+               errorCodes.codeOf(result) || 'STS-ADMIN-0839');
+        log.debug("Leaving the admin person edit endpoint. Refused.");
+        return;
+      }
+      self.respondToAction(req, res,
+                           self.userReturnTo(body, who,
+                                             group ? '#ufg-' + group
+                                                   : '#person-fields'),
+                           result);
+      log.debug("Leaving the admin person edit endpoint. Saved.");
+    });
+
     app.get('/admin/users/new', function (req, res) {
       log.debug("Entering the admin new-user page.");
       const view = self.newUserView(req);
@@ -36612,13 +40046,29 @@ class AdminConsole {
                      String(body.action || 'create');
       const posted = { username: String(body.username || ''),
                        credential: String(body.credential || 'none'),
-                       fields: userFieldsFrom(body) };
+                       fields: userFieldsFrom(body),
+                       view: String(body.view || '') };
 
       // A JSON caller gets JSON, exactly as every other action on this console
       // does. It is /admin-api that a script should be driving, and this branch
       // is here so that a script pointed at the page does not get a wall of
       // HTML back with the secret buried in it.
       const wantsJson = /json/i.test(String(req.headers['content-type'] || ''));
+
+      // THE FIELD GRID'S ROUND TRIPS (2026-10-01): the view switch, "+" and
+      // the bin redraw this form with every box as it was and create nobody.
+      if (!wantsJson && (body.switchview !== undefined ||
+                         body.grow !== undefined || body.drop !== undefined)) {
+        const view = self.newUserPage(req, Object.assign({}, posted, {
+          view: body.switchview !== undefined ? String(body.switchview)
+            : posted.view,
+          draft: body }));
+        self.respond(req, res, view.json, 'New user', '/admin/users',
+                     view.inner, self.newUserUp());
+        log.debug("Leaving the admin new-user action endpoint. A field " +
+                  "grid round trip.");
+        return;
+      }
 
       // ------------------------------------------------------------------
       // FILL. It creates nothing and answers with this same form, filled in.
@@ -36760,8 +40210,9 @@ class AdminConsole {
       // carries one `protocols` array. helpers.parseBody() cannot see a repeat
       // — it builds a plain object, so the last box ticked would be the only
       // one to arrive — which is what listField() exists for.
-      const protocols = self.listField(req, body, 'protocol').concat(
-          self.listField(req, body, 'protocols'));
+      const protocols = applications.familiesOfChoices(
+        self.listField(req, body, 'protocol').concat(
+          self.listField(req, body, 'protocols')));
       // The realm's authorization servers, for `load-resource-metadata` — the
       // one action that compares something against the address this request
       // arrived on, and which every other action ignores.
@@ -36801,7 +40252,45 @@ class AdminConsole {
                   "a metadata fetch.");
         return;
       }
+      // A DID KEY PAIR THAT WAS GENERATED (2026-10-01) is answered with a
+      // page, for the TLS certificate's reason: the reply carries the only
+      // copy of the private key.
+      if (result && result.ok && result.privateJwk &&
+          String(body.action || '') === 'generate-did-key') {
+        self.answerGeneratedDidKey(req, res, body, result);
+        return;
+      }
+      // A SIGNED DID CONFIGURATION (2026-10-01) is answered with the FILE,
+      // to host at the origin; a JSON caller gets the action's reply.
+      if (result && result.ok && result.didConfiguration &&
+          String(body.action || '') === 'sign-domain-linkage' &&
+          !/json/i.test(String(req.headers['content-type'] || ''))) {
+        res.set('Cache-Control', 'no-store');
+        res.set('Content-Disposition', 'attachment; filename="' +
+                String(result.filename).replace(/[^A-Za-z0-9._-]/g, '_') +
+                '"');
+        res.status(200).type('application/json')
+           .send(JSON.stringify(result.didConfiguration, null, 2));
+        log.debug("Leaving the admin applications action endpoint. A DID " +
+                  "configuration.");
+        return;
+      }
       self.respondToApplicationAction(req, res, body, result);
+    });
+
+    // THE COPY BUTTONS' SCRIPT (rcbj, 2026-10-01). The parent project's
+    // `copyField()` (client/src/tool_panes.js): the asynchronous clipboard
+    // where there is one, and a selected text area with execCommand('copy')
+    // where there is not — `navigator.clipboard` is undefined outside a
+    // secure context, which a console reached over plain http is. A separate
+    // resource, never inline, so `script-src 'self'` is enough; it reveals
+    // the hidden buttons, so with it blocked nothing on the page changes.
+    // Browser code: no log lines (the code style's exemption).
+    app.get('/admin/copy.js', function (req, res) {
+      log.debug("Entering the admin copy script.");
+      res.set('Cache-Control', 'no-store');
+      res.status(200).type('application/javascript').send(COPY_SCRIPT);
+      log.debug("Leaving the admin copy script.");
     });
 
     app.get('/admin/applications', function (req, res) {
@@ -36892,8 +40381,24 @@ class AdminConsole {
         return;
       }
 
-      const protocols = self.listField(req, body, 'protocol').concat(
-          self.listField(req, body, 'protocols'));
+      const protocols = applications.familiesOfChoices(
+        self.listField(req, body, 'protocol').concat(
+          self.listField(req, body, 'protocols')));
+      // The RFC 9728 document a redraw reads again for the pane, or null.
+      const reloadedMetadata = function () {
+        log.debug("Entering reloadedMetadata().");
+        if (!body.metadata) {
+          log.debug("Leaving reloadedMetadata(). None loaded.");
+          return null;
+        }
+        const again = resourceMetadata.analyse(String(body.metadata), {
+          source: String(body.metadataSource || 'pasted'),
+          url: String(body['field.oauthResourceMetadataUrl'] || ''),
+          filename: String(body.metadataFilename || '')
+        }, context);
+        log.debug("Leaving reloadedMetadata().");
+        return again.ok ? again : null;
+      };
       // GENERATE SECRET (2026-09-18): the whole create form, posted here by
       // the button's `formaction`, drawn again with a new secret in
       // `oauthClientSecret` and every other box as it was. The secret comes
@@ -36901,29 +40406,54 @@ class AdminConsole {
       // nothing is written. With an RFC 9728 document loaded, the pane is
       // read again from the ORIGINAL document, as a refused create's is. A
       // JSON caller falls through and gets the action's reply.
+      // THE FIELD GRID'S ROUND TRIPS (2026-09-30): "+", a delete and the
+      // view switch each post the whole form here, and the page is drawn
+      // again with that change and every other box as it was. Nothing is
+      // written. With an RFC 9728 document loaded, the pane is read again
+      // from the ORIGINAL document, as Generate Secret's is.
+      if (!wantsJson && (body.grow !== undefined || body.drop !== undefined ||
+                         body.switchview !== undefined)) {
+        self.newApplicationRedraw(req, res, {
+          loaded: reloadedMetadata(), draft: body, protocols: protocols,
+          view: String(body.switchview || body.view || ''),
+          tab: body.metadata ? 'fields' : undefined
+        });
+        log.debug("Leaving the admin new-application action endpoint. A " +
+                  "field grid round trip.");
+        return;
+      }
       if (action === 'generate-secret' && !wantsJson) {
         const minted = applicationsAction(body, protocols, context);
         const draft = Object.assign({}, body, {
           'field.oauthClientSecret': minted.clientSecret
         });
-        let loaded = null;
-        if (body.metadata) {
-          const again = resourceMetadata.analyse(String(body.metadata), {
-            source: String(body.metadataSource || 'pasted'),
-            url: String(body['field.oauthResourceMetadataUrl'] || ''),
-            filename: String(body.metadataFilename || '')
-          }, context);
-          loaded = again.ok ? again : null;
+        // The method a secret is presented by, filled in where nothing (or
+        // `none`) was chosen: RFC 7591 section 2's default. A method somebody
+        // picked is left as they picked it.
+        // A LIST OF CHECKBOXES since 2026-10-01 (`field.<name>.<n>`, one key
+        // per ticked box), so every key of it is read and, where nothing but
+        // `none` was ticked, all of them are replaced by the one default.
+        const methodKeys = Object.keys(body).filter(function (key) {
+          return /^field\.oauthTokenEndpointAuthMethod(\.\d+)?$/.test(key);
+        });
+        const methodsAsked = methodKeys.map(function (key) {
+          return String(body[key] || '').trim();
+        }).filter(function (one) { return one !== '' && one !== 'none'; });
+        if (!methodsAsked.length) {
+          methodKeys.forEach(function (key) { delete draft[key]; });
+          draft['field.oauthTokenEndpointAuthMethod.0'] = 'client_secret_basic';
         }
+        const loaded = reloadedMetadata();
         self.newApplicationRedraw(req, res, {
           loaded: loaded, draft: draft, protocols: protocols,
+          view: String(body.view || ''),
           tab: loaded ? 'fields' : undefined,
           notice: 'A client secret was generated and is in the ' +
                   'oauthClientSecret box below. Nothing has been written: ' +
                   'it becomes this application\'s credential when you ' +
-                  'create it. With OAuth 2.0 or OpenID Connect ticked, the ' +
-                  'create records client_secret_basic as its token endpoint ' +
-                  'authentication method, and the token endpoint accepts ' +
+                  'create it. Its token endpoint authentication method is ' +
+                  'set to client_secret_basic where none was chosen, and the ' +
+                  'token endpoint accepts ' +
                   'the secret either in an Authorization: Basic header ' +
                   '(client_secret_basic) or as a client_secret form ' +
                   'parameter (client_secret_post).'
@@ -36961,6 +40491,17 @@ class AdminConsole {
             return;
           }
         }
+        if (action === 'create' && !outcome.ok && !wantsJson) {
+          // A REFUSED CREATE COMES BACK TO THIS PAGE with every box as it
+          // was (2026-09-30), rather than to the list with a message.
+          self.newApplicationRedraw(req, res, {
+            draft: body, protocols: protocols, view: String(body.view || ''),
+            error: outcome.errors,
+            errorTitle: 'The application was not created.'
+          }, errorCodes.codeOf(outcome) || 'STS-ADMIN-0645');
+          log.debug("Leaving answer(). Redrawn after a refusal.");
+          return;
+        }
         self.respondToApplicationAction(req, res, body, outcome);
         log.debug("Leaving answer().");
       };
@@ -36972,6 +40513,66 @@ class AdminConsole {
       }
       answer(result);
       log.debug("Leaving the admin new-application action endpoint.");
+    });
+
+    // POST /admin/applications/edit — THE APPLICATION PAGE'S FIELD GRID
+    // (2026-09-30). "+" and a delete redraw the page with one box more or
+    // fewer and write nothing; Save is `update-fields`, the same action
+    // `POST /admin-api/applications/update-fields` calls, and lands on the
+    // page's grid with a message, or — refused — redraws the page with every
+    // box as the reader left it. A JSON caller gets the action's reply.
+    app.post('/admin/applications/edit', function (req, res) {
+      log.debug("Entering the admin application edit endpoint.");
+      const body = parseBody(req);
+      const wantsJson = /json/i.test(String(req.headers['content-type'] || ''));
+      const identifier = String(body.application || '').trim();
+      const protocols = applications.familiesOfChoices(
+        self.listField(req, body, 'protocol').concat(
+          self.listField(req, body, 'protocols')));
+      const redraw = function (state, code?) {
+        log.debug("Entering redraw().");
+        if (code) {
+          errorCodes.mark(res, code);
+        }
+        const detail = self.applicationDetailPage(req, identifier, state);
+        if (detail.missing) {
+          errorCodes.mark(res, 'STS-ADMIN-0021');
+        }
+        self.respond(req, res, detail.json, 'Application ' + identifier,
+                     '/admin/applications', detail.inner,
+                     self.upTo('/admin/applications', identifier,
+                               self.listViewFromBack('/admin/applications',
+                                                     body.back)));
+        log.debug("Leaving redraw().");
+      };
+      if (!wantsJson && (body.grow !== undefined || body.drop !== undefined)) {
+        redraw({ draft: body });
+        log.debug("Leaving the admin application edit endpoint. A field " +
+                  "grid round trip.");
+        return;
+      }
+      const result = applicationsAction(Object.assign({}, body,
+        { action: 'update-fields' }), protocols, {
+        authorizationServers: resourceMetadata.authorizationServersOf(req),
+        base: baseUrlOf(req)
+      });
+      if (wantsJson) {
+        self.respondToAction(req, res, '/admin/applications', result);
+        log.debug("Leaving the admin application edit endpoint. JSON.");
+        return;
+      }
+      if (!result.ok) {
+        redraw({ draft: body, error: result.errors },
+               errorCodes.codeOf(result) || 'STS-ADMIN-0836');
+        log.debug("Leaving the admin application edit endpoint. Refused.");
+        return;
+      }
+      self.respondToAction(req, res,
+                           self.applicationReturnTo(body, identifier,
+                             '#cfg-' + (/^[a-z0-9-]+$/.test(
+                               String(body.group || '')) ? body.group
+                               : 'families')), result);
+      log.debug("Leaving the admin application edit endpoint. Saved.");
     });
 
     app.get('/admin/authorization-servers', function (req, res) {
@@ -37537,8 +41138,14 @@ class AdminConsole {
           'that application carries it.') + '">For application ' +
         '<input type="text" name="application" list="role-create-apps" ' +
         'placeholder="realm-wide"></label><datalist id="role-create-apps">' +
-        applicationOptions + '</datalist><button ' +
-        'type="submit">Create</button></div></form>' +
+        applicationOptions + '</datalist>' +
+        // ITS LABEL AND WHO MAY HOLD IT (#93).
+        '<label>Display name <input type="text" name="displayName" ' +
+        'placeholder="optional"></label><label>May be held by <select ' +
+        'name="memberTypes"><option value="">people and applications' +
+        '</option><option value="user">people only</option><option ' +
+        'value="application">applications only</option></select></label>' +
+        '<button type="submit">Create</button></div></form>' +
 
         // "SOMEBODY" IS THREE KINDS AND THE HEADING USED TO HIDE TWO OF THEM.
         //
@@ -37852,6 +41459,22 @@ class AdminConsole {
       const state = gateStateFor(req);
       const result = rolesAction(body, { actor: (state && state.username) || '',
                                          via: 'console' });
+      // FROM AN APPLICATION'S PAGE (#93): its Application permissions section
+      // grants and removes the roles the application holds, and comes back
+      // there. The path is fixed and `client` only a query value, rebuilt by
+      // queryWith() — permissionsReturnTo()'s arrangement — and it must be
+      // the member acted on, so a form cannot land anywhere it did not act.
+      const client = String(body.client || '').trim();
+      if (String(body.from || '') === '/admin/applications' && client &&
+          client === String(body.member || '').trim() &&
+          String(body.kind || '') === 'application') {
+        self.respondToAction(req, res, '/admin/applications' +
+          queryWith(self.listViewFromBack('/admin/applications', body.back),
+                    { application: client }) + '#app-roles', result);
+        log.debug("Leaving the admin roles action endpoint. Back to the " +
+                  "application.");
+        return;
+      }
       const back = '/admin/roles' +
         queryWith(self.listViewFromBack('/admin/roles', body.back), {}) +
         // WHICH HEADING THE READER WAS ON. `from` is a NAME and never a URL,
@@ -38666,7 +42289,10 @@ class AdminConsole {
       // because this is the shape a BROWSER posts and that function is also
       // what the management API calls with an `action` taken from its own URL.
       const reset = String(req.query.reset || '').trim();
-      const result = configAction(reset
+      // An ordered choice's checkboxes and numbers, folded into its one
+      // value first (2026-10-01) — this is the shape a browser posts.
+      const folded = reset ? null : self.foldOrderedChoices(body);
+      const result = folded || configAction(reset
         ? { action: 'reset', key: reset, from: body.from }
         : body);
       // BACK TO THE PAGE THE FORM WAS ON. Every protocol page draws its own
@@ -41131,12 +44757,19 @@ class AdminConsole {
       log.debug("Entering the admin Shared Signals action endpoint.");
       const body = parseBody(req);
       // The one action handler in this console that awaits. Signing a Security
-      // Event Token may be an ML-DSA or SLH-DSA signature on the worker pool,
-      // and delivering it is a POST to somebody else's endpoint; answering
-      // before either had happened would be this page reporting "sent" about
-      // nothing.
+      // Event Token may be an ML-DSA or SLH-DSA signature on libuv's thread
+      // pool, and delivering it is a POST to somebody else's endpoint;
+      // answering before either had happened would be this page reporting
+      // "sent" about nothing.
       ssfAction(body).then(function (result) {
-        self.respondToAction(req, res, '/admin/ssf', result);
+        // A Pause or Enable pressed on an application's own page (2026-10-01)
+        // goes back there: the destination is REBUILT from the identifier,
+        // never echoed, as applicationReturnTo() does for every control on
+        // that page.
+        const back = body.from === 'application' && body.application
+          ? self.applicationReturnTo(body, body.application, '#signals')
+          : '/admin/ssf';
+        self.respondToAction(req, res, back, result);
         log.debug("Leaving the admin Shared Signals action endpoint.");
       }).catch(function (e) {
         // A rejected promise here is a bug in ssf/ssf.ts rather than anything a
@@ -42640,10 +46273,23 @@ class AdminConsole {
     PROTOCOL_SETTINGS_PAGES.forEach(function (row) {
       app.get(row.path, function (req, res) {
         log.debug("Entering the admin " + row.title + " page.");
-        self.respond(req, res, self.protocolSettingsJson(row), row.title,
-                     row.path,
-                     self.protocolSettingsPage(req, row));
-        log.debug("Leaving the admin " + row.title + " page.");
+        // A row with a `prepare` (the Cluster page, #361) is asked for what
+        // its synchronous status block draws first; a failure there is the
+        // block's to draw, never a page that does not answer.
+        const ready = typeof row.prepare === 'function'
+          ? Promise.resolve().then(function () {
+            return row.prepare();
+          }).catch(function (e) {
+            log.debug("Caught in the admin " + row.title + " page: " +
+                      ((e && e.message) || e));
+          })
+          : Promise.resolve();
+        ready.then(function () {
+          self.respond(req, res, self.protocolSettingsJson(row), row.title,
+                       row.path,
+                       self.protocolSettingsPage(req, row));
+          log.debug("Leaving the admin " + row.title + " page.");
+        });
       });
     });
 
@@ -42780,8 +46426,13 @@ class AdminConsole {
     app.post('/admin/federation', function (req, res) {
       log.debug("Entering the admin federation action endpoint.");
       const body = parseBody(req);
-      // A PROMISE SINCE #168: a create and a key rotation issue a key.
-      federationAction(body).then(function (result) {
+      // A PROMISE SINCE #168: a create and a key rotation issue a key. The
+      // actor and the base since #373: a Shared Signals act is audited, and a
+      // push stream is created with this realm's address.
+      const state = gateStateFor(req);
+      federationAction(body, { via: 'console',
+                               actor: (state && state.username) || '',
+                               base: baseUrlOf(req) }).then(function (result) {
         const id = String(body.id || body.relationship || '').trim();
         // The list state the form carried, REBUILT rather than echoed — see
         // listViewFromBack(), and the note in admin-ui/CLAUDE.md about a new
@@ -43241,7 +46892,28 @@ const SETTING_HOMES = [
   { group: 'OAuth 2.0 / OIDC per-client', pages: ['/admin/token-lifetimes'] },
   { group: 'WS-Trust', pages: ['/admin/wstrust'] },
   { group: 'WS-Federation', pages: ['/admin/wsfed'] },
-  { group: 'TLS', pages: ['/admin/tls'] },
+  // THE LISTENERS PAGE (#423, rcbj: "Put all the listener configuration,
+  // including TLS on its own page under Server Settings->Listeners"): the
+  // TLS group moved here from /admin/tls, which keeps the truststore and the
+  // certificate, and so did the realm listener's rows (#99).
+  { group: 'Listeners', pages: ['/admin/listeners'] },
+  // ONE GROUP PER TLS LISTENER (#429): its own rows, generated in
+  // common/config.js, and its client-certificate pair.
+  { group: 'Listener: Main port', pages: ['/admin/listeners'] },
+  { group: 'Listener: LDAPS', pages: ['/admin/listeners'] },
+  { group: 'Listener: Protocol debugger', pages: ['/admin/listeners'] },
+  { group: 'Listener: SPIRE Server API', pages: ['/admin/listeners'] },
+  { group: 'Listener: SPIFFE Broker API', pages: ['/admin/listeners'] },
+  { group: 'Listener: Channel between cells', pages: ['/admin/listeners'] },
+  { group: 'Listener: Revocation (plain HTTP)', pages: ['/admin/listeners'] },
+  // HTTP connection pooling's service-wide defaults (#429), on the
+  // Service-wide defaults tab beside the TLS ones.
+  { group: 'HTTP connections', pages: ['/admin/listeners'] },
+  { group: 'TLS', pages: ['/admin/listeners'] },
+  // A trust realm's own listener (#99): realm-only settings, edited on the
+  // Listeners page read inside a realm (#423); the default realm refuses
+  // them (STS-CORE-0145).
+  { group: 'Realm listener', pages: ['/admin/listeners'] },
   { group: 'OID4VCI', pages: ['/admin/oid4vci'] },
   { group: 'OID4VP', pages: ['/admin/oid4vp'] },
   { group: 'Kerberos', pages: ['/admin/kerberos'] },
@@ -43259,6 +46931,9 @@ const SETTING_HOMES = [
   // `cluster.acceptMissingCapabilities` read anywhere but beside the list of
   // what is missing would be a list of ids with no meaning.
   { group: 'Cluster', pages: ['/admin/cluster'] },
+  // THE CELLS' SETTINGS (#98), on the page that shows the cell map they
+  // configure and the realm's transfer choices they decide about.
+  { group: 'Cells', pages: ['/admin/cells'] },
   // SIGNER ROTATION (2026-09-22, #42/#48), on /admin/keys — the page that
   // shows every unit's current, next and retired keys and carries the
   // Rotate controls (rcbj's D5).
@@ -43267,6 +46942,7 @@ const SETTING_HOMES = [
   // jobs they switch and the ticks they time.
   { group: 'Scheduler', pages: ['/admin/scheduler'] },
   { group: 'Mail', pages: ['/admin/mail'] },
+  { group: 'Attribute sources', pages: ['/admin/attribute-sources'] },
   // THE DEVICE REGISTER'S BOUNDS (#218): on the page that says how a device
   // arrives, beside the enrolment methods those bounds limit.
   { group: 'Devices', pages: ['/admin/device-registration'] },
@@ -43335,7 +47011,9 @@ const SETTING_HOMES = [
     pages: ['/admin/totp', '/admin/webauthn'] },
   { group: 'Group claim', pages: ['/admin/groups'] },
   { group: 'Audit log', pages: ['/admin/audit'] },
-  { group: 'Delegation', pages: ['/admin/delegation'] },
+  // On Protocols → Delegation since 2026-10-01, with the register's controls:
+  // Monitoring → Delegation changes nothing.
+  { group: 'Delegation', pages: ['/admin/delegation-settings'] },
   { group: 'Logout', pages: ['/admin/logout'] },
   { group: 'SPIFFE', pages: ['/admin/spiffe'] }
 ];
@@ -43453,6 +47131,11 @@ const LIST_PARAMS = {
   // reader who paged the grants table to 4, clicked a client and came back
   // should come back to page 4 of the grants table and not to the top of a
   // page they have already read three screens of.
+  // Protocols → Delegation (2026-10-01): the register's two searches and two
+  // pagings, the same names they have on Monitoring → Delegation, so a
+  // Remove or Revoke answers on the page and the search it was pressed on.
+  '/admin/delegation-settings': ['per', 'permq', 'grantq', 'permissionsPage',
+                                 'grantsPage'],
   '/admin/delegation': ['type', 'mode', 'outcome', 'protocol', 'q', 'per',
                         'page',
                         'appq', 'appfrom', 'userq', 'userfrom',
@@ -44378,14 +48061,12 @@ WIRE_STEPS.push(function (instance: AdminConsole): void {
     '<code>oauthClientSecret</code> at the token endpoint. With that mode ' +
     'off, ' +
     'these entries are a record and nothing more.') +
-    instance.note('<strong>Two attributes hold credentials in the ' +
-    'clear</strong> &mdash; <code>oauthClientSecret</code> and ' +
-    '<code>appRegistrationAccessToken</code> &mdash; in a directory where ' +
-    'every bind succeeds. That is the same decision ' +
-    '<code>/krb5/principals</code> makes about the Kerberos passwords and it ' +
-    'costs more here than it does there: in RFC 9700 mode that secret is ' +
-    'checked, so anyone who can read this directory can authenticate as that ' +
-    'client. They are never written to the audit log.');
+    instance.note('<strong>Two attributes hold credentials</strong> &mdash; ' +
+    '<code>oauthClientSecret</code> and ' +
+    '<code>appRegistrationAccessToken</code>. Both are SEALED at rest ' +
+    'wherever this process holds a durable key-encryption key, so this page ' +
+    'shows their ciphertext; without one (development) they are in the ' +
+    'clear. They are never written to the audit log.');
 });
 
 const APPLICATIONS_LINKS =
@@ -44413,52 +48094,6 @@ const KEY_SOURCE_SENTENCES = {
             'here &mdash; written by hand, or by a build older than the ' +
             'provenance attribute.'
 };
-
-// WHICH FAMILIES EACH OVERRIDABLE SETTING BELONGS TO, so the section can be
-// grouped and made conditional. Keyed by the setting's PREFIX, which is the one
-// thing a setting key reliably carries — and the group claim is the case that
-// makes this a table rather than a split on the dot: `groups.*` reaches an
-// access token, an ID Token and both SAML assertions, so it belongs to five
-// families at once and appears whenever any of them is ticked.
-const OVERRIDE_SECTIONS = [
-  { prefix: 'oauth2.', heading: 'What OAuth 2.0 / OIDC issues for this client',
-    families: ['oauth2', 'oidc'],
-    intro: 'The three token lifetimes, the refresh idle timeout, whether ' +
-           'signing out revokes this client\'s refresh tokens, and whether ' +
-           'an RFC 8693 token exchange it performs comes back with a refresh ' +
-           'token. The idle timeout and the sign-out revocation are read ' +
-           'only in RFC 9700 mode. The last is the ONE field on this whole ' +
-           'form that is refused rather than merely inert when the family ' +
-           'above is not ticked &mdash; it decides what the token endpoint ' +
-           'does for a client_id, so an entry no token request can name ' +
-           'would carry it looking like a policy in force.' },
-  { prefix: 'saml2.', heading: 'What SAML 2.0 issues for this service provider',
-    families: ['saml2'],
-    intro: 'The assertion lifetime, the two signature switches, the default ' +
-           'NameID format and the artifact lifetime.' },
-  { prefix: 'saml11.', heading: 'What SAML 1.1 issues for this relying party',
-    families: ['saml11'],
-    intro: 'The same five for the older profiles. They are separate settings ' +
-           'because 1.1 and 2.0 are separate implementations here, so an ' +
-           'application declared for both carries two answers.' },
-  { prefix: 'wsfed.', heading: 'What WS-Federation issues for this relying ' +
-                               'party',
-    families: ['wsfed'],
-    intro: 'One setting: how long the SAML 1.1 assertion inside a sign-in ' +
-           'response lasts. It also sets the wsu:Lifetime of the ' +
-           'RequestSecurityTokenResponse around it, so the envelope and the ' +
-           'assertion cannot disagree.' },
-  { prefix: 'groups.', heading: 'The groups claim for this application',
-    families: ['oauth2', 'oidc', 'saml2', 'saml11', 'wsfed'],
-    intro: 'THE ONE GROUP HERE THAT IS NOT A PROTOCOL\'S. These four reach ' +
-           'an access token, an ID Token, a SAML 2.0 assertion and a SAML ' +
-           '1.1 one at once, so an application declared for two protocols ' +
-           'gets the same claim name in both — which is what a claim mapping ' +
-           'should do. The name is the one that differs in practice: ' +
-           '<code>groups</code>, <code>roles</code> and ' +
-           '<code>memberOf</code> are all ordinary.' }
-];
-
 // THE THREE ATTRIBUTES THAT SAY WHERE A SERVICE PROVIDER'S KEY COMES FROM.
 //
 // They are not setting overrides — nothing in config.js corresponds to them —
@@ -44467,7 +48102,7 @@ const OVERRIDE_SECTIONS = [
 // family.
 //
 // `samlSpMetadata` is a TEXTAREA and the other two are inputs, which is the
-// same shape rule declarationFieldRow() follows: a document is not something
+// same shape rule the field grid follows: a document is not something
 // anybody types on one line, and offering a single-line box for one invites a
 // paste that loses its newlines.
 const SAML_KEY_SOURCE_FIELDS = [
@@ -44489,238 +48124,18 @@ const SAML_KEY_SOURCE_FIELDS = [
           'behind a proxy this service cannot dial.' }
 ];
 
-// ---------------------------------------------------------------------------
-// WHERE A SIGN-OUT GOES. Four families have one and the rest do not, and the
-// absences are the interesting half — each is a fact about the protocol rather
-// than a gap in this form.
-// ---------------------------------------------------------------------------
-let NEW_APPLICATION_LOGOUT_INTRO: string;
-WIRE_STEPS.push(function (instance: AdminConsole): void {
-  NEW_APPLICATION_LOGOUT_INTRO =
-    instance.note('Where this application is sent, or pinged, when a ' +
-    'session it was part of ends. <strong>Every one of these takes MORE THAN ' +
-    'ONE address, one per line</strong> — a service provider commonly has a ' +
-    'different endpoint per binding, and an OAuth client registering several ' +
-    'environments has a post-logout URI for each.') +
-    instance.note('<strong>ONLY FOUR FAMILIES HAVE ONE, AND THE ' +
-    'ABSENCES ARE NOT AN OVERSIGHT.</strong> SAML 1.1 is the one people look ' +
-    'for: it has NO Single Logout at all &mdash; that arrived with SAML 2.0 ' +
-    '&mdash; so a field here would be a box whose value nothing could ever ' +
-    'read. WS-Trust issues a token and holds no session to end; Kerberos ' +
-    'hands out a ticket this service cannot recall; and federation ' +
-    'deliberately does not consume a partner\'s sign-out. The rule this form ' +
-    'follows is the one the identifiers follow: a field is offered where an ' +
-    'attribute exists to ' +
-    'hold it, and nowhere else.') +
-    instance.warn('<strong>These are DECLARED and, today, mostly not ' +
-    'yet READ.</strong> <code>samlSingleLogoutService</code> is the ' +
-    'exception and always has been &mdash; SAML 2.0 Single Logout really ' +
-    'does send a LogoutRequest there. The OAuth post-logout URIs are matched ' +
-    'by RP-Initiated Logout when a client supplies one, and ' +
-    '<code>wsfedSignOutUri</code> is NEW and is not read by the sign-out ' +
-    'yet: a <code>wsignoutcleanup1.0</code> ping goes to the ' +
-    '<code>wreply</code> this service OBSERVED during sign-in, which is a ' +
-    'different fact from the one an operator declares here. Storing it is ' +
-    'this change; changing where a cleanup goes is a change to what the ' +
-    'protocol does, and is deliberately ' +
-    'separate.');
-});
-
-// ---------------------------------------------------------------------------
-// WHERE A RECEIVER EXPECTS ITS EVENTS PUSHED. The `delivery` role of
-// `applications.declarationAttributes()`, which `createApplication()` and
-// `GET /admin-api/applications/new` both accepted while this form drew no field
-// for it until 2026-09-12 — the one role of six the form had no section for.
-// `tests/application_form_roles.js` is what stops a seventh going the same way.
-// ---------------------------------------------------------------------------
-let NEW_APPLICATION_DELIVERY_INTRO: string;
-WIRE_STEPS.push(function (instance: AdminConsole): void {
-  NEW_APPLICATION_DELIVERY_INTRO =
-    instance.note('Where this Shared Signals receiver expects its ' +
-    'Security Event Tokens POSTed &mdash; an RFC 8935 push endpoint, one per ' +
-    'line if it runs one per environment.') +
-    instance.warn('<strong>This is a DECLARATION and nothing dials ' +
-    'it.</strong> A push goes to the <code>endpoint_url</code> on the ' +
-    'STREAM, which the receiver names when it creates one at ' +
-    '<code>/ssf/stream</code>; this service will not take a URL to open a ' +
-    'connection to from an application entry. What this field is for is ' +
-    'writing down what the ' +
-    'receiver is EXPECTED to use, beside everything else the application is.');
-});
-
-// ---------------------------------------------------------------------------
-// WHICH SHARED SIGNALS EVENTS A RECEIVER MAY BE SENT (2026-09-12). One field,
-// one family, and unlike the fields above it is ENFORCED.
-// ---------------------------------------------------------------------------
-let NEW_APPLICATION_EVENTS_INTRO: string;
-WIRE_STEPS.push(function (instance: AdminConsole): void {
-  NEW_APPLICATION_EVENTS_INTRO =
-    instance.note('Shared Signals has no separate CAEP or RISC checkbox ' +
-    'because both are sent over it: <strong>CAEP</strong> is what happens to ' +
-    'a SESSION, <strong>RISC</strong> what happens to an ACCOUNT. A receiver ' +
-    'chooses event types itself, in the <code>events_requested</code> of the ' +
-    'stream it creates at <code>/ssf/stream</code>. This field is where an ' +
-    'operator LIMITS that choice for one application.') +
-    instance.warn('<strong>Leave it empty and nothing is ' +
-    'limited.</strong> Otherwise write one value per line: ' +
-    '<code>caep</code>, <code>risc</code>, or an event type URI. A stream ' +
-    'this application owns is agreed only those types, and every delivery ' +
-    'checks again, so removing a value later stops existing streams ' +
-    'receiving it. SSF\'s own ' +
-    'verification and stream-updated events are always allowed.');
-});
-
-// ---------------------------------------------------------------------------
-// THE CLIENT SECRET. The `secret` role — `oauthClientSecret` for the two OAuth
-// families and, since GNAP arrived, `gnapSymmetricKey` too, though the intro
-// below still speaks of OAuth only — and a warning that is the whole point of
-// it.
-// ---------------------------------------------------------------------------
-let NEW_APPLICATION_SECRET_INTRO: string;
-WIRE_STEPS.push(function (instance: AdminConsole): void {
-  NEW_APPLICATION_SECRET_INTRO =
-    instance.note('The <code>client_secret</code> for the two OAuth ' +
-    'families. Leave it empty and the entry simply has none, which is what a ' +
-    'public client is; a client registering through <code>POST ' +
-    '/oauth2/register</code> is minted one instead. <em>Generate ' +
-    'Secret</em> mints one the same way and puts it in the box, keeping ' +
-    'everything else on this page as you left it; with a secret, the create ' +
-    'records <code>client_secret_basic</code>, and the token endpoint takes ' +
-    'the secret by an <code>Authorization: Basic</code> header or a ' +
-    '<code>client_secret</code> form parameter alike.') +
-    instance.warn('<strong>IT IS STORED IN THE CLEAR, IN A DIRECTORY ' +
-    'WHERE EVERY BIND SUCCEEDS.</strong> That is deliberate and it is the ' +
-    'same decision <code>GET /krb5/principals</code> makes about the ' +
-    'Kerberos passwords: a debugger whose accounts are unusable without ' +
-    'reading the source is worse than one that says what they are. Anybody ' +
-    'who can reach port 389 can read this value. It is never written to the ' +
-    'audit log, which is the one place it is kept back.\n\nNothing checks it ' +
-    'today outside RFC 9700 mode. A mode that enforces client authentication ' +
-    'everywhere is the intended next step, and this field is what it will ' +
-    'check against &mdash; so a secret typed here is worth setting now even ' +
-    'though it is not yet a ' +
-    'credential this service refuses anybody for.');
-});
-
-let NEW_APPLICATION_IDENTIFIERS_INTRO: string;
-WIRE_STEPS.push(function (instance: AdminConsole): void {
-  NEW_APPLICATION_IDENTIFIERS_INTRO =
-    instance.note('The name this application answers to in each family ' +
-    'it speaks. They are all optional and all independent of the ' +
-    '<em>Identifier</em> above &mdash; that one is the KEY this registry ' +
-    'files the entry under, and these are what the protocols will present. ' +
-    'For an ordinary OAuth client the two are the same string, which is what ' +
-    'a protocol sighting writes anyway; they differ when one application ' +
-    'answers to a client_id in one environment and another in the next, or ' +
-    'when it is a SAML service provider whose entityID is a URN and whose ' +
-    'entry you would ' +
-    'rather file under a readable name.') +
-    instance.note('<strong>Several families share a field where the ' +
-    'specifications share the identifier.</strong> An OpenID Connect relying ' +
-    'party IS an OAuth client and an OpenID4VCI wallet authenticates as one, ' +
-    'so all three declare their name in <code>oauthClientId</code>; both ' +
-    'SAML profiles name the same party, so both use ' +
-    '<code>samlEntityId</code>. Two boxes writing one attribute would be a ' +
-    'form that silently kept whichever ' +
-    'was filled in second.') +
-    instance.note('<strong>Four of these are declaration and only ever ' +
-    'declaration.</strong> Nothing in this service writes ' +
-    '<code>federationPartnerId</code>, <code>ldapBindDn</code>, ' +
-    '<code>scimClientId</code> or <code>spiffeWorkloadId</code>, because ' +
-    'those surfaces either authenticate the CALLER rather than an ' +
-    'application, or file the identity in a container of their own. The ' +
-    'value is a note about what this application is, in the one place the ' +
-    'rest of what it is already lives &mdash; and, like every other field ' +
-    'here, it grants nothing: a federation partner declared here federates ' +
-    'with nobody until a ' +
-    'relationship under <code>ou=federations</code> says so.');
-});
-
-// THE CORS SECTION'S INTRO (2026-09-18). Its first sentence is the one the
-// section exists to say, and it is unfolded on purpose: `note()` folds prose
-// longer than a line under its opening sentence, so whatever comes first is
-// what a reader sees without opening anything.
-let NEW_APPLICATION_CORS_INTRO: string;
-WIRE_STEPS.push(function (instance: AdminConsole): void {
-  NEW_APPLICATION_CORS_INTRO =
-    '<p><strong>These origins configure CORS on every published protocol ' +
-    'endpoint of this service</strong> &mdash; OAuth 2.0 and OpenID Connect, ' +
-    'SAML, WS-Federation, OpenID4VCI and OpenID4VP, DID, SCIM, GNAP, the ' +
-    'certificate enrollment protocols and the management API alike. A ' +
-    'browser page on one of them may read this service\'s answers; a page ' +
-    'on any other origin may not.</p>' +
-    instance.note('<strong>Which list is asked depends on the request, not ' +
-    'on the family.</strong> A request that names this application as its ' +
-    'client &mdash; a <code>client_id</code>, a Basic credential, a client ' +
-    'assertion, or an access token issued to it &mdash; is answered with ' +
-    '<code>Access-Control-Allow-Origin</code> only for an origin listed ' +
-    'HERE. A request that names no client at all &mdash; discovery, a ' +
-    'JWKS, a DID document, every CORS preflight &mdash; is answered for an ' +
-    'origin listed on ANY application in this realm. That is why this field ' +
-    'is shown whatever families are ticked below: it is not a property of ' +
-    'one protocol.') +
-    instance.note('<strong>One exact origin per line</strong> &mdash; ' +
-    '<code>https://app.example.com</code>, or with a port, ' +
-    '<code>https://app.example.com:8443</code> &mdash; with no path and no ' +
-    'wildcard. Each is stored normalised: scheme and host lower-cased and a ' +
-    'default port dropped, so two spellings of one origin are one value. A ' +
-    'value that is not an origin refuses the whole create ' +
-    '(<code>STS-REG-0150</code>) rather than being written beside the ' +
-    'others.') +
-    instance.note('<strong>Empty allows no third-party origin, in both ' +
-    'modes.</strong> This service\'s own origins &mdash; its listeners, ' +
-    '<code>global.publicBaseUrl</code>, the embedded debugger and ' +
-    '<code>global.corsOrigins</code> &mdash; never need listing. After the ' +
-    'application exists, its page lists these origins one per row, with a ' +
-    'Remove button on each and a box to add another.');
-});
-
-let NEW_APPLICATION_REDIRECTS_INTRO: string;
-WIRE_STEPS.push(function (instance: AdminConsole): void {
-  NEW_APPLICATION_REDIRECTS_INTRO =
-    instance.note('Where a response goes back to. Only three families ' +
-    'send one through a browser, which is why there are three of these and ' +
-    'fourteen identifiers above.') +
-    instance.note('<strong>Only the OAuth list is ever CHECKED, and ' +
-    'only in RFC 9700 mode.</strong> <code>oauthRedirectUri</code> is what ' +
-    'section 2.1\'s exact string comparison reads &mdash; give an ' +
-    'application its redirect URIs here and the next authorization request ' +
-    'is judged against them rather than against the ' +
-    '<code>oauth2.redirectUris</code> setting, which is most of the reason ' +
-    'to create an entry before the application connects. ' +
-    '<code>samlAssertionConsumerService</code> and ' +
-    '<code>wsfedReplyUrl</code> are checked in PRODUCT mode only: in ' +
-    'development a SAML response goes wherever the AuthnRequest asked and a ' +
-    '<code>wsignin1.0</code> response goes to whatever <code>wreply</code> ' +
-    'named, because a mock that refused would remove a test case rather than ' +
-    'add one &mdash; unless the SAML service provider\'s metadata has been ' +
-    'consumed, when a request is answered only at an endpoint it ' +
-    'registered, in every mode. The SAML one is READ for something else ' +
-    '&mdash; it is the ' +
-    'fallback used when a Single Logout has nowhere else to go, which is why ' +
-    'WS-Federation\'s <code>wreply</code> stopped being written into it on ' +
-    '2026-08-25 and has a ' +
-    'field of its own.') +
-    instance.note('<strong>What a client has actually USED is a ' +
-    'different attribute and is not here.</strong> ' +
-    '<code>appRedirectUriObserved</code> records a redirect_uri seen on a ' +
-    'request this service answered, it is not editable anywhere in this ' +
-    'console, and RFC 9700 section 2.1 is entirely about not confusing the ' +
-    'two.');
-});
-
 let NEW_APPLICATION_NOTES: string;
 WIRE_STEPS.push(function (instance: AdminConsole): void {
   NEW_APPLICATION_NOTES =
-    instance.note('<strong>Declaring a protocol family grants nothing ' +
-    'and refuses nothing.</strong> No endpoint in this service reads ' +
-    '<code>appAllowedProtocol</code>: an application declared for SAML 2.0 ' +
-    'alone is still issued an access token at <code>/oauth2/token</code>, ' +
-    'and one declared for nothing at all is treated exactly as it would have ' +
-    'been. It is a RECORD OF INTENT on the entry &mdash; what this ' +
-    'application is FOR, said before it has connected &mdash; and it is ' +
-    'deliberately not a permission, because a mock that refused a protocol ' +
-    'would remove a test case rather than add one. The configuration that ' +
+    instance.note('<strong>Declaring a protocol family grants nothing, ' +
+    'and in product mode it refuses the rest.</strong> The issuance ' +
+    'policy refuses, in product mode, an issuance through a family the ' +
+    'application is not declared for: an application declared for SAML 2.0 ' +
+    'alone is refused an access token at <code>/oauth2/token</code>. In ' +
+    'development the declaration is a RECORD OF INTENT &mdash; what this ' +
+    'application is FOR &mdash; and refuses nothing, and an application ' +
+    'declared for nothing at all is refused nothing in either mode. The ' +
+    'configuration that ' +
     'DOES take effect is the attributes underneath: give the entry its ' +
     'redirect URIs, its grant types and its secret from <a ' +
     'href="/admin/applications">Applications</a>, and ' +
@@ -45275,7 +48690,7 @@ let truststore = null;
 // refuses a partial filler in order to avoid.
 //
 // `action` RETURNS A PROMISE, like the eighth's: emitting a CAEP event signs a
-// JWS — possibly on the worker pool — and then POSTs it to somebody else's
+// JWS — possibly on libuv's thread pool — and then POSTs it to somebody else's
 // endpoint.
 // ---------------------------------------------------------------------------
 let caepReporter = null;
@@ -45881,6 +49296,9 @@ const PROTOCOL_SETTINGS_PAGES = [
            'that differs does not start, because two nodes with different ' +
            'krbtgt keys seal tickets neither can open for the other.'],
     status: slot.forward('clusterStatusBlock'),
+    // EVERY OTHER CELL'S CLUSTER (#361): asked before the page is drawn,
+    // because the status block is synchronous and the other cells are not.
+    prepare: slot.forward('prepareClusterPage'),
     links: [['/admin/persistence', 'the store the cluster is built on'],
             ['/admin/database', 'the database itself'],
             ['/admin/secrets', 'where the key-encryption key comes from'],
@@ -45980,7 +49398,14 @@ const PROTOCOL_SETTINGS_PAGES = [
           'the one every other protocol answers on; what this page ' +
           'configures is the certificate that port and LDAPS 636 present, ' +
           'and what this service makes of a certificate a CLIENT presents.',
-    also: ['<strong>A verified client certificate IS a login since ' +
+    also: ['<strong>What each listener does at the handshake is on <a ' +
+           'href="/admin/listeners">Listeners</a> since #423</strong>: TLS ' +
+           '1.2 on or off, the TLS 1.3 cipher suites, post-quantum only, ' +
+           'and whether a listener asks for a client certificate, requires ' +
+           'one, or neither — a required one is verified against the ' +
+           'truststore on this page. The TLS settings that were drawn here ' +
+           'are drawn there.',
+           '<strong>A verified client certificate IS a login since ' +
            '2026-09-05, and it is now <a href="/tls/sign-in">GET ' +
            '/tls/sign-in</a> on the main port.</strong> Presenting a ' +
            'certificate is the CLIENT\'s decision here — this port asks for ' +
@@ -46133,6 +49558,9 @@ const consoleExports = {
   // settings renderer and a second redirect-or-JSON rule, and two of either is
   // how a console starts behaving differently on different pages.
   configFormsFor: slot.forward('configFormsFor'),
+  // The tab panels an application's page is drawn in, for a page drawn
+  // elsewhere that wants the same tabs (/admin/listeners, #423).
+  tabbedPanels: slot.forward('tabbedPanels'),
   setXacmlPages: slot.forward('setXacmlPages'),
   xacmlActionNames: slot.forward('xacmlActionNames'),
   // The JSON counterpart of the block above, so that a page drawn
@@ -46155,9 +49583,13 @@ const consoleExports = {
   // second way is the one that goes stale.
   // ---------------------------------------------------------------------
   respondToAction: slot.forward('respondToAction'),
+  // A claim set's section, for tests/attribute_claims.js (#94).
+  claimSetSection: slot.forward('claimSetSection'),
   // For `admin-ui/pki_admin.ts`, whose key-pair controls are drawn on an
   // application's page too — see applicationReturnTo().
   applicationReturnTo: slot.forward('applicationReturnTo'),
+  enrollmentReturnTo: slot.forward('enrollmentReturnTo'),
+  copyButton: slot.forward('copyButton'),
   userReturnTo: slot.forward('userReturnTo'),
   // And the trail a page drawn there hangs under, so the one-time key page an
   // issue from a person's own page answers with is `Users › Signing key pair`
@@ -46208,6 +49640,9 @@ const consoleExports = {
   // (2026-09-13) — the same control every multi-list page here draws.
   perPageForm: slot.forward('perPageForm'),
   perPageOptions: slot.forward('perPageOptions'),
+  // For the same page's four kinds of section (2026-09-30): a search box over
+  // each paged list, the one every multi-list page here draws.
+  sectionSearchForm: slot.forward('sectionSearchForm'),
   queryWith: queryWith,
   // Filled by spiffe_server.js at its require time, for the reason beside the
   // requires at the top: this file must not require that module.
@@ -46347,6 +49782,7 @@ const consoleExports = {
   // `POST /admin-api/config/set-many` already mirrors. A second POST per page
   // would be that many more doors onto one function.
   protocolSettingsJsonFor: slot.forward('protocolSettingsJsonFor'),
+  preparedSettingsJsonFor: slot.forward('preparedSettingsJsonFor'),
   // Where each group of settings is drawn, for the API's own /config resource
   // and for anything that wants to send a person to the right page.
   /**
@@ -46437,6 +49873,9 @@ const consoleExports = {
   // header: a require in either direction fails rule 3e's test.
   setRolePreviewer: slot.forward('setRolePreviewer'),
   usersView: slot.forward('usersView'),
+  // A person's page and the new-user form, for tests/person_fields.js.
+  userDetailPage: slot.forward('userDetailPage'),
+  newUserPage: slot.forward('newUserPage'),
   // The create page's own view, for GET /admin-api/users/new. Rule 7, and the
   // same argument `newApplicationView` makes below: what it answers is the
   // CATALOGUE the create takes — every attribute a person here may be given,

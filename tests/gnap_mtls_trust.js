@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -150,7 +150,7 @@ function childMain() {
     note(added.added === 1, 'setup: the foreign CA is a client trust anchor',
          JSON.stringify(added));
 
-    const DEMO = 'urn:mock-sts:gnap:demo';
+    const DEMO = 'urn:iya-sts:gnap:demo';
     const request = function (method, urlPath, opts) {
       const o = opts || {};
       return new Promise(function (resolve) {

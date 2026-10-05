@@ -1,0 +1,27 @@
+# SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+# SPDX-License-Identifier: BUSL-1.1
+#
+# iya-sts: THE GLOBAL TIER'S SCHEMA, on the writer, as its administrator —
+# AWS's `global-schema-init`, run by the PRIMARY cell's nodes only. Every
+# other cell reads a physical replica, which takes the schema, the role and
+# its password by replication. Idempotent, and run on every start.
+[Unit]
+Description=iya-sts: global tier schema
+Requires=sts-secrets.service
+After=sts-secrets.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+Environment=HOME=/var/lib/sts
+ExecStartPre=/usr/bin/docker pull ${schema_image}
+ExecStart=/usr/bin/docker run --rm --name sts-global-schema \
+  --add-host ${db_host}:${db_address} \
+  --env-file ${run_dir}/global-schema-secrets.env \
+  -e PGHOST=${db_host} \
+  -e PGPORT=${db_port} \
+  -e PGDATABASE=${db_name} \
+  -e PGUSER=${db_user} \
+  -e STS_DB_APP_USER=${db_app_user} \
+  -e STS_SCHEMA_SSLMODE=${sslmode} \
+  ${schema_image}

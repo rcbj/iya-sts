@@ -1,12 +1,12 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
 // File: tests/scim_basic_off_thread.js
 //
 // ===========================================================================
-// A SCIM BASIC PASSWORD IS HASHED IN THE WORKER POOL, NOT ON THE REQUEST
+// A SCIM BASIC PASSWORD IS HASHED ON LIBUV'S THREAD POOL, NOT ON THE REQUEST
 // THREAD (2026-09-21).
 //
 // `scim/scim_auth.ts`'s `attemptBasic()` is synchronous, so in product mode
@@ -145,7 +145,7 @@ async function run(t) {
 
 module.exports = {
   name: 'scim_basic_off_thread',
-  describe: 'a SCIM Basic password is verified in the worker pool on the ' +
-            'asynchronous path, and only for the credential it was reached for',
+  describe: 'a SCIM Basic password is verified on libuv\'s thread pool ' +
+            'on the asynchronous path, and only for the credential it was reached for',
   run: run
 };

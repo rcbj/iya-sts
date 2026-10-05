@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 "use strict";
 //
@@ -358,7 +358,7 @@ async function test() {
     await setting(realm, "acme.attemptsPerAddress", 100000);
   }
   await ok(realmApi(REALM) + "/applications/create",
-           { identifier: APP, protocols: ["oauth2"],
+           { identifier: APP, protocols: ["oauth2", "acme"],
              fields: { oauthClientId: APP } }, "created an application");
   await ok(realmApi(REALM) + "/acme/add-host-name",
            { kind: "person", identifier: ALICE,

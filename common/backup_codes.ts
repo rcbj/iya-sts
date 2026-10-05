@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -501,9 +501,9 @@ class BackupCodes {
   // this machine: one hash is 72ms, and a WRONG code has to be compared
   // against every code in the set — ten by default — which measured **906ms
   // of blocked event loop**. That is not a price a sign-in path can pay on
-  // one thread, so `common/credentials.ts` checks a presented code through
-  // the WORKER POOL and in parallel. The synchronous door is kept for `npm
-  // test` and for `workers.count = 0`, which is a supported configuration.
+  // one thread, so `common/credentials.ts` checks a presented code on
+  // libuv's thread pool and in parallel (#363; a pool of forked processes
+  // until then). The synchronous door is kept for `npm test`.
   //
   // A hash carries its own random salt, so two identical codes in two sets —
   // or in one — hash differently, and there is no shortcut that would let a
@@ -666,7 +666,7 @@ class BackupCodes {
               '2026-09-11 holds the codes themselves and is still accepted, ' +
               'code by code, until its owner generates a new one.',
       comparisonOfAHash: 'crypto.verifySecret() in constant time against ' +
-                         'each stored hash in turn, on the worker pool ' +
+                         'each stored hash in turn, on libuv\'s thread pool ' +
                          'where the door is asynchronous.'
     };
   }

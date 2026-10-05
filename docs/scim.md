@@ -117,6 +117,25 @@ is accepted** and logged, because this directory does no referential integrity.
 entry with `origin: scim` and no row on `/admin/users` until they sign in
 somewhere.
 
+### A service deployed in several regions
+
+When this service runs as several regional cells, each person is homed in one
+of them and their data stays there. SCIM follows the person:
+
+* a request about one person (`/Users/{id}`) is answered by the region they
+  are homed in, whichever region your client reached;
+* a new person is homed in the region named by
+  `urn:ietf:params:scim:schemas:extension:iya-sts:2.0:User:homeCell` (a region
+  id; write-only and never returned), or in the realm's default region. A
+  region the realm may not home people in is refused. A later write cannot
+  move a person: that is an administrator's act;
+* a list or a search returns the people of the region that answered;
+* a Group write whose members are homed in more than one region, and a
+  BulkRequest whose operations are, are refused whole (400 `invalidValue`).
+  Send one request per region's people.
+
+A service deployed as one region ignores `homeCell`.
+
 ### Attribute mapping
 
 Each SCIM member is stored in one LDAP attribute. For example, `userName` is
@@ -295,7 +314,7 @@ address on the strength of it.
 | `scim.maxResults` | `SCIM_MAX_RESULTS` | `200` | yes | The largest page a list or search returns, published as `filter.maxResults`; a larger `count` is clamped. |
 | `scim.bulkMaxOperations` | `SCIM_BULK_MAX_OPERATIONS` | `100` | yes | How many operations one Bulk request may carry, published as `bulk.maxOperations`. |
 | `scim.bulkMaxPayloadSize` | `SCIM_BULK_MAX_PAYLOAD_SIZE` | `1048576` | yes | The largest Bulk body in bytes, published as `bulk.maxPayloadSize` and checked against that number. |
-| `scim.authDiscovery` | `SCIM_AUTH_DISCOVERY` | `false` | yes | Whether the three discovery documents also need a credential. |
+| `scim.authDiscovery` | `SCIM_AUTH_DISCOVERY` | `false` | yes | Whether the three discovery documents also need a credential. Off is what RFC 7643 section 5 asks (authenticationSchemes SHOULD be readable without prior authentication); **on departs from it**. |
 | `scim.inventOnCreate` | `SCIM_INVENT_ON_CREATE` | `true` | yes | Development mode only: fill a provisioned person in with the invented persona and the /admin/vc attributes the client did not send. Off, a create writes exactly what was sent. |
 | `scim.authRealm` | `SCIM_AUTH_REALM` | `SCIM` | yes | The protection space in every challenge; Digest and HOBA credentials are computed over it. |
 | `scim.scopeRead` | `SCIM_SCOPE_READ` | `scim:read` | yes | The OAuth scope needed to read, published in `scopes_supported`. |

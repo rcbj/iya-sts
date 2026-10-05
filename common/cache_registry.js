@@ -1,6 +1,6 @@
 // @ts-check
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -27,10 +27,12 @@
 // Registers that are the RECORD of something — sessions, tokens, the audit
 // log, consent, the directory — are neither, and are not registered.
 //
-// There was no shared cache class before this file and there still is not
-// one. Each cache stays the `Map`, `realms.map()` or `realms.keyed()` it was,
-// in the module that owns it, and DESCRIBES itself here once, beside its
-// declaration:
+// There was no shared cache class before this file, and the caches it was
+// written for are still not one. Each stays the `Map`, `realms.map()` or
+// `realms.keyed()` it was, in the module that owns it, and DESCRIBES itself
+// here once, beside its declaration. (`common/bounded_lru.ts`, #349, is the
+// one class since: for a cache whose victim is the entry least recently READ,
+// which `makeRoom()` below does not do. It registers through the same door.)
 //
 //   * `register(descriptor)` — a name, a title, a description, the owning
 //     file, a scope (`process` or `realm`), a `maxEntries()`, a `lifetime()`
@@ -92,6 +94,8 @@ const nodeCrypto = require('crypto');
 const bunyan = require('bunyan');
 const config = require('./config');
 const errorCodes = require('./error_codes');
+// This thread's identity (#364); see common/worker_channel.ts.
+const WorkerChannel = require('./worker_channel');
 
 const log = bunyan.createLogger({ name: 'sts-cache-registry' });
 config.registerLogger(log);
@@ -486,7 +490,7 @@ function snapshot(now) {
             c.hits, c.misses, c.evictions, c.refusals];
   });
   log.debug("Leaving snapshot().");
-  return { at: at, pid: process.pid, caches: out };
+  return { at: at, pid: WorkerChannel.processTag(), caches: out };
 }
 
 // The reverse of `snapshot()`'s rows, for the page.

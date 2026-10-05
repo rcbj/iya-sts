@@ -189,6 +189,52 @@ built-in policy decides. RFC 9396 authorization details are asked about in the
 same way (action `issue-authorization-detail`) for the client's registered
 types and the types the server publishes.
 
+**The issuance policy also decides each GNAP access right** (#432). For every
+right a GNAP grant asks for, the grant engine asks one question: the action is
+`issue-gnap-right` and the resource is the right's type (or its reference
+string). The facts are under `urn:sts:xacml:gnap:` — the right's `kind`, its
+`right-action`, `right-location`, `right-datatype`, `right-identifier` and
+`right-privilege`; whether the access-type catalogue declares its type
+(`catalogued`) and what it declares (`type-owner`, `type-bearer`,
+`type-max-lifetime`, `type-acr`, `type-interaction`, `type-consent-action`,
+`type-derivable-from`, `type-introspection-claim`); the token (`token-label`,
+`token-bearer`, `token-format`, `token-target`); the client
+(`client-class`, `client-has-allowed-access`, `client-bearer-refused`,
+`right-listed`, `reference-registered`, `protected`, `protected-declared`);
+and who approved it and how (`approver`, `approval`), the session
+(`session-acr`, `session-amr`), its risk (`risk-level`, `risk-signal`) and
+registered device (`device-*`). The stage is `request` or `issue`. The
+answer's obligation `urn:sts:xacml:obligation:gnap-right` carries
+`urn:sts:xacml:gnap-right-verdict` (`keep`, `narrow` or `refuse`),
+`urn:sts:xacml:gnap-right-code`, any number of
+`urn:sts:xacml:gnap-right-drop-action`, `-drop-location`, `-drop-datatype`
+and `-drop-privilege` values, and `urn:sts:xacml:gnap-right-max-lifetime`.
+Several obligations in one answer are merged: refuse over narrow over keep,
+the drops together, the shortest lifetime. The built-in `role-issuance`
+policy holds the rules (`decideGnapRights`); a document without them leaves
+the question to the built-in policy, and a verdict this service does not
+know refuses the right. [GNAP](gnap.md#each-right-is-a-question-to-the-issuance-policy)
+describes what each rule does.
+
+**Where the service is deployed as cells, the issuance policy also decides
+where a person's data may go** (#98). A cell asks three questions: may a
+visitor's session be held here (`hold-session`), may a request about them be
+served here at all, even by relaying it to their home cell
+(`serve-request`), and may another cell's residents be released to a reader
+here (`release-attributes`). The request carries the person's home
+jurisdiction, the cell's jurisdiction, the client's country when it is known,
+whether the realm lists the transfer in `cells.permittedTransfers`, and
+`cells.hardGeofence`. The answer's obligation
+`urn:sts:xacml:obligation:transfer` says `hold` or `relay`, `serve` or
+`refuse`, `release` or `withhold`. The built-in rule is strict: a session is
+held, and residents released, only within one jurisdiction or where the realm
+lists the transfer; anything else is relayed to the home cell, and refused
+only under a hard geofence. A realm can loosen this in its own issuance
+policy, for example with a rule that lets `us` subjects hold sessions in
+`eu`. **Each loosening is a decision that personal data may be processed in
+another jurisdiction; make it only where the law of both allows it.** A
+document without the transfer rules leaves them to the built-in policy.
+
 The issuance PEP builds a request in which the subject is the party being
 authenticated (in a `client_credentials` grant, that is the client). The
 request carries the roles the subject holds and any roles found in a token it
@@ -206,6 +252,16 @@ that application, the role counts under its short name (`reader`): the
 application's `appRequiredRole` can name it, and tokens and assertions for that
 application carry it in the roles claim. Tokens for any other application never
 carry it. Realm-wide roles work as before and appear everywhere.
+
+**An application can hold a role as itself** (#93): add it as a member, on
+`/admin/roles` or in the *Application permissions* section of its own page on
+`/admin/applications` (`POST /admin-api/roles/add-member` with
+`kind: application`). Its `client_credentials` access tokens then carry the
+role in the roles claim: a realm-wide role in every token, another
+application's role only in a token for that application, under its short
+name. Such a token has no `username`; its `sub` names the application. A role
+can be limited to people or to applications (`memberTypes`), and it can have a
+display name. Its stable id is the entry's `entryUUID`.
 
 **The request also carries the RISK of the authentication** the issuance
 rests on, as four environment attributes (`urn:sts:xacml:risk-level`,

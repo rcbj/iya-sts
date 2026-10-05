@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -34,7 +34,8 @@ const log = require('bunyan').createLogger({ name: 'audit_vocabulary',
   level: process.env.STS_LOG_LEVEL || 'info' });
 
 const ROOT = path.join(__dirname, '..');
-const DIRS = ['common', 'admin-core', 'admin-ui', 'authn', 'portal',
+const DIRS = ['common', 'admin-core', 'admin-ui', 'attribute-sources',
+  'authn', 'portal',
   'oauth-oidc', 'saml', 'ws-trust', 'ws-federation', 'federation',
   'kerberos', 'ldap', 'scim', 'ssf', 'spiffe', 'xacml', 'gnap', 'acme',
   'est', 'scep', 'risk', 'oid4vc', 'oidfed', 'pki', 'mgmt-api', 'logout',
@@ -47,7 +48,8 @@ const BUILT = {
   'admin.krb5.service.': ['created', 'rotated', 'deleted'],
   'oauth2.claims-providers.': ['add-provider', 'update-provider',
                                'remove-provider', 'revoke-link'],
-  'xacml.pep.': ['enable', 'disable']
+  'xacml.pep.': ['enable', 'disable'],
+  'attribute-sources.': ['add', 'update', 'remove', 'refresh']
 };
 
 function sources() {

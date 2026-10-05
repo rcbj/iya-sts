@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -172,7 +172,17 @@ class MailFactor {
       log.debug("Leaving MailFactor.entryOf(). None.");
       return null;
     }
-    const attrs = entry.attributes || {};
+    const out = this.valuesOf(entry.attributes || {});
+    log.debug("Leaving MailFactor.entryOf().");
+    return out;
+  }
+
+  // The four values this file reads off a person's attributes (lower-cased
+  // names, as the store keeps them). One place, so `entryOf()` and
+  // `heldOfAttributes()` read an entry the same way.
+  private valuesOf(attrs: Record<string, unknown[]>): Record<string, string> {
+    const { log } = this.deps;
+    log.debug("Entering MailFactor.valuesOf().");
     const first = function (name: string): string {
       log.debug("Entering first().");
       const values = attrs[name.toLowerCase()] || [];
@@ -185,7 +195,7 @@ class MailFactor {
       factor: first('stsMailFactor').trim().toLowerCase(),
       failures: first('stsMailFactorFailures').trim()
     };
-    log.debug("Leaving MailFactor.entryOf().");
+    log.debug("Leaving MailFactor.valuesOf().");
     return out;
   }
 
@@ -200,9 +210,64 @@ class MailFactor {
    * usable
    */
   status(username: string) {
-    const { log, authnPolicy } = this.deps;
+    const { log } = this.deps;
     log.debug("Entering MailFactor.status(). " + username);
-    const entry = this.entryOf(username);
+    const out = this.statusOfValues(this.entryOf(username));
+    log.debug("Leaving MailFactor.status().");
+    return out;
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE KIND HELD, FROM ATTRIBUTES ALREADY READ (#352, 2026-09-29).
+  //
+  // `/admin/users` counts who holds a second factor over everybody in the
+  // realm, and an emailed factor that is usable is one (`mechanismsFor()`'s
+  // `mfaRequired`). Asking `held()` per person was a lookup and a copy of the
+  // whole entry each; the directory's credential census hands over the four
+  // attributes instead, and this answers from them by the SAME rule
+  // `status()` applies — `statusOfValues()` is both.
+  //
+  // Nobody opted in is answered before the realm's policy is asked, which is
+  // the common case and is `status()`'s own first test, so it is the same
+  // answer without two policy reads per person. Where this process has no
+  // mail channel directory, nobody holds one — `entryOf()`'s answer.
+  // ---------------------------------------------------------------------------
+  /**
+   * Returns the kind of emailed factor held, from a person's attributes.
+   *
+   * @param attrs - the person's attributes, lower-cased names to values
+   * @returns `code`, `link`, or '' when none is usable
+   */
+  heldOfAttributes(attrs: Record<string, unknown[]>): Kind | '' {
+    const { log } = this.deps;
+    log.debug("Entering MailFactor.heldOfAttributes().");
+    let directory = null;
+    try {
+      directory = this.deps.mail().directory();
+    } catch (e) {
+      log.debug("Caught in MailFactor.heldOfAttributes(): " +
+                ((e && e.message) || e));
+      // No mail channel in this process: `entryOf()` reads nobody then.
+      directory = null;
+    }
+    if (!directory || !attrs) {
+      log.debug("Leaving MailFactor.heldOfAttributes(). No directory.");
+      return '';
+    }
+    const values = this.valuesOf(attrs);
+    if (!MailFactor.isKind(values.factor)) {
+      log.debug("Leaving MailFactor.heldOfAttributes(). Not opted in.");
+      return '';
+    }
+    const s = this.statusOfValues(values);
+    log.debug("Leaving MailFactor.heldOfAttributes().");
+    return s.usable ? s.kind : '';
+  }
+
+  // `status()`'s rule, over values already read. Null is nobody.
+  private statusOfValues(entry: Record<string, string> | null) {
+    const { log, authnPolicy } = this.deps;
+    log.debug("Entering MailFactor.statusOfValues().");
     const kind: Kind | '' = entry && MailFactor.isKind(entry.factor)
       ? entry.factor as Kind : '';
     const verified = !!(entry && entry.mail &&
@@ -232,8 +297,8 @@ class MailFactor {
       offered: offered,
       failures: Number((entry && entry.failures) || 0) || 0
     };
-    log.debug("Leaving MailFactor.status(). " + (out.usable ? 'usable'
-      : why));
+    log.debug("Leaving MailFactor.statusOfValues(). " + (out.usable
+      ? 'usable' : why));
     return out;
   }
 
@@ -648,6 +713,7 @@ export = {
   isKind: MailFactor.isKind,
   status: slot.forward('status'),
   held: slot.forward('held'),
+  heldOfAttributes: slot.forward('heldOfAttributes'),
   masked: slot.forward('masked'),
   optIn: slot.forward('optIn'),
   clear: slot.forward('clear'),

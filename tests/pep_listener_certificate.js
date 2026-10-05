@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -27,23 +27,20 @@
 //      a TLS stack does not serve.
 //   D. A REISSUE SUPERSEDES, and the register keeps no private key.
 //   E. THE NAMES A REGISTRATION IMPLIES (`xacml/xacml_pep_tls.ts`).
-//   F. THE CONTAINER'S RELOAD RULES, in a CHILD PROCESS because `xacml-pep/`
-//      primes `require.cache` with its shim: a missing pair waits, a pair whose
-//      halves disagree is refused, a good pair starts a listener, a new pair
-//      is swapped in, and a bad pair never replaces a good one.
+//
+// THE CONTAINER'S RELOAD RULES were section F, in a child requiring the
+// Node PEP. The PEP is a Rust binary since #444, and the same rules — a
+// missing pair waits, halves that disagree are refused, a good pair starts
+// the listener, the same bytes are no change, a bad pair never replaces a
+// good one — are `rust/bins/xacml-pep/src/listener.rs`'s own test.
 // ===========================================================================
 
 // Deleted rather than set, for the reason `config_realm_layer.js` gives.
 delete process.env.CONFIG_FILE;
 
-const childProcess = require('child_process');
-const fs = require('fs');
 const nodeCrypto = require('crypto');
-const os = require('os');
-const path = require('path');
 const tls = require('tls');
 
-const CHILD_FLAG = 'STS_PEP_LISTENER_CHILD';
 const REALM = 'peptls-a';
 
 const log = require('bunyan').createLogger({ name: 'pep_listener_certificate',
@@ -306,128 +303,6 @@ async function inProcess(t) {
 }
 
 // ---------------------------------------------------------------------------
-// F. THE CONTAINER'S RELOAD, in a child.
-// ---------------------------------------------------------------------------
-async function childBody() {
-  log.debug("Entering childBody().");
-  const dir = process.env.PEP_LISTENER_DIR;
-  const pep = require('../xacml-pep/pep.js');
-  const report = {};
-  const settle = function (ms) {
-    log.debug("Entering settle().");
-    log.debug("Leaving settle().");
-    return new Promise(function (resolve) { setTimeout(resolve, ms); });
-  };
-  const anchor = fs.readFileSync(path.join(dir, 'anchor.pem'), 'utf8');
-
-  pep.reloadListenerPair();
-  report.missing = { listening: pep.listener.listening,
-                     problem: pep.listener.lastProblem };
-
-  // Halves that disagree — the moment between two writes.
-  fs.copyFileSync(path.join(dir, 'one.crt'), path.join(dir, 'pep.crt'));
-  fs.copyFileSync(path.join(dir, 'two.key'), path.join(dir, 'pep.key'));
-  pep.reloadListenerPair();
-  report.mismatched = { listening: pep.listener.listening,
-                        server: !!pep.httpsServer(),
-                        problem: pep.listener.lastProblem };
-
-  fs.copyFileSync(path.join(dir, 'one.key'), path.join(dir, 'pep.key'));
-  pep.reloadListenerPair();
-  await settle(300);
-  report.good = { listening: pep.listener.listening,
-                  serial: pep.listener.certificate &&
-                          pep.listener.certificate.serialHex };
-  report.goodSeen = await handshake(pep.listener.port, anchor, 'pep-one.test');
-
-  fs.copyFileSync(path.join(dir, 'two.crt'), path.join(dir, 'pep.crt'));
-  fs.copyFileSync(path.join(dir, 'two.key'), path.join(dir, 'pep.key'));
-  pep.reloadListenerPair();
-  report.swappedSeen = await handshake(pep.listener.port, anchor,
-                                       'pep-one.test');
-
-  // A bad pair after a good one.
-  fs.copyFileSync(path.join(dir, 'one.key'), path.join(dir, 'pep.key'));
-  pep.reloadListenerPair();
-  report.keptSeen = await handshake(pep.listener.port, anchor, 'pep-one.test');
-  report.kept = { problem: pep.listener.lastProblem };
-  report.overview = pep.overview().https;
-  pep.httpsServer().close();
-  process.stdout.write('\nREPORT ' + JSON.stringify(report) + '\n');
-  log.debug("Leaving childBody().");
-}
-
-function theReload(t, issued) {
-  log.debug("Entering theReload().");
-  t.log.info('=== F. the container picks a pair up, and keeps a good one ===');
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pep-listener-'));
-  try {
-    const chain = function (one) {
-      log.debug("Entering chain().");
-      log.debug("Leaving chain().");
-      return [one.certificatePem].concat(one.chainPem).join('\n');
-    };
-    fs.writeFileSync(path.join(dir, 'one.crt'), chain(issued.first));
-    fs.writeFileSync(path.join(dir, 'one.key'), issued.first.privateKeyPem);
-    fs.writeFileSync(path.join(dir, 'two.crt'), chain(issued.second));
-    fs.writeFileSync(path.join(dir, 'two.key'), issued.second.privateKeyPem);
-    fs.writeFileSync(path.join(dir, 'anchor.pem'), issued.first.anchorPem);
-    const env = Object.assign({}, process.env);
-    env[CHILD_FLAG] = '1';
-    env.PEP_LISTENER_DIR = dir;
-    env.PEP_HTTPS_CERT = path.join(dir, 'pep.crt');
-    env.PEP_HTTPS_KEY = path.join(dir, 'pep.key');
-    env.PEP_HTTPS_PORT = '0';
-    env.PEP_LOG_LEVEL = 'warn';
-    const out = childProcess.spawnSync(process.execPath, [__filename],
-                                       { env: env, encoding: 'utf8',
-                                         timeout: 60000 });
-    const line = String(out.stdout || '').split('\n').filter(function (one) {
-      return one.indexOf('REPORT ') === 0;
-    })[0];
-    t.check(out.status === 0 && !!line, 'the child ran',
-            String(out.stderr || '').slice(-2000));
-    if (!line) {
-      log.debug("Leaving theReload(). No report.");
-      return;
-    }
-    const r = JSON.parse(line.slice('REPORT '.length));
-    t.check(!r.missing.listening && /does not exist/.test(r.missing.problem),
-            'a pair not yet written is waited for, and said so',
-            JSON.stringify(r.missing));
-    t.check(!r.mismatched.listening && !r.mismatched.server &&
-            /not the key this certificate certifies/.test(
-              r.mismatched.problem || ''),
-            'halves that disagree start no listener',
-            JSON.stringify(r.mismatched));
-    t.check(r.good.listening &&
-            r.good.serial === issued.first.serialHex.toLowerCase(),
-            'a good pair starts the listener', JSON.stringify(r.good));
-    t.check(r.goodSeen.authorized &&
-            r.goodSeen.serialHex === issued.first.serialHex.toLowerCase() &&
-            /200/.test(r.goodSeen.status),
-            'and it serves the four endpoints over a verified handshake',
-            JSON.stringify(r.goodSeen));
-    t.equal(r.swappedSeen.serialHex, issued.second.serialHex.toLowerCase(),
-            'a new pair is swapped in without a restart');
-    t.check(r.keptSeen.authorized &&
-            r.keptSeen.serialHex === issued.second.serialHex.toLowerCase() &&
-            /keeps serving/.test(r.kept.problem || ''),
-            'a bad pair written after a good one does not replace it',
-            JSON.stringify({ seen: r.keptSeen, kept: r.kept }));
-    t.check(r.overview.configured && r.overview.listening &&
-            r.overview.certificate &&
-            r.overview.certificate.serialHex ===
-              issued.second.serialHex.toLowerCase(),
-            'GET / reports the certificate being SERVED',
-            JSON.stringify(r.overview));
-  } finally {
-    fs.rmSync(dir, { recursive: true, force: true });
-  }
-  log.debug("Leaving theReload().");
-}
-
-// ---------------------------------------------------------------------------
 // THE CERTIFICATE AUTHORITY THIS FILE FINDS IS THE ONE IT LEAVES, for
 // `tests/application_credentials.js`'s reason: `run.js` runs every file in ONE
 // process, and a service Root built here is the Root `tests/pki.js` meets when
@@ -463,10 +338,9 @@ function restoreAuthority(before) {
 
 async function run(t) {
   log.debug("Entering run().");
-  let issued = null;
   const before = heldAuthority();
   try {
-    issued = await inProcess(t);
+    await inProcess(t);
   } finally {
     // `realm_isolation.js` asserts only the default realm is left.
     const realms = require('../common/realms');
@@ -475,17 +349,7 @@ async function run(t) {
     }
     restoreAuthority(before);
   }
-  theReload(t, issued);
   log.debug("Leaving run().");
-}
-
-if (require.main === module && process.env[CHILD_FLAG]) {
-  childBody().then(function () {
-    process.exit(0);
-  }, function (e) {
-    process.stderr.write(String((e && e.stack) || e) + '\n');
-    process.exit(1);
-  });
 }
 
 module.exports = {
@@ -493,6 +357,6 @@ module.exports = {
   describe: 'A remote PEP\'s HTTPS listener certificate: a branch topped up ' +
             'rather than rebuilt, a serverAuth leaf a Root-only client ' +
             'verifies through its realm\'s Intermediate, the refusals, a ' +
-            'reissue superseding, and the container\'s reload rules',
+            'reissue superseding',
   run: run
 };

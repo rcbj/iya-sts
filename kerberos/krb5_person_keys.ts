@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -3043,22 +3043,52 @@ class Krb5PersonKeys {
   // its operation. Built from the PUBLIC info attributes only; nothing is
   // opened.
   // -------------------------------------------------------------------------
+  // PAGED BEFORE IT IS DESCRIBED (#352, 2026-09-29). `listPeople()` parsed
+  // every person's info attribute, hashed their stored password for the
+  // `current` stamp and built their retained versions, then sorted — for a
+  // page that shows twenty-five. The work is split so the console can page
+  // between the halves: `listPeopleKeys()` is the population, sorted by
+  // username exactly as the described rows were (the sort reads nothing the
+  // description adds), and `describePeople()` is the per-row half, for the
+  // rows shown. `listPeople()` is the two together and answers as it did.
   /**
-   * Lists the people holding Kerberos keys, from the public info attributes
-   * only.
+   * Lists the people holding Kerberos keys as undescribed rows, sorted by
+   * username; nothing is parsed or hashed.
    *
    * @returns the rows, by username
    */
-  listPeople(): Json[] {
-    const self = this;
-    const { log, principals, kcrypto } = this.deps;
-    log.debug('Entering Krb5PersonKeys.listPeople().');
+  listPeopleKeys(): Json[] {
+    const { log } = this.deps;
+    log.debug('Entering Krb5PersonKeys.listPeopleKeys().');
     if (!this.directory) {
-      log.debug('Leaving Krb5PersonKeys.listPeople(). No directory.');
+      log.debug('Leaving Krb5PersonKeys.listPeopleKeys(). No directory.');
       return [];
     }
+    const collator = new Intl.Collator();
+    const rows = this.directory.personKeyInfos().slice(0);
+    // `a.username.localeCompare(b.username)`, which this collator's compare
+    // is by definition, built once rather than per comparison.
+    rows.sort(function (a, b) {
+      return collator.compare(String(a.username), String(b.username));
+    });
+    log.debug('Leaving Krb5PersonKeys.listPeopleKeys(). ' + rows.length +
+              ' person(s).');
+    return rows;
+  }
+
+  /**
+   * Describes rows `listPeopleKeys()` answered, from the public info
+   * attributes only; nothing is opened.
+   *
+   * @param keyRows - the rows to describe
+   * @returns the described rows, in the same order
+   */
+  describePeople(keyRows: Json[]): Json[] {
+    const self = this;
+    const { log, principals, kcrypto } = this.deps;
+    log.debug('Entering Krb5PersonKeys.describePeople().');
     const nowMs = Date.now();
-    const rows = this.directory.personKeyInfos().map(function (one) {
+    const rows = (keyRows || []).map(function (one) {
       const info = self.parseInfo(one.info) || {};
       return {
         // THE PREVIOUS VERSIONS STILL ACCEPTED for tickets issued under them —
@@ -3082,9 +3112,21 @@ class Krb5PersonKeys {
                  info.stamp === self.stampOf(one.passwordHash)
       };
     });
-    rows.sort(function (a, b) {
-      return a.username.localeCompare(b.username);
-    });
+    log.debug('Leaving Krb5PersonKeys.describePeople(). ' + rows.length +
+              ' person(s).');
+    return rows;
+  }
+
+  /**
+   * Lists the people holding Kerberos keys, from the public info attributes
+   * only.
+   *
+   * @returns the rows, by username
+   */
+  listPeople(): Json[] {
+    const { log } = this.deps;
+    log.debug('Entering Krb5PersonKeys.listPeople().');
+    const rows = this.describePeople(this.listPeopleKeys());
     log.debug('Leaving Krb5PersonKeys.listPeople(). ' + rows.length +
               ' person(s).');
     return rows;
@@ -3285,6 +3327,8 @@ export = {
   retainedVersionsLimit: slot.forward('retainedVersionsLimit'),
   retainedTtlSeconds: slot.forward('retainedTtlSeconds'),
   listPeople: slot.forward('listPeople'),
+  listPeopleKeys: slot.forward('listPeopleKeys'),
+  describePeople: slot.forward('describePeople'),
   listServices: slot.forward('listServices'),
   withheldValues: slot.forward('withheldValues'),
   // THE KRBTGT KEY (#169).

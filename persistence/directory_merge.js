@@ -1,6 +1,6 @@
 // @ts-check
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -236,6 +236,67 @@ function mergeAttributes(base, mine, theirs) {
  * 'merged' (write `entry`), 'theirs' (write nothing, adopt `entry` here) or
  * 'deleted' (write nothing, remove the entry here)
  */
+// ---------------------------------------------------------------------------
+// TWO PROCESSES CREATED ONE ENTRY, AND NEITHER KNEW (2026-10-02). With no
+// base and two entryUUIDs, this answered `theirs` whole, and whatever this
+// process had put in its own copy since creating it was lost. Two nodes seed
+// a new realm's role groups each, and a grant made on the node that committed
+// second added a member nothing ever wrote: `sts_realm_administrators` in the
+// cluster mode (CI run 36967212793) granted Admin Write, was answered 200,
+// and was refused STS-ADMIN-0797 by both nodes.
+//
+// The first committed is still the entry — its entryUUID and every value it
+// holds alone (applyEntry() keeps this process's entryUUID as an alias) — and
+// what mine holds besides is added to it: an attribute theirs lacks, and the
+// values of a list attribute theirs does not hold. A single value both set
+// differently stays theirs. Answered `theirs` when mine adds nothing.
+// ---------------------------------------------------------------------------
+/**
+ * Merges two independent creations of one entry: theirs, committed first,
+ * plus what mine holds that theirs does not.
+ *
+ * @param mine - the entry this process created and wants to write
+ * @param theirs - the entry another process created and committed
+ * @returns `{ outcome, entry }`: 'theirs' when mine adds nothing, else
+ *   'merged'
+ */
+function mergeCreations(mine, theirs) {
+  const m = (mine && mine.attributes) || {};
+  const t = (theirs && theirs.attributes) || {};
+  const out = {};
+  Object.keys(t).forEach(function (name) {
+    out[name] = t[name];
+  });
+  Object.keys(m).forEach(function (name) {
+    if (name === 'entryuuid' || name === 'createtimestamp' ||
+        name === 'modifytimestamp') {
+      return;
+    }
+    if (t[name] === undefined) {
+      out[name] = m[name];
+      return;
+    }
+    if (MULTI.indexOf(name) >= 0 || countOf(m[name]) > 1 ||
+        countOf(t[name]) > 1) {
+      out[name] = mergeValues([], m[name], t[name]);
+    }
+  });
+  if (same(out, t)) {
+    return { outcome: 'theirs', entry: theirs };
+  }
+  const merged = {
+    dn: theirs.dn,
+    attributes: out,
+    createdAt: theirs.createdAt || mine.createdAt || null,
+    modifiedAt: String(mine.modifiedAt || '') >= String(theirs.modifiedAt || '')
+      ? (mine.modifiedAt || null) : (theirs.modifiedAt || null)
+  };
+  if (theirs.origin || mine.origin) {
+    merged.origin = theirs.origin || mine.origin;
+  }
+  return { outcome: 'merged', entry: merged };
+}
+
 function mergeEntry(base, mine, theirs) {
   if (!mine) {
     // A delete is written as a delete and never reaches here; answered for a
@@ -258,7 +319,7 @@ function mergeEntry(base, mine, theirs) {
   let effectiveBase = base;
   if (!base) {
     if (mu && tu && mu !== tu) {
-      return { outcome: 'theirs', entry: theirs };
+      return mergeCreations(mine, theirs);
     }
     effectiveBase = { attributes: {} };
   } else {

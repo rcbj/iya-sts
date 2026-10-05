@@ -1,6 +1,6 @@
 // @ts-check
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -295,7 +295,8 @@ let directory = null;
  * Validated whole: hooks missing any of `read`, `write` and `persons` are
  * refused (STS-OAUTH-0084).
  *
- * @param hooks - `{ read, write, persons }`
+ * @param hooks - `{ read, write, persons }`, and optionally `holdingAny`
+ *   (#352), which `holders()` walks the directory through once
  * @returns true when installed, false when refused
  */
 function setDirectory(hooks) {
@@ -364,7 +365,9 @@ function sealValue(name, value) {
     log.debug("Leaving sealValue().");
     return String(value);
   }
-  const out = keystore.seal(String(value), SEAL_LABEL);
+  // Under the CELL's key where there is one (#98): a person's key pair is
+  // theirs and lives only in their home cell.
+  const out = keystore.seal(String(value), SEAL_LABEL, 'cell');
   if (!out) {
     log.debug("Leaving sealValue().");
     return null;
@@ -443,14 +446,36 @@ function recordFor(username) {
     log.debug('Leaving recordFor(). Nobody by that name.');
     return null;
   }
+  log.debug('Leaving recordFor().');
+  return recordOf(name, raw, true);
+}
+
+// ---------------------------------------------------------------------------
+// ONE PERSON'S RECORD OUT OF THE ATTRIBUTES ALREADY READ, which is
+// `recordFor()`'s body since #352 (2026-09-29) so that `holders()` can build
+// the same record out of a walk without a second read per person.
+//
+// **`openKeys` FALSE LEAVES THE PRIVATE KEYS OUT ALTOGETHER** — not opened and
+// not copied sealed either — and it is what `holders()` passes. A report of who
+// holds a key pair is answered by the JWKS and the certificate, which are
+// public; opening the private half to answer it cost a `keystore.open()` per
+// person per page view and made every console visit a decryption of every
+// person's signing key. A record without them says so by not having the
+// member, and nothing that builds a row from `holders()` reads it.
+// ---------------------------------------------------------------------------
+function recordOf(name, raw, openKeys) {
+  log.debug('Entering recordOf(). username=' + name);
   const out = { username: name,
                 issuers: valuesOf(raw[ISSUER_ATTRIBUTE]),
                 hasKeyPair: false,
                 samlIssuers: valuesOf(raw[SAML_ISSUER_ATTRIBUTE]),
                 hasSamlKeyPair: false };
   KEY_ATTRIBUTES.concat(SAML_KEY_ATTRIBUTES).forEach(function (attribute) {
+    if (!openKeys && SEALED_ATTRIBUTES.indexOf(attribute) >= 0) {
+      return;
+    }
     const first = valuesOf(raw[attribute])[0] || '';
-    out[attribute] = openValue(attribute, first, name);
+    out[attribute] = openKeys ? openValue(attribute, first, name) : first;
   });
   out.hasKeyPair = !!out.stsAssertionJwks;
   out.hasSamlKeyPair = !!out.stsSamlAssertionCertificate;
@@ -464,7 +489,7 @@ function recordFor(username) {
   out.effectiveIssuers = out.issuers.length ? out.issuers.slice() : [name];
   out.samlEffectiveIssuers = out.samlIssuers.length
     ? out.samlIssuers.slice() : [name];
-  log.debug('Leaving recordFor(). ' +
+  log.debug('Leaving recordOf(). ' +
             (out.hasKeyPair ? 'A JWT key pair. ' : 'No JWT key pair. ') +
             (out.hasSamlKeyPair ? 'A SAML key pair.' : 'No SAML key pair.'));
   return out;
@@ -821,10 +846,29 @@ function clear(username, purpose, opts) {
 // report in this module that a page renders, and a page that drew a private
 // key would be one that gives it away on every visit to everybody who can
 // read the console.
+//
+// **PRESENCE, READ IN ONE WALK, WITH NOTHING UNSEALED (#352, 2026-09-29).**
+// This was `persons()` — every name in the realm, uncapped — and then
+// `recordFor()` for each: a directory read per person and a `keystore.open()`
+// of both private keys per holder, to answer a list that carries no private
+// key. On testidp that was twenty-nine thousand reads per view of
+// `/admin/pki`. It is now the directory's `holdingAny()`: the people holding
+// any of the four attributes that make somebody a row here (either profile's
+// key pair or declared issuer), with their raw values, in the one walk the
+// directory makes anyway — and the record built from those values with
+// `openKeys` false, so no private key is opened or even copied.
+//
+// **THE ANSWER IS THE SAME ROWS IN THE SAME ORDER.** `holdingAny()` hands
+// them back in `allPersons()`'s order, and the test below is the old one
+// applied to the same record, so an entry carrying an attribute with only an
+// empty value is left out exactly as it was. A directory that offers no
+// `holdingAny()` — an older filler, or a test's stub — is walked the old way,
+// still without an unseal.
 // ---------------------------------------------------------------------------
 /**
  * Lists everybody in the realm who holds a key pair or declares an issuer, for
- * `/admin/pki` and the management API. No private key is in the answer.
+ * `/admin/pki` and the management API. No private key is in the answer, and
+ * none is opened to build it.
  *
  * @returns one row per person, the JWT profile's members at the top and the
  * SAML profile's under `saml`
@@ -835,9 +879,21 @@ function holders() {
     log.debug('Leaving holders(). No directory.');
     return [];
   }
+  let found;
+  if (typeof directory.holdingAny === 'function') {
+    found = (directory.holdingAny([ISSUER_ATTRIBUTE,
+      KEY_PAIR_ATTRIBUTES.jwt.present, SAML_ISSUER_ATTRIBUTE,
+      KEY_PAIR_ATTRIBUTES.saml.present]) || []).map(function (one) {
+      return recordOf(String(one.username), one.attributes || {}, false);
+    });
+  } else {
+    found = (directory.persons() || []).map(function (name) {
+      const raw = directory.read(String(name || ''));
+      return raw ? recordOf(String(name), raw, false) : null;
+    });
+  }
   const out = [];
-  (directory.persons() || []).forEach(function (name) {
-    const record = recordFor(name);
+  found.forEach(function (record) {
     if (!record || (!record.hasKeyPair && !record.issuers.length &&
                     !record.hasSamlKeyPair && !record.samlIssuers.length)) {
       return;

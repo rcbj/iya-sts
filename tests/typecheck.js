@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -55,7 +55,8 @@ const compiledTree = require('../common/compiled_tree');
 // files under them that are not this repository's to change stay unchecked: the
 // root CLAUDE.md names `common/vendored/` (a directory, never listed here
 // because it is not read) and the eight Kerberos codec copies.
-const CHECKED_DIRS = ['acme', 'admin-core', 'admin-ui', 'authn', 'cluster',
+const CHECKED_DIRS = ['acme', 'admin-core', 'admin-ui',
+                      'attribute-sources', 'authn', 'cluster',
                       'common', 'debugger', 'est', 'federation', 'gnap',
                       'home', 'kerberos', 'ldap', 'logout', 'mgmt-api',
                       'oauth-oidc', 'oid4vc', 'oidfed', 'persistence', 'pki',

@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: BUSL-1.1
 #
 # ---------------------------------------------------------------------------
 # THE SUITE'S CALLBACK TASK FOR ONE RUN AGAINST AN ENVIRONMENT (2026-09-18).
@@ -9,7 +9,7 @@
 # The state key names the environment, under `environment/` because that is
 # the one prefix the deployer role may write state under
 # (foundation/iam_deployer.tf, TerraformStateObjects):
-#   terraform init -backend-config="bucket=mock-sts-terraform-state-<account>" \
+#   terraform init -backend-config="bucket=iya-sts-terraform-state-<account>" \
 #                  -backend-config="key=environment/testidp/suite-callbacks.tfstate"
 # entrypoint.sh builds that key from TF_ENV.
 # ---------------------------------------------------------------------------

@@ -11,7 +11,7 @@
 An **identity provider and security token service** that speaks the protocol
 families below from one process, with a certificate authority of its own.
 
-It started as the mock STS inside the [OAuth2/OIDC Debugger](https://idptools.com)
+It started as IYA STS inside the [OAuth2/OIDC Debugger](https://idptools.com)
 project's test suite, and it runs in one of two modes, per trust realm
 (`global.mode`):
 
@@ -31,6 +31,38 @@ protocol's documentation page before relying on it.
 
 **The documentation is at [`docs/`](docs/index.md)** (published as a GitHub
 Pages site): configuration, architecture, and a page per protocol family.
+
+## iya-sts — Flexible, Secure Identity Integration for the AI Era
+
+Identity infrastructure shouldn't become the bottleneck for the next generation of applications.
+
+iya-sts is flexible, security-focused Identity Integration software designed to connect modern applications, services, workloads, and AI agents to the identity protocols and authorization systems they already use.
+
+Built around open standards rather than a single identity ecosystem, iya-sts brings together authentication, federation, token services, authorization, delegation, and identity integration in one extensible platform.
+
+From traditional enterprise applications to cloud workloads and emerging AI-agent architectures, iya-sts is designed for the messy reality of modern identity: multiple protocols, multiple trust domains, multiple identity types, and increasingly complex relationships between users, applications, services, and agents.
+
+### Built for integration
+
+iya-sts works across the identity landscape rather than forcing everything into one proprietary model. Its protocol-oriented architecture supports technologies including OAuth 2.0, OpenID Connect, SAML, WS-Trust, WS-Federation, Kerberos, SCIM, XACML, WebAuthn, and modern verifiable-credential and workload-identity technologies.
+
+### Built for the AI era
+
+AI systems introduce a new identity problem: software increasingly acts on behalf of people, applications, and other agents.
+
+That requires more than simply authenticating a user.
+
+It requires understanding who is acting, on whose behalf, what authority was delegated, what resources can be accessed, and how that authority can be constrained and enforced.
+
+iya-sts provides an identity foundation for those relationships—bringing traditional enterprise identity concepts into architectures where humans, applications, workloads, and AI agents all participate.
+
+### Standards first. Integration focused.
+
+iya-sts is built around open identity and security standards, making it useful as an integration layer between systems that were never designed to speak the same identity language.
+
+One identity layer. Multiple protocols. Multiple trust relationships. Modern applications and AI agents.
+
+iya-sts is built for organizations that don't want to replace their entire identity infrastructure just to build what's next.
 
 ## Architecture
 
@@ -86,6 +118,26 @@ docker run --rm -p 8081:8081 iya-sts        # add -e VAR=value for any setting
 
 `docker compose up` starts the service with its PostgreSQL store.
 
+### The published image
+
+Every build of `main` that passes its smoke test is published, so the
+service can be run without building anything:
+
+| Image | Tags |
+|---|---|
+| `ghcr.io/rcbj/iya-sts` | `latest` (the newest build) and one `M.N.O` per build |
+| `docker.io/iyasec/iya-sts` | the same |
+| `ghcr.io/rcbj/iya-sts-xacml-pep`, `docker.io/iyasec/iya-sts-xacml-pep` | the remote XACML PEP ([`xacml-pep/`](xacml-pep/)), the same tags |
+
+```bash
+docker run --rm -p 8081:8081 ghcr.io/rcbj/iya-sts:latest
+```
+
+`M.N.O` is the version the image reports (see *Versioning*), and the image's
+`org.opencontainers.image.revision` label names the commit it was built from.
+The published image is the same as one built here, in development mode by
+default; [`docs/configuration.md`](docs/configuration.md) covers product mode.
+
 **The main port is HTTPS**, on a self-signed certificate generated at each
 start. Fetch it once and trust it from then on:
 
@@ -100,7 +152,7 @@ through a first sign-in.
 
 ### The ports
 
-Ten bindings across nine numbers — 88 is listed twice because TCP and UDP are
+Eleven bindings across ten numbers — 88 is listed twice because TCP and UDP are
 two sockets. Every one is settable.
 
 | Port | | Setting / env var | What is on it |
@@ -116,6 +168,7 @@ two sockets. Every one is settable.
 | **8181** | tcp | `spiffe.serverPort` / `STS_SPIFFE_SERVER_PORT` | The SPIRE Server API over gRPC, mutual TLS. |
 | *(off)* | tcp | `spiffe.brokerPort` / `STS_SPIFFE_BROKER_PORT` | The SPIFFE Broker API, mutual TLS. `0` by default. |
 | **8444** | tcp | `debugger.port` / `STS_DEBUGGER_PORT` | The embedded protocol debugger, for console administrators. |
+| **8446** | tcp | `cells.port` / `STS_CELL_PORT` | The inter-cell channel, mutual TLS 1.3, bound only when `cells.id` is set ([cells](docs/cells.md)). A private address between cells, never published. |
 
 And two Unix domain sockets (mount the directory as a volume to reach them):
 
@@ -167,9 +220,15 @@ new test goes.
 
 ## Licence
 
-MIT — see [LICENSE.md](LICENSE.md), which also carries the notices for the
-third-party code this repository includes and names the four paths that are
-under another licence. Every file declares its copyright and licence in SPDX
+The [Business Source License 1.1](LICENSE.md) since 2026-09-30: you may
+copy, modify and make non-production use of iya-sts freely, and **production
+use requires a commercial license, granted as part of a paid support
+subscription** from Iya CyberSecurity Solutions, LLC. Each version becomes MIT
+four years after it is published, and everything published before
+2026-09-30 stays MIT. [LICENSE.md](LICENSE.md) also carries the notices for
+the third-party code this repository includes and names the paths that are
+under another licence, among them the parent project's copies, which stay
+MIT. Every file declares its copyright and licence in SPDX
 form, and the repository passes `reuse lint`
 ([REUSE](https://reuse.software/)). The only third-party dataset distributed is
 Natural Earth's public-domain country outlines.

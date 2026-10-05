@@ -1,6 +1,6 @@
 // @ts-check
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -145,6 +145,10 @@ const CAPABILITIES = [
     by: 'gnap/gnap_store.ts',
     what: 'A GNAP continuation, interaction reference, user code and request ' +
           'signature are spent once across the cluster.' },
+  { id: 'gnap.limits', section: '2',
+    by: 'gnap/gnap_spend.ts',
+    what: 'The demonstration resource server spends a GNAP right\'s limits ' +
+          'against one budget per grant across the cluster (#432).' },
   { id: 'kerberos.replay-cache', section: '2',
     by: 'kerberos/krb5_service.js',
     what: 'A Kerberos AP-REQ authenticator is accepted once across the ' +

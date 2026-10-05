@@ -12,7 +12,11 @@ SAML 1.1 (Browser/POST), WS-Federation 1.2 (the passive requestor profile),
 [OAuth 2.0](https://www.rfc-editor.org/rfc/rfc6749). As a **service provider**
 it sends a person to a partner and consumes what comes back; as an **identity
 provider** it marks a partner as a federation partner and decides which
-attributes are released to it. Relationships are **per trust realm**: each
+attributes are released to it. A partner's **Shared Signals** — its CAEP and
+RISC events about the people it signs in — are received on its relationship,
+and a partner that signs nobody in (a device manager, an HR system) is a
+relationship of a sixth protocol, `ssf` (see *A partner's Shared Signals*,
+below). Relationships are **per trust realm**: each
 realm has its own register, and a relationship is verified against the
 certificate configured in that realm.
 
@@ -26,7 +30,8 @@ relationship configures is a key.
 
 A relationship has a **role** (`service-provider` — this service consumes — or
 `identity-provider` — this service asserts) and a **protocol** (`saml2`,
-`saml11`, `wsfed`, `oidc`, `oauth2`). A partner this service both consumes from
+`saml11`, `wsfed`, `oidc`, `oauth2`, or `ssf` for a partner that only sends
+Shared Signals, service-provider side only). A partner this service both consumes from
 and asserts to is **two relationships**, because every field differs by
 direction: whose endpoints, whose certificate, an inbound attribute mapping or
 an outbound release list. A field that belongs to the other direction is
@@ -49,6 +54,7 @@ an `ldapmodify`.
 | `GET\|POST /federation/slo/{id}` | **a partner's sign-out, in a browser** (#167): a SAML 2.0 `<LogoutRequest>` or `<LogoutResponse>`, a WS-Federation `wsignoutcleanup1.0` or `wsignout1.0`, and the browser coming back from an OpenID Provider's `end_session_endpoint`. The SAML `SingleLogoutService`, the WS-Federation sign-out URL and the OpenID Connect `post_logout_redirect_uri` to configure at the partner |
 | `POST /federation/backchannel-logout/{id}` | the OpenID Connect `backchannel_logout_uri` to register at the partner |
 | `GET /federation/frontchannel-logout/{id}` | the OpenID Connect `frontchannel_logout_uri` to register at the partner, with `frontchannel_logout_session_required` |
+| `POST /federation/signals/{id}` | where the partner pushes its Shared Signals (RFC 8935) when the relationship's stream is a push stream; given to the partner when the stream is created (#373) |
 | `GET /authn/select-idp` | the chooser drawn when an application names several usable partners |
 
 In a trust realm every path is under `/realm/{id}`. One path receives all five
@@ -453,6 +459,38 @@ so a hybrid key can be added beside the classical one when one is registered.
 * Validating the partner's certificate against a CA or its validity dates — it
   is a pinned key; only its revocation is checked.
 
+### A partner's Shared Signals
+
+A partner can send this service CAEP and RISC events (OpenID Shared Signals
+Framework 1.0) about the people it signs in. They are configured on its
+service-provider-side relationship, in the relationship page's *Shared
+Signals from this partner* section
+([#373](https://github.com/rcbj/iya-sts/issues/373)). By default, a verified
+event from a partner people sign in through ends **only the sessions that
+relationship started** for the person, and its `account-disabled` **blocks
+that partner's sign-ins** of the person until its `account-enabled` or an
+administrator lifts it. The person's local sign-in and every other partner
+keep working. Its `session-revoked`, `account-disabled`, `account-purged` and
+`credential-compromise` also **revoke the person's GNAP and OAuth grants and
+tokens** ([#432](https://github.com/rcbj/iya-sts/issues/432)) — for a
+`session-revoked`, those issued on the sessions it started — unless
+`ssf.signalsRevokeGrants` is off.
+
+A partner that signs nobody in is an **`ssf` relationship**
+([#374](https://github.com/rcbj/iya-sts/issues/374)). It takes the Shared
+Signals fields and nothing else, is offered on no sign-in screen, and names
+its people through links an administrator writes on each person's page. By
+default its events are recorded and nothing more, except a device's
+compliance, which is set.
+
+[Shared Signals](shared-signals.md#receiving-from-a-federation-partner) has
+the steps, the fields and the default reactions. Every arrival is on
+Monitoring → Signals from partners.
+
+An identity-provider-side relationship shows, read only, the Shared Signals
+streams its application holds on this service's own transmitter: what this
+service tells the partner.
+
 ### The federation map
 
 `/admin/federation/map`, reached from a link on the relationship table, draws
@@ -576,14 +614,20 @@ These are attributes of the relationship entry, set on `/admin/federation` or
 | `fedEncryptionKeyType`, `fedKeyManagementAlgorithm`, `fedContentEncryptionAlgorithm` | SP (SAML 2.0, WS-Federation, OIDC) | what a partner encrypts to: `rsa-3072` or `ec-p256`; `rsa-oaep`/`ecdh-es` (XML) or `RSA-OAEP-256`, `RSA-OAEP` (**a warning: SHA-1**), `ECDH-ES`, `ECDH-ES+A128KW`, `ECDH-ES+A256KW` (JOSE); `aes256-gcm`/`aes128-gcm` or `A256GCM`/`A128GCM`. A new key type issues a key of that type at once |
 | `fedAllowUnencrypted` | SP (SAML 2.0, WS-Federation, OIDC) | accept a plaintext assertion in product; `FALSE` by default — **a warning**: the partner then sends the person's identifier and attributes in clear through the browser |
 | `fedEncryptionKey` | SP | the key table: never editable, never shown with its private key |
+| `fedSignalsEnabled`, `fedSignalsIssuer`, `fedSignalsDelivery`, `fedSignalsEvents` | SP | receive the partner's Shared Signals (on for an `ssf` relationship); its SSF issuer (empty is `fedPeer`); `poll` or `push`; the event types asked for (#373) |
+| `fedSignalsTokenUrl`, `fedSignalsClientId`, `fedSignalsClientSecret`, `fedSignalsScope`, `fedSignalsBearer` | SP | how this realm authenticates to the partner's stream management: client credentials (the first three fall back to `fedTokenUrl`, `fedClientId`, `fedClientSecret`) or a bearer token. The two secrets are sealed wherever keys persist |
+| `fedSignalEmailMatch` | SP | let the partner's events name a person by mail; `FALSE` by default |
 | `fedApplication` | IdP | the partner's entry under `ou=applications` |
 | `fedAuthnMechanism`, `fedAuthnRelationship` | IdP | how this service authenticates for the partner |
 | `fedRelease` | IdP | the attributes released to the partner |
 
-What each protocol requires before a relationship is usable: `fedSsoUrl` and
-`fedPeer` always; `fedSigningCertificate` for the three SAML-shaped protocols;
-`fedClientId` for OIDC; `fedTokenUrl` and `fedClientId` for OAuth 2.0. A missing
-one is named on the page and the relationship refuses until it is filled.
+What each protocol requires before a relationship is usable: for the five
+sign-in protocols, `fedSsoUrl` and `fedPeer` always; `fedSigningCertificate`
+for the three SAML-shaped protocols;
+`fedClientId` for OIDC; `fedTokenUrl` and `fedClientId` for OAuth 2.0; for
+`ssf`, `fedPeer` and a way to reach the partner's stream (a bearer, or a token
+endpoint and client). A missing one is named on the page and the
+relationship refuses until it is filled.
 
 ## Design decisions
 

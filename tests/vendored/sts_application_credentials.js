@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 "use strict";
 //
@@ -457,8 +457,19 @@ async function test() {
           assert.strictEqual(regenerated.replaced, true);
         });
   view = await applicationView(CLIENT);
-  check("the entry now holds the new secret", function () {
-    assert.strictEqual(view.fields.oauthClientSecret, newSecret);
+  check("the entry now holds the new secret, and only it", function () {
+    // Each value is a record (2026-10-01): {"id", "secret", "created",
+    // "expires"}; a bare value is a secret on its own.
+    const held = [].concat(view.fields.oauthClientSecret || [])
+      .map(function (value) {
+        try {
+          return JSON.parse(value).secret;
+        } catch (e) {
+          log.debug("Caught in the secret check: " + ((e && e.message) || e));
+          return String(value);
+        }
+      });
+    assert.deepStrictEqual(held, [newSecret]);
   });
   const auditRows = await get(realmApi + "/audit?per=200");
   check("and the new secret is nowhere in the audit log", function () {

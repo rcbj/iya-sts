@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: BUSL-1.1
 #
 # The left-hand navigation of the documentation site, drawn by
 # _includes/sidebar.html on every page, in place of `header_pages` in
@@ -28,6 +28,7 @@
   items:
     - { title: OAuth 2.0 and OpenID Connect, url: /oauth-oidc.html }
     - { title: "Security profiles: RFC 9700, OAuth 2.1, DPoP, mTLS", url: /oauth-security.html }
+    - { title: Post-quantum key establishment, url: /post-quantum-encryption.html }
     - { title: JWT assertions (RFC 7523), url: /jwt-assertions.html }
     - { title: SAML assertions (RFC 7522), url: /saml-assertions.html }
     - { title: GNAP, url: /gnap.html }
@@ -51,6 +52,7 @@
     - { title: Risk scoring, url: /risk-scoring.html }
     - { title: Devices, url: /devices.html }
     - { title: "Mail: reset, verification, notices", url: /mail.html }
+    - { title: Attribute sources, url: /attribute-sources.html }
 
 - section: Verifiable credentials
   items:
@@ -67,6 +69,7 @@
 - section: Authorization policy
   items:
     - { title: XACML 3.0 and ALFA, url: /xacml.html }
+    - { title: Delegation and impersonation, url: /delegation.html }
     - { title: Remote PEP, url: /remote-pep.html }
 
 - section: Shared Signals
@@ -99,6 +102,8 @@
     - { title: Encryption at rest, url: /encryption-at-rest.html }
     - { title: Caches, url: /caches.html }
     - { title: A cluster in AWS, url: /aws-cluster.html }
+    - { title: Several regions (cells), url: /cells.html }
+    - { title: How cells work, url: /cells-concepts.html }
 
 - section: For contributors
   items:

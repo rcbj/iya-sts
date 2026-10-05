@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -336,6 +336,16 @@ const register = realms.map({ persist: 'risc.register' });
  * It sends nothing: `observe()` and `observeAct()` answer the events that are
  * due and `ssf/ssf.ts` delivers them.
  */
+
+// WHAT THE COMMON CLAIMS WERE BUILT FROM (2026-10-01), kept on the payload
+// under a symbol so it rides along in this process and never in a SET: the
+// event's timestamp and its two reasons whether or not the service-wide
+// settings put them in. A stream whose owning application overrides
+// risc.includeReasons, risc.reasonLanguage or risc.omitEventTimestamp
+// has its SET's copy rebuilt from it (`ssf.ts`'s commonClaimsForStream()).
+// Typed `any`: a symbol may not index the `Record<string, any>` payloads.
+const COMMON_SOURCE: any = Symbol.for('sts.ssf.commonSource');
+
 class RiscRegister {
   /**
    * The acts this service can observe, each mapped to the short name of the
@@ -943,10 +953,16 @@ class RiscRegister {
                 'of them.');
       return out;
     }
+    const timestamp = typeof asked.eventTimestamp === 'number'
+      ? asked.eventTimestamp : nowSec();
     if (!config.value('risc.omitEventTimestamp')) {
-      out.event_timestamp = typeof asked.eventTimestamp === 'number'
-        ? asked.eventTimestamp : nowSec();
+      out.event_timestamp = timestamp;
     }
+    Object.defineProperty(out, COMMON_SOURCE, {
+      value: { family: 'risc', eventTimestamp: timestamp,
+               reasonAdmin: asked.reasonAdmin ? String(asked.reasonAdmin) : '',
+               reasonUser: asked.reasonUser ? String(asked.reasonUser) : '' },
+      enumerable: false });
     const tag = String(config.value('risc.reasonLanguage') || 'en');
     if (config.value('risc.includeReasons')) {
       if (asked.reasonAdmin) {
@@ -985,8 +1001,13 @@ class RiscRegister {
       log.debug("Leaving RiscRegister.buildPayload(). Unknown type.");
       return {};
     }
-    const payload = Object.assign({}, row.generate(values || {}),
-                                  this.commonClaims(uri, options));
+    const common = this.commonClaims(uri, options);
+    const payload = Object.assign({}, row.generate(values || {}), common);
+    if (common[COMMON_SOURCE]) {
+      Object.defineProperty(payload, COMMON_SOURCE,
+                            { value: common[COMMON_SOURCE],
+                              enumerable: false });
+    }
     log.debug("Leaving RiscRegister.buildPayload(). " +
               Object.keys(payload).length + ' member(s).');
     return payload;

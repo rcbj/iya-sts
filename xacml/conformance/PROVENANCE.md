@@ -49,19 +49,21 @@ The three upstream directories, the upstream `ConformanceTests.html` (the
 original OASIS description of the tests) and every file beneath them are
 untouched.
 
-## This subtree is not MIT
+## This subtree is not under the repository's licence
 
-**The rest of this repository is MIT** (`LICENSE.md` at the root,
+**The rest of this repository is under the Business Source License 1.1**
+(MIT until 2026-09-30; `LICENSE.md` at the root,
 © 2026 Iya CyberSecurity Solutions, LLC). **This directory is Apache-2.0**,
 and that is a deliberate, recorded exception rather than an oversight — the
 root `LICENSE.md` says so and points here.
 
 What Apache-2.0 asks of us, all three of which are satisfied above: keep the
 licence text (`LICENSE`), keep the attribution notices (this file), and state
-what was changed (the section above). Apache-2.0 is one-way compatible into a
-permissively licensed distribution, so shipping an MIT project that contains
-this subtree is fine; what is *not* fine is quietly relicensing these files as
-MIT, which is why they live in a directory of their own rather than being
+what was changed (the section above). Apache-2.0 lets these files be
+distributed inside a project under other terms as long as they keep their
+own licence and notices, so shipping this repository with this subtree in it
+is fine; what is *not* fine is quietly relicensing these files under the
+repository's licence, which is why they live in a directory of their own rather than being
 scattered under `tests/`.
 
 ## The one link nobody can confirm

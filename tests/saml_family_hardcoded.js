@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -335,7 +335,7 @@ function run(t) {
   }
   t.check(/<md:OrganizationName xml:lang="en">sts</.test(
             documentSettings.organizationElement('https://idp.test')),
-          'and the default is the product name, sts (mock-sts until ' +
+          'and the default is the product name, sts (iya-sts until ' +
           '2026-09-12)');
 
   // -------------------------------------------------------------------------

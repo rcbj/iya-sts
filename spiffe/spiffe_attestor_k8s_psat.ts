@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -270,7 +270,7 @@ class K8sPsatAttestor {
     const { log, spiffeId, rpc } = this.deps;
     log.debug("Entering K8sPsatAttestor.attest().");
     const call = context.call;
-    const status = rpc.grpc.status;
+    const status = rpc.status;
     const configured = this.clusters();
     if (configured.problem) {
       log.debug("Leaving K8sPsatAttestor.attest(). Not configured.");

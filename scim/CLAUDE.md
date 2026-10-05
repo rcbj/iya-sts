@@ -153,6 +153,12 @@ into the LDAP directory, entry for entry, with **no store of its own**.
    is `POST /tls/trust`'s bootstrapping argument: the ServiceProviderConfig is
    where a client READS which schemes exist, so demanding a credential to fetch
    it means a client must already know the answer to the question it is asking.
+   **And it is what the specification asks**: RFC 7643 section 5 says a service
+   provider SHOULD make `authenticationSchemes` readable without prior
+   authentication, so off is the conforming default (rcbj, 2026-10-02) and
+   `tests/scim_auth_discovery.js` asserts the default itself — the row, the
+   value with no override, every shipped appconfig file. On departs from that
+   SHOULD, which the setting's description says.
 
    **A CREDENTIAL THAT WAS PRESENTED AND FAILED IS ALWAYS A REFUSAL**, and was
    one even while `scim.authRequired` could turn the requirement off. A client
@@ -508,6 +514,14 @@ Four things about it are this module's own and are easy to get wrong:
   five creates is one `bulk` AND five `create`s, because each of the five really
   is performed.
 
+**A BULK IS ONE BATCH OF PERSON DELETES (#351, 2026-09-29).** The handler runs
+scimmy's `apply()` inside `directory.inPersonBatch()`, so every operation is
+still applied in order and answered with its own status (RFC 7644 section
+3.7: `bulkId` references, `failOnErrors`), a delete's entry goes at once, and
+what each deleted person held is read and ended for the batch together
+(`ldap/CLAUDE.md`, *Deleting people in bulk*). The User degress handler awaits
+`directory.personBatchStep()`, which yields a macrotask every 500 deletes.
+
 **THE COUNTERS ARE PER TRUST REALM AND WERE NOT UNTIL THIS PAGE WAS WRITTEN.**
 `scimCounts` was a plain object beside a file in which everything else is
 `realms.map()`, `realms.arr()` or `realms.obj()` — the third store found
@@ -755,3 +769,43 @@ holds each fix in process. What they found, and where each fix lives:
 be removed (above, *`active` IS THE ACCOUNT'S DISABLED STATE*); there is no
 ETag, now refused rather than ignored; and the members the directory cannot
 hold are unpublished rather than stored.
+
+## CELLS: WHICH CELL ANSWERS A SCIM REQUEST (#98, 2026-09-28)
+
+`scim_cells.ts` decides, asked by `handle()` **before the caller is
+authenticated** (a Digest nonce count and a HOBA signature are spent where they
+are checked, and the owning cell must spend them) and by the User ingress
+before a person is written. Single-cell mode does not ask; the gate starts in
+the same tick it always did. The file's header argues each operation; in short:
+
+| Request | Answered |
+|---|---|
+| `GET/PUT/PATCH/DELETE /Users/{id}` | the id's (the `entryUUID`'s) home cell, relayed whole; a DN id by its RDN value |
+| `POST /Users` | the new person's home: `homeCell` below, else the realm's `cells.homeCell`, else the cell reached. Relayed there; THAT cell claims the login name in the routing index before writing (409 `uniqueness`, `STS-CELL-0142`, when homed elsewhere) |
+| Group writes naming members | the members' home cell; members in more than one cell: refused whole, 400 `invalidValue` (`STS-CELL-0143`) — send one request per cell |
+| `POST /Bulk` | every operation placed as it would be alone; one other cell: relayed whole; spanning cells: refused whole before anything runs (`STS-CELL-0144`) |
+| lists, `.search` | the serving cell's residents (D11) |
+| `/Me` | a bearer token at the edge (its minting cell); HTTP Basic by its user name here |
+| `POST /.well-known/hoba/register` | the named person's home; a new name where a new person is homed |
+
+**A PUT to a Group replaces the serving cell's share of the membership**, and
+the global definition; the members other cells hold stand. A group's full
+membership is the union across cells.
+
+**NO CROSS-CELL LIST PARAMETER.** RFC 7644 section 3.4.2 fixes a list's query
+parameters, and a client would never send one of ours; the cross-cell door is
+the console's and `/admin-api`'s `?cell=` selector, placed at the edge.
+
+**THE EXTENSION MEMBER `homeCell`**, in this service's own User extension:
+`urn:ietf:params:scim:schemas:extension:iya-sts:2.0:User:homeCell`, a string
+naming a cell id. It is read on a create only, and is `writeOnly` / `returned:
+never` — a cell is a routing fact no document a client reads may name — and it
+is never stored on the entry: the entry existing in that cell IS the home. A
+cell the service does not have, or one outside the realm's
+`cells.jurisdictions`, is refused (`STS-CELL-0140`) rather than placed
+somewhere else. A later PUT or PATCH naming another cell is refused 400
+`mutability` (`STS-CELL-0145`): re-homing is an administrator's act. A
+single-cell service accepts and ignores it.
+
+**What has no test yet**: a two-cell run over HTTP. `tests/cell_handlers_c.js`
+drives the placement in process with the routing and the channel stubbed.

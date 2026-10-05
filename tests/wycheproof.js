@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -102,9 +102,10 @@ const ERRATA = {
 // THE FILES NO DOOR APPLIES TO, and why. Matched in order.
 // ---------------------------------------------------------------------------
 const NOT_APPLICABLE = [
-  [/^(aegis|ascon|morus|xchacha20|chacha20|aead_aes_siv|aes_siv|aes_gcm_siv|aes_eax|aes_ccm|aes_gmac|aes_xts|aes_cmac|aes_kwp|c2sp_chunked)/,
-   'crypto.js offers no such cipher or mode: its AEADs are AES-GCM and ' +
-   'RFC 7518 AES-CBC-HMAC, its key wraps RFC 3394 AES-KW'],
+  [/^(aegis|ascon|morus|xchacha20|aead_aes_siv|aes_gcm_siv|aes_eax|aes_ccm|aes_gmac|aes_xts|aes_cmac|aes_kwp|c2sp_chunked)/,
+   'crypto.js offers no such cipher or mode: its AEADs are AES-GCM, ' +
+   'RFC 7518 AES-CBC-HMAC and (HPKE, #82) ChaCha20-Poly1305, its key ' +
+   'wraps RFC 3394 AES-KW'],
   [/^(aria|camellia|seed|sm4)_/, 'crypto.js offers no ARIA, Camellia, SEED ' +
    'or SM4'],
   [/^aes_ff1_/, 'crypto.js does no format-preserving encryption'],
@@ -116,8 +117,13 @@ const NOT_APPLICABLE = [
    'a BLS signature verifier over G2)'],
   [/^(primality|ec_prime_order_curves)_/, 'crypto.js generates no primes or ' +
    'curves; key generation is node\'s'],
-  [/^(x25519|x448)/, 'crypto.js agrees keys only by ECDH over P-256/384/521 ' +
-   '(JWE ECDH-ES, XML Encryption 1.1 ECDH-ES)'],
+  // X25519 and X448 are agreed since #82 (HPKE's DHKEM and the X-Wing
+  // hybrid, `hpke.montgomeryDh`), over the RAW RFC 7748 octets DHKEM
+  // serialises; the key-container files below are not that door.
+  [/^(x25519|x448)_(asn|jwk|pem)_test/, 'the X25519 / X448 door (HPKE ' +
+   'DHKEM, X-Wing) takes the raw RFC 7748 octets DHKEM serialises; ' +
+   'parsing an ASN.1, JWK or PEM container is what these files test, and ' +
+   'crypto.js reads no X25519 key in one'],
   [/^ecdh_(brainpool|sect|secp224r1|secp256k1)/, 'both ECDH doors agree over ' +
    'P-256, P-384 and P-521 only, and refuse other curves by name'],
   [/^ecdh_secp(256r1|384r1|521r1)_(test|pem_test)/, 'no door takes the peer ' +
@@ -140,17 +146,22 @@ const NOT_APPLICABLE = [
    'or SHA-512/t OAEP digest'],
   [/^rsa_three_primes_oaep_.*sha224/, 'no door names a SHA-224 OAEP digest'],
   [/^(hkdf|pbkdf2|pbes2)_/, 'no door takes a caller\'s salt, info or ' +
-   'iterations: encryptWithKek() derives with HKDF over fixed labels, ' +
+   'iterations: wrapDek() and deriveDek() use HKDF over fixed labels, ' +
    'pbes2Key() prefixes the salt with the JWE alg (RFC 7518 4.8.1.1), and ' +
    'Wycheproof\'s PBES2 is PKCS#5 with AES-CBC, not JWE\'s PBES2+AESKW'],
   [/^mldsa_\d+_sign_noseed_/, 'crypto.js holds an ML-DSA private key only ' +
    'as its 32-byte seed (RFC 9964 section 3.2); an expanded key reaches no ' +
    'door'],
-  [/^mlkem_/, 'crypto.js encapsulates and decapsulates nothing — no ' +
-   'protocol here has an ML-KEM method (XML Encryption and JOSE register ' +
-   'none); the service\'s ML-KEM KEY GENERATION is held to NIST\'s keyGen ' +
-   'vectors by tests/acvp_pqc.js']
+  // ML-KEM is encapsulated and decapsulated since #82 (JWE ML-KEM and
+  // HPKE's ML-KEM and hybrid KEMs); its keys are the d || z seed only.
+  [/^mlkem_\d+_semi_expanded_decaps_test/, 'decapsulation from an ' +
+   'EXPANDED key: crypto.js holds an ML-KEM key as its 64-octet seed only ' +
+   '(draft-ietf-jose-pqc-kem-06 section 8, draft-ietf-hpke-pq section 3)']
 ];
+
+// The HPKE ML-KEM KEM ids (draft-ietf-hpke-pq-05 Table 2), #82's door.
+const MLKEM_KEM_ID = { 'ML-KEM-512': 0x0040, 'ML-KEM-768': 0x0041,
+                       'ML-KEM-1024': 0x0042 };
 
 // Wycheproof's hash names -> node's.
 // nodeHash() is a hot path: called for every group; no Entering/Leaving pair.
@@ -599,24 +610,133 @@ const APPLICATIONS = [
     },
     run: function (c, t) {
       return refusesOnThrow(function () {
-        const randomized = (t.flags || []).indexOf('Randomized') >= 0;
-        // Deterministic (the internal parameter, #203) where the vector is;
-        // a Randomized vector is held to verification of our hedged one.
-        const sig = crypto.jwsSignatureOver(c.alg, c.seed, hex(t.msg),
-                                            { deterministic: !randomized });
-        if ((t.flags || []).indexOf('Randomized') >= 0) {
-          // A hedged vector: its bytes cannot be reproduced, so ours is held
-          // to the vector's public key by the vendored engine instead.
-          const spki = require('../common/vendored/pqc_x509')
-            .encodeSpki(c.alg, c.pub);
-          return nodeCrypto.verify(null, hex(t.msg),
-            nodeCrypto.createPublicKey({ key: Buffer.from(spki),
-                                         format: 'der', type: 'spki' }), sig);
-        }
-        return sig.equals(hex(t.sig));
+        // Hedged since #363 (node's OpenSSL has no deterministic switch),
+        // so no vector's bytes can be reproduced: our signature from the
+        // vector's seed must verify under the vector's public key, and the
+        // vector's own signature must verify too.
+        const sig = crypto.jwsSignatureOver(c.alg, c.seed, hex(t.msg));
+        const spki = require('../common/vendored/pqc_x509')
+          .encodeSpki(c.alg, c.pub);
+        const pub = nodeCrypto.createPublicKey({ key: Buffer.from(spki),
+                                                 format: 'der',
+                                                 type: 'spki' });
+        return nodeCrypto.verify(null, hex(t.msg), pub, sig) &&
+          nodeCrypto.verify(null, hex(t.msg), pub, hex(t.sig));
+      });
+    } },
+  // ----- ML-KEM and XDH (#82) --------------------------------------------
+  // Through common/crypto.js's key establishment: the HPKE ML-KEM KEMs
+  // (the door every ML-KEM JWE alg and hybrid reaches), the encapsulation
+  // key check, key generation from the seed, and the X25519 / X448
+  // exchange of HPKE's DHKEMs and X-Wing.
+  { door: 'ML-KEM decapsulation from the seed (HPKE KEM)',
+    files: /^mlkem_\d+_test/,
+    group: function (g) {
+      return { kem: MLKEM_KEM_ID[g.parameterSet] };
+    },
+    run: function (c, t) {
+      return refusesOnThrow(function () {
+        return crypto.hpke.decap(c.kem, hex(t.c), hex(t.seed))
+          .equals(hex(t.K));
+      });
+    } },
+  { door: 'ML-KEM encapsulation (HPKE KEM, FIPS 203 7.2 key check)',
+    files: /^mlkem_\d+_encaps_test/,
+    group: function (g) {
+      return { kem: MLKEM_KEM_ID[g.parameterSet] };
+    },
+    // A VALID vector is an encapsulation with its own m (Encaps_internal),
+    // which node's OpenSSL does not take (#363), so its bytes cannot be
+    // reproduced; an INVALID one is an encapsulation key the FIPS 203
+    // section 7.2 check must refuse, which is still held — with our own
+    // randomness, since the refusal is about the key.
+    expect: function (c, t) {
+      if (t.result === 'valid') {
+        return { expect: 'skip', why: 'an encapsulation with the vector\'s ' +
+          'm (Encaps_internal): node\'s OpenSSL takes no randomness' };
+      }
+      return null;
+    },
+    run: function (c, t) {
+      return refusesOnThrow(function () {
+        const out = crypto.hpke.encap(c.kem, hex(t.ek));
+        return out.enc.length > 0;
+      });
+    } },
+  { door: 'ML-KEM key generation from the seed',
+    files: /^mlkem_\d+_keygen_seed_test/,
+    group: function (g) {
+      return { set: g.parameterSet };
+    },
+    run: function (c, t) {
+      return refusesOnThrow(function () {
+        return crypto.hpke.mlkemEncapsulationKeyOf(c.set, hex(t.seed))
+          .equals(hex(t.ek));
+      });
+    } },
+  { door: 'ChaCha20-Poly1305 (HPKE AEAD 0x0003)',
+    files: /^chacha20_poly1305_test/,
+    group: function () {
+      return {};
+    },
+    run: function (c, t) {
+      return refusesOnThrow(function () {
+        const ct = Buffer.concat([hex(t.ct), hex(t.tag)]);
+        const opened = crypto.hpke.aeadOpen(0x0003, hex(t.key), hex(t.iv),
+                                            hex(t.aad), ct);
+        return opened.equals(hex(t.msg)) &&
+               crypto.hpke.aeadSeal(0x0003, hex(t.key), hex(t.iv),
+                                    hex(t.aad), hex(t.msg)).equals(ct);
+      });
+    } },
+  { door: 'X25519 / X448 (HPKE DHKEM, X-Wing)', files: /^(x25519|x448)_test/,
+    group: function (g) {
+      return { group: g.curve === 'curve448' ? 'X448' : 'X25519' };
+    },
+    // An ACCEPTABLE vector: an all-zero shared secret is REFUSED (RFC 7748
+    // section 6, and draft-ietf-hpke-hpke section 7.1.4 makes the check a
+    // MUST); every other acceptable one — a twist point, a non-canonical
+    // u-coordinate — is ACCEPTED with the right secret, as RFC 7748 section
+    // 5 says an implementation processes them.
+    expect: function (c, t) {
+      if (t.result !== 'acceptable') {
+        return null;
+      }
+      return (t.flags || []).indexOf('ZeroSharedSecret') >= 0
+        ? { expect: 'reject', why: 'RFC 7748 section 6 / HPKE 7.1.4: the ' +
+            'all-zero output is refused' }
+        : { expect: 'accept', why: 'RFC 7748 section 5: twist and ' +
+            'non-canonical inputs are processed' };
+    },
+    run: function (c, t) {
+      return refusesOnThrow(function () {
+        return crypto.hpke.montgomeryDh(c.group, hex(t.private),
+                                        hex(t.public)).equals(hex(t.shared));
       });
     } },
   // ----- AEAD ------------------------------------------------------------
+  // AES-SIV (RFC 5297) with a 512-bit key (#391): `keys.directoryCipher`'s
+  // `aes-256-siv`, the cipher of directory data's keys when chosen. Each
+  // vector is one associated data component, as Wycheproof writes them; a
+  // valid one must encrypt to its ciphertext AND open, an invalid one must
+  // not open.
+  { door: 'AES-256-SIV (directory data keys)', files: /^aes_siv_cmac_test/,
+    group: function (g) {
+      return Number(g.keySize) === 512 ? { siv: true }
+        : 'crypto.js does AES-SIV with a 512-bit key (two AES-256 keys) ' +
+          'only';
+    },
+    run: function (c, t) {
+      return refusesOnThrow(function () {
+        const key = hex(t.key);
+        const ad = [hex(t.aad)];
+        const opened = crypto.aesSivDecrypt(key, hex(t.ct), ad);
+        if (!opened.equals(hex(t.msg))) {
+          return false;
+        }
+        return crypto.aesSivEncrypt(key, hex(t.msg), ad).equals(hex(t.ct));
+      });
+    } },
   { door: 'JWE A*GCM content', files: /^aes_gcm_test/,
     group: function (g) {
       const enc = { 128: 'A128GCM', 192: 'A192GCM', 256: 'A256GCM' }[

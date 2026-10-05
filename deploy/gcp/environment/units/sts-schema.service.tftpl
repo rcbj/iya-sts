@@ -1,0 +1,27 @@
+# SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+# SPDX-License-Identifier: BUSL-1.1
+#
+# iya-sts: postgres/schema.sql applied as the master user before the node
+# starts — AWS's schema-init container. Idempotent; node-a's group is made
+# first, so the first application is never concurrent.
+[Unit]
+Description=iya-sts: schema
+Requires=sts-secrets.service
+After=sts-secrets.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+Environment=HOME=/var/lib/sts
+ExecStartPre=/usr/bin/docker pull ${schema_image}
+ExecStart=/usr/bin/docker run --rm --name sts-schema \
+  --add-host ${db_host}:${db_address} \
+  --env-file ${run_dir}/schema-secrets.env \
+  -e PGHOST=${db_host} \
+  -e PGPORT=${db_port} \
+  -e PGDATABASE=${db_name} \
+  -e PGUSER=${db_user} \
+  -e STS_DB_APP_USER=${db_app_user} \
+  -e STS_SCHEMA_SSLMODE=${sslmode} \
+  -v ${db_ca}:/usr/local/share/sts/database-ca.pem:ro \
+  ${schema_image}

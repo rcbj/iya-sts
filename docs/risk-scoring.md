@@ -94,7 +94,7 @@ on a new device scores well above 1.
 | `new-tls-stack` | ×2 | the connection's TLS client fingerprint (JA4) is one this person has not signed in with before |
 | `new-device` | ×2 | the browser's fingerprint is one this person has not signed in from before (only with `risk.fingerprinting` on) |
 | `account-failures` | ×3 | five or more refused passwords for this person in the last hour |
-| `network-failures` | ×3 | twenty or more refused passwords from this network in the last hour |
+| `network-failures` | ×3 | twenty or more refused passwords from this network in the last hour — **not counted for an address on the realm's operator allow list**, which the operator has declared trusted (#311) |
 | `authenticator-compromised` | ×50 | the security key's model is reported revoked or compromised in the FIDO metadata. A key whose signature counter went backwards (a clone) sets the person's standing to HIGH with this signal at once, and RISC `credential-compromise` is sent once: the policy's credential-compromise reaction to that standing is recorded as already sent |
 | `totp-replay` | ×2 | a one-time code was presented a second time for this person in the last hour. The code is refused, and it is not counted as a refused password. It is not a security event on its own, because somebody who pressed submit twice looks the same |
 

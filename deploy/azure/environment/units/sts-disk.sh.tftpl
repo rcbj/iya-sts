@@ -1,0 +1,30 @@
+#!/bin/bash
+# SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+# SPDX-License-Identifier: BUSL-1.1
+#
+# THE RISK-DATASET UPLOAD DISK (#214 on AWS): the scale set's data disk on
+# LUN 0, formatted the first time and EMPTIED on every start —
+# deploy/gcp/environment/units/sts-disk.sh.tftpl argues why (a managed disk
+# survives a reboot where the EBS volume did not). Found by the LUN link
+# Azure's udev rules make on Ubuntu.
+set -euo pipefail
+dev=/dev/disk/azure/scsi1/lun0
+dir=${mount_dir}
+attempt=0
+until [ -e "$${dev}" ]; do
+  attempt=$((attempt + 1))
+  if [ "$${attempt}" -ge 30 ];
+  then
+    echo "sts-disk: $${dev} did not appear." >&2
+    exit 1
+  fi
+  sleep 2
+done
+if ! blkid "$${dev}" > /dev/null 2>&1;
+then
+  mkfs.ext4 -m 0 -E lazy_itable_init=0,lazy_journal_init=0,discard "$${dev}"
+fi
+mkdir -p "$${dir}"
+mountpoint -q "$${dir}" || mount -o discard,defaults,nosuid,nodev "$${dev}" "$${dir}"
+find "$${dir}" -mindepth 1 -delete
+chmod 0700 "$${dir}"

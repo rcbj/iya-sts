@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -72,6 +72,10 @@ const ALLOWED = {
     'a reconnect retry within one attempt to reach the database' },
   'ldap/ldap_cluster_connections.ts|noteLocalChange|timeout': { permanent:
     'a debounce: one publish for a burst of connection changes' },
+  'attribute-sources/attribute_sources.ts|lookup|timeout': { permanent:
+    'not periodic: one lookup\'s timeout, cleared when it settles (#94), ' +
+    'caught by the recursion rule because lookup() calls the driver\'s ' +
+    'lookup()' },
   'common/request_worker.ts|start|timeout': { permanent:
     'not periodic: a one-shot start-up timeout, caught by the recursion rule ' +
     'because start() is also a method name it calls' },

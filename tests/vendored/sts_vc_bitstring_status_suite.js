@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 "use strict";
 //
@@ -246,7 +246,7 @@ async function test() {
       ctx.realmBase + "/vc-api/presentations/verify", tags, "vc-api:verify")]
   }, { enableInteropTests: true });
   log.info("=== 1. the suite ===");
-  const run = kit.runMocha(dir, ctx);
+  const run = await kit.runMocha(dir, ctx);
   kit.judge(SUITE, run.tests, EXCEPTIONS, PENDING);
   log.info("=== 2. the status changes the suite does not make ===");
   await statusChanges(ctx);

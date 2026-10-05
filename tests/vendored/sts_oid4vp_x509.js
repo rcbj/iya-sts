@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 "use strict";
 //
@@ -268,6 +268,30 @@ async function test() {
       doc.json.x509_san_dns.trust_anchor_pem));
     assert.strictEqual(doc.json.response_uri, base + "/oid4vp/response");
   });
+
+  // ONE CERTIFICATE BEFORE THE TWO REQUESTS (2026-10-01). With request
+  // workers the first fetches can land on two workers that each certify the
+  // Verifier's key before either has adopted the other's certificate; the
+  // store keeps one, and the workers converge on it. Section 1 asks the two
+  // prefixes in two requests and compares them, so wait until five reads in
+  // a row name the same x509_hash (single-node, 2026-09-30: two hashes).
+  const settleDeadline = Date.now() + 30000;
+  let lastHash = "";
+  let sameReads = 0;
+  while (sameReads < 5 && Date.now() < settleDeadline) {
+    const again = await hop("GET", base + "/oid4vp/verifier-certificate");
+    const hash = again.json && again.json.x509_hash ?
+      again.json.x509_hash.client_id : "";
+    sameReads = hash && hash === lastHash ? sameReads + 1 : 1;
+    lastHash = hash;
+    if (sameReads < 5) {
+      await new Promise(function (resolve) {
+        setTimeout(resolve, 300);
+      });
+    }
+  }
+  log.info("  the verifier certificate settled after " + sameReads +
+           " matching read(s): " + lastHash);
 
   const seen = {};
   for (const prefix of ["x509_san_dns", "x509_hash"]) {

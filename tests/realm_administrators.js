@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 
@@ -271,10 +271,11 @@ function childMain() {
          'the TLS listener\'s private key is refused through both spellings ' +
          'of its export');
     const settings = refused(realmState, '/admin/config',
-      { action: 'set-many', 'workers.count': '2', 'admin.readGroup': 'x',
+      { action: 'set-many', 'scheduler.runHistoryCount': '2',
+        'admin.readGroup': 'x',
         'oauth2.accessTokenTtlS': '600' });
     note(settings && settings.code === 'STS-ADMIN-0788' &&
-         settings.settings.indexOf('workers.count') >= 0 &&
+         settings.settings.indexOf('scheduler.runHistoryCount') >= 0 &&
          settings.settings.indexOf('admin.readGroup') >= 0 &&
          settings.settings.indexOf('oauth2.accessTokenTtlS') < 0 &&
          !refused(realmState, '/admin/config',
@@ -303,7 +304,8 @@ function childMain() {
          JSON.stringify(settings && settings.settings));
     note(!refused(serviceState, '/admin/tls/trust') &&
          !refused(serviceState, '/admin/pki', { action: 'build-root' }) &&
-         !refused(serviceState, '/admin/config', { 'workers.count': '2' }) &&
+         !refused(serviceState, '/admin/config',
+                  { 'scheduler.runHistoryCount': '2' }) &&
          !refused(null, '/admin/persistence'),
          'a service authority, and a request with no authority, are refused ' +
          'nothing here');

@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -78,10 +78,11 @@ const ROOT = path.join(__dirname, '..');
 //   openbao                        a separate container's seed scripts, not
 //                                  a service that fails at runtime
 //
-// `xacml-pep/` IS SCANNED although it is a separate container: its failures
-// are operator-facing like the mock's, and its codes are in the one table (the
-// XPEP subsystem). Its Dockerfile copies common/error_codes.js to the image
-// root, which tests/xacml_pep.js pins.
+// `rust/` IS SCANNED, its `.rs` files beside the JavaScript and TypeScript
+// (#444): the remote PEP is a Rust binary since 2026-10-05, its failures are
+// operator-facing like the service's, and its codes are in the one table (the
+// XPEP subsystem) — raised by `sts_core::log::tag()`. `rust/target` is
+// cargo's build output and is not.
 //   xacml/conformance              the vendored OASIS suite's manifest
 //   env                            the appconfig files and the generated
 //                                  defaults.js
@@ -100,7 +101,7 @@ const SKIP_DIRS = ['node_modules', 'node-ldapjs', 'tests', 'docs',
                    '.claude'];
 
 const SKIP_PATHS = ['common/vendored', 'xacml/conformance',
-                    'debugger/embedded'];
+                    'debugger/embedded', 'rust/target'];
 
 // kerberos/CLAUDE.md: the eight codec modules are vendored from the parent
 // project and not editable here, despite not living under common/vendored.
@@ -126,8 +127,10 @@ function sourceFiles() {
         walk(full);
         return;
       }
-      // Source only: a `.ts`, or a `.js` that is not its compiled twin (#50).
-      if (!isSourceFile(entry.name, names)) return;
+      // Source only: a `.ts`, or a `.js` that is not its compiled twin (#50),
+      // or the Rust conversion's `.rs` (#444).
+      const rust = rel.indexOf('rust/') === 0 && /\.rs$/.test(entry.name);
+      if (!rust && !isSourceFile(entry.name, names)) return;
       if (VENDORED_FILES.indexOf(rel) >= 0) return;
       out.push(rel);
     });

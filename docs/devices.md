@@ -262,7 +262,7 @@ counts changes by source, day by day.
 | An administrator: the **Compliance** form on a device's page, or `POST /admin-api/devices/set-compliance` | `admin` | Admin Write. May also set `unknown`, withdrawing a vouch. |
 | An MDM or posture feed: `POST /admin-api/device-compliance` | `mdm` | A client holding an access token with the **`device:compliance`** scope, and nothing else, whose application is a member of the `DEVICE_COMPLIANCE` role. |
 | The test control: `POST /devices/test/compliance` | `test-control` | Anybody, **in development only**; product answers `403`. |
-| A received CAEP `device-compliance-change` from a trusted transmitter | `caep` | A foreign transmitter an administrator registered on **Shared Signals transmitters** (#153). The device is named by its id (an `iss_sub` subject's `sub`) or a key thumbprint. |
+| A received CAEP `device-compliance-change` from a trusted transmitter | `caep` | A federation partner whose Shared Signals this realm receives, as the `signal-response` policy permits (#153, #373). A device manager is an `ssf` relationship on **Federation** (#374). The device is named by its id (an `iss_sub` subject's `sub`) or a key thumbprint. |
 
 ### Integrating an MDM or posture feed
 
@@ -325,6 +325,16 @@ or `POST /admin-api/devices/set-status` with `"status":"compromised"`):
 * revokes its Native SSO `device_secret`;
 * revokes every certificate this service's EST or SCEP Issuing CA issued it,
   with reason **keyCompromise**, so its CRL and OCSP responder say so;
+* ends every GNAP grant whose client key is one of the device's keys —
+  including a client proving by mutual TLS with one of the device's
+  certificates — and revokes every OAuth access or refresh token bound to the
+  device: DPoP-bound to one of its JWK keys, or bound by mutual TLS (RFC 8705
+  `x5t#S256`) to a certificate over one of its keys — the certificate the
+  device's `x509` key holds, or any other certificate over the same key (one
+  another CA issued, or a re-issue this register never saw), because the key
+  under a bound certificate is recorded when the token is issued
+  ([#432](https://github.com/rcbj/iya-sts/issues/432)). A WebAuthn key binds
+  no token;
 * raises its risk level to `HIGH`;
 * sends RISC `credential-compromise` and `sessions-revoked` for a person's
   device (below).

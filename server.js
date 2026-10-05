@@ -1,6 +1,6 @@
 // @ts-check
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -78,6 +78,19 @@
 // from the first converted module. See `common/compiled_tree.js`.
 require('./common/compiled_tree').refuseUncompiledTree('node server.js');
 require('./common/config_file').resolveConfigFile();
+// ---------------------------------------------------------------------------
+// THE HEAP LIMIT, BEFORE ANYTHING ELSE IS LOADED (#341, 2026-09-29). V8 reads
+// --max-old-space-size when it starts, so when a limit is due — derived from
+// the container, or workers.heapLimitMb — and not yet in force, this process
+// REPLACES ITSELF with the same command and the flag (`process.execve()`: the
+// same pid and descriptors) and never returns from this line. It runs where
+// every way of starting this service meets: the image's CMD, the compose
+// files' `exec node server.js`, `docker run` and ECS. Here, after the
+// appconfig file is resolved and before the service is loaded, so the second
+// start repeats as little as possible. `common/process_memory.ts` argues it
+// against NODE_OPTIONS and a launcher.
+// ---------------------------------------------------------------------------
+require('./common/process_memory').reexecWithHeapLimit();
 
 const http = require('http');
 const https = require('https');
@@ -90,20 +103,14 @@ const { log, PORT, HOST, warmPqKeys,
         warmSignerGroups } = require('./common/helpers');
 const realms = require('./common/realms');
 const config = require('./common/config');
-// A LIBRARY, rule 3's shape: it registers no route and its position in the
-// require order is not a position at all. It is named here for one thing — the
-// drain in shutdown() below — and it is already loaded by then, because
-// common/crypto.js requires it. See common/worker_pool.js.
-const workerPool = require('./common/worker_pool');
 // ---------------------------------------------------------------------------
-// AND THE SECOND POOL, WHICH IS A DIFFERENT KIND OF WORKER.
-//
-// `worker_pool.js` above forks children that run a JOB TABLE — four leaf
-// computations. `request_pool.js` forks children that run THE SERVICE: each
-// loads the same protocol stack in the same order, binds no protocol port, and
-// answers HTTP on a unix socket this process proxies to. It is required here
-// for its lifecycle only; the middleware that uses it is installed in app.js,
-// because that is where the order it has to sit in is decided.
+// THE REQUEST POOL. Its workers run THE SERVICE: each loads the same protocol
+// stack in the same order, binds no protocol port, and answers HTTP on a unix
+// socket this process proxies to. It is required here for its lifecycle only;
+// the middleware that uses it is installed in app.js, because that is where
+// the order it has to sit in is decided. (There was a second pool until #363,
+// `common/worker_pool.js`, of processes that computed post-quantum signatures
+// and scrypt; those run on libuv's thread pool now — `common/pq_native.js`.)
 // ---------------------------------------------------------------------------
 const requestPool = require('./common/request_pool');
 // THE VERSION, M.N.O. A LIBRARY and a LEAF: it registers no route and requires
@@ -118,6 +125,21 @@ const version = require('./common/version');
 // each is logged with its code at the front — see common/error_codes.js.
 const errorCodes = require('./common/error_codes');
 const APP_VERSION = version.load();
+// ---------------------------------------------------------------------------
+// AN UNEXPECTED ERROR IS CONTAINED, NOT A CRASH (#355). Two halves, installed
+// at two different moments on purpose — see common/fault_boundary.ts:
+//
+//   * the EXPRESS GUARD now, before any request can arrive: a rejected
+//     `async` handler reaches `next()` as a 500 instead of becoming an
+//     unhandled rejection. It patches the one prototype every express app in
+//     this process shares, the debugger's own included. Here and not in
+//     `common/app.js`, because that file is in the parent project's Kerberos
+//     COPY closure and a require there would owe a COPY line over there;
+//   * the PROCESS HANDLERS in announce(), once the service has STARTED — a
+//     failure while starting is still fatal, as it always was.
+// ---------------------------------------------------------------------------
+const faultBoundary = require('./common/fault_boundary');
+faultBoundary.guardExpress(log);
 
 // ---------------------------------------------------------------------------
 // WHERE THIS SERVICE WRITES ITSELF DOWN — #4a, AND THE FIRST TIME IT EVER HAS.
@@ -215,6 +237,10 @@ const useHttps = config.value('global.https');
 
 function announce() {
   log.debug('Entering announce().');
+  // From here on no uncaught exception or unhandled rejection ends this
+  // process — the front process, and the scheduler's leader when it is one
+  // (#355). Logged under STS-CORE-0141 / 0142 and carried on from.
+  faultBoundary.installProcessHandlers('front process', log);
   // ---------------------------------------------------------------------
   // THE DEFAULT REALM'S POST-QUANTUM KEYS, WARMED ONCE THE PORT IS OPEN.
   //
@@ -234,14 +260,11 @@ function announce() {
   // intermittently, in about half of the coverage runs on `main`. The
   // service was never wrong; the work was simply in the wrong place.
   //
-  // IT IS HERE AND NOT AT REQUIRE TIME, which matters: `workers.count`'s own
-  // description promises that nothing is forked until the first post-quantum
-  // job, so that the parent project's in-process Kerberos jobs, this
-  // repository's own `npm test` and `node env/generate_defaults.js` never pay
-  // for a pool they will not use. Warming from `helpers.js` would have broken
-  // that for every one of them. A process that has bound a socket is a
-  // SERVICE, and a service is exactly the thing that will be asked for a
-  // JWKS.
+  // IT IS HERE AND NOT AT REQUIRE TIME, so that the parent project's
+  // in-process Kerberos jobs, this repository's own `npm test` and
+  // `node env/generate_defaults.js` never pay for eleven key generations they
+  // will not use. A process that has bound a socket is a SERVICE, and a
+  // service is exactly the thing that will be asked for a JWKS.
   //
   // NOT AWAITED, and failure is not fatal. The port is already open; this is
   // work moved off the first request's path, not a precondition for
@@ -263,7 +286,7 @@ function announce() {
   // record was stamped at build time or computed just now, which is the
   // difference between an artifact and a checkout and is not guessable from the
   // number.
-  log.info('mock-sts version ' + APP_VERSION.version + ' (' +
+  log.info('iya-sts version ' + APP_VERSION.version + ' (' +
            version.buildInfo(APP_VERSION) + ').');
   log.info('WS-Trust STS mock listening on ' + (useHttps ? 'https' : 'http') +
            '://' + HOST + ':' + PORT +
@@ -482,6 +505,22 @@ function announce() {
               'Every http:// CRL and OCSP address in this service\'s ' +
               'certificates will answer nothing.');
   });
+  // THE CHANNEL BETWEEN CELLS (#98, 2026-09-28): mutual TLS on cells.port,
+  // bound only when this service is deployed as cells, in this process only
+  // (a request worker dials and never listens). A relayed request it takes
+  // is served by the same app as the public port. Recorded rather than
+  // thrown, as every socket here is: without it this cell still answers
+  // what it owns, and the other cells fail closed on what they relay here.
+  require('./common/cell_channel').listen(app).whenReady.then(
+    function (ready) {
+      if (ready.port) {
+        log.info('cells: the inter-cell channel is on port ' + ready.port +
+                 ', mutual TLS, for the other cells of this service only.');
+      }
+    }).catch(function (err) {
+    log.error(errorCodes.tag('STS-CELL-0033') + 'cells: the inter-cell ' +
+              'listener could not start: ' + err.message);
+  });
   // THE EMBEDDED PROTOCOL DEBUGGER (2026-09-13): its own listener, then its
   // api child. Recorded rather than thrown like every socket here — and a
   // debugger that is not embedded, or not installed, says why on
@@ -540,6 +579,33 @@ function announce() {
 // ---------------------------------------------------------------------------
 let stopping = false;
 
+// ---------------------------------------------------------------------------
+// THE BOOTSTRAP ADMINISTRATOR IS THE SERVICE'S, NOT EACH CELL'S (#98,
+// 2026-09-28; found by tests/tools/rehearse-cell-conversion.sh). The
+// bootstrap asks "does anybody in THIS directory hold a credential", and a
+// cell's directory holds only the people homed in it — so every cell but the
+// first found nobody and created a second `admin.bootstrapUsername` of its
+// own beside the one homed in the first cell: an entry the routing index
+// refused by name (STS-CELL-0020), indexed by its entryUUID, with a password
+// printed that sign-in routing never reaches. A cell now asks the index
+// first, and a realm whose bootstrap account is homed in another cell is not
+// bootstrapped here. Single-cell mode never asks.
+// ---------------------------------------------------------------------------
+function bootstrapHomedElsewhere(realmId, username) {
+  log.debug('Entering bootstrapHomedElsewhere(). realm=' + realmId);
+  const cells = require('./common/cells');
+  if (!cells.isMulti() || !username) {
+    log.debug('Leaving bootstrapHomedElsewhere(). Single-cell.');
+    return Promise.resolve('');
+  }
+  log.debug('Leaving bootstrapHomedElsewhere(). Asking the index.');
+  return require('./common/cell_routing')
+    .homeOf(realmId, 'name', String(username))
+    .then(function (home) {
+      return home && home !== cells.id() ? String(home) : '';
+    });
+}
+
 function shutdown(signal) {
   log.debug('Entering shutdown(). signal=' + signal);
   if (stopping) {
@@ -553,20 +619,9 @@ function shutdown(signal) {
            'down, then exiting. Sessions, tokens, codes, artifacts and ' +
            'tickets are not persisted and are going with this process, which ' +
            'is what they have always done.');
-  // THE COMPUTATION POOL IS DRAINED rather than killed: a child
-  // part way through an SLH-DSA signature is answering a request this process
-  // still has open, and thirteen seconds of computation thrown away is a
-  // request that gets nothing back. It gives them five seconds and kills what
-  // is left, which costs nothing — a worker holds no state. It resolves rather
-  // than rejects for the same reason persistence.stop() does: the only move
-  // left here is to exit, and a rejection would replace the sentence that says
-  // what was flushed with a stack trace. See common/worker_pool.js.
-  // ---------------------------------------------------------------------
-  // THE REQUEST WORKERS GO FIRST, AND THE ORDER IS A DEPENDENCY RATHER THAN A
-  // PREFERENCE: a request worker that is still finishing a response may be
-  // waiting on a post-quantum signature from the COMPUTATION pool, so draining
-  // that pool first would fail the job the request is blocked on and turn a
-  // clean shutdown into a truncated answer.
+  // THE REQUEST WORKERS ARE DRAINED BEFORE THE STORE IS FLUSHED: a worker
+  // still finishing a response may write, and its write has to be in the
+  // store before persistence.stop() closes it.
   // ---------------------------------------------------------------------
   // The debugger's api child first: it is not a worker of either pool and
   // holds nothing worth draining, and an orphan would keep its socket.
@@ -574,6 +629,11 @@ function shutdown(signal) {
   // A run in progress is left to finish or be fenced out; its claim lapses
   // and the next leader takes it over.
   require('./cluster/scheduler').stop();
+  // The inter-cell listener (#98): nothing drains through it that the
+  // request pool below does not already finish.
+  require('./common/cell_channel').close().catch(function (e) {
+    log.debug('Caught in shutdown(): ' + ((e && e.message) || e));
+  });
   debuggerServer.close().catch(function (e) {
     log.debug('Caught in shutdown(): ' + ((e && e.message) || e));
   }).then(function () {
@@ -581,12 +641,6 @@ function shutdown(signal) {
   }).then(function (drained) {
     if (drained.stopped || drained.killed) {
       log.info('sts: ' + drained.stopped + ' request worker(s) finished and ' +
-               drained.killed + ' had to be killed.');
-    }
-    return workerPool.stop();
-  }).then(function (drained) {
-    if (drained.stopped || drained.killed) {
-      log.info('sts: ' + drained.stopped + ' worker process(es) finished and ' +
                drained.killed + ' had to be killed.');
     }
     return persistence.stop();
@@ -754,15 +808,32 @@ serviceState.start().then(function (both) {
   const otherRealms = realms.list().filter(function (realm) {
     return realm.id !== realms.DEFAULT_ID;
   });
-  const bootstrapped = realms.run(realms.DEFAULT_REALM, function () {
-    return credentials.bootstrapOnce(realms.DEFAULT_ID, function () {
-      adminRbac.seedBootstrapAdministrator();
-      // A CONSOLE NOBODY CAN ENTER IS SAID HERE, ONCE (#103): product mode
-      // never opens it to whoever signs in, so a realm left with no bootstrap
-      // administrator and an empty roster is logged under STS-ADMIN-0798
-      // rather than discovered by being refused.
-      adminRbac.reportClosedConsole();
-      return credentials.bootstrap({ username: bootstrapUsername });
+  // In a service of several cells, a realm whose bootstrap account is homed
+  // in another cell is not bootstrapped here: see bootstrapHomedElsewhere().
+  const unlessHomedElsewhere = function (realmId, bootstrap) {
+    return bootstrapHomedElsewhere(realmId, bootstrapUsername)
+      .then(function (home) {
+        if (home) {
+          log.info('credentials: the "' + realmId + '" realm\'s bootstrap ' +
+                   'account "' + bootstrapUsername + '" is homed in cell "' +
+                   home + '"; this cell bootstraps no administrator of its ' +
+                   'own.');
+          return { ran: false, why: 'homed in cell ' + home };
+        }
+        return bootstrap();
+      });
+  };
+  const bootstrapped = unlessHomedElsewhere(realms.DEFAULT_ID, function () {
+    return realms.run(realms.DEFAULT_REALM, function () {
+      return credentials.bootstrapOnce(realms.DEFAULT_ID, function () {
+        adminRbac.seedBootstrapAdministrator();
+        // A CONSOLE NOBODY CAN ENTER IS SAID HERE, ONCE (#103): product mode
+        // never opens it to whoever signs in, so a realm left with no
+        // bootstrap administrator and an empty roster is logged under
+        // STS-ADMIN-0798 rather than discovered by being refused.
+        adminRbac.reportClosedConsole();
+        return credentials.bootstrap({ username: bootstrapUsername });
+      });
     });
   }).then(function () {
     // AND EVERY TRUST REALM THIS PROCESS STARTED WITH (2026-09-14, #32): each
@@ -773,11 +844,13 @@ serviceState.start().then(function (both) {
     // realm above — and one realm at a time, each under its own claim.
     return otherRealms.reduce(function (chain, realm) {
       return chain.then(function () {
-        return realms.run(realm, function () {
-          return credentials.bootstrapOnce(realm.id, function () {
-            adminRbac.seedBootstrapAdministrator(realm.id);
-            adminRbac.reportClosedConsole(realm.id);
-            return credentials.bootstrap({ username: bootstrapUsername });
+        return unlessHomedElsewhere(realm.id, function () {
+          return realms.run(realm, function () {
+            return credentials.bootstrapOnce(realm.id, function () {
+              adminRbac.seedBootstrapAdministrator(realm.id);
+              adminRbac.reportClosedConsole(realm.id);
+              return credentials.bootstrap({ username: bootstrapUsername });
+            });
           });
         });
       });
@@ -877,6 +950,12 @@ serviceState.start().then(function (both) {
                      return one.started + ' of ' + one.wanted + ' ' + one.pool;
                    }).join(', ') + ')'
                    : '') +
+                 // THE REST START BEHIND THE LISTENER, one at a time (#342):
+                 // start() resolves once each pool's first worker settled.
+                 (pool.pending
+                   ? ', and ' + pool.pending + ' more are starting behind ' +
+                     'the listener (workers.startConcurrency)'
+                   : '') +
                  (requestPool.dispatchPrefixes().length
                    ? '; dispatching ' +
                      requestPool.dispatchPrefixes().join(', ')
@@ -949,6 +1028,42 @@ serviceState.start().then(function (both) {
 // Built rather than started above, because the two shapes differ only in this
 // one expression and writing the whole announcement twice is how the two
 // versions of it come to say different things.
+// A TRUST REALM'S OWN LISTENER (#99, 2026-10-02): an unbound HTTPS server
+// wired exactly as the main port below is — the client-certificate request
+// and the truststore, the TLS policy, the connection observer, the JA4
+// fingerprint and the PROXY protocol — but presenting the realm's own
+// certificate (`certificateOf` hands it to the truststore's re-application, so
+// a truststore change never swaps it for the main port's). Bound, rebound and
+// closed by `tls/realm_listeners.js` as the realm registry changes.
+// `common/app.js`'s `enterRealm` answers only that realm's paths on it.
+function realmListener(label, certificate, certificateOf, realmId) {
+  log.debug("Entering realmListener(). " + label);
+  // The realm's own policy (#423): its listener.* rows, inheriting the
+  // process's TLS settings unless set, and its own client authentication.
+  const policy = tlsServer.policyFor('realm', realmId);
+  const server = https.createServer(Object.assign({
+    cert: certificate.cert,
+    key: certificate.key,
+    // Its own truststore (#429): the realm's listener.trustAnchorsFile and
+    // listener.trustIssuedClientCertificates, else the service's.
+    ca: tlsServer.clientTruststoreOptions(policy).ca
+  // Its TLS session lifetime is in the policy (#429), its session cache
+  // attached when it registers below.
+  }, tlsServer.clientAuthOptions(policy.clientAuth),
+  tlsServer.protocolOptions(policy)), app);
+  // ITS OWN CONNECTION POOLING (#429): the realm's listener.keepAliveTimeoutS
+  // and the rest, inheriting the service's http.* rows; re-applied when
+  // they change.
+  tlsServer.registerHttpListener(server, 'realm', realmId);
+  tlsServer.trustClientCertificatesOn(server, label, certificateOf,
+                                      { kind: 'realm', realm: realmId });
+  tlsServer.observeConnectionsOn(server, label);
+  clientHello.install(server, { label: label });
+  proxyProtocol.install(server, { label: label, channel: 'http' });
+  log.debug("Leaving realmListener().");
+  return server;
+}
+
 function bind() {
 log.debug("Entering bind().");
 if (useHttps) {
@@ -971,7 +1086,9 @@ if (useHttps) {
     // the remote XACML PEP arrived, because that caller's DN has to resolve to
     // a directory entry, a group and a role, and none of that may rest on a
     // certificate nobody issued.
-    ca: tlsServer.clientTruststoreOptions().ca,
+    // The main port's own truststore since #429: listenerMain.trustAnchorsFile
+    // and listenerMain.trustIssuedClientCertificates, else the service's.
+    ca: tlsServer.clientTruststoreOptions(tlsServer.policyFor('main')).ca,
     // RFC 8705 — certificate-bound access tokens. The token endpoint is on this
     // listener, so a certificate has to be ASKED FOR here or there is never one
     // to bind to. Asked for, never required — and since the 9443 listener was
@@ -984,29 +1101,56 @@ if (useHttps) {
     // completed this handshake, not that a CA vouched for it. Requiring
     // verification would also make the feature unreachable, since the
     // truststore at /tls/trust starts empty by design.
-    requestCert: true,
-    rejectUnauthorized: false
+    //
+    // THE OPERATOR'S TO CHANGE SINCE #423, the default unchanged:
+    // tls.mainPortDisableOptionalClientCertificate asks for none, and
+    // tls.mainPortRequireClientCertificate requires one that verifies. The
+    // pair is applied again, with the truststore, whenever either moves.
+    ...tlsServer.clientAuthOptions(tlsServer.policyFor('main').clientAuth)
+    // HOW LONG A SESSION MAY BE RESUMED (#406; per listener and editable
+    // since #429): in the policy below, as `sessionTimeout`. A resumed
+    // session carries no CertificateRequest, so a browser holding a matching
+    // certificate does not ask its user again.
   // `tls.minVersion` and `tls.ciphers` (2026-09-12), from the module that
   // states them for every TLS listener — at creation as well as on every
   // truststore change, so the first handshake is held to the same floor as the
-  // hundredth.
-  }, tlsServer.protocolOptions()), app);
+  // hundredth. And the listeners' policy since #423: TLS 1.2 off or on, the
+  // TLS 1.3 suites chosen, post-quantum only.
+  }, tlsServer.protocolOptions(tlsServer.policyFor('main'))), app);
+  // HTTP CONNECTION POOLING ON THE MAIN PORT (#406, 2026-10-02). node keeps an
+  // idle HTTP/1.1 connection five seconds by default, so a person reading a
+  // page lost it and the next click made a new connection — a full TLS
+  // handshake, and a client-certificate prompt in a browser holding a
+  // matching certificate. Requests a client pipelines on one connection are
+  // answered in order, which node does on its own. The header timeout is kept
+  // above the keep-alive, so a client (or a balancer) reusing a connection at
+  // the last moment never meets one this end is already closing. Per
+  // listener and editable since #429: listenerMain.keepAliveTimeoutS and the
+  // rest, inheriting http.*, re-applied by tls_server.js when they change.
+  tlsServer.registerHttpListener(mainServer, 'main');
   // REGISTERED SO THAT A LATER `POST /tls/trust` REACHES THIS LISTENER TOO.
   // `tls_server.js` owns the anchors and applies them to every listener it
   // knows about; this is how the one it did not create becomes one of them. It
   // is a registration rather than a require in the other direction because
   // this file requires that module, not the other way round.
   tlsServer.trustClientCertificatesOn(mainServer,
-                                      'the main port (' + PORT + ')');
-  // NOT ONE SESSION-TICKET KEY WITH THE OTHER NODES, although LDAPS has one
-  // (tls/session_tickets.ts). This port asks for a client certificate, and a
-  // resumed session hands the server the LEAF alone:
-  // common/revocation_status.js walks it with the chain this PROCESS
-  // remembered from the full handshake. A ticket resumed on another node
-  // finds no chain there, and product mode's hard-fail refuses a certificate
-  // that verified (the remote PEP, every XACML caller, in the cluster mode).
-  // With a key per node the other node cannot open the ticket, so the client
-  // makes a full handshake and presents its chain.
+                                      'the main port (' + PORT + ')',
+                                      undefined, { kind: 'main' });
+  // ONE SESSION-TICKET KEY WITH THE OTHER NODES SINCE #406 (2026-10-02), as
+  // LDAPS has had (tls/session_tickets.ts). Until then this port kept a key
+  // per node: it asks for a client certificate, a resumed session hands the
+  // server the LEAF alone, and common/revocation_status.js walked it with the
+  // chain only THIS process remembered — so a ticket resumed on another node
+  // found no chain, and product mode's hard-fail refused a certificate that
+  // verified. The price was a full handshake on nearly every new connection
+  // behind a balancer, and a browser holding a matching certificate asking its
+  // user each time. The remembered chains are replicated now, with a bounded
+  // wait for one still on its way (`common/app.js`), so the key is shared;
+  // `tls.mainPortSharedTickets` puts the key per node back.
+  if (config.value('tls.mainPortSharedTickets') !== false) {
+    require('./tls/session_tickets').track(mainServer,
+                                           'the main port (' + PORT + ')');
+  }
   // AND SO THAT A CLIENT CERTIFICATE PRESENTED HERE IS WRITTEN DOWN
   // (2026-09-16). The sighting hung on the 8443 and 9443 listeners'
   // `secureConnection` until they were deleted, so the main port — where every
@@ -1040,6 +1184,10 @@ if (useHttps) {
   proxyProtocol.install(mainServer, { label: 'the main port (' + PORT + ')',
                                       channel: 'http' });
   mainServer.listen(PORT, HOST, announce);
+  // AND EVERY REALM THAT ASKS FOR A LISTENER OF ITS OWN (#99), bound beside
+  // the main port and kept in step with the realm registry from here on. A
+  // realm port that cannot bind is recorded, never fatal.
+  require('./tls/realm_listeners').start({ build: realmListener });
 } else {
   // `http.createServer(app)` rather than `app.listen()`, which is the same
   // thing with the server object hidden — and the PROXY protocol has to be

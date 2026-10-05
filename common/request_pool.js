@@ -1,13 +1,26 @@
 // @ts-check
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
 // File: request_pool.js
 //
 // ---------------------------------------------------------------------------
-// THE FRONT PROCESS'S END OF THE REQUEST WORKERS: FORK, ROUTE, PROXY, DRAIN.
+// THE FRONT PROCESS'S END OF THE REQUEST WORKERS: START, ROUTE, PROXY, DRAIN.
+//
+// **A WORKER IS A THREAD SINCE #364 (2026-09-30)** — a `worker_threads`
+// Worker of this process, with its own V8 isolate, heap and event loop — and
+// it was a forked process until then. Everything else about it is as it was:
+// it loads the whole stack, answers real HTTP on its own unix socket, and
+// shares state with this thread through the store and its change log, never
+// through memory. `startThread()` is the one function that knows it is a
+// thread; the rest of this file speaks to `entry.child` as it spoke to a
+// ChildProcess, and still says "fork" for starting one. Two consequences run
+// through it: a worker's id is its `threadId` (every thread has this
+// process's pid), and a worker's heap exhaustion is ERR_WORKER_OUT_OF_MEMORY
+// where it was a SIGABRT. The default is ONE worker where the store
+// coordinates (`process_memory.ts`'s `requestWorkers()`).
 //
 // `request_worker.ts` says what a worker is and why it speaks real HTTP over a
 // unix socket. This file is the half that runs where the sockets are, and its
@@ -82,7 +95,11 @@ const path = require('path');
 const os = require('os');
 const fs = require('fs');
 const http = require('http');
-const child_process = require('child_process');
+const EventEmitter = require('events');
+const workerThreads = require('worker_threads');
+// The channel's other half (#364): a message a thread posts has its Buffers
+// turned back into Buffers here, as the thread does for what it receives.
+const WorkerChannel = require('./worker_channel');
 const nodeCrypto = require('crypto');
 const bunyan = require('bunyan');
 const config = require('./config');
@@ -99,6 +116,10 @@ const clientAddress = require('./client_address');
 // A LEAF: the affinity maps below, described to `/admin/caches` (#74).
 const cacheRegistry = require('./cache_registry');
 const lingeringClose = require('./lingering_close');
+// A LEAF (config, error_codes, node's own modules): every process's heap
+// budget, which fork() hands each worker, and the container's OOM-kill count,
+// which reap() reads for a worker that was SIGKILLed (#341).
+const processMemory = require('./process_memory');
 // THE JA4 READER (#62 P0) IS REQUIRED LAZILY, in `clientHelloModule()`
 // below: this file is loaded by `app.js` before the composition root defers
 // instance building, and a load here would build `tls/client_hello`'s
@@ -1031,6 +1052,61 @@ givenUp[SURFACE_POOL] = false;
 const replaced = {};
 replaced[PROTOCOL_POOL] = 0;
 replaced[SURFACE_POOL] = 0;
+// ---------------------------------------------------------------------------
+// WHAT HAS HAPPENED TO EACH POOL SINCE THIS PROCESS STARTED, for Monitoring →
+// Worker Pools (#327). `stats()` answered what each pool IS and how many dead
+// workers it replaced, and nothing else about its history: not how many
+// workers died unasked against how many were stopped, not how long a
+// dispatched request took.
+//
+// * `initial` — the workers `start()` forked into the pool (the configured
+//   count, or 0 when the surface pool was idled for want of prefixes), and
+//   `startedAt` when.
+// * `forked` — every fork, replacements included.
+// * `crashed` — a worker that exited while nobody had asked it to;
+//   `stoppedExits` one that exited because `stop()` retired it.
+//   `failedStarts` is the subset of crashes that never became ready (or went
+//   within QUICK_EXIT_MS having served nothing), counted for good where
+//   `quickExits` counts only a run of them.
+// * `answered`, `answerMs`, `maxAnswerMs`, `recentMs` — every request and
+//   operation a worker ANSWERED, from dispatch to the end of its answer as
+//   the front process saw it; a 502 for a worker that never answered is not a
+//   response time and is not counted. `recentMs` is an exponentially weighted
+//   average (a weight of RECENT_WEIGHT for the newest), because a mean since
+//   start stops moving after the first hour and is not what an operator
+//   looking at a slow console wants to see.
+//
+// **THE HOT PATH PAYS ONE `Date.now()` AND FOUR ADDITIONS PER REQUEST**, in
+// the process whose whole job is request/response I/O; it keeps no list and
+// nothing grows. That is below the cost of the headers proxy() already copies.
+// ---------------------------------------------------------------------------
+const RECENT_WEIGHT = 0.1;
+function freshHistory() {
+  log.debug("Entering freshHistory().");
+  log.debug("Leaving freshHistory().");
+  return { initial: 0, startedAt: 0, forked: 0, crashed: 0, stoppedExits: 0,
+           failedStarts: 0, answered: 0, answerMs: 0, maxAnswerMs: 0,
+           recentMs: 0 };
+}
+const history = {};
+history[PROTOCOL_POOL] = freshHistory();
+history[SURFACE_POOL] = freshHistory();
+
+// One answered request or operation, for `history` above. Called from
+// proxy()'s finish and receiveOperation() — no Entering/Leaving pair: it is
+// on every dispatched request and a debug line each way would double what
+// the proxy logs per request for four additions.
+function noteAnswered(pool, ms) {
+  const h = history[pool] || history[PROTOCOL_POOL];
+  const took = ms > 0 ? ms : 0;
+  h.answered++;
+  h.answerMs += took;
+  if (took > h.maxAnswerMs) {
+    h.maxAnswerMs = took;
+  }
+  h.recentMs = h.answered === 1
+    ? took : h.recentMs + RECENT_WEIGHT * (took - h.recentMs);
+}
 // The module a worker runs. Only tests/request_worker_replacement.js changes
 // it, to fork a stub that answers the same channel without loading the stack;
 // reset() puts it back.
@@ -1049,10 +1125,19 @@ let starting = null;
  * @param pool - `SURFACE_POOL`, or anything else for the protocol pool
  * @returns the count; 0 when unset or when there is no configuration
  */
+// ONE REQUEST WORKER BY DEFAULT, WHERE THE STORE CAN COORDINATE (#364):
+// `processMemory.requestWorkers()` is the rule, and the one place it is
+// written, because the heap budget divides by the same count before the
+// store is opened.
 function size(pool) {
   log.debug('Entering size().');
   const key = pool === SURFACE_POOL ? 'workers.surfaceCount'
                                     : 'workers.requestCount';
+  if (pool !== SURFACE_POOL) {
+    const wantedWorkers = processMemory.requestWorkers();
+    log.debug('Leaving size(). ' + wantedWorkers + '.');
+    return wantedWorkers;
+  }
   let wanted = 0;
   try {
     wanted = parseInt(config.value(key), 10);
@@ -1689,11 +1774,25 @@ function poolFor(url) {
 // brokers they list are ordinary configuration either way. Only these two:
 // `/admin/spiffe` and `/admin-api/spiffe` stay dispatched, for the authority
 // argument above, and `matchesAny()` stops at the segment boundary.
+//
+// **AND THE WORKER POOLS' OWN PAGE (#327, 2026-09-28).** Both request pools
+// are this module's table, and only the front process has one: a worker's
+// copy of this module forked nothing. `/admin/worker-pools` and
+// `GET /admin-api/worker-pools` answered by a worker would report every pool
+// off on a service running eight workers — the debugger's shape again, and
+// pinned for its reason.
+//
+// **AND NODE HEALTH'S (#329, 2026-09-28)**, for the same reason: it lists
+// every process of the node, and only the front process knows the workers and
+// can ask them. A worker drawing it would list itself alone.
 // ---------------------------------------------------------------------------
 const NEVER_DISPATCHED = ['/tls', '/admin/tls/trust', '/admin-api/tls/trust',
                           '/admin/debugger', '/admin-api/debugger',
                           '/admin/spiffe/brokers',
-                          '/admin-api/spiffe/brokers'];
+                          '/admin-api/spiffe/brokers',
+                          '/admin/worker-pools', '/admin-api/worker-pools',
+                          '/admin/node-health', '/admin-api/node-health',
+                          '/admin/listeners', '/admin-api/listeners'];
 
 /**
  * Tells whether a request is handled in a request worker rather than here.
@@ -1964,6 +2063,50 @@ function directory() {
   log.debug("Entering directory().");
   log.debug("Leaving directory().");
   return require('../ldap/ldap_server');
+}
+
+// THE SPIFFE LISTENERS, THE SAME WAY (#337). The front process binds the
+// Workload, Server and Broker API sockets; a worker answering /admin/spiffe
+// or /admin-api/spiffe has none, and reported "no listeners". The snapshot is
+// sent at fork (`begin`) and after every reconcile, and the worker's
+// spiffe_server answers from it. Lazily required for directory()'s reason.
+function spiffe() {
+  log.debug("Entering spiffe().");
+  log.debug("Leaving spiffe().");
+  return require('../spiffe/spiffe_server');
+}
+
+function spiffeBindingsNow() {
+  log.debug("Entering spiffeBindingsNow().");
+  try {
+    const now = spiffe().bindings();
+    log.debug("Leaving spiffeBindingsNow().");
+    return now;
+  } catch (e) {
+    // SPIFFE not loaded in this process (an in-process test of the pool): a
+    // worker then reports its own, which is none.
+    log.debug("Caught in spiffeBindingsNow(): " + ((e && e.message) || e));
+    log.debug("Leaving spiffeBindingsNow(). None.");
+    return null;
+  }
+}
+
+function publishSpiffeBindings(snapshot) {
+  log.debug("Entering publishSpiffeBindings().");
+  workers.forEach(function (one) {
+    if (!one.child || !one.child.connected) {
+      return;
+    }
+    try {
+      one.child.send({ spiffeBindings: snapshot || null });
+    } catch (e) {
+      // A worker on its way out; its replacement is handed the snapshot at
+      // fork.
+      log.debug('request_pool: could not publish the SPIFFE listeners to ' +
+                'worker ' + one.pid + ': ' + e.message);
+    }
+  });
+  log.debug("Leaving publishSpiffeBindings().");
 }
 
 function publishDirectoryConnections(rows) {
@@ -2366,6 +2509,87 @@ function maxSocketsPerWorker() {
   return (n > 0) ? n : 64;
 }
 
+// ---------------------------------------------------------------------------
+// A WORKER THREAD WEARING THE SHAPE A FORKED CHILD HAD (#364, 2026-09-30).
+//
+// Until #364 each request or surface worker was `child_process.fork()`: a
+// whole node runtime per worker. It is a `worker_threads` Worker now — its
+// own V8 isolate and event loop inside this process — and this is the one
+// function that knows. It answers an EventEmitter with the members the pool
+// used of a ChildProcess:
+//
+//   send(message)   postMessage(); throws once the thread has exited, as
+//                   send() on a closed channel did
+//   pid             the thread's `threadId`, captured NOW because it reads
+//                   -1 after the thread exits. Every thread has this
+//                   process's pid, so the id the pool routes, pins and names
+//                   workers by is the thread's (WorkerChannel.id() in the
+//                   thread says the same number)
+//   connected       true until the thread exits
+//   exitCode        the thread's exit code once it has exited; signalCode
+//                   stays null, because a thread receives no signal
+//   kill()          terminate()
+//   'message'       each message REVIVED — a Buffer the thread posted
+//                   arrives as a Uint8Array and is turned back
+//   'error'         an exception the thread did not catch, or
+//                   ERR_WORKER_OUT_OF_MEMORY; it is kept for 'exit'
+//   'exit'          (code, cause) — `cause` is ERR_WORKER_OUT_OF_MEMORY
+//                   when the thread's heap reached its resourceLimits, and
+//                   null otherwise; it is what reap() passes to noteExit()
+//
+// stdout and stderr are the process's own, so a worker's bunyan lines land in
+// the same stream as everything else (forwarded through this thread's event
+// loop, which is node's design for worker threads).
+// ---------------------------------------------------------------------------
+function startThread(file, socket, options) {
+  log.debug("Entering startThread().");
+  const worker = new workerThreads.Worker(file, {
+    argv: [socket],
+    env: options.env,
+    resourceLimits: options.resourceLimits
+  });
+  const child = /** @type {any} */ (new EventEmitter());
+  child.worker = worker;
+  child.pid = worker.threadId;
+  child.connected = true;
+  child.exitCode = null;
+  child.signalCode = null;
+  child.lastError = null;
+  child.send = function (message) {
+    if (!child.connected) {
+      throw new Error('request_pool: worker thread ' + child.pid +
+                      ' has exited');
+    }
+    worker.postMessage(message);
+    return true;
+  };
+  child.kill = function () {
+    worker.terminate().catch(function (e) {
+      log.debug("Caught in startThread(): " + ((e && e.message) || e));
+      // A thread that is already gone cannot be ended twice; its 'exit'
+      // has fired or is about to.
+    });
+    return true;
+  };
+  worker.on('message', function (message) {
+    child.emit('message', WorkerChannel.revive(message));
+  });
+  worker.on('error', function (err) {
+    child.lastError = err;
+    child.emit('error', err);
+  });
+  worker.on('exit', function (code) {
+    child.connected = false;
+    child.exitCode = code;
+    const cause = child.lastError &&
+      child.lastError.code === 'ERR_WORKER_OUT_OF_MEMORY'
+      ? 'ERR_WORKER_OUT_OF_MEMORY' : null;
+    child.emit('exit', code, cause);
+  });
+  log.debug("Leaving startThread(). thread=" + child.pid);
+  return child;
+}
+
 // `slot` is the worker's position in its pool, handed to it as
 // STS_REQUEST_WORKER_SLOT so that its persistence origin is the same one the
 // worker in that position had before a restart (2026-09-18, `adoptOrigin()` in
@@ -2386,40 +2610,15 @@ function fork(pool, slot) {
   const socket = path.join(ensureSocketDir(),
                            (which === SURFACE_POOL ? 's' : 'w') +
                            (nextSocket++) + '.sock');
-  const child = child_process.fork(workerModule, [socket], {
-    // stdout and stderr are the front process's, so a worker's bunyan lines
-    // land in the same stream as everything else. They carry the pid.
-    stdio: ['ignore', 'inherit', 'inherit', 'ipc'],
-    // -------------------------------------------------------------------
-    // STRUCTURED CLONE ON THE CHANNEL, AND IT WAS THE DEFAULT JSON UNTIL
-    // 2026-09-12.
-    //
-    // **THIS IS `worker_pool.js`'s ARGUMENT, ARRIVING HERE FOR THE SECOND
-    // FAMILY.** That file says it about a 32,000-byte SLH-DSA signature; the
-    // same sentence is true of a DER certificate, and the operation channel
-    // now carries them: a SPIFFE gRPC request and reply hold X509-SVIDs,
-    // bundles, private keys and CSRs as `bytes`.
-    //
-    // **JSON DOES NOT MERELY BLOAT A BUFFER, IT CHANGES ITS TYPE.**
-    // `JSON.stringify(Buffer)` is `{"type":"Buffer","data":[…]}` — six times
-    // the bytes, and it arrives at the far end as a PLAIN OBJECT. Measured
-    // here before the change: a Buffer sent over a default channel reaches the
-    // child as `Object` and comes back as `Object`. grpc-js would then be
-    // handed something that is not a Buffer for a `bytes` field, so the
-    // failure lands in protobuf serialization, naming a field, one process
-    // away from the cause.
-    //
-    // **IT IS A STRICT SUPERSET FOR EVERYTHING THIS CHANNEL ALREADY
-    // CARRIES** — the LDAP operation shapes are strings and numbers, and so
-    // are the commit, sync and ready messages — so nothing that worked before
-    // it behaves differently. What it adds is Buffers, Dates and Maps
-    // surviving as themselves, which is what stopped the SPIFFE codec needing
-    // a base64 layer of its own that every new `bytes` field would have had to
-    // be added to.
-    // -------------------------------------------------------------------
-    serialization: 'advanced',
+  // A WORKER THREAD SINCE #364, and it was a forked process until then.
+  // startThread() gives it the shape the child had — send(), on(), kill(),
+  // connected, exitCode — so everything below that speaks to `entry.child`
+  // is unchanged.
+  const child = startThread(workerModule, socket, {
     // THE MARKER THAT STOPS A WORKER PROXYING TO ITSELF. See the constant at
-    // the top of this file for what happens without it.
+    // the top of this file for what happens without it. A thread's
+    // `process.env` is a COPY of this one taken here, exactly as a forked
+    // child's was, so these three are the thread's own.
     //
     // AND WHICH POOL IT IS IN. One thing in a worker reads it: the OpenID
     // Connect back channel in `common/oidc_rp.ts`, which names the worker that
@@ -2430,7 +2629,22 @@ function fork(pool, slot) {
       STS_REQUEST_WORKER_POOL: which,
       STS_REQUEST_WORKER_SLOT: typeof slot === 'number'
         ? which + '-' + slot : ''
-    })
+    }),
+    // -------------------------------------------------------------------
+    // ITS HEAP LIMIT (#341, #364): every isolate has an old space of its
+    // own, so a thread is given the same share of the node's budget a
+    // forked process was (`common/process_memory.ts`), as `resourceLimits`
+    // where it was a `--max-old-space-size` flag. A thread whose heap
+    // reaches it ends with ERR_WORKER_OUT_OF_MEMORY, which reap() reports as
+    // STS-WORKER-0046, and the process carries on. No budget (no visible
+    // container limit) sets none, which is V8's own default.
+    // -------------------------------------------------------------------
+    resourceLimits: processMemory.budget().off || !processMemory.budget().mb
+      ? undefined
+      : { maxOldGenerationSizeMb: processMemory.budget().mb,
+          // Its young generation too (#366): part of the same share.
+          maxYoungGenerationSizeMb: processMemory.budget().youngMb ||
+            undefined }
   });
   const entry = { child: child, pid: child.pid, pool: which, socket: socket,
                   ready: false,
@@ -2497,6 +2711,7 @@ function fork(pool, slot) {
                   // seen everything committed before it started.
                   generation: generation };
   workers.push(entry);
+  history[which].forked++;
   // TELL IT WHAT IT IS. Nothing is loaded in the child until this arrives —
   // see request_worker.ts for why the certificate travels here rather than in
   // the fork's environment.
@@ -2518,7 +2733,9 @@ function fork(pool, slot) {
                  // would answer a sign-out for a connection made before it
                  // existed with "there is nothing to end" — which is the bug
                  // this whole mechanism is about, narrowed to one worker.
-                 ldapConnections: directory().connectionSnapshot() });
+                 ldapConnections: directory().connectionSnapshot(),
+                 // AND THE SPIFFE LISTENERS THIS PROCESS HOLDS (#337).
+                 spiffeBindings: spiffeBindingsNow() });
   } catch (e) {
     log.error(errorCodes.tag('STS-WORKER-0016') +
               'request_pool: could not start worker ' + child.pid + ': ' +
@@ -2548,7 +2765,7 @@ function fork(pool, slot) {
         // died — counted as a failed start, so a worker that can never start
         // is tried QUICK_EXIT_LIMIT times and then given up on.
         try {
-          child.kill('SIGKILL');
+          child.kill();
         } catch (e) {
           log.debug('request_pool: could not end worker ' + entry.pid +
                     ', which could not start: ' + ((e && e.message) || e));
@@ -2572,8 +2789,18 @@ function fork(pool, slot) {
         receiveSync(entry, message);
         return;
       }
+      // ITS LATEST MEMORY FIGURES, from its own `process.memory-report` run
+      // (#341), kept so that its exit can be reported beside them.
+      if (message && message.memoryReport) {
+        entry.memory = message.memoryReport;
+        return;
+      }
       if (message && message.operation) {
         receiveOperation(entry, message);
+        return;
+      }
+      if (message && message.poolStatus) {
+        receivePoolStatus(entry, message);
         return;
       }
       if (message && message.status) {
@@ -2599,7 +2826,7 @@ function fork(pool, slot) {
 // A worker that has gone. Unlike the computation pool there is nothing to
 // reject: a request in flight is an open socket, and the proxy below fails it
 // when the connection drops, with the pid in the sentence.
-function reap(entry, code, signal) {
+function reap(entry, code, reason) {
   log.debug('Entering reap(). pid=' + entry.pid);
   workers = workers.filter(function (one) { return one !== entry; });
   // ITS AGENT GOES WITH IT. The agent holds sockets to a socket PATH that has
@@ -2660,7 +2887,14 @@ function reap(entry, code, signal) {
     log.debug("Caught in reap(): " + ((e && e.message) || e));
   }
   failOperations(entry);
-  const how = signal ? 'was killed with ' + signal : 'exited with code ' + code;
+  // `reason` is startThread()'s exit cause (#364): a thread receives no
+  // signal, and the one cause it can name is its heap.
+  const how = reason === 'ERR_WORKER_OUT_OF_MEMORY'
+    ? 'ran out of heap (ERR_WORKER_OUT_OF_MEMORY)'
+    : 'exited with code ' + code;
+  // WHY IT DIED, WHERE THIS PROCESS CAN TELL (#341): a heap that reached its
+  // limit. See exitCause().
+  noteExit(entry, code, reason);
   // A FAILED START: a worker that never became ready, however long it took
   // to fail, or one that went within QUICK_EXIT_MS of being forked having
   // served nothing. A worker that was ready resets the count (fork()), so
@@ -2671,6 +2905,17 @@ function reap(entry, code, signal) {
   const pool = entry.pool || PROTOCOL_POOL;
   if (failedStart && !stopped) {
     quickExits[pool]++;
+  }
+  // CRASHED OR STOPPED (#327): `stop()` sets both `stopped` and `retiring`
+  // before its workers go; any other exit is one nobody asked for.
+  const h = history[pool] || history[PROTOCOL_POOL];
+  if (stopped || entry.retiring) {
+    h.stoppedExits++;
+  } else {
+    h.crashed++;
+    if (failedStart) {
+      h.failedStarts++;
+    }
   }
   if (entry.inFlight) {
     log.warn(errorCodes.tag('STS-WORKER-0022') +
@@ -2705,6 +2950,109 @@ function reap(entry, code, signal) {
   }
   replaceIfWanted(entry);
   log.debug('Leaving reap().');
+}
+
+// ---------------------------------------------------------------------------
+// WHY A WORKER DIED, WHERE THE FRONT PROCESS CAN TELL (#341, 2026-09-29).
+//
+// Since #341 every worker has a heap limit, and a worker that reaches it is
+// named as such: `STS-WORKER-0046`. Since #364 a worker is a THREAD, and the
+// heap is the one way out of memory the front can see: V8 ends a thread
+// whose old space reached its `resourceLimits` with ERR_WORKER_OUT_OF_MEMORY
+// and the process carries on (startThread() hands that over as the exit's
+// cause). Until #364 it was a SIGABRT of a forked process.
+//
+// **THE KERNEL'S OOM KILLER NO LONGER HAS A WORKER TO NAME.** When the
+// workers were processes it could pick one, and a SIGKILL with the cgroup's
+// `oom_kill` count risen was `STS-WORKER-0047`. A thread is not a process
+// the kernel can choose, so a container at its limit loses the whole
+// process, front included, and nothing is left here to log it —
+// `STS-WORKER-0047` is retired. The count is still read, for
+// `stats().memory.oomKills`.
+//
+// Each line carries the worker's last memory report, when it sent one, and
+// the latest exits are in `stats().memory.exits`.
+// ---------------------------------------------------------------------------
+const EXITS_KEPT = 20;
+let recentExits = [];
+// The container's OOM-kill count when last read; null until it is read.
+let oomSeen = null;
+// The counter reap() reads; only tests/process_memory.js replaces it.
+let oomCounter = function () {
+  log.debug("Entering oomCounter().");
+  log.debug("Leaving oomCounter().");
+  return processMemory.oomKillCount();
+};
+
+/**
+ * Classifies a worker's exit. A decision over its argument.
+ *
+ * @param cause - the exit's cause as startThread() reports it, or null
+ * @returns `STS-WORKER-0046` for a heap that reached its limit, or '' when
+ *   nothing can be said
+ */
+function exitCause(cause) {
+  log.debug("Entering exitCause().");
+  if (cause === 'ERR_WORKER_OUT_OF_MEMORY') {
+    log.debug("Leaving exitCause(). The heap.");
+    return 'STS-WORKER-0046';
+  }
+  log.debug("Leaving exitCause(). Nothing to say.");
+  return '';
+}
+
+// The last figures a worker reported, as a clause for the lines below.
+function lastReport(entry) {
+  log.debug("Entering lastReport().");
+  const m = entry.memory;
+  if (!m) {
+    log.debug("Leaving lastReport(). None.");
+    return ' It had sent no memory report.';
+  }
+  log.debug("Leaving lastReport().");
+  // Its HEAP figures only: a thread's `rssMb` is the whole process's (#364),
+  // and would read as what this worker used.
+  return ' Its last memory report, ' +
+    Math.round((Date.now() - (m.at || Date.now())) / 1000) + 's before: ' +
+    'heap ' + m.heapUsedMb + ' of ' + m.heapTotalMb + ' MiB (limit ' +
+    m.heapLimitMb + '), external ' + m.externalMb + ' MiB.';
+}
+
+function noteExit(entry, code, reason) {
+  log.debug("Entering noteExit(). pid=" + entry.pid);
+  const cause = exitCause(reason);
+  const pool = entry.pool || PROTOCOL_POOL;
+  const budget = processMemory.budget();
+  if (cause === 'STS-WORKER-0046') {
+    log.error(errorCodes.tag(cause) + 'request_pool: ' + pool + ' worker ' +
+              entry.pid + ' ran out of heap (ERR_WORKER_OUT_OF_MEMORY): ' +
+              'its heap reached its limit' +
+              (budget.mb ? ' of ' + budget.mb + ' MiB (' + budget.source + ')'
+                         : ', V8\'s own default') + '.' + lastReport(entry));
+  }
+  recentExits.push({ pid: entry.pid, pool: pool, code: code,
+                     reason: reason || null, cause: cause || null,
+                     at: Date.now(), memory: entry.memory || null });
+  if (recentExits.length > EXITS_KEPT) {
+    recentExits = recentExits.slice(-EXITS_KEPT);
+  }
+  log.debug("Leaving noteExit().");
+}
+
+// For tests/process_memory.js only: the OOM-kill counter reap() reads.
+/**
+ * Sets the OOM-kill counter reap() reads; for tests. Nothing restores the
+ * real one.
+ *
+ * @param fn - answers the count, or null
+ */
+function useOomCounter(fn) {
+  log.debug("Entering useOomCounter().");
+  oomCounter = fn || function () {
+    return processMemory.oomKillCount();
+  };
+  oomSeen = oomCounter();
+  log.debug("Leaving useOomCounter().");
 }
 
 // ---------------------------------------------------------------------------
@@ -2808,9 +3156,22 @@ function workerTable() {
   return workers.slice();
 }
 
+// A REPLACEMENT GOES THROUGH THE START GATE (#342), like every fork after
+// start(). A crash that takes several workers at once — the kernel's OOM
+// killer does exactly that — would otherwise fork all their replacements at
+// once, and those restores would repeat the memory peak that killed them. The
+// forks still waiting are counted as held, so that two deaths close together
+// cannot queue more workers than the pool's size or hand out one slot twice.
+/**
+ * Queues a replacement for a dead worker, when `replacementFor()` says so.
+ *
+ * @param dead - the dead worker's entry
+ * @returns a promise of the replacement's settled entry, or null when none
+ *   is queued
+ */
 function replaceIfWanted(dead) {
   log.debug("Entering replaceIfWanted().");
-  const plan = replacementFor(dead, workers);
+  const plan = replacementFor(dead, workers.concat(queuedForks()));
   if (!plan.replace) {
     log.info('request_pool: ' + plan.pool + ' worker ' + dead.pid +
              ' is not replaced: ' + plan.why + '.');
@@ -2821,10 +3182,161 @@ function replaceIfWanted(dead) {
   log.warn(errorCodes.tag('STS-WORKER-0043') +
            'request_pool: forking a replacement for ' + plan.pool +
            ' worker ' + dead.pid + ' in slot ' + plan.slot + ' (' +
-           replaced[plan.pool] + ' replaced in this pool so far).');
-  const next = fork(plan.pool, plan.slot);
+           replaced[plan.pool] + ' replaced in this pool so far)' +
+           (startsInFlight >= startConcurrency()
+             ? ', once the ' + startsInFlight + ' worker(s) starting now ' +
+               'have settled'
+             : '') + '.');
+  const next = queueFork(plan.pool, plan.slot);
   log.debug("Leaving replaceIfWanted().");
   return next;
+}
+
+// ---------------------------------------------------------------------------
+// WORKERS START ONE AT A TIME (#342, 2026-09-29).
+//
+// A request worker's start restores the WHOLE store into its own heap: the
+// directory, the realms and their keys, the minted rows, and the transient
+// arrays the restore builds on the way. start() used to fork every worker in
+// the same instant, so the node's memory peaked at N restores running at once
+// on top of the front process. On testidp's node-a on 2026-09-28 at
+// 20:32 UTC, a new task's surface worker and all three protocol workers were
+// SIGKILLed within three seconds of each other, twice. That was the Fargate
+// task's memory limit, and it was reached only while they were starting.
+//
+// So every fork after start() goes through this gate, replacements included.
+// At most `workers.startConcurrency` workers (default 1) are between their
+// fork and their first answer. The next one is forked when one of those
+// settles: it reported ready, it reported that it could not start, its
+// channel failed, or it exited. That is `entry.settled`, which fork() already
+// resolves in each of those cases.
+//
+// **ONE COUNT FOR BOTH POOLS, NOT ONE PER POOL.** What this gate limits is the
+// memory of the NODE, and a surface worker's start costs the same as a
+// protocol worker's: the same stack, and the same restore of the same store.
+// A count per pool would still allow two restores at once with the default
+// of 1, and the node that died had both pools starting together.
+//
+// **AND THE LISTENER DOES NOT WAIT FOR ALL OF THEM.** server.js binds when
+// start() resolves. start() used to resolve when every worker had settled,
+// which with serial forks would be the SUM of the starts: about 4 × 68 s on
+// testidp. It now resolves once the FIRST worker of each configured pool has
+// settled. The queue is interleaved (protocol 0, surfaces 0, protocol 1, and
+// so on) so that both pools have a worker as early as possible. The rest come
+// up behind a listener that is already answering, and routing sends requests
+// to whichever workers are ready (readyWorkers()), which it has always done
+// for a replacement. STS-WORKER-0025 and 0026 are still decided over the
+// whole initial set, when its last member settles.
+//
+// **THE START TIMEOUT IS EACH WORKER'S OWN.** `request_worker.ts` arms it in
+// the child after `begin`, so it runs from that worker's own fork and never
+// from the pool's. A worker queued behind three others does not use up its
+// time while it waits.
+//
+// A queued fork is dropped when the pool is stopping or its pool has given
+// up. By then, forking it would be the fork loop that give-up exists to
+// prevent.
+// ---------------------------------------------------------------------------
+let forkQueue = [];
+let startsInFlight = 0;
+
+/**
+ * Reads `workers.startConcurrency`: how many workers of both pools may be
+ * starting at once.
+ *
+ * @returns the count, at least 1; 1 with no configuration
+ */
+function startConcurrency() {
+  log.debug("Entering startConcurrency().");
+  let n = 1;
+  try {
+    n = parseInt(config.value('workers.startConcurrency'), 10);
+  } catch (e) {
+    log.debug("Caught in startConcurrency(): " + ((e && e.message) || e));
+    // No configuration at all (an in-process test): one at a time, which is
+    // the default and the conservative answer.
+    n = 1;
+  }
+  log.debug("Leaving startConcurrency().");
+  return n >= 1 ? n : 1;
+}
+
+// The forks still waiting, as `{ pool, slot }`, for replacementFor()'s count.
+function queuedForks() {
+  log.debug("Entering queuedForks().");
+  log.debug("Leaving queuedForks().");
+  return forkQueue.map(function (one) {
+    return { pool: one.pool, slot: one.slot, queued: true };
+  });
+}
+
+/**
+ * Queues one worker's fork behind the start gate.
+ *
+ * @param pool - the pool name; the protocol pool unless `SURFACE_POOL`
+ * @param slot - the worker's position in its pool
+ * @returns a promise of the worker's entry once it is ready, or null when
+ *   it failed to start or was never forked
+ */
+function queueFork(pool, slot) {
+  log.debug("Entering queueFork(). pool=" + pool + " slot=" + slot);
+  const which = pool === SURFACE_POOL ? SURFACE_POOL : PROTOCOL_POOL;
+  const settled = new Promise(function (resolve) {
+    forkQueue.push({ pool: which, slot: slot, resolve: resolve });
+  });
+  pumpForks();
+  log.debug("Leaving queueFork().");
+  return settled;
+}
+
+// Forks from the front of the queue while fewer than startConcurrency() are
+// starting. Called when a fork is queued and whenever one settles.
+function pumpForks() {
+  log.debug("Entering pumpForks().");
+  while (forkQueue.length && startsInFlight < startConcurrency()) {
+    const next = forkQueue.shift();
+    if (stopped || givenUp[next.pool]) {
+      log.info('request_pool: a queued ' + next.pool + ' worker (slot ' +
+               next.slot + ') is not forked: ' +
+               (stopped ? 'the pool is stopping'
+                        : 'the ' + next.pool + ' pool has given up on its ' +
+                          'workers') + '.');
+      next.resolve(null);
+      continue;
+    }
+    let entry;
+    try {
+      entry = fork(next.pool, next.slot);
+    } catch (e) {
+      log.error(errorCodes.tag('STS-WORKER-0045') +
+                'request_pool: could not fork a ' + next.pool + ' worker ' +
+                '(slot ' + next.slot + '): ' + ((e && e.message) || e) +
+                '. Moving on to the next one queued.');
+      next.resolve(null);
+      continue;
+    }
+    startsInFlight++;
+    log.info('request_pool: ' + next.pool + ' worker ' + entry.pid +
+             ' (slot ' + next.slot + ') forked; ' + startsInFlight +
+             ' starting, ' + forkQueue.length + ' queued behind it.');
+    entry.settled.then(function (settled) {
+      startsInFlight = Math.max(0, startsInFlight - 1);
+      next.resolve(settled);
+      pumpForks();
+    });
+  }
+  log.debug("Leaving pumpForks().");
+}
+
+// Drops every queued fork, for stop() and reset().
+function dropQueuedForks() {
+  log.debug("Entering dropQueuedForks().");
+  const dropped = forkQueue;
+  forkQueue = [];
+  dropped.forEach(function (one) {
+    one.resolve(null);
+  });
+  log.debug("Leaving dropQueuedForks(). " + dropped.length + " dropped.");
 }
 
 // The ready workers of ONE pool — the protocol pool when none is named. Every
@@ -3432,15 +3944,44 @@ function surfacePoolProblem() {
 // service, seeds a directory and generates a realm's keys), so forking one on
 // the first request would make that request wait for all of it. The front
 // process is not answering yet at this point, so the cost is paid where nobody
-// is waiting.
+// is waiting — for each pool's first worker, since #342; the rest start one
+// at a time behind the listener (see the start gate above queueFork()).
 // ---------------------------------------------------------------------------
+// THE ORDER THE INITIAL WORKERS ARE QUEUED IN (#342): interleaved, protocol 0,
+// surfaces 0, protocol 1, and so on, so that each pool has its first worker as
+// early as possible. start() lists them pool by pool, protocol first, and a
+// stable sort by slot interleaves them. Exported for
+// tests/request_worker_replacement.js.
 /**
- * Forks both pools and waits for their workers to be ready; called once from
- * `server.js` before the listener binds.
+ * Sorts start()'s list of initial workers, in place, into the order they
+ * are queued.
+ *
+ * @param forks - `[{ pool, slot }]`, pool by pool, the protocol pool first
+ * @returns the same array, interleaved by slot
+ */
+function startOrder(forks) {
+  log.debug("Entering startOrder().");
+  forks.sort(function (a, b) {
+    return a.slot - b.slot;
+  });
+  log.debug("Leaving startOrder().");
+  return forks;
+}
+
+// **SINCE #342 (2026-09-29) THE WORKERS ARE FORKED ONE AT A TIME** through
+// the start gate above queueFork(), and the promise resolves once the first
+// worker of each pool has settled rather than when all have.
+/**
+ * Queues both pools' workers behind the start gate and waits for the first
+ * worker of each pool to settle; called once from `server.js` before the
+ * listener binds.
  *
  * Rejects when anything is dispatched while the store does not coordinate,
  * or when the surface pool's configuration is fatal.
- * @returns a promise of `{ started, wanted, pools }`
+ * @returns a promise of `{ started, wanted, pending, all, pools }`:
+ *   `started` workers ready so far, `pending` of the initial set not yet
+ *   settled, and `all` a promise of `{ started, wanted, pools }` once every
+ *   one of the initial set has
  */
 function start() {
   log.debug('Entering start().');
@@ -3563,16 +4104,19 @@ function start() {
   // rows are sealed, and development mode has no KEK to seal them with. So one
   // is generated here and handed to every worker with everything else.
   //
-  // In PRODUCT mode this does nothing — `useEphemeralKek()` refuses, because
-  // there the operator's KEK is already in place and the store is meant to
-  // outlive the process. See keystore.js.
+  // In PRODUCT mode — anywhere the keystore persists — nothing is offered: the
+  // operator's KEK is already in place and the store is meant to outlive the
+  // process. See keystore.js.
   // ---------------------------------------------------------------------
   // (THE OID4VCI REQUEST-ENCRYPTION KEY WAS GENERATED HERE until 2026-09-12 —
   // one key for the whole process, handed to every worker in the environment,
   // shared by every trust realm. It is a member of each realm's key set now, so
   // the key channel installed below carries it per realm and the keystore
   // writes it down in product mode; nothing about it happens in this file.)
-  if (!keystore.hasEphemeralKek()) {
+  // NOT WHERE THE KEYSTORE PERSISTS (#357): `useEphemeralKek()` refuses there,
+  // and the refusal is an ERROR (STS-KEYS-0038) that every product start logged
+  // for a key nobody needed — the operator's KEK is already in place.
+  if (!keystore.hasEphemeralKek() && !keystore.persists()) {
     const generated = nodeCrypto.randomBytes(32).toString('hex');
     if (keystore.useEphemeralKek(generated)) {
       log.info('request_pool: a per-run key-encryption key was generated, so ' +
@@ -3580,6 +4124,10 @@ function start() {
                'minted survives a restart, which is unchanged.');
     }
   }
+
+  // THE CONTAINER'S OOM-KILL COUNT BEFORE ANY WORKER EXISTS (#341), so that
+  // the first SIGKILL can be told apart. See exitCause().
+  oomSeen = oomCounter();
 
   // THE PARENT'S OWN KEY GENERATION JOINS THE REGISTRY. Installed before the
   // first fork so that a realm generated here on the way up is already in
@@ -3606,6 +4154,14 @@ function start() {
   directory().setConnectionWatcher(function (rows) {
     publishDirectoryConnections(rows);
   });
+  // AND THE SPIFFE LISTENERS (#337): told after every reconcile, which is
+  // after `listen()` binds them — later than this pool's fork.
+  try {
+    spiffe().setBindingsWatcher(publishSpiffeBindings);
+  } catch (e) {
+    log.debug('request_pool: no SPIFFE listeners to watch: ' +
+              ((e && e.message) || e));
+  }
   log.info('request_pool: starting ' + wanted + ' request worker(s) — ' +
            wantedByPool[PROTOCOL_POOL] + ' for the protocols and ' +
            wantedByPool[SURFACE_POOL] + ' for the hosted surfaces (' +
@@ -3614,11 +4170,28 @@ function start() {
            'loads the whole protocol stack and binds no protocol port.');
   const forks = [];
   POOLS.forEach(function (pool) {
+    // The pool's initial size, for Monitoring → Worker Pools (#327).
+    history[pool].initial = wantedByPool[pool];
+    history[pool].startedAt = Date.now();
     for (let i = 0; i < wantedByPool[pool]; i++) {
-      forks.push(fork(pool, i).settled);
+      forks.push({ pool: pool, slot: i });
     }
   });
-  starting = Promise.all(forks).then(function (settled) {
+  startOrder(forks);
+  forks.forEach(function (one) {
+    one.settled = queueFork(one.pool, one.slot).then(function (entry) {
+      one.done = true;
+      return entry;
+    });
+  });
+  // THE LISTENER WAITS FOR EACH POOL'S FIRST WORKER ONLY, and the rest come
+  // up behind it; `pending` is how many of the initial set had not settled.
+  const firsts = forks.filter(function (one) {
+    return one.slot === 0;
+  });
+  const all = Promise.all(forks.map(function (one) {
+    return one.settled;
+  })).then(function (settled) {
     const up = settled.filter(Boolean).length;
     const upByPool = {};
     POOLS.forEach(function (pool) {
@@ -3646,6 +4219,24 @@ function start() {
     return { started: up, wanted: wanted,
              pools: POOLS.map(function (pool) {
                return { pool: pool, started: upByPool[pool],
+                        wanted: wantedByPool[pool] };
+             }) };
+  });
+  // What server.js is told once each pool's first worker has settled: how
+  // many are serving so far and how many of the initial set are still to
+  // come. `all` is the whole initial set's outcome, as start() used to
+  // report it, for a caller that wants to wait for it (the tests do).
+  starting = Promise.all(firsts.map(function (one) {
+    return one.settled;
+  })).then(function () {
+    const pending = forks.filter(function (one) {
+      return !one.done;
+    }).length;
+    return { started: readyWorkers(PROTOCOL_POOL).length +
+                      readyWorkers(SURFACE_POOL).length,
+             wanted: wanted, pending: pending, all: all,
+             pools: POOLS.map(function (pool) {
+               return { pool: pool, started: readyWorkers(pool).length,
                         wanted: wantedByPool[pool] };
              }) };
   });
@@ -4276,6 +4867,8 @@ function proxy(entry, req, res, atGeneration, ticket) {
             req.url);
   const wrote = mayWrite(req.method);
   entry.inFlight++;
+  // For the pool's response time (#327); see noteAnswered().
+  const dispatchedAt = Date.now();
   let done = false;
   // WHETHER THE WORKER EVER GOT AS FAR AS AN ANSWER. It decides which of the
   // two ticket endings this request has — see ticketAbandoned(), which is the
@@ -4290,6 +4883,9 @@ function proxy(entry, req, res, atGeneration, ticket) {
       done = true;
       entry.inFlight--;
       entry.served++;
+      if (!lost) {
+        noteAnswered(entry.pool, Date.now() - dispatchedAt);
+      }
       // THE TICKET IS TAKEN AT DISPATCH NOW, NOT HERE — see dispatchTicket().
       // Taking it on `finish` left a window the client could drive straight
       // through: `finish` fires after the response has been flushed, so a
@@ -5149,7 +5745,9 @@ function sendOperation(entry, kind, args, ticket) {
   const id = nextOperationId++;
   const promise = new Promise(function (resolve, reject) {
     pendingOperations.set(id, { resolve: resolve, reject: reject, kind: kind,
-                                pid: entry.pid, ticket: ticket });
+                                pid: entry.pid, ticket: ticket,
+                                // For the pool's response time (#327).
+                                sentAt: Date.now() });
   });
   entry.inFlight++;
   try {
@@ -5185,6 +5783,7 @@ function receiveOperation(entry, message) {
   pendingOperations.delete(message.id);
   entry.inFlight--;
   entry.served++;
+  noteAnswered(entry.pool, Date.now() - (pending.sentAt || Date.now()));
   // ---------------------------------------------------------------------
   // THE TICKET, AND THE TWO ENDINGS ARE THE ONES proxy() HAS.
   //
@@ -5259,6 +5858,8 @@ function failOperations(entry) {
 function stop(timeoutMs) {
   log.debug('Entering stop().');
   stopped = true;
+  // A worker still waiting behind the start gate is never forked (#342).
+  dropQueuedForks();
   const limit = timeoutMs === undefined ? 8000 : timeoutMs;
   const going = workers.slice();
   if (!going.length) {
@@ -5278,7 +5879,7 @@ function stop(timeoutMs) {
           log.warn(errorCodes.tag('STS-WORKER-0031') +
                    'request_pool: worker ' + entry.pid + ' did not finish ' +
                    'within ' + limit + 'ms and was killed.');
-          entry.child.kill('SIGKILL');
+          entry.child.kill();
         }
       });
       done();
@@ -5339,6 +5940,102 @@ function removeSocketDir() {
   log.debug("Leaving removeSocketDir().");
 }
 
+// ---------------------------------------------------------------------------
+// EACH WORKER'S OWN MEMORY AND CPU TIME, ASKED FOR (#327, #329).
+//
+// Monitoring → Worker Pools and Node Health ask for what only a worker can
+// read about itself through the channel every other exchange here uses: one
+// `{ poolStatus }` message to each ready worker, answered with its
+// `process.memoryUsage()` and `process.cpuUsage()`, the answers awaited for at
+// most `timeoutMs`. (Until #363 the answer also carried each worker's own
+// post-quantum pool, which is gone.) A worker that does not answer in time is
+// reported as not having answered, and the page is drawn without it rather
+// than waiting — a worker busy for seconds is exactly the one whose numbers
+// would say why, and a page that hung on it would say nothing.
+//
+// NOT SIGUSR2, which `request_worker.ts` also answers with a status: a signal
+// to a worker that has not installed its handler yet ends it, and its reply
+// overwrites `served` with the worker's own count.
+// ---------------------------------------------------------------------------
+let nextPoolStatusId = 1;
+const poolStatusWaiters = new Map();
+
+function receivePoolStatus(entry, message) {
+  log.debug("Entering receivePoolStatus(). pid=" + entry.pid);
+  const waiter = poolStatusWaiters.get(message.id);
+  if (!waiter || waiter.answers[entry.pid]) {
+    log.debug("Leaving receivePoolStatus(). Nobody is waiting.");
+    return;
+  }
+  // `memory`, `cpu` and `uptimeS` for Monitoring → Node Health (#329): the
+  // worker's own `process.memoryUsage()` and `process.cpuUsage()`.
+  waiter.answers[entry.pid] = { error: message.error || null,
+                                memory: message.memory || null,
+                                cpu: message.cpu || null,
+                                uptimeS: message.uptimeS === undefined
+                                  ? null : message.uptimeS };
+  waiter.left--;
+  if (waiter.left <= 0) {
+    waiter.finish();
+  }
+  log.debug("Leaving receivePoolStatus().");
+}
+
+/**
+ * Asks every ready request worker for its own memory and CPU time.
+ *
+ * @param timeoutMs - how long to wait for the answers; 1000 when omitted
+ * @returns a promise of `{ [pid]: { error, memory, cpu, uptimeS } }`; a
+ *   worker that did not answer in time is absent
+ */
+function askWorkerPoolStatus(timeoutMs) {
+  log.debug("Entering askWorkerPoolStatus().");
+  const asked = workers.filter(function (one) {
+    return one.ready && one.child && one.child.connected;
+  });
+  if (!asked.length) {
+    log.debug("Leaving askWorkerPoolStatus(). No worker to ask.");
+    return Promise.resolve({});
+  }
+  const id = nextPoolStatusId++;
+  const limit = timeoutMs === undefined ? 1000 : timeoutMs;
+  log.debug("Leaving askWorkerPoolStatus(). Asked " + asked.length + ".");
+  return new Promise(function (resolve) {
+    const waiter = { answers: {}, left: asked.length,
+                     finish: function () {} };
+    // Unreferenced, as every timer of this pool that is not a drain is: it
+    // may not hold the process open for a page nobody is waiting on.
+    const timer = setTimeout(function () {
+      waiter.finish();
+    }, limit);
+    if (timer.unref) {
+      timer.unref();
+    }
+    waiter.finish = function () {
+      log.debug("Entering finish().");
+      clearTimeout(timer);
+      poolStatusWaiters.delete(id);
+      resolve(waiter.answers);
+      log.debug("Leaving finish().");
+    };
+    poolStatusWaiters.set(id, waiter);
+    asked.forEach(function (one) {
+      try {
+        one.child.send({ poolStatus: true, id: id });
+      } catch (e) {
+        log.debug("Caught in askWorkerPoolStatus(): " +
+                  ((e && e.message) || e));
+        // A channel that closed between the filter and the send: that
+        // worker is going, and is simply not waited for.
+        waiter.left--;
+      }
+    });
+    if (waiter.left <= 0) {
+      waiter.finish();
+    }
+  });
+}
+
 // What the pool is doing, for `/admin` and for the tests. A copy, so a reader
 // cannot reach into the live entries.
 /**
@@ -5360,11 +6057,26 @@ function stats() {
     inProcess: readyWorkers(PROTOCOL_POOL).length === 0,
     gaveUp: givenUp[PROTOCOL_POOL],
     pools: POOLS.map(function (pool) {
+      const ready = readyWorkers(pool);
+      const busy = ready.filter(function (one) {
+        return one.inFlight > 0;
+      }).length;
+      const h = history[pool];
       return { pool: pool, configured: size(pool),
-               ready: readyWorkers(pool).length, gaveUp: givenUp[pool],
+               running: workers.filter(function (one) {
+                 return (one.pool || PROTOCOL_POOL) === pool;
+               }).length,
+               ready: ready.length, gaveUp: givenUp[pool],
                replaced: replaced[pool],
                affinities: affinities[pool].size,
-               prefixes: pool === SURFACE_POOL ? surfacePrefixes() : [] };
+               prefixes: pool === SURFACE_POOL ? surfacePrefixes() : [],
+               // #327: busy and free among the ready workers, and the
+               // pool's history (see `history`).
+               busy: busy, free: ready.length - busy,
+               history: Object.assign({}, h),
+               averageMs: h.answered ? Math.round(h.answerMs / h.answered)
+                                     : null,
+               recentAverageMs: h.answered ? Math.round(h.recentMs) : null };
     }),
     readYourWrite: readYourWrite(),
     generation: generation,
@@ -5374,6 +6086,17 @@ function stats() {
     // Requests sent again because none of their bytes had reached the worker
     // when its connection failed (#77, STS-WORKER-0042). See proxy().
     replayed: replayCount,
+    // THE START GATE (#342): how many workers may start at once, how many
+    // are starting, and how many wait behind them.
+    starts: { concurrency: startConcurrency(), starting: startsInFlight,
+              queued: forkQueue.length },
+    // EVERY PROCESS'S HEAP BUDGET AND THE LATEST EXITS (#341): the limit a
+    // worker is forked with and where it came from, the container's
+    // OOM-kill count when last read, and each exit with its cause.
+    memory: { heapLimitMb: processMemory.budget().mb,
+              source: processMemory.budget().source,
+              oomKills: oomSeen,
+              exits: recentExits.slice() },
     // THE BARRIER'S OWN BOOKKEEPING, reported because the failure it can have
     // is invisible from outside: a ticket nothing will ever clear makes this
     // service answer correctly and 2,000ms slower per read, for ever. See
@@ -5392,7 +6115,8 @@ function stats() {
       return { pid: one.pid, pool: one.pool, ready: one.ready,
                inFlight: one.inFlight,
                served: one.served, socket: one.socket,
-               generation: one.generation };
+               generation: one.generation, slot: one.slot,
+               startedAt: one.startedAt, retiring: !!one.retiring };
     })
   };
 }
@@ -5409,10 +6133,22 @@ function reset() {
     givenUp[pool] = false;
     quickExits[pool] = 0;
     replaced[pool] = 0;
+    history[pool] = freshHistory();
   });
   workerModule = WORKER_MODULE;
   stopped = false;
   starting = null;
+  // And the start gate (#342): nothing queued, nothing counted as starting.
+  dropQueuedForks();
+  startsInFlight = 0;
+  // And the memory bookkeeping (#341): the budget is read again, the real
+  // OOM-kill counter is back, and no exit is remembered.
+  processMemory.resetBudget();
+  recentExits = [];
+  oomSeen = null;
+  oomCounter = function () {
+    return processMemory.oomKillCount();
+  };
   // AND THE BARRIER, because it is process-wide module state exactly as the
   // generation is: a test that armed a ticket and left it would make every
   // later file in the same run wait the full bound.
@@ -5445,6 +6181,9 @@ module.exports = {
   start: start,
   stop: stop,
   stats: stats,
+  // Monitoring → Worker Pools (#327): each request worker's own
+  // post-quantum pool, asked for over the channel.
+  askWorkerPoolStatus: askWorkerPoolStatus,
   reset: reset,
   middleware: middleware,
   setServerCertificate: setServerCertificate,
@@ -5542,6 +6281,14 @@ module.exports = {
   replacementFor: replacementFor,
   useWorkerModule: useWorkerModule,
   fork: fork,
+  // THE START GATE (#342), for the same file: a fork queued behind it, as
+  // start() and a replacement queue theirs.
+  queueFork: queueFork,
+  startOrder: startOrder,
+  // WHY A WORKER DIED (#341), for tests/process_memory.js: the decision, and
+  // the OOM-kill counter reap() reads.
+  exitCause: exitCause,
+  useOomCounter: useOomCounter,
   workerTable: workerTable,
   PEER_AUTHORIZED_HEADER: PEER_AUTHORIZED_HEADER
 };

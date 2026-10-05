@@ -1,8 +1,8 @@
 # SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: BUSL-1.1
 
 variable "aws_region" {
-  description = "The one region this project deploys to."
+  description = "The region of a single-cell environment. A cell's is `cells[cell].region` (cells.tf, #98)."
   type        = string
   default     = "us-west-2"
 }
@@ -10,7 +10,7 @@ variable "aws_region" {
 variable "name" {
   description = "The project prefix. Must match the foundation stack's `name`."
   type        = string
-  default     = "mock-sts"
+  default     = "iya-sts"
 }
 
 variable "environment" {
@@ -67,14 +67,18 @@ variable "pep_image_tag" {
 variable "ldap_max_entries" {
   description = <<-EOT
     The directory's entry ceiling (LDAP_MAX_ENTRIES) on every node. The service
-    default is 2000; the three bulk-load jobs leave about 15,000 entries in the
-    default realm on every run, and an environment is reused run after run, so
-    reset-environment.js resets the override they leave back to THIS value
-    rather than to one that refuses every later create. Entries are held in
-    each node's memory: raise the task memory with it.
+    default is 2000. The three bulk-load jobs add about 15,000 entries to the
+    default realm on every run (raising `ldap.maxEntries` for themselves while
+    they do), and an environment is reused run after run, so
+    reset-environment.js deletes the previous runs' bulk-load entries and then
+    resets that override back to THIS value (#344). 50,000 holds one run's bulk
+    loads beside the seeded population with room to spare. It was 200,000
+    until 2026-09-29, when nothing was deleted between runs. Every entry is
+    held in the memory of every node process (1 + request + surface workers):
+    raise task_memory with it.
   EOT
   type        = number
-  default     = 200000
+  default     = 50000
 }
 
 variable "applications_max" {
@@ -129,13 +133,25 @@ variable "node_count" {
 }
 
 variable "task_cpu" {
-  description = "Fargate CPU units per node."
+  description = <<-EOT
+    Fargate CPU units per node. It bounds the worker counts: do not run more
+    than task_cpu / 1024 + 1 node processes (1 + workers_request_count +
+    workers_surface_count) — a process beyond that adds a whole copy of the
+    service's memory and no parallelism (#340).
+  EOT
   type        = number
   default     = 1024
 }
 
 variable "task_memory" {
-  description = "Fargate memory (MiB) per node."
+  description = <<-EOT
+    Fargate memory (MiB) per node. Size it as (node processes x one process's
+    working set) + headroom, where node processes = 1 + workers_request_count
+    + workers_surface_count: every process holds the whole directory and every
+    store (#339), so memory grows with the process count, not the load. The
+    task is OOM-killed past it, and a restart — every process restoring from
+    postgres at once — is the peak (#340).
+  EOT
   type        = number
   default     = 3072
 }
@@ -174,16 +190,104 @@ variable "delete_automated_backups" {
   default     = true
 }
 
+# ---------------------------------------------------------------------------
+# RESTORING A SINGLE-REGION ENVIRONMENT FROM A SNAPSHOT (2026-09-30).
+#
+# A cell restores through its `cells[cell].db_snapshot_identifier` and the
+# global stack's carry-over (conversion.tf, global/secrets.tf); a single-cell
+# environment had no way to at all. These two are its way, and they go
+# TOGETHER: every sealed row in the snapshot opens only under the
+# key-encryption key it was written with, so a restore without the carry-over
+# is a database the nodes cannot read (and refuse to start on).
+#
+# PASSED ON THE ONE APPLY THAT RESTORES, NOT WRITTEN INTO envs/<env>.tfvars —
+# terraform-local.sh forwards TF_VAR_db_snapshot_identifier and
+# TF_VAR_carryover_secret from its environment. Written into the env file,
+# every fresh rebuild would restore a snapshot that stopped being current the
+# day it was taken, and fail the day it was deleted (the cells file's
+# argument, deploy/aws/CLAUDE.md). A later apply that names neither keeps
+# both: the instance ignores `snapshot_identifier` after creation (rds.tf),
+# and the carried values are read once (secrets.tf).
+# ---------------------------------------------------------------------------
+variable "db_snapshot_identifier" {
+  description = <<-EOT
+    A single-cell environment's database is RESTORED from this RDS snapshot
+    rather than created empty. It must be under the project KMS key (the
+    instance's). Ignored in a cell, whose own `db_snapshot_identifier` does
+    this. Name `carryover_secret` with it.
+  EOT
+  type        = string
+  default     = ""
+}
+
+variable "carryover_secret" {
+  description = <<-EOT
+    A single-cell environment takes `kek`, `admin-api-client-secret`,
+    `bootstrap-admin-password` and `krb5-service-password` from this JSON
+    secret (deploy/aws/convert-to-cells.sh --carry-secrets writes one) in
+    place of generated ones, for a database restored from a snapshot those
+    values were written under. Read on the first apply and kept. Ignored in a
+    cell, whose shared secrets are the global stack's.
+  EOT
+  type        = string
+  default     = ""
+}
+
 variable "vpc_cidr" {
-  description = "The environment's own VPC. Clear of the account's existing 10.0.0.0/24 and 172.31.0.0/16."
+  description = "The environment's own VPC. Clear of the account's existing 10.0.0.0/24 and 172.31.0.0/16. A cell's is `cells[cell].vpc_cidr` (#98)."
   type        = string
   default     = "10.51.0.0/16"
 }
 
 variable "extra_environment" {
-  description = "Additional environment variables for every mock-sts container."
+  description = "Additional environment variables for every iya-sts container."
   type        = map(string)
   default     = {}
+}
+
+variable "mail_ses_domain" {
+  description = <<-EOT
+    A domain to send mail as through Amazon SES (#311). EMPTY (the default)
+    leaves `mail.transport` at the mode's default, which in product mode sends
+    nothing. SET, it must be `public_hostname` or a name under it: the
+    environment creates the SES identity with Easy DKIM and its three CNAMEs
+    (mail.tf), lets the task role send as it, and sets `mail.transport=ses`.
+    The image must be built with `@aws-sdk/client-sesv2` in STS_CLOUD_SDKS, or
+    a product node refuses to start (STS-MAIL-0002).
+  EOT
+  type        = string
+  default     = ""
+}
+
+variable "spiffe_workload_port" {
+  description = "The default realm's SPIFFE Workload API port, the same on the load balancer and the node (spiffe.workloadPort; spiffe_default.tf)."
+  type        = number
+  default     = 8092
+}
+
+variable "spiffe_server_port" {
+  description = "The default realm's SPIRE Server API port, the same on the load balancer and the node (spiffe.serverPort; spiffe_default.tf)."
+  type        = number
+  default     = 8181
+}
+
+variable "mail_allowed_recipients" {
+  description = <<-EOT
+    Where set, the only recipient addresses the task role may send to through
+    SES (IAM `ses:Recipients`, StringLike patterns such as `*@iyasec.io`).
+    Empty (the default) restricts nothing. Mail to anybody else is refused by
+    IAM before SES counts or delivers it, and dead-letters in the service's
+    outbox — which is what keeps a test suite's invented addresses from using
+    the SES quota or bouncing (#311).
+  EOT
+  type        = list(string)
+  default     = []
+}
+
+variable "mail_from" {
+  description = "The From address when mail_ses_domain is set. Empty means `no-reply@<mail_ses_domain>`."
+  type        = string
+  default     = ""
 }
 
 variable "tags" {
@@ -191,7 +295,7 @@ variable "tags" {
   type        = map(string)
   default = {
     ManagedBy = "terraform"
-    Stack     = "mock-sts-environment"
+    Stack     = "iya-sts-environment"
     Lifecycle = "destroy-after-test-run"
   }
 }
@@ -276,14 +380,67 @@ variable "pki_listener_port" {
   default     = 80
 }
 
+# THE MAIN PORT'S CONNECTION AND SESSION POOLING (#406). Each is the setting
+# of the same name, so an environment changes it here rather than through
+# `extra_environment`; the defaults are the service's own.
+variable "http_keep_alive_timeout_s" {
+  description = <<-EOT
+    STS_HTTP_KEEP_ALIVE_TIMEOUT_S (http.keepAliveTimeoutS): how long every
+    HTTP listener keeps an idle HTTP/1.1 connection, unless a listener sets
+    its own on Server configuration -> Listeners. Keep it under the NLB's TCP
+    idle timeout (350 s).
+  EOT
+  type        = number
+  default     = 60
+}
+
+variable "tls_session_timeout_s" {
+  description = <<-EOT
+    STS_TLS_SESSION_TIMEOUT_S (tls.sessionTimeoutS): how long a TLS session
+    may be resumed on every TLS listener, unless a listener sets its own.
+  EOT
+  type        = number
+  default     = 60
+}
+
+variable "tls_main_port_shared_tickets" {
+  description = <<-EOT
+    STS_TLS_MAIN_PORT_SHARED_TICKETS (tls.mainPortSharedTickets): the main port
+    seals its session tickets under the key every node shares, so a session
+    resumes on whichever node the NLB picks.
+  EOT
+  type        = bool
+  default     = true
+}
+
+variable "tls_resumed_chain_wait_ms" {
+  description = <<-EOT
+    STS_TLS_RESUMED_CHAIN_WAIT_MS (tls.resumedChainWaitMs): how long a request
+    on a session resumed from another node waits for its client-certificate
+    chain to replicate.
+  EOT
+  type        = number
+  default     = 2000
+}
+
 variable "workers_request_count" {
-  description = "STS_WORKERS_REQUEST_COUNT on every node: request workers running the whole service. 0 is off."
+  description = <<-EOT
+    STS_WORKERS_REQUEST_COUNT on every node: request workers running the whole
+    service. 0 is off. Each is a whole copy of the service in memory, so keep
+    1 + request + surface within task_cpu / 1024 + 1 and size task_memory to
+    it (#340).
+  EOT
   type        = number
   default     = 0
 }
 
 variable "workers_surface_count" {
-  description = "STS_WORKERS_SURFACE_COUNT on every node: workers running only /admin and /portal. 0 is off."
+  description = <<-EOT
+    STS_WORKERS_SURFACE_COUNT on every node: workers running only /admin and
+    /portal. 0 is off, and those paths then go to the request workers. Each is
+    a whole copy of the service in memory like a request worker, and counts
+    against the same bound (#340).
+  EOT
   type        = number
   default     = 0
 }
@@ -295,7 +452,12 @@ variable "workers_dispatch" {
 }
 
 variable "workers_read_your_write" {
-  description = "STS_WORKERS_READ_YOUR_WRITE on every node. Required by the surface pool."
+  description = <<-EOT
+    STS_WORKERS_READ_YOUR_WRITE on every node. Required by the surface pool
+    (the service refuses to start without it, STS-WORKER-0038), and needed
+    with more than one request worker too, where a caller that writes through
+    one worker and reads back through another must see its write.
+  EOT
   type        = bool
   default     = false
 }
@@ -353,3 +515,30 @@ variable "risk_upload_volume_iops" {
     error_message = "risk_upload_volume_iops is 3000 to 16000 (gp3's range)."
   }
 }
+
+# A TRUST REALM'S OWN LOAD BALANCER (#99): realm_listeners.tf.
+variable "realm_listeners" {
+  description = <<-EOT
+    The trust realms that have a front-end listener of their own, each behind
+    a network load balancer of its own (realm_listeners.tf, #99): the realm
+    id, the container port the service binds for it (the realm's
+    listener.port; not one of the published ports), the public host name, and
+    the Route 53 zone to write that name in ("" to write none). The realm's
+    own settings are set through /admin-api; the realm_listener_settings
+    output prints the calls.
+  EOT
+  type = list(object({
+    realm    = string
+    port     = number
+    hostname = string
+    zone     = string
+  }))
+  default = []
+}
+
+variable "realm_path_segment" {
+  description = "realms.pathSegment: the path segment realms are found under, for a realm listener's health check."
+  type        = string
+  default     = "realm"
+}
+

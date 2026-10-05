@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -102,6 +102,9 @@
 // ---------------------------------------------------------------------------
 
 import crypto = require('crypto');
+// WHICH CELL MINTED AN ARTIFACT (#98 D10): a keyed tag appended to what
+// this module mints and read where it is presented. A leaf library.
+import cellLocator = require('../common/cell_locator');
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
 import config = require('../common/config');
@@ -133,8 +136,11 @@ const REFERENCE_BYTES = 32;
 const DEFAULT_AUTHORIZATION_SERVER = 'default';
 
 // request_uri -> the pushed request. See the header for the shape.
+// `expiresAt` (#333): the record's own expiry — see common/realms.js.
 const pushedRequests = realms.map({ persist: 'oauth2.pushedRequests',
-                                    retain: 'age' });
+                                    retain: 'age',
+                                    expiresAt: realms.expiryField('expiresAt',
+                                                                  1) });
 
 /**
  * The store of RFC 9126 pushed authorization requests and the request_uri each
@@ -358,8 +364,11 @@ class PushedRequests {
         'forgotten to make room.');
     }
     const seconds = this.lifetimeS();
-    const requestUri = REQUEST_URI_PREFIX +
-      crypto.randomBytes(REFERENCE_BYTES).toString('base64url');
+    // The reference is stamped with the minting cell (#98 D10): the
+    // browser that carries it may reach another cell, whose edge relays the
+    // authorization request here.
+    const requestUri = REQUEST_URI_PREFIX + cellLocator.stamp(
+      crypto.randomBytes(REFERENCE_BYTES).toString('base64url'));
     const params = Object.assign({}, options.params || {});
     delete params.request;
     delete params.request_uri;
@@ -635,6 +644,90 @@ class PushedRequests {
 }
 
 // ---------------------------------------------------------------------------
+// A PUSHED REQUEST HANDED TO ANOTHER CELL (#98 D9). A flow that restarts at
+// its person's home cell starts from the authorization request, and one that
+// names a request_uri names a record THIS cell holds — so the record is sent
+// home first, under the same reference, and the browser pinned there finds it.
+// The reference keeps this cell's tag, which is harmless: a pinned browser's
+// affinity wins over an artifact's tag on a browser route
+// (`common/cell_placement.ts`), and the record is only ever read by the cell
+// the browser is pinned to.
+//
+// STATIC, because the store is this module's, not an instance's, and the
+// operation is registered once at load (`common/cell_channel.ts` keeps a map;
+// registering binds and dials nothing).
+// ---------------------------------------------------------------------------
+/**
+ * Pushed requests handed between the cells of a service deployed as cells.
+ */
+class PushedRequestHandover {
+  /**
+   * Sends a pushed request this cell holds to another cell.
+   *
+   * @param realmId - the realm
+   * @param requestUri - the reference
+   * @param cellId - the receiving cell
+   * @returns a promise of true when it was sent, false when not held here
+   */
+  static handOver(realmId: string, requestUri: string,
+                  cellId: string): Promise<boolean> {
+    helpers.log.debug("Entering PushedRequestHandover.handOver().");
+    const realm = realms.get(realmId) || realms.get(realms.DEFAULT_ID);
+    let record = null;
+    realms.run(realm, function () {
+      record = pushedRequests.get(String(requestUri));
+    });
+    if (!record) {
+      helpers.log.debug("Leaving PushedRequestHandover.handOver(). None.");
+      return Promise.resolve(false);
+    }
+    helpers.log.debug("Leaving PushedRequestHandover.handOver().");
+    return require('../common/cell_channel').call(cellId,
+      'adopt-pushed-request', { realm: realmId,
+                                requestUri: String(requestUri),
+                                record: record })
+      .then(function () {
+        return true;
+      });
+  }
+
+  /**
+   * Takes a pushed request another cell handed over.
+   *
+   * @param body - `{ realm, requestUri, record }`
+   * @returns `{ adopted: true }`
+   * @throws an Error for a malformed hand-over or an unknown realm
+   */
+  static adopt(body: any): { adopted: boolean } {
+    helpers.log.debug("Entering PushedRequestHandover.adopt().");
+    const uri = String((body && body.requestUri) || '');
+    if (uri.indexOf(REQUEST_URI_PREFIX) !== 0 || !body.record ||
+        typeof body.record !== 'object') {
+      helpers.log.debug("Leaving PushedRequestHandover.adopt(). Malformed.");
+      throw new Error('not a pushed authorization request');
+    }
+    const realm = realms.get(String(body.realm || '')) ||
+      (String(body.realm || '') ? null : realms.get(realms.DEFAULT_ID));
+    if (!realm) {
+      helpers.log.debug("Leaving PushedRequestHandover.adopt(). No realm.");
+      throw new Error('no such realm');
+    }
+    realms.run(realm, function () {
+      pushedRequests.set(uri, body.record);
+    });
+    helpers.log.info('par: a pushed authorization request was handed over ' +
+                     'from another cell, for a flow restarting here.');
+    helpers.log.debug("Leaving PushedRequestHandover.adopt().");
+    return { adopted: true };
+  }
+}
+
+require('../common/cell_channel').registerOp('adopt-pushed-request',
+  function (body: any) {
+    return PushedRequestHandover.adopt(body);
+  });
+
+// ---------------------------------------------------------------------------
 // THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds no
 // instance of its own: `common/protocol_stack.ts` builds one and calls
 // `installInstance()`. The exports below are FACADES that forward to that
@@ -675,6 +768,8 @@ export = {
    */
   instanceOrigin: (): string => slot.origin(),
   REQUEST_URI_PREFIX: PushedRequests.REQUEST_URI_PREFIX,
+  // Handed between cells (#98 D9).
+  handOver: PushedRequestHandover.handOver,
   isPushedRequestUri: slot.forward('isPushedRequestUri'),
   lifetimeS: slot.forward('lifetimeS'),
   push: slot.forward('push'),

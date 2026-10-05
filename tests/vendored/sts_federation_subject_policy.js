@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 //
 // ===========================================================================
 // WHICH PEOPLE A FEDERATION PARTNER MAY ASSERT, OVER THE NETWORK (#109).
@@ -655,20 +655,17 @@ async function theOtherPolicies() {
   const got = await federatedSignIn(jit, {});
   const own = await spView(jit);
   const spaced = await spView(REL + "~" + jit);
+  // THE SAME IN BOTH MODES SINCE #325 (2026-09-29): product honours the
+  // relationship's fedAutocreateUsers, so jit-namespaced creates the
+  // namespaced entry there too. tests/federation_subject_policy.js 1m and 4a
+  // are the in-process half of the same change.
   await check("jit-namespaced never signs in the existing person of that " +
-              "name" + (isProduct ? ", and product creates nobody"
-                                  : ", and creates " + REL + "~" + jit),
-              async function () {
+              "name, and creates " + REL + "~" + jit, async function () {
     assert.deepStrictEqual(own.entry.mail, [jit + "@" + SP_MAIL]);
     assert.strictEqual(own.links.length, 0);
-    if (isProduct) {
-      assert.strictEqual(got.r.status, 403, squash(got.r.body));
-      assert.strictEqual(spaced.entry, null);
-    } else {
-      assert.strictEqual(got.r.status, 200, squash(got.r.body));
-      assert.ok(spaced.entry, "no namespaced entry");
-      assert.strictEqual(spaced.links.length, 1);
-    }
+    assert.strictEqual(got.r.status, 200, squash(got.r.body));
+    assert.ok(spaced.entry, "no namespaced entry");
+    assert.strictEqual(spaced.links.length, 1);
   });
   await setRel("fedSubjectPolicy", "");
   log.debug("Leaving theOtherPolicies().");

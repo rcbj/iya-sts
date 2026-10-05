@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -274,12 +274,13 @@ function childMain() {
 
     // --- B. the catch-up, for a delete whose consequence did not run here ---
     // The directory reaches account_state through its exports at the moment
-    // of the delete, so replacing the one function stands in for a node that
-    // only ever saw the entry go.
-    const realDeleted = accountState.directoryDeleted;
+    // of the delete — `directoryDeletedMany()`, a batch of one for a single
+    // delete (#351) — so replacing the one function stands in for a node
+    // that only ever saw the entry go.
+    const realDeleted = accountState.directoryDeletedMany;
     const lost = [];
-    accountState.directoryDeleted = function (change) {
-      lost.push(change);
+    accountState.directoryDeletedMany = function (changes) {
+      lost.push.apply(lost, changes);
     };
     const bobId = await scimCreate('adel-bob');
     const bob = browser(port);
@@ -309,8 +310,8 @@ function childMain() {
       accountState.AccountState.defaultDeps(), { later: function (fn) {
         deferred.push(fn);
       } }));
-    accountState.directoryDeleted = function (change) {
-      return held.directoryDeleted(change);
+    accountState.directoryDeletedMany = function (changes) {
+      return held.directoryDeletedMany(changes);
     };
     const carolId = await scimCreate('adel-carol');
     const carolOld = browser(port);
@@ -329,7 +330,7 @@ function childMain() {
          'C1. a person made again under the same name keeps the session ' +
          'they signed in with; only the deleted person\'s was ended',
          before + ' then ' + authn.sessionsOf('adel-carol').length);
-    accountState.directoryDeleted = realDeleted;
+    accountState.directoryDeletedMany = realDeleted;
 
     server.close();
     rp.close();

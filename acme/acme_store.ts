@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -53,33 +53,67 @@ import nodeCrypto = require('crypto');
 import helpers = require('../common/helpers');
 const { log } = helpers;
 import realms = require('../common/realms');
+import config = require('../common/config');
 // The atomic "once" a nonce is spent through across nodes — see
 // `spendNonceOnce()`. A LIBRARY that reaches `persistence.js` lazily.
 import claims = require('../cluster/cluster_claims');
 import InstanceSlot = require('../common/instance_slot');
+// Which cell minted an identifier (#98 D10). A leaf library.
+import cellLocator = require('../common/cell_locator');
 import cacheRegistry = require('../common/cache_registry');
 
 const accounts = realms.map({ persist: 'acme.accounts' });
 // thumbprint -> account id. An account IS its key (section 7.3.1), and a key
 // bound to one account may not be bound to a second (section 7.3.5).
 const accountKeys = realms.map({ persist: 'acme.accountKeys' });
-const orders = realms.map({ persist: 'acme.orders' });
+// `expiresAt` (#333): pruneOrders()'s rule — an order that never became
+// VALID goes a day after its `expires` (an ISO string), with its
+// authorizations; a valid one is kept while its account lists it. An
+// authorization follows the same rule, being deleted only with its order.
+function unlessValid(record: any): number | null {
+  // A hot path (every row a flush writes): no Entering/Leaving pair.
+  if (!record || record.status === 'valid') {
+    return null;
+  }
+  const at = Date.parse(String(record.expires || ''));
+  return isFinite(at) && at > 0 ? at + 86400000 : null;
+}
+const orders = realms.map({ persist: 'acme.orders',
+                            expiresAt: unlessValid });
 const authorizations = realms.map({ persist: 'acme.authorizations',
-                                    retain: 'age' });
+                                    retain: 'age',
+                                    expiresAt: unlessValid });
 const certificates = realms.map({ persist: 'acme.certificates' });
 // RFC 9773 certID -> certificate id.
 const renewals = realms.map({ persist: 'acme.renewalInfo' });
 // The random part of every Replay-Nonce already presented, with its expiry.
-const usedNonces = realms.map({ persist: 'acme.usedNonces', retain: 'age' });
+const usedNonces = realms.map({ persist: 'acme.usedNonces', retain: 'age',
+                                // #333: the value IS the expiry, seconds.
+                                expiresAt: realms.expiryField(null, 1000) });
 
 // A realm holding this many spent nonces refuses to remember more by dropping
 // the ones that have expired first; a nonce is only useful until it expires, so
 // what is dropped can never be presented again anyway.
+//
+// A SETTING SINCE #346 (2026-09-29), `acme.maxSpentNonces`, where it was a
+// literal 100,000. The default came down to 10,000 because the history is
+// resident in every process of every node, per realm (#339). Lowering it does
+// not shorten the replay window — a full history REFUSES, it never forgets a
+// live spend — so what the lower number costs is throughput: a realm answers
+// badNonce past about acme.maxSpentNonces / acme.nonceLifetimeS spends a
+// second (33 at the defaults).
 /**
  * How many spent nonces a realm remembers; past it, expired ones are dropped
  * first and a new spend is refused rather than forgotten.
+ *
+ * @returns the realm's `acme.maxSpentNonces`
  */
-const MAX_USED_NONCES = 100000;
+function maxUsedNonces(): number {
+  log.debug("Entering maxUsedNonces().");
+  const max = Number(config.value('acme.maxSpentNonces'));
+  log.debug("Leaving maxUsedNonces().");
+  return max;
+}
 
 // Described to `/admin/caches` (#74, rule 3ap). The value is the nonce's
 // expiry in seconds. The bound is soft: at it, only expired nonces go.
@@ -93,10 +127,11 @@ const usedNoncesCount = cacheRegistry.register({
   kind: 'replay',
   persisted: true,
   hitMeaning: 'a nonce already spent, so the request was refused',
+  settings: ['acme.nonceLifetimeS', 'acme.maxSpentNonces'],
   maxEntries: function (): number {
-    return MAX_USED_NONCES;
+    return maxUsedNonces();
   },
-  bound: 'Enforced: ' + MAX_USED_NONCES + ' spent nonces per realm. Expired ' +
+  bound: 'Enforced: acme.maxSpentNonces spent nonces per realm. Expired ' +
     'ones are cleared at the bound; a history still full REFUSES the next ' +
     'spend (answered badNonce) rather than forget a live one.',
   lifetime: function (): string {
@@ -129,6 +164,7 @@ interface AcmeStoreDeps {
   nodeCrypto: typeof nodeCrypto;
   log: typeof log;
   claims: typeof claims;
+  cellLocator: typeof cellLocator;
 }
 
 /**
@@ -162,7 +198,8 @@ class AcmeStore {
     return {
       nodeCrypto: nodeCrypto,
       log: log,
-      claims: claims
+      claims: claims,
+      cellLocator: cellLocator
     };
   }
 
@@ -172,11 +209,22 @@ class AcmeStore {
    * @param bytes - how many random bytes; 15 when absent
    * @returns the identifier
    */
+  //
+  // **STAMPED WITH THE CELL THAT MINTED IT (#98 D10).** Every identifier made
+  // here is the last segment of a URL the client POSTs to later — an
+  // account's `kid`, an order, an authorization and its one challenge, a
+  // certificate — and the rows it names are this cell's (`acme.*` is cell
+  // tier). The placement table's ACME rows read the tag off the path at the
+  // edge, and `Acme.placeRequest()` reads it off a `kid`, so a request that
+  // reaches another cell is relayed here before its JWS is looked at. Twelve
+  // base64url characters more (28 or 32 in all), inside `ID_PATTERN`'s 8 to
+  // 64; nothing in a single-cell service.
   newId(bytes) {
-    const { log, nodeCrypto } = this.deps;
+    const { log, nodeCrypto, cellLocator } = this.deps;
     log.debug("Entering AcmeStore.newId().");
     log.debug("Leaving AcmeStore.newId().");
-    return nodeCrypto.randomBytes(bytes || 15).toString('base64url');
+    return cellLocator.stamp(nodeCrypto.randomBytes(bytes || 15)
+      .toString('base64url'));
   }
 
   /**
@@ -552,7 +600,7 @@ class AcmeStore {
       return false;
     }
     usedNoncesCount.miss();
-    // THE BOUND (MAX_USED_NONCES). The expired go first, as they always did;
+    // THE BOUND (acme.maxSpentNonces). The expired go first, as they always did;
     // what changed on 2026-09-18 is a store still full of LIVE spends, which
     // took the new one anyway and grew past its bound. It decides a replay,
     // so it refuses rather than forgets: the spend answers false, the request
@@ -560,8 +608,9 @@ class AcmeStore {
     // which RFC 8555 section 6.5 has it do. The registry logs the real reason
     // (STS-CORE-0097) at most once a minute.
     const nowS = Math.floor(this.nowMs() / 1000);
-    const room = cacheRegistry.makeRoom(usedNonces, MAX_USED_NONCES, {
+    const room = cacheRegistry.makeRoom(usedNonces, maxUsedNonces(), {
       policy: 'refuse', counter: usedNoncesCount, name: 'acme.nonces',
+      setting: 'acme.maxSpentNonces',
       expired: function (value: unknown): boolean {
         return Number(value) <= nowS;
       }
@@ -655,7 +704,6 @@ export = {
   AcmeStore: AcmeStore,
   installInstance: (instance: AcmeStore): void => slot.install(instance),
   instanceOrigin: (): string => slot.origin(),
-  MAX_USED_NONCES: MAX_USED_NONCES,
   createAccount: slot.forward('createAccount'),
   getAccount: slot.forward('getAccount'),
   accountByThumbprint: slot.forward('accountByThumbprint'),

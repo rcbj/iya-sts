@@ -1,10 +1,10 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 //
 // File: sts_admin_console.js
 //
 // ---------------------------------------------------------------------------
-// THE MOCK STS'S ADMIN CONSOLE AT /admin, DRIVEN IN A REAL BROWSER: EVERY PAGE,
+// IYA STS'S ADMIN CONSOLE AT /admin, DRIVEN IN A REAL BROWSER: EVERY PAGE,
 // EVERY LINK, EVERY GET FORM, AND EVERY BUTTON — AND WHAT COMES BACK
 // AFTERWARDS.
 //
@@ -182,7 +182,7 @@
 // ---------------------------------------------------------------------------
 const assert = require("assert");
 const { Command, Option } = require("commander");
-const { Builder, By, until } = require("selenium-webdriver");
+const { Builder, By } = require("selenium-webdriver");
 const chrome = require("selenium-webdriver/chrome");
 const NetworkInspector = require("selenium-webdriver/bidi/networkInspector.js");
 const browserFlags = require("./browser_flags.js");
@@ -450,8 +450,18 @@ async function go(driver, url) {
   // driver.get() resolving, so the bug appears as one page in the walk
   // reporting the status it had in a previous section, intermittently.
   const from = mark();
-  await driver.get(url);
-  const seen = await waitForResponse(url, from);
+  // A FRAGMENT IS NOT PART OF WHAT IS FETCHED (2026-10-01): the response is
+  // for the URL without it, and a URL differing from the page already loaded
+  // only by its fragment is not fetched at all. So the page is loaded bare
+  // and the fragment — an application page's tab — set afterwards.
+  const hash = url.indexOf("#");
+  const bare = hash < 0 ? url : url.slice(0, hash);
+  await driver.get(bare);
+  const seen = await waitForResponse(bare, from);
+  if (hash >= 0) {
+    await driver.executeScript("location.hash = arguments[0];",
+                               url.slice(hash + 1));
+  }
   log.debug("Leaving go(). status=" + (seen ? seen.status : "?"));
   return seen;
 }
@@ -544,6 +554,12 @@ const SURVEY = `
   return {
     title: document.title,
     scripts: document.scripts.length,
+    scriptSrcs: Array.from(document.scripts).map(function (one) {
+      return one.getAttribute('src') || '';
+    }),
+    copyButtons: document.querySelectorAll('button.copybtn').length,
+    copyButtonsShown: Array.from(document.querySelectorAll('button.copybtn'))
+      .filter(function (one) { return !one.hidden; }).length,
     forms: Array.from(document.forms).map(function (f, i) {
       return {
         index: i,
@@ -636,6 +652,33 @@ async function rawSourceOf(driver, url) {
   return String(text);
 }
 
+// THE PAGE AN ELEMENT WAS ON HAS BEEN REPLACED (2026-10-02). Not
+// `until.stalenessOf()`: that counts only a StaleElementReferenceError as
+// stale, and a probe that lands while Chrome is tearing the old document down
+// is answered "Node with given id does not belong to the document" instead.
+// That escaped press() in the field grid section twice (a local memory-mode
+// run and CI's coverage run, both 2026-10-02) on a page that had in fact been
+// replaced. sts_xacml_editor.js met the same thing on 2026-09-23; both errors
+// mean the same thing here.
+async function pageReplaced(driver, element, ms) {
+  log.debug("Entering pageReplaced().");
+  await driver.wait(async function () {
+    try {
+      await element.isEnabled();
+      return false;
+    } catch (e) {
+      log.debug("Caught in pageReplaced(): " + ((e && e.message) || e));
+      if ((e && e.name === "StaleElementReferenceError") ||
+          /does not belong to the document|No node with given id/
+            .test(String(e && e.message))) {
+        return true;
+      }
+      throw e;
+    }
+  }, ms, "the page was never replaced");
+  log.debug("Leaving pageReplaced().");
+}
+
 // ---------------------------------------------------------------------------
 // FILLING IN A FORM AND PRESSING ITS BUTTON, the way a person does.
 //
@@ -723,11 +766,33 @@ async function fillAndPress(driver, formIndex, values, options) {
   // The index comes back from the same script that found the control, so the
   // element typed into is the one that was chosen, by construction. It is the
   // device `submitButtonOf()` below already uses for the same reason.
+  // A FORM ON A TAB THAT IS NOT SHOWN (2026-10-01) — an application's page
+  // is tabs — is reached by opening its tab, which is the fragment of the
+  // panel it is in, as a person clicking the tab does. It is opened BEFORE
+  // anything is typed: Chrome will not type into a field it does not display
+  // (`ElementNotInteractableError`, an application's drill-down, b2b64e4b).
+  await driver.executeScript(`
+    const f = document.forms[arguments[0]];
+    const panel = f && f.closest('.subpanel, .tabpanel');
+    if (panel && panel.id && !f.checkVisibility()) {
+      location.hash = panel.id;
+    }
+  `, formIndex);
   if (typed.firstText && values && values[typed.firstText] !== undefined &&
       !opts.noTyping && typed.firstTextIndex >= 0) {
+    // A FIELD IN A CLOSED <details> IS OPENED FIRST, AS A PERSON WOULD
+    // (2026-10-01). Protocols -> PKI draws a search box per authority inside
+    // that authority's fold (1ed634c8), and Chrome will not type into a
+    // control it does not display: `ElementNotInteractableError` on a page
+    // that works. Every closed ancestor fold is opened, innermost to outer.
     const field = await driver.executeScript(`
       const f = document.forms[arguments[0]];
-      return f ? Array.from(f.elements)[arguments[1]] : null;
+      const el = f ? Array.from(f.elements)[arguments[1]] : null;
+      for (let d = el && el.closest('details'); d;
+           d = d.parentElement && d.parentElement.closest('details')) {
+        d.open = true;
+      }
+      return el;
     `, formIndex, typed.firstTextIndex).catch(function (e) {
       // No such element: the typing below is skipped and the press goes on.
       log.debug("Caught finding the field to type into: " +
@@ -746,7 +811,29 @@ async function fillAndPress(driver, formIndex, values, options) {
 
   const from = mark();
   const button = await submitButtonOf(driver, formIndex, opts.buttonText);
+  // THE OLD DOCUMENT HAS TO GO BEFORE ANYTHING IS READ (#311). The settle
+  // below waits for `readyState === "complete"`, which the page being left
+  // already is, and then for a response of the form's method since `from` —
+  // and the network events that count those arrive late, so one from just
+  // before the click can satisfy it. On testidp's run 8 the Kerberos create
+  // was read 0.2 s after its press, from the list page it was pressed on,
+  // and failed as "the answer did not say the keytab is shown once". A press
+  // that answers with a FILE replaces no document, so this wait is bounded
+  // and running out of it is not an error.
+  const leaving = await driver.findElement(By.css("html")).catch(
+    function (e) {
+      log.debug("Caught finding the page being left: " +
+                ((e && e.message) || e));
+      return null;
+    });
   await button.click();
+  if (leaving) {
+    await pageReplaced(driver, leaving, 20000).catch(function (e) {
+      log.debug("Caught waiting for the page to be replaced (a download " +
+                "replaces none): " + ((e && e.message) || e));
+      return null;
+    });
+  }
   await settleAfterSubmit(driver, from, typed.method);
   log.debug("Leaving fillAndPress().");
   return { from: from, responses: since(from) };
@@ -1134,8 +1221,11 @@ async function theGateBehaves(driver) {
     "/admin/users/new should draw a form whose action is `create`; the " +
     "gate's POST assertion needs a real form to submit.");
   await clearSession(driver);
+  // NAMED, because the first submit on that form is the simplified /
+  // advanced view switch since 9e9647de, which creates nobody.
   const posted = await fillAndPress(driver, createForm,
-      { username: "gate-probe-" + names.runStamp() });
+      { username: "gate-probe-" + names.runStamp() },
+      { buttonText: "Create the user" });
   const postResponse = thePostIn(posted.responses, "posting a form with no " +
                                                    "session");
   check("a POST with no session is refused, never redirected", function () {
@@ -1256,8 +1346,26 @@ async function everyPageIsDrawn(driver, pages) {
         "and it should have a title; it has " + JSON.stringify(page.title));
     });
     const scripted = SCRIPTED_PAGES[path];
+    // A PROTOCOLS PAGE DRAWS A COPY BUTTON BESIDE EACH ENDPOINT (2026-10-01),
+    // and that is the one other script this console may carry: /admin/copy.js,
+    // which reveals the buttons and copies a value. The page is the page with
+    // the script blocked — the buttons stay hidden — so the test is that the
+    // page names exactly that one resource, is served `script-src 'self'` and
+    // nothing looser, and that the script really ran (every button shown).
+    const copying = !scripted && page.copyButtons > 0;
     check(path + " keeps the policy", function () {
-      if (scripted) {
+      if (copying) {
+        assert.ok(/script-src\s+'self'/.test(csp),
+          path + " draws " + page.copyButtons + " Copy button(s) and must be " +
+          "served `script-src 'self'` for /admin/copy.js. Its policy is: " +
+          csp);
+        assert.ok(!/unsafe-inline/.test(csp.replace(/style-src[^;]*/, "")),
+          path + " must NOT relax anything to 'unsafe-inline'. Its policy " +
+          "is: " + csp);
+        assert.ok(!/connect-src/.test(csp),
+          path + " needs no `connect-src`: copying calls nothing. Its " +
+          "policy is: " + csp);
+      } else if (scripted) {
         // THE EXCEPTION IS CHECKED HARDER THAN THE RULE. A page allowed to
         // relax `script-src` must relax exactly that, to exactly `'self'`, and
         // must never reach `'unsafe-inline'` — which is the clause that would
@@ -1297,8 +1405,21 @@ async function everyPageIsDrawn(driver, pages) {
       assert.ok(/base-uri\s+'none'/.test(csp),
         path + " must be served with `base-uri 'none'`. Its policy is: " + csp);
     });
-    check(path + (scripted ? " carries exactly its own script"
-                           : " has no script on it"), function () {
+    check(path + (scripted || copying ? " carries exactly its own script"
+                                      : " has no script on it"), function () {
+      if (copying) {
+        // A realm's page names it under the realm prefix, which app.js adds.
+        assert.ok(page.scriptSrcs.length === 1 &&
+                  /^(\/realm\/[^/]+)?\/admin\/copy\.js$/
+                    .test(page.scriptSrcs[0]),
+          path + " should carry exactly one <script>, /admin/copy.js; the " +
+          "browser built " + JSON.stringify(page.scriptSrcs) + ".");
+        assert.strictEqual(page.copyButtonsShown, page.copyButtons,
+          path + " should show every Copy button once the script has run; " +
+          page.copyButtonsShown + " of " + page.copyButtons + " are shown, " +
+          "so /admin/copy.js did not run.");
+        return;
+      }
       if (scripted) {
         // `document.scripts.length` is the browser's own answer, which is why
         // this walk is worth doing in a browser at all: ONE script, and the
@@ -1312,7 +1433,8 @@ async function everyPageIsDrawn(driver, pages) {
       assert.strictEqual(page.scripts, 0,
         path + " has " + page.scripts + " <script> element(s) in the DOM the " +
         "browser built. The console has no JavaScript on any page but the " +
-        "one named in SCRIPTED_PAGES, which is what makes the family of " +
+        "one named in SCRIPTED_PAGES and the Protocols pages' copy " +
+        "script, which is what makes the family of " +
         "reflected-content problems moot here rather than merely unlikely — " +
         "and a page that carries one is relying on the header to save it.");
     });
@@ -1703,6 +1825,24 @@ async function everyGetFormSubmits(driver, pages) {
   log.debug("Leaving everyGetFormSubmits().");
 }
 
+// THE BOX FOR AN ATTRIBUTE ON THE NEW-USER GRID (9e9647de): a single-valued
+// attribute is `field.<name>` and a multi-valued one `field.<name>.<n>`, its
+// first row `.0`. Answers the drawn name, or null where neither is drawn.
+function boxFor(drawn, attribute) {
+  log.debug("Entering boxFor().");
+  const single = "field." + attribute;
+  if (drawn.indexOf(single) >= 0) {
+    log.debug("Leaving boxFor(). Single-valued.");
+    return single;
+  }
+  if (drawn.indexOf(single + ".0") >= 0) {
+    log.debug("Leaving boxFor(). Multi-valued.");
+    return single + ".0";
+  }
+  log.debug("Leaving boxFor(). Not drawn.");
+  return null;
+}
+
 // ---------------------------------------------------------------------------
 // /admin/users/new — A PERSON DESCRIBED RATHER THAN INVENTED.
 //
@@ -1765,12 +1905,19 @@ async function theNewUserPageDescribesAPerson(driver) {
   });
 
   const page = await open(driver, realm("/admin/users/new"));
+  // EVERY FIELD IS ON THE ADVANCED VIEW (9e9647de): the page opens on the
+  // simplified one, which draws a subset, and only its switch reaches the
+  // rest — so it is pressed before the boxes are counted.
+  const switchIndex = await formIndexPosting(driver, "create");
+  await fillAndPress(driver, switchIndex, {},
+      { buttonText: "Show every field", noTyping: true });
+  const advanced = await survey(driver);
   check("and draws a box for every one of them", function () {
     assert.strictEqual(page.status, 200,
       "/admin/users/new should draw; it answered " + page.status);
-    const drawn = boxesNamed(page, "field.");
+    const drawn = boxesNamed(advanced, "field.");
     (form.body.fields || []).forEach(function (row) {
-      assert.ok(drawn.indexOf("field." + row.attribute) >= 0,
+      assert.ok(boxFor(drawn, row.attribute) !== null,
         "the catalogue names `" + row.attribute + "` and the form draws no " +
         "box for it. The form and the create validate against ONE list, so a " +
         "field the document offers and the page does not is an attribute " +
@@ -1816,10 +1963,11 @@ async function theNewUserPageDescribesAPerson(driver) {
         "the one value that was typed must survive the fill: an invention that " +
         "overwrote it would discard work with nothing said. It now holds " +
         JSON.stringify(values["field.mail"]));
-      assert.ok(values["field.givenName"],
+      const given = values["field.givenName"] || values["field.givenName.0"];
+      assert.ok(given,
         "and a box that was EMPTY should now carry the invented person's " +
-        "value — that is the whole of what the button does. `field.givenName` " +
-        "holds " + JSON.stringify(values["field.givenName"]));
+        "value — that is the whole of what the button does. The givenName " +
+        "box holds " + JSON.stringify(given));
     });
     const stillNobody = await apiJson("/realm/" + REALM +
         "/admin-api/ldap/directory?q=" + encodeURIComponent(filled));
@@ -1839,10 +1987,14 @@ async function theNewUserPageDescribesAPerson(driver) {
   const described = "ui-described-" + names.runStamp();
   await open(driver, realm("/admin/users/new"));
   const second = await formIndexPosting(driver, "create");
-  await fillAndPress(driver, second,
-      { username: described, "field.mail": "described@example.com",
-        "field.title": "Auditor" },
-      { noTyping: true });
+  const secondBoxes = {};
+  secondBoxes.username = described;
+  secondBoxes[boxFor(boxesNamed(page, "field."), "mail") || "field.mail"] =
+    "described@example.com";
+  secondBoxes[boxFor(boxesNamed(page, "field."), "title") || "field.title"] =
+    "Auditor";
+  await fillAndPress(driver, second, secondBoxes,
+      { noTyping: true, buttonText: "Create the user" });
 
   const entry = await theDirectoryEntryOf(described);
   check("an empty box records NO VALUE", function () {
@@ -1882,7 +2034,8 @@ async function theNewUserPageDescribesAPerson(driver) {
   await open(driver, realm("/admin/users/new"));
   const third = await formIndexPosting(driver, "create");
   await fillAndPress(driver, third,
-      { username: withPassword, credential: "generate" }, { noTyping: true });
+      { username: withPassword, credential: "generate" }, { noTyping: true,
+        buttonText: "Create the user" });
   const shown = await driver.executeScript(
     "const e = document.querySelector('.secret'); return e ? e.textContent : '';");
   check("a generated password is shown once, in the page", function () {
@@ -1915,7 +2068,8 @@ async function theNewUserPageDescribesAPerson(driver) {
   await open(driver, realm("/admin/users/new"));
   const fourth = await formIndexPosting(driver, "create");
   await fillAndPress(driver, fourth,
-      { username: toActivate, credential: "activation" }, { noTyping: true });
+      { username: toActivate, credential: "activation" }, { noTyping: true,
+        buttonText: "Create the user" });
   const link = await driver.executeScript(
     "const e = document.querySelector('.secret'); return e ? e.textContent : '';");
   check("an activation link is shown once", function () {
@@ -2115,7 +2269,7 @@ async function everyControlReachesSomething(driver, pages) {
 function actionValuesIn(form) {
   log.debug("Entering actionValuesIn().");
   const values = [];
-  const inQuery = String(form.resolvedAction || "").match(/[?&]action=([^&]*)/);
+  const inQuery = String(form.resolvedAction || "").match(/[?&]action=([^&#]*)/);
   if (inQuery) {
     values.push(decodeURIComponent(inQuery[1]));
     log.debug("Leaving actionValuesIn().");
@@ -2763,7 +2917,9 @@ async function theDirectoryPagesWork(driver) {
   await open(driver, realm("/admin/users/new"));
   const createUser = await formIndexPosting(driver, "create");
   assert.ok(createUser >= 0, "/admin/users/new should draw a create form.");
-  await fillAndPress(driver, createUser, { username: person });
+  // The Create button by name: the form's first submit is the view switch.
+  await fillAndPress(driver, createUser, { username: person },
+                     { buttonText: "Create the user" });
 
   const users = await apiJson("/realm/" + REALM +
       "/admin-api/users?q=" + encodeURIComponent(person));
@@ -2821,9 +2977,17 @@ async function theDirectoryPagesWork(driver) {
       "and it should carry the NAME the form was given; it carries " +
       JSON.stringify(found.name));
     const declared = [].concat(found.allowedProtocols || []);
-    assert.strictEqual(declared.length, kinds.length,
-      "and it should have declared ALL " + kinds.length + " families the " +
-      "form's repeated `protocol` column carried; it declared " +
+    // ONE BOX MAY STAND FOR TWO FAMILIES (2026-10-01): "Verifiable
+    // Credentials" posts `vc`, which the registry stores as OpenID4VCI and
+    // OpenID4VP (applications.familiesOfChoices()). So the families expected
+    // are the boxes with that one expanded.
+    const expected = [].concat.apply([], kinds.map(function (k) {
+      return k === "vc" ? ["oid4vci", "oid4vp"] : [k];
+    }));
+    assert.deepStrictEqual(declared.slice().sort(), expected.slice().sort(),
+      "and it should have declared ALL " + expected.length + " families the " +
+      "form's repeated `protocol` column carried (" + kinds.length +
+      " boxes); it declared " +
       declared.length + " (" + JSON.stringify(declared) + "). The body a " +
       "browser builds carries that name once per checked box, and a handler " +
       "reading it the ordinary way keeps only the last — which answers 200 " +
@@ -3458,6 +3622,7 @@ async function theHandlersNothingEverPressed(driver) {
   await theKerberosPrincipalsPageCreatesAndDeletes(driver);
   await theCredentialsSectionIsPressed(driver);
   await thePersonCredentialsSectionIsPressed(driver);
+  await theFieldGridIsPressed(driver);
 
   log.debug("Leaving theHandlersNothingEverPressed().");
 }
@@ -3657,8 +3822,8 @@ async function theTruststorePageAddsAndRemoves(driver) {
   const label = "console-truststore-" + names.runStamp().toLowerCase()
       .replace(/[^a-z0-9]/g, "").slice(0, 12);
   const minted = await credentials.mint({
-    rootSubject: "CN=" + label + ",O=mock-sts tests",
-    subject: "CN=" + label + "-leaf,O=mock-sts tests" });
+    rootSubject: "CN=" + label + ",O=iya-sts tests",
+    subject: "CN=" + label + "-leaf,O=iya-sts tests" });
   const fingerprint = new (require("crypto").X509Certificate)(
     minted.anchorPem).fingerprint256;
   const held = async function () {
@@ -3751,7 +3916,11 @@ async function theTruststorePageAddsAndRemoves(driver) {
 }
 
 // ---------------------------------------------------------------------------
-// /admin/delegation: THE FIVE CONTROLS ON THE CONFIGURED HALF.
+// THE FIVE CONTROLS ON THE CONFIGURED HALF OF DELEGATION — on Protocols →
+// Delegation (/admin/delegation-settings) since 2026-10-01, and on each
+// application's own Permissions tab. Monitoring → Delegation
+// (/admin/delegation) draws the same register READ-ONLY, which is asserted
+// here too.
 //
 // It is in this section rather than in the writeForms() table for the reason
 // /admin/logout is: each control needs something done first. A permission
@@ -3791,9 +3960,28 @@ async function theDelegationPageDefinesAndGrants(driver) {
     });
   }
 
+  // 0. MONITORING → DELEGATION CHANGES NOTHING (2026-10-01). Every control
+  //    that was on it is on Protocols → Delegation; a form left behind would
+  //    post to a path that no longer takes one.
+  const monitoring = await open(driver, realm("/admin/delegation"));
+  const leftBehind = [];
+  for (const action of ["set-permission-base", "define-permission",
+                        "remove-permission", "revoke-permission"]) {
+    if (await formIndexPosting(driver, action) >= 0) {
+      leftBehind.push(action);
+    }
+  }
+  check("/admin/delegation draws no control of the register", function () {
+    assert.ok(monitoring.status === 200 && leftBehind.length === 0,
+      "Monitoring → Delegation reads the register and changes none of it " +
+      "since 2026-10-01; its controls are on /admin/delegation-settings. It " +
+      "answered " + monitoring.status + " and drew: " +
+      (leftBehind.join(", ") || "nothing"));
+  });
+
   // 1. THE BASE URI. Pressed first because nothing else on the page works
   //    without it, which is exactly what the second press below asserts.
-  await open(driver, realm("/admin/delegation"));
+  await open(driver, realm("/admin/delegation-settings"));
   // FOUND BY ACTION AND NOT BY FIELD NAMES, all three of them, and that is a
   // correction rather than a style. The two TABLES on this page draw row
   // buttons whose hidden fields are `resource`+`name` (Remove) and
@@ -3803,22 +3991,24 @@ async function theDelegationPageDefinesAndGrants(driver) {
   // this run starts, and would silently press Remove instead of Define the
   // first time it did not.
   const baseForm = await formIndexPosting(driver, "set-permission-base");
-  check("/admin/delegation draws the Expose an API form", function () {
+  check("/admin/delegation-settings draws the Expose an API form", function () {
     assert.ok(baseForm >= 0,
-      "/admin/delegation should draw a form taking a `resource` and a " +
-      "`baseUri`. The whole configured half of that page hangs off it: a " +
-      "permission is named by its base URI followed by its name, so an " +
+      "/admin/delegation-settings should draw a form taking a `resource` " +
+      "and a `baseUri`. The whole configured half of that page hangs off " +
+      "it: a permission is named by its base URI followed by its name, so an " +
       "application with no base exposes permissions no client can ask for.");
   });
   await fillAndPress(driver, baseForm,
                      { resource: resource, baseUri: baseUri });
 
   // 2. THE PERMISSION.
-  await open(driver, realm("/admin/delegation"));
+  await open(driver, realm("/admin/delegation-settings"));
   const defineForm = await formIndexPosting(driver, "define-permission");
-  check("/admin/delegation draws the Define a permission form", function () {
+  check("/admin/delegation-settings draws the Define a permission form",
+        function () {
     assert.ok(defineForm >= 0,
-      "/admin/delegation should draw a form taking a `resource` and a `name`.");
+      "/admin/delegation-settings should draw a form taking a `resource` and " +
+      "a `name`.");
   });
   await fillAndPress(driver, defineForm,
                      { resource: resource, name: "write",
@@ -3844,13 +4034,13 @@ async function theDelegationPageDefinesAndGrants(driver) {
   //    delegation page keeps the other four controls and a paragraph saying
   //    where this one went.
   //
-  //    The form still POSTs to /admin/delegation — `grant-permission` is that
-  //    handler's action and moving a form is not moving an action — which is
-  //    why the read-back below is the assertion that matters: a redirect that
-  //    landed anywhere else, or a write that landed on the resource, both
-  //    answer 303 with the same cheerful notice.
+  //    The form POSTs to /admin/delegation-settings — `grant-permission` is
+  //    that handler's action and moving a form is not moving an action —
+  //    which is why the read-back below is the assertion that matters: a
+  //    redirect that landed anywhere else, or a write that landed on the
+  //    resource, both answer 303 with the same cheerful notice.
   await open(driver, realm("/admin/applications?application=" +
-                           encodeURIComponent(client)));
+                           encodeURIComponent(client) + "#tab-permissions"));
   const grantForm = await formIndexPosting(driver, "grant-permission");
   check("the client's own page draws the Grant a permission form", function () {
     assert.ok(grantForm >= 0,
@@ -3904,16 +4094,16 @@ async function theDelegationPageDefinesAndGrants(driver) {
   //    then be pressing a button on a row in a state this run did not set up.
   //
   //    Revoke is pressed on the CLIENT's page, where the row button now is
-  //    beside the grant it revokes; Remove stays on /admin/delegation, which
-  //    is where a permission is defined and undefined.
+  //    beside the grant it revokes; Remove is on /admin/delegation-settings,
+  //    which is where every permission is defined and undefined.
   await open(driver, realm("/admin/applications?application=" +
-                           encodeURIComponent(client)));
+                           encodeURIComponent(client) + "#tab-permissions"));
   const revokeForm = await formIndexPosting(driver, "revoke-permission");
   if (revokeForm >= 0) {
     await fillAndPress(driver, revokeForm, {});
   }
   const revoked = await survey(driver);
-  await open(driver, realm("/admin/delegation"));
+  await open(driver, realm("/admin/delegation-settings"));
   const removeForm = await formIndexPosting(driver, "remove-permission");
   if (removeForm >= 0) {
     await fillAndPress(driver, removeForm, {});
@@ -3924,7 +4114,8 @@ async function theDelegationPageDefinesAndGrants(driver) {
       "the client's page should draw a Revoke button on the row of every " +
       "permission it holds; it drew revoke=" + revokeForm);
     assert.ok(removeForm >= 0,
-      "and /admin/delegation should draw a Remove button on the row of every " +
+      "and /admin/delegation-settings should draw a Remove button on the row " +
+      "of every " +
       "permission defined; it drew remove=" + removeForm);
     assert.ok(revoked.text.indexOf(baseUri + "write") < 0 ||
               /It holds none/i.test(revoked.text),
@@ -3935,12 +4126,127 @@ async function theDelegationPageDefinesAndGrants(driver) {
       "It still says: " + cleared.text.slice(0, 400));
   });
 
+  // 6. THE RESOURCE'S OWN PAGE (2026-10-01). Its Permissions tab defines,
+  //    grants and removes ITS OWN permissions only: `resource` is a hidden
+  //    field there, and the client is found with a search pane and picked
+  //    before the grant form (a select of this application's permissions)
+  //    is drawn.
+  const resourcePage = realm("/admin/applications?application=" +
+                             encodeURIComponent(resource) + "#tab-permissions");
+  await open(driver, resourcePage);
+  const ownDefine = await formIndexPosting(driver, "define-permission");
+  check("the resource's own page draws Define a permission", function () {
+    assert.ok(ownDefine >= 0,
+      "the Permissions tab of a RESOURCE application should define a " +
+      "permission on that application, with no application select.");
+  });
+  await fillAndPress(driver, ownDefine,
+                     { name: "read", description: "Pressed on its own page" });
+  const afterDefine = await survey(driver);
+  check("and the permission is read back on that page", function () {
+    assert.ok(afterDefine.text.indexOf(baseUri + "read") >= 0,
+      "a permission defined on the resource's page should be listed there " +
+      "by its whole identifier. The page says " +
+      afterDefine.text.slice(0, 400));
+  });
+
+  // THE CLIENT IS FOUND BY A SEARCH, NOT A <select> (2026-10-01): a
+  // chooserPane() whose results link back here with `grantto` naming the
+  // pick. So: search, follow the result, and only then is there a form.
+  const resourceBase = "/admin/applications?application=" +
+                       encodeURIComponent(resource);
+  const searched = await open(driver, realm(resourceBase + "&granttoq=" +
+                              encodeURIComponent(client) + "#find-granttoq"));
+  const pickHref = await driver.executeScript(`
+    const wanted = 'grantto=' + encodeURIComponent(arguments[0]);
+    const hit = Array.from(document.querySelectorAll('.chooser a'))
+      .find(function (a) { return a.href.indexOf(wanted) >= 0; });
+    return hit ? hit.href : '';
+  `, client);
+  check("the resource's page finds the client by searching for it",
+        function () {
+    assert.ok(pickHref,
+      "searching the Grant to pane for " + client + " should list it as a " +
+      "link that picks it (grantto=). The page says " +
+      searched.text.slice(0, 400));
+  });
+  let ownGrant = -1;
+  if (pickHref) {
+    await open(driver, pickHref);
+    // Two `grant-permission` forms are on this page; the resource half's is
+    // the one carrying `page`.
+    ownGrant = await formIndexPostingWithField(driver, "grant-permission",
+                                               "input[name=page]");
+  }
+  check("and, once picked, grants its permission to that client",
+        function () {
+    assert.ok(ownGrant >= 0,
+      "with an application picked, the Permissions tab of a RESOURCE " +
+      "application should draw a form granting one of ITS OWN permissions " +
+      "to it.");
+  });
+  if (ownGrant >= 0) {
+    await fillAndPress(driver, ownGrant, { permission: baseUri + "read" });
+  }
+  const clientPage = await open(driver, realm(
+    "/admin/applications?application=" + encodeURIComponent(client) +
+    "#tab-permissions"));
+  check("and the grant lands on the CLIENT's entry", function () {
+    assert.ok(clientPage.text.indexOf(baseUri + "read") >= 0,
+      "a grant made from the resource's page is still a value of " +
+      "oauthDelegatedPermission on the CLIENT, so the client's own page " +
+      "must list it as something it holds. It says " +
+      clientPage.text.slice(0, 500));
+  });
+
+  await open(driver, resourcePage);
+  const ownRevoke = await formIndexPosting(driver, "revoke-permission");
+  if (ownRevoke >= 0) {
+    await fillAndPress(driver, ownRevoke, {});
+  }
+  const ownRemove = await formIndexPosting(driver, "remove-permission");
+  if (ownRemove >= 0) {
+    await fillAndPress(driver, ownRemove, {});
+  }
+  const ownCleared = await survey(driver);
+  check("and revokes and removes it there", function () {
+    assert.ok(ownRevoke >= 0 && ownRemove >= 0,
+      "the resource's page should draw Revoke on each grant of its " +
+      "permissions and Remove on each permission; it drew revoke=" +
+      ownRevoke + " remove=" + ownRemove);
+    assert.ok(ownCleared.text.indexOf(baseUri + "read") < 0,
+      "and afterwards the permission should be gone from it. It says " +
+      ownCleared.text.slice(0, 400));
+  });
+
   log.info("[permissions] OK — a base URI and a permission were typed on " +
-           "/admin/delegation, the grant was typed on the CLIENT's own page, " +
-           "the composed identifier and both applications were read back off " +
-           "the pages that drew the controls, the register agreed, and " +
-           "revoke and remove took them away again.");
+           "/admin/delegation-settings, the grant was typed on the CLIENT's " +
+           "own page, the composed identifier and both applications were " +
+           "read back off the pages that drew the controls, the register " +
+           "agreed, revoke and remove took them away again, and the " +
+           "RESOURCE's own page defined, granted, revoked and removed one " +
+           "of its own.");
   log.debug("Leaving theDelegationPageDefinesAndGrants().");
+}
+
+// The index of the first form whose hidden `action` is `actionValue` AND
+// which holds an element matching `selector` — for a page that draws two
+// forms with one action, like a resource's Permissions tab (2026-10-01).
+async function formIndexPostingWithField(driver, actionValue, selector) {
+  log.debug("Entering formIndexPostingWithField(). action=" + actionValue);
+  const found = await driver.executeScript(`
+    const forms = Array.from(document.forms);
+    for (let i = 0; i < forms.length; i += 1) {
+      const control = forms[i].querySelector('input[type=hidden][name=action]');
+      if (control && control.value === arguments[0] &&
+          forms[i].querySelector(arguments[1])) {
+        return i;
+      }
+    }
+    return -1;
+  `, actionValue, selector);
+  log.debug("Leaving formIndexPostingWithField(). " + found);
+  return found;
 }
 
 // ---------------------------------------------------------------------------
@@ -4018,7 +4324,7 @@ async function theObservedAddressesArePressed(driver) {
   });
 
   const pageUrl = realm("/admin/applications?application=" +
-                        encodeURIComponent(rpId));
+                        encodeURIComponent(rpId) + "#tab-addresses");
   const drawn = await open(driver, pageUrl);
   check("the application page draws the observed addresses with both buttons",
         function () {
@@ -4128,7 +4434,7 @@ async function theCredentialsSectionIsPressed(driver) {
   };
   const donorPem = (await entryOf(DONOR)).fields.oauthSamlAssertionCertificate;
   const pageUrl = realm("/admin/applications?application=" +
-                        encodeURIComponent(APP));
+                        encodeURIComponent(APP) + "#tab-credentials");
   const onThePage = function (url) {
     log.debug("Entering onThePage().");
     const u = new URL(url);
@@ -4163,14 +4469,28 @@ async function theCredentialsSectionIsPressed(driver) {
   });
 
   // --- Regenerate ----------------------------------------------------------
-  const secretBefore = (await entryOf(APP)).fields.oauthClientSecret;
+  // The secret is a RECORD on the entry (2026-10-01); compare the secrets
+  // themselves, newest first, or an array compared by reference always
+  // "changed".
+  const secretsOn = function (entry) {
+    return [].concat((entry.fields || {}).oauthClientSecret || [])
+      .map(function (value) {
+        try {
+          return JSON.parse(value).secret;
+        } catch (e) {
+          log.debug("Caught in secretsOn(): " + ((e && e.message) || e));
+          return String(value);
+        }
+      }).join(" ");
+  };
+  const secretBefore = secretsOn(await entryOf(APP));
   const regenerate = await formFor("regenerate-secret");
   check("it draws a Regenerate form", function () {
     assert.ok(regenerate >= 0, "no regenerate-secret form on " + pageUrl);
   });
   await fillAndPress(driver, regenerate, {});
   const afterRegenerate = await driver.getCurrentUrl();
-  const secretAfter = (await entryOf(APP)).fields.oauthClientSecret;
+  const secretAfter = secretsOn(await entryOf(APP));
   check("Regenerate replaced the secret and came back to the section, with " +
         "no secret in the address", function () {
     assert.strictEqual(outcomeOf(afterRegenerate, "error"), "",
@@ -4234,6 +4554,320 @@ async function theCredentialsSectionIsPressed(driver) {
 }
 
 // ---------------------------------------------------------------------------
+// THE FIELD GRID, PRESSED ON BOTH PAGES (2026-10-01).
+//
+// `/admin/applications/new` and an application's own page draw one typed grid:
+// a list is one box per value with a "+" and a trash can, a boolean three
+// radios, and the create page has a simplified and an advanced view. None of
+// it has a script, so every one of those buttons is a SUBMIT with a
+// `formaction` that redraws the page — and what has to be true is that each
+// press keeps everything else that was typed. That is a property of the
+// redraw, which only a real round trip can show; the in-process test holds the
+// catalogue and nothing else.
+//
+// On the create page: the view switch keeps the identifier and the ticked
+// family; "+" adds an empty box and keeps the value beside it; the trash can
+// takes one value away and keeps the other; a create with an empty box is
+// refused with every box kept and nothing created; the create that follows
+// writes exactly the one URI and the boolean. On the application page: "+"
+// redraws and writes nothing; Save adds the new value; the trash can and a
+// radio moved to false save as one write; an empty box is refused and changes
+// nothing; the radio's third choice clears the attribute.
+// ---------------------------------------------------------------------------
+async function theFieldGridIsPressed(driver) {
+  log.debug("Entering theFieldGridIsPressed().");
+  log.info("=== The application field grid: +, the trash can, the view " +
+           "switch, Create and Save ===");
+  const stamp = names.runStamp().toLowerCase().replace(/[^a-z0-9]/g, "")
+    .slice(0, 8);
+  const APP = "console-grid-" + stamp;
+  const URI_A = "https://grid-a-" + stamp + ".example/cb";
+  const URI_B = "https://grid-b-" + stamp + ".example/cb";
+  const URI_C = "https://grid-c-" + stamp + ".example/cb";
+  const BOOL = "oauthRequirePushedAuthorizationRequests";
+  const REDIRECT = "oauthRedirectUri";
+
+  // Presses the first VISIBLE-TO-A-PERSON button the css and the text pick,
+  // having first set `values` in that button's form. A real click, then a
+  // wait for the page it replaces, as fillAndPress() does.
+  const press = async function (css, text, values) {
+    log.debug("Entering press(). " + css + " " + (text || ""));
+    const button = await driver.executeScript(`
+      const css = arguments[0];
+      const text = arguments[1];
+      return Array.from(document.querySelectorAll(css)).filter(function (b) {
+        return b.getAttribute('aria-hidden') !== 'true' &&
+          (!text || (b.textContent || '').indexOf(text) >= 0);
+      })[0] || null;
+    `, css, text || "");
+    assert.ok(button, "no button matching " + css + " " + (text || "") +
+              " on " + (await driver.getCurrentUrl()));
+    await driver.executeScript(`
+      const f = arguments[0].form;
+      const values = arguments[1];
+      // A BUTTON ON A TAB NOT SHOWN is reached as a person reaches it: by
+      // opening its tab, which is the panel's fragment.
+      const panel = arguments[0].closest('.subpanel, .tabpanel');
+      if (panel && panel.id && !arguments[0].checkVisibility()) {
+        location.hash = panel.id;
+      }
+      Object.keys(values).forEach(function (name) {
+        const control = f.elements[name];
+        if (!control) { return; }
+        const list = (control.length !== undefined && !control.tagName)
+          ? Array.from(control) : [control];
+        list.forEach(function (e) {
+          if (e.type === 'radio' || e.type === 'checkbox') {
+            e.checked = String(e.value) === String(values[name]);
+          } else {
+            e.value = String(values[name]);
+          }
+        });
+      });
+      for (let d = arguments[0].closest('details'); d;
+           d = d.parentElement && d.parentElement.closest('details')) {
+        d.open = true;
+      }
+    `, button, values || {});
+    const from = mark();
+    const leaving = await driver.findElement(By.css("html"));
+    await button.click();
+    await pageReplaced(driver, leaving, 20000);
+    await settleAfterSubmit(driver, from, "POST");
+    log.debug("Leaving press().");
+  };
+  // What the page's grid form holds now, by control name.
+  const state = async function () {
+    log.debug("Entering state().");
+    const read = await driver.executeScript(`
+      const out = { boxes: [], radio: null, checked: [], text: '',
+                    cells: document.querySelectorAll('.fg-cell').length };
+      Array.from(document.querySelectorAll(
+          "input[name^='field.${REDIRECT}.']")).forEach(function (e) {
+        out.boxes.push(e.value);
+      });
+      const r = document.querySelector(
+          "input[type=radio][name='field.${BOOL}']:checked");
+      out.radio = r ? r.value : null;
+      out.hasRadio = !!document.querySelector(
+          "input[type=radio][name='field.${BOOL}']");
+      Array.from(document.querySelectorAll(
+          "input[type=checkbox][name=protocol]:checked")).forEach(function (e) {
+        out.checked.push(e.value);
+      });
+      const id = document.querySelector("input[name=identifier]");
+      out.identifier = id ? id.value : null;
+      out.text = document.body ? document.body.innerText : '';
+      return out;
+    `);
+    log.debug("Leaving state().");
+    return read;
+  };
+  const entryOf = async function () {
+    log.debug("Entering entryOf().");
+    const reply = await apiJson("/realm/" + REALM +
+                                "/admin-api/applications?application=" +
+                                encodeURIComponent(APP));
+    log.debug("Leaving entryOf().");
+    return reply.status === 200 && reply.body && reply.body.fields
+      ? reply.body.fields : null;
+  };
+  const listOf = function (fields, name) {
+    log.debug("Entering listOf().");
+    log.debug("Leaving listOf().");
+    return fields && fields[name] !== undefined
+      ? [].concat(fields[name]).map(String) : [];
+  };
+  const onThePath = async function (path) {
+    log.debug("Entering onThePath().");
+    const u = new URL(await driver.getCurrentUrl());
+    log.debug("Leaving onThePath().");
+    return u.pathname === "/realm/" + REALM + path;
+  };
+  const GROW = "button.fg-grow[value='" + REDIRECT + "']";
+  const dropOf = function (n) {
+    return "button.fg-drop[value='" + REDIRECT + "." + n + "']";
+  };
+
+  // --- The create page -------------------------------------------------------
+  await open(driver, realm("/admin/applications/new"));
+  const simple = await state();
+  check("the create page opens in the simplified view, with a + for the " +
+        "redirect URIs and no boxes", function () {
+    assert.ok(/Simplified view/.test(simple.text),
+      "the page does not say it is the simplified view");
+    assert.ok(simple.cells > 0, "the page draws no field grid");
+    assert.strictEqual(simple.boxes.length, 0,
+      "a new application's redirect URI list should be no boxes; it is " +
+      JSON.stringify(simple.boxes));
+  });
+  // The identifier is TYPED, so one control on this page goes through real
+  // key events, as every other form in this file has one.
+  const idBox = await driver.findElement(By.css("input[name=identifier]"));
+  await idBox.clear();
+  await idBox.sendKeys(APP);
+  await press("button[name=switchview]", "", { protocol: "oauth2",
+                                               name: "Console grid app" });
+  const advanced = await state();
+  check("the view switch draws every field and keeps what was typed and " +
+        "ticked", function () {
+    assert.ok(/Advanced view/.test(advanced.text),
+      "the switch did not reach the advanced view");
+    assert.ok(advanced.cells > simple.cells,
+      "the advanced view draws " + advanced.cells + " fields and the " +
+      "simplified one " + simple.cells);
+    assert.strictEqual(advanced.identifier, APP,
+      "the identifier typed before the switch was lost: " +
+      JSON.stringify(advanced.identifier));
+    assert.deepStrictEqual(advanced.checked, ["oauth2"],
+      "the ticked family was lost: " + JSON.stringify(advanced.checked));
+    assert.ok(advanced.hasRadio, "the advanced view draws no radios for " +
+              BOOL);
+  });
+
+  await press(GROW, "", {});
+  const grown = await state();
+  const grownOnNew = await onThePath("/admin/applications/new");
+  check("+ on the create page adds one empty box and creates nothing",
+        function () {
+    assert.deepStrictEqual(grown.boxes, [""], JSON.stringify(grown.boxes));
+    assert.ok(grownOnNew, "+ left the create page");
+  });
+  assert.strictEqual(await entryOf(), null,
+    "+ created the application " + APP);
+  await press(GROW, "", { ["field." + REDIRECT + ".0"]: URI_A });
+  const twice = await state();
+  check("a second + keeps the value typed in the first box", function () {
+    assert.deepStrictEqual(twice.boxes, [URI_A, ""],
+      JSON.stringify(twice.boxes));
+    assert.strictEqual(twice.identifier, APP, "the identifier was lost");
+  });
+  await press(dropOf(0), "", { ["field." + REDIRECT + ".1"]: URI_B });
+  const dropped = await state();
+  check("the trash can takes the first value away and keeps the second",
+        function () {
+    assert.deepStrictEqual(dropped.boxes, [URI_B],
+      JSON.stringify(dropped.boxes));
+  });
+
+  await press(GROW, "", { ["field." + BOOL]: "TRUE" });
+  await press("form.newapp .formrow > button[type=submit]",
+              "Create the application", {});
+  const refusedCreate = await state();
+  check("a create with an empty box is REFUSED, every box and the radio " +
+        "kept, and nothing created", function () {
+    assert.ok(/must hold a value/.test(refusedCreate.text),
+      "the page does not say the empty box was refused");
+    assert.deepStrictEqual(refusedCreate.boxes, [URI_B, ""],
+      JSON.stringify(refusedCreate.boxes));
+    assert.strictEqual(refusedCreate.radio, "TRUE",
+      "the radio set before the refusal was lost");
+    assert.strictEqual(refusedCreate.identifier, APP);
+  });
+  assert.strictEqual(await entryOf(), null,
+    "the refused create made the application anyway");
+
+  await press(dropOf(1), "", {});
+  await press("form.newapp .formrow > button[type=submit]",
+              "Create the application", {});
+  const created = await entryOf();
+  const landed = new URL(await driver.getCurrentUrl());
+  check("the create writes exactly the one URI left and the boolean, and " +
+        "lands on the application", function () {
+    assert.ok(created, "no application " + APP + " after Create");
+    assert.deepStrictEqual(listOf(created, REDIRECT), [URI_B],
+      JSON.stringify(listOf(created, REDIRECT)));
+    assert.deepStrictEqual(listOf(created, BOOL), ["TRUE"],
+      JSON.stringify(listOf(created, BOOL)));
+    assert.strictEqual(landed.searchParams.get("application"), APP,
+      "the create landed on " + landed.href);
+  });
+
+  // --- The application's own page --------------------------------------------
+  const pageUrl = realm("/admin/applications?application=" +
+                        encodeURIComponent(APP));
+  await open(driver, pageUrl);
+  const shown = await state();
+  check("the application page's grid holds what the entry holds",
+        function () {
+    assert.deepStrictEqual(shown.boxes, [URI_B], JSON.stringify(shown.boxes));
+    assert.strictEqual(shown.radio, "TRUE");
+  });
+  await press(GROW, "", {});
+  const editGrown = await state();
+  const grownOnEdit = await onThePath("/admin/applications/edit");
+  check("+ on the application page redraws with an empty box and writes " +
+        "nothing", function () {
+    assert.ok(grownOnEdit,
+      "+ did not redraw through /admin/applications/edit");
+    assert.deepStrictEqual(editGrown.boxes, [URI_B, ""],
+      JSON.stringify(editGrown.boxes));
+  });
+  assert.deepStrictEqual(listOf(await entryOf(), REDIRECT), [URI_B],
+    "+ on the application page wrote to the entry");
+  const SAVE = "#cfg-oauth form.appgrid .formrow > button[type=submit]";
+  await press(SAVE, "Save", { ["field." + REDIRECT + ".1"]: URI_C });
+  const savedTwo = await entryOf();
+  const u = new URL(await driver.getCurrentUrl());
+  check("Save adds the value typed in the new box and lands on the grid",
+        function () {
+    assert.deepStrictEqual(listOf(savedTwo, REDIRECT), [URI_B, URI_C],
+      JSON.stringify(listOf(savedTwo, REDIRECT)));
+    assert.strictEqual(outcomeOf(u.href, "error"), "",
+      "the save was refused: " + outcomeOf(u.href, "error"));
+    assert.ok(u.searchParams.get("application") === APP &&
+              u.hash === "#cfg-oauth", "Save landed on " + u.href);
+  });
+
+  await press(dropOf(0), "", { ["field." + BOOL]: "FALSE" });
+  const editDropped = await state();
+  check("the trash can on the application page keeps the other value and " +
+        "the radio just moved", function () {
+    assert.deepStrictEqual(editDropped.boxes, [URI_C],
+      JSON.stringify(editDropped.boxes));
+    assert.strictEqual(editDropped.radio, "FALSE");
+  });
+  await press(SAVE, "Save", {});
+  const savedOne = await entryOf();
+  check("Save writes the removal and the radio together", function () {
+    assert.deepStrictEqual(listOf(savedOne, REDIRECT), [URI_C],
+      JSON.stringify(listOf(savedOne, REDIRECT)));
+    assert.deepStrictEqual(listOf(savedOne, BOOL), ["FALSE"],
+      JSON.stringify(listOf(savedOne, BOOL)));
+  });
+
+  await press(GROW, "", {});
+  await press(SAVE, "Save", {});
+  const refusedSave = await state();
+  const afterRefusedSave = listOf(await entryOf(), REDIRECT);
+  check("a Save with an empty box is refused, says why, and changes nothing",
+        function () {
+    assert.ok(/must hold a value/.test(refusedSave.text),
+      "the page does not say the empty box was refused");
+    assert.deepStrictEqual(refusedSave.boxes, [URI_C, ""],
+      JSON.stringify(refusedSave.boxes));
+    assert.deepStrictEqual(afterRefusedSave, [URI_C],
+      "the refused save changed the entry");
+  });
+
+  await press(dropOf(1), "", { ["field." + BOOL]: "" });
+  await press(SAVE, "Save", {});
+  const cleared = await entryOf();
+  check("the radio's default choice clears the attribute", function () {
+    assert.deepStrictEqual(listOf(cleared, BOOL), [],
+      JSON.stringify(listOf(cleared, BOOL)));
+    assert.deepStrictEqual(listOf(cleared, REDIRECT), [URI_C]);
+  });
+  log.info("[field grid] OK — on the create page the view switch, + and the " +
+           "trash can kept every other value, an empty box was refused with " +
+           "nothing created, and Create wrote one URI and the boolean; on " +
+           "the application page + wrote nothing, Save added and removed " +
+           "values and moved the radio, an empty box was refused, and the " +
+           "default radio cleared the attribute.");
+  log.debug("Leaving theFieldGridIsPressed().");
+}
+
+// ---------------------------------------------------------------------------
 // A PERSON'S CREDENTIALS SECTION: ISSUE, UPLOAD, TAKE OFF (2026-09-13).
 //
 // The application section's three presses, on `/admin/users?user=`, and the one
@@ -4294,7 +4928,10 @@ async function thePersonCredentialsSectionIsPressed(driver) {
     return index;
   };
 
-  const drawn = await open(driver, pageUrl);
+  // THE KEY PAIRS ARE A SUB-TAB SINCE THE PERSON'S PAGE BECAME TABS
+  // (2026-10-01), drawn only while the fragment targets them, so the page is
+  // opened where an action returns to: #credentials.
+  const drawn = await open(driver, pageUrl + "#credentials");
   check("the person's page draws a Credentials section for both profiles",
         function () {
     assert.ok(/assertion key pairs/.test(drawn.text) &&
@@ -4343,7 +4980,7 @@ async function thePersonCredentialsSectionIsPressed(driver) {
   });
 
   // --- Upload (the certificate this realm just issued to this person) -------
-  await open(driver, pageUrl);
+  await open(driver, pageUrl + "#credentials");
   const upload = await formFor("upload-certificate", "saml");
   await fillAndPress(driver, upload, { certificate: certificatePem },
                      { noTyping: true });
@@ -4364,7 +5001,7 @@ async function thePersonCredentialsSectionIsPressed(driver) {
   });
 
   // --- Take off -------------------------------------------------------------
-  const redrawn = await open(driver, pageUrl);
+  const redrawn = await open(driver, pageUrl + "#credentials");
   check("the redrawn section names where the SAML key pair came from",
         function () {
     assert.ok(redrawn.text.indexOf("uploaded-realm-ca") >= 0,
@@ -5609,6 +6246,12 @@ function anIntegerSettingWithAProtocolPage(config) {
       if (chosen || setting.editable !== true || setting.overridden) {
         return;
       }
+      // One a REALM may carry: the change is made under a realm prefix and
+      // its source is expected to move to `realm`. A per-process setting
+      // (#429's http.* rows, say) lands on the process and stays `override`.
+      if (setting.realmSettable === false) {
+        return;
+      }
       if (!Number.isInteger(setting.value) ||
           setting.value < 1 || setting.value > 100000) {
         return;
@@ -5766,7 +6409,7 @@ async function theChangeReachedTheStore(driver) {
              (store.mode || "memory") + "), the default " +
              "and what the containerized stack runs. The value round trip " +
              "above is asserted; that the bytes reach a file is asserted in " +
-             "mock-sts's own tests/appconfig_persistence.js, in process, " +
+             "iya-sts's own tests/appconfig_persistence.js, in process, " +
              "where they can be read back.");
     log.debug("Leaving theChangeReachedTheStore(). No store.");
     return;
@@ -5986,7 +6629,8 @@ async function theRolesArePressedAndEnforced(driver, created) {
     await open(driver, realm("/admin/users/new"));
     const createForm = await formIndexPosting(driver, "create");
     const attempt = await fillAndPress(driver, createForm,
-        { username: "reader-should-not-create-" + names.runStamp() });
+        { username: "reader-should-not-create-" + names.runStamp() },
+        { buttonText: "Create the user" });
     const refused = thePostIn(attempt.responses, "a reader posting a form");
     check("and a reader may not write", function () {
       assert.strictEqual(refused.status, 403,
@@ -6340,7 +6984,7 @@ async function theBrowserConsoleIsClean(driver) {
 // ---------------------------------------------------------------------------
 async function test() {
   log.debug("Entering test().");
-  log.info("Driving the mock STS admin console at " + base + "/admin");
+  log.info("Driving IYA STS admin console at " + base + "/admin");
 
   let status;
   try {
@@ -6443,7 +7087,7 @@ async function test() {
 const program = new Command();
 program
   .name("sts_admin_console")
-  .description("Verify the mock STS admin console in a real browser: the " +
+  .description("Verify IYA STS admin console in a real browser: the " +
       "gate, every page, every link, every GET form, every button, and the " +
       "values that come back afterwards.")
   .addOption(new Option("-u, --url <url>", "base url of the STS under test")

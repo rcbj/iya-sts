@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 "use strict";
 //
@@ -305,7 +305,7 @@ async function test() {
            "turned self-issued sign-in on in the realm");
   await registry.provision(base, {
     identifier: CLIENT_ID, name: "SIOPv2 job",
-    protocols: ["oauth2"],
+    protocols: ["oauth2", "oidc"],
     fields: { oauthClientId: CLIENT_ID,
               oauthGrantType: ["authorization_code"],
               oauthTokenEndpointAuthMethod: "none",

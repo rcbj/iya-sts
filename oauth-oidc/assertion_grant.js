@@ -1,6 +1,6 @@
 // @ts-check
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -426,6 +426,16 @@ function unwrapAssertion(presented, opts) {
       }
       candidates.push({ privateKey: one.privateKey });
     });
+  } else if (stsCrypto.describeJweKemAlg(alg)) {
+    // ML-KEM OR HPKE (#82): the realm's one key for exactly this alg, and
+    // only where an administrator opted the realm in to it
+    // (`keys.encryptionKemAlgs`) — which is also the only case discovery
+    // advertises the alg in, so no candidate is the refusal below.
+    const held = require('../common/helpers').kemDecryptionKeyFor(alg);
+    if (held && (!header.kid ||
+                 String(header.kid) === String(held.publicJwk.kid))) {
+      candidates.push({ privateJwk: held.privateJwk });
+    }
   } else {
     // Every RSA key of this realm, JOSE first — each live generation (#42).
     require('../common/helpers').ownRsaDecryptionKeys('jose')
@@ -871,7 +881,9 @@ async function keyFromChain(header) {
  * used-assertion history as the last check.
  *
  * @param opts - `assertion`, `audiences`, `clientSecret`, `requestingClientId`,
- *   `scope` and `request`
+ *   `scope` and `request`; for an RFC 8693 token exchange (#114) `use:
+ *   'token-exchange'` and `audienceCheck(auds)`, which decides the audience
+ *   in place of `audiences` and answers the one it accepted, or ''
  * @returns a promise of `{ ok: true, issuer, subject, claims, ... }`, or `{ ok:
  *   false, errorCode, error, description }`
  */
@@ -879,8 +891,16 @@ async function verify(opts) {
   log.debug('Entering verify().');
   const options = opts || {};
   const audiences = options.audiences || [];
+  // #114: the same assertion, presented as an RFC 8693 subject_token or
+  // actor_token. Everything below holds — the declared issuer, the signature
+  // and chain, the person-as-issuer rule, the lifetime, the one-spend
+  // history — except two things the grant's profile decides and the exchange
+  // decides otherwise: whether the GRANT is switched on (an exchange is not
+  // the grant), and the AUDIENCE, which `oauth2.tokenExchangeAudience` may
+  // widen to a relying party registered here.
+  const exchange = options.use === 'token-exchange';
 
-  if (!enabled()) {
+  if (!exchange && !enabled()) {
     log.debug('Leaving verify(). The grant is switched off.');
     return { ok: false, errorCode: 'STS-OAUTH-0037',
              error: 'unsupported_grant_type',
@@ -1054,13 +1074,29 @@ async function verify(opts) {
         // `aud` and `iss` are checked by the library so that a library that
         // knows the rules applies them: RFC 7521 section 5.2 (5) allows `aud`
         // to be an array and a single expected value must match ANY member.
-        audience: audiences,
+        audience: exchange && options.audienceCheck ? undefined : audiences,
         issuer: iss,
         clockTolerance: skewSeconds()
       });
       usedKey = attempts[i];
     } catch (e) {
       lastError = e.message;
+    }
+  }
+  // #114: an exchange's audience, decided by its own rule once the signature
+  // has vouched for the claim.
+  if (claims && exchange && options.audienceCheck) {
+    const auds = [].concat(claims.aud === undefined ? [] : claims.aud)
+      .map(String);
+    if (!options.audienceCheck(auds)) {
+      log.debug('Leaving verify(). The exchange\'s audience rule refused.');
+      return { ok: false, errorCode: 'STS-OAUTH-0796', error: GRANT_ERROR,
+               description: 'this assertion is addressed to ' +
+                            (auds.join(', ') || 'nobody') + ', which ' +
+                            'oauth2.tokenExchangeAudience does not accept ' +
+                            'for a token exchange: ' +
+                            (options.audienceRule || 'this authorization ' +
+                             'server') + '.' };
     }
   }
   if (!claims) {
@@ -1276,7 +1312,7 @@ async function verify(opts) {
   // LAST refusal of the document itself — nothing below this line refuses — so
   // an assertion refused for any other reason is not also used up.
   const spent = await usedAssertions.claim({
-    format: 'jwt', use: 'authorization-grant',
+    format: 'jwt', use: exchange ? 'token-exchange' : 'authorization-grant',
     issuer: iss, identifier: String(claims.jti),
     // The client making the token request, where it named itself. Recorded on
     // the row for the console; it is not part of what the history is keyed by.

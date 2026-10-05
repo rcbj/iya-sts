@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -894,9 +894,10 @@ class VcStatusCodec {
     return out;
   }
 
-  // The same, with a post-quantum signature made in the worker pool.
+  // The same, with a post-quantum signature made on libuv's thread pool.
   /**
-   * Signs a COSE_Sign1, with a post-quantum signature made in the worker pool.
+   * Signs a COSE_Sign1, with a post-quantum signature made on libuv's thread
+   * pool.
    *
    * @param input - `{ protectedHeader, unprotectedHeader, payload, key, alg }`
    * @returns the COSE_Sign1 bytes
@@ -911,8 +912,8 @@ class VcStatusCodec {
       return this.coseSign1Sign(input);
     }
     const signature = await pqJose.signAsync(setup.alg.name,
-      this.pqPrivate(input.key), setup.toBeSigned, {});
-    log.debug("Leaving VcStatusCodec.coseSign1SignAsync(). Pooled.");
+      this.pqPrivate(input.key), setup.toBeSigned);
+    log.debug("Leaving VcStatusCodec.coseSign1SignAsync(). On libuv.");
     return this.coseAssemble(input, setup.protectedBytes,
                              Buffer.from(signature));
   }
@@ -1015,7 +1016,8 @@ class VcStatusCodec {
   }
 
   /**
-   * Verifies a COSE_Sign1, with a post-quantum check made in the worker pool.
+   * Verifies a COSE_Sign1, with a post-quantum check made on libuv's thread
+   * pool.
    *
    * @param buf - the COSE_Sign1 bytes
    * @param key - the public key
@@ -1032,8 +1034,8 @@ class VcStatusCodec {
       return this.coseSign1Verify(buf, key, opts);
     }
     const ok = await pqJose.verifyAsync(parsed.alg.name, this.pqPublic(key),
-      parsed.toBeSigned, parsed.signature, {});
-    log.debug("Leaving VcStatusCodec.coseSign1VerifyAsync(). Pooled.");
+      parsed.toBeSigned, parsed.signature);
+    log.debug("Leaving VcStatusCodec.coseSign1VerifyAsync(). On libuv.");
     return this.coseFinish(parsed, !!ok);
   }
 
@@ -1092,7 +1094,7 @@ class VcStatusCodec {
 
   /**
    * Builds and signs a Status List Token in CWT form, a post-quantum signature
-   * made in the worker pool.
+   * made on libuv's thread pool.
    *
    * @param input - as `statusListCwt()` takes it
    * @returns the CWT bytes
@@ -1173,7 +1175,7 @@ class VcStatusCodec {
 
   /**
    * Verifies and reads a Status List Token in CWT form, a post-quantum check
-   * made in the worker pool.
+   * made on libuv's thread pool.
    *
    * @param buf - the CWT bytes
    * @param key - the public key

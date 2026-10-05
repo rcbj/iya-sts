@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -44,6 +44,7 @@ const path = require('path');
 const nodeCrypto = require('crypto');
 
 const crypto = require('../common/crypto');
+const sealedRows = require('./tools/sealed_rows');
 const pkiMerge = require('../common/pki_merge');
 
 const log = require('bunyan').createLogger({
@@ -88,13 +89,15 @@ function freshNode(names) {
 // THE STORE BOTH NODES SHARE. `mergeKeys()` serialises per row and waits
 // `delayMs` holding the "lock", which is what a SELECT … FOR UPDATE does to a
 // second transaction.
+const STORES = [];
+
 function sharedStore(delayMs) {
   log.debug("Entering sharedStore().");
   const rows = new Map();
   const locks = new Map();
   const adopted = [];
   log.debug("Leaving sharedStore().");
-  return {
+  const made = {
     rows: rows,
     adopted: adopted,
     loadKeys: function () {
@@ -148,6 +151,8 @@ function sharedStore(delayMs) {
       log.debug("Leaving hierarchyAdopted().");
     }
   };
+  STORES.push(made);
+  return made;
 }
 
 // Something shaped like a serialised key set, as far as the keystore's write
@@ -168,7 +173,7 @@ function keySet(label, extra) {
 function opened(kek, cipher) {
   log.debug("Entering opened().");
   log.debug("Leaving opened().");
-  return JSON.parse(crypto.decryptWithKek(kek, cipher));
+  return JSON.parse(sealedRows.openRowIn(STORES, kek, cipher));
 }
 
 async function startNode(store, spies) {
@@ -221,8 +226,8 @@ async function offSection(t, kek) {
                    intermediate: { serialHex: '01', certificatePem: 'I1' },
                    issuing: { scep: { serialHex: '02', certificatePem: 'S1' } },
                    revoked: {}, crlNumbers: {}, issuedKeyPairs: [] };
-    store.rows.set('pki:solo', crypto.encryptWithKek(kek,
-      JSON.stringify(seed), 'pki-hierarchy'));
+    store.rows.set('pki:solo', sealedRows.sealRowIn(store, kek, 'solo',
+    'pki-hierarchy', JSON.stringify(seed)));
     const c = await startNode(store, { adopted: [], published: [] });
     const d = await startNode(store, { adopted: [], published: [] });
     const rowC = JSON.parse(JSON.stringify(c.pkiFor('solo')));
@@ -364,8 +369,8 @@ async function mergeSection(t, kek) {
     crlNumbers: { jose: 4 },
     issuedKeyPairs: []
   };
-  store.rows.set('pki:acme', crypto.encryptWithKek(kek, JSON.stringify(seed),
-                                                   'pki-hierarchy'));
+  store.rows.set('pki:acme', sealedRows.sealRowIn(store, kek, 'acme',
+    'pki-hierarchy', JSON.stringify(seed)));
   const spies = { adopted: [], published: [] };
   const a = await startNode(store, spies);
   const b = await startNode(store, { adopted: [], published: [] });
@@ -504,6 +509,45 @@ async function buildSection(t) {
   t.check(interA && interB && interA.serialHex === interB.serialHex,
           'and one process Intermediate, not one per node',
           [interA && interA.serialHex, interB && interB.serialHex]);
+
+  // 9b. ONE CONTAINER'S PROCESSES TOO (2026-10-02). With cluster.mode=off
+  // the row is still merged (section 0), and two processes ensuring a new
+  // realm's branch at once each built one: the merge kept the first, and the
+  // second had already issued from its own (sts_webauthn_attestation, the
+  // user portal's key pair). They take the build claim now, as nodes do.
+  t.log.info('=== 9b. two processes of one container build ONE branch ===');
+  process.env.STS_CLUSTER_MODE = 'off';
+  try {
+    const procA = freshNode(['keystore', 'pki']);
+    const procB = freshNode(['keystore', 'pki']);
+    [procA, procB].forEach(function (node) {
+      node.keystore.setStore(store);
+    });
+    await procA.keystore.start();
+    await procB.keystore.start();
+    t.check(!procA.keystore.arbitrates() && procA.keystore.mergesPkiRows(),
+            'precondition: one container — the store does not arbitrate key ' +
+            'sets and does merge a certificate authority row');
+    await procA.pki.ensureRoot({ keyAlg: 'ec-p256' });
+    await procB.pki.ensureRoot({ keyAlg: 'ec-p256' });
+    const solo = await Promise.all([
+      procA.pki.ensureScope('solo-realm', { keyAlg: 'ec-p256' }),
+      procB.pki.ensureScope('solo-realm', { keyAlg: 'ec-p256' })
+    ]);
+    t.check(solo[0].ok && solo[1].ok, 'both processes answer ok', solo);
+    t.check(!!solo[0].existing !== !!solo[1].existing,
+            'EXACTLY ONE PROCESS BUILT the realm\'s branch; the other waited ' +
+            'on the build claim and took it from the store',
+            solo.map(function (one) { return !!one.existing; }));
+    const soloA = procA.pki.rawRowFor('solo-realm').intermediate;
+    const soloB = procB.pki.rawRowFor('solo-realm').intermediate;
+    t.check(soloA && soloB && soloA.serialHex === soloB.serialHex,
+            'and both hold the SAME Intermediate, so nothing either issues ' +
+            'is under an authority the other threw away',
+            [soloA && soloA.serialHex, soloB && soloB.serialHex]);
+  } finally {
+    process.env.STS_CLUSTER_MODE = 'active-active';
+  }
 
   t.log.info('=== 10. a node that starts later reads, and builds nothing ===');
   const nodeC = freshNode(['keystore', 'pki']);
@@ -757,8 +801,8 @@ async function publishedNotRevokedSection(t, kek) {
     crlNumbers: { root: 1 },
     issuedKeyPairs: []
   };
-  store.rows.set('pki:acme', crypto.encryptWithKek(kek, JSON.stringify(seed),
-                                                   'pki-hierarchy'));
+  store.rows.set('pki:acme', sealedRows.sealRowIn(store, kek, 'acme',
+    'pki-hierarchy', JSON.stringify(seed)));
   const a = await startNode(store, { adopted: [], published: [] });
 
   // A REBUILD THAT SUPERSEDED THE INTERMEDIATE AND DID NOT REPLACE IT — the
@@ -825,8 +869,8 @@ async function unadoptedMergeSection(t, kek) {
     crlNumbers: {},
     issuedKeyPairs: []
   };
-  store.rows.set('pki:acme', crypto.encryptWithKek(kek, JSON.stringify(seed),
-                                                   'pki-hierarchy'));
+  store.rows.set('pki:acme', sealedRows.sealRowIn(store, kek, 'acme',
+    'pki-hierarchy', JSON.stringify(seed)));
   const a = await startNode(store, { adopted: [], published: [] });
   const b = await startNode(store, { adopted: [], published: [] });
 
@@ -889,8 +933,8 @@ async function orphanedSlotSection(t, kek) {
     crlNumbers: {},
     issuedKeyPairs: []
   };
-  store.rows.set('pki:acme', crypto.encryptWithKek(kek, JSON.stringify(seed),
-                                                   'pki-hierarchy'));
+  store.rows.set('pki:acme', sealedRows.sealRowIn(store, kek, 'acme',
+    'pki-hierarchy', JSON.stringify(seed)));
   const a = await startNode(store, { adopted: [], published: [] });
   const b = await startNode(store, { adopted: [], published: [] });
   const told = [];
@@ -952,8 +996,8 @@ async function applyWaitsSection(t, kek) {
     crlNumbers: { xml: 1 },
     issuedKeyPairs: []
   };
-  store.rows.set('pki:pinrace', crypto.encryptWithKek(
-    kek, JSON.stringify(seed), 'pki-hierarchy'));
+  store.rows.set('pki:pinrace', sealedRows.sealRowIn(store, kek, 'pinrace',
+    'pki-hierarchy', JSON.stringify(seed)));
   const a = await startNode(store, { adopted: [], published: [] });
   const b = await startNode(store, { adopted: [], published: [] });
   // Node A's change commits: the one node B must see.
@@ -982,6 +1026,57 @@ async function applyWaitsSection(t, kek) {
   }), 'and its own change is kept', held.issuedKeyPairs);
   await b.settleAll();
   log.debug("Leaving applyWaitsSection().");
+}
+
+// A BROADCAST COPY DOES NOT REPLACE A NEWER STORED ROW (2026-09-28). In one
+// container a process publishes its certificate-authority row over IPC when
+// it saves it, and `adoptPki()` replaced what every other process held with
+// that copy — built before a change another process had since merged into the
+// stored row. So the change vanished from memory everywhere: the xml pin in
+// `sts_pinned_signer` (single-node, 01991121's run; CI's cluster job), wiped
+// by a post-quantum certification another worker published 30 ms later.
+// Where the store merges the row, the broadcast is a nudge to read it.
+async function broadcastNudgeSection(t, kek) {
+  log.debug("Entering broadcastNudgeSection().");
+  t.log.info('=== 15. a broadcast copy does not replace a newer stored ' +
+             'row ===');
+  const store = sharedStore(5);
+  const seed = {
+    version: 2, scope: 'nudge',
+    intermediate: { serialHex: '01', certificatePem: 'I1' },
+    issuing: { xml: { serialHex: '02', certificatePem: 'X1' } },
+    revoked: { xml: [] },
+    crlNumbers: { xml: 1 },
+    issuedKeyPairs: []
+  };
+  store.rows.set('pki:nudge', sealedRows.sealRowIn(store, kek, 'nudge',
+    'pki-hierarchy', JSON.stringify(seed)));
+  const a = await startNode(store, { adopted: [], published: [] });
+  const b = await startNode(store, { adopted: [], published: [] });
+  // A's change commits and B adopts the stored row carrying it.
+  const rowA = JSON.parse(JSON.stringify(a.pkiFor('nudge')));
+  rowA.revoked.xml.push({ serialHex: 'd1', reason: 'keyCompromise',
+                          revokedAt: '2026-09-28T13:06:22.000Z' });
+  a.attachPki('nudge', rowA);
+  await a.settleAll();
+  await b.applyStoredChange('pki:nudge');
+  t.check(b.pkiFor('nudge').revoked.xml.some(function (one) {
+    return one.serialHex === 'd1';
+  }), 'node B holds node A\'s change from the stored row');
+  // Then a third process's copy, made before that change, is broadcast.
+  const future = new Date(Date.now() + 86400000).toISOString();
+  const older = JSON.parse(JSON.stringify(seed));
+  older.issuedKeyPairs.push({ serialHex: 'c1', useCase: 'xml',
+                              notAfter: future });
+  const answer = b.adoptPki('nudge', older);
+  await sleep(50);
+  t.check(answer === true && b.pkiFor('nudge').revoked.xml.some(
+    function (one) {
+      return one.serialHex === 'd1';
+    }), 'A BROADCAST COPY MADE BEFORE A MERGED CHANGE DOES NOT WIPE IT: ' +
+        'where the store merges the row, the broadcast is read as a nudge ' +
+        'to read the stored row', b.pkiFor('nudge').revoked);
+  log.debug("Leaving broadcastNudgeSection().");
 }
 
 async function run(t) {
@@ -1014,6 +1109,7 @@ async function run(t) {
     await unadoptedMergeSection(t, kek);
     await orphanedSlotSection(t, kek);
     await applyWaitsSection(t, kek);
+    await broadcastNudgeSection(t, kek);
     await buildSection(t);
     await crlSection(t);
     await spiffeSection(t);

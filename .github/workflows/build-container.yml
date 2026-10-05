@@ -1,14 +1,26 @@
 # SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: BUSL-1.1
 #
-# Builds the mock STS container image.
+# Builds IYA STS container image.
 #
-# On every push to main (which is what a merged pull request is) and on demand
-# from the Actions tab. It does not publish: the image exists only for the life
-# of the job, and tests.yml is what pushes this repository's images. It does
-# log in to ghcr.io, READ-ONLY, because both of the Dockerfile's base images
-# come from the private image mirror (.github/image-mirror.txt) since
-# 2026-09-27.
+# On every push to main (which is what a merged pull request is) and to
+# develop, and on demand from the Actions tab. Both of the Dockerfile's base
+# images come from the private image mirror (.github/image-mirror.txt) since
+# 2026-09-27, so it logs in to ghcr.io before building.
+#
+# AND FROM main, AND ONLY FROM main, IT PUBLISHES THE IMAGES IT HAS JUST
+# SMOKE-TESTED (2026-10-02), as PUBLIC images, to two registries with the same tags from the same build —
+# the parent project's arrangement for its api and client (its
+# .github/workflows/dockerimage.yml, issue #154 there):
+#
+#   ghcr.io/rcbj/iya-sts              docker.io/iyasec/iya-sts
+#   ghcr.io/rcbj/iya-sts-xacml-pep    docker.io/iyasec/iya-sts-xacml-pep
+#
+# The second is the remote XACML PEP (xacml-pep/), checked for liveness
+# before anything is published. A develop build is built and checked and
+# publishes nothing (rcbj, 2026-10-02): what goes out is what reached main.
+#
+# See *Publish the image* below.
 #
 # The build alone is worth running. This service is a shell — server.js requires
 # the other modules and listens — so a module that never reaches the image is not
@@ -23,13 +35,14 @@ name: Build container
 
 on:
   push:
-    branches: [main]
+    branches: [main, develop]
   workflow_dispatch:
 
 permissions:
   contents: read
-  # The private image mirror on ghcr.io, read for the base images.
-  packages: read
+  # The private image mirror on ghcr.io, read for the base images, and the
+  # public ghcr.io/rcbj/iya-sts package, written.
+  packages: write
 
 jobs:
   build:
@@ -86,16 +99,16 @@ jobs:
       # image in its own cache and `docker run rcbj/sts` would pull from Docker
       # Hub instead — a stale published image passing for the one just built.
       #
-      # THE TWO BUILD ARGUMENTS STAMP THE IMAGE'S VERSION (M.N.O). The build
-      # number is fixed here rather than at startup — see CLAUDE.md,
-      # *Versioning* — and CI is the one place where the run number is a better
-      # build number than the UTC instant: it is what a failure report names, so
-      # a version that carries it points straight back at the run that produced
-      # the image. GIT_COMMIT has to be passed because `.dockerignore` excludes
+      # THE IMAGE NUMBERS ITSELF (M.N.O). The Dockerfile's
+      # `node common/version.js --stamp` fixes the build number while the
+      # image is built — the UTC build instant, the number every console page
+      # shows at its foot — so no BUILD_NUMBER is passed (it was the workflow's
+      # run number until 2026-10-02), and the publish step below reads the
+      # version back out of the image. The XACML PEP image is stamped by its
+      # own build, a moment later, so its number is its own.
+      # GIT_COMMIT has to be passed because `.dockerignore` excludes
       # `.git`, so the build context carries no history for `git rev-parse` to
-      # read. Neither is required — omit them and the version is the build
-      # instant with no commit — which is what keeps a plain `docker build`
-      # working unchanged.
+      # read.
       - name: Build image
         uses: docker/build-push-action@v6
         with:
@@ -104,7 +117,6 @@ jobs:
           load: true
           push: false
           build-args: |
-            BUILD_NUMBER=${{ github.run_number }}
             GIT_COMMIT=${{ github.sha }}
           # Every FROM from the ghcr.io mirror, as docker-compose-run-tests.yml's
           # x-mirror-contexts does (`ubuntu`, not `ubuntu:latest`: BuildKit
@@ -115,6 +127,25 @@ jobs:
             node:24.16.0-bookworm-slim=docker-image://ghcr.io/rcbj/iya-sts/mirror/node:24.16.0-bookworm-slim
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      # THE REMOTE XACML PEP (2026-10-02), with the same build number and
+      # commit, so the two images published from one run carry one version.
+      # Its one FROM comes from the mirror, as the service's do.
+      - name: Build the XACML PEP image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: xacml-pep/Dockerfile
+          tags: rcbj/xacml-pep:ci
+          load: true
+          push: false
+          build-args: |
+            GIT_COMMIT=${{ github.sha }}
+          build-contexts: |
+            rust:1.97-bookworm=docker-image://ghcr.io/rcbj/iya-sts/mirror/rust:1.97-bookworm
+            debian:bookworm-slim=docker-image://ghcr.io/rcbj/iya-sts/mirror/debian:bookworm-slim
+          cache-from: type=gha,scope=xacml-pep
+          cache-to: type=gha,mode=max,scope=xacml-pep
 
       # Publishing to the host rather than reusing the compose file: this needs
       # one container and a port, and compose would add a second thing that can
@@ -220,7 +251,7 @@ jobs:
       # place that claim can be checked at all: the stamp is written during the
       # image build, and every other test in this repository runs against a
       # service started from a checkout, where there IS no stamp and the number
-      # is computed at startup. So `stamped: true` and the run number reaching
+      # is computed at startup. So `stamped: true` and the build number reaching
       # the version are exactly what no other test can see.
       #
       # It also catches the specific way this goes quietly wrong: a `--stamp`
@@ -237,9 +268,11 @@ jobs:
           body=$(curl -fsSk -H "Authorization: Bearer ${STS_ADMIN_API_TOKEN}" \
             https://localhost:8081/admin-api)
           echo "${body}" | head -8
-          echo "${body}" | grep -q '"build": "${{ github.run_number }}"' || {
-            echo "The image did not report BUILD_NUMBER=${{ github.run_number }}." >&2
-            echo "The Dockerfile's --stamp step did not reach the image." >&2
+          stamped="$(docker run --rm --entrypoint cat rcbj/sts:ci \
+                     version.json | jq -r .build)"
+          echo "${body}" | grep -q "\"build\": \"${stamped}\"" || {
+            echo "The service did not report the build number its image" >&2
+            echo "was stamped with (${stamped})." >&2
             exit 1
           }
           echo "${body}" | grep -q '"stamped": true' || {
@@ -249,6 +282,173 @@ jobs:
             exit 1
           }
 
+      # The PEP's liveness only: it starts, binds 9090 and answers
+      # /healthcheck. Registering with a PDP needs a client certificate a
+      # realm issued, which the test stacks arrange and this job does not; a
+      # PEP that cannot reach its PDP keeps retrying and stays live, which
+      # is the behaviour xacml-pep/CLAUDE.md argues.
+      - name: Check the XACML PEP image starts
+        run: |
+          docker run -d --name pep-ci -p 9090:9090 \
+            -e PEP_PDP_URL=https://localhost:8081 rcbj/xacml-pep:ci
+          for i in $(seq 1 30); do
+            if curl -fsS http://localhost:9090/healthcheck; then
+              echo
+              echo "The PEP answered /healthcheck after ${i} attempt(s)."
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "The PEP never answered /healthcheck." >&2
+          docker logs pep-ci >&2 || true
+          exit 1
+
+      # ---------------------------------------------------------------------
+      # PUBLISH THE IMAGE (2026-10-02), only after every check above passed,
+      # so nothing published failed to start, register its routes or report
+      # its stamp.
+      #
+      # Tagged M.N.O, the version the image itself reports (read out of its
+      # version.json, so the tag and the stamp cannot disagree), and a
+      # floating `latest`. From main ONLY (rcbj, 2026-10-02): develop
+      # published a `develop` tag for a day, and too much went out that was
+      # not ready. A develop build, and a run started by hand from any branch
+      # but main, publishes nothing. The image's
+      # org.opencontainers.image.revision label names the commit.
+      #
+      # NOT ghcr.io/rcbj/iya-sts/<name>. That namespace is the test stack's
+      # (tests.yml pushes ghcr.io/rcbj/iya-sts/sts and its siblings under the
+      # commit and the branch, built for the test stacks) and the mirror's;
+      # sharing a name would let one workflow overwrite the other's tag.
+      #
+      # A NEW ghcr.io PACKAGE STARTS PRIVATE. The image's
+      # org.opencontainers.image.source label links it to this repository,
+      # but the first push still creates it private, and no API can change
+      # that: make it public ONCE, under Package settings -> Danger Zone ->
+      # Change visibility. Every later push keeps the setting.
+      #
+      # DOCKER HUB, the iyasec organization, logs in with a personal access
+      # token held in two repository secrets, the parent project's:
+      # DOCKERHUB_USERNAME (an account that may push to iyasec) and
+      # DOCKERHUB_TOKEN (Read & Write). A build that should publish and has
+      # neither FAILS rather than publishing to one registry of two, which
+      # would leave the tags disagreeing. A repository a first push creates
+      # takes the organization's default visibility: create iyasec/iya-sts
+      # public before the first push, or make iyasec's default public.
+      # ---------------------------------------------------------------------
+      - name: Decide what to publish
+        id: publish-plan
+        run: |
+          set -euo pipefail
+          case "${{ github.ref_name }}" in
+            main) FLOAT=latest ;;
+            *)    FLOAT="" ;;
+          esac
+          VERSION="$(docker run --rm --entrypoint cat rcbj/sts:ci \
+                     version.json | jq -r .version)"
+          PEP_VERSION="$(docker run --rm --entrypoint cat \
+                         rcbj/xacml-pep:ci version.json | jq -r .version)"
+          for v in "${VERSION}" "${PEP_VERSION}"; do
+            test -n "${v}" && test "${v}" != null
+          done
+          echo "float=${FLOAT}" >> "$GITHUB_OUTPUT"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "pep_version=${PEP_VERSION}" >> "$GITHUB_OUTPUT"
+          if [ -z "${FLOAT}" ]; then
+            echo "Not main: nothing is published."
+          else
+            echo "Publishing ${VERSION} (PEP ${PEP_VERSION}) and ${FLOAT}."
+          fi
+
+      - name: Log in to Docker Hub
+        if: ${{ steps.publish-plan.outputs.float != '' }}
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "${DOCKERHUB_USERNAME}" ] || [ -z "${DOCKERHUB_TOKEN}" ]; then
+            echo "::error::DOCKERHUB_USERNAME and DOCKERHUB_TOKEN must both be" \
+                 "set as repository secrets to publish to docker.io/iyasec."
+            exit 1
+          fi
+          echo "${DOCKERHUB_TOKEN}" |
+            docker login docker.io -u "${DOCKERHUB_USERNAME}" --password-stdin
+
+      - name: Publish the images
+        if: ${{ steps.publish-plan.outputs.float != '' }}
+        env:
+          VERSION: ${{ steps.publish-plan.outputs.version }}
+          PEP_VERSION: ${{ steps.publish-plan.outputs.pep_version }}
+          FLOAT: ${{ steps.publish-plan.outputs.float }}
+        run: |
+          set -euo pipefail
+          rows=""
+          # source image, published name, its version
+          while read -r src name version; do
+            for registry in ghcr.io/rcbj docker.io/iyasec; do
+              dst="${registry}/${name}"
+              for tag in "${version}" "${FLOAT}"; do
+                docker tag "${src}" "${dst}:${tag}"
+                docker push "${dst}:${tag}"
+              done
+              # One RepoDigests entry per registry; Docker records docker.io
+              # repositories without the host.
+              repo="${dst#docker.io/}"
+              digest="$(docker image inspect --format \
+                  '{{range .RepoDigests}}{{println .}}{{end}}' "${src}" |
+                  grep -m1 "^${repo}@" || true)"
+              rows="${rows}| \`${dst}:${version}\` | \`${digest#*@}\` |"$'\n'
+            done
+          done <<EOF
+          rcbj/sts:ci iya-sts ${VERSION}
+          rcbj/xacml-pep:ci iya-sts-xacml-pep ${PEP_VERSION}
+          EOF
+          {
+            echo "### Published images (also \`${FLOAT}\`)"
+            echo ""
+            echo "| Image | Digest |"
+            echo "|---|---|"
+            printf '%s' "${rows}"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # ARTIFACT HUB'S VERIFIED PUBLISHER BADGE (2026-10-02), the parent
+      # project's arrangement (its dockerimage.yml, d95d48f there). For a
+      # container-image repository Artifact Hub does not read git: it looks
+      # for its repository metadata in the IMAGE repository, under the tag
+      # `artifacthub.io`, and a repositoryID matching the one it assigned is
+      # the proof of ownership. ghcr.io only, where the Artifact Hub
+      # repositories point. An image whose
+      # .github/artifacthub/<name>/artifacthub-repo.yml has not been committed
+      # yet (the ID exists only once the repository is added in Artifact
+      # Hub's control panel) is skipped. Pushing again changes nothing, so
+      # every publishing build does it. The per-package metadata is the
+      # io.artifacthub.* LABELs in each Dockerfile, not this file.
+      - name: Install oras
+        if: ${{ steps.publish-plan.outputs.float != '' }}
+        uses: oras-project/setup-oras@v1
+
+      - name: Publish Artifact Hub repository metadata
+        if: ${{ steps.publish-plan.outputs.float != '' }}
+        run: |
+          set -euo pipefail
+          for name in iya-sts iya-sts-xacml-pep; do
+            dir=".github/artifacthub/${name}"
+            if [ ! -f "${dir}/artifacthub-repo.yml" ]; then
+              echo "No ${dir}/artifacthub-repo.yml yet: ${name} is skipped."
+              continue
+            fi
+            # oras takes the path as given into the layer's title, so push
+            # from the file's own directory and it is named
+            # artifacthub-repo.yml, as Artifact Hub expects.
+            (
+              cd "${dir}"
+              oras push "ghcr.io/rcbj/${name}:artifacthub.io" \
+                --config /dev/null:application/vnd.cncf.artifacthub.config.v1+yaml \
+                artifacthub-repo.yml:application/vnd.cncf.artifacthub.repository-metadata.layer.v1.yaml
+            )
+          done
+
       # if: always() — when a step above fails, the container's log is the only
       # place the reason exists (a MODULE_NOT_FOUND, a context file that was not
       # copied), and it is gone as soon as the runner is reclaimed.
@@ -256,6 +456,6 @@ jobs:
         if: always()
         run: docker logs sts-ci || true
 
-      - name: Stop the container
+      - name: Stop the containers
         if: always()
-        run: docker rm -f sts-ci || true
+        run: docker rm -f sts-ci pep-ci || true

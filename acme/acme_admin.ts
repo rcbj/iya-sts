@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -468,7 +468,7 @@ class AcmeAdmin {
    * @param res - its response
    * @param result - the action's answer
    */
-  createdEabPage(req, res, result) {
+  createdEabPage(req, res, result, backHref?) {
     const { log, admin, esc } = this.deps;
     log.debug("Entering AcmeAdmin.createdEabPage().");
     const inner = admin.warn('<strong>Copy the HMAC key now.</strong> It is ' +
@@ -482,7 +482,9 @@ class AcmeAdmin {
       this.code(result.alg) + '</td></tr><tr><th>Unused until</th><td>' +
       esc(result.expiresAt) + '</td></tr></table>' +
       '<h2>certbot</h2><pre>' + esc(result.certbot) + '</pre>' +
-      '<p class="links"><a href="/admin/acme#eab">Back to ACME</a></p>';
+      '<p class="links">' + (backHref
+        ? '<a href="' + esc(backHref) + '">Back to the application</a> · '
+        : '') + '<a href="/admin/acme#eab">Back to ACME</a></p>';
     admin.respond(req, res, result, 'ACME — EAB key', '/admin/acme', inner);
     log.debug("Leaving AcmeAdmin.createdEabPage().");
   }
@@ -595,10 +597,13 @@ class AcmeAdmin {
       Promise.resolve(consoleModel.acmeAction(body, { via: 'console',
                                                      actor: actor, req: req }))
         .then(function (result) {
+          // A form on an application's page comes back there (2026-10-01).
+          const back = admin.enrollmentReturnTo(body, '/admin/acme');
           if (result.ok && body.action === 'create-eab') {
-            return self.createdEabPage(req, res, result);
+            return self.createdEabPage(req, res, result,
+              back === '/admin/acme' ? '' : back);
           }
-          return admin.respondToAction(req, res, '/admin/acme', result);
+          return admin.respondToAction(req, res, back, result);
         }).catch(function (e) {
           log.error(errorCodes.tag('STS-ACME-0095') + 'acme console action ' +
                     'threw: ' + ((e && e.stack) || e));

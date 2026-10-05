@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -1607,10 +1607,17 @@ class AdminRbac {
     };
 
     if (directory) {
-      directory.allPersons().forEach(function (person) {
+      // DNs, not entries (#352): the RDN is all this reads, and copying
+      // every person's entry whole to read it was the page's cost.
+      const dns = typeof directory.personDns === 'function'
+        ? directory.personDns()
+        : directory.allPersons().map(function (person) {
+          return person.dn;
+        });
+      dns.forEach(function (dn) {
         // The RDN value, which is what `existingUserEntry()` matches a typed
         // name against — so what the search offers is what a grant will find.
-        const rdn = String(person.dn).split(',')[0];
+        const rdn = String(dn).split(',')[0];
         const eq = rdn.indexOf('=');
         add(eq > 0 ? rdn.slice(eq + 1) : '', 'inDirectory');
       });

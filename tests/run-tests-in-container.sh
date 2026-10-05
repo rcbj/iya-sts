@@ -1,6 +1,6 @@
 #!/bin/bash
 # SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: BUSL-1.1
 #
 # tests/run-tests-in-container.sh — the tests image's CMD.
 #
@@ -83,13 +83,13 @@ waitForTheService()
 {
   local deadline code
   deadline=$(( $(date +%s) + ${STS_TEST_READY_SECONDS:-180} ))
-  echo "Waiting for the mock STS at ${STS_URL} ..."
+  echo "Waiting for IYA STS at ${STS_URL} ..."
   while :;
   do
     code="$(probe "${STS_URL}/healthcheck")"
     if [ "${code}" = "200" ];
     then
-      echo "The mock STS is answering at ${STS_URL}."
+      echo "IYA STS is answering at ${STS_URL}."
       return 0
     fi
     if [ "$(date +%s)" -ge "${deadline}" ];

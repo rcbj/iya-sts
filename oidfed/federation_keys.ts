@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -91,6 +91,10 @@ const ROTATE_JOB = 'oidfed.key-rotate';
  */
 const ROTATE_NOW_JOB = 'oidfed.key-rotate-now';
 const MINT_SCOPE = 'oidfed.key-mint';
+// How long a request that met another process's mint waits for its row, and
+// how often it looks (see `awaitMinted()`).
+const MINT_WAIT_MS = 15000;
+const MINT_POLL_MS = 100;
 const DAY_MS = 86400000;
 // The revocation reasons 8.7.3 defines.
 /**
@@ -221,6 +225,37 @@ class FederationKeys {
     return Math.max(0, Number(config.value('oidfed.keyOverlapDays'))) * DAY_MS;
   }
 
+  // -------------------------------------------------------------------------
+  // THE ROW ANOTHER PROCESS IS MINTING, waited for (see `ensure()`): the rows
+  // are read again every MINT_POLL_MS until a current key is among them or
+  // `waitMs` passes. Each read is the directory as replication has brought it,
+  // so nothing here dials anything. A claim that lapsed while waiting (the
+  // minter died) is not taken over here: the next request's `ensure()` claims
+  // again.
+  // -------------------------------------------------------------------------
+  /**
+   * Waits, bounded, for another process's current key to arrive.
+   *
+   * @param waitMs - how long to wait
+   * @returns a promise of the key rows as they then stand
+   */
+  private async awaitMinted(waitMs: number): Promise<Json[]> {
+    const { log } = this.deps;
+    log.debug("Entering FederationKeys.awaitMinted().");
+    const until = Date.now() + Math.max(0, Number(waitMs) || 0);
+    let rows = this.rows();
+    while (!rows.some(function (r: Json): boolean {
+      return r.state === 'current';
+    }) && Date.now() < until) {
+      await new Promise(function (resolve): void {
+        setTimeout(resolve, MINT_POLL_MS);
+      });
+      rows = this.rows();
+    }
+    log.debug("Leaving FederationKeys.awaitMinted(). " + rows.length);
+    return rows;
+  }
+
   private rows(): Json[] {
     const { log, store } = this.deps;
     log.debug("Entering FederationKeys.rows().");
@@ -330,9 +365,13 @@ class FederationKeys {
     const claimed: Json = await claims().claim({ scope: MINT_SCOPE,
       value: realmId + ':' + rows.length, ttlMs: 60000 });
     if (!claimed.ok) {
-      // Another node is minting it. Its row arrives with the directory's
-      // next change; until then this realm has no key to sign with.
-      rows = this.rows();
+      // Another node or worker is minting it, and its row arrives with the
+      // directory's next change. WAITED FOR, BOUNDED (2026-09-28): this
+      // answered at once with no key, so a request that met the claim held
+      // was a 503 a moment before the key existed everywhere — CI run
+      // 36415737694, `sts_siop` in single-node, the Entity Configuration of
+      // a realm created 1.4 s earlier.
+      rows = await this.awaitMinted(MINT_WAIT_MS);
       log.debug("Leaving FederationKeys.ensure(). Minted elsewhere.");
       return rows;
     }

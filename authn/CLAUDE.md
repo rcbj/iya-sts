@@ -1277,6 +1277,36 @@ refresh; `cluster/CLAUDE.md`, *The scheduler*). What moved and what did not:
   dispatch without coordination is refused. A configuration where a process
   holds sessions nobody else can see would make it a *per-process* job there.
 
+**A REALM HOLDS AT MOST `authn.maxSessions` SESSIONS (#345, 2026-09-29;
+100,000 by default).** Until then only the expiry job bounded the store, so a
+burst of sign-ins — a suite run, credential stuffing, a client that never
+keeps its cookie — grew every process until the job caught up.
+
+* **Checked at INSERT**, in `makeRoomForSession()`, by the three doors that
+  add a key: `startArrivalSession()`, `startRelyingPartySession()` and
+  `startSessionHere()` (an upgraded arrival keeps its id and is not an
+  insert). The scheduler rule allows it: a bound cannot wait for a timer.
+* **At the cap the LEAST RECENTLY USED session ends, through
+  `expireSession()`** with `why` = `capacity` — the delete, back-channel
+  Logout Tokens planned, and once for the cluster the `session.end` audit row
+  carrying `STS-AUTHN-0292` and CAEP `session-revoked` initiated by `policy`.
+  The log line is at most once a minute per process, with a count.
+* **Least recently used is `lastSeenAt`, falling back to `startedAt`**,
+  because it is what the row tracks. It moves at every sign-in on the
+  session and every API client call, and on every use only while an idle
+  timeout is in force (`noteSessionUsed()`: a browser read is not a write
+  otherwise). Creation order would end an operator's session behind a burst
+  of arrivals.
+* **Only the process doing the insert checks**, against its own view of the
+  replicated store. A worker restoring sessions, or applying another's
+  writes from the change log, never evicts, so processes do not each evict
+  differently. The end is a normal tombstoned delete. Two concurrent
+  inserters may overshoot by one each until the next insert.
+* **Lowering the cap** ends every session over it at the next insert, in one
+  sort, rather than one per insert.
+
+`tests/session_cap.js` holds it.
+
 **THE EVENT SAYS `policy` AND NOT `user`.** `caep.ts`'s rule for a `revoked` act
 was `admin` when an administrator did it and `user` otherwise, and an expiry is
 neither — a lifetime this service configured ran out, which is what CAEP section
@@ -1733,6 +1763,44 @@ header; what a maintainer of THIS directory needs is where it sits:
   JWK now carries `alg`**, so an assertion is checked with the credential's own
   hash and padding; a key stored before has none and is read by key type — which
   fixed ES384 and ES512 keys, checked with SHA-256 until then.
+* **EVERY ALGORITHM, REQUESTED BY DEFAULT (2026-10-01, rcbj).** The verifier
+  also checks RFC 9864's fully specified ESP256/384/512 (-9/-51/-52) and
+  Ed25519/Ed448 (-19/-53), whose curve is checked against the key, and RFC
+  8812's ES256K (-47) — nineteen in all, and a standalone copy refuses the
+  six new ones too. `webauthn.algorithms` now defaults to all nineteen, ML-DSA
+  first (-48, -49, -50), where it was `ES256,RS256`; an authenticator takes
+  the first it supports. `tests/webauthn_attestation.js` section B
+  registers and asserts every one.
+* **TWO PER-REALM FLAGS ON THE ALGORITHMS (2026-10-01, rcbj).**
+  `webauthn.insecureAlgorithms` (off) requests SHA-1's RS1 (-65535) LAST
+  and accepts it — in `crypto.verifyCoseSignature()` it is marked
+  `insecure` and refused unless the caller passes `allowInsecure`, which
+  the two assertion doors, the attestation statements and the offer take
+  from `webauthnPolicy.insecureAlgorithmsAllowed()`; an RS1 key's
+  assertion with the flag off fails the named check `algorithm is allowed`
+  (`STS-AUTHN-0294`). It is `onlyWhile: 'usesBrokenAlgorithms'`, so product
+  cannot set it and ignores it. `webauthn.pqcOnly` (off) narrows the
+  request to ML-DSA (all three where the list names none, and it beats the
+  insecure flag); registration then refuses anything else, and enrolled
+  classical keys go on signing in.
+* **CHOSEN ON THE CONSOLE BY CHECKBOX AND NUMBER (2026-10-01, rcbj).**
+  `webauthn.algorithms` is marked `ordered` (with `csvValueNotes`) in
+  `common/config.js`, so `/admin/webauthn` draws it as a table — a
+  checkbox to request each algorithm and a number for its preference — and
+  `admin.ts`'s `foldOrderedChoices()` turns the posted fields back into the
+  one list before `set-many` checks it; ticking nothing is refused
+  (`STS-ADMIN-0840`). No script. `/admin-api/config` takes the list as it
+  always did. `tests/ordered_choice_setting.js` holds it.
+* **THE ALGORITHM IS RECORDED AND SHOWN (2026-10-01, rcbj).** A key's
+  record carries `algorithm` and `coseAlg` from the ceremony;
+  `credentials.keyAlgorithm()` reads them, or the stored JWK's `alg`, or
+  the key type for a key older than both. `/portal/keys` and a person's
+  `/admin/users` page show it (marked post-quantum or insecure), and
+  `GET /admin-api/users?user=` returns it per key. The enrolment audit rows
+  (`portal.key.enrolled`, `portal.activate.key.enrolled`) carry
+  `algorithm`, and `session.start` carries `credentialAlgorithm` for a
+  sign-in a passkey verified, passwordless or second factor; the
+  authentication event's context carries `algorithm` and `coseAlg`.
 * **Both ceremony doors ask it, AFTER the ceremony's checks and BEFORE the
   credential id is claimed**: the sign-in screen (`authn.ts`, in the async
   registration tail) and `credentials.checkKeyEnrolment()` (`/portal/keys`). A

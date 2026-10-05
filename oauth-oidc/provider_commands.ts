@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -166,8 +166,21 @@ const learned = realms.map({ persist: 'oauth2.commandMetadata' });
 // every minted flush failed from the first command onward (2026-09-27).
 const issuerLearned = realms.map({ persist: 'oauth2.commandIssuer' });
 const callbacks = realms.map({ persist: 'oauth2.commandCallbacks',
-                               retain: 'age' });
-const runs = realms.map({ persist: 'oauth2.tenantCommandRuns' });
+                               retain: 'age',
+                               // #333: the callback token's own expiry, ms.
+                               expiresAt: realms.expiryField('expiresAt', 1) });
+// `expiresAt` (#333): the sweep's rule — a finished run is kept
+// `oauth2.commandRetentionS` past its end; a running one never expires.
+const runs = realms.map({
+  persist: 'oauth2.tenantCommandRuns',
+  // A hot path (every row a flush writes): no Entering/Leaving pair.
+  expiresAt: function (run: Json): number | null {
+    const ended = Number(run && (run.finishedAt || run.startedAt));
+    const keepS = Number(config.value('oauth2.commandRetentionS'));
+    return run && run.state !== 'running' && ended > 0 && keepS > 0
+      ? ended + keepS * 1000 : null;
+  }
+});
 
 interface ProviderCommandsDeps {
   log: typeof helpers.log;
@@ -420,7 +433,9 @@ class ProviderCommands {
       log.debug("Leaving ProviderCommands.issuer(). From the request.");
       return iss;
     }
-    const pinned = String(config.value('global.publicBaseUrl') || '').trim()
+    // The realm's own base first (#99), as helpers.pinnedBaseUrl() reads it.
+    const pinned = String(config.value('listener.publicBaseUrl') ||
+                          config.value('global.publicBaseUrl') || '').trim()
       .replace(/\/+$/, '');
     if (config.value('oauth2.issuer') || pinned) {
       log.debug("Leaving ProviderCommands.issuer(). Pinned.");
@@ -553,6 +568,36 @@ class ProviderCommands {
     }
     log.debug("Leaving ProviderCommands.audSubFor().");
     return found ? found.slice(prefix.length) : '';
+  }
+
+  // COMMITTED BEFORE IT IS HANDED OUT (2026-09-30). A callback token is
+  // found by its `oauth2.commandCallbacks` row, which this process writes
+  // into its own store and flushes later; the Command Token carrying the
+  // token went out at once. A relying party calling back to ANOTHER process
+  // or node — a request worker, or the other node behind the balancer —
+  // then presented a token nobody there had, and was answered 401:
+  // `sts_provider_commands` waited thirty seconds for `suspended` in
+  // single-node twice. So what hands a token out waits for the minted
+  // flush first, as `oidc_rp.ts` waits before it signs with a key it has
+  // just issued. A flush that fails is reported by persistence.js; the
+  // command goes out anyway, and a callback it cannot find is a 401 the
+  // relying party can retry.
+  /**
+   * Runs `fn` once the rows this process has minted are committed.
+   *
+   * @param fn - what to do then
+   * @returns a promise of what `fn` returns
+   */
+  private afterMintedCommit(fn: () => unknown): Promise<unknown> {
+    const { log } = this.deps;
+    log.debug("Entering ProviderCommands.afterMintedCommit().");
+    log.debug("Leaving ProviderCommands.afterMintedCommit().");
+    return Promise.resolve().then(function () {
+      return require('../persistence/persistence').flushMinted();
+    }).catch(function (e: Json) {
+      log.debug("Caught in ProviderCommands.afterMintedCommit(): " +
+                ((e && e.message) || e));
+    }).then(fn);
   }
 
   // A callback token, minted and stored hashed with what it answers for.
@@ -928,7 +973,10 @@ class ProviderCommands {
         purpose: 'refresh', clientId: String(clientId), command: cmd });
     }
     const queued = this.outbox.queue(fields);
-    this.outbox.dispatch([queued.row]).catch(function (e) {
+    const outbox = this.outbox;
+    this.afterMintedCommit(function () {
+      return outbox.dispatch([queued.row]);
+    }).catch(function (e) {
       log.debug("Caught in ProviderCommands.send(): " +
                 ((e && e.message) || e));
     });
@@ -993,13 +1041,16 @@ class ProviderCommands {
     }
     runs.set(run.id, run);
     const realm = realms.current();
-    setImmediate(function () {
+    this.afterMintedCommit(function () {
       realms.run(realm, function () {
         return self.executeRun(run.id).catch(function (e) {
           log.debug("Caught in ProviderCommands.startTenant(): " +
                     ((e && e.message) || e));
         });
       });
+    }).catch(function (e) {
+      log.debug("Caught in ProviderCommands.startTenant(): " +
+                ((e && e.message) || e));
     });
     audit.audit({
       action: 'oauth2.command.tenant', actor: run.actor,

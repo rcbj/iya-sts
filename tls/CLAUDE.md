@@ -1218,6 +1218,174 @@ refusal) and the fatal cipher list. **Its real-handshake assertion that
 builds from the same `protocolOptions()`. Mutation-tested against the product
 refusal removed.
 
+## EVERY SETTING PER LISTENER, AND TLS 1.3 BY DEFAULT (#429, 2026-10-02)
+
+rcbj asked for two things. First: "all of the settings available on each tab
+(besides Listeners) on the Server Configuration->Listeners page to be per
+listener". He chose every TLS listener, each with its own certificate and
+truststore, each inheriting the service-wide value unless set. Second: "TLS
+v1.3 to be the default for all TLS listeners". `tls.disableTls12` now defaults
+to on.
+
+* **The rows are generated.** In `common/config.js`, `PER_LISTENER_SETTINGS` and
+  `TLS_LISTENERS` produce `listener<Id>.<name>`.
+  - Each row has the service row's type, plus a way to say inherit: `inherit`
+    in an enum (a bool becomes inherit/on/off), or an empty string.
+  - Each is per process, and restart-only exactly where its service row is.
+  - Keys have two segments because the appconfig files nest one level.
+  - A realm's own listener has the same set as `listener.<name>`.
+* **One resolver: `policyFor(kind, realm)`.**
+  - `ownValue()` answers a listener's own value, or undefined to inherit.
+  - `pick()` falls back to the service-wide row.
+  - The policy carries everything `protocolOptions()` and
+    `secureContextOptions()` need: floor, TLS 1.2 list, groups, signature
+    algorithms, suites, post-quantum only, client authentication, and the
+    truststore's own file and service-Root switch.
+  - `spiffe` was split into `spiffeServer` and `spiffeBroker`.
+* **The truststore is per listener.** `secureContextOptions(policy)` builds `ca`
+  from the shared runtime anchors, then the listener's OWN anchors file (which
+  replaces the service's file anchors for it), then the service Root where its
+  switch says so.
+* **Startup checks every listener.**
+  - The service-wide checks come first, so an inherited bad value is named by
+    its service-wide setting.
+  - Then each listener's own policy must build a context, including its TLS
+    1.2 list while TLS 1.2 is off; a broken list would otherwise wait for
+    whoever turns TLS 1.2 on.
+  - Each listener's own anchors file must read (`STS-TLS-0045`).
+* **Certificates are NOT per listener, and will not be.** rcbj stopped
+  #429's phase 2 (a certificate per listener) on 2026-10-02, before any of it
+  was written, and DROPPED it the same day: "We are not doing that." The
+  main port, LDAPS and the debugger share one certificate, as they always
+  have, and the certificate rows (hostnames, IPs, algorithms, files) stay
+  service-wide.
+* **A REALM'S LISTENERS SHARE ONE CERTIFICATE (rcbj, 2026-10-02: "Each
+  listener in a realm should use the same certificate").**
+  - The default realm's main port, LDAPS and debugger present the one service
+    certificate.
+  - A realm with a listener of its own (#99) presents that realm's
+    certificate, `listener.certificateFile` or one its CA issues.
+  - The only listeners that present something else are those whose protocol
+    requires it: SPIFFE's gRPC listeners present an X509-SVID of the realm's
+    trust domain, and the cell channel presents a cell certificate.
+  - A change that would give one realm two different listener certificates is
+    against this rule.
+  - **A NEW SERVER CERTIFICATE IS MADE ONLY WHEN A REALM DEFINES ITS OWN PORT**
+    (rcbj, 2026-10-02). The realm's `listener.port`, #99 (`tls/realm_listeners.js`),
+    gets a `realm-tls` leaf from the realm's CA unless `listener.certificateFile`
+    names one. No other setting or listener mints a server certificate. The
+    service certificate is made once, at startup, and only re-issued over its
+    own key when the Root is rebuilt. SPIFFE's SVIDs and the cell channel's
+    leaf are their protocols' credentials, not server certificates in this
+    sense.
+* **Tests that need TLS 1.2 turn it on:**
+  - `sts_tlsfuzzer.js` turns it on service-wide for its run (it is `exclusive`);
+  - `tlsfuzzer_debugger.js` and `ldaps_no_certificate_request.js` set it in
+    their environment;
+  - `tls_protocol_policy.js` builds its listener with it;
+  - `sts_fapi2.js` asserts whatever `/admin-api/listeners` says.
+
+### Per-listener session cache and connection pooling (#429, 2026-10-02)
+
+rcbj: "expose the size and timeout of the TLS Session Cache as a parameter
+on each TLS listener tab as editable fields. Also, expose HTTP Connection
+Pooling settings on each HTTP/HTTPS listener tab."
+
+* **The session cache is two settings, both runtime.**
+  - `tls.sessionTimeoutS` (60) is how long a session resumes, by ticket or
+    by ID. It replaced `tls.mainSessionTimeoutS`, which was the main port's
+    alone; `policyFor()` carries it and `protocolOptions()` hands it to
+    OpenSSL as `sessionTimeout`, so a change reaches the next handshake
+    through the secure context `reapplyPolicy()` rebuilds.
+  - `tls.sessionCacheSize` (0) is how many TLS 1.2 session IDs a listener
+    keeps. **Node has no server-side session cache of its own**: it resumes
+    by ticket, and by ID only through the `newSession`/`resumeSession`
+    events. `attachSessionCache()` installs those on every listener that
+    registers with `trustClientCertificatesOn()`, and on the cell channel,
+    as a Map bounded by the size and the timeout READ AT EACH EVENT, so a
+    change needs no re-application. 0 keeps nothing, which is what the
+    service did before.
+  - **Not on the SPIFFE listeners**, which have only the timeout: grpc-js
+    offers no session-ID events.
+* **Connection pooling is four settings, all runtime, on the HTTP
+  listeners only** (main, the debugger, the plain-HTTP revocation listener,
+  and a realm's own): `http.keepAliveTimeoutS` (60; it replaced
+  `global.httpKeepAliveTimeoutS`), `http.headersTimeoutS` (0 = keep-alive
+  plus one second, and never at or below the keep-alive),
+  `http.maxRequestsPerSocket` and `http.maxConnections` (0 = no limit, and
+  `Infinity` on the server: node refuses every connection at 0). They are
+  properties of node's server object, read at each connection or request,
+  so `registerHttpListener()` sets them and `reapplyPolicy()` sets them
+  again when what `httpPolicyFor()` answers has changed.
+* **The per-listener integer rows inherit with `-1`**, beside phase 1's
+  `inherit` and `''`. The rows are `listener<Id>.<name>` and a realm's
+  `listener.<name>`, generated from `PER_LISTENER_SETTINGS` like the rest,
+  and the Listeners page draws each listener's on its tab.
+* **The two replaced settings are refused at start** (`REPLACED_SETTINGS`),
+  naming their successors; `STS_TLS_MAIN_SESSION_TIMEOUT_S` is the one with
+  an environment variable, and `deploy/aws/` passes
+  `STS_TLS_SESSION_TIMEOUT_S` instead.
+
+## THE LISTENERS' POLICY (#423, 2026-10-02)
+
+rcbj asked for:
+- a "Disable TLS v1.2" flag on every TLS listener, including a realm's own;
+- the TLS 1.3 cipher suites chosen one by one, with the post-quantum safe ones
+  among them;
+- a post-quantum-only toggle;
+- per listener, a toggle that stops it asking for a client certificate and one
+  that requires one.
+
+The settings are drawn, all on Server configuration → Listeners
+(`admin-ui/listeners_admin.ts`), along with the TLS and Realm listener groups
+that moved there from this page. `docs/tls.md` has the table.
+
+* **A POLICY PER LISTENER, FROM ONE FUNCTION.** `policyFor(kind, realmId)`
+  answers `{ disableTls12, pqcOnly, tls13Suites, clientAuth }`:
+  - the kinds are `main`, `ldaps`, `debugger`, `realm`, `spiffe` and `cell`;
+  - `protocolOptions(policy)` turns a policy into node's options;
+  - `clientAuthOptions(mode)` turns it into `requestCert` / `rejectUnauthorized`;
+  - with no argument, `protocolOptions()` is the process's policy, which is
+    what every caller that predates #423 still passes.
+
+  A realm's listener reads its `listener.*` rows inside the realm and inherits
+  the process's unless set. `spiffe` and `cell` get no client authentication:
+  their protocols fix it.
+* **RUNTIME, AND RE-APPLIED IN PLACE.** The floor, the suites and the groups are
+  baked into a secure context, and node reads `server.requestCert` /
+  `server.rejectUnauthorized` at each connection. So:
+  - `config.onOverridesChanged()` and `realms.onChange()` call `reapplyPolicy()`;
+  - it compares each registered listener's policy with the one it last applied
+    and re-keys only those that moved;
+  - registered listeners (`trustClientCertificatesOn(server, label,
+    certificateOf, { kind, realm })`) are re-keyed through `applyAnchors()`,
+    which now carries each one's policy and sets the two server properties;
+  - SPIFFE's gRPC credentials and the cell channel register an applier
+    (`registerPolicyApplier()`).
+
+  No listener is rebound, so no connection is dropped. **LDAPS is registered
+  now**, which it never was: it may ask for a certificate, and a required one
+  needs the truststore.
+* **`tls.ciphers` IS THE TLS 1.2 LIST ALONE.** A `TLS_` name there stops the
+  service (`STS-TLS-0042`), and a write of one is refused (`STS-TLS-0043`).
+  `protocolOptions()` always puts the TLS 1.3 suites first and never passes an
+  empty set, because a node cipher string with no `TLS_` name turns TLS 1.3 off.
+* **POST-QUANTUM SAFE MEANS THE KEY EXCHANGE TOO.** A TLS 1.3 suite is only the
+  record protection. The 256-bit suites survive Grover's algorithm with 128
+  bits; the 128-bit ones do not. A recorded session is protected from a later
+  quantum adversary only by an ML-KEM group. So `pqcOnly` means:
+  - the 256-bit suites;
+  - the ML-KEM groups of `tls.groups`, or the three hybrids where it lists none;
+  - TLS 1.3 only.
+
+  It does not restrict the signature algorithms. The rules between these
+  settings are `config.addWriteRule()` rules owned here (`policyWriteRule()`).
+  A realm listener's is in `realms.js`'s `listenerOverrideProblem()`.
+* **TESTS.** `tests/listener_tls_policy.js` drives real `openssl s_client`
+  handshakes against listeners built as `server.js` builds them, and against the
+  real LDAPS socket. The settings are changed through `config.setOverride()` and
+  `realms.setOverride()`.
+
 ## WHAT tlsfuzzer FOUND (2026-09-26, #212)
 
 tlsfuzzer runs against all three listeners that present this module's
@@ -1416,3 +1584,70 @@ through outside active-active, and the requirement belongs to the act rather
 than to the socket it used to arrive on. Catch up with what other nodes
 committed, and hold the answer until this request's writes commit. Not measured
 on a live pair.
+
+## CELLS: `GET /tls/sign-in` STARTS THE SESSION IN THE HOLDER'S HOME CELL (#98, 2026-09-28)
+
+`placeCertificateSignIn()`, before the revocation check, the identity gate and
+the session: a VERIFIED certificate's holder — the `urn:sts:person:` name this
+service's authority wrote, else the common name, else the subject, the same
+reading `startCertificateSessionIn()` makes — homed in another cell is relayed
+there whole, in the realm the certificate names. **The certificate goes with
+it**: the inter-cell channel forwards the client's certificate and its chain the
+way the front process hands one to a request worker (`request_pool.peerOf()`),
+and the home cell shims the socket so `getPeerCertificate()` answers with the
+client's and `authorized` with this handshake's verdict. At home the door runs
+whole: `revocation_status.fromSocket()` reads the forwarded `issuerChain` exactly
+as in a worker, the identity gate and the issuance policy decide, and
+`authn.startSession()` pins the browser there.
+
+**Answered here instead**: an unverified or absent certificate (nothing starts
+a session), an application's certificate (it signs nobody in), and a browser
+that already holds a session in this cell — the one-session-per-browser rule
+beats the move. The placement table honours a pinned browser's cell before the
+handler runs (`common/cell_placement.ts`, row `/tls/sign-in`, `browser: true`).
+One side effect to know: the home cell's `fromSocket()` sees a shim whose
+prototype is the inter-cell socket, so it REMEMBERS the forwarded chain against
+the leaf as it does for a real handshake — harmless, and keyed by the leaf.
+
+## The main port's connections and sessions are pooled (#406, 2026-10-02)
+
+**The main port shares the cluster's session-ticket key** (`tls.mainPortSharedTickets`,
+on by default), keeps an idle HTTP/1.1 connection `http.keepAliveTimeoutS`
+(60, against node's own 5) and lets a TLS session resume for
+`tls.sessionTimeoutS` (60). Both were the main port's own settings
+(`global.httpKeepAliveTimeoutS`, `tls.mainSessionTimeoutS`) until #429 made
+them service-wide defaults every listener inherits — see *Per-listener
+session cache and connection pooling*, below. What forced it: the main port asks every full
+handshake for a client certificate, and a browser holding one under a CA it
+names asks its user whether to send it on every FULL handshake. Behind a
+balancer, with a key per node and five-second connections, that was nearly
+every click on the console and the portal (test-idp, 2026-10-01). A resumed
+session carries no CertificateRequest.
+
+**The key was per node for one reason, and that reason was moved rather than
+ignored.** A resumed session hands the server the leaf alone, and
+`common/revocation_status.js` walked it with the chain only the process that
+saw the full handshake remembered; product mode's hard-fail refuses a leaf
+whose issuer it cannot find. The remembered chains are a replicated shared
+store now (`tls.presentedChains`), and `common/app.js` mounts a bounded wait
+above the request pool for a session that resumed before its chain's row
+arrived (`tls.resumedChainWaitMs`, `STS-TLS-0038` when it runs out).
+
+**HTTP/2 is not offered** — express cannot run on node's own `http2` server,
+and rcbj wants that out of the box rather than written here: #407.
+
+## A trust realm's own front-end listener (#99, 2026-10-02)
+
+`tls/realm_listeners.js` binds an HTTPS listener per realm that sets
+`listener.port`, in the front process, built by `server.js`'s
+`realmListener()` with the main port's wiring and the realm's own certificate
+(an operator's files, or a `realm-tls` leaf from the realm's CA, one slot per
+node so one node's issuance never supersedes another's). It is reconciled on
+every realm change; bind failures are recorded, never fatal. Two things it
+needed from this directory: `trustClientCertificatesOn()` takes the listener's
+own certificate (`certificateOf`), because `applyAnchors()` used to push the
+MAIN port's certificate to every registered listener on each truststore
+change; and `forgetListener()`, for a listener closed at runtime.
+`common/app.js`'s `enterRealm` refuses any other realm's path on it
+(STS-TLS-0041); `docs/trust-realms.md` is the operator's half.
+

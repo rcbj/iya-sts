@@ -15,6 +15,7 @@ provider for each of them**.
 | `document_settings.ts` | **The signature algorithm, the canonicalization and `<md:Organization>`** every signed document here asks the configuration for (2026-09-12). Registers nothing. |
 | `return_address.ts` | **Where a response may be delivered**: anything in development, a registered address in product (2026-09-12). Shared with WS-Federation. Registers nothing. |
 | `person_attributes.ts` | **The persona facts an assertion carries**, invented in development and read off the directory entry (or omitted) in product (2026-09-12). Registers nothing. |
+| `saml_cells.ts` | **Where a SAML back-channel request is answered in a service deployed as cells** (#98 D10, 2026-09-28): the cell tag inside an artifact's handle, and the peer holding the session a query names (the `saml-session-holder` inter-cell operation). Registers no route. See *IN A SERVICE DEPLOYED AS CELLS*, at the end. |
 | `listener_keys.ts` | **The certificate the back channel presents, as a metadata key** (#248): every leaf the main port presents — every live cluster node's — as a `use="signing"` KeyDescriptor for both profiles' metadata. Registers nothing; reaches `tls/tls_server.js` lazily. See *THE BACK CHANNEL'S TLS CERTIFICATE IS IN THE METADATA*, at the end. |
 
 ## THE TWO PROFILES ARE SEPARATE IMPLEMENTATIONS, NOT ONE WITH A VERSION FLAG
@@ -1379,3 +1380,45 @@ Keycloak still get the anchor**, as documented exceptions: pysaml2 verifies
 TLS with `requests` against `ca_certs`, Keycloak with its Java truststore, and
 neither reads a metadata key for TLS. Held in process by
 `tests/saml_listener_key.js`.
+
+## IN A SERVICE DEPLOYED AS CELLS (#98 D10, 2026-09-28)
+
+Every browser endpoint of both profiles is an `affinity` row of
+`common/cell_placement.ts` — a pinned browser is served where it is pinned,
+and a sign-in whose person is homed elsewhere restarts there (D9) with the
+AuthnRequest or the inter-site transfer re-sent. **The three SOAP endpoints
+are `handler` rows, because a service provider's SERVER calls them and it
+reaches the cell nearest IT.** `saml_cells.ts` argues the design; what each
+handler does, before it authenticates, counts or spends anything:
+
+| Endpoint | Finds the owning cell by | And |
+|---|---|---|
+| `/saml2/ars` | the artifact's MessageHandle, whose last four bytes are the minting cell's keyed tag | relays the whole ArtifactResolve there (`relayToCell()`) |
+| `/saml11/responder`, an AssertionArtifact | the AssertionHandle, the same way | the same |
+| `/saml11/responder`, an AssertionIDReference | the AssertionID, stamped by `saml11.ts` when the assertion is built (twelve base64url characters; still an `xsd:ID`) | relays to the cell that holds the assertion |
+| `/saml2/aa`, and `/saml11/responder`'s queries in product | the cell holding the live session that gave the asking party that NameID — here first, then every peer (`saml-session-holder`) | relays there; a NameID no cell holds a session for is refused where it arrived, as before |
+| `/saml11/responder`'s queries in development | the NameIdentifier, read as the login name it is there | relays to that person's home |
+
+**WHY THE TAG IS INSIDE THE HANDLE, AND FOUR BYTES**: both artifact layouts
+are fixed and decoded by length, and SourceID is the service provider's index
+of the issuer, so nothing can be appended and SourceID cannot carry a cell.
+Sixteen random bytes remain — saml-bindings-2.0-os section 3.6.4's floor —
+and `common/cell_locator.ts` says what the short tag is weaker at (a collision
+between two cells' tags is served where it lands, `STS-CELL-0120`).
+
+**WHY A QUERY IS PLACED BY ITS SESSION AND NOT BY ITS PERSON**: both
+attribute authorities answer only about the subject of a live session that
+gave the asker that exact NameID. A transient NameID maps to nobody outside
+that session, a persistent one is a keyed derivation with no index, and a
+session may be held away from the person's home (D4). A peer that cannot be
+asked is skipped (`STS-CELL-0121`) and the query is answered here, which for
+a session only that peer holds is the UnknownPrincipal it would always have
+been.
+
+**What is not placed, and why that is acceptable**: the three MOCK relying
+parties (`/saml2/sp`, `/saml11/rp` and WS-Federation's `/wsfed/rp`) keep the
+context of a flow they started in the cell where it started. A flow whose
+person is homed in another cell restarts at home (D9) and comes back there,
+where the mock's context is not — so the mock reports an unsolicited response.
+They are test aids; a real relying party keeps its own state. Held in process
+by `tests/cell_saml_federation.js`.

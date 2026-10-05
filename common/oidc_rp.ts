@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -187,6 +187,9 @@ import InstanceSlot = require('./instance_slot');
 // FAPI (#139): whether this realm is in FAPI 1.0 Advanced, which changes how
 // a surface signs in. A leaf that requires only `helpers` and `config`.
 import fapi = require('../oauth-oidc/fapi');
+// This thread's identity (#364): a request worker is a thread of this
+// process, so the pid alone no longer tells two of them apart.
+import WorkerChannel = require('./worker_channel');
 
 type SurfaceId = 'admin' | 'portal' | 'debugger';
 
@@ -461,7 +464,19 @@ const PAR_PATH = '/oauth2/par';
 // handle and every fact about the request stays on this side. The `returnTo`
 // in particular must never ride in a parameter, because a return address a
 // caller can write is an open redirect operated by whoever can forge a state.
-const flows = realms.map({ persist: 'oidc_rp.flows', retain: 'age' });
+// `expiresAt` (#333): a flow lives `authn.pendingTtlS` from `startedAt`
+// (flowTtlMs(), FLOW_TTL_MS when that is not a positive number).
+const flows = realms.map({
+  persist: 'oidc_rp.flows',
+  retain: 'age',
+  // A hot path (every row a flush writes): no Entering/Leaving pair.
+  expiresAt: function (flow: any): number | null {
+    const at = Number(flow && flow.startedAt);
+    const ttlS = Number(config.value('authn.pendingTtlS'));
+    const ttl = isFinite(ttlS) && ttlS > 0 ? ttlS * 1000 : FLOW_TTL_MS;
+    return at > 0 ? at + ttl : null;
+  }
+});
 // In flight at once, per realm rather than per process, for the reason
 // `federation_sp.ts` gives about a shared cap: one realm's flood would
 // otherwise evict another realm's in-flight sign-ins. `oidcRp.maxFlows` since
@@ -750,6 +765,90 @@ class OidcRelyingParty {
     return baseUrlOf(req);
   }
 
+  // -------------------------------------------------------------------------
+  // A CELL'S OWN CONSOLE ADDRESS (#361, 2026-09-30). With `global.
+  // publicBaseUrl` set, every redirect URI is on the shared public name —
+  // which DNS sends to whichever cell is nearest — so a console opened at a
+  // cell's own name (`cells.consoleUrl`, `https://cac1.<public name>`)
+  // signed in and came back to a different cell. For the CONSOLE, a request
+  // whose Host is a configured cell console address signs in AT that
+  // address: its callback and its authorization request stay on it. The
+  // address is configuration, never the request's choice — a Host that is
+  // not one of them gets the public name as before.
+  // -------------------------------------------------------------------------
+  /**
+   * The console's base at a cell's own console address, when the request
+   * arrived at one; '' otherwise and for every other surface.
+   *
+   * @param req - the request
+   * @param surface - the surface signing in
+   * @returns the configured origin plus the realm prefix, or ''
+   */
+  private cellConsoleBase(req: any, surface: Surface): string {
+    const { log, realms } = this.deps;
+    log.debug("Entering OidcRelyingParty.cellConsoleBase().");
+    if (surface.id !== 'admin') {
+      log.debug("Leaving OidcRelyingParty.cellConsoleBase(). Not the " +
+                "console.");
+      return '';
+    }
+    const cells = require('./cells');
+    const host = String((req && req.headers && req.headers.host) || '');
+    const hit = cells.consoleOfHost(host);
+    log.debug("Leaving OidcRelyingParty.cellConsoleBase(). " +
+              (hit ? hit.id : 'none'));
+    return hit ? hit.consoleUrl + realms.currentPrefix() : '';
+  }
+
+  /**
+   * Tells whether a redirect URI is the console's callback at a CONFIGURED
+   * cell console address (`cells.consoleUrl` of this cell or a peer).
+   *
+   * @param surface - the surface
+   * @param uri - the redirect URI
+   * @returns true when it is
+   */
+  private isConfiguredCellCallback(surface: Surface, uri: string): boolean {
+    const { log } = this.deps;
+    log.debug("Entering OidcRelyingParty.isConfiguredCellCallback().");
+    if (surface.id !== 'admin') {
+      log.debug("Leaving OidcRelyingParty.isConfiguredCellCallback(). No.");
+      return false;
+    }
+    const cells = require('./cells');
+    const out = cells.all().some(function (one: any) {
+      if (!one.consoleUrl) {
+        return false;
+      }
+      const at = String(uri || '');
+      return at.indexOf(one.consoleUrl + '/') === 0 &&
+             at.slice(-surface.callbackPath.length) === surface.callbackPath;
+    });
+    log.debug("Leaving OidcRelyingParty.isConfiguredCellCallback(). " + out);
+    return out;
+  }
+
+  // A REALM'S OWN LISTENER (#99, 2026-10-02). A realm with
+  // `listener.publicBaseUrl` builds its console's and portal's callbacks on
+  // that base, which an ADMINISTRATOR configured — not a Host header a request
+  // carried — so it is registered on the surface's client in every mode, as a
+  // configured cell's console address is. Only the exact callback under the
+  // realm's own prefix, on the base the ambient realm configured.
+  private isRealmListenerCallback(surface: Surface, uri: string): boolean {
+    const { log, config } = this.deps;
+    log.debug("Entering OidcRelyingParty.isRealmListenerCallback().");
+    const base = String(config.value('listener.publicBaseUrl') || '').trim()
+      .replace(/\/+$/, '');
+    if (!base) {
+      log.debug("Leaving OidcRelyingParty.isRealmListenerCallback(). No.");
+      return false;
+    }
+    const out = String(uri || '') ===
+      base + realms.currentPrefix() + surface.callbackPath;
+    log.debug("Leaving OidcRelyingParty.isRealmListenerCallback(). " + out);
+    return out;
+  }
+
   /**
    * Returns the origin this process dials itself on for the back channel: the
    * loopback address and this service's port.
@@ -906,6 +1005,33 @@ class OidcRelyingParty {
       return { ok: true, learnt: false };
     }
     const pinned = !!helpers.pinnedBaseUrl();
+    // A CELL'S OWN CONSOLE CALLBACK IS CONFIGURATION (#361): it is built
+    // from `cells.consoleUrl` / `cells.peers`, never from a Host header, so
+    // it is REGISTERED on the entry in either mode — as an operator's value,
+    // not an observed one — the first time the console signs in there.
+    if (this.isConfiguredCellCallback(surface, uri) ||
+        this.isRealmListenerCallback(surface, uri)) {
+      const added = applications.updateApplication(surface.clientId, {
+        attribute: 'oauthRedirectUri', mode: 'add', value: uri,
+        actor: 'the ' + surface.label + ' (a configured cell console ' +
+               'address)'
+      });
+      if (!added || added.ok === false) {
+        const why = uri + ' is a configured cell console address, but it ' +
+                    'could not be registered on "' + surface.clientId +
+                    '": ' + ((added && (added.errors || []).join(' ')) ||
+                             'no reason given') + '.';
+        log.warn(errorCodes.tag('STS-AUTHN-0115') + 'oidc_rp: ' + why);
+        log.debug('Leaving OidcRelyingParty.ensureRedirectUri(). A cell ' +
+                  'console callback could not be registered.');
+        return this.coded('STS-AUTHN-0115', { ok: false, why: why });
+      }
+      log.info('oidc_rp: "' + surface.clientId + '" registered ' + uri +
+               ', a configured cell console address (#361).');
+      log.debug('Leaving OidcRelyingParty.ensureRedirectUri(). A cell ' +
+                'console callback, registered.');
+      return { ok: true, learnt: false, registered: true };
+    }
     // -----------------------------------------------------------------------
     // AN ADDRESS DEVELOPMENT LEARNT IS NOT A REGISTERED ONE (2026-09-12).
     // `client.redirect_uris` comes from `applications.clientConfigOf()`,
@@ -1191,7 +1317,7 @@ class OidcRelyingParty {
           process.env.STS_REQUEST_WORKER_POOL === 'surfaces';
         const target = inSurfacePool
           ? (Number(options.from && options.from.stsProtocolWorker) || 0)
-          : process.pid;
+          : WorkerChannel.id();
         if (target) {
           const pin = 'sts_pool=' + target;
           headers.cookie = headers.cookie ? (headers.cookie + '; ' + pin) :
@@ -2260,7 +2386,9 @@ class OidcRelyingParty {
                           { ok: false, why: found.why, reason: 'no-client' },
                           res);
       }
-      const publicBase = opts.callbackBase || self.publicBaseOf(req);
+      const publicBase = opts.callbackBase ||
+                         self.cellConsoleBase(req, surface) ||
+                         self.publicBaseOf(req);
       const redirectUri = publicBase + surface.callbackPath;
       const registered = self.ensureRedirectUri(surface, found.client,
                                                 redirectUri);
@@ -2494,7 +2622,9 @@ class OidcRelyingParty {
       // The authorization server's base, which is the request's own for the
       // console and the portal and the main port's for the debugger — see
       // the surface table.
-      const publicBase = opts.authorizationBase || self.publicBaseOf(req);
+      const publicBase = opts.authorizationBase ||
+                         self.cellConsoleBase(req, surface) ||
+                         self.publicBaseOf(req);
       const host = self.hostHeaderFrom(publicBase);
 
       // ---------------------------------------------------------------------

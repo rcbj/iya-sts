@@ -259,6 +259,42 @@ it as a tenth profile row.
   offered, and reads every FAILURE; every AES size with SHA-256 and SHA-512
   enrolls, and DES, DES-EDE3 and SHA-1 are `badAlg`.
 
+## Cells: where a PKIOperation is served (#98 D10, 2026-09-28)
+
+`Scep.placeMessage()` runs in `pkiOperation()` once the pkiMessage is parsed
+and before its signature is verified, its transaction claimed or its
+challenge spent. The RA key is in the realm's PKI row (global tier), so any
+cell can open the envelope far enough to read whose the message is:
+
+* **a signer this realm issued** (RenewalReq, GetCert, GetCRL, a PKCSReq in
+  the historical renewal form) — the person its `urn:sts:person:` names goes
+  to their home cell;
+* **a PKCSReq's challenge password** — the challenge id names its entry
+  (`common/cert_enrollment.ts`'s `credentialId()`, stamped with the minting
+  cell): a person's goes to their home, where the challenge and the
+  certificate live; an application's to the cell that minted it, which holds
+  its spend claim (`redeemScepChallengeOnce()`).
+
+The relay sends the bytes as they arrived (`cell_placement.ts`'s
+`serialisedBody()` prefers `req.rawBody`, which is what sscep's type-less
+POST reaches a handler as), or the GET binding's query untouched. A retried
+PKCSReq carries the same challenge and so reaches the cell holding the
+completed transaction.
+
+**The documented exception — CertPoll.** It carries neither a realm-issued
+signer nor a challenge, so it is answered by the cell it reaches, whose
+transaction store may not hold it (FAILURE `STS-SCEP-0038`, badCertId). Harmless
+here: nothing is ever answered PENDING, so a client following RFC 8894
+section 3.3.3 never polls.
+
+## The monitor counts (#352, 2026-09-29)
+
+`/admin/scep/monitor`'s *issued certificates* built the whole SCEP list to
+read its length; it is `certificateCountsInRealm('scep').held`. `/admin/scep`
+slices before `certificateRow()` and its listing reads holders in one walk,
+never parsing an ACME or EST record (`common/CLAUDE.md`, 3ag).
+`tests/certificate_listing_bounds.js` holds both.
+
 ## Documented exceptions
 
 | Not implemented | Why |

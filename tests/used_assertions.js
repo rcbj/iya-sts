@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -479,13 +479,15 @@ function noCachesLeft(t) {
     'oauth-oidc/assertion_grant.js'), 'utf8');
   const clientSource = fs.readFileSync(path.join(__dirname, '..',
     'oauth-oidc/client_auth.js'), 'utf8');
-  t.check(/format: 'jwt', use: 'authorization-grant',\s+issuer: iss, identifier: String\(claims\.jti\)/
+  // Since #114 the grant verifier also spends an RFC 8693 exchange's
+  // assertion, under the same `iss` with `use: 'token-exchange'`.
+  t.check(/format: 'jwt', use: exchange \? 'token-exchange' : 'authorization-grant',\s+issuer: iss, identifier: String\(claims\.jti\)/
             .test(grantSource) &&
           /format: 'jwt', use: 'client-authentication',\s+issuer: clientId, identifier: String\(claims\.jti\)/
             .test(clientSource),
-          'the grant spends a JWT under its `iss` and client authentication ' +
-          'under the client_id that `iss` was checked to be, so both reach ' +
-          'one row');
+          'the grant (and the exchange) spends a JWT under its `iss` and ' +
+          'client authentication under the client_id that `iss` was ' +
+          'checked to be, so all reach one row');
   ['STS-OAUTH-0243', 'STS-STORE-0044', 'STS-STORE-0045', 'STS-STORE-0046',
    'STS-STORE-0047', 'STS-STORE-0048'].forEach(function (code) {
     t.check(errorCodes.isKnown(code), code + ' is registered');

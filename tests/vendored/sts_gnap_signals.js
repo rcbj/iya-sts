@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 "use strict";
 //
@@ -22,6 +22,16 @@
 //      silence is the scope and not a broken pipe;
 //   3. revoking a grant or a token emits CAEP session-revoked, whose session is
 //      the grant or the token, and modifying a grant emits token-claims-change.
+//
+// And a fourth since #432 (section 7): a REGISTERED RESOURCE SERVER owns a
+// stream the same way and hears session-revoked for the GNAP tokens and
+// grants AUDIENCED TO IT — and nothing about a token for another server,
+// while the unscoped control stream hears both.
+// And since #432 (2026-10-03), what ends a grant from OUTSIDE the protocol: a
+// global sign-out of the resource owner, their account disabled, and the
+// client's application entry deleted each end the grant — CAEP
+// session-revoked naming it, with `admin` as the initiating entity — and its
+// token stops working at the demonstration resource server.
 //
 // Every SET read here is verified against the realm's /oauth2/jwks with node's
 // crypto before its contents are believed.
@@ -67,18 +77,18 @@ const h = flowLib.harness({
 });
 const check = h.check;
 const OWNER = usernameFor("gnap-sig-owner");
+const RS_OWNER = usernameFor("gnap-sig-rsowner");
 const STRANGER = usernameFor("gnap-sig-stranger");
 const CAEP = "https://schemas.openid.net/secevent/caep/event-type/";
 const REVOKED = CAEP + "session-revoked";
 const CLAIMS = CAEP + "token-claims-change";
 const POLL = "urn:ietf:rfc:8936";
-// THE BASIC PRINCIPAL IS A REAL PERSON WITH A REAL PASSWORD (2026-09-18),
-// created in the realm below beside the other two. It was a name nobody
-// created with `any-password`, which only development mode accepts; product
-// mode verifies a Basic credential against the person's own userPassword.
-const PROBE = "gnap-signals-probe";
-const BASIC = "Basic " +
-              Buffer.from(PROBE + ":" + PASSWORD).toString("base64");
+// THE CONTROL STREAM IS OWNED BY AN APPLICATION (2026-10-01). It was a person
+// over Basic until #336 made a person's stream about that person alone, so a
+// person-owned control heard nothing about OWNER and stopped being a control.
+// A client's own client_credentials token owns a stream no scope narrows,
+// which is what "unscoped" means here.
+const CONTROL_SECRET = "gnap-signals-control-" + String(Date.now()).slice(-6);
 
 let jwks = null;
 
@@ -199,7 +209,6 @@ async function test() {
   await h.setting("gnap.continueWaitS", 0);
   await h.ensurePerson(OWNER);
   await h.ensurePerson(STRANGER);
-  await h.ensurePerson(PROBE);
   // Their subjects, which a SET's `user.sub` carries (2026-09-14).
   SUBJECTS[OWNER] = await h.subjectOf(OWNER);
   SUBJECTS[STRANGER] = await h.subjectOf(STRANGER);
@@ -222,6 +231,26 @@ async function test() {
               gnapFinishUri: h.FINISH,
               oauthAllowedScope: ["ssf:read", "ssf:write"] } },
     "registered a second web application");
+  const CONTROL_ID = "gnap-control-" + h.realm;
+  await h.ok(h.realmApi + "/applications/create", {
+    identifier: CONTROL_ID, kind: "oauth2-client", name: CONTROL_ID,
+    protocols: ["oauth2"],
+    fields: { oauthClientId: [CONTROL_ID],
+              oauthAllowedScope: ["ssf:read", "ssf:write"],
+              oauthClientSecret: CONTROL_SECRET,
+              oauthTokenEndpointAuthMethod: "client_secret_post" } },
+    "registered the application that owns the unscoped control stream");
+  const controlTokenAnswer = await (await fetch(h.realmBase + "/oauth2/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: "grant_type=client_credentials&client_id=" +
+          encodeURIComponent(CONTROL_ID) + "&client_secret=" +
+          encodeURIComponent(CONTROL_SECRET) + "&scope=" +
+          encodeURIComponent("ssf:read ssf:write") })).json();
+  assert.ok(controlTokenAnswer.access_token,
+            "a token for the control application: " +
+            JSON.stringify(controlTokenAnswer));
+  const CONTROL_AUTH = "Bearer " + controlTokenAnswer.access_token;
 
   // =========================================================================
   // 1. A GNAP ACCESS TOKEN OWNS A STREAM (ssf/ssf_auth.ts, the gnap scheme).
@@ -289,12 +318,14 @@ async function test() {
     return web.send("POST", h.realmBase + "/ssf/poll",
                     { token: ssfToken, json: body });
   };
-  // THE CONTROL: an unscoped stream owned by a Basic principal, which is not a
-  // GNAP application and so is covered by no GNAP scope.
+  // THE CONTROL: an unscoped stream owned by an application's own token,
+  // which is not a GNAP application (so no GNAP scope) and not a person (so
+  // not #336's person scope).
   r = await gnap.rawRequest("POST", h.realmBase + "/ssf/stream",
-    { Authorization: BASIC, "Content-Type": "application/json" },
+    { Authorization: CONTROL_AUTH, "Content-Type": "application/json" },
     Buffer.from(JSON.stringify(streamBody)));
-  check("an unscoped control stream is created with Basic", function () {
+  check("an unscoped control stream is created with an application's token",
+        function () {
     assert.strictEqual(r.status, 201, r.text);
   });
   const controlStream = r.json.stream_id;
@@ -303,7 +334,8 @@ async function test() {
     const buf = Buffer.from(JSON.stringify(body));
     log.debug("Leaving pollControl().");
     return gnap.rawRequest("POST", h.realmBase + "/ssf/poll",
-      { Authorization: BASIC, "Content-Type": "application/json" }, buf);
+      { Authorization: CONTROL_AUTH, "Content-Type": "application/json" },
+      buf);
   };
   await drain(pollWeb, webStream);
   await drain(pollControl, controlStream);
@@ -474,7 +506,179 @@ async function test() {
                              JSON.stringify(webSets));
         });
 
-  assert.ok(h.checks >= 17, "only " + h.checks + " checks ran; a section has " +
+  // =========================================================================
+  // 7. A RESOURCE SERVER OWNS A STREAM (#432): TOKENS AUDIENCED TO IT ONLY.
+  // =========================================================================
+  log.info("=== 7. a resource server's stream ===");
+  await h.ensurePerson(RS_OWNER);
+  SUBJECTS[RS_OWNER] = await h.subjectOf(RS_OWNER);
+  const rsClient = new gnap.Client({ key: gnap.newKey("ES256") });
+  const RS_ID = "gnap-sig-rs-" + h.realm;
+  const RS_URI = "https://rs.signals.gnap.test/api";
+  await h.ok(h.realmApi + "/applications/create", {
+    identifier: RS_ID, kind: "gnap-resource-server", protocols: ["gnap"],
+    fields: { gnapKey: JSON.stringify(rsClient.keyObject()),
+              gnapFinishUri: h.FINISH, gnapResourceServerUri: RS_URI,
+              oauthAllowedScope: ["ssf:read", "ssf:write"] } },
+    "registered the resource server that will own a stream");
+  r = await rsClient.send("POST", h.realmBase + "/gnap/resource", { json: {
+    access: [{ type: "https://rs.signals.gnap.test/photos",
+               actions: ["read"], locations: [RS_URI] }],
+    resource_server: { key: rsClient.keyObject() } } });
+  assert.strictEqual(r.status, 200, "registered a resource set: " + r.text);
+  const rsReference = r.json.resource_reference;
+  // Its own ssf grant, approved by a person of its own — so the web
+  // application rule, which also applies to an entry with a finish URI, is
+  // about RS_OWNER and never about OWNER, whom every event below names.
+  const rsSsf = await h.redirectGrant(rsClient, RS_OWNER,
+    { access_token: { access: ["ssf:read", "ssf:write"] } });
+  const rsSsfToken = rsSsf.released.access_token.value;
+  r = await rsClient.send("POST", h.realmBase + "/ssf/stream",
+                          { token: rsSsfToken, json: streamBody });
+  check("a registered resource server creates a stream with its own GNAP " +
+        "token", function () {
+    assert.strictEqual(r.status, 201, r.text);
+  });
+  const rsStream = r.json.stream_id;
+  const pollRs = function (body) {
+    log.debug("Entering pollRs().");
+    log.debug("Leaving pollRs().");
+    return rsClient.send("POST", h.realmBase + "/ssf/poll",
+                         { token: rsSsfToken, json: body });
+  };
+  await drain(pollRs, rsStream);
+  await drain(pollControl, controlStream);
+  const jtiOf = function (value) {
+    log.debug("Entering jtiOf().");
+    log.debug("Leaving jtiOf().");
+    return JSON.parse(Buffer.from(value.split(".")[1], "base64url")
+                            .toString("utf8")).jti;
+  };
+  // A token FOR the resource server, and one for the demonstration RS, both
+  // about OWNER, both revoked at their manage URIs.
+  const forRs = await h.redirectGrant(web, OWNER,
+                                      { access_token: {
+                                        access: [rsReference] } });
+  const forRsJti = jtiOf(forRs.released.access_token.value);
+  const notForRs = await h.redirectGrant(web, OWNER);
+  const notForRsJti = jtiOf(notForRs.released.access_token.value);
+  r = await web.send("DELETE", notForRs.released.access_token.manage.uri,
+                     { token: notForRs.released.access_token.manage
+                                      .access_token.value });
+  assert.strictEqual(r.status, 204, r.text);
+  r = await web.send("DELETE", forRs.released.access_token.manage.uri,
+                     { token: forRs.released.access_token.manage
+                                   .access_token.value });
+  assert.strictEqual(r.status, 204, r.text);
+  controlSets = await drainUntil(pollControl, controlStream, function (sets) {
+    return about(sets, REVOKED, OWNER, "gnap-token:" + notForRsJti).length &&
+           about(sets, REVOKED, OWNER, "gnap-token:" + forRsJti).length;
+  });
+  let rsSets = await drainUntil(pollRs, rsStream,
+                                hears(REVOKED, OWNER, "gnap-token:" +
+                                      forRsJti));
+  rsSets = rsSets.concat(await drainUntil(pollRs, rsStream, null, SETTLE_MS));
+  check("the control stream hears both revocations — the pipe works",
+        function () {
+    assert.strictEqual(about(controlSets, REVOKED, OWNER, "gnap-token:" +
+                             notForRsJti).length, 1,
+                       JSON.stringify(controlSets));
+  });
+  check("the resource server's stream hears session-revoked for the token " +
+        "audienced to it", function () {
+    const hits = about(rsSets, REVOKED, OWNER, "gnap-token:" + forRsJti);
+    assert.strictEqual(hits.length, 1, JSON.stringify(rsSets));
+    assert.strictEqual(hits[0].sub_id.session.id, "gnap-token:" + forRsJti);
+  });
+  check("…and NOT for the token issued for another resource server",
+        function () {
+    assert.strictEqual(about(rsSets, REVOKED, OWNER, "gnap-token:" +
+                             notForRsJti).length, 0, JSON.stringify(rsSets));
+  });
+  r = await web.send("DELETE", forRs.released.continue.uri,
+                     { token: forRs.released.continue.access_token.value });
+  assert.strictEqual(r.status, 204, r.text);
+  const forRsGrant = "gnap-grant:" + forRs.released.continue.uri
+    .split("/").pop();
+  rsSets = await drainUntil(pollRs, rsStream,
+                            hears(REVOKED, OWNER, forRsGrant));
+  check("and session-revoked for the grant one of whose tokens was " +
+        "audienced to it", function () {
+    assert.strictEqual(about(rsSets, REVOKED, OWNER, forRsGrant).length, 1,
+                       JSON.stringify(rsSets));
+  });
+
+  // =========================================================================
+  // 8.–10. WHAT ENDS A GRANT FROM OUTSIDE THE PROTOCOL (#432). Heard on the
+  // CONTROL stream: a global sign-out of OWNER ends the grant that owns the
+  // web application's stream too, which is the point.
+  // =========================================================================
+  const endedFromOutside = async function (what, grant, act) {
+    log.debug("Entering endedFromOutside().");
+    const id = "gnap-grant:" + grant.released.continue.uri.split("/").pop();
+    let before = await web.send("GET", h.RS,
+                                { token: grant.released.access_token.value });
+    if (before.status === 401) {
+      before = await other.send("GET", h.RS,
+                                { token: grant.released.access_token.value });
+    }
+    await act();
+    const sets = await drainUntil(pollControl, controlStream,
+      function (all) {
+        return all.some(function (set) {
+          const subject = set.sub_id || {};
+          return set.events && set.events[REVOKED] &&
+                 String((subject.session || {}).id) === id;
+        });
+      });
+    const hit = sets.filter(function (set) {
+      return set.events && set.events[REVOKED] &&
+             String(((set.sub_id || {}).session || {}).id) === id;
+    })[0];
+    check(what + " ends the grant: CAEP session-revoked names it, as an " +
+          "administrator's act (#432)", function () {
+      assert.ok(hit, JSON.stringify(sets).slice(0, 800));
+      assert.strictEqual(hit.events[REVOKED].initiating_entity, "admin",
+                         JSON.stringify(hit.events[REVOKED]));
+    });
+    const afterWeb = await web.send("GET", h.RS,
+                                    { token: grant.released.access_token
+                                                   .value });
+    const afterOther = await other.send("GET", h.RS,
+                                        { token: grant.released.access_token
+                                                       .value });
+    check("…and its access token, which worked before, stops working at " +
+          "the resource server", function () {
+      assert.strictEqual(before.status, 200, before.text);
+      assert.strictEqual(afterWeb.status, 401, afterWeb.text);
+      assert.strictEqual(afterOther.status, 401, afterOther.text);
+    });
+    log.debug("Leaving endedFromOutside().");
+  };
+  log.info("=== 8. a global sign-out ends the owner's grants ===");
+  const signedOut = await h.redirectGrant(web, OWNER);
+  await endedFromOutside("a global sign-out of the resource owner",
+    signedOut, async function () {
+      await h.ok(h.realmApi + "/logout/global", { user: OWNER },
+                 "signed the owner out everywhere");
+    });
+  log.info("=== 9. disabling the account ends the grants ===");
+  const disabledGrant = await h.redirectGrant(other, STRANGER);
+  await endedFromOutside("disabling the resource owner's account",
+    disabledGrant, async function () {
+      await h.ok(h.realmApi + "/users/disable", { user: STRANGER },
+                 "disabled the stranger");
+    });
+  log.info("=== 10. deleting the client's entry ends its grants ===");
+  const orphaned = await h.redirectGrant(other, OWNER);
+  await endedFromOutside("deleting the client's application entry",
+    orphaned, async function () {
+      await h.ok(h.realmApi + "/applications/forget",
+                 { application: OTHER_ID }, "deleted the second application");
+    });
+
+
+  assert.ok(h.checks >= 28, "only " + h.checks + " checks ran; a section has " +
                                                  "stopped being called.");
   log.info(h.checks + " check(s) passed.");
   log.info("Test completed successfully.");

@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -148,6 +148,8 @@ import scopePolicy = require('../common/scope_policy');
 // (#302, #303) — what the gate hands the access-control policy. A library
 // (rule 3).
 import rolePermissions = require('../common/role_permissions');
+// The member types a role may be restricted to (#93), for the enum below.
+import roles = require('../common/roles');
 // The password policy's FIELD TABLE, which the request schema of
 // `save-password-policy` is generated from — for `narrowDoorProperties()`'s
 // reason: a hand-written list of what an operation accepts is a second
@@ -218,6 +220,12 @@ import cachesAdmin = require('../admin-ui/caches_admin');
 import vcStatusAdmin = require('../admin-ui/vc_status_admin');
 // Server configuration → Mode (#181): its one view, rule 7.
 import modeAdmin = require('../admin-ui/mode_admin');
+import listenersAdmin = require('../admin-ui/listeners_admin');
+import workerPoolsAdmin = require('../admin-ui/worker_pools_admin');
+// Monitoring → Node Health (#329): its one view, rule 7.
+import nodeHealthAdmin = require('../admin-ui/node_health_admin');
+// Server configuration → Cells (#98): `cellsView()` and `peopleOf()`.
+import cellsAdmin = require('../admin-ui/cells_admin');
 // The scheduler's page (#49): its view and its two actions, rule 7.
 import schedulerAdmin = require('../admin-ui/scheduler_admin');
 // The mail channel's two pages (#63), mirrored below (rule 7).
@@ -486,6 +494,9 @@ interface AdminApiDeps {
   loadOauth2MonitorApi(): typeof import('../oauth-oidc/oauth2_monitor_api');
   loadGrantManagementApi(): typeof import('../oauth-oidc/grant_management_api');
   loadClaimsProvidersApi(): typeof import('../oauth-oidc/claims_providers_api');
+  // The attribute source operations (#94).
+  loadAttributeSourcesApi():
+    typeof import('../attribute-sources/attribute_sources_api');
   loadProviderCommandsApi(): typeof import('../oauth-oidc/provider_commands_api');
   loadSsfTransmittersApi(): typeof import('../ssf/ssf_transmitters_api');
 }
@@ -593,6 +604,9 @@ class AdminApi {
       loadOauth2MonitorApi: function () {
         return require('../oauth-oidc/oauth2_monitor_api');
       },
+      loadAttributeSourcesApi: function () {
+        return require('../attribute-sources/attribute_sources_api');
+      },
       loadClaimsProvidersApi: function () {
         return require('../oauth-oidc/claims_providers_api');
       },
@@ -673,16 +687,27 @@ class AdminApi {
    * Returns a request schema ready for ajv: `structureOnly()` of it, with the
    * document's named schemas as `components`.
    *
+   * **`components` IS PASSED IN, AND EVERY CALLER PASSES THE SAME ONE (#365,
+   * 2026-09-30).** It used to be `structureOnly(spec.SCHEMAS)` made here, a
+   * fresh deep copy of the whole components table (about 170 KB) for each of
+   * the 363 validators — and ajv keeps every root it compiled in its cache
+   * for the life of the process, so the copies were never collected: about
+   * 60 MB of every process's heap. The copy is made once, in
+   * `compileRequestSchemas()`, and each root points at it. ajv reads a schema
+   * and never writes to it, so a shared subtree is exactly what the copies
+   * were, 363 times fewer; what each validator accepts and refuses, and the
+   * words it refuses in, are unchanged.
+   *
    * @param schema - an operation's request schema
+   * @param components - the one `{ schemas: structureOnly(spec.SCHEMAS) }`
    * @returns the schema to compile
    */
-  compilable(schema) {
-    const { log, spec } = this.deps;
+  compilable(schema, components) {
+    const { log } = this.deps;
     log.debug("Entering AdminApi.compilable().");
     log.debug("Leaving AdminApi.compilable().");
     return Object.assign({}, this.structureOnly(schema),
-                         { components: { schemas: this.structureOnly(
-                             spec.SCHEMAS) } });
+                         { components: components });
   }
 
   /**
@@ -708,10 +733,13 @@ class AdminApi {
    * @returns how many validators were built
    */
   compileRequestSchemas() {
-    const { log, errorCodes } = this.deps;
+    const { log, errorCodes, spec } = this.deps;
     const self = this;
     log.debug("Entering AdminApi.compileRequestSchemas().");
     let built = 0;
+    // ONE copy of the enforced components for every root below (#365; see
+    // `compilable()`).
+    const components = { schemas: self.structureOnly(spec.SCHEMAS) };
     ROUTES.forEach(function (entry) {
       const route = entry.route || entry.path;
       const rows = entry.actions || [];
@@ -721,7 +749,8 @@ class AdminApi {
         }
         try {
           validators.set(self.validatorKeyOf(route, action.action),
-                         ajv.compile(self.compilable(action.requestBody)));
+                         ajv.compile(self.compilable(action.requestBody,
+                                                     components)));
           built = built + 1;
         } catch (e) {
           // A schema this repository wrote that ajv will not compile. Logged by
@@ -737,7 +766,8 @@ class AdminApi {
       if (entry.requestBody) {
         try {
           validators.set(self.validatorKeyOf(route, ''),
-                         ajv.compile(self.compilable(entry.requestBody)));
+                         ajv.compile(self.compilable(entry.requestBody,
+                                                     components)));
           built = built + 1;
         } catch (e) {
           log.error(errorCodes.tag('STS-API-0010') +
@@ -1371,6 +1401,48 @@ class AdminApi {
         },
         responseDescription: 'The set as it now stands, in `claims`.' },
 
+      { action: 'add-attribute-claim', operationId: family.ids.addAttribute,
+        summary: 'Add one ' + noun + ' carrying a directory attribute',
+        description: 'The ' + noun + '\'s value is `attribute` on the ' +
+                     'entry of the person the ' + family.carrier + ' is ' +
+                     'about (#94) — any attribute, where the directory-' +
+                     'attribute half of a set offers only the fixed ' +
+                     'catalogue, under the name given here. Only the ' +
+                     'directory, never an invented value: a person whose ' +
+                     'entry lacks it gets no such ' + noun + ', and a lower ' +
+                     'layer of the same name still answers. `multi` ' +
+                     'carries every value. A secret, a binary value or an ' +
+                     'attribute this service keeps (sts*, hoba*, app*, ' +
+                     'pwd*) is refused. Removed by `remove`, by name. The ' +
+                     'same reserved names are refused as for `add`, and a ' +
+                     'directory write that moves the attribute sends CAEP ' +
+                     'token-claims-change to holders of live tokens.',
+        requestBodyRequired: true,
+        requestBody: {
+          type: 'object',
+          properties: {
+            set: setField,
+            name: { type: 'string' },
+            attribute: { type: 'string',
+                         description: 'The directory attribute.' },
+            multi: { type: 'boolean',
+                     description: 'Every value rather than the first.' },
+            type: { type: 'string',
+                    enum: ['string', 'number', 'boolean', 'json'],
+                    description: 'The JSON type of each value, in a JWT or ' +
+                                 'UserInfo set. Ignored by the SAML sets.' },
+            nameFormat: { type: 'string',
+                          description: 'The SAML 2.0 set only.' },
+            namespace: { type: 'string',
+                         description: 'The SAML 1.1 set only.' }
+          },
+          required: ['set', 'name', 'attribute'],
+          examples: [{ set: family.example, name: 'cost_center',
+                       attribute: 'costCenter' }],
+          additionalProperties: false
+        },
+        responseDescription: 'The set as it now stands, in `claims`.' },
+
       { action: 'remove', operationId: family.ids.remove,
         summary: 'Remove one ' + noun + ' from one set',
         description: 'By name. A name the set does not carry is refused ' +
@@ -1874,7 +1946,12 @@ class AdminApi {
                      'count of processes answering requests there, and ' +
                      '`lastStallMs`, the event-loop stall that explains a ' +
                      'late heartbeat), which is what the console draws its ' +
-                     'member list from; the capability ' +
+                     'member list from, and `status.members`, the same rows ' +
+                     'folded BY NAME as the console draws them (`running` ' +
+                     'node ids; `restarts`, per running name, how many ' +
+                     'earlier rows it left and when the last ended; ' +
+                     '`leftOrExpired`, one row per name with no running ' +
+                     'member, with `earlierLives`); the capability ' +
                      'table active-active mode is held to ' +
                      '(`status.self.capabilities`, with `missing` and ' +
                      '`acceptedMissing`); where each shared secret\'s value ' +
@@ -1960,10 +2037,14 @@ class AdminApi {
                handler: function (req, res) {
                  log.debug("Entering the management API " + row.console + " " +
                      "endpoint.");
-                 self.sendJson(res, 200,
-                               admin.protocolSettingsJsonFor(row.console));
-                 log.debug("Leaving the management API " + row.console + " " +
-                     "endpoint.");
+                 // Through the row's `prepare` step, which the Cluster page
+                 // has (#361): the same answer the console draws.
+                 admin.preparedSettingsJsonFor(row.console).then(
+                   function (json) {
+                     self.sendJson(res, 200, json);
+                     log.debug("Leaving the management API " + row.console +
+                               " endpoint.");
+                   });
                } };
     });
     log.debug("Leaving AdminApi.buildProtocolSettingsOperations().");
@@ -2197,7 +2278,9 @@ class AdminApi {
             pkiAdmin, certificateViews, passwordPolicy, loadAcmeApi, loadEstApi,
             loadScepApi, loadOidfedApi, loadOauth2MonitorApi,
             loadGrantManagementApi, loadClaimsProvidersApi,
-            loadProviderCommandsApi, loadSsfTransmittersApi } = this.deps;
+            loadAttributeSourcesApi,
+            loadProviderCommandsApi, loadSsfTransmittersApi,
+            federation } = this.deps;
     const self = this;
     log.debug("Entering AdminApi.buildRoutes().");
     const closed = this.closedLists();
@@ -2215,7 +2298,7 @@ class AdminApi {
           log.debug("Entering the management API index.");
           const base = baseUrlOf(req);
           self.sendJson(res, 200, {
-            name: 'mock STS management API',
+            name: 'IYA STS management API',
             version: VERSION,
             // THE PROVENANCE OF THAT NUMBER, BROKEN OUT rather than left as a
             // string to be parsed. A test asserting "this stack is running the
@@ -2371,9 +2454,7 @@ class AdminApi {
                      'silently.\n\n`classes` LISTS WHAT IS DELIBERATELY NOT ' +
                      'SEALED BESIDE WHAT IS, each with the reason — ' +
                      'passwords are hashed rather than encrypted, which is ' +
-                     'stronger; client secrets are in the clear because a ' +
-                     'federation secret is SENT to somebody else\'s token ' +
-                     'endpoint; the post-quantum keys, the TLS certificate ' +
+                     'stronger; the post-quantum keys, the TLS certificate ' +
                      'and the SPIFFE authorities are not persisted at all, ' +
                      'so there is nothing at rest to ' +
                      'seal. A list of only the yeses would ' +
@@ -2397,8 +2478,10 @@ class AdminApi {
                      'page to have read it on. Two limits and one deployment ' +
                      'mistake: there is ONE key-encryption key for the ' +
                      'service and NOT one per trust realm (`perRealmKey: ' +
-                     'false`), so a realm is not a cryptographic boundary at ' +
-                     'rest and rotating the key rotates every realm; ' +
+                     'false`) — it wraps every realm\'s data encryption ' +
+                     'keys, one per realm per class — so a realm is not an ' +
+                     'independent boundary at rest and rotating the key ' +
+                     're-wraps every realm\'s data keys; ' +
                      'everything NOT in `classes` is plaintext in the store, ' +
                      'because the layer that covers a whole database belongs ' +
                      'under it rather than inside it (a column-level answer ' +
@@ -2410,13 +2493,32 @@ class AdminApi {
                      '`file` provider invites and why every other provider ' +
                      'exists.',
         mirrors: 'GET /admin/encryption',
+        // THE DATA ENCRYPTION KEYS (#391 P2) are one paged list of the reply,
+        // `dataKeys.keys`, moved by `dataKeysPage` — ids, realms, classes and
+        // states, never a key.
+        parameters: [
+          { name: 'dataKeysPage', in: 'query', required: false,
+            schema: { type: 'integer', minimum: 1 },
+            description: 'Which page of `dataKeys.keys` to return, clamped ' +
+                         'as every page is; `dataKeys.paging` says which ' +
+                         'page it is.' }
+        ].concat(this.pagingParameters().filter(function (one) {
+          return one.name === 'per';
+        })),
         responseDescription: 'The whole report.',
         responseSchema: { type: 'object',
           description: 'The encryption report: `mode`, `key` (present, ' +
-                       'durable or ephemeral, and which provider), ' +
+                       'durable or ephemeral, which provider, and ' +
+                       '`kmsKey`, the key\'s name in its key management ' +
+                       'service, never a key), ' +
                        '`algorithm` (read from common/crypto.js\'s own ' +
                        'table), `store`, `classes` (what is sealed and what ' +
-                       'is not, each with its counts), `accounting` (the ' +
+                       'is not, each with its counts), `dataKeys` (every ' +
+                       'data encryption key held — id, realm, class, scope, ' +
+                       'state, `ageDays`, and `values` with `countedAt`, ' +
+                       'the last count of what is sealed under it, never a ' +
+                       'key — paged, with the rotation ' +
+                       'settings and whether its jobs run), `accounting` (the ' +
                        'totals and the breakdown by label), `unclassified` ' +
                        '(labels counted that the page has no row for, ' +
                        'reported rather than dropped) and `boundaries` — the ' +
@@ -2425,9 +2527,257 @@ class AdminApi {
                        '(`perRealmKey: false`).' },
         handler: function (req, res) {
           log.debug("Entering the management API encryption report endpoint.");
-          self.sendJson(res, 200, encryptionAdmin.encryptionView());
+          self.sendJson(res, 200,
+                        encryptionAdmin.encryptionView(req.query || {}));
           log.debug("Leaving the management API encryption report endpoint.");
         } },
+
+      // THE DATA-KEY ACTS (#391 P2, P5): `/admin/encryption/data-keys`'s
+      // four forms, through the one function they post to. Each QUEUES a run of
+      // `common/data_key_rotation.ts`'s jobs and answers 202.
+      { method: 'POST', route: BASE + '/encryption/:action', tag: 'Service',
+        mirrors: 'POST /admin/encryption/data-keys',
+        handler: function (req, res) {
+          log.debug("Entering the management API data-key endpoint.");
+          const body = self.withAction(req, parseBody(req));
+          const result = encryptionAdmin.dataKeysAction(
+            req, body, 'the management API at /admin-api/encryption/' +
+            body.action);
+          if (!result.ok) {
+            errorCodes.mark(res, result.errorCode || 'STS-API-0014');
+            self.sendJson(res, result.status || 400,
+                          { ok: false, errors: result.errors });
+            log.debug("Leaving the management API data-key endpoint. " +
+                      "Refused.");
+            return;
+          }
+          self.sendJson(res, 202, { ok: true, accepted: true,
+            runId: result.runId, message: result.message,
+            run: BASE + '/scheduler?run=' + encodeURIComponent(result.runId) });
+          log.debug("Leaving the management API data-key endpoint. Queued " +
+                    result.runId + ".");
+        },
+        actions: [
+          { action: 'rotate-data-keys', operationId: 'rotateDataKeys',
+            summary: 'Rotate the data encryption keys now',
+            description: 'Queues a run of the scheduler job ' +
+                         '`keys.data-key-rotate-now` and answers **202** ' +
+                         'with its `runId`. Every stored data encryption ' +
+                         'key — or one realm\'s, or one class\'s — gets a ' +
+                         'successor, used ' +
+                         '`keys.dataKeyActivationLeadSeconds` after it is ' +
+                         'published; what the old key sealed is re-sealed by ' +
+                         '`keys.data-key-reencrypt`. 400 (STS-KEYS-0100) ' +
+                         'where data keys are derived per run and not ' +
+                         'stored, or where none serves the realm or class.',
+            requestBody: {
+              type: 'object',
+              properties: {
+                realm: { type: 'string', description: 'A realm id; ' +
+                         'omitted for every realm, `default` for the ' +
+                         'default realm.' },
+                cls: { type: 'string', description: 'A data class, e.g. ' +
+                       '`minted-rows`; omitted for every class.' }
+              },
+              additionalProperties: false
+            },
+            responseDescription: 'The queued run: `runId`, `message`, and ' +
+                                 '`run`, the address to follow it at.' },
+          { action: 'reencrypt-data-keys',
+            operationId: 'reencryptDataKeys',
+            summary: 'Run the data re-encryption pass now',
+            description: 'Queues a run of `keys.data-key-reencrypt` and ' +
+                         'answers **202**: what is still sealed under a ' +
+                         'superseded data encryption key is re-sealed under ' +
+                         'the current one, and a superseded key nothing is ' +
+                         'sealed under any longer, superseded for ' +
+                         '`keys.dataKeyRetireAfterDays`, is destroyed. 400 ' +
+                         '(STS-KEYS-0100) where data keys are not stored.',
+            requestBody: { type: 'object', properties: {},
+                           additionalProperties: false },
+            responseDescription: 'The queued run, as for ' +
+                                 '`rotate-data-keys`.' },
+          { action: 'count-data-keys', operationId: 'countDataKeys',
+            summary: 'Count what is sealed under every data key now',
+            description: 'Queues a run of `keys.data-key-count` and answers ' +
+                         '**202**: the values sealed under every data ' +
+                         'encryption key are counted in one pass of the ' +
+                         'store and kept on each key, where ' +
+                         '`GET /admin-api/encryption` reports them as ' +
+                         '`values` and `countedAt` (#391). 400 ' +
+                         '(STS-KEYS-0100) where data keys are not stored or ' +
+                         'the store cannot count (only PostgreSQL can).',
+            requestBody: { type: 'object', properties: {},
+                           additionalProperties: false },
+            responseDescription: 'The queued run, as for ' +
+                                 '`rotate-data-keys`.' },
+          { action: 'rotate-kek', operationId: 'rotateKek',
+            summary: 'Rotate the key-encryption key in its key management ' +
+                     'service',
+            description: 'Queues a run of `keys.kek-rotate-now` and answers ' +
+                         '**202**: the key management service makes a new ' +
+                         'version of the key-encryption key (Transit, Cloud ' +
+                         'KMS and Key Vault; AWS KMS rotates on demand ' +
+                         'behind the same key id) and every data encryption ' +
+                         'key is re-wrapped under it. The run fails ' +
+                         '(STS-KEYS-0105) where the identity this service ' +
+                         'runs as may use the key but not rotate it. 400 ' +
+                         '(STS-KEYS-0104) where the key is read into the ' +
+                         'process: its successor is configured with ' +
+                         '`keys.previousKek*` and a restart.',
+            requestBody: { type: 'object', properties: {},
+                           additionalProperties: false },
+            responseDescription: 'The queued run, as for ' +
+                                 '`rotate-data-keys`.' }
+        ] },
+
+      // ---------------------------------------------------------------------
+      // CELLS (#98). `cellsAdmin.cellsView()` — the function `/admin/cells`
+      // draws — and `peopleOf()`, another cell's residents under its release
+      // policy. Neither changes anything; the Cells settings are written
+      // through `POST /admin-api/config/set`. A call naming `?cell=` on any
+      // operation is relayed to that cell whole (common/cell_placement.ts).
+      // ---------------------------------------------------------------------
+      { method: 'GET', path: BASE + '/cells', tag: 'Service',
+        operationId: 'getCells',
+        summary: 'The cells of this service, the store\'s tiers and the ' +
+                 'channel between cells',
+        description: 'What this cell knows about the deployment (#98): ' +
+                     '`multi` (false in single-cell mode), `cell`, ' +
+                     '`jurisdiction`, `peers` (each `id`, `jurisdiction`, ' +
+                     '`reachable` and `answeredMs` or `error` — never an ' +
+                     'address), `store` (`tiered`, `globalReplicaLagMs`, ' +
+                     'the global change-log follower, the routing index\'s ' +
+                     'counters and `peoplePerCell`), `channel` (the ' +
+                     'listener, this process\'s certificate, the operations ' +
+                     'and the counters), `placement` (requests relayed and ' +
+                     'served here), `sessions` (projections held here and ' +
+                     'exports made from here) and `settings`.',
+        mirrors: 'GET /admin/cells',
+        responseDescription: 'The cell map.',
+        responseSchema: { type: 'object',
+          description: 'As described above.' },
+        handler: function (req, res) {
+          log.debug("Entering the management API cells endpoint.");
+          cellsAdmin.cellsView().then(function (view) {
+            self.sendJson(res, 200, view);
+            log.debug("Leaving the management API cells endpoint.");
+          }, function (e) {
+            log.debug("Caught in the management API cells endpoint: " +
+                      ((e && e.message) || e));
+            errorCodes.mark(res, 'STS-CELL-0191');
+            self.sendJson(res, 500, { error: 'server_error',
+                                      error_description: String(
+                                        (e && e.message) || e) });
+          });
+        } },
+      { method: 'GET', path: BASE + '/cells/people', tag: 'Service',
+        operationId: 'getCellPeople',
+        summary: 'A page of another cell\'s residents, where its release ' +
+                 'policy permits',
+        description: 'Asks cell `cell` for a page of the people homed ' +
+                     'there in the realm of the call (#98 D11), after the ' +
+                     'login name `after`. The answering cell releases them ' +
+                     'only when its release policy permits its people to be ' +
+                     'listed from this cell\'s jurisdiction; otherwise ' +
+                     '`refused` says why. Each person is `name`, `uuid` ' +
+                     'and `displayName` and nothing else.',
+        mirrors: 'GET /admin/cells?people=',
+        parameters: [
+          { name: 'cell', in: 'query', required: true,
+            schema: { type: 'string', minLength: 1, maxLength: 16 },
+            description: 'The other cell\'s id.' },
+          { name: 'after', in: 'query', required: false,
+            schema: { type: 'string', maxLength: 256 },
+            description: 'The last login name of the previous page.' }
+        ],
+        responseDescription: '`{ cell, people, next }` or `{ cell, ' +
+                             'refused }`.',
+        responseSchema: { type: 'object',
+          description: 'A page of people, or a refusal.' },
+        handler: function (req, res) {
+          log.debug("Entering the management API cell people endpoint.");
+          // The cell that relayed this call here, when it did (`?cell=`
+          // naming this one, D11): this cell then answers its own residents.
+          cellsAdmin.peopleOf(String((req.query && req.query.cell) || ''),
+                              String((req.query && req.query.after) || ''),
+                              String((req.stsCellRelay &&
+                                      req.stsCellRelay.from) || ''))
+            .then(function (view) {
+              self.sendJson(res, 200, view);
+              log.debug("Leaving the management API cell people endpoint.");
+            });
+        } },
+
+      // AN ACTION RESOURCE RATHER THAN A BARE POST (2026-09-28), for
+      // `/keys/:action`'s reason: `sts_admin_api_operations.js` probes every
+      // POST resource with an action nobody has heard of and requires a 400
+      // naming the ones that exist, and a literal `/cells/rehome` answered
+      // Express's 404. One action today.
+      { method: 'POST', route: BASE + '/cells/:action', tag: 'Service',
+        mirrors: 'POST /admin/cells (action=rehome)',
+        handler: function (req, res) {
+          log.debug("Entering the management API rehome endpoint.");
+          const body = self.withAction(req, parseBody(req));
+          if (body.action !== 'rehome') {
+            // The sentence the suite reads — `/keys/:action`'s shape.
+            errorCodes.mark(res, 'STS-API-0014');
+            self.sendJson(res, 400, { ok: false, errors: [
+              'Unknown action "' + body.action + '". The actions here are: ' +
+              'rehome.'] });
+            log.debug("Leaving the management API rehome endpoint. " +
+                      "Unknown action.");
+            return;
+          }
+          cellsAdmin.rehomeAction(String((body && body.username) || ''),
+                                  String((body && body.target) || ''),
+                                  'the management API')
+            .then(function (result) {
+              if (!result.ok) {
+                // The refusal's own code, from cell_rehome.ts.
+                errorCodes.mark(res, result.code || 'STS-CELL-0192');
+                self.sendJson(res, 400, result);
+                log.debug("Leaving the management API rehome endpoint. " +
+                          "Refused.");
+                return;
+              }
+              self.sendJson(res, 200, result);
+              log.debug("Leaving the management API rehome endpoint.");
+            }, function (e) {
+              log.debug("Caught in the management API rehome endpoint: " +
+                        ((e && e.message) || e));
+              errorCodes.mark(res, 'STS-CELL-0192');
+              self.sendJson(res, 500, { ok: false, errors: [String(
+                (e && e.message) || e)] });
+            });
+        },
+        actions: [
+          { action: 'rehome', operationId: 'rehomePerson',
+            summary: 'Move a person homed in this cell to another cell',
+            description: 'Re-homing (#98): everything the person holds is ' +
+                         'ended first — here and in every cell holding an ' +
+                         'export of their session — then their entry, ' +
+                         'devices and group memberships are sent to ' +
+                         '`target` with their entryUUID kept and their ' +
+                         'credentials sealed again under that cell\'s key, ' +
+                         'the routing index is moved, and they are taken ' +
+                         'out of this cell. Call it at the cell that holds ' +
+                         'them (name it with `?cell=` from anywhere). ' +
+                         '`target` must be in a jurisdiction the realm may ' +
+                         'place people in.',
+            requestBody: {
+              type: 'object',
+              properties: {
+                username: { type: 'string', minLength: 1, maxLength: 256 },
+                target: { type: 'string', minLength: 1, maxLength: 16 }
+              },
+              required: ['username', 'target'],
+              examples: [{ username: 'alice', target: 'cac1' }],
+              additionalProperties: false
+            },
+            responseDescription: '`{ ok: true, target }`, or a refusal ' +
+                                 'naming why.' }
+        ] },
 
       // ---------------------------------------------------------------------
       // THE MODE (#181). `modeAdmin.modeView()` — `common/mode.js`'s
@@ -2466,6 +2816,40 @@ class AdminApi {
           log.debug("Entering the management API mode endpoint.");
           self.sendJson(res, 200, modeAdmin.modeView());
           log.debug("Leaving the management API mode endpoint.");
+        } },
+
+      // ---------------------------------------------------------------------
+      // THE LISTENERS (#423). `listenersAdmin.listenersView()`, the function
+      // `/admin/listeners` answers. It changes nothing: the Listeners, TLS
+      // and Realm listener settings are set through config/set (the
+      // process's) and realms/set (a realm's own listener).
+      // ---------------------------------------------------------------------
+      { method: 'GET', path: BASE + '/listeners', tag: 'Service',
+        operationId: 'getListeners',
+        summary: 'Every listener, its TLS policy and its client ' +
+                 'authentication',
+        description: 'For the realm the call is in: `realm`, `servedOn` ' +
+                     '(`own` where the realm has a listener of its own, ' +
+                     '`default` where it is served on the default ' +
+                     'listeners), `ownListener` (its `port`, ' +
+                     '`publicBaseUrl`, `state`, `why`, `certificate` and ' +
+                     '`policy`) or `listeners` (each default listener\'s ' +
+                     '`id`, `name`, `setting`, `port`, `tls`, `what` and ' +
+                     '`policy`), the process\'s `process` policy and the ' +
+                     'TLS listeners `live` on this node. A `policy` is ' +
+                     '`minVersion`, `tls12`, `tls13Suites` (each `name` and ' +
+                     '`postQuantum`, in order), `tls12Ciphers`, `pqcOnly`, ' +
+                     '`groups` and `clientAuth` (`none`, `optional`, ' +
+                     '`required`, or the protocol\'s rule).',
+        mirrors: 'GET /admin/listeners',
+        responseDescription: 'The listeners view.',
+        responseSchema: { type: 'object',
+          description: '`realm`, `servedOn`, `ownListener`, `listeners`, ' +
+                       '`process` and `live`.' },
+        handler: function (req, res) {
+          log.debug("Entering the management API listeners endpoint.");
+          self.sendJson(res, 200, listenersAdmin.listenersView());
+          log.debug("Leaving the management API listeners endpoint.");
         } },
 
       // ---------------------------------------------------------------------
@@ -3870,6 +4254,212 @@ class AdminApi {
         } },
 
       // ---------------------------------------------------------------------
+      // THE WORKER POOLS (#327). `workerPoolsAdmin.workerPoolsView()` — the
+      // function `/admin/worker-pools?format=json` answers — and nothing
+      // else. Pinned to the front process with the page
+      // (`request_pool.js`'s NEVER_DISPATCHED), because only it holds the
+      // pools.
+      // ---------------------------------------------------------------------
+      { method: 'GET', path: BASE + '/worker-pools', tag: 'Service',
+        operationId: 'getWorkerPools',
+        summary: 'The request and hosted-surface worker pools of this node',
+        description: 'Always `generatedAt`, `node`, `pid` (the front ' +
+                     'process that answered), `mainThread` (true: drawn ' +
+                     'on its main thread, which holds the pools), ' +
+                     '`scope` (`node`) and `scopeText`; then `pools`, ' +
+                     'two of them, `id` ' +
+                     '`request` and `surface`, each with `title`, ' +
+                     '`module`, `setting`, `state` (`off`, ' +
+                     '`not-started`, `not-dispatching`, `running` or ' +
+                     '`given-up`) and `stateText` saying it in a ' +
+                     'sentence, `maxWorkers` (the configured count), ' +
+                     '`initialWorkers` (what the pool started with), ' +
+                     '`currentWorkers`, `busyWorkers`, `freeWorkers`, ' +
+                     '`restarts` (`forked`, `crashed` — an exit nobody ' +
+                     'asked for — `failedStarts` among them, `replaced` ' +
+                     'and `stopped`) and `responseTime` (`answered`, ' +
+                     '`averageMs`, `recentAverageMs`, `maxMs`, dispatch to ' +
+                     'answer), and its `workers` — each a worker THREAD ' +
+                     'of the front process since #364 — (`threadId`, ' +
+                     '`slot`, `ready`, `busy`, `inFlight`, `served`, ' +
+                     '`upSeconds`). `restarts.forked` counts the threads ' +
+                     'started. A request pool at the default ' +
+                     '`workers.requestCount` of 1 is `off` where the ' +
+                     'store cannot coordinate, and `stateText` says so. ' +
+                     'There is ' +
+                     'no post-quantum pool since #363: post-quantum ' +
+                     'signing and scrypt run on libuv\'s thread pool ' +
+                     'inside each process. Every count is ' +
+                     'since the process started. THE FIGURES ARE THIS ' +
+                     'NODE\'S at the top level (`node` names it; never a ' +
+                     'host or an address). In a cluster, `nodes` has a ' +
+                     'section per node — this one live, every other from ' +
+                     'the snapshot it writes every 15 s, each with ' +
+                     '`name`, `self`, `state` (`live`, `stale` past 45 s, ' +
+                     '`gone` from cluster membership, `no-snapshot`), ' +
+                     '`stateText`, `ageSeconds` and `view` — and `totals` ' +
+                     'sums each pool over the nodes not gone; `cluster` ' +
+                     'says whether there is one. `answeredBy` names the ' +
+                     'node that answered (#332). A service operation: a ' +
+                     'realm\'s own administrator is refused it.',
+        mirrors: 'GET /admin/worker-pools',
+        parameters: [
+          { name: 'node', in: 'query', required: false,
+            schema: { type: 'string' },
+            description: 'A cluster node\'s NAME (`cluster.nodeName`, ' +
+                         'node-a, node-b, …), to answer about that node ' +
+                         'alone: its view at the top, `nodes` holding its ' +
+                         'one section. An unknown name is 404 with the ' +
+                         'names there are (#332).' }
+        ],
+        responseDescription: 'The two pools.',
+        responseSchema: { type: 'object',
+          description: '`generatedAt`, `node`, `pid`, `scope`, `scopeText`, ' +
+                       '`pools`, `answeredBy`, `state`, `cluster`, `nodes` ' +
+                       'and `totals`.' },
+        handler: function (req, res) {
+          log.debug("Entering the management API worker pools endpoint.");
+          workerPoolsAdmin.workerPoolsView({ node: req.query && req.query.node
+            ? String(req.query.node) : '' }).then(function (view) {
+            if (view.notFound) {
+              errorCodes.mark(res, 'STS-CORE-0126');
+              self.sendJson(res, 404, { ok: false, errors: [
+                'There is no node named ' + view.notFound + '.'],
+                nodes: view.nodeNames });
+              return;
+            }
+            self.sendJson(res, 200, view);
+          }).catch(function (e) {
+            log.debug("Caught in the management API worker pools " +
+                      "endpoint: " + ((e && e.message) || e));
+            log.error(errorCodes.tag('STS-WORKER-0044') + 'The worker ' +
+                      'pools report could not be built: ' +
+                      ((e && e.message) || e));
+            errorCodes.mark(res, 'STS-WORKER-0044');
+            self.sendJson(res, 500, { ok: false, errors: [
+              'The worker pools report could not be built.'] });
+          });
+          log.debug("Leaving the management API worker pools endpoint.");
+        } },
+
+      // ---------------------------------------------------------------------
+      // NODE HEALTH (#329). `nodeHealthAdmin.nodeHealthView()` — the
+      // function `/admin/node-health?format=json` answers — and nothing
+      // else. Pinned to the front process with the page
+      // (`request_pool.js`'s NEVER_DISPATCHED), because only it knows every
+      // process of the node.
+      // ---------------------------------------------------------------------
+      { method: 'GET', path: BASE + '/node-health', tag: 'Service',
+        operationId: 'getNodeHealth',
+        summary: 'The CPU and memory of this node\'s container, and the ' +
+                 'Node.js memory of each of its processes and worker ' +
+                 'threads',
+        description: 'Always `generatedAt`, `node`, `pid` (the front ' +
+                     'process that answered), `scope` (`node`), ' +
+                     '`scopeText` and `cgroup` (the cgroup v2 directory ' +
+                     'read, or null). `cpu`: `available`, and either ' +
+                     '`unavailableText` or `utilisationPercent` — CPU time ' +
+                     'from `cpu.stat` over `windowSeconds` (`sampled` ' +
+                     '`since-previous-sample` or `fresh-sample`), as a ' +
+                     'share of `percentOfVcpus` — `coresUsed`, ' +
+                     '`limitVcpus` (from `cpu.max`; null for no quota, ' +
+                     'when the share is of `os.availableParallelism()`, ' +
+                     'which `limitText` says), `usageSeconds`, ' +
+                     '`userSeconds`, `systemSeconds` and `throttling`. ' +
+                     'Both say which cgroup they came from ' +
+                     '(`cgroupVersion`, 2 or 1); a limit that means none ' +
+                     'is the ECS task\'s where the agent answers ' +
+                     '(`limitSource` `ecs-task`), and with no cgroup at ' +
+                     'all the figures are the agent\'s (`fromEcs`). ' +
+                     '`memory`: `available`, and either `unavailableText` ' +
+                     'or `currentBytes` (`memory.current`), `limitBytes` ' +
+                     '(`memory.max`; null for none), ' +
+                     '`utilisationPercent`, `peakBytes`, `anonBytes`, ' +
+                     '`fileBytes`, `kernelBytes` and `oomKills`. ' +
+                     '`processes`: `rows`, each with `kind` (`process` or ' +
+                     '`thread`), `pid` and `threadId` — the front process ' +
+                     '(`process.memoryUsage()`: `rssBytes`, ' +
+                     '`heapUsedBytes`, `heapTotalBytes`, `externalBytes`, ' +
+                     '`arrayBuffersBytes`, and CPU time; its resident ' +
+                     'size and CPU time are the whole process\'s, every ' +
+                     'thread\'s included, `processWide` says so); each ' +
+                     'request and hosted-surface worker THREAD of it ' +
+                     '(#364) that answered within a second, with its own ' +
+                     'heap figures and `rssBytes` and CPU time null, ' +
+                     'because in a thread those are the process\'s; and ' +
+                     'the debugger\'s api child, the five figures ' +
+                     'when it answered within half ' +
+                     'a second, and otherwise `rssBytes` and ' +
+                     '`peakRssBytes` from `/proc/<pid>/status`, the heap ' +
+                     'figures null and `notReported` saying why — ' +
+                     '`unanswered` (worker threads that did not answer, by ' +
+                     '`threadId`; a thread has no /proc entry to fall ' +
+                     'back on), and `totals` (`rows`, `processes`, ' +
+                     '`workerThreads`, `rssBytes` over processes only, ' +
+                     '`processesWithRss`, the heap sums over every ' +
+                     'isolate and `isolatesWithHeap`). `ecs`: the ECS task ' +
+                     'metadata endpoint\'s `taskLimits` and `stats` where ' +
+                     '`ECS_CONTAINER_METADATA_URI_V4` is set, and ' +
+                     '`available: false` with a sentence where it is not. ' +
+                     '`machine`: `os.loadavg()`, `os.totalmem()`, ' +
+                     '`os.freemem()` and the CPU count, which describe the ' +
+                     'machine (on Fargate the micro-VM) and NOT the ' +
+                     'container. THE TOP-LEVEL FIGURES ARE THIS NODE\'S ' +
+                     '(`node` names it; never a host or an address). In a ' +
+                     'cluster, `nodes` has a section per node — this one ' +
+                     'live, every other from the snapshot it writes every ' +
+                     '15 s, each with `name`, `self`, `state` (`live`, ' +
+                     '`stale` past 45 s, `gone` from cluster membership, ' +
+                     '`no-snapshot`), `stateText`, `ageSeconds` and `view` ' +
+                     '— and `totals` sums container memory and its limit, ' +
+                     'CPU, the processes and the worker threads over the ' +
+                     'nodes not gone; ' +
+                     '`cluster` says whether there is one. `answeredBy` ' +
+                     'names the node that answered (#332). A service ' +
+                     'operation: a realm\'s own administrator is refused ' +
+                     'it.',
+        mirrors: 'GET /admin/node-health',
+        parameters: [
+          { name: 'node', in: 'query', required: false,
+            schema: { type: 'string' },
+            description: 'A cluster node\'s NAME (`cluster.nodeName`, ' +
+                         'node-a, node-b, …), to answer about that node ' +
+                         'alone: its view at the top, `nodes` holding its ' +
+                         'one section. An unknown name is 404 with the ' +
+                         'names there are (#332).' }
+        ],
+        responseDescription: 'The container and its processes.',
+        responseSchema: { type: 'object',
+          description: '`generatedAt`, `node`, `pid`, `scope`, `scopeText`, ' +
+                       '`cgroup`, `cpu`, `memory`, `processes`, `ecs`, ' +
+                       '`machine`, `answeredBy`, `state`, `cluster`, ' +
+                       '`nodes` and `totals`.' },
+        handler: function (req, res) {
+          log.debug("Entering the management API node health endpoint.");
+          nodeHealthAdmin.nodeHealthView({ node: req.query && req.query.node
+            ? String(req.query.node) : '' }).then(function (view) {
+            if (view.notFound) {
+              errorCodes.mark(res, 'STS-CORE-0126');
+              self.sendJson(res, 404, { ok: false, errors: [
+                'There is no node named ' + view.notFound + '.'],
+                nodes: view.nodeNames });
+              return;
+            }
+            self.sendJson(res, 200, view);
+          }).catch(function (e) {
+            log.debug("Caught in the management API node health " +
+                      "endpoint: " + ((e && e.message) || e));
+            log.error(errorCodes.tag('STS-CORE-0124') + 'The node health ' +
+                      'report could not be built: ' +
+                      ((e && e.message) || e));
+            errorCodes.mark(res, 'STS-CORE-0124');
+            self.sendJson(res, 500, { ok: false, errors: [
+              'The node health report could not be built.'] });
+          });
+          log.debug("Leaving the management API node health endpoint.");
+        } },
+
+      // ---------------------------------------------------------------------
       // THE DATABASE REPORT. `databaseAdmin.databaseView()` and nothing else,
       // which is rule 7 read the strict way: the page and this operation must
       // not be able to report different numbers, and one function is the only
@@ -4587,7 +5177,18 @@ class AdminApi {
           { name: 'federationLinks',
             description: 'The federation partners\' subjects linked to ' +
                          'this person (#109), each `{ link, relationship, ' +
-                         'issuer, subject, relationshipExists }`.' }
+                         'issuer, subject, relationshipExists }`.' },
+          { name: 'gnapGrants',
+            description: 'The GNAP grants this person is the resource ' +
+                         'owner of (#432): each with its state, why it was ' +
+                         'finalized (`finalization.reason`: issued, ' +
+                         'revoked, rejected, expired), its rights, the ' +
+                         'tokens issued under it (label, format, expiry, ' +
+                         'state — never a value) and whether it can still ' +
+                         'be revoked, which POST ' +
+                         '/admin-api/gnap/revoke-grant does with `user`. ' +
+                         '`gnapGrantsCells` says what a multi-cell ' +
+                         'service\'s list leaves out.' }
         ])),
         responseDescription: 'The list, or one identity.',
         responseSchema: { oneOf: [
@@ -4774,8 +5375,11 @@ class AdminApi {
         // that a generated password and an activation link can be answered in a
         // page body rather than in a 303's query string. Naming only the first
         // would leave the console suite unable to tell that page's Create
-        // button from a control that reaches nothing.
-        mirrors: 'POST /admin/users and POST /admin/users/new',
+        // button from a control that reaches nothing. A THIRD since
+        // 2026-10-01: a person's field grid posts to /admin/users/edit, which
+        // reaches `update-fields` here.
+        mirrors: 'POST /admin/users, POST /admin/users/new and POST ' +
+                 '/admin/users/edit',
         handler: function (req, res) {
           log.debug("Entering the management API users action endpoint.");
           const body = parseBody(req);
@@ -5025,7 +5629,27 @@ class AdminApi {
                                         'it cannot be mailed the link is ' +
                                         'returned as with `show` (the ' +
                                         'default), with `mailError` saying ' +
-                                        'why.' }
+                                        'why.' },
+                // THE HOME CELL (#98 D1), which `cell_placement.ts`'s
+                // creation claim reads before this operation runs: a cell
+                // other than the serving one is relayed there whole. It was
+                // read there and refused HERE — not a member of this schema —
+                // at the cell it was relayed to, so no creation naming
+                // another cell could succeed until the `cells` mode's first
+                // run (2026-09-28, tests/vendored/sts_cells_routing.js).
+                homeCell: { type: 'string', maxLength: 16,
+                            description: 'Only when this service is ' +
+                                         'deployed as cells (#98): the id ' +
+                                         'of the cell the person is homed ' +
+                                         'in. Empty means the realm\'s ' +
+                                         '`cells.homeCell`, or the cell ' +
+                                         'that answers. Another cell\'s ' +
+                                         'id makes the creation THERE; a ' +
+                                         'cell the service does not have, ' +
+                                         'or one in a jurisdiction the ' +
+                                         'realm does not allow, is ' +
+                                         'refused 400. Ignored in ' +
+                                         'single-cell mode.' }
               },
               required: ['username'],
               examples: [{ username: 'rcbj' },
@@ -5413,6 +6037,48 @@ class AdminApi {
             responseDescription: 'The attribute and every value it now ' +
                                  'holds.' },
 
+          // SEVERAL OF A PERSON'S ATTRIBUTES AT ONCE (2026-10-01): what the
+          // Save of a tab of the person's field grid on /admin/users does.
+          { action: 'update-fields', operationId: 'updateUserFields',
+            summary: 'Set several of somebody\'s attributes at once',
+            description: 'What the Save button of a tab of a person\'s ' +
+                         'Attributes on the console does. Each member of ' +
+                         '`fields` names an attribute `attributeEditor` in ' +
+                         'GET /admin-api/users?user= lists as editable, and ' +
+                         'gives what it should hold: a single-valued ' +
+                         'attribute is SET (an empty string or array clears ' +
+                         'it), and a multi-valued one has the values put in ' +
+                         'added and then the values taken out removed — ' +
+                         'exactly `set-attribute`, `add-attribute` and ' +
+                         '`remove-attribute`, applied per attribute, so ' +
+                         'every rule those hold still holds, and each ' +
+                         'change is audited and told to Shared Signals as ' +
+                         'one of those is. An attribute whose values did ' +
+                         'not change is not written.\n\nWhat one attribute ' +
+                         'refuses does not undo another: the reply names ' +
+                         'what was saved (`changed`) and every refusal, and ' +
+                         'answers 400 when there was any.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                user: { type: 'string',
+                        description:
+                          'The person, as /admin-api/users names them.' },
+                username: { type: 'string',
+                            description: 'Accepted for `user`.' },
+                fields: { type: 'object',
+                          description: 'Attribute name to a string or an ' +
+                                       'array of strings; empty clears it.' }
+              },
+              required: ['user', 'fields'],
+              examples: [{ user: 'alice',
+                           fields: { title: 'Principal Engineer',
+                                     mobile: ['+46 70 000 00 00'] } }],
+              additionalProperties: false
+            },
+            responseDescription: 'The attributes saved (`changed`).' },
+
           // -----------------------------------------------------------------
           // WHAT AN ADMINISTRATOR DOES TO SOMEBODY'S CREDENTIALS (2026-09-13),
           // mirroring the Password and second-factor controls on a person's
@@ -5727,6 +6393,49 @@ class AdminApi {
               additionalProperties: false
             },
             responseDescription: 'The delegate as it now stands.' },
+
+          { action: 'set-delegation-semantics',
+            operationId: 'setUserDelegationSemantics',
+            summary: 'Set the delegation semantics a person allows',
+            description: 'Writes `stsDelegationSemantics` (the semantics the ' +
+                         'person allows: `delegation`, `impersonation`, or ' +
+                         'both; empty leaves it to the issuance policy, ' +
+                         'which reads an empty set as both for a subject ' +
+                         'and delegation only for an actor) and ' +
+                         '`stsDefaultDelegationSemantics` (what an act they ' +
+                         'are part of is when the request does not say). ' +
+                         'Read by the exchange policy at an RFC 8693 token ' +
+                         'exchange, a WS-Trust OnBehalfOf / ActAs and a ' +
+                         'Kerberos S4U request (#186).',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                user: { type: 'string',
+                        description:
+                          'The person, as /admin-api/users names them.' },
+                username: { type: 'string',
+                            description: 'Accepted for `user`.' },
+                semantics: {
+                  description: 'delegation and/or impersonation, as a list ' +
+                               'or comma separated; empty clears.',
+                  anyOf: [{ type: 'string' },
+                          { type: 'array',
+                            items: { type: 'string',
+                                     enum: ['delegation', 'impersonation'] } }]
+                },
+                'default': { type: 'string',
+                             enum: ['delegation', 'impersonation'],
+                             description: 'The default; left out, it is ' +
+                                          'cleared.' }
+              },
+              required: ['user'],
+              examples: [{ user: 'alice',
+                           semantics: ['delegation', 'impersonation'],
+                           'default': 'delegation' }],
+              additionalProperties: false
+            },
+            responseDescription: 'The semantics as they now stand.' },
 
           { action: 'answer-ciba-request',
             operationId: 'answerUserCibaRequest',
@@ -9496,7 +10205,8 @@ class AdminApi {
         handler: function (req, res) {
           log.debug("Entering the management API federation action endpoint.");
           const body = parseBody(req);
-          adminActions.federationAction(self.withAction(req, body))
+          adminActions.federationAction(self.withAction(req, body),
+            { via: 'api', actor: 'admin-api', base: baseUrlOf(req) })
             .then(function (result) {
               if (!result.ok) {
                 errorCodes.mark(res, errorCodes.codeOf(result) ||
@@ -9552,10 +10262,12 @@ class AdminApi {
                                      'and this service consumes what it ' +
                                      'issues.' },
                 protocol: { type: 'string',
-                            enum: ['saml2', 'saml11', 'wsfed', 'oidc',
-                                   'oauth2'],
+                            enum: federation.PROTOCOL_IDS.slice(),
                             description:
-                              'The protocol the relationship runs in.' },
+                              'The protocol the relationship runs in. ' +
+                              '`ssf` (#374) is a partner that signs nobody ' +
+                              'in and only sends Shared Signals; it takes ' +
+                              'the service-provider role.' },
                 name: { type: 'string',
                         description:
                           'What to call the partner on a page. The ' +
@@ -9763,6 +10475,101 @@ class AdminApi {
             },
             responseDescription: 'The new key\'s kid, and the relationship ' +
                                  'as it now stands.' },
+
+          // A PARTNER'S SHARED SIGNALS (#373, #374): the relationship page's
+          // Shared Signals buttons, each handed to ssf/ssf_transmitters.ts.
+          ...[
+            ['signals-discover', 'discoverFederationSignals',
+             'Discover the partner\'s Shared Signals configuration',
+             'Fetches `/.well-known/ssf-configuration` under the SSF issuer ' +
+             '(`fedSignalsIssuer`, else `fedPeer`; SSF 1.0 section 7), which ' +
+             'must name that issuer, a `jwks_uri` and a ' +
+             '`configuration_endpoint`, and fetches the keys. Every address ' +
+             'dialled afterwards is one that document named. Audited.'],
+            ['signals-create-stream', 'createFederationSignalsStream',
+             'Create this realm\'s stream at the partner',
+             'SSF 1.0 section 8.1.1, discovering first where needed: a poll ' +
+             'stream, or — `fedSignalsDelivery` push — a push stream to ' +
+             '`/federation/signals/{id}` with an authorization header only ' +
+             'this realm and the partner know. Asks for `fedSignalsEvents`. ' +
+             'Audited.'],
+            ['signals-read-stream', 'readFederationSignalsStream',
+             'Read the stream\'s configuration from the partner',
+             'Refreshes what is held: audience, events, delivery.'],
+            ['signals-update-stream', 'updateFederationSignalsStream',
+             'Send fedSignalsEvents to the stream',
+             'A PATCH of `events_requested` to the relationship\'s ' +
+             '`fedSignalsEvents`. Audited.'],
+            ['signals-delete-stream', 'deleteFederationSignalsStream',
+             'Delete the stream at the partner', 'Audited.'],
+            ['signals-verify', 'verifyFederationSignalsStream',
+             'Ask the partner for a verification event',
+             'SSF 1.0 section 8.1.4.2: its state is checked when the event ' +
+             'arrives.'],
+            ['signals-poll-now', 'pollFederationSignals',
+             'Poll the partner now', 'RFC 8936, as the ssf.foreign-poll job ' +
+             'does.']
+          ].map(function (one: string[]) {
+            return { action: one[0], operationId: one[1], summary: one[2],
+                     description: one[3], requestBodyRequired: true,
+                     requestBody: { type: 'object',
+                       properties: { id: { type: 'string',
+                         description: 'The relationship.' } },
+                       required: ['id'], examples: [{ id: 'partner' }],
+                       additionalProperties: false },
+                     responseDescription: 'The relationship\'s Shared ' +
+                                          'Signals as they stand.' };
+          }),
+          { action: 'signals-set-status',
+            operationId: 'setFederationSignalsStatus',
+            summary: 'Enable, pause or disable the stream at the partner',
+            description: 'SSF 1.0 section 8.1.2. Audited.',
+            requestBodyRequired: true,
+            requestBody: { type: 'object', properties: {
+              id: { type: 'string', description: 'The relationship.' },
+              status: { type: 'string', enum: ['enabled', 'paused',
+                                               'disabled'] },
+              reason: { type: 'string', maxLength: 512 } },
+              required: ['id', 'status'],
+              examples: [{ id: 'partner', status: 'paused' }],
+              additionalProperties: false },
+            responseDescription: 'The relationship\'s Shared Signals as ' +
+                                 'they stand.' },
+          ...[['signals-add-subject', 'addFederationSignalsSubject',
+               'Add a subject to the stream at the partner',
+               'SSF 1.0 section 8.1.3.2. Audited.'],
+              ['signals-remove-subject', 'removeFederationSignalsSubject',
+               'Remove a subject from the stream at the partner',
+               'SSF 1.0 section 8.1.3.3. Audited.']
+          ].map(function (one: string[]) {
+            return { action: one[0], operationId: one[1], summary: one[2],
+                     description: one[3], requestBodyRequired: true,
+                     requestBody: { type: 'object', properties: {
+                       id: { type: 'string', description: 'The relationship.' },
+                       subject: { type: 'object', additionalProperties: true } },
+                       required: ['id', 'subject'],
+                       examples: [{ id: 'partner', subject: {
+                         format: 'iss_sub', iss: 'https://idp.example',
+                         sub: '248289761001' } }],
+                       additionalProperties: false },
+                     responseDescription: 'The relationship\'s Shared ' +
+                                          'Signals as they stand.' };
+          }),
+          { action: 'signals-unblock', operationId: 'unblockFederationSignals',
+            summary: 'Lift a partner\'s block on a person\'s sign-ins',
+            description: 'A verified `account-disabled` from a sign-in ' +
+                         'partner blocks its sign-ins of the person until its ' +
+                         '`account-enabled` (#373). This lifts the block by ' +
+                         'hand. Audited.',
+            requestBodyRequired: true,
+            requestBody: { type: 'object', properties: {
+              id: { type: 'string', description: 'The relationship.' },
+              user: { type: 'string', description: 'The person.' } },
+              required: ['id', 'user'],
+              examples: [{ id: 'partner', user: 'alice' }],
+              additionalProperties: false },
+            responseDescription: 'The relationship\'s Shared Signals as ' +
+                                 'they stand.' },
 
           { action: 'delete', operationId: 'deleteFederationRelationship',
             summary: 'Delete a relationship',
@@ -10570,12 +11377,11 @@ class AdminApi {
                      'reply pages its attribute list under `attributesPage` ' +
                      'rather than `page`, which is the convention for a ' +
                      'reply holding a list that is not the top-level ' +
-                     'one.\n\n**Two attributes hold credentials in the ' +
-                     'clear** — `oauthClientSecret` and ' +
-                     '`appRegistrationAccessToken` — for the reason GET ' +
-                     '/krb5/principals prints the Kerberos passwords. In RFC ' +
-                     '9700 mode that secret is CHECKED, so anyone who can ' +
-                     'reach this endpoint can authenticate as that client.',
+                     'one.\n\n**This reply carries credentials** — ' +
+                     '`oauthClientSecret` and `appRegistrationAccessToken`, ' +
+                     'opened. They are sealed at rest wherever the process ' +
+                     'holds a durable key-encryption key, but anyone who ' +
+                     'can read this reply can authenticate as that client.',
         mirrors: 'GET /admin/applications',
         parameters: [
           { name: 'application', in: 'query', required: false,
@@ -10682,7 +11488,8 @@ class AdminApi {
         // and /admin/applications/new's RFC 9728 import, whose load and create
         // post to that page so a refusal can redraw it. The console suite reads
         // this field to learn which console paths take a POST.
-        mirrors: 'POST /admin/applications and POST /admin/applications/new',
+        mirrors: 'POST /admin/applications, POST /admin/applications/new ' +
+                 'and POST /admin/applications/edit',
         handler: function (req, res) {
           log.debug("Entering the management API applications action " +
                     "endpoint.");
@@ -10908,9 +11715,11 @@ class AdminApi {
                            'The new value; empty clears the attribute.' }
               },
               required: ['application', 'attribute'],
+              // Not `oauthTokenEndpointAuthMethod` since 2026-10-01: it is
+              // a list now, written with `add` and `remove`.
               examples: [{ application: 'my-web-app',
-                           attribute: 'oauthTokenEndpointAuthMethod',
-                           value: 'none' }],
+                           attribute: 'oauthSubjectType',
+                           value: 'pairwise' }],
               additionalProperties: false
             },
             responseDescription: 'The application as it now stands, with ' +
@@ -10974,6 +11783,46 @@ class AdminApi {
               additionalProperties: false
             },
             responseDescription: 'The application as it now stands.' },
+
+          // THE FIELD GRID'S SAVE (2026-09-30): the application page's one
+          // form, and every attribute it carries at once.
+          { action: 'update-fields', operationId: 'updateApplicationFields',
+            summary: 'Set several attributes of an application at once',
+            description: 'What the Save button of an application\'s field ' +
+                         'grid on the console does. Each member of ' +
+                         '`fields` names an editable attribute and gives ' +
+                         'what it should hold: a single-valued attribute is ' +
+                         'SET (an empty string or array clears it), and a ' +
+                         'multi-valued one has the values not given ' +
+                         'removed and the values not yet held added — ' +
+                         'exactly `set`, `add` and `remove`, applied per ' +
+                         'attribute, so every rule those hold still holds. ' +
+                         'An attribute whose values did not change is not ' +
+                         'written. `protocols`, when given, replaces the ' +
+                         'declared protocol families, and is written first, ' +
+                         'so a family-scoped attribute may be set in the ' +
+                         'same call that declares its family.\n\nWhat ' +
+                         'one attribute refuses does not undo another: the ' +
+                         'reply names what was saved (`changed`) and every ' +
+                         'refusal, and answers 400 when there was any.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                application: { type: 'string' },
+                fields: { type: 'object' },
+                protocols: { type: 'array', items: { type: 'string' } }
+              },
+              required: ['application'],
+              examples: [{ application: 'my-web-app',
+                           fields: { oauthRedirectUri: [
+                             'https://app.example.com/callback'],
+                                     oauthRequirePushedAuthorizationRequests:
+                                       'TRUE' } }],
+              additionalProperties: false
+            },
+            responseDescription: 'The attributes saved (`changed`) and the ' +
+                                 'application as it now stands.' },
 
           // THE PROVENANCE PAIR (2026-09-12). The console's application page
           // draws a Confirm and a Discard button beside every return address a
@@ -11067,29 +11916,28 @@ class AdminApi {
             responseDescription: 'The application as it now stands, without ' +
                                  'the address or its mark.' },
 
-          // THE CREDENTIALS SECTION'S SECRET CONTROL (2026-09-13).
+          // THE CREDENTIALS SECTION'S SECRET CONTROLS (2026-09-13; several
+          // secrets since 2026-10-01).
           { action: 'regenerate-secret',
             operationId: 'regenerateApplicationClientSecret',
             summary: 'Mint a new client secret for an application, replacing ' +
-                     'the old one',
+                     'every one it holds',
             description: 'Mints `oauth2.registeredSecretBytes` random bytes, ' +
                          'base64url — the way `POST /oauth2/register` mints ' +
-                         'one — onto `oauthClientSecret`, and into the ' +
-                         'stored RFC 7591 registration document where there ' +
-                         'is one, with `client_secret_expires_at` recomputed ' +
-                         'from `oauth2.registeredSecretLifetimeS`.\n\n**THE ' +
-                         'OLD SECRET STOPS AUTHENTICATING AT ONCE**, ' +
-                         'wherever the token endpoint checks a secret (RFC ' +
-                         '9700 mode, product mode). **THIS REPLY IS THE ONE ' +
-                         'PLACE THE NEW VALUE IS HANDED OUT BY THIS ACT** — ' +
-                         'the audit row names the attribute and never the ' +
-                         'value — though `GET ' +
+                         'one — as the application\'s ONLY secret, a record ' +
+                         'on `oauthClientSecret` expiring after ' +
+                         '`oauth2.clientSecretLifetimeDays` days (never at ' +
+                         '0), ' +
+                         'and into the stored RFC 7591 registration document ' +
+                         'where there is one.\n\n**EVERY SECRET IT HELD ' +
+                         'STOPS AUTHENTICATING AT ONCE**, wherever the token ' +
+                         'endpoint checks a secret (RFC 9700 mode, product ' +
+                         'mode). **THIS REPLY IS THE ONE PLACE THE NEW VALUE ' +
+                         'IS HANDED OUT BY THIS ACT** — the audit row names ' +
+                         'the attribute and never the value — though `GET ' +
                          '/admin-api/applications?application=` reads the ' +
-                         'entry\'s secret back for an `admin:read` token, as ' +
-                         'it always has.\n\nThe console\'s and the portal\'s ' +
-                         'own seeded clients read their secret off the entry ' +
-                         'on every sign-in, so regenerating one is safe. ' +
-                         '`sts-management-api` is REFUSED while ' +
+                         'entry back for an `admin:read` token, as it always ' +
+                         'has.\n\n`sts-management-api` is REFUSED while ' +
                          '`adminApi.clientSecret` pins its secret: every ' +
                          'token for this API is minted with that setting, ' +
                          'and seeding never writes over an existing entry.',
@@ -11101,26 +11949,27 @@ class AdminApi {
               examples: [{ application: 'my-web-app' }],
               additionalProperties: false
             },
-            responseDescription: 'The new secret in `clientSecret`, whether ' +
-                                 'one was replaced, and the application as ' +
-                                 'it now stands.' },
+            responseDescription: 'The new secret in `clientSecret`, its ' +
+                                 '`secretId` and `expiresAt`, whether one ' +
+                                 'was replaced, and the application as it ' +
+                                 'now stands.' },
 
-          // ROTATION WITH AN OVERLAP (#49 P5, 2026-09-22).
+          // ROTATION WITH AN OVERLAP (#49 P5, 2026-09-22; add-and-shorten
+          // since 2026-10-01).
           { action: 'rotate-secret',
             operationId: 'rotateApplicationClientSecret',
-            summary: 'Mint a new client secret, keeping the old one working ' +
+            summary: 'Add a new client secret, keeping the others working ' +
                      'for an overlap',
-            description: 'Exactly `regenerate-secret`, except that the ' +
-                         'secret it replaces goes on authenticating at the ' +
-                         'token endpoint until ' +
+            description: 'Adds a new secret, as `add-secret` does with the ' +
+                         'default lifetime, and moves every UNEXPIRED secret ' +
+                         'the application holds to expire when ' +
                          '`oauth2.clientSecretOverlapS` has passed (a week ' +
-                         'by default) — kept on the entry as ' +
-                         '`oauthClientSecretPrevious` and ' +
-                         '`oauthClientSecretPreviousUntil`, and cleared by ' +
-                         'the scheduler job `oauth2.client-secret-expiry` ' +
-                         'after it — so the client can change over without ' +
-                         'an outage. With the overlap at 0 it is a ' +
-                         'regeneration.',
+                         'by default; an earlier expiry is kept), so the ' +
+                         'client can change over without an outage. The ' +
+                         'scheduler job `oauth2.client-secret-expiry` ' +
+                         'removes them after. With the overlap at 0 it is a ' +
+                         'regeneration. Refused past ' +
+                         '`oauth2.clientSecretsMax`.',
             requestBodyRequired: true,
             requestBody: {
               type: 'object',
@@ -11130,8 +11979,63 @@ class AdminApi {
               additionalProperties: false
             },
             responseDescription: 'The new secret in `clientSecret`, and ' +
-                                 '`overlapUntil`: when the old one stops ' +
+                                 '`overlapUntil`: when the old ones stop ' +
                                  'working (ms).' },
+
+          { action: 'add-secret',
+            operationId: 'addApplicationClientSecret',
+            summary: 'Add a client secret beside the ones an application ' +
+                     'holds',
+            description: 'Mints a secret as `regenerate-secret` does and ' +
+                         'ADDS it: every secret already held goes on ' +
+                         'authenticating until its own expiry. The new one ' +
+                         'is the newest, so it becomes the PRIMARY — the one ' +
+                         'this service signs HS256 ID Tokens and JARM with, ' +
+                         'keys symmetric encryption with, and returns as ' +
+                         'RFC 7591\'s `client_secret`. `lifetimeDays` is ' +
+                         'its lifetime in whole days, 0 to 730 (0 never ' +
+                         'expires; omitted or empty, ' +
+                         '`oauth2.clientSecretLifetimeDays`), and ' +
+                         '`description` one line saying what it is for. ' +
+                         'Refused past `oauth2.clientSecretsMax`.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                application: { type: 'string' },
+                lifetimeDays: { type: ['integer', 'string'] },
+                description: { type: 'string', maxLength: 200 }
+              },
+              required: ['application'],
+              examples: [{ application: 'my-web-app', lifetimeDays: 90,
+                           description: 'production deploy' }],
+              additionalProperties: false
+            },
+            responseDescription: 'The new secret in `clientSecret`, its ' +
+                                 '`secretId` and `expiresAt` (seconds, 0 ' +
+                                 'never), and the application as it now ' +
+                                 'stands.' },
+
+          { action: 'remove-secret',
+            operationId: 'removeApplicationClientSecret',
+            summary: 'Remove one client secret, by its id',
+            description: 'Removes the secret whose id is `secret` (the ids ' +
+                         'are in the application\'s `credentials.clientSecret' +
+                         '.secrets`); it stops authenticating at once. The ' +
+                         'secret `adminApi.clientSecret` pins on ' +
+                         '`sts-management-api` is refused.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: { application: { type: 'string' },
+                            secret: { type: 'string' } },
+              required: ['application', 'secret'],
+              examples: [{ application: 'my-web-app',
+                           secret: 'cs-0123456789ab' }],
+              additionalProperties: false
+            },
+            responseDescription: 'How many secrets are `left`, and the ' +
+                                 'application as it now stands.' },
 
           // /admin/applications/new's *Generate Secret* button (2026-09-18).
           { action: 'generate-secret',
@@ -11157,6 +12061,253 @@ class AdminApi {
               additionalProperties: false
             },
             responseDescription: 'The secret in `clientSecret`.' },
+
+          // THE DID TAB'S *Generate a key pair* (2026-10-01).
+          { action: 'generate-did-key',
+            operationId: 'generateApplicationDidKey',
+            summary: 'Generate a key pair for an application\'s DID, ' +
+                     'publishing the public half',
+            description: 'For an application declared for the `did` family: ' +
+                         'generates an ES256 (default), ES384 or EdDSA key ' +
+                         'pair, adds the public JWK to `didPublicKeyJwk` — ' +
+                         'with `replace`, after taking the keys already ' +
+                         'there off — and answers the private key, as a JWK ' +
+                         'and as PKCS#8 PEM. **THIS REPLY IS THE ONLY ' +
+                         'PLACE THE PRIVATE KEY IS SHOWN**: this service ' +
+                         'publishes the public half in the DID document it ' +
+                         'advertises at `<base>/applications/<identifier>/' +
+                         'did.json`, and keeps the private half SEALED in ' +
+                         '`didPrivateKeys` to sign the application\'s ' +
+                         'Domain Linkage Credentials (`sign-domain-' +
+                         'linkage`). The application\'s DID is ' +
+                         '`did:web:<host>[:realm:<id>]:applications:' +
+                         '<identifier>`. Refused (`STS-ADMIN-0837`) for an ' +
+                         'unknown application, one not declared for `did`, ' +
+                         'or another algorithm.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                application: { type: 'string' },
+                algorithm: { type: 'string',
+                             enum: ['ES256', 'ES384', 'EdDSA'] },
+                replace: { type: 'boolean' }
+              },
+              required: ['application'],
+              examples: [{ application: 'my-web-app', algorithm: 'ES256' }],
+              additionalProperties: false
+            },
+            responseDescription: 'The DID, the verification method and the ' +
+                                 'document\'s address; the public JWK; and ' +
+                                 'the private key in `privateJwk` and ' +
+                                 '`privateKeyPem`.' },
+
+          // THE DID TAB'S *Download did-configuration.json* (2026-10-01).
+          { action: 'sign-domain-linkage',
+            operationId: 'signApplicationDomainLinkage',
+            summary: 'Sign the DID Configuration resource for one of an ' +
+                     'application\'s LinkedDomains origins',
+            description: 'The DIF Well-Known DID Configuration: one Domain ' +
+                         'Linkage Credential (JWT form), self-issued by the ' +
+                         'application\'s DID with credentialSubject ' +
+                         '`{ id, origin }`, signed with a key its DID ' +
+                         'document publishes whose private half this ' +
+                         'service kept (one `generate-did-key` made). Host ' +
+                         '`didConfiguration` at ' +
+                         '`https://<origin>/.well-known/did-configuration.' +
+                         'json`. `origin` must be a `LinkedDomains` service ' +
+                         'in `didService`. Writes nothing. Refused ' +
+                         '(`STS-VC-0115`) for an application with no DID ' +
+                         'document, an origin it does not list, or no kept ' +
+                         'key.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                application: { type: 'string' },
+                origin: { type: 'string' }
+              },
+              required: ['application', 'origin'],
+              examples: [{ application: 'my-web-app',
+                           origin: 'https://app.example.com' }],
+              additionalProperties: false
+            },
+            responseDescription: 'The DID Configuration resource in ' +
+                                 '`didConfiguration`, the DID, the origin, ' +
+                                 'the signing key\'s kid, a file name and ' +
+                                 'where to host it (`hostAt`).' },
+
+          // AN APPLICATION'S OWN CUSTOM CLAIMS AND SAML ATTRIBUTES
+          // (2026-10-01): the Custom claims and Custom SAML attributes
+          // sections of its configuration tabs.
+          { action: 'set-custom-claim',
+            operationId: 'setApplicationCustomClaim',
+            summary: 'Set one of an application\'s own custom claims or ' +
+                     'SAML attributes',
+            description: 'Adds a row to one of the application\'s own claim ' +
+                         'sets — `access_token`, `id_token`, `userinfo`, ' +
+                         '`saml2` or `saml11` — or replaces its row of the ' +
+                         'same name. At issuance the application\'s rows are ' +
+                         'ADDED to the realm\'s set and win by name. A row is ' +
+                         'a typed value (`value`, with `${placeholders}`) or a ' +
+                         'directory attribute of the person (`attribute`, ' +
+                         'with `multi` and, for the three JSON sets, `type`); ' +
+                         'a SAML 2.0 row may carry `nameFormat`, a SAML 1.1 ' +
+                         'row `namespace`. Held to the realm\'s rules: a ' +
+                         'reserved name, an attribute that may not be ' +
+                         'released or an unknown type is refused ' +
+                         '(`STS-REG-0206`), as is an OAuth set on an ' +
+                         'application declared for no OAuth family.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                application: { type: 'string' },
+                set: { type: 'string',
+                       enum: ['access_token', 'id_token', 'userinfo', 'saml2',
+                              'saml11'] },
+                name: { type: 'string' },
+                value: { type: 'string' },
+                attribute: { type: 'string' },
+                multi: { type: 'boolean' },
+                type: { type: 'string',
+                        enum: ['string', 'number', 'boolean', 'json'] },
+                nameFormat: { type: 'string' },
+                namespace: { type: 'string' }
+              },
+              required: ['application', 'set', 'name'],
+              examples: [{ application: 'my-web-app', set: 'access_token',
+                           name: 'tenant', value: 'acme' },
+                         { application: 'my-web-app', set: 'id_token',
+                           name: 'department', attribute: 'departmentNumber',
+                           type: 'string' }],
+              additionalProperties: false
+            },
+            responseDescription: 'The application\'s rows for that set ' +
+                                 'after the change, in `claims`.' },
+          { action: 'remove-custom-claim',
+            operationId: 'removeApplicationCustomClaim',
+            summary: 'Take one of an application\'s own custom claims or ' +
+                     'SAML attributes off',
+            description: 'Removes the application\'s row of that name from ' +
+                         'one of its claim sets. The realm\'s row of the same ' +
+                         'name, if there is one, is issued again. Refused ' +
+                         '(`STS-REG-0206`) for a name the application does ' +
+                         'not hold.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                application: { type: 'string' },
+                set: { type: 'string',
+                       enum: ['access_token', 'id_token', 'userinfo', 'saml2',
+                              'saml11'] },
+                name: { type: 'string' }
+              },
+              required: ['application', 'set', 'name'],
+              examples: [{ application: 'my-web-app', set: 'access_token',
+                           name: 'tenant' }],
+              additionalProperties: false
+            },
+            responseDescription: 'The application\'s rows for that set ' +
+                                 'after the change, in `claims`.' },
+
+          // THE ACCESS TYPES TAB (#432 phase 4): one entry of the access-type
+          // catalogue RFC 9396 and GNAP share.
+          { action: 'set-access-type',
+            operationId: 'setApplicationAccessType',
+            summary: 'Declare or replace an access type a resource ' +
+                     'application owns',
+            description: 'Writes one `oauthAuthorizationDetailsType` value ' +
+                         'from named fields — the access-type catalogue ' +
+                         'read by RFC 9396 authorization_details and by ' +
+                         'GNAP access rights alike — replacing the ' +
+                         'application\'s definition of the same `type`. ' +
+                         'A list field is an array or text with one value ' +
+                         'per line (`requiredMembers` is the definition\'s ' +
+                         '`required`); `schema` and `limits` are JSON ' +
+                         'Schemas ' +
+                         '(`limits` a subset: type, properties, required, ' +
+                         'additionalProperties, items, enum, const, bounds, ' +
+                         'pattern, format). `bearer: false` makes a token ' +
+                         'carrying the type sender-constrained; ' +
+                         '`maxLifetimeS` caps it; `derivableFrom` names the ' +
+                         'types it may be derived from (RFC 9767 section 4); ' +
+                         '`introspectionClaims` the person\'s claims the ' +
+                         'application is told at introspection. ' +
+                         '`interaction` (always, default, never), ' +
+                         '`consentActions` and `acr` decide, for GNAP, ' +
+                         'whether the resource owner must be asked and how ' +
+                         'strongly signed in (#432 phase 6). A definition ' +
+                         'that ' +
+                         'does not read is refused (`STS-REG-0294`) and the ' +
+                         'one declared stays.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                application: { type: 'string' },
+                type: { type: 'string' },
+                description: { type: 'string' },
+                locations: { type: ['array', 'string'],
+                             items: { type: 'string' } },
+                actions: { type: ['array', 'string'],
+                           items: { type: 'string' } },
+                datatypes: { type: ['array', 'string'],
+                             items: { type: 'string' } },
+                privileges: { type: ['array', 'string'],
+                              items: { type: 'string' } },
+                requiredMembers: { type: ['array', 'string'],
+                                   items: { type: 'string' } },
+                interaction: { type: 'string',
+                               enum: ['always', 'default', 'never'] },
+                consentActions: { type: ['array', 'string'],
+                                  items: { type: 'string' } },
+                bearer: { type: ['boolean', 'string'] },
+                maxLifetimeS: { type: ['integer', 'string'] },
+                acr: { type: 'string' },
+                derivableFrom: { type: ['array', 'string'],
+                                 items: { type: 'string' } },
+                introspectionClaims: { type: ['array', 'string'],
+                                       items: { type: 'string' } },
+                schema: { type: ['object', 'string'] },
+                limits: { type: ['object', 'string'] }
+              },
+              required: ['application', 'type'],
+              examples: [{ application: 'payments-api',
+                           type: 'payment_initiation',
+                           actions: ['initiate', 'status'],
+                           bearer: false, maxLifetimeS: 300,
+                           introspectionClaims: ['email'],
+                           limits: { type: 'object',
+                                     properties: {
+                                       amount: { type: 'number',
+                                                 minimum: 0 } },
+                                     additionalProperties: false } }],
+              additionalProperties: false
+            },
+            responseDescription: 'The definition written, in `definition`.' },
+          { action: 'remove-access-type',
+            operationId: 'removeApplicationAccessType',
+            summary: 'Take an access type off a resource application',
+            description: 'Removes the application\'s definition of `type` ' +
+                         'from the access-type catalogue. A right of the ' +
+                         'type is then refused by RFC 9396 in every mode and ' +
+                         'by GNAP in product mode. Refused (`STS-REG-0295`) ' +
+                         'for a type the application does not declare.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                application: { type: 'string' },
+                type: { type: 'string' }
+              },
+              required: ['application', 'type'],
+              examples: [{ application: 'payments-api',
+                           type: 'payment_initiation' }],
+              additionalProperties: false
+            },
+            responseDescription: 'The application and the type removed.' },
 
           // THE CREDENTIALS SECTION'S MUTUAL TLS CONTROLS (RFC 8705,
           // 2026-09-13).
@@ -11717,12 +12868,24 @@ class AdminApi {
                          'seen had it revoked the grant itself, and a CAEP ' +
                          'session-revoked is sent to every ' +
                          'stream that takes it. A grant already ' +
-                         'finalized is reported unchanged rather than refused.',
+                         'finalized is reported unchanged rather than ' +
+                         'refused — except one finalized as `issued`, whose ' +
+                         'tokens are still live and are revoked (#432). ' +
+                         'Naming `user` as well revokes it only if that ' +
+                         'person is its resource owner — the per-person ' +
+                         'door the GNAP grants tab of /admin/users uses, ' +
+                         'whose grants GET /admin-api/users?user= lists as ' +
+                         '`gnapGrants`.',
             requestBodyRequired: true,
             requestBody: {
               type: 'object',
               properties: { grant: { type: 'string', description: 'The grant ' +
-                  'identifier, from GET /admin-api/gnap.' } },
+                  'identifier, from GET /admin-api/gnap or the person\'s ' +
+                  '`gnapGrants`.' },
+                            user: { type: 'string', description: 'The ' +
+                  'person whose grant it must be (optional). A grant whose ' +
+                  'resource owner is somebody else is refused and nothing ' +
+                  'changes.' } },
               required: ['grant'],
               examples: [{ grant: 'no-such-grant-example' }],
               additionalProperties: false
@@ -14643,12 +15806,22 @@ class AdminApi {
         // resource looks an application up in `issued` by identifier and a
         // reply holding one page would answer "not there" about page two.
         // `admin-ui/pki_admin.ts`'s `keyPairPaging()` argues it.
-        parameters: this.pagingParameters().filter(function (one) {
-          return one.name === 'per';
-        }).concat(this.detailPagingParameters([
+        // FIVE ROWS A PAGE, AND A CEILING (2026-09-30): `per` here may
+        // shorten every list and cannot lengthen one, so its schema says five
+        // rather than the console's MAX_ROWS. And each list has a search,
+        // applied before it is paged. The `as any` below is a WIDENING, not
+        // a library's wrong type: TypeScript takes the array's element type
+        // from this first row's integer schema, and the two search rows
+        // concatenated after it carry a string one.
+        parameters: [
+          { name: 'per', in: 'query', required: false,
+            schema: { type: 'integer', minimum: 1, maximum: 5 } as any,
+            description: 'Rows per page, SHARED by every paged list in the ' +
+                         'reply: five by default and at most five.' }
+        ].concat(this.detailPagingParameters([
           { name: 'issued',
-            description: 'The Applications table on /admin/pki, twenty-five ' +
-                         'rows by default. `issued` itself is the WHOLE list ' +
+            description: 'The Applications table on /admin/pki, five rows ' +
+                         'a page. `issued` itself is the WHOLE list ' +
                          'whatever page is asked for; `issuedPaging` says ' +
                          'which rows the page drew.' },
           { name: 'persons',
@@ -14657,12 +15830,42 @@ class AdminApi {
                          '`persons` and two rows on the page. `persons` is ' +
                          'the WHOLE list; `personsPaging` says which people ' +
                          'the page drew.' }
-        ])),
+        ]), [
+          { name: 'issuedq', in: 'query', required: false,
+            schema: { type: 'string', maxLength: 200 },
+            description: 'Narrows the Applications table before it is ' +
+                         'paged: a case-insensitive substring of the ' +
+                         'identifier, the profile, the key handle or a ' +
+                         'declared issuer. `issuedPaging.total` is then the ' +
+                         'count that matched, and `issuedSearch` echoes it.' },
+          { name: 'personsq', in: 'query', required: false,
+            schema: { type: 'string', maxLength: 200 },
+            description: 'Narrows the People table before it is paged: a ' +
+                         'case-insensitive substring of the username, either ' +
+                         'key handle or an issuer either profile asserts as. ' +
+                         '`personsPaging.total` is then the count that ' +
+                         'matched, and `personsSearch` echoes it.' }
+        ]),
         responseDescription: 'The hierarchy, the algorithm vocabularies, the ' +
-                             'two assertion profiles, and one row per ' +
+                             'two assertion profiles, one row per ' +
                              'application per profile for those holding an ' +
                              'issued key pair, with `issuedPaging` and ' +
-                             '`personsPaging` beside the two lists.',
+                             '`personsPaging` beside the two lists, and each ' +
+                             'authority\'s revocation lists as pages (#370): ' +
+                             '`issued` and `revokedNotIssued` on each ' +
+                             'authority are one page each, five rows at ' +
+                             'most, on the query parameters ' +
+                             '`ca-<scope segment>-<ca>-issuedPage` and ' +
+                             '`…-orphansPage`, each narrowed first by ' +
+                             '`ca-<scope segment>-<ca>-issuedq` and ' +
+                             '`…-orphansq` (a case-insensitive substring of ' +
+                             'the serial, the subject, the name or reason), ' +
+                             'with `issuedPaging`, `orphansPaging` (whose ' +
+                             '`total` is the count that matched), ' +
+                             '`issuedSearch`, `orphansSearch`, ' +
+                             '`issuedTotal`, `revokedTotal` and ' +
+                             '`revokedNotIssuedTotal` ' +
+                             'beside them.',
         handler: function (req, res) {
           log.debug("Entering the management API PKI endpoint.");
           self.sendJson(res, 200, pkiAdmin.pkiView(req));
@@ -17049,9 +18252,12 @@ class AdminApi {
                      'intermediaries it accepts;\n* ' +
                      '`appDelegationSubjectGroup` on the intermediary names ' +
                      'the groups of people it may act for (empty: anybody ' +
-                     'unprotected);\n* `appTrustedToImpersonate` TRUE lets ' +
-                     'it IMPERSONATE (OnBehalfOf, an exchange with no ' +
-                     'actor_token) as well as delegate.\n\n`pairs` has one ' +
+                     'unprotected);\n* `appDelegationSemantics` says ' +
+                     'whether it may IMPERSONATE as well as delegate (empty ' +
+                     'is delegation only), `appDefaultDelegationSemantics` ' +
+                     'its default, and `appNotDelegated` that nobody acts ' +
+                     'for it.\n\nThe issuance policy decides on these ' +
+                     'facts (#186). `pairs` has one ' +
                      'row per (intermediary, target, attribute); ' +
                      '`intermediaries` the applications carrying the flag ' +
                      'or a subject group; `people` those carrying ' +
@@ -17297,7 +18503,7 @@ class AdminApi {
         } },
 
       { method: 'POST', route: BASE + '/permissions/:action', tag: 'Delegation',
-        mirrors: 'POST /admin/delegation',
+        mirrors: 'POST /admin/delegation-settings',
         handler: function (req, res) {
           log.debug("Entering the management API permissions action endpoint.");
           const body = parseBody(req);
@@ -17737,13 +18943,32 @@ class AdminApi {
                                             '`<role>`, no other ' +
                                             'application\'s at all. Omit it ' +
                                             'for a realm-wide role, whose ' +
-                                            'name may not contain `@`.' }
+                                            'name may not contain `@`.' },
+                displayName: { type: 'string',
+                               description: 'A name for people to read ' +
+                                            '(#93). The role\'s name is ' +
+                                            'still what a token carries; ' +
+                                            'this is its label. Optional.' },
+                memberTypes: { type: 'array',
+                               items: { type: 'string',
+                                        enum: roles.MEMBER_TYPES },
+                               description: 'Who may hold it (#93): `user` ' +
+                                            '(people, directly or through a ' +
+                                            'group) and `application` (an ' +
+                                            'application as itself). Empty ' +
+                                            'is both. A member of an ' +
+                                            'excluded kind is refused, ' +
+                                            'already held or added later; ' +
+                                            'the two console roles cannot ' +
+                                            'be restricted. Omitted, both.' }
               },
               required: ['role'],
               examples: [{ role: 'staff',
                            description: 'People who work here' },
                          { role: 'reader', application: 'payroll',
-                           description: 'May read payroll' }],
+                           description: 'May read payroll',
+                           displayName: 'Payroll reader',
+                           memberTypes: ['application'] }],
               additionalProperties: false
             },
             responseDescription: 'The role that was made.' },
@@ -17778,9 +19003,11 @@ class AdminApi {
                                  'now require something nobody can hold.' },
 
           { action: 'describe-role', operationId: 'describeRole',
-            summary: 'Change what a role says it is for',
-            description: 'Replaces the `description` and leaves the ' +
-                         'membership exactly as it was. It is an action of ' +
+            summary: 'Change what a role says it is for, and who may hold it',
+            description: 'Replaces the `description` — and, where given, the ' +
+                         '`displayName` and `memberTypes` (#93) — and ' +
+                         'leaves the membership exactly as it was. It is an ' +
+                         'action of ' +
                          'its own rather than a field on ' +
                          '`create-role` because creating an ' +
                          'existing role is refused: roles are edited in place.',
@@ -17791,7 +19018,27 @@ class AdminApi {
                 role: { type: 'string', description: 'The role.' },
                 description: { type: 'string',
                                description: 'The new description. An empty ' +
-                                            'string clears it.' }
+                                            'string clears it.' },
+                displayName: { type: 'string',
+                               description: 'A name for people to read ' +
+                                            '(#93). The role\'s name is ' +
+                                            'still what a token carries; ' +
+                                            'this is its label. Omitted, ' +
+                                            'it is kept; an empty string ' +
+                                            'clears it.' },
+                memberTypes: { type: 'array',
+                               items: { type: 'string',
+                                        enum: roles.MEMBER_TYPES },
+                               description: 'Who may hold it (#93): `user` ' +
+                                            '(people, directly or through a ' +
+                                            'group) and `application` (an ' +
+                                            'application as itself). Empty ' +
+                                            'is both. A member of an ' +
+                                            'excluded kind is refused, ' +
+                                            'already held or added later; ' +
+                                            'the two console roles cannot ' +
+                                            'be restricted. Omitted, they ' +
+                                            'are kept.' }
               },
               required: ['role'],
               examples: [{ role: 'staff',
@@ -19016,10 +20263,14 @@ class AdminApi {
       // CLAIMS PROVIDERS (#147): /admin/claim-providers' twin, in the same
       // shape.
       ...loadClaimsProvidersApi().ROUTES,
+      // THE ATTRIBUTE SOURCES (#94): the register and its six acts, the
+      // console's own (`attribute-sources/attribute_sources_api.ts`).
+      ...loadAttributeSourcesApi().ROUTES,
       // PROVIDER COMMANDS AND OUTBOUND DELIVERIES (#151): /admin/commands'
       // and /admin/deliveries' twins, in the same shape.
       ...loadProviderCommandsApi().ROUTES,
-      // FOREIGN SSF TRANSMITTERS (#153): /admin/ssf/transmitters' twin.
+      // FEDERATION PARTNERS' SHARED SIGNALS (#153, #373): the monitoring
+      // page's twin. The acts are federation's (`signals-*` below).
       ...loadSsfTransmittersApi().ROUTES
     ];
     log.debug("Leaving AdminApi.buildRoutes().");
@@ -20231,7 +21482,8 @@ const JWT_CLAIM_FAMILY = {
   carrier: 'token',
   example: 'id_token',
   reserved: true,
-  ids: { add: 'addClaim', remove: 'removeClaim', clear: 'clearClaims',
+  ids: { add: 'addClaim', addAttribute: 'addAttributeClaim',
+         remove: 'removeClaim', clear: 'clearClaims',
          replace: 'replaceClaims', attributes: 'setClaimAttributes',
          all: 'selectAllClaimAttributes', none: 'clearClaimAttributes' }
 };
@@ -20255,7 +21507,9 @@ const USERINFO_CLAIM_FAMILY = {
   carrier: 'UserInfo response',
   example: 'userinfo',
   reserved: true,
-  ids: { add: 'addUserInfoClaim', remove: 'removeUserInfoClaim',
+  ids: { add: 'addUserInfoClaim',
+         addAttribute: 'addUserInfoAttributeClaim',
+         remove: 'removeUserInfoClaim',
          clear: 'clearUserInfoClaims', replace: 'replaceUserInfoClaims',
          attributes: 'setUserInfoClaimAttributes',
          all: 'selectAllUserInfoClaimAttributes',
@@ -20268,7 +21522,9 @@ const SAML_CLAIM_FAMILY = {
   carrier: 'assertion',
   example: 'saml11',
   reserved: false,
-  ids: { add: 'addSamlAttribute', remove: 'removeSamlAttribute',
+  ids: { add: 'addSamlAttribute',
+         addAttribute: 'addSamlDirectoryAttributeClaim',
+         remove: 'removeSamlAttribute',
          clear: 'clearSamlAttributes', replace: 'replaceSamlAttributes',
          attributes: 'setSamlDirectoryAttributes',
          all: 'selectAllSamlDirectoryAttributes',

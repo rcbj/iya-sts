@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -749,8 +749,13 @@ class ClientHello {
   of(req: any): HelloInfo | null {
     const { log } = this.deps;
     log.debug("Entering ClientHello.of().");
-    const found = (req && req[INFO]) ||
-                  (req && req.socket && req.socket[INFO]) || null;
+    // A request that CARRIES its own answer — forwarded from the front
+    // process, or relayed from another cell (#98) — is answered from that
+    // answer even when it is null: a relayed request's socket is the peer
+    // cell's, and its ClientHello is that cell's, not the client's.
+    const found = req && Object.prototype.hasOwnProperty.call(req, INFO)
+      ? req[INFO]
+      : (req && req.socket && req.socket[INFO]) || null;
     log.debug("Leaving ClientHello.of(). " + (found ? found.ja4 : 'none'));
     return found;
   }
@@ -826,6 +831,28 @@ class ClientHello {
     log.debug("Leaving ClientHello.adoptForwarded().");
   }
 
+  // -------------------------------------------------------------------------
+  // adoptRelayed(req) — on the inter-cell listener (#98): the fingerprint the
+  // sending cell forwarded, or NONE. Never the connection's own, which is
+  // the sending cell's node dialling out, and would put the service's own
+  // TLS stack on a person's authentication event as theirs.
+  // -------------------------------------------------------------------------
+  /**
+   * Adopts the fingerprint another cell forwarded with a relayed request,
+   * or records that there is none.
+   *
+   * @param req - the relayed request
+   */
+  adoptRelayed(req: any): void {
+    const { log } = this.deps;
+    log.debug("Entering ClientHello.adoptRelayed().");
+    this.adoptForwarded(req);
+    if (req && !Object.prototype.hasOwnProperty.call(req, INFO)) {
+      req[INFO] = null;
+    }
+    log.debug("Leaving ClientHello.adoptRelayed().");
+  }
+
   // For a report page and the tests.
   /**
    * Reports this process's counters and how many connections are waiting.
@@ -881,6 +908,7 @@ export = {
   install: slot.forward('install'),
   of: slot.forward('of'),
   encodeForward: slot.forward('encodeForward'),
+  adoptRelayed: slot.forward('adoptRelayed'),
   adoptForwarded: slot.forward('adoptForwarded'),
   report: slot.forward('report')
 };

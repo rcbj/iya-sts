@@ -1650,16 +1650,19 @@ The delegation policy for WS-Trust and RFC 8693 (`../common/CLAUDE.md`, rule
 3az) has three doors here, and rule 7 is kept by construction rather than by a
 new resource:
 
-* **The four application attributes** (`appAllowedToDelegateTo`,
-  `appAllowedToActOnBehalfOf`, `appDelegationSubjectGroup`,
-  `appTrustedToImpersonate`) are ordinary `EDITABLE` rows, so `POST
+* **The application attributes** (`appAllowedToDelegateTo`,
+  `appAllowedToActOnBehalfOf`, `appDelegationSemantics`,
+  `appDefaultDelegationSemantics`, `appDelegationSubjectGroup`,
+  `appNotDelegated`) are ordinary `EDITABLE` rows, so `POST
   /admin-api/applications/{add,set,remove,update}` edits them exactly as the
   application's console page does. `STS-REG-0194` refuses a flag that is not
-  TRUE or FALSE and a subject group that is not a DN.
-* **The person's two** are `POST /admin-api/users/set-not-delegated`
-  (`{ user, value }`, value defaulting to true) and `/set-may-act`
-  (`{ user, delegate }`, a DN; empty clears), through the same `usersAction()`
-  the person's console page posts — `STS-ADMIN-0805` and `0806`.
+  TRUE or FALSE, a semantics that is neither, and a subject group that is not
+  a DN.
+* **The person's three** are `POST /admin-api/users/set-not-delegated`
+  (`{ user, value }`, value defaulting to true), `/set-may-act`
+  (`{ user, delegate }`, a DN; empty clears) and `/set-delegation-semantics`
+  (`{ user, semantics, default }`; #186), through the same `usersAction()`
+  the person's console page posts — `STS-ADMIN-0805`, `0806` and `0841`.
 * **`GET /admin-api/delegation/policy`** is the read, answered by
   `adminViews.delegationPolicyView()` — the function the *Who may act for whom*
   section of `/admin/delegation` draws — three lists PAGED on parameters of
@@ -1942,3 +1945,49 @@ deliberate:
 exception out of the gate's source. `admin-ui/devices_admin.ts`'s `mdmFeed()`
 is the handler, shared with development's test control at
 `/devices/test/compliance` (`mode.opensTestControls()`).
+
+## ONE COPY OF THE COMPONENTS BEHIND EVERY VALIDATOR (#365, 2026-09-30)
+
+Each request schema is compiled wrapped in a root that carries the
+document's named schemas as `components`, so a `$ref` into them resolves
+(`admin_api.ts`, above `NOT_ENFORCED_HERE`). Until #365 `compilable()` built
+that wrapper with a fresh `structureOnly(spec.SCHEMAS)` each time — a deep
+copy of the whole components table, about 170 KB, for each of the 363
+validators — and ajv keeps every root it compiled for the life of the
+process. **A heap snapshot of a fresh front process put 61 MB of its 190 MB
+under this module.** `compileRequestSchemas()` now makes the copy once and
+every root points at it; ajv reads a schema and never writes to it, so the
+shared subtree is the same value the copies were. Measured on the service
+image: the module's retained size 60.9 MB → 1.9 MB, the live heap 190.5 MB
+→ 131.3 MB. What each validator accepts and refuses, and the sentence it
+refuses in, did not change.
+
+**Do not make the wrapper per operation again** — not by cloning "to be
+safe", and not by giving an operation a components table of its own. A
+second shared copy costs 170 KB once; a per-validator one costs it 363
+times, in every process (#339).
+
+## `updateApplicationFields` — THE FIELD GRID'S SAVE (2026-09-30)
+
+`POST /admin-api/applications/update-fields`, body `{ application, fields,
+protocols }`, is what the console's application field grid posts
+(`admin-ui/CLAUDE.md`). Each member of `fields` gives what an editable
+attribute should hold: a single-valued one is SET (empty clears it), a list has
+the values not given removed and the new ones added — `set`, `add` and `remove`
+per attribute, so every rule those hold still holds, and an unchanged attribute
+is not written. `protocols` replaces the declared families and is written
+first, so a family-scoped attribute can be set in the same call. Neither given
+is `STS-ADMIN-0835`; an empty list box `0834`; a partial save `0836`, naming
+what was saved and what was refused. Its resource's `mirrors` names three
+console paths (`/admin/applications`, `/admin/applications/new`,
+`/admin/applications/edit`).
+
+**THE SHARED SIGNALS OVERRIDES ARE WRITTEN THROUGH IT, AND READ BACK UNDER
+`sharedSignals`** (2026-10-01). The twenty `ssf*` overrides (`ssf/CLAUDE.md`)
+are ordinary editable attributes, so `update-fields`, `set` and `create` take
+them, refusing an unusable value with `STS-REG-0202`.
+`GET /admin-api/applications?application=` answers `sharedSignals`: the
+streams the application owns, with the members their receiver set, and each
+override's value in force and its source. That is the same view model the
+console's Shared Signals section draws. Pausing and enabling a stream is
+`POST /admin-api/ssf/status`, as it always was.

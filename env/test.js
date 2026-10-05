@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 //
 // Configuration the test launchers select for a run below debug level
 // (run-tests.sh's and run-coverage.sh's THE SERVICE'S LOG LEVEL

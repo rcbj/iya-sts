@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 // File: webauthn_attestation.ts
@@ -508,6 +508,17 @@ class WebauthnAttestation {
     return '';
   }
 
+  // WHETHER AN INSECURE ALGORITHM (RS1) IS ACCEPTED in a statement's
+  // signature (2026-10-01): `webauthn.insecureAlgorithms`, through the policy,
+  // so an old TPM's SHA-1 statement verifies exactly where an RS1 credential
+  // would, and nowhere else.
+  private insecureOption(): { allowInsecure: boolean } {
+    const { log, policy } = this.deps;
+    log.debug("Entering WebauthnAttestation.insecureOption().");
+    log.debug("Leaving WebauthnAttestation.insecureOption().");
+    return { allowInsecure: !!policy.insecureAlgorithmsAllowed() };
+  }
+
   // The public key of a certificate, as `crypto.verifyCoseSignature()`
   // takes it — including an ML-DSA key node cannot read.
   private certificateKey(der: Buffer): Json {
@@ -568,7 +579,7 @@ class WebauthnAttestation {
                          'is ' + ctx.coseAlg);
       }
       if (!crypto.verifyCoseSignature(st.alg, ctx.credentialJwk, signed,
-                                      st.sig)) {
+                                      st.sig, this.insecureOption())) {
         log.debug("Leaving WebauthnAttestation.packed(). Self, signature.");
         return this.fail('STS-AUTHN-0233', 'packed', 'the self attestation ' +
                          'signature does not verify under the credential key');
@@ -577,7 +588,7 @@ class WebauthnAttestation {
       return { ok: true, format: 'packed', type: 'self', trustPath: [] };
     }
     if (!crypto.verifyCoseSignature(st.alg, this.certificateKey(st.x5c[0]),
-                                    signed, st.sig)) {
+                                    signed, st.sig, this.insecureOption())) {
       log.debug("Leaving WebauthnAttestation.packed(). Signature.");
       return this.fail('STS-AUTHN-0233', 'packed', 'the signature does not ' +
                        'verify under the attestation certificate\'s key ' +
@@ -676,7 +687,8 @@ class WebauthnAttestation {
     const parsed = crypto.tpmParseSignature(st.sig);
     const signature = parsed ? parsed.signature : st.sig;
     if (!crypto.verifyCoseSignature(st.alg, this.certificateKey(st.x5c[0]),
-                                    st.certInfo, signature)) {
+                                    st.certInfo, signature,
+                                    this.insecureOption())) {
       log.debug("Leaving WebauthnAttestation.tpm(). Signature.");
       return this.fail('STS-AUTHN-0233', 'tpm', 'the signature over ' +
                        'certInfo does not verify under the AIK ' +
@@ -763,7 +775,7 @@ class WebauthnAttestation {
     }
     const signed = Buffer.concat([ctx.authData, ctx.clientDataHash]);
     if (!crypto.verifyCoseSignature(st.alg, this.certificateKey(st.x5c[0]),
-                                    signed, st.sig)) {
+                                    signed, st.sig, this.insecureOption())) {
       log.debug("Leaving WebauthnAttestation.androidKey(). Signature.");
       return this.fail('STS-AUTHN-0233', 'android-key', 'the signature does ' +
                        'not verify under the first certificate\'s key');

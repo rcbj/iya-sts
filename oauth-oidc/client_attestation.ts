@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -187,8 +187,17 @@ const ANSWERED = Symbol('sts.clientAttestation.answered');
 // what is minted, `dpop.issuedNonces`' arrangement: a challenge handed out by
 // one process is presented to another, and the barrier makes the write land
 // before the retry can be asked about it.
-const challenges = realms.map({ persist: 'oauth2.attestationChallenges',
-                                retain: 'age' });
+// `expiresAt` (#333): the value is when the challenge was ISSUED, in epoch
+// seconds; it lives `oauth2.clientAttestationChallengeTtlS` from then.
+const challenges = realms.map({
+  persist: 'oauth2.attestationChallenges',
+  retain: 'age',
+  // A hot path (every row a flush writes): no Entering/Leaving pair.
+  expiresAt: function (issuedS: unknown): number | null {
+    const at = Number(issuedS);
+    return at > 0 ? (at + challengeTtlS()) * 1000 : null;
+  }
+});
 
 function challengeTtlS(): number {
   helpers.log.debug("Entering challengeTtlS().");
@@ -1147,8 +1156,21 @@ class ClientAttestation {
     log.debug("Entering ClientAttestation.requestRefusal().");
     const o = opts || {};
     const registered = o.registered || {};
-    const declared = String(registered.token_endpoint_auth_method || '');
     const observation = o.observation || {};
+    // SEVERAL DECLARED METHODS (2026-10-01): the attestation is the declared
+    // method when the client declares nothing else, or when it declares it
+    // and this request presented the header — a client that may also use a
+    // secret and sent one is not refused for not attesting.
+    const methods = [].concat(registered.token_endpoint_auth_methods &&
+                              registered.token_endpoint_auth_methods.length
+      ? registered.token_endpoint_auth_methods
+      : [registered.token_endpoint_auth_method || '']).map(String);
+    const attesting = methods.filter((one) => this.isMethod(one));
+    const declared = attesting.length &&
+      (attesting.length === methods.length || this.presented(o.request))
+      ? (this.isMethod(observation.method) ? String(observation.method)
+                                           : attesting[0])
+      : '';
     if (this.isMethod(declared)) {
       if (observation.authenticated) {
         log.debug("Leaving ClientAttestation.requestRefusal(). Declared, " +

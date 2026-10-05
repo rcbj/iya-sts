@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 //
 // ===========================================================================
 // sts_realm_administrators.js — A TRUST REALM'S OWN ADMINISTRATORS, OVER HTTP.
@@ -340,7 +340,7 @@ async function aRealmAdministratorIsConfined() {
   });
 
   const perProcess = await consolePost(cookie, R, R + "/admin/config",
-    { action: "set-many", "workers.count": "3" });
+    { action: "set-many", "scheduler.runHistoryCount": "3" });
   check("a per-process setting is refused, because a realm write of one " +
         "lands process-wide", function () {
     assert.strictEqual(perProcess.status, 403,
@@ -499,7 +499,7 @@ async function aRealmTokenStaysInItsRealm() {
                        "it answered " + buildRoot.status);
   });
   const workers = await apiAs(token, "POST", R + "/admin-api/config/set",
-                              { key: "workers.count", value: "2" });
+                              { key: "scheduler.runHistoryCount", value: "2" });
   check("a per-process setting is refused 403", function () {
     assert.strictEqual(workers.status, 403, "it answered " + workers.status);
   });

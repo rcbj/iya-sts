@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -99,6 +99,9 @@ interface BuildOptions {
   attributeQuery?: boolean;
   nameQualifier?: string;
   spNameQualifier?: string;
+  // #186: the parties that acted, least to most recent.
+  delegates?: Array<{ nameId: string; format?: string;
+                      instant?: string }>;
   [member: string]: unknown;
 }
 
@@ -289,6 +292,14 @@ class Saml2Assertions {
   //                         the assertion says what the subject's attributes
   //                         are, not that anybody authenticated just now, and
   //                         saml-profiles-2.0-os section 6 asks for no more.
+  //   delegates             #186: the parties that ACTED for the subject,
+  //                         least to most recent — WS-Trust's ActAs. They
+  //                         become the SAML V2.0 Condition for Delegation
+  //                         Restriction (sstc-saml-delegation-cs-01): one
+  //                         <del:Delegate> each, in that order, which is the
+  //                         profile's own ("the earliest element is the
+  //                         farthest removed from the immediate use of the
+  //                         assertion"). Absent or empty, no condition.
   //   sign                  false to return the assertion unsigned. Default
   //                         true, which is what every existing caller gets. It
   //                         is a supported state and not a failure: a service
@@ -308,7 +319,8 @@ class Saml2Assertions {
    * @param lifetimeMin - the lifetime in minutes; 60 when absent
    * @param opts - `authnContextClassRef`, `attributes`, `nameIdFormat`,
    * `nameIdValue`, `subjectConfirmation`, `sessionIndex`, `authnInstant`,
-   * `issuer`, `nameQualifier`, `spNameQualifier`, `attributeQuery` and `sign`
+   * `issuer`, `nameQualifier`, `spNameQualifier`, `attributeQuery`,
+ * `delegates` and `sign`
    * @returns the assertion's XML
    */
   buildSamlAssertion(subject: string, audience?: string | null,
@@ -333,6 +345,19 @@ class Saml2Assertions {
     const audienceEl = audience
       ? '<saml:AudienceRestriction><saml:Audience>' + xmlEscape(audience) +
         '</saml:Audience></saml:AudienceRestriction>'
+      : '';
+    const delegates = Array.isArray(opts.delegates) ? opts.delegates : [];
+    const delegationEl = delegates.length
+      ? '<saml:Condition xmlns:xsi="http://www.w3.org/2001/XMLSchema-' +
+        'instance" xmlns:del="urn:oasis:names:tc:SAML:2.0:conditions:' +
+        'delegation" xsi:type="del:DelegationRestrictionType">' +
+        delegates.map(function (one) {
+          return '<del:Delegate' + (one.instant
+            ? ' DelegationInstant="' + xmlEscape(one.instant) + '"' : '') +
+            '><saml:NameID Format="' + xmlEscape(one.format ||
+              'urn:oasis:names:tc:SAML:2.0:nameid-format:entity') + '">' +
+            xmlEscape(one.nameId) + '</saml:NameID></del:Delegate>';
+        }).join('') + '</saml:Condition>'
       : '';
     // THE DEFAULT IS `unspecified` SINCE 2026-09-12, and it was
     // PasswordProtectedTransport. A caller that names no class has not said a
@@ -434,7 +459,8 @@ class Saml2Assertions {
           xmlEscape(nameIdValue) + '</saml:NameID>' +
         (opts.attributeQuery ? '' : confirmation) + '</saml:Subject>' +
         '<saml:Conditions NotBefore="' + notBefore + '" NotOnOrAfter="' + exp +
-        '">' + audienceEl + '</saml:Conditions>' + authnStatement +
+        '">' + delegationEl + audienceEl + '</saml:Conditions>' +
+        authnStatement +
         '<saml:AttributeStatement>' + attributeEls +
         '</saml:AttributeStatement></saml:Assertion>';
     // Counted here rather than at the call sites: WS-Trust and WS-Federation

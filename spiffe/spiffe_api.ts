@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -138,7 +138,7 @@ import awsIidAttestor = require('./spiffe_attestor_aws_iid');
 import gcpIitAttestor = require('./spiffe_attestor_gcp_iit');
 import azureImdsAttestor = require('./spiffe_attestor_azure_imds');
 
-const status = rpc.grpc.status;
+const status = rpc.status;
 
 // What `SpiffeApi` needs from the rest of the service: the modules this file
 // used to reach for itself, passed in so that the composition root can build
@@ -2765,7 +2765,10 @@ const slot = new InstanceSlot<SpiffeApi>(
  * The realm's unspent join tokens, keyed by a SHA-256 of the token, never the
  * token itself.
  */
-const joinTokens = realms.map({ persist: 'spiffe.joinTokens' });
+const joinTokens = realms.map({ persist: 'spiffe.joinTokens',
+                                // #333: its `expiresAt`, epoch seconds.
+                                expiresAt: realms.expiryField('expiresAt',
+                                                              1000) });
 
 // ===========================================================================
 // WHAT THIS SURFACE IMPLEMENTS, for the pages that describe it.

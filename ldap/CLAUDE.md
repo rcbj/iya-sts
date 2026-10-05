@@ -570,6 +570,97 @@ the ceiling was never the intention; `hasChildren()`, a question about one DN in
 the realm being asked; and the realm purge, which now deletes nothing at all
 because `realms.map()` drops the whole store with the realm.
 
+### IN A REQUEST WORKER, `entries` MAY BE A WINDOW ONTO THE STORE (#349, 2026-09-29)
+
+**rcbj's decisions on #349**: with `ldap.workerDirectory=postgres-lru` a
+request or surface worker holds `ldap/directory_window.ts` as `entries` — the
+same Map shape, answering the ambient realm, with `realmMap(id)` — so not one
+reader or writer in this file changed. The front process always holds the
+whole directory.
+
+* **Resident**: every entry NOT strictly under a realm's `ou=users` or
+  `ou=devices` (`windowedContainersOf()`), held whole — groups stay resident,
+  so the group index is unchanged.
+* **Windowed**: the people and devices, in a bounded LRU
+  (`ldap.workerCacheEntries`); a key not held is read through the synchronous
+  bridge (`common/sync_query.ts`), an absence is held too.
+* **Walks** (`forEach`, `values`, `keys`, `for…of`) page through the store;
+  `hasChildren()` asks it (`hasChildIn()`). Correct and O(n) in rows — the hot
+  walks become indexed questions in #349's phase 5.
+* **Writes stay local and are PINNED until flushed.** What changed is found by
+  comparing each candidate's JSON with its BASE — the JSON it had when loaded
+  or last written, kept for held entries only, and the base of the store's
+  three-way merge. The candidates are what was set or deleted, what was HANDED
+  OUT since the last flush (an in-place edit with no `touchDirectory()` DN is
+  still found), what the journal names, and — for a write that named nothing —
+  everything held plus every EVICTED entry a caller still holds (a WeakRef).
+  A digest could say "changed" and could not be that base, which is why #343's
+  digest is not used here.
+* **A row another process wrote** is `forgetEntry()`-ed (read again next
+  time) unless the key is busy here, in which case this process's own flush
+  goes first and the store merges.
+* **The identity register is a whole directory's** (rcbj, 2026-09-29).
+  `replaceRealm()` fills it from the store in a windowed worker — a page of
+  NAMES at a time (`namesUnder`: key, DN, origin, first `uid`), the same
+  rule as the loop over restored entries, no entry read whole — and
+  `forgetEntry()`, handed the row the applier read, notes a person another
+  process made as `created`, as `applyEntry()` does. Section K of the test
+  compares the two modes.
+* **The hooks** use `adopt()` (a row the store holds, not a write) in
+  `applyEntry()` and `replaceRealm()`, `forget()` in `removeEntry()`;
+  `realmEntries()` and `entryAt()` answer the RESIDENT half only, so the write
+  shadow never holds a windowed key; `storedFromRow()` is the one construction
+  of a stored entry from a row.
+* **`size`** is resident + the store's count when first asked + this process's
+  own net: a change detector beside `directoryVersion`, not a cap.
+* **`ldap.maxEntries` is a PER-REALM cap on the STORE in a windowed worker**
+  (rcbj): `cappedEntries()` asks the window's `capCount()` — the realm's rows
+  counted by the store at most ten seconds ago, plus this process's net since.
+  Everywhere else it is `totalEntries()`, what the process holds, as before.
+* **The walks that can say what they want do** (phase 5), and each is the old
+  walk outside a windowed worker:
+  - `eachResidentEntry()` for a filter that cannot match a person or device:
+    the federations, policies, roles, PEPs and trust anchors, and SPIFFE.
+  - `eachGroupEntry()` for the GROUPS (`groupsFor()`, `buildGroupIndex()`,
+    `allGroupEntries()`, `membershipsNaming()`, `dropMemberships()`,
+    `logBatchDangling()`): the resident entries, and the windowed
+    containers' entries with a group class, asked of the store
+    (`classesUnder`, the GIN index over the generated `class_keys`) and read
+    back through the window. `groupRuleFor()` is placement-blind, so **a
+    group under `ou=users` or `ou=devices` is seen**, and the membership
+    lookups, the group index, the listings and a search answer as a whole
+    directory does (rcbj, 2026-09-29; `tests/directory_window.js` section J
+    compares the two modes).
+  - `memberOfClaims()` (#352's claims index), `holdingAny()` and
+    `holdersWithValues()` visit the holders only (`eachHolderOfAny()`);
+    `personRows()` pages `ou=users` read-only; `batchHasChildren()` asks
+    `hasChildren()`; `countDeviceEntries()` is `countUnder()`.
+  - `windowedFind()` for an indexed question (`directory_queries.js`), each
+    answer read back through the window and asked the service's own rule, the
+    entries changed here and not yet written added: `existingUserEntry()`
+    (`byName`, replacing the username index there), `entryByUuid()` (`byUuid`
+    after a RESIDENT-only index), `entryByDidSubject()`,
+    `entryBySpiffeSubject()`, `locateEntry()`'s `x509subject`, `objectFor()`'s
+    `alsoNamed` (`byAttribute`), `peopleByMail()` (`byMail`),
+    `peopleByFederationLink()`.
+  - `eachHolderOfAny()` for a walk that acts only on holders of an attribute
+    (`withAttribute`, paged): consent, claim-source tokens, self-issued
+    subjects, federation links, claimed memberships, delegation flags, a
+    person attribute's holders, Kerberos key infos; `anybodyHoldsACredential()`
+    asks `anyWithAttribute`.
+  - `personCount()` is the store's count; `allPersons()` pages `ou=users`
+    alone; `entriesUnder()` pages a windowed container and does NOT cache it;
+    the LDAP search walks only what its base reaches, read-only and lazily, so
+    a size limit stops the paging.
+  - **Still whole walks, correct and paged**: `populateVcAttributes()`
+    (development only), `ldapDirectoryView()`, the realm-retirement
+    announcement and the seed; `buildUsernameIndex()` is not reached.
+* **A bridge failure inside an LDAP operation** answers `unavailable` (52),
+  `STS-LDAP-0130`/`0131`, from `performOperation()`; over HTTP the worker's
+  last error middleware answers 503 (`common/CLAUDE.md`).
+
+`tests/directory_window.js`, section H loading this file as a windowed worker.
+
 ### The socket picks a store, and it picks it from the DN
 
 There is no ambient realm on port 389 — no path, no header, nothing but the
@@ -706,12 +797,12 @@ part of why federation refuses by default rather than accepting. In product mode
 a socket write needs Admin Write (*WHO MAY WRITE THIS DIRECTORY OVER THE SOCKET*,
 below).
 
-`fedClientSecret` is on these entries in the clear, and it is a stronger claim
-than `oauthClientSecret` one container over: that one is a secret this service
-MINTED for a mock client and can mint again, and this one is this service's own
-credential at a REAL foreign service. Same decision, same reason
-(`/krb5/principals` prints the Kerberos passwords), worth restating because the
-consequence is different.
+`fedClientSecret` is a stronger claim than `oauthClientSecret` one container
+over: that one is a secret this service MINTED for a mock client and can mint
+again, and this one is this service's own credential at a REAL foreign
+service. Both are SEALED on the entry since 2026-10-01 wherever the process
+holds a durable key-encryption key (`federation.js`'s `sealClientSecret()`),
+and in the clear without one.
 
 ## `ou=devices`: A DEVICE IS AN ENTRY (2026-09-23, #130)
 
@@ -1195,6 +1286,49 @@ slowing from 11/s to 5/s as the directory filled. Both use the cached listing
 now. Measured in process with ~2,000 people: 200 `applications.list()` calls in
 51 ms against 518 ms for the walk.
 
+### AND AN EIGHTH: THE CONSOLE'S LISTS PAGE BEFORE THEY COPY (#352, 2026-09-29)
+
+On testidp (29,267 people) every console list that started from the directory
+built and decorated the whole realm to draw one page. The rule since is
+**population from keys, filter and sort on the keys, page, then read**, and
+each piece below is shaped so that #349's postgres window can answer it with
+one statement; the function's own comment names the statement.
+
+* **`personRows()`**: the realm's people as `{ key, name, dn, uid }`, each DN
+  normalised ONCE, sorted exactly as `allPersons()` sorted, kept on the
+  `ou=users` subtree clock (`ldap.person-keys` on `/admin/caches`).
+  `allPersons()` reads it and copies each entry; `personNames()` and
+  `personDns()` copy nothing, and are what the two `persons()` slots and the
+  roster's candidates read now. The sort used to normalise both DNs in every
+  comparison — about 900,000 calls at testidp's size.
+* **`residentsPage(after, limit)`**: the cells page's keyset, a binary search
+  over the same rows sorted by lower-cased first `uid`, reading `limit`
+  entries. It was `allPersons()`, a filter, a sort and a slice, so the cursor
+  bought nothing.
+* **`memberOfClaims()`**: who claims each group through their own `memberOf`,
+  one walk for every group, kept on `directoryVersion` (a `memberOf` can be on
+  any entry, the base included, which no container clock covers).
+  `claimedMembersOf()` was a walk of the realm per group, and `/admin/groups`
+  and the roster asked it once per group and per role. The list's member
+  counts are a Map lookup per value (`memberPresenceOf()`), not a resolution.
+* **`/admin/ldap/directory`** sorts `{ dn, origin }` with one collator and
+  copies the attributes of the shown rows only (`directoryRowOf()`); a `q`
+  that the DN does not decide is the one thing that still looks inside an
+  entry, because it searches values.
+* **`countDeviceEntries()`**, and `personKeyInfos()` / `delegationFlaggedPersons()`
+  testing their attribute before `isPersonEntry()` normalises anything.
+
+**A replicated write now moves its own realm's clocks.** `applyEntry()` and
+`removeEntry()` call `touchDirectory()` inside the row's realm. The change-log
+applier already ran there; a flush's outcomes (`applyDirectoryOutcomes()`)
+did not, so a merged or conflicting row of another realm moved the DEFAULT
+realm's subtree clock and left its own where it was — which every listing kept
+on a subtree clock (`entriesUnder()`, the application registry's, the person
+keys) would have missed.
+
+`tests/admin_paging_directory.js` counts each of these over a realm of three
+thousand people.
+
 ### The mutation record, and two mutants that were equivalent rather than missed
 
 Caught: the group-index stamp applied to group writes as well (6 assertions
@@ -1239,6 +1373,81 @@ reconcile them (see `claimedMembersOf()`), so an incremental update has to
 handle a group that names a person and a person who names a group as two
 separate edits. It was not attempted on 2026-09-07; the three fixes above were,
 and this is the measurement that says where the next one would go.
+
+## DELETING PEOPLE IN BULK, AND THE INDEXES A DELETE USED TO THROW AWAY (#351, 2026-09-29)
+
+One SCIM Bulk of a hundred `DELETE /Users` held a request worker on testidp
+for about a minute — long enough for its origin claim to lapse (#351's first
+two parts are that side). Reproduced in process on a realm of 50,000 people
+with 2,000 live sessions, it was 185ms per person, and almost none of it was
+the delete:
+
+* **`deletePerson()` and the LDAP delete called `touchDirectory()` with no
+  DN.** That drops every cached container listing — so each RISC event after
+  it walked the whole realm to find its stream's owning application — and
+  makes the next flush diff the whole store. Both name the DN now, and so does
+  `removeEntry()`, the change-log applier every OTHER process runs a delete
+  through, which had the same DN-less touch once per entry.
+* **The three indexes were rebuilt after every delete.** Puts fold into the
+  username and group indexes (below); nothing told any index about a delete,
+  and everything after one asks: the deleted person's `urn:uuid:` is exactly
+  the lookup that misses, and the RISC register, the sign-out's session filing
+  and every token read make it. `noteIndexesDelete()` takes the entry out of
+  the username and entryUUID indexes and re-stamps the group index (a person
+  is not a group). Exact unless two entries claimed one name or UUID, which
+  each index now counts as it is built (`collisions`); then it rebuilds, as
+  before. **The entryUUID index is kept by what can move a UUID rather than by
+  `directoryVersion`**: a put folds in (`noteUuidIndexPut()`), a delete folds
+  out, and a DN-less touch, a create race reconciled or a replicated entry
+  replacing another marks it `dirty`; a miss on a clean index is
+  authoritative, and a hit is checked against the entry it names. Before, an
+  attribute changed in place — most writes — made the next miss rebuild it
+  with two walks, which also made every SCIM create at 50,000 cost 38ms.
+* **Reading and ending what each person held** was two folds of the token
+  register and a walk of the sessions per person, and then a selective
+  sign-out of the `krb5` row nothing can end (`STS-LOGOUT-0007`) —
+  `logout/CLAUDE.md` and `common/CLAUDE.md` have that half.
+
+**So a person's delete has one path, `removePersonEntry()`** — SCIM's
+`deletePerson()`, the LDAP delete handler and a re-homing all reach it — and
+its consequences go through a BATCH. `inPersonBatch(fn, { door })` runs `fn`
+in an `AsyncLocalStorage` of its own (the realm's arrangement), so a SCIM
+Bulk's degress handler — which scimmy calls once per operation, awaited —
+adds to the batch its request opened, and another request's delete meanwhile
+is not swept into it. The observers (RISC `account-purged`, OpenID Provider
+Commands) are still told per person, at once; what each person held is
+gathered and handed to `account_state.directoryDeletedMany()` together — at
+every 500 deletes (`personBatchStep()`, which also yields a macrotask so a
+Bulk of thousands never holds the event loop for all of them) and when the
+batch closes. Outside a batch a delete is a batch of one. Inside one,
+`hasChildren()` — a walk per delete — is `batchHasChildren()`: one walk counts
+the entries under every DN, the batch's own deletes come off the counts, and
+any other write in between makes it count again. The dangling memberships the
+deletes leave are counted in one walk at the end and logged in one line
+(`deletePerson()` no longer returns `dangling`: its one reader, SCIM, logged
+it under a test that read `.length` of a number and so never fired).
+
+**The store sees one flush per chunk**: postgres flushes on a `setTimeout(0)`
+(`persistence/CLAUDE.md`), and a chunk runs without turning the event loop, so
+its deletes are one transaction; a Bulk larger than 500 is one per 500.
+
+Measured in process with one benchmark (a realm of 5,000 or 50,000 people,
+530 or 2,030 live sessions and tokens, 100 people per door; ms per person,
+the Bulk as answered; before is origin/feature/351 at 3f558a2f):
+
+| | 5,000, before | 5,000, after | 50,000, before | 50,000, after |
+|---|---|---|---|---|
+| SCIM Bulk of 100 DELETE | 34 | 4.1 | 185 | 8.0 |
+| `deletePerson()` one at a time | 30 | 3.9 | 192 | 11 |
+| SCIM `DELETE`, one request each | 46 | 11 | 293 | 19 |
+| SCIM Bulk of 100 POST | 6.0 | 5.0 | 38 | 6.1 |
+
+At 50,000 the Bulk of 100 deletes took 0.98s of CPU (was 20.2s) and held the
+event loop for at most 0.37s at a time (was 17.9s).
+
+What is left per single delete is `hasChildren()`'s walk and one pass over the
+live sessions (each resolved by `holderKeyOf()`), both O(the service) rather
+than O(the batch); a batch pays each once.
 
 ## A WRITE MUST CALL `touchDirectory()`
 
@@ -1739,6 +1948,21 @@ running here is only for the paths where nothing ran anywhere**: no pool, the
 operation not named in `workers.dispatch`, no worker to take it — all three
 resolve `{ dispatched: false }`, which is what `workers.requestCount = 0` means
 and is a supported configuration rather than a degraded one.
+
+### A write is answered after its commit, and `unavailable` when it is not (#351)
+
+In postgres mode an operation that changed the store sends its result only
+once that change has committed, and **`unavailable` (52)** (STS-STORE-0067)
+when the commit fails — the same code a worker that died mid-operation gets,
+and the true one: RFC 4511's "a subsystem necessary to complete the operation
+is offline", where `busy` (51) would claim a load problem. It is
+`cluster/cluster_barrier.js`'s `answerAfterCommit()`, put on every handler at
+registration INSIDE what `LOCAL_HANDLERS` holds, so it runs wherever the
+handler runs; it holds `res.end()` and the handler's `next()` and sets
+`req.stsAsyncOperation` so `performOperation()` waits for it. A search or
+compare is held only for directory or key changes, never for its audit rows.
+`persistence/CLAUDE.md`, *A write is answered after its commit*, argues the
+rest; `tests/answer_after_commit.js` section C drives an add both ways.
 
 ### The wrapper goes on at REGISTRATION, beside the realm wrapper
 
@@ -2872,3 +3096,31 @@ this JavaScript module registers `/admin/ldap/*` when required.
 every code from `STS-LDAP-0102` to `0109`, the formats, untouched neighbours,
 the observer, the view and the page. `tests/vendored/sts_person_attributes.js`
 covers the API over HTTP in a realm of its own.
+
+## CELLS: A BIND AS A PERSON HOMED IN ANOTHER CELL (#98, 2026-09-28)
+
+**The password is verified in the person's home cell and only the verdict comes
+back** (`verifyInHomeCell()`, and the `ldap-bind` inter-cell operation
+`answerCellBind()` answers). That is D2 — a traveller's credential is relayed
+to the home cell over the mutual-TLS channel — which D9 replaced for browsers
+only, because a browser flow's state lives where it started; an LDAP bind has
+no flow, and the connection (the session, RFC 4511 section 4.2) is here. The
+two alternatives and why they lost are in the code's header: a referral is a
+result almost no client chases on a bind and would publish a cell's address,
+and a local copy of the credential is the person's data outside their
+jurisdiction. The password crosses inside the channel, is compared by
+`credentials.verify()` with `door: 'ldap'` at home (second factors, app
+passwords, a disabled account — the same rules), and is stored and logged
+nowhere.
+
+Only a DN this cell holds no entry for, in multi-cell mode, is sent; a DN the
+routing index does not know is verified here as always. **What stays here**:
+the refusals before a password is read, this cell's rate-limit buckets (a
+guesser spreading across cells gets each cell's budget — said, not hidden), the
+audit rows and the connection. A bound traveller reads what any bound identity
+without a local entry may — their group memberships are resident at home, so
+they hold no role here — and **a search answers this cell's residents** (D11).
+A home cell that cannot be asked is LDAP_UNAVAILABLE (52), `STS-CELL-0147`,
+fail-closed and not counted as a failed bind. LDAP writes act on this cell's
+residents only; the console's and `/admin-api`'s `?cell=` selector is the
+cross-cell door.

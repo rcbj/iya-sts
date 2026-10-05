@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -258,6 +258,12 @@ import fedLinks = require('../federation/federation_links');
 // Every SCIM error this module sends carries an STS-SCIM-* code on the
 // response — see common/error_codes.js. A leaf.
 import errorCodes = require('../common/error_codes');
+// WHICH CELL ANSWERS (#98): asked by handle() before the caller is
+// authenticated, and by the User ingress before a person is written. A
+// library that registers nothing; `scim_cells.ts` argues every operation.
+import scimCells = require('./scim_cells');
+import realms = require('../common/realms');
+import cells = require('../common/cells');
 
 // A function the directory, `scim_auth`, `scim_map` and the others offer, as
 // this module calls it. Their own modules are the authority on the shapes.
@@ -285,7 +291,7 @@ interface ScimDeps {
                     'readGroupEntry' | 'allGroupEntries' | 'nameUsableInDn' |
                     'groupDnFor' | 'writeGroupEntry' | 'deleteGroupEntry' |
                     'objectFor' | 'groupsDn' | 'baseDn' | 'personCount' |
-                    'entryCount', Fn>;
+                    'entryCount' | 'inPersonBatch' | 'personBatchStep', Fn>;
   createClaims: { refusalMessage: Fn };
   scimAuth: Record<'schemesForConfig' | 'authenticateSpent' |
                    'schemesBeyondTheCanonicalList' | 'primarySchemeId' |
@@ -831,6 +837,11 @@ class Scim {
         return;
       }
 
+      // EVERYTHING AFTER THE PLACEMENT BELOW, unchanged but for being an
+      // arrow function (so `this` is still the instance) that both of the
+      // placement's outcomes reach.
+      const authenticateAndRun = (): any => {
+      log.debug("Entering authenticateAndRun().");
       // WHO IS ASKING. scim_auth.ts decides and never touches `res`; the answer
       // is turned into SCIM's own error shape here, because what a refusal
       // LOOKS like is protocol knowledge and stays in the protocol module. The
@@ -886,6 +897,49 @@ class Scim {
                       (ex && ex.stack ? ex.stack : ex));
           }
           this.sendScimError(req, res, info, ex);
+        });
+      log.debug("Leaving authenticateAndRun().");
+      return undefined;
+      };
+
+      // WHICH CELL ANSWERS (#98), FIRST — before the gate below, because a
+      // Digest nonce count and a HOBA signature are spent where they are
+      // checked, and the cell that owns the request must be the one that
+      // spends them. A request about a person homed in another cell is sent
+      // there whole; a Group write or a BulkRequest spanning cells is
+      // refused whole. `scim_cells.ts` argues each operation; single-cell
+      // mode does not ask at all, so its gate starts in the same tick it
+      // always did.
+      if (!cells.isMulti()) {
+        authenticateAndRun();
+        log.debug("Leaving the SCIM handler (the answer is on its way).");
+        return;
+      }
+      scimCells.place(req, res, info, realms.currentId())
+        .then((placed) => {
+          if (placed.relayed) {
+            log.debug("The SCIM request was relayed to its home cell.");
+            return undefined;
+          }
+          if (placed.refusal) {
+            const r = placed.refusal;
+            // error-code: none — scim_cells.ts chose the STS-CELL code
+            this.sendScimError(req, res, info,
+                               coded(r.code, new SCIMMY.Types.Error(
+                                 r.status, r.scimType, r.detail)));
+            log.debug("The SCIM request could not be placed in one cell.");
+            return undefined;
+          }
+          return authenticateAndRun();
+        })
+        .catch((ex) => {
+          log.debug("Caught in Scim.handle(): " + ((ex && ex.message) || ex));
+          // A placement that failed is served here, which is what an unknown
+          // person always was: the owning cell, if there is one, answers for
+          // its own when it is asked (`oauth2.ts`'s back-channel placement
+          // makes the same choice). Unless an answer has already started,
+          // which is a relay that failed after it began and has answered.
+          return res.headersSent ? undefined : authenticateAndRun();
         });
       log.debug("Leaving the SCIM handler (the answer is on its way).");
     };
@@ -1359,6 +1413,19 @@ class Scim {
         description: 'The region of birth.' }),
       new Attribute('string', 'placeOfBirthLocality', {
         description: 'The locality of birth.' }),
+      // WHERE A NEW PERSON IS HOMED (#98 D1), in a service deployed as cells:
+      // the cell id, on a create only. Write-only and never returned — a
+      // cell is a routing fact nothing a client reads may name — and never
+      // stored on the entry: the entry existing in that cell IS the home.
+      // An update naming another cell is refused (re-homing is an
+      // administrator's act); a single-cell service ignores it.
+      // `scim_cells.ts` reads it.
+      new Attribute('string', 'homeCell', {
+        direction: 'in', returned: 'never', caseExact: true,
+        description: 'On a create in a service deployed as several regions: ' +
+          'the region the person is homed in, whose data stays there. The ' +
+          'realm\'s default when not sent. Never returned, and not ' +
+          'changed by a later write.' }),
       new Attribute('complex', 'federationLinks', {
         multiValued: true,
         description: 'Each a federation partner\'s identifier for the ' +
@@ -1546,6 +1613,21 @@ class Scim {
     log.debug("Leaving Scim.claimingIngress().");
     return async (resource, data, ctx) => {
       const req = (ctx || {}).req;
+      // THE PERSON'S CELL (#98), before either claim below and before
+      // anything is written: a create is homed HERE and claims its login
+      // name in the global routing index first; an update may not ask to
+      // move the person. Every User write passes, a BulkRequest's included,
+      // which is why it is here and not in the create handler.
+      // `scim_cells.ts`'s `ingressRefusal()`; nothing in single-cell mode.
+      if (type === 'User') {
+        const refused = await scimCells.ingressRefusal(data, !resource.id,
+                                                       realms.currentId());
+        if (refused) {
+          // error-code: none — scim_cells.ts chose the STS-CELL code
+          throw coded(refused.code, new SCIMMY.Types.Error(
+            refused.status, refused.scimType, refused.detail));
+        }
+      }
       if (resource.id || (req && req.__scimCreateClaimed)) {
         return handler(resource, data, ctx);
       }
@@ -1977,7 +2059,7 @@ class Scim {
                   (written.created ? 'created.' : 'updated.'));
         return scimMap.prune(this.userResourceFor(entry, req));
       }))
-      .degress((resource, ctx) => {
+      .degress(async (resource, ctx) => {
         log.debug("Entering the SCIM User degress handler. id=" + resource.id);
         const removed = directory.deletePerson(resource.id);
         if (!removed.ok && removed.reason === 'protected') {
@@ -2003,19 +2085,19 @@ class Scim {
               : 'There is no entry at ' + resource.id + ' under ' +
                 directory.usersDn() + '.'));
         }
-        // The dangling memberships this delete just created, logged rather than
-        // repaired: referential integrity is a directory feature and not a
-        // protocol rule, and /admin/groups exists to report exactly this. A
-        // SCIM client that means to remove somebody from their groups has to
-        // say so.
-        if ((removed.dangling || []).length) {
-          log.info('scim: ' + resource.id + ' was deleted and is still ' +
-                   'listed as a member by ' + removed.dangling.length +
-                   ' group(s). This ' +
-                   'directory does no referential integrity on purpose; ' +
-                   '/admin/groups reports them as dangling members.');
-        }
+        // The dangling memberships a delete leaves are logged by the
+        // directory for the batch, in one walk (#351): referential integrity
+        // is a directory feature and not a protocol rule, and /admin/groups
+        // exists to report exactly this. A SCIM client that means to remove
+        // somebody from their groups has to say so.
         this.auditScim('user.delete', resource.id, {}, (ctx || {}).req);
+        // INSIDE A BULK (#351), every so many deletes: the batch's gathered
+        // sign-outs are handed over and the event loop turns once, so a
+        // BulkRequest of thousands never holds this process for all of them.
+        const step = directory.personBatchStep();
+        if (step) {
+          await step;
+        }
         log.debug("Leaving the SCIM User degress handler.");
       });
 
@@ -3036,21 +3118,11 @@ class Scim {
       log.debug("Leaving GET " + HOBA_REGISTER_PATH + ".");
     });
 
-    app.post(HOBA_REGISTER_PATH, (req, res) => {
-      log.debug("Entering POST " + HOBA_REGISTER_PATH + ".");
-      if (!this.enabled()) {
-        errorCodes.mark(res, 'STS-SCIM-0001');
-        res.status(501).type('application/json')
-           .set('Cache-Control', 'no-store')
-           .send(JSON.stringify({ error: 'SCIM is turned off on this service ' +
-                                         '(scim.enabled), and HOBA ' +
-                                         'registration is part of its ' +
-                                         'authentication surface. The route ' +
-                                         'is registered, which is why this ' +
-                                         'is a 501 and not a 404.' }, null, 2));
-        log.debug("Leaving POST " + HOBA_REGISTER_PATH + ". SCIM is off.");
-        return;
-      }
+    // THE REGISTRATION ITSELF, once it is known to be answered here — split
+    // out of the route (#98) so the cell placement can come first and both of
+    // its outcomes reach it.
+    const answerHobaRegistration = (req: any, res: any): void => {
+      log.debug("Entering answerHobaRegistration().");
       const result = scimAuth.registerHobaKey(req);
       Object.keys(result.headers || {}).forEach((name) => {
         res.set(name, result.headers[name]);
@@ -3061,8 +3133,7 @@ class Scim {
            .type('application/json')
            .set('Cache-Control', 'no-store')
            .send(JSON.stringify({ error: result.detail }, null, 2));
-        log.debug("Leaving POST " + HOBA_REGISTER_PATH + ". " + result.status +
-                  ".");
+        log.debug("Leaving answerHobaRegistration(). " + result.status + ".");
         return;
       }
       // The directory row, in the directory's own vocabulary — a registration
@@ -3081,8 +3152,50 @@ class Scim {
          .type('application/json')
          .set('Cache-Control', 'no-store')
          .send(JSON.stringify(result.body, null, 2));
-      log.debug("Leaving POST " + HOBA_REGISTER_PATH + ". Registered " +
+      log.debug("Leaving answerHobaRegistration(). Registered " +
                 result.body.kid + ".");
+    };
+
+    app.post(HOBA_REGISTER_PATH, (req, res) => {
+      log.debug("Entering POST " + HOBA_REGISTER_PATH + ".");
+      if (!this.enabled()) {
+        errorCodes.mark(res, 'STS-SCIM-0001');
+        res.status(501).type('application/json')
+           .set('Cache-Control', 'no-store')
+           .send(JSON.stringify({ error: 'SCIM is turned off on this service ' +
+                                         '(scim.enabled), and HOBA ' +
+                                         'registration is part of its ' +
+                                         'authentication surface. The route ' +
+                                         'is registered, which is why this ' +
+                                         'is a 501 and not a 404.' }, null, 2));
+        log.debug("Leaving POST " + HOBA_REGISTER_PATH + ". SCIM is off.");
+        return;
+      }
+      if (cells.isMulti() && !req.stsCellRelay) {
+        // THE PERSON'S CELL (#98), before anything is read or written: a
+        // key goes on the entry where it is homed, and a new name is made
+        // where a new person is homed. The body is form-encoded text here.
+        const raw = typeof req.body === 'string' ? req.body : '';
+        const username = String(new URLSearchParams(raw).get('username') ||
+                                '').trim();
+        scimCells.placeHobaRegistration(req, res, realms.currentId(),
+                                        username)
+          .then((relayed) => {
+            if (!relayed) {
+              answerHobaRegistration(req, res);
+            }
+          }, (e) => {
+            log.debug("Caught in POST " + HOBA_REGISTER_PATH + ": " +
+                      ((e && e.message) || e));
+            if (!res.headersSent) {
+              answerHobaRegistration(req, res);
+            }
+          });
+        log.debug("Leaving POST " + HOBA_REGISTER_PATH + ". Placing it.");
+        return;
+      }
+      answerHobaRegistration(req, res);
+      log.debug("Leaving POST " + HOBA_REGISTER_PATH + ".");
     });
 
     // --- Users (sections 3.3 to 3.6) -----------------------------------------
@@ -3196,9 +3309,16 @@ class Scim {
                                         'published as ' +
             'bulk.maxPayloadSize in the ServiceProviderConfig).'));
         }
-        const result = await new SCIMMY.Messages.BulkRequest(
-          body, this.bulkMaxOperations())
-          .apply([SCIMMY.Resources.User, SCIMMY.Resources.Group], { req: req });
+        // ONE BATCH OF PERSON DELETES (#351): each operation is still applied
+        // in order and answered with its own status, as section 3.7 requires,
+        // and a delete's entry goes at once; what each deleted person held is
+        // read and ended for the batch together, not one person at a time.
+        const bulk = new SCIMMY.Messages.BulkRequest(body,
+                                                     this.bulkMaxOperations());
+        const result = await directory.inPersonBatch(() => {
+          return bulk.apply([SCIMMY.Resources.User, SCIMMY.Resources.Group],
+                            { req: req });
+        }, { door: 'a SCIM Bulk' });
         // 200 rather than a status derived from the operations inside: RFC 7644
         // section 3.7 puts each operation's own status in its own `status`
         // member, and a bulk that was accepted and processed succeeded whatever

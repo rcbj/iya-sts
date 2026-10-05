@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -196,12 +196,21 @@ import InstanceSlot = require('./../common/instance_slot');
 // register nothing and require nothing here back.
 import mode = require('./../common/mode');
 import links = require('./federation_links');
+// A partner's block on a person (#373): a leaf store the receiver writes.
+import fedBlocks = require('./federation_blocks');
 import rbac = require('./../admin-ui/admin_rbac');
 import roles = require('./../common/roles');
 // A PARTNER'S ENCRYPTED ASSERTION OR ID TOKEN (#168): the key it is encrypted
 // to and the policy it is decrypted under. A static utility class that
 // registers no route and requires nothing here back.
 import fedEncryption = require('./federation_encryption');
+// A FLOW'S HANDLE NAMES THE CELL THAT HOLDS IT (#98 D10): stamped when it is
+// minted (putContext()), read where a partner's answer arrives (consume()).
+// Libraries that register no route.
+import cellLocator = require('./../common/cell_locator');
+import cellPlacement = require('./../common/cell_placement');
+import cells = require('./../common/cells');
+import cellRouting = require('./../common/cell_routing');
 
 const { DOMParser, XMLSerializer } = xmldom;
 
@@ -260,6 +269,9 @@ const LOGIN_PATH = federation.PATHS.login;
 const ACS_PATH = federation.PATHS.acs;
 const METADATA_PATH = federation.PATHS.metadata;
 const LINK_PATH = federation.PATHS.link;
+// The inter-cell operation that asks whether a resident carries a partner's
+// link (#98 D9): see FederationSp.homeOfSubject().
+const LINK_HOME_OP = 'federation-link-home';
 // A partner's sign-out (#167), served by `federation_slo.ts`; named here too
 // because the ACS points at it and the metadata publishes it.
 const SLO_PATH = federation.PATHS.slo;
@@ -313,7 +325,9 @@ const STATUS_SUCCESS = 'urn:oasis:names:tc:SAML:2.0:status:Success';
 // which is the denial of service the cap exists to bound arriving through the
 // door it was meant to close.
 const contexts = realms.map({ persist: 'federation_sp.contexts',
-                              retain: 'age' });
+                              retain: 'age',
+                              // #333: the context's `expires`, ms.
+                              expiresAt: realms.expiryField('expires', 1) });
 
 // ---------------------------------------------------------------------------
 // PAGES. This module draws two: a refusal and an index. Both are plain HTML
@@ -539,12 +553,18 @@ class FederationSp {
    * oldest context is dropped once `federation.maxContexts` are held.
    *
    * @param record - what the flow needs back when the response arrives
-   * @returns the handle, `fed-` and a random value
+   * @returns the handle, `fed-` and a random value (stamped with this cell
+   *   in a service deployed as cells)
    */
   putContext(record) {
     const { log, randomId } = this.deps;
     log.debug("Entering FederationSp.putContext().");
-    const handle = 'fed-' + randomId(18);
+    // STAMPED WITH THE CELL THAT HOLDS IT (#98 D10): the context store is
+    // the cell's, and a handle comes back — as a RelayState, a wctx, a
+    // state, or `/federation/link/{handle}`'s path segment — at whichever
+    // cell the browser reaches next. Twelve base64url characters: 40 in all,
+    // inside the handle pattern's 64 and SAML's 80-byte RelayState.
+    const handle = 'fed-' + cellLocator.stamp(randomId(18));
     const now = Date.now();
     contexts.forEach((value, key) => {
       if (value.expires < now) contexts.delete(key);
@@ -606,7 +626,10 @@ class FederationSp {
     log.debug("Leaving FederationSp.fromContext().");
     return {
       returnTo: (context && context.returnTo) || '',
-      application: (context && context.application) || ''
+      application: (context && context.application) || '',
+      // The sign-in screen's pending record, for a restart at the person's
+      // home cell (#98 D9); '' in single-cell mode.
+      authnPending: (context && context.authnPending) || ''
     };
   }
 
@@ -1265,9 +1288,17 @@ class FederationSp {
   // Steps 3 to 5 are finishSignIn(), which the linking step calls too.
   // ---------------------------------------------------------------------------
   private completeSignIn(req, res, record, result) {
-    const { fedMap, errorCodes, log } = this.deps;
+    const { fedMap, errorCodes, log, federation } = this.deps;
     log.debug("Entering FederationSp.completeSignIn(). id=" + record.fedId);
     const mapped = fedMap.mapIncoming(record, result.bag, result.subject);
+    // What was dropped, for /admin/federation (#94). A store that cannot be
+    // written costs the list and never the sign-in.
+    try {
+      federation.recordUnmapped(record.fedId, mapped.unmapped);
+    } catch (e) {
+      log.debug("Caught in FederationSp.completeSignIn(): " +
+                ((e && e.message) || e));
+    }
     if (!mapped.username) {
       log.debug("Leaving FederationSp.completeSignIn(). There is no username.");
       errorCodes.mark(res, 'STS-FED-0043');
@@ -1283,19 +1314,191 @@ class FederationSp {
                         'configured to take one from an attribute instead'),
                     this.bagTable(result.bag));
     }
+    // A PERSON HOMED IN ANOTHER CELL (#98 D9), before the subject is decided
+    // against a directory that does not hold them — and so before anything
+    // is linked, provisioned or signed in here. See homeOfSubject().
+    if (cells.isMulti()) {
+      const self = this;
+      log.debug("Leaving FederationSp.completeSignIn(). Asking where the " +
+                "subject is homed.");
+      return this.homeOfSubject(record, result, mapped)
+        .then(function (home: string): unknown {
+          if (home) {
+            return self.restartAtHome(req, res, record, result, home);
+          }
+          return self.decideAndFinish(req, res, record, result, mapped);
+        });
+    }
+    log.debug("Leaving FederationSp.completeSignIn(). Deciding.");
+    return this.decideAndFinish(req, res, record, result, mapped);
+  }
+
+  // Steps 2 to 5 of completeSignIn(), once the subject is known to be decided
+  // HERE.
+  private decideAndFinish(req, res, record, result, mapped) {
+    const { log } = this.deps;
+    log.debug("Entering FederationSp.decideAndFinish(). id=" + record.fedId);
     const decision = this.subjectDecision(record, result, mapped);
     if (!decision.ok) {
-      log.debug("Leaving FederationSp.completeSignIn(). The subject was " +
+      log.debug("Leaving FederationSp.decideAndFinish(). The subject was " +
                 "refused: " + decision.code);
       return this.refuseSubject(res, record, result, mapped, decision);
     }
     if (decision.confirm) {
-      log.debug("Leaving FederationSp.completeSignIn(). A local sign-in " +
+      log.debug("Leaving FederationSp.decideAndFinish(). A local sign-in " +
                 "first, to link " + decision.username + ".");
       return this.beginLinking(req, res, record, result, decision);
     }
-    log.debug("Leaving FederationSp.completeSignIn(). " + decision.how + ".");
+    log.debug("Leaving FederationSp.decideAndFinish(). " + decision.how + ".");
     return this.finishSignIn(req, res, record, result, mapped, decision);
+  }
+
+  // ---------------------------------------------------------------------------
+  // WHERE THE PARTNER'S SUBJECT IS HOMED (#98 D9), in a service deployed as
+  // cells. subjectDecision() reads THIS cell's directory, which holds its
+  // residents and — for a session exported here — projections of people
+  // homed elsewhere, which are not residents. A person homed in another cell
+  // is found three ways, in the order subjectDecision() would find them:
+  //
+  //   1. the person a local entry's federationLink names — a projection's
+  //      home from the routing index;
+  //   2. with no local holder, a RESIDENT of another cell carrying the link,
+  //      asked of every peer (`federation-link-home`): the routing index
+  //      keeps names and entryUUIDs, not links;
+  //   3. the NAMES the relationship's policy would sign in or create — the
+  //      mapped username under any-existing and link-at-first-sign-in, the
+  //      namespaced name under every policy that creates one — from the
+  //      routing index. A name homed elsewhere is never created here, which
+  //      is also what the index's own claim at creation refuses.
+  //
+  // Nothing personal leaves this cell and the assertion is not forwarded:
+  // the flow restarts at home (restartAtHome()), where the partner — which
+  // holds its own sign-on session — answers again at home's consumer, and
+  // the decision, a link-at-first-sign-in included, is made there.
+  // Answers '' to decide here: single-cell mode, a subject resident here or
+  // unknown everywhere, and a peer that cannot be asked (STS-CELL-0123).
+  // ---------------------------------------------------------------------------
+  private homeOfSubject(record, result, mapped): Promise<string> {
+    const { federation, links, log } = this.deps;
+    log.debug("Entering FederationSp.homeOfSubject(). id=" + record.fedId);
+    const realmId = realms.currentId();
+    const elsewhere = function (home: string): string {
+      return home && home !== cells.id() && cells.get(home) ? home : '';
+    };
+    const stable = links.stableSubjectOf(record, result);
+    const holders = stable.ok ? federation.peopleLinkedBy(stable.value) : [];
+    if (holders.length === 1) {
+      log.debug("Leaving FederationSp.homeOfSubject(). A linked person.");
+      return cellRouting.homeOf(realmId, 'name', holders[0].username)
+        .then(elsewhere);
+    }
+    if (holders.length > 1) {
+      log.debug("Leaving FederationSp.homeOfSubject(). Ambiguous; decided " +
+                "here.");
+      return Promise.resolve('');
+    }
+    const policy = federation.subjectPolicyOf(record);
+    const names = [];
+    if (policy === 'any-existing' || policy === 'link-at-first-sign-in') {
+      names.push(mapped.username);
+    }
+    if (policy !== 'any-existing' && policy !== 'pre-linked') {
+      names.push(links.namespacedName(record.fedId, mapped.username));
+    }
+    const byLink = stable.ok
+      ? FederationSp.linkHomeAtPeers(realmId, stable.value)
+      : Promise.resolve('');
+    log.debug("Leaving FederationSp.homeOfSubject(). Asking the peers and " +
+              "the routing index.");
+    return byLink.then(function (home: string): Promise<string> | string {
+      if (home) {
+        return home;
+      }
+      return names.reduce(function (found: Promise<string>, name: string) {
+        return found.then(function (had: string) {
+          return had || !name ? had
+            : cellRouting.homeOf(realmId, 'name', name).then(elsewhere);
+        });
+      }, Promise.resolve(''));
+    });
+  }
+
+  /**
+   * Asks every other cell whether one of its RESIDENTS carries a
+   * federationLink.
+   *
+   * @param realmId - the realm
+   * @param link - the link value (`links.stableSubjectOf().value`)
+   * @returns a promise of the first cell that holds one, or ''
+   */
+  static linkHomeAtPeers(realmId: string, link: string): Promise<string> {
+    helpers.log.debug("Entering FederationSp.linkHomeAtPeers().");
+    const channel = require('./../common/cell_channel');
+    const asks = cells.peers().map(function (peer) {
+      return channel.call(peer.id, LINK_HOME_OP, { realm: realmId,
+                                                   link: link })
+        .then(function (answer: any) {
+          return answer && answer.holds ? peer.id : '';
+        }, function (err: any) {
+          helpers.log.warn(errorCodes.tag('STS-CELL-0123') + 'federation: ' +
+                           'cell "' + peer.id + '" could not be asked ' +
+                           'whether a person there carries a partner\'s ' +
+                           'link (' + ((err && err.message) || err) + '); ' +
+                           'the subject is decided without it.');
+          return '';
+        });
+    });
+    helpers.log.debug("Leaving FederationSp.linkHomeAtPeers(). " +
+                      asks.length + " peer(s).");
+    return Promise.all(asks).then(function (found: string[]) {
+      return found.filter(Boolean)[0] || '';
+    });
+  }
+
+  /**
+   * Answers another cell's `federation-link-home`: whether a person RESIDENT
+   * here — not a projection — carries the link.
+   *
+   * @param body - `{ realm, link }`
+   * @returns `{ holds }`
+   * @throws an Error for an unknown realm
+   */
+  static answerLinkHome(body: any): { holds: boolean } {
+    helpers.log.debug("Entering FederationSp.answerLinkHome().");
+    const realmId = String((body && body.realm) || '');
+    const realm = realmId ? realms.get(realmId)
+                          : realms.get(realms.DEFAULT_ID);
+    if (!realm) {
+      helpers.log.debug("Leaving FederationSp.answerLinkHome(). No realm.");
+      throw new Error('no such realm');
+    }
+    let holds = false;
+    realms.run(realm, function () {
+      const cellSessions = require('./../common/cell_sessions');
+      holds = federation.peopleLinkedBy(String(body.link || ''))
+        .some(function (one) {
+          return !cellSessions.isProjected(realmId, 'name', one.username);
+        });
+    });
+    helpers.log.debug("Leaving FederationSp.answerLinkHome(). " + holds);
+    return { holds: holds };
+  }
+
+  // THE FLOW RESTARTS AT HOME (#98 D9): the browser is pinned to the home
+  // cell and sent back to the start the sign-in screen recorded
+  // (`authn.restartPendingAtHome()`, the sign-in screen's own restart), or to
+  // the flow's return address when it recorded none. The verified assertion
+  // is dropped here, unused: nothing about the person is written or carried.
+  private restartAtHome(req, res, record, result, home: string) {
+    const { authn, log } = this.deps;
+    log.debug("Entering FederationSp.restartAtHome(). home=" + home);
+    log.info('federation: ' + record.fedId + '\'s partner asserted a person ' +
+             'homed in cell "' + home + '"; the flow restarts there (#98 ' +
+             'D9).');
+    log.debug("Leaving FederationSp.restartAtHome().");
+    return authn.restartPendingAtHome(req, res,
+                                      String(result.authnPending || ''),
+                                      String(result.returnTo || ''), home);
   }
 
   // ---------------------------------------------------------------------------
@@ -1417,6 +1620,23 @@ class FederationSp {
       }
     }
     const person = federation.federatedPerson(target);
+    // THE PARTNER STOPPED VOUCHING FOR THIS PERSON (#373): a verified
+    // account-disabled from its own Shared Signals blocks its sign-ins of
+    // them, and only its — before any rule, because nothing else this
+    // partner says about the person can outweigh the partner saying stop.
+    const stopped = fedBlocks.blockOf(record.fedId,
+                                      person ? person.username : target);
+    if (stopped) {
+      log.debug("Leaving FederationSp.subjectDecision(). Blocked.");
+      return this.subjectRefusal('STS-FED-0156', 'blocked',
+        'The partner has stopped vouching for this person',
+        'A verified ' + (stopped.event || 'account-disabled') + ' event ' +
+        'from this partner\'s Shared Signals (at ' +
+        new Date(Number(stopped.at) || 0).toISOString() + ') blocks its ' +
+        'sign-ins of ' + stopped.username + '. Its account-enabled lifts ' +
+        'that, and so can an administrator on the relationship\'s page. ' +
+        'Signing in here another way is unaffected.');
+    }
     const rules = this.subjectRules(record, mapped, target, person);
     if (!rules.ok) {
       log.debug("Leaving FederationSp.subjectDecision(). A rule refused.");
@@ -1740,7 +1960,7 @@ class FederationSp {
     }
     const record = federation.get(context.id);
     if (!record || record.fedRole !== 'service-provider' ||
-        !federation.isUsable(record)) {
+        !federation.signsIn(record) || !federation.isUsable(record)) {
       errorCodes.mark(res, record && federation.isEnabled(record)
         ? 'STS-FED-0006' : 'STS-FED-0005');
       log.debug("Leaving the federation linking endpoint. The relationship " +
@@ -2068,8 +2288,8 @@ class FederationSp {
         'The assertion verified and the partner is configured, but this ' +
         'service holds no directory entry for ' + username + ', and ' +
         (federation.boolOf(record.fedAutocreateUsers, true)
-          ? 'the directory would not create one (product mode creates ' +
-            'nobody, ldap.autocreateUsers is off, or it is full).'
+          ? 'the directory would not create one (the subject policy ' +
+            'refused it, or the directory is full).'
           : 'dynamic provisioning (fedAutocreateUsers) is off on this ' +
             'relationship, so the person has to be created here first — ' +
             'through SCIM, /admin/users/new or the management API — and ' +
@@ -2109,22 +2329,35 @@ class FederationSp {
              mapped.unmapped.length + ' unmapped. Session ' + session.id + '.');
 
     const returnTo = result.returnTo || '';
-    if (returnTo) {
-      // 303, for the reason `authn.js`'s returnToCaller() gives at length: this
-      // may follow a POST carrying an assertion, and 302's behaviour after a
-      // POST is historically ambiguous where 303's is defined.
-      res.redirect(303, returnTo);
-      log.debug("Leaving FederationSp.startFederatedSession(). Sent them on to " +
-                returnTo + '.');
-      return;
-    }
-    res.type('html').set('Cache-Control', 'no-store').send(
-      this.page('Signed in',
-                this.signedInPage(record,
-                                  Object.assign({}, mapped,
-                                                { username: username }),
-                                  result, session)));
-    log.debug("Leaving FederationSp.startFederatedSession(). Drew the result page.");
+    const self = this;
+    // THE ATTRIBUTE SOURCES A SIGN-IN READS (#94), after the partner's
+    // attributes are on the entry and before the browser goes on — so a
+    // source's column wins over a partner's value for an attribute both
+    // name, and a refusing source that failed is this relationship's
+    // refusal page rather than a session.
+    this.deps.authn.afterSignIn(res, function (): void {
+      if (returnTo) {
+        // 303, for the reason `authn.js`'s returnToCaller() gives at length:
+        // this may follow a POST carrying an assertion, and 302's behaviour
+        // after a POST is historically ambiguous where 303's is defined.
+        res.redirect(303, returnTo);
+        return;
+      }
+      res.type('html').set('Cache-Control', 'no-store').send(
+        self.page('Signed in',
+                  self.signedInPage(record,
+                                    Object.assign({}, mapped,
+                                                  { username: username }),
+                                    result, session)));
+    }, function (why: string): void {
+      // error-code: none — afterSignIn() marked STS-ATTR-0012 on `res`
+      self.refuse(res, record, 403, 'An attribute source refused the sign-in',
+                  why + ' This realm\'s attribute source says a sign-in it ' +
+                  'cannot read is refused, and the session was ended.');
+    });
+    log.debug("Leaving FederationSp.startFederatedSession(). " +
+              (returnTo ? "Sending them on to " + returnTo + "."
+                        : "Drawing the result page."));
   }
 
   // ---------------------------------------------------------------------------
@@ -2541,6 +2774,15 @@ class FederationSp {
         'consumes from and asserts to is two relationships — see ' +
         'federation/CLAUDE.md.');
     }
+    // A PARTNER THAT ONLY SENDS SHARED SIGNALS (#374) has nowhere to send
+    // anybody: it is a transmitter, and nothing more.
+    if (!federation.signsIn(record)) {
+      errorCodes.mark(res, 'STS-FED-0155');
+      log.debug("Leaving the federation login endpoint. Signals only.");
+      return this.refuse(res, record, 400, 'That partner signs nobody in',
+        '"' + id + '" is an ssf relationship: the partner sends this ' +
+        'service Shared Signals, and signs nobody in.');
+    }
     if (!federation.isEnabled(record)) {
       errorCodes.mark(res, 'STS-FED-0005');
       return this.refuse(res, record, 403, 'That relationship is disabled',
@@ -2566,6 +2808,12 @@ class FederationSp {
     const pkce = this.pkcePair();
     const contextRecord: any = {
       id: record.fedId, protocol: record.fedProtocol, returnTo: returnTo,
+      // THE SIGN-IN SCREEN'S PENDING RECORD (#98 D9), named by `authn.ts` in
+      // a service deployed as cells: where the flow STARTED, should the
+      // partner assert a person homed in another cell (completeSignIn()).
+      // Only an id; the record stays in the sign-in service's store.
+      authnPending: /^[A-Za-z0-9_-]{1,64}$/.test(String(req.query.authn || ''))
+        ? String(req.query.authn) : '',
       // WHAT THE PERSON WAS SIGNING IN TO, carried across the round trip so
       // that completeSignIn() can move the relationship's per-application
       // counts.
@@ -3242,7 +3490,8 @@ class FederationSp {
         amr: this.federatedAmr([]),
         acr: contents.context || '',
         returnTo: this.fromContext(context).returnTo,
-        application: this.fromContext(context).application
+        application: this.fromContext(context).application,
+        authnPending: this.fromContext(context).authnPending
       });
     });
   }
@@ -3464,7 +3713,8 @@ class FederationSp {
         sessionNotOnOrAfter: bound.at,
         amr: this.federatedAmr([]), acr: contents.context || '',
         returnTo: this.fromContext(context).returnTo,
-        application: this.fromContext(context).application
+        application: this.fromContext(context).application,
+        authnPending: this.fromContext(context).authnPending
       });
     });
   }
@@ -3757,9 +4007,9 @@ class FederationSp {
         .then(function (assertion) {
           form.client_assertion = assertion;
         });
-    } else if (record.fedClientSecret) {
+    } else if (federation.clientSecretOf(record)) {
       options.basic = { user: record.fedClientId,
-                        pass: record.fedClientSecret };
+                        pass: federation.clientSecretOf(record) };
     } else {
       // A public client. The client_id goes in the body, which is what RFC 6749
       // section 4.1.3 requires when the client does not authenticate.
@@ -4023,7 +4273,8 @@ class FederationSp {
               ? String(idToken) : '',
             acr: String(payload.acr || ''),
             returnTo: this.fromContext(context).returnTo,
-            application: this.fromContext(context).application
+            application: this.fromContext(context).application,
+            authnPending: this.fromContext(context).authnPending
           });
         }, verified.jwk);
       };
@@ -4168,7 +4419,8 @@ class FederationSp {
             amr: this.federatedAmr([]),
             acr: '',
             returnTo: this.fromContext(context).returnTo,
-            application: this.fromContext(context).application
+            application: this.fromContext(context).application,
+            authnPending: this.fromContext(context).authnPending
           });
         }, verified.jwk);
       });
@@ -4218,7 +4470,8 @@ class FederationSp {
         issuer: String(record.fedPeer || ''),
         bag: bag, amr: this.federatedAmr([]), acr: '',
         returnTo: this.fromContext(context).returnTo,
-        application: this.fromContext(context).application
+        application: this.fromContext(context).application,
+        authnPending: this.fromContext(context).authnPending
       });
     });
   }
@@ -4243,7 +4496,9 @@ class FederationSp {
     }
     const id = String(req.params.id || '');
     const record = federation.get(id);
-    if (!record || record.fedRole !== 'service-provider') {
+    // An ssf relationship (#374) has no assertion consumer service.
+    if (!record || record.fedRole !== 'service-provider' ||
+        !federation.signsIn(record)) {
       errorCodes.mark(res, 'STS-FED-0002');
       res.status(404).type('html').send(this.page('No such relationship',
         '<h1>No such assertion consumer service</h1><p>There is no ' +
@@ -4267,6 +4522,22 @@ class FederationSp {
             'for.');
     }
     const params = this.paramsOf(req);
+    // THE FLOW'S CELL (#98 D10), before the response is verified or anything
+    // in it spent: a partner's answer names the context this service stored
+    // when the flow began — RelayState, SAML 1.1's fedctx, wctx or state —
+    // and that context is held only by the cell that stamped it. A
+    // browser pinned elsewhere was placed at the edge already; this is the
+    // one that was not. An unsolicited response names nothing and is served
+    // here.
+    const named: any = params;
+    const flowHandle = String(named.RelayState || named.fedctx ||
+                              named.wctx || named.state || '');
+    if (cellPlacement.relayIfElsewhere(req, res, flowHandle,
+                                       'a federation partner\'s response')) {
+      log.debug("Leaving FederationSp.consume(). Relayed to the cell that " +
+                "holds the flow.");
+      return undefined;
+    }
     try {
       if (record.fedProtocol === 'saml2') {
         log.debug("Leaving FederationSp.consume().");
@@ -4665,6 +4936,13 @@ const slot = new InstanceSlot<FederationSp>(
 
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
+
+// A PEER'S QUESTION ABOUT A PARTNER'S LINK (#98 D9): see homeOfSubject().
+// Registered once at load; registering binds and dials nothing.
+require('./../common/cell_channel').registerOp(LINK_HOME_OP,
+  function (body: any) {
+    return FederationSp.answerLinkHome(body);
+  });
 
 /**
  * This service as a federation service provider: signing a person in through a

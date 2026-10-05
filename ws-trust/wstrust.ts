@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -149,6 +149,14 @@ import authnContext = require('../saml/authn_context');
 // refusal decided below handleRst() travels out on the result's `errorCode` and
 // is marked on the response by the route; it never reaches the SOAP body.
 import errorCodes = require('../common/error_codes');
+// WHERE A REQUEST IS SERVED IN A SERVICE DEPLOYED AS CELLS (#98 D10): at the
+// home of the person it names. Libraries that register no route.
+import cells = require('../common/cells');
+import cellPlacement = require('../common/cell_placement');
+// A DELEGATED SUBJECT'S ATTRIBUTES FROM THEIR HOME (#98 section 5): required
+// at load, not lazily, because loading it is what registers the
+// `fetch-attributes` operation this cell answers as somebody's home.
+import cellAttributes = require('../common/cell_attributes');
 
 const { DOMParser, XMLSerializer } = xmldom;
 
@@ -353,9 +361,10 @@ class WsTrust {
   // jsonwebtoken's options, because signJwtAs() takes a payload and nothing
   // else.
   // ---------------------------------------------------------------------------
-  private buildJwt(subject, audience, lifetimeMin) {
+  private buildJwt(subject, audience, lifetimeMin, delegates?) {
     const {
-      config, log, logArtifact, randomId, signJwtAs, subjectForName
+      config, log, logArtifact, randomId, signJwtAs, subjectForName,
+      delegationPolicy
     } = this.deps;
     log.debug("Entering WsTrust.buildJwt().");
     const alg = String(config.value('wstrust.jwtAlgorithm') || 'RS256');
@@ -378,6 +387,26 @@ class WsTrust {
     };
     // An empty-string audience is not an audience — only set it when present.
     if (audience) claims.aud = audience;
+    // #186: the parties that acted, as RFC 8693 section 4.1's `act` — the
+    // most recent outermost, each earlier one nested beneath it — which is
+    // the same chain an assertion carries as Delegation Restriction.
+    let act = null;
+    (delegates || []).forEach(function (one) {
+      const next: any = { sub: String(one.nameId) };
+      if (act) {
+        next.act = act;
+      }
+      act = next;
+    });
+    if (act) {
+      claims.act = act;
+    }
+    // And RFC 8693 section 4.4's `may_act`, from the person's own choice
+    // (`stsMayAct`) — the same claim an access token about them carries.
+    const mayAct = delegationPolicy.mayActClaimFor(claims.sub);
+    if (mayAct) {
+      claims.may_act = mayAct;
+    }
     logArtifact('WS-Trust JWT', 'before signing',
                 { header: { alg: alg }, payload: claims });
     // `wstrust.jwtCertificateHeader` decides the `x5c` / `x5u`.
@@ -405,16 +434,19 @@ class WsTrust {
    * @param lifetimeMin - the lifetime in minutes
    * @param authnContextClassRef - how the requester authenticated; unspecified
    * when absent
+   * @param delegates - #186: the parties that acted for the subject, least
+   * to most recent; none when absent
    * @returns the token's XML, its reference, its token type and its id
    */
   buildToken(tokenType, subject, audience, lifetimeMin,
-                      authnContextClassRef) {
+                      authnContextClassRef, delegates?) {
     const { buildSamlAssertion, authnContext, log, xmlEscape } = this.deps;
     log.debug("Entering WsTrust.buildToken(). tokenType=" + tokenType + ", " +
         "subject=" +
               subject);
     if (tokenType === JWT_TOKEN_TYPE) {
-      const built = this.buildJwt(subject, audience, lifetimeMin);
+      const built = this.buildJwt(subject, audience, lifetimeMin,
+                                  delegates);
       const token = { xml: '<wsse:BinarySecurityToken ' +
         'xmlns:wsse="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd" ' +
         'ValueType="urn:ietf:params:oauth:token-type:jwt">' + built.token +
@@ -423,9 +455,12 @@ class WsTrust {
       log.debug("Leaving WsTrust.buildToken(). Issued a JWT.");
       return token;
     }
+    // #186: an ActAs token NAMES the parties that acted — the SAML V2.0
+    // Condition for Delegation Restriction, least to most recent.
     const assertion = buildSamlAssertion(subject, audience, lifetimeMin,
       { authnContextClassRef: authnContextClassRef ||
-                              authnContext.AC_UNSPECIFIED });
+                              authnContext.AC_UNSPECIFIED,
+        delegates: delegates || [] });
     const idm = assertion.match(/\bID="([^"]+)"/);
     const id = idm ? idm[1] : '';
     const ref = '<wst:RequestedAttachedReference>' +
@@ -895,7 +930,9 @@ class WsTrust {
                 checked.subject + " via " + element + ".");
       return { subject: checked.subject, element: element,
                both: !!(oboEl && actAsEl),
-               tokenId: this.delegatedTokenId(obo) };
+               tokenId: this.delegatedTokenId(obo),
+               audiences: this.delegatedAudiences(obo),
+               delegates: this.delegatedDelegates(obo) };
     }
     const nameId = firstByLocal(obo, 'NameID') ||
       firstByLocal(obo, 'NameIdentifier');
@@ -905,7 +942,55 @@ class WsTrust {
     log.debug("Leaving WsTrust.delegatedSubject(). " + named + " via " +
               element + ".");
     return { subject: named, element: element, both: !!(oboEl && actAsEl),
-             tokenId: tokenId };
+             tokenId: tokenId, audiences: this.delegatedAudiences(obo),
+             delegates: this.delegatedDelegates(obo) };
+  }
+
+  // #186: the parties the delegated assertion already says ACTED — its SAML
+  // V2.0 Delegation Restriction's <del:Delegate> NameIDs, least to most
+  // recent, as that profile orders them — so an ActAs of an ActAs token
+  // keeps the chain, as RFC 8693's `act` nests.
+  private delegatedDelegates(element) {
+    const { log } = this.deps;
+    log.debug("Entering WsTrust.delegatedDelegates().");
+    const out = [];
+    const all = element && element.getElementsByTagNameNS
+      ? element.getElementsByTagNameNS(
+        'urn:oasis:names:tc:SAML:2.0:conditions:delegation', 'Delegate')
+      : [];
+    for (let i = 0; i < all.length; i += 1) {
+      const nameIds = all[i].getElementsByTagNameNS('*', 'NameID');
+      const nameId = nameIds.length
+        ? String(nameIds[0].textContent || '').trim() : '';
+      if (nameId) {
+        out.push({ nameId: nameId,
+                   format: String(nameIds[0].getAttribute('Format') || ''),
+                   instant: String(all[i].getAttribute('DelegationInstant') ||
+                                   '') });
+      }
+    }
+    log.debug("Leaving WsTrust.delegatedDelegates(). " + out.length);
+    return out;
+  }
+
+  // #186: the audiences the delegated assertion is restricted to — SAML 2.0's
+  // <saml:Audience> and SAML 1.1's <saml:Audience> under
+  // AudienceRestrictionCondition alike — which is S, the application the
+  // assertion was issued for. Empty when it names none.
+  private delegatedAudiences(element) {
+    const { log } = this.deps;
+    log.debug("Entering WsTrust.delegatedAudiences().");
+    const out = [];
+    const all = element && element.getElementsByTagNameNS
+      ? element.getElementsByTagNameNS('*', 'Audience') : [];
+    for (let i = 0; i < all.length; i += 1) {
+      const text = String(all[i].textContent || '').trim();
+      if (text && out.indexOf(text) < 0) {
+        out.push(text);
+      }
+    }
+    log.debug("Leaving WsTrust.delegatedAudiences(). " + out.length);
+    return out;
   }
 
   // Who this request is from, who the token it asks for is about, and whether
@@ -998,7 +1083,12 @@ class WsTrust {
           // carried one. handleRst() records it as what the act consumed, which
           // is what lets /admin/tokens/credential walk a chain of these hops
           // back to the sign-in that started it. See delegatedTokenId().
-          tokenId: delegatedBy.tokenId || ''
+          tokenId: delegatedBy.tokenId || '',
+          // #186: S — the audiences the delegated assertion is restricted
+          // to, the application it was issued for.
+          audiences: delegatedBy.audiences || [],
+          // #186: the parties the delegated assertion says already acted.
+          delegates: delegatedBy.delegates || []
         }
       };
     }
@@ -1312,51 +1402,61 @@ class WsTrust {
                                'about them.') };
     }
     // -------------------------------------------------------------------------
-    // WHO MAY ACT FOR WHOM (#108, 2026-09-23). WS-Trust puts no authorization
+    // WHO MAY ACT FOR WHOM, AND AS WHAT (#186). WS-Trust puts no authorization
     // on `OnBehalfOf` (1.3 section 9.2) or `ActAs` (1.4 section 9.3) — "a real
-    // STS decides this from policy that has no place in the message", as the
-    // act's row used to say — and this is that policy:
-    // `common/delegation_policy.ts`, from the attributes on the entries, the
-    // Kerberos model. OnBehalfOf is IMPERSONATION and needs
-    // appTrustedToImpersonate; ActAs is DELEGATION.
+    // STS decides this from policy that has no place in the message" — and
+    // the issuance policy is that policy, the same rules the RFC 8693 token
+    // exchange and Kerberos S4U are decided by, through
+    // `common/delegation_policy.ts`. The ELEMENT is the request's choice of
+    // semantics: OnBehalfOf asks for IMPERSONATION, ActAs for DELEGATION, and
+    // the entries' allowed semantics still decide. The actor is the
+    // REQUESTER; S is the delegated assertion's audience; R the AppliesTo.
+    // A person may be the requester when they hold delegation.actorRole.
     //
-    // **ONLY AN APPLICATION MAY DELEGATE** (the owner's decision on #108): the
-    // requester's name must be an application entry's identifier — the
-    // credential it presented may be kept on a service account of the same
-    // name, since a UsernameToken is verified against a `userPassword` — and a
-    // requester that is only a PERSON is refused with that said. Every
-    // identity maps to an entry, and it is the entry's KIND that decides.
+    // A REQUEST CARRYING BOTH ELEMENTS asks for two contradictory things and is
+    // refused in every mode (wst:InvalidRequest).
     //
-    // ENFORCED IN PRODUCT (`mode.authorizesDelegation()`) as a SOAP Fault with
-    // WS-Trust 1.4 section 11's `wst:RequestFailed`; development issues and
-    // writes "would have been refused" on the act's row. Here rather than in
-    // authenticate(), because this is the only place that knows the AppliesTo,
-    // which is the TARGET.
+    // ENFORCED IN PRODUCT — the policy's answer says whether a refusal is
+    // enforced — as a SOAP Fault with WS-Trust 1.4 section 11's
+    // `wst:RequestFailed`; development issues and writes "would have been
+    // refused" on the act's row. Here rather than in authenticate(), because
+    // this is the only place that knows the AppliesTo, which is the TARGET.
     // -------------------------------------------------------------------------
     let delegationDecision = null;
+    if (auth.delegation && auth.delegation.both) {
+      const why = 'The request carries both <wst:OnBehalfOf> (impersonation) ' +
+        'and <wst14:ActAs> (delegation); send one.';
+      log.info('wstrust: refused a request carrying both OnBehalfOf and ' +
+               'ActAs.');
+      log.debug("Leaving the RST handler. Both delegation elements.");
+      return { status: 500, version: version, errorCode: 'STS-WSTRUST-0025',
+               body: this.soapFault(version, why, 'InvalidRequest',
+                                    trustNs) };
+    }
     if (auth.delegation) {
       const via = auth.delegation.element;
       const requester = String(auth.delegation.requester || '');
       delegationDecision = delegationPolicy.decide({
         protocol: 'WS-Trust',
-        mode: via === 'ActAs' ? 'delegation' : 'impersonation',
-        intermediary: requester,
+        requested: via === 'ActAs' ? 'delegation' : 'impersonation',
+        actor: requester,
         subject: String(subject || ''),
+        source: auth.delegation.audiences || [],
         targets: audience ? [audience] : [],
-        targetKind: 'appliesTo',
-        self: !!requester && requester === String(subject || '')
+        targetKind: 'appliesTo'
       });
       if (!delegationDecision.allowed && delegationDecision.enforced) {
-        const code = delegationDecision.refusal === 'intermediary'
-          ? 'STS-WSTRUST-0019'
-          : (delegationDecision.refusal === 'xacml' ? 'STS-WSTRUST-0020'
-                                                    : 'STS-WSTRUST-0018');
-        const why = delegationDecision.refusal === 'intermediary'
-          ? 'The requester "' + requester + '" is not an application entry ' +
-            'in this realm. In product mode only an application may ask for ' +
-            'a token on somebody else\'s behalf (<wst:' + via + '>); a ' +
-            'person, or a name with no application entry, may not.'
-          : delegationDecision.why;
+        const CODES = {
+          'intermediary': 'STS-WSTRUST-0019',
+          'policy': 'STS-WSTRUST-0020',
+          'semantics': 'STS-WSTRUST-0022',
+          'authority': 'STS-WSTRUST-0023',
+          'no-target': 'STS-WSTRUST-0024',
+          'unregistered-target': 'STS-WSTRUST-0024',
+          'targets': 'STS-WSTRUST-0024'
+        };
+        const code = CODES[delegationDecision.refusal] || 'STS-WSTRUST-0018';
+        const why = delegationDecision.why;
         const refusedTarget = delegationDecision.targets[0] ||
           { asked: '', application: '' };
         delegation.record({
@@ -1366,9 +1466,7 @@ class WsTrust {
           initial: { presented: subject,
                      what: 'the subject named in <wst:' + via + '>' },
           intermediary: { presented: requester,
-                          application:
-                            delegationDecision.refusal === 'intermediary'
-                              ? '' : delegationDecision.intermediary,
+                          application: delegationDecision.intermediary,
                           what: 'the requester, authenticated by ' +
                                 String(auth.delegation.requesterMethod ||
                                        'nothing') },
@@ -1377,7 +1475,7 @@ class WsTrust {
                     what: audience
                       ? 'the AppliesTo "' + audience + '"'
                       : 'unstated — the RST carried no AppliesTo' },
-          authorizedBy: 'refused by the delegation policy: ' + why,
+          authorizedBy: 'refused by the issuance policy: ' + why,
           reason: why,
           consumed: auth.delegation.tokenId
             ? [{ kind: 'delegated token',
@@ -1386,20 +1484,33 @@ class WsTrust {
             : [],
           produced: []
         });
-        log.info('wstrust: the delegation policy refused <wst:' + via +
+        log.info('wstrust: the issuance policy refused <wst:' + via +
                  '> by "' + requester + '" for "' + String(subject) +
                  '" to "' + audience + '": ' + why);
-        log.debug("Leaving the RST handler. The delegation policy refused " +
+        log.debug("Leaving the RST handler. The issuance policy refused " +
                   "it.");
-        // error-code: none — `code` (0018, 0019 or 0020) rides out on the answer
+        // error-code: none — `code` rides out on the answer
         return { status: 500, version: version, errorCode: code,
                  body: this.soapFault(version, why, 'RequestFailed',
                                       trustNs) };
       }
     }
 
+    // #186: WHO ACTED, carried into the token. A delegation (ActAs) adds the
+    // requester after whoever the delegated assertion already named; an
+    // impersonation keeps that chain and adds nobody — a prior delegation is
+    // never laundered into an ordinary token; a self act adds nobody.
+    const priorDelegates = (auth.delegation && auth.delegation.delegates) ||
+      [];
+    const delegates = delegationDecision &&
+      delegationDecision.semantics === 'delegation'
+      ? priorDelegates.concat([{
+        nameId: String(delegationDecision.intermediary ||
+                       auth.delegation.requester || ''),
+        instant: new Date().toISOString() }])
+      : priorDelegates;
     const tok = this.buildToken(tokenType, subject, audience, lifetimeMin,
-                           this.authnContextOf(auth));
+                           this.authnContextOf(auth), delegates);
 
     // Optional encryption (?encrypt=1): encrypt the SAML assertion to the
     // recipient certificate carried in the request's WS-Security signature
@@ -1808,7 +1919,7 @@ class WsTrust {
   // cannot answer leaves the decision to roles alone.
   // -------------------------------------------------------------------------
   private stsEndpoint(req, res) {
-    const { log, validation, textByLocal, subjectForName } = this.deps;
+    const { log, validation, textByLocal } = this.deps;
     log.debug("Entering WsTrust.stsEndpoint().");
     const self = this;
     let claimed = '';
@@ -1816,6 +1927,167 @@ class WsTrust {
     if (read.ok) {
       claimed = textByLocal(read.value, 'Username');
     }
+    // THE PERSON'S HOME CELL (#98 D10), before anything is read, verified,
+    // recorded or spent: see homeNameOf(). Single-cell mode goes straight
+    // on, as it always did.
+    const home = read.ok && cells.isMulti() && !req.stsCellRelay
+      ? this.homeNameOf(read.value) : '';
+    // THE DELEGATED SUBJECT, when it is somebody other than the person the
+    // request is served for: see delegatedHere().
+    const delegated = read.ok && cells.isMulti()
+      ? this.delegatedNameOf(read.value, home) : '';
+    if (home) {
+      log.debug("Leaving WsTrust.stsEndpoint(). Finding the home cell.");
+      return cellPlacement.relayToHome(req, res,
+        require('../common/realms').currentId(), 'name', home,
+        'a WS-Trust request').then(function (relayed: boolean): unknown {
+          return relayed ? undefined
+            : self.stsEndpointHere(req, res, claimed, delegated,
+                                   read.value);
+        });
+    }
+    log.debug("Leaving WsTrust.stsEndpoint().");
+    return this.stsEndpointHere(req, res, claimed, delegated,
+                                read.ok ? read.value : null);
+  }
+
+  // The subject of an OnBehalfOf / ActAs, when the request is served for
+  // somebody ELSE — its requester, whose home this is (homeNameOf()). ''
+  // when nothing is delegated, or the delegated subject is the one the
+  // request was placed by.
+  private delegatedNameOf(doc, placedBy: string): string {
+    const { firstByLocal, log } = this.deps;
+    log.debug("Entering WsTrust.delegatedNameOf().");
+    const obo = firstByLocal(doc, 'OnBehalfOf') || firstByLocal(doc, 'ActAs');
+    const named = obo ? firstByLocal(obo, 'NameID') ||
+                        firstByLocal(obo, 'NameIdentifier') : null;
+    const name = named ? String(named.textContent || '').trim() : '';
+    log.debug("Leaving WsTrust.delegatedNameOf().");
+    return name && name.toLowerCase() !== String(placedBy || '').toLowerCase()
+      ? name : '';
+  }
+
+  // ---------------------------------------------------------------------------
+  // A DELEGATED SUBJECT HOMED IN ANOTHER CELL (#98 section 5,
+  // `fetch-attributes`). The request is served at its REQUESTER's home, whose
+  // directory does not hold the person the token is about — so the token's
+  // subject, its configured attributes, the delegation policy's flags on
+  // their entry and the issuance policy's roles would be made from nothing.
+  // Their home is asked for their credential-free attributes
+  // (`common/cell_attributes.ts`), which it releases only where the transfer
+  // policy says, and the exchange runs with them held in this process's
+  // directory for exactly its own synchronous duration.
+  //
+  // FAIL-CLOSED (D6): home refusing to release them, or not reachable, is a
+  // refused issuance — a Fault naming which, never a token about somebody
+  // this cell cannot describe. A person already held here as a projection is
+  // read as they are; one unknown to every cell is served as a name nobody
+  // knows always was.
+  // ---------------------------------------------------------------------------
+  private delegatedHere(req, res, delegated: string, doc): unknown {
+    const { errorCodes, log } = this.deps;
+    log.debug("Entering WsTrust.delegatedHere().");
+    const self = this;
+    const realms = require('../common/realms');
+    const realmId = realms.currentId();
+    if (require('../common/cell_sessions').isProjected(realmId, 'name',
+                                                       delegated)) {
+      log.debug("Leaving WsTrust.delegatedHere(). Held here already.");
+      return this.stsEndpointNow(req, res);
+    }
+    log.debug("Leaving WsTrust.delegatedHere(). Asking where they live.");
+    return require('../common/cell_routing').homeOf(realmId, 'name', delegated)
+      .then(function (home: string): unknown {
+        if (!home || home === cells.id() || !cells.get(home)) {
+          return self.stsEndpointNow(req, res);
+        }
+        return cellAttributes.fetch(realmId, delegated, home)
+          .then(function (got: any): unknown {
+            if (!got.ok) {
+              const version = self.detectSoapVersion(doc,
+                req.headers['content-type'] || '');
+              errorCodes.mark(res, got.code);
+              res.status(got.code === 'STS-CELL-0125' ? 503 : 403)
+                 .type(version === '1.1' ? 'text/xml; charset=utf-8'
+                                         : 'application/soap+xml; ' +
+                                           'charset=utf-8')
+                 .send(self.soapFault(version, 'The subject of this ' +
+                   'request\'s delegation is held in another part of this ' +
+                   'service, which ' + (got.code === 'STS-CELL-0125'
+                     ? 'could not be reached'
+                     : 'did not release what a token about them needs') +
+                   ', so no token is issued about them.'));
+              return undefined;
+            }
+            return cellAttributes.withPerson(realmId, got.projection,
+              function () {
+                return self.stsEndpointNow(req, res);
+              });
+          });
+      });
+  }
+
+  // ---------------------------------------------------------------------------
+  // WHICH PERSON'S HOME SERVES AN RST (#98 D10). A request is served where the
+  // person whose CREDENTIAL it presents is homed, because that is the one
+  // cell that can verify it — a UsernameToken's password is checked against
+  // a `userPassword` only the home cell holds, and a person's second factor,
+  // lockout and app passwords are there too. In order:
+  //
+  //   1. the requester's UsernameToken, by its Username;
+  //   2. the requester's own SAML assertion, by its NameID. **An assertion
+  //      this realm signed would VERIFY in any cell** — the signing keys are
+  //      the global tier's (D8) — and it is relayed anyway, because what
+  //      follows the verification is the person's: the authentication is
+  //      recorded against their entry, the issuance policy and the risk
+  //      standing read it, the token's attributes are its attributes, and a
+  //      browser session may be started for them. None of that exists
+  //      outside their home;
+  //   3. with no requester credential (development's delegation with nobody
+  //      in the requester's seat), the subject of the OnBehalfOf / ActAs.
+  //
+  // **A DELEGATION ACROSS CELLS IS SERVED AT THE REQUESTER'S HOME**, which
+  // does not hold the delegated subject's entry when that person is homed
+  // elsewhere; the token about them then carries what that cell knows of
+  // them, which is nothing beyond the name. Fetching a subject's attributes
+  // from its home is the design's `fetch-attributes` operation (#98 section
+  // 5), not built yet — recorded in `ws-trust/CLAUDE.md`.
+  //
+  // A NameID that is not a login name (an email address, a pairwise value)
+  // is unknown to the routing index, and the request is served where it
+  // arrived — the answer it always had.
+  // ---------------------------------------------------------------------------
+  private homeNameOf(doc): string {
+    const { firstByLocal, log, textByLocal } = this.deps;
+    log.debug("Entering WsTrust.homeNameOf().");
+    const nameOf = function (el): string {
+      log.debug("Entering nameOf().");
+      const named = el ? firstByLocal(el, 'NameID') ||
+                         firstByLocal(el, 'NameIdentifier') : null;
+      log.debug("Leaving nameOf().");
+      return named ? String(named.textContent || '').trim() : '';
+    };
+    const scope = this.credentialScope(doc);
+    const ut = this.firstOwnedByRequester(scope, 'UsernameToken');
+    if (ut) {
+      log.debug("Leaving WsTrust.homeNameOf(). A UsernameToken.");
+      return String(textByLocal(ut, 'Username') || '').trim();
+    }
+    const assertion = this.firstOwnedByRequester(scope, 'Assertion');
+    if (assertion) {
+      log.debug("Leaving WsTrust.homeNameOf(). The requester's assertion.");
+      return nameOf(assertion);
+    }
+    log.debug("Leaving WsTrust.homeNameOf(). The delegated subject.");
+    return nameOf(firstByLocal(doc, 'OnBehalfOf') ||
+                  firstByLocal(doc, 'ActAs'));
+  }
+
+  // The endpoint, once the request is known to be served HERE.
+  private stsEndpointHere(req, res, claimed, delegated?: string, doc?) {
+    const { log, subjectForName } = this.deps;
+    log.debug("Entering WsTrust.stsEndpointHere().");
+    const self = this;
     let preload: Promise<unknown> = Promise.resolve(null);
     if (claimed) {
       try {
@@ -1824,20 +2096,23 @@ class WsTrust {
           require('../common/realms').currentId(), claimed, sub)
           : preload;
       } catch (e) {
-        log.debug("Caught in WsTrust.stsEndpoint(): " +
+        log.debug("Caught in WsTrust.stsEndpointHere(): " +
                   ((e && e.message) || e));
         // No risk engine in this process: nothing to read, and the roles
         // decide.
         preload = Promise.resolve(null);
       }
     }
-    log.debug("Leaving WsTrust.stsEndpoint().");
+    log.debug("Leaving WsTrust.stsEndpointHere().");
     return preload.then(function (): unknown {
-      return self.stsEndpointNow(req, res);
+      return delegated ? self.delegatedHere(req, res, delegated, doc)
+                       : self.stsEndpointNow(req, res);
     }, function (e: any): unknown {
-      log.debug("Caught in WsTrust.stsEndpoint(): " + ((e && e.message) || e));
+      log.debug("Caught in WsTrust.stsEndpointHere(): " +
+                ((e && e.message) || e));
       // loadStanding() never rejects; this is its belt and braces.
-      return self.stsEndpointNow(req, res);
+      return delegated ? self.delegatedHere(req, res, delegated, doc)
+                       : self.stsEndpointNow(req, res);
     });
   }
 

@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 
@@ -208,7 +208,7 @@ function childMain() {
         ? await attempt(format, issued.credential, pqHolder) : null;
       note(!!issued.credential && signedIn && signedIn.ok,
            '3a[' + format + ']. an ML-DSA-44 holder key is bound at ' +
-           'issuance and proves the presentation, in the worker pool\'s ' +
+           'issuance and proves the presentation, on libuv\'s thread pool\'s ' +
            'place', (issued.error || '') + ' ' + (signedIn && signedIn.code));
     }
     await w.inRealm(function () {

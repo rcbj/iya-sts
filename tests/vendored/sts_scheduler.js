@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 //
 // File: sts_scheduler.js
 //
@@ -28,6 +28,10 @@
 //      every slot of the session-expiry job is one run however many nodes
 //      could have run it. In every other mode a step-down is refused
 //      (STS-SCHED-0010): there is nobody to hand to.
+//   7. A REMOVED REALM'S JOBS GO WITH IT (#338): a realm created for the
+//      purpose has its realm jobs listed, and once it is removed no answer —
+//      through the balancer, from every node — lists a job or a run in it,
+//      and the history job is a cluster job every ten minutes.
 //
 // No sleep waits for a job: each wait is a bounded poll on the condition, at
 // the tick the service runs at (`scheduler.tickS`).
@@ -288,6 +292,7 @@ async function thePageAndTheApiAgree(cookie) {
   // How far apart the two reads the nextRunAt check compares were made, for
   // that check's allowance (below).
   let readGapMs = 0;
+  let readEndedMs = 0;
   // The `id@realm` rows set aside as a realm created mid-walk (below).
   let walkSetAside = [];
   for (let attempt = 1; attempt <= 5; attempt++) {
@@ -295,7 +300,8 @@ async function thePageAndTheApiAgree(cookie) {
     json = await report();
     pageJson = await call("GET", base + "/admin/scheduler?format=json" +
                                 "&per=200", { headers: { Cookie: cookie } });
-    readGapMs = Date.now() - readStarted;
+    readEndedMs = Date.now();
+    readGapMs = readEndedMs - readStarted;
     // EVERY PAGE, as report() reads the API's (2026-09-23): a comparison of
     // all the API's jobs with one page of the console's would fail on a
     // service with more than 200 job rows, about pages drawing exactly what
@@ -403,7 +409,17 @@ async function thePageAndTheApiAgree(cookie) {
             const wholeSlots = every > 0 && every <= 60000 && slots >= 1 &&
               Math.abs(delta - slots * every) < 1000 &&
               delta <= readGapMs + every;
-            assert.ok(delta < 1000 || wholeSlots,
+            // A SLOT DUE BETWEEN THE READS (2026-09-28): a job whose slot
+            // had come due but not yet run answers that slot as its next
+            // run, and the other read, made after it ran, answers the one
+            // after. So one whole interval apart, the earlier of the two
+            // already past when the reads ended, is agreement at any
+            // interval (a 5-minute job met it at 17:50:00 in memory mode).
+            const earlier = Math.min(Date.parse(j.nextRunAt),
+                                     Date.parse(other.nextRunAt));
+            const ranBetween = every > 0 &&
+              Math.abs(delta - every) < 1000 && earlier <= readEndedMs;
+            assert.ok(delta < 1000 || wholeSlots || ranBetween,
                       j.id + ": " + j.nextRunAt + " and " +
                       other.nextRunAt + " (the reads took " + readGapMs +
                       " ms)");
@@ -581,16 +597,18 @@ async function theClusterAgrees() {
     log.debug("Leaving theClusterAgrees(). One node.");
     return;
   }
-  log.info("=== 6. two nodes agree, and hand over ===");
+  // EVERY node, not two (#311): the AWS environments run three, and
+  // STS_TEST_CLUSTER_NODES says how many; the local cluster mode sets 2.
+  log.info("=== 6. " + EXPECTED_NODES + " nodes agree, and hand over ===");
   const seen = {};
   const answers = [];
-  for (let i = 0; i < 16; i++) {
+  for (let i = 0; i < 8 * EXPECTED_NODES; i++) {
     const r = await report();
     seen[r.answeredBy.node] = true;
     answers.push(r);
   }
-  check("both nodes answered through the balancer", function () {
-    assert.strictEqual(Object.keys(seen).length, 2,
+  check("every node answered through the balancer", function () {
+    assert.strictEqual(Object.keys(seen).length, EXPECTED_NODES,
                        JSON.stringify(Object.keys(seen)));
   });
   check("and every answer names the same leader", function () {
@@ -634,6 +652,67 @@ async function theClusterAgrees() {
   log.debug("Leaving theClusterAgrees().");
 }
 
+async function aRemovedRealmsJobsGo() {
+  log.debug("Entering aRemovedRealmsJobsGo().");
+  log.info("=== 7. a removed realm's jobs go with it (#338) ===");
+  const gone = "sched-gone-" + STAMP;
+  const made = await api("POST", "/admin-api/realms/create",
+                         { id: gone, domain: gone + ".example.net",
+                           name: "Scheduler removal test " + STAMP });
+  assert.ok(made.status === 200, "precondition: creating " + gone +
+            " answered " + made.status + " " + made.text.slice(0, 300));
+  await until("every node to list the new realm's jobs", async function () {
+    for (let i = 0; i < 4 * EXPECTED_NODES; i++) {
+      const r = await report();
+      if (!jobOf(r, "signing.rotate", gone)) {
+        return null;
+      }
+    }
+    return true;
+  });
+  check("the new realm's realm jobs are listed on every node", function () {
+    assert.ok(true);
+  });
+  const removed = await api("POST", "/admin-api/realms/remove", { id: gone });
+  check("the realm is removed (200)", function () {
+    assert.strictEqual(removed.status, 200, removed.text.slice(0, 300));
+  });
+  await until("no node to list a job in the removed realm", async function () {
+    for (let i = 0; i < 4 * EXPECTED_NODES; i++) {
+      const r = await report();
+      const left = (r.jobs || []).filter(function (j) {
+        return j.realm === gone;
+      });
+      if (left.length) {
+        return null;
+      }
+    }
+    return true;
+  });
+  check("no answer lists a job in the removed realm", function () {
+    assert.ok(true);
+  });
+  const runs = await api("GET", "/admin-api/scheduler?per=500&realm=" +
+                         encodeURIComponent(gone));
+  check("nor a run in it", function () {
+    const inGone = ((runs.body && runs.body.runs) || []).filter(function (r) {
+      return r.realm === gone;
+    });
+    assert.strictEqual(inGone.length, 0, JSON.stringify(inGone.slice(0, 3)));
+  });
+  const queued = await api("POST", "/admin-api/scheduler/run",
+                           { job: "signing.rotate-now", realm: gone });
+  check("and a Run now in it is refused", function () {
+    assert.strictEqual(queued.status, 400, queued.text.slice(0, 300));
+  });
+  const history = jobOf(await report(), "scheduler.history");
+  check("the history job is a cluster job every ten minutes", function () {
+    assert.ok(history && history.kind === "cluster" &&
+              history.schedule.everyMs === 600000, JSON.stringify(history));
+  });
+  log.debug("Leaving aRemovedRealmsJobsGo().");
+}
+
 async function main() {
   log.debug("Entering main().");
   const admin = "sched-admin-" + STAMP;
@@ -646,6 +725,7 @@ async function main() {
   await adminReadRunsNothing();
   await aRealmTokenIsConfined();
   await theClusterAgrees();
+  await aRemovedRealmsJobsGo();
   log.info("sts_scheduler: " + checks + " check(s) passed.");
   log.debug("Leaving main().");
 }

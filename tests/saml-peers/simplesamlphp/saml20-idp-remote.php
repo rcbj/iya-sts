@@ -1,6 +1,6 @@
 <?php
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 //
 // The identity provider(s) this peer trusts: what /peer/configure.php parsed
 // from the metadata the job handed it, with SimpleSAMLphp's own SAMLParser.

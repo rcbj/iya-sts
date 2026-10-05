@@ -1,14 +1,17 @@
 # SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: BUSL-1.1
 #
 # ---------------------------------------------------------------------------
 # THE TWO ROLES A NODE'S TASK RUNS WITH, EACH WITH THE LEAST IT NEEDS.
 #
-# TASK ROLE — what the mock-sts CONTAINER can do with its credentials: read
-# the key-encryption key and the database password (GetSecretValue at startup,
-# DescribeSecret for the /admin/secrets report), and decrypt them with the
-# project key, only through Secrets Manager. Nothing else: no S3, no RDS API,
-# no other secret. The schema-init container shares it and uses none of it.
+# TASK ROLE — what the iya-sts CONTAINER can do with its credentials: read
+# the database password, and the key-encryption key where it is a secret
+# (kek.tf), with GetSecretValue at startup and DescribeSecret for the
+# /admin/secrets report, and decrypt them with the project key, only through
+# Secrets Manager; and, where the key-encryption key is the foundation's KMS
+# key (the default since #391), wrap and unwrap the data encryption keys with
+# it directly. Nothing else: no S3, no RDS API, no other secret, no other
+# key. The schema-init container shares it and uses none of it.
 #
 # AND, WHERE THERE IS A PUBLIC NAME, ONE MORE THING — `acm:ExportCertificate`
 # on THAT ONE CERTIFICATE, which the `cert-init` container uses and the other
@@ -22,7 +25,7 @@
 # EXECUTION ROLE — what ECS itself does on the task's behalf before a container
 # runs: pull the images, write to the log group, and inject the three
 # secrets that arrive as environment variables (the admin API client secret
-# into mock-sts; the master and application passwords into schema-init).
+# into iya-sts; the master and application passwords into schema-init).
 #
 # Both carry the foundation's permissions boundary; the deployer cannot create
 # a role without it.
@@ -48,7 +51,7 @@ data "aws_iam_policy_document" "ecs_tasks_trust" {
 
 resource "aws_iam_role" "task" {
   name                 = "${local.role_prefix}-task"
-  description          = "mock-sts ${var.environment}: the container reads its key and database password"
+  description          = "iya-sts ${var.environment}: the container reads its key and database password"
   assume_role_policy   = data.aws_iam_policy_document.ecs_tasks_trust.json
   permissions_boundary = data.aws_iam_policy.workload_boundary.arn
 }
@@ -57,19 +60,50 @@ data "aws_iam_policy_document" "task" {
   statement {
     sid     = "ReadTheKeyAndTheDatabasePassword"
     actions = ["secretsmanager:GetSecretValue", "secretsmanager:DescribeSecret"]
-    resources = [
-      aws_secretsmanager_secret.main["kek"].arn,
+    # In a cell (#98) the key is the global/ stack's replica here, and the
+    # node also reads its CELL key-encryption key and the global database's
+    # password. `compact`, because a cell's `base` phase has no global
+    # secrets yet and runs no node to read them.
+    #
+    # THE `kek` SECRET ONLY WHERE A NODE READS IT (kek.tf, #391): as the KEK
+    # with `kek_provider = "secret"`, as the previous KEK while migrating.
+    # With a KMS KEK the node never asks for it, so it may not.
+    resources = compact(concat([
+      local.kek_reads_secret ? local.shared_secret_arns["kek"] : "",
       aws_secretsmanager_secret.main["db-app-password"].arn,
-    ]
+      ], local.multi ? [
+      aws_secretsmanager_secret.main["cell-kek"].arn,
+      lookup(local.global_secret_arns, "global-db-app-password", ""),
+    ] : []))
   }
   statement {
     sid       = "DecryptThemThroughSecretsManager"
     actions   = ["kms:Decrypt"]
-    resources = [data.aws_kms_key.main.arn]
+    resources = compact([local.kms_key_arn, local.global_kms_key_arn])
     condition {
       test     = "StringEquals"
       variable = "kms:ViaService"
       values   = ["secretsmanager.${local.region}.amazonaws.com"]
+    }
+  }
+
+  # THE KEY-ENCRYPTION KEY IN KMS (kek.tf, #391), called directly by the
+  # node: DescribeKey at start (the service checks the key is enabled,
+  # ENCRYPT_DECRYPT and SYMMETRIC_DEFAULT), Encrypt and Decrypt to wrap and
+  # unwrap each data encryption key, and GetKeyRotationStatus for the
+  # /admin/secrets report. On the key's primary and replica ARNs and nothing
+  # else; no `kms:ViaService`, because no AWS service is between the node and
+  # the key. Absent with `kek_provider = "secret"`. The foundation's
+  # workload boundary carries the same four on the same key.
+  dynamic "statement" {
+    for_each = local.kek_in_kms ? [1] : []
+    content {
+      sid = "WrapAndUnwrapWithTheKeyEncryptionKey"
+      actions = [
+        "kms:DescribeKey", "kms:Encrypt", "kms:Decrypt",
+        "kms:GetKeyRotationStatus",
+      ]
+      resources = local.kek_key_arns
     }
   }
 
@@ -82,7 +116,46 @@ data "aws_iam_policy_document" "task" {
     content {
       sid       = "ExportThePublicCertificateForTheNodeToServe"
       actions   = ["acm:ExportCertificate"]
-      resources = [aws_acm_certificate.public[0].arn]
+      resources = [local.public_certificate_arn]
+    }
+  }
+
+  # The mail channel's SES transport (#311, mail.tf), and only FROM this
+  # environment's own address. SCOPED BY `ses:FromAddress`, NOT BY THE
+  # IDENTITY'S ARN: while the account is in the SES sandbox, SES authorizes a
+  # send against EVERY identity it involves — the recipient's verified
+  # identity as well as the sender's — so a policy naming only
+  # `identity/<domain>` was refused on `identity/tester1@iyasec.io` (the first
+  # testidp send, 2026-09-28, STS-MAIL-0008). The condition is what keeps it
+  # narrow: any identity, only this From address. The transport always sets
+  # `FromEmailAddress` (common/mail_transports.ts), which is what the key reads.
+  dynamic "statement" {
+    for_each = local.mail_ses ? [1] : []
+    content {
+      sid       = "SendMailFromTheEnvironmentsOwnAddress"
+      actions   = ["ses:SendEmail", "ses:SendRawEmail"]
+      resources = ["arn:${local.partition}:ses:${local.region}:${local.account_id}:identity/*"]
+      condition {
+        test     = "StringEquals"
+        variable = "ses:FromAddress"
+        values   = [local.mail_from]
+      }
+      # AND ONLY TO THESE RECIPIENTS, where the environment names any
+      # (`mail_allowed_recipients`, 2026-09-28). The suite creates people
+      # with addresses like `x@suite.example.test`, and every one of them is
+      # sent a security notice: in the SES sandbox SES rejects those, and out
+      # of it SES would try to deliver them and each would hard-bounce against
+      # the account's reputation. Refused here, IAM answers AccessDenied before
+      # SES sees the message — no quota, no bounce — and the service
+      # dead-letters it (STS-MAIL-0008) with that reason on Monitoring → Mail.
+      dynamic "condition" {
+        for_each = length(var.mail_allowed_recipients) > 0 ? [1] : []
+        content {
+          test     = "ForAllValues:StringLike"
+          variable = "ses:Recipients"
+          values   = var.mail_allowed_recipients
+        }
+      }
     }
   }
 }
@@ -95,7 +168,7 @@ resource "aws_iam_role_policy" "task" {
 
 resource "aws_iam_role" "execution" {
   name                 = "${local.role_prefix}-exec"
-  description          = "mock-sts ${var.environment}: ECS pulls images, writes logs, injects secrets"
+  description          = "iya-sts ${var.environment}: ECS pulls images, writes logs, injects secrets"
   assume_role_policy   = data.aws_iam_policy_document.ecs_tasks_trust.json
   permissions_boundary = data.aws_iam_policy.workload_boundary.arn
 }
@@ -119,15 +192,32 @@ data "aws_iam_policy_document" "execution" {
   statement {
     sid     = "InjectTheThreeEnvironmentSecrets"
     actions = ["secretsmanager:GetSecretValue"]
-    resources = [
-      aws_secretsmanager_secret.main["admin-api-client-secret"].arn,
+    # The first is the global/ stack's replica in a cell (#98); `compact`
+    # for a cell's `base` phase, as in the task role.
+    resources = compact([
+      local.shared_secret_arns["admin-api-client-secret"],
       aws_secretsmanager_secret.main["db-master-password"].arn,
       aws_secretsmanager_secret.main["db-app-password"].arn,
-    ]
+    ])
+  }
+
+  # THE GLOBAL SCHEMA'S TWO (#98), in the primary cell only: its
+  # `global-schema-init` container runs as the global database's master user
+  # and sets the `sts_app` role's password there (ecs.tf).
+  dynamic "statement" {
+    for_each = local.global_schema_init ? [1] : []
+    content {
+      sid     = "InjectTheGlobalSchemaSecrets"
+      actions = ["secretsmanager:GetSecretValue"]
+      resources = [
+        local.global.master_secret_arn,
+        lookup(local.global_secret_arns, "global-db-app-password", ""),
+      ]
+    }
   }
 
   # THE PRODUCT-MODE THREE (2026-09-17, the KDC's two 2026-09-18): the
-  # bootstrap administrator's password, injected into mock-sts so that the
+  # bootstrap administrator's password, injected into iya-sts so that the
   # only way into a fresh deployment is in Secrets Manager rather than in a
   # log, and the krbtgt and service account passwords without which a product
   # KDC issues nothing (secrets.tf).
@@ -136,22 +226,25 @@ data "aws_iam_policy_document" "execution" {
   # the policy `dev` and `ci` render is the policy they rendered before —
   # their whole job is to be the unchanged standard, and even a sid that says
   # "three" when it means four is a diff on their next apply.
+  #
+  # In a cell (#98) they are the global/ stack's replicas here, and absent in
+  # a cell's `base` phase, which runs no node.
   dynamic "statement" {
-    for_each = local.bootstrap_secret ? [1] : []
+    for_each = local.product && local.full ? [1] : []
     content {
       sid     = "InjectTheProductModeSecrets"
       actions = ["secretsmanager:GetSecretValue"]
       resources = [
-        aws_secretsmanager_secret.main["bootstrap-admin-password"].arn,
-        aws_secretsmanager_secret.main["krb5-krbtgt-password"].arn,
-        aws_secretsmanager_secret.main["krb5-service-password"].arn,
+        local.shared_secret_arns["bootstrap-admin-password"],
+        local.shared_secret_arns["krb5-krbtgt-password"],
+        local.shared_secret_arns["krb5-service-password"],
       ]
     }
   }
   statement {
     sid       = "DecryptThemThroughSecretsManager"
     actions   = ["kms:Decrypt"]
-    resources = [data.aws_kms_key.main.arn]
+    resources = compact([local.kms_key_arn, local.global_kms_key_arn])
     condition {
       test     = "StringEquals"
       variable = "kms:ViaService"
@@ -173,7 +266,7 @@ resource "aws_iam_role_policy" "execution" {
 # Not a task role and never one: it is assumed by `ecs.amazonaws.com` (the
 # service scheduler), not `ecs-tasks.amazonaws.com`, and no container ever
 # holds its credentials. It carries a boundary of its OWN,
-# `mock-sts-ecs-infrastructure-boundary`, rather than the workload boundary,
+# `iya-sts-ecs-infrastructure-boundary`, rather than the workload boundary,
 # so that nothing a container may do was widened to make room for it; and the
 # deployer may pass a role of this name to ECS itself and to nothing else
 # (foundation/iam_deployer.tf).
@@ -214,7 +307,7 @@ data "aws_iam_policy_document" "ecs_infrastructure_trust" {
 
 resource "aws_iam_role" "ecs_infrastructure" {
   name                 = "${local.role_prefix}-ecs-infra"
-  description          = "mock-sts ${var.environment}: ECS creates, attaches and deletes each node's upload volume"
+  description          = "iya-sts ${var.environment}: ECS creates, attaches and deletes each node's upload volume"
   assume_role_policy   = data.aws_iam_policy_document.ecs_infrastructure_trust.json
   permissions_boundary = data.aws_iam_policy.ecs_infrastructure_boundary.arn
 }
@@ -306,12 +399,12 @@ data "aws_iam_policy_document" "ecs_infrastructure" {
   statement {
     sid       = "DescribeTheProjectKey"
     actions   = ["kms:DescribeKey"]
-    resources = [data.aws_kms_key.main.arn]
+    resources = [local.kms_key_arn]
   }
   statement {
     sid       = "EncryptTheVolumeThroughEc2"
     actions   = ["kms:GenerateDataKeyWithoutPlaintext"]
-    resources = [data.aws_kms_key.main.arn]
+    resources = [local.kms_key_arn]
     condition {
       test     = "StringEquals"
       variable = "kms:ViaService"
@@ -326,7 +419,7 @@ data "aws_iam_policy_document" "ecs_infrastructure" {
   statement {
     sid       = "GrantTheKeyToTheVolumeThroughEc2"
     actions   = ["kms:CreateGrant"]
-    resources = [data.aws_kms_key.main.arn]
+    resources = [local.kms_key_arn]
     condition {
       test     = "StringEquals"
       variable = "kms:ViaService"

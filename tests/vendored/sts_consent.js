@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 //
 // File: sts_consent.js
 //
@@ -866,7 +866,7 @@ async function test() {
 const program = new Command();
 program
   .name("sts_consent")
-  .description("Drive the mock STS's consent screen over HTTP: that it is " +
+  .description("Drive IYA STS's consent screen over HTTP: that it is " +
       "asked once and not twice, that it records one row per scope, that it " +
       "refuses a replay and somebody else's session, that Deny records " +
       "nothing — and that a global consent on an application's entry stops " +

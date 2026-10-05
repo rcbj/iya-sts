@@ -288,10 +288,63 @@ MIT Kerberos.
 
 Four of the eight mechanisms `/admin/delegation` knows are this directory's:
 S4U2Self, S4U2Proxy classic, S4U2Proxy resource-based, and a forwarded
-ticket-granting ticket. **Kerberos is also the ONLY family in this service that
-polices delegation at all** — WS-Trust puts no authorization on `OnBehalfOf` or
-`ActAs` and RFC 8693 leaves it to a policy this authorization server has not got
-— so this is the one place where a refusal has a reason worth publishing.
+ticket-granting ticket.
+
+**WHO MAY DO WHAT IS THE ONE DELEGATION POLICY SINCE #186 (2026-10-03).**
+Kerberos policed delegation from msDS-* fields on its own principal table; it
+now asks the issuance policy that decides WS-Trust and RFC 8693 too, over the
+common controls on the directory's entries (`../common/CLAUDE.md` rule 3az,
+`../docs/delegation.md`). `krb5_delegation.ts` is the Kerberos side, and it
+decides nothing: it names the parties (a service is the application entry
+whose identifier is its `SPN@REALM`, a person their entry), asks
+`delegation_policy.ts`, and holds the two pieces of machinery that are not
+policy. rcbj's decisions on #186, each load-bearing:
+
+* **S4U2Self is IMPERSONATION** by the service of itself (actor = R). It is
+  never refused for want of a policy — a ticket to yourself is not the
+  privilege — but the policy decides whether it is FORWARDABLE, which is what
+  `TRUSTED_TO_AUTHENTICATE_FOR_DELEGATION` used to: `impersonation` in the
+  service's `appDelegationSemantics`, and a subject who is not protected.
+* **S4U2Proxy is DELEGATION** by the front end (actor = S) to the back end
+  (R). Classic is S's `appAllowedToDelegateTo`, resource-based R's
+  `appAllowedToActOnBehalfOf`; the Kerberos mechanics stay in `resolveS4u()`
+  (PA-PAC-OPTIONS for RBCD, forwardable evidence for classic), and the
+  policy's other rules (a protected user, subject groups, semantics,
+  authority) refuse with `KDC_ERR_POLICY` (`STS-KRB-0177`).
+* **ENTRIES ONLY.** `krb5_principals.js` keeps no delegation field on a
+  principal. The fixture definitions' rules are SEEDS (`delegationSeeds()`),
+  written onto the services' entries by `krb5_delegation.ts` the first time a
+  realm is asked — every fixture service, rules or not, because the policy
+  refuses an unregistered target — filling only what an entry lacks. The
+  person `sensitive` is the directory's own demo seed (`stsNotDelegated`). A
+  process with no directory has no registry and therefore no delegation: the
+  parent project's in-process delegation jobs lose their rules, which rcbj
+  accepted on #186 — they are changed or retired over there, and
+  `../tests/kerberos_delegation.js` is the replacement here.
+* **ENFORCED IN BOTH MODES**, unlike WS-Trust and RFC 8693: the fixtures make
+  every refusal reachable in development, and a KDC that issued a refused
+  ticket would change what goes on the wire.
+* **THE EVIDENCE TICKET IS VERIFIED** (`verifyEvidence()`): its PAC's ticket
+  signature — which covers the enc-part's flags — and KDC signature, with the
+  krbtgt key. It is sealed in the REQUESTER's key, so the requester could set
+  its forwardable flag (CVE-2020-17049) or forge one outright, and until #186
+  the PAC was re-signed unchecked. No PAC, or a signature that fails, is
+  `KRB_AP_ERR_MODIFIED` (`STS-KRB-0176`). Only the current krbtgt key is
+  tried, so an evidence ticket issued before a krbtgt rotation is refused —
+  evidence lives minutes, and the rotation is the operator's act.
+* **PA-S4U-X509-USER** ([MS-SFU] 2.2.2): read and answered in
+  `krb5_delegation.ts`. The checksum (the TGT session key's own, usage 26),
+  the nonce, and the user by name, by a certificate this realm issued
+  (`common/tls_client_certificates.js`'s `identityOf()`, the `/tls/sign-in`
+  gate), or both agreeing. The reply carries it back (usage 27 when asked).
+  NOT done: the `encrypted-pa-data` copy [MS-SFU] asks for under a
+  "not-newer" (RC4/DES) session key — RC4 is development-only here — and
+  KERB_S4U_OPTIONS_check_logonhours, which has no logon hours to check.
+* **Unconstrained delegation** is `krb5TrustedForDelegation`, off by
+  default: `ok-as-delegate` on the service's tickets. The KDC is never told
+  where a forwarded TGT goes, so what it controls is the person — a
+  protected person's TGT is not forwardable, and a FORWARDED request
+  presenting one is refused (`STS-KRB-0042`).
 
 Two halves, and they live where their stores do:
 
@@ -314,28 +367,29 @@ Two halves, and they live where their stores do:
   credentials over, and this KDC is never told to whom — which is what the empty
   intermediary on that row means and is the definition of unconstrained
   delegation.
-* **`krb5_principals.js` publishes the POLICY**, as `delegationPolicy()`. It
-  owns the two attributes, so it is where what they MEAN is decided;
-  `../admin-core/admin_views.ts` requires it and the console renders the
-  answer. It reports the pairs from both `msDS-AllowedToDelegateTo` (front end)
-  and `msDS-AllowedToActOnBehalfOfOtherIdentity` (back end) in ONE list with a
-  field
-  saying which account carries the permission — the messages and the KDC options
-  are identical and that is the whole difference — plus the account flags that
-  STOP delegation (`NOT_DELEGATED`) or enable protocol transition
-  (`TRUSTED_TO_AUTHENTICATE_FOR_DELEGATION`), and `ok-as-delegate`, which is
-  advice to the client and not a control.
+* **`krb5_principals.js` publishes the KDC's view of the POLICY**, as
+  `delegationPolicy()` — read off the ENTRIES since #186, the services in
+  this realm (`SPN@REALM` identifiers). `../admin-core/admin_views.ts` requires
+  it and the console renders the answer. It reports the pairs from both
+  `appAllowedToDelegateTo` (front end) and `appAllowedToActOnBehalfOf` (back
+  end) in ONE list with a field saying which entry carries the permission —
+  the messages and the KDC options are identical and that is the whole
+  difference — plus the entries that STOP delegation (`appNotDelegated`),
+  allow protocol transition (`impersonation` in `appDelegationSemantics`),
+  and carry `krb5TrustedForDelegation`, whose `ok-as-delegate` is advice to
+  the client and not a control. People are on the common register
+  (`delegation_policy.ts`'s `list()`), beside it on the same page.
 
 **`warning` on a pair is for something genuinely WRONG, and it got that wrong
 once.** The resource-based rows used to push "this also needs PA-PAC-OPTIONS"
 into it unconditionally, so every RBCD pair reported something missing for ever
 and the field could never say *nothing is*. That sentence is a property of the
 MECHANISM and belongs in `requires`, where it already was. What `warning` is for
-is the expensive case: a front end with `msDS-AllowedToDelegateTo` set and NO
-`TRUSTED_TO_AUTHENTICATE_FOR_DELEGATION`, whose S4U2Self ticket is simply not
+is the expensive case: a front end with `appAllowedToDelegateTo` set and NO
+`impersonation` in its semantics, whose S4U2Self ticket is simply not
 forwardable — so classic S4U2Proxy fails a step later complaining about the
-evidence, two steps from the attribute that caused it. `HTTP/notrusted` exists in
-the principal table to produce exactly that, and the page now says so before
+evidence, two steps from the attribute that caused it. `HTTP/notrusted` is seeded
+to produce exactly that, and the page now says so before
 anybody tries it.
 
 ---
@@ -370,9 +424,21 @@ commit that bumps the `sts/` gitlink across the change, or the four jobs die at
 load with `Cannot find module` naming a file nobody edited. See
 `docs/parent-project-migration.md`.
 
+**AND OWED AGAIN AS OF 2026-10-03 (#186): `kerberos/krb5_delegation.ts` and
+what it reaches.** `krb5_kdc.js` requires it LAZILY — on the first request
+that asks about delegation (an AS-REQ for a forwardable TGT is one) — and it
+requires `common/applications.js`, `common/delegation_policy.ts` (with
+`credentials`, `roles`, `issuance_gate` and, lazily,
+`xacml/xacml_exchange_verdicts.js`, `xacml_request.js`, `xacml_templates.ts`
+and the engine) and, lazily, `common/tls_client_certificates.js`. A pin bump
+across #186 owes those COPY lines, compiled: the TypeScript is built inside
+an image (`../build-typescript.sh`). Without a directory the registry answers
+empty, so the in-process delegation jobs lose their fixture rules whatever is
+copied — rcbj's decision on #186 is that they change over there.
+
 **AND IT IS OWED AGAIN AS OF 2026-09-12: `common/error_codes.js`.** The error
 code registry is required by `common/audit.js`, `config.js`, `helpers.js`,
-`realms.js`, `crypto.js`, `worker_pool.js`, `worker.js`, `krb5_kdc.js`,
+`realms.js`, `crypto.js`, `krb5_kdc.js`,
 `krb5_service.js` and `spnego_exchange.js` — all inside that closure — so the
 commit that bumps the `sts/` pin across it needs `COPY
 sts/common/error_codes.js ./sts/common/` in the parent's `tests/Dockerfile`, or
@@ -412,6 +478,17 @@ now reads `socket.remoteAddress` once per connection for its debug line and its
 two refusal warnings, which is the header's source when one was read. The UDP
 socket is not covered — a datagram has no stream to put a header in front of —
 so behind a load balancer Kerberos clients use TCP.
+
+**AND OWED AGAIN AS OF 2026-09-30, BOTH WAYS: `common/pq_native.js` IN,
+`common/worker.js` AND `common/worker_pool.js` OUT** (#363). `crypto.js` no
+longer requires the post-quantum pool (it was deleted), and `pq_jose.js` and
+`vendored/pqc.js` now require `pq_native.js`. So the commit that bumps the
+`sts/` pin across #363 must change the parent's `tests/Dockerfile` line
+`COPY sts/common/pq_jose.js sts/common/worker.js sts/common/worker_pool.js
+./sts/common/` to copy `pq_jose.js` and `pq_native.js` — a COPY of a file that
+no longer exists fails the image build, and a missing `pq_native.js` fails
+four Kerberos jobs at load with `Cannot find module './pq_native'`. The
+parent's closure also no longer needs `@noble/post-quantum` for this tree.
 
 **AND OWED AGAIN AS OF 2026-09-17: `common/cache_registry.js`** (#74).
 `common/helpers.js`, `keystore.js`, `revocation_status.js`, `jose_kid.js`,
@@ -1514,3 +1591,55 @@ need a computer, server or managed-service account — a sAMAccountName and SPNs
 sharing ONE key, which this KDC keys apart. They are thousands of tests (the etype
 permutations, as_canonicalization, claims, PKINIT, RODC, authentication policies),
 skipped by the driver naming what each needed; the job logs the count per reason.
+
+## CELLS: A KERBEROS REQUEST IS ANSWERED AT HOME (#98, 2026-09-28)
+
+In a service deployed as cells a person is homed in one cell, and everything a
+KDC consults about them is there: the long-term keys sealed on their entry, the
+disabled flag, the second factor, the PAC's facts, and the sign-out instant —
+`signedOutAt` is a field of the `krb5.principals` row, which is CELL-tier
+(`persistence/tiers.js`). So a Kerberos request is answered in its client's home
+cell, and the request travels rather than the data (#98 §5, D2).
+
+**`krb5_home.ts` does it for MS-KKDCP**, as a `POST /KdcProxy` of its own
+registered just before `krb5_kdc.js` is required (require order 14c): it
+unframes the KDC-PROXY-MESSAGE, finds the client, relays the whole request to
+its home over the inter-cell channel, and calls `next()` for everything else —
+after which the KDC's own handler runs unchanged. The KDC is one of the parent
+project's locked files, so this is the only way to put a check in front of it
+here. It requires the vendored codec and `krb5_principals.js` and edits none of
+them; nothing in the COPY closure requires it, so **the closure is unchanged**.
+
+* **AS-REQ**: the body's `cname`, one component, in the realm's own Kerberos
+  realm. A FAST-armored AS-REQ is routed by its OUTER body — the inner cannot be
+  read before the armor key — which every client this KDC is tested against
+  copies.
+* **TGS-REQ: SERVED AT HOME, NOT WHEREVER IT ARRIVES.** The krbtgt key lives on
+  an APPLICATION entry (`krbtgt/<REALM>`, #169), the global tier, so every cell
+  CAN open a TGT, and `krb5_home.ts` does — only to read its `cname`. It is not
+  answered where it arrives because the sign-out instant, the disabled account
+  and the PAC's person are the home cell's: a TGT stamped signed out at home
+  would be honoured by a cell that never saw the stamp. An S4U2Self request is
+  routed by the PA-FOR-USER user rather than by the service asking.
+* A cross-realm ticket, a multi-component name, a service's own ticket, or a
+  message that does not decode is the KDC's to answer, where it arrived.
+
+**THE EXCEPTION: THE RAW SOCKETS ON TCP AND UDP 88 ARE NOT PLACED.** `listen()`
+in `krb5_kdc.js` starts them and hands each message to the module-private
+`handleMessage()` with no hook between the socket and the answer, and the file
+is locked. So a traveller whose `krb5.conf` names port 88 and whose packets reach
+a visiting cell is answered THERE: an unknown principal in product (their keys
+are at home), a freshly made one in development. MS-KKDCP is placed; port 88 is
+not. **What the parent project would need to add** to close it, in
+`common/krb5`'s copy of the KDC, is one exported seam — a
+`setMessageRouter(fn)` whose `fn(bytes, { transport, peer })` is awaited by
+`startTcp()` and `startUdp()` before `handleMessage()` and may answer the reply
+bytes itself (relayed, here, as an inter-cell operation that runs
+`handleMessage()` at home) or `null` to go on. `krb5_home.ts`'s `clientOf()`
+is already the decision such a router would make; the operation it would call
+does not exist yet, because nothing could reach it. **Filed as
+rcbj/id-proto-debugger#317 (2026-09-28, rcbj's decision)**, which also asks
+for an exported `answerMessage(bytes, transport)` — the home cell needs to run
+what `handleMessage()` does on bytes that arrived without a socket.
+
+Tested in process with stubbed routing and channel by `tests/cell_handlers_c.js`.

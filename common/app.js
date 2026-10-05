@@ -1,6 +1,6 @@
 // @ts-check
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -157,6 +157,21 @@ function enterRealm(req, res, next) {
   log.debug("Entering enterRealm().");
   const pathname = String(req.url || '').split('?')[0];
   const match = realms.matchPath(pathname);
+  // A REALM'S OWN LISTENER ANSWERS THAT REALM AND NOTHING ELSE (#99,
+  // 2026-10-02). `tls/realm_listeners.js` marks every socket it accepts with
+  // its realm; a path that is not under that realm's prefix — another
+  // realm's, or the default realm's unprefixed one — is not served there,
+  // so a realm's host and load balancer front that realm alone. The main port
+  // carries no mark and serves every realm as it always has.
+  const own = req.socket && req.socket.stsRealmListener;
+  if (own && !(match && match.realm && match.realm.id === own)) {
+    require('./error_codes').mark(res, 'STS-TLS-0041');
+    res.status(404).type('text/plain')
+      .send('Not found: this listener serves realm "' + own + '" only, ' +
+            'under ' + realms.prefixOf(realms.get(own) || undefined) + '.');
+    log.debug("Leaving enterRealm(). Off this realm's listener.");
+    return;
+  }
 
   // Not in a realm — including a path that opens with the realm SEGMENT and an
   // id nobody defined. That case deliberately falls through to Express's own
@@ -395,6 +410,43 @@ realms.reserve(function () {
 // With `workers.dispatch` empty — the default — this calls next() for
 // everything and the service behaves exactly as it did.
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// AND JUST ABOVE IT, WHICH CELL SERVES THE REQUEST (#98, 2026-09-28).
+//
+// In a service deployed as cells a request that belongs to another cell — a
+// browser pinned to its home, an artifact another cell minted, a token its
+// minting cell must check — is relayed there WHOLE, before this process reads
+// its body or hands it to a worker, which is why this is the one position
+// that works: below the realm middleware (the placement is per realm) and
+// above the pool and the body parsers (a relay pipes the request untouched).
+// `common/cell_placement.ts` argues the table; single-cell mode calls next()
+// for everything. Required HERE rather than at the top of this file for the
+// reason the pool is: it is a library of the front process's edge.
+// ---------------------------------------------------------------------------
+app.use(require('./cell_placement').middleware());
+
+// ---------------------------------------------------------------------------
+// AND BETWEEN THE TWO, THE CHAIN OF A SESSION RESUMED FROM ANOTHER NODE
+// (#406, 2026-10-02). The main port shares the cluster's session-ticket key,
+// so a TLS session made on one node resumes on another — and a resumed
+// session hands over the client certificate without its chain, which is
+// replicated from the node that saw it. This waits for it, bounded by
+// `tls.resumedChainWaitMs`, before the request is answered here or handed to
+// a worker (whose copy of the chain the pool builds from this process's).
+// `common/revocation_status.js` argues it; it calls next() at once for every
+// connection that is not a resumed one holding a verified certificate, which
+// is every browser that declined to send one. Required at the first request,
+// so this file's own load order does not change.
+// ---------------------------------------------------------------------------
+let resumedChainWait = null;
+// A HOT PATH: every request passes it, so no Entering/Leaving pair.
+app.use(function awaitResumedChainLazily(req, res, next) {
+  if (!resumedChainWait) {
+    resumedChainWait = require('./revocation_status').resumedChainMiddleware();
+  }
+  resumedChainWait(req, res, next);
+});
+
 app.use(requestPool.middleware({ enterRealm: enterRealm }));
 
 // ---------------------------------------------------------------------------
@@ -404,10 +456,28 @@ app.use(requestPool.middleware({ enterRealm: enterRealm }));
 // request — a worker, or this process for a request it keeps — and never in a
 // front process that only proxies. Above everything else, because every
 // middleware below here may read a store: the arrival session, the CSRF check,
-// the rate limiter. It does nothing unless the node is active-active.
-// cluster/cluster_barrier.js argues both of its rules.
+// the rate limiter. Its first rule (catch up with other nodes) runs only
+// when the node is active-active; its second (answer a write after its
+// commit, 503 when the commit fails) wherever the store is a database, one
+// node or many (#351). cluster/cluster_barrier.js argues both rules.
+//
+// **WHY A WRAPPED `res.end()` AND NOT A HOOK IN EVERY HANDLER**: it is
+// installed here, above every route, so every route is covered, including
+// the ones written after it — the only way nobody can forget it. Express's
+// `res.send()`, `res.json()` and `res.redirect()` all finish through
+// `res.end()`, so a redirect is held (and its `Location` discarded on a
+// refusal) like any other answer.
 // ---------------------------------------------------------------------------
 app.use(clusterBarrier.middleware());
+
+// ---------------------------------------------------------------------------
+// A SESSION EXPORTED TO THE CELL A TRAVELLER IS REACHING (#98 D4), where the
+// transfer policy permits holding it there. Below the barrier, in the process
+// that serves the request, because it reads the session store; a no-op for
+// everything but a request another cell relayed here.
+// `common/cell_sessions.ts` argues it.
+// ---------------------------------------------------------------------------
+app.use(require('./cell_sessions').middleware());
 
 // ---------------------------------------------------------------------------
 // AND THE REQUEST'S REALM'S KEY SET, MADE OFF THE EVENT LOOP BEFORE A HANDLER
@@ -984,6 +1054,20 @@ app.use(function (req, res, next) {
     });
   });
 
+  // A RESPONSE WHOSE COMMIT FAILED IS RECORDED AGAIN, AS WHAT WAS SENT (#351).
+  // The row above is written before the barrier decides, with the handler's
+  // status; when the commit then fails the client is answered 503 instead
+  // (cluster/cluster_barrier.js, rule 2), and this second row — the 503 and
+  // STS-STORE-0066 — is the one an operator needs beside it.
+  clusterBarrier.onCommitRefused(res, realms.bind(req.realm, function () {
+    const matchedPath = (req.route && req.route.path) || '';
+    audit.recordHttp(req, res, {
+      route: matchedPath,
+      matched: !!matchedPath,
+      durationMs: Date.now() - started
+    });
+  }));
+
   res.end = function (chunk) {
     log.debug("Entering end().");
     if (!responseBody && chunk) {
@@ -1049,6 +1133,17 @@ app.use(function (req, res, next) {
 // the CSP and `X-Content-Type-Options` every other response does.
 // ---------------------------------------------------------------------------
 app.use(validation.guard());
+
+// ---------------------------------------------------------------------------
+// A PERSON CREATED IN A SERVICE DEPLOYED AS CELLS (#98 D1): the console's
+// new-user form and `POST /admin-api/users/create` claim the login name in the
+// global routing index before anything is created, and a creation naming a
+// home cell other than this one is relayed there. Here, below the body
+// parsers and above every route, because both doors' handlers are
+// synchronous past this point. SCIM claims in its own ingress. A no-op in
+// single-cell mode. `common/cell_placement.ts` argues it.
+// ---------------------------------------------------------------------------
+app.use(require('./cell_placement').creationClaim());
 
 // ---------------------------------------------------------------------------
 // THE REVOCATION STATUS OF A PRESENTED CLIENT CERTIFICATE (2026-09-12).

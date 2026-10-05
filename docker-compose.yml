@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: BUSL-1.1
 #
-# Stand-alone compose file for the mock STS: `docker compose up --build`.
+# Stand-alone compose file for IYA STS: `docker compose up --build`.
 #
 # In the project this was extracted from the STS is one service among nine
 # (local-tests.yml), all on host networking so that Keycloak, the api, the client
@@ -757,7 +757,7 @@ services:
       #   request workers   the handlers off the thread that owns every socket,
       #                     which is the only configuration where a slow
       #                     signature does not stop the KDC answering.
-      #   coordination      because three workers against one store are three
+      #   coordination      because two workers against one store are two
       #                     processes, and the change log is what makes them
       #                     one service.
       #
@@ -768,16 +768,27 @@ services:
       # ---------------------------------------------------------------------
       - STS_MODE=${STS_MODE:-product}
       - STS_PERSISTENCE_COORDINATE=${STS_PERSISTENCE_COORDINATE:-true}
-      - STS_WORKERS_REQUEST_COUNT=${STS_WORKERS_REQUEST_COUNT:-3}
-      # The console and the portal on workers of their own, so that neither
-      # queues behind protocol traffic. It needs read-your-write, which the
+      # TWO REQUEST WORKERS AND NO SURFACE WORKER SINCE 2026-09-29 (#340; it
+      # was three and two). Every worker is a whole copy of the service — the
+      # directory and every store in its own heap (#339) — so this stack ran
+      # six copies, and memory grows with the process count, not the load.
+      # Keep 1 + request + surface within one per CPU plus one, and size the
+      # memory to (processes x one process's working set) + headroom:
+      # deploy/aws/CLAUDE.md, *Sizing a node*. Two request workers still take
+      # the handlers off the thread that owns every socket and still spread
+      # across more than one worker.
+      - STS_WORKERS_REQUEST_COUNT=${STS_WORKERS_REQUEST_COUNT:-2}
+      # With 0 the console and the portal are answered by the request workers.
+      # A surface pool puts them on workers of their own, so that neither
+      # queues behind protocol traffic; it needs read-your-write, which the
       # line below turns on — see common/request_pool.js's surfacePoolProblem().
-      # TWO since 2026-09-13 (it was one): with one, a console page walking the
-      # directory held the only worker every portal page and every console
-      # sign-in callback was waiting on, and a worker that died left both
-      # surfaces on the protocol pool until it was re-forked. Each is a whole
-      # copy of the service, so raise it with the memory to match.
-      - STS_WORKERS_SURFACE_COUNT=${STS_WORKERS_SURFACE_COUNT:-2}
+      # It was TWO from 2026-09-13 (one before): with one, a console page
+      # walking the directory held the only worker every portal page and every
+      # console sign-in callback was waiting on. With none they share the two
+      # request workers, so no single worker is theirs to hold. Set it for a
+      # stack that needs the split, with the memory to match. The test modes
+      # set their own counts (tests/tools/modes.sh) and do not read this.
+      - STS_WORKERS_SURFACE_COUNT=${STS_WORKERS_SURFACE_COUNT:-0}
       - STS_WORKERS_DISPATCH=${STS_WORKERS_DISPATCH:-*}
       - STS_WORKERS_FANOUT=${STS_WORKERS_FANOUT:-/scim,/xacml,/admin-api}
       - STS_WORKERS_READ_YOUR_WRITE=${STS_WORKERS_READ_YOUR_WRITE:-true}
@@ -855,10 +866,18 @@ services:
       # sealed its signing keys under, cannot change the database password and
       # cannot plant a key of its own. A vendored job asserts the refusal
       # rather than trusting the policy file to be right.
+      #
+      # **THE KEY-ENCRYPTION KEY IS A TRANSIT KEY SINCE #391**: `sts-kek` in
+      # the store's Transit engine, which wraps each data encryption key and
+      # never leaves the store — the service holds no key-encryption key at
+      # all. The seeder makes it and proves the identity can use it and not
+      # rotate or reconfigure it. `STS_KEYS_KEK_PROVIDER=vault` (with
+      # `STS_KEYS_KEK_REF=secret/data/sts`) is the key READ from KV, as before;
+      # the database password is read from KV either way.
       # ---------------------------------------------------------------------
-      - STS_KEYS_KEK_PROVIDER=${STS_KEYS_KEK_PROVIDER:-vault}
+      - STS_KEYS_KEK_PROVIDER=${STS_KEYS_KEK_PROVIDER:-vault-transit}
       - STS_KEYS_KEK_VAULT=${STS_KEYS_KEK_VAULT:-https://openbao:8200}
-      - STS_KEYS_KEK_REF=${STS_KEYS_KEK_REF:-secret/data/sts}
+      - STS_KEYS_KEK_REF=${STS_KEYS_KEK_REF:-sts-kek}
       - STS_KEYS_KEK_FIELD=${STS_KEYS_KEK_FIELD:-kek}
       - STS_KEYS_VAULT_CLIENT_CERT=${STS_KEYS_VAULT_CLIENT_CERT:-/run/secrets/bao/client.crt}
       - STS_KEYS_VAULT_CLIENT_KEY=${STS_KEYS_VAULT_CLIENT_KEY:-/run/secrets/bao/client.key}
@@ -882,6 +901,9 @@ services:
       - STS_EXTRA_IPS=${STS_EXTRA_IPS:-172.29.0.11/24 172.29.0.12/24 172.29.0.13/24}
       - STS_DATABASE_PASSWORD_PROVIDER=${STS_DATABASE_PASSWORD_PROVIDER:-vault}
       - STS_DATABASE_PASSWORD_FIELD=${STS_DATABASE_PASSWORD_FIELD:-databasePassword}
+      # ITS OWN LOCATION SINCE #391: it used to borrow the key-encryption
+      # key's, which is now a Transit key's name and no place to read from.
+      - STS_DATABASE_PASSWORD_REF=${STS_DATABASE_PASSWORD_REF:-secret/data/sts}
       # WHETHER THE KEYSTORE IS ON AT ALL, and it is BARE for the reason
       # ADMIN_API_CLIENT_SECRET above is: unset must mean *the default for this
       # mode* rather than the empty string. Product mode — this file's default
@@ -1010,7 +1032,7 @@ services:
       # that a plain `docker compose --profile xacml up` needs no file and no
       # variable. A launcher sets XACML_PEP_CERT_DIR to a directory it wrote
       # pep.crt and pep.key into and names them with the two variables below.
-      - ${XACML_PEP_CERT_DIR:-./xacml-pep/common}:/certs:ro
+      - ${XACML_PEP_CERT_DIR:-./xacml-pep/certs}:/certs:ro
     depends_on:
       sts:
         condition: service_healthy
@@ -1065,7 +1087,7 @@ services:
       #
       # — so the files normally do NOT exist when this container starts, and
       # the PEP re-reads these two paths until they do. EMPTY BY DEFAULT: the
-      # default mount above is xacml-pep/common in this checkout, and a
+      # default mount above is xacml-pep/certs in this checkout, and a
       # default pointing into it would invite writing a private key into the
       # source tree. A launcher points them at a directory of its own.
       - PEP_HTTPS_CERT=${XACML_PEP_HTTPS_CERT:-}

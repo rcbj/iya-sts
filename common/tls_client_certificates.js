@@ -1,6 +1,6 @@
 // @ts-check
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -747,9 +747,12 @@ function revoke(realmId, username, serialHex, reasonId, kind) {
  * @returns the Root's PEM, or an empty string when
  *   `tls.trustIssuedClientCertificates` is off or there is no Root
  */
-function trustAnchorPem() {
+function trustAnchorPem(trust) {
   log.debug("Entering trustAnchorPem().");
-  if (config.value('tls.trustIssuedClientCertificates') === false) {
+  // `trust` is a listener's own answer (#429, its
+  // listener<Id>.trustIssuedClientCertificates); undefined is the service's.
+  if (trust === false || (trust === undefined &&
+      config.value('tls.trustIssuedClientCertificates') === false)) {
     log.debug("Leaving trustAnchorPem(). Off.");
     return '';
   }

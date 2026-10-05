@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -101,6 +101,11 @@ import x509 = require('../common/vendored/x509');
 import mtls = require('../oauth-oidc/mtls');
 import codec = require('./est_codec');
 import InstanceSlot = require('../common/instance_slot');
+// WHICH CELL ANSWERS (#98 D10): the cell map, the placement helpers and the
+// routing index. Libraries; each is a no-op in a single-cell service.
+import cells = require('../common/cells');
+import cellPlacement = require('../common/cell_placement');
+import cellRouting = require('../common/cell_routing');
 
 /**
  * The enrollment family's name in the core and the monitor, `est`.
@@ -182,6 +187,9 @@ interface EstDeps {
   x509: typeof x509;
   mtls: typeof mtls;
   codec: typeof codec;
+  cells: typeof cells;
+  cellPlacement: typeof cellPlacement;
+  cellRouting: typeof cellRouting;
   // Required when first called, as the JavaScript did, for the reason
   // given where each is called.
   loadPkijs(): typeof import('pkijs');
@@ -235,6 +243,9 @@ class Est {
       x509: x509,
       mtls: mtls,
       codec: codec,
+      cells: cells,
+      cellPlacement: cellPlacement,
+      cellRouting: cellRouting,
       loadPkijs: function () {
         return require('pkijs');
       },
@@ -489,8 +500,13 @@ class Est {
     // client asking an unlabelled /cacerts is asking for the CA, not a profile.
     const enrolling = ['simpleenroll', 'simplereenroll', 'serverkeygen']
       .indexOf(ctx.op) >= 0;
+    // STRUCTURAL ONLY before the credential (rcbj, 2026-10-01): whether the
+    // label is a profile at all. Whether it is ALLOWED depends on whose
+    // request it is — an application's own list overrides the realm's — so
+    // `core.issue()` asks that once it knows the entry.
     if (ctx.labelled || (enrolling && ctx.op !== 'simplereenroll')) {
-      const profile = core.checkProfile(FAMILY, ctx.profile);
+      const profile = core.checkProfile(FAMILY, ctx.profile, null,
+                                        { structural: true });
       if (!profile.ok) {
         this.refuseWith(req, res, ctx, profile);
         log.debug("Leaving Est.refusedBeforeAuthentication(). Profile.");
@@ -621,6 +637,36 @@ class Est {
     return !!(view && view.identifier);
   }
 
+  // Is certificate authentication on for the certificate presented? The
+  // realm's switch, unless the certificate NAMES an application (read, not
+  // believed: it is verified next either way) whose own
+  // estCertificateAuthentication says otherwise (rcbj, 2026-10-01).
+  /**
+   * Answers whether EST accepts the presented client certificate's method:
+   * the named application's own switch where it set one, the realm's
+   * otherwise.
+   *
+   * @param req - the request
+   * @returns true when certificate authentication is on for it
+   */
+  certificateAuthenticationOn(req) {
+    const { log, core, mtls } = this.deps;
+    log.debug("Entering Est.certificateAuthenticationOn().");
+    const presented = mtls.peerCertificate(req);
+    let named = null;
+    try {
+      named = presented && presented.raw
+        ? core.entryNamedByCertificate(Buffer.from(presented.raw)) : null;
+    } catch (e) {
+      log.debug("Caught in Est.certificateAuthenticationOn(): " +
+                ((e && e.message) || e));
+      named = null;
+    }
+    const entry = named && named.kind === 'application' ? named : null;
+    log.debug("Leaving Est.certificateAuthenticationOn().");
+    return core.estSwitch('certificateAuthentication', entry);
+  }
+
   // { ok, principal } or a marked refusal the caller answers with.
   /**
    * Authenticates an enrollment: HTTP Basic, as a person first and then as an
@@ -641,7 +687,16 @@ class Est {
                            '(RFC 7030 section 3.2.3) and no other ' +
                            'Authorization scheme.');
       }
-      if (config.value('est.basicAuthentication') === false) {
+      // Off for the realm, unless the name is an application whose own
+      // estBasicAuthentication turns it on (rcbj, 2026-10-01: the
+      // application's setting overrides the realm's). Its secret is still
+      // checked below; the name only chooses which switch is asked.
+      const basicOn = config.value('est.basicAuthentication') !== false ||
+        (!core.resolveEntry('person', basic.username).ok &&
+         this.applicationNamed(basic.username) &&
+         core.estSwitch('basicAuthentication',
+                        { kind: 'application', id: basic.username }));
+      if (!basicOn) {
         log.debug("Leaving Est.authenticate(). Basic is off.");
         return core.refuse('STS-EST-0010', 401, 'HTTP Basic is turned off ' +
                            'for EST in this realm (est.basicAuthentication).');
@@ -672,7 +727,7 @@ class Est {
       return application;
     }
     if (mtls.peerCertificate(req)) {
-      if (config.value('est.certificateAuthentication') === false) {
+      if (!this.certificateAuthenticationOn(req)) {
         log.debug("Leaving Est.authenticate(). Certificates are off.");
         return core.refuse('STS-EST-0012', 401, 'TLS client certificate ' +
                            'authentication is turned off for EST in this ' +
@@ -726,6 +781,104 @@ class Est {
     return principal ? principal.kind + ':' + principal.id : '';
   }
 
+  // ---------------------------------------------------------------------------
+  // WHICH CELL ANSWERS AN ENROLLMENT (#98 D10), decided before the throttle,
+  // the credential and the body: the entry the request authenticates as is
+  // held — its password, its enrolled certificates, the certificates about
+  // to be written onto it — only by the cell it is homed in, so the request
+  // is relayed there WHOLE, its client certificate with it (the channel
+  // forwards it as the front process hands one to a request worker). What
+  // names the entry is READ, NOT BELIEVED, and chooses only where it is
+  // checked:
+  //
+  //   * **an HTTP Basic username** — a person's login name goes to their
+  //     home cell. An application's client_id is not a person the routing
+  //     index knows, so it is served here: an application's entry is the
+  //     global tier's and every cell holds it.
+  //   * **a TLS client certificate**, when there is no Authorization header
+  //     (the order `authenticate()` reads them in) — the person its
+  //     `urn:sts:person:` subjectAltName names goes home the same way.
+  //
+  // A name nobody knows, or a certificate naming no person, is served here
+  // and refused here for its own reasons. A single-cell service places
+  // nothing.
+  // ---------------------------------------------------------------------------
+  /**
+   * Relays an enrollment to the home cell of the person its credential
+   * names, when that is another cell.
+   *
+   * @param req - the request
+   * @param res - the response
+   * @param basic - what `basicCredentialOf()` read
+   * @returns a promise of true when the request was relayed
+   */
+  async placeRequest(req, res, basic): Promise<boolean> {
+    const { log, mtls, core, cells, cellPlacement } = this.deps;
+    log.debug("Entering Est.placeRequest().");
+    if (!cells.isMulti() || req.stsCellRelay) {
+      log.debug("Leaving Est.placeRequest(). Here.");
+      return false;
+    }
+    const realmId = realms.currentId();
+    if (basic.present) {
+      const named = basic.basic && !basic.malformed && basic.username
+        ? String(basic.username) : '';
+      log.debug("Leaving Est.placeRequest(). By the Basic name.");
+      return named
+        ? cellPlacement.relayToHome(req, res, realmId, 'name', named,
+                                    'est:basic')
+        : false;
+    }
+    const presented = mtls.peerCertificate(req);
+    const entry = presented && presented.raw
+      ? core.entryNamedByCertificate(Buffer.from(presented.raw)) : null;
+    log.debug("Leaving Est.placeRequest(). By the client certificate.");
+    return entry && entry.kind === 'person'
+      ? cellPlacement.relayToHome(req, res, realmId, 'name', entry.id,
+                                  'est:certificate')
+      : false;
+  }
+
+  // A TARGET HOMED IN ANOTHER CELL (#98). The request was placed by its
+  // CREDENTIAL, which is right for everything but one case: an administrator
+  // enrolling on somebody else's behalf, whose own home and the target's can
+  // differ. The certificate is written onto the target's entry, which only
+  // its home cell holds, and the administrator's password is checked only
+  // at theirs — one relay cannot reach both. So it is refused with a
+  // sentence that says why, rather than as "there is no such person"
+  // (STS-ENROLL-0012), which would be false. `est/CLAUDE.md` records it.
+  /**
+   * Refuses an enrollment whose target person is homed in another cell.
+   *
+   * @param req - the request
+   * @param res - the response
+   * @param ctx - the request's context
+   * @param target - the entry the certificate is for
+   * @returns a promise of true when the request was refused
+   */
+  async refusedAsElsewhere(req, res, ctx, target): Promise<boolean> {
+    const { log, core, cells, cellRouting } = this.deps;
+    log.debug("Entering Est.refusedAsElsewhere().");
+    if (!cells.isMulti() || !target || target.kind !== 'person' ||
+        core.resolveEntry('person', target.id).ok) {
+      log.debug("Leaving Est.refusedAsElsewhere(). Here.");
+      return false;
+    }
+    const home = await cellRouting.homeOf(realms.currentId(), 'name',
+                                          target.id);
+    if (!home || home === cells.id()) {
+      log.debug("Leaving Est.refusedAsElsewhere(). Not homed elsewhere.");
+      return false;
+    }
+    this.refuseWith(req, res, ctx, core.refuse('STS-CELL-0101', 403,
+      'The person "' + target.id + '" is homed in another region of this ' +
+      'service, and a certificate is written onto their entry only there. ' +
+      'Enroll as that person, or ask an administrator homed in their ' +
+      'region.'));
+    log.debug("Leaving Est.refusedAsElsewhere(). Refused.");
+    return true;
+  }
+
   // The common start of the three enrollments: the pre-body checks, the
   // credential, and the body decoded and parsed. Answers `null` when it has
   // already answered.
@@ -745,6 +898,12 @@ class Est {
     log.debug("Entering Est.enrollmentRequest().");
     ctx.basic = this.basicCredentialOf(req);
     ctx.identity = this.identityHintOf(req, ctx.basic);
+    // FIRST, before the throttle reads its window (#98 D10): see
+    // `placeRequest()`.
+    if (await this.placeRequest(req, res, ctx.basic)) {
+      log.debug("Leaving Est.enrollmentRequest(). Relayed to another cell.");
+      return null;
+    }
     if (await this.refusedBeforeBody(req, res, ctx)) {
       log.debug("Leaving Est.enrollmentRequest(). Refused before the body.");
       return null;
@@ -857,6 +1016,10 @@ class Est {
       log.debug("Leaving Est.simpleenroll(). No target.");
       return;
     }
+    if (await this.refusedAsElsewhere(req, res, ctx, target.target)) {
+      log.debug("Leaving Est.simpleenroll(). Homed in another cell.");
+      return;
+    }
     ctx.targetUri = core.entryUri(target.target);
     const issued = await core.issue({
       family: FAMILY, profile: ctx.profile, principal: ctx.principal,
@@ -865,6 +1028,9 @@ class Est {
       // The request's key attestation, read only by the device profile
       // (#164 phase 2, `core.issueForDevice()`).
       attestations: csr.attestations,
+      // The unlabelled path's profile is the realm default, which an
+      // application's own default replaces (2026-10-01).
+      profileDefaulted: !ctx.labelled,
       via: 'est:simpleenroll'
     });
     if (!issued.ok) {
@@ -1021,7 +1187,7 @@ class Est {
     const byCertificate = ctx.principal.certificateSerial
       ? { ok: true, principal: ctx.principal }
       : (mtls.peerCertificate(req) &&
-         config.value('est.certificateAuthentication') !== false
+         this.certificateAuthenticationOn(req)
           ? await core.authenticateCertificate(req, 'est-certificate')
           : null);
     if (byCertificate) {
@@ -1060,6 +1226,10 @@ class Est {
       if (!named.ok) {
         this.refuseWith(req, res, ctx, named);
         log.debug("Leaving Est.simplereenroll(). No target.");
+        return;
+      }
+      if (await this.refusedAsElsewhere(req, res, ctx, named.target)) {
+        log.debug("Leaving Est.simplereenroll(). Homed in another cell.");
         return;
       }
       target = named.target;
@@ -1156,7 +1326,16 @@ class Est {
   async serverkeygen(req, res, ctx) {
     const { log, config, errorCodes, codec, keyMaterial, core } = this.deps;
     log.debug("Entering Est.serverkeygen().");
-    if (config.value('est.serverKeyGeneration') === false) {
+    // Off for the realm refuses here, before the template is read — unless
+    // the caller is an application whose own estServerKeyGeneration turns
+    // it on, or an administrator, who may be asking for such an
+    // application; `core.issue()` then asks the switch of the TARGET
+    // (rcbj, 2026-10-01: the application's setting overrides the realm's).
+    const asker = ctx.principal || {};
+    const mayStillBeOn = asker.kind === 'person' && asker.admin === true ||
+      (asker.kind === 'application' &&
+       core.estSwitch('serverKeyGeneration', asker));
+    if (config.value('est.serverKeyGeneration') === false && !mayStillBeOn) {
       errorCodes.mark(res, 'STS-EST-0005');
       this.estError(req, res, ctx, 501,
                     'Server-side key generation is turned off ' +
@@ -1201,10 +1380,15 @@ class Est {
       log.debug("Leaving Est.serverkeygen(). No target.");
       return;
     }
+    if (await this.refusedAsElsewhere(req, res, ctx, target.target)) {
+      log.debug("Leaving Est.serverkeygen(). Homed in another cell.");
+      return;
+    }
     ctx.targetUri = core.entryUri(target.target);
     const issued = await core.issueWithServerKey({
       family: FAMILY, profile: ctx.profile, principal: ctx.principal,
       target: target.target, keyAlg: keyAlg, requested: csr.requested,
+      profileDefaulted: !ctx.labelled,
       via: 'est:serverkeygen'
     });
     if (!issued.ok) {

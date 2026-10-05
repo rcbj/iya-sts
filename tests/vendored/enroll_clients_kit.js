@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 "use strict";
 //
@@ -194,8 +194,25 @@ async function trustBundle(dir) {
       extra = "";
     }
   }
+  // AND THE SYSTEM'S PUBLIC ROOTS, where the image has them (#311): a
+  // deployment with a public name presents a publicly issued certificate on
+  // the main port (testidp's ACM leaf, under Amazon's roots), and a client
+  // given the leaf alone as an anchor refuses it — OpenSSL anchors a chain at
+  // a root, not at a leaf. A local stack's listener is under the service Root
+  // above, so adding these changes nothing there.
+  let system = "";
+  for (const one of ["/etc/ssl/certs/ca-certificates.crt",
+                     "/etc/pki/tls/certs/ca-bundle.crt"]) {
+    try {
+      system = fs.readFileSync(one, "utf8");
+      break;
+    } catch (e) {
+      log.debug("Caught in trustBundle(): " + ((e && e.message) || e));
+      // Not this distribution's path; the next, or none.
+    }
+  }
   const file = path.join(dir, "trust-bundle.pem");
-  fs.writeFileSync(file, root.toString() + "\n" + extra);
+  fs.writeFileSync(file, root.toString() + "\n" + extra + "\n" + system);
   log.debug("Leaving trustBundle().");
   return { file: file, root: root };
 }

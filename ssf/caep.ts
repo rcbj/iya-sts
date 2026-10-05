@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -112,6 +112,9 @@ import groupClaims = require('../common/group_claims');
 // `config`, loaded by `admin_stats.js` long before this file, so the require
 // closes no cycle and moves no route.
 import roles = require('../common/roles');
+// The claim sets' attribute claims (#94), whose attributes a directory write
+// can move. `claim_attributes` already requires it, so this closes no cycle.
+import stats = require('../common/admin_stats');
 
 // One register row. See `blankRow()`.
 interface CaepRow {
@@ -173,6 +176,9 @@ interface CaepRegisterDeps {
                                                 values: string[] } };
   roles: { claimFor(who: Record<string, unknown>):
              Record<string, string[]> | null };
+  // Optional, so a test supplying the rest need not supply it (#94).
+  stats?: { attributeClaimRows(): Array<{ name: string; attribute: string;
+                                          multi: boolean; type: string }> };
 }
 
 // The acts this service can actually OBSERVE, and their event types — three
@@ -254,6 +260,16 @@ const register = realms.map({ persist: 'caep.register' });
  * `ssf/ssf.ts` delivers it. A row outlives its session, capped by
  * `caep.maxSessionsTracked`.
  */
+
+// WHAT THE COMMON CLAIMS WERE BUILT FROM (2026-10-01), kept on the payload
+// under a symbol so it rides along in this process and never in a SET: the
+// event's timestamp and its two reasons whether or not the service-wide
+// settings put them in. A stream whose owning application overrides
+// caep.includeReasons, caep.reasonLanguage or caep.omitEventTimestamp
+// has its SET's copy rebuilt from it (`ssf.ts`'s commonClaimsForStream()).
+// Typed `any`: a symbol may not index the `Record<string, any>` payloads.
+const COMMON_SOURCE: any = Symbol.for('sts.ssf.commonSource');
+
 class CaepRegister {
   /**
    * The acts this service can observe, each mapped to the short name of the
@@ -433,6 +449,24 @@ class CaepRegister {
         });
         at[row.claim[row.claim.length - 1]] = now.length === 0 ? null
           : now.length === 1 ? now[0] : now;
+      });
+      // THE CLAIM SETS' ATTRIBUTE CLAIMS (#94): a row naming an attribute
+      // this write moved moves its claim, with the value it now holds (as
+      // text; every value where the row is `multi`), or null when gone.
+      const rows = self.deps.stats &&
+        typeof self.deps.stats.attributeClaimRows === 'function'
+        ? self.deps.stats.attributeClaimRows() : [];
+      rows.forEach(function (row) {
+        const name = String(row.attribute).toLowerCase();
+        const now = valuesAt(after, name).filter(function (one: string) {
+          return one !== '';
+        });
+        if (JSON.stringify(valuesAt(before, name)) ===
+            JSON.stringify(valuesAt(after, name))) {
+          return;
+        }
+        claims[row.name] = now.length === 0 ? null
+          : (row.multi ? now : now[0]);
       });
       // A person's own `memberOf` is read live as their groups, so writing it
       // moves the groups claim exactly as a group's `member` does.
@@ -789,10 +823,16 @@ class CaepRegister {
     log.debug("Entering CaepRegister.commonClaims().");
     const asked = options || {};
     const out: Record<string, any> = {};
+    const timestamp = typeof asked.eventTimestamp === 'number'
+      ? asked.eventTimestamp : nowSec();
     if (!config.value('caep.omitEventTimestamp')) {
-      out.event_timestamp = typeof asked.eventTimestamp === 'number'
-        ? asked.eventTimestamp : nowSec();
+      out.event_timestamp = timestamp;
     }
+    Object.defineProperty(out, COMMON_SOURCE, {
+      value: { family: 'caep', eventTimestamp: timestamp,
+               reasonAdmin: asked.reasonAdmin ? String(asked.reasonAdmin) : '',
+               reasonUser: asked.reasonUser ? String(asked.reasonUser) : '' },
+      enumerable: false });
     if (['admin', 'user', 'policy', 'system']
         .indexOf(asked.initiatingEntity) >= 0) {
       out.initiating_entity = asked.initiatingEntity;
@@ -837,8 +877,10 @@ class CaepRegister {
       log.debug("Leaving CaepRegister.buildPayload(). Unknown type.");
       return {};
     }
-    const payload = Object.assign({}, row.generate(values || {}),
-                                  this.commonClaims(options));
+    const common = this.commonClaims(options);
+    const payload = Object.assign({}, row.generate(values || {}), common);
+    Object.defineProperty(payload, COMMON_SOURCE,
+                          { value: common[COMMON_SOURCE], enumerable: false });
     log.debug("Leaving CaepRegister.buildPayload(). " +
               Object.keys(payload).length + ' member(s).');
     return payload;
@@ -1433,7 +1475,8 @@ class CaepRegister {
       stepUp: stepUp,
       claimAttributes: claimAttributes,
       groupClaims: groupClaims,
-      roles: roles
+      roles: roles,
+      stats: stats
     };
   }
 }

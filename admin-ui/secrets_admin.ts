@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -140,10 +140,14 @@ interface SecretsAdminDeps {
 const SECRET_NOTES = {
   'kek': {
     heading: 'The key-encryption key',
-    what: 'The AES-256 key every signing key, every certificate authority, ' +
-          'every assertion key pair this service issues, every authenticator ' +
-          'secret and every recovery code is sealed under — and, in product ' +
-          'mode on a postgres store, every row this service mints.',
+    what: 'The key that wraps every data encryption key (#391) — and so ' +
+          'protects every signing key, certificate authority, issued key ' +
+          'pair, authenticator secret and recovery code, and, in product ' +
+          'mode on a postgres store, every row this service mints. Read ' +
+          'into this process from a file or a secret store, or kept in ' +
+          'a key management service (Vault Transit, AWS KMS, Cloud KMS or ' +
+          'Azure Key Vault), which then wraps each data key itself and ' +
+          'never hands the key over.',
     without: 'In PRODUCT mode this service does not start without it, and ' +
              'that is deliberate: generating a replacement would stop every ' +
              'token, assertion and signed document it has ever issued from ' +
@@ -151,11 +155,14 @@ const SECRET_NOTES = {
              'DEVELOPMENT mode &mdash; the default &mdash; nothing is ' +
              'persisted, so it is never asked for at all, which is why a ' +
              'perfectly broken configuration can sit here looking fine.',
-    rotating: 'It is written ONCE and never replaced. Everything sealed ' +
-              'under it would be unreadable, and this service has no ' +
-              're-sealing pass — which is why there is no rotate ' +
-              'control on this page and why <code>openbao/seed.js</code> ' +
-              'refuses to overwrite one.'
+    rotating: 'Rotated by RE-WRAPPING the data keys, not by re-encrypting ' +
+              'the store: put the new key in <code>keys.kek*</code> and the ' +
+              'old one in <code>keys.previousKek*</code>, and start. A key ' +
+              'rotated inside its key management service needs neither. ' +
+              'Never ' +
+              'replace it without the previous one beside it: everything ' +
+              'wrapped under it would be unreadable, which is why ' +
+              '<code>openbao/seed.js</code> refuses to overwrite one.'
   },
   'database-password': {
     heading: 'The database password',
@@ -171,6 +178,52 @@ const SECRET_NOTES = {
     rotating: 'Rotating it is ordinary: change it in the store and in ' +
               'PostgreSQL, and restart. Nothing this service has written ' +
               'depends on its value.'
+  },
+  // THE CELLS' TWO (#98). Neither is asked for without `cells.id`.
+  'global-database-password': {
+    heading: 'The global database password',
+    what: 'The password this cell dials the GLOBAL tier with &mdash; the ' +
+          'one writable database every cell shares for realms, settings, ' +
+          'applications, policies, signing keys and the routing index, and ' +
+          'its replica in this cell ' +
+          '(<code>persistence.globalDatabaseUrl</code>, ' +
+          '<code>persistence.globalDatabaseReadUrl</code>).',
+    without: 'Nothing in single-cell mode. A cell (<code>cells.id</code> ' +
+             'set) cannot open the global tier without it where the URL ' +
+             'carries none, and a cell with no global tier does not start.',
+    rotating: 'Ordinary: change it in the store and in PostgreSQL, then ' +
+              'restart every cell. Nothing written depends on its value.'
+  },
+  'cell-kek': {
+    heading: 'This cell\'s key-encryption key',
+    what: 'The AES-256 key the rows RESIDENT in this cell are sealed under ' +
+          '&mdash; a person\'s credentials, devices, sessions and everything ' +
+          'else minted about the people homed here. It lives only in this ' +
+          'cell\'s region, so another jurisdiction holding a copy of the ' +
+          'database still cannot read them. It must not be the service ' +
+          'key-encryption key, and is refused if it is.',
+    without: 'In PRODUCT mode a cell does not start without it, and there ' +
+             'is no fallback to the service key: that would put the ' +
+             'people of every jurisdiction under one key. In development ' +
+             'mode, and in single-cell mode, it is never asked for.',
+    rotating: 'Written once and never replaced, for the same reason as the ' +
+              'service key: this service has no re-sealing pass. A person ' +
+              're-homed to another cell is sealed again under THAT cell\'s ' +
+              'key as they move.'
+  },
+  'previous-kek': {
+    heading: 'The previous key-encryption key',
+    what: 'Read only while the key-encryption key is being ROTATED (#391): ' +
+          'the old key, beside the new one in <code>keys.kek*</code>. A data ' +
+          'encryption key that unwraps only under the old key is re-wrapped ' +
+          'under the new one at start and written back. It may be a key ' +
+          'read into this process or a key in a key management service.',
+    without: '<code>none</code>, the default, is the ordinary state. A ' +
+             'start with a new key and no previous key, over data keys ' +
+             'wrapped under the old one, does not start (STS-KEYS-0091).',
+    rotating: 'Set it back to <code>none</code> once every node has started ' +
+              'with the new key: by then nothing is wrapped under the old ' +
+              'one.'
   },
   // THE MAIL CHANNEL'S FOUR (#63). Each is optional and unconfigured by
   // default; each is read when `common/mail.ts` builds the transport that

@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -80,6 +80,9 @@ import errorCodes = require('../common/error_codes');
 import InstanceSlot = require('../common/instance_slot');
 import version = require('../common/version');
 import cluster = require('../cluster/cluster');
+// This thread's identity (#364): a request worker is a thread of this
+// process, so the pid alone no longer tells two of them apart.
+import WorkerChannel = require('../common/worker_channel');
 
 type Req = any;
 type Res = any;
@@ -299,7 +302,7 @@ class CachesAdmin {
     const q = query || {};
     const at = now();
     const base = { generatedAt: new Date(at).toISOString(),
-                   pid: process.pid };
+                   pid: WorkerChannel.processTag() };
     const wanted = self.firstOf(q.cache);
     if (!wanted) {
       const caches = cacheRegistry.report(at);
@@ -376,7 +379,8 @@ class CachesAdmin {
       const info = (node && node.info) || {};
       const report = info.caches;
       if (!report || !Array.isArray(report.caches) || node.leftAt ||
-          (report.pid === process.pid && node.nodeId === selfId)) {
+          (String(report.pid) === WorkerChannel.processTag() &&
+           node.nodeId === selfId)) {
         return;
       }
       const caches = report.caches.map(function (row: unknown): Json {

@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -35,6 +35,7 @@ delete process.env.CONFIG_FILE;
 
 const nodeCrypto = require('crypto');
 const realms = require('../common/realms');
+const config = require('../common/config');
 const jws = require('../acme/acme_jws');
 const store = require('../acme/acme_store');
 
@@ -472,6 +473,49 @@ function checkSecretAtRequire(t) {
   log.debug("Leaving checkSecretAtRequire().");
 }
 
+// THE SPENT-NONCE BOUND IS A SETTING, AND IT REFUSES (#346, 2026-09-29). It
+// was a literal 100,000; it is `acme.maxSpentNonces`, 10,000 by default, and
+// so are the three other replay-store defaults #346 lowered. A history full of
+// LIVE spends must refuse the next one rather than forget a spent nonce, which
+// is what keeps a lower number from shortening the replay window.
+function checkSpentNonceBound(t) {
+  log.debug("Entering checkSpentNonceBound().");
+  ['acme.maxSpentNonces', 'oauth2.dpopReplayCacheSize',
+   'gnap.replayCacheSize', 'oid4vp.signInRegisterMaxEntries']
+    .forEach(function (key) {
+      const row = config.SETTINGS.find(function (one) {
+        return one.key === key;
+      });
+      t.check(!!row && row.dflt === 10000 && row.max >= 1000000,
+              key + ' defaults to 10,000 and may still be raised',
+              JSON.stringify(row && { dflt: row.dflt, max: row.max }));
+    });
+  const id = 'acmebound-' + RUN;
+  realms.create({ id: id, name: 'ACME spent-nonce bound' });
+  try {
+    realms.run(realms.get(id), function () {
+      config.setOverride('acme.maxSpentNonces', '100');
+      const live = 9999999999;
+      let spent = 0;
+      for (let i = 0; i < 100; i++) {
+        if (store.spendNonce('bound-' + RUN + '-' + i, live)) {
+          spent++;
+        }
+      }
+      t.equal(spent, 100, 'a realm spends as many nonces as ' +
+              'acme.maxSpentNonces allows');
+      t.check(!store.spendNonce('bound-' + RUN + '-next', live),
+              'and refuses the next one while all of them are live');
+      t.check(!store.spendNonce('bound-' + RUN + '-0', live),
+              'and a nonce spent before the history filled is still ' +
+              'refused as spent: nothing live was forgotten');
+    });
+  } finally {
+    realms.remove(id);
+  }
+  log.debug("Leaving checkSpentNonceBound().");
+}
+
 async function run(t) {
   log.debug("Entering run().");
   checkSecretAtRequire(t);
@@ -481,6 +525,7 @@ async function run(t) {
   checkEab(t);
   checkIdentifiers(t);
   checkRealmIsolation(t);
+  checkSpentNonceBound(t);
   log.debug("Leaving run().");
 }
 

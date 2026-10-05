@@ -1,6 +1,6 @@
 // @ts-check
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -666,7 +666,7 @@ function derivesKrbtgtFromPassword() {
 // Is an EXPIRED client secret refused? (2026-09-22, #49 P5.) Product refuses
 // it at the token endpoint wherever a secret is checked; development accepts
 // it and says so, because a test fixture registered with a short
-// oauth2.registeredSecretLifetimeS must not stop working half-way through a
+// oauth2.clientSecretLifetimeDays must not stop working half-way through a
 // run nobody meant to be about secrets.
 /**
  * Tells whether an expired client secret is refused at the token endpoint.
@@ -753,6 +753,25 @@ function opensTestControls() {
   log.debug("Entering opensTestControls().");
   log.debug("Leaving opensTestControls().");
   return !isProduct();
+}
+
+// Must a CELL hold a key-encryption key of its own (#98, 2026-09-28)? What a
+// cell stores of its own — the people homed there and what it mints — is
+// sealed under a key that lives only in the cell, so a copy of its rows
+// opens in no other. Product answers yes and a cell without one does not
+// start (STS-CELL-0003). Development answers no: a test of cells on one
+// machine is allowed one key for everything, which is also what single-cell
+// mode always does.
+/**
+ * Tells whether a service deployed as cells must hold a cell
+ * key-encryption key in each cell.
+ *
+ * @returns true in product mode
+ */
+function requiresCellKek() {
+  log.debug("Entering requiresCellKek().");
+  log.debug("Leaving requiresCellKek().");
+  return isProduct();
 }
 
 // Does the console's BOOTSTRAP WINDOW open the console to anybody who signs in
@@ -1193,6 +1212,53 @@ function authorizesDelegation() {
 function grantsUndeclaredScopes() {
   log.debug("Entering grantsUndeclaredScopes().");
   log.debug("Leaving grantsUndeclaredScopes().");
+  return !isProduct();
+}
+
+// Is something issued to an application through a protocol family it is not
+// declared for (2026-10-01)? Development says yes: a client is exercised by
+// whatever protocol a tester points at it, and `appAllowedProtocol` is a
+// description there. Product says no: the declaration is the administrator's
+// statement of which protocols the application speaks, and the issuance
+// policy's `protocol-not-declared` rule refuses the rest. An application
+// declared for nothing is not refused in either mode. `issuance_gate.js`
+// asks it, to decide whether the policy must be asked where the role
+// question is switched off.
+/**
+ * Tells whether an issuance through a protocol family the application is not
+ * declared for goes ahead.
+ *
+ * @returns true in development mode
+ */
+function issuesThroughUndeclaredProtocols() {
+  log.debug("Entering issuesThroughUndeclaredProtocols().");
+  log.debug("Leaving issuesThroughUndeclaredProtocols().");
+  return !isProduct();
+}
+
+// Is a GNAP access right of a type NO resource server declares granted
+// (#432 phase 4, 2026-10-03)? Development says yes: a client is exercised with
+// whatever right a tester types, and a type nobody catalogued is still a
+// right RFC 9635 section 8 lets an API define for itself. Product says no:
+// the access-type catalogue (`oauthAuthorizationDetailsType` on the resource
+// application) is the administrator's statement of which kinds of access
+// exist, and the issuance policy's `gnap-type-not-catalogued` rule refuses
+// the rest at the grant endpoint (STS-GNAP-0810). RFC 9396 is NOT behind this
+// predicate: section 5 makes an unknown authorization_details type a refusal
+// in every mode, and `authorization_details.ts` refuses it so. A reference
+// string (section 8.1) is a different question:
+// `gnap.unknownAccessReferences`.
+// The policy reads the realm's mode itself; this is the same question asked
+// for the pages that SAY which answer applies (the console's Access types tab).
+/**
+ * Tells whether a GNAP access right of a type no resource server declares in
+ * the access-type catalogue is granted.
+ *
+ * @returns true in development mode
+ */
+function grantsUncataloguedAccess() {
+  log.debug("Entering grantsUncataloguedAccess().");
+  log.debug("Leaving grantsUncataloguedAccess().");
   return !isProduct();
 }
 
@@ -1905,6 +1971,17 @@ function observesSignalsOnly() {
  * `/admin/mode` and the management API render it.
  */
 const REQUIREMENTS = [
+  { id: 'cell-key',
+    what: 'Each cell of a service deployed as cells seals what it stores ' +
+          'under a key of its own',
+    development: 'A cell with no keys.cellKekProvider seals its rows under ' +
+                 'the service key-encryption key, so its rows would open in ' +
+                 'any cell — acceptable for cells tested on one machine.',
+    product: 'A cell with no cell key does not start (STS-CELL-0003). The ' +
+             'people homed in a cell and what it mints are sealed under a ' +
+             'key that lives only in its region, and opens in no other ' +
+             'cell (#98). Single-cell mode is unaffected.',
+    where: 'persistence/persistence.js, common/keystore.js' },
   { id: 'credentials',
     what: 'A presented password is verified',
     development: 'No password is checked in any protocol. The sign-in screen ' +
@@ -1993,14 +2070,15 @@ const REQUIREMENTS = [
                  'its answer is recorded on the act on /admin/delegation as ' +
                  '"would have been refused: ...", and an exchange may ask ' +
                  'for a scope wider than its subject_token\'s.',
-    product: 'The delegation attributes decide (appAllowedToDelegateTo, ' +
-             'appAllowedToActOnBehalfOf, appDelegationSubjectGroup, ' +
-             'appTrustedToImpersonate on application entries; ' +
-             'stsNotDelegated and the console roster on people), then the ' +
-             'issuance policy may Deny action-id `delegate`. A refusal is ' +
+    product: 'The issuance policy decides (#186), from the delegation ' +
+             'attributes (appAllowedToDelegateTo, appAllowedToActOnBehalfOf, ' +
+             'appDelegationSubjectGroup, appDelegationSemantics, ' +
+             'appNotDelegated on application entries; stsNotDelegated, ' +
+             'stsDelegationSemantics, delegation.protectedGroups and the ' +
+             'console roster for people). A refusal is ' +
              'invalid_request or invalid_target (RFC 8693 section 2.2.2) or ' +
-             'a wst:RequestFailed SOAP Fault (WS-Trust 1.4 section 11). Only ' +
-             'an application entry may delegate as a WS-Trust requester, and ' +
+             'a wst:RequestFailed SOAP Fault (WS-Trust 1.4 section 11). A ' +
+             'person acts only holding delegation.actorRole, and ' +
              'an exchange may not widen its subject_token\'s scope ' +
              '(invalid_scope).',
     where: 'common/delegation_policy.ts, oauth-oidc/oauth2.ts, ' +
@@ -2024,6 +2102,31 @@ const REQUIREMENTS = [
              'rules.',
     where: 'common/scope_policy.ts, oauth-oidc/oauth2.ts, ' +
            'gnap/gnap_grants.ts' },
+  { id: 'declared-protocols',
+    what: 'An application is issued nothing through a protocol it is not ' +
+          'declared for',
+    development: 'appAllowedProtocol is a description: a token, assertion ' +
+                 'or ticket is issued whichever protocol asked.',
+    product: 'The issuance policy\'s protocol-not-declared rule refuses an ' +
+             'issuance through a protocol family the application is not ' +
+             'declared for (STS-XACML-0084): an ID Token to an application ' +
+             'declared for OAuth 2.0 alone, a SAML assertion to one ' +
+             'declared for OpenID Connect. An application declared for ' +
+             'nothing is not refused.',
+    where: 'common/issuance_gate.js, xacml/xacml_role_pep.ts, ' +
+           'xacml/xacml_templates.ts' },
+  { id: 'uncatalogued-access',
+    what: 'A GNAP access right is granted only of a type the access-type ' +
+          'catalogue declares',
+    development: 'A right of a type no resource application declares ' +
+                 '(oauthAuthorizationDetailsType) is granted as the client ' +
+                 'asked for it.',
+    product: 'The issuance policy\'s gnap-type-not-catalogued rule refuses ' +
+             'it at the grant endpoint (request_denied, STS-GNAP-0810). RFC ' +
+             '9396 authorization_details refuse an undeclared type in both ' +
+             'modes, as section 5 requires.',
+    where: 'gnap/gnap_rights.ts, xacml/xacml_templates.ts, ' +
+           'oauth-oidc/authorization_details.ts' },
   { id: 'delegated-permissions',
     what: 'A delegated permission is issued only to a client granted it',
     development: 'An ungranted permission is honoured and recorded as ' +
@@ -2937,10 +3040,11 @@ const REQUIREMENTS = [
     development: 'ACCEPTED where a secret is checked, with an audit row ' +
                  'saying it had expired.',
     product: 'REFUSED at the token endpoint (invalid_client, ' +
-             'STS-OAUTH-0558) once oauthClientSecretExpiresAt — or the ' +
-             'registration\'s client_secret_expires_at — has passed. A ' +
-             'rotated secret\'s predecessor is accepted in both modes until ' +
-             'oauth2.clientSecretOverlapS has passed.',
+             'STS-OAUTH-0558), and as a client_secret_jwt key, once the ' +
+             'expiry on that secret\'s record on oauthClientSecret has ' +
+             'passed. An application may hold several secrets, each with ' +
+             'its own expiry; a rotation moves the live ones to expire after ' +
+             'oauth2.clientSecretOverlapS.',
     where: 'oauth-oidc/client_auth.js, common/applications.js' },
   // 2026-09-22 (#42). It was NOT_YET's `key-overlap` — "a rotation has NO
   // OVERLAP" — until key GENERATIONS gave every unit a next key published
@@ -3493,6 +3597,7 @@ module.exports = {
   listsRealmsBeforeSignIn: listsRealmsBeforeSignIn,
   inventsClaimValues: inventsClaimValues,
   acceptsUnregisteredAddresses: acceptsUnregisteredAddresses,
+  requiresCellKek: requiresCellKek,
   opensTestControls: opensTestControls,
   opensConsoleToAnyone: opensConsoleToAnyone,
   authorizesDirectoryWrites: authorizesDirectoryWrites,
@@ -3513,6 +3618,8 @@ module.exports = {
   exchangesUnverifiedTokens: exchangesUnverifiedTokens,
   authorizesDelegation: authorizesDelegation,
   grantsUndeclaredScopes: grantsUndeclaredScopes,
+  issuesThroughUndeclaredProtocols: issuesThroughUndeclaredProtocols,
+  grantsUncataloguedAccess: grantsUncataloguedAccess,
   honoursUngrantedPermissions: honoursUngrantedPermissions,
   enrolsKeysOnFirstUse: enrolsKeysOnFirstUse,
   acceptsUnverifiedAttestation: acceptsUnverifiedAttestation,

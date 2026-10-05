@@ -1,5 +1,5 @@
 -- SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
--- SPDX-License-Identifier: MIT
+-- SPDX-License-Identifier: BUSL-1.1
 --
 -- File: postgres/schema.sql
 --
@@ -38,7 +38,7 @@
 -- defaults (`sts_app` / `sts_app`, which is what docker-compose.yml uses):
 --
 --   psql -v ON_ERROR_STOP=1 \
---        -v sts_app_role=mock_sts -v sts_app_password='...' \
+--        -v sts_app_role=iya_sts -v sts_app_password='...' \
 --        -f postgres/schema.sql "postgres://.../sts"
 --
 -- IT IS IDEMPOTENT. Every object is `IF NOT EXISTS` and every grant is a grant
@@ -141,9 +141,65 @@ CREATE TABLE IF NOT EXISTS sts_ldap_entries (
   origin      text,
   created_at  text,
   modified_at text,
+  parent_key text GENERATED ALWAYS AS (CASE WHEN strpos(dn_key, ',') > 0 THEN substr(dn_key, strpos(dn_key, ',') + 1) ELSE '' END) STORED,
+  rdn_value text GENERATED ALWAYS AS (substr(split_part(dn_key, ',', 1), strpos(split_part(dn_key, ',', 1), '=') + 1)) STORED,
+  name_keys jsonb NOT NULL DEFAULT '[]'::jsonb,
+  mail_keys jsonb NOT NULL DEFAULT '[]'::jsonb,
+  uuid_keys jsonb NOT NULL DEFAULT '[]'::jsonb,
+  class_keys jsonb NOT NULL DEFAULT '[]'::jsonb,
+  value_keys jsonb NOT NULL DEFAULT '[]'::jsonb,
+  attr_names jsonb NOT NULL DEFAULT '[]'::jsonb,
   PRIMARY KEY (realm, dn_key));
 
 CREATE INDEX IF NOT EXISTS sts_ldap_entries_realm ON sts_ldap_entries (realm);
+
+-- THE DIRECTORY'S LOOKUP COLUMNS (#349, schema version 13, 2026-09-29): what
+-- a request worker holding the people and devices as a bounded window asks
+-- the store instead of an index in memory. Each is GENERATED from `dn_key`
+-- and `attrs` by an immutable expression, so no writer maintains it, and
+-- adding one to a table that already has rows rewrites the table once and
+-- fills them — the whole of the migration. What each mirrors in
+-- `ldap/ldap_server.js`: `parent_key` is `parentDn()` of the key (everything
+-- after the first comma — the key splits on every comma, escapes unread);
+-- `rdn_value` the first RDN's value; `name_keys`, `mail_keys` and
+-- `uuid_keys` the `uid`, `mail` and entryUUID (and alias) values, and
+-- `class_keys` the object classes,
+-- lower-cased, as a JSON array for `@>`. `persistence/directory_queries.js`
+-- builds every statement that reads them. Added separately as well, for
+-- `sts_realms.domain`'s reason.
+--
+-- SINCE #391 PHASE 6 (schema version 14) ONLY `parent_key` AND `rdn_value`
+-- ARE GENERATED: `attrs` holds the entry SEALED, as one blob, which the
+-- database cannot read. `name_keys`, `mail_keys`, `uuid_keys` and
+-- `class_keys` are written by the service beside it as KEYED DIGESTS of the
+-- same values (`persistence/directory_codec.js`), and so are `value_keys` —
+-- `name=value` of the attributes looked up by value (a login name, a DID, a
+-- SPIFFE ID, a certificate subject, a federation link) — and `attr_names`,
+-- the attribute NAMES in the clear. A database built before version 14 has
+-- them generated and is refused at start (STS-STORE-0074): recreate it.
+ALTER TABLE sts_ldap_entries ADD COLUMN IF NOT EXISTS parent_key text GENERATED ALWAYS AS (CASE WHEN strpos(dn_key, ',') > 0 THEN substr(dn_key, strpos(dn_key, ',') + 1) ELSE '' END) STORED;
+ALTER TABLE sts_ldap_entries ADD COLUMN IF NOT EXISTS rdn_value text GENERATED ALWAYS AS (substr(split_part(dn_key, ',', 1), strpos(split_part(dn_key, ',', 1), '=') + 1)) STORED;
+ALTER TABLE sts_ldap_entries ADD COLUMN IF NOT EXISTS name_keys jsonb NOT NULL DEFAULT '[]'::jsonb;
+ALTER TABLE sts_ldap_entries ADD COLUMN IF NOT EXISTS mail_keys jsonb NOT NULL DEFAULT '[]'::jsonb;
+ALTER TABLE sts_ldap_entries ADD COLUMN IF NOT EXISTS uuid_keys jsonb NOT NULL DEFAULT '[]'::jsonb;
+ALTER TABLE sts_ldap_entries ADD COLUMN IF NOT EXISTS class_keys jsonb NOT NULL DEFAULT '[]'::jsonb;
+ALTER TABLE sts_ldap_entries ADD COLUMN IF NOT EXISTS value_keys jsonb NOT NULL DEFAULT '[]'::jsonb;
+ALTER TABLE sts_ldap_entries ADD COLUMN IF NOT EXISTS attr_names jsonb NOT NULL DEFAULT '[]'::jsonb;
+
+-- The children of a container in key order, and the RDN value there (a login
+-- name); the `uid`, `mail` and entryUUID digests; the digests of the values
+-- looked up as written (a DID, a SPIFFE ID, a federation link); and the
+-- attribute names, with the default operator class for `?`.
+CREATE INDEX IF NOT EXISTS sts_ldap_entries_parent ON sts_ldap_entries (realm, parent_key, dn_key);
+CREATE INDEX IF NOT EXISTS sts_ldap_entries_rdn ON sts_ldap_entries (realm, parent_key, rdn_value);
+CREATE INDEX IF NOT EXISTS sts_ldap_entries_names ON sts_ldap_entries USING gin (name_keys jsonb_path_ops);
+CREATE INDEX IF NOT EXISTS sts_ldap_entries_mails ON sts_ldap_entries USING gin (mail_keys jsonb_path_ops);
+CREATE INDEX IF NOT EXISTS sts_ldap_entries_uuids ON sts_ldap_entries USING gin (uuid_keys jsonb_path_ops);
+CREATE INDEX IF NOT EXISTS sts_ldap_entries_values ON sts_ldap_entries USING gin (value_keys jsonb_path_ops);
+CREATE INDEX IF NOT EXISTS sts_ldap_entries_attr_names ON sts_ldap_entries USING gin (attr_names);
+-- The object classes, with the default GIN operator class, for `?|`: a group
+-- placed under `ou=users` or `ou=devices` found without a walk.
+CREATE INDEX IF NOT EXISTS sts_ldap_entries_classes ON sts_ldap_entries USING gin (class_keys);
 
 CREATE TABLE IF NOT EXISTS sts_realms (
   id          text PRIMARY KEY,
@@ -201,8 +257,23 @@ CREATE TABLE IF NOT EXISTS sts_keys (
 -- here is queryable by SQL and that is the trade, taken deliberately: what
 -- wants querying is `sts_ldap_entries`, which is JSONB and is not sealed.
 --
+-- `expires_at` IS THE RECORD'S OWN EXPIRY (2026-09-28, schema version 12,
+-- #333), in epoch milliseconds, as the store's `expiresAt` hook answered it
+-- when the row was written; NULL for a record that does not expire and for a
+-- tombstone. A start reads no row whose instant has passed, and the
+-- `persistence.minted-expiry-purge` job deletes them in batches.
+--
 -- `written_at` IS WHAT RETENTION READS — `persistence.mintedRetention`, seven
--- days by default. A row older than that is neither restored nor kept.
+-- days by default — for a short-lived store's row that has NO expiry. A row
+-- older than that is neither restored nor kept.
+--
+-- `key` IS A KEYED DIGEST OF THE RECORD'S NAME and `key_sealed` THE NAME,
+-- SEALED (#222, schema version 14). The name is often the credential itself —
+-- a session id, a SAML artifact — and was stored in the clear; now the row is
+-- found by the digest, which the service computes from a name it already
+-- holds, and the name is opened only by the restore. A row written without
+-- one (a test, a store with no key) has `key_sealed` '' and its `key` is the
+-- name, as before.
 -- ---------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS sts_minted (
   handle     text        NOT NULL,
@@ -210,10 +281,20 @@ CREATE TABLE IF NOT EXISTS sts_minted (
   key        text        NOT NULL,
   body       text        NOT NULL,
   written_at timestamptz NOT NULL DEFAULT now(),
+  expires_at bigint,
+  key_sealed text        NOT NULL DEFAULT '',
   PRIMARY KEY (handle, realm, key));
+
+-- Added separately as well, for `sts_realms.domain`'s reason: a table built by
+-- an older version of this file has no such column. Existing rows get NULL.
+ALTER TABLE sts_minted ADD COLUMN IF NOT EXISTS expires_at bigint;
+ALTER TABLE sts_minted ADD COLUMN IF NOT EXISTS key_sealed text NOT NULL DEFAULT '';
 
 CREATE INDEX IF NOT EXISTS sts_minted_handle ON sts_minted (handle, realm);
 CREATE INDEX IF NOT EXISTS sts_minted_written ON sts_minted (written_at);
+-- Partial: the purge looks rows up by it only where there is an expiry, and
+-- every INSERT into this, the busiest table, pays for an index.
+CREATE INDEX IF NOT EXISTS sts_minted_expires ON sts_minted (expires_at) WHERE expires_at IS NOT NULL;
 
 -- ---------------------------------------------------------------------------
 -- THE CHANGE LOG (2026-09-06), which is what makes several processes against
@@ -358,6 +439,36 @@ CREATE TABLE IF NOT EXISTS sts_cluster_windows (
   PRIMARY KEY (scope, realm, key));
 
 CREATE INDEX IF NOT EXISTS sts_cluster_windows_expiry ON sts_cluster_windows (window_ends_at);
+
+-- A BUDGET SPENT AGAINST A LIMIT (#432 phase 5, schema version 15): the
+-- running totals of a GNAP right's limits, spent by every node with one
+-- conditional upsert so two spends at once cannot both pass a limit.
+-- `amount` is millionths; a row is purged once its grant has ended.
+-- `cluster/cluster_counters.js` argues it.
+CREATE TABLE IF NOT EXISTS sts_cluster_budgets (
+  scope      text   NOT NULL,
+  realm      text   NOT NULL,
+  key        text   NOT NULL,
+  period     bigint NOT NULL,
+  amount     bigint NOT NULL,
+  count      bigint NOT NULL,
+  origin     text   NOT NULL DEFAULT '',
+  expires_at bigint NOT NULL,
+  updated_at bigint NOT NULL,
+  PRIMARY KEY (scope, realm, key));
+
+CREATE INDEX IF NOT EXISTS sts_cluster_budgets_expiry ON sts_cluster_budgets (expires_at);
+
+-- WHAT EACH NODE LAST SAID ABOUT ITSELF (#332, schema version 11): its own
+-- Monitoring → Worker Pools and → Node Health views, written every fifteen
+-- seconds by its front process and read by whichever node draws those pages.
+-- One row per node NAME, overwritten, so it never grows with time.
+-- `cluster/node_snapshots.ts` argues it.
+CREATE TABLE IF NOT EXISTS sts_node_snapshots (
+  name     text   PRIMARY KEY,
+  node_id  text   NOT NULL DEFAULT '',
+  taken_at bigint NOT NULL,
+  body     jsonb  NOT NULL DEFAULT '{}'::jsonb);
 
 -- WHERE EVERY PROCESS READING THE CHANGE LOG HAS GOT TO (#46 section 8): the
 -- low-water mark each coordinating process reports, which `sts_changes` is
@@ -625,6 +736,19 @@ CREATE TABLE IF NOT EXISTS sts_risk_terms_acceptances (
 
 CREATE INDEX IF NOT EXISTS sts_risk_terms_acceptances_provider ON sts_risk_terms_acceptances (provider, accepted_at);
 
+-- WHERE EACH PERSON IS HOMED (#98, schema version 11, 2026-09-28): the
+-- routing index of a service deployed as cells, in the global tier. Keyed
+-- digests of a login name or an entryUUID and the cell that holds the person;
+-- no name and no identifier in the clear. The primary key is what keeps a
+-- login name unique in a realm across cells.
+CREATE TABLE IF NOT EXISTS sts_cell_routing (
+  realm      text   NOT NULL,
+  kind       text   NOT NULL,
+  digest     text   NOT NULL,
+  cell       text   NOT NULL,
+  written_at bigint NOT NULL,
+  PRIMARY KEY (realm, kind, digest));
+
 CREATE TABLE IF NOT EXISTS sts_schema (
   version int PRIMARY KEY,
   applied_at timestamptz NOT NULL DEFAULT now());
@@ -632,7 +756,7 @@ CREATE TABLE IF NOT EXISTS sts_schema (
 -- WHAT VERSION OF THE ABOVE THIS IS. The driver writes the same row on open()
 -- and `tests/postgres_schema.js` checks that this number is its SCHEMA_VERSION,
 -- so the two cannot disagree about which schema is on disk.
-INSERT INTO sts_schema (version) VALUES (10) ON CONFLICT (version) DO NOTHING;
+INSERT INTO sts_schema (version) VALUES (15) ON CONFLICT (version) DO NOTHING;
 
 -- ---------------------------------------------------------------------------
 -- THE APPLICATION ROLE: READ AND WRITE THE ROWS, AND NOTHING ELSE.

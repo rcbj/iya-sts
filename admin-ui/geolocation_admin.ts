@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -284,7 +284,13 @@ class GeolocationAdmin {
           : r.country === scope.country.iso));
     }).map(function (r: Json): Json {
       const c = byIso.get(r.country);
-      return Object.assign({ iso: r.country, name: c ? c.name : r.country,
+      // A CODE THE MAP DOES NOT HAVE (#311): DB-IP answers `ZZ` for an
+      // address it cannot place, and a row for it linked to
+      // ?country=ZZ, which scopeOf() refuses (400). It is kept — those
+      // sign-ins happened — but named as what it is, and not linked.
+      return Object.assign({ iso: r.country, onMap: !!c,
+                             name: c ? c.name
+                                     : r.country + ' (not on the map)',
                              continent: geo.slugOf(r.continent) }, shown(r));
     }).sort(function (a: Json, b: Json): number {
       return (b.people || 0) - (a.people || 0) || (a.name < b.name ? -1 : 1);
@@ -577,7 +583,7 @@ class GeolocationAdmin {
         'Country', v.countries.map(function (c: Json): Json {
           return Object.assign({ label: c.name }, c);
         }), function (r: Json): string {
-          return place('', r.iso);
+          return r.onMap ? place('', r.iso) : '';
         }, v.level === 'world' ? unknown : '');
     } else {
       const other = v.hidden.cities

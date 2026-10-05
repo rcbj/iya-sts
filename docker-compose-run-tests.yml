@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: BUSL-1.1
 #
 # docker-compose-run-tests.yml — THE WHOLE SUITE, IN CONTAINERS.
 #
@@ -30,7 +30,7 @@
 #                                 runs its `tests` service alone.
 #
 # There was a third use until 2026-09-16: ./local-run-tests.sh brought
-# docker-compose.yml up on a free port as project mock-sts-tests and drove it
+# docker-compose.yml up on a free port as project iya-sts-tests and drove it
 # from host processes. That launcher is gone.
 #
 # They never collide, and that is by construction rather than by luck:
@@ -120,7 +120,8 @@ x-mirror-contexts: &mirror-contexts
   ubuntu: docker-image://${IMAGE_MIRROR:-ghcr.io/rcbj/iya-sts/mirror}/ubuntu:latest
   "node:24.16.0-bookworm-slim": docker-image://${IMAGE_MIRROR:-ghcr.io/rcbj/iya-sts/mirror}/node:24.16.0-bookworm-slim
   "node:24.16.0-bookworm": docker-image://${IMAGE_MIRROR:-ghcr.io/rcbj/iya-sts/mirror}/node:24.16.0-bookworm
-  "node:22-alpine": docker-image://${IMAGE_MIRROR:-ghcr.io/rcbj/iya-sts/mirror}/node:22-alpine
+  "rust:1.97-bookworm": docker-image://${IMAGE_MIRROR:-ghcr.io/rcbj/iya-sts/mirror}/rust:1.97-bookworm
+  "debian:bookworm-slim": docker-image://${IMAGE_MIRROR:-ghcr.io/rcbj/iya-sts/mirror}/debian:bookworm-slim
   "golang:1.26.8-bookworm": docker-image://${IMAGE_MIRROR:-ghcr.io/rcbj/iya-sts/mirror}/golang:1.26.8-bookworm
   "golang:1.26": docker-image://${IMAGE_MIRROR:-ghcr.io/rcbj/iya-sts/mirror}/golang:1.26
   "maven:3.9.16-eclipse-temurin-21-noble": docker-image://${IMAGE_MIRROR:-ghcr.io/rcbj/iya-sts/mirror}/maven:3.9.16-eclipse-temurin-21-noble
@@ -691,7 +692,7 @@ services:
   # into the run, and removed by it at the end — which is how the job gets a
   # repository whose whole contents it wrote without disturbing the realm every
   # other job is using. So this container comes up, fails to register, fails to
-  # pull, says so, and goes on trying: `xacml-pep/sync.js` retries its
+  # pull, says so, and goes on trying: the PEP's sync (`rust/bins/xacml-pep`) retries its
   # registration on the poll timer, so it converges on a console row the same
   # way it converges on policy. That retry exists BECAUSE of this ordering and
   # its own header argues why it is right independently of this file.
@@ -736,7 +737,7 @@ services:
       # service up and starting this container — see ./run-tests.sh,
       # which does it with `docker run` against the service image so that the
       # host still needs docker and nothing else.
-      - ${XACML_PEP_CERT_DIR:-./xacml-pep/common}:/certs:ro
+      - ${XACML_PEP_CERT_DIR:-./xacml-pep/certs}:/certs:ro
     environment:
       # BY COMPOSE DNS AND THE INTERNAL PORT, never a published one — nothing
       # in this stack publishes anything. `sts` is in the certificate's SANs.
@@ -1023,8 +1024,8 @@ services:
         ipv4_address: ${SAML_KEYCLOAK_ADDRESS:-172.30.0.46}
 
   tests:
-    container_name: ${STS_TESTS_CONTAINER_NAME:-mock-sts-test-runner}
-    image: ${STS_TESTS_IMAGE:-${IMAGE_REGISTRY:-ghcr.io/rcbj/iya-sts}/mock-sts-tests:${IMAGE_TAG:-latest}}
+    container_name: ${STS_TESTS_CONTAINER_NAME:-iya-sts-test-runner}
+    image: ${STS_TESTS_IMAGE:-${IMAGE_REGISTRY:-ghcr.io/rcbj/iya-sts}/iya-sts-tests:${IMAGE_TAG:-latest}}
     build:
       # The same context as the service, with the root .dockerignore deciding
       # what is in it — see tests/Dockerfile's header for why the two images
@@ -1121,6 +1122,13 @@ services:
       # volume, mounted into `sts` at the same place.
       - OUTBOUND_TEST_CA_DIR=${OUTBOUND_TEST_CA_DIR:-/run/sts-test}
       - OUTBOUND_TEST_CA_FILE=${OUTBOUND_TEST_CA_FILE:-/run/sts-test/outbound-test-ca.crt}
+      # THE DATABASE AN ATTRIBUTE SOURCE IS TESTED AGAINST (#94): the
+      # stack's own postgres, as its superuser, which
+      # `tests/vendored/sts_attribute_sources.js` creates a database, a
+      # read-only role and a table of its own in — never the service's
+      # schema. `-` rather than `:-`, so an EMPTY value (./run-coverage.sh,
+      # which has no postgres) skips the job instead of dialling nothing.
+      - STS_TEST_ATTRIBUTE_DB_URL=${STS_TEST_ATTRIBUTE_DB_URL-postgres://sts:sts@postgres:5432/sts}
       # THE MAIL CATCHER (#63): where `tests/vendored/sts_mail.js` reads what
       # arrived, and where it tells the service to deliver — the host, the
       # port and the catcher's certificate AS THE SERVICE SEES IT.

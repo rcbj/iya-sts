@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 "use strict";
 //
@@ -41,6 +41,7 @@ const names = require("./random_username.js");
 const registry = require("./sts_applications.js");
 const facts = require("./service_facts.js");
 const testCa = require("./outbound_test_ca.js");
+const expectation = require("./expectation.js");
 
 var appconfig;
 let appconfigProblem = null;
@@ -372,6 +373,15 @@ async function register(realmBase, metadata) {
 
 async function test() {
   log.debug("Entering test().");
+  // A PRODUCT SERVICE WITH NO SHARED DIRECTORY CANNOT RUN THIS AT ALL, which
+  // is a skip and not a failure (#311: the in-AWS run has no volume shared
+  // with the service). It was an assertion inside trustThisService(), so the
+  // run reported a failure for a job that never started.
+  if (!testCa.caLocation() && await facts.isProduct(root + "/admin-api")) {
+    expectation.declineToRun(log, testCa.skipReason());
+    log.debug("Leaving test(). Skipped.");
+    return;
+  }
   log.info("=== 0. two throwaway realms: " + OP + " (the OP) and " + CP +
            " (the Claims Provider) ===");
   for (const id of [OP, CP]) {

@@ -1,6 +1,6 @@
 // @ts-check
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -340,7 +340,17 @@ function maxPending() {
 // so a negotiation begun under one realm's prefix could be continued under
 // another's — one shared row under one key, whichever realm asked. A realm's
 // pending negotiations are now its own.
-const pending = realms.map({ persist: 'spnego.pending', retain: 'age' });
+// `expiresAt` (#333): a negotiation lives pendingTtlMs() from its `at`.
+const pending = realms.map({
+  persist: 'spnego.pending',
+  retain: 'age',
+  // A hot path (every row a flush writes): no Entering/Leaving pair.
+  expiresAt: function (row) {
+    const at = Number(row && row.at);
+    const ttl = Number(pendingTtlMs());
+    return at > 0 && ttl > 0 ? at + ttl : null;
+  }
+});
 const PENDING_COOKIE = 'sts_spnego_negotiation';
 
 function whoIs(req) {

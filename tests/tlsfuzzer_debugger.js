@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -34,6 +34,9 @@
 // ===========================================================================
 
 delete process.env.CONFIG_FILE;
+// TLS 1.2 on for this listener's plan: every listener is TLS 1.3 only by
+// default since #429, and most of the plan probes TLS 1.2.
+process.env.STS_TLS_DISABLE_TLS12 = 'false';
 
 const childProcess = require('child_process');
 const fs = require('fs');

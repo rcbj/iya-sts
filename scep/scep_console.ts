@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -102,9 +102,11 @@ const ACTION_SCHEMAS = {
     profile: vt.opt(PROFILE_TEXT),
     lifetimeS: vt.opt(vt.integer(60, 2592000))
   })),
+  // The random part may carry the minting cell's twelve-character tag (#98,
+  // `cert_enrollment.ts`'s `credentialId()`).
   'delete-challenge': vz.object({
     id: vz.string().min(1).max(600)
-      .regex(/^scep-[pa]-[A-Za-z0-9_-]{1,400}-[0-9a-f]{16}$/,
+      .regex(/^scep-[pa]-[A-Za-z0-9_-]{1,400}-[0-9a-f]{16}(?:[A-Za-z0-9_-]{12})?$/,
              'must be a SCEP challenge id')
   }),
   'reissue-ra': vz.object({}),
@@ -529,7 +531,9 @@ class ScepConsole {
       errorCodes: snap.codes || {},
       statuses: snap.statuses || {},
       failInfo: snap.failInfos || {},
-      issuedCertificates: core.certificatesInRealm('scep').length,
+      // COUNTED, not listed (#352): the tile wants a number, and the list
+      // built a row per certificate to have its length read.
+      issuedCertificates: core.certificateCountsInRealm('scep').held,
       lastAt: snap.lastAt || null,
       paging: adminViews.pagingJson(paging),
       recent: recent.slice(paging.offset, paging.offset + paging.perPage)

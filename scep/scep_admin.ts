@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -562,6 +562,8 @@ class ScepAdmin {
                                       actor: consoleModel.actorOf(req),
                                       req: req })
         .then(function (result) {
+          // A form on an application's page comes back there (2026-10-01).
+          const back = admin.enrollmentReturnTo(body, '/admin/scep');
           const json = /json/i.test(String(req.headers['content-type'] || ''));
           if (result.ok && result.challenge && !json) {
             // THE ONE-TIME SECRET, on a 200 page — see the header.
@@ -576,12 +578,14 @@ class ScepAdmin {
               '</td></tr><tr><th>Plain-HTTP SCEP URL</th><td>' +
               self.code(result.plainUrl) +
               '</td></tr></table><h3>With sscep</h3><pre>' +
-              esc(result.hint) + '</pre>';
+              esc(result.hint) + '</pre>' + (back === '/admin/scep' ? ''
+                : '<p class="links"><a href="' + esc(back) + '">Back to ' +
+                  'the application</a></p>');
             self.drawScep(req, res, shown);
             log.debug("Leaving the admin SCEP action. A challenge shown once.");
             return;
           }
-          admin.respondToAction(req, res, '/admin/scep', result);
+          admin.respondToAction(req, res, back, result);
           log.debug("Leaving the admin SCEP action. ok=" + result.ok);
         })
         .catch(function (e) {

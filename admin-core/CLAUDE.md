@@ -272,6 +272,83 @@ that meant one thing in the page's scope and another in the layer's:
 every one. That is the whole argument for running the owned jobs against a
 change of this shape — see `tests/CLAUDE.md`.
 
+## THE USERS LIST PAGES BEFORE IT DECORATES (#352, 2026-09-29)
+
+**On testidp (29,267 people) `GET /admin-api/users` took ten seconds a
+request, whatever the page and whatever `?q=`**, and the request worker that
+served it missed its read barriers while it did (STS-WORKER-0027). The list
+was built WHOLE and then sliced: `peopleRows()` asked
+`credentials.secondFactorHolders()`, which asked `mechanismsFor()` of every
+name — about nine directory reads, a copy of the entry for the mail factor
+and an unseal of the TOTP secret per person — for five thousand directory
+people (the scan cap) plus everybody the register had seen, and then
+`usersListJson()` showed fifty. `/admin-api/mfa` answers out of the same view
+and paid the same.
+
+**The order is now list, filter, page, decorate, and each step reads only
+what it needs:**
+
+* **List.** `peopleRows()` folds the register's rows with
+  `credentials.secondFactorPopulation()` — the same union, deduplication,
+  sort and cap as before, and nothing read per name. A row comes back with
+  `factors: null`; beside the rows, `spellings` records which population
+  names folded into which row, in the order the old fold applied
+  `mergeFactors()`. `isApplicationRow()`'s third test uses the directory's
+  `applicationMatcher()`, one listing of `ou=applications`, where it used to
+  ask `applications.get()` per register row.
+* **Filter.** `?q=` and `?protocol=` read the row. `?factor=` needs every
+  row's factors, and so do the seven tiles, so both read `peopleCensus()`:
+  `credentials.factorCensus()` over every spelling, from ONE call into the
+  directory (`credentialCensus()`), united per row by the same
+  `mergeFactors()`. The census carries seven facts and never the recovery
+  codes or the authenticator's detail, which no count reads.
+* **Page, then decorate.** `pagedRows()` takes `options.decorate(row)` and
+  applies it to the shown slice only. `decoratePerson()` builds each shown
+  row's full factors from `credentials.factorHolderRow()` — which is
+  `mechanismsFor()` — per spelling, exactly as the old fold did for
+  everybody.
+
+**The census interprets nothing in the directory.** `ldap_server.js` hands
+back raw attribute values; which values are keys, what a sealed TOTP record
+is, and when an emailed factor is held are still decided in
+`common/credentials.ts` and `common/mail_factor.ts`, through the same
+functions the one-name path uses — that file's header argues why the console
+must not learn what an enrolment is, and a directory that did would be a
+second answer to it.
+
+**The one unseal left is remembered.** Whether a sealed TOTP secret opens is
+a pure function of the sealed text and this process's keys, so
+`credentials.ts` keeps the verdict (`credentials.totp-verdicts` on
+`/admin/caches`), stamped with `keystore.kekEpoch()`, which moves when the
+keys do. Each secret is opened at most once per process and key set and not
+at all on a repeat request. `verifyTotp()` never reads the memo; it opens the
+secret every time.
+
+**`?user=` no longer builds the list to find one row**: `stats.userDetail()`
+asks `stats.userRow(key)`, which runs the same builder for that key only, and
+`knownUserKeys()` — nine pages' "can this member's name be a link" — asks
+`stats.userKeys()` instead of building every row to read their keys.
+`/admin/sessions` asks `stats.issuedArtifactsOfKind('Kerberos TGT')` for the
+tickets rather than building `issuedList()`.
+
+**What was measured, and what holds it.** `tests/users_page_before_decoration.js`
+seeds three thousand people and asserts that page one, a far page, `?q=` and
+each `?factor=` call `mechanismsFor()` at most once per row shown, that a
+first request opens each sealed secret at most once and a repeat opens none,
+and that every answer — tiles, counts, scan cap, the rows with their factors
+— equals the old algorithm's, computed there independently. In that test the
+old algorithm took about 600 ms for the population and the new page about
+90 ms on a first request and 70 on a repeat. The remaining cost is building
+the register's rows and listing the directory's names, both in memory, and
+the name list is `persons()`, whose own cost is `ldap/`'s to make small.
+
+**Not done, and why.** The census is not memoized across requests. It would
+have to be keyed on every input a fact depends on — the people subtree's
+version, the realm's authentication policy and mail settings for the emailed
+factor, and the key epoch — and a request that already reads no secret and
+makes one call into the directory does not need it. Under #349's windowed
+directory, `credentialCensus()` is one batched `byKeys()` query.
+
 ## `certificate_views.ts`: THE CERTIFICATE DETAILS DIALOG'S CATALOGUE (2026-09-13)
 
 `/admin/pki` and `/admin/crypto-metadata` open a certificate's every X.509 field
@@ -304,6 +381,24 @@ Four decisions, and each is a refusal:
   the TLS module registers routes at 20. A request runs after every module has
   loaded, so inside a function the require is a cache hit. `admin_views.ts` is
   required lazily too, for the same reason read the other way.
+
+**THE LIST PAGES BEFORE IT PARSES (#352, 2026-09-29).** `listView()` parsed
+every certificate in the catalogue with pkijs — subject, issuer, notAfter —
+before it filtered and sliced; the holders are the part of the catalogue that
+grows with the realm. The catalogue is in the order its sources were read and
+nothing sorts it, so without `q` the page is a slice and only the slice is
+parsed; with `q` a certificate is asked the cheap question first (the labels of
+where it appears, text already in hand) and parsed only when that does not
+match, against the same haystack the old filter searched. What a parse finds
+is kept in `certificates.parsed-facts` — CONTENT-KEYED (the fingerprint, or
+the SHA-256 of the PEM text for `pqcOf()`), so it can never be wrong in this
+process or any other and needs no version or invalidation; bounded at 4,096,
+the oldest dropped, and on `/admin/caches` (rule 3ap). `pqcOf()` is the same
+memo put in front of `pqc_support.of()` for `/admin/pki`. **The details
+lookup's miss path parses nothing it does not open**: it fingerprints the
+holders' certificates (a SHA-256 of the DER, not an X.509 parse), and the
+holders themselves come from `person_assertions.holders()`, which reads
+presence in one walk. `tests/certificate_listing_bounds.js` counts it.
 
 It is here rather than in `common/` because both surfaces read it and it reads
 the two route-registering modules above — lazily, but it reads them — which is

@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 "use strict";
 //
@@ -380,7 +380,7 @@ var xacmlUser = null;
 async function mintTheCredential() {
   log.debug("Entering mintTheCredential().");
   xacmlUser = await credentials.mint({
-    subject: "CN=xacml-user-1,OU=xacml-users,O=mock-sts tests" });
+    subject: "CN=xacml-user-1,OU=xacml-users,O=iya-sts tests" });
   const posted = await credentials.trustAnchor(base, xacmlUser.anchorPem);
   assert.ok(posted.ok, "POST /tls/trust should accept the Root CA this file " +
     "just built; it answered " + posted.status + ". Without the anchor the " +
@@ -851,7 +851,7 @@ async function attachToThePep() {
 function containerSubject() {
   log.debug("Entering containerSubject().");
   log.debug("Leaving containerSubject().");
-  return "CN=" + PEP_NAME + ",OU=remote-peps,O=mock-sts tests";
+  return "CN=" + PEP_NAME + ",OU=remote-peps,O=iya-sts tests";
 }
 
 // The entry and the membership, in THIS RUN'S REALM — the directory is per
@@ -902,7 +902,7 @@ async function mintTheContainersCredential() {
   // one machine must not share it, and this one is removed with the
   // container. `mkdtemp` rather than a name built from the stamp, so the
   // collision cannot be constructed at all.
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mock-sts-pep-cert-"));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "iya-sts-pep-cert-"));
   // The leaf FOLLOWED BY THE INTERMEDIATE, which is what `certPem` already
   // is — the service holds only the root, so a container sending the leaf
   // alone presents a chain that cannot be built.
@@ -2409,18 +2409,47 @@ async function theNudgeIsDelivered(polledMs) {
   // the PEP now records what asked for the pull that changed its holding
   // (`sync.js`'s `lastChangeCause`), and that is asserted instead. The
   // latency is still logged.
-  check("and it was the NUDGE's pull that brought the change in, not a poll",
+  // AND SINCE 2026-09-30 A POLL MAY WIN THE RACE, BY A MOMENT, AND THAT IS
+  // NOT A FAILURE. The PEP polls every POLL_MS on its own clock, so a poll
+  // that fires between the save and the nudge's pull brings the change, and
+  // the nudge's pull finds nothing new: `lastChangeCause` says "poll" for a
+  // PEP that did exactly what it should. It failed a single-node run at 1.3s
+  // of latency — about one run in four at that speed. What the check exists
+  // to catch is a nudge ANSWERED AND NOT ACTED ON, so it now reads the PEP's
+  // record of its last nudge-caused pull (`lastNudgeAt`, `lastNudgeResult`,
+  // `sync.js`): either that pull brought the change, or it ran after the
+  // change was in and found it already there.
+  const nudged = await until(
+    "the PEP to record the pull this nudge caused",
+    async function () {
+      const seen = (await pepOverview()).holding;
+      return { ok: !!seen.lastNudgeAt &&
+                   Date.parse(seen.lastNudgeAt) >= started - 1000,
+               note: "its last nudged pull is " +
+                     (seen.lastNudgeAt || "none") + " (" +
+                     (seen.lastNudgeResult || "no result") + ")",
+               holding: seen };
+    });
+  const holding = nudged.holding || (await pepOverview()).holding;
+  check("and the NUDGE's pull acted on it, whether or not a poll beat it",
         function () {
-    assert.strictEqual(after.holding.lastChangeCause, "nudge",
+    const byNudge = holding.lastChangeCause === "nudge";
+    const pollFirst = holding.lastChangeCause === "poll" &&
+      holding.lastNudgeResult === "unchanged" &&
+      Date.parse(holding.lastNudgeAt) >= Date.parse(holding.lastChangeAt);
+    assert.ok(byNudge || pollFirst,
       "the PEP records what asked for the pull that last changed its " +
-      "holding, and it says \"" + after.holding.lastChangeCause + "\" (at " +
-      after.holding.lastChangeAt + "). A nudge recorded as delivered whose " +
-      "pull did not bring the change is a PEP that answers a nudge without " +
-      "acting on it, which looks identical from every other angle. This " +
+      "holding (\"" + holding.lastChangeCause + "\" at " +
+      holding.lastChangeAt + ") and what its last nudged pull found (\"" +
+      holding.lastNudgeResult + "\" at " + holding.lastNudgeAt + "). A " +
+      "nudge recorded as delivered whose pull neither brought the change nor " +
+      "found it already there is a PEP that answers a nudge without acting " +
+      "on it, which looks identical from every other angle. This " +
       "convergence took " + elapsed + "ms against " + polledMs +
       "ms by polling and a " + POLL_MS + "ms interval." + pepLog());
     log.info("Nudged convergence: " + elapsed + "ms, against " + polledMs +
-             "ms by polling and a " + POLL_MS + "ms interval.");
+             "ms by polling and a " + POLL_MS + "ms interval; the change " +
+             "came by " + holding.lastChangeCause + ".");
   });
 
   log.info("[nudge] OK — the PDP dialled the PEP across the " + pep.network +

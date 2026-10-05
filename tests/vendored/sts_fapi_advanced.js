@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 "use strict";
 //
@@ -592,7 +592,24 @@ async function test() {
     assert.strictEqual(t.status, 400, t.raw.slice(0, 300));
     assert.strictEqual(t.body.error, "invalid_request");
   });
-  t = await token({ grant_type: "authorization_code", code: jarmClaims.code,
+  // That refusal SPENT the code: a code is presented once, whatever the
+  // outcome (RFC 6749 section 4.1.2, #424). The bound request needs a
+  // fresh one, pushed and authorized again.
+  r = await send(parUrl, { method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: form(Object.assign(clientAuth(),
+                             { request: requestObject(params) })) });
+  r = await follow(alice, await alice.go("GET", R + "/oauth2/authorize?" +
+    form({ client_id: client.client_id, request_uri: r.body.request_uri })),
+    ALICE, { shown: 0 });
+  back = paramsAt(r);
+  const fresh = back && back.get("response")
+    ? verifyWithJwks(back.get("response"), jwks).claims.code : "";
+  check("a fresh authorization gives another code", function () {
+    assert.ok(fresh && fresh !== jarmClaims.code,
+              r.status + " " + r.location);
+  });
+  t = await token({ grant_type: "authorization_code", code: fresh,
                     redirect_uri: REDIRECT, code_verifier: p.verifier }, true);
   check("with a DPoP proof it is issued: a DPoP-bound access token and an " +
         "ID Token, both signed PS256", function () {

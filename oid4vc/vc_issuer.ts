@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -74,8 +74,17 @@ import jwt = require('jsonwebtoken');
 import stsCrypto = require('../common/crypto');
 import app = require('../common/app');
 import config = require('../common/config');
-import bbs2023 = require('../common/vendored/bbs2023.js');
 import helpers = require('../common/helpers');
+import LazyModule = require('../common/lazy_module');
+// THE VENDORED BBS SUITE, REQUIRED AT FIRST USE (#348): it requires `jsonld`
+// at its top, and together they are resident memory in every request worker
+// that never issues or verifies a BBS credential. `common/lazy_module.ts`
+// argues it; `common/helpers.js` defers the same file by hand.
+type Bbs2023 = typeof import('../common/vendored/bbs2023.js');
+const bbs2023: Bbs2023 = LazyModule.of('common/vendored/bbs2023.js',
+  function () {
+    return require('../common/vendored/bbs2023.js') as Bbs2023;
+  }, helpers.log);
 import InstanceSlot = require('../common/instance_slot');
 import dpop = require('../oauth-oidc/dpop');
 import mode = require('../common/mode');
@@ -215,7 +224,9 @@ interface VcIssuerDeps {
  * The `c_nonce` values this issuer has handed out and not yet seen used, per
  * trust realm; each is single-use.
  */
-const vciNonces = realms.map({ persist: 'vc_issuer.vciNonces', retain: 'age' });
+const vciNonces = realms.map({ persist: 'vc_issuer.vciNonces', retain: 'age',
+                               // #333: the value IS the expiry, ms.
+                               expiresAt: realms.expiryField(null, 1) });
 
 // `oid4vci.cNonceTtlS` since 2026-09-12; the constant is its default and keeps
 // its exported name.
@@ -283,7 +294,10 @@ const CLAIM_SKEW_MS = 60 * 1000;
 // and in a service with no realms defined, there is exactly one partition and
 // this behaves as the plain Map it replaced. See common/realms.js.
 // id -> { accessToken, expires, event }
-const notificationIds = realms.map({ persist: 'vc_issuer.notificationIds' });
+const notificationIds = realms.map({ persist: 'vc_issuer.notificationIds',
+                                     // #333: its `expires`, ms.
+                                     expiresAt: realms.expiryField('expires',
+                                                                   1) });
 
 // ---------------------------------------------------------------------------
 // Credential Response encryption (OID4VCI section 10).
@@ -297,7 +311,18 @@ const VCI_ENC_ALG = 'RSA-OAEP-256';
 // wherever it names one (section 5, OpenID4VP) and the one the OpenID
 // conformance suite's HAIP issuer plan sends a P-256 key for. RSA-OAEP-256
 // stays for an RSA key; each is taken only with the key type it fits.
-const VCI_ENC_ALGS = [VCI_ENC_ALG, 'ECDH-ES'];
+//
+// AND THE ML-KEM AND HPKE KEY ENCRYPTION ALGS (#82): a wallet whose
+// `credential_response_encryption.jwk` names one of them in its `alg` gets
+// the Credential Response encrypted with post-quantum or PQ/T hybrid key
+// establishment — ML-KEM-768 for pqc-kem-05, HPKE-10-KE for X-Wing. Not
+// HPKE Integrated Encryption: section 10 requires an `enc` and that mode
+// has none.
+const VCI_KEM_ALGS = stsCrypto.JWE_MLKEM_ALGS.concat(
+  stsCrypto.JWE_HPKE_ALGS.filter(function (alg) {
+    return !stsCrypto.isIntegratedJweAlg(alg);
+  }));
+const VCI_ENC_ALGS = [VCI_ENC_ALG, 'ECDH-ES'].concat(VCI_KEM_ALGS);
 const VCI_ENC_CURVES = ['P-256', 'P-384', 'P-521'];
 
 // The implemented list, kept under its old name. What is ADVERTISED and
@@ -630,7 +655,10 @@ class VcIssuer {
       // as well, which nothing implemented — metadata that overstates is worse
       // than metadata that says little.
       credential_response_encryption: {
-        alg_values_supported: VCI_ENC_ALGS.slice(),
+        // The ML-KEM and HPKE ones only where `keys.offerKemEncryption` is
+        // on (helpers.offeredJweAlgs(), 2026-09-28): drafts, and the
+        // OpenID4VCI conformance suite refuses the metadata naming them.
+        alg_values_supported: helpers.offeredJweAlgs(VCI_ENC_ALGS),
         enc_values_supported: this.responseEncValues(),
         // DEFLATE before encryption (section 8.2's `zip`, #187). Requests
         // are not decompressed — credential_request_encryption says none.
@@ -1181,7 +1209,7 @@ class VcIssuer {
   // advertises every asymmetric algorithm in the shared table — the eleven
   // post-quantum and composite ones included. Verifying one of those takes
   // SECONDS on the thread that owns every listener here, and a wallet may send
-  // a batch of them. See common/worker.js.
+  // a batch of them. See common/pq_native.js.
   private async verifyProofJwt(proofJwt, credentialIssuer) {
     const { log, logArtifact, jsonFromB64u, stsCrypto, vciNonces } = this.deps;
     log.debug("Entering VcIssuer.verifyProofJwt().");
@@ -2367,7 +2395,14 @@ class VcIssuer {
     log.debug("Entering VcIssuer.credentialRequestEncryptionMetadata().");
     log.debug("Leaving VcIssuer.credentialRequestEncryptionMetadata().");
     return {
-      jwks: { keys: [this.requestEncryptionKeys().publicJwk] },
+      // The RSA key, and — where an administrator opted the realm in
+      // (`keys.encryptionKemAlgs`, #82) — each of its ML-KEM and HPKE Key
+      // Encryption keys: section 10's request JWE takes its `alg` from the
+      // key the wallet picked, so a key with an `alg` is the whole offer.
+      jwks: { keys: [this.requestEncryptionKeys().publicJwk].concat(
+        this.requestKemKeys().map(function (one) {
+          return stsCrypto.publicJweKemJwk(one.publicJwk);
+        })) },
       enc_values_supported: this.requestEncValues(),
       // zip_values_supported is deliberately absent: "If absent then no
       // compression algorithms are supported", and this issuer does not
@@ -2375,6 +2410,18 @@ class VcIssuer {
       // lie, which is the same rule the response side follows.
       encryption_required: this.vciRequestEncryptionRequired()
     };
+  }
+
+  // The realm's KEM decryption keys a Credential Request may be encrypted to
+  // (#82): the Key Encryption ones only, for the `enc` reason above.
+  private requestKemKeys(): any[] {
+    const { log } = this.deps;
+    log.debug("Entering VcIssuer.requestKemKeys().");
+    const out = helpers.kemEncryptionKeysFor().filter(function (one) {
+      return VCI_KEM_ALGS.indexOf(one.alg) >= 0;
+    });
+    log.debug("Leaving VcIssuer.requestKemKeys(). " + out.length);
+    return out;
   }
 
   // The mirror of encryptToJwe(): RSA-OAEP-256 unwrap of the content key, then
@@ -2406,11 +2453,33 @@ class VcIssuer {
     // The hand-rolled implementation was KEPT rather than replaced by a JOSE
     // library, for the reason encryptToJwe() has always given: having the steps
     // visible is the point of a mock. It is simply in one place now.
-    const result = stsCrypto.decryptJweCompact(compact, {
-      privateKey: this.requestEncryptionKeys().privateKey,
-      allowedEnc: this.requestEncValues(),
-      expectedKid: this.requestEncryptionKeys().publicJwk.kid
-    });
+    // WHICH KEY: the header's alg picks it (#82). An ML-KEM or HPKE alg
+    // opens only with the realm's key for exactly that alg, and only where
+    // one is published; everything else is the RSA key, as it always was.
+    let headerAlg = '';
+    try {
+      headerAlg = String(JSON.parse(Buffer.from(String(compact || '')
+        .split('.')[0], 'base64url').toString('utf8')).alg || '');
+    } catch (e) {
+      log.debug("Caught in VcIssuer.decryptJweRequest(): " +
+                ((e && e.message) || e));
+      headerAlg = '';
+    }
+    const kemKey = this.requestKemKeys().filter(function (one) {
+      return one.alg === headerAlg;
+    })[0];
+    const result = kemKey
+      ? stsCrypto.decryptJweCompact(compact, {
+          privateJwk: kemKey.privateJwk,
+          allowedAlg: [kemKey.alg],
+          allowedEnc: this.requestEncValues(),
+          expectedKid: kemKey.publicJwk.kid
+        })
+      : stsCrypto.decryptJweCompact(compact, {
+          privateKey: this.requestEncryptionKeys().privateKey,
+          allowedEnc: this.requestEncValues(),
+          expectedKid: this.requestEncryptionKeys().publicJwk.kid
+        });
     logArtifact('OID4VCI Credential Request',
                 'JWE protected header as received', result.header);
     let body;
@@ -2548,10 +2617,36 @@ class VcIssuer {
     const { log } = this.deps;
     log.debug("Entering VcIssuer.encryptionProblem().");
     const jwk = encryption.jwk;
+    // A KEY THAT NAMES AN ML-KEM OR HPKE KEY ENCRYPTION ALG (#82) is judged
+    // by `common/crypto.js`'s own check of that alg against the key, and
+    // then by the same `enc` and `zip` rules below.
+    // Only while the realm OFFERS them (`keys.offerKemEncryption`).
+    const offeredKem = helpers.offeredJweAlgs(VCI_KEM_ALGS);
+    const kemAlg = jwk && offeredKem.indexOf(String(jwk.alg || '')) >= 0
+      ? String(jwk.alg) : '';
+    if (jwk && jwk.kty === 'AKP' && !kemAlg) {
+      log.debug("Leaving VcIssuer.encryptionProblem(). AKP without a KEM " +
+                "alg.");
+      return offeredKem.length
+        ? 'credential_response_encryption.jwk is an AKP key, and an AKP ' +
+          'key names its algorithm: this issuer encrypts to one whose ' +
+          '`alg` is one of ' + offeredKem.join(', ') + '; this one ' +
+          'says "' + (jwk.alg || '(none)') + '".'
+        : 'credential_response_encryption.jwk is an AKP key, and this ' +
+          'issuer offers no ML-KEM or HPKE encryption ' +
+          '(keys.offerKemEncryption is off in this realm).';
+    }
+    if (kemAlg && !stsCrypto.jweRecipientKeyFits(kemAlg, jwk)) {
+      log.debug("Leaving VcIssuer.encryptionProblem(). The KEM key does " +
+                "not fit its alg.");
+      return 'credential_response_encryption.jwk names alg "' + kemAlg +
+             '", which needs ' + stsCrypto.jweRecipientKeyNeed(kemAlg) +
+             ', and this key is not one.';
+    }
     const rsa = !!jwk && jwk.kty === 'RSA' && !!jwk.n && !!jwk.e;
     const ec = !!jwk && jwk.kty === 'EC' && !!jwk.x && !!jwk.y &&
                VCI_ENC_CURVES.indexOf(jwk.crv) >= 0;
-    if (!rsa && !ec) {
+    if (!rsa && !ec && !kemAlg) {
       log.debug("Leaving VcIssuer.encryptionProblem(). The key is unusable.");
       return 'credential_response_encryption.jwk must be an RSA public key ' +
              '(for ' + VCI_ENC_ALG + ') or an EC public key on ' +
@@ -2559,7 +2654,7 @@ class VcIssuer {
     }
     const alg = jwk.alg || encryption.alg ||
                 (rsa ? VCI_ENC_ALG : 'ECDH-ES');
-    if (alg !== (rsa ? VCI_ENC_ALG : 'ECDH-ES')) {
+    if (!kemAlg && alg !== (rsa ? VCI_ENC_ALG : 'ECDH-ES')) {
       log.debug("Leaving VcIssuer.encryptionProblem(). Unsupported alg " +
                 alg);
       return 'This issuer encrypts to ' + (rsa ? 'an RSA' : 'an EC') +
@@ -2611,8 +2706,13 @@ class VcIssuer {
     const compact = stsCrypto.encryptJweCompact(plaintext, {
       jwk: encryption.jwk,
       enc: encryption.enc,
-      alg: encryption.jwk && encryption.jwk.kty === 'EC' ? 'ECDH-ES' :
-        VCI_ENC_ALG,
+      // The key's own alg where it names an ML-KEM or HPKE one (#82) —
+      // `encryptionProblem()` has already held the key to it.
+      alg: encryption.jwk &&
+           VCI_KEM_ALGS.indexOf(String(encryption.jwk.alg || '')) >= 0
+        ? String(encryption.jwk.alg)
+        : (encryption.jwk && encryption.jwk.kty === 'EC' ? 'ECDH-ES' :
+          VCI_ENC_ALG),
       zip: encryption.zip === 'DEF' ? 'DEF' : undefined
     });
     log.debug("Leaving VcIssuer.encryptToJwe(). " + compact.length +

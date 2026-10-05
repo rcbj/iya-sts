@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -36,6 +36,9 @@
 // ===========================================================================
 
 import nodeCrypto = require('crypto');
+// WHICH CELL MINTED AN ARTIFACT (#98 D10): a keyed tag appended to what
+// this module mints and read where it is presented. A leaf library.
+import cellLocator = require('../common/cell_locator');
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
 import config = require('../common/config');
@@ -56,7 +59,22 @@ const REDEEM_SCOPE = 'oauth.device';
 const RETENTION_MS = 60 * 60 * 1000;
 const USER_CODE_ALPHABET = 'BCDFGHJKLMNPQRSTVWXZ';
 
-const codes = realms.map({ persist: 'oauth2.deviceCodes', retain: 'age' });
+// `expiresAt` (#333): the sweep's rule for a FINISHED `d|` row — kept
+// RETENTION_MS past its end, so a late poll hears `expired_token` rather than
+// nothing. A PENDING one has none (the sweep marks it expired first), and a
+// `u|` row is a bare pointer with none: both fall to `retain: 'age'`.
+const codes = realms.map({
+  persist: 'oauth2.deviceCodes',
+  retain: 'age',
+  // A hot path (every row a flush writes): no Entering/Leaving pair.
+  expiresAt: function (row: Json): number | null {
+    if (!row || typeof row !== 'object' || row.state === 'pending') {
+      return null;
+    }
+    const ended = Number(row.finishedAt || row.redeemedAt || row.expiresAt);
+    return ended > 0 ? ended + RETENTION_MS : null;
+  }
+});
 
 interface DeviceDeps {
   log: typeof helpers.log;
@@ -173,7 +191,10 @@ class DeviceAuthorization {
     }
     const lifetime = Number(config.value('oauth2.deviceCodeLifetimeS'));
     const record = {
-      deviceCode: nodeCrypto.randomBytes(32).toString('base64url'),
+      // Stamped with the minting cell (#98 D10): a device polls the cell
+      // nearest IT, which relays to this one.
+      deviceCode: cellLocator.stamp(nodeCrypto.randomBytes(32)
+                                      .toString('base64url')),
       userCode: userCode, clientId: clientId,
       clientName: clientName || clientId, scope: scope,
       dpopJkt: dpopJkt || '', state: 'pending', createdAt: now(),

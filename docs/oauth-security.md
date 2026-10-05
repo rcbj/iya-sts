@@ -1199,7 +1199,7 @@ headers) are described on [Configuration](configuration.md) and
 | `oauth2.dpopNonceRequired` | `STS_OAUTH2_DPOP_NONCE_REQUIRED` | `false` | yes | Require every DPoP proof to carry a nonce this server supplied; makes proofs fresher, never mandatory. |
 | `oauth2.dpopIatSkewS` | `STS_OAUTH2_DPOP_IAT_SKEW_S` | `300` | yes | How far a proof's `iat` may be from now, either way. |
 | `oauth2.dpopNonceTtlS` | `STS_OAUTH2_DPOP_NONCE_TTL_S` | `300` | yes | How long a server-supplied nonce is accepted. |
-| `oauth2.dpopReplayCacheSize` | `STS_OAUTH2_DPOP_REPLAY_CACHE_SIZE` | `100000` | yes | How many live proof `jti`s a realm remembers; a full history refuses the next proof. |
+| `oauth2.dpopReplayCacheSize` | `STS_OAUTH2_DPOP_REPLAY_CACHE_SIZE` | `10000` | yes | How many live proof `jti`s a realm remembers; a full history refuses the next proof. **At the default that is about 16 DPoP proofs a second, sustained; past it every DPoP proof in the realm is refused until entries age out.** Raise it for a busier realm. |
 | `oauth2.dpopNonceCacheSize` | `STS_OAUTH2_DPOP_NONCE_CACHE_SIZE` | `10000` | yes | How many issued nonces a realm holds; past it the oldest is dropped. |
 
 ### Sender constraints

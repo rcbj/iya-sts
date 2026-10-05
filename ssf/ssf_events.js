@@ -1,6 +1,6 @@
 // @ts-check
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -1847,8 +1847,9 @@ function signingAlgorithm() {
 // **IT IS ASYNCHRONOUS AND MUST STAY THAT WAY.** `ssf.signingAlgorithm` can
 // name SLH-DSA, and an SLH-DSA-SHAKE-128s signature measured 14.6 seconds on
 // this service's own thread — during which it answers nobody. `signJwtAsAsync`
-// routes a post-quantum signature to the worker pool and resolves an RS256 one
-// in place, so the cost is paid only where it is real. See common/worker.js.
+// routes a post-quantum signature to libuv's thread pool and resolves an RS256
+// one in place, so the cost is paid only where it is real. See
+// common/pq_native.js.
 //
 // `ssf.breakSetSignature` is the deliberate defect for this family, the same
 // device as `oauth2.breakIdTokenNonce`: it flips one byte of the signature
@@ -1861,13 +1862,13 @@ function signingAlgorithm() {
 // ---------------------------------------------------------------------------
 /**
  * Signs a SET with `typ: secevent+jwt`, asynchronously so that a post-quantum
- * signature runs on the worker pool.
+ * signature runs on libuv's thread pool.
  *
  * In development mode `ssf.breakSetSignature` flips a byte of the signature
  * after signing.
  *
  * @param claims - the SET's claims
- * @param options - `algorithm` (default `signingAlgorithm()`) and `session`
+ * @param options - `algorithm` (default `signingAlgorithm()`)
  * @returns a promise of the compact JWS
  */
 function signSet(claims, options) {
@@ -1875,7 +1876,7 @@ function signSet(claims, options) {
   const settings = options || {};
   const alg = settings.algorithm || signingAlgorithm();
   log.debug("Leaving signSet().");
-  return signJwtAsAsync(claims, alg, null, { session: settings.session,
+  return signJwtAsAsync(claims, alg, null, {
     // RFC 8417 section 2.2's media type, and it is a SHOULD that behaves
     // like a MUST: a receiver that dispatches on `typ` — and several do —
     // drops a token without it with no error anybody sees. It is asked for

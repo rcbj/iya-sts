@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -147,9 +147,8 @@ module.exports = {
               '24.16.0, so the containerized run does check all of it)');
       t.log.warn('NOT CHECKED HERE: every ML-DSA certificate assertion in ' +
                  'pq_certificates.js. Run ./run-tests.sh, or use ' +
-                 'node 24, to check them. The post-quantum JOSE algorithms ' +
-                 'are unaffected and worker_pool.js still covers them — they ' +
-                 'come from @noble/post-quantum and need nothing of OpenSSL.');
+                 'node 24, to check them. Since #363 every post-quantum ' +
+                 'algorithm here needs OpenSSL 3.5, the JOSE ones included.');
       let named = null;
       try {
         crypto.selfSignedMlDsaCertificate({ algorithm: 'ml-dsa-65',

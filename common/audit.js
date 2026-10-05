@@ -1,6 +1,6 @@
 // @ts-check
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -377,6 +377,16 @@ const ACTIONS = [
            'was being spent' },
   { action: 'portal.activate.mfa.refused', category: 'authentication',
     label: 'An authenticator app was not confirmed during activation' },
+  // And a security key's ceremony inside an activation (2026-10-01), for the
+  // same reason: the link authorised it, not a session.
+  { action: 'portal.activate.key.started', category: 'authentication',
+    label: 'A security key ceremony was started while an activation link ' +
+           'was being spent' },
+  { action: 'portal.activate.key.enrolled', category: 'authentication',
+    label: 'A security key was registered while an activation link was ' +
+           'being spent' },
+  { action: 'portal.activate.key.refused', category: 'authentication',
+    label: 'A security key was not registered during activation' },
 
   { action: 'session.start', category: 'session',
     label: 'A sign-on session was created' },
@@ -461,6 +471,18 @@ const ACTIONS = [
     label: 'An application\'s client secret has expired' },
   { action: 'keys.retire', category: 'service',
     label: 'Retired signing keys past their grace were dropped' },
+  // DATA ENCRYPTION KEYS (#391 P2): `common/data_key_rotation.ts`.
+  { action: 'keys.data-key-rotate', category: 'service',
+    label: 'Data encryption keys were rotated' },
+  { action: 'keys.data-key-reencrypt', category: 'service',
+    label: 'Values under superseded data encryption keys were re-sealed' },
+  { action: 'keys.data-key-destroy', category: 'service',
+    label: 'Superseded data encryption keys nothing is sealed under were ' +
+           'destroyed' },
+  // THE KEY-ENCRYPTION KEY ROTATED IN ITS KMS, BY HAND (#391 P5).
+  { action: 'keys.kek-rotate', category: 'admin',
+    label: 'The key-encryption key was rotated in its key management ' +
+           'service and the data keys re-wrapped' },
   // A PINNED SIGNING KEY (#263): an operator's key pinned as a realm's signer
   // for one algorithm, and unpinned. `common/signing_rotation.ts`.
   { action: 'keys.pin', category: 'admin',
@@ -539,6 +561,10 @@ const ACTIONS = [
   { action: 'user.delete', category: 'directory', label: 'A user was deleted' },
   { action: 'user.update', category: 'directory', label: 'A user was updated' },
   { action: 'user.rename', category: 'directory', label: 'A user was renamed' },
+  // A PERSON'S HOME MOVED TO ANOTHER CELL (#98): an administrator's act, one
+  // row at the cell that held them, naming the cell they went to.
+  { action: 'cells.rehome', category: 'directory',
+    label: 'A person was moved to another cell' },
   { action: 'user.query', category: 'directory',
     label: 'A search returned at least one user' },
   { action: 'group.create', category: 'directory',
@@ -687,6 +713,9 @@ const ACTIONS = [
            'cleared it' },
   { action: 'admin.delegation.may-act', category: 'admin',
     label: 'An operator named or cleared the party who may act for somebody' },
+  { action: 'admin.delegation.semantics', category: 'admin',
+    label: 'An operator set the delegation semantics a person allows, or ' +
+           'their default (#186)' },
   { action: 'portal.delegation.may-act', category: 'authentication',
     label: 'A person named or cleared the party who may act for them' },
 
@@ -891,6 +920,16 @@ const ACTIONS = [
     label: 'A GNAP grant was approved and its tokens released' },
   { action: 'gnap.grant.revoke', category: 'protocol',
     label: 'A GNAP grant was revoked' },
+  { action: 'gnap.grant.owner-queued', category: 'protocol',
+    label: 'A GNAP grant waits for its absent resource owner\'s approval ' +
+           'on the portal (#432 phase 6)' },
+  { action: 'gnap.grant.forward', category: 'protocol',
+    label: 'The person at a GNAP approval page was not the user the ' +
+           'request named, and the grant was sent to that user\'s portal ' +
+           '(#432 phase 6)' },
+  { action: 'gnap.grant.finalize', category: 'protocol',
+    label: 'A GNAP grant was finalized, with the reason: issued, revoked, ' +
+           'rejected or expired' },
   { action: 'gnap.token.issue', category: 'protocol',
     label: 'A GNAP access token was issued' },
   { action: 'gnap.token.rotate', category: 'protocol',
@@ -997,6 +1036,12 @@ const ACTIONS = [
     label: 'A certificate enrollment was refused' },
   { action: 'enrollment.revoke', category: 'protocol',
     label: 'An enrolled certificate was revoked' },
+  { action: 'federation.signal-block', category: 'session',
+    label: 'A federation partner\'s Shared Signals blocked its sign-ins of ' +
+           'a person (#373)' },
+  { action: 'federation.signal-unblock', category: 'session',
+    label: 'A federation partner\'s Shared Signals lifted its block on a ' +
+           'person (#373)' },
   { action: 'federation.signout', category: 'session',
     label: 'A federation partner\'s sign-out ended a session' },
   { action: 'federation.signout-answered', category: 'session',
@@ -1082,10 +1127,20 @@ const ACTIONS = [
     label: 'A risk response was carried out' },
   { action: 'risk.terms.accept', category: 'admin',
     label: 'A risk dataset provider\'s terms were accepted' },
+  { action: 'attribute-sources.add', category: 'admin',
+    label: 'An attribute source was added' },
+  { action: 'attribute-sources.update', category: 'admin',
+    label: 'An attribute source was changed' },
+  { action: 'attribute-sources.remove', category: 'admin',
+    label: 'An attribute source was removed' },
+  { action: 'attribute-sources.refresh', category: 'admin',
+    label: 'People were read from an attribute source by hand' },
   { action: 'roles.create', category: 'admin',
     label: 'A role was created' },
   { action: 'roles.delete', category: 'admin',
     label: 'A role was deleted' },
+  { action: 'roles.describe', category: 'admin',
+    label: 'A role\'s description, display name or member types were set' },
   { action: 'saml2.authnrequest', category: 'protocol',
     label: 'A SAML 2.0 AuthnRequest was refused' },
   { action: 'saml2.artifact.resolve', category: 'protocol',

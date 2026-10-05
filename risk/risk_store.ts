@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -43,6 +43,9 @@ import bunyan = require('bunyan');
 import net = require('net');
 import config = require('../common/config');
 import InstanceSlot = require('../common/instance_slot');
+// This thread's identity (#364): a request worker is a thread of this
+// process, so the pid alone no longer tells two of them apart.
+import WorkerChannel = require('../common/worker_channel');
 
 const log = bunyan.createLogger({ name: 'sts-risk-store' });
 config.registerLogger(log);
@@ -531,7 +534,7 @@ class RiskStore {
       realm: String(v.realm || ''), attribution: '', sourceUri: '',
       rowCount: 0, parameters: {}, nextUpdateAt: 0, loadedAt: 0,
       activatedAt: 0, supersededAt: 0, rowsDeletedAt: 0, refusal: '',
-      errorCode: '', origin: String(process.pid)
+      errorCode: '', origin: WorkerChannel.processTag()
     }, v, { realm: String(v.realm || ''), state: 'loading' }));
     log.debug("Leaving RiskStore.beginVersion(). Begun.");
     return Promise.resolve(true);
@@ -953,7 +956,7 @@ class RiskStore {
     const held = this.failures.get(realm) || [];
     this.failureSeq += 1;
     held.push(Object.assign({ id: String(this.failureSeq),
-                              origin: String(process.pid) }, row,
+                              origin: WorkerChannel.processTag() }, row,
                             { realm: realm }));
     if (held.length > MAX_MEMORY_FAILURES) {
       held.splice(0, held.length - MAX_MEMORY_FAILURES);

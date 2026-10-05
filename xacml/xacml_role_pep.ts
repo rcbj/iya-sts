@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -137,6 +137,13 @@ import templates = require('./xacml_templates');
 import xacmlRequest = require('./xacml_request');
 // THE PER-SCOPE QUESTION, asked one way (#304, #305).
 import scopeVerdicts = require('./xacml_scope_verdicts');
+// THE TRANSFER QUESTIONS (#98 D4), asked the one way the gate asks them too.
+import transferVerdicts = require('./xacml_transfer_verdicts');
+// #186: who may act for whom, asked the same way by the gate.
+import exchangeVerdicts = require('./xacml_exchange_verdicts');
+// #432 phase 3: one question per GNAP access right, asked the same way by
+// the gate.
+import gnapRightVerdicts = require('./xacml_gnap_right_verdicts');
 const { AuthorizationRequest } = xacmlRequest;
 
 // The question an issuance site asks, through `common/issuance_gate.js`.
@@ -160,12 +167,10 @@ interface IssuanceQuestion {
   // THE AUTHENTICATION A SESSION STANDS ON (#64): `{ amr, acr, kinds }`,
   // named by `authn.startSession()` and by nothing else.
   authentication?: { amr?: string[]; acr?: string; kinds?: string[] } | null;
-  // THE DELEGATION QUESTION (#108): action-id `delegate`, asked by
-  // `issuance_gate.checkDelegation()` after the delegation attributes allowed
-  // an act. DENY-ONLY — see `decideDenyOnly()`.
-  denyOnly?: boolean;
-  delegation?: { intermediary: string; subject: string; target: string;
-                 mode: string; protocol: string } | null;
+  // WHO MAY ACT FOR WHOM (#186): present, this is the exchange question
+  // `issuance_gate.checkExchange()` asks, answered with a verdict
+  // (`decideExchange()`).
+  exchangeQuestion?: Record<string, any> | null;
   // THE REGISTERED DEVICE (#164 phase 6): the recognition fact, brought up
   // to date by the gate, or null for none; and what the realm requires of
   // one (`issuance_gate.deviceRequirementOf()`). A question with no
@@ -173,6 +178,14 @@ interface IssuanceQuestion {
   // carries no device attribute, and every device rule is inapplicable.
   device?: any;
   deviceRequirement?: string[];
+  // THE PROTOCOL DECLARATION (2026-10-01): the families this issuance
+  // satisfies, the families the application is declared for, and the realm's
+  // mode — named by the gate only where the application is declared for
+  // something. Absent, no protocol attribute is sent and the rule does not
+  // apply.
+  protocolFamilies?: string[];
+  declaredProtocols?: string[];
+  mode?: string;
   // WHAT THE REQUEST CARRIES (#304, part C of #88): the scope values asked
   // for, the client it came through, the grant type and the protocol — sent
   // to the policy on every issuance question where the caller names them.
@@ -184,6 +197,15 @@ interface IssuanceQuestion {
   // but one question per requested scope, answered with a verdict each
   // (`decideScopes()`).
   scopeQuestion?: ScopeQuestion | null;
+  // THE TRANSFER QUESTION (#98 D4): present, this is `hold-session`,
+  // `serve-request` or `release-attributes`, asked by
+  // `common/cell_transfer.ts` through `issuance_gate.checkTransfer()`, and
+  // answered with a verdict (`decideTransfer()`).
+  transferQuestion?: Record<string, any> | null;
+  // THE PER-RIGHT GNAP QUESTION (#432 phase 3): present, one question per
+  // GNAP access right, answered with a verdict each
+  // (`decideGnapRights()`).
+  gnapRightQuestion?: Record<string, any> | null;
 }
 
 // One requested scope (or RFC 9396 detail), with the facts the policy
@@ -248,8 +270,18 @@ interface IssuanceAnswer {
   // The device rule that denied (#164 phase 6): `compromised` or
   // `not-compliant`.
   device?: { refusal: string } | null;
+  // The protocol rule that denied (2026-10-01): the declaration and the
+  // families this issuance satisfies.
+  protocolRefused?: { declared: string[]; families: string[] } | null;
   // The per-scope verdicts, for a scope question (#304).
   scopes?: ScopeVerdict[];
+  // The verdict on a transfer question (#98): `hold` / `relay`, `serve` /
+  // `refuse` or `release` / `withhold`, and which document decided.
+  transfer?: { verdict: string; decidedBy: string } | null;
+  // The exchange verdict (#186), `xacml_exchange_verdicts.js`'s shape.
+  exchange?: Record<string, any> | null;
+  // The per-right verdicts, for a GNAP right question (#432).
+  gnapRights?: Array<Record<string, any>>;
 }
 
 // Which document decides: `policy` when one does, `why` when none can.
@@ -284,22 +316,18 @@ interface XacmlRolePepDeps {
   heldFactors?: (username: string) => string[];
   templates: { build(id: string, answers: any, options: any): any;
                ISSUANCE_ATTRIBUTE: Record<string, string>;
-               DEVICE_ATTRIBUTE?: Record<string, string> };
+               DEVICE_ATTRIBUTE?: Record<string, string>;
+               PROTOCOL_ATTRIBUTE?: Record<string, string> };
 }
 
 const ATTRIBUTE = templates.ISSUANCE_ATTRIBUTE;
 
-// THE DELEGATION QUESTION'S OWN ATTRIBUTES (#108). The intermediary is the
-// XACML 3.0 intermediary-subject category's subject-id — the standard place
-// for "the party acting between the subject and the resource" — and the two
-// below say which kind of act and through which protocol.
-const DELEGATION_ATTRIBUTE = {
-  MODE: 'urn:sts:xacml:delegation-mode',
-  PROTOCOL: 'urn:sts:xacml:delegation-protocol'
-};
 const RISK = templates.RISK_ATTRIBUTE;
 // #164 phase 6: the registered device an issuance came from.
 const DEVICE = templates.DEVICE_ATTRIBUTE;
+// The protocol families an issuance satisfies and the application's
+// declaration (2026-10-01).
+const PROTOCOL = templates.PROTOCOL_ATTRIBUTE;
 // #64: the authentication a session stands on.
 const AUTHN = templates.AUTHN_ATTRIBUTE;
 
@@ -615,6 +643,18 @@ class XacmlRolePep {
     this.riskAttributes(req, asked.risk, String(subject.name || ''));
     this.authenticationAttributes(req, asked.authentication);
     this.deviceAttributes(req, asked);
+    // THE PROTOCOL DECLARATION, only where the gate named both halves: the
+    // declaration on the resource (it is a fact about the application), the
+    // families and the mode in the environment (facts about this request).
+    const declared = asked.declaredProtocols || [];
+    const families = asked.protocolFamilies || [];
+    if (declared.length && families.length) {
+      req.resource(PROTOCOL.DECLARED, declared);
+      req.environment(PROTOCOL.FAMILY, families);
+      if (asked.mode) {
+        req.mode(asked.mode);
+      }
+    }
     log.debug('Leaving XacmlRolePep.requestFor().');
     return req;
   }
@@ -843,6 +883,21 @@ class XacmlRolePep {
       return this.decideScopes(asked);
     }
 
+    if (asked.exchangeQuestion) {
+      log.debug('Leaving XacmlRolePep.decideNow(). An exchange question.');
+      return this.decideExchange(asked);
+    }
+
+    if (asked.transferQuestion) {
+      log.debug('Leaving XacmlRolePep.decideNow(). A transfer question.');
+      return this.decideTransfer(asked);
+    }
+
+    if (asked.gnapRightQuestion) {
+      log.debug('Leaving XacmlRolePep.decideNow(). A GNAP right question.');
+      return this.decideGnapRights(asked);
+    }
+
     if (config.value('xacml.enabled') === false) {
       log.debug('Leaving XacmlRolePep.decideNow(). The XACML family is ' +
                 'switched off.');
@@ -850,10 +905,6 @@ class XacmlRolePep {
                           'at all.', [], []);
     }
 
-    if (asked.denyOnly) {
-      log.debug('Leaving XacmlRolePep.decideNow(). A deny-only question.');
-      return this.decideDenyOnly(asked);
-    }
 
     const subject = asked.subject || {};
     // A WAIVED ROLE QUESTION requires nothing, which the policy's "requires
@@ -986,6 +1037,47 @@ class XacmlRolePep {
     }
 
     // -----------------------------------------------------------------------
+    // A DENY ABOUT THE PROTOCOL (2026-10-01) — the policy's protocol
+    // obligation says so: in product mode, an issuance through a family the
+    // application is not declared for. Final like the device's, asked before
+    // risk so it is never turned into a step-up, and enforced where the role
+    // question was waived, because it is not about roles. The rule fires only
+    // in product, so development is never refused here.
+    // -----------------------------------------------------------------------
+    const protocolDeny = answer.decision === model.DECISION.DENY &&
+      (answer.obligations || []).some(function (o) {
+        return o && o.id === PROTOCOL.OBLIGATION;
+      });
+    if (protocolDeny) {
+      const protocolWhy = 'The application "' +
+        String(asked.application || '') + '" is declared for ' +
+        (asked.declaredProtocols || []).join(', ') + ', and this ' +
+        (asked.kind || 'issuance') + ' belongs to ' +
+        (asked.protocolFamilies || []).join(' or ') + '.';
+      if (!dryRun) {
+        audit.audit({
+          action: 'xacml.issuance.refused', errorCode: 'STS-XACML-0084',
+          actor: subject.name || '', protocol: 'XACML',
+          detail: 'Deny on the protocol for ' +
+                  (asked.kind || 'an issuance') + ': ' + protocolWhy
+        });
+      }
+      log.info(errorCodes.tag('STS-XACML-0084') + 'xacml: ' +
+               (dryRun ? 'a dry run would have REFUSED ' : 'REFUSED ') +
+               (asked.kind || 'an issuance') + ' to "' +
+               (subject.name || 'nobody') + '" on the protocol — ' +
+               protocolWhy);
+      const refusal = this.refused('The application is not configured for ' +
+        'this protocol.', answer.decision, held, required, answer);
+      refusal.protocolRefused = {
+        declared: asked.declaredProtocols || [],
+        families: asked.protocolFamilies || []
+      };
+      log.debug('Leaving XacmlRolePep.decideNow(). Deny on the protocol.');
+      return refusal;
+    }
+
+    // -----------------------------------------------------------------------
     // A DENY ABOUT RISK (#62 P3) — the policy's risk obligation says so. In
     // product it refuses, and the answer carries what to do about it (a
     // step-up and its factor) for the doors that can. In development it is
@@ -1106,60 +1198,39 @@ class XacmlRolePep {
   }
 
   // -------------------------------------------------------------------------
-  // THE DELEGATION QUESTION, DENY-ONLY (#108, 2026-09-23).
-  //
-  // `common/delegation_policy.ts` has already allowed the act from the
-  // attributes on the entries; this is the administrator's layer on top. Only
-  // an explicit Deny refuses. A missing, disabled or unloadable issuance
-  // policy, a NotApplicable (the built-in policy says nothing about
-  // `delegate`) and an Indeterminate leave the attribute rule's answer
-  // standing — the locked-room argument above applies with more force here,
-  // since the attributes ARE a policy and the question is only whether an
-  // operator wrote something stricter. No risk facts: a delegation is not an
-  // authentication.
+  // WHO MAY ACT FOR WHOM (#186): the two exchange questions, asked by
+  // `common/delegation_policy.ts` through `issuance_gate.checkExchange()`,
+  // against the realm's issuance policy and — where that gives no verdict,
+  // or xacml.enabled is off — the built-in one
+  // (`xacml_exchange_verdicts.js`, the transfer question's arrangement). The
+  // answer is the verdict; the door enforces it, and records the act.
   // -------------------------------------------------------------------------
-  private decideDenyOnly(asked: IssuanceQuestion): IssuanceAnswer {
-    const { log, audit, model, store, pdp, pip } = this.deps;
-    log.debug('Entering XacmlRolePep.decideDenyOnly().');
-    const loaded = this.issuancePolicy();
-    if (!loaded.policy) {
-      log.debug('Leaving XacmlRolePep.decideDenyOnly(). No policy.');
-      return this.allowed('No issuance policy is loaded (' + loaded.why +
-                          '), so nothing denies the delegation.', [], []);
-    }
-    const held: string[] = [];
-    const facts = asked.delegation || { intermediary: '', subject: '',
-                                        target: '', mode: '', protocol: '' };
-    const request = this.requestFor(asked, held, [], [])
-      .action(DELEGATION_ATTRIBUTE.MODE, [facts.mode])
-      .environment(DELEGATION_ATTRIBUTE.PROTOCOL, [facts.protocol])
-      .intermediary(facts.intermediary)
-      .build();
-    const answer = pdp.evaluate(loaded.policy, request, {
-      repository: store.repository(),
-      resolver: pip.resolverFor(request)
+  private decideExchange(asked: IssuanceQuestion): IssuanceAnswer {
+    const { log, config, store, pip } = this.deps;
+    log.debug('Entering XacmlRolePep.decideExchange().');
+    const question = asked.exchangeQuestion as Record<string, any>;
+    const loaded = config.value('xacml.enabled') === false
+      ? null : this.issuancePolicy();
+    const found = exchangeVerdicts.decide(Object.assign({}, question, {
+      policyName: this.issuancePolicyName()
+    }), loaded && loaded.policy ? loaded : null, function (request: any): any {
+      return { repository: store.repository(),
+               resolver: pip.resolverFor(request) };
     });
-    if (answer.decision !== model.DECISION.DENY) {
-      log.debug('Leaving XacmlRolePep.decideDenyOnly(). ' + answer.decision +
-                ', which does not refuse.');
-      return this.allowed('The issuance policy answered ' + answer.decision +
-                          ' for `delegate`; only a Deny refuses.', held, [],
-                          answer);
-    }
-    const why = 'The issuance policy denies "' + facts.intermediary +
-      '" acting for "' + facts.subject + '" toward "' + facts.target +
-      '" (action-id delegate, ' + (facts.mode || 'a delegation') + ').';
-    if (!dryRun) {
-      audit.audit({
-        action: 'xacml.issuance.refused', errorCode: 'STS-XACML-0039',
-        actor: facts.intermediary, protocol: 'XACML',
-        detail: why
-      });
-    }
-    log.info('xacml: ' + (dryRun ? 'a dry run would have DENIED ' :
-             'DENIED ') + why);
-    log.debug('Leaving XacmlRolePep.decideDenyOnly(). Deny.');
-    return this.refused(why, answer.decision, held, [], answer);
+    log.debug('Leaving XacmlRolePep.decideExchange(). ' + found.verdict);
+    return { allowed: found.verdict === 'allow',
+             decision: found.verdict === 'allow' ? 'Permit' : 'Deny',
+             why: 'The exchange verdict is ' + found.verdict +
+                  (found.refusal ? ' (' + found.refusal + ')' : '') +
+                  ', decided by ' +
+                  (found.decidedBy === 'policy'
+                    ? 'the issuance policy "' +
+                      ((loaded && loaded.name) || '') + '"'
+                    : found.decidedBy === 'none'
+                      ? 'nothing: no policy answered, so it is refused'
+                      : 'the built-in issuance policy') + '.',
+             roles: [], required: [],
+             policy: (loaded && loaded.name) || '', exchange: found };
   }
 
   // -------------------------------------------------------------------------
@@ -1207,6 +1278,72 @@ class XacmlRolePep {
              why: 'One verdict per requested scope.',
              roles: question.held || [], required: [],
              policy: (loaded && loaded.name) || '', scopes: verdicts };
+  }
+
+  // -------------------------------------------------------------------------
+  // THE PER-RIGHT GNAP QUESTION (#432 phase 3), `decideScopes()`'s
+  // arrangement: the realm's issuance policy first, with the repository and
+  // the PIP, the BUILT-IN policy for a right it says nothing about —
+  // `xacml.enabled` off, no loadable policy, an override built without the
+  // GNAP rules — through `xacml_gnap_right_verdicts.ts`, the one library the
+  // gate asks too. Nothing is audited here: the grant engine records what it
+  // refused or narrowed, once.
+  // -------------------------------------------------------------------------
+  private decideGnapRights(asked: IssuanceQuestion): IssuanceAnswer {
+    const { log, config, store, pip } = this.deps;
+    log.debug('Entering XacmlRolePep.decideGnapRights().');
+    const question = asked.gnapRightQuestion as Record<string, any>;
+    const loaded = config.value('xacml.enabled') === false
+      ? null : this.issuancePolicy();
+    const verdicts = gnapRightVerdicts.decide(Object.assign({}, question, {
+      policyName: this.issuancePolicyName()
+    }), loaded && loaded.policy ? loaded : null, function (request: any): any {
+      return { repository: store.repository(),
+               resolver: pip.resolverFor(request) };
+    });
+    log.debug('Leaving XacmlRolePep.decideGnapRights(). ' + verdicts.length +
+              ' verdict(s).');
+    return { allowed: true, decision: 'Permit',
+             why: 'One verdict per GNAP access right.',
+             roles: [], required: [],
+             policy: (loaded && loaded.name) || '', gnapRights: verdicts };
+  }
+
+  // -------------------------------------------------------------------------
+  // THE TRANSFER QUESTION (#98 D4): `hold-session`, `serve-request` or
+  // `release-attributes`, the facts `cell_transfer.ts` gathered, and one
+  // verdict out of the policy's transfer obligation. The scope question's
+  // arrangement exactly: the realm's issuance policy first, with the repository
+  // and the PIP, and the BUILT-IN policy where that gives no verdict —
+  // `xacml.enabled` off, no loadable policy, or an override built without the
+  // transfer rules — so the strict default never silently switches off. Nothing
+  // is audited or counted here: the caller records the relay or the refusal.
+  // -------------------------------------------------------------------------
+  private decideTransfer(asked: IssuanceQuestion): IssuanceAnswer {
+    const { log, config, store, pip } = this.deps;
+    log.debug('Entering XacmlRolePep.decideTransfer().');
+    const question = asked.transferQuestion as Record<string, any>;
+    const loaded = config.value('xacml.enabled') === false
+      ? null : this.issuancePolicy();
+    const found = transferVerdicts.decide(Object.assign({}, question, {
+      policyName: this.issuancePolicyName()
+    }), loaded && loaded.policy ? loaded : null, function (request: any): any {
+      return { repository: store.repository(),
+               resolver: pip.resolverFor(request) };
+    });
+    log.debug('Leaving XacmlRolePep.decideTransfer(). ' + found.verdict);
+    return { allowed: ['hold', 'serve', 'release']
+               .indexOf(found.verdict) >= 0,
+             decision: 'Permit',
+             why: 'The transfer verdict is ' + found.verdict + ', decided by ' +
+                  (found.decidedBy === 'policy'
+                    ? 'the issuance policy "' +
+                      ((loaded && loaded.name) || '') + '"'
+                    : found.decidedBy === 'none'
+                      ? 'the strict default, because no policy answered'
+                      : 'the built-in issuance policy') + '.',
+             roles: [], required: [],
+             policy: (loaded && loaded.name) || '', transfer: found };
   }
 
   private reasonFor(answer: any, held: string[], required: string[],

@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -285,8 +285,17 @@ void mtls;
 // `cluster_claims.js` before a credential is accepted (`spendPresented()`),
 // which is what decides a replay presented at two nodes at once.
 // ---------------------------------------------------------------------------
-const digestNonces = realms.map({ persist: 'scim.digestNonces',
-                                  retain: 'age' });
+// `expiresAt` (#333): a nonce lives `scim.digestNonceSeconds` from `at`.
+const digestNonces = realms.map({
+  persist: 'scim.digestNonces',
+  retain: 'age',
+  // A hot path (every row a flush writes): no Entering/Leaving pair.
+  expiresAt: function (row: any): number | null {
+    const at = Number(row && row.at);
+    const ttlS = Number(config.value('scim.digestNonceSeconds'));
+    return at > 0 && ttlS > 0 ? at + ttlS * 1000 : null;
+  }
+});
 // nonce -> the nonce-counts this process has accepted. Per realm for
 // `digestNonces`'s reason. It was not persisted (see above) until
 // 2026-09-18 — below.
@@ -342,8 +351,18 @@ const MAX_COUNTS_PER_NONCE = 1024;
 // is last writer wins. **It is persisted since 2026-09-18** all the same
 // (`scim.hobaSeen`), so a restarted process's fast refusal survives the
 // restart; the claim is still what decides between two live processes.
-const hobaChallenges = realms.map({ persist: 'scim.hobaChallenges',
-                                    retain: 'age' });
+// `expiresAt` (#333): the value is when the challenge was ISSUED, ms; it
+// lives `scim.hobaMaxAgeSeconds`.
+const hobaChallenges = realms.map({
+  persist: 'scim.hobaChallenges',
+  retain: 'age',
+  // A hot path (every row a flush writes): no Entering/Leaving pair.
+  expiresAt: function (issuedMs: any): number | null {
+    const at = Number(issuedMs);
+    const ttlS = Number(config.value('scim.hobaMaxAgeSeconds'));
+    return at > 0 && ttlS > 0 ? at + ttlS * 1000 : null;
+  }
+});
 const hobaSeen = realms.map({ persist: 'scim.hobaSeen', retain: 'age' });
 
 // ---------------------------------------------------------------------------
@@ -1367,10 +1386,18 @@ class ScimAuth {
     // — so the client_id is the principal and `isClient` says why the name
     // looks like an application. `username` is what every user-bearing grant
     // here carries alongside `sub`, and it is the form the audit log and
-    // /admin/users file people under.
-    const isClient = !claims.username && !claims.sub;
-    const principal = String(claims.username || claims.sub ||
-                             claims.client_id || '').trim();
+    // /admin/users file people under. A client's token is told by its `sub`,
+    // which names the client — the client_id, or `urn:sts:client:<id>` in
+    // RFC 9700 mode — the rule `role_permissions.ts`'s isClientToken() and
+    // `ssf_auth.ts`'s principalOfClaims() state; it carries no `username`
+    // since #93, so its principal is the client_id in both modes.
+    const clientId = String(claims.client_id || '');
+    const sub = String(claims.sub || '');
+    const isClient = !claims.username &&
+      (!sub || (!!clientId &&
+                (sub === clientId || sub === 'urn:sts:client:' + clientId)));
+    const principal = String((isClient ? clientId : '') || claims.username ||
+                             sub || clientId).trim();
 
     log.debug("Leaving ScimAuth.attemptBearer(). " + row + " for " +
               (principal || '(unnamed)') + ".");
@@ -2853,7 +2880,7 @@ class ScimAuth {
   // ---------------------------------------------------------------------------
   /**
    * Decides as `authenticate()` does, with a Basic password verified in the
-   * worker pool and a single-use Digest or HOBA credential claimed across the
+   * thread pool and a single-use Digest or HOBA credential claimed across the
    * cluster before any session is made.
    *
    * @param req - the request
@@ -2878,14 +2905,14 @@ class ScimAuth {
   }
 
   // ---------------------------------------------------------------------------
-  // A BASIC PASSWORD, VERIFIED IN THE WORKER POOL (2026-09-21).
+  // A BASIC PASSWORD, VERIFIED ON LIBUV'S THREAD POOL (2026-09-21).
   //
   // `attemptBasic()` is synchronous, so in product mode it hashed the password
   // with scrypt ON THE REQUEST THREAD — about 70ms at the default cost, in
   // which this worker answered nothing else. The asynchronous path
   // (`authenticateSpent()`, which `scim.ts` takes) now asks
   // `credentials.verifyAsync()` first, which is the same check with the hash
-  // done in the worker pool, and leaves the verdict on the request for
+  // done on libuv's thread pool, and leaves the verdict on the request for
   // `attemptBasic()` to use. It keeps the username and a SHA-256 of the
   // password beside the verdict — never the password — so a verdict is only
   // used for the credential it was reached for. Only when the Basic scheme is

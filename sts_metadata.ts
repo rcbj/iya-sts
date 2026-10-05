@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -787,7 +787,14 @@ const SPECS: Spec[] = [
               'through existing_access_token, and every format in the ' +
               'section 5.2 token format registry — jwt-signed, ' +
               'jwt-encrypted, macaroon, biscuit and zcap — minted and ' +
-              'verified.' },
+              'verified. Section 6.3\'s resource server that checks a token ' +
+              'on its own sees a revocation (#432): the JWT formats carry a ' +
+              'Token Status List status claim, revoked biscuits\' ' +
+              'revocation identifiers are published (non-standard), and a ' +
+              'registered resource server may own a Shared Signals stream ' +
+              'that hears session-revoked for the tokens audienced to it. ' +
+              'Macaroon and zcap tokens have no such mechanism; introspection ' +
+              'is their path.' },
   { id: 'rfc9421', name: 'RFC 9421 — HTTP Message Signatures',
     where: 'IETF',
     url: 'https://www.rfc-editor.org/rfc/rfc9421',
@@ -1206,11 +1213,14 @@ const SPECS: Spec[] = [
     coverage: 'partial: Issue, Renew, Validate and Cancel over SOAP 1.1 and ' +
               '1.2. Request signatures are not verified. OnBehalfOf and ' +
               'ActAs ' +
-              'are decided by a delegation policy (#108) — only an ' +
-              'application entry may delegate, appAllowedToDelegateTo or ' +
-              'appAllowedToActOnBehalfOf must allow the AppliesTo, ' +
-              'OnBehalfOf needs appTrustedToImpersonate — and refused with a ' +
-              'wst:RequestFailed fault (section 11) in product mode; ' +
+              'are decided by the issuance policy (#186, the rules the token ' +
+              'exchange and Kerberos S4U share) — OnBehalfOf asks for ' +
+              'impersonation and ActAs for delegation, the entries\' ' +
+              'delegation semantics must allow it, the AppliesTo must be a ' +
+              'registered application the delegation relationships allow, ' +
+              'and a person requester needs delegation.actorRole — and ' +
+              'refused with a wst:RequestFailed fault (section 11) in ' +
+              'product mode; both elements at once are wst:InvalidRequest; ' +
               'development records what would have been refused. In PRODUCT ' +
               'mode (2026-09-12) every ' +
               'operation needs a credential — a UsernameToken verified ' +
@@ -1726,11 +1736,14 @@ const SPECS: Spec[] = [
     where: 'IETF', url: 'https://www.rfc-editor.org/rfc/rfc8693',
     coverage: 'partial: the grant is accepted at the token endpoint and the ' +
               'subject token becomes the identity in the issued token. A ' +
-              'delegation policy decides who may act for whom (#108): the ' +
-              'client and actor against appAllowedToDelegateTo / ' +
-              'appAllowedToActOnBehalfOf, appTrustedToImpersonate for an ' +
-              'exchange with no actor_token, the subject\'s groups and ' +
-              'stsNotDelegated, and a deny-only issuance-policy layer — ' +
+              'the issuance policy decides who may act for whom and as what ' +
+              '(#186): the semantics by precedence (this service\'s ' +
+              'exchange_semantics parameter, the actor\'s and subject\'s ' +
+              'defaults, delegation.defaultSemantics), the semantics each ' +
+              'party allows, the subject\'s authority for the application, ' +
+              'appAllowedToDelegateTo / appAllowedToActOnBehalfOf between S ' +
+              'and R, protected subjects, may_act, and exactly one ' +
+              'registered audience — ' +
               'invalid_request or invalid_target (section 2.2.2) in product ' +
               'mode, recorded in development. `act` nests (section 4.1); ' +
               '`may_act` (section 4.4) is issued from the person\'s own ' +
@@ -1894,7 +1907,9 @@ const SPECS: Spec[] = [
     coverage: 'full, in every mode: every access token carries typ at+jwt, ' +
               'the seven required claims, scope only when granted, ' +
               'preferred_username for a person and auth_time/amr/acr where ' +
-              'an authentication event is behind it. A scope naming two ' +
+              'an authentication event is behind it, and a ' +
+              'draft-ietf-oauth-status-list status claim naming its index in ' +
+              'the realm\'s access-token status list (#432). A scope naming two ' +
               'resources, or a resource the request did not address, is ' +
               'invalid_scope, and several resources with a scope tied to none ' +
               'of them is invalid_target (section 3); a token for an API ' +
@@ -2944,8 +2959,13 @@ const SPECS: Spec[] = [
               'endpoint, and the status claim in every SD-JWT VC and ' +
               'jwt_vc_json credential; the Verifier resolves a trusted ' +
               'foreign issuer\'s list and refuses when no statement can be ' +
-              'made. No historical resolution (501), no redirects followed, ' +
-              'no mdoc (none is issued).' },
+              'made. And a second list per realm for ACCESS TOKENS (#432): ' +
+              'one bit per token, every OAuth RFC 9068 access token and ' +
+              'every GNAP jwt-signed and jwt-encrypted token carrying its ' +
+              'status claim, advertised as status_list_aggregation_endpoint ' +
+              '(section 9.1) in the authorization server metadata. No ' +
+              'historical resolution (501), no redirects followed, no mdoc ' +
+              '(none is issued).' },
   { id: 'bitstring-status-list', name: 'W3C Bitstring Status List v1.0',
     where: 'W3C', url: 'https://www.w3.org/TR/vc-bitstring-status-list/',
     coverage: 'partial: revocation and suspension lists per realm, served ' +
@@ -3273,10 +3293,9 @@ const ENDPOINTS: EndpointEntry[] = [
           'the one question that container answers unanswerable. It ' +
           'publishes the schema for the same reason /admin/ldap/applications ' +
           'does, plus a column that page has no need of: which DIRECTION ' +
-          'each attribute is for. fedClientSecret is in the clear here, and ' +
-          'it is this service\'s own credential at somebody else\'s — a ' +
-          'stronger statement than anything else in this directory, made for ' +
-          'the reason /krb5/principals prints the Kerberos passwords.' },
+          'each attribute is for. fedClientSecret, this service\'s own ' +
+          'credential at somebody else\'s, is sealed at rest wherever the ' +
+          'process holds a durable key-encryption key.' },
   { path: '/admin/ldap/applications', group: 'LDAP', name: 'The application ' +
       'registry, and its schema',
     specs: ['rfc4511', 'rfc4512', 'rfc4519', 'rfc7591'],
@@ -3617,6 +3636,18 @@ const ENDPOINTS: EndpointEntry[] = [
           'and for zcap the controller document\'s URL and the one proof ' +
           'suite this realm signs and accepts. Macaroons are symmetric and ' +
           'never appear here. Served no-store.' },
+  { path: '/gnap/biscuit/revocations', group: 'GNAP',
+    name: 'Revoked biscuits',
+    specs: ['rfc9767', 'biscuit'],
+    what: 'NOT A SPECIFICATION ENDPOINT (#432): the revocation identifiers ' +
+          'of every revoked biscuit access token that has not yet expired, ' +
+          'as JSON { revocation_ids, ttl } — a biscuit\'s own answer to ' +
+          'revocation is a list its verifier checks a token\'s identifiers ' +
+          'against, and no document says where one is published. Named in ' +
+          'the RS-facing discovery document (biscuit_revocation_endpoint) ' +
+          'and on /gnap/keys. Macaroon and zcap tokens have no such ' +
+          'mechanism: introspection, or a short lifetime, is their path. ' +
+          'Cache-Control max-age is oauth2.accessTokenStatusListTtlS.' },
   { path: '/gnap/zcap/controller', group: 'GNAP', name: 'The ZCAP controller ' +
                                                         'document',
     specs: ['zcap-ld', 'di-jcs'],
@@ -3634,6 +3665,18 @@ const ENDPOINTS: EndpointEntry[] = [
           'section 9.1 WWW-Authenticate challenge naming the grant endpoint; ' +
           'with one it checks the format, the audience, the key binding and ' +
           'the access rights the way a resource server would. ' +
+          'gnap.demoResourceServer turns it off.' },
+  { path: '/gnap/rs/spend', group: 'GNAP', name: 'The demonstration ' +
+                                                 'resource server\'s spend',
+    specs: ['rfc9635', 'rfc9767'],
+    what: 'An operation that SPENDS against a right\'s limits (#432 phase ' +
+          '5): POST with an amount, currency and receiver, under a token ' +
+          'granting spend on the demonstration type. The resource server ' +
+          'keeps the running totals per grant — atomically across the ' +
+          'cluster, reset at each boundary of the limits\' repeating ' +
+          'interval, refunded when the operation fails — and refuses an ' +
+          'over-limit operation with 403 insufficient_scope. The reference ' +
+          'for what a resource server does with a limit. ' +
           'gnap.demoResourceServer turns it off.' },
   { path: '/admin/gnap', group: 'GNAP', name: 'The GNAP console page',
     specs: ['rfc9635', 'rfc9767'],
@@ -4169,15 +4212,17 @@ const ENDPOINTS: EndpointEntry[] = [
           '(min_verification_interval) is not enforced unless ' +
           'ssf.verificationRateLimit is on, which is what makes the 429 ' +
           'reachable.' },
-  { path: '/ssf/transmitters/:id/push', group: 'Shared Signals',
-    name: 'Push endpoint for a foreign transmitter (RFC 8935)',
+  { path: '/federation/signals/:id', group: 'Shared Signals',
+    name: 'Push endpoint for a federation partner\'s Shared Signals ' +
+          '(RFC 8935)',
     specs: ['ssf', 'rfc8935', 'rfc8417'],
-    what: 'Where a foreign transmitter this realm registered pushes a ' +
-          'Security Event Token (#153): the Authorization header this realm ' +
-          'gave it when the stream was created, then the SET, verified ' +
-          'against the transmitter\'s keys and acted on as the ' +
-          'signal-response policy permits. 202, or 400 with {err, ' +
-          'description}.' },
+    what: 'Where the partner of a federation relationship pushes a ' +
+          'Security Event Token (#153, #373): the relationship must be ' +
+          'enabled with its signals on, then the Authorization header this ' +
+          'realm gave the partner when the stream was created, then the ' +
+          'SET, verified against the keys its SSF configuration names and ' +
+          'acted on as the signal-response policy permits. 202, or 400 ' +
+          'with {err, description}.' },
   { path: '/ssf/poll', group: 'Shared Signals',
     name: 'Poll delivery (RFC 8936)',
     specs: ['rfc8936', 'rfc8417'],
@@ -4750,10 +4795,17 @@ const ENDPOINTS: EndpointEntry[] = [
   { path: '/admin/api-explorer/explorer.js', group: 'Admin',
     name: 'API explorer script', specs: [],
     what:
-      'NON-SPEC. The explorer\'s script, and the only script this service ' +
-          'serves. A separate resource rather than an inline block precisely ' +
-          'so that script-src \'self\' suffices and \'unsafe-inline\' is ' +
-          'never needed.' },
+      'NON-SPEC. The explorer\'s script. A separate resource rather than an ' +
+          'inline block precisely so that script-src \'self\' suffices and ' +
+          '\'unsafe-inline\' is never needed.' },
+  { path: '/admin/copy.js', group: 'Admin',
+    name: 'Copy button script', specs: [],
+    what:
+      'NON-SPEC. The script behind the Copy buttons beside every endpoint ' +
+          'on the Protocols pages: it reveals the hidden buttons and copies ' +
+          'a value to the clipboard (the asynchronous clipboard, or a ' +
+          'selected text area with execCommand where there is none). Loaded ' +
+          'with script-src \'self\' only by a page that draws a Copy button.' },
   { path: '/admin/sts-metadata', group: 'Admin', name: 'This page',
     specs: [],
     what: 'NON-SPEC. Every protocol this service speaks, every endpoint it ' +
@@ -4987,6 +5039,34 @@ const ENDPOINTS: EndpointEntry[] = [
           'its authorization_servers with this realm\'s; action=create then ' +
           'creates through the same function and redraws this page on a ' +
           'refusal with the document still loaded.' },
+  { path: '/admin/applications/edit', group: 'Admin',
+    name: 'An application\'s field grid',
+    // The page above's specifications, for its reasons: what it writes is the
+    // same directory entry.
+    specs: ['rfc4511', 'rfc4519', 'rfc7591'],
+    what: 'NON-SPEC console form, POST ONLY. The field grid on an ' +
+          'application\'s page and on /admin/applications/new — the ' +
+          'protocol families it is declared for and every field ' +
+          'applicationFields() can edit, one sub-tab per protocol — posts ' +
+          'here, because a refused save, a "+" and a delete have to come ' +
+          'back to the same page with every box as the reader left it, which ' +
+          'the list page\'s 303 cannot carry. A save goes through the same ' +
+          'update-fields action as POST /admin-api/applications/update-fields ' +
+          'and lands on the protocol\'s sub-tab.' },
+  { path: '/admin/users/edit', group: 'Admin',
+    name: 'A person\'s field grid',
+    // What it writes is a person's directory entry, whose attribute names are
+    // RFC 4519's and RFC 2798's.
+    specs: ['rfc4511', 'rfc4519'],
+    what: 'NON-SPEC console form, POST ONLY. The Attributes tab of a ' +
+          'person\'s page on /admin/users — every attribute ' +
+          'ldap/person_editor.ts edits, typed, one sub-tab per group with ' +
+          'its own Save — posts here, because a refused save, a "+" and a ' +
+          'delete have to come back to the same page with every box as the ' +
+          'reader left it, which the list page\'s 303 cannot carry. A save ' +
+          'goes through the same update-fields action as POST ' +
+          '/admin-api/users/update-fields and lands on the group\'s ' +
+          'sub-tab.' },
   { path: '/admin/spiffe', group: 'Admin', name: 'SPIFFE',
     specs: ['spiffe-id', 'spiffe-bundle', 'spiffe-x509-svid',
             'spiffe-jwt-svid'],
@@ -5303,12 +5383,14 @@ const ENDPOINTS: EndpointEntry[] = [
           'the shared outbound queue, by kind, with each dead letter\'s ' +
           'code and a Retry.' },
   { path: '/admin/ssf/transmitters', group: 'Admin',
-    name: 'Foreign SSF transmitters',
+    name: 'Signals from partners',
     specs: ['ssf', 'rfc8935', 'rfc8936'],
-    what: 'The transmitters this realm receives Shared Signals from (#153): ' +
-          'register one by its issuer, its stream there and every stream ' +
-          'act, what arrived, whether it verified, the person it named and ' +
-          'what it led to.' },
+    what: 'NON-SPEC PAGE, under Monitoring (#153, #373): every federation ' +
+          'relationship whose partner\'s Shared Signals this realm ' +
+          'receives, its stream there, what arrived, whether it verified, ' +
+          'the person it named, what it led to, and the sign-ins partners ' +
+          'have blocked. Read only: the acts are on the relationship\'s ' +
+          'page.' },
   { path: '/admin/ssf/dead-letters', group: 'Admin', name: 'Dead letters',
     specs: ['ssf', 'rfc8417', 'rfc8935'],
     what: 'NON-SPEC PAGE (2026-09-14), under Monitoring → Shared Signals: ' +
@@ -5949,6 +6031,26 @@ const ENDPOINTS: EndpointEntry[] = [
           'form names only an application and a scope, checked against the ' +
           'person\'s own entry. Paged by application. Real submit buttons ' +
           'and no script.' },
+  { path: '/portal/gnap', group: 'User portal',
+    name: 'The GNAP grants you gave, and revoking one',
+    specs: ['rfc9635'],
+    effect: 'revokes one of the signed-in person\'s own GNAP grants and ' +
+            'every token issued under it',
+    what: 'NON-SPEC page for a spec behaviour (#432). Every GNAP grant the ' +
+          'signed-in person is the resource owner of — approved by them, ' +
+          'or acted on by a trusted client presenting a verified assertion ' +
+          'about them — with the access rights it holds (limits included), ' +
+          'the tokens issued under it (label, format, expiry, state; never ' +
+          'a value), its own lifetime and, once finalized, why: issued, ' +
+          'revoked, rejected or expired. Revoke is the client\'s RFC 9635 ' +
+          'section 5.4 act performed for them, through the one path the ' +
+          'client\'s DELETE and the console take: the tokens revoked, the ' +
+          'grant finalized as revoked, CAEP session-revoked sent. The ' +
+          'identity is the session\'s; the form names only a grant, ' +
+          'checked against the person\'s own. The same view as the ' +
+          'GNAP grants tab of /admin/users and gnapGrants in ' +
+          '/admin-api/users?user=. Under cells, this cell\'s grants, and ' +
+          'the page says so. Paged; real submit buttons and no script.' },
   { path: '/portal/signing-key', group: 'User portal',
     name: 'Your own RFC 7523 signing key',
     specs: ['rfc7521', 'rfc7523', 'rfc5280'],
@@ -6096,9 +6198,11 @@ const ENDPOINTS: EndpointEntry[] = [
           'accounts, both attributes and which was missing, and they appear ' +
           'in NO other list here, because nothing was accepted so no ' +
           'authentication was recorded. A SECOND HALF OF THE PAGE IS ' +
-          'CONFIGURATION RATHER THAN HISTORY, and it is TWO registers. ' +
-          'DELEGATED PERMISSIONS, in Microsoft Entra ID\'s shape and the ' +
-          'only CONTROLS this page has: a resource application is given a ' +
+          'CONFIGURATION RATHER THAN HISTORY, and it is TWO registers, both ' +
+          'drawn READ-ONLY here since 2026-10-01: every control is on ' +
+          '/admin/delegation-settings (Protocols → Delegation) and on each ' +
+          'application\'s Permissions tab. DELEGATED PERMISSIONS, in ' +
+          'Microsoft Entra ID\'s shape: a resource application is given a ' +
           'base URI (oauthPermissionBaseUri) and permissions on it ' +
           '(oauthPermission), a permission is identified by the two joined — ' +
           'https://example.com/ + write = https://example.com/write — and a ' +
@@ -6107,8 +6211,9 @@ const ENDPOINTS: EndpointEntry[] = [
           'ORDINARY OAUTH SCOPE and the access token comes back AUDIENCED to ' +
           'the base URI with the permission NAME on its scope claim. A ' +
           'permission must be DEFINED before it can be GRANTED, which is ' +
-          'checked in applications.js so that this form, the management API ' +
-          'and the attribute editor on /admin/applications cannot disagree. ' +
+          'checked in applications.js so that the console forms, the ' +
+          'management API and the attribute editor on /admin/applications ' +
+          'cannot disagree. ' +
           'IN PRODUCT MODE AN UNGRANTED PERMISSION IS invalid_scope; in ' +
           'development it is honoured, logged and marked here, and only ' +
           'oauth2.delegatedPermissionsEnforced turns it into invalid_scope. ' +
@@ -6122,7 +6227,7 @@ const ENDPOINTS: EndpointEntry[] = [
           '— and, since #108, the same model for WS-Trust OnBehalfOf / ActAs ' +
           'and the RFC 8693 token exchange on application entries ' +
           '(appAllowedToDelegateTo, appAllowedToActOnBehalfOf, ' +
-          'appDelegationSubjectGroup, appTrustedToImpersonate) with the ' +
+          'appDelegationSubjectGroup, appDelegationSemantics) with the ' +
           'people carrying stsNotDelegated or stsMayAct, ENFORCED in product ' +
           'mode and recorded as "would have been refused" in development. ' +
           'The permission register beside them is policy this service was ' +
@@ -6137,6 +6242,37 @@ const ENDPOINTS: EndpointEntry[] = [
           'the picture), the Kerberos policy, and `delegationPolicy` — the ' +
           'WS-Trust and token-exchange one, paged as GET ' +
           '/admin-api/delegation/policy pages it.' },
+  { path: '/admin/delegation-settings', group: 'Admin',
+    name: 'Delegation settings',
+    // RFC 6749 because a delegated permission is asked for as an OAuth scope
+    // and the access token is audienced to the resource's base URI.
+    specs: ['rfc6749'],
+    effect: 'changes which delegated permissions exist and which client ' +
+            'applications hold them, and how many delegation acts are kept',
+    what: 'NON-SPEC PAGE (2026-10-01). Every control that was on ' +
+          '/admin/delegation, which only reads since: the DELEGATED ' +
+          'PERMISSIONS register for every application — Expose an API (a ' +
+          'resource\'s oauthPermissionBaseUri), Define a permission ' +
+          '(oauthPermission), each permission\'s Remove and each grant\'s ' +
+          'Revoke (oauthDelegatedPermission on the client) — and the ' +
+          'Delegation settings group (delegation.maxRecords). A grant is ' +
+          'made on an application\'s own Permissions tab, from either end. ' +
+          'POST takes the five actions set-permission-base, ' +
+          'define-permission, remove-permission, grant-permission and ' +
+          'revoke-permission from both pages, and POST ' +
+          '/admin-api/permissions/{action} mirrors it. ?format=json is the ' +
+          'register whole, as `allowed`, and the settings.' },
+  { path: '/admin/attribute-sources', group: 'Admin',
+    name: 'Attribute sources', specs: [],
+    what: 'NON-SPEC PAGE (#94). The SQL databases this realm reads people\'s ' +
+          'attributes from, onto their directory entries: each source\'s ' +
+          'database, the one row it reads (a table or view, the key column ' +
+          'and the person\'s attribute it matches), the columns it writes ' +
+          'onto which attributes, when it reads — at sign-in, once, on a ' +
+          'schedule, on demand — and what a failure does, with its status. ' +
+          'Add, change, test (read one row, write nothing), read everyone ' +
+          'now, read one person now, remove. TLS always verified; the ' +
+          'password read from where the source names, never stored.' },
   { path: '/admin/roles', group: 'Admin', name: 'Roles',
     // XACML because the decision is a XACML one, and rfc6749/oidc/saml because
     // those are the issuances a role gates. NOT the delegation page's four:
@@ -6690,6 +6826,44 @@ const ENDPOINTS: EndpointEntry[] = [
           'valid. Keys only, never values, and no control. A service page: ' +
           'a realm administrator is refused it. The figures are the ' +
           'answering process\'s. Add ?format=json, or GET /admin-api/caches.' },
+  { path: '/admin/worker-pools', group: 'Admin',
+    name: 'The worker pools of this node',
+    specs: [],
+    what: 'NON-SPEC (#327). Filed under Monitoring. The pools of workers ' +
+          'this node runs — the request workers (workers.requestCount) and ' +
+          'the console and portal\'s own (workers.surfaceCount) — each ' +
+          'with its workers now, busy and free, its ' +
+          'maximum and initial size, how many crashed (and never started) ' +
+          'against how many were stopped, and its average response time. A ' +
+          'pool that is off says so. Always drawn by the front process, ' +
+          'which asks each request worker for its own figures. ' +
+          'In a cluster, a section per node by name (#332) — this one ' +
+          'live, every other from its snapshot in the shared store, marked ' +
+          'stale or gone — and the totals; ?node= narrows it to one. A ' +
+          'service page: a realm ' +
+          'administrator is refused it. Add ?format=json, or ' +
+          'GET /admin-api/worker-pools.' },
+  { path: '/admin/node-health', group: 'Admin',
+    name: 'The container and processes of this node',
+    specs: [],
+    what: 'NON-SPEC (#329). Filed under Monitoring. The CPU utilisation of ' +
+          'this node\'s container (cgroup v2 cpu.stat over an interval, ' +
+          'against the quota in cpu.max), its memory (memory.current ' +
+          'against memory.max, and memory.stat), and the Node.js memory of ' +
+          'every process of the node — the front process and each request ' +
+          'and hosted-surface worker (process.memoryUsage(), asked over the ' +
+          'channel), each post-quantum child and the debugger\'s api ' +
+          '(the same, each asked over its own channel; a child busy with a ' +
+          'job is read from /proc and says so) — with the total; the ECS ' +
+          'task ' +
+          'metadata endpoint as a cross-check where there is one. A source ' +
+          'that is not there says so. Always drawn by the front process. ' +
+          'In a cluster, a section per node by name (#332) — this one ' +
+          'live, every other from its snapshot in the shared store, marked ' +
+          'stale or gone — and the totals; ?node= narrows it to one. A ' +
+          'service page: a realm ' +
+          'administrator is refused it. Add ?format=json, or ' +
+          'GET /admin-api/node-health.' },
   { path: '/admin/encryption', group: 'Admin',
     name: 'What is encrypted at rest, and how much of it has happened',
     specs: [],
@@ -6720,6 +6894,17 @@ const ENDPOINTS: EndpointEntry[] = [
           'and never writes one — and a decrypt-this button would be the one ' +
           'door onto material no door is supposed to have. Add ?format=json, ' +
           'or GET /admin-api/encryption.' },
+  { path: '/admin/encryption/data-keys', group: 'Admin',
+    name: 'The data encryption keys\' four acts', specs: [],
+    what: 'NON-SPEC console form, POST ONLY, Admin Write (#391 P2, P5). ' +
+          'Its four actions — rotate-data-keys, reencrypt-data-keys, ' +
+          'count-data-keys and rotate-kek — each QUEUE a run of ' +
+          'common/data_key_rotation.ts\'s scheduler jobs rather than doing ' +
+          'the work in the request, and redirect back to /admin/encryption. ' +
+          'A service page: a realm\'s own administrator never reaches it. ' +
+          'Rotating the key-encryption key is refused where the key lives in ' +
+          'a key management service that does not let this service rotate ' +
+          'it. Mirrored by POST /admin-api/encryption/{action}.' },
   { path: '/admin/used-assertions', group: 'Admin', name: 'Used assertions',
     specs: ['rfc7521', 'rfc7522', 'rfc7523'],
     what: 'Every RFC 7523 JWT and RFC 7522 SAML assertion this realm has ' +
@@ -7019,6 +7204,24 @@ const ENDPOINTS: EndpointEntry[] = [
           'exactly wrong for the one endpoint whose purpose is to land you ' +
           'in a different one. 303, so the reload after it is a GET.' },
 
+  { path: '/admin/cells', group: 'Admin', name: 'Cells',
+    specs: [],
+    what: 'NON-SPEC (#98). One service deployed as several cells: this ' +
+          'cell and its jurisdiction, every other cell and whether it ' +
+          'answers (never where it is), the global tier\'s replica lag, how ' +
+          'many people each cell holds, the sessions held away from home, ' +
+          'the inter-cell channel, the Cells settings, and — with ?people= — ' +
+          'another cell\'s residents where its release policy permits. Add ' +
+          '?format=json.' },
+  { path: '/admin/listeners', group: 'Admin', name: 'Listeners',
+    specs: [],
+    what: 'NON-SPEC (#423). Every socket this service answers on and the ' +
+          'TLS policy each is held to — TLS 1.2 on or off, the TLS 1.3 ' +
+          'cipher suites in order, post-quantum only, the groups — and ' +
+          'whether it asks for a client certificate, requires one, or ' +
+          'neither; in a realm with a listener of its own, that listener. ' +
+          'The Listeners, TLS and Realm listener settings are drawn here. ' +
+          'Add ?format=json.' },
   { path: '/admin/mode', group: 'Admin', name: 'Mode',
     specs: [],
     what: 'NON-SPEC (#181). What global.mode changes and what is in force ' +
@@ -7567,6 +7770,24 @@ const ENDPOINTS: EndpointEntry[] = [
           'each with its realm, key and time left. An unknown name answers ' +
           '200 with found: false. No cached value is in the reply. Mirrors ' +
           'GET /admin/caches.' },
+  { path: '/admin-api/worker-pools', group: 'Management API',
+    name: 'Worker pools', specs: [],
+    what: 'NON-SPEC (#327). Everything /admin/worker-pools draws, as JSON: ' +
+          'the request, hosted-surface and post-quantum pools of this node, ' +
+          'each with its state, current, busy, free, maximum and initial ' +
+          'workers, its crashes, failed starts and stops, and its response ' +
+          'time; the post-quantum pool per process; in a cluster every ' +
+          'node by name and the totals, ?node= for one (#332). Mirrors ' +
+          'GET /admin/worker-pools.' },
+  { path: '/admin-api/node-health', group: 'Management API',
+    name: 'Node health', specs: [],
+    what: 'NON-SPEC (#329). Everything /admin/node-health draws, as JSON: ' +
+          'the container\'s CPU utilisation and memory from its cgroup, ' +
+          'the Node.js memory of every process of this node and their ' +
+          'total, the ECS task metadata endpoint\'s figures where there is ' +
+          'one, and the machine\'s own figures labelled as such; in a ' +
+          'cluster every node by name and the totals, ?node= for one ' +
+          '(#332). Mirrors GET /admin/node-health.' },
   { path: '/admin-api/encryption', group: 'Management API',
     name: 'Encryption at rest', specs: [],
     what: 'NON-SPEC. Everything /admin/encryption draws, as JSON: the mode, ' +
@@ -7586,6 +7807,14 @@ const ENDPOINTS: EndpointEntry[] = [
           'CIPHERTEXT AND NO PLAINTEXT IS IN THE REPLY and no operation ' +
           'anywhere opens a sealed value on request. Mirrors GET ' +
           '/admin/encryption.' },
+  { path: '/admin-api/encryption/:action', group: 'Management API',
+    name: 'The data encryption keys\' four acts', specs: [],
+    what: 'NON-SPEC, POST, admin:write (#391 P2, P5). rotate-data-keys, ' +
+          'reencrypt-data-keys, count-data-keys and rotate-kek, through the ' +
+          'one function POST /admin/encryption/data-keys calls: each QUEUES ' +
+          'a run of the data-key jobs and answers 202 with its runId and ' +
+          'the /admin-api/scheduler address to follow it, or 400 with the ' +
+          'refusal. Mirrors POST /admin/encryption/data-keys.' },
   { path: '/admin-api/crypto', group: 'Management API', name: 'Cryptography',
     specs: [],
     what: 'NON-SPEC. Everything /admin/crypto-metadata reports, as JSON: ' +
@@ -8094,14 +8323,9 @@ const ENDPOINTS: EndpointEntry[] = [
           'samples is absent and a 100% success rate on nothing is the most ' +
           'misleading figure this reply could carry.' },
   { path: '/admin-api/ssf/transmitters', group: 'Management API',
-    name: 'Foreign SSF transmitters', specs: ['openapi', 'ssf'],
-    what: 'GET /admin/ssf/transmitters over JSON (#153).' },
-  { path: '/admin-api/ssf/transmitters/:action', group: 'Management API',
-    name: 'Register a foreign transmitter, or act on its stream',
-    specs: ['openapi', 'ssf'],
-    what: 'add, create-stream, read-stream, update-stream, delete-stream, ' +
-          'set-status, add-subject, remove-subject, verify, poll-now and ' +
-          'remove: the console\'s acts (#153).' },
+    name: 'Signals from partners', specs: ['openapi', 'ssf'],
+    what: 'GET /admin/ssf/transmitters over JSON (#153, #373). The acts are ' +
+          'POST /admin-api/federation/signals-*.' },
   { path: '/admin-api/ssf', group: 'Management API', name: 'Shared Signals',
     specs: ['openapi', 'ssf', 'rfc8417'],
     what: 'GET /admin/ssf over JSON: the streams, their subjects, their ' +
@@ -8203,8 +8427,8 @@ const ENDPOINTS: EndpointEntry[] = [
           'is a receiver that asked for it at POST /ssf/stream — an API that ' +
           'could mint one would be a second, ungated door onto the outbound ' +
           'request. It is also the ONE action handler in this API that ' +
-          'awaits: transmitting signs a JWS, possibly on the worker pool, ' +
-          'and then POSTs it, and answering before either had happened would ' +
+          'awaits: transmitting signs a JWS, possibly on libuv\'s thread ' +
+          'pool, and then POSTs it, and answering before either had happened would ' +
           'be reporting "sent" about nothing.' },
   { path: '/admin-api/spiffe', group: 'Management API', name: 'The SPIFFE ' +
       'trust domain',
@@ -8290,7 +8514,7 @@ const ENDPOINTS: EndpointEntry[] = [
           'ActAs and the RFC 8693 token exchange, as JSON: Kerberos\'s model ' +
           'on application entries — appAllowedToDelegateTo on the ' +
           'intermediary, appAllowedToActOnBehalfOf on the target, ' +
-          'appDelegationSubjectGroup and appTrustedToImpersonate — and the ' +
+          'appDelegationSubjectGroup and appDelegationSemantics — and the ' +
           'people carrying stsNotDelegated or stsMayAct. Three paged lists. ' +
           'Read only; the attributes are edited through ' +
           '/admin-api/applications/update and /admin-api/users/set-not-' +
@@ -8376,6 +8600,16 @@ const ENDPOINTS: EndpointEntry[] = [
           'not revoke the grants naming it — they become dangling, because ' +
           'tidying them would be one call writing to entries it did not ' +
           'name.' },
+  { path: '/admin-api/attribute-sources', group: 'Management API',
+    name: 'Attribute sources', specs: ['openapi'],
+    what: 'NON-SPEC (#94). What GET /admin/attribute-sources draws, out of ' +
+          'the same call: every source with its status, and the rules a ' +
+          'definition is held to. Never a password.' },
+  { path: '/admin-api/attribute-sources/:action', group: 'Management API',
+    name: 'Change the attribute sources', specs: ['openapi'],
+    what: 'NON-SPEC (#94). add-source, update-source, remove-source, ' +
+          'test-source, refresh-source and refresh-person: the console\'s ' +
+          'six acts, each audited.' },
   { path: '/admin-api/roles', group: 'Management API', name: 'Roles',
     specs: ['openapi', 'xacml30'],
     what: 'NON-SPEC. The role register, both relations. `roles` is ' +
@@ -8563,6 +8797,29 @@ const ENDPOINTS: EndpointEntry[] = [
           'existing — and the default realm cannot be removed at all, since ' +
           'every URL this service published before realms existed is a URL ' +
           'in it.' },
+  { path: '/admin-api/cells', group: 'Management API', name: 'Cells',
+    specs: ['openapi'],
+    what: 'NON-SPEC (#98). GET /admin/cells over JSON: the cell map, the ' +
+          'store\'s tiers, the channel and the sessions held across cells.' },
+  { path: '/admin-api/cells/:action', group: 'Management API',
+    name: 'Re-home a person',
+    specs: ['openapi'],
+    what: 'NON-SPEC (#98 §8.8). Moves a person homed in this cell to ' +
+          'another: ended everywhere first, the entry with its entryUUID, ' +
+          'devices and memberships sent, credentials sealed again there, the ' +
+          'routing index moved, and the person taken out of this cell.' },
+  { path: '/admin-api/cells/people', group: 'Management API',
+    name: 'Cell residents',
+    specs: ['openapi'],
+    what: 'NON-SPEC (#98 D11). A page of another cell\'s residents, ' +
+          'answered by that cell only where its release policy permits.' },
+  { path: '/admin-api/listeners', group: 'Management API',
+    name: 'Listeners',
+    specs: ['openapi'],
+    what: 'NON-SPEC (#423). GET /admin/listeners over JSON: every listener ' +
+          'of the realm the call is in, or the realm\'s own, with its TLS ' +
+          'policy and client authentication, the process\'s policy and the ' +
+          'TLS listeners live on this node. It changes nothing.' },
   { path: '/admin-api/mode', group: 'Management API', name: 'Mode',
     specs: ['openapi'],
     what: 'NON-SPEC (#181). GET /admin/mode over JSON: the realm\'s mode, ' +
@@ -8960,7 +9217,11 @@ const ENDPOINTS: EndpointEntry[] = [
     effect: 'the same seven writes the console\'s forms make, and this API ' +
             'is NOT GATED',
     what: 'NON-SPEC. create, set, add-value, remove-value, enable, disable, ' +
-          'delete — calling admin.js\'s federationAction(), which is the ' +
+          'rotate-key, delete, and the partner\'s Shared Signals acts ' +
+          '(signals-discover, -create-stream, -read-stream, -update-stream, ' +
+          '-delete-stream, -set-status, -add-subject, -remove-subject, ' +
+          '-verify, -poll-now and -unblock, #373) — calling ' +
+          'federationAction(), which is the ' +
           'same function the console posts to. **It is how a test configures ' +
           'a federation partner with no browser at all**, which is the only ' +
           'way this feature can be exercised automatically. The honest ' +
@@ -10400,6 +10661,27 @@ const ENDPOINTS: EndpointEntry[] = [
           'authenticate as a client in every mode and is refused 400 ' +
           'invalid_client otherwise; a JSON request must authenticate in ' +
           'product mode (401) and need not in development.' },
+  { path: '/status-lists/access-tokens', group: 'OAuth 2.0 / OIDC',
+    name: 'Access-token status list',
+    specs: ['token-status-list', 'rfc9068', 'rfc9767', 'rfc7519',
+            'rfc8392', 'rfc9052'],
+    what: 'The realm\'s ONE access-token Status List Token (#432): every ' +
+          'OAuth RFC 9068 access token and every GNAP jwt-signed and ' +
+          'jwt-encrypted token names an index in it ' +
+          '(status.status_list), so a resource server that checks a token ' +
+          'on its own sees it revoked. application/statuslist+jwt, or ' +
+          'application/statuslist+cwt by Accept; one bit per token over ' +
+          '1,048,576 indexes, the bit computed from the revocation register; ' +
+          'ttl oauth2.accessTokenStatusListTtlS, exp ' +
+          'oauth2.accessTokenStatusListLifetimeS, signed with the realm\'s ' +
+          'RS256 access-token key. ?time= answers 501.' },
+  { path: '/status-lists', group: 'OAuth 2.0 / OIDC',
+    name: 'Access-token Status List Aggregation',
+    specs: ['token-status-list'],
+    what: 'The status_lists this authorization server publishes (section ' +
+          '9): the access-token list. Named in the authorization server ' +
+          'metadata and GNAP\'s RS-facing discovery as ' +
+          'status_list_aggregation_endpoint.' },
   { path: '/oauth2/challenge', group: 'OAuth 2.0 / OIDC',
     name: 'Client attestation challenge endpoint',
     specs: ['oauth-attestation', 'rfc9449'],
@@ -10793,6 +11075,20 @@ const ENDPOINTS: EndpointEntry[] = [
           'path answers 404 naming the well-known location, because a ' +
           'document served where no resolver looks is a document nothing ' +
           'checks.' },
+  { path: '/applications/:application/did.json',
+    group: 'Decentralized Identifiers',
+    name: 'An application\'s DID document', specs: ['did-core'],
+    effect: 'answers 404 unless the application is declared for the did ' +
+            'family and has a key',
+    what: 'The DID document of an application declared for the ' +
+          'Decentralized Identifier (DID) family, where the did:web method ' +
+          'resolves did:web:<host>[:realm:<id>]:applications:<identifier>: ' +
+          'its keys (didPublicKeyJwk) as JsonWebKey2020 methods under ' +
+          'authentication and assertionMethod, its services (didService) ' +
+          'and alsoKnownAs (didAlsoKnownAs). no-store. A key pair is ' +
+          'generated on the application\'s Configuration tab or with ' +
+          'POST /admin-api/applications/generate-did-key, which hands the ' +
+          'private key out once.' },
   { path: '/did/generate', group: 'Decentralized Identifiers',
     name: 'Generate a verifiable DID (not a spec endpoint)', specs: [],
     what: 'NON-SPEC, for tests and for trying the DID Tools page: ' +
@@ -12147,7 +12443,7 @@ class StsMetadata {
       // this service do" and the honest form of that answer names a release.
       // The footer says it on every page; this is the one page where it is
       // part of the subject rather than provenance in the margin.
-      ' This is <strong>mock-sts ' + esc(APP_VERSION.version) + '</strong>' +
+      ' This is <strong>iya-sts ' + esc(APP_VERSION.version) + '</strong>' +
       (APP_VERSION.commit ? ', built from commit <code>' +
        esc(APP_VERSION.commit) + '</code>' : '') +
       (APP_VERSION.stamped ? '' : ' — computed at startup rather than ' +

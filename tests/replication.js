@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -45,6 +45,8 @@ delete process.env.CONFIG_FILE;
 
 const realms = require('../common/realms');
 const replication = require('../persistence/persistence_replication');
+
+const errorCodes = require('../common/error_codes');
 
 // This file's own logger, for the Entering/Leaving lines and the handled
 // exceptions the code style asks for. Its level is LOG_LEVEL, which is also
@@ -284,6 +286,43 @@ async function run(t) {
           'to the one above, and just as silent: a row that can never be ' +
           'applied would otherwise stop this process at that seq for ever ' +
           'while it went on reporting that it was coordinating');
+
+  // -------------------------------------------------------------------------
+  // 5b. A ROW UNDER A DATA KEY THIS THREAD HAS NOT READ YET IS TRIED ONCE
+  // MORE (2026-10-02), after the data-key rows are read again — the ordinary
+  // cause is a realm another worker thread made a moment ago. Only that code:
+  // any other failure is not retried, and a row that never opens is tried
+  // twice and then reported like any other bad row.
+  // -------------------------------------------------------------------------
+  t.log.info('=== a row under a data key not read yet is tried once more ===');
+  replication.reset();
+  const sealedRows = fakeDriver('me');
+  const tries = {};
+  await replication.start(sealedRows, {
+    directory: function (change) {
+      log.debug("Entering directory().");
+      tries[change.key] = (tries[change.key] || 0) + 1;
+      const unopened = change.key === 'cn=never' ||
+        (change.key === 'cn=late' && tries[change.key] === 1);
+      if (unopened) {
+        throw errorCodes.mark(new Error('[STS-STORE-0072] does not open'),
+                              'STS-STORE-0072');
+      }
+      if (change.key === 'cn=other') {
+        throw new Error('this row cannot be applied here');
+      }
+      log.debug("Leaving directory().");
+    }
+  });
+  sealedRows.write('them', 'directory', '', 'cn=late');
+  sealedRows.write('them', 'directory', '', 'cn=never');
+  sealedRows.write('them', 'directory', '', 'cn=other');
+  await replication.pull();
+  t.equal(tries['cn=late'], 2, '5b1. a row that does not open the first ' +
+          'time is applied on the second, after the data keys are read again');
+  t.equal(tries['cn=never'], 2, '5b2. a row that never opens is tried ' +
+          'twice and no more');
+  t.equal(tries['cn=other'], 1, '5b3. any other failure is not retried');
 
   // -------------------------------------------------------------------------
   // 6. AN UNKNOWN KIND IS SKIPPED RATHER THAN FATAL.

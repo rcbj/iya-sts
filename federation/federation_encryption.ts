@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -179,17 +179,33 @@ class FederationEncryption {
   // open — a key sealed under a key-encryption key this process no longer
   // holds. Logged, and the row decrypts nothing.
   /**
-   * Returns a key row's private key, unsealed where it is sealed.
+   * Returns a key row's private key, unsealed where it is sealed: a node
+   * KeyObject for a classical row, the parsed AKP JWK for a post-quantum one
+   * (#82).
    *
    * @param record - the federation relationship, for the log line
    * @param row - the key row
    * @returns the key, or null (logged under `STS-FED-0137`) when it will not
    *   open or parse
    */
-  static privateKeyOf(record: Json, row: Json): nodeCrypto.KeyObject | null {
+  static privateKeyOf(record: Json, row: Json): any {
     log.debug("Entering FederationEncryption.privateKeyOf(). kid=" + row.kid);
     const stored = String(row.privateKey || '');
     const pem = row.sealed ? keystore.open(stored, SEAL_LABEL) : stored;
+    if (pem && row.kem) {
+      try {
+        const jwk = JSON.parse(String(pem));
+        log.debug("Leaving FederationEncryption.privateKeyOf(). AKP.");
+        return jwk;
+      } catch (e) {
+        log.warn(errorCodes.tag('STS-FED-0137') + 'federation: ' +
+                 record.fedId + '\'s encryption key ' + row.kid + ' does ' +
+                 'not parse (' + ((e && e.message) || e) + '), so it ' +
+                 'decrypts nothing. Rotate the key.');
+        log.debug("Leaving FederationEncryption.privateKeyOf(). Unreadable.");
+        return null;
+      }
+    }
     if (!pem) {
       log.warn(errorCodes.tag('STS-FED-0137') + 'federation: ' +
                record.fedId + '\'s encryption key ' + row.kid + ' is ' +
@@ -223,6 +239,12 @@ class FederationEncryption {
   static keyTypeFor(management: string): string {
     log.debug("Entering FederationEncryption.keyTypeFor().");
     log.debug("Leaving FederationEncryption.keyTypeFor().");
+    if (management === 'HPKE-10-KE') {
+      return 'x-wing';
+    }
+    if (management === 'ML-KEM-768') {
+      return 'ml-kem-768';
+    }
     return /^ecdh/i.test(management) ? 'ec-p256' : 'rsa-3072';
   }
 
@@ -404,9 +426,9 @@ class FederationEncryption {
         continue;
       }
       try {
-        const out = stsCrypto.decryptJweCompact(compact, {
-          privateKey: key, allowedAlg: [policy.management],
-          allowedEnc: [policy.content] });
+        const out = stsCrypto.decryptJweCompact(compact, Object.assign({
+          allowedAlg: [policy.management], allowedEnc: [policy.content] },
+          keys[i].kem ? { privateJwk: key } : { privateKey: key }));
         log.debug("Leaving FederationEncryption.decryptJwe(). Decrypted " +
                   "with " + keys[i].kid + ".");
         return { ok: true, plaintext: out.plaintext, header: out.header,
@@ -459,6 +481,25 @@ class FederationEncryption {
                              'STS-FED-0144');
     }
     const policy = federation.encryptionPolicyOf(record);
+    // A POST-QUANTUM KEY (#82) is made by `common/crypto.js`, not issued by
+    // the PKI: no X.509 profile exists for an X-Wing key, and a partner reads
+    // it from the relationship's JWKS. Otherwise it is written exactly as a
+    // classical one is below — sealed, the old one kept for its grace.
+    if (federation.MANAGEMENT_FOR_KEY[policy.keyType] &&
+        stsCrypto.describeJweKemAlg(policy.management)) {
+      const pair = stsCrypto.generateJweKemKeyPair(policy.management);
+      const kid = 'fed-' + policy.keyType + '-' + stsCrypto.jwkThumbprint(
+        stsCrypto.publicJweKemJwk(pair.publicJwk), { truncate: 16 });
+      pair.publicJwk.kid = kid;
+      pair.privateJwk.kid = kid;
+      const out = await FederationEncryption.store(id, record, policy, {
+        kid: kid, kem: policy.management, certificate: '', chain: [],
+        notAfter: null, publicJwk: pair.publicJwk,
+        privateKey: JSON.stringify(pair.privateJwk) }, why);
+      log.debug("Leaving FederationEncryption.rotate(). " +
+                (out.ok ? kid : 'not stored'));
+      return out;
+    }
     // Lazily: see the header.
     const pki = require('../common/pki');
     const spec = { identifier: id, keyAlg: policy.keyType,
@@ -479,10 +520,41 @@ class FederationEncryption {
                (made.errors || []).join(' ')] }, 'STS-FED-0142');
     }
     const issued = made.issued;
-    // SEALED WHERE KEYS PERSIST, and refused rather than written in clear
-    // where they persist and nothing can seal — `applications.js`'s rule
-    // about a private key on an entry.
-    let privateKey = String(issued.privateKeyPem);
+    const jwk = Object.assign({}, issued.publicJwk, { use: 'enc' });
+    delete jwk.alg;
+    const stored = await FederationEncryption.store(id, record, policy, {
+      kid: issued.kid, kem: '', notAfter: issued.notAfter,
+      certificate: stsCrypto.stripPem(issued.certificatePem),
+      chain: (issued.chainPem || []).map(stsCrypto.stripPem),
+      publicJwk: jwk, privateKey: String(issued.privateKeyPem) }, why);
+    log.debug("Leaving FederationEncryption.rotate(). " +
+              (stored.ok ? issued.kid : 'not stored'));
+    return stored;
+  }
+
+  // -------------------------------------------------------------------------
+  // THE NEW KEY WRITTEN: sealed where keys persist (and refused rather than
+  // written in clear where nothing can seal — `applications.js`'s rule about
+  // a private key on an entry), made `current`, the one it replaces kept as
+  // `previous` for `federation.encryptionKeyGraceS`. One path for a classical
+  // key and a post-quantum one (#82): `made.privateKey` is a PEM or an AKP
+  // JWK's JSON, and `made.kem` names the alg of the second kind.
+  // -------------------------------------------------------------------------
+  /**
+   * Writes a new encryption key as `current`, keeping the one it replaces
+   * for its grace; sealed where keys persist.
+   *
+   * @param id - the relationship
+   * @param record - the relationship's record
+   * @param policy - its encryption policy
+   * @param made - the key: kid, publicJwk, privateKey, certificate or kem
+   * @param why - the audit sentence
+   * @returns `{ ok, kid, message }` or `{ ok: false, errors }`
+   */
+  static async store(id: string, record: Json, policy: Json, made: Json,
+                     why?: string): Promise<Json> {
+    log.debug("Entering FederationEncryption.store(). id=" + id);
+    let privateKey = String(made.privateKey);
     let sealed = false;
     if (keystore.persists()) {
       const closed = keystore.seal(privateKey, SEAL_LABEL);
@@ -490,7 +562,7 @@ class FederationEncryption {
         log.error(errorCodes.tag('STS-FED-0142') + 'federation: the ' +
                   'encryption key for ' + id + ' could not be sealed, so ' +
                   'it was not written.');
-        log.debug("Leaving FederationEncryption.rotate(). Not sealed.");
+        log.debug("Leaving FederationEncryption.store(). Not sealed.");
         return errorCodes.mark({ ok: false, errors: ['The encryption key ' +
                  'for "' + id + '" could not be sealed under the ' +
                  'key-encryption key, and a private key is never written ' +
@@ -511,36 +583,37 @@ class FederationEncryption {
         return Object.assign({}, row, { state: 'previous',
                                         retiresAt: now + graceMs });
       });
-    const jwk = Object.assign({}, issued.publicJwk, { use: 'enc' });
-    delete jwk.alg;
-    rows.unshift({
-      v: ROW_VERSION, kid: issued.kid, keyType: policy.keyType,
-      state: 'current', createdAt: now, notAfter: issued.notAfter,
-      certificate: stsCrypto.stripPem(issued.certificatePem),
-      chain: (issued.chainPem || []).map(stsCrypto.stripPem),
-      publicJwk: jwk, sealed: sealed, privateKey: privateKey
-    });
+    const row: Json = {
+      v: ROW_VERSION, kid: made.kid, keyType: policy.keyType,
+      state: 'current', createdAt: now, notAfter: made.notAfter,
+      certificate: made.certificate, chain: made.chain,
+      publicJwk: made.publicJwk, sealed: sealed, privateKey: privateKey
+    };
+    if (made.kem) {
+      row.kem = made.kem;
+    }
+    rows.unshift(row);
     if (!federation.writeEncryptionKeys(id, rows, why ||
                                          'the encryption key was rotated')) {
-      log.debug("Leaving FederationEncryption.rotate(). Not written.");
+      log.debug("Leaving FederationEncryption.store(). Not written.");
       return errorCodes.mark({ ok: false, errors: ['The directory refused ' +
                'the new encryption key for "' + id + '".'] }, 'STS-FED-0142');
     }
     log.info('federation: ' + id + ' has a new ' + policy.keyType +
-             ' encryption key, ' + issued.kid + (rows.length > 1
+             ' encryption key, ' + made.kid + (rows.length > 1
                ? '; the one it replaces decrypts until ' +
                  new Date(now + graceMs).toISOString() +
                  ' (federation.encryptionKeyGraceS)'
                : '') + '.');
-    log.debug("Leaving FederationEncryption.rotate(). " + issued.kid);
-    return { ok: true, kid: issued.kid,
+    log.debug("Leaving FederationEncryption.store(). " + made.kid);
+    return { ok: true, kid: made.kid,
              message: 'A new ' + policy.keyType + ' encryption key, ' +
-                      issued.kid + ', is current. ' + (rows.length > 1
+                      made.kid + ', is current. ' + (rows.length > 1
                         ? 'The one it replaces still decrypts until ' +
                           new Date(now + graceMs).toISOString() + '. '
                         : '') +
-                      'Give the partner the certificate or JWKS published ' +
-                      'now.' };
+                      'Give the partner the ' + (made.kem ? 'JWKS'
+                        : 'certificate or JWKS') + ' published now.' };
   }
 
   // THE RETIREMENT: every previous row past its `retiresAt`, in this realm,
@@ -700,7 +773,9 @@ class FederationEncryption {
       allowUnencrypted: federation.boolOf(record.fedAllowUnencrypted, false),
       graceS: Number(config.value('federation.encryptionKeyGraceS')),
       current: current ? current.kid : '',
-      certificatePem: current
+      // A post-quantum key (#82) has no certificate: its JWK is the whole
+      // of what a partner is given.
+      certificatePem: current && current.certificate
         ? '-----BEGIN CERTIFICATE-----\n' +
           (String(current.certificate).match(/.{1,64}/g) || []).join('\n') +
           '\n-----END CERTIFICATE-----\n'

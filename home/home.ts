@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -35,7 +35,7 @@
 // ---------------------------------------------------------------------------
 // TWO ROUTES, AND THE SECOND ONE IS A PNG.
 //
-// `/logo.png` serves `assets/debugger-logo.png` from this directory. It is a
+// `/logo.png` serves `assets/logo.png` from this directory. It is a
 // route rather than `express.static()` because one file does not need a static
 // middleware, and a middleware mounted at the root would sit in front of every
 // protocol module's routes for the rest of the process's life — see rule 1 in
@@ -57,29 +57,14 @@
 // an endpoint answering for itself is the distinction it is looking for.
 //
 // ---------------------------------------------------------------------------
-// THE IMAGE IS ON A BLACK BAND AND THAT IS NOT A STYLE CHOICE.
-//
-// The logo is the parent project's transparent one: white lettering with a dark
-// outline, a green wordmark and a pale-blue mark, drawn to sit on a dark
-// ground. On this file's own card background the "IYA CYBER SECURITY" half all
-// but disappears. The band behind it is black for the same reason the parent
-// project ships a black-backed copy of the same artwork on its error pages —
-// it is what the artwork was drawn for.
-//
-// The asset is a DERIVATIVE rather than a byte-identical copy, which is why it
-// is here and not in `common/vendored/` (that directory's rule is that its
-// files match the parent's byte for byte, and two of the parent's tests hold
-// them to it). It was produced from
-// `client/public/images/oauth2oidcdebugger+iyasec-logo-transparent.png` — 2172
-// x724 and 745 kB — with:
-//
-//     convert <source> -resize 720x -strip PNG32:debugger-logo.png
-//     convert debugger-logo.png -colors 256 PNG8:debugger-logo.png
-//     optipng -o5 debugger-logo.png
-//
-// 720px is twice the width it is drawn at, so it stays sharp on a 2x display,
-// and 256 colours takes it to 31 kB. Re-run those three lines if the parent's
-// artwork changes.
+// THE LOGO IS THIS PROJECT'S OWN (2026-10-01, rcbj): the one README.md
+// shows, `docs/logo.png`, copied byte for byte (906 x 269, opaque, 22 kB;
+// drawn at half that, so it is sharp on a 2x display). It replaced the
+// parent project's debugger artwork, which was white lettering drawn for a
+// black band. This one is dark lettering on an off-white ground, so the
+// band takes the image's own background colour (#fbfaf8) and the logo sits
+// on it with no edge. Copy `docs/logo.png` over it again if the README's
+// logo changes.
 //
 // ---------------------------------------------------------------------------
 // NO SCRIPT, NO EXTERNAL RESOURCE.
@@ -195,7 +180,7 @@ const CONSOLE_PATH = '/admin';
 // be a second copy that goes stale the first time a page is added there.
 const PORTAL_PATH = '/portal';
 
-const LOGO_PATH = path.join(__dirname, 'assets', 'debugger-logo.png');
+const LOGO_PATH = path.join(__dirname, 'assets', 'logo.png');
 
 const LOGO_ROUTE = '/logo.png';
 
@@ -451,22 +436,22 @@ class Home {
     const { log, xmlEscape } = this.deps.helpers;
     log.debug('Entering Home.homePage().');
     const logo = logoBytes
-      ? '<div class="hero"><img src="' + LOGO_ROUTE + '" width="720" ' +
-        'height="240" alt="OAuth2 / OIDC / SAML2 Debugger — Iya Cyber ' +
-        'Security"></div>'
+      ? '<div class="hero"><img src="' + LOGO_ROUTE + '" width="906" ' +
+        'height="269" alt="IYA STS — Security Token Service"></div>'
       : '';
     const html = '<!DOCTYPE html>\n<html lang="en"><head><meta ' +
       'charset="utf-8"><meta name="viewport" content="width=device-width, ' +
-      'initial-scale=1"><title>mock-sts</title><style>' +
+      'initial-scale=1"><title>IYA STS</title><style>' +
       'body{font-family:system-ui,-apple-system,"Segoe ' +
       'UI",Arial,sans-serif;background:#f4f4f7;margin:0;padding:2rem ' +
       '1rem;color:#222;line-height:1.45}.card{background:#fff;border:1px ' +
       'solid #d5d5dd;border-radius:10px;padding:0 0 ' +
       '26px;max-width:44rem;margin:0 auto;overflow:hidden;box-shadow:0 6px ' +
       '24px rgba(0,0,0,.08)}' +
-      // The band the artwork was drawn for. See the header.
-      '.hero{background:#000;padding:22px 24px;text-align:center}' +
-      '.hero img{width:100%;max-width:360px;height:auto;display:inline-block}' +
+      // The band is the logo's own background colour. See the header.
+      '.hero{background:#fbfaf8;padding:22px 24px;text-align:center;' +
+      'border-bottom:1px solid #ecebe7}' +
+      '.hero img{width:100%;max-width:453px;height:auto;display:inline-block}' +
       '.body{padding:22px 28px 0}' +
       'h1{font-size:1.5em;margin:0 0 2px;color:#12107c;letter-spacing:.01em}' +
       'p.sub{color:#666;font-size:.88em;margin:0 0 4px}' +
@@ -481,7 +466,7 @@ class Home {
       '.note{display:block;color:#666;font-size:.8em;font-weight:400;' +
       'margin-top:2px}' +
       '</style></head><body><div class="card">' + logo + '<div class="body">' +
-      '<h1>mock-sts</h1>' +
+      '<h1>IYA STS</h1>' +
       '<p class="sub">A permissive mock identity service that speaks sixteen ' +
       'protocol families. It exists to exercise CLIENTS.</p>' +
       // THE VERSION, WITH ITS PROVENANCE IN THE TOOLTIP. The number is what a

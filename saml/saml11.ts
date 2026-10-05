@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -95,6 +95,8 @@ import stats = require('../common/admin_stats');
 // authenticated — both libraries beside this file, argued in their headers.
 import documentSettings = require('./document_settings');
 import authnContext = require('./authn_context');
+// THE AssertionID NAMES ITS CELL (#98 D10): see buildSaml11Assertion().
+import cellLocator = require('../common/cell_locator');
 /**
  * The SAML 1.1 assertion namespace.
  */
@@ -370,7 +372,12 @@ class Saml11Assertions {
     const self = this;
     log.debug("Entering Saml11Assertions.buildSaml11Assertion(). subject=" +
               (opts.subject || '(none)'));
-    const id = genId();
+    // STAMPED WITH THE MINTING CELL (#98 D10): the SAML 1.1 responder answers
+    // an AssertionIDReference from the store of the cell that issued the
+    // assertion, and a relying party's server reaches whichever cell is
+    // nearest it. Twelve base64url characters keep the value an xsd:ID;
+    // single-cell mode adds nothing.
+    const id = cellLocator.stamp(genId());
     const now = iso(0);
     const lifetimeMin = opts.lifetimeMin > 0 ? opts.lifetimeMin : 60;
     // Widened at both ends by saml.clockSkewS, for the reason saml2.ts gives at

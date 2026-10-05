@@ -267,6 +267,17 @@ has its own *Generate* and *Take off*, the private key is shown once with the
 it off leaves their RFC 7523 key working. `pki.personSelfService` turns the
 self-service door off for both profiles; it takes away no key already held.
 
+## It can be exchanged, too
+
+The same assertion is accepted as the `subject_token` or `actor_token` of an
+RFC 8693 token exchange, with `urn:ietf:params:oauth:token-type:saml2` — and a
+**SAML 1.1** assertion from the same declared issuer with
+`urn:ietf:params:oauth:token-type:saml1`. Both are verified by this page's
+checks, read from each version's own elements, and spent in the same one-use
+history as the grant. What they may be addressed to is
+`oauth2.tokenExchangeAudience`. See
+[Delegation and impersonation](delegation.md#assertions-as-the-subject-or-the-actor).
+
 ## Configuration
 
 | Setting | Environment variable | Default | Runtime? | What it does |
@@ -336,9 +347,11 @@ changed — the console page, or `POST /admin-api/config/set`.
   [What is not checked](what-is-not-checked.md).
 * **The `Address` on a `<SubjectConfirmationData>` is not enforced**, for the
   reason in the table above.
-* **A `<Response>` is not accepted**, nor is a SAML 1.1 assertion: RFC 7522 is
-  the SAML 2.0 profile and says so, and this service refuses a `Version` that is
-  not `2.0` by name rather than failing somewhere in the `<Conditions>`.
+* **A `<Response>` is not accepted**, nor is a SAML 1.1 assertion at the grant:
+  RFC 7522 is the SAML 2.0 profile and says so, and this service refuses a
+  `Version` that is not `2.0` by name rather than failing somewhere in the
+  `<Conditions>`. A SAML 1.1 assertion is accepted only by the token exchange,
+  [above](#it-can-be-exchanged-too).
 
 ## Related
 

@@ -199,7 +199,7 @@ draws it with a description of every field.
 | Group | Attributes |
 |---|---|
 | Identity and observation | `appIdentifier`, `cn`, `appName`, `description`, `appHomePageUrl`, `appKind`, `appProtocol`, `appAllowedProtocol`, `appAuthorizationServer`, `appCorsOrigin`, `appRegistered`, `appRegisteredBy`, `appFirstSeen`, `appLastSeen`, `appAuthentications`, `appSessions`, `appUsers`, `appLastSession`, `appLastUser`, `appRedirectUriObserved`, `appReturnAddressObserved`, `appRegistrationJson`, `appRegistrationAccessToken` |
-| OAuth client | `oauthClientId`, `oauthConfidential`, `oauthClientSecret` (**withheld**), `oauthClientSecretPrevious`, `oauthClientSecretPreviousUntil`, `oauthClientSecretExpiresAt`, `oauthTokenEndpointAuthMethod`, `oauthTokenEndpointAuthSigningAlg`, `oauthJwks`, `oauthJwksUri`, `oauthRedirectUri`, `oauthGrantType`, `oauthResponseType`, `oauthScope`, `oauthAllowedScope`, `oauthAudience`, `oauthSubjectType`, `oauthSectorIdentifierUri` |
+| OAuth client | `oauthClientId`, `oauthConfidential`, `oauthClientSecret` (**withheld**; one JSON record per secret, each with its own expiry, sealed at rest where keys persist), `oauthTokenEndpointAuthMethod`, `oauthTokenEndpointAuthSigningAlg`, `oauthJwks`, `oauthJwksUri`, `oauthRedirectUri`, `oauthGrantType`, `oauthResponseType`, `oauthScope`, `oauthAllowedScope`, `oauthAudience`, `oauthSubjectType`, `oauthSectorIdentifierUri` |
 | Logout | `oauthPostLogoutRedirectUri`, `oauthFrontchannelLogoutUri`, `oauthFrontchannelLogoutSessionRequired`, `oauthBackchannelLogoutUri`, `oauthBackchannelLogoutSessionRequired`, `oauthRevokeRefreshOnLogout` |
 | Requests and responses | `oauthRequestUri`, `oauthRequestObjectSigningAlg`, `oauthRequestObjectEncryptionAlg`, `oauthRequestObjectEncryptionEnc`, `oauthRequireSignedRequestObject`, `oauthRequirePushedAuthorizationRequests`, `oauthIntrospectionSignedResponseAlg`, `oauthIntrospectionEncryptedResponseAlg`, `oauthIntrospectionEncryptedResponseEnc`, `oauthAuthorizationDetailsType`, `oauthAuthorizationDetailsTypes`, `oauthStepUpAcrValues`, `oauthStepUpMaxAge` |
 | Resource server and consent | `oauthPermissionBaseUri`, `oauthPermission`, `oauthDelegatedPermission`, `oauthResourceMetadata`, `oauthResourceMetadataUrl`, `oauthGlobalConsent`, `oauthGlobalConsentWithdrawn` |
@@ -215,10 +215,10 @@ draws it with a description of every field.
 | SAML per-profile | `saml2AssertionLifetimeMin`, `saml2SignAssertion`, `saml2SignResponse`, `saml2NameIdFormat`, `saml2ArtifactTtlS`, `saml2EncryptAssertion`, `saml2EncryptionAlgorithm`, `saml2KeyTransportAlgorithm`, `saml2EncryptLogoutNameId`, `saml11AssertionLifetimeMin`, `saml11SignAssertion`, `saml11SignResponse`, `saml11NameIdFormat`, `saml11ArtifactTtlS` |
 | WS-* | `wsfedRealm`, `wsfedReplyUrl`, `wsfedSignOutUri`, `wsfedAssertionLifetimeMin`, `wstrustAppliesTo` |
 | Kerberos service | `krb5ServicePrincipalName`, `krb5ServiceKeys` (**sealed**), `krb5ServiceKeyInfo` |
-| Delegation (#108) | `appAllowedToDelegateTo`, `appAllowedToActOnBehalfOf`, `appDelegationSubjectGroup`, `appTrustedToImpersonate` |
+| Delegation (#108, #186; [Delegation and impersonation](delegation.md)) | `appAllowedToDelegateTo`, `appAllowedToActOnBehalfOf`, `appDelegationSemantics`, `appDefaultDelegationSemantics`, `appDelegationSubjectGroup`, `appNotDelegated`, `appMayAct`, and for a Kerberos service `krb5TrustedForDelegation` |
 | Roles and claims | `appRequiredRole`, `appGroupsClaim`, `appGroupsClaimName`, `appGroupsClaimValue`, `appGroupsClaimFromMemberOf`, `appAuthnMechanism` |
 | Certificate enrollment | `appEnrolledCertificate`, `appEnrolledPrivateKey`, `appAcmeEabKey`, `appScepChallenge`, `appCertificateHostName` |
-| GNAP | `gnapInstanceId`, `gnapClassId`, `gnapKey`, `gnapKeyIdentity`, `gnapKeyReference`, `gnapKeyProof`, `gnapMtlsTrust`, `gnapSymmetricKey` (**withheld**), `gnapSymmetricAlg`, `gnapDisplayUri`, `gnapLogoUri`, `gnapFinishUri`, `gnapInteractionStartModes`, `gnapAllowedAccess`, `gnapBearerTokens`, `gnapSkipInteraction`, `gnapAccessTokenFormat`, `gnapAccessTokenLifetimeS`, `gnapResourceServerUri`, `gnapJweKey`, `gnapMacaroonKey`, `gnapScopedSignals` |
+| GNAP | `gnapInstanceId`, `gnapClassId`, `gnapKey`, `gnapKeyIdentity`, `gnapKeyReference`, `gnapKeyProof`, `gnapMtlsTrust`, `gnapSymmetricKey` (**withheld**), `gnapSymmetricAlg`, `gnapDisplayUri`, `gnapLogoUri`, `gnapFinishUri`, `gnapInteractionStartModes`, `gnapAllowedAccess`, `gnapBearerTokens`, `gnapSkipInteraction`, `gnapAccessTokenFormat`, `gnapAccessTokenLifetimeS`, `gnapResourceServerUri`, `gnapOwnerLookupUri`, `gnapJweKey`, `gnapMacaroonKey`, `gnapScopedSignals` |
 | Links to other registries | `oid4vpClientId`, `federationPartnerId`, `appFederationRelationship`, `appFederationAutoRedirect`, `ldapBindDn`, `scimClientId`, `ssfReceiverId`, `ssfDeliveryEndpoint`, `ssfAllowedEvents`, `spiffeWorkloadId` |
 
 ## Federation relationships: `ou=federations`
@@ -238,13 +238,24 @@ draws it with a description of every field.
 | Subjects and provisioning | `fedSubjectPolicy`, `fedSubjectPattern`, `fedSubjectDomain`, `fedSubjectGroup`, `fedHomeRealmDomain` (#148, the domains whose `domain_hint` goes to this partner), `fedUsernameSource`, `fedAutocreateUsers`, `fedUpdateUserAttributes`, `fedAttributeMap`, `fedRelease` |
 | Observation | `fedFirstSeen`, `fedLastSeen`, `fedLastUser`, `fedUsers`, `fedAuthentications`, `fedLastError`, `fedLastErrorAt` |
 
+## Attribute sources: `ou=attributesources`
+
+`objectClass: top, stsAttributeSource`, named `cn=<source id>`, with the source's whole definition as
+one JSON value, `stsAttributeSourceData`. It holds the database, the row it reads, the column map, when it reads
+and what a failure does, and never a password (#94). On a **person**, `stsAttributeSourced` names each attribute a
+source wrote (`<source>:<attribute>`), and `stsAttributeSourceSeen` records when each source last read them
+(`<source>=<time>`). See [Attribute sources](attribute-sources.md).
+
 ## Roles: `ou=roles`
 
 `objectClass: top, stsRole`, named `cn=<role>`, with `roleName`, `description`, the three kinds of
 holder (`roleMemberUser`, `roleMemberGroup` and `roleMemberApplication`), and `rolePermission`: the permissions a
 holder may be issued (#303), named as a client asks for them, and `roleApplication`: the one application a role
 belongs to (#310). Such a role is named `<role>@<application>`, and only a token for that application carries it,
-as `<role>`. A role saved by an earlier version was written with
+as `<role>`. `roleAllowedMemberType` (`user`, `application`, or both when absent) says who may hold the
+role, and a member of another kind is refused (#93); the two console roles cannot be restricted. `displayName`
+is an optional label for the console and the API, and is never what a token carries. The entry's `entryUUID`
+is the role's stable id. A role saved by an earlier version was written with
 no object class and gains one on its next save.
 `common/roles.js` keeps apart who **holds** a role and what **requires** one
 (`appRequiredRole` on an application). Which of an application's permissions need a role at all is
@@ -421,7 +432,10 @@ mail-verification tokens, each recovery code and each app password.
 key-encryption key, in product; clear in development): the TOTP secret,
 `stsKrb5Keys`, `krb5ServiceKeys`, every RFC 7523 and RFC 7522 private key, the
 EAB keys, enrolled private keys and `fedEncryptionKey` private keys.
-`oauthClientSecret` is withheld but stored in the clear.
+`oauthClientSecret`, `appRegistrationAccessToken`, `fedClientSecret` and
+`stsIdaVerification` are sealed too, but only where the key-encryption key is
+durable (not development's ephemeral one, and not a product-mode realm inside
+a development process).
 [Encryption at rest](encryption-at-rest.md) has the rest.
 
 `pwdHistory` and `pwdChangedTime` are maintained by the service and refused on

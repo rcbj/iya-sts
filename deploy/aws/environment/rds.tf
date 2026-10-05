@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: BUSL-1.1
 #
 # ---------------------------------------------------------------------------
 # RDS POSTGRESQL 18: A PRIMARY AND ONE READ REPLICA, IN DIFFERENT AZS.
@@ -23,21 +23,26 @@
 # requires backups on its source, so the replica and the retention are
 # connected.
 #
-# THE REPLICA is asynchronous streaming replication, read-only. mock-sts writes
+# THE REPLICA is asynchronous streaming replication, read-only. iya-sts writes
 # and reads through the primary endpoint only — the replica is a copy and a
 # manually promotable standby, not an automatic failover target (that would be
 # Multi-AZ, which is a different product with no readable standby here).
+#
+# A CELL CONVERTED FROM A SINGLE-REGION ENVIRONMENT (#98, 2026-09-28) has its
+# primary RESTORED from an RDS snapshot rather than created empty —
+# `db_snapshot_identifier` on the cell, argued in conversion.tf. The replica is
+# made from the restored primary exactly as from a new one.
 # ---------------------------------------------------------------------------
 resource "aws_db_subnet_group" "main" {
   name        = local.prefix
-  description = "mock-sts ${var.environment}: private subnets, three AZs"
+  description = "iya-sts ${var.environment}: private subnets, three AZs"
   subnet_ids  = aws_subnet.private[*].id
 }
 
 resource "aws_db_parameter_group" "main" {
   name        = "${local.prefix}-pg18"
   family      = "postgres18"
-  description = "mock-sts ${var.environment}: TLS required"
+  description = "iya-sts ${var.environment}: TLS required"
 
   # `apply_method` is spelt as RDS reports it back; left to default, every
   # plan shows these two as changed although the values are already in force.
@@ -60,7 +65,18 @@ resource "aws_db_parameter_group" "main" {
 }
 
 resource "aws_db_instance" "primary" {
-  identifier     = "${local.prefix}-primary"
+  identifier = "${local.prefix}-primary"
+
+  # RESTORED, IN A CONVERTED CELL (conversion.tf); null — a new, empty
+  # database, the only thing this resource made until #98's conversion — in
+  # every other environment and cell. On a restore RDS takes the database
+  # name, the master user name, the engine and the data from the snapshot;
+  # the provider then sets what differs (the master password, the parameter
+  # group, the backup settings) with one ModifyDBInstance. The KEY is the
+  # snapshot's and cannot be changed by the restore, which is why the
+  # snapshot named here must already be a copy under the cell key.
+  snapshot_identifier = local.db_snapshot_identifier != "" ? local.db_snapshot_identifier : null
+
   engine         = "postgres"
   engine_version = var.db_engine_version
   instance_class = var.db_instance_class
@@ -73,7 +89,7 @@ resource "aws_db_instance" "primary" {
   allocated_storage = var.db_allocated_storage
   storage_type      = "gp3"
   storage_encrypted = true
-  kms_key_id        = data.aws_kms_key.main.arn
+  kms_key_id        = local.kms_key_arn
 
   availability_zone      = local.azs[0]
   multi_az               = false
@@ -93,6 +109,17 @@ resource "aws_db_instance" "primary" {
 
   auto_minor_version_upgrade = true
   apply_immediately          = true
+
+  # A SNAPSHOT IS READ ONCE, WHEN THE DATABASE IS MADE, AND NEVER AGAIN.
+  # `snapshot_identifier` forces a new instance when it changes, so without
+  # this the apply after a conversion — which no longer names the snapshot —
+  # would DESTROY the converted database and make an empty one, and so would
+  # deleting the snapshot once the conversion is done. Ignored here in every
+  # environment: for one that never named a snapshot, null stays null and
+  # nothing is different.
+  lifecycle {
+    ignore_changes = [snapshot_identifier]
+  }
 }
 
 resource "aws_db_instance" "replica" {
@@ -102,7 +129,7 @@ resource "aws_db_instance" "replica" {
 
   storage_type      = "gp3"
   storage_encrypted = true
-  kms_key_id        = data.aws_kms_key.main.arn
+  kms_key_id        = local.kms_key_arn
 
   availability_zone      = local.azs[1]
   multi_az               = false

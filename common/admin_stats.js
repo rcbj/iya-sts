@@ -1,6 +1,6 @@
 // @ts-check
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -82,6 +82,8 @@ const audit = require('./audit');
 // throw log it with one; a refused claim-set change carries its code on the
 // audit row and, NON-ENUMERABLY, on the result a caller serialises.
 const errorCodes = require('./error_codes');
+// Which attributes a claim may carry out (#94). A leaf.
+const SourcedAttributes = require('./sourced_attributes');
 // THE FEDERATION RELEASE FILTER, and it is a plain require in the ordinary
 // direction rather than a hook. Rule 3e's test both ways round: that module
 // registers no route, and it requires only helpers.js, config.js, realms.js,
@@ -307,7 +309,21 @@ function recordCall(call) {
 // and in a service with no realms defined, there is exactly one partition and
 // this behaves as the plain Map it replaced. See common/realms.js.
 // jti (or a synthetic key) -> the record below
-const tokens = realms.map({ persist: 'admin_stats.tokens' });
+// `expiresAt` (#333): the purge's own rule — a record is kept
+// `oauth2.expiredTokenRetentionS` past its `exp` (epoch seconds, plus the
+// clock skew) so /admin/tokens can show it expired, and then goes. A token
+// with no `exp` (0) never expires.
+const tokens = realms.map({
+  persist: 'admin_stats.tokens',
+  // A hot path (every row a flush writes): no Entering/Leaving pair.
+  expiresAt: function (record) {
+    const exp = Number(record && record.exp);
+    const skewS = Number(config.value('oauth2.clockSkewS'));
+    const keepS = Number(config.value('oauth2.expiredTokenRetentionS'));
+    return exp > 0 && isFinite(skewS) && isFinite(keepS)
+      ? (exp + Math.max(0, skewS) + Math.max(0, keepS)) * 1000 : null;
+  }
+});
 
 
 
@@ -405,7 +421,13 @@ function recordJwt(payload, signed, context) {
     // Token: the two carry the same person under different names because that
     // is what their respective specifications call the claim, and a console
     // column that read only one of them would show a dash for every ID Token.
-    username: payload.username || payload.preferred_username || '',
+    // A client_credentials access token carries no `username` since #93 (it
+    // is about no person), and is filed under its CLIENT, as it was when the
+    // claim carried the client_id: /admin/users lists the client flagged as
+    // one, and a disabled or deleted application's tokens are found by name.
+    username: payload.username || payload.preferred_username ||
+              (issuedUnder.grant === 'client_credentials'
+                ? String(payload.client_id || '') : ''),
     client_id: payload.client_id || payload.azp || payload.aud || '',
     // WHAT THIS TOKEN IS ADDRESSED TO, as its own fact. `client_id` above falls
     // back to the `aud` when nothing better names the client, which is right
@@ -423,6 +445,19 @@ function recordJwt(payload, signed, context) {
     // jkt rather than the whole cnf: the thumbprint is the binding, and it is
     // what makes a row on the page say "DPoP" honestly rather than by guessing.
     jkt: (payload.cnf && payload.cnf.jkt) || '',
+    // AND THE CERTIFICATE BINDING (#432 follow-up): RFC 8705's x5t#S256, for
+    // a token bound to a client certificate by mutual TLS. Recorded beside
+    // `jkt` for the same reason — it IS the binding — and so a device marked
+    // compromised can revoke the tokens bound to a certificate it holds
+    // (`common/devices.ts`, endGrantsBoundTo()).
+    x5t: (payload.cnf && payload.cnf['x5t#S256']) || '',
+    // AND THE KEY UNDER THAT CERTIFICATE: its SubjectPublicKeyInfo SHA-256,
+    // stated by the issuer out of band (no claim carries it), and kept only
+    // for a token that IS certificate-bound. `x5t` names the certificate,
+    // which changes when the key is re-certified or certified elsewhere; this
+    // names the key a device holds.
+    x5tSpki: payload.cnf && payload.cnf['x5t#S256']
+      ? String(issuedUnder.certSpki || '') : '',
     iat: payload.iat || 0,
     nbf: payload.nbf || 0,
     exp: payload.exp || 0,
@@ -508,9 +543,22 @@ function recordJwt(payload, signed, context) {
 //     `oauth2.expiredTokenRetentionS` — kept that long so /admin/tokens can
 //     still show a token as EXPIRED, which an operator asks about; and
 //   * a revoked jti whose token has expired: a revocation of a token that no
-//     verifier would accept anyway protects nothing. A revoked jti whose
-//     record is already gone is KEPT, because nothing here knows when that
-//     token expires.
+//     verifier would accept anyway protects nothing. **Since #345 the
+//     revocation carries its token's `exp` itself** (see `revokedJtis`), so
+//     one whose record the register's cap (MAX_TOKENS, 5,000) has already
+//     forgotten is dropped at its expiry too — until then it was kept for
+//     ever, and nothing removed it. A revocation whose `exp` nobody stated
+//     and whose record is gone is still kept; the size cap at insert
+//     (`oauth2.maxRevokedJtis`, `makeRoomForRevocation()`) is what bounds
+//     those.
+//
+// **A CLUSTER JOB, NOT A PER-PROCESS ONE, AND THE REVOKED JTIS STAY IN IT
+// (#345).** The ticket asked for a per-process job, and the root rule says
+// which: a per-process job is for state "reachable from no other process".
+// `revokedJtis` is `realms.map({persist})` — REPLICATED through the change
+// log — so a delete on the leader reaches every process's copy, and a
+// per-process job would journal the same delete once per process. This job
+// already walked the revocations for the half of them it could date.
 //
 // Registered at the first recording, lazily: the scheduler loads after this.
 // A record with no `exp` is a token that never expires and is never purged —
@@ -550,6 +598,15 @@ function purgeExpiredTokens(nowMs) {
         }
         if (deadAt + keepMs <= now) {
           gone.push(key);
+        }
+      });
+      // AND THE REVOCATIONS THAT DATE THEMSELVES (#345), whether or not the
+      // register still holds their record.
+      revoked.forEach(function (value, jti) {
+        const exp = revokedExpOf(value);
+        if (exp && exp * 1000 + skewMs <= now &&
+            deadJtis.indexOf(jti) < 0) {
+          deadJtis.push(jti);
         }
       });
       deadJtis.forEach(function (jti) {
@@ -659,7 +716,122 @@ setJwtRecorder(recordJwt);
 // revoked through /admin-api introspected as ACTIVE on any other worker,
 // because that worker had never been told. `realms.map({persist})` is the
 // declaration that makes a store replicate, and a Set has no such declaration.
+//
+// **THE VALUE IS `{ exp }` SINCE #345** — the revoked token's own `exp`, in
+// epoch seconds, or 0 where nobody stated it — because a revocation is worth
+// keeping only until its token would have expired anyway: after that no
+// verifier accepts it on `exp` alone. The hourly purge above drops it then.
+// A row written before #345 holds `true`, which `revokedExpOf()` reads as
+// "not stated", the same as a token with no `exp`: kept until the cap.
+//
+// (feature/333 adds an `expiresAt` hook to the minted-store declaration, so
+// a start need not restore a row past its expiry. It is not on develop yet;
+// once it is, this declaration's hook is `revokedExpOf()` plus the clock
+// skew, in milliseconds.)
 const revokedJtis = realms.map({ persist: 'admin_stats.revokedJtis' });
+
+/**
+ * Reads the token expiry a revocation carries.
+ *
+ * @param value - a `revokedJtis` value: `{ exp }`, or `true` from before #345
+ * @returns the expiry in epoch seconds, or 0 when none was stated
+ */
+function revokedExpOf(value) {
+  // A HOT PATH: called for every revocation the purge and the cap walk, so
+  // no Entering/Leaving pair — one would drown the log.
+  const exp = Number(value && typeof value === 'object' ? value.exp : 0);
+  return isFinite(exp) && exp > 0 ? exp : 0;
+}
+
+// ---------------------------------------------------------------------------
+// THE SIZE CAP (#345), `oauth2.maxRevokedJtis`, checked AT INSERT because a
+// bound cannot wait for a timer (root CLAUDE.md, *Anything periodic*). At the
+// cap it first drops every revocation whose token has already expired — free,
+// since no verifier accepts that token — and only if that leaves no room
+// does it FORGET ONE THAT STILL MATTERS: the one whose token expires
+// SOONEST, which is the smallest window in which a revoked token is accepted
+// again. A
+// revocation with no stated `exp` sorts LAST, because forgetting it re-opens
+// a token for good; among those the oldest goes first (Map order).
+//
+// O(n) in the realm's revocations, and only when the register is full — the
+// ordinary insert costs nothing; a sort only when the cap was lowered below
+// the register's size. Logged under STS-OAUTH-0787 at most once a
+// minute per process, with the count since the last line, rather than once
+// per revocation (the no-per-event-log rule).
+// ---------------------------------------------------------------------------
+let revocationsForgotten = 0;
+let revocationsForgottenLoggedAt = 0;
+
+function makeRoomForRevocation() {
+  log.debug("Entering makeRoomForRevocation().");
+  const cap = Number(config.value('oauth2.maxRevokedJtis'));
+  if (!(cap > 0) || revokedJtis.size < cap) {
+    log.debug("Leaving makeRoomForRevocation(). Room.");
+    return 0;
+  }
+  const skewMs = Number(config.value('oauth2.clockSkewS')) * 1000;
+  const now = Date.now();
+  const dead = [];
+  const live = [];
+  revokedJtis.forEach(function (value, jti) {
+    const exp = revokedExpOf(value);
+    if (exp && exp * 1000 + skewMs <= now) {
+      dead.push(jti);
+      return;
+    }
+    live.push([jti, exp || Infinity]);
+  });
+  dead.forEach(function (jti) {
+    revokedJtis.delete(jti);
+  });
+  // Room for ONE more; more than one over only when the cap was lowered, and
+  // then every revocation over it goes now rather than one per insert, which
+  // would never converge.
+  const over = revokedJtis.size - cap + 1;
+  if (over <= 0) {
+    log.debug("Leaving makeRoomForRevocation(). " + dead.length +
+              " expired dropped.");
+    return 0;
+  }
+  let forgotten = [];
+  if (over === 1) {
+    // The steady state at the cap: one linear pass, no sort. Strictly less,
+    // so a tie keeps the first — the oldest — in Map order.
+    let soonest = null;
+    live.forEach(function (pair) {
+      if (soonest === null || pair[1] < soonest[1]) {
+        soonest = pair;
+      }
+    });
+    forgotten = soonest ? [soonest[0]] : [];
+  } else {
+    // Array.prototype.sort is stable, so a tie keeps Map order here too.
+    live.sort(function (a, b) {
+      return a[1] === b[1] ? 0 : (a[1] < b[1] ? -1 : 1);
+    });
+    forgotten = live.slice(0, over).map(function (pair) {
+      return pair[0];
+    });
+  }
+  forgotten.forEach(function (jti) {
+    revokedJtis.delete(jti);
+  });
+  revocationsForgotten += forgotten.length;
+  if (now - revocationsForgottenLoggedAt >= 60000) {
+    log.warn(errorCodes.tag('STS-OAUTH-0787') + 'admin: the revoked-token ' +
+             'register reached oauth2.maxRevokedJtis (' + cap + ') with ' +
+             'nothing expired in it, so ' + revocationsForgotten + ' ' +
+             'revocation(s) of unexpired tokens were forgotten, the soonest ' +
+             'to expire first (the latest was ' +
+             forgotten[forgotten.length - 1] + '). Raise the setting.');
+    revocationsForgotten = 0;
+    revocationsForgottenLoggedAt = now;
+  }
+  log.debug("Leaving makeRoomForRevocation(). Forgot " + forgotten.length +
+            ".");
+  return forgotten.length;
+}
 
 // ---------------------------------------------------------------------------
 // WHO IS TOLD THAT A TOKEN WAS REVOKED (#239, 2026-09-26): an INVERTED HOOK,
@@ -731,18 +903,30 @@ function tellRevocationObserver(jti, record, via, how) {
  * @param jti - the token's jti
  * @param via - which door revoked it, for the record and the log
  * @param how - the door's statement of the act, passed to the observer
+ * @param expSec - the token's `exp`, in epoch seconds, where the door has
+ *   it; otherwise the register's record's, and 0 (kept until the cap) where
+ *   neither knows (#345)
  * @returns true when the jti was newly revoked, false when it was already
  *   revoked or empty
  */
-function revoke(jti, via, how) {
+function revoke(jti, via, how, expSec) {
   log.debug("Entering revoke(). jti=" + jti);
   if (!jti) {
     log.debug("Leaving revoke(). There was no jti to revoke.");
     return false;
   }
-  const first = !revokedJtis.has(jti);
-  revokedJtis.set(jti, true);
   const record = tokens.get(jti);
+  const first = !revokedJtis.has(jti);
+  if (first) {
+    makeRoomForRevocation();
+  }
+  // The latest of what anybody stated: one jti is one token with one `exp`,
+  // and a later door that knows it dates a revocation an earlier one could
+  // not.
+  const exp = Math.max(revokedExpOf({ exp: expSec }),
+                       revokedExpOf(record),
+                       revokedExpOf(revokedJtis.get(jti)));
+  revokedJtis.set(jti, { exp: exp });
   if (record) {
     record.revoked = true;
     record.revokedAt = record.revokedAt || Date.now();
@@ -2350,16 +2534,27 @@ function copyOfUserRecord(record) {
 // as a person with no directory entry — its `isClient` was on a row nobody
 // read. Keyed by identity key, in the ambient realm, as copies.
 // ---------------------------------------------------------------------------
-function everyUserRecord() {
+//
+// `onlyKey` (#352) keeps one identity's record and copies nobody else's —
+// `userRow()`'s question, which built every copy to keep one. The fold is the
+// same fold, so the record it keeps is the one the whole map would have held.
+function everyUserRecord(onlyKey) {
   log.debug("Entering everyUserRecord().");
   const merged = new Map();
+  const wanted = onlyKey === undefined ? null : String(onlyKey);
   users.forEach(function (record) {
+    if (wanted !== null && record.key !== wanted) {
+      return;
+    }
     merged.set(record.key, copyOfUserRecord(record));
   });
   replication.remoteKeys('admin_stats.users').forEach(function (key) {
     replication.remoteRows('admin_stats.users', undefined, key)
       .forEach(function (value) {
         if (!value || typeof value !== 'object') {
+          return;
+        }
+        if (wanted !== null && (value.key || key) !== wanted) {
           return;
         }
         const theirs = Object.assign({}, value, { key: value.key || key,
@@ -2811,7 +3006,11 @@ const RESERVED_JWT_CLAIMS = [
   // does — the UserInfo endpoint has to know what the client asked for, and a
   // signed token is the one thing that reaches it — so a settable `claims`
   // would let a web form decide what a request asked for. See oauth2.js.
-  'claims'
+  'claims',
+  // draft-ietf-oauth-status-list section 6.1's reference (#432): where a
+  // resource server checking an access token on its own reads whether it was
+  // revoked. A settable one would point every token at a list somebody chose.
+  'status'
 ];
 
 // PER TRUST REALM, AND IT WAS NOT UNTIL 2026-08-28.
@@ -2996,6 +3195,120 @@ function resolvedJwtClaims(id, context) {
               'is issued without its attribute claims: ' + e.message);
     return {};
   }
+}
+
+// ---------------------------------------------------------------------------
+// ATTRIBUTE CLAIMS (#94): a claim-set row whose value is a directory
+// attribute of the person the artifact is about. The entry is read through
+// the same resolver slot the catalogue's attributes are (`entryAttributes`,
+// filled by `claim_attributes.ts`), once per artifact and only when the set
+// has such a row, and wrapped for resolvedJwtClaims()'s reason: a directory
+// that throws costs the claims and never the issuance.
+//
+// **ONLY THE DIRECTORY.** No persona is invented for an attribute claim in
+// either mode: an attribute the entry lacks is a row that adds nothing, and
+// a lower layer (the catalogue's claim of the same name, the groups or roles
+// claim) still answers under that name if it has a value.
+// ---------------------------------------------------------------------------
+function resolvedEntryAttributes(context) {
+  log.debug("Entering resolvedEntryAttributes().");
+  if (!attributeResolver ||
+      typeof attributeResolver.entryAttributes !== 'function') {
+    log.debug("Leaving resolvedEntryAttributes(). No resolver.");
+    return null;
+  }
+  try {
+    log.debug("Leaving resolvedEntryAttributes().");
+    return attributeResolver.entryAttributes(context) || null;
+  } catch (e) {
+    log.error(errorCodes.tag('STS-REG-0042') +
+              'the claim-attribute resolver threw reading the entry and was ' +
+              'ignored; the artifact is issued without its attribute ' +
+              'claims: ' + e.message);
+    log.debug("Leaving resolvedEntryAttributes().");
+    return null;
+  }
+}
+
+// An attribute's values off an entry, as text, empty ones dropped. The entry
+// is keyed lower-cased (`vc_claims.entryAttributes()`).
+function attributeValuesOf(entry, attribute) {
+  log.debug("Entering attributeValuesOf(). " + attribute);
+  const held = entry ? entry[String(attribute).toLowerCase()] : null;
+  log.debug("Leaving attributeValuesOf().");
+  return (Array.isArray(held) ? held : (held == null ? [] : [held]))
+    .map(function (one) { return String(one); })
+    .filter(function (one) { return one !== ''; });
+}
+
+// One value as the row's JSON type; null for a value that is not one (it is
+// left out rather than sent as the wrong type). Called once per value while a
+// token is built, so no Entering/Leaving pair — the hot-path exception.
+function typedAttributeValue(value, type) {
+  if (type === 'number') {
+    const n = Number(value);
+    return value.trim() !== '' && isFinite(n) ? n : null;
+  }
+  if (type === 'boolean') {
+    const lower = value.trim().toLowerCase();
+    return lower === 'true' ? true : (lower === 'false' ? false : null);
+  }
+  if (type === 'json') {
+    try {
+      return JSON.parse(value);
+    } catch (e) {
+      log.debug("Caught in typedAttributeValue(): " +
+                ((e && e.message) || e));
+      // Not JSON: left out, as a number that is not one is.
+      return null;
+    }
+  }
+  return value;
+}
+
+// A JWT attribute claim's value: every value typed (`multi`), or the first,
+// or undefined when the entry has none.
+function jwtAttributeClaimValue(entry, claim) {
+  log.debug("Entering jwtAttributeClaimValue(). " + claim.name);
+  const typed = attributeValuesOf(entry, claim.attribute)
+    .map(function (one) {
+      return typedAttributeValue(one, claim.type || 'string');
+    }).filter(function (one) {
+      return one !== null;
+    });
+  if (!typed.length) {
+    log.debug("Leaving jwtAttributeClaimValue(). No value.");
+    return undefined;
+  }
+  log.debug("Leaving jwtAttributeClaimValue().");
+  return claim.multi ? typed : typed[0];
+}
+
+// Every attribute claim row in the ambient realm's claim sets (#94), for CAEP:
+// a directory write that moves one of these attributes moves the claim, as a
+// catalogue attribute's write does. One row per claim name and attribute.
+/**
+ * Lists the attribute claims of every claim set in the ambient realm.
+ *
+ * @returns `[{ name, attribute, multi, type }]`, one per claim name and
+ *   attribute
+ */
+function attributeClaimRows() {
+  log.debug("Entering attributeClaimRows().");
+  const out = [];
+  const seen = new Set();
+  CLAIM_SET_IDS.forEach(function (id) {
+    claimSet(id).forEach(function (claim) {
+      const key = claim.name + '\n' + String(claim.attribute || '');
+      if (claim.attribute && !seen.has(key)) {
+        seen.add(key);
+        out.push({ name: claim.name, attribute: claim.attribute,
+                   multi: !!claim.multi, type: claim.type || 'string' });
+      }
+    });
+  });
+  log.debug("Leaving attributeClaimRows(). " + out.length + " row(s).");
+  return out;
 }
 
 function resolvedSamlAttributes(id, context) {
@@ -3370,32 +3683,30 @@ function reservedNames(set) {
           [];
 }
 
+// The JSON types an attribute claim's values become in a JWT (#94). A SAML
+// attribute's values are text whatever this says.
+const ATTRIBUTE_CLAIM_TYPES = ['string', 'number', 'boolean', 'json'];
+
 // Validate and install a whole set at once. Returns the errors rather than
 // throwing, because the caller is a form handler that has to redisplay them.
+// THE RULES A CLAIM ROW IS HELD TO, wherever it is configured (2026-10-01):
+// lifted out of setClaimSet() when an APPLICATION grew claim sets of its own,
+// so the realm's five sets and an application's are refused for exactly the
+// same reasons — a reserved name, a duplicate, an attribute that may not be
+// released, a type that is not one. Returns the cleaned rows; changes
+// nothing.
 /**
- * Validates and replaces a whole claim set; audited, and announced to holders
- * of live artifacts built from it.
+ * Checks a list of claim rows against a claim set's rules.
  *
  * @param id - the claim set id
- * @param entries - the claims, each `name`, `value` and optionally a type
- * @returns `ok`, or `ok: false` with `errors` when the set is unknown or an
- *   entry is invalid
+ * @param entries - the rows: a typed claim is `name` and `value`, an
+ *   attribute claim `name` and `attribute`
+ * @returns `ok`, the cleaned `claims`, the `errors` and the first refusal's
+ *   `code`
  */
-function setClaimSet(id, entries) {
-  log.debug("Entering setClaimSet(). id=" + id + ", " + (entries || []).length +
-      " " +
-      "entry/entries.");
-  const set = CLAIM_SETS[id];
-  if (!set) {
-    log.debug("Leaving setClaimSet(). No such claim set.");
-    return errorCodes.mark({ ok: false, errors: ['There is no claim set ' +
-                                                 'called "' + id + '". ' +
-        'The ' +
-                                 CLAIM_SET_IDS.length + ' are: ' +
-                                                 CLAIM_SET_IDS.join(', ') +
-                                                 '.'] },
-                           'STS-REG-0034');
-  }
+function checkClaimEntries(id, entries) {
+  log.debug("Entering checkClaimEntries(). id=" + id);
+  const set = CLAIM_SETS[id] || freshClaimSets()[id];
   const errors = [];
   const cleaned = [];
   const seen = new Set();
@@ -3424,15 +3735,81 @@ function setClaimSet(id, entries) {
       return;
     }
     seen.add(name);
-    const claim = { name: name,
-                    value: String((entry && entry.value) != null ? entry.value :
-                                  '') };
+    // AN ATTRIBUTE CLAIM (#94): the value is a directory attribute of the
+    // person the artifact is about, rather than a template. `multi` carries
+    // every value; `type` (JWT and UserInfo sets) says what JSON type each
+    // becomes. Refused for a secret, a binary value or what this service
+    // keeps (`SourcedAttributes.releaseRefusal()`).
+    const attribute = String((entry && entry.attribute) || '').trim();
+    let claim;
+    if (attribute) {
+      const problem = !/^[A-Za-z][A-Za-z0-9-]*$/.test(attribute)
+        ? '"' + attribute + '" is not an attribute name'
+        : SourcedAttributes.releaseRefusal(attribute);
+      if (problem) {
+        errors.push('"' + name + '" cannot carry an attribute: ' + problem +
+                    '.');
+        code = code || 'STS-REG-0200';
+        return;
+      }
+      const type = String((entry && entry.type) || 'string');
+      if (set.kind !== 'saml2' && set.kind !== 'saml11' &&
+          ATTRIBUTE_CLAIM_TYPES.indexOf(type) < 0) {
+        errors.push('"' + name + '" has type "' + type + '", which is not ' +
+                    'one of ' + ATTRIBUTE_CLAIM_TYPES.join(', ') + '.');
+        code = code || 'STS-REG-0201';
+        return;
+      }
+      claim = { name: name, attribute: attribute,
+                multi: entry.multi === true || entry.multi === 'true' };
+      if (set.kind !== 'saml2' && set.kind !== 'saml11') {
+        claim.type = type;
+      }
+    } else {
+      claim = { name: name,
+                value: String((entry && entry.value) != null ? entry.value :
+                              '') };
+    }
     if (set.kind === 'saml2' &&
         entry.nameFormat) claim.nameFormat = String(entry.nameFormat);
     if (set.kind === 'saml11') claim.namespace = String(
         entry.namespace || DEFAULT_SAML11_NAMESPACE);
     cleaned.push(claim);
   });
+  log.debug("Leaving checkClaimEntries(). " + errors.length + " error(s).");
+  return { ok: errors.length === 0, errors: errors, claims: cleaned,
+           code: code };
+}
+
+/**
+ * Validates and replaces a whole claim set; audited, and announced to holders
+ * of live artifacts built from it.
+ *
+ * @param id - the claim set id
+ * @param entries - the claims: a typed claim is `name` and `value`, an
+ *   attribute claim (#94) is `name`, `attribute`, `multi` and `type`
+ * @returns `ok`, or `ok: false` with `errors` when the set is unknown or an
+ *   entry is invalid
+ */
+function setClaimSet(id, entries) {
+  log.debug("Entering setClaimSet(). id=" + id + ", " + (entries || []).length +
+      " " +
+      "entry/entries.");
+  const set = CLAIM_SETS[id];
+  if (!set) {
+    log.debug("Leaving setClaimSet(). No such claim set.");
+    return errorCodes.mark({ ok: false, errors: ['There is no claim set ' +
+                                                 'called "' + id + '". ' +
+        'The ' +
+                                 CLAIM_SET_IDS.length + ' are: ' +
+                                                 CLAIM_SET_IDS.join(', ') +
+                                                 '.'] },
+                           'STS-REG-0034');
+  }
+  const checked = checkClaimEntries(id, entries);
+  const errors = checked.errors;
+  const cleaned = checked.claims;
+  const code = checked.code;
   if (errors.length) {
     recordClaimSetChange(id, set, [], [], set.claims.length, false, errors,
                          code);
@@ -3485,6 +3862,137 @@ function setClaimSet(id, entries) {
   log.debug("Leaving setClaimSet(). Installed " + cleaned.length +
             " claim(s).");
   return { ok: true, errors: [], claims: cleaned };
+}
+
+// AN APPLICATION'S OWN CLAIM SETS (rcbj, 2026-10-01). Each of the five sets
+// may also be configured on an APPLICATION, on its OAuth / OpenID Connect
+// and SAML configuration tabs, as one JSON array of rows on its entry
+// (`APP_CLAIM_ATTRIBUTES`). At issuance they are ADDED to the realm's set and
+// WIN BY NAME — rcbj's choice: the realm's rows still go out, an
+// application's row replaces the realm's row of the same name, and an
+// application with none issues exactly what the realm does.
+//
+// WHICH APPLICATION: the one the per-application settings already answer
+// for (`applications.settingFor()`) — the OAuth `client_id` for the three
+// JSON sets, the audience (a service provider's entityID, a WS-Federation
+// realm) for the two SAML sets — read by identifier, then by client_id or
+// AppliesTo. The rows are held to `checkClaimEntries()` at the write; a row
+// stored by hand that fails it is dropped here with a warning rather than
+// costing the issuance.
+const APP_CLAIM_ATTRIBUTES = {
+  access_token: 'oauthClaimsAccessToken',
+  id_token: 'oauthClaimsIdToken',
+  userinfo: 'oauthClaimsUserinfo',
+  saml2: 'saml2CustomAttributes',
+  saml11: 'saml11CustomAttributes'
+};
+
+/**
+ * Finds the application an issuance is for: by identifier, then by OAuth
+ * client_id, then by WS-Trust AppliesTo.
+ *
+ * @param name - the client_id or the audience
+ * @returns the application's view, or null
+ */
+function applicationForClaims(name) {
+  log.debug("Entering applicationForClaims().");
+  const wanted = String(name || '').trim();
+  if (!wanted) {
+    log.debug("Leaving applicationForClaims(). Nothing named.");
+    return null;
+  }
+  let found = null;
+  try {
+    found = applications.get(wanted) ||
+      (typeof applications.forClientId === 'function'
+        ? applications.forClientId(wanted) : null) ||
+      (typeof applications.forAppliesTo === 'function'
+        ? applications.forAppliesTo(wanted) : null);
+  } catch (e) {
+    log.debug("Caught in applicationForClaims(): " + ((e && e.message) || e));
+    // A registry that cannot answer costs the application's rows, never the
+    // issuance: the realm's set still goes out.
+    found = null;
+  }
+  log.debug("Leaving applicationForClaims(). " + (found ? 'Found.' : 'None.'));
+  return found;
+}
+
+/**
+ * Returns an application's own rows for a claim set, as stored and
+ * checked; none for an application with none.
+ *
+ * @param id - the claim set id
+ * @param application - the application's view, or its identifier
+ * @returns the rows
+ */
+function applicationClaimSet(id, application) {
+  log.debug("Entering applicationClaimSet(). id=" + id);
+  const attribute = APP_CLAIM_ATTRIBUTES[id];
+  const view = typeof application === 'string'
+    ? applicationForClaims(application) : application;
+  const raw = attribute && view && view.fields
+    ? [].concat(view.fields[attribute] || [])[0] : '';
+  if (!raw) {
+    log.debug("Leaving applicationClaimSet(). None.");
+    return [];
+  }
+  let rows = null;
+  try {
+    rows = JSON.parse(String(raw));
+  } catch (e) {
+    log.debug("Caught in applicationClaimSet(): " + ((e && e.message) || e));
+    rows = null;
+  }
+  if (!Array.isArray(rows)) {
+    log.warn(errorCodes.tag('STS-REG-0205') + 'admin: the application "' +
+             view.identifier + '" carries ' + attribute + ' that is not a ' +
+             'JSON array of claim rows; its own ' + id + ' claims are ' +
+             'ignored and the realm\'s are issued.');
+    log.debug("Leaving applicationClaimSet(). Not an array.");
+    return [];
+  }
+  const checked = checkClaimEntries(id, rows);
+  if (!checked.ok) {
+    log.warn(errorCodes.tag('STS-REG-0205') + 'admin: the application "' +
+             view.identifier + '" carries ' + attribute + ' rows that are ' +
+             'refused (' + checked.errors.join(' ') + '); its own ' + id +
+             ' claims are ignored and the realm\'s are issued.');
+    log.debug("Leaving applicationClaimSet(). Refused rows.");
+    return [];
+  }
+  log.debug("Leaving applicationClaimSet(). " + checked.claims.length + ".");
+  return checked.claims;
+}
+
+/**
+ * Returns the claim rows in force for an issuance: the realm's set, with the
+ * application's own rows added and winning by name.
+ *
+ * @param id - the claim set id
+ * @param context - the issuance's context: `client_id` for the JSON sets,
+ *   `audience` for the SAML ones
+ * @returns the rows
+ */
+function effectiveClaimSet(id, context) {
+  log.debug("Entering effectiveClaimSet(). id=" + id);
+  const realmRows = claimSet(id);
+  const isSaml = id === 'saml2' || id === 'saml11';
+  const name = context
+    ? (isSaml ? context.audience : (context.client_id || context.clientId))
+    : '';
+  const own = name ? applicationClaimSet(id, String(name)) : [];
+  if (!own.length) {
+    log.debug("Leaving effectiveClaimSet(). The realm's.");
+    return realmRows;
+  }
+  const ownNames = own.map(function (row) { return row.name; });
+  const merged = realmRows.filter(function (row) {
+    return ownNames.indexOf(row.name) < 0;
+  }).concat(own);
+  log.debug("Leaving effectiveClaimSet(). " + own.length + " of the " +
+            "application's over " + realmRows.length + " of the realm's.");
+  return merged;
 }
 
 /**
@@ -3612,7 +4120,19 @@ function jwtClaims(id, context) {
   const out = resolvedRoleClaims(context);
   Object.assign(out, resolvedGroupClaims(id, context));
   Object.assign(out, resolvedJwtClaims(id, context));
-  claimSet(id).forEach(function (claim) {
+  // The realm's set with the application's own rows over it (2026-10-01).
+  const configured = effectiveClaimSet(id, context);
+  // Read once, and only when a row needs it (#94).
+  const entry = configured.some(function (claim) { return !!claim.attribute; })
+    ? resolvedEntryAttributes(context) : null;
+  configured.forEach(function (claim) {
+    if (claim.attribute) {
+      const value = jwtAttributeClaimValue(entry, claim);
+      if (value !== undefined) {
+        out[claim.name] = value;
+      }
+      return;
+    }
     out[claim.name] = typedValue(expandValue(claim.value, context));
   });
   // ---------------------------------------------------------------------
@@ -3661,14 +4181,34 @@ function jwtClaims(id, context) {
  */
 function samlAttributes(id, context) {
   log.debug("Entering samlAttributes(). id=" + id);
-  const typed = claimSet(id).map(function (claim) {
-    const attribute = { name: claim.name,
-                        value: expandValue(claim.value, context) };
+  // The realm's set with the application's own rows over it (2026-10-01).
+  const configured = effectiveClaimSet(id, context);
+  // Read once, and only when a row needs it (#94).
+  const entry = configured.some(function (claim) { return !!claim.attribute; })
+    ? resolvedEntryAttributes(context) : null;
+  const typed = configured.map(function (claim) {
+    let attribute;
+    if (claim.attribute) {
+      // AN ATTRIBUTE CLAIM (#94): one <Attribute> with an <AttributeValue>
+      // per value when `multi`, else the first; none when the entry has
+      // none, so a lower layer may still answer under the name.
+      const values = attributeValuesOf(entry, claim.attribute);
+      if (!values.length) {
+        return null;
+      }
+      attribute = { name: claim.name,
+                    values: claim.multi ? values : [values[0]] };
+    } else {
+      attribute = { name: claim.name,
+                    value: expandValue(claim.value, context) };
+    }
     if (id === 'saml2' &&
         claim.nameFormat) attribute.nameFormat = claim.nameFormat;
     if (id === 'saml11') attribute.namespace = claim.namespace ||
                                                DEFAULT_SAML11_NAMESPACE;
     return attribute;
+  }).filter(function (attribute) {
+    return attribute !== null;
   });
   // The same precedence jwtClaims() applies, but it has to be written as a
   // FILTER rather than as an assignment order: an assertion is a list of
@@ -4486,6 +5026,58 @@ function issuedList() {
 }
 
 // ---------------------------------------------------------------------------
+// ONE KIND OF ARTIFACT, AS `issuedList()` WOULD LIST IT (#352, 2026-09-29).
+//
+// `/admin/sessions` (through `logout.liveSessions()`) wanted the Kerberos
+// ticket-granting tickets and built `issuedList()` to find them: every token
+// copied and given a state, every artifact of every kind given one, all of it
+// sorted — up to five thousand tokens on each request, to keep a handful of
+// tickets. This walks the artifacts once, keeps the kind asked for, and
+// builds each kept row by the artifact branch of `issuedList()` — the same
+// members, the same state against the same clock — in the same order that
+// list would have put them in: newest first, and among equal instants the one
+// recorded later first.
+// ---------------------------------------------------------------------------
+/**
+ * Lists the issued artifacts of one kind, each as `issuedList()` would list
+ * it, newest first.
+ *
+ * @param kind - the artifact kind, such as `Kerberos TGT`
+ * @returns the rows
+ */
+function issuedArtifactsOfKind(kind) {
+  log.debug("Entering issuedArtifactsOfKind(). kind=" + kind);
+  const nowMs = Date.now();
+  const family = FAMILY_BY_ARTIFACT_KIND[kind];
+  const out = [];
+  if (!family) {
+    log.debug("Leaving issuedArtifactsOfKind(). Not a listed kind.");
+    return out;
+  }
+  allArtifacts().forEach(function (one, index) {
+    if (!one || one.kind !== kind) {
+      return;
+    }
+    const record = withRevocation(one);
+    out.push(Object.assign({}, record, {
+      family: family,
+      state: artifactStateOf(record, nowMs),
+      expiresAtMs: record.expiresAt || 0,
+      identifier: record.id || '',
+      setId: '',
+      revocable: true,
+      revocationReach: 'record-only',
+      order: index
+    }));
+  });
+  out.sort(function (a, b) {
+    return (b.issuedAt - a.issuedAt) || (b.order - a.order);
+  });
+  log.debug("Leaving issuedArtifactsOfKind(). " + out.length + " row(s).");
+  return out;
+}
+
+// ---------------------------------------------------------------------------
 // THE SAME LIST, GROUPED INTO WHAT WAS ISSUED TOGETHER.
 //
 // **This is what /admin/tokens draws, and the reason it is a different list
@@ -4765,12 +5357,92 @@ function blankUserRow(identity) {
  */
 function userRows() {
   log.debug("Entering userRows().");
+  const out = buildUserRows(undefined);
+  log.debug("Leaving userRows().");
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// ONE IDENTITY'S ROW, WITHOUT EVERYBODY ELSE'S (#352, 2026-09-29).
+//
+// `userDetail()` found its row by building `userRows()` and filtering it —
+// every register record copied and folded, every token and artifact walked
+// into a row, every row's counted maps turned into sorted arrays, all sorted
+// by activity — to keep one. On testidp that is thirteen thousand rows built
+// for each click on a name. `buildUserRows()` takes the key and builds only
+// that row, through the same code, so the row it answers is the row the
+// whole list would have held: the register fold keeps the one record, and
+// a token or artifact is counted only if it files under that key.
+// ---------------------------------------------------------------------------
+/**
+ * Returns one identity's row, exactly as `userRows()` would list it.
+ *
+ * @param key - the identity's key
+ * @returns the row, or null when nothing here knows that key
+ */
+function userRow(key) {
+  log.debug("Entering userRow(). key=" + key);
+  const rows = buildUserRows(String(key == null ? '' : key));
+  log.debug("Leaving userRow(). " + (rows.length ? "Found." : "None."));
+  return rows[0] || null;
+}
+
+// ---------------------------------------------------------------------------
+// EVERY KEY `userRows()` WOULD LIST, AND NOTHING ELSE (#352, 2026-09-29).
+//
+// Nine console pages asked `userRows()` for a set of keys — "is this member
+// somebody the users page knows, so the name can be a link" — and threw the
+// rows away. The keys come from the same three sources by the same rules (the
+// register's records, `holderKeyOf()` of every token, `identityOf()` of every
+// artifact's subject); no row is built, copied or sorted.
+// ---------------------------------------------------------------------------
+/**
+ * Returns the key of every identity `userRows()` would list.
+ *
+ * @returns a Set of keys
+ */
+function userKeys() {
+  log.debug("Entering userKeys().");
+  const keys = new Set();
+  users.forEach(function (record) {
+    keys.add(record.key);
+  });
+  replication.remoteKeys('admin_stats.users').forEach(function (key) {
+    replication.remoteRows('admin_stats.users', undefined, key)
+      .forEach(function (value) {
+        if (value && typeof value === 'object') {
+          keys.add(value.key || key);
+        }
+      });
+  });
+  // `rowFor()`'s rule: the key is `identityOf()` of what it is handed, and an
+  // empty one files nothing.
+  const add = function (value) {
+    const identity = identityOf(value);
+    if (identity.key) {
+      keys.add(identity.key);
+    }
+  };
+  tokens.forEach(function (record) {
+    add(holderKeyOf(record.username, record.sub));
+  });
+  allArtifacts().forEach(function (record) {
+    add(record.subject);
+  });
+  log.debug("Leaving userKeys(). " + keys.size + " key(s).");
+  return keys;
+}
+
+// `userRows()`, or with `onlyKey` the one row it would hold under that key.
+function buildUserRows(onlyKey) {
+  log.debug("Entering buildUserRows().");
+  const wanted = onlyKey === undefined ? null : String(onlyKey);
   const nowMs = Date.now();
   const rows = new Map();
   const rowFor = function (value) {
     log.debug("Entering rowFor().");
     const identity = identityOf(value);
-    if (!identity.key) {
+    if (!identity.key || (wanted !== null && identity.key !== wanted)) {
       log.debug("Leaving rowFor().");
       return null;
     }
@@ -4783,7 +5455,7 @@ function userRows() {
     return row;
   };
 
-  everyUserRecord().forEach(function (record) {
+  everyUserRecord(onlyKey).forEach(function (record) {
     const row = blankUserRow(record);
     // The registry's own counts win over anything reconstructed below: they
     // count authentications, and the forms map there was built one presentation
@@ -4868,7 +5540,7 @@ function userRows() {
   // Most recently active first, which on a mock is nearly always the person
   // being debugged right now.
   out.sort(function (a, b) { return b.lastActivityAt - a.lastActivityAt; });
-  log.debug("Leaving userRows(). " + out.length + " user(s), " +
+  log.debug("Leaving buildUserRows(). " + out.length + " user(s), " +
             out.filter(function (r) { return r.authenticated; }).length + " " +
                 "authenticated here.");
   return out;
@@ -4887,20 +5559,64 @@ function userRows() {
 function userDetail(key) {
   log.debug("Entering userDetail(). key=" + key);
   const wanted = String(key || '');
-  const row = userRows().filter(function (r) { return r.key === wanted; })[0] ||
-              null;
+  // `userRow()` and not `userRows()` filtered (#352): the same row, without
+  // building everybody else's to find it.
+  const row = wanted ? userRow(wanted) : null;
   if (!row) {
     log.debug("Leaving userDetail(). No such user.");
     return null;
   }
+  const held = holdingsOf([wanted]).get(wanted);
+  log.debug("Leaving userDetail(). " + held.tokens.length + " token(s), " +
+            held.artifacts.length + " artifact(s).");
+  return { user: row, tokens: held.tokens, artifacts: held.artifacts };
+}
+
+// ---------------------------------------------------------------------------
+// WHAT SEVERAL IDENTITIES HOLD, FROM ONE PASS OVER EACH REGISTER (#351,
+// 2026-09-29).
+//
+// userDetail() answers one identity and builds EVERY user row to find it,
+// then walks every token and every artifact. The sign-out's `token` and
+// `issued` families asked it once each per person — four whole folds of this
+// register per person deleted, since a delete reads what the person held and
+// then ends it — and a SCIM Bulk of a hundred deletes spent most of its time
+// here. This is the half of it a sign-out needs: the token and artifact
+// records, in userDetail()'s shapes and filtered by its rules, for every key
+// asked at once. userDetail() is this with the row beside it, so the two
+// cannot disagree about what a person holds.
+//
+// What it does NOT ask is whether the identity has a row on /admin/users.
+// userDetail() answered null without one, and a sign-out read that null as
+// "holds nothing"; but every token's holder and every artifact's subject makes
+// a row (userRows() is built from exactly these records), so the only thing
+// the row ever hid was an artifact filed under somebody by its `person` alone
+// — which is theirs to have ended, and is ended now.
+// ---------------------------------------------------------------------------
+/**
+ * Returns what each identity holds: their token records and their artifact
+ * records, in userDetail()'s shapes, from one pass over each register.
+ *
+ * @param keys - the identity keys
+ * @returns a Map from each key asked to `{ tokens, artifacts }`, newest first
+ */
+function holdingsOf(keys) {
+  log.debug("Entering holdingsOf(). " + (keys || []).length + " key(s).");
+  const out = new Map();
+  (keys || []).forEach(function (key) {
+    out.set(String(key || ''), { tokens: [], artifacts: [] });
+  });
+  if (!out.size) {
+    log.debug("Leaving holdingsOf(). Nobody asked.");
+    return out;
+  }
   const nowMs = Date.now();
-  const theirTokens = [];
   tokens.forEach(function (record) {
-    if (holderKeyOf(record.username, record.sub) !== wanted) return;
-    theirTokens.push(Object.assign({ state: tokenStateOf(record, nowMs) },
+    const held = out.get(holderKeyOf(record.username, record.sub));
+    if (!held) return;
+    held.tokens.push(Object.assign({ state: tokenStateOf(record, nowMs) },
                                    record));
   });
-  theirTokens.sort(function (a, b) { return b.issuedAt - a.issuedAt; });
   // ACROSS EVERY PROCESS'S ROWS — see allArtifacts(). This was the LAST reader
   // still walking the bare array, and it was the one that mattered most: this
   // is what `logout.js`'s `issued` family collects, so a credential another
@@ -4910,16 +5626,22 @@ function userDetail(key) {
   // ticket whose artifact stayed `valid` because nothing had offered it for
   // revocation. The SAML assertions beside it revoked correctly, which is what
   // made it look like a Kerberos problem for a day.
-  const theirArtifacts = allArtifacts().filter(function (record) {
-    return identityKeyOf(record.subject) === wanted ||
-           (!!record.person && identityKeyOf(record.person) === wanted);
-  }).map(function (one) {
+  allArtifacts().forEach(function (one) {
+    const bySubject = out.get(identityKeyOf(one.subject));
+    const byPerson = one.person ? out.get(identityKeyOf(one.person)) : null;
+    if (!bySubject && !byPerson) return;
     const record = withRevocation(one);
-    return Object.assign({ state: artifactStateOf(record, nowMs) }, record);
-  }).sort(function (a, b) { return b.issuedAt - a.issuedAt; });
-  log.debug("Leaving userDetail(). " + theirTokens.length + " token(s), " +
-            theirArtifacts.length + " artifact(s).");
-  return { user: row, tokens: theirTokens, artifacts: theirArtifacts };
+    const shaped = Object.assign({ state: artifactStateOf(record, nowMs) },
+                                 record);
+    if (bySubject) bySubject.artifacts.push(shaped);
+    if (byPerson && byPerson !== bySubject) byPerson.artifacts.push(shaped);
+  });
+  out.forEach(function (held) {
+    held.tokens.sort(function (a, b) { return b.issuedAt - a.issuedAt; });
+    held.artifacts.sort(function (a, b) { return b.issuedAt - a.issuedAt; });
+  });
+  log.debug("Leaving holdingsOf().");
+  return out;
 }
 
 // The session a token was issued under, by jti. The refresh grant is what needs
@@ -5325,7 +6047,12 @@ module.exports = {
   holderKeyOf: holderKeyOf,
   renameIdentity: renameIdentity,
   userRows: userRows,
+  // #352: one row, and the keys alone, without building every row.
+  userRow: userRow,
+  userKeys: userKeys,
+  issuedArtifactsOfKind: issuedArtifactsOfKind,
   userDetail: userDetail,
+  holdingsOf: holdingsOf,
   sessionIdOfJti: sessionIdOfJti,
   sessionAuthenticatedOfJti: sessionAuthenticatedOfJti,
   recordAssertion: recordAssertion,
@@ -5360,7 +6087,12 @@ module.exports = {
   isRevoked: isRevoked,
   revokedCount: revokedCount,
   claimSet: claimSet,
+  attributeClaimRows: attributeClaimRows,
   setClaimSet: setClaimSet,
+  checkClaimEntries: checkClaimEntries,
+  APP_CLAIM_ATTRIBUTES: APP_CLAIM_ATTRIBUTES,
+  applicationClaimSet: applicationClaimSet,
+  effectiveClaimSet: effectiveClaimSet,
   // Filled by claim_attributes.js at its require time; see the note above it.
   // The inversion is what keeps the four issuance sites unchanged.
   setAttributeResolver: setAttributeResolver,

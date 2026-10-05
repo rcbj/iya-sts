@@ -375,6 +375,16 @@ assertion, the assertion's `jti` is in the register, and a resource server
 holding the token can be told which trusted party asserted the subject. The
 party is acting **openly**, which is what the word means.
 
+## It can be exchanged, too
+
+The same assertion, from the same declared issuer, is accepted as the
+`subject_token` or `actor_token` of an RFC 8693 token exchange, with
+`urn:ietf:params:oauth:token-type:jwt`. It is verified by the same code and
+spent in the same one-use history: a JWT used at this grant cannot then be
+exchanged, nor the reverse. What it may be addressed to is
+`oauth2.tokenExchangeAudience`. See
+[Delegation and impersonation](delegation.md#assertions-as-the-subject-or-the-actor).
+
 ## Configuration
 
 | Setting | Environment variable | Default | Runtime? | What it does |

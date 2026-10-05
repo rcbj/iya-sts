@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -105,6 +105,10 @@ import claims = require('../cluster/cluster_claims');
 import accountSignals = require('../ssf/account_signals');
 import capabilities = require('../cluster/cluster_capabilities');
 import InstanceSlot = require('./instance_slot');
+// Which cell minted a credential (#98 D10): a keyed tag appended to an EAB
+// key id and a SCEP challenge id. A leaf library; stamps nothing in a
+// single-cell service.
+import cellLocator = require('./cell_locator');
 // A DEVICE AS THE HOLDER (#164 phase 2): the device register, what a
 // request's key attestation proves, and the enrolment counters. Three
 // libraries; none requires this file.
@@ -304,6 +308,7 @@ interface CertEnrollmentDeps {
   devices: typeof devices;
   deviceAttestation: typeof deviceAttestation;
   deviceRecognition: typeof deviceRecognition;
+  cellLocator: typeof cellLocator;
   // Required when first called, as the JavaScript did: `pki_revocation.js`
   // by `revokeEnrolled()`, and `websecurity.ts` by the throttles
   // (`websecurityModule()`).
@@ -417,6 +422,7 @@ class CertEnrollment {
       devices: devices,
       deviceAttestation: deviceAttestation,
       deviceRecognition: deviceRecognition,
+      cellLocator: cellLocator,
       loadRevocation: function () {
         return require('./pki_revocation');
       },
@@ -595,6 +601,48 @@ class CertEnrollment {
     });
     log.debug("Leaving CertEnrollment.entryFromUri().");
     return found;
+  }
+
+  // THE ENTRY A CERTIFICATE NAMES, READ AND NOT BELIEVED (#98 D10). Where a
+  // request is served in a service deployed as cells is decided before it is
+  // authenticated — a credential is verified, a claim spent and a certificate
+  // written only in the cell that holds the entry — so the enrollment
+  // families need the entry a presented certificate's `urn:sts:`
+  // subjectAltName names without verifying anything: it chooses only WHERE
+  // `authenticatePresentedCertificate()` then asks the three real questions.
+  /**
+   * Reads the one person or application a certificate's `urn:sts:`
+   * subjectAltName names, without verifying the certificate.
+   *
+   * @param certificate - the certificate, as PEM or DER
+   * @returns the entry's `kind` and `id`, or null when it names none or
+   *   several, or cannot be read
+   */
+  entryNamedByCertificate(certificate) {
+    const { nodeCrypto, log } = this.deps;
+    const self = this;
+    log.debug("Entering CertEnrollment.entryNamedByCertificate().");
+    let cert = null;
+    try {
+      cert = certificate ? new nodeCrypto.X509Certificate(certificate) : null;
+    } catch (e) {
+      log.debug("Caught in CertEnrollment.entryNamedByCertificate(): " +
+                ((e && e.message) || e));
+      cert = null;
+    }
+    const named = String((cert && cert.subjectAltName) || '').split(/,\s*/)
+      .filter(function (one) {
+        return one.indexOf('URI:') === 0;
+      })
+      .map(function (one) {
+        return self.entryFromUri(one.slice(4));
+      })
+      .filter(function (one) {
+        return !!one;
+      });
+    log.debug("Leaving CertEnrollment.entryNamedByCertificate(). " +
+              named.length);
+    return named.length === 1 ? named[0] : null;
   }
 
   /**
@@ -1156,9 +1204,12 @@ class CertEnrollment {
    * `allowedProfiles` setting.
    *
    * @param family - the enrollment family
+   * @param entry - optional `{ kind, id }`: an application's own
+   *   `<family>AllowedProfiles`, where it lists something, REPLACES the
+   *   realm's list for it (the five profiles never issued stay refused)
    * @returns the profile ids
    */
-  allowedProfiles(family) {
+  allowedProfiles(family, entry?) {
     const { log, config } = this.deps;
     log.debug("Entering CertEnrollment.allowedProfiles(). family=" + family);
     const raw = config.value(family + '.allowedProfiles');
@@ -1168,10 +1219,42 @@ class CertEnrollment {
     const listed = (Array.isArray(raw) ? raw : String(raw || '').split(','))
       .map(function (one) { return String(one).trim(); })
       .filter(function (one) { return known.indexOf(one) >= 0; });
-    log.debug("Leaving CertEnrollment.allowedProfiles().");
+    // AN APPLICATION'S OWN LIST OVERRIDES THE REALM'S (rcbj, 2026-10-01):
+    // where it lists something, it is the whole answer for that application,
+    // and the realm's list is not consulted. Only a known profile counts, so
+    // the five never issued cannot be listed back in.
+    const own = this.applicationProfileList(family, entry).filter(
+      function (one) { return known.indexOf(one) >= 0; });
+    const chosen = own.length ? own : listed;
+    log.debug("Leaving CertEnrollment.allowedProfiles(). " +
+              (own.length ? "The application's list." : "The realm's list."));
     return known.filter(function (one) {
-      return listed.indexOf(one) >= 0;
+      return chosen.indexOf(one) >= 0;
     });
+  }
+
+  // An application's own `<family>AllowedProfiles`, or none (2026-10-01).
+  /**
+   * Returns an application's own allowed-profile list for a family, or an
+   * empty list for anything else.
+   *
+   * @param family - the enrollment family
+   * @param entry - `{ kind, id }`, or nothing
+   * @returns the profile ids it lists
+   */
+  applicationProfileList(family, entry?) {
+    const { log, applications } = this.deps;
+    log.debug("Entering CertEnrollment.applicationProfileList().");
+    if (!entry || entry.kind !== 'application') {
+      log.debug("Leaving CertEnrollment.applicationProfileList(). None.");
+      return [];
+    }
+    const view = applications.get(String(entry.id));
+    const raw = view && view.fields ? view.fields[family + 'AllowedProfiles']
+                                    : null;
+    log.debug("Leaving CertEnrollment.applicationProfileList().");
+    return [].concat(raw == null ? [] : raw).map(String)
+      .map(function (one) { return one.trim(); }).filter(Boolean);
   }
 
   /**
@@ -1180,9 +1263,13 @@ class CertEnrollment {
    *
    * @param family - the enrollment family
    * @param profileId - the profile
+   * @param entry - optional `{ kind, id }`: an application's own list,
+   *   where it has one, is asked instead of the realm's
+   * @param options - `structural: true` asks only whether it is an issued
+   *   profile at all, not whether it is allowed
    * @returns `ok` and the profile, or a refusal
    */
-  checkProfile(family, profileId) {
+  checkProfile(family, profileId, entry?, options?) {
     const { log } = this.deps;
     const self = this;
     log.debug("Entering CertEnrollment.checkProfile(). profile=" + profileId);
@@ -1210,11 +1297,27 @@ class CertEnrollment {
                          ' issued over ' + FAMILY_LABELS[family] + ' are: ' +
                          PROFILE_IDS.join(', ') + '.');
     }
-    if (self.allowedProfiles(family).indexOf(id) < 0) {
+    // The application's own list, where it has one, is the list; the realm's
+    // is asked otherwise. `options.structural` asks only the four checks
+    // above: EST checks a label before it knows whose request it is.
+    const ownList = self.applicationProfileList(family, entry).length > 0;
+    if (options && options.structural) {
+      log.debug("Leaving CertEnrollment.checkProfile(). A profile.");
+      return { ok: true, profile: id };
+    }
+    if (!ownList && self.allowedProfiles(family).indexOf(id) < 0) {
       log.debug("Leaving CertEnrollment.checkProfile(). Not allowed here.");
       return self.refuse('STS-ENROLL-0003', 403, 'The "' + id + '" profile ' +
                          'is not in ' + family + '.allowedProfiles in this ' +
                          'realm.');
+    }
+    if (ownList && self.allowedProfiles(family, entry).indexOf(id) < 0) {
+      log.debug("Leaving CertEnrollment.checkProfile(). Not allowed for " +
+                "the application.");
+      return self.refuse('STS-ENROLL-0095', 403, 'The "' + id + '" profile ' +
+                         'is not in the ' + family + 'AllowedProfiles of ' +
+                         'the application "' + String(entry && entry.id) +
+                         '".');
     }
     log.debug("Leaving CertEnrollment.checkProfile(). Allowed.");
     return { ok: true, profile: id };
@@ -1224,13 +1327,28 @@ class CertEnrollment {
    * Returns a family's default profile in this realm.
    *
    * @param family - the enrollment family
+   * @param entry - optional `{ kind, id }`: an application's own
+   *   `<family>DefaultProfile` replaces the realm's, where the list in force
+   *   for the application allows it
    * @returns the profile id
    */
-  defaultProfile(family) {
-    const { log, config } = this.deps;
+  defaultProfile(family, entry?) {
+    const { log, config, applications } = this.deps;
     log.debug("Entering CertEnrollment.defaultProfile().");
+    const realmDefault = String(config.value(family + '.defaultProfile') ||
+                                'tls-client');
+    if (entry && entry.kind === 'application') {
+      const view = applications.get(String(entry.id));
+      const own = String(view && view.fields &&
+                         view.fields[family + 'DefaultProfile'] || '').trim();
+      if (own && this.allowedProfiles(family, entry).indexOf(own) >= 0) {
+        log.debug("Leaving CertEnrollment.defaultProfile(). The " +
+                  "application's.");
+        return own;
+      }
+    }
     log.debug("Leaving CertEnrollment.defaultProfile().");
-    return String(config.value(family + '.defaultProfile') || 'tls-client');
+    return realmDefault;
   }
 
   // ---------------------------------------------------------------------------
@@ -1268,22 +1386,192 @@ class CertEnrollment {
    *
    * @param family - the enrollment family
    * @param types - the identifier types in the order
+   * @param entry - optional `{ kind, id }`, the account's entry
    * @returns the profile id
    */
-  profileForIdentifiers(family, types) {
+  profileForIdentifiers(family, types, entry?) {
     const { log } = this.deps;
     log.debug("Entering CertEnrollment.profileForIdentifiers().");
     const list = Array.isArray(types) ? types.map(String) : [];
     const hostsOnly = list.length > 0 && list.every(function (one) {
       return one === 'dns' || one === 'ip';
     });
-    if (hostsOnly && this.allowedProfiles(family).indexOf('tls-server') >= 0) {
+    if (hostsOnly &&
+        this.allowedProfiles(family, entry).indexOf('tls-server') >= 0) {
       log.debug("Leaving CertEnrollment.profileForIdentifiers(). tls-server.");
       return 'tls-server';
     }
     log.debug("Leaving CertEnrollment.profileForIdentifiers(). The realm " +
               "default.");
-    return this.defaultProfile(family);
+    return this.defaultProfile(family, entry);
+  }
+
+  // ---------------------------------------------------------------------------
+  // AN APPLICATION'S OWN RULES (rcbj, 2026-10-01). An application is an
+  // enrollment subject like a person; since this date it may also be declared
+  // for the ACME, EST and SCEP families and carry overrides for them, on its
+  // page's Certificate enrollment tab. For an APPLICATION entry, in order:
+  //
+  //   1. THE DECLARATION, decided by the issuance policy's protocol rule
+  //      (#380) through `issuance_gate.check()` with kind `issue-certificate`
+  //      and this family: in product mode, an application declared for some
+  //      families and not this one is refused; development refuses nothing,
+  //      and one declared for nothing is never refused. Roles are waived and
+  //      the device deferred — neither is what this question is about.
+  //   2. THE PROFILE: a request that named none (`profileDefaulted`) takes
+  //      the application's `<family>DefaultProfile` where the list in force
+  //      for it allows it; and any profile must be in that list.
+  //   3. EST'S AUTHENTICATION, where the application authenticated itself:
+  //      `estBasicAuthentication` and `estCertificateAuthentication` decide
+  //      that method for it, and `estServerKeyGeneration` /serverkeygen for
+  //      its certificates (`estSwitch()`).
+  //   4. THE LIFETIME AND THE CAP: the application's value where it set one.
+  //
+  // **AN APPLICATION'S VALUE OVERRIDES THE REALM'S (rcbj, 2026-10-01)**, in
+  // both directions: it may widen as well as narrow, and an unset value
+  // leaves the realm's in force. What no override reaches: the five
+  // profiles never issued, a lifetime past the Issuing CA's own expiry, the
+  // declaration rule, and `<family>.enabled`. The first version of this
+  // (the same day) only narrowed, and rcbj asked for an override.
+  //
+  // Every refusal is this module's ordinary one, which each protocol already
+  // turns into its own specification's error — an RFC 8555 problem document,
+  // an RFC 7030 HTTP status, an RFC 8894 failInfo — so nothing here adds a
+  // protocol error the specifications do not define. A person's entry is
+  // unchanged: the realm's settings, as before.
+  // ---------------------------------------------------------------------------
+  /**
+   * Applies an application subject's declaration and overrides to an
+   * enrollment, and answers the profile, lifetime and certificate cap to
+   * issue with.
+   *
+   * @param family - the enrollment family
+   * @param entry - the resolved subject, `{ kind, id }`
+   * @param asked - the issue request, for its principal, key source and
+   *   whether its profile was the default
+   * @param profileId - the profile the request is for
+   * @returns `{ ok: true, profile, days, cap }`, or a refusal
+   */
+  applicationRules(family, entry, asked, profileId) {
+    const { log, config, applications } = this.deps;
+    const self = this;
+    log.debug("Entering CertEnrollment.applicationRules(). family=" + family);
+    const realmDays = Number(config.value(family +
+                                          '.certificateLifetimeDays'));
+    const realmCap = Number(config.value(
+      'pki.enrollmentMaxCertificatesPerEntry'));
+    const plain = { ok: true, profile: profileId, days: realmDays,
+                    cap: realmCap };
+    if (!entry || entry.kind !== 'application') {
+      log.debug("Leaving CertEnrollment.applicationRules(). Not an " +
+                "application.");
+      return plain;
+    }
+    const id = String(entry.id);
+    // 1. The declaration.
+    const gate = require('./issuance_gate');
+    const declared = gate.check({
+      application: id, kind: gate.ISSUANCE.CERTIFICATE,
+      protocolFamilies: [family], rolesWaived: true, deviceDeferred: true,
+      subject: { kind: 'application', name: id, authenticated: true },
+      claims: null
+    });
+    if (!declared.allowed) {
+      log.debug("Leaving CertEnrollment.applicationRules(). Not declared.");
+      return self.refuse('STS-ENROLL-0094', 403, 'The application "' + id +
+        '" is not declared for ' + FAMILY_LABELS[family] + ', so no ' +
+        'certificate is issued to it over that protocol here.');
+    }
+    const view = applications.get(id);
+    const fields = (view && view.fields) || {};
+    const listOf = function (value) {
+      log.debug("Entering listOf().");
+      log.debug("Leaving listOf().");
+      return [].concat(value == null ? [] : value).map(String)
+        .map(function (one) { return one.trim(); }).filter(Boolean);
+    };
+    // 2. The profile.
+    const allowed = self.allowedProfiles(family, entry);
+    let profile = String(profileId || '');
+    const ownDefault = String(fields[family + 'DefaultProfile'] || '').trim();
+    if (asked && asked.profileDefaulted && ownDefault &&
+        allowed.indexOf(ownDefault) >= 0) {
+      profile = ownDefault;
+    }
+    const own = listOf(fields[family + 'AllowedProfiles']);
+    if (own.length && own.indexOf(profile) < 0) {
+      log.debug("Leaving CertEnrollment.applicationRules(). Profile not " +
+                "allowed for the application.");
+      return self.refuse('STS-ENROLL-0095', 403, 'The "' + profile +
+        '" profile is not one the application "' + id + '" may be issued ' +
+        'over ' + FAMILY_LABELS[family] + ' (' + family +
+        'AllowedProfiles: ' + own.join(', ') + ').');
+    }
+    // 3. EST's authentication, where the application authenticated itself:
+    // its own switch, where it set one, decides; the realm's otherwise.
+    const principal = (asked && asked.principal) || {};
+    const isSelf = principal.kind === 'application' &&
+      String(principal.id) === id;
+    if (family === 'est' && isSelf) {
+      const byCertificate = !!principal.certificateSerial;
+      const refusedBy = byCertificate
+        ? (!self.estSwitch('certificateAuthentication', entry)
+          ? 'certificate authentication (estCertificateAuthentication)' : '')
+        : (!self.estSwitch('basicAuthentication', entry)
+          ? 'its client id and secret (estBasicAuthentication)' : '');
+      if (refusedBy) {
+        log.debug("Leaving CertEnrollment.applicationRules(). EST " +
+                  "authentication turned off for the application.");
+        return self.refuse('STS-ENROLL-0096', 403, 'EST does not accept ' +
+          refusedBy + ' for the application "' + id + '".');
+      }
+    }
+    if (family === 'est' && asked && asked.keySource === 'server' &&
+        !self.estSwitch('serverKeyGeneration', entry)) {
+      log.debug("Leaving CertEnrollment.applicationRules(). Server key " +
+                "generation turned off for the application.");
+      return self.refuse('STS-ENROLL-0096', 403, 'EST /serverkeygen is not ' +
+        'offered to the application "' + id + '" (estServerKeyGeneration).');
+    }
+    // 4. The lifetime and the cap: its own value, where it set one.
+    const ownOr = function (realmValue, attribute) {
+      log.debug("Entering ownOr().");
+      const mine = Number(String(fields[attribute] || '').trim());
+      log.debug("Leaving ownOr().");
+      return Number.isFinite(mine) && mine > 0 ? mine : realmValue;
+    };
+    log.debug("Leaving CertEnrollment.applicationRules().");
+    return { ok: true, profile: profile,
+             days: ownOr(realmDays, family + 'CertificateLifetimeDays'),
+             cap: ownOr(realmCap, 'enrollMaxCertificates') };
+  }
+
+  // ONE OF EST'S THREE SWITCHES, FOR AN ENTRY (rcbj, 2026-10-01): an
+  // application's own `est<Name>` where it set one, the realm's
+  // `est.<name>` otherwise. A person is the realm's.
+  /**
+   * Answers whether one of EST's switches is on for an entry: the
+   * application's own value where it set one, the realm's otherwise.
+   *
+   * @param name - `basicAuthentication`, `certificateAuthentication` or
+   *   `serverKeyGeneration`
+   * @param entry - `{ kind, id }`, or nothing for the realm's value
+   * @returns true when the switch is on
+   */
+  estSwitch(name, entry?) {
+    const { log, config, applications } = this.deps;
+    log.debug("Entering CertEnrollment.estSwitch(). name=" + name);
+    const realmValue = config.value('est.' + name) !== false;
+    if (!entry || entry.kind !== 'application') {
+      log.debug("Leaving CertEnrollment.estSwitch(). The realm's.");
+      return realmValue;
+    }
+    const view = applications.get(String(entry.id));
+    const attribute = 'est' + name.charAt(0).toUpperCase() + name.slice(1);
+    const raw = String(view && view.fields && view.fields[attribute] || '')
+      .trim().toUpperCase();
+    log.debug("Leaving CertEnrollment.estSwitch(). raw=" + raw);
+    return raw === 'TRUE' ? true : (raw === 'FALSE' ? false : realmValue);
   }
 
   // ---------------------------------------------------------------------------
@@ -1849,7 +2137,7 @@ class CertEnrollment {
     log.debug("Leaving CertEnrollment.organisationOf().");
     return {
       organisation: String((row && row.organisation) ||
-                           config.value('pki.organisation') || 'mock-sts'),
+                           config.value('pki.organisation') || 'iya-sts'),
       country: String((row && row.country) || '')
     };
   }
@@ -1914,7 +2202,7 @@ class CertEnrollment {
     return !!written;
   }
 
-  sealText(plain, label?) {
+  sealText(plain, label?, tier?) {
     const { log, keystore } = this.deps;
     log.debug("Entering CertEnrollment.sealText().");
     if (!keystore.persists()) {
@@ -1924,7 +2212,10 @@ class CertEnrollment {
     }
     let sealed = null;
     try {
-      sealed = keystore.seal(String(plain), label);
+      // `tier` 'cell' for a PERSON's material (#98): sealed under their home
+      // cell's key where there is one; an application's is configuration
+      // every cell holds, under the service key.
+      sealed = keystore.seal(String(plain), label, tier);
     } catch (e) {
       log.debug("Caught in CertEnrollment.sealText(): " +
                 ((e && e.message) || e));
@@ -1942,7 +2233,7 @@ class CertEnrollment {
     const { log, keystore } = this.deps;
     log.debug("Entering CertEnrollment.openText().");
     const text = String(value || '');
-    if (text.indexOf('$aesgcm$') !== 0) {
+    if (!require('./crypto').isEncryptedWithKek(text)) {
       log.debug("Leaving CertEnrollment.openText(). Not sealed.");
       return text;
     }
@@ -2000,11 +2291,55 @@ class CertEnrollment {
       return [];
     }
     log.debug("Leaving CertEnrollment.enrolledOf().");
-    return self.parseJsonValues(values).map(function (one) {
-      return self.publicRecord(one);
-    }).sort(function (a, b) {
+    return self.enrolledFrom(values).sort(function (a, b) {
       return String(b.issuedAt).localeCompare(String(a.issuedAt));
     });
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE RECORDS OUT OF VALUES ALREADY READ, optionally of ONE FAMILY — and
+  // the family is decided BEFORE the parse (#352, 2026-09-29).
+  //
+  // Each value is one JSON record carrying a PEM, a subject, names and a
+  // `family`; the SCEP page wanted SCEP's and parsed EST's and ACME's to find
+  // out they were not. `ofFamily()` below reads the family off the TEXT, and a
+  // value that cannot be of the family asked for is never parsed.
+  // ---------------------------------------------------------------------------
+  enrolledFrom(values, family?) {
+    const { log } = this.deps;
+    const self = this;
+    log.debug("Entering CertEnrollment.enrolledFrom(). family=" + family);
+    const wanted = family ? (values || []).filter(function (value) {
+      return self.mayBeOfFamily(value, family);
+    }) : (values || []);
+    const out = self.parseJsonValues(wanted).filter(function (one) {
+      return !family || one.family === family;
+    }).map(function (one) {
+      return self.publicRecord(one);
+    });
+    log.debug("Leaving CertEnrollment.enrolledFrom(). " + out.length + ".");
+    return out;
+  }
+
+  // Can this stored value be a record of `family`? **FALSE ONLY WHEN IT
+  // CANNOT**, so the answer after the parse is exactly the answer without
+  // this test. JSON can spell a key or a string in two ways: literally, or
+  // with `\u` escapes. Without a `\u` anywhere in the value, a record whose
+  // `family` is `scep` must contain `"family"`, optional whitespace, a colon,
+  // optional whitespace and `"scep"` literally — so the absence of that is
+  // proof. With one, the value is parsed, whatever it holds. A family is one
+  // of three fixed words, so it needs no escaping inside the expression; a
+  // name that is not a plain word is not tested and the value is parsed.
+  // Hot path for a realm's enrolled certificates: one test per stored value,
+  // so no Entering/Leaving pair — two log lines per value would be most of
+  // the listing's log.
+  mayBeOfFamily(value, family) {
+    const text = String(value);
+    const word = String(family);
+    if (!/^[a-z0-9-]+$/.test(word) || text.indexOf('\\u') >= 0) {
+      return true;
+    }
+    return new RegExp('"family"\\s*:\\s*"' + word + '"').test(text);
   }
 
   // ---------------------------------------------------------------------------
@@ -2114,7 +2449,14 @@ class CertEnrollment {
       });
       return refusal;
     };
-    const profile = self.checkProfile(family, asked.profile);
+    // Asked of the TARGET, so an application's own list is the one in force
+    // for it (rcbj, 2026-10-01: its settings override the realm's).
+    // A request that named no profile asks for the default IN FORCE FOR THE
+    // TARGET — an application's own, where it set one — before the check, or
+    // a realm default outside the application's own list would be refused.
+    const askedProfile = asked.profileDefaulted
+      ? self.defaultProfile(family, asked.target) : asked.profile;
+    const profile = self.checkProfile(family, askedProfile, asked.target);
     if (!profile.ok) {
       log.debug("Leaving CertEnrollment.issue(). Profile refused.");
       return auditRefusal(profile);
@@ -2131,6 +2473,29 @@ class CertEnrollment {
       log.debug("Leaving CertEnrollment.issue(). Not authorized.");
       return auditRefusal(allowed);
     }
+    // AN APPLICATION'S OWN RULES (2026-10-01): its protocol declaration,
+    // its profile, lifetime and certificate-cap overrides, and EST's
+    // authentication overrides. See applicationRules().
+    const rules = self.applicationRules(family, resolved.entry, asked,
+                                        profile.profile);
+    if (!rules.ok) {
+      log.debug("Leaving CertEnrollment.issue(). The application's rules " +
+                "refused it.");
+      return auditRefusal(rules);
+    }
+    profile.profile = rules.profile;
+    // EST /serverkeygen for an entry that is NOT an application: the realm's
+    // switch, asked here because the protocol lets an administrator past its
+    // early check when the target may be an application whose own switch
+    // turns it on (an application's is asked in applicationRules()).
+    if (family === 'est' && asked.keySource === 'server' &&
+        resolved.entry.kind !== 'application' &&
+        !self.estSwitch('serverKeyGeneration')) {
+      log.debug("Leaving CertEnrollment.issue(). Server keys are off.");
+      return auditRefusal(self.refuse('STS-EST-0005', 501, 'Server-side ' +
+        'key generation is turned off for EST in this realm ' +
+        '(est.serverKeyGeneration).'));
+    }
     const names = self.namesFor(resolved, profile.profile, asked.requested);
     if (!names.ok) {
       log.debug("Leaving CertEnrollment.issue(). A name was refused.");
@@ -2142,7 +2507,7 @@ class CertEnrollment {
     const live = existing.filter(function (one) {
       return new Date(one.notAfter).getTime() > nowMs;
     });
-    const cap = Number(config.value('pki.enrollmentMaxCertificatesPerEntry'));
+    const cap = rules.cap;
     const replacing = asked.replaces ? self.normalSerial(asked.replaces) : '';
     const counted = live.filter(function (one) {
       return self.normalSerial(one.serialHex) !== replacing;
@@ -2180,7 +2545,7 @@ class CertEnrollment {
     const subject = self.subjectFor(resolved.entry, names.names)
       .concat([{ name: 'O', value: org.organisation }])
       .concat(org.country ? [{ name: 'C', value: org.country }] : []);
-    const days = Number(config.value(family + '.certificateLifetimeDays'));
+    const days = rules.days;
     const issued = await pki.issueEnrolled(realms.currentId(), family, {
       subject: subject,
       publicKeyPem: asked.publicKeyPem,
@@ -2237,7 +2602,8 @@ class CertEnrollment {
     const kind = resolved.entry.kind;
     if (record.keySource === 'server') {
       const sealed = self.sealText(asked.privateKeyPem, kind === 'person'
-        ? 'person-private-key' : 'application-private-key');
+        ? 'person-private-key' : 'application-private-key',
+        kind === 'person' ? 'cell' : '');
       if (!sealed.ok) {
         log.debug("Leaving CertEnrollment.issue(). The key could not be " +
                   "sealed.");
@@ -2949,21 +3315,38 @@ class CertEnrollment {
   // the portal, an administrator on the console or the API), shown once, and
   // spent once.
   // ---------------------------------------------------------------------------
+  //
+  // **AND, IN A SERVICE DEPLOYED AS CELLS, THE CELL THAT MINTED IT (#98
+  // D10).** The random part carries `cell_locator.ts`'s keyed tag — twelve
+  // base64url characters after the sixteen hex digits, nothing a reader can
+  // map to a cell — so an ACME newAccount or a SCEP PKCSReq presented at
+  // another cell is relayed to the one that minted the credential before
+  // anything is verified or spent there. A PERSON's credential is placed by
+  // their home instead (the entry the identifier names, through the routing
+  // index), which is where it was minted and where it still is if they are
+  // ever re-homed; the tag is what places an APPLICATION's, whose entry is
+  // the global tier's and whose binding claim (`bindEabOnce()`,
+  // `redeemScepChallengeOnce()`) is held in one cell. A single-cell service
+  // appends nothing, so its identifiers are what they always were.
   credentialId(prefix, entry) {
-    const { nodeCrypto, log } = this.deps;
+    const { nodeCrypto, log, cellLocator } = this.deps;
     log.debug("Entering CertEnrollment.credentialId().");
     log.debug("Leaving CertEnrollment.credentialId().");
     return prefix + '-' + (entry.kind === 'person' ? 'p' : 'a') + '-' +
            Buffer.from(entry.id, 'utf8').toString('base64url') + '-' +
-           nodeCrypto.randomBytes(8).toString('hex');
+           cellLocator.stamp(nodeCrypto.randomBytes(8).toString('hex'));
   }
 
   entryOfCredentialId(prefix, id) {
-    const { log } = this.deps;
+    const { log, cellLocator } = this.deps;
     const self = this;
     log.debug("Entering CertEnrollment.entryOfCredentialId().");
+    // The random part, and the cell's tag after it when there is one (see
+    // `credentialId()`); the tag is `cell_locator.TAG_LENGTH` characters.
     const match = new RegExp('^' + prefix + '-([pa])-([A-Za-z0-9_-]{1,400})-' +
-                             '([0-9a-f]{16})$').exec(String(id || ''));
+                             '([0-9a-f]{16})(?:[A-Za-z0-9_-]{' +
+                             cellLocator.TAG_LENGTH + '})?$')
+      .exec(String(id || ''));
     if (!match) {
       log.debug("Leaving CertEnrollment.entryOfCredentialId(). Malformed.");
       return null;
@@ -3041,7 +3424,9 @@ class CertEnrollment {
     }
     const kid = self.credentialId('eab', resolved.entry);
     const hmacKey = nodeCrypto.randomBytes(32).toString('base64url');
-    const sealed = self.sealText(hmacKey, 'acme-eab-key');
+    const sealed = self.sealText(hmacKey, 'acme-eab-key',
+                                 resolved.entry.kind === 'person' ? 'cell'
+                                                                  : '');
     if (!sealed.ok) {
       log.debug("Leaving CertEnrollment.createEab(). Could not seal.");
       return self.refuse('STS-ENROLL-0043', 503, 'The EAB key could not be ' +
@@ -3360,8 +3745,17 @@ class CertEnrollment {
     const self = this;
     log.debug("Entering CertEnrollment.eabsOf().");
     const values = self.readAttribute(entry, 'eab') || [];
-    const nowMs = Date.now();
     log.debug("Leaving CertEnrollment.eabsOf().");
+    return self.eabsFrom(values);
+  }
+
+  // `eabsOf()` out of values already read (#352), for the realm listing.
+  eabsFrom(values) {
+    const { log } = this.deps;
+    const self = this;
+    log.debug("Entering CertEnrollment.eabsFrom().");
+    const nowMs = Date.now();
+    log.debug("Leaving CertEnrollment.eabsFrom().");
     return self.parseJsonValues(values).map(function (one) {
       return { kid: one.kid, createdAt: one.createdAt,
                expiresAt: one.expiresAt, createdBy: one.createdBy,
@@ -3386,7 +3780,8 @@ class CertEnrollment {
     log.debug("Entering CertEnrollment.createScepChallenge().");
     const asked = spec || {};
     const profile = self.checkProfile('scep', asked.profile ||
-                                      self.defaultProfile('scep'));
+                                      self.defaultProfile('scep', asked.target),
+                                      asked.target);
     if (!profile.ok) {
       log.debug("Leaving CertEnrollment.createScepChallenge(). Profile " +
                 "refused.");
@@ -3621,8 +4016,17 @@ class CertEnrollment {
     const self = this;
     log.debug("Entering CertEnrollment.scepChallengesOf().");
     const values = self.readAttribute(entry, 'challenge') || [];
-    const nowMs = Date.now();
     log.debug("Leaving CertEnrollment.scepChallengesOf().");
+    return self.challengesFrom(values);
+  }
+
+  // `scepChallengesOf()` out of values already read (#352).
+  challengesFrom(values) {
+    const { log } = this.deps;
+    const self = this;
+    log.debug("Entering CertEnrollment.challengesFrom().");
+    const nowMs = Date.now();
+    log.debug("Leaving CertEnrollment.challengesFrom().");
     return self.parseJsonValues(values).map(function (one) {
       return { id: one.id, profile: one.profile, createdAt: one.createdAt,
                expiresAt: one.expiresAt, createdBy: one.createdBy,
@@ -3730,8 +4134,65 @@ class CertEnrollment {
     return out;
   }
 
+  // ---------------------------------------------------------------------------
+  // EVERY HOLDER OF AN ATTRIBUTE WITH ITS VALUES, IN ONE WALK (#352,
+  // 2026-09-29): `[{ entry, values }]`, in `holdersOf()`'s order.
+  //
+  // The four realm listings below were `holdersOf()` — a walk that FOUND the
+  // values — and then `readAttribute()` per holder, which is `resolveEntry()`:
+  // a second directory lookup, and a copy of eight attributes, to read the
+  // one the walk had just seen. The directory's `holdersWithValues()` hands
+  // the values back from the walk. Under #349's window each is one
+  // statement, where the old shape was one plus one per holder.
+  //
+  // A directory without `holdersWithValues()` (an older filler, a test's
+  // stub) is asked the old way.
+  // ---------------------------------------------------------------------------
+  holdersWithValuesOf(key) {
+    const { log } = this.deps;
+    const self = this;
+    log.debug("Entering CertEnrollment.holdersWithValuesOf(). key=" + key);
+    const out = [];
+    if (!self.directory) {
+      log.debug("Leaving CertEnrollment.holdersWithValuesOf(). No directory.");
+      return out;
+    }
+    if (typeof self.directory.holdersWithValues !== 'function') {
+      self.holdersOf(key).forEach(function (entry) {
+        const values = self.readAttribute(entry, key);
+        if (values) {
+          out.push({ entry: entry, values: values });
+        }
+      });
+      log.debug("Leaving CertEnrollment.holdersWithValuesOf(). " +
+                out.length + ", read one by one.");
+      return out;
+    }
+    ['person', 'application'].forEach(function (kind) {
+      let rows = [];
+      try {
+        rows = self.directory.holdersWithValues(kind,
+                                                ATTRIBUTES[kind][key]) || [];
+      } catch (e) {
+        log.debug("Caught in CertEnrollment.holdersWithValuesOf(): " +
+                  ((e && e.message) || e));
+        rows = [];
+      }
+      rows.forEach(function (row) {
+        out.push({ entry: { kind: kind, id: String(row.id) },
+                   values: (row.values || []).slice() });
+      });
+    });
+    log.debug("Leaving CertEnrollment.holdersWithValuesOf(). " + out.length +
+              " holder(s).");
+    return out;
+  }
+
   /**
    * Lists every enrolled certificate in the ambient realm, newest first.
+   *
+   * Records of another family are recognised on their text and never parsed
+   * (#352).
    *
    * @param family - the family to list; every family when omitted
    * @returns the records, each with its entry
@@ -3742,13 +4203,13 @@ class CertEnrollment {
     log.debug("Entering CertEnrollment.certificatesInRealm(). family=" +
               family);
     const out = [];
-    self.holdersOf('certificate').forEach(function (entry) {
-      self.enrolledOf(entry).forEach(function (record) {
-        if (!family || record.family === family) {
-          out.push(Object.assign({ entry: entry,
-                                   entryUri: self.entryUri(entry) },
-                                 record));
-        }
+    self.holdersWithValuesOf('certificate').forEach(function (held) {
+      const entryUri = self.entryUri(held.entry);
+      self.enrolledFrom(held.values, family).sort(function (a, b) {
+        return String(b.issuedAt).localeCompare(String(a.issuedAt));
+      }).forEach(function (record) {
+        out.push(Object.assign({ entry: held.entry, entryUri: entryUri },
+                               record));
       });
     });
     log.debug("Leaving CertEnrollment.certificatesInRealm(). " + out.length +
@@ -3756,6 +4217,37 @@ class CertEnrollment {
     return out.sort(function (a, b) {
       return String(b.issuedAt).localeCompare(String(a.issuedAt));
     });
+  }
+
+  // ---------------------------------------------------------------------------
+  // HOW MANY, AND IN WHICH STATE — for the monitors' tiles (#352). They asked
+  // `certificatesInRealm()` for the whole list to read its `length`, which
+  // built, copied and sorted a row per certificate to count them. This reads
+  // the same records and keeps four numbers; the state is `publicRecord()`'s
+  // own rule, so a tile and the list beside it cannot disagree.
+  // ---------------------------------------------------------------------------
+  /**
+   * Counts the enrolled certificates of a family in the ambient realm, by
+   * state, without building a row for any of them.
+   *
+   * @param family - the family to count; every family when omitted
+   * @returns `{ held, valid, revoked, expired }`
+   */
+  certificateCountsInRealm(family?) {
+    const { log } = this.deps;
+    const self = this;
+    log.debug("Entering CertEnrollment.certificateCountsInRealm(). family=" +
+              family);
+    const out = { held: 0, valid: 0, revoked: 0, expired: 0 };
+    self.holdersWithValuesOf('certificate').forEach(function (held) {
+      self.enrolledFrom(held.values, family).forEach(function (record) {
+        out.held += 1;
+        out[record.status] += 1;
+      });
+    });
+    log.debug("Leaving CertEnrollment.certificateCountsInRealm(). " +
+              out.held + ".");
+    return out;
   }
 
   /**
@@ -3768,9 +4260,10 @@ class CertEnrollment {
     const self = this;
     log.debug("Entering CertEnrollment.eabsInRealm().");
     const out = [];
-    self.holdersOf('eab').forEach(function (entry) {
-      self.eabsOf(entry).forEach(function (one) {
-        out.push(Object.assign({ entry: entry, entryUri: self.entryUri(entry) },
+    self.holdersWithValuesOf('eab').forEach(function (held) {
+      const entryUri = self.entryUri(held.entry);
+      self.eabsFrom(held.values).forEach(function (one) {
+        out.push(Object.assign({ entry: held.entry, entryUri: entryUri },
                                one));
       });
     });
@@ -3790,9 +4283,10 @@ class CertEnrollment {
     const self = this;
     log.debug("Entering CertEnrollment.challengesInRealm().");
     const out = [];
-    self.holdersOf('challenge').forEach(function (entry) {
-      self.scepChallengesOf(entry).forEach(function (one) {
-        out.push(Object.assign({ entry: entry, entryUri: self.entryUri(entry) },
+    self.holdersWithValuesOf('challenge').forEach(function (held) {
+      const entryUri = self.entryUri(held.entry);
+      self.challengesFrom(held.values).forEach(function (one) {
+        out.push(Object.assign({ entry: held.entry, entryUri: entryUri },
                                one));
       });
     });
@@ -3812,10 +4306,13 @@ class CertEnrollment {
     const self = this;
     log.debug("Entering CertEnrollment.hostNamesInRealm().");
     const out = [];
-    self.holdersOf('hostName').forEach(function (entry) {
-      const names = self.hostNamesOf(entry);
+    self.holdersWithValuesOf('hostName').forEach(function (held) {
+      // `resolveEntry()`'s reading of the attribute, from the values in hand.
+      const names = held.values.map(function (one) {
+        return self.normalHostName(one);
+      }).filter(function (one) { return !!one; });
       if (names.length) {
-        out.push({ entry: entry, entryUri: self.entryUri(entry),
+        out.push({ entry: held.entry, entryUri: self.entryUri(held.entry),
                    hostNames: names });
       }
     });
@@ -4346,6 +4843,8 @@ export = {
   entryUri: slot.forward('entryUri'),
   organisationOf: slot.forward('organisationOf'),
   entryFromUri: slot.forward('entryFromUri'),
+  entryNamedByCertificate: slot.forward('entryNamedByCertificate'),
+  entryOfCredentialId: slot.forward('entryOfCredentialId'),
   entryLabel: slot.forward('entryLabel'),
   resolveEntry: slot.forward('resolveEntry'),
   normalHostName: slot.forward('normalHostName'),
@@ -4360,6 +4859,8 @@ export = {
     slot.forward('authenticatePresentedCertificate'),
   authorizeTarget: slot.forward('authorizeTarget'),
   allowedProfiles: slot.forward('allowedProfiles'),
+  applicationRules: slot.forward('applicationRules'),
+  estSwitch: slot.forward('estSwitch'),
   checkProfile: slot.forward('checkProfile'),
   defaultProfile: slot.forward('defaultProfile'),
   profileForIdentifiers: slot.forward('profileForIdentifiers'),
@@ -4388,6 +4889,7 @@ export = {
   addHostName: slot.forward('addHostName'),
   removeHostName: slot.forward('removeHostName'),
   certificatesInRealm: slot.forward('certificatesInRealm'),
+  certificateCountsInRealm: slot.forward('certificateCountsInRealm'),
   eabsInRealm: slot.forward('eabsInRealm'),
   challengesInRealm: slot.forward('challengesInRealm'),
   hostNamesInRealm: slot.forward('hostNamesInRealm'),

@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -43,9 +43,11 @@
 // THE `.proto` FILES ARE VENDORED AND ARE LOAD-BEARING
 //
 // `protos/workloadapi.proto` and `protos/brokerapi.proto` are verbatim copies
-// of the SPIFFE project's own, and `protos/spire/**` of the `spire-api-sdk`'s. They are read AT REQUIRE
-// TIME, at module scope, and a missing one is not a degraded feature — this
-// module does not load. That is the same decision `bbs2023.js` makes about
+// of the SPIFFE project's own, and `protos/spire/**` of the
+// `spire-api-sdk`'s. They are read when first needed (`services()`, since
+// #348) — which in the front process is at START, when the default realm's
+// listeners are bound — and a missing one is not a degraded feature: the
+// service does not start. That is the same decision `bbs2023.js` makes about
 // `contexts/`, and for a similar reason: a service that advertised the Workload
 // API and then answered `Unimplemented` because a file was missing would be
 // worse than one that did not start.
@@ -66,11 +68,39 @@
 
 import fs = require('fs');
 import path = require('path');
-import grpc = require('@grpc/grpc-js');
-import loader = require('@grpc/proto-loader');
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
+import LazyModule = require('../common/lazy_module');
 const { log } = helpers;
+// ---------------------------------------------------------------------------
+// THE gRPC RUNTIME AND ITS PROTO LOADER ARE REQUIRED AT FIRST USE (#348).
+//
+// Every request and surface worker loads this module (the stack is the same
+// in every process), and only the FRONT process binds a SPIFFE socket — so
+// requiring `@grpc/grpc-js` and `@grpc/proto-loader` here put about 5 MB of
+// heap and 13 MB of resident memory into every worker that never used them
+// (measured on #348). `grpc` and `loader` are stand-ins that require the
+// package the first time a property is read: binding a server, building its
+// credentials, a `Metadata`, loading the protos.
+//
+// **WHAT A WORKER DOES NEED IS THE STATUS NUMBERS**, because a dispatched
+// method refuses with a gRPC status and that number crosses back to the
+// front process. They are grpc-js's own table — `grpc.status` IS
+// `build/src/constants.js`'s `Status`, a file that requires nothing — so
+// `status` below is that table, the same object, read without the runtime.
+// `tests/spiffe_operations.js` checks the two are the same object, so a
+// grpc-js that moved the file fails there rather than in a refusal.
+// ---------------------------------------------------------------------------
+type Grpc = typeof import('@grpc/grpc-js');
+type ProtoLoader = typeof import('@grpc/proto-loader');
+const grpc: Grpc = LazyModule.of('@grpc/grpc-js', function () {
+  return require('@grpc/grpc-js') as Grpc;
+}, log);
+const loader: ProtoLoader = LazyModule.of('@grpc/proto-loader', function () {
+  return require('@grpc/proto-loader') as ProtoLoader;
+}, log);
+import grpcConstants = require('@grpc/grpc-js/build/src/constants');
+const status: Grpc['status'] = grpcConstants.Status;
 import config = require('../common/config');
 // A LEAF (it requires `config` and `error_codes` only), for the one
 // development-only setting this file reads (#181).
@@ -157,8 +187,10 @@ const SERVER_PROTOS = [
 interface SpiffeGrpcDeps {
   fs: typeof fs;
   path: typeof path;
-  grpc: typeof grpc;
-  loader: typeof loader;
+  grpc: Grpc;
+  loader: ProtoLoader;
+  // grpc-js's status numbers without the runtime (#348) — see the top.
+  status: Grpc['status'];
   log: typeof log;
   config: typeof config;
   mode: typeof mode;
@@ -245,6 +277,7 @@ class SpiffeGrpc {
       path: path,
       grpc: grpc,
       loader: loader,
+      status: status,
       log: log,
       config: config,
       mode: mode,
@@ -274,18 +307,41 @@ class SpiffeGrpc {
 
   // THE WORK LOADING THIS MODULE USED TO DO WITH ITS OWN INSTANCE (#50, R2),
   // run by `common/instance_slot.ts` once for whichever instance is
-  // installed: loading the vendored protos and naming the services, and
-  // refusing to go on when one is missing.
+  // installed. It loaded the vendored protos and named the services until
+  // #348 (2026-09-29); that moved to `services()`, at first use, because
+  // every request worker built this instance and only the front process
+  // binds a SPIFFE socket. The front process still loads them at START,
+  // because `spiffe_server.ts` binds the default realm's listeners from
+  // `listen()` whether `spiffe.enabled` is on or not — so a missing proto is
+  // still a service that does not start rather than a surface that answers
+  // `Unimplemented` later, which is what the header asks for.
   /**
-   * Loads the vendored protos and names the services for the installed
-   * instance, refusing to go on when one is missing (#50, R2).
+   * The installed instance's wire step: nothing since #348 — the protos are
+   * loaded by `services()` when first needed.
    *
    * @param instance - the installed instance
-   * @throws an Error when a service is missing from the loaded definitions
    */
   static wire(instance: SpiffeGrpc): void {
     helpers.log.debug("Entering SpiffeGrpc.wire().");
-    const DEFINITIONS = instance.loadDefinitions();
+    helpers.log.debug("Leaving SpiffeGrpc.wire(). " +
+                      (instance ? 'Protos at first use.' : ''));
+  }
+
+  /**
+   * Loads the vendored protos and names the services, the first time a caller
+   * needs them (#348), refusing to go on when one is missing.
+   *
+   * @returns the service definitions by name
+   * @throws an Error when a service is missing from the loaded definitions
+   */
+  services(): Record<ServiceName, any> {
+    const { log } = this.deps;
+    log.debug("Entering SpiffeGrpc.services().");
+    if (SERVICES) {
+      log.debug("Leaving SpiffeGrpc.services(). Already loaded.");
+      return SERVICES;
+    }
+    const DEFINITIONS = this.loadDefinitions();
     const services = {
       workload: DEFINITIONS.workload['SpiffeWorkloadAPI'],
       entry: DEFINITIONS.server['spire.api.server.entry.v1.Entry'],
@@ -297,18 +353,18 @@ class SpiffeGrpc {
       debug: DEFINITIONS.server['spire.api.server.debug.v1.Debug'],
       broker: DEFINITIONS.broker['spiffe.broker.API']
     };
-    SERVICES = services;
     Object.keys(services).forEach(function (name) {
       if (!services[name]) {
-        helpers.log.debug("Leaving SpiffeGrpc.wire(). " + name +
-                          " missing.");
+        log.debug("Leaving SpiffeGrpc.services(). " + name + " missing.");
         throw new Error('spiffe: the ' + name + ' service is not in the ' +
                         'vendored protos. This is a build problem rather ' +
                         'than a runtime one — see protos/ and the note at ' +
                         'the top of spiffe_grpc.js.');
       }
     });
-    helpers.log.debug("Leaving SpiffeGrpc.wire().");
+    SERVICES = services;
+    log.debug("Leaving SpiffeGrpc.services().");
+    return SERVICES;
   }
 
   /**
@@ -342,7 +398,7 @@ class SpiffeGrpc {
   methodsOf(serviceName) {
     const { log } = this.deps;
     log.debug("Entering SpiffeGrpc.methodsOf().");
-    const service = SERVICES[serviceName];
+    const service = this.services()[serviceName];
     log.debug("Leaving SpiffeGrpc.methodsOf().");
     return Object.keys(service).map(function (key) {
       const method = service[key];
@@ -443,11 +499,11 @@ class SpiffeGrpc {
    */
   // error-code: none — the definition of this helper, not a call to it
   invalidArgument(message) {
-    const { log, grpc } = this.deps;
+    const { log, status } = this.deps;
     log.debug("Entering SpiffeGrpc.invalidArgument().");
     log.debug("Leaving SpiffeGrpc.invalidArgument().");
     // error-code: none — a constructor; the caller marks the condition
-    return this.statusError(grpc.status.INVALID_ARGUMENT, message);
+    return this.statusError(status.INVALID_ARGUMENT, message);
   }
 
   /**
@@ -458,11 +514,11 @@ class SpiffeGrpc {
    */
   // error-code: none — the definition of this helper, not a call to it
   notFound(message) {
-    const { log, grpc } = this.deps;
+    const { log, status } = this.deps;
     log.debug("Entering SpiffeGrpc.notFound().");
     log.debug("Leaving SpiffeGrpc.notFound().");
     // error-code: none — a constructor; the caller marks the condition
-    return this.statusError(grpc.status.NOT_FOUND, message);
+    return this.statusError(status.NOT_FOUND, message);
   }
 
   /**
@@ -473,11 +529,11 @@ class SpiffeGrpc {
    */
   // error-code: none — the definition of this helper, not a call to it
   permissionDenied(message) {
-    const { log, grpc } = this.deps;
+    const { log, status } = this.deps;
     log.debug("Entering SpiffeGrpc.permissionDenied().");
     log.debug("Leaving SpiffeGrpc.permissionDenied().");
     // error-code: none — a constructor; the caller marks the condition
-    return this.statusError(grpc.status.PERMISSION_DENIED, message);
+    return this.statusError(status.PERMISSION_DENIED, message);
   }
 
   /**
@@ -488,11 +544,11 @@ class SpiffeGrpc {
    */
   // error-code: none — the definition of this helper, not a call to it
   unavailable(message) {
-    const { log, grpc } = this.deps;
+    const { log, status } = this.deps;
     log.debug("Entering SpiffeGrpc.unavailable().");
     log.debug("Leaving SpiffeGrpc.unavailable().");
     // error-code: none — a constructor; the caller marks the condition
-    return this.statusError(grpc.status.UNAVAILABLE, message);
+    return this.statusError(status.UNAVAILABLE, message);
   }
 
   // WHICH CODE THE AUDIT ROW FOR A FAILED CALL CARRIES. A throw that is not a
@@ -529,7 +585,7 @@ class SpiffeGrpc {
    * @returns the status
    */
   errorToStatus(err, where) {
-    const { log, errorCodes, grpc } = this.deps;
+    const { log, errorCodes, status } = this.deps;
     log.debug("Entering SpiffeGrpc.errorToStatus().");
     if (err && typeof err.code === 'number') {
       log.debug("Leaving SpiffeGrpc.errorToStatus().");
@@ -544,7 +600,7 @@ class SpiffeGrpc {
               'error, which is a defect in this service rather than in the ' +
               'call: ' + (err && err.stack ? err.stack : err));
     log.debug("Leaving SpiffeGrpc.errorToStatus().");
-    return { code: grpc.status.UNKNOWN,
+    return { code: status.UNKNOWN,
              details: (err && err.message) || 'Something went wrong.' };
   }
 
@@ -615,9 +671,9 @@ class SpiffeGrpc {
    * @returns the error
    */
   fromDescriptor(descriptor) {
-    const { log, grpc, errorCodes } = this.deps;
+    const { log, status, errorCodes } = this.deps;
     log.debug("Entering SpiffeGrpc.fromDescriptor().");
-    const code = grpc.status[descriptor.status];
+    const code = status[descriptor.status];
     if (typeof code !== 'number') {
       log.error(errorCodes.tag('STS-SPIFFE-0004') +
                 'spiffe: spiffe_auth.js returned the status name "' +
@@ -626,7 +682,7 @@ class SpiffeGrpc {
                 'with PERMISSION_DENIED; this is a defect in this service.');
       log.debug("Leaving SpiffeGrpc.fromDescriptor().");
       // The refusal STS-SPIFFE-0004 above describes.
-      return this.statusError(grpc.status.PERMISSION_DENIED,
+      return this.statusError(status.PERMISSION_DENIED,
                               descriptor.message);
     }
     log.debug("Leaving SpiffeGrpc.fromDescriptor().");
@@ -900,7 +956,7 @@ class SpiffeGrpc {
    * @returns the wrapped handler
    */
   fromCaller(handler) {
-    const { log, audit, errorCodes, grpc } = this.deps;
+    const { log, audit, errorCodes, status } = this.deps;
     const self = this;
     log.debug("Entering SpiffeGrpc.fromCaller().");
     log.debug("Leaving SpiffeGrpc.fromCaller().");
@@ -922,12 +978,66 @@ class SpiffeGrpc {
                   'handler threw after the cluster read barrier: ' +
                   ((e && e.message) || e));
         if (typeof callback === 'function') {
-          callback({ code: grpc.status.INTERNAL,
+          callback({ code: status.INTERNAL,
                      details: 'The call failed inside the service.' });
         }
       });
       return undefined;
     };
+  }
+
+  // ---------------------------------------------------------------------------
+  // A CALLER WHOSE AUTHORITY HAS NOT REACHED THIS PROCESS YET (2026-10-02). A
+  // federated bundle written through /admin-api is stored by whichever
+  // process answered that request and reaches the process holding the gRPC
+  // sockets on the next pull of the change log; an SVID presented in that gap
+  // was refused as signed by nobody (STS-SPIFFE-0024) — `sts_spiffe_broker` in
+  // single-node, CI run 36986913696, presenting under a trust domain it had
+  // federated a moment before. So that one refusal waits for the store ONCE,
+  // bounded, and the call is prepared again; every other answer, and that one
+  // when the bundle still is not there, stands as it was.
+  // ---------------------------------------------------------------------------
+  /**
+   * Prepares a call, waiting for the store once when the presented SVID's
+   * authority is unknown here, and hands the result to `then`.
+   *
+   * @param call - the gRPC call
+   * @param surface - the surface
+   * @param method - the method
+   * @param then - called with what `prepareCall()` answered
+   * @returns nothing
+   */
+  prepareAfterCatchUp(call, surface, method, then) {
+    const { log } = this.deps;
+    const self = this;
+    log.debug('Entering SpiffeGrpc.prepareAfterCatchUp().');
+    const first = this.prepareCall(call, surface, method);
+    const late = first.refusal &&
+      ((first.caller && first.caller.refusalCode === 'STS-SPIFFE-0024') ||
+       first.errorCode === 'STS-SPIFFE-0024');
+    if (!late) {
+      log.debug('Leaving SpiffeGrpc.prepareAfterCatchUp(). As it was.');
+      then(first);
+      return;
+    }
+    let persistence = null;
+    try {
+      persistence = require('../persistence/persistence');
+    } catch (e) {
+      log.debug('Caught in SpiffeGrpc.prepareAfterCatchUp(): ' +
+                ((e && e.message) || e));
+    }
+    const pull = persistence && typeof persistence.syncNow === 'function'
+      ? Promise.resolve(persistence.syncNow()) : Promise.resolve();
+    Promise.race([pull, new Promise(function (resolve) {
+      setTimeout(resolve, 3000);
+    })]).catch(function (e) {
+      log.debug('Caught in SpiffeGrpc.prepareAfterCatchUp(): ' +
+                ((e && e.message) || e));
+    }).then(function () {
+      log.debug('Leaving SpiffeGrpc.prepareAfterCatchUp(). Caught up.');
+      then(self.prepareCall(call, surface, method));
+    });
   }
 
   /**
@@ -1446,47 +1556,52 @@ class SpiffeGrpc {
     log.debug("Leaving SpiffeGrpc.unary().");
     return this.fromCaller(function (call, callback) {
       log.debug('Entering the ' + method + ' handler.');
-      const prepared = self.prepareCall(call, surface, method);
-      if (prepared.refusal) {
-        self.recordCall(surface, method, false,
-                        { refused: prepared.refusal.message },
-                        prepared.caller, prepared.errorCode);
-        log.debug('Leaving the ' + method + ' handler. Refused.');
-        callback(self.errorToStatus(prepared.refusal, method));
-        return;
-      }
-      Promise.resolve()
-        .then(function () { return self.dispatchUnary(surface, method, call); })
-        .then(function (answer) {
-          if (!answer || !answer.dispatched) {
-            // NOT DISPATCHED: no pool, this method not named in
-            // `workers.dispatch`, or no worker to take it. All three mean the
-            // front process does the work, which is what
-            // `workers.requestCount = 0` means and is a supported configuration
-            // rather than a degraded one.
-            return handler(call);
-          }
-          if (answer.result && answer.result.ok) {
-            return answer.result.reply;
-          }
-          if (answer.result && answer.result.errorCode) {
-            errorCodes.mark(call, answer.result.errorCode);
-          }
-          throw self.errorFromResult(answer.result);
-        })
-        .then(function (reply) {
-          self.recordCall(surface, method, true, {}, prepared.caller);
-          callback(null, reply || {});
-          log.debug('Leaving the ' + method + ' handler.');
-        })
-        .catch(function (err) {
-          const status = self.errorToStatus(err, method);
-          self.recordCall(surface, method, false, { status: status.code },
-                          prepared.caller,
-                          self.failureCodeOf(call, err));
-          callback(status);
-          log.debug('Leaving the ' + method + ' handler. ' + status.details);
-        });
+      self.prepareAfterCatchUp(call, surface, method,
+                               function (prepared) {
+        if (prepared.refusal) {
+          self.recordCall(surface, method, false,
+                          { refused: prepared.refusal.message },
+                          prepared.caller, prepared.errorCode);
+          log.debug('Leaving the ' + method + ' handler. Refused.');
+          callback(self.errorToStatus(prepared.refusal, method));
+          return;
+        }
+        Promise.resolve()
+          .then(function () {
+            return self.dispatchUnary(surface, method, call);
+          })
+          .then(function (answer) {
+            if (!answer || !answer.dispatched) {
+              // NOT DISPATCHED: no pool, this method not named in
+              // `workers.dispatch`, or no worker to take it. All three mean the
+              // front process does the work, which is what
+              // `workers.requestCount = 0` means and is a supported
+              // configuration
+              // rather than a degraded one.
+              return handler(call);
+            }
+            if (answer.result && answer.result.ok) {
+              return answer.result.reply;
+            }
+            if (answer.result && answer.result.errorCode) {
+              errorCodes.mark(call, answer.result.errorCode);
+            }
+            throw self.errorFromResult(answer.result);
+          })
+          .then(function (reply) {
+            self.recordCall(surface, method, true, {}, prepared.caller);
+            callback(null, reply || {});
+            log.debug('Leaving the ' + method + ' handler.');
+          })
+          .catch(function (err) {
+            const status = self.errorToStatus(err, method);
+            self.recordCall(surface, method, false, { status: status.code },
+                            prepared.caller,
+                            self.failureCodeOf(call, err));
+            callback(status);
+            log.debug('Leaving the ' + method + ' handler. ' + status.details);
+          });
+      });
     });
   }
 
@@ -1628,76 +1743,78 @@ class SpiffeGrpc {
     log.debug("Leaving SpiffeGrpc.serverStream().");
     return this.fromCaller(function (call) {
       log.debug('Entering the ' + method + ' stream handler.');
-      const prepared = self.prepareCall(call, surface, method);
-      if (prepared.refusal) {
-        self.recordCall(surface, method, false,
-                        { refused: prepared.refusal.message },
-                        prepared.caller, prepared.errorCode);
-        call.emit('error', self.errorToStatus(prepared.refusal, method));
-        log.debug('Leaving the ' + method + ' stream handler. Refused.');
-        return;
-      }
-      let open = true;
-      // `cancelled` fires when the peer goes away. Without this listener a
-      // rotation timer would go on writing to a dead stream, which grpc-js
-      // reports as an unhandled error on the server.
-      call.on('cancelled', function () {
-        open = false;
-        log.debug('spiffe: the ' + method +
-                  ' stream was cancelled by the client.');
-      });
-      call.on('error', function (err) {
-        open = false;
-        log.debug('spiffe: the ' + method + ' stream ended with ' +
-                  err.message);
-      });
-      Promise.resolve()
-        .then(function () {
-          return handler(call, function push(message) {
-            log.debug("Entering push().");
-            // The push callback a handler uses to send a later message — an
-            // SVID that rotated, a bundle that changed. Guarded on `open`,
-            // because the handler holds it across time and the client may be
-            // long gone.
-            if (!open) {
-              log.debug("Leaving push().");
-              return false;
-            }
-            call.write(message);
-            log.debug("Leaving push().");
-            return true;
-          }, function end(err) {
-            log.debug("Entering end().");
-            // A handler ENDING the stream with a status — the Broker API's
-            // "the workload has stopped" (#170): no later message is sent
-            // for it, and the broker is told why.
-            if (!open) {
-              log.debug("Leaving end(). Already closed.");
-              return;
-            }
-            open = false;
-            call.emit('error', self.errorToStatus(err, method));
-            log.debug("Leaving end().");
-          });
-        })
-        .then(function (first) {
-          if (first && open) call.write(first);
-          self.recordCall(surface, method, true, { streaming: true },
-                          prepared.caller);
-          log.debug('Leaving the ' + method + ' stream handler. The stream ' +
-                    'stays open; a Workload API client treats it ending as a ' +
-                    'fault.');
-        })
-        .catch(function (err) {
-          const status = self.errorToStatus(err, method);
-          self.recordCall(surface, method, false, { status: status.code },
-                          prepared.caller,
-                          self.failureCodeOf(call, err));
+      self.prepareAfterCatchUp(call, surface, method,
+                               function (prepared) {
+        if (prepared.refusal) {
+          self.recordCall(surface, method, false,
+                          { refused: prepared.refusal.message },
+                          prepared.caller, prepared.errorCode);
+          call.emit('error', self.errorToStatus(prepared.refusal, method));
+          log.debug('Leaving the ' + method + ' stream handler. Refused.');
+          return;
+        }
+        let open = true;
+        // `cancelled` fires when the peer goes away. Without this listener a
+        // rotation timer would go on writing to a dead stream, which grpc-js
+        // reports as an unhandled error on the server.
+        call.on('cancelled', function () {
           open = false;
-          call.emit('error', status);
-          log.debug('Leaving the ' + method + ' stream handler. ' +
-                    status.details);
+          log.debug('spiffe: the ' + method +
+                    ' stream was cancelled by the client.');
         });
+        call.on('error', function (err) {
+          open = false;
+          log.debug('spiffe: the ' + method + ' stream ended with ' +
+                    err.message);
+        });
+        Promise.resolve()
+          .then(function () {
+            return handler(call, function push(message) {
+              log.debug("Entering push().");
+              // The push callback a handler uses to send a later message — an
+              // SVID that rotated, a bundle that changed. Guarded on `open`,
+              // because the handler holds it across time and the client may be
+              // long gone.
+              if (!open) {
+                log.debug("Leaving push().");
+                return false;
+              }
+              call.write(message);
+              log.debug("Leaving push().");
+              return true;
+            }, function end(err) {
+              log.debug("Entering end().");
+              // A handler ENDING the stream with a status — the Broker API's
+              // "the workload has stopped" (#170): no later message is sent
+              // for it, and the broker is told why.
+              if (!open) {
+                log.debug("Leaving end(). Already closed.");
+                return;
+              }
+              open = false;
+              call.emit('error', self.errorToStatus(err, method));
+              log.debug("Leaving end().");
+            });
+          })
+          .then(function (first) {
+            if (first && open) call.write(first);
+            self.recordCall(surface, method, true, { streaming: true },
+                            prepared.caller);
+            log.debug('Leaving the ' + method + ' stream handler. The ' +
+                      'stream stays open; a Workload API client treats it ' +
+                      'ending as a fault.');
+          })
+          .catch(function (err) {
+            const status = self.errorToStatus(err, method);
+            self.recordCall(surface, method, false, { status: status.code },
+                            prepared.caller,
+                            self.failureCodeOf(call, err));
+            open = false;
+            call.emit('error', status);
+            log.debug('Leaving the ' + method + ' stream handler. ' +
+                      status.details);
+          });
+      });
     });
   }
 
@@ -1735,133 +1852,136 @@ class SpiffeGrpc {
     log.debug("Leaving SpiffeGrpc.bidiStream().");
     return this.fromCaller(function (call) {
       log.debug('Entering the ' + method + ' bidi handler.');
-      const prepared = self.prepareCall(call, surface, method);
-      if (prepared.refusal) {
-        self.recordCall(surface, method, false,
-                        { refused: prepared.refusal.message },
-                        prepared.caller, prepared.errorCode);
-        call.emit('error', self.errorToStatus(prepared.refusal, method));
-        log.debug('Leaving the ' + method + ' bidi handler. Refused.');
-        return;
-      }
-      const inFlight = new Set();
-      let failed = false;
-      let clientEnded = false;
-      let finished = false;
-      // The one outstanding challenge, if any: { resolve, reject, timer }.
-      let waiting = null;
-      function conversationError(reason, message) {
-        log.debug("Entering conversationError().");
-        const err: any = new Error(message);
-        err.conversation = reason;
-        log.debug("Leaving conversationError().");
-        return err;
-      }
-      function failWaiting(reason, message) {
-        log.debug("Entering failWaiting().");
-        if (!waiting) {
-          log.debug("Leaving failWaiting(). Nothing outstanding.");
+      self.prepareAfterCatchUp(call, surface, method,
+                               function (prepared) {
+        if (prepared.refusal) {
+          self.recordCall(surface, method, false,
+                          { refused: prepared.refusal.message },
+                          prepared.caller, prepared.errorCode);
+          call.emit('error', self.errorToStatus(prepared.refusal, method));
+          log.debug('Leaving the ' + method + ' bidi handler. Refused.');
           return;
         }
-        const w = waiting;
-        waiting = null;
-        clearTimeout(w.timer);
-        w.reject(conversationError(reason, message));
-        log.debug("Leaving failWaiting().");
-      }
-      function finish() {
-        log.debug("Entering finish().");
-        if (finished || !clientEnded || inFlight.size) {
-          log.debug("Leaving finish(). Not yet.");
-          return;
+        const inFlight = new Set();
+        let failed = false;
+        let clientEnded = false;
+        let finished = false;
+        // The one outstanding challenge, if any: { resolve, reject, timer }.
+        let waiting = null;
+        function conversationError(reason, message) {
+          log.debug("Entering conversationError().");
+          const err: any = new Error(message);
+          err.conversation = reason;
+          log.debug("Leaving conversationError().");
+          return err;
         }
-        finished = true;
-        if (!failed) {
-          self.recordCall(surface, method, true, { streaming: true },
-                          prepared.caller);
-          call.end();
-        }
-        log.debug('Leaving finish(). The ' + method + ' bidi stream is ' +
-                  'ended.');
-      }
-      const conversation = {
-        // Write `message` and resolve with the client's next message. At most
-        // one at a time: an attestor is a sequence, and two challenges
-        // outstanding at once would leave the next message's meaning to a
-        // race.
-        challenge: function (message, timeoutMs) {
-          log.debug("Entering challenge().");
-          if (waiting) {
-            log.debug("Leaving challenge(). One is already outstanding.");
-            return Promise.reject(conversationError('busy',
-              'A challenge is already outstanding on this stream.'));
+        function failWaiting(reason, message) {
+          log.debug("Entering failWaiting().");
+          if (!waiting) {
+            log.debug("Leaving failWaiting(). Nothing outstanding.");
+            return;
           }
-          if (clientEnded || failed) {
-            log.debug("Leaving challenge(). The stream is closing.");
-            return Promise.reject(conversationError('ended',
-              'The client ended the stream before it could be challenged.'));
-          }
-          log.debug("Leaving challenge().");
-          return new Promise(function (resolve, reject) {
-            waiting = {
-              resolve: resolve, reject: reject,
-              timer: setTimeout(function () {
-                failWaiting('timeout', 'No challenge response arrived within ' +
-                            Math.round(timeoutMs / 1000) + ' second(s).');
-              }, timeoutMs)
-            };
-            call.write(message);
-          });
-        }
-      };
-      call.on('data', function (request) {
-        if (waiting) {
-          // The answer to the outstanding challenge, and not a new request.
           const w = waiting;
           waiting = null;
           clearTimeout(w.timer);
-          w.resolve(request);
-          return;
+          w.reject(conversationError(reason, message));
+          log.debug("Leaving failWaiting().");
         }
-        const running = Promise.resolve()
-          .then(function () { return handler(request, call, conversation); })
-          .then(function (reply) {
-            if (reply && !failed) call.write(reply);
-          })
-          .catch(function (err) {
-            log.debug("Caught in the " + method + " bidi handler: " +
-                      ((err && err.message) || err));
-            if (failed) {
-              return;
+        function finish() {
+          log.debug("Entering finish().");
+          if (finished || !clientEnded || inFlight.size) {
+            log.debug("Leaving finish(). Not yet.");
+            return;
+          }
+          finished = true;
+          if (!failed) {
+            self.recordCall(surface, method, true, { streaming: true },
+                            prepared.caller);
+            call.end();
+          }
+          log.debug('Leaving finish(). The ' + method + ' bidi stream is ' +
+                    'ended.');
+        }
+        const conversation = {
+          // Write `message` and resolve with the client's next message. At most
+          // one at a time: an attestor is a sequence, and two challenges
+          // outstanding at once would leave the next message's meaning to a
+          // race.
+          challenge: function (message, timeoutMs) {
+            log.debug("Entering challenge().");
+            if (waiting) {
+              log.debug("Leaving challenge(). One is already outstanding.");
+              return Promise.reject(conversationError('busy',
+                'A challenge is already outstanding on this stream.'));
             }
-            failed = true;
-            failWaiting('ended', 'The stream failed.');
-            const status = self.errorToStatus(err, method);
-            self.recordCall(surface, method, false, { status: status.code },
-                            prepared.caller, self.failureCodeOf(call, err));
-            call.emit('error', status);
-          })
-          .then(function () {
-            inFlight.delete(running);
-            finish();
-          });
-        inFlight.add(running);
-      });
-      call.on('end', function () {
-        clientEnded = true;
-        failWaiting('ended', 'The client ended the stream with a challenge ' +
-                    'outstanding.');
-        finish();
-        log.debug('Leaving the ' + method +
-                  ' bidi handler. The client ended it.');
-      });
-      call.on('cancelled', function () {
-        failWaiting('cancelled', 'The client cancelled the stream.');
-      });
-      call.on('error', function (err) {
-        failWaiting('ended', 'The stream ended with ' + err.message);
-        log.debug('spiffe: the ' + method + ' bidi stream ended with ' +
-                  err.message);
+            if (clientEnded || failed) {
+              log.debug("Leaving challenge(). The stream is closing.");
+              return Promise.reject(conversationError('ended',
+                'The client ended the stream before it could be challenged.'));
+            }
+            log.debug("Leaving challenge().");
+            return new Promise(function (resolve, reject) {
+              waiting = {
+                resolve: resolve, reject: reject,
+                timer: setTimeout(function () {
+                  failWaiting('timeout', 'No challenge response arrived ' +
+                              'within ' + Math.round(timeoutMs / 1000) +
+                              ' second(s).');
+                }, timeoutMs)
+              };
+              call.write(message);
+            });
+          }
+        };
+        call.on('data', function (request) {
+          if (waiting) {
+            // The answer to the outstanding challenge, and not a new request.
+            const w = waiting;
+            waiting = null;
+            clearTimeout(w.timer);
+            w.resolve(request);
+            return;
+          }
+          const running = Promise.resolve()
+            .then(function () { return handler(request, call, conversation); })
+            .then(function (reply) {
+              if (reply && !failed) call.write(reply);
+            })
+            .catch(function (err) {
+              log.debug("Caught in the " + method + " bidi handler: " +
+                        ((err && err.message) || err));
+              if (failed) {
+                return;
+              }
+              failed = true;
+              failWaiting('ended', 'The stream failed.');
+              const status = self.errorToStatus(err, method);
+              self.recordCall(surface, method, false, { status: status.code },
+                              prepared.caller, self.failureCodeOf(call, err));
+              call.emit('error', status);
+            })
+            .then(function () {
+              inFlight.delete(running);
+              finish();
+            });
+          inFlight.add(running);
+        });
+        call.on('end', function () {
+          clientEnded = true;
+          failWaiting('ended', 'The client ended the stream with a challenge ' +
+                      'outstanding.');
+          finish();
+          log.debug('Leaving the ' + method +
+                    ' bidi handler. The client ended it.');
+        });
+        call.on('cancelled', function () {
+          failWaiting('cancelled', 'The client cancelled the stream.');
+        });
+        call.on('error', function (err) {
+          failWaiting('ended', 'The stream ended with ' + err.message);
+          log.debug('spiffe: the ' + method + ' bidi stream ended with ' +
+                    err.message);
+        });
       });
     });
   }
@@ -2072,8 +2192,9 @@ class SpiffeGrpc {
     const { log, grpc } = this.deps;
     log.debug('Entering SpiffeGrpc.buildServer().');
     const server = new grpc.Server();
+    const definitions = this.services();
     services.forEach(function (entry) {
-      server.addService(SERVICES[entry.name], entry.handlers);
+      server.addService(definitions[entry.name], entry.handlers);
     });
     log.debug('Leaving SpiffeGrpc.buildServer(). ' + services.length +
               ' service(s).');
@@ -2286,6 +2407,29 @@ class SpiffeGrpc {
    * @param surface - names the listener in the log
    * @returns the credentials
    */
+  /**
+   * The listeners' TLS policy (#423) as secure-context options for a SPIFFE
+   * listener: the floor, the suites, the groups and no renegotiation, with
+   * SPIFFE's own signature list.
+   *
+   * @param kind - `spiffeServer` or `spiffeBroker` (#429)
+   * @returns the options
+   */
+  static policyContextOptions(kind?: string): any {
+    helpers.log.debug('Entering SpiffeGrpc.policyContextOptions().');
+    const tlsServer = require('../tls/tls_server');
+    const policy = tlsServer.policyFor(kind || 'spiffeServer');
+    const options = tlsServer.protocolOptions(policy);
+    // SPIFFE's own signature list, unless the listener names one of its own
+    // (#429, listenerSpiffe*.signatureAlgorithms).
+    const own = tlsServer.listenerOwnValue(kind || 'spiffeServer',
+                                           'signatureAlgorithms');
+    options.sigalgs = own !== undefined ? String(own)
+                                        : SpiffeGrpc.POLICY_SIGALGS;
+    helpers.log.debug('Leaving SpiffeGrpc.policyContextOptions().');
+    return options;
+  }
+
   async svidServerCredentials(surface: string) {
     const { log, ca, spiffeId, config, grpc, errorCodes } = this.deps;
     log.debug('Entering SpiffeGrpc.svidServerCredentials(). ' + surface);
@@ -2363,6 +2507,28 @@ class SpiffeGrpc {
       // refusal. tls/CLAUDE.md has the rule.
       credentials._getConstructorOptions().sigalgs =
         SpiffeGrpc.POLICY_SIGALGS;
+      // THE LISTENERS' POLICY (#423): TLS 1.2 off or on, the TLS 1.3 suites
+      // chosen, post-quantum only — at the first handshake, and re-applied
+      // through grpc-js's own `updateSecureContextOptions()` whenever a
+      // setting moves. Client authentication is the protocol's here (the
+      // SPIRE Server API must accept an agent with no SVID yet, the Broker
+      // API requires one), so it has no toggle.
+      // Each gRPC surface is a listener of its own since #429.
+      const kind = /Broker/.test(surface) ? 'spiffeBroker' : 'spiffeServer';
+      Object.assign(credentials._getConstructorOptions(),
+                    SpiffeGrpc.policyContextOptions(kind));
+      // `any`: grpc-js declares updateSecureContextOptions() protected, and
+      // refreshServerApiCredentials() below already calls it from outside.
+      const held: any = credentials;
+      held.stsUnregisterPolicy = require('../tls/tls_server')
+        .registerPolicyApplier('SPIFFE ' + surface + ' (' +
+                               ca.trustDomain() + ')', kind,
+          function () {
+            held.updateSecureContextOptions(Object.assign({},
+              held._getSecureContextOptions(),
+              SpiffeGrpc.policyContextOptions(kind)));
+          });
+      held.stsPolicyKind = kind;
     } catch (e) {
       log.error(errorCodes.tag('STS-SPIFFE-0012') +
                 'spiffe: the ' + surface + ' ' +
@@ -2415,13 +2581,15 @@ class SpiffeGrpc {
     const identity = spiffeId.serverId(ca.trustDomain());
     const svid = await ca.mintX509Svid(identity,
       { ttl: config.value('spiffe.caTtl') });
-    credentials.updateSecureContextOptions({
+    credentials.updateSecureContextOptions(Object.assign({
       ca: Buffer.from(ca.state().trustAnchors.map(function (anchor) {
         return anchor.certificatePem;
       }).join('\n'), 'utf8'),
       cert: [Buffer.from(svid.chainPem.join('\n'), 'utf8')],
       key: [Buffer.from(svid.privateKeyPem, 'utf8')]
-    });
+    // The listeners' policy (#423) goes with every new context: a context
+    // without it is node's defaults until the next setting change.
+    }, SpiffeGrpc.policyContextOptions(credentials.stsPolicyKind)));
     log.info('spiffe: the SPIRE Server API TCP listener took a new ' +
              'certificate as ' + identity + ' (serial ' + svid.serialHex +
              ') under the replaced Root.');
@@ -2445,12 +2613,13 @@ const slot = new InstanceSlot<SpiffeGrpc>(
   helpers.log);
 
 // The service definitions, by the fully-qualified name the wire uses. Named
-// in `SpiffeGrpc.wire()`, once, so that a typo in a service name is a
-// `TypeError` at startup rather than a method nothing ever routes to. Loaded
-// by the instance, so filled when the instance is installed (#50, R2).
+// in `SpiffeGrpc.services()`, once, so that a typo in a service name is an
+// Error when the front process binds at startup rather than a method nothing
+// ever routes to. Filled at first use since #348 (it was when the instance
+// was installed, #50's R2).
 /**
  * The service definitions by fully-qualified name, filled by
- * `SpiffeGrpc.wire()`.
+ * `SpiffeGrpc.services()` at first use.
  */
 let SERVICES: Record<ServiceName, any> | null = null;
 
@@ -2609,19 +2778,23 @@ export = {
   SpiffeGrpc: SpiffeGrpc,
   installInstance: (instance: SpiffeGrpc): void => slot.install(instance),
   instanceOrigin: (): string => slot.origin(),
+  // A stand-in that requires grpc-js when first read (#348); `status` is its
+  // status table without the runtime, for anything a worker runs.
   grpc: grpc,
-  // Named by `SpiffeGrpc.wire()`, so read once the instance exists.
+  status: status,
+  // Named by `SpiffeGrpc.services()`, which loads the protos if nothing has
+  // yet (#348).
   /**
    * The service definitions, once the instance exists.
    */
   get SERVICES(): Record<ServiceName, any> {
     log.debug("Entering SERVICES().");
-    slot.get();
     log.debug("Leaving SERVICES().");
-    return SERVICES;
+    return slot.get().services();
   },
   SECURITY_HEADER: SECURITY_HEADER,
   BROKER_SECURITY_HEADER: BROKER_SECURITY_HEADER,
+  services: slot.forward('services'),
   methodsOf: slot.forward('methodsOf'),
   statusError: slot.forward('statusError'),
   invalidArgument: slot.forward('invalidArgument'),

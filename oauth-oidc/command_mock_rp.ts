@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -348,9 +348,32 @@ class CommandMockRp {
       // Section 6.2: 202 now, the result through the callback after.
       const realm = this.deps.realms.current();
       const callbackToken = String(c.callback_token || '');
+      // THE TOKEN MAY NOT HAVE REACHED THIS PROCESS YET (2026-09-30). The
+      // Command Token, and the `oauth2.commandCallbacks` row its
+      // callback_token is found by, were written by whichever process
+      // delivered the command; with request workers this request reached
+      // another one, which learns of the row through the change log. Called
+      // at once it could answer 401 for a token that is merely on its way,
+      // and the result was dropped: `sts_provider_commands` waited thirty
+      // seconds for `suspended` in single-node. So a 401 catches this
+      // process up with the store and tries once more — what a real relying
+      // party's retry would do, without its delay.
       setImmediate(function () {
         self.deps.realms.run(realm, function () {
-          commands.acceptCallback(callbackToken, answer);
+          const first = commands.acceptCallback(callbackToken, answer);
+          if (!first || first.status !== 401) {
+            return;
+          }
+          Promise.resolve().then(function () {
+            return require('../persistence/persistence').syncNow();
+          }).catch(function (e: Json) {
+            log.debug("Caught in CommandMockRp.handle(): " +
+                      ((e && e.message) || e));
+          }).then(function () {
+            self.deps.realms.run(realm, function () {
+              commands.acceptCallback(callbackToken, answer);
+            });
+          });
         });
       });
       log.debug("Leaving CommandMockRp.handle(). 202.");

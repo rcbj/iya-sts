@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: BUSL-1.1
 #
-# iya-sts, the mock STS: every protocol family README.md lists, in one small Node
+# iya-sts, IYA STS: every protocol family README.md lists, in one small Node
 # service. See README.md.
 #
 # Pinned to Node 24.16.0 via nvm rather than an official node image, which is what
@@ -55,8 +55,19 @@ FROM ${DEBUGGER_IMAGE} AS debugger
 # runs: it only produces files, `tsc` is a native binary whose output does not
 # depend on the node beside it, and the version is still 24.16.0.
 #
+# **AND SHIPPED WITHOUT ITS COMMENTS (#365, 2026-09-30)**: `--strip` also
+# takes the comments out of every `.js` left in the tree, compiled or written
+# in JavaScript, keeping every name and every line break
+# (`tests/tools/strip-comments.js` argues it). V8 holds each script's source
+# for the life of the process, and this repository's comments were 79 MB of
+# every process's heap. Since #369 it also escapes the characters above
+# U+00FF left in string and regular-expression literals, so V8 stores each
+# script one-byte (another ~20 MB per isolate). The repository and the tests
+# image keep both as written.
+#
 # The installs are the final stage's (for the types of what the service
-# requires) and `tests/package.json`'s (the compiler). Both `node_modules` are
+# requires) and `tests/package.json`'s (the compiler, and the parser the
+# comment stripper uses). Both `node_modules` are
 # removed at the end, so the COPY below cannot replace the final stage's own.
 # ---------------------------------------------------------------------------
 FROM node:24.16.0-bookworm-slim AS typescript
@@ -249,6 +260,7 @@ ENV NODE_PATH=/opt/sts-sdk/node_modules
 # The paragraph above leaves the three cloud SDKs out, and for THIS stack that
 # is still right. `deploy/aws/` (issue #51) runs the same image on ECS against
 # AWS Secrets Manager and RDS, so it needs `@aws-sdk/client-secrets-manager`
+# (and, since #391, `@aws-sdk/client-kms` for a key-encryption key in KMS)
 # and the RDS certificate bundle — and "a deployment runs one `npm install` in
 # its own image" is exactly what these two build arguments are, spelt once
 # here rather than in a second Dockerfile that would drift from this one.
@@ -336,9 +348,11 @@ RUN if [ -n "${STS_CLOUD_SDKS}" ]; \
 # ENOENT in the first ./run-tests.sh run that reached them.
 # `deploy/` (2026-09-15) is Terraform and the schema-init image's files, run
 # from a workstation or CI and never by the service.
+# `rust/` (#444, 2026-10-05) is the Rust conversion: its own images build it,
+# and this Node service runs none of it.
 RUN rm -rf ./tests ./xacml-pep ./README.md ./docker-compose.yml ./Dockerfile \
            ./.github ./docs ./docker-compose-run-tests.yml ./deploy \
-           ./build-typescript.sh
+           ./build-typescript.sh ./rust
 
 # The debugger's built tree — see the stage at the top of this file. After the
 # `rm` above and before the version stamp, and into the directory
@@ -374,6 +388,23 @@ ARG BUILD_NUMBER=
 ARG GIT_COMMIT=
 RUN BUILD_NUMBER="${BUILD_NUMBER}" GIT_COMMIT="${GIT_COMMIT}" \
     node common/version.js --stamp . && cat version.json
+# OCI metadata, read by ghcr.io and Docker Hub (2026-10-02). `source` is what
+# LINKS the published package (ghcr.io/rcbj/iya-sts, pushed by
+# .github/workflows/build-container.yml) to this repository, so it lists under
+# the repository's Packages; `revision` is the commit the image was built
+# from, beside the build number version.json carries. The parent project's
+# api and client images carry the same five. A LABEL is metadata, not a layer.
+# The io.artifacthub.* labels are what artifacthub.io reads when it indexes
+# the published image; readme-url is the one it refuses the package without.
+LABEL org.opencontainers.image.source="https://github.com/rcbj/iya-sts" \
+      org.opencontainers.image.title="iya-sts" \
+      org.opencontainers.image.description="IYA STS: an identity service speaking OAuth 2.0 / OpenID Connect, SAML, WS-Trust, WS-Federation, Kerberos, LDAP, SCIM, SPIFFE and more (port 8081)" \
+      org.opencontainers.image.licenses="BUSL-1.1" \
+      org.opencontainers.image.revision="${GIT_COMMIT}" \
+      io.artifacthub.package.readme-url="https://raw.githubusercontent.com/rcbj/iya-sts/main/README.md" \
+      io.artifacthub.package.logo-url="https://raw.githubusercontent.com/rcbj/iya-sts/main/docs/logo.png" \
+      io.artifacthub.package.license="BUSL-1.1" \
+      io.artifacthub.package.keywords="identity,sts,oauth2,oidc,saml,ws-trust,ws-federation,kerberos,ldap,scim,spiffe,xacml,gnap"
 # The service selects its configuration (log level) with CONFIG_FILE, the same
 # way api and client do. The compose files override this per stack.
 #
@@ -383,6 +414,16 @@ RUN BUILD_NUMBER="${BUILD_NUMBER}" GIT_COMMIT="${GIT_COMMIT}" \
 # true by accident; it is now true on purpose, and this string did not have to
 # change.
 ENV CONFIG_FILE=./env/local.js
+# NODE_ENV=production, IN EVERY MODE (#355, 2026-09-29), and it is NOT this
+# service's development/product switch — that is `global.mode`
+# (common/mode.js), and nothing here reads NODE_ENV. Of every package in the
+# image only express and its finalhandler do: outside production, an error
+# that reaches Express's final handler is answered with its STACK TRACE in the
+# page. With it set, the page says "Internal Server Error" and the stack stays
+# in the log. Its other effect, express's `view cache`, touches nothing: no
+# route calls res.render(). The embedded debugger's api child does not
+# inherit it — its environment is an allow-list (debugger_api_process.ts).
+ENV NODE_ENV=production
 
 # 8081 is the HTTP service. Most of the rest are the listeners that are NOT HTTP
 # and so are not on it: 88 is the KDC (TCP and UDP), 8888 the Kerberos-protected
@@ -443,4 +484,8 @@ EXPOSE 8181
 # The embedded protocol debugger's listener (debugger.port), when it is
 # embedded and installed. See debugger/CLAUDE.md.
 EXPOSE 8444
+# The inter-cell channel (cells.port), bound only when the service is deployed
+# as cells (#98). A private address between cells; never publish it. See
+# docs/cells.md.
+EXPOSE 8446
 CMD [ "node", "server.js" ]

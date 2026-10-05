@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -496,6 +496,12 @@ const NAV = [
       // taking it back. Drawn by `portal_consents.ts`.
       { path: BASE + '/consents', label: 'Consents',
         heading: 'What you have agreed applications may do' },
+      // GNAP GRANTS (#432 phase 7, 2026-10-03), beside Consents and for its
+      // reason: what this person has let applications do, with the one
+      // control that belongs there, revoking it. A page of its own rather
+      // than a section of Consents — `portal_gnap.ts`'s header argues it.
+      { path: BASE + '/gnap', label: 'GNAP grants',
+        heading: 'Access you have given through GNAP' },
       // EMAIL (#63, 2026-09-22): the address this service writes to, whether
       // it is verified, which messages may be declined, and what was sent.
       // Under *Your account* for Security activity's reason — it is what this
@@ -638,8 +644,16 @@ const ACTIVATE_FORM = vz.object({
   // names it explicitly rather than being inferred from whether `code` is
   // present: a person who leaves the code box empty and presses Finish would
   // otherwise be treated as though they had started over.
-  step: vt.opt(vt.oneOf(['setup', 'totp'])),
+  // `key` (2026-10-01) is the security key's ceremony, the step that made
+  // `key_role` mean something: until then choosing a key enrolled nothing.
+  step: vt.opt(vt.oneOf(['setup', 'key', 'totp'])),
   code: vz.string().max(32).optional(),
+  // THE SECURITY KEY'S STEP (2026-10-01), `/portal/keys`' three fields and
+  // for its reasons — see ENROL_KEY_FORM below: where the key lives, the
+  // pending enrolment's id, and the browser's ceremony result as JSON.
+  kind: vt.opt(vt.oneOf(['any', 'platform', 'roaming'])),
+  enrolment_id: vt.opt(vt.base64url),
+  credential: vz.string().max(validation.CAP.TEXT).optional(),
   csrf_token: vt.opt(vt.token)
 });
 
@@ -1270,7 +1284,7 @@ class Portal {
     log.debug("Leaving Portal.page().");
     return '<!DOCTYPE html>\n<html lang="en"><head><meta charset="utf-8">' +
       '<meta name="viewport" content="width=device-width,initial-scale=1">' +
-      '<title>' + self.esc(title) + ' — mock STS</title><style>' + CSS +
+      '<title>' + self.esc(title) + ' — IYA STS</title><style>' + CSS +
       '</style></head><body><div class="wrap' + (wide ? ' wide' : '') + '">' +
       inner +
       // WHICH BUILD THIS IS, on every page of this application including the
@@ -1284,7 +1298,7 @@ class Portal {
       // person's own account, not a console: the number is enough to quote, and
       // the build instant and commit are for whoever they quote it to.
       '<p class="ver" title="' + self.esc(APP_BUILD_INFO) + '">' +
-      'mock-sts <code>' + self.esc(APP_VERSION.version) + '</code></p>' +
+      'iya-sts <code>' + self.esc(APP_VERSION.version) + '</code></p>' +
       '</div></body></html>\n';
   }
 
@@ -1449,7 +1463,7 @@ class Portal {
 
   private activationForm(base, username, token, message, error) {
     const self = this;
-    const { log, totp } = this.deps;
+    const { log, totp, webauthnPolicy } = this.deps;
     log.debug("Entering Portal.activationForm().");
     const csrfless = ''; // the form carries the token instead; see below
     log.debug("Leaving Portal.activationForm().");
@@ -1487,9 +1501,16 @@ class Portal {
       'class="chk"><input type="radio" name="key_role" value="primary"> Use ' +
       'a security key instead of a password</label><label class="chk"><input ' +
       'type="radio" name="key_role" value="mfa"> Use a security key as a ' +
-      'second factor, with the password above</label><p ' +
-      'class="note">Choosing a security key takes you to the enrolment ' +
-      'screen after this step.</p>' +
+      'second factor, with the password above</label>' +
+      // WHERE THE KEY LIVES, `/portal/keys`' choice and for its reason
+      // (`kindChoice()`): a passkey built into this device is what most
+      // people mean by one, and Chrome and Edge offer it only when asked.
+      (webauthnPolicy.settings().enabled
+        ? self.kindChoice(webauthnPolicy.authenticatorKinds())
+        : '') +
+      '<p class="note">Choosing a security key takes you to the enrolment ' +
+      'screen after this step, and your account is not set up until the key ' +
+      'is registered.</p>' +
       // ---------------------------------------------------------------
       // THE AUTHENTICATOR APP (2026-09-10). A CHECKBOX AND NOT A FOURTH
       // RADIO BUTTON, and that is the whole of what it says about itself:
@@ -1533,7 +1554,7 @@ class Portal {
   // The token rides in the form for the same reason it does on the page before
   // this one: nobody is signed in, so there is no session to carry state on.
   // ---------------------------------------------------------------------------
-  private activationTotpForm(username, token, enrolment, error) {
+  private activationTotpForm(username, token, enrolment, error, keyRole?) {
     const self = this;
     const { log } = this.deps;
     log.debug("Entering Portal.activationTotpForm().");
@@ -1542,8 +1563,8 @@ class Portal {
       '<div class="card">' +
       '<h1>Scan this with your authenticator app</h1>' +
       '<p class="sub">Almost done. ' +
-      '<strong>' + self.esc(username) + '</strong> has ' +
-      'a password now; this adds the second factor.</p>' +
+      '<strong>' + self.esc(username) + '</strong> can sign in now; this ' +
+      'adds the second factor.</p>' +
       (error ? '<div class="err">' + self.esc(error) + '</div>' : '') +
       (enrolment.qr
         ? '<p><img src="' + self.esc(enrolment.qr) + '" width="240" ' +
@@ -1565,6 +1586,11 @@ class Portal {
       '<input type="hidden" name="user" value="' + self.esc(username) + '">' +
       '<input type="hidden" name="token" value="' + self.esc(token) + '">' +
       '<input type="hidden" name="step" value="totp">' +
+      // What the first page chose for a security key, carried so the page
+      // that finishes says what was set up (a key registered on the step
+      // before this one is on the entry already).
+      '<input type="hidden" name="key_role" value="' +
+      self.esc(String(keyRole || 'none')) + '">' +
       '<label for="code">The ' + self.esc(String(enrolment.digits)) +
       '-digit code your app is showing now</label>' +
       '<input type="text" id="code" name="code" autocomplete="one-time-code" ' +
@@ -1576,6 +1602,93 @@ class Portal {
       'activation link is not used up until then either — so if you cannot ' +
       'finish now, open the link again and leave the authenticator box ' +
       'unticked.</p></div>');
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE SECURITY KEY'S STEP OF AN ACTIVATION (2026-10-01).
+  //
+  // **UNTIL THIS DAY THE `key_role` RADIO ENROLLED NOTHING.** Choosing *use a
+  // security key instead of a password* spent the link, said the account was
+  // ready, and sent the person to the sign-in screen to enrol the key on first
+  // use — which product mode refuses (`STS-AUTHN-0206`, rightly: there, anybody
+  // who knew a username could register their own key as that person's). So
+  // the only way through was to go back and set a password, which is the
+  // opposite of what was asked for.
+  //
+  // The key is registered HERE instead, on an unauthenticated page, and what
+  // authorises the ceremony is the ACTIVATION LINK — the same credential that
+  // authorises setting the password on the step before. It is `/portal/keys`'
+  // ceremony through `credentials.beginKeyEnrolment()` and
+  // `confirmKeyEnrolment()`, so the challenge, the exclusion list, the
+  // attestation and the claimed write are the ones a signed-in person meets.
+  //
+  // **THE LINK IS NOT SPENT WHILE THIS IS DRAWN**, the authenticator app's
+  // rule (`activationTotpForm()`): somebody whose key will not register still
+  // holds a usable link and can open it again.
+  //
+  // **A SCRIPTED PAGE, AND THE ARGUMENT IS `/portal/keys`' ONE**: a WebAuthn
+  // registration is `navigator.credentials.create()`, which no markup can
+  // make — so `script-src 'self'` naming `/authn/webauthn.js`, the same
+  // resource and not a copy, through `sendKeysPage()`; and a real submit
+  // button underneath that, with the script blocked, posts no credential and
+  // is answered with why.
+  // ---------------------------------------------------------------------------
+  private activationKeyForm(base, username, token, pending, wantsTotp,
+                            error) {
+    const self = this;
+    const { authn, log, webauthnPolicy } = this.deps;
+    log.debug("Entering Portal.activationKeyForm().");
+    // THE BASE IS THE ONE THE REQUEST ARRIVED ON, for `enrolBlock()`'s
+    // reason: a realm's base carries a path and the RP ID is its host.
+    const rpId = authn.rpIdOf(base);
+    const builtIn = pending.kind === 'platform';
+    const hidden = '<input type="hidden" name="user" value="' +
+      self.esc(username) + '"><input type="hidden" name="token" value="' +
+      self.esc(token) + '"><input type="hidden" name="key_role" value="' +
+      self.esc(pending.role) + '">' +
+      (wantsTotp ? '<input type="hidden" name="totp" value="1">' : '');
+    log.debug("Leaving Portal.activationKeyForm().");
+    return self.page('Register your security key',
+      '<div class="card">' +
+      '<h1>' + (builtIn ? 'Use this device\'s authenticator'
+                        : 'Register your security key') + '</h1>' +
+      '<p class="sub">Almost done. <strong>' + self.esc(username) +
+      '</strong> will sign in with this key ' +
+      (pending.role === 'primary'
+        ? 'and no password.' : 'as a second factor, after the password.') +
+      '</p>' +
+      (error ? '<div class="err">' + self.esc(error) + '</div>' : '') +
+      '<p class="note">' + (builtIn
+        ? 'Your browser is about to ask for the authenticator built into ' +
+          'this device — Touch ID, Face ID, Windows Hello or the screen ' +
+          'lock — and save a passkey on it.'
+        : 'Your browser is about to ask for a passkey or a security key.') +
+      ' Your account is not set up, and this activation link is not used ' +
+      'up, until the key is registered.</p>' +
+      '<div id="wa-data"' +
+      ' data-challenge="' + self.esc(pending.challenge) + '"' +
+      ' data-rpid="' + self.esc(rpId) + '"' +
+      ' data-user="' + self.esc(username) + '"' +
+      ' data-allow=""' +
+      ' data-exclude="' + self.esc((pending.exclude || []).join(',')) + '"' +
+      ' data-options="' +
+      self.esc(JSON.stringify(webauthnPolicy.creationOptions(rpId,
+        pending.kind))) +
+      '"' +
+      ' data-mode="create"></div>' +
+      '<button id="wa-go" type="button">Register this key</button>' +
+      '<form method="post" action="' + ACTIVATE + '" id="wa-form">' + hidden +
+      '<input type="hidden" name="step" value="key">' +
+      '<input type="hidden" name="enrolment_id" value="' +
+      self.esc(pending.id) + '">' +
+      '<input type="hidden" name="credential" id="wa-credential">' +
+      // THE REAL BUTTON, `enrolBlock()`'s: with the script blocked it posts
+      // a `key` step with no credential, answered by saying why.
+      '<button class="secondary">My browser did not ask &mdash; tell me ' +
+      'why</button></form>' +
+      '<p class="note">If you cannot register a key now, open your ' +
+      'activation link again and choose differently.</p></div>' +
+      '<script src="' + authn.WEBAUTHN_SCRIPT_PATH + '"></script>');
   }
 
   // ---------------------------------------------------------------------------
@@ -1676,11 +1789,88 @@ class Portal {
   }
 
   // ---------------------------------------------------------------------------
+  // WHAT AN ACTIVATION DOES ONCE ITS KEY IS SETTLED (2026-10-01): the
+  // authenticator app if it was asked for, then the finish. A function
+  // because two POSTs reach it — the setup with no key, and the `key` step
+  // once the ceremony registered one — and the authenticator comes after the
+  // key either way, so a person is never shown a QR code for an account whose
+  // way in is not set up yet.
+  // ---------------------------------------------------------------------------
+  private async activationAfterKey(res, req, base, username, token, keyRole,
+                                   wantsTotp, warning) {
+    const self = this;
+    const { audit, credentials, errorCodes, log, totp,
+            websecurity } = this.deps;
+    log.debug('Entering Portal.activationAfterKey().');
+    const hasPassword = credentials.mechanismsFor(username).password;
+    // ---------------------------------------------------------------------
+    // THE AUTHENTICATOR APP, IF IT WAS ASKED FOR (2026-09-10).
+    //
+    // **THIS RETURNS WITHOUT FINISHING**, which is the whole shape of the
+    // two-step enrolment: the password is set, the link is NOT spent, and the
+    // person is shown a secret they have to prove they hold.
+    // `finishActivation()` runs on the second POST.
+    //
+    // **THE SETTING IS CHECKED HERE AND NOT ONLY WHERE THE BOX IS DRAWN.**
+    // The form is markup and this is the door — `authn.js`'s rule about the
+    // anonymous button, and it applies to every optional control in this
+    // service.
+    //
+    // A REFUSAL DOES NOT LOSE THE ACTIVATION. If the enrolment cannot be
+    // started — the mechanism is off, or product mode will not enrol for
+    // somebody with no entry — the setup FINISHES with what was configured
+    // and says what did not happen. Refusing the whole activation over an
+    // optional second factor would strand somebody who has just set a
+    // perfectly good password.
+    if (wantsTotp && totp.offered()) {
+      const begun = credentials.beginTotpEnrolment(username, { base: base });
+      if (begun.ok) {
+        const enrolment = await self.pendingEnrolmentFor(username, base);
+        if (enrolment) {
+          audit.record({
+            category: 'authentication', action: 'portal.activate.mfa.started',
+            actor: username, outcome: 'success',
+            summary: username + ' started setting up an authenticator app ' +
+                     'while activating',
+            detail: { address: websecurity.addressOf(req) }
+          });
+          log.debug('Leaving Portal.activationAfterKey(). Showing the ' +
+                    'authenticator secret; the link is not spent yet.');
+          return self.send(res, 200,
+                           self.activationTotpForm(username, token,
+                                                   enrolment, warning,
+                                                   keyRole));
+        }
+      }
+      log.warn(errorCodes.tag('STS-PORTAL-0009') +
+               'portal: an authenticator app was asked for while ' +
+               'activating "' + username + '" and could not be started (' +
+               (begun.errors || []).join(' ') + '). The activation ' +
+               'finishes without it rather than being refused.');
+      log.debug('Leaving Portal.activationAfterKey(). No authenticator.');
+      return self.finishActivation(res, base, username, hasPassword, keyRole,
+                                   false, req,
+                                   (warning ? warning + ' ' : '') +
+                                   'The authenticator app could NOT be set ' +
+                                   'up: ' +
+                                   (begun.errors || ['it was refused.'])[0] +
+                                   ' Everything else is set up, and you ' +
+                                   'can add one from your account pages ' +
+                                   'after you sign in.');
+    }
+
+    log.debug('Leaving Portal.activationAfterKey(). Finishing.');
+    return self.finishActivation(res, base, username, hasPassword, keyRole,
+                                 false, req, warning);
+  }
+
+  // ---------------------------------------------------------------------------
   // THE ONE PLACE AN ACTIVATION FINISHES (2026-09-10).
   //
-  // **IT IS A FUNCTION BECAUSE THERE ARE THREE WAYS IN NOW** — a plain setup,
-  // an authenticator confirmed on a second POST, and an authenticator that
-  // could not be started — and every one of them has to spend the link, write
+  // **IT IS A FUNCTION BECAUSE THERE ARE SEVERAL WAYS IN NOW** — a plain
+  // setup, a security key registered on a second POST (2026-10-01), an
+  // authenticator confirmed on a later one, and either of those that could
+  // not be started — and every one of them has to spend the link, write
   // the audit row and draw the same page. Three copies of that is two chances
   // for one of them to leave a spent-looking link that still works.
   // ---------------------------------------------------------------------------
@@ -1708,7 +1898,7 @@ class Portal {
              '). The activation link is now spent.');
     // CAEP credential-change for what setup created (#145): the first
     // password and the authenticator app, each a credential the person now
-    // holds. A security key is enrolled later, by its own door.
+    // holds. A security key's is sent by the `key` step that registered it.
     if (password) {
       self.deps.accountSignals.credentialChanged({ username: username,
         credentialType: 'password', changeType: 'create',
@@ -1813,16 +2003,21 @@ class Portal {
           'why it can show them to you and why it can never show you your ' +
           'password.</p>'
         : '') +
-      (keyRole !== 'none'
-        ? '<p>You asked to use a security key' +
-          (keyRole === 'mfa' ? ' as a second factor' : ' instead of a ' +
-            'password') +
-          '. A key is enrolled DURING A SIGN-IN rather than from your ' +
-          'account pages: tick the security-key box at the sign-in screen ' +
-          'and the first use enrols it. There is no enrol button on your ' +
-          'Security keys page, because a WebAuthn ceremony belongs to a ' +
-          'sign-in — which is the same reason nothing here links to ' +
-          '/authn/webauthn.</p>'
+      // THE KEY IS REGISTERED BY NOW (2026-10-01) — the `key` step finishes
+      // only once it is on the entry — so this says how to USE it. It said
+      // the key would be enrolled at the sign-in screen on first use, which
+      // product mode refuses for a key instead of a password.
+      (keyRole === 'primary'
+        ? '<p><strong>Your security key is registered and is how you sign ' +
+          'in.</strong> At the sign-in screen, type your username, tick ' +
+          '<em>Sign in with the security key alone</em> and leave the ' +
+          'password empty. Add a second key on your Security keys page once ' +
+          'you are in, so that losing this one is not a locked account.</p>'
+        : '') +
+      (keyRole === 'mfa'
+        ? '<p><strong>Your security key is registered as a second ' +
+          'factor.</strong> You will be asked for it every time you sign in, ' +
+          'after your password.</p>'
         : '') +
       '<p><a href="' + self.esc(next) + '">Sign in</a></p></div>'));
   }
@@ -1886,6 +2081,184 @@ class Portal {
   }
 
   // ---------------------------------------------------------------------------
+  // ADOPTING THE CONSOLE'S SESSION (2026-09-30).
+  //
+  // **WHAT WENT WRONG, ON A PRODUCT DEPLOYMENT.** An administrator signed in to
+  // `/admin`, followed the account menu's link to their own account here, and
+  // was asked first to CHOOSE A REALM and then to SIGN IN AGAIN. Both were
+  // this surface doing exactly what it was written to do: it had no session of
+  // its own, so `realmChooser.decide()` asked the bare `/portal`'s question,
+  // and the code flow behind it met no sign-on session — because the sign-on
+  // session behind the console had run out (`authn.sessionLifetimeS`, an
+  // hour, absolute) while the console session carried on past it by renewing
+  // its own tokens (`common/oidc_rp.ts` section 4). Single sign-on between the
+  // two surfaces rested on a session one of them no longer needed.
+  //
+  // **THE OWNER'S DECISION: the portal reads the realm and the authenticated
+  // session from the console session.** So a request with no portal session,
+  // in a browser holding a LIVE console session, is given a portal session of
+  // its own made from that one (`authn.adoptRelyingPartySession()`): the same
+  // person, the realm they signed in to the console through, the same
+  // authentication record, and a life bounded by the console session's — it
+  // names the console session as its parent and ends with it, on any sign-out
+  // and on the first request after it is gone.
+  //
+  // Five things keep it narrow:
+  //
+  //   * **ONE DIRECTION.** Nothing here writes the console's cookie, and the
+  //     console's gate reads only its own (`admin-core/admin_views.ts`'s
+  //     `consoleRpSession()`). A portal session grants no console.
+  //   * **"LIVE" IS THE CONSOLE'S OWN ANSWER**: `oidcRp.sessionFor(req,
+  //     'admin')`, which applies the console session's expiry, idle timeout
+  //     and parent check, and then `renewalDecision()`, which refuses one
+  //     whose tokens ran out and can no longer be renewed. Nothing is
+  //     loosened for the portal's sake.
+  //   * **THE REALM IS THE CONSOLE SESSION'S IDENTITY REALM** (its
+  //     `derivedFromRealm`, the realm whose roster the console asks — the same
+  //     answer the console's account-menu link is built from). Reached at the
+  //     bare `/portal` of the default realm by a realm's own administrator, it
+  //     is a REDIRECT to that realm's portal, built from the registry as the
+  //     chooser builds one, and the adoption happens there. Reached under
+  //     ANOTHER realm's prefix, nothing is adopted: somebody who named a realm
+  //     the console session is not from is asking to sign in there.
+  //   * **THE ACCESS POLICY STILL DECIDES.** The adopted session goes through
+  //     the same `accessGate` check as a code-flow session, in
+  //     `requireSignIn()`.
+  //   * **NOT ACROSS CELLS (#98).** A person held here only as a projection is
+  //     homed elsewhere, and their account is managed there; nothing is
+  //     adopted and the code flow runs as it always did.
+  //
+  // Anything that stops an adoption leaves the old path — the chooser, then
+  // the code flow — exactly as it was, with the reason logged under its code.
+  // ---------------------------------------------------------------------------
+  /**
+   * Makes this portal's session from a live admin console session in the same
+   * browser, or says where that session's realm's portal is.
+   *
+   * @param req - the request, which has no portal session
+   * @param res - the response the new session's cookie is set on
+   * @param returnTo - the portal path the caller would return to
+   * @returns `{ session }` when adopted, `{ redirect }` to that realm's
+   *   portal, or null to sign in the ordinary way
+   */
+  adoptConsoleSession(req, res, returnTo) {
+    const { authn, baseUrlOf, errorCodes, log, oidcRp, realms } = this.deps;
+    log.debug("Entering Portal.adoptConsoleSession().");
+    let held: any = null;
+    try {
+      held = oidcRp.sessionFor(req, 'admin');
+    } catch (e) {
+      log.error(errorCodes.tag('STS-PORTAL-0099') + 'portal: reading the ' +
+                'admin console session to adopt it threw, and the portal ' +
+                'signs in the ordinary way: ' + ((e && e.stack) || e));
+      held = null;
+    }
+    if (!held || held.rpSurface !== 'admin' || !held.user) {
+      log.debug("Leaving Portal.adoptConsoleSession(). No live console " +
+                "session.");
+      return null;
+    }
+    const username = String(held.user.username || '');
+    const homeId = String(held.derivedFromRealm || realms.DEFAULT_ID);
+    const home = realms.get(homeId);
+    const decision = oidcRp.renewalDecision(held, Date.now(), 0);
+    const why = !username ? 'it names nobody'
+      : !home ? 'the realm "' + homeId + '" it was signed in through is no ' +
+                'longer defined'
+      : decision.action === 'end' ? String(decision.why || 'its tokens ran ' +
+                                           'out')
+      : '';
+    if (why) {
+      log.info(errorCodes.tag('STS-PORTAL-0098') + 'portal: the admin ' +
+               'console session ' + held.id + ' was not adopted, because ' +
+               why + '. The portal signs in the ordinary way.');
+      log.debug("Leaving Portal.adoptConsoleSession(). Not adoptable.");
+      return null;
+    }
+    const here = realms.currentId();
+    // THE CHOOSER'S OWN ANSWER WINS. `?realm=` on the bare `/portal` is a
+    // person saying which realm they mean (`common/realm_chooser.ts`), and one
+    // naming a realm this console session is not from is left to the chooser.
+    const rawAsked = req.query ? req.query.realm : undefined;
+    const asked = String((Array.isArray(rawAsked) ? rawAsked[0] : rawAsked) ||
+                         '').trim();
+    if (here === realms.DEFAULT_ID && asked && asked !== homeId) {
+      log.debug("Leaving Portal.adoptConsoleSession(). The chooser named " +
+                "another realm.");
+      return null;
+    }
+    if (here !== homeId) {
+      if (here !== realms.DEFAULT_ID) {
+        log.debug("Leaving Portal.adoptConsoleSession(). A realm the console " +
+                  "session is not from was named; its own sign-in.");
+        return null;
+      }
+      // BUILT, NEVER ECHOED: the service's own base with the ambient prefix
+      // taken off, the registry's prefix for the realm, and a portal path
+      // this file wrote — `returnTo` is always a constant built from `BASE`,
+      // and anything else (or a request that is not a GET) is the root.
+      const withRealm = baseUrlOf(req);
+      const prefix = realms.currentPrefix();
+      const root = prefix && withRealm.slice(-prefix.length) === prefix
+        ? withRealm.slice(0, withRealm.length - prefix.length) : withRealm;
+      const method = String(req.method || 'GET').toUpperCase();
+      const portalPath = /^\/portal(\/[A-Za-z0-9_~-][A-Za-z0-9._~-]*)*$/;
+      const path = (method === 'GET' || method === 'HEAD') &&
+                   portalPath.test(String(returnTo || ''))
+        ? String(returnTo) : BASE;
+      const location = root + realms.prefixOf(home) + path;
+      log.info('portal: the admin console session ' + held.id + ' of ' +
+               username + ' was signed in through realm ' + homeId +
+               ', so its portal is that realm\'s; sending the browser to ' +
+               location + ' to adopt it there.');
+      log.debug("Leaving Portal.adoptConsoleSession(). To " + location + ".");
+      return { redirect: location };
+    }
+    let projected = false;
+    try {
+      projected = require('../common/cell_sessions').isProjected(homeId,
+                                                                 'name',
+                                                                 username);
+    } catch (e) {
+      log.debug("Caught in Portal.adoptConsoleSession(): " +
+                ((e && e.message) || e));
+      // No cells in this process: every person is homed here.
+      projected = false;
+    }
+    if (projected) {
+      log.info(errorCodes.tag('STS-PORTAL-0098') + 'portal: the admin ' +
+               'console session ' + held.id + ' was not adopted, because ' +
+               username + ' is homed in another cell, where their account ' +
+               'is managed. The portal signs in the ordinary way.');
+      log.debug("Leaving Portal.adoptConsoleSession(). Projected.");
+      return null;
+    }
+    const surface = oidcRp.surfaceOf('portal');
+    let session: any = null;
+    try {
+      session = authn.adoptRelyingPartySession({
+        res: res, req: req, source: held, sourceRealm: realms.DEFAULT_ID,
+        surface: surface.id, label: surface.label,
+        clientId: surface.clientId, cookie: surface.cookie
+      });
+    } catch (e) {
+      log.error(errorCodes.tag('STS-PORTAL-0099') + 'portal: adopting the ' +
+                'admin console session ' + held.id + ' threw, and the ' +
+                'portal signs in the ordinary way: ' + ((e && e.stack) || e));
+      session = null;
+    }
+    if (!session) {
+      log.debug("Leaving Portal.adoptConsoleSession(). Not made.");
+      return null;
+    }
+    log.info('portal: ' + username + ' was signed in to the portal in realm ' +
+             homeId + ' from their live admin console session ' + held.id +
+             '; portal session ' + session.id + ' ends when that one does.');
+    log.debug("Leaving Portal.adoptConsoleSession(). Adopted.");
+    return { session: session };
+  }
+
+  // ---------------------------------------------------------------------------
   // THE AUTHENTICATED PORTAL.
   //
   // **THE IDENTITY COMES FROM THE SESSION AND NOWHERE ELSE.** Not from a query
@@ -1916,7 +2289,22 @@ class Portal {
     // family here was silently already signed in to their account page, which
     // is single sign-on happening without an application ever having asked for
     // it.
-    const session = oidcRp.sessionFor(req, 'portal');
+    let session = oidcRp.sessionFor(req, 'portal');
+    // NO PORTAL SESSION, BUT A LIVE CONSOLE SESSION IN THIS BROWSER
+    // (2026-09-30): adopted, or the browser sent to the realm it is adopted
+    // in — see adoptConsoleSession(). Before the chooser and the code flow,
+    // which are what it replaces for this one case, and before the policy,
+    // which it does not replace at all.
+    if (!session) {
+      const adopted = self.adoptConsoleSession(req, res, returnTo);
+      if (adopted && adopted.redirect) {
+        res.set('Cache-Control', 'no-store').redirect(303, adopted.redirect);
+        log.debug("Leaving Portal.requireSignIn(). To the console session's " +
+                  "realm.");
+        return null;
+      }
+      session = adopted ? adopted.session : null;
+    }
     if (session) {
       // -------------------------------------------------------------------
       // AND THE POLICY (2026-09-06). OWASP A01, decided by the PDP.
@@ -2484,13 +2872,20 @@ class Portal {
         : 'You have no security keys enrolled.') + '</p>' +
       (keys.length
         ? '<table class="grid"><tr><th>Key</th><th>Role</th>' +
-          '<th>Kind</th><th>Authenticator</th><th>Enrolled</th><th></th>' +
-          '</tr>' +
+          '<th>Kind</th><th>Algorithm</th><th>Authenticator</th>' +
+          '<th>Enrolled</th><th></th></tr>' +
           keys.map(function (one) {
+            // THE SIGNATURE ALGORITHM (2026-10-01): the one this key signs
+            // with, which is the one every sign-in with it is verified with.
+            const algorithm = credentials.keyAlgorithm(one);
             return '<tr><td>' +
               self.esc(one.label || 'security key') + '</td>' +
               '<td>' + self.esc(one.role) + '</td>' +
               '<td>' + self.esc(credentials.keyKind(one).text) + '</td>' +
+              '<td><code>' + self.esc(algorithm.text) + '</code>' +
+              (algorithm.postQuantum ? ' post-quantum' : '') +
+              (algorithm.insecure ? ' <strong>insecure</strong>' : '') +
+              '</td>' +
               '<td>' + self.attestationText(one.attestation) + '</td>' +
               '<td>' +
               self.esc(new Date(one.enrolledAt || 0).toISOString()
@@ -4504,6 +4899,48 @@ class Portal {
    *
    * @param app - the express app
    */
+  // Which cell a portal request belongs to (#98): the home of the person it
+  // is about. Resolves true when it was relayed.
+  /**
+   * Relays a portal request to the home cell of the person it is about.
+   *
+   * @param req - the request
+   * @param res - the response
+   * @returns a promise of true when the request was relayed
+   */
+  async placeRequest(req: any, res: any): Promise<boolean> {
+    const { authn, log, parseBody } = this.deps;
+    log.debug("Entering Portal.placeRequest().");
+    const cells = require('../common/cells');
+    if (!cells.isMulti() || req.stsCellRelay) {
+      log.debug("Leaving Portal.placeRequest(). Here.");
+      return false;
+    }
+    const realms = require('../common/realms');
+    const placement = require('../common/cell_placement');
+    const realmId = realms.currentId();
+    const session = authn.sessionOf(req);
+    const username = session && session.user
+      ? String(session.user.username || '') : '';
+    if (username &&
+        require('../common/cell_sessions').isProjected(realmId, 'name',
+                                                       username)) {
+      log.debug("Leaving Portal.placeRequest(). A projected session.");
+      return placement.relayToHome(req, res, realmId, 'name', username,
+                                   'portal');
+    }
+    // A link that names its person — the activation, reset and verification
+    // pages carry `user` in the query or the form.
+    const body = String(req.method || 'GET') === 'POST'
+      ? (parseBody(req) || {}) : {};
+    const named = String((req.query && req.query.user) || body.user || '')
+      .trim();
+    log.debug("Leaving Portal.placeRequest().");
+    return named ? placement.relayToHome(req, res, realmId, 'name', named,
+                                         'portal-link')
+                 : false;
+  }
+
   registerRoutes(app: typeof import('../common/app')): void {
     const self = this;
     const { accessGate, accountSignals, audit, authn, baseUrlOf, config,
@@ -4528,6 +4965,27 @@ class Portal {
     // browser through the code flow as it always did for a request with no
     // session.
     // -------------------------------------------------------------------------
+    // THE PORTAL IS SERVED AT THE PERSON'S HOME (#98). It manages a person's
+    // own entry, which only their home cell holds: a request whose session
+    // is a PROJECTION of somebody homed elsewhere, or a link naming a person
+    // homed elsewhere (activation, password reset, address verification), is
+    // relayed there whole. Above the renewal and every page, before anything
+    // is read or spent. `common/cell_placement.ts` is the table.
+    app.use(BASE, function (req, res, next) {
+      log.debug("Entering the portal's cell placement.");
+      self.placeRequest(req, res).then(function (relayed) {
+        log.debug("Leaving the portal's cell placement. " +
+                  (relayed ? 'Relayed.' : 'Here.'));
+        if (!relayed) {
+          next();
+        }
+      }, function (e) {
+        log.debug("Caught in the portal's cell placement: " +
+                  ((e && e.message) || e));
+        next();
+      });
+    });
+
     app.use(BASE, oidcRp.renewal('portal'));
 
     // ASYNCHRONOUS SINCE 2026-09-14 (#46): the rate limit below counts in the
@@ -4695,8 +5153,142 @@ class Portal {
         // again. It is answered by the prompt being standing rather than a
         // one-off — the card stays in its warning state for as long as it is
         // true.
-        return self.finishActivation(res, base, username, true, keyRole, true,
+        // WHETHER A PASSWORD IS HELD IS READ OFF THE ENTRY, since a key
+        // instead of a password (2026-10-01) can reach this step with none.
+        return self.finishActivation(res, base, username,
+                                     credentials.mechanismsFor(username)
+                                       .password, keyRole, true,
                                      req, null, null);
+      }
+
+      // ---------------------------------------------------------------------
+      // THE SECURITY KEY'S CEREMONY, ANSWERED (2026-10-01).
+      //
+      // `/portal/keys`' `finish`, authorised by the link rather than by a
+      // session — see `activationKeyForm()`. Handled before the password
+      // guards for the authenticator step's reason: this POST carries no
+      // password, and the one chosen on the first POST is already set.
+      //
+      // **ANY FAILURE DRAWS A FRESH CEREMONY** rather than the form before
+      // it: a person who declined the prompt, touched an enrolled key or
+      // picked an authenticator this browser does not have is one step from
+      // done, and the link is still unspent. A fresh challenge each time,
+      // because one spent on a refused attestation is not worth keeping.
+      // ---------------------------------------------------------------------
+      if (step === 'key') {
+        const waitingKey = credentials.pendingKeyEnrolmentFor(username);
+        if (!waitingKey) {
+          log.debug('Leaving POST ' + ACTIVATE + '. The key enrolment had ' +
+                    'expired.');
+          errorCodes.mark(res, 'STS-PORTAL-0102');
+          return self.send(res, 400, self.activationForm(
+            base, username, token, null,
+            'That security key setup expired before it was finished. ' +
+            'Nothing was lost — choose again below.'));
+        }
+        const keyKind = waitingKey.kind || '';
+        let ceremony = null;
+        try {
+          ceremony = JSON.parse(String(body.credential || 'null'));
+        } catch (e) {
+          log.debug('Caught in POST ' + ACTIVATE + ': ' +
+                    ((e && e.message) || e));
+          // Not JSON: the real button under the script was pressed, or a
+          // hand-made POST. The sentence below answers both.
+          ceremony = null;
+        }
+        let refused = '';
+        let refusedCode = '';
+        let enrolled = null;
+        const rpRefusal = authn.rpIdProblem(base);
+        if (!ceremony) {
+          refused = 'Your browser did not run the ceremony, so there is ' +
+                    'nothing to register. This step needs JavaScript — a ' +
+                    'security key is created by the browser and no form can ' +
+                    'do it.';
+          refusedCode = 'STS-PORTAL-0102';
+        } else if (rpRefusal) {
+          refused = rpRefusal;
+          refusedCode = 'STS-PORTAL-0102';
+        } else {
+          let done = null;
+          try {
+            done = await credentials.confirmKeyEnrolment(username,
+              String(body.enrolment_id || ''), ceremony,
+              { origin: authn.expectedOriginFor(base, ceremony),
+                rpId: authn.rpIdOf(base) });
+          } catch (e) {
+            log.debug('Caught in POST ' + ACTIVATE + ': ' +
+                      ((e && e.message) || e));
+            done = { ok: false, reason: 'error',
+                     errors: ['The security key could not be registered.'] };
+          }
+          if (done.ok) {
+            enrolled = done;
+          } else {
+            refused = (done.errors ||
+                       ['The security key could not be registered.'])[0];
+            refusedCode = self.innerCode(done) || 'STS-PORTAL-0102';
+            if (done.reason === 'browser' && keyKind === 'platform') {
+              refused += ' This browser may have no authenticator built ' +
+                         'into this device. Open your activation link again ' +
+                         'and choose "A security key I carry" or "Let my ' +
+                         'browser choose".';
+            }
+          }
+        }
+        if (!enrolled) {
+          audit.record({
+            category: 'authentication', action: 'portal.activate.key.refused',
+            errorCode: refusedCode, actor: username, outcome: 'failure',
+            summary: 'a security key was not registered during activation',
+            detail: { reason: refused, address: websecurity.addressOf(req) }
+          });
+          credentials.abandonKeyEnrolment(username);
+          const again = credentials.beginKeyEnrolment(username, {
+            role: waitingKey.role, kind: keyKind, label: waitingKey.label });
+          const fresh = again.ok
+            ? credentials.pendingKeyEnrolmentFor(username) : null;
+          log.debug('Leaving POST ' + ACTIVATE + '. The key was not ' +
+                    'registered.');
+          if (!fresh) {
+            errorCodes.mark(res, refusedCode || 'STS-PORTAL-0102');
+            return self.send(res, 400, self.activationForm(
+              base, username, token, null, refused));
+          }
+          errorCodes.mark(res, refusedCode || 'STS-PORTAL-0102');
+          return self.sendKeysPage(res, 400, self.activationKeyForm(
+            base, username, token, fresh, wantsTotp, refused));
+        }
+        const heldKey = credentials.keysOf(username).filter(function (one) {
+          return one.credentialId === String(enrolled.credentialId || '');
+        })[0] || null;
+        self.deps.accountSignals.credentialChanged({ username: username,
+          credentialType: self.deps.accountSignals.keyCredentialType(heldKey),
+          fido2Aaguid: String((heldKey && heldKey.aaguid) || ''),
+          friendlyName: String((heldKey && heldKey.label) || ''),
+          changeType: 'create', initiatingEntity: 'user',
+          via: 'portal activation',
+          reasonAdmin: username + ' registered a security key when ' +
+                       'activating their account.',
+          reasonUser: 'You registered a security key for your new account.' });
+        audit.record({
+          category: 'authentication', action: 'portal.activate.key.enrolled',
+          actor: username, outcome: 'success',
+          summary: username + ' registered a security key as a ' +
+                   enrolled.role + ' credential while activating',
+          detail: { role: enrolled.role,
+                    // Its signature algorithm (2026-10-01).
+                    algorithm: credentials.keyAlgorithm(heldKey)
+                      .text,
+                    address: websecurity.addressOf(req) }
+        });
+        log.info('portal: ' + username + ' registered a "' + enrolled.role +
+                 '" security key while spending an activation link.');
+        log.debug('Leaving POST ' + ACTIVATE + '. The key is registered.');
+        return self.activationAfterKey(res, req, base, username, token,
+                                       String(enrolled.role || keyRole),
+                                       wantsTotp, null);
       }
 
       if (password && password !== confirm) {
@@ -4735,60 +5327,60 @@ class Portal {
       }
 
       // ---------------------------------------------------------------------
-      // THE AUTHENTICATOR APP, IF IT WAS ASKED FOR (2026-09-10).
+      // THE SECURITY KEY, IF ONE WAS CHOSEN (2026-10-01).
       //
-      // **THIS RETURNS WITHOUT FINISHING**, which is the whole shape of the
-      // two-step enrolment: the password is set, the link is NOT spent, and the
-      // person is shown a secret they have to prove they hold.
-      // `finishActivation()` runs on the second POST.
+      // **THIS RETURNS WITHOUT FINISHING**, the authenticator app's shape:
+      // the ceremony is drawn, the link is NOT spent, and the `key` step above
+      // finishes — or goes on to the authenticator app, which comes after it.
       //
-      // **THE SETTING IS CHECKED HERE AND NOT ONLY WHERE THE BOX IS DRAWN.**
-      // The form is markup and this is the door — `authn.js`'s rule about the
-      // anonymous button, and it applies to every optional control in this
-      // service.
-      //
-      // A REFUSAL DOES NOT LOSE THE ACTIVATION. If the enrolment cannot be
-      // started — the mechanism is off, or product mode will not enrol for
-      // somebody with no entry — the setup FINISHES with what was configured
-      // and says what did not happen. Refusing the whole activation over an
-      // optional second factor would strand somebody who has just set a
-      // perfectly good password.
-      if (wantsTotp && totp.offered()) {
-        const begun = credentials.beginTotpEnrolment(username, { base: base });
-        if (begun.ok) {
-          const enrolment = await self.pendingEnrolmentFor(username, base);
-          if (enrolment) {
-            audit.record({
-              category: 'authentication', action: 'portal.activate.mfa.started',
-              actor: username, outcome: 'success',
-              summary: username + ' started setting up an authenticator app ' +
-                       'while activating',
-              detail: { address: websecurity.addressOf(req) }
-            });
-            log.debug('Leaving POST ' + ACTIVATE + '. Showing the ' +
-                      'authenticator secret; the link is not spent yet.');
-            return self.send(res, 200,
-                             self.activationTotpForm(username, token,
-                                                     enrolment, null));
-          }
+      // A KEY THAT CANNOT BE STARTED is refused where it was the ONLY way in
+      // (a key instead of a password, and no password set) — finishing then
+      // would be the account nobody can sign in to that this step exists to
+      // stop. Beside a password it is the authenticator app's rule: the setup
+      // finishes and says what did not happen.
+      if (keyRole !== 'none') {
+        const begunKey = credentials.beginKeyEnrolment(username, {
+          role: keyRole, kind: String(body.kind || '') });
+        const pendingKey = begunKey.ok
+          ? credentials.pendingKeyEnrolmentFor(username) : null;
+        if (pendingKey) {
+          audit.record({
+            category: 'authentication', action: 'portal.activate.key.started',
+            actor: username, outcome: 'success',
+            summary: username + ' started registering a security key while ' +
+                     'activating',
+            detail: { role: pendingKey.role, kind: pendingKey.kind || 'any',
+                      address: websecurity.addressOf(req) }
+          });
+          log.debug('Leaving POST ' + ACTIVATE + '. Showing the security ' +
+                    'key ceremony; the link is not spent yet.');
+          return self.sendKeysPage(res, 200, self.activationKeyForm(
+            base, username, token, pendingKey, wantsTotp, null));
         }
-        log.warn(errorCodes.tag('STS-PORTAL-0009') +
-                 'portal: an authenticator app was asked for while ' +
-                 'activating "' + username + '" and could not be started (' +
-                 (begun.errors || []).join(' ') + '). The activation ' +
-                 'finishes without it rather than being refused.');
-        return self.finishActivation(res, base, username, !!password, keyRole,
-                                     false, req,
-                                     'The authenticator app could NOT be set ' +
-                                     'up: ' +
-                                     (begun.errors || ['it was refused.'])[0] +
-                                     ' Everything else is set up, and you ' +
-                                     'can add one from your account pages ' +
-                                     'after you sign in.');
+        const why = (begunKey.errors || ['it was refused.'])[0];
+        if (!password) {
+          log.debug('Leaving POST ' + ACTIVATE + '. No key could be started ' +
+                    'and there is no password.');
+          errorCodes.mark(res, 'STS-PORTAL-0101');
+          return self.send(res, 400, self.activationForm(
+            base, username, token, null,
+            'A security key cannot be set up here: ' + why + ' Set a ' +
+            'password instead.'));
+        }
+        log.warn(errorCodes.tag('STS-PORTAL-0100') +
+                 'portal: a security key was asked for while activating "' +
+                 username + '" and could not be started (' + why + '). The ' +
+                 'activation goes on without it rather than being refused.');
+        return self.activationAfterKey(res, req, base, username, token,
+                                       'none', wantsTotp,
+                                       'The security key could NOT be set ' +
+                                       'up: ' + why + ' Everything else is ' +
+                                       'set up, and you can add one on your ' +
+                                       'Security keys page after you sign in.');
       }
 
-      return self.finishActivation(res, base, username, !!password, keyRole,
-                                   false, req);
+      return self.activationAfterKey(res, req, base, username, token, keyRole,
+                                     wantsTotp, null);
     });
 
     // ASYNCHRONOUS SINCE 2026-09-14 (#46), for GET ACTIVATE's reason.
@@ -6269,6 +6861,9 @@ class Portal {
             summary: username + ' enrolled a security key as a ' + done.role +
                      ' credential',
             detail: { role: done.role, held: done.held,
+                      // Its signature algorithm (2026-10-01).
+                      algorithm: credentials.keyAlgorithm(enrolled)
+                        .text,
                       address: websecurity.addressOf(req) }
           });
           log.info('portal: ' + username + ' enrolled a "' + done.role +
@@ -6422,12 +7017,50 @@ class Portal {
 
       }
       const parent = String(session.derivedFrom || '');
+      // AN ADOPTED SESSION'S PARENT IS THE CONSOLE SESSION (2026-09-30), in
+      // the default realm's partition, and the SIGN-ON session is that one's
+      // parent, in the realm it names — see adoptConsoleSession(). Both are
+      // ended, for this button's own reason: ending only the portal's would
+      // let the next page adopt the console session again and come back in
+      // with nothing typed. Read before anything is ended, because the
+      // cascade takes the rows that name them.
+      const adopted = !!session.rpAdoptedFrom;
+      const realmsHere = self.deps.realms;
+      const consoleRow = adopted && parent
+        ? realmsHere.run(realmsHere.get(String(session.derivedFromRealm ||
+                                               realmsHere.DEFAULT_ID)),
+                         function () {
+                           return authn.sessionById(parent);
+                         })
+        : null;
       oidcRp.endSessionFor(req, res, 'portal', 'the Sign out button on the ' +
                                                'user portal', 'user');
-      const signOnEnded = parent
-        ? !!authn.endSessionById(parent, 'the Sign out button on the user ' +
-                                         'portal', 'user')
-        : false;
+      let consoleEnded = false;
+      let signOnEnded = false;
+      if (adopted) {
+        consoleEnded = !!(consoleRow && realmsHere.run(
+          realmsHere.get(String(session.derivedFromRealm ||
+                                realmsHere.DEFAULT_ID)),
+          function () {
+            return authn.endSessionById(parent, 'the Sign out button on ' +
+                                                'the user portal', 'user');
+          }));
+        authn.clearSessionCookie(res, oidcRp.cookieFor('admin'));
+        const signOnId = consoleRow ? String(consoleRow.derivedFrom || '') :
+          '';
+        const signOnRealm = realmsHere.get(String((consoleRow &&
+          consoleRow.derivedFromRealm) || realmsHere.DEFAULT_ID));
+        signOnEnded = !!(signOnId && signOnRealm && realmsHere.run(
+          signOnRealm, function () {
+            return authn.endSessionById(signOnId, 'the Sign out button on ' +
+                                                  'the user portal', 'user');
+          }));
+      } else {
+        signOnEnded = parent
+          ? !!authn.endSessionById(parent, 'the Sign out button on the user ' +
+                                           'portal', 'user')
+          : false;
+      }
       // AND THE SIGN-ON COOKIE. `endSessionById()` takes no response — it is
       // how /logout ends sessions that are not the caller's — so the cookie
       // naming it has to be cleared here, or the browser goes on presenting a
@@ -6439,21 +7072,32 @@ class Portal {
         category: 'authentication', action: 'portal.signout',
         actor: username, outcome: 'success',
         summary: username + ' signed out of the user portal' +
+                 (consoleEnded ? ', and of the admin console session it was ' +
+                                 'adopted from' : '') +
                  (signOnEnded ? ', and of the sign-on session behind it' : ''),
-        detail: { portalSession: session.id, signOnSession: parent || '(none)',
+        detail: { portalSession: session.id,
+                  signOnSession: (adopted
+                    ? String((consoleRow && consoleRow.derivedFrom) || '')
+                    : parent) || '(none)',
+                  consoleSession: adopted ? parent : '(none)',
+                  consoleEnded: consoleEnded,
                   signOnEnded: signOnEnded,
                   address: websecurity.addressOf(req) }
       });
       log.info('portal: ' + username + ' signed out. The portal session ' +
                'is gone' +
+               (consoleEnded ? ', with the admin console session it was ' +
+                               'adopted from (' + parent + ')' : '') +
                (signOnEnded ?
-                ' and so is the sign-on session behind it (' + parent +
-                '), with every session derived from it.'
+                ' and so is the sign-on session behind it, with every ' +
+                'session derived from it.'
                 : '; there was no sign-on session left to end.'));
       log.debug('Leaving POST ' + BASE + '/signout. Signed out.');
       return self.send(res, 200, self.page('Signed out',
         '<div class="card"><h1>You are signed out</h1>' +
         '<div class="ok">Your portal session has ended' +
+        (consoleEnded
+          ? ', and so has the admin console session it was made from' : '') +
         (signOnEnded
           ? ', and so has the sign-on session it was built on — so anything ' +
             'else you were signed in to through it is signed out too.'
@@ -6524,6 +7168,8 @@ const portalKerberos = require('./portal_kerberos');
 const portalSignIns = require('./portal_sign_ins');
 // /portal/consents (#172), the same arrangement, registered after that.
 const portalConsents = require('./portal_consents');
+// /portal/gnap (#432 phase 7), the same arrangement, registered after that.
+const portalGnap = require('./portal_gnap');
 // /portal/delegate (#108), the same arrangement, registered after that.
 const portalDelegate = require('./portal_delegate');
 // /portal/email, /portal/verify-email and /portal/forgot-password (#63),
@@ -6601,6 +7247,19 @@ export = {
       audit: audit, errorCodes: errorCodes, config: config
     });
     portalConsents.register({
+      app: target, BASE: BASE, log: helpers.log,
+      esc: slot.forward('esc'),
+      shell: slot.forward('shell'),
+      send: slot.forward('send'),
+      requireSignIn: slot.forward('requireSignIn'),
+      refuseShape: slot.forward('refuseShape'),
+      innerCode: slot.forward('innerCode'),
+      baseUrlOf: helpers.baseUrlOf, parseBody: helpers.parseBody,
+      validation: validation, websecurity: websecurity,
+      accessGate: accessGate,
+      audit: audit, errorCodes: errorCodes, config: config
+    });
+    portalGnap.register({
       app: target, BASE: BASE, log: helpers.log,
       esc: slot.forward('esc'),
       shell: slot.forward('shell'),

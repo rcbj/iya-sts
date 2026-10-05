@@ -78,32 +78,40 @@ is put the composite fact into an `ActAs` token — nothing in the assertion say
 a middle tier acted — and the row states that as a gap in the mock rather than
 in the profile.
 
-## WHO MAY ACT FOR WHOM (#108, 2026-09-23)
+## WHO MAY ACT FOR WHOM, AND AS WHAT (#108, 2026-09-23; #186, 2026-10-03)
 
 WS-Trust puts no authorization on either element — 1.3 section 9.2 and 1.4
 section 9.3 describe what the requester ASKS for and leave the decision to the
-STS — and until #108 this one decided nothing. `handleRst()` now asks
-`../common/delegation_policy.ts` (rule 3az, `../common/CLAUDE.md`) after the
-role gate and the JWT-subject check and before the token is built: the one
-place that knows the `AppliesTo`, which is the TARGET. The intermediary is the
-REQUESTER; `OnBehalfOf` is `impersonation` and needs
-`appTrustedToImpersonate`, `ActAs` is `delegation`.
+STS. `handleRst()` asks `../common/delegation_policy.ts` (rule 3az,
+`../common/CLAUDE.md`) after the role gate and the JWT-subject check and before
+the token is built, with **the same rules as RFC 8693's token exchange**
+(rcbj, #186): the ACTOR is the REQUESTER; the SUBJECT is the delegated token's;
+S is the delegated assertion's Audience (`delegatedAudiences()`); R is the
+`AppliesTo`. **The element is the requested semantics**: `OnBehalfOf` is
+impersonation, `ActAs` delegation — and the policy decides whether the actor
+and subject allow them (`appDelegationSemantics`, `stsDelegationSemantics`).
 
-**ONLY AN APPLICATION MAY DELEGATE** — the owner's decision on #108. The
-requester's authenticated NAME must be an application entry's identifier;
-the credential it presented (a UsernameToken, verified against a
-`userPassword`) may be kept on a service account entry of the same name, which
-is the only way an application authenticates here. A requester that is only a
-PERSON is refused `STS-WSTRUST-0019`, and the fault says why.
+**A PERSON MAY ACT ONLY WITH THE ROLE `delegation.actorRole` NAMES**, and only
+toward an R that accepts them by name; a requester the realm does not know at
+all is refused the same way (`STS-WSTRUST-0019`). The credential an
+application presents (a UsernameToken, verified against a `userPassword`) may
+be kept on a service account entry of the same name, and the APPLICATION entry
+is what the policy reads (`partyFacts()` asks the registry first).
+
+**BOTH ELEMENTS IN ONE REQUEST ARE REFUSED IN EVERY MODE** —
+`wst:InvalidRequest`, `STS-WSTRUST-0025`: they ask for opposite semantics.
+**No `AppliesTo` is refused unless the act is a self one** (the policy's
+`no-target`).
 
 **A REFUSAL IS WS-TRUST 1.4 SECTION 11's `wst:RequestFailed`** ("The specified
 request failed"). `soapFault()` takes the fault code as an optional third
 argument and the request's own trust namespace as the fourth: on SOAP 1.1 it
 REPLACES `soap:Client` as the `faultcode`, and on SOAP 1.2 it is the `Subcode`
-under `soap:Sender` — section 11's own mapping. Every other refusal here still
-sends the generic fault, which is a gap worth a ticket rather than a sweep made
-on the side. `STS-WSTRUST-0018` for the attribute rule, `0019` for a person
-requester, `0020` for the XACML Deny.
+under `soap:Sender` — section 11's own mapping. The codes by refusal kind:
+`intermediary` `STS-WSTRUST-0019`, a realm policy's `policy` `0020`,
+`semantics` `0022`, `authority` `0023`, the target kinds (`target`,
+`targets`, `unregistered-target`, `no-target`) `0024`, the rest (a protected
+subject, may_act) `0018`.
 
 **ENFORCED IN PRODUCT** (`mode.authorizesDelegation()`); development issues and
 the act says "WOULD HAVE BEEN REFUSED in product: …". A refused act is recorded
@@ -248,3 +256,34 @@ holds or must hold a second factor is refused their own password with the one
 scoped to `wstrust` instead; the authentication row's method then says
 `(app password)`. `authn/CLAUDE.md` owns the rule. WS-Trust has no rate limit
 of its own for a refused UsernameToken, so there is nothing further to count.
+
+## IN A SERVICE DEPLOYED AS CELLS (#98 D10, 2026-09-28)
+
+`POST /sts` is a `handler` row of `common/cell_placement.ts`: an RST is
+relayed WHOLE to the home cell of the person whose credential it presents,
+before anything is read for the risk standing, verified, recorded or spent
+(`homeNameOf()`, `stsEndpoint()`). The name is, in order, the requester's
+UsernameToken's Username, the requester's own SAML assertion's NameID, and —
+with no requester credential, which only development allows — the subject of
+the OnBehalfOf / ActAs.
+
+**A SAML ASSERTION THIS REALM SIGNED WOULD VERIFY IN ANY CELL**, since the
+signing keys are the global tier's (D8), and it is relayed anyway: what
+follows the signature is the person's — the authentication recorded against
+their entry, the issuance policy and risk standing that read it, the issued
+token's attributes, and the browser session the exchange may start. None of
+that exists outside their home.
+
+**A DELEGATION ACROSS CELLS** is served at the REQUESTER's home, which does
+not hold the delegated subject's entry when they are homed elsewhere. That
+home is asked for their credential-free attributes (`fetch-attributes`,
+`common/cell_attributes.ts`), released only where the transfer policy says,
+and the exchange runs with them held in this process's directory for its own
+synchronous duration (`delegatedHere()`) — so the token's subject, its
+configured attributes, the delegation policy's flags on their entry and the
+issuance policy's roles are theirs. **Fail-closed (D6)**: home refusing
+(`STS-CELL-0124`, 403) or unreachable (`STS-CELL-0125`, 503) is a Fault and
+no token. A person already held here as a projection is read as they are.
+A NameID that is not a login name (an email address, a pairwise value) is
+unknown to the routing index and served where it arrives. Held in process by `tests/cell_saml_federation.js`.
+

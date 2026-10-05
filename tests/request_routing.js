@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -90,22 +90,84 @@ function withSettings(dispatch, fanout, fn) {
 }
 
 // ---------------------------------------------------------------------------
-// NOTHING IS DISPATCHED UNTIL SOMEBODY ASKS, which is the safety property the
-// whole pool rests on: it is landable before the state channel exists only
-// because the default routes nothing anywhere.
+// THE DEFAULT DISPATCHES EVERYTHING, AND NOTHING LEAVES WITHOUT A WORKER.
+//
+// Until #364 the default dispatch list was empty, and that was the safety
+// property the pool rested on: it was landable before the state channel
+// existed only because the default routed nothing anywhere. Since #364
+// (rcbj's decision) the defaults are one request worker THREAD, `*` and
+// read-your-write on — and the property moved to the worker COUNT:
+// `process_memory.requestWorkers()` makes the default of one mean NONE where
+// the store cannot coordinate (memory, ldif), so on this file's memory store
+// `*` names everything and the middleware still sends nothing anywhere. An
+// explicit empty list is still inert, and `tests/process_memory.js` holds the
+// count's rule on every store.
 // ---------------------------------------------------------------------------
-function checkTheDefaultIsInert(t) {
-  log.debug("Entering checkTheDefaultIsInert().");
-  t.log.info('=== with no dispatch list, nothing goes to a worker ===');
+function withoutSettings(names, fn) {
+  log.debug("Entering withoutSettings().");
+  const had = {};
+  names.forEach(function (name) {
+    had[name] = process.env[name];
+    delete process.env[name];
+  });
+  try {
+    fn();
+  } finally {
+    names.forEach(function (name) {
+      if (had[name] !== undefined) {
+        process.env[name] = had[name];
+      }
+    });
+    log.debug("Leaving withoutSettings().");
+  }
+}
+
+function checkTheDefault(t) {
+  log.debug("Entering checkTheDefault().");
+  t.log.info('=== the default names everything, and with no worker ' +
+             'nothing leaves ===');
+  withoutSettings(['STS_WORKERS_DISPATCH', 'STS_WORKERS_REQUEST_COUNT',
+                   'STS_WORKERS_READ_YOUR_WRITE', 'STS_PERSISTENCE_MODE'],
+  function () {
+    t.check(JSON.stringify(pool.dispatchPrefixes()) === '["*"]' &&
+            pool.operationDispatched('ldap.search') === true,
+            'workers.dispatch is * by default, paths and operations alike',
+            JSON.stringify(pool.dispatchPrefixes()));
+    t.check(pool.readYourWrite() === true,
+            'and read-your-write is on by default', '');
+    t.check(pool.dispatched('/scim/v2/Users') === true &&
+            pool.dispatched('/admin/worker-pools') === false,
+            'so every path is named, but the ones pinned to the front ' +
+            'process', '');
+    t.equal(pool.size(pool.PROTOCOL_POOL), 0,
+            'and on the memory store the default request worker count of ' +
+            'one means none');
+    let passed = 0;
+    const handler = pool.middleware();
+    ['/oauth2/authorize', '/scim/v2/Users', '/admin', '/admin-api/config',
+     '/portal', '/xacml/pdp'].forEach(function (url) {
+      let went = false;
+      handler({ method: 'GET', url: url, originalUrl: url, headers: {} },
+              {}, function () {
+                went = true;
+              });
+      if (went) {
+        passed++;
+      }
+    });
+    t.equal(passed, 6, 'so the middleware hands every request on to this ' +
+            'process — nothing is dispatched, because there is nowhere to ' +
+            'send it');
+  });
   withSettings('', '/scim,/xacml,/admin-api', function () {
     ['/oauth2/authorize', '/scim/v2/Users', '/admin', '/admin-api/config',
      '/portal', '/xacml/pdp'].forEach(function (url) {
       t.check(pool.dispatched(url) === false,
-              'nothing is dispatched by default: ' + url,
+              'an explicit empty dispatch list names nothing: ' + url,
               String(pool.dispatched(url)));
     });
   });
-  log.debug("Leaving checkTheDefaultIsInert().");
+  log.debug("Leaving checkTheDefault().");
 }
 
 // ---------------------------------------------------------------------------
@@ -469,9 +531,10 @@ function checkOperations(t) {
   t.log.info('=== operations and paths come out of one setting ===');
   const had = process.env.STS_WORKERS_DISPATCH;
   try {
-    delete process.env.STS_WORKERS_DISPATCH;
+    process.env.STS_WORKERS_DISPATCH = '';
     t.check(pool.operationDispatched('ldap.search') === false,
-            'NOTHING is dispatched by default, of either kind',
+            'an empty list dispatches nothing, of either kind (the default ' +
+            'is `*` since #364; see checkTheDefault())',
             String(pool.operationDispatched('ldap.search')));
 
     process.env.STS_WORKERS_DISPATCH = 'ldap';
@@ -773,7 +836,7 @@ function checkTheSurfacePool(t) {
 
 function run(t) {
   log.debug("Entering run().");
-  checkTheDefaultIsInert(t);
+  checkTheDefault(t);
   checkThePrefixEndsAtASegment(t);
   checkTheRoutingPolicy(t);
   checkDispatchEverything(t);

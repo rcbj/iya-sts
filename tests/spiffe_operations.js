@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -38,7 +38,8 @@
 //
 // It drives `spiffeGrpc.performMethod()` — the function a worker runs — and
 // `spiffeGrpc.errorFromResult()`, the front process's half, against the
-// handlers those two share. No port, no fork, no container.
+// handlers those two share. No port and no container; section 2 alone starts
+// a worker thread, because the channel is what it asserts.
 //
 // **IT DOES NOT ASSERT WHAT A HANDLER ANSWERS.** Whether `BatchCreateEntry`
 // creates the right entry is `spiffe_api.js`'s business and the parent suite's;
@@ -47,12 +48,16 @@
 // the seam is responsible for.
 // ===========================================================================
 
-const child_process = require('child_process');
+const workerThreads = require('worker_threads');
+const os = require('os');
 const path = require('path');
 const fs = require('fs');
 const spiffeGrpc = require('../spiffe/spiffe_grpc');
 const spiffeServer = require('../spiffe/spiffe_server');
 const worker = require('../common/request_worker');
+const requestPool = require('../common/request_pool');
+// The channel a worker thread speaks since #364; see section 2.
+const WorkerChannel = require('../common/worker_channel');
 
 // This file's own logger, for the Entering/Leaving lines and the handled
 // exceptions the code style asks for. Its level is LOG_LEVEL, which is also
@@ -87,10 +92,9 @@ function callerLike(fields) {
 function dispatched(surface, method, request, caller) {
   log.debug("Entering dispatched().");
   // **STRUCTURED CLONE AND NOT `JSON.parse(JSON.stringify(...))`**, which is
-  // where this file differs from the directory's and is the point of section 2:
-  // the request pool forks with `serialization: 'advanced'` precisely because
-  // these messages carry Buffers, and cloning through JSON here would be
-  // testing a channel this service does not use.
+  // where this file differs from the directory's: a worker is a THREAD since
+  // #364 and `postMessage()` IS the structured clone, so this is the channel
+  // this service uses — less the Buffer revival section 2 holds on its own.
   const args = structuredClone({ request: request, caller: caller || null });
   log.debug("Leaving dispatched().");
   return spiffeGrpc.performMethod(surface, method, args);
@@ -158,80 +162,175 @@ async function checkAMethodAgrees(t) {
 // CSRs and private keys as protobuf `bytes`, which grpc-js gives a handler as a
 // Buffer and expects back as one.
 //
-// The request pool forked with node's DEFAULT JSON serialization until
-// 2026-09-12, and JSON does not merely bloat a Buffer — `JSON.stringify` turns
-// it into `{"type":"Buffer","data":[…]}`, so it arrives at the far end as a
-// PLAIN OBJECT.
+// **THE CHANNEL HAS CHANGED TWICE, AND EACH TIME THIS WAS THE TRAP.** The
+// pool forked with node's DEFAULT JSON serialization until 2026-09-12, which
+// turns a Buffer into `{"type":"Buffer","data":[…]}`; it forked with
+// `serialization: 'advanced'` from then until #364, whose IPC handed back a
+// real Buffer. Since #364 a worker is a `worker_threads` THREAD and the channel
+// is `postMessage()`, whose structured clone has no Buffer: one arrives as a
+// plain Uint8Array, and protobuf serialisation fails naming a field, one
+// thread away from the cause. `common/worker_channel.ts` REVIVES every
+// Uint8Array it receives into a Buffer, on both ends — `WorkerChannel.on()` in
+// the worker, `startThread()`'s message handler in the front process.
 //
-// **IT FORKS, AND THE FIRST VERSION OF THIS SECTION DID NOT AND WAS WRONG.**
-// It modelled the channel with `structuredClone()`, which is the algorithm the
-// documentation names — and `structuredClone(Buffer)` gives a **Uint8Array**,
-// because the Buffer subclass is not part of that algorithm, while node's IPC
-// gives back a real Buffer. So the model was HARSHER than the channel and the
-// section failed against a service that was working. A test that models a
-// mechanism can only be as right as the model; the mechanism here is one fork
-// away, so it is asserted directly.
+// So this runs the REAL pool: `fork()` starts a stub worker thread that
+// listens through the real `WorkerChannel`, and `runOperation()` sends it a
+// CSR as a SPIFFE operation. The stub says what it saw and sends the bytes
+// back, and the answer arrives through the pool's own receive path. Both
+// directions are asserted, because each end revives on its own.
 //
-// The default-serialization control beside it is what makes this a comparison
-// rather than a restatement of how Buffers work.
+// THE CONTROL beside it is a bare thread on the same channel with no revival
+// (`tests/tools/thread_echo.js`): it must see a Uint8Array, or the revival this
+// section exists for is unnecessary and its reasoning is wrong.
 // ---------------------------------------------------------------------------
-function roundTrip(options) {
-  log.debug("Entering roundTrip().");
-  log.debug("Leaving roundTrip().");
+const CSR = [0x30, 0x82, 0x01, 0xff, 0x00, 0x7f];
+
+// A stub worker thread over the real channel: `begin` in, `ready` out, and an
+// operation answered with what it saw of `args.csr` and the bytes themselves.
+function channelStub() {
+  log.debug("Entering channelStub().");
+  log.debug("Leaving channelStub().");
+  return [
+    "'use strict';",
+    "const http = require('http');",
+    "const WorkerChannel = require(" + JSON.stringify(
+      path.join(__dirname, '..', 'common', 'worker_channel')) + ");",
+    "const EXPECT = Buffer.from(" + JSON.stringify(CSR) + ");",
+    "WorkerChannel.on(function (m) {",
+    "  if (m && m.stop) { process.exit(0); }",
+    "  if (m && m.operation) {",
+    "    const csr = m.args && m.args.csr;",
+    "    WorkerChannel.send({ operation: true, id: m.id, ok: true,",
+    "      ran: true, result: {",
+    "        sawBuffer: Buffer.isBuffer(csr),",
+    "        sawType: (csr && csr.constructor && csr.constructor.name) ||",
+    "                 typeof csr,",
+    "        sameBytes: Buffer.isBuffer(csr) &&",
+    "                   Buffer.compare(csr, EXPECT) === 0,",
+    "        echo: csr } });",
+    "    return;",
+    "  }",
+    "  if (!m || !m.begin) { return; }",
+    "  const server = http.createServer(function (req, res) {",
+    "    res.end('');",
+    "  });",
+    "  server.listen(m.socket, function () {",
+    "    WorkerChannel.send({ ready: true });",
+    "  });",
+    "});",
+    ""
+  ].join('\n');
+}
+
+// The control: a bare thread on `postMessage()` with nothing revived.
+function bareThreadSees() {
+  log.debug("Entering bareThreadSees().");
+  log.debug("Leaving bareThreadSees().");
   return new Promise(function (resolve, reject) {
-    const child = child_process.fork(
-      path.join(__dirname, 'tools', 'ipc_echo.js'), [], options);
+    const thread = new workerThreads.Worker(
+      path.join(__dirname, 'tools', 'thread_echo.js'));
     const timer = setTimeout(function () {
-      child.kill();
-      reject(new Error('the echo child did not answer within 10s'));
+      thread.terminate();
+      reject(new Error('the echo thread did not answer within 10s'));
     }, 10000);
-    child.once('message', function (message) {
+    thread.once('message', function (message) {
       clearTimeout(timer);
-      child.kill();
+      thread.terminate();
       resolve(message);
     });
-    child.once('error', function (err) {
+    thread.once('error', function (err) {
       clearTimeout(timer);
       reject(err);
     });
-    child.send({ csr: Buffer.from([0x30, 0x82, 0x01, 0xff, 0x00, 0x7f]) });
+    thread.postMessage({ csr: Buffer.from(CSR) });
   });
+}
+
+// Sets `vars` for the length of `fn` and puts them back, whatever happens.
+async function withVars(vars, fn) {
+  log.debug("Entering withVars().");
+  const had = {};
+  Object.keys(vars).forEach(function (name) {
+    had[name] = process.env[name];
+    process.env[name] = vars[name];
+  });
+  try {
+    await fn();
+  } finally {
+    Object.keys(had).forEach(function (name) {
+      if (had[name] === undefined) {
+        delete process.env[name];
+      } else {
+        process.env[name] = had[name];
+      }
+    });
+    log.debug("Leaving withVars().");
+  }
 }
 
 async function checkBytesSurvive(t) {
   log.debug("Entering checkBytesSurvive().");
   t.log.info('=== a bytes field crosses the real channel as a Buffer ===');
 
-  const advanced = await roundTrip({ serialization: 'advanced',
-                                     stdio: ['ignore', 'ignore', 'ignore',
-                                             'ipc'] });
-  t.check(advanced.sawBuffer === true,
-          'the child of an advanced-serialization fork sees a Buffer (' +
-          advanced.sawType + ')',
-          'it saw ' + advanced.sawType + ' — grpc-js would be handed a ' +
-          'non-Buffer for a bytes field, and the failure would land inside ' +
-          'protobuf serialization one process away from the cause');
-  t.check(advanced.sameBytes === true,
-          'and the same bytes',
-          'the bytes changed across the channel');
+  const stubPath = path.join(os.tmpdir(), 'sts-stub-spiffe-bytes-' +
+                             process.pid + '.js');
+  fs.writeFileSync(stubPath, channelStub());
+  // One worker, the SPIFFE family dispatched, and no read barrier: what is
+  // being asserted is the channel, not the ticket machinery around it.
+  await withVars({ STS_WORKERS_REQUEST_COUNT: '1',
+                   STS_WORKERS_DISPATCH: 'spiffe',
+                   STS_WORKERS_READ_YOUR_WRITE: 'false' }, async function () {
+    requestPool.reset();
+    requestPool.useWorkerModule(stubPath);
+    try {
+      const entry = requestPool.fork(requestPool.PROTOCOL_POOL, 0);
+      await entry.settled;
+      t.check(entry.ready, 'a stub worker thread comes up on the real ' +
+              'channel', '');
+      const answer = await requestPool.runOperation(
+        'spiffe.server.Entry.ListEntries', { csr: Buffer.from(CSR) });
+      const seen = (answer && answer.result) || {};
+      t.check(answer && answer.dispatched === true,
+              'the operation was dispatched to the thread',
+              JSON.stringify(answer));
+      t.check(seen.sawBuffer === true,
+              'the worker thread sees a Buffer (' + seen.sawType + ')',
+              'it saw ' + seen.sawType + ' — grpc-js would be handed a ' +
+              'non-Buffer for a bytes field, and the failure would land ' +
+              'inside protobuf serialization one thread away from the cause');
+      t.check(seen.sameBytes === true, 'and the same bytes',
+              'the bytes changed across the channel');
+      t.check(Buffer.isBuffer(seen.echo) &&
+              Buffer.compare(seen.echo, Buffer.from(CSR)) === 0,
+              'and the bytes it sends back arrive in the front process as a ' +
+              'Buffer too',
+              'they arrived as ' + (seen.echo && seen.echo.constructor &&
+                                    seen.echo.constructor.name));
+    } finally {
+      await requestPool.stop(3000);
+      requestPool.reset();
+      try {
+        fs.unlinkSync(stubPath);
+      } catch (e) {
+        log.debug("Caught in checkBytesSurvive(): " +
+                  ((e && e.message) || e));
+      }
+    }
+  });
 
-  // THE CONTROL: the channel this replaced. Without it the assertion above is
-  // a statement about node rather than about a decision this repository made.
-  const plain = await roundTrip({ stdio: ['ignore', 'ignore', 'ignore',
-                                          'ipc'] });
-  t.check(plain.sawBuffer === false,
-          'and the default JSON channel did NOT (' + plain.sawType + ')',
-          'JSON preserved the Buffer, so the serialization change this ' +
-          'section exists for was unnecessary and its reasoning is wrong');
-
-  // AND THE FORK REALLY ASKS FOR IT. A comment saying "advanced" and a fork
-  // without the option is exactly the shape of drift nothing else here checks.
-  const source = fs.readFileSync(
-    path.join(__dirname, '..', 'common', 'request_pool.js'), 'utf8');
-  t.check(/serialization:\s*'advanced'/.test(source),
-          'and the request pool forks its workers asking for it',
-          'common/request_pool.js does not pass serialization: advanced, so ' +
-          'every bytes field in this family would arrive as a plain object');
+  // THE CONTROL: the same channel with nothing revived. Without it the
+  // assertions above are a statement about node rather than about a decision
+  // this repository made.
+  const bare = await bareThreadSees();
+  t.check(bare.sawBuffer === false && bare.sawType === 'Uint8Array',
+          'and a bare thread on postMessage() does NOT see a Buffer (' +
+          bare.sawType + ')',
+          'postMessage() preserved the Buffer, so the revival in ' +
+          'common/worker_channel.ts is unnecessary and this section\'s ' +
+          'reasoning is wrong');
+  t.check(WorkerChannel.revive({ csr: new Uint8Array(CSR) }).csr instanceof
+          Buffer,
+          'which is what WorkerChannel.revive() turns back', '');
   log.debug("Leaving checkBytesSurvive().");
 }
 

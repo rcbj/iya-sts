@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -110,8 +110,11 @@ async function run(t) {
       tree.scopes.filter(function (one) { return one.scope === REALM_B; })[0];
 
   t.equal(a.issuing.map(function (one) { return one.id; }).join(','),
-          'jose,xml,assertions,spiffe,pep-tls,acme,est,scep,tls-client',
-          'a REALM carries the nine use cases whose keys belong to a realm. ' +
+          'jose,xml,assertions,spiffe,pep-tls,realm-tls,acme,est,scep,' +
+          'tls-client',
+          'a REALM carries the ten use cases whose keys belong to a realm. ' +
+          'The tenth arrived 2026-10-02 (#99): the certificate a realm\'s ' +
+          'own front-end listener presents. ' +
           'The ninth arrived 2026-09-13 too: the TLS client certificates a ' +
           'person issues themselves on the user portal. ' +
           'The last three arrived 2026-09-13, one Issuing CA per enrollment ' +
@@ -126,7 +129,9 @@ async function run(t) {
           'tls',
           'and the PROCESS branch carries the one whose key is shared by ' +
           'every realm — a realm\'s Intermediate signing the TLS certificate ' +
-          'would be one realm vouching for every other realm\'s front door');
+          'would be one realm vouching for every other realm\'s front door. ' +
+          '(A service deployed as cells adds a second, `cell`, for the ' +
+          'inter-cell channel (#98); a single-cell service never builds it.)');
   t.check(a.issuing.every(function (one) { return one.built; }) &&
           process.issuing.every(function (one) { return one.built; }),
           'every Issuing CA in every scope is built, because a branch is ' +

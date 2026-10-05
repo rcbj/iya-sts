@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -97,11 +97,11 @@ async function mintAnchors() {
   const credentials = require('./tools/pep-credential.js');
   const stamp = process.pid + '-' + Date.now();
   const one = await credentials.mint({
-    rootSubject: 'CN=truststore-admin A ' + stamp + ',O=mock-sts tests',
-    subject: 'CN=truststore-admin-leaf-a,O=mock-sts tests' });
+    rootSubject: 'CN=truststore-admin A ' + stamp + ',O=iya-sts tests',
+    subject: 'CN=truststore-admin-leaf-a,O=iya-sts tests' });
   const two = await credentials.mint({
-    rootSubject: 'CN=truststore-admin B ' + stamp + ',O=mock-sts tests',
-    subject: 'CN=truststore-admin-leaf-b,O=mock-sts tests' });
+    rootSubject: 'CN=truststore-admin B ' + stamp + ',O=iya-sts tests',
+    subject: 'CN=truststore-admin-leaf-b,O=iya-sts tests' });
   log.debug("Leaving mintAnchors().");
   return { a: one.anchorPem, b: two.anchorPem, spare: two.issuing.pem,
            clientA: { cert: one.certPem, key: one.keyPem } };

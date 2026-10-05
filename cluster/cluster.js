@@ -1,6 +1,6 @@
 // @ts-check
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -61,6 +61,8 @@ const capabilities = require('./cluster_capabilities');
 // A leaf requiring only `config` and `error_codes` (rule 3ap), so this adds
 // nothing to what loads before the store's gate.
 const cacheRegistry = require('../common/cache_registry');
+// This thread's identity (#364); see common/worker_channel.ts.
+const WorkerChannel = require('../common/worker_channel');
 
 const log = bunyan.createLogger({ name: 'sts-cluster' });
 config.registerLogger(log);
@@ -734,7 +736,8 @@ function attach(theDriver) {
       'cluster: a request worker of an active-passive node was forked ' +
       'without the service lease\'s token.'));
   }
-  log.info('cluster: request worker ' + process.pid + ' attached to node ' +
+  log.info('cluster: request worker ' + WorkerChannel.processTag() +
+           ' attached to node ' +
            nodeId + ' (' + resolved.mode + ').');
   // READ THE MEMBERSHIP NOW, NOT ON THE FIRST PAGE THAT ASKS (2026-09-18).
   // A worker has no heartbeat, so the only thing that ever read the member
@@ -1274,8 +1277,75 @@ function state() {
       delete copy.fingerprint;
       return copy;
     });
+    // The rows folded by name, beside the whole list (foldMembers()).
+    answer.members = foldMembers(answer.nodes, answer.now);
     return answer;
   });
+}
+
+// THE MEMBERS FOLDED BY NAME (2026-09-30). A node restarted under the same
+// name joins under a fresh node id, so every restart leaves a dead membership
+// row until the 24-hour sweep — and the Cluster page drew each as one more
+// node "that left or expired": testidpna showed 24 beside three healthy
+// members. The name is what an operator means by a node (the persistence
+// origin and the Worker Pools and Node Health pages already key by it), so a
+// dead row whose name has a LIVE row is that node's RESTART HISTORY, counted
+// on the live row, and only a name with no live row at all has left or
+// expired — drawn once, as its latest row, with its earlier lives counted.
+// The rows themselves are untouched: this is a reading of them, and the API
+// carries the whole list beside it.
+/**
+ * Folds membership rows by node name.
+ *
+ * @param nodes - the member rows, as `state()` answers them
+ * @param now - the database clock, in milliseconds
+ * @returns `{ live, restarts, gone }`: the live rows; for each live name, how
+ *   many earlier rows it has and when the latest of them ended; and one row
+ *   per name with no live row (its latest), with `earlierLives`
+ */
+function foldMembers(nodes, now) {
+  log.debug("Entering foldMembers().");
+  const isLive = function (node) {
+    return !node.leftAt && node.expiresAt > now;
+  };
+  const endOf = function (node) {
+    return node.leftAt || node.expiresAt || 0;
+  };
+  const live = (nodes || []).filter(isLive);
+  const liveNames = new Set(live.map(function (node) {
+    return node.name || '';
+  }));
+  const restarts = {};
+  const goneByName = new Map();
+  (nodes || []).forEach(function (node) {
+    if (isLive(node)) {
+      return;
+    }
+    const name = node.name || '';
+    // A row with no name cannot be anybody's earlier life: it stands alone.
+    if (name && liveNames.has(name)) {
+      const r = restarts[name] || { count: 0, lastEndedAt: 0 };
+      r.count += 1;
+      r.lastEndedAt = Math.max(r.lastEndedAt, endOf(node));
+      restarts[name] = r;
+      return;
+    }
+    const key = name || ('id:' + node.nodeId);
+    const held = goneByName.get(key);
+    if (!held) {
+      goneByName.set(key, Object.assign({}, node, { earlierLives: 0 }));
+    } else if (endOf(node) > endOf(held)) {
+      goneByName.set(key, Object.assign({}, node,
+                                        { earlierLives: held.earlierLives + 1 }));
+    } else {
+      held.earlierLives += 1;
+    }
+  });
+  const gone = Array.from(goneByName.values()).sort(function (a, b) {
+    return endOf(b) - endOf(a);
+  });
+  log.debug("Leaving foldMembers().");
+  return { live: live, restarts: restarts, gone: gone };
 }
 
 // THE LAST STATE READ, for a console page that is drawn synchronously. Read on
@@ -1434,6 +1504,7 @@ module.exports = {
   state: state,
   refreshState: refreshState,
   snapshot: snapshot,
+  foldMembers: foldMembers,
   // The main port's leaves, on this node's row and read off every live one's
   // (#248, the SAML metadata's back-channel key).
   setListenerCertificates: setListenerCertificates,

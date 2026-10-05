@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -120,8 +120,16 @@ const JWT_PATTERN = /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]*$/;
 
 // Setup flows in progress: state -> { username, provider, verifier, at }.
 // PERSISTED: the provider may send the person back to another node.
-const flows = realms.map({ persist: 'oauth2.claimSourceFlows',
-                           retain: 'age' });
+// `expiresAt` (#333): a link request lives FLOW_TTL_MS from its `at`.
+const flows = realms.map({
+  persist: 'oauth2.claimSourceFlows',
+  retain: 'age',
+  // A hot path (every row a flush writes): no Entering/Leaving pair.
+  expiresAt: function (flow: Json): number | null {
+    const at = Number(flow && flow.at);
+    return at > 0 ? at + FLOW_TTL_MS : null;
+  }
+});
 
 interface Provider {
   id: string;
@@ -264,7 +272,7 @@ class ClaimsProviders {
   private open(stored: string, label: string): string {
     const { log, keystore } = this.deps;
     log.debug("Entering ClaimsProviders.open(). " + label);
-    if (!/^\$aesgcm\$/.test(String(stored || ''))) {
+    if (!stsCrypto.isEncryptedWithKek(String(stored || ''))) {
       log.debug("Leaving ClaimsProviders.open(). Not sealed.");
       return String(stored || '');
     }
@@ -1208,6 +1216,35 @@ class ClaimsProviders {
   }
 
   /**
+   * Says whether a realm has nothing for the refresh job to do: no Claims
+   * Provider registered and no link request pending. Asked outside any
+   * realm, so it enters the one named.
+   *
+   * @param realmId - the realm
+   * @returns true when the job has nothing to do there
+   */
+  idleIn(realmId: string): boolean {
+    const { log } = this.deps;
+    log.debug("Entering ClaimsProviders.idleIn(). " + realmId);
+    const self = this;
+    const realm = realms.get(String(realmId || realms.DEFAULT_ID));
+    if (!realm) {
+      log.debug("Leaving ClaimsProviders.idleIn(). No such realm.");
+      return true;
+    }
+    if (flows.realmMap(realm.id).size > 0) {
+      log.debug("Leaving ClaimsProviders.idleIn(). A request is pending.");
+      return false;
+    }
+    const none = realms.run(realm, function (): boolean {
+      return self.list().length === 0;
+    });
+    log.debug("Leaving ClaimsProviders.idleIn(). " + (none ? 'Idle.' :
+                                                         'Providers.'));
+    return none;
+  }
+
+  /**
    * Registers the refresh job on the scheduler, once.
    */
   scheduleJobs(): void {
@@ -1228,6 +1265,18 @@ class ClaimsProviders {
       owner: 'oauth-oidc/claims_providers.ts',
       kind: 'cluster', scope: 'realm', everyMs: function (): number {
         return 60000;
+      },
+      // OFF IN A REALM WITH NOTHING TO REFRESH (#338). It ran every minute
+      // in EVERY realm — each run a claim and a recorded row — and in a
+      // realm with no Claims Provider registered it can do nothing: a link
+      // needs a provider, and a link request with no provider left expires
+      // on its own (#333's hook on `flows`). On testidp that was 270 of the
+      // 300 most recent runs, in realms that had never registered one.
+      off: function (realmId: string): string {
+        return self.idleIn(realmId)
+          ? 'no Claims Provider is registered in this realm and no link ' +
+            'request is pending'
+          : '';
       },
       manual: true,
       run: function (): Promise<Json> {

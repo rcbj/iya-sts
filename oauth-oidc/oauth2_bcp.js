@@ -1,6 +1,6 @@
 // @ts-check
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -1935,7 +1935,9 @@ function maxTransactions() {
 // this behaves as the plain Map it replaced. See common/realms.js.
 // 'pkce:x' / 'nonce:x' -> record
 const transactions = realms.map({ persist: 'oauth2_bcp.transactions',
-                                  retain: 'age' });
+                                  retain: 'age',
+                                  // #333: the sweep's `forget`, ms.
+                                  expiresAt: realms.expiryField('forget', 1) });
 
 function forgetStaleTransactions() {
   log.debug("Entering forgetStaleTransactions().");
@@ -2468,20 +2470,38 @@ function checkClientRegistration(metadata) {
 // OAuth 2.1's PKCE exemption all ask it — and they were two inline copies of
 // one expression until 2026-09-13, which is the shape that disagrees the first
 // time a method is added.
+//
+// SEVERAL DECLARED METHODS (2026-10-01): asked about ONE method — the one a
+// request presented, `clientAuth.methodFor()` — where there is a request,
+// and otherwise about any of them, which is what "can this client
+// authenticate at all" means to the PKCE exemption.
 /**
  * Tells whether a confidential client has anything on file to check its
  * declared method against.
  *
  * @param registered - the client's configuration
+ * @param asked - one declared method to ask about; every declared method
+ *   when omitted
  * @returns true when it has
  */
-function credentialOnFile(registered) {
+function credentialOnFile(registered, asked) {
   log.debug("Entering credentialOnFile().");
   if (!registered || !isConfidential(registered)) {
     log.debug("Leaving credentialOnFile(). Not a confidential client.");
     return false;
   }
-  const method = String(registered.token_endpoint_auth_method).trim();
+  if (asked === undefined) {
+    const every = [].concat(registered.token_endpoint_auth_methods &&
+                            registered.token_endpoint_auth_methods.length
+      ? registered.token_endpoint_auth_methods
+      : [registered.token_endpoint_auth_method]);
+    const any = every.some(function (one) {
+      return credentialOnFile(registered, String(one || '').trim());
+    });
+    log.debug("Leaving credentialOnFile(). Any of " + every.length + ".");
+    return any;
+  }
+  const method = String(asked || '').trim();
   const have =
     (clientAuth.SYMMETRIC_METHODS.indexOf(method) >= 0 &&
      registered.client_secret) ||
@@ -2519,7 +2539,7 @@ function credentialOnFile(registered) {
 // `private_key_jwt` assertion may be signed with one of the eleven
 // post-quantum algorithms this service advertises for client authentication —
 // seconds of computation on the thread that owns every listener here. See
-// common/worker.js. What this function DECIDES is unchanged: the policy is
+// common/pq_native.js. What this function DECIDES is unchanged: the policy is
 // still this module's and the mechanics are still client_auth.js's.
 // ---------------------------------------------------------------------------
 // WHAT THIS REQUEST DEMONSTRATED ABOUT THE CLIENT — AN OBSERVATION, NEVER A
@@ -2609,8 +2629,12 @@ async function observeClientAuthentication(opts) {
                   'token_endpoint_auth_method="none", so it has no ' +
                   'credential to present and presenting none is correct.' };
   }
-  const method = String(registered.token_endpoint_auth_method).trim();
-  const haveCredential = credentialOnFile(registered);
+  // WHICH DECLARED METHOD THIS REQUEST PRESENTED (2026-10-01): an entry may
+  // declare several, and the one verified is the one on the wire.
+  const method = clientAuth.methodFor(registered, {
+    request: opts.request, clientSecret: opts.clientSecret,
+    assertion: opts.assertion, assertionType: opts.assertionType });
+  const haveCredential = credentialOnFile(registered, method);
   if (!haveCredential) {
     log.debug("Leaving observeClientAuthentication(). Confidential with " +
               "nothing on file.");
@@ -2631,6 +2655,9 @@ async function observeClientAuthentication(opts) {
     // audience (#229).
     issuer: opts.issuer || '',
     presentedSecret: opts.clientSecret,
+    // Every method the entry declares, for a refusal that has to say what
+    // to send (2026-10-02).
+    declaredMethods: clientAuth.declaredMethodsOf(registered),
     assertion: opts.assertion,
     assertionType: opts.assertionType,
     clientSecret: registered.client_secret,
@@ -2669,6 +2696,25 @@ async function observeClientAuthentication(opts) {
            why: 'it authenticated with ' + method + '.' };
 }
 
+// WHAT THE ENTRY DECLARES, as a refusal says it (2026-10-02): every method
+// where it declares several, so the sentence does not name the first alone.
+/**
+ * Names the token endpoint authentication method(s) a client declares.
+ *
+ * @param registered - the client's configuration
+ * @param method - the method being verified, used where none is declared
+ * @returns `token_endpoint_auth_method=x`, or
+ *   `token_endpoint_auth_methods x, y`
+ */
+function declaredText(registered, method) {
+  log.debug("Entering declaredText().");
+  const declared = clientAuth.declaredMethodsOf(registered);
+  log.debug("Leaving declaredText().");
+  return declared.length > 1
+    ? 'token_endpoint_auth_methods ' + declared.join(', ')
+    : 'token_endpoint_auth_method=' + (declared[0] || method);
+}
+
 /**
  * Refuses, in RFC 9700 mode, a confidential client that did not authenticate
  * with the method it declared; a client with nothing on file is let through.
@@ -2690,7 +2736,11 @@ async function checkClientAuthentication(opts) {
     log.debug("Leaving checkClientAuthentication(). The client is public.");
     return { ok: true };
   }
-  const method = String(registered.token_endpoint_auth_method).trim();
+  // WHICH DECLARED METHOD THIS REQUEST PRESENTED (2026-10-01): an entry may
+  // declare several, and the one verified is the one on the wire.
+  const method = clientAuth.methodFor(registered, {
+    request: opts.request, clientSecret: opts.clientSecret,
+    assertion: opts.assertion, assertionType: opts.assertionType });
 
   // A confidential client with NOTHING ON FILE to check against is not refused:
   // there is nothing to compare, and inventing a refusal for one would be
@@ -2698,7 +2748,7 @@ async function checkClientAuthentication(opts) {
   // seen alone. It happens for an application created by hand and given a
   // method but no credential, which is a half-configured client rather than a
   // wrong one, and the log line says which.
-  const haveCredential = credentialOnFile(registered);
+  const haveCredential = credentialOnFile(registered, method);
   if (!haveCredential) {
     log.warn('RFC 9700 section 2.5: client "' + (opts.clientId || '(unnamed)') +
              '" ' +
@@ -2729,6 +2779,9 @@ async function checkClientAuthentication(opts) {
     // audience (#229).
     issuer: opts.issuer || '',
     presentedSecret: opts.clientSecret,
+    // Every method the entry declares, for a refusal that has to say what
+    // to send (2026-10-02).
+    declaredMethods: clientAuth.declaredMethodsOf(registered),
     assertion: opts.assertion,
     assertionType: opts.assertionType,
     clientSecret: registered.client_secret,
@@ -2763,7 +2816,7 @@ async function checkClientAuthentication(opts) {
              requirement: 'client-authentication',
              description: 'RFC 9700 section 2.5: this client\'s entry in the ' +
                           'application registry declares ' +
-                          'token_endpoint_auth_method=' + method + ', ' +
+                          declaredText(registered, method) + ', ' +
                           'so it must authenticate — ' +
                           'and ' + checked.description };
   }
@@ -2916,6 +2969,8 @@ function maxRefreshTokens() {
 // record back as unrotated, which would make the replay it marks undetectable.
 const refreshTokens = realms.map({
   persist: 'oauth2_bcp.refreshTokens', tombstone: true,
+  // #333: the sweep's `forget`, ms.
+  expiresAt: realms.expiryField('forget', 1),
   mergeRow: function (mine, theirs) {
     log.debug("Entering mergeRow().");
     log.debug("Leaving mergeRow().");
@@ -2933,7 +2988,12 @@ const refreshTokens = realms.map({
 // this behaves as the plain Map it replaced. See common/realms.js.
 // family -> { clientId, forget, lastUsedAt } — no `members` array since #46
 // (see `membersOf()`); a row restored from an older build may still carry one.
-const refreshFamilies = realms.map({ persist: 'oauth2_bcp.refreshFamilies' });
+// `expiresAt` (#333): the family's absolute `forget`, ms, moved forward at
+// every issuance — the idle rule refuses earlier but deletes nothing.
+const refreshFamilies = realms.map({
+  persist: 'oauth2_bcp.refreshFamilies',
+  expiresAt: realms.expiryField('forget', 1)
+});
 
 function forgetStaleRefreshTokens() {
   log.debug("Entering forgetStaleRefreshTokens().");
@@ -3142,7 +3202,9 @@ function noteRefreshIssued(jti, parentJti, clientId, parentFamily) {
 // ---------------------------------------------------------------------------
 // refresh jti -> { family, access, clientId, forget }
 const grantTokens = realms.map({ persist: 'oauth2_bcp.grantTokens',
-                                 tombstone: true });
+                                 tombstone: true,
+                                 // #333: the sweep's `forget`, ms.
+                                 expiresAt: realms.expiryField('forget', 1) });
 
 function forgetStaleGrantTokens() {
   log.debug("Entering forgetStaleGrantTokens().");
@@ -3796,6 +3858,33 @@ function noteTokenBinding(opts) {
  * @returns `{ ok: true }`, or `{ ok: false, errorCode, error, requirement,
  *   description }` with `revoke`
  */
+// ---------------------------------------------------------------------------
+// WHETHER AN AUTHORIZATION CODE MAY OUTLIVE A FAILED PRESENTATION (#424).
+//
+// rcbj, 2026-10-02: "The caller can only submit a request with that
+// authorization code once. Then, they have to start the flow / grant over
+// again." So by default a code is SPENT at its first presentation, whatever
+// that request's outcome. `oauth2.codeReplayIdempotent` (off by default)
+// brings back the old leniency — a refused request leaves the code redeemable
+// and an identical repeat is answered with the same tokens — and, like the
+// relaxation below, never in this mode (and so never in OAuth 2.1, FAPI or
+// product mode, which imply it).
+// ---------------------------------------------------------------------------
+/**
+ * Tells whether authorization code redemption is relaxed: a refused Token
+ * Request leaves the code redeemable, and an identical repeat is answered
+ * with the same tokens.
+ *
+ * @returns true only outside this mode with oauth2.codeReplayIdempotent on
+ */
+function codeRedemptionRelaxed() {
+  log.debug("Entering codeRedemptionRelaxed().");
+  const relaxed = !enabled() &&
+    config.value('oauth2.codeReplayIdempotent') === true;
+  log.debug("Leaving codeRedemptionRelaxed(). " + relaxed);
+  return relaxed;
+}
+
 function checkCodeReplay(opts) {
   log.debug("Entering checkCodeReplay().");
   // RFC 6749 section 4.1.2's MUST, in every mode since #187: the relaxation
@@ -4303,6 +4392,7 @@ module.exports = {
   rememberTransactionValues: rememberTransactionValues,
   checkTokenRequest: checkTokenRequest,
   checkCodeReplay: checkCodeReplay,
+  codeRedemptionRelaxed: codeRedemptionRelaxed,
   noteRedeemed: noteRedeemed,
   applyToMetadata: applyToMetadata,
   state: state

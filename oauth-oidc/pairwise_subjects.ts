@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -75,6 +75,9 @@ const LABEL = 'oidc-pairwise-sub';
 // The pairwise DEVICE identifier's own label (#164 phase 6): a device id
 // derived under the subject's label could collide with a person's `sub`.
 const DEVICE_LABEL = 'oidc-pairwise-device-id';
+// The GNAP opaque subject identifier's own label (#432 phase 7), for the
+// device label's reason: it must never equal an OIDC pairwise `sub`.
+const GNAP_OPAQUE_LABEL = 'gnap-opaque-sub';
 /**
  * The scheduler job id that removes expired ephemeral subject mappings.
  */
@@ -299,6 +302,86 @@ class PairwiseSubjects {
       sector, id);
     log.debug("Leaving PairwiseSubjects.deviceIdFor(). pairwise.");
     return derived;
+  }
+
+  // -------------------------------------------------------------------------
+  // THE GNAP OPAQUE SUBJECT IDENTIFIER A CLIENT INSTANCE IS TOLD (#432
+  // phase 7, 2026-10-03). RFC 9635 section 3.4's `opaque` format (RFC 9493)
+  // was ONE HMAC PER REALM, so every client was handed the same value for a
+  // person and two clients could join their records on it — exactly what
+  // OIDC Core section 8 has the provider prevent with a pairwise `sub`. It is
+  // derived here, by section 8's model, so there is one place that says how
+  // this service keeps clients from correlating a person.
+  //
+  //   * ALWAYS PER CLIENT OR SECTOR, whatever `subject_type` the entry
+  //     registers. GNAP has no registration member asking for a public
+  //     identifier, and an opaque identifier exists to name a person to ONE
+  //     client — a public one is what `iss_sub` is for.
+  //   * THE SECTOR is the host of the entry's REGISTERED
+  //     `sector_identifier_uri` (section 8.1, checked where it is
+  //     registered). With none, the sector is the client's own identifier:
+  //     section 8.1's other rule — the one host every redirect URI shares — is
+  //     about redirect URIs, which a GNAP client instance does not have, and
+  //     inferring a sector from its finish URIs would change the day one was
+  //     added.
+  //   * Its own label, `gnap-opaque-sub`, so a value can never equal the
+  //     client's OIDC pairwise `sub` for the same person, and the `client:`
+  //     or `sector:` prefix keeps a client named like a host from sharing a
+  //     sector's identifiers.
+  //
+  // RFC 9635 section 3.4's "SHOULD NOT reuse Subject Identifiers for
+  // multiple different ROs" still holds: the input is the person's stable
+  // subject, which is never given to a second person (`gnap_subject.ts`).
+  // -------------------------------------------------------------------------
+  /**
+   * Returns the opaque Subject Identifier (RFC 9635 section 3.4) a GNAP
+   * client instance is told for a person: an HMAC over the realm, the
+   * client's sector — the host of its registered `sector_identifier_uri`, or
+   * the client itself — and the person's stable subject.
+   *
+   * @param clientId - the GNAP client instance's application identifier
+   * @param localKey - the person's stable subject (or name, with no entry)
+   * @returns `{ id, sector }`: the identifier and the sector it is for
+   */
+  gnapOpaqueFor(clientId: Json, localKey: Json): { id: string;
+                                                    sector: string } {
+    const { log, stsCrypto, realms, clusterSecrets } = this.deps;
+    log.debug("Entering PairwiseSubjects.gnapOpaqueFor(). client=" +
+              clientId);
+    const sector = this.gnapSectorOf(clientId);
+    const id = stsCrypto.deriveSharedCredential(
+      clusterSecrets.text('oidc-pairwise'), GNAP_OPAQUE_LABEL,
+      realms.currentId(), sector, String(localKey || ''));
+    log.debug("Leaving PairwiseSubjects.gnapOpaqueFor(). " + sector + ".");
+    return { id: id, sector: sector };
+  }
+
+  /**
+   * Returns the sector a GNAP client instance's opaque identifiers are made
+   * for: `sector:<host>` of its registered `sector_identifier_uri`, or
+   * `client:<identifier>`.
+   *
+   * @param clientId - the GNAP client instance's application identifier
+   * @returns the sector label
+   */
+  gnapSectorOf(clientId: Json): string {
+    const { log, applications } = this.deps;
+    log.debug("Entering PairwiseSubjects.gnapSectorOf().");
+    const id = String(clientId || '');
+    const cfg = id ? applications.clientConfigOf(id) : null;
+    let host = '';
+    if (cfg && cfg.sector_identifier_uri) {
+      try {
+        host = new URL(String(cfg.sector_identifier_uri)).host;
+      } catch (e) {
+        log.debug("Caught in PairwiseSubjects.gnapSectorOf(): " +
+                  ((e && e.message) || e));
+        // Not a URL: no sector, and the client is its own.
+        host = '';
+      }
+    }
+    log.debug("Leaving PairwiseSubjects.gnapSectorOf().");
+    return host ? 'sector:' + host : 'client:' + id;
   }
 
   // How long an ephemeral mapping outlives its last use: the longest a token
@@ -530,6 +613,8 @@ export = {
   sectorOf: slot.forward('sectorOf'),
   subjectFor: slot.forward('subjectFor'),
   deviceIdFor: slot.forward('deviceIdFor'),
+  gnapOpaqueFor: slot.forward('gnapOpaqueFor'),
+  gnapSectorOf: slot.forward('gnapSectorOf'),
   localFor: slot.forward('localFor'),
   purge: slot.forward('purge'),
   PURGE_JOB: PURGE_JOB,

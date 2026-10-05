@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -46,6 +46,7 @@ const model = require('../xacml/xacml_model');
 const datatypes = require('../xacml/xacml_datatypes');
 const deciderBefore = gate.deciderInstalled();
 const rolePep = require('../xacml/xacml_role_pep');
+const errorCodes = require('../common/error_codes');
 
 const log = require('bunyan').createLogger({ name: 'app_roles',
   level: process.env.LOG_LEVEL || 'info' });
@@ -220,6 +221,94 @@ function permissions(t) {
   log.debug("Leaving permissions().");
 }
 
+// G. APPLICATION PERMISSIONS (#93): who may hold a role, its display name and
+// stable id, and the roles an application holds read from its own side.
+function applicationPermissions(t) {
+  log.debug("Entering applicationPermissions().");
+  t.log.info('=== G. application permissions (#93) ===');
+  const MACHINES = 'ar-machines-' + RUN;
+  const PEOPLE = 'ar-people-' + RUN;
+  const codeOf = function (result) {
+    return errorCodes.codeOf(result) || '';
+  };
+  const made = action({ action: 'create-role', role: MACHINES,
+                        displayName: 'Batch machines',
+                        memberTypes: ['application'] });
+  const madeRow = roles.read(MACHINES);
+  t.check(made.ok && madeRow && madeRow.displayName === 'Batch machines' &&
+          madeRow.memberTypes.join() === 'application' &&
+          /^[0-9a-f-]{36}$/.test(madeRow.id),
+          'G1. a role is made with a display name, applications only, and ' +
+          'an entryUUID id', JSON.stringify(madeRow));
+  const person = action({ action: 'add-member', role: MACHINES, kind: 'user',
+                          member: ALICE });
+  t.check(!person.ok && codeOf(person) === 'STS-XACML-0082',
+          'G2. a person is refused on an applications-only role',
+          JSON.stringify(person) + ' ' + codeOf(person));
+  const group = action({ action: 'add-member', role: MACHINES, kind: 'group',
+                         member: 'developers' });
+  t.check(!group.ok && codeOf(group) === 'STS-XACML-0082',
+          'G3. and so is a group', codeOf(group));
+  t.check(action({ action: 'add-member', role: MACHINES, kind: 'application',
+                   member: HR }).ok &&
+          action({ action: 'add-permission', role: MACHINES,
+                   permission: 'https://' + PAYROLL + '.example/read' }).ok,
+          'G4. an application is added, and a permission beside it');
+  const kept = roles.read(MACHINES);
+  t.check(kept.displayName === 'Batch machines' &&
+          kept.memberTypes.join() === 'application' && kept.id === madeRow.id,
+          'G5. add-member and add-permission keep the display name, the ' +
+          'member types and the id', JSON.stringify(kept));
+  const narrowing = action({ action: 'describe-role', role: MACHINES,
+                             description: 'batch', memberTypes: ['user'] });
+  t.check(!narrowing.ok && codeOf(narrowing) === 'STS-XACML-0082' &&
+          roles.read(MACHINES).memberTypes.join() === 'application',
+          'G6. restricting it to people while an application holds it is ' +
+          'refused, and nothing changes', codeOf(narrowing));
+  const described = action({ action: 'describe-role', role: MACHINES,
+                             description: 'batch jobs' });
+  const afterDescribe = roles.read(MACHINES);
+  t.check(described.ok && afterDescribe.description === 'batch jobs' &&
+          afterDescribe.displayName === 'Batch machines' &&
+          afterDescribe.memberTypes.join() === 'application',
+          'G7. describe-role with only a description keeps the display name ' +
+          'and member types', JSON.stringify(afterDescribe));
+  const unknown = action({ action: 'create-role', role: 'ar-odd-' + RUN,
+                          memberTypes: ['robot'] });
+  t.check(!unknown.ok && codeOf(unknown) === 'STS-XACML-0081',
+          'G8. an unknown member type is refused', codeOf(unknown));
+  const consoleRole = action({ action: 'describe-role', role: 'ADMIN_READ',
+                              memberTypes: ['application'] });
+  t.check(!consoleRole.ok && codeOf(consoleRole) === 'STS-XACML-0083',
+          'G9. a console role cannot be restricted', codeOf(consoleRole));
+  t.check(action({ action: 'create-role', role: PEOPLE,
+                   memberTypes: ['user'] }).ok,
+          'precondition: a people-only role');
+  const state = adminViews.applicationRolesState(HR);
+  const held = state.held.filter(function (one) {
+    return one.name === MACHINES;
+  })[0];
+  t.check(!!held && held.displayName === 'Batch machines' &&
+          held.id === madeRow.id && held.carriedAs === MACHINES &&
+          held.application === '',
+          'G10. the application\'s page lists the role it holds, realm-wide, ' +
+          'with its label and id', JSON.stringify(state.held));
+  t.check(state.offerable.indexOf(PEOPLE) < 0 &&
+          state.offerable.indexOf(MACHINES) < 0 &&
+          state.offerable.indexOf(STAFF) >= 0,
+          'G11. it is offered neither a people-only role nor one it holds, ' +
+          'and is offered an unrestricted one',
+          JSON.stringify(state.offerable));
+  const detail = adminViews.applicationDetailJson({ query: {} }, HR);
+  t.check(detail.json.applicationRoles &&
+          detail.json.applicationRoles.held.some(function (one) {
+            return one.name === MACHINES;
+          }),
+          'G12. and GET /admin-api/applications?application= carries the ' +
+          'same, as applicationRoles');
+  log.debug("Leaving applicationPermissions().");
+}
+
 async function run(t) {
   log.debug("Entering run().");
   gate.setDecider(rolePep.decide);
@@ -234,6 +323,7 @@ async function run(t) {
       theRequirement(t);
       thePip(t);
       permissions(t);
+      applicationPermissions(t);
     });
   } finally {
     // THE STATE THE REQUIRE LEFT, not an empty slot: requiring the issuance
@@ -249,6 +339,7 @@ module.exports = {
   name: 'app_roles',
   describe: 'roles that belong to one application: naming, resolution per ' +
             'application, the claim, the requirement, the PIP and ' +
-            'permissions (#310)',
+            'permissions (#310); member types, display name, id and the ' +
+            'application\'s own roles (#93)',
   run: run
 };

@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -105,6 +105,9 @@ import cacheRegistry = require('./cache_registry');
 import clusterClaims = require('../cluster/cluster_claims');
 import MailTemplates = require('./mail_templates');
 import mailTransports = require('./mail_transports');
+// This thread's identity (#364): a request worker is a thread of this
+// process, so the pid alone no longer tells two of them apart.
+import WorkerChannel = require('./worker_channel');
 
 type Json = any;
 
@@ -316,7 +319,7 @@ cacheRegistry.register({
 });
 
 // This process's name on a row it is sending, for the console.
-const HOLDER = os.hostname() + ':' + process.pid;
+const HOLDER = os.hostname() + ':' + WorkerChannel.processTag();
 
 // THE DIRECTORY (header point 5), filled by `ldap/ldap_server.js`.
 let directory: Directory | null = null;
@@ -605,7 +608,9 @@ class Mail {
   linkBase(): string {
     const { log, config, realms, mode } = this.deps;
     log.debug("Entering Mail.linkBase().");
-    const pinned = String(config.value('global.publicBaseUrl') || '').trim()
+    // A realm with a listener of its own (#99) mails links on its own base.
+    const pinned = String(config.value('listener.publicBaseUrl') ||
+                          config.value('global.publicBaseUrl') || '').trim()
       .replace(/\/+$/, '');
     if (pinned) {
       log.debug("Leaving Mail.linkBase(). Pinned.");
@@ -1990,7 +1995,8 @@ class Mail {
       available: this.available(),
       from: cfg.from,
       linkBase: this.linkBase(),
-      linkBasePinned: !!String(this.setting('global.publicBaseUrl') || ''),
+      linkBasePinned: !!String(this.setting('listener.publicBaseUrl') ||
+                               this.setting('global.publicBaseUrl') || ''),
       relay: cfg.transport === 'smtp'
         ? { host: cfg.smtpHost, port: cfg.smtpPort, tls: cfg.smtpTls,
             auth: cfg.smtpAuth, dkim: cfg.dkimDomain

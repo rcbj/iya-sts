@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -235,7 +235,7 @@ class GcpIitAttestor {
             now } = this.deps;
     log.debug("Entering GcpIitAttestor.attest().");
     const call = context.call;
-    const status = rpc.grpc.status;
+    const status = rpc.status;
     const projects = this.csv('spiffe.gcpIitProjectIdAllowList');
     let template = null;
     let problem = projects.length ? '' : 'projectid_allow_list is required ' +

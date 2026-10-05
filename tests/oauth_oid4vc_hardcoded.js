@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -258,21 +258,22 @@ function childMain() {
     // 4. RFC 7591 REGISTRATION
     // ======================================================================
     config.setOverride('oauth2.registeredClientIdPrefix', 'hc-dyn-');
-    config.setOverride('oauth2.registeredSecretLifetimeS', 3600);
+    config.setOverride('oauth2.clientSecretLifetimeDays', 1);
     r = await request(port, 'POST', '/oauth2/register',
       { json: { redirect_uris: ['https://rp.hc.example/cb'] } });
     note(r.status === 201 && r.json && /^hc-dyn-/.test(r.json.client_id),
          '4a. development: registration is open and the client_id takes the ' +
          'configured prefix',
          r.status + ' ' + (r.json && r.json.client_id));
+    const dayFromNow = Math.floor(Date.now() / 1000) + 86400;
     note(r.json &&
-         r.json.client_secret_expires_at > Math.floor(Date.now() / 1000),
+         Math.abs(r.json.client_secret_expires_at - dayFromNow) <= 60,
          '4b. and client_secret_expires_at follows ' +
-         'oauth2.registeredSecretLifetimeS',
+         'oauth2.clientSecretLifetimeDays, in days',
          r.json && r.json.client_secret_expires_at);
     const registered = r.json || {};
     config.clearOverride('oauth2.registeredClientIdPrefix');
-    config.clearOverride('oauth2.registeredSecretLifetimeS');
+    config.clearOverride('oauth2.clientSecretLifetimeDays');
 
     const readNoToken = await request(port, 'GET', '/oauth2/register/' +
       encodeURIComponent(registered.client_id || 'x'));
@@ -469,6 +470,16 @@ function childMain() {
          '6k. PRODUCT: a token this realm issued reaches the request (refused ' +
          'for the missing proof — the control)',
          r.status + ' ' + r.text.slice(0, 160));
+    // THE OTHER TWO ENDPOINTS TAKE THE SAME TOKEN (#409), the control for
+    // 6l-ii: before the revocation the token gets past the token check there
+    // (whatever the request then answers, it is not invalid_token).
+    for (const where of ['/oid4vci/deferred_credential',
+                         '/oid4vci/notification']) {
+      r = await issuerCall(where, realToken, {});
+      note(!(r.status === 401 && r.json && r.json.error === 'invalid_token'),
+           '6k-ii. PRODUCT: ' + where + ' lets the live token past the token ' +
+           'check (the control)', r.status + ' ' + r.text.slice(0, 160));
+    }
     const revoked = await request(port, 'POST', '/oauth2/revoke', {
       form: Object.assign({ token: realToken }, client) });
     r = await issuerCall('/oid4vci/credential', realToken, IDENTITY);
@@ -477,6 +488,28 @@ function childMain() {
          /revoked/.test(String(r.json.error_description)),
          '6l. PRODUCT: a token this realm REVOKED is refused',
          revoked.status + ' / ' + r.status + ' ' + r.text.slice(0, 160));
+    // #409: at the deferred-credential and notification endpoints too, and
+    // every one of the three refusals is recorded under STS-VC-0086 — the
+    // code is never sent, so the audit row is where it is read back.
+    for (const where of ['/oid4vci/deferred_credential',
+                         '/oid4vci/notification']) {
+      r = await issuerCall(where, realToken, {});
+      note(r.status === 401 && r.json && r.json.error === 'invalid_token' &&
+           /revoked/.test(String(r.json.error_description)) &&
+           /invalid_token/.test(String(r.headers['www-authenticate'] || '')),
+           '6l-ii. PRODUCT: ' + where + ' refuses the REVOKED token ' +
+           'invalid_token', r.status + ' ' + r.text.slice(0, 160));
+    }
+    await new Promise(function (resolve) { setTimeout(resolve, 50); });
+    const audit = require(ROOT + '/common/audit');
+    for (const where of ['/oid4vci/credential', '/oid4vci/deferred_credential',
+                         '/oid4vci/notification']) {
+      const row = audit.list().filter(function (event) {
+        return event.target === where && event.errorCode === 'STS-VC-0086';
+      })[0];
+      note(!!row, '6l-iii. PRODUCT: the refusal at ' + where + ' is recorded ' +
+           'under STS-VC-0086', row ? row.summary : 'no such audit row');
+    }
     config.clearOverride('global.mode');
     r = await issuerCall('/oid4vci/credential', foreign, IDENTITY);
     note(r.status !== 401,

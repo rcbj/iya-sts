@@ -1,6 +1,6 @@
 // @ts-check
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -106,12 +106,22 @@ function store() {
  *
  * @param scope - the kind of counter
  * @param key - the one counter, such as a credential id
- * @returns the SHA-256 digest, base64url
+ * @returns the keyed digest (HMAC-SHA256 under the keystore's digest key),
+ *   or the SHA-256 digest where no key is held; base64url
  */
 function digestOf(scope, key) {
   log.debug("Entering digestOf().");
-  const out = nodeCrypto.createHash('sha256')
-    .update(String(scope) + '\n' + String(key)).digest('base64url');
+  // KEYED SINCE #222: what is digested here is often guessable — a username,
+  // an address, a short code — and an unkeyed SHA-256 of it in the store is
+  // recovered by hashing the guesses. Under the keystore's digest key (the
+  // same key on every node and process) it is not. Where there is no key —
+  // development with no request pool, or a moment before the keystore has
+  // started — it is the plain digest, which is what every process without a
+  // key computes alike.
+  const text = String(scope) + '\n' + String(key);
+  const keyed = require('../common/keystore').keyedDigest('cluster-counter', text);
+  const out = keyed || nodeCrypto.createHash('sha256').update(text)
+    .digest('base64url');
   log.debug("Leaving digestOf().");
   return out;
 }
@@ -457,6 +467,199 @@ function clearWindow(opts) {
 }
 
 // For tests: forget this process's memory store.
+// ===========================================================================
+// A BUDGET SPENT AGAINST A LIMIT, AGREED BY EVERY NODE (#432 phase 5,
+// 2026-10-03).
+//
+// The fourth shape. A GNAP access right may carry LIMITS — an amount, a
+// count, reset at each boundary of a repeating interval — and the resource
+// server keeps the running totals per grant (rcbj's decision 2 on #432); the
+// demonstration resource server is the reference, and runs on every node.
+// "Spend 30 if what has been spent this period plus 30 is still within 100"
+// is none of the three shapes above: not once, not only up, and not a count
+// that every attempt increments whatever it is. Read, add and write back
+// through a replicated row is last writer wins on a LEDGER — two nodes each
+// reading 80 and each spending 20 have spent 40 of a budget of 100 and
+// recorded 20 — so it is `sts_cluster_budgets` and one conditional upsert:
+//
+//   INSERT … SELECT … WHERE this spend alone is within the limits
+//   ON CONFLICT DO UPDATE SET totals = CASE WHEN the period is the same
+//     THEN totals + spend ELSE spend END, period = new
+//   WHERE new period >= stored period AND the new totals are within limits
+//
+// under the primary key's row lock, which returns the totals THIS spend
+// made, or nothing when it would pass a limit. A period older than the row's
+// (a request that computed its period before a boundary and arrived after
+// another node moved past it) is refused rather than resetting a newer
+// period's totals. AMOUNTS ARE MILLIONTHS, as bigint (`common/
+// access_limits.ts`): a ledger summed in floating point drifts.
+//
+// A REFUND (`refundBudget()`) is one UPDATE that takes a spend back only
+// from the period it was made in and never below zero — an operation that
+// failed after its spend was counted must not have used the budget, and one
+// that failed across a boundary has nothing left to give back.
+//
+// **THERE IS NO MEMORY FALLBACK HERE**, `countInWindow()`'s rule: the caller
+// asks `sharesBudgets()` first and keeps its own persisted ledger where no
+// store is shared (`gnap/gnap_spend.ts`), which on one process is exactly as
+// atomic. A store that cannot be asked answers `reason: 'store'` and the
+// caller REFUSES the operation — a spend this service cannot prove was within
+// the limit is not one it may allow (`STS-CLUSTER-0162`).
+//
+// Each row carries `expires_at`, the end of the grant it counts for: past it
+// no token of that grant can be presented, and `purgeBudgets()` — the
+// caller's scheduler job — deletes it.
+// ===========================================================================
+function budgetStore() {
+  log.debug("Entering budgetStore().");
+  const persistence = require('../persistence/persistence');
+  const candidate = persistence.clusterStore();
+  log.debug("Leaving budgetStore().");
+  return candidate && typeof candidate.spendBudget === 'function' &&
+    typeof candidate.refundBudget === 'function' ? candidate : null;
+}
+
+/**
+ * Says, synchronously, whether a store every process shares a budget in is
+ * open.
+ *
+ * @returns true when spendBudget() will reach a shared store
+ */
+function sharesBudgets() {
+  log.debug("Entering sharesBudgets().");
+  const out = !!budgetStore();
+  log.debug("Leaving sharesBudgets().");
+  return out;
+}
+
+// The arguments every budget call shares, or null when they are malformed.
+function budgetArgs(opts) {
+  log.debug("Entering budgetArgs().");
+  const o = opts || {};
+  const scope = String(o.scope || '');
+  const period = Math.floor(Number(o.period));
+  let amount = null;
+  try {
+    amount = BigInt(o.amount === undefined ? 0 : o.amount);
+  } catch (e) {
+    log.debug("Caught in budgetArgs(): " + ((e && e.message) || e));
+    amount = null;
+  }
+  const count = Math.floor(Number(o.count === undefined ? 0 : o.count));
+  if (!scope || o.key === undefined || o.key === null || o.key === '' ||
+      !Number.isSafeInteger(period) || period < 0 || amount === null ||
+      amount < BigInt(0) || !Number.isSafeInteger(count) || count < 0) {
+    log.debug("Leaving budgetArgs(). Malformed.");
+    return null;
+  }
+  log.debug("Leaving budgetArgs().");
+  return {
+    scope: scope,
+    realmId: o.realm === undefined ? realms.currentId() : String(o.realm || ''),
+    digest: digestOf(scope, o.key),
+    period: period, amount: amount, count: count
+  };
+}
+
+//   spendBudget({ scope, key, realm, period, amount, count, limitAmount,
+//                 limitCount, expiresAtMs })
+// `amount` and `limitAmount` are millionths (bigint or decimal string),
+// `limitAmount` / `limitCount` null for no limit. Answers `{ ok: true,
+// amount, count }` (the totals this spend made, amount as a BigInt) or `{ ok:
+// false, reason: 'over' | 'store', why }`.
+/**
+ * Spends against a budget, atomically, in the store every node shares.
+ *
+ * @param {any} opts - scope, key, realm, period, amount, count, the two
+ *   limits (null for none) and the row's expiry in milliseconds
+ * @returns {Promise<any>} the totals this spend made, or the refusal
+ */
+function spendBudget(opts) {
+  log.debug("Entering spendBudget().");
+  const a = budgetArgs(opts);
+  const theStore = budgetStore();
+  if (!a || !theStore) {
+    log.debug("Leaving spendBudget(). " + (a ? 'No shared store.'
+                                             : 'Malformed.'));
+    return Promise.resolve({ ok: false, reason: 'store',
+      why: a ? 'no store every node shares a budget in is open'
+             : 'a spend needs a scope, a key, a period and amounts of 0 ' +
+               'or more' });
+  }
+  const o = opts || {};
+  const limitAmount = o.limitAmount === null || o.limitAmount === undefined
+    ? null : String(BigInt(o.limitAmount));
+  const limitCount = o.limitCount === null || o.limitCount === undefined
+    ? null : Math.floor(Number(o.limitCount));
+  log.debug("Leaving spendBudget(). Asking the store.");
+  return Promise.resolve().then(function () {
+    return theStore.spendBudget(a.scope, a.realmId, a.digest, a.period,
+                                String(a.amount), a.count, limitAmount,
+                                limitCount,
+                                Math.floor(Number(o.expiresAtMs) || 0));
+  }).then(function (answer) {
+    if (!answer) {
+      return { ok: false, reason: 'over',
+               why: 'the spend would pass a limit' };
+    }
+    return { ok: true, amount: BigInt(answer.amount),
+             count: Number(answer.count) };
+  }, function (e) {
+    log.error(errorCodes.tag('STS-CLUSTER-0162') + 'cluster budgets: the ' +
+              'store could not be asked to spend against a "' + a.scope +
+              '" budget: ' + ((e && e.message) || e) + '. The operation is ' +
+              'refused.');
+    return { ok: false, reason: 'store', why: (e && e.message) || String(e) };
+  });
+}
+
+/**
+ * Takes a spend back from the period it was made in, never below zero.
+ *
+ * @param {any} opts - scope, key, realm, period, amount and count, as spent
+ * @returns {Promise<any>} `{ ok, refunded }`
+ */
+function refundBudget(opts) {
+  log.debug("Entering refundBudget().");
+  const a = budgetArgs(opts);
+  const theStore = budgetStore();
+  if (!a || !theStore) {
+    log.debug("Leaving refundBudget(). Nothing to ask.");
+    return Promise.resolve({ ok: false, refunded: false });
+  }
+  log.debug("Leaving refundBudget(). Asking the store.");
+  return Promise.resolve().then(function () {
+    return theStore.refundBudget(a.scope, a.realmId, a.digest, a.period,
+                                 String(a.amount), a.count);
+  }).then(function (refunded) {
+    return { ok: true, refunded: !!refunded };
+  }, function (e) {
+    log.error(errorCodes.tag('STS-CLUSTER-0163') + 'cluster budgets: a ' +
+              '"' + a.scope + '" spend could not be refunded: ' +
+              ((e && e.message) || e));
+    return { ok: false, refunded: false };
+  });
+}
+
+/**
+ * Deletes the budget rows of one scope and realm whose grant has ended.
+ *
+ * @param {string} scope - the kind of budget
+ * @param {string} realmId - the realm
+ * @returns {Promise<number>} how many rows were deleted
+ */
+function purgeBudgets(scope, realmId) {
+  log.debug("Entering purgeBudgets().");
+  const theStore = budgetStore();
+  if (!theStore || typeof theStore.purgeBudgets !== 'function') {
+    log.debug("Leaving purgeBudgets(). No shared store.");
+    return Promise.resolve(0);
+  }
+  log.debug("Leaving purgeBudgets(). Asking the store.");
+  return Promise.resolve(theStore.purgeBudgets(String(scope),
+                                               String(realmId || '')));
+}
+
 /**
  * Forgets this process's in-memory counters. For tests.
  */
@@ -479,6 +682,10 @@ module.exports = {
   countInWindow: countInWindow,
   peekWindow: peekWindow,
   clearWindow: clearWindow,
+  sharesBudgets: sharesBudgets,
+  spendBudget: spendBudget,
+  refundBudget: refundBudget,
+  purgeBudgets: purgeBudgets,
   digestOf: digestOf,
   // Exported for `cluster/scheduler.ts`, which registers this job at its own
   // load so that every process lists it — see the function's own comment.

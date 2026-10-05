@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: BUSL-1.1
 
 output "cluster" {
   description = "The ECS cluster the task runs in."
@@ -19,6 +19,11 @@ output "subnet_id" {
 output "security_group_id" {
   description = "The task's security group."
   value       = aws_security_group.callbacks.id
+}
+
+output "subnet_cidr" {
+  description = "The task's subnet: where it reaches the load balancer from when the public name resolves inside the VPC (environment/dns.tf)."
+  value       = aws_subnet.callbacks.cidr_block
 }
 
 output "egress_ip" {

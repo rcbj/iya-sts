@@ -1,6 +1,6 @@
 // @ts-check
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -39,6 +39,19 @@
 // names the DNs that moved, so a commit is the cost of the rows written, and
 // that is the price of a second node being able to see them.
 //
+// **AND SINCE 2026-09-29 (#351) RULE 2 IS NOT A CLUSTER RULE.** It holds in
+// every process whose store is a database (`persistence.answersAfterCommit()`),
+// one node or many, and a commit that FAILS is answered 503 with Retry-After
+// in place of the success — never the 2xx the handler wrote. A worker on
+// testidp answered ~600 SCIM deletes 204 while their write was deferred
+// (STS-STORE-0002), exited on a lost origin before the retry, and the people
+// came back from the database; a response sent before its commit is an
+// acknowledgement the process can lose, whatever the node count. Rule 1 —
+// catching up with other nodes — is still active-active only, because only
+// there does another node write. The same rule reaches an LDAP operation
+// through `answerAfterCommit()` below, which `ldap/ldap_server.js` wraps
+// every handler in at registration.
+//
 // **WHAT IT DOES NOT DO.** It does not make two CONCURRENT requests
 // serialisable: two redemptions of one code racing on two nodes both see the
 // code. That is `cluster_claims.js`'s job. This is what makes a SEQUENTIAL flow
@@ -72,7 +85,52 @@ const SYNCED = Symbol('sts.clusterBarrier.synced');
 
 const stats = { requests: 0, caughtUp: 0, gaveUp: 0, heldForCommit: 0,
                 answeredUnheld: 0, commitFailures: 0, totalWaitMs: 0,
-                totalHoldMs: 0 };
+                totalHoldMs: 0, refusedForCommit: 0, heldForBacklog: 0,
+                ldapHeldForCommit: 0, ldapRefusedForCommit: 0 };
+
+// ---------------------------------------------------------------------------
+// WHAT A REFUSED COMMIT IS ANSWERED WITH (#351).
+//
+// 503 and `Retry-After`: RFC 9110 section 15.6.4 — "temporarily unable to
+// handle the request … likely to be alleviated after some delay" — which is
+// exactly a store that refused one transaction. RETRY_AFTER_S is the pool's
+// own connection wait (`persistence_postgres.js`, `connectionTimeoutMillis`),
+// the shortest time in which a starved pool can be expected to have a
+// connection again; the store's own retry of the write starts sooner.
+//
+// **THE HANDLER'S RESPONSE IS DISCARDED WHOLE**: its body, its `Location`,
+// its `Set-Cookie`, its `Content-*` — a redirect to a page that assumes the
+// write, or a session cookie for a session the store does not hold, is a
+// success by another name. What survives is the headers every response
+// carries for its own safety (the CSP and its companions, HSTS, CORS so a
+// page's script can read the 503 at all). The body is RFC 6749's
+// `temporarily_unavailable`, the one error code a family here already
+// defines for this condition, and harmless to every other client; it names
+// no error code — codes are recorded, never sent.
+//
+// **A RESPONSE WHOSE HEADERS ALREADY LEFT CANNOT BE TURNED INTO A 503**: a
+// handler that streamed (`res.write()`) or called `writeHead()` itself. Four
+// routes write, and none of them writes to the store; for one that ever
+// does, the connection is DESTROYED rather than completed, so the client
+// sees a failed exchange and never a finished success.
+// ---------------------------------------------------------------------------
+const RETRY_AFTER_S = 5;
+const KEPT_ON_REFUSAL = /^(content-security-policy|x-content-type-options|x-frame-options|referrer-policy|strict-transport-security|access-control-.*|vary|cross-origin-.*|permissions-policy)$/i;
+const REFUSED_BODY = JSON.stringify({
+  error: 'temporarily_unavailable',
+  error_description: 'The change could not be committed to the store. ' +
+    'Nothing was confirmed; try again.'
+});
+// The call log's hook, per response: `common/app.js` records the refusal as
+// the row the operator reads, because the row it recorded a moment earlier
+// carried the handler's status.
+const ON_REFUSED = Symbol('sts.clusterBarrier.onRefused');
+
+// Methods that change something, by RFC 9110 section 9.2.1's definition of
+// safe. A request with one of them is held while a refused write is still
+// waiting for its retry (`persistence.commitBacklog()`), even when it wrote
+// nothing itself.
+const UNSAFE_METHODS = ['POST', 'PUT', 'PATCH', 'DELETE'];
 
 function persistence() {
   log.debug("Entering persistence().");
@@ -85,6 +143,110 @@ function active() {
   const cluster = require('./cluster');
   log.debug("Leaving active().");
   return cluster.isActiveActive() && cluster.enabled();
+}
+
+// Whether rule 2 applies in this process: active-active, or a store that a
+// writing response waits for (#351).
+function holds() {
+  log.debug("Entering holds().");
+  const store = persistence();
+  const answer = active() ||
+    (typeof store.answersAfterCommit === 'function' &&
+     !!store.answersAfterCommit());
+  log.debug("Leaving holds(). " + answer);
+  return answer;
+}
+
+// The failures among a commit's answers.
+function failuresOf(results) {
+  log.debug("Entering failuresOf().");
+  log.debug("Leaving failuresOf().");
+  return (results || []).filter(function (one) {
+    return one && one.error;
+  });
+}
+
+// The commit a held answer waits for, as a promise of its failures' texts —
+// never a rejection. `now` is the position to commit through, or null for a
+// persistence module without positions (a test double).
+function commitFailures(store, now) {
+  log.debug("Entering commitFailures().");
+  const committing = now
+    ? Promise.resolve().then(function () { return store.commitThrough(now); })
+    : Promise.all([
+      Promise.resolve().then(function () { return store.flush(); }),
+      Promise.resolve().then(function () { return store.flushMinted(); })
+    ]);
+  log.debug("Leaving commitFailures().");
+  return committing.then(function (results) {
+    return failuresOf(results).map(function (one) {
+      return String(one.error);
+    });
+  }, function (e) {
+    log.debug("Caught in commitFailures(): " + ((e && e.message) || e));
+    return [String((e && e.message) || e)];
+  });
+}
+
+/**
+ * Answers a held response with 503 in place of what its handler wrote, or
+ * destroys it when its headers have already gone.
+ *
+ * @param res - the response
+ * @param end - the response's own `end()`
+ * @returns the response
+ */
+function refuseForCommit(res, end) {
+  log.debug("Entering refuseForCommit().");
+  errorCodes.mark(res, 'STS-STORE-0066');
+  stats.refusedForCommit += 1;
+  if (res.headersSent) {
+    log.debug("Leaving refuseForCommit(). Headers gone; destroyed.");
+    res.destroy();
+    return res;
+  }
+  res.getHeaderNames().forEach(function (name) {
+    if (!KEPT_ON_REFUSAL.test(name)) {
+      res.removeHeader(name);
+    }
+  });
+  res.statusCode = 503;
+  res.statusMessage = 'Service Unavailable';
+  res.setHeader('Retry-After', String(RETRY_AFTER_S));
+  res.setHeader('Cache-Control', 'no-store');
+  res.setHeader('Content-Type', 'application/json; charset=utf-8');
+  const hook = res[ON_REFUSED];
+  if (typeof hook === 'function') {
+    try {
+      hook();
+    } catch (e) {
+      // The row is the operator's; the refusal is the client's, and a row
+      // that could not be written must not cost the client its answer. The
+      // log line above carries the code either way.
+      log.debug("Caught in refuseForCommit(): " + ((e && e.message) || e));
+    }
+  }
+  const head = res.req && res.req.method === 'HEAD';
+  res.setHeader('Content-Length', head ? '0'
+    : String(Buffer.byteLength(REFUSED_BODY)));
+  log.debug("Leaving refuseForCommit().");
+  return head ? end.call(res) : end.call(res, REFUSED_BODY);
+}
+
+/**
+ * Installs the call log's hook for a refused commit on one response: it is
+ * called after the status is 503 and the code is marked, so the row it
+ * records says what the client was answered.
+ *
+ * @param res - the response
+ * @param fn - the hook
+ */
+function onCommitRefused(res, fn) {
+  log.debug("Entering onCommitRefused().");
+  if (res && typeof fn === 'function') {
+    res[ON_REFUSED] = fn;
+  }
+  log.debug("Leaving onCommitRefused().");
 }
 
 // One barrier for every request that arrived before it started.
@@ -229,15 +391,18 @@ function mintedWrites(position) {
 /**
  * Wraps `res.end()` so that a response whose request wrote anything is sent
  * only once those writes have committed; one that wrote nothing is sent at
- * once, and a failed commit is logged and the response sent anyway.
+ * once, and one whose commit FAILED is answered 503 instead (#351).
  *
  * @param res - the response
  * @param arrival - the store's write position when the request arrived, or
  *   null for a persistence module without positions
+ * @param req - the request, whose method decides whether a refused write
+ *   still waiting for its retry holds it too; optional
  */
-function holdUntilCommitted(res, arrival) {
+function holdUntilCommitted(res, arrival, req) {
   log.debug("Entering holdUntilCommitted().");
   const end = res.end;
+  const method = String((req && req.method) || '').toUpperCase();
   res.end = function () {
     log.debug("Entering end().");
     const args = arguments;
@@ -250,11 +415,16 @@ function holdUntilCommitted(res, arrival) {
     // The position before the call log recorded, where it did: what moved
     // after it is the call log's own rows, held only for a refusal.
     const handled = logged ? logged.before : now;
+    // A WRITING METHOD WHILE A REFUSED WRITE WAITS FOR ITS RETRY (#351) is
+    // held for it: see `persistence.commitBacklog()`.
+    const backlog = positioned && UNSAFE_METHODS.indexOf(method) >= 0 &&
+      typeof store.commitBacklog === 'function' && !!store.commitBacklog();
     const wrote = positioned
       ? (handled.directory !== arrival.directory ||
          mintedWrites(handled) !== mintedWrites(arrival) ||
          (logged && logged.mustCommit) ||
-         (typeof store.keysPending === 'function' && store.keysPending()))
+         (typeof store.keysPending === 'function' && store.keysPending()) ||
+         backlog)
       : store.pendingWrites();
     if (!wrote) {
       stats.answeredUnheld += 1;
@@ -263,37 +433,146 @@ function holdUntilCommitted(res, arrival) {
     }
     const began = Date.now();
     stats.heldForCommit += 1;
-    const committing = positioned
-      ? Promise.resolve().then(function () { return store.commitThrough(now); })
-      : Promise.all([
-        Promise.resolve().then(function () { return store.flush(); }),
-        Promise.resolve().then(function () { return store.flushMinted(); })
-      ]);
-    committing.then(function (results) {
-      const failed = (results || []).filter(function (one) {
-        return one && one.error;
-      });
-      if (failed.length) {
-        stats.commitFailures += 1;
-        log.error(errorCodes.tag('STS-CLUSTER-0019') + 'cluster barrier: a ' +
-                  'response held for its writes could not commit them (' +
-                  failed.map(function (one) { return one.error; }).join('; ') +
-                  '); it is sent, and another node may not see them until ' +
-                  'the retry lands.');
-      }
-    }, function (e) {
-      stats.commitFailures += 1;
-      log.error(errorCodes.tag('STS-CLUSTER-0019') + 'cluster barrier: the ' +
-                'commit a response was held for failed: ' +
-                ((e && e.message) || e) + '; it is sent anyway.');
-    }).then(function () {
+    if (backlog) {
+      stats.heldForBacklog += 1;
+    }
+    commitFailures(store, now).then(function (failed) {
       stats.totalHoldMs += Date.now() - began;
-      end.apply(res, args);
+      if (!failed.length) {
+        end.apply(res, args);
+        return;
+      }
+      stats.commitFailures += 1;
+      const url = res.req ? res.req.method + ' ' +
+        String(res.req.originalUrl || res.req.url || '').split('?')[0] : '';
+      log.error(errorCodes.tag('STS-STORE-0066') + 'persistence: ' +
+                (url || 'a response') + ' changed the store and the commit ' +
+                'of that change failed (' + failed.join('; ') + '); it is ' +
+                'answered 503 instead of its success. The change is still ' +
+                'in memory and its write is retried.');
+      refuseForCommit(res, end);
     });
     log.debug("Leaving end(). Held for the commit.");
     return res;
   };
   log.debug("Leaving holdUntilCommitted().");
+}
+
+// ---------------------------------------------------------------------------
+// RULE 2 FOR AN LDAP OPERATION (2026-09-29, #351).
+//
+// `ldap/ldap_server.js` wraps every handler in this at registration, INSIDE
+// what `LOCAL_HANDLERS` holds, so it runs wherever the handler runs — the
+// process holding the socket, or the request worker the operation was
+// dispatched to — and holds that process's writes, which are the ones the
+// operation made.
+//
+// An LDAP response is `res.end()` and a handler's `next()`, and both are
+// held: `end()` until the commit, and a `next()` the handler called after
+// it until the result has gone, so the worker's `performOperation()` (which
+// reads the outcome when `next()` is called) sees the held result and not an
+// operation that "ended nothing". `req.stsAsyncOperation` says so, as the
+// asynchronous bind does. A handler that never calls `next()` gets one call
+// once the result has gone, which is ldapjs's no-op past the last handler.
+//
+// **A FAILED COMMIT IS `unavailable` (52), NOT `busy` (51).** RFC 4511
+// section 4.1.9: busy is "too busy to perform the request"; unavailable is
+// "a subsystem necessary to complete the operation is offline" — and the
+// store that refused the transaction is exactly that subsystem, whatever
+// refused it (a starved pool, a fence, a database that went away). A worker
+// that dies mid-operation is already answered 52 (`ldap/CLAUDE.md`, *A
+// rejection is a refusal and never a second attempt*), so a client sees one
+// result code for "the change may not have landed". Both are transient to
+// every LDAP client that retries; 52 is the one that is true.
+//
+// **READS ARE HELD ONLY FOR WHAT THEY CHANGED IN THE DIRECTORY OR THE KEYS**,
+// never for the audit and counter rows a search or compare leaves: the HTTP
+// call log's success row, which is not held either (see above), for the
+// same cost argument — a transaction on every read. A bind is held for all
+// it wrote: a sign-in's rows are the ones somebody goes looking for.
+// ---------------------------------------------------------------------------
+const LDAP_WRITES = ['add', 'del', 'delete', 'modify', 'modifyDN'];
+const LDAP_READS = ['search', 'compare'];
+
+/**
+ * Wraps an LDAP handler so that its result is sent only once the writes it
+ * made have committed, and an error made by `refusal` is sent instead when
+ * that commit fails.
+ *
+ * @param operation - the operation's name (`add`, `search`, …)
+ * @param handler - the ldapjs handler
+ * @param refusal - builds the error sent in place of a result whose commit
+ *   failed, from a message
+ * @returns the wrapped handler
+ */
+function answerAfterCommit(operation, handler, refusal) {
+  log.debug("Entering answerAfterCommit(). " + operation);
+  const writing = LDAP_WRITES.indexOf(operation) >= 0;
+  const reading = LDAP_READS.indexOf(operation) >= 0;
+  log.debug("Leaving answerAfterCommit().");
+  return function answeredAfterCommit(req, res, next) {
+    log.debug("Entering answeredAfterCommit(). " + operation);
+    const store = persistence();
+    if (typeof store.answersAfterCommit !== 'function' ||
+        !store.answersAfterCommit() ||
+        typeof store.writeGeneration !== 'function' ||
+        typeof store.commitThrough !== 'function') {
+      log.debug("Leaving answeredAfterCommit(). Not held here.");
+      return handler(req, res, next);
+    }
+    const arrival = store.writeGeneration();
+    const end = res.end;
+    let held = false;
+    let nextArgs = null;
+    res.end = function () {
+      log.debug("Entering the held end(). " + operation);
+      const args = arguments;
+      res.end = end;
+      const now = store.writeGeneration();
+      const backlog = writing && typeof store.commitBacklog === 'function' &&
+        !!store.commitBacklog();
+      const wrote = now.directory !== arrival.directory ||
+        (!reading && mintedWrites(now) !== mintedWrites(arrival)) ||
+        (typeof store.keysPending === 'function' && store.keysPending()) ||
+        backlog;
+      if (!wrote) {
+        log.debug("Leaving the held end(). Nothing written.");
+        return end.apply(res, args);
+      }
+      held = true;
+      req.stsAsyncOperation = true;
+      stats.ldapHeldForCommit += 1;
+      if (backlog) {
+        stats.heldForBacklog += 1;
+      }
+      commitFailures(store, now).then(function (failed) {
+        if (!failed.length) {
+          end.apply(res, args);
+          next.apply(null, nextArgs || []);
+          return;
+        }
+        stats.ldapRefusedForCommit += 1;
+        stats.commitFailures += 1;
+        log.error(errorCodes.tag('STS-STORE-0067') + 'persistence: an LDAP ' +
+                  operation + ' changed the store and the commit of that ' +
+                  'change failed (' + failed.join('; ') + '); it is ' +
+                  'answered unavailable (52) instead of its result. The ' +
+                  'change is still in memory and its write is retried.');
+        next(refusal('The change could not be committed to the store. ' +
+                     'Nothing was confirmed; try again.'));
+      });
+      log.debug("Leaving the held end(). Held for the commit.");
+      return undefined;
+    };
+    log.debug("Leaving answeredAfterCommit().");
+    return handler(req, res, function () {
+      if (held) {
+        nextArgs = Array.prototype.slice.call(arguments);
+        return undefined;
+      }
+      return next.apply(null, arguments);
+    });
+  };
 }
 
 // RULE 2 FOR A MESSAGE THIS NODE SENDS (2026-09-27). What rule 2 does for a
@@ -392,18 +671,24 @@ function middleware() {
   log.debug("Leaving middleware().");
   return function clusterBarrier(req, res, next) {
     log.debug("Entering clusterBarrier().");
+    if (!holds()) {
+      log.debug("Leaving clusterBarrier(). Neither rule applies.");
+      next();
+      return;
+    }
+    const store = persistence();
+    const arrival = typeof store.writeGeneration === 'function'
+      ? store.writeGeneration() : null;
+    res[ARRIVAL] = arrival;
+    holdUntilCommitted(res, arrival, req);
+    // RULE 1 IS STILL A CLUSTER RULE: one node has nobody to catch up with.
     if (!active()) {
-      log.debug("Leaving clusterBarrier(). Not active-active.");
+      log.debug("Leaving clusterBarrier(). Rule 2 only.");
       next();
       return;
     }
     stats.requests += 1;
     const began = Date.now();
-    const store = persistence();
-    const arrival = typeof store.writeGeneration === 'function'
-      ? store.writeGeneration() : null;
-    res[ARRIVAL] = arrival;
-    holdUntilCommitted(res, arrival);
     const synced = req[SYNCED]
       ? Promise.resolve(req[SYNCED]) : syncShared();
     synced.then(function (answer) {
@@ -431,7 +716,7 @@ function middleware() {
 function report() {
   log.debug("Entering report().");
   log.debug("Leaving report().");
-  return Object.assign({ active: active() }, stats, {
+  return Object.assign({ active: active(), holds: holds() }, stats, {
     meanWaitMs: stats.requests ? stats.totalWaitMs / stats.requests : 0,
     meanHoldMs: stats.heldForCommit
       ? stats.totalHoldMs / stats.heldForCommit : 0
@@ -453,6 +738,8 @@ module.exports = {
   middleware: middleware,
   syncShared: syncShared,
   holdUntilCommitted: holdUntilCommitted,
+  answerAfterCommit: answerAfterCommit,
+  onCommitRefused: onCommitRefused,
   commitBeforeSending: commitBeforeSending,
   callLogStarts: callLogStarts,
   isActive: isActive,

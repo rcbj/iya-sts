@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 // File: webauthn_policy.ts
@@ -117,6 +117,28 @@ Object.keys(webauthn.COSE_ALGS).forEach(function (id) {
 // was settable.
 const FALLBACK_ALGS = ['ES256', 'RS256'];
 
+// THE POST-QUANTUM ALGORITHMS (2026-10-01): RFC 9964's ML-DSA, what
+// `webauthn.pqcOnly` narrows the request to — and what it asks for when the
+// list names none of them, because an empty request is refused by the
+// browser and a classical one is what the setting says not to send.
+/**
+ * The post-quantum WebAuthn algorithms, RFC 9964's ML-DSA, in the order
+ * `webauthn.pqcOnly` requests them when the list names none.
+ */
+const PQC_ALGS = ['ML-DSA-44', 'ML-DSA-65', 'ML-DSA-87'];
+
+// THE INSECURE ONES (2026-10-01), by name: the verifier's
+// `INSECURE_COSE_ALGS` read through its own table, so the two cannot list
+// different algorithms. Offered and accepted only where
+// `insecureAlgorithmsAllowed()` says.
+/**
+ * The broken WebAuthn algorithms (SHA-1's RS1), offered and accepted only
+ * where `webauthn.insecureAlgorithms` allows them.
+ */
+const INSECURE_ALGS = webauthn.INSECURE_COSE_ALGS.map(function (id) {
+  return webauthn.COSE_ALGS[String(id)];
+});
+
 // The attestation statement formats `authn/webauthn_attestation.ts` verifies
 // (#105): all eight of WebAuthn Level 3 section 8. Written here rather than
 // read from that module because this one is required by it, and a table of
@@ -159,7 +181,10 @@ const FAILED_CHECK_CODES = {
   // WebAuthn Level 3 section 7.1's remaining registration checks (#105).
   'credential algorithm was offered': 'STS-AUTHN-0228',
   'credential ID is at most 1023 bytes': 'STS-AUTHN-0229',
-  'backup state only where backup eligible': 'STS-AUTHN-0230'
+  'backup state only where backup eligible': 'STS-AUTHN-0230',
+  // An assertion by a key whose algorithm is insecure, with
+  // `webauthn.insecureAlgorithms` off (2026-10-01).
+  'algorithm is allowed': 'STS-AUTHN-0294'
 };
 
 // The `authenticatorSelection` member of the creation options. Its
@@ -277,6 +302,9 @@ class WebauthnPolicy {
       credProps: config.value('webauthn.credProps') !== false,
       primaryAllowed: config.value('webauthn.primaryAllowed') !== false,
       mfaAllowed: config.value('webauthn.mfaAllowed') !== false,
+      // The two algorithm flags (2026-10-01).
+      insecureAlgorithms: this.insecureAlgorithmsAllowed(),
+      pqcOnly: this.pqcOnly(),
       maxKeysPerPerson: this.clamp(config.value('webauthn.maxKeysPerPerson'), 1,
                                    50,
                                    10)
@@ -394,7 +422,9 @@ class WebauthnPolicy {
     const list = (Array.isArray(asked) ? asked : String(asked || '').split(','))
       .map(function (name) { return String(name || '').trim(); })
       .filter(Boolean);
-    const kept = [];
+    const insecureAllowed = this.insecureAlgorithmsAllowed();
+    const pqcOnly = this.pqcOnly();
+    let kept = [];
     list.forEach(function (name) {
       if (ALG_IDS[name] === undefined) {
         log.warn('webauthn: "' + name + '" is not an algorithm this service ' +
@@ -405,10 +435,43 @@ class WebauthnPolicy {
                  'works again.');
         return;
       }
+      // AN INSECURE ONE ONLY WHERE THE REALM ALLOWS IT (2026-10-01): named in
+      // the list or not, it is dropped while `webauthn.insecureAlgorithms`
+      // is off (or the service is in product mode, which ignores it).
+      if (INSECURE_ALGS.indexOf(name) >= 0 && !insecureAllowed) {
+        log.debug('webauthn: ' + name + ' is insecure and ' +
+                  'webauthn.insecureAlgorithms is off; not offered.');
+        return;
+      }
       if (kept.indexOf(name) < 0) {
         kept.push(name);
       }
     });
+    // ON, THE INSECURE ONES ARE REQUESTED TOO, last: the flag says to use
+    // them, and an authenticator takes the first algorithm it supports, so
+    // at the end they are asked for only from one that supports nothing
+    // better.
+    if (insecureAllowed) {
+      INSECURE_ALGS.forEach(function (name) {
+        if (kept.indexOf(name) < 0) {
+          kept.push(name);
+        }
+      });
+    }
+    // POST-QUANTUM ONLY (2026-10-01): the request narrowed to ML-DSA, and
+    // all three where the list names none. It narrows what is REQUESTED,
+    // and so what may be registered (section 7.1's offered-algorithm
+    // check); a classical key already enrolled goes on signing in.
+    if (pqcOnly) {
+      kept = kept.filter(function (name) {
+        return PQC_ALGS.indexOf(name) >= 0;
+      });
+      if (!kept.length) {
+        log.debug('Leaving WebauthnPolicy.algorithmsOffered(). PQC only, ' +
+                  'and the list names no ML-DSA: all three.');
+        return PQC_ALGS.slice();
+      }
+    }
     if (!kept.length) {
       // NOT an empty list. `pubKeyCredParams: []` is a registration the browser
       // refuses outright, with an error the ceremony reports as one of its
@@ -426,6 +489,49 @@ class WebauthnPolicy {
     log.debug('Leaving WebauthnPolicy.algorithmsOffered(). ' + kept.length +
               ' offered.');
     return kept;
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE TWO ALGORITHM FLAGS (2026-10-01, rcbj), PER REALM like every runtime
+  // setting (`config.value()` reads the ambient realm's override first).
+  //
+  // `webauthn.insecureAlgorithms`, off by default: the broken algorithms
+  // (SHA-1's RS1) are offered and accepted. DEVELOPMENT ONLY, the row's
+  // `onlyWhile: 'usesBrokenAlgorithms'` — product cannot set it, and a value
+  // that reached it anyway is ignored here, because product never uses a
+  // broken algorithm (`mode.usesBrokenAlgorithms()`).
+  //
+  // `webauthn.pqcOnly`, off by default: only ML-DSA is requested.
+  // ---------------------------------------------------------------------------
+  /**
+   * Tells whether this realm offers and accepts the insecure WebAuthn
+   * algorithms (RS1): `webauthn.insecureAlgorithms`, in development mode
+   * only.
+   *
+   * @returns true when they are allowed
+   */
+  insecureAlgorithmsAllowed(): boolean {
+    const { config, log, mode } = this.deps;
+    log.debug('Entering WebauthnPolicy.insecureAlgorithmsAllowed().');
+    const allowed = config.value('webauthn.insecureAlgorithms') === true &&
+                    mode.usesBrokenAlgorithms();
+    log.debug('Leaving WebauthnPolicy.insecureAlgorithmsAllowed(). ' +
+              allowed);
+    return allowed;
+  }
+
+  /**
+   * Tells whether this realm requests only the post-quantum algorithms
+   * (ML-DSA): `webauthn.pqcOnly`.
+   *
+   * @returns true when it does
+   */
+  pqcOnly(): boolean {
+    const { config, log } = this.deps;
+    log.debug('Entering WebauthnPolicy.pqcOnly().');
+    const only = config.value('webauthn.pqcOnly') === true;
+    log.debug('Leaving WebauthnPolicy.pqcOnly(). ' + only);
+    return only;
   }
 
   // The COSE identifiers for `pubKeyCredParams`, in the order the names were
@@ -750,8 +856,12 @@ class WebauthnPolicy {
       algorithms: Object.keys(webauthn.COSE_ALGS).map(function (id) {
         const name = webauthn.COSE_ALGS[id];
         return { name: name, coseAlg: Number(id),
-                 offered: live.algorithms.indexOf(name) >= 0 };
+                 offered: live.algorithms.indexOf(name) >= 0,
+                 postQuantum: PQC_ALGS.indexOf(name) >= 0,
+                 insecure: INSECURE_ALGS.indexOf(name) >= 0 };
       }),
+      insecureAlgorithms: live.insecureAlgorithms,
+      pqcOnly: live.pqcOnly,
       curves: Object.keys(webauthn.COSE_CURVES).map(function (id) {
         return { name: webauthn.COSE_CURVES[id], coseCurve: Number(id) };
       }),
@@ -829,6 +939,10 @@ export = {
   roleAllowed: slot.forward('roleAllowed'),
   algorithmsOffered: slot.forward('algorithmsOffered'),
   algorithmIds: slot.forward('algorithmIds'),
+  insecureAlgorithmsAllowed: slot.forward('insecureAlgorithmsAllowed'),
+  pqcOnly: slot.forward('pqcOnly'),
+  PQC_ALGS: PQC_ALGS,
+  INSECURE_ALGS: INSECURE_ALGS,
   creationOptions: slot.forward('creationOptions'),
   authenticatorKinds: slot.forward('authenticatorKinds'),
   requestOptions: slot.forward('requestOptions'),

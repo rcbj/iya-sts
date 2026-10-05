@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -146,6 +146,11 @@ interface EditableRow {
   must: boolean;
   format: string;
   note: string;
+  // The field grid's (2026-10-01): which tab draws it, an example of a valid
+  // value, and whether the simple view of the create form offers it.
+  group: string;
+  example: string;
+  simple: boolean;
 }
 
 // One attribute of the universe that is NOT editable, with the door to use.
@@ -238,6 +243,110 @@ const MANAGED: Record<string, string> = {
         'page, or POST /admin-api/users/set-mail), because a write of it is ' +
         'VERIFIED and the former address is told it changed.'
 };
+
+// ---------------------------------------------------------------------------
+// THE FIELD GRID'S GROUPS (rcbj, 2026-10-01): a person's page draws the
+// editable attributes as typed fields, one tab per group with its own Save,
+// and `/admin/users/new` draws the same fields under the same headings — the
+// application page's model. The groups are named here, beside the list they
+// partition, so the two pages cannot group one attribute two ways. An
+// attribute no group names is drawn under Other, so a row added to the schema
+// or the catalogue is drawn the day it is added.
+// ---------------------------------------------------------------------------
+const FIELD_GROUPS = [
+  { id: 'name', label: 'Name',
+    what: 'What the person is called: the two names every person must hold ' +
+          '(cn and sn), the parts of them, and the names they were known by.',
+    attributes: ['cn', 'sn', 'givenName', 'displayName', 'initials',
+                 'schacPersonalTitle', 'salutation', 'alsoKnownAs',
+                 'birthFamilyName', 'birthGivenName', 'birthMiddleName'] },
+  { id: 'contact', label: 'Contact',
+    what: 'How to reach them, and in which language. The email address is ' +
+          'set by its own control, because an address an administrator sets ' +
+          'is marked verified and the former one is told.',
+    attributes: ['telephoneNumber', 'mobile', 'homePhone', 'pager',
+                 'facsimileTelephoneNumber', 'preferredLanguage',
+                 'labeledURI'] },
+  { id: 'organization', label: 'Organization',
+    what: 'Where they sit in the organization.',
+    attributes: ['title', 'o', 'ou', 'businessCategory', 'departmentNumber',
+                 'employeeNumber', 'employeeType', 'employeeStatus',
+                 'roomNumber', 'physicalDeliveryOfficeName', 'manager',
+                 'secretary', 'carLicense'] },
+  { id: 'address', label: 'Address',
+    what: 'Postal addresses, work and home.',
+    attributes: ['street', 'l', 'st', 'postalCode', 'c', 'postalAddress',
+                 'postOfficeBox', 'homePostalAddress', 'registeredAddress',
+                 'destinationIndicator', 'preferredDeliveryMethod'] },
+  { id: 'identity', label: 'Identity',
+    what: 'Facts an identity-assurance verification is about: birth and ' +
+          'citizenship.',
+    attributes: ['schacDateOfBirth', 'placeOfBirthCountry',
+                 'placeOfBirthRegion', 'placeOfBirthLocality',
+                 'schacCountryOfCitizenship', 'x500UniqueIdentifier'] },
+  { id: 'other', label: 'Other',
+    what: 'Everything else the schema gives a person.',
+    attributes: [] as string[] }
+];
+
+// AN EXAMPLE OF A VALID VALUE FOR EVERY EDITABLE ATTRIBUTE, drawn as the
+// box's placeholder (the application grid's rule, 2026-10-01). Lower-cased
+// names. `tests/person_fields.js` fails on an editable attribute with none.
+const FIELD_EXAMPLES: Record<string, string> = {
+  cn: 'Alice Smith', sn: 'Smith', givenname: 'Alice',
+  displayname: 'Alice Smith', initials: 'A. J.',
+  schacpersonaltitle: 'Dr', salutation: 'Dear Dr Smith',
+  alsoknownas: 'Ally Smith', birthfamilyname: 'Jones',
+  birthgivenname: 'Alice', birthmiddlename: 'Jane',
+  telephonenumber: '+1 555 0100', mobile: '+1 555 0101',
+  homephone: '+1 555 0102', pager: '+1 555 0103',
+  facsimiletelephonenumber: '+1 555 0104', preferredlanguage: 'en-GB',
+  labeleduri: 'https://example.com/~alice Alice\'s page',
+  title: 'Principal Engineer', o: 'Example Corp', ou: 'Engineering',
+  businesscategory: 'Software', departmentnumber: '4711',
+  employeenumber: 'E-10042', employeetype: 'Employee',
+  employeestatus: 'active', roomnumber: '3.14',
+  physicaldeliveryofficename: 'Headquarters',
+  manager: 'uid=bob,ou=users,dc=example,dc=com',
+  secretary: 'uid=carol,ou=users,dc=example,dc=com', carlicense: 'ABC 123',
+  street: '1 Main Street', l: 'Springfield', st: 'Illinois',
+  postalcode: '62701', c: 'US', postaladdress: '1 Main Street$Springfield',
+  postofficebox: 'PO Box 42', homepostaladdress: '9 Elm Road$Springfield',
+  registeredaddress: '1 Main Street$Springfield',
+  destinationindicator: 'USNYC', preferreddeliverymethod: 'telephone',
+  schacdateofbirth: '19800131', placeofbirthcountry: 'US',
+  placeofbirthregion: 'Illinois', placeofbirthlocality: 'Springfield',
+  schaccountryofcitizenship: 'US', x500uniqueidentifier: '#\'0101\'B',
+  description: 'Joined in 2026',
+  seealso: 'cn=staff,ou=groups,dc=example,dc=com',
+  internationalisdnnumber: '+1 555 0105', telexnumber: '123456 ACME US',
+  teletexterminalidentifier: 'ACME-01', x121address: '31102100000123',
+  mail: 'alice@example.com'
+};
+
+// WHAT THE SIMPLE VIEW OF `/admin/users/new` OFFERS: the names, the address
+// and the contact details somebody creating a person usually has. Lower-cased.
+const SIMPLE_FIELDS = ['cn', 'sn', 'givenname', 'displayname', 'mail',
+                       'telephonenumber', 'mobile', 'title', 'o', 'ou',
+                       'preferredlanguage'];
+
+/**
+ * Returns the field grid group an attribute is drawn in.
+ *
+ * @param name - the attribute, in any case
+ * @returns the group's id, `other` when no group names it
+ */
+function groupOf(name: string): string {
+  helpers.log.debug("Entering groupOf().");
+  const key = String(name || '').toLowerCase();
+  const group = FIELD_GROUPS.filter(function (one) {
+    return one.attributes.some(function (attr) {
+      return attr.toLowerCase() === key;
+    });
+  })[0];
+  helpers.log.debug("Leaving groupOf().");
+  return group ? group.id : 'other';
+}
 
 /**
  * The three edits: `set` (replace every value with one, or clear with an empty
@@ -375,7 +484,9 @@ class PersonEditor {
       editable.push({ name: name, label: label, schema: schema,
                       multi: SINGLE_VALUED.indexOf(key) < 0,
                       must: !!flags.must, format: format,
-                      note: format ? FORMAT_HINTS[format] : '' });
+                      note: format ? FORMAT_HINTS[format] : '',
+                      group: groupOf(name), example: FIELD_EXAMPLES[key] || '',
+                      simple: SIMPLE_FIELDS.indexOf(key) >= 0 });
       log.debug("Leaving consider(). Editable.");
     };
     schemaRows().forEach(function (row) {
@@ -556,6 +667,59 @@ class PersonEditor {
     const ok = DN_SHAPE.test(value);
     log.debug("Leaving PersonEditor.shaped(). " + ok);
     return ok ? { value: value } : { error: hint };
+  }
+
+  // -------------------------------------------------------------------------
+  // THE VALUES A CREATE WRITES, held to the rules an edit is (2026-10-01).
+  // `/admin/users/new` draws the same fields as a person's Attributes tab, so
+  // a value the tab would refuse must not be written by a create: the shape
+  // of a country code, a date, a DN, the length, no control character, and
+  // one value for a single-valued attribute. Answers null for an attribute
+  // this editor does not know, which the create's own catalogue decides.
+  // -------------------------------------------------------------------------
+  /**
+   * Checks the values a create would write for one attribute against the
+   * editor's rules, and returns them in their normal form.
+   *
+   * @param name - the attribute, in any case
+   * @param values - the values, empty ones already removed
+   * @returns null when the editor does not know the attribute; otherwise
+   * `{ name, values }`, or `{ error }` naming what was wrong
+   */
+  checkCreateValues(name: string, values: unknown[]):
+      { name?: string; values?: string[]; error?: string } | null {
+    const { log } = this.deps;
+    log.debug("Entering PersonEditor.checkCreateValues(). " + name);
+    const row = this.universe().editable.filter(function (one) {
+      return one.name.toLowerCase() === String(name || '').toLowerCase();
+    })[0];
+    if (!row) {
+      log.debug("Leaving PersonEditor.checkCreateValues(). Not ours.");
+      return null;
+    }
+    const list = [].concat(values || []).map(String);
+    if (!row.multi && list.length > 1) {
+      log.debug("Leaving PersonEditor.checkCreateValues(). Several values.");
+      return { error: row.name + ' holds one value, and ' + list.length +
+                      ' were given.' };
+    }
+    const out: string[] = [];
+    for (const one of list) {
+      const checked = this.normalised(row, one);
+      if (checked.error !== undefined) {
+        log.debug("Leaving PersonEditor.checkCreateValues(). Refused.");
+        return { error: 'The value for ' + row.name + ' ' + checked.error +
+                        '.' };
+      }
+      const value = String(checked.value);
+      if (value !== '' && !out.some(function (held) {
+        return held.toLowerCase() === value.toLowerCase();
+      })) {
+        out.push(value);
+      }
+    }
+    log.debug("Leaving PersonEditor.checkCreateValues().");
+    return { name: row.name, values: out };
   }
 
   // A refusal, coded.
@@ -747,6 +911,16 @@ export = {
   instanceOrigin: (): string => slot.origin(),
   MAX_VALUE_LENGTH: MAX_VALUE_LENGTH,
   MODES: MODES,
+  /**
+   * The field grid's groups, in tab order; an attribute none names is in
+   * `other`.
+   */
+  FIELD_GROUPS: FIELD_GROUPS,
+  /**
+   * An example of a valid value, by lower-cased attribute name.
+   */
+  FIELD_EXAMPLES: FIELD_EXAMPLES,
+  groupOf: groupOf,
   // The directory's slot (rule 3e), filled by `ldap/ldap_server.js`. Both
   // members or nothing: see the header.
   /**
@@ -773,5 +947,6 @@ export = {
   editableAttributes: slot.forward('editableAttributes'),
   withheldAttributes: slot.forward('withheldAttributes'),
   editorFor: slot.forward('editorFor'),
+  checkCreateValues: slot.forward('checkCreateValues'),
   update: slot.forward('update')
 };

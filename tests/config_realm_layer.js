@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -234,7 +234,34 @@ function checkMarker(t) {
     'spiffe.serverPort',
     // #170: the SPIFFE Broker API's listener, bound with the realm's others.
     'spiffe.brokerPort',
-    'spiffe.grpcHost'
+    'spiffe.grpcHost',
+    // #99: a realm's own front-end listener, bound with the realm and
+    // `realmOnly` besides — read from the realm's overrides alone.
+    'listener.port',
+    'listener.publicBaseUrl',
+    'listener.hostnames',
+    'listener.certificateFile',
+    'listener.privateKeyFile',
+    // #423: that listener's TLS policy and client authentication.
+    'listener.disableTls12',
+    'listener.tls13CipherSuites',
+    'listener.pqcOnly',
+    'listener.disableOptionalClientCertificate',
+    'listener.requireClientCertificate',
+    // #429: the rest of the listener's TLS settings, generated.
+    'listener.minVersion',
+    'listener.ciphers',
+    'listener.groups',
+    'listener.signatureAlgorithms',
+    'listener.trustAnchorsFile',
+    'listener.trustIssuedClientCertificates',
+    // #429: its TLS session cache and HTTP connection pooling.
+    'listener.sessionTimeoutS',
+    'listener.sessionCacheSize',
+    'listener.keepAliveTimeoutS',
+    'listener.headersTimeoutS',
+    'listener.maxRequestsPerSocket',
+    'listener.maxConnections'
   ];
   const marked = config.SETTINGS.filter(function (s) {
     return s.realmRuntime;
@@ -429,8 +456,13 @@ function checkReadingEnd(t) {
     return s.derived && FOLLOWS_THE_REALM.indexOf(s.key) === -1;
   });
   const flipped = {};
-  config.SETTINGS.filter(function (s) { return s.realmRuntime; })
-    .forEach(function (s) {
+  // The `listener.*` rows (#99) are left out: a realm's listener settings are
+  // accepted only together (a port needs an https base), so a set of
+  // placeholder values is refused by their own rules, which
+  // tests/realm_listener.js holds. None of them is read by a derived row.
+  config.SETTINGS.filter(function (s) {
+    return s.realmRuntime && s.key.indexOf('listener.') !== 0;
+  }).forEach(function (s) {
       flipped[s.key] = differentValue(s);
     });
   withRealm(t, 'trl-flip', flipped, function (realm) {
@@ -519,19 +551,108 @@ function checkComplianceReport(t) {
   log.debug("Leaving checkComplianceReport().");
 }
 
-function run(t) {
-  log.debug("Entering run().");
+function runChecks(t) {
+  log.debug("Entering runChecks().");
   checkMarker(t);
   checkWritingEnd(t);
   checkRealmWrites(t);
   checkReadingEnd(t);
   checkReadingLock(t);
   checkComplianceReport(t);
+  log.debug("Leaving runChecks().");
+}
+
+// THE CHECKS RUN IN A CHILD PROCESS, and that is what makes the deletion of
+// CONFIG_FILE at the top of this file mean anything. config.js reads the
+// appconfig file once, when it is first required, and `npm test` runs every
+// file in ONE process: an earlier file that loads the service
+// (admin_actions_layer.js does) has config.js read the tests image's
+// CONFIG_FILE=./env/local.js, which sets global.https, and the three checks
+// about a plain-http process then fail on a correct service. A child that
+// loads config.js first is the only way to be sure this file is first. Its
+// findings are written to a file and replayed into the parent's harness.
+function childMain() {
+  log.debug("Entering childMain().");
+  const findings = [];
+  const t = {
+    log: log,
+    name: 'config_realm_layer',
+    ok: function (what, detail) {
+      findings.push({ ok: true, what: what, detail: detail });
+    },
+    bad: function (what, detail) {
+      findings.push({ ok: false, what: what, detail: detail });
+    },
+    check: function (condition, what, detail) {
+      findings.push({ ok: !!condition, what: what, detail: detail });
+      return !!condition;
+    },
+    equal: function (actual, expected, what) {
+      return t.check(actual === expected, what,
+                     'expected ' + JSON.stringify(expected) +
+                     ', got ' + JSON.stringify(actual));
+    }
+  };
+  try {
+    runChecks(t);
+  } catch (e) {
+    log.debug("Caught in childMain(): " + ((e && e.message) || e));
+    findings.push({ ok: false, what: 'the child ran to the end',
+                    detail: String((e && e.stack) || e) });
+  }
+  require('fs').writeFileSync(process.env.CRL_OUT, JSON.stringify(findings));
+  log.debug("Leaving childMain().");
+}
+
+function run(t) {
+  log.debug("Entering run().");
+  const fs = require('fs');
+  const os = require('os');
+  const path = require('path');
+  const out = path.join(os.tmpdir(), 'config-realm-layer-' + process.pid +
+                        '-' + require('crypto').randomBytes(8)
+                          .toString('hex') + '.json');
+  // The child inherits no STS_ variable and no CONFIG_FILE: what it asserts
+  // is the shipped answer, which those would change.
+  const clean = {};
+  Object.keys(process.env).forEach(function (key) {
+    if (!/^(STS_|CONFIG_FILE$)/.test(key)) {
+      clean[key] = process.env[key];
+    }
+  });
+  const result = require('child_process').spawnSync(process.execPath,
+    ['-e', 'require(' + JSON.stringify(__filename) + ').childMain()'], {
+      env: Object.assign(clean, { LOG_LEVEL: 'fatal', CRL_OUT: out }),
+      encoding: 'utf8', timeout: 120000, cwd: path.join(__dirname, '..')
+    });
+  let findings = null;
+  try {
+    findings = JSON.parse(fs.readFileSync(out, 'utf8'));
+  } catch (e) {
+    log.debug("Caught in run(): " + ((e && e.message) || e));
+    findings = null;
+  }
+  try {
+    fs.unlinkSync(out);
+  } catch (e) {
+    log.debug("Caught in run(): " + ((e && e.message) || e));
+  }
+  if (!t.check(Array.isArray(findings),
+               'the child process reported its findings',
+               'exit ' + result.status + ' ' +
+               String(result.stderr || '').slice(-1200))) {
+    log.debug("Leaving run().");
+    return;
+  }
+  findings.forEach(function (one) {
+    t.check(one.ok, one.what, one.detail);
+  });
   log.debug("Leaving run().");
 }
 
 module.exports = {
   name: 'config_realm_layer',
   describe: 'what a trust realm may and may not carry, at both ends',
-  run: run
+  run: run,
+  childMain: childMain
 };

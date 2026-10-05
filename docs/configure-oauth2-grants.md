@@ -138,7 +138,7 @@ Taken from `oauth_fixtures.js` and `oauth2_sts_endpoints.js`.
 4. In **Where responses go back to**, enter `com.example.oauth2stsendpoints:/callback`, one URI per line.
 5. Click **Create the application**.
 6. On the application's page, in **Change what it is allowed to do**:
-   - **Set** `oauthTokenEndpointAuthMethod` to `none`.
+   - **Tick** `none` under `oauthTokenEndpointAuthMethod`, and nothing else.
    - **Set** `oauthConfidential` to `FALSE`.
    - **Add to** `oauthGrantType` the values `authorization_code` and `refresh_token`.
    - **Add to** `oauthAllowedScope` the values `openid`, `profile` and `email`.
@@ -169,7 +169,7 @@ Taken from `sts_token_revocation.js`.
 **Identifier** `rv-a` and redirect URI `https://rp.revoke.example.test/cb`. In
 **The client secret**, click **Generate Secret**, and copy the value before
 you create the application. Then, on the application's page:
-- **Set** `oauthTokenEndpointAuthMethod` to `client_secret_basic`.
+- **Tick** `client_secret_basic` under `oauthTokenEndpointAuthMethod`, and nothing else.
 - **Add to** `oauthAllowedScope` the value `openid`.
 
 An application that already exists gets a secret from the **Credentials →
@@ -234,7 +234,7 @@ Taken from `sts_scope_policy.js` and `oauth2_sts_endpoints.js`.
 1. Create the application: **Identifier** `svc`, tick **OAuth 2.0**, and
    generate a secret in **The client secret**. No redirect URI is needed.
 2. On its page:
-   - **Set** `oauthTokenEndpointAuthMethod` to `client_secret_post`.
+   - **Tick** `client_secret_post` under `oauthTokenEndpointAuthMethod`, and nothing else.
    - **Add to** `oauthGrantType` the value `client_credentials`.
    - **Add to** `oauthAllowedScope` each scope it may be issued, for example `api`.
 
@@ -486,11 +486,12 @@ The settings are `oauth2.saml2BearerGrant`, `…RequireRegisteredIssuer` and
 
 ## Token exchange (RFC 8693)
 
-A client exchanges a token it holds for a token for another audience. With no
-`actor_token` the exchange is **impersonation**. With one it is
-**delegation**, and the result carries a nested `act` claim. Who may do either
-is decided by the **delegation policy** on the application entries. See
-[OAuth 2.0 and OpenID Connect → Token exchange](oauth-oidc.md) for the model.
+A client exchanges a token it holds for a token for another audience. The
+exchange is a **delegation** (the result carries a nested `act` claim naming
+the actor) or an **impersonation** (it does not), as the issuance policy
+chooses — the request may ask with `exchange_semantics`. Who may do either is
+decided by the same controls as WS-Trust and Kerberos: see
+[Delegation and impersonation](delegation.md) for the model.
 
 Taken from `sts_delegation_policy.js`.
 
@@ -513,16 +514,18 @@ api applications/create '{"identifier":"dp-mid","name":"dp-mid","protocols":["oa
 
 **The policy:**
 ```bash
-# dp-mid may obtain tokens for dp-back …
+# a token issued for dp-mid may be handed on to dp-back …
 api applications/add '{"application":"dp-mid","attribute":"appAllowedToDelegateTo","value":"dp-back"}'
-# … and may do so with no actor token (impersonation)
-api applications/set '{"application":"dp-mid","attribute":"appTrustedToImpersonate","value":"TRUE"}'
+# … and dp-mid may also impersonate, when the request asks for it
+api applications/add '{"application":"dp-mid","attribute":"appDelegationSemantics","value":"delegation"}'
+api applications/add '{"application":"dp-mid","attribute":"appDelegationSemantics","value":"impersonation"}'
 ```
 
-Three more attributes can take part:
-* `appAllowedToActOnBehalfOf`, on the **target**, lists the applications that may act toward it.
-* `appDelegationSubjectGroup`, on the intermediary, holds group DNs that limit whose tokens it may exchange.
-* The person's own flags: `POST /admin-api/users/set-not-delegated {"user","value":true}` and `POST /admin-api/users/set-may-act {"user","delegate":"<application DN>"}`.
+More controls can take part:
+* `appAllowedToActOnBehalfOf`, on the **target**, lists the applications (and people) that may act toward it.
+* `appDelegationSubjectGroup`, on the actor, holds group DNs that limit whose tokens it may exchange.
+* `appDefaultDelegationSemantics` and `appNotDelegated` on an application.
+* The person's own settings: `POST /admin-api/users/set-not-delegated {"user","value":true}`, `POST /admin-api/users/set-may-act {"user","delegate":"<application DN>"}` and `POST /admin-api/users/set-delegation-semantics {"user","semantics":["delegation"],"default":"delegation"}`.
 
 To read the whole policy back, use `GET /admin-api/delegation/policy`; in the
 console it is `/admin/delegation`.
@@ -534,7 +537,8 @@ POST /oauth2/token
   &client_id=dp-mid&client_secret=<secret>
   &subject_token=<token>&subject_token_type=urn:ietf:params:oauth:token-type:access_token
   &audience=https://dp-back.example&scope=api
-  [&actor_token=<dp-mid's client-credentials token>
+  [&exchange_semantics=delegation|impersonation]
+  [&actor_token=<a token about the actor>
    &actor_token_type=urn:ietf:params:oauth:token-type:access_token]
 ```
 
@@ -614,7 +618,19 @@ settings are `oid4vci.txCodeLength` (default 5) and `oid4vci.txCodeMaxAttempts`
 
 ## Client authentication methods
 
-`oauthTokenEndpointAuthMethod` names the method. Each method needs something
+`oauthTokenEndpointAuthMethod` names the methods: a checkbox per method on the
+application's page, and a list in the API (`applications/add` and
+`applications/remove`, or an array in `create`). **A client may hold several**
+— a secret and a key pair, say — and the token endpoint accepts whichever one
+a request presents: a `client_assertion` is `private_key_jwt` or
+`client_secret_jwt` (by its `alg` where both are held), an `Authorization:
+Basic` header is `client_secret_basic`, a `client_secret` in the body is
+`client_secret_post`, the attestation headers are the attestation methods and
+a client certificate is `tls_client_auth` or `self_signed_tls_client_auth`.
+**`none` cannot be held with any other method**, because it is what makes a
+client public; a save that ticks it beside another is refused
+(`STS-REG-0207`). Registration (RFC 7591) reports the first method held, since
+its `token_endpoint_auth_method` is a single value. Each method needs something
 more on the application:
 
 | Method | What the application needs | How the client presents it | Job |

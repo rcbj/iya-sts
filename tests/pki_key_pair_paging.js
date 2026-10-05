@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 
@@ -23,8 +23,11 @@
 //      carries it as `back` — a link that dropped `personsPage` would reset the
 //      table the reader was not touching.
 //   4. THE REDIRECT A TAKE-OFF ANSWERS WITH IS REBUILT, NOT ECHOED. It is a
-//      `Location` header made out of a request body; the page numbers survive
-//      and anything else in `back` does not.
+//      `Location` header made out of a request body; the page numbers and
+//      the searches survive and anything else in `back` does not.
+//   5. FIVE ROWS A PAGE AT MOST, AND A SEARCH PER TABLE (2026-09-30): each
+//      table narrowed by its own box before it is paged, the other left
+//      alone, and the JSON still whole.
 //
 // In process because the page is behind the console gate and a sign-in is not
 // what is under test: the route's own handler is called with a request that
@@ -196,8 +199,10 @@ async function runBody(t) {
           '`personsPaging` is on page 1 — `issuedPage` did not move it');
   t.equal(json.personsPaging.total, json.persons.length,
           'and counts people, one per member of `persons`');
-  t.equal(whole.issuedPaging.perPage, 25,
-          'with no `per`, a table shows twenty-five rows');
+  t.equal(whole.issuedPaging.perPage, 5,
+          'with no `per`, a table shows five rows');
+  t.equal(pkiAdmin.pkiView({ query: { per: '50' } }).issuedPaging.perPage, 5,
+          'and a `per` above five is held to five');
 
   // -------------------------------------------------------------------------
   t.log.info('=== 2. the page: each table draws its own slice ===');
@@ -248,8 +253,12 @@ async function runBody(t) {
            href.indexOf('per=' + perPage) >= 0;
   }), 'every Applications paging link carries People\'s page and the ' +
       'shared `per`', appLinks.slice(0, 2).join(' '));
-  t.equal((body.match(/id="per"/g) || []).length, 1,
-          'the rows-per-table control is drawn once, and its id is unique');
+  t.equal((body.match(/id="per"/g) || []).length, 0,
+          'no rows-per-table control: every size it offered is above the ' +
+          'ceiling of five');
+  t.check(/id="find-issuedq"/.test(appsMarkup) &&
+          /id="find-personsq"/.test(peopleMarkup),
+          'each table has a search box of its own');
 
   const expectedBack = 'name="back" value="?per=' + perPage +
                        '&amp;issuedPage=' + appPage +
@@ -289,8 +298,44 @@ async function runBody(t) {
           '/admin/pki#pki-applications',
           'anything in `back` that is not a page number is dropped — the ' +
           'destination is rebuilt, never echoed');
+  t.equal(pkiAdmin.returnTo({ action: 'revoke', identifier: APPS[0],
+                              back: '?issuedq=pkp&issuedPage=2' }),
+          '/admin/pki?issuedPage=2&issuedq=pkp#pki-applications',
+          'a search in `back` survives the round trip');
   t.equal(pkiAdmin.returnTo({ action: 'build' }), '/admin/pki',
           'a control that carries no `back` gets the bare page, as before');
+
+  // -------------------------------------------------------------------------
+  t.log.info('=== 4. each table searched before it is paged ===');
+  const one = pkiAdmin.pkiView({ query: {
+    issuedq: APPS[3].toUpperCase(), issuedPage: '7' } });
+  t.equal(one.issuedPaging.total, 1,
+          'a case-insensitive identifier matches its one application row');
+  t.equal(one.issuedPaging.page, 1, 'on page 1 of 1');
+  t.equal(one.issuedSearch, APPS[3].toUpperCase(),
+          'and the reply says what it was narrowed by');
+  t.equal(one.issued.length, whole.issued.length,
+          '`issued` itself is still WHOLE');
+  t.equal(one.personsPaging.total, whole.personsPaging.total,
+          'People is not narrowed by the Applications box');
+  const runApps = pkiAdmin.pkiView({ query: { issuedq: 'pkp-app-' + RUN } });
+  t.equal(runApps.issuedPaging.total, APPS.length,
+          'a common part of the identifiers matches every one of them');
+  const searchedBody = drawPage({ issuedq: APPS[3], personsq: PEOPLE[0] });
+  const searchedApps = between(searchedBody, 'pki-applications',
+                               'Issue a signing key pair to a person');
+  const searchedPeople = between(searchedBody, 'pki-people',
+                                 'Revoking a certificate');
+  t.equal(namesIn(searchedApps, APPS).join(','), APPS[3],
+          'the Applications table draws only the match');
+  t.equal(namesIn(searchedPeople, PEOPLE).join(','), PEOPLE[0],
+          'and People only its own match');
+  t.check(/name="back" value="[^"]*issuedq=/.test(searchedApps),
+          'a Take-off button carries the search back with it');
+  const missing = drawPage({ personsq: 'nobody-' + RUN });
+  t.check(between(missing, 'pki-people', 'Revoking a certificate')
+    .indexOf('Nobody matches the search.') >= 0,
+          'a search that matches nobody says so');
   log.debug("Leaving runBody().");
 }
 

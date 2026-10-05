@@ -56,7 +56,7 @@ profile. It is shown once and cannot be shown again.
 * **A person** makes one for themselves on the user portal, at
   `/portal/certificates`.
 * **An administrator** makes one for any person or application in the realm on
-  Protocols → SCEP (`/admin/scep`), or through the management API:
+  Protocols → Cert issuance → SCEP (`/admin/scep`), or through the management API:
 
 ```bash
 curl -s -X POST https://host:8081/admin-api/scep/create-challenge \
@@ -69,6 +69,80 @@ port, and `plainUrl`, on the plain-HTTP listener), and a ready-to-paste `sscep`
 sequence that runs as it is written — the suite runs it
 (`tests/vendored/sts_scep_sscep.js`). Whoever redeems the challenge is issued a certificate **as the
 entry it names**: a request naming anybody else in its subjectAltName is refused.
+
+## Configuring SCEP
+
+### For the realm: Protocols → Cert issuance → SCEP
+
+The SCEP page of the console (`/admin/scep`) holds the realm's server: the
+endpoints (main port and plain-HTTP), the SCEP Issuing CA and the RA
+certificate, the profiles, the **challenge passwords** (make one for a person
+or an application, delete one), the **registered host names**, and the
+`scep.*` settings (see [Configuration](#configuration)). Viewing it needs
+Admin Read; changing anything needs Admin Write. A realm's own administrators
+manage their realm's page. **Monitoring → Cert issuance → SCEP enrollments**
+shows what the server has done and why anything was refused.
+
+To get a device enrolled:
+
+1. Turn the server on (`scep.enabled`, on by default), narrow
+   `scep.allowedProfiles` if needed, and pick `scep.raKeyAlgorithm`.
+2. Register the host names an entry may be issued under **Registered host
+   names**.
+3. Make a challenge password for the entry and profile, and give the device
+   the challenge and the URL the reply shows.
+
+### For one application
+
+An application's own rules are set on its page, **Directory → Applications →
+<the application>**:
+
+1. On the **Configuration** tab, **Protocol families** sub-tab, tick
+   **SCEP** and press **Save**. In **product** mode an application is
+   issued a certificate over SCEP only when it is ticked here; the
+   refusal is `STS-ENROLL-0094`. In development nothing is refused, and an
+   application with no families ticked is not refused in either mode.
+2. On the **Certificate enrollment** sub-tab, set any of the overrides
+   below and press **Save**. **A value set here overrides the realm's setting for this application**, in either direction; a field left empty takes the realm's value.
+
+The same attributes can be written with
+`POST /admin-api/applications/update-fields` or `/admin-api/applications/set`.
+
+The application's **Credentials** tab and its Certificate enrollment tab
+also list the certificates it was issued, each with a Revoke button, and
+generate its challenge passwords — the same actions as
+on this protocol's page. See [Applications](applications.md#certificate-enrollment-acme-est-scep).
+
+| Attribute | Overrides | What it does for this application |
+|---|---|---|
+| `scepAllowedProfiles` | `scep.allowedProfiles` | The profiles it may be issued. Where it lists something, it replaces the realm's list for this application, wider or narrower. The CA, OCSP and KDC profiles are never issued. A challenge cannot be made for another, and a request is refused `badRequest`. |
+| `scepDefaultProfile` | `scep.defaultProfile` | The profile a challenge for this application is made for when none is chosen. Used only when the list in force for it allows it. |
+| `scepCertificateLifetimeDays` | `scep.certificateLifetimeDays` | The certificate lifetime, in place of the realm's (longer or shorter). No certificate outlives its Issuing CA. |
+| `enrollMaxCertificates` | `pki.enrollmentMaxCertificatesPerEntry` | How many certificates it may hold across ACME, EST and SCEP, in place of the realm's (higher or lower). |
+
+An application has no portal, so its challenges are made by an administrator
+on the SCEP page or with `POST /admin-api/scep/create-challenge`
+(`"kind":"application"`).
+
+## Authenticating the caller
+
+`GetCACaps` and `GetCACert` are not authenticated. Every `PKIOperation` is a
+CMS message signed by the requester and encrypted to the RA, and is
+authenticated by what it carries:
+
+| Message | How the caller is authenticated |
+|---|---|
+| **PKCSReq** (a first enrollment) | A **challenge password** in the request's `challengePassword` attribute. It was made for one entry and one profile, by the person on `/portal/certificates` or by an administrator; it is redeemed once, within `scep.challengeLifetimeS`, and checked in both modes. The certificate is issued as that entry and nobody else. |
+| **RenewalReq**, or a **PKCSReq signed by a certificate this realm issued** | The **signing certificate**: issued by this realm, still on its entry and not revoked. No challenge. The new certificate is for that entry, and the old one goes on the CRL as `superseded`. |
+| **CertPoll** (GetCertInitial) | The same signer key as the transaction it asks about. |
+| **GetCert**, **GetCRL** | A signing certificate this realm issued to an entry that still holds it. |
+
+* A self-signed signer with no challenge is refused.
+* A message must use SHA-256, SHA-384 or SHA-512, and AES. SHA-1, MD5, DES
+  and 3DES are refused `badAlg`.
+* SCEP is answered over plain HTTP as well as TLS, in both modes.
+* Refused PKIOperations are rate-limited per challenge
+  (`scep.attemptsPerIdentity`) and per address (`scep.attemptsPerAddress`).
 
 ## With sscep
 
@@ -147,7 +221,7 @@ Three things to know:
   signature on server response … no content`, and certmonger retries it.
   RFC 8894 sends a FAILURE CertRep without signed content and certmonger's
   reader requires some, so it cannot tell a refusal from an outage. The reason
-  is on Monitoring → SCEP with its error code; stop the retries with
+  is on Monitoring → Cert issuance → SCEP enrollments with its error code; stop the retries with
   `getcert stop-tracking`.
 * **Its transactionID is its public key's digest**, so every request for the
   same key carries the same one. A second request under a completed
@@ -198,7 +272,7 @@ enrollment protocol**: `root-ca`, `intermediate-ca`, `issuing-ca`,
 `ocsp-responder` and `kdc` — their holder could issue certificates, answer OCSP
 for this authority, or impersonate the KDC.
 
-Host names are registered by an administrator on Protocols → SCEP or with
+Host names are registered by an administrator on Protocols → Cert issuance → SCEP or with
 `POST /admin-api/scep/add-host-name`. This service never proves control of a
 name by dialling it.
 
@@ -218,12 +292,12 @@ A request too malformed to name answers an HTTP error (400, 405, 413, 415, 429,
 501, 503). Anything else is a **CertRep FAILURE** — HTTP 200, signed by the RA —
 with a `failInfo`: `badAlg`, `badMessageCheck`, `badRequest`, `badTime` or
 `badCertId`. The reason is **not** in the reply; it is on the audit log and on
-Monitoring → SCEP enrollments (`/admin/scep/monitor`) as an
+Monitoring → Cert issuance → SCEP enrollments (`/admin/scep/monitor`) as an
 [error code](error-codes.md) (`STS-SCEP-…` or `STS-ENROLL-…`).
 
 ## Configuration
 
-Every `scep.*` setting is runtime and per trust realm, on **Protocols → SCEP**
+Every `scep.*` setting is runtime and per trust realm, on **Protocols → Cert issuance → SCEP**
 (`/admin/scep`).
 
 | Setting | Environment variable | Default | Runtime? | What it does |

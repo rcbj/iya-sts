@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -444,7 +444,10 @@ class EstConsole {
     const recent = snapshot.recent || [];
     const paging = adminViews.pagingOf(query, recent.length,
                                        { noun: 'requests' });
-    const issuedHere = core.certificatesInRealm(FAMILY);
+    // COUNTED, not listed (#352): the four tiles are four numbers, and
+    // `certificateCountsInRealm()` reads the same records with the same
+    // state rule and builds no row.
+    const issuedHere = core.certificateCountsInRealm(FAMILY);
     const json = {
       page: '/admin/est/monitor',
       title: 'EST enrollments',
@@ -457,16 +460,10 @@ class EstConsole {
         revoked: snapshot.revoked || 0
       },
       certificates: {
-        held: issuedHere.length,
-        valid: issuedHere.filter(function (one) {
-          return one.status === 'valid';
-        }).length,
-        revoked: issuedHere.filter(function (one) {
-          return one.status === 'revoked';
-        }).length,
-        expired: issuedHere.filter(function (one) {
-          return one.status === 'expired';
-        }).length
+        held: issuedHere.held,
+        valid: issuedHere.valid,
+        revoked: issuedHere.revoked,
+        expired: issuedHere.expired
       },
       operations: this.tableOf(snapshot.operations),
       profiles: this.tableOf(snapshot.profiles),
@@ -590,14 +587,19 @@ class EstConsole {
   async issueServerKey(asked, actor, via) {
     const { log, config, core, keyMaterial } = this.deps;
     log.debug("Entering EstConsole.issueServerKey().");
-    if (config.value('est.serverKeyGeneration') === false) {
+    // The TARGET's switch: an application's own estServerKeyGeneration,
+    // where it set one, overrides the realm's (rcbj, 2026-10-01).
+    if (!core.estSwitch('serverKeyGeneration',
+                        { kind: asked.kind, id: asked.identifier })) {
       log.debug("Leaving EstConsole.issueServerKey(). Off.");
       return this.refused('STS-EST-0005', 400,
                           'Server-side key generation is ' +
-                          'turned off for EST in this realm ' +
-                          '(est.serverKeyGeneration).');
+                          'turned off for EST for this entry ' +
+                          '(est.serverKeyGeneration, or the ' +
+                          'application\'s own estServerKeyGeneration).');
     }
-    const profile = asked.profile || core.defaultProfile(FAMILY);
+    const profile = asked.profile ||
+      core.defaultProfile(FAMILY, { kind: asked.kind, id: asked.identifier });
     const keyAlg = asked.keyAlg || 'ec-p256';
     const described = keyMaterial.keyAlg(keyAlg) || {};
     if (described.kind === 'pqc' && described.use === 'kem' &&

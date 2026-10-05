@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -361,7 +361,10 @@ async function claimB(t) {
           /driver\.releaseOrigin\(\)/.test(persistenceSrc),
           'persistence.js adopts the origin by node and slot when the store ' +
           'opens, and releases it at a clean stop');
-  t.check(/fork\(pool, i\)/.test(poolSrc) &&
+  // THE SLOT IS HANDED THROUGH THE START GATE SINCE #342: start() queues
+  // `{ pool, slot }` and the gate forks it with that slot.
+  t.check(/forks\.push\(\{ pool: pool, slot: i \}\)/.test(poolSrc) &&
+          /fork\(next\.pool, next\.slot\)/.test(poolSrc) &&
           /STS_REQUEST_WORKER_SLOT: typeof slot === 'number'/.test(poolSrc),
           'request_pool.js hands every worker its slot');
   log.debug("Leaving claimB().");

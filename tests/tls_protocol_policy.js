@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -143,8 +143,13 @@ async function run(t) {
 
     t.log.info('=== B. real handshakes against that policy ===');
     const rsa = selfSigned(scratch, 'server', ['-newkey', 'rsa:2048']);
+    // TLS 1.2 ON for this listener: every listener is TLS 1.3 only by
+    // default since #429, and the renegotiation refusal below is a TLS 1.2
+    // property. The rest of the policy is the default's.
+    const withTwelve = tlsServer.protocolOptions(Object.assign({},
+      tlsServer.policyFor(), { disableTls12: false }));
     const server = tls.createServer(Object.assign({ key: rsa.key,
-      cert: rsa.cert }, opts), function (socket) {
+      cert: rsa.cert }, withTwelve), function (socket) {
       socket.on('error', function (e) {
         log.debug("Caught on a policy test socket: " +
                   ((e && e.message) || e));

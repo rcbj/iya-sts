@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -18,7 +18,7 @@
 //      throws is reported and does not stop the others; `eject` must be a
 //      function.
 //   B. THE LIST. Exactly the stores whose entries expire carry an ejector —
-//      thirty-one, the device enrolment challenges (#164) the latest —
+//      thirty-two, the attribute source lookups (#94) the latest —
 //      and the two that do not, on purpose, are named.
 //   C. THE JOB is registered, per-process and quiet.
 //   D. AN EJECTOR DELETES WHAT ITS READER WOULD REFUSE AND NOTHING ELSE:
@@ -121,13 +121,23 @@ function childMain() {
       'scim.digest-nonces', 'scim.hoba-challenges', 'scim.hoba-signatures',
       // The VC-API test adapter's issued credentials (#194-#199): a row
       // expires with the credential's validity or a default window.
-      'vc-api.issued'
+      'vc-api.issued',
+      // The rows an attribute source returned, held for a burst of sign-ins
+      // (#94).
+      'attribute-sources.lookups',
+      // The access-token status list's rows and signed lists, and the
+      // revoked biscuits' identifiers (#432): each until its token expires.
+      'oauth2.access-token-status', 'oauth2.access-token-status-lists',
+      'gnap.biscuit-revocations',
+      // A resource server's owner lookups (#432 phase 5), each for
+      // gnap.ownerLookupCacheS.
+      'gnap.owner-lookups'
     ].sort();
     const ejecting = registry.ejecting().filter(function (n) {
       return !/^test\./.test(n);
     });
     note(JSON.stringify(ejecting) === JSON.stringify(expected),
-         'B1. exactly the thirty-one stores whose entries expire eject them',
+         'B1. exactly the thirty-eight stores whose entries expire eject them',
          JSON.stringify({ missing: expected.filter(function (n) {
            return ejecting.indexOf(n) < 0;
          }), extra: ejecting.filter(function (n) {

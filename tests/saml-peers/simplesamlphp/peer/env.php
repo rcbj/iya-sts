@@ -1,6 +1,6 @@
 <?php
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 //
 // GET ?as=…: the session this SP holds — its attributes, NameID, identity
 // provider and session index — as JSON, or 401 when there is none.

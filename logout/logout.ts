@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 
@@ -189,6 +189,14 @@ import vcIssued = require('../oid4vc/vc_issued');
 import krb5Principals = require('../kerberos/krb5_principals');
 // The embedded directory, for the bound connections that ARE the LDAP session.
 import ldapServer = require('../ldap/ldap_server');
+// GNAP GRANTS (#432): what ends one from outside the protocol, and who holds
+// one. A library and a cache hit — the family is at 23d, this module second
+// to last — that requires nothing of this one.
+import gnapRevocation = require('../gnap/gnap_revocation');
+// THE OAUTH GRANT REGISTER (Grant Management, #142), for the grants a
+// sign-out of everything — and a received signal (#432) — revokes. A cache
+// hit: it is built with `oauth2` at 9.
+import grantManagement = require('../oauth-oidc/grant_management');
 import InstanceSlot = require('../common/instance_slot');
 
 /**
@@ -233,6 +241,8 @@ interface LogoutDeps {
   vcVerifier: typeof vcVerifier;
   krb5Principals: typeof krb5Principals;
   ldapServer: typeof ldapServer;
+  gnapRevocation: typeof gnapRevocation;
+  grantManagement: typeof grantManagement;
 }
 
 /**
@@ -309,7 +319,9 @@ class Logout {
       vcOffers: vcOffers,
       vcVerifier: vcVerifier,
       krb5Principals: krb5Principals,
-      ldapServer: ldapServer
+      ldapServer: ldapServer,
+      gnapRevocation: gnapRevocation,
+      grantManagement: grantManagement
     };
   }
 
@@ -422,19 +434,167 @@ class Logout {
   // one started before a rename is still found by the entry's `urn:uuid:`
   // subject (2026-09-14).
   private sessionsForKey(key?) {
-    const { log, authn, stats } = this.deps;
+    const { log } = this.deps;
     log.debug("Entering Logout.sessionsForKey(). key=" + key);
     const wanted = String(key || '');
-    const out = [];
+    const indexed = this.indexed(wanted);
+    const out = (indexed
+      ? indexed.sessions.get(wanted)
+      : this.sessionsByKey([wanted]).get(wanted)) || [];
+    log.debug("Leaving Logout.sessionsForKey(). " + out.length +
+              " session(s).");
+    return out.slice(0);
+  }
+
+  // The sessions of every key asked, from ONE walk of the session store, by
+  // the rule above: grouped by `holderKeyOf()` where the old walk compared it
+  // with one key, so a batch of a thousand people walks the store once.
+  private sessionsByKey(keys: string[]): Map<string, Loose[]> {
+    const { log, authn, stats } = this.deps;
+    log.debug("Entering Logout.sessionsByKey(). " + keys.length + " key(s).");
+    const out = new Map();
+    keys.forEach((key) => { out.set(String(key || ''), []); });
     authn.sessions.forEach((session) => {
       const username = (session.user && session.user.username) || '';
       const sub = (session.user && session.user.sub) || '';
-      if (stats.holderKeyOf(username, sub) === wanted) out.push(session);
+      const list = out.get(stats.holderKeyOf(username, sub));
+      if (list) list.push(session);
     });
-    out.sort((a, b) => { return (b.authTime || 0) - (a.authTime || 0); });
-    log.debug("Leaving Logout.sessionsForKey(). " + out.length +
-              " session(s).");
+    out.forEach((list) => {
+      list.sort((a, b) => { return (b.authTime || 0) - (a.authTime || 0); });
+    });
+    log.debug("Leaving Logout.sessionsByKey().");
     return out;
+  }
+
+  // ---------------------------------------------------------------------------
+  // ONE READ OF THE BIG STORES FOR A WHOLE SET OF PEOPLE (#351, 2026-09-29).
+  //
+  // Every family is written for ONE identity — `collect(ctx)` — and three of
+  // them read a store that grows with the whole service rather than with the
+  // person: the sign-on sessions, the token and artifact register, and the
+  // wallet credentials. Asked person by person, a directory delete of a
+  // hundred people walked each of those two hundred times (once to read what
+  // they held, once to end it), and a SCIM Bulk spent a minute doing it.
+  //
+  // So `heldIdsFor()` and `terminateEach()` build this index ONCE for every key
+  // they are given, and the three readers below consult it: the same rule
+  // (`holderKeyOf()`, `identityKeyOf()`), grouped by key instead of compared
+  // with one. It lives only for the synchronous call that built it — nothing
+  // can be issued or signed in while it stands — and a key it was not built
+  // for falls through to the unindexed read, so it can never answer "nothing"
+  // for somebody it never looked at. One path: a single person's read is an
+  // index of one.
+  // ---------------------------------------------------------------------------
+  private index: Loose | null = null;
+
+  // The index entry for a key, or null when there is none for it.
+  private indexed(key: string): Loose | null {
+    const { log } = this.deps;
+    log.debug("Entering Logout.indexed().");
+    const index = this.index;
+    log.debug("Leaving Logout.indexed().");
+    return index && index.keys.has(key) ? index : null;
+  }
+
+  // Runs `fn` with the index built for `keys`, and takes it down after —
+  // nested calls reuse the outer one when it covers them.
+  private withIndex<T>(keys: string[], fn: () => T): T {
+    const { log, stats } = this.deps;
+    log.debug("Entering Logout.withIndex(). " + keys.length + " key(s).");
+    const wanted = keys.map((key) => { return String(key || ''); });
+    if (this.index && wanted.every((key) => { return this.index.keys.has(key);
+    })) {
+      log.debug("Leaving Logout.withIndex(). The outer index covers it.");
+      return fn();
+    }
+    const outer = this.index;
+    this.index = {
+      keys: new Set(wanted),
+      sessions: this.sessionsByKey(wanted),
+      holdings: stats.holdingsOf(wanted),
+      wallet: this.walletRowsByKey(wanted),
+      // #432: the GNAP grants and the OAuth grants, one walk each.
+      gnap: this.deps.gnapRevocation.grantsByKey(wanted),
+      oauthGrants: this.oauthGrantsByKey(wanted)
+    };
+    try {
+      log.debug("Leaving Logout.withIndex(). Built.");
+      return fn();
+    } finally {
+      this.index = outer;
+    }
+  }
+
+  // What the `token` and `issued` families read: the person's token and
+  // artifact records, from the index, or read once per context and kept on
+  // it — both families ask, and each used to fold the whole register.
+  private holdingsFor(ctx: Loose): Loose {
+    const { log, stats } = this.deps;
+    log.debug("Entering Logout.holdingsFor().");
+    const key = String((ctx && ctx.key) || '');
+    const indexed = this.indexed(key);
+    if (indexed) {
+      log.debug("Leaving Logout.holdingsFor(). Indexed.");
+      return indexed.holdings.get(key);
+    }
+    if (!ctx.holdings) {
+      ctx.holdings = stats.holdingsOf([key]).get(key);
+    }
+    log.debug("Leaving Logout.holdingsFor().");
+    return ctx.holdings;
+  }
+
+  // THE LIVE GNAP GRANTS A PERSON HOLDS (#432), from the index or read once
+  // per context — the `gnap` family reads them twice, to list and to end.
+  private gnapGrantsFor(ctx: Loose): Loose[] {
+    const { log, gnapRevocation } = this.deps;
+    log.debug("Entering Logout.gnapGrantsFor().");
+    const key = String((ctx && ctx.key) || '');
+    const indexed = this.indexed(key);
+    if (indexed) {
+      log.debug("Leaving Logout.gnapGrantsFor(). Indexed.");
+      return (indexed.gnap.get(key) || []).filter((grant) => {
+        return gnapRevocation.isLive(grant);
+      });
+    }
+    log.debug("Leaving Logout.gnapGrantsFor().");
+    return gnapRevocation.grantsHeldBy(key);
+  }
+
+  // THE OAUTH GRANTS (Grant Management) of every key asked, from one read of
+  // the register, filed by the subject each grant was made for under the
+  // rule every other row here uses (`holderKeyOf()`).
+  private oauthGrantsByKey(keys: string[]): Map<string, Loose[]> {
+    const { log, stats, grantManagement } = this.deps;
+    log.debug("Entering Logout.oauthGrantsByKey().");
+    const out = new Map();
+    keys.forEach((key) => { out.set(String(key || ''), []); });
+    grantManagement.list().forEach(function (row) {
+      const sub = String(row.subject || '');
+      const list = out.get(stats.holderKeyOf(
+        helpers.nameForSubject(sub) || '', sub));
+      if (list) list.push(row);
+    });
+    log.debug("Leaving Logout.oauthGrantsByKey().");
+    return out;
+  }
+
+  // One person's OAuth grants, from the index or read once per context.
+  private oauthGrantsFor(ctx: Loose): Loose[] {
+    const { log } = this.deps;
+    log.debug("Entering Logout.oauthGrantsFor().");
+    const key = String((ctx && ctx.key) || '');
+    const indexed = this.indexed(key);
+    if (indexed) {
+      log.debug("Leaving Logout.oauthGrantsFor(). Indexed.");
+      return indexed.oauthGrants.get(key) || [];
+    }
+    if (!ctx.oauthGrants) {
+      ctx.oauthGrants = this.oauthGrantsByKey([key]).get(key) || [];
+    }
+    log.debug("Leaving Logout.oauthGrantsFor().");
+    return ctx.oauthGrants;
   }
 
   // ---------------------------------------------------------------------------
@@ -826,6 +986,70 @@ class Logout {
         } },
 
       // -----------------------------------------------------------------------
+      // THE OAUTH GRANTS A CLIENT WAS HANDED A grant_id FOR (#432). Grant
+      // Management's register (#142) outlives the tokens in it: a grant whose
+      // tokens a sign-out revoked was still CURRENT, and a client could name
+      // it in its next authorization request to merge onto. Ending one is
+      // the client's own DELETE performed for the person — the grant leaves
+      // the register and every token recorded under it is revoked. `endOrder`
+      // 19, just ahead of the tokens, so the token family finds them already
+      // revoked rather than revoking them a second way.
+      { id: 'oauth-grant', endOrder: 19,
+        label: 'OAuth grants (Grant Management)',
+        protocol: 'OAuth 2.0 / OIDC',
+        spec: 'Grant Management for OAuth 2.0 (the revocation a client\'s ' +
+              'DELETE performs)',
+        what: 'The grants a client was handed a grant_id for. A grant ' +
+              'outlives the tokens issued under it — a client can name it ' +
+              'in its next authorization request — so a sign-out that ' +
+              'revoked the tokens and left the grant would have left the ' +
+              'thing a client renews from. Ending one removes it from the ' +
+              'register and revokes every token recorded under it.',
+        collect: (ctx) => {
+          log.debug("Entering oauth-grant.collect().");
+          const rows = this.oauthGrantsFor(ctx).map((row) => {
+            const scopes = (row.scopes || []).map(function (one) {
+              return String((one && one.scope) || '');
+            }).filter(Boolean).join(' ');
+            return this.row('oauth-grant', 'grant', String(row.grantId), {
+              label: String(row.clientId || ''),
+              detail: 'grant ' + String(row.grantId).slice(0, 8) + '…' +
+                      (scopes ? ', scope ' + scopes : '') + ', ' +
+                      (row.tokens || 0) + ' token(s) recorded under it',
+              startedAt: (Number(row.created_at) || 0) * 1000,
+              expiresAt: (Number(row.expires_at) || 0) * 1000
+            });
+          });
+          log.debug("Leaving oauth-grant.collect(). " + rows.length);
+          return rows;
+        },
+        terminate: (r, ctx) => {
+          log.debug("Entering oauth-grant.terminate().");
+          // Re-resolved, never trusted from the form: the grant must still be
+          // this person's.
+          const held = this.oauthGrantsFor(ctx).filter((row) => {
+            return String(row.grantId) === r.handle;
+          })[0];
+          if (!held) {
+            log.debug("Leaving oauth-grant.terminate(). Gone.");
+            return { ok: false, message: 'that grant has already been ' +
+                                         'revoked or has expired' };
+          }
+          const done = grantManagement.revoke(r.handle, ctx.key,
+            ctx.by || 'a sign-out', ctx.initiatingEntity || 'admin');
+          if (ctx.oauthGrants) {
+            ctx.oauthGrants = ctx.oauthGrants.filter((row) => {
+              return String(row.grantId) !== r.handle;
+            });
+          }
+          log.debug("Leaving oauth-grant.terminate().");
+          return done && done.ok
+            ? { ok: true, message: 'the grant of ' + done.clientId + ' was ' +
+                'revoked, and ' + done.revoked + ' token(s) with it' }
+            : { ok: false, message: 'that grant has already been revoked' };
+        } },
+
+      // -----------------------------------------------------------------------
       { id: 'token', endOrder: 20,
         label: 'Tokens',
         protocol: 'OAuth 2.0 / OIDC',
@@ -841,7 +1065,7 @@ class Logout {
               'promise about tokens issued long ago.',
         collect: (ctx) => {
           log.debug("Entering token.collect().");
-          const detail = stats.userDetail(ctx.key);
+          const detail = this.holdingsFor(ctx);
           if (!detail) {
             log.debug("Leaving token.collect().");
             return [];
@@ -1132,6 +1356,85 @@ class Logout {
         } },
 
       // -----------------------------------------------------------------------
+      // GNAP GRANTS (#432) — `logout/` never named GNAP, so a global sign-out
+      // and an account disable left every grant and token a person approved
+      // live (#432's gap 3). A grant is a DELEGATED SESSION between a client
+      // instance and the person who approved it (`gnap/gnap_signals.ts`), so
+      // ending one is the client's own section 5.4 revocation performed for
+      // the person (`gnap_revocation.ts`'s `endGrant()`): its tokens revoked,
+      // the grant finalized, CAEP `session-revoked` about the grant.
+      //
+      // **A GRANT TIED TO A SESSION THIS ACT ENDS ENDS WITH IT**
+      // (`endsWithSession`): a selective sign-out of one session — a Revoke on
+      // `/admin/sessions`, a federation partner's sign-out (#167) — takes the
+      // grants approved on that session too, ticked or not. An ordinary
+      // sign-out (`/oauth2/logout`, SAML Single Logout, `wsignout1.0`) goes
+      // through `authn.dropSession()` and never here, so a person signing out
+      // of one application keeps the grants they gave others — the
+      // wallet-credential family's rule, for its reason: the grant was given
+      // to outlive the browser, and only a sign-out of EVERYTHING is a
+      // statement about it. A session merely expiring ends nothing here.
+      //
+      // `endOrder` 27, with the credentials and before the session.
+      { id: 'gnap', endOrder: 27, endsWithSession: true,
+        label: 'GNAP grants',
+        protocol: 'GNAP',
+        spec: 'RFC 9635 section 5.4 (the revocation, performed for the ' +
+              'person); RFC 9767 for what a resource server sees after',
+        what: 'Grants this person approved to a GNAP client instance, and ' +
+              'the access tokens issued under them. Ending one revokes ' +
+              'every token the grant issued and finalizes the grant, as the ' +
+              'client\'s own revocation does: introspection answers ' +
+              'inactive from then, a continuation is refused, and CAEP ' +
+              'session-revoked names the grant to any receiver that ' +
+              'subscribed. A grant approved on a session this sign-out ends ' +
+              'ends with it.',
+        collect: (ctx) => {
+          log.debug("Entering gnap.collect().");
+          const rows = this.gnapGrantsFor(ctx).map((grant) => {
+            const live = this.deps.gnapRevocation.liveTokensOf(grant);
+            const session = grant.ro && grant.ro.sessionId
+              ? String(grant.ro.sessionId) : '';
+            return this.row('gnap', 'grant', String(grant.id), {
+              label: String((grant.client && grant.client.identifier) || ''),
+              detail: grant.state + ', ' + live.length + ' live access ' +
+                      'token(s)' + (session ? ', approved on session ' +
+                        session : (grant.derivedFrom ? ', derived by a ' +
+                          'resource server' : ', approved with no browser ' +
+                            'session')),
+              startedAt: (Number(grant.createdAt) || 0) * 1000,
+              expiresAt: 0,
+              sessionId: session
+            });
+          });
+          log.debug("Leaving gnap.collect(). " + rows.length);
+          return rows;
+        },
+        terminate: (r, ctx) => {
+          log.debug("Entering gnap.terminate().");
+          const grant = this.gnapGrantsFor(ctx).filter((one) => {
+            return String(one.id) === r.handle;
+          })[0];
+          if (!grant) {
+            log.debug("Leaving gnap.terminate(). Gone.");
+            return { ok: false, message: 'that GNAP grant has already been ' +
+                                         'revoked or finalized' };
+          }
+          const tokens = (grant.tokens || []).length;
+          const ended = this.deps.gnapRevocation.endGrant(grant, {
+            why: 'ended by ' + (ctx.by || 'a protocol-independent sign-out'),
+            actor: ctx.key, via: ctx.by || 'the /logout endpoint',
+            initiatingEntity: ctx.initiatingEntity || '' });
+          log.debug("Leaving gnap.terminate().");
+          return ended
+            ? { ok: true, message: 'the GNAP grant ' + grant.id + ' of ' +
+                grant.client.identifier + ' is finalized and its ' + tokens +
+                ' token(s) are revoked' }
+            : { ok: false, message: 'that GNAP grant had already been ' +
+                                    'finalized' };
+        } },
+
+      // -----------------------------------------------------------------------
       { id: 'ldap', endOrder: 23,
         label: 'Directory connections',
         protocol: 'LDAP',
@@ -1410,7 +1713,7 @@ class Logout {
               'it did not.',
         collect: (ctx) => {
           log.debug("Entering issued.collect().");
-          const detail = stats.userDetail(ctx.key);
+          const detail = this.holdingsFor(ctx);
           if (!detail) {
             log.debug("Leaving issued.collect().");
             return [];
@@ -1484,14 +1787,28 @@ class Logout {
   // live, undisowned row whose subject files under this key, by the
   // normalisation `sessionsForKey()` uses.
   private walletRowsFor(key: string): any[] {
-    const { log, stats } = this.deps;
+    const { log } = this.deps;
     log.debug("Entering Logout.walletRowsFor().");
-    const rows = vcIssued.rowsForSubject(null).filter(function (row) {
-      return stats.holderKeyOf(helpers.nameForSubject(row.subject) || '',
-                               row.subject) === key;
-    });
+    const indexed = this.indexed(key);
+    const rows = (indexed ? indexed.wallet.get(key)
+      : this.walletRowsByKey([key]).get(key)) || [];
     log.debug("Leaving Logout.walletRowsFor(). " + rows.length + ".");
-    return rows;
+    return rows.slice(0);
+  }
+
+  // The wallet credential rows of every key asked, from one walk (#351).
+  private walletRowsByKey(keys: string[]): Map<string, any[]> {
+    const { log, stats } = this.deps;
+    log.debug("Entering Logout.walletRowsByKey().");
+    const out = new Map();
+    keys.forEach((key) => { out.set(String(key || ''), []); });
+    vcIssued.rowsForSubject(null).forEach(function (row) {
+      const list = out.get(stats.holderKeyOf(
+        helpers.nameForSubject(row.subject) || '', row.subject));
+      if (list) list.push(row);
+    });
+    log.debug("Leaving Logout.walletRowsByKey().");
+    return out;
   }
 
   private contextFor(key?, issuer?, by?, initiatingEntity?) {
@@ -1695,6 +2012,15 @@ class Logout {
       ldap: 'None. A Bind sets the authorization state of a CONNECTION (RFC ' +
             '4511 section 4.2), so it lasts until the next Bind, an Unbind, ' +
             'or the socket closing. There is no expiry to count down to.',
+      // A GNAP GRANT (#432). RFC 9635 gives an approved grant no lifetime of
+      // its own: its access tokens expire, and the client renews them
+      // through the grant (sections 5 and 6) until something ends it.
+      gnap: 'None of its own. An approved grant lasts until its client ' +
+            'instance revokes it (RFC 9635 section 5.4), an administrator ' +
+            'does, or a sign-out of everything — or of the session it was ' +
+            'approved on — ends it; its access tokens expire on their own ' +
+            'and are renewed through it. Ending it revokes every token it ' +
+            'issued.',
       // THE FOURTH RULE (2026-09-06), and it is the only one here that IS
       // extended by use — which is why it needed a rule of its own rather than
       // borrowing the browser's. The surfaces it covers present a credential on
@@ -1883,9 +2209,18 @@ class Logout {
     // record of one that exists here, and deliberately not a store of the
     // KDC's: a real KDC keeps no state about the tickets it has issued, which
     // is what lets one be replicated read-only.
+    //
+    // **ONE KIND ASKED FOR, NOT EVERYTHING ISSUED FILTERED (#352).** This
+    // built `stats.issuedList()` — every token and artifact copied, given a
+    // state and sorted — on every `/admin/sessions` request, to keep the
+    // tickets. `issuedArtifactsOfKind()` answers the same rows in the same
+    // order from one walk of the artifacts; a `stats` without it (an older
+    // one, or a test's stub) is asked the old way.
     const realm = krb5Principals.REALM;
     const signOutOn = config.value('logout.kerberosSignOut');
-    stats.issuedList().forEach((record) => {
+    const tickets = typeof stats.issuedArtifactsOfKind === 'function'
+      ? stats.issuedArtifactsOfKind('Kerberos TGT') : stats.issuedList();
+    tickets.forEach((record) => {
       if (record.kind !== 'Kerberos TGT') {
         return;
       }
@@ -1961,6 +2296,44 @@ class Logout {
           : 'logout.kerberosSignOut is off, so this service leaves the KDC ' +
             'alone and a ticket already issued goes on working. Turn it on ' +
             'to have older tickets refused.'
+      });
+    });
+
+    // GNAP GRANTS (#432). A grant is a DELEGATED SESSION between a client
+    // instance and the person who approved it (`gnap/gnap_signals.ts` argues
+    // it), and CAEP already reports its end as `session-revoked` — so it is
+    // a fourth kind of row here, and its Revoke is `terminate()` with a
+    // selection of one, the same function a global sign-out uses.
+    this.deps.gnapRevocation.liveHeldGrants().forEach((grant) => {
+      const username = String(grant.ro.username || '');
+      const live = this.deps.gnapRevocation.liveTokensOf(grant);
+      out.push({
+        id: 'gnap:' + grant.id,
+        family: 'gnap',
+        kind: 'GNAP grant',
+        key: this.deps.gnapRevocation.holderKeyOf(grant),
+        username: username,
+        sub: '',
+        protocol: 'GNAP',
+        handle: String(grant.id),
+        // The sign-on session it was approved on, where there was one: the
+        // join to the browser row, and the session whose end takes it.
+        sessionId: String(grant.ro.sessionId || ''),
+        startedAt: (Number(grant.createdAt) || 0) * 1000,
+        expiresAt: 0,
+        expiryRule: this.sessionExpiryRules.gnap,
+        amr: (grant.ro.amr || []).slice(),
+        acr: grant.ro.acr || '',
+        carries: [live.length + ' live access token(s)'],
+        detail: 'approved to ' + String((grant.client &&
+          grant.client.identifier) || '?') + ' (' + grant.state + ')' +
+          (grant.derivedFrom ? ', derived by a resource server' : ''),
+        // A resource owner approved it: there is no unauthenticated grant.
+        authenticated: true,
+        terminable: true,
+        why: 'Ending this revokes every access token the grant issued and ' +
+             'finalizes it, as the client\'s own revocation does (RFC 9635 ' +
+             'section 5.4); CAEP session-revoked names the grant.'
       });
     });
 
@@ -2121,22 +2494,147 @@ class Logout {
   // session exists, so ending everything on a crossing into HIGH does not
   // end the session the issuance policy has just decided on the same risk.
   // Ids only — never the rows, whose `secret` stays in this module.
+  //
+  // **ONLY WHAT CAN BE ENDED (#351, 2026-09-29).** It listed every row, and
+  // the `krb5` family always has one: "no such principal in this KDC", or
+  // "this trust realm has no KDC", `terminable: false`, because the page must
+  // say Kerberos was looked at. So EVERY person held one thing, every deleted
+  // person was scheduled a selective sign-out, and every one of those ended
+  // "0 of 1 live item(s)" and was audited refused (`STS-LOGOUT-0007`) — a
+  // hundred of them, a quarter of a second each, after one SCIM Bulk on
+  // testidp. A row nothing can end is not something a later sign-out could
+  // end either, so it is not a thing held: a person holding nothing now
+  // answers an empty list, and their caller does nothing.
   // ---------------------------------------------------------------------------
   /**
-   * Returns the ids of everything an identity holds now, so a later
-   * terminate() can end those and nothing issued after.
+   * Returns the ids of everything an identity holds now that a sign-out can
+   * end, so a later terminate() can end those and nothing issued after.
    *
    * @param key - the identity key
-   * @returns the row ids
+   * @returns the row ids of the terminable rows
    */
   heldIds(key?) {
     const { log } = this.deps;
     log.debug("Entering Logout.heldIds(). key=" + key);
-    const ids = this.allRows(this.contextFor(key)).map((r) => {
-      return String(r.id);
-    });
+    const ids = this.heldIdsFor([String(key || '')]).get(String(key || ''));
     log.debug("Leaving Logout.heldIds(). " + ids.length + ".");
     return ids;
+  }
+
+  /**
+   * heldIds() for several identities at once, reading each large store once
+   * for the whole set (#351).
+   *
+   * @param keys - the identity keys
+   * @returns a Map from each key to the ids of the terminable rows it holds
+   */
+  heldIdsFor(keys?: string[]): Map<string, string[]> {
+    const { log } = this.deps;
+    const wanted = (keys || []).map((key) => { return String(key || ''); });
+    log.debug("Entering Logout.heldIdsFor(). " + wanted.length + " key(s).");
+    const out = new Map();
+    this.withIndex(wanted, () => {
+      wanted.forEach((key) => {
+        out.set(key, this.allRows(this.contextFor(key)).filter((r) => {
+          return r.terminable &&
+                 typeof this.familyById[r.family].terminate === 'function';
+        }).map((r) => {
+          return String(r.id);
+        }));
+      });
+    });
+    log.debug("Leaving Logout.heldIdsFor().");
+    return out;
+  }
+
+  /**
+   * terminate() for several identities, one after another, with each large
+   * store read once for the whole set (#351). Each is exactly the terminate()
+   * a single sign-out is — its own audit row, its own back-channel
+   * deliveries, its own CAEP — and `opts.quiet` moves each one's info line
+   * to debug, for a caller that logs one line for the set.
+   *
+   * @param list - `{ key, selection }` per identity; an empty selection is
+   *   a global sign-out, as terminate()'s is
+   * @param opts - terminate()'s options, and `quiet`
+   * @returns terminate()'s result per identity, in the order given
+   */
+  terminateEach(list?: Loose[], opts?: Loose): Loose[] {
+    const { log } = this.deps;
+    const items = (list || []).map((one) => {
+      return { key: String((one && one.key) || ''),
+               selection: (one && one.selection) || [] };
+    });
+    log.debug("Entering Logout.terminateEach(). " + items.length + ".");
+    const results = this.withIndex(items.map((one) => { return one.key; }),
+      () => {
+        return items.map((one) => {
+          return this.terminate(one.key, one.selection, opts);
+        });
+      });
+    log.debug("Leaving Logout.terminateEach().");
+    return results;
+  }
+
+  // ---------------------------------------------------------------------------
+  // A PERSON'S GRANTS AND TOKENS, AND NOTHING ELSE (#432, rcbj's decision 1).
+  //
+  // What a federation partner's verified signal ends when the
+  // `signal-response` policy permits `signal-revoke-grants`: every GNAP grant
+  // the person approved and every OAuth grant and token held for them — the
+  // Grant Management register, the refresh and access tokens, the codes not
+  // yet redeemed — and NOT their sessions, their directory connections or
+  // their Kerberos tickets, which other reactions decide. It is a SELECTIVE
+  // `terminate()` of those four families, so it is the same act with the same
+  // audit row, CAEP and refusals as ticking them on `/admin/logout`.
+  //
+  // `sessionIds` narrows it to what was issued on those sessions (a partner's
+  // `session-revoked` about the session it started): the codes, the tokens
+  // and the GNAP grants recorded on them. An OAuth grant records no session,
+  // so a narrowed revocation reaches it through its tokens only.
+  //
+  // **NOTHING SELECTED IS NOTHING ENDED.** An empty selection is a GLOBAL
+  // sign-out to `terminate()`, so this answers without calling it when the
+  // person holds none of these.
+  // ---------------------------------------------------------------------------
+  /**
+   * Revokes a person's GNAP grants and OAuth grants, tokens and codes —
+   * nothing else they hold — as a selective sign-out of those families.
+   *
+   * @param key - the identity key
+   * @param opts - terminate()'s options, and `sessionIds` to narrow it to
+   *   what was issued on those sessions
+   * @returns terminate()'s result, or an empty one when nothing was held
+   */
+  revokeGrantsOf(key?: string, opts?: Loose): Loose {
+    const { log } = this.deps;
+    const options = opts || {};
+    const wanted = String(key || '');
+    log.debug("Entering Logout.revokeGrantsOf(). key=" + wanted);
+    const narrowed = Array.isArray(options.sessionIds);
+    const sessions = {};
+    (options.sessionIds || []).forEach((id) => {
+      sessions[String(id)] = true;
+    });
+    const families = narrowed ? ['token', 'code', 'gnap']
+                              : ['oauth-grant', 'token', 'code', 'gnap'];
+    const ids = wanted ? this.allRows(this.contextFor(wanted)).filter((r) => {
+      return families.indexOf(r.family) >= 0 && r.terminable &&
+        (!narrowed || (!!r.sessionId && !!sessions[r.sessionId]));
+    }).map((r) => {
+      return String(r.id);
+    }) : [];
+    if (!ids.length) {
+      log.debug("Leaving Logout.revokeGrantsOf(). Nothing held.");
+      return { ok: true, key: wanted, scope: 'selected', terminated: [],
+               skipped: [], unknown: [],
+               message: 'Nothing to revoke for ' + wanted + '.' };
+    }
+    const result = this.terminate(wanted, ids, Object.assign({}, options,
+      { providerCommand: false }));
+    log.debug("Leaving Logout.revokeGrantsOf(). " +
+              ((result && result.terminated) || []).length + " ended.");
+    return result;
   }
 
   // Every row, flattened, WITH its secret — the internal form, for terminate().
@@ -2228,6 +2726,14 @@ class Logout {
     // observer reports the grant a revoked token ends.
     const wanted = (selection || []).map(String).filter(Boolean);
     const global = !wanted.length;
+    // A SIGN-OUT EVERYWHERE REACHES EVERY CELL (#98 D6): a person homed here
+    // whose session was exported to another cell has things held there too,
+    // and home is what says they end. A no-op in single-cell mode, and for an
+    // identity not homed here (a projection is never a subject of this).
+    if (global) {
+      require('../common/cell_sessions').subjectTerminated(
+        require('../common/realms').currentId(), String(key || ''));
+    }
     const wantedSet = {};
     wanted.forEach((id) => { wantedSet[id] = true; });
 
@@ -2275,7 +2781,11 @@ class Logout {
         return;
       }
       rows.forEach((r) => {
-        if (!global && !wantedSet[r.id]) return;
+        // A row of an `endsWithSession` family (#432, GNAP) whose session this
+        // act ends is ended with it, ticked or not — see that family.
+        const withSession = !!family.endsWithSession && !!r.sessionId &&
+          !!ctx.endingSessions[r.sessionId];
+        if (!global && !wantedSet[r.id] && !withSession) return;
         delete unknown[r.id];
         if (!r.terminable || typeof family.terminate !== 'function') {
           // In a GLOBAL logout these are the honest short-fall and are reported
@@ -2422,7 +2932,11 @@ class Logout {
     if (acrossCluster.length) {
       result.acrossCluster = acrossCluster;
     }
-    log.info('logout: ' + result.message);
+    if (options.quiet) {
+      log.debug('logout: ' + result.message);
+    } else {
+      log.info('logout: ' + result.message);
+    }
     // OPENID PROVIDER COMMANDS (#151): a GLOBAL sign-out of a person is
     // `invalidate` at every relying party that supports it. A disable passes
     // `providerCommand: false` — it sends `suspend`, which invalidates too.
@@ -3281,6 +3795,11 @@ export = {
   inventoryFor: slot.forward('inventoryFor'),
   terminate: slot.forward('terminate'),
   heldIds: slot.forward('heldIds'),
+  heldIdsFor: slot.forward('heldIdsFor'),
+  terminateEach: slot.forward('terminateEach'),
+  // A person's grants and tokens and nothing else (#432): what a received
+  // signal's `signal-revoke-grants` ends.
+  revokeGrantsOf: slot.forward('revokeGrantsOf'),
   // A federation partner's sign-out (#167): the one session it named, ended
   // through terminate(), and what a browser then has to draw.
   endPartnerSession: slot.forward('endPartnerSession'),

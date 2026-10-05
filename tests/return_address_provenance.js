@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -496,9 +496,13 @@ function run(t) {
           /unconfirmed:\s*replyKnown\.unconfirmed/.test(wsfed),
           'each passes the withheld addresses on, so the refusal can name ' +
           'them');
-  const cfgBlock = registry.slice(registry.indexOf('function clientConfigOf('),
-                                  registry.indexOf('function clientConfigOf(') +
-                                  3200);
+  // THE WHOLE FUNCTION, to the next top-level one: a fixed window of 3200
+  // characters stopped short of `redirect_uris` once c4797e03 added the
+  // methods list above it, and the check failed on a correct service.
+  const cfgStart = registry.indexOf('function clientConfigOf(');
+  const cfgNext = registry.indexOf('\nfunction ', cfgStart + 1);
+  const cfgBlock = registry.slice(cfgStart,
+                                  cfgNext > 0 ? cfgNext : registry.length);
   t.check(/returnAddressesOf\(fields, 'oauthRedirectUri'\)/.test(cfgBlock) &&
           /redirect_uris:\s*redirects\.registered/.test(cfgBlock),
           'clientConfigOf() builds redirect_uris from returnAddressesOf()');

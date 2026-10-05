@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -217,7 +217,20 @@ const IAT_SKEW_SECONDS = 300;
 // unchanged and every one of them is now realm-correct. In the default realm,
 // and in a service with no realms defined, there is exactly one partition and
 // this behaves as the plain Map it replaced. See common/realms.js.
-const seenJtis = realms.map({ persist: 'dpop.seenJtis', retain: 'age' });
+// `expiresAt` (#333): the value is when the jti was SEEN, epoch seconds; the
+// prune keeps it twice `oauth2.dpopIatSkewS` (the module's default when that
+// is not a positive number, which is what iatSkewSeconds() answers).
+const seenJtis = realms.map({
+  persist: 'dpop.seenJtis',
+  retain: 'age',
+  // A hot path (every row a flush writes): no Entering/Leaving pair.
+  expiresAt: function (seenS: unknown): number | null {
+    const at = Number(seenS);
+    const skew = Number(config.value('oauth2.dpopIatSkewS'));
+    return at > 0 && isFinite(skew) && skew > 0
+      ? (at + 2 * Math.floor(skew)) * 1000 : null;
+  }
+});
 
 // ---------------------------------------------------------------------------
 // THE REPLAY CHECK ACROSS NODES (2026-09-14, #46).
@@ -303,8 +316,19 @@ const PROOF_CLAIM = Symbol('sts.dpopProofClaim');
 // unchanged and every one of them is now realm-correct. In the default realm,
 // and in a service with no realms defined, there is exactly one partition and
 // this behaves as the plain Map it replaced. See common/realms.js.
-const issuedNonces = realms.map({ persist: 'dpop.issuedNonces',
-                                  retain: 'age' });
+// `expiresAt` (#333): the value is when the nonce was ISSUED, epoch seconds;
+// it lives `oauth2.dpopNonceTtlS`.
+const issuedNonces = realms.map({
+  persist: 'dpop.issuedNonces',
+  retain: 'age',
+  // A hot path (every row a flush writes): no Entering/Leaving pair.
+  expiresAt: function (issuedS: unknown): number | null {
+    const at = Number(issuedS);
+    const ttl = Number(config.value('oauth2.dpopNonceTtlS'));
+    return at > 0 && isFinite(ttl) && ttl > 0
+      ? (at + Math.floor(ttl)) * 1000 : null;
+  }
+});
 // The default of `oauth2.dpopNonceTtlS`, kept under its old name for the same
 // reason IAT_SKEW_SECONDS is.
 const NONCE_TTL_SECONDS = 300;

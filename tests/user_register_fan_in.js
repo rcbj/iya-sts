@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -167,8 +167,11 @@ module.exports = {
       const tokenClient = 'fanin-token-client-' + STAMP;
       const tokenPerson = 'fanin-token-person-' + STAMP;
       helpers.signJwt({ jti: 'fanin-cc-' + STAMP, typ: 'Bearer',
+                        // No `username`: a client_credentials token
+                        // carries none since #93, and the register files it
+                        // under its client_id.
                         sub: 'urn:sts:client:' + tokenClient,
-                        username: tokenClient, client_id: tokenClient,
+                        client_id: tokenClient,
                         exp: Math.floor(Date.now() / 1000) + 60 },
                       { grant: 'client_credentials' });
       helpers.signJwt({ jti: 'fanin-ac-' + STAMP, typ: 'Bearer',

@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 const path = require('path');
 
@@ -249,11 +249,18 @@ const JOBS = [
   // one. A mode that is not what it says would otherwise be reported green by
   // every job after it. Its header argues why it is local and why it is first.
   { file: 'sts_cluster_alternation.js',  browser: false, local: true },
+  { file: 'sts_main_port_pooling.js',    browser: false, local: true },
+  { file: 'sts_realm_listener.js',       browser: false, local: true },
   { file: 'admin_api.js',                browser: false, local: true,
     exclusive: true },
   { file: 'ldp_vc_issuance.js',          browser: false },
   { file: 'ldp_vc_refresh.js',           browser: false },
-  { file: 'oauth2_sts_endpoints.js',     browser: false },
+  // OURS SINCE 2026-10-03 (#186): rcbj's decision that iya-sts moves away
+  // from the parent's copies. Taken from the parent's then-current file and
+  // changed HERE to detect appAllowedToDelegateTo (appTrustedToImpersonate
+  // was merged into appDelegationSemantics). Porting back is decided case by
+  // case; the de-vendoring ticket carries the rest.
+  { file: 'oauth2_sts_endpoints.js',     browser: false, local: true },
   // THE GATE IN FRONT OF THAT API, as opposed to what is behind it
   // (2026-09-09). `sts_admin_api_operations.js` walks every documented
   // operation; this one asserts that none of them can be reached
@@ -310,6 +317,18 @@ const JOBS = [
   // nested act and the policy resource. `local: true`: the policy is ours.
   // Its realm is left standing.
   { file: 'sts_delegation_policy.js',    browser: false, local: true },
+  // ASSERTIONS AS RFC 8693 SUBJECT AND ACTOR TOKENS (#114, 2026-10-03): an
+  // RFC 7523 JWT, an RFC 7522 SAML 2.0 and a SAML 1.1 assertion from issuers
+  // declared through /admin-api, exchanged; the replay history shared with
+  // the jwt-bearer grant; oauth2.tokenExchangeAudience's two rules and the
+  // SAML Recipient under forwarding. `local: true`: the feature is ours. Its
+  // realm is left standing.
+  { file: 'sts_token_exchange_assertions.js', browser: false, local: true },
+  // WHAT AN EXCHANGE ANSWERS (#156, 2026-10-05): no `"scope": ""`, no
+  // id_token beside a token whose scope names no openid, and the subject's
+  // scope carried forward when the exchange asks for none. `local: true`:
+  // the response is ours. Its realm is left standing.
+  { file: 'sts_token_exchange_response.js', browser: false, local: true },
   { file: 'sts_dpop.js',                 browser: false },
   // GNAP (2026-09-12). `local: true` on the second of tests/CLAUDE.md's
   // reasons: GNAP exists in this repository and nowhere else, so there is no
@@ -321,12 +340,37 @@ const JOBS = [
   { file: 'sts_gnap_core.js',            browser: false, local: true },
   { file: 'sts_gnap_rs.js',              browser: false, local: true },
   { file: 'sts_gnap_signals.js',         browser: false, local: true },
+  // #432: the access-token status list from OAuth's side — an RFC 9068
+  // token's status claim, the list fetched, verified and read by the job's
+  // own code, and the bit set by RFC 7009 revocation. `local: true` on the
+  // second question: asserted over HTTP, so written here. GNAP's half is
+  // `sts_gnap_rs.js` section 8.
+  { file: 'sts_access_token_status.js',  browser: false, local: true },
   // #107: a key proved by mutual TLS under the pinned and PKI trust models,
   // revocation in both, the binding to an application entry, rotation at the
   // authority, the per-client override and the product default. Presents
   // client certificates on the main port; the foreign leaf names a CRL this
   // job serves (test_crl_host.js).
   { file: 'sts_gnap_mtls.js',            browser: false, local: true },
+  // #432 phase 1: GNAP impersonation by user assertion and RFC 9767
+  // derivation asked of #186's delegation policy, in whichever mode the
+  // service is in — product's refusals by their audited codes, development's
+  // "would have been refused" — the act chain on a derived token, the depth
+  // cap, and the acts on /admin-api/delegation. A throwaway realm left behind.
+  { file: 'sts_gnap_delegation.js',      browser: false, local: true },
+  { file: 'sts_gnap_catalogue.js',       browser: false, local: true },
+  // #432 phase 5: an identifier's owner from a registered resource set
+  // (a non-owner refused on the approval page, a group member approving),
+  // a limit lowered on the page and read off the token by the job, and the
+  // demonstration resource server spending to the limit, refunding a failed
+  // operation and refusing past it. A throwaway realm left behind.
+  { file: 'sts_gnap_limits.js',          browser: false, local: true },
+  // #432 phase 6: per-type interaction (never, always, a consent action)
+  // against a client trusted to skip, a remembered approval not standing in
+  // for always, the step-up an mfa type demands and its refusal, and
+  // approval by an absent owner on /portal/ciba while the client polls. A
+  // throwaway realm left behind.
+  { file: 'sts_gnap_interaction.js',     browser: false, local: true },
   // CERTIFICATE ENROLLMENT (2026-09-13): ACME, EST and SCEP, each driven by an
   // independent client written from its RFC with no code from acme/, est/ or
   // scep/, each in a throwaway realm it leaves behind.
@@ -353,8 +397,9 @@ const JOBS = [
     timeoutMs: 900000 },
   { file: 'sts_acme_lego.js',            browser: false, local: true,
     timeoutMs: 900000 },
+  // `exclusive` since #429: it turns TLS 1.2 on service-wide for its run.
   { file: 'sts_est_libest.js',           browser: false, local: true,
-    timeoutMs: 600000 },
+    timeoutMs: 600000, exclusive: true },
   { file: 'sts_scep_sscep.js',           browser: false, local: true,
     timeoutMs: 600000 },
   { file: 'sts_scep_micromdm.js',        browser: false, local: true,
@@ -370,6 +415,14 @@ const JOBS = [
   // attribute is this repository's own and the assertion spans an /admin-api
   // write and a protocol delivery.
   { file: 'sts_ssf_allowed_events.js',   browser: false, local: true },
+  // THE SUBJECT'S ISSUER IS THE ONE THE RECEIVER DISCOVERED (#154,
+  // 2026-10-05): an administrator's set-password, disable and enable send
+  // CAEP and RISC events whose iss_sub names the person under the SET's own
+  // iss, read from the realm's SSF configuration at the URL the suite
+  // reaches — on a stream about everybody and on one that added the person
+  // under that issuer. `local: true`: this repository's own transmitter, in
+  // a throwaway realm it leaves behind.
+  { file: 'sts_ssf_subject_issuer.js',   browser: false, local: true },
   // SSF 1.0 FINAL OVER THE WIRE (#144, 2026-09-22): stream ownership (another
   // receiver's stream is a 404 on all ten endpoints), a Transmitter-Supplied
   // aud, the RFC 9493 names and the final complex subject, the inserted-path
@@ -470,6 +523,13 @@ const JOBS = [
   // approving session, and in product the OpenID4VCI offer. `local: true`:
   // this repository's own transmitter.
   { file: 'sts_caep_oauth_grants.js',    browser: false, local: true },
+  // AN OPENID4VCI PRE-AUTHORIZED CODE NAMES ITS PERSON (#158, 2026-10-05): a
+  // cross-device offer redeemed by an anonymous wallet gives an access token
+  // whose `sub` is the person's ID Token `sub` — in development for an
+  // offer made before the person had an entry — and whose `client_id` is
+  // the anonymous wallet's defined value. `local: true`: this repository's
+  // own credential issuer.
+  { file: 'sts_oid4vci_preauth_subject.js', browser: false, local: true },
   // RISC ON ITS OWN (#146, 2026-09-22): a reset link marked compromised
   // (account-credential-change-required, recovery-activated,
   // credential-compromise), a disable's reason, an address recycled, and the
@@ -499,6 +559,19 @@ const JOBS = [
   // and a step-down hands it over. `local: true`: this repository's own
   // /admin and /admin-api.
   { file: 'sts_scheduler.js',            browser: false, local: true },
+  // MONITORING → WORKER POOLS (#327, 2026-09-28): GET /admin-api/worker-pools
+  // answers the request, surface and post-quantum pools with the seven
+  // figures, adding up, drawn by the front process; the page and its
+  // ?format=json agree; a realm's token is refused. `local: true`: this
+  // repository's own /admin and /admin-api.
+  { file: 'sts_worker_pools.js',         browser: false, local: true },
+  // MONITORING → NODE HEALTH (#329, 2026-09-28): GET /admin-api/node-health
+  // answers the container's CPU and memory (read, or unavailable in a
+  // sentence) and every process's memory, the totals the rows' sum, the
+  // workers of /admin-api/worker-pools each listed; the page and its
+  // ?format=json; a realm's token is refused. `local: true`: this
+  // repository's own /admin and /admin-api.
+  { file: 'sts_node_health.js',          browser: false, local: true },
   // RISK DATASETS AND THE FAILURE HISTORY (#62 P1, 2026-09-22): an operator
   // list imported, looked up, refused on a bad SHA-256, replaced and rolled
   // back — through the balancer in `cluster`, so both nodes follow — and a
@@ -533,6 +606,12 @@ const JOBS = [
   // throwaway realm, so the emergency signs nobody else out. `local: true`:
   // this repository's own /admin and /admin-api.
   { file: 'sts_key_rotation.js',         browser: false, local: true },
+  // DATA ENCRYPTION KEY ROTATION (#391 P2): POST /admin-api/encryption's
+  // two acts followed to their runs' ends, or their 400 where the data keys
+  // are derived per run. It rotates one class of the default realm's keys,
+  // which changes nothing another job can see: a value sealed under either
+  // key opens. `local: true`: this repository's own /admin-api.
+  { file: 'sts_data_keys.js',            browser: false, local: true },
   { file: 'sts_signer_groups.js',        browser: false, local: true },
   // THE CONSOLE AND THE PORTAL RENEW THEIR TOKENS INSIDE THE SAME SESSION
   // (2026-09-12). Both surfaces are this repository's own, and section 5 waits
@@ -856,6 +935,12 @@ const JOBS = [
   // SIGNED IN WITH by MIT `kinit -k -t` and by `krb5_wire.js` using the
   // keytab's key — against the KDC at the published address, in both modes.
   { file: 'sts_kerberos_keytab.js',      browser: false, local: true },
+  // #186 (2026-10-03): Kerberos S4U2Self, S4U2Proxy, forwarded TGTs and
+  // PA-S4U-X509-USER over TCP 88, decided by the one delegation policy — the
+  // job builds its own services (create-service) and people, so it runs in
+  // either mode. It replaces, here, the parent's in-process delegation jobs,
+  // which lose their fixture rules without a directory (kerberos/CLAUDE.md).
+  { file: 'sts_kerberos_delegation.js',  browser: false, local: true },
   // A KERBEROS SIGN-OUT OUTLIVES THE NEXT AS EXCHANGE (#111, 2026-09-23):
   // over TCP 88, a TGT from before a global sign-out refused
   // KDC_ERR_TGT_REVOKED, a new AS exchange straight after it accepted, the
@@ -952,8 +1037,11 @@ const JOBS = [
   // tests/tlsfuzzer/sts_adapter.py; every failure fixed or a documented
   // exception in tlsfuzzer_kit.js. `local: true`: this repository's TLS
   // listeners and their policy (tls/tls_server.js).
+  // EXCLUSIVE SINCE #429: it turns TLS 1.2 on service-wide for its run
+  // (every listener is TLS 1.3 only by default), which no other job may
+  // see half-way through.
   { file: 'sts_tlsfuzzer.js',            browser: false, local: true,
-    timeoutMs: 2700000 },
+    timeoutMs: 2700000, exclusive: true },
   // THE W3C VERIFIABLE CREDENTIALS AND DID TEST SUITES (#194-#199,
   // 2026-09-26): each Working Group suite, pinned and installed in the tests
   // image by tests/vc-suites/fetch-suites.sh, run against the VC-API test
@@ -998,10 +1086,11 @@ const JOBS = [
   // resumed tenant stream and a retried delivery, against the mock relying
   // party. `local: true`.
   { file: 'sts_provider_commands.js',    browser: false, local: true },
-  // SSF AS THE RECEIVER OF A FOREIGN TRANSMITTER (#153, 2026-09-26): one
-  // realm's transmitter as the "foreign" one, another realm receiving by
-  // poll and push, verifying and acting through a federation link.
-  // `local: true`.
+  // A FEDERATION PARTNER'S SHARED SIGNALS (#153, 2026-09-26; #373 and #374,
+  // 2026-10-01): one realm's transmitter as the partner, another realm
+  // receiving through federation relationships by poll and push, blocking
+  // the partner's sign-ins of a linked person, and a signals-only (`ssf`)
+  // relationship recording without acting. `local: true`.
   { file: 'sts_ssf_foreign_receiver.js', browser: false, local: true },
   // THE OPENID FOUNDATION'S CONFORMANCE SUITE (#176, 2026-09-24): FAPI 2.0
   // Security Profile and Message Signing, FAPI 1.0 Advanced and FAPI-CIBA,
@@ -1136,12 +1225,65 @@ const JOBS = [
   // A person's attributes set, added to and removed from through
   // /admin-api (#228), in a realm of its own.
   { file: 'sts_person_attributes.js',    browser: false, local: true },
+  // Attribute sources against the stack's real PostgreSQL (#94): a
+  // database, a read-only role and a table of the job's own, TLS verified
+  // against the source's own chain, the password read from a shared file,
+  // a sign-in carrying the attribute claim, and refuse on failure. Skips
+  // without STS_TEST_ATTRIBUTE_DB_URL or a shared directory.
+  { file: 'sts_attribute_sources.js',    browser: false, local: true },
   // OAuth 2.0 Attestation-Based Client Authentication (#229): a client
   // attester made at run time, the challenge endpoint, PAR, the code and
   // refresh token bound to the client instance, the DPoP combined mode and
   // introspection, in a realm of its own.
   { file: 'sts_client_attestation.js',   browser: false, local: true },
   { file: 'vc_did.js',                   browser: false },
+  // ---------------------------------------------------------------------
+  // TWO CELLS OF ONE SERVICE (#98, 2026-09-28). Each runs only in the
+  // `cells` mode (`./run-tests.sh --modes=cells`), which hands the runner
+  // both cells by name (STS_TEST_CELL_A_URL, STS_TEST_CELL_B_URL), and
+  // declines to run in every other mode, naming the variable. `local`:
+  // they drive this repository's own `/admin-api` and a stack only this
+  // repository's launcher builds. What they share is cells_kit.js.
+  //
+  //   sts_cells_map.js        each cell reports both, the peer reachable
+  //                           over the channel, a tiered store, no address
+  //   sts_cells_routing.js    a login name is unique across cells (409 at
+  //                           the other), and a creation naming another
+  //                           cell as home is made there (D1)
+  //   sts_cells_traveller.js  a flow started at cell A for a person homed
+  //                           at cell B restarts at home, pinned, and is
+  //                           served there through A — code, tokens, one
+  //                           key set (D8, D9) — and a pushed request made
+  //                           at B is found from A (D10)
+  //   sts_cells_transfer.js   a realm that lists `ca>us` holds the session
+  //                           at A with a projection; a disable at home
+  //                           ends it at A (D4, D6)
+  //   sts_cells_release.js    another cell's residents are refused under
+  //                           the strict default and listed once the realm
+  //                           permits it (D11)
+  //   sts_cells_rehome.js     a person moved from B to A: what they held
+  //                           ended, entryUUID and sub kept, signed in at A;
+  //                           a jurisdiction the realm forbids refused (8.8)
+  //   sts_cells_console.js    an administrator signs in to /admin through
+  //                           cell B, and /admin/cells draws both cells
+  //   sts_cells_ldap.js       a bind at cell B's LDAPS for a person homed
+  //                           at A is verified at home (D2)
+  //   sts_cells_unreachable.js  cell B cut off from A (tests/tools/
+  //                           cell_link.js): fail-closed refuses a refresh,
+  //                           a sign-in and a bind; fail-open refreshes a
+  //                           held session (D6). Restores the link. LAST of
+  //                           the cells jobs, so a link it failed to
+  //                           restore costs no other
+  // ---------------------------------------------------------------------
+  { file: 'sts_cells_map.js',            browser: false, local: true },
+  { file: 'sts_cells_routing.js',        browser: false, local: true },
+  { file: 'sts_cells_traveller.js',      browser: false, local: true },
+  { file: 'sts_cells_transfer.js',       browser: false, local: true },
+  { file: 'sts_cells_release.js',        browser: false, local: true },
+  { file: 'sts_cells_rehome.js',         browser: false, local: true },
+  { file: 'sts_cells_console.js',        browser: false, local: true },
+  { file: 'sts_cells_ldap.js',           browser: false, local: true },
+  { file: 'sts_cells_unreachable.js',    browser: false, local: true },
   // ---------------------------------------------------------------------
   // LAST, ALL THREE OF THEM, AND THE ORDER IS THE WHOLE OF WHY IT IS SAFE
   // (2026-09-06).
@@ -1327,7 +1469,13 @@ const LOCAL_HELPERS = [
   // `tests/risk_upload.js`: one entry, several, a directory and __MACOSX/
   // beside the data, a declared size that lies. Node's zlib; nothing from
   // yauzl, which is the reader under test.
-  'zip_writer.js'
+  'zip_writer.js',
+  // WHAT THE NINE `sts_cells_*.js` JOBS SHARE (#98): each cell's management
+  // API with a token minted at that cell, a cookie jar and a browser that
+  // follows no redirect, a JWT checked against a key set with node's own
+  // crypto, and a bounded wait for the global tier. Nothing from the
+  // service.
+  'cells_kit.js'
 ];
 
 // ---------------------------------------------------------------------------

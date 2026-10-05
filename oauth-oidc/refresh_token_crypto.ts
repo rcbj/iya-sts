@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -165,16 +165,22 @@ class RefreshTokenCrypto {
     return err;
   }
 
-  // Which of the realm's three keys an algorithm uses.
+  // Which of the realm's three keys an algorithm uses — or, for an ML-KEM
+  // or HPKE alg (#82), 'kem': a key pair DERIVED from the realm's secret
+  // for that alg (see kemKeyFor()).
   /**
-   * Tells which of the realm's three keys an algorithm uses.
+   * Tells which of the realm's keys an algorithm uses.
    *
    * @param alg - a JWE key-management algorithm
-   * @returns `rsa`, `ec` or `secret`
+   * @returns `rsa`, `ec`, `secret`, or `kem` for an ML-KEM or HPKE alg (#82)
    */
   kindOf(alg: string): string {
-    const { log } = this.deps;
+    const { log, stsCrypto } = this.deps;
     log.debug("Entering RefreshTokenCrypto.kindOf().");
+    if (stsCrypto.describeJweKemAlg(alg)) {
+      log.debug("Leaving RefreshTokenCrypto.kindOf().");
+      return 'kem';
+    }
     if (/^RSA-OAEP/.test(alg)) {
       log.debug("Leaving RefreshTokenCrypto.kindOf().");
       return 'rsa';
@@ -245,8 +251,39 @@ class RefreshTokenCrypto {
     log.debug("Leaving RefreshTokenCrypto.symmetricKeyFor().");
     return Buffer.from(nodeCrypto.hkdfSync('sha256', Buffer.from(secret),
       Buffer.alloc(0),
-      Buffer.from('mock-sts refresh token v1|' + alg + '|' + enc,
+      Buffer.from('iya-sts refresh token v1|' + alg + '|' + enc,
                   'utf8'), length));
+  }
+
+  // -------------------------------------------------------------------------
+  // THE REALM'S KEY PAIR FOR AN ML-KEM OR HPKE ALG (#82): derived from the
+  // realm's refresh-token secret through the KEM's own DeriveKeyPair, with
+  // an input made by HKDF from the secret and the alg, as symmetricKeyFor()
+  // makes a symmetric one. Nothing new is stored: the secret is already
+  // persisted, sealed, shared with every process and rotated with the rest
+  // of these keys, so the derived pair is all four as well, and a token
+  // sealed on one node opens on another. Never published — a refresh token
+  // is encrypted by this realm to itself. The kid is the secret's, with the
+  // alg after it, so open() can tell another realm's or a rotated key's.
+  // -------------------------------------------------------------------------
+  /**
+   * Derives the realm's key pair for an ML-KEM or HPKE alg from its
+   * refresh-token secret (#82).
+   *
+   * @param keys - the realm's refresh-token keys
+   * @param alg - an ML-KEM or HPKE `alg`
+   * @returns `{ publicJwk, privateJwk }`
+   */
+  kemKeyFor(keys: Json, alg: string): Json {
+    const { log, stsCrypto } = this.deps;
+    log.debug("Entering RefreshTokenCrypto.kemKeyFor(). " + alg);
+    const ikm = Buffer.from(nodeCrypto.hkdfSync('sha256',
+      Buffer.from(keys.secret), Buffer.alloc(0),
+      Buffer.from('iya-sts refresh token kem v1|' + alg, 'utf8'), 64));
+    const out = stsCrypto.deriveJweKemKeyPair(alg, ikm, keys.secretKid + '.' +
+      alg.toLowerCase().replace(/[^a-z0-9]+/g, ''));
+    log.debug("Leaving RefreshTokenCrypto.kemKeyFor().");
+    return out;
   }
 
   // The configured algorithm pair, each checked against the table that
@@ -337,6 +374,8 @@ class RefreshTokenCrypto {
         // `jwk.kid` into the header and uses `secret` as the key for these
         // algorithms.
         options.jwk = { kid: keys.secretKid };
+      } else if (kind === 'kem') {
+        options.jwk = this.kemKeyFor(keys, pair.alg).publicJwk;
       } else {
         options.jwk = keys[kind].publicJwk;
       }
@@ -418,6 +457,11 @@ class RefreshTokenCrypto {
     }
     const kind = this.kindOf(alg);
     const kidOf = function (set: Json): string {
+      if (kind === 'kem') {
+        // kemKeyFor()'s kid, without deriving the key to read it.
+        return set.secretKid + '.' +
+               alg.toLowerCase().replace(/[^a-z0-9]+/g, '');
+      }
       return kind === 'secret' ? set.secretKid : set[kind].publicJwk.kid;
     };
     let expectedKid = kidOf(keys);
@@ -457,6 +501,8 @@ class RefreshTokenCrypto {
       const options: Json = { expectedKid: expectedKid };
       if (kind === 'secret') {
         options.secret = this.symmetricKeyFor(keys.secret, alg, enc);
+      } else if (kind === 'kem') {
+        options.privateJwk = this.kemKeyFor(keys, alg).privateJwk;
       } else {
         options.privateKey = keys[kind].privateKey;
       }
@@ -533,7 +579,13 @@ class RefreshTokenCrypto {
       algorithms: stsCrypto.JWE_ALGS.slice(),
       encryptions: Object.keys(stsCrypto.JWE_ENCS),
       keys: { rsa: keys.rsa.publicJwk.kid, ec: keys.ec.publicJwk.kid,
-              ecCurve: keys.ec.publicJwk.crv, secret: keys.secretKid },
+              ecCurve: keys.ec.publicJwk.crv, secret: keys.secretKid,
+              // The derived ML-KEM / HPKE key's kid, when that is what is in
+              // force (#82); '' otherwise.
+              kem: this.kindOf(pair.alg) === 'kem'
+                ? keys.secretKid + '.' +
+                  pair.alg.toLowerCase().replace(/[^a-z0-9]+/g, '')
+                : '' },
       unencryptedAccepted: false
     };
   }
@@ -582,6 +634,7 @@ export = {
    */
   instanceOrigin: (): string => slot.origin(),
   kindOf: slot.forward('kindOf'),
+  kemKeyFor: slot.forward('kemKeyFor'),
   symmetricBytes: slot.forward('symmetricBytes'),
   symmetricKeyFor: slot.forward('symmetricKeyFor'),
   configured: slot.forward('configured'),

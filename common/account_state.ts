@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -71,6 +71,8 @@ type Json = any;
 interface LogoutFamily {
   terminate(key?: string, selection?: string[], opts?: Json): Json;
   heldIds?(key?: string): string[];
+  heldIdsFor?(keys?: string[]): Map<string, string[]>;
+  terminateEach?(list?: Json[], opts?: Json): Json[];
 }
 
 interface AccountStateDeps {
@@ -528,51 +530,203 @@ class AccountState {
    * Ends what a deleted person held at the moment of the delete.
    *
    * The held ids are read now and ended after the write has been answered, so a
-   * person re-created under the same name keeps what they hold.
+   * person re-created under the same name keeps what they hold. A batch of one
+   * of directoryDeletedMany().
    *
    * @param change - `username`, `realm` and `door` of the delete
    */
   directoryDeleted(change: Json): void {
+    const { log } = this.deps;
+    log.debug("Entering AccountState.directoryDeleted().");
+    this.directoryDeletedMany([change]);
+    log.debug("Leaving AccountState.directoryDeleted().");
+  }
+
+  // -------------------------------------------------------------------------
+  // SEVERAL PEOPLE DELETED AT ONCE (#351, 2026-09-29) — a SCIM Bulk, or any
+  // door's run of deletes the directory hands over together. Everything above
+  // holds per person: what they held is read NOW, ended LATER, and a person
+  // made again under the name in between keeps theirs. What changes is how
+  // often the stores are read: once for the whole set (`heldIdsFor()`), not
+  // once per person, and ended with one index (`terminateEach()`) — each
+  // person's sign-out still its own act, with its own audit row, CAEP and
+  // back-channel Logout Tokens. A person holding nothing is dropped here and
+  // costs nothing after; the deferred step logs ONE line per batch.
+  //
+  // The ending runs in chunks of `CHUNK`, a macrotask apart, so a thousand
+  // sign-outs never hold the event loop for the whole thousand.
+  // -------------------------------------------------------------------------
+  static readonly CHUNK = 500;
+
+  /**
+   * Ends what each deleted person held at the moment of the delete, reading
+   * the stores once for the set.
+   *
+   * @param changes - `username`, `realm` and `door` per delete
+   */
+  directoryDeletedMany(changes: Json[]): void {
+    const { log, realms } = this.deps;
+    log.debug("Entering AccountState.directoryDeletedMany(). " +
+              (changes || []).length + ".");
+    // By realm, in the order given; a name once per realm.
+    const byRealm = new Map<string, { realm: Json, door: string,
+                                      names: string[] }>();
+    (changes || []).forEach((change) => {
+      const c = change || {};
+      const name = String(c.username || '');
+      if (!name || name === 'anonymous') {
+        return;
+      }
+      const realm = realms.get(String(c.realm || '')) || realms.current();
+      let group = byRealm.get(realm.id);
+      if (!group) {
+        group = { realm: realm, door: String(c.door || 'a directory delete'),
+                  names: [] };
+        byRealm.set(realm.id, group);
+      }
+      if (group.names.indexOf(name) < 0) {
+        group.names.push(name);
+      }
+    });
+    byRealm.forEach((group) => {
+      this.endHeldByDeleted(group.realm, group.names, group.door);
+    });
+    log.debug("Leaving AccountState.directoryDeletedMany().");
+  }
+
+  // One realm's deleted people: read what they hold now, end it later.
+  private endHeldByDeleted(realm: Json, names: string[], door: string): void {
     const { log, later, realms } = this.deps;
     const self = this;
-    log.debug("Entering AccountState.directoryDeleted().");
-    const c = change || {};
-    const name = String(c.username || '');
-    if (!name || name === 'anonymous') {
-      log.debug("Leaving AccountState.directoryDeleted(). Nobody named.");
-      return;
-    }
-    const realm = realms.get(String(c.realm || '')) || realms.current();
-    const held = realms.run(realm, function (): string[] | null {
-      return self.heldBy(name);
+    log.debug("Entering AccountState.endHeldByDeleted(). " + names.length +
+              ".");
+    const held: Map<string, string[]> | null = realms.run(realm,
+      function (): Map<string, string[]> | null {
+        return self.heldByMany(names);
+      });
+    const toEnd = names.filter(function (name) {
+      return !held || (held.get(name) || []).length > 0;
     });
-    if (held && !held.length) {
-      log.debug("Leaving AccountState.directoryDeleted(). They held " +
+    if (!toEnd.length) {
+      log.debug("Leaving AccountState.endHeldByDeleted(). They held " +
                 "nothing.");
       return;
     }
-    later(function (): void {
+    const totals = { people: 0, ended: 0, backchannel: 0 };
+    const step = function (from: number): void {
       if (!realms.get(realm.id)) {
         // The realm went in the meantime, and its removal ended everything
         // in it already (`realms.retire()`).
         return;
       }
+      const chunk = toEnd.slice(from, from + AccountState.CHUNK);
       realms.run(realm, function (): void {
-        const ended = self.endEverything(name, {
+        const results = self.endEach(chunk.map(function (name) {
+          return { who: name,
+                   selection: held ? held.get(name) : undefined };
+        }), {
           channel: 'internal',
-          selection: held || undefined,
           initiatingEntity: 'admin',
-          by: 'the deletion of the account (' +
-              String(c.door || 'a directory delete') + ')' });
-        log.info('account state: ' + name + ' was deleted; ' +
-                 ended.terminated + ' live item(s) they held were ended' +
-                 (ended.backchannel.length
-                   ? ', with ' + ended.backchannel.length +
-                     ' back-channel Logout Token(s) queued'
-                   : '') + '.');
+          by: 'the deletion of the account (' + door + ')' });
+        results.forEach(function (ended: Json) {
+          totals.people += 1;
+          totals.ended += ended.terminated;
+          totals.backchannel += ended.backchannel.length;
+        });
       });
+      if (from + AccountState.CHUNK < toEnd.length) {
+        later(function (): void {
+          step(from + AccountState.CHUNK);
+        });
+        return;
+      }
+      log.info('account state: ' + (names.length === 1
+        ? names[0] + ' was deleted; '
+        : names.length + ' people were deleted (' + door + '); ' +
+          totals.people + ' of them held something, and ') +
+        totals.ended + ' live item(s) they held were ended' +
+        (totals.backchannel
+          ? ', with ' + totals.backchannel +
+            ' back-channel Logout Token(s) queued'
+          : '') + '.');
+    };
+    later(function (): void {
+      step(0);
     });
-    log.debug("Leaving AccountState.directoryDeleted(). Scheduled.");
+    log.debug("Leaving AccountState.endHeldByDeleted(). Scheduled " +
+              toEnd.length + ".");
+  }
+
+  // heldBy() for several people at once: the stores read once for the set.
+  // Null where no sign-out module is loaded, as heldBy()'s.
+  private heldByMany(names: string[]): Map<string, string[]> | null {
+    const { log, findLogout } = this.deps;
+    log.debug("Entering AccountState.heldByMany(). " + names.length + ".");
+    const logout = findLogout();
+    if (!logout) {
+      log.debug("Leaving AccountState.heldByMany(). No logout family.");
+      return null;
+    }
+    const out = new Map<string, string[]>();
+    if (typeof logout.heldIdsFor === 'function') {
+      const byKey = logout.heldIdsFor(names.map((name) => {
+        return this.keyOf(name);
+      }));
+      names.forEach((name) => {
+        out.set(name, byKey.get(this.keyOf(name)) || []);
+      });
+    } else if (typeof logout.heldIds === 'function') {
+      names.forEach((name) => {
+        out.set(name, this.heldBy(name) || []);
+      });
+    } else {
+      log.debug("Leaving AccountState.heldByMany(). No logout family.");
+      return null;
+    }
+    log.debug("Leaving AccountState.heldByMany().");
+    return out;
+  }
+
+  // endEverything() for several people, through `terminateEach()` where the
+  // sign-out offers it, so the stores are read once; each person's answer is
+  // endEverything()'s, and each one's info line becomes the caller's one.
+  private endEach(list: Json[], opts: Json): Json[] {
+    const { log, findLogout, errorCodes } = this.deps;
+    log.debug("Entering AccountState.endEach(). " + list.length + ".");
+    const logout = findLogout();
+    if (!logout || typeof logout.terminateEach !== 'function') {
+      log.debug("Leaving AccountState.endEach(). One at a time.");
+      return list.map((one) => {
+        return this.endEverything(one.who, Object.assign({}, opts,
+          { selection: one.selection }));
+      });
+    }
+    let results: Json[] = [];
+    try {
+      results = logout.terminateEach(list.map((one) => {
+        return { key: this.keyOf(one.who),
+                 selection: Array.isArray(one.selection) ? one.selection
+                   : [] };
+      }), {
+        actor: opts.actor || '', channel: opts.channel || 'internal',
+        by: opts.by, initiatingEntity: opts.initiatingEntity || 'admin',
+        providerCommand: false, quiet: true
+      });
+    } catch (e) {
+      log.error(errorCodes.tag('STS-LDAP-0120') + 'account state: ending ' +
+                'what ' + list.length + ' deleted person(s) held failed: ' +
+                ((e && e.message) || e));
+      log.debug("Leaving AccountState.endEach(). Threw.");
+      return list.map(function (): Json {
+        return { ended: false, terminated: 0, backchannel: [] };
+      });
+    }
+    log.debug("Leaving AccountState.endEach().");
+    return results.map(function (result: Json): Json {
+      return { ended: true,
+               terminated: ((result && result.terminated) || []).length,
+               backchannel: (result && result.backchannel) || [] };
+    });
   }
 }
 
@@ -610,5 +764,6 @@ export = {
   heldBy: slot.forward('heldBy'),
   setDisabled: slot.forward('setDisabled'),
   directoryChanged: slot.forward('directoryChanged'),
-  directoryDeleted: slot.forward('directoryDeleted')
+  directoryDeleted: slot.forward('directoryDeleted'),
+  directoryDeletedMany: slot.forward('directoryDeletedMany')
 };

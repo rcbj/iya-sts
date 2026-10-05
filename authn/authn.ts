@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 // File: authn.ts
@@ -214,6 +214,12 @@ import errorCodes = require('../common/error_codes');
 // signs somebody in — and by sessionOf(), so a session that was live when the
 // account was disabled is not honoured again.
 import accountState = require('../common/account_state');
+// A SERVICE DEPLOYED AS CELLS (#98): which cell this is, where a person is
+// homed, and the browser's pin — all LIBRARIES with no route, so a require
+// here moves nothing. The sign-in screen is where D9's restart happens.
+import cells = require('../common/cells');
+import cellRouting = require('../common/cell_routing');
+import cellPlacement = require('../common/cell_placement');
 
 // The path a caller sends the browser to. Exported, because the two callers
 // build a URL out of it and a string spelled twice is a string that drifts.
@@ -456,7 +462,9 @@ const sessions = realms.map({ persist: 'authn.sessions', tombstone: true,
 // and in a service with no realms defined, there is exactly one partition and
 // this behaves as the plain Map it replaced. See common/realms.js.
 // authn id -> { returnTo, details, ... }
-const pending = realms.map({ persist: 'authn.pending', retain: 'age' });
+const pending = realms.map({ persist: 'authn.pending', retain: 'age',
+                             // #333: the sign-in's `expires`, ms.
+                             expiresAt: realms.expiryField('expires', 1) });
 
 // ONE DEVICE RECOGNITION PER REQUEST AND CREDENTIAL (#164 phase 5): see
 // `registeredDeviceFor()`. Keyed WEAKLY by the request object, so it lives
@@ -556,14 +564,18 @@ import totp = require('../common/totp');
 // unchanged and every one of them is now realm-correct. In the default realm,
 // and in a service with no realms defined, there is exactly one partition and
 // this behaves as the plain Map it replaced. See common/realms.js.
-const pendingMfa = realms.map({ persist: 'authn.pendingMfa', retain: 'age' });
+const pendingMfa = realms.map({ persist: 'authn.pendingMfa', retain: 'age',
+                                // #333: the step's `expires`, ms.
+                                expiresAt: realms.expiryField('expires', 1) });
 // change id -> { authn, username, secondFactor, expires }. A password that must
 // be changed before the sign-in it opened goes any further (2026-09-13). A
 // store of its own rather than a `factor` on the one above: that register is
 // "a sign-in waiting for a SECOND FACTOR", and a new password is not one — the
 // person has presented one factor and is being asked to replace it.
 const pendingPasswordChange = realms.map({
-  persist: 'authn.pendingPasswordChange', retain: 'age' });
+  persist: 'authn.pendingPasswordChange', retain: 'age',
+  // #333: the step's `expires`, ms.
+  expiresAt: realms.expiryField('expires', 1) });
 // How long a second-factor step waits. `authn.mfaStepTtlS` since 2026-09-12;
 // this is its default.
 const MFA_TTL_MS = 5 * 60 * 1000;
@@ -1049,7 +1061,7 @@ const WEBAUTHN_SCRIPT = [
   '    var p;',
   '    if (d.getAttribute("data-mode") === "create") {',
   '      p = navigator.credentials.create({ publicKey: {',
-  '        rp: o.rp || { name: "Mock authorization server", id: rpId },',
+  '        rp: o.rp || { name: "IYA STS", id: rpId },',
   '        user: { id: new TextEncoder().encode(user), name: user, ' +
   'displayName: user },',
   '        challenge: challenge,',
@@ -1975,6 +1987,7 @@ class Authn {
       events: []
     };
     const cookieValue = this.mintSessionHandle(session);
+    this.makeRoomForSession(sessions.realmMap(), sessionId);
     sessions.set(sessionId, session);
     this.setCookieHeader(res, this.sessionCookieLine(SESSION_COOKIE,
                                                      cookieValue));
@@ -2146,17 +2159,28 @@ class Authn {
   // partitions with the same `derivedFrom` would be ended by a sign-out it has
   // nothing to do with. An absent `derivedFromRealm` means "my own partition",
   // which is what every session made before this field existed meant.
+  //
+  // **AND A THIRD, NAMED BY THE CALLER (2026-09-30).** A portal session ADOPTED
+  // from a console session (`adoptRelyingPartySession()`) is a child of that
+  // console session, which lives in the default partition, while the portal
+  // session lives in the realm its person signed in through — which is the
+  // console session's own `derivedFromRealm`. So `dropSession()` names that
+  // one realm when the session being ended is a console session, and this
+  // walks it as well. It is the "another named partition" the paragraph above
+  // asked for, and still not a walk over `realms.list()`.
   /**
-   * Lists the relying-party sessions derived from one sign-on session.
+   * Lists the relying-party sessions derived from one session.
    *
-   * It looks in the given partition and in the default realm's, and a child
-   * found in the other partition must name this parent's realm.
+   * It looks in the given partition, in the default realm's, and in `alsoRealm`
+   * when named; a child found outside the ambient partition must name this
+   * parent's realm.
    *
-   * @param parentId - the sign-on session id
+   * @param parentId - the parent session id
    * @param store - the partition to look in; the ambient one by default
+   * @param alsoRealm - one further realm whose partition is walked
    * @returns the derived sessions found
    */
-  derivedFrom(parentId, store?) {
+  derivedFrom(parentId, store?, alsoRealm?) {
     const { realms, log } = this.deps;
     log.debug("Entering Authn.derivedFrom(). parentId=" + parentId);
     const here = realms.currentId();
@@ -2179,6 +2203,11 @@ class Authn {
     scan(here, store || sessions.realmMap());
     if (here !== realms.DEFAULT_ID) {
       scan(realms.DEFAULT_ID, sessions.realmMap(realms.DEFAULT_ID));
+    }
+    const also = String(alsoRealm || '');
+    if (also && also !== here && also !== realms.DEFAULT_ID &&
+        realms.get(also)) {
+      scan(also, sessions.realmMap(also));
     }
     log.debug("Leaving Authn.derivedFrom(). " + found.length +
               " derived session(s).");
@@ -2430,6 +2459,7 @@ class Authn {
       calls: 1
     };
     const cookieValue = this.mintSessionHandle(session);
+    this.makeRoomForSession(store, sessionId);
     store.set(sessionId, session);
     this.setCookieHeader(spec.res, this.sessionCookieLine(spec.cookie,
                                                           cookieValue));
@@ -2479,6 +2509,145 @@ class Authn {
              '. No authentication was recorded here — the authorization ' +
              'endpoint already counted it.');
     log.debug("Leaving Authn.startRelyingPartySession(). " + sessionId);
+    return session;
+  }
+
+  // ---------------------------------------------------------------------------
+  // ADOPTING ANOTHER SURFACE'S SESSION (2026-09-30). The one other way a
+  // relying-party session is made, and ONE DIRECTION ONLY: the user portal
+  // establishing its own session from a LIVE console session in the same
+  // browser (`portal/portal.ts`'s `adoptConsoleSession()`, which is the one
+  // caller and argues why).
+  //
+  // What it was for, observed on a product deployment: an administrator
+  // followed the console's link to their own account and was asked to sign in
+  // AGAIN, because the sign-on session behind the console had run out
+  // (`authn.sessionLifetimeS`, absolute) while the console session renewed its
+  // own tokens past it (`common/oidc_rp.ts` section 4). The portal's code flow
+  // then met no sign-on session. The owner's decision was that the portal reads
+  // the realm and the authentication from the console session.
+  //
+  // **IT INVENTS NOTHING.** Everything on the new row comes off the console
+  // row, which was itself made from an ID Token this service verified — the
+  // person, the authentication time, `amr`, `acr`, whether they authenticated,
+  // and the authority that vouched for the sign-in. So the export list's rule
+  // ("a caller that wanted to create one of these without going through the
+  // code flow would be a caller inventing a session out of nothing") still
+  // holds one step removed: the code flow ran, for the console.
+  //
+  // **ITS PARENT IS THE CONSOLE SESSION, AND IT DIES WITH IT** — `derivedFrom`
+  // names it and `derivedFromRealm` says it is in the default partition, so:
+  //   * the reader (`relyingPartySessionOf()`) ends it on the first request
+  //     after the console session is gone, for whatever reason;
+  //   * `dropSession()`'s cascade ends it WITH the console session, in any
+  //     realm (see `derivedFrom()`'s `alsoRealm`);
+  //   * it holds NO TOKENS, so it never renews and "a parent that ran out" is
+  //     never an excuse to outlive it; and its expiry is the console
+  //     session's at the moment it was adopted.
+  //
+  // It records no authentication, for `startRelyingPartySession()`'s reason.
+  // It writes a `session.start` row that says it was adopted, and announces an
+  // `established` session, because a new session is what it is.
+  // ---------------------------------------------------------------------------
+  /**
+   * Creates a surface's relying-party session from another surface's live
+   * relying-party session in the same browser — the user portal adopting the
+   * console's. Created in the ambient realm's partition.
+   *
+   * @param spec - `{ res, source, sourceRealm, surface, label, clientId,
+   *   cookie, req }`: the response the cookie is set on, the live session
+   *   adopted and the realm whose partition holds it, and the adopting
+   *   surface's identity
+   * @returns the new session
+   */
+  adoptRelyingPartySession(spec) {
+    const { realms, log, randomId, userFor, audit } = this.deps;
+    log.debug("Entering Authn.adoptRelyingPartySession(). surface=" +
+              spec.surface);
+    const source = spec.source;
+    const sourceRealm = String(spec.sourceRealm || realms.currentId());
+    const username = String(source.user.username);
+    const sessionId = randomId(24);
+    const store = sessions.realmMap();
+    const session: SessionRow = {
+      id: sessionId,
+      // Built HERE, in the realm the portal session lives in, which is the
+      // realm the person signed in through: the console row's own `user` was
+      // built in the default partition and names that realm's view of them.
+      user: userFor(username),
+      authTime: source.authTime,
+      expires: Number(source.expires) || 0,
+      authenticated: source.authenticated !== false,
+      amr: Array.isArray(source.amr) ? source.amr.slice() : [],
+      acr: source.acr || '',
+      via: spec.label || spec.surface,
+      signInAuthority: source.signInAuthority || '',
+      derivedFrom: source.id,
+      derivedFromRealm: sourceRealm,
+      rpSurface: String(spec.surface || ''),
+      rpLabel: String(spec.label || spec.surface || ''),
+      rpClientId: String(spec.clientId || ''),
+      // The sign-on session's `sid` the console was told, so a front-channel
+      // logout naming that sign-on session names this one too.
+      rpSid: String(source.rpSid || ''),
+      // WHICH SURFACE IT WAS ADOPTED FROM, and the one field no code-flow row
+      // carries — what `/admin/sessions` and the portal's sign-out read to
+      // tell the two kinds apart.
+      rpAdoptedFrom: String(source.rpSurface || ''),
+      // No tokens: it never renews, and see relyingPartySessionOf() for why
+      // that is what makes a missing parent always end it.
+      rpTokens: null,
+      rpRenewableUntil: 0,
+      rpRenewals: 0,
+      rpRenewedAt: 0,
+      derivedFromExpires: 0,
+      credentialKey: null,
+      lastSeenAt: Date.now(),
+      calls: 1
+    };
+    const cookieValue = this.mintSessionHandle(session);
+    this.makeRoomForSession(store, sessionId);
+    store.set(sessionId, session);
+    this.setCookieHeader(spec.res, this.sessionCookieLine(spec.cookie,
+                                                          cookieValue));
+    audit.audit({
+      action: 'session.start',
+      actor: username,
+      protocol: 'OAuth 2.0 / OIDC',
+      channel: 'http',
+      target: sessionId,
+      summary: username + ' was signed in to the ' +
+               (spec.label || spec.surface) + ' from their live ' +
+               (source.rpLabel || source.rpSurface) + ' session ' +
+               source.id + '; session ' + sessionId + ' was created',
+      detail: {
+        sessionId: sessionId,
+        sub: session.user.sub,
+        client_id: session.rpClientId,
+        derivedFrom: session.derivedFrom,
+        derivedFromRealm: sourceRealm,
+        adoptedFrom: session.rpAdoptedFrom,
+        surface: session.rpSurface,
+        amr: (session.amr || []).join(', '),
+        acr: session.acr || '',
+        authTime: session.authTime,
+        expiresAt: new Date(session.expires).toISOString(),
+        note: 'A RELYING PARTY session ADOPTED from another surface\'s live ' +
+              'session in the same browser. Nobody authenticated here and no ' +
+              'code flow ran: the authentication is the one behind ' +
+              source.id + ', and this session ends when that one does.'
+      }
+    });
+    session.firstPresentationIsTheSignIn = true;
+    this.notifySession('established', session,
+                       { via: spec.label || spec.surface,
+                         req: spec.req || null });
+    log.info('authn: ' + username + ' holds a ' + (spec.label || spec.surface) +
+             ' session (' + sessionId + ') in realm ' + realms.currentId() +
+             ', adopted from their ' + (source.rpLabel || source.rpSurface) +
+             ' session ' + source.id + ' in realm ' + sourceRealm +
+             '. No authentication was recorded and no code flow ran.');
+    log.debug("Leaving Authn.adoptRelyingPartySession(). " + sessionId);
     return session;
   }
 
@@ -3053,6 +3222,11 @@ class Authn {
     // away too long" and "your session is an hour old" are different things to
     // tell somebody, and a receiver may treat them differently.
     const idle = why === 'idle';
+    // THE THIRD WAY A SESSION RUNS OUT (#345): the realm's store was full
+    // (`authn.maxSessions`) when another session was created, and this was
+    // the least recently used. A policy ending a session nobody signed out
+    // of, exactly as an expiry is, so it takes this same end.
+    const evicted = why === 'capacity';
     store.delete(id);
     // THE BACK-CHANNEL LOGOUT TOKENS, ON AN EXPIRY TOO (2026-09-17, #36
     // follow-up) — while `oauth2.backchannelLogoutOnExpiry` is on, which it is
@@ -3064,14 +3238,18 @@ class Authn {
     // sweep, an idle timeout noticed on a later request — has no page to
     // draw one on.
     const planned = this.backchannelOnExpiry()
-      ? this.planBackchannel(session, idle
-          ? 'the session went idle (authn.sessionIdleTimeoutS)'
-          : 'the session expired (authn.sessionLifetimeS)', 'expiry')
+      ? this.planBackchannel(session, evicted
+          ? 'the realm held authn.maxSessions sessions and this was the ' +
+            'least recently used'
+          : idle
+            ? 'the session went idle (authn.sessionIdleTimeoutS)'
+            : 'the session expired (authn.sessionLifetimeS)', 'expiry')
       : [];
     // THE REPORT ONCE FOR THE CLUSTER; the delete above is this process's own.
     // See sessionEndOnce().
     this.sessionEndOnce(id, function () {
-      self.reportExpiry(id, session, via, idle);
+      self.reportExpiry(id, session, via, evicted ? 'capacity'
+                                                  : (idle ? 'idle' : ''));
       self.dispatchBackchannel(planned);
     });
     log.debug("Leaving Authn.expireSession().");
@@ -3143,10 +3321,14 @@ class Authn {
 
   // The audit row and the event for an expiry — what sessionEndOnce() lets out
   // once for the cluster. Split from expireSession() for that reason only.
-  private reportExpiry(id, session, via, idle) {
+  // `kind` is 'idle', 'capacity' (#345: ended to keep the realm under
+  // `authn.maxSessions`) or '' for the absolute expiry.
+  private reportExpiry(id, session, via, kind) {
     const { log, audit } = this.deps;
     log.debug("Entering Authn.reportExpiry(). id=" + id);
-    audit.audit({
+    const idle = kind === 'idle';
+    const evicted = kind === 'capacity';
+    const row: any = {
       action: 'session.end',
       outcome: 'success',
       actor: (session && session.user && session.user.username) || '',
@@ -3155,21 +3337,32 @@ class Authn {
       target: id,
       summary: ((session && session.user &&
                  session.user.username) || 'somebody') +
-               '\'s session ' + id + ' expired and was discarded',
+               '\'s session ' + id + (evicted
+                 ? ' was ended to make room: the realm held ' +
+                   'authn.maxSessions sessions'
+                 : ' expired and was discarded'),
       detail: {
         sessionId: id,
         // Not "signed out": nobody asked for this and no browser was involved.
         // A receiver told the session was established has to be able to tell
         // the two apart, which is what `initiating_entity` carries in the
         // event.
-        reason: idle
-          ? 'the session went unused for longer than authn.sessionIdleTimeoutS'
-          : 'the session lifetime ran out',
+        reason: evicted
+          ? 'the realm held authn.maxSessions sessions when another was ' +
+            'created, and this one was the least recently used'
+          : idle
+            ? 'the session went unused for longer than ' +
+              'authn.sessionIdleTimeoutS'
+            : 'the session lifetime ran out',
         noticedBy: via,
         expiresAt: session && session.expires
           ? new Date(session.expires).toISOString() : ''
       }
-    });
+    };
+    if (evicted) {
+      row.errorCode = 'STS-AUTHN-0292';
+    }
+    audit.audit(row);
     // THE EVENT. `revoked` is CAEP's word for a session that is no longer good,
     // and an expiry is exactly that — the observer decides what to send and
     // this says what happened.
@@ -3184,7 +3377,11 @@ class Authn {
     this.notifySession('revoked', session, {
       via: via, byAdmin: false, expired: true,
       initiatingEntity: 'policy',
-      reason: idle
+      reason: evicted
+        ? 'This service holds a bounded number of sessions, it was full, ' +
+          'and this was the session least recently used. Nobody signed ' +
+          'out — this service stopped honouring it to make room.'
+        : idle
         ? 'The session went unused for longer than this service\'s idle ' +
           'timeout. Nobody signed out — this service stopped honouring a ' +
           'session nobody was using.'
@@ -3251,6 +3448,110 @@ class Authn {
     }
     log.debug("Leaving Authn.sweepExpiredSessions(). " + gone + " ended.");
     return gone;
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE SIZE CAP (#345): `authn.maxSessions` per realm, checked where a
+  // session is CREATED, because a bound cannot wait for the expiry job (root
+  // CLAUDE.md, *Anything periodic is a scheduler job*). Called by the three
+  // doors that add a key to the store — `startArrivalSession()`,
+  // `startRelyingPartySession()` and `startSessionHere()` — before the set;
+  // a write back to a session that already exists is not an insert and
+  // passes.
+  //
+  // **AT THE CAP THE LEAST RECENTLY USED SESSION ENDS, through
+  // `expireSession()`** — the one end an expiry takes: the delete, the
+  // back-channel Logout Tokens planned, and, once for the cluster, the audit
+  // row (carrying STS-AUTHN-0292) and CAEP session-revoked. Nothing is
+  // dropped silently; the person behind it signs in again.
+  //
+  // **"LEAST RECENTLY USED" IS `lastSeenAt`, falling back to `startedAt`**,
+  // because that is what the row tracks. Oldest-by-creation would end a
+  // console operator's session while a burst of arrivals from nobody sat
+  // behind it. `lastSeenAt` is stamped at creation, at every sign-in on the
+  // session, on every call an API client makes, and — while an idle timeout
+  // is in force — on every use (`noteSessionUsed()`); with no idle timeout a
+  // browser read writes nothing (a read must not be a write to a persisted
+  // store), so it is then "last authenticated", which is still the better
+  // order. Map order would be free and is creation order, which is the
+  // wrong question.
+  //
+  // **O(n) in the realm's sessions, and only at the cap** — the ordinary
+  // insert asks `size` and nothing else. When the cap was LOWERED below the
+  // store's size, one sort ends every session over it at once rather than
+  // one per insert, which would never converge.
+  //
+  // **SEVERAL PROCESSES, ONE STORE.** `sessions` is persisted and
+  // replicated (`realms.map({persist, tombstone})`), so the end is a normal
+  // tombstoned delete that reaches every node, and its report is claimed
+  // once (`sessionEndOnce()`). The check runs ONLY in the process doing the
+  // insert, against that process's view of the store: a worker RESTORING
+  // sessions at start, or applying another's writes from the change log,
+  // does not come through here and evicts nothing — so processes never
+  // evict each other's choices differently. Two processes inserting at the
+  // same instant may each see room, so the store can overshoot by one per
+  // concurrent inserter until the next insert; a bound, not an exact count.
+  // ---------------------------------------------------------------------------
+  private sessionCapLoggedAt = 0;
+  private sessionCapEnded = 0;
+
+  private makeRoomForSession(store, newId) {
+    const { log, config, errorCodes } = this.deps;
+    const self = this;
+    log.debug("Entering Authn.makeRoomForSession().");
+    const cap = Math.floor(Number(config.value('authn.maxSessions')));
+    if (!(cap > 0) || !store || store.size < cap ||
+        (newId && store.has(newId))) {
+      log.debug("Leaving Authn.makeRoomForSession(). Room.");
+      return 0;
+    }
+    // A HOT PATH: called for every session the scan or the sort compares,
+    // so no Entering/Leaving pair — one would drown the log.
+    const usedAt = function (session) {
+      return Number(session && (session.lastSeenAt || session.startedAt)) ||
+             0;
+    };
+    const over = store.size - cap + 1;
+    let victims = [];
+    if (over === 1) {
+      let oldest = null;
+      store.forEach(function (session, id) {
+        // Strictly less: a tie keeps the first, the older in Map order.
+        if (oldest === null || usedAt(session) < usedAt(oldest[1])) {
+          oldest = [id, session];
+        }
+      });
+      if (oldest) {
+        victims = [oldest];
+      }
+    } else {
+      const all = [];
+      store.forEach(function (session, id) {
+        all.push([id, session]);
+      });
+      all.sort(function (a, b) {
+        return usedAt(a[1]) - usedAt(b[1]);
+      });
+      victims = all.slice(0, over);
+    }
+    victims.forEach(function (pair) {
+      self.expireSession(store, pair[0], pair[1],
+                         'the session cap (authn.maxSessions)', 'capacity');
+    });
+    this.sessionCapEnded += victims.length;
+    const now = Date.now();
+    if (now - this.sessionCapLoggedAt >= 60000) {
+      log.warn(errorCodes.tag('STS-AUTHN-0292') + 'authn: the realm held ' +
+               'authn.maxSessions (' + cap + ') sessions, so ' +
+               this.sessionCapEnded + ' least recently used session(s) were ' +
+               'ended to make room for new ones. Each is an audit row. ' +
+               'Raise the setting if this is ordinary load.');
+      this.sessionCapEnded = 0;
+      this.sessionCapLoggedAt = now;
+    }
+    log.debug("Leaving Authn.makeRoomForSession(). " + victims.length +
+              " ended.");
+    return victims.length;
   }
 
   // ---------------------------------------------------------------------------
@@ -3574,6 +3875,14 @@ class Authn {
     }
     if (typeof given.backupState === 'boolean') {
       credential.backupState = given.backupState;
+    }
+    // The signature algorithm a WebAuthn ceremony was verified with
+    // (2026-10-01).
+    if (given.algorithm) {
+      credential.algorithm = String(given.algorithm);
+    }
+    if (typeof given.coseAlg === 'number') {
+      credential.coseAlg = given.coseAlg;
     }
     // THE BROWSER FINGERPRINT (#62 P6), where the realm asked for one and
     // the sign-in form carried it — as a digest, like the User-Agent: the
@@ -4305,10 +4614,28 @@ class Authn {
    * @returns the session, or null when refused
    */
   startSession(res, username, amr, acr, via, detail) {
+    const { log } = this.deps;
+    log.debug("Entering Authn.startSession().");
+    const session = this.startSessionHere(res, username, amr, acr, via,
+                                          detail);
+    // THE BROWSER IS PINNED TO THE CELL THAT HOLDS ITS SESSION (#98 D9), so
+    // it keeps reaching this cell whichever cell DNS answers it with next —
+    // a traveller moving between regions, or a balancer's health check
+    // moving it. A no-op in single-cell mode.
+    if (session && cells.isMulti()) {
+      cellPlacement.setAffinity((detail && detail.request) || {}, res,
+                                realms.currentId(), cells.id());
+    }
+    log.debug("Leaving Authn.startSession().");
+    return session;
+  }
+
+  // What startSession() did before cells: every path that makes a session.
+  private startSessionHere(res, username, amr, acr, via, detail) {
     const { log, randomId, userFor, helpers, stats, gate, audit,
       errorCodes } = this.deps;
     const self = this;
-    log.debug("Entering Authn.startSession(). username=" + username + ", acr=" +
+    log.debug("Entering Authn.startSessionHere(). username=" + username + ", acr=" +
               acr);
     const extra = detail || {};
     // -------------------------------------------------------------------------
@@ -4335,7 +4662,7 @@ class Authn {
       });
       extra.refusedWith = 'STS-CORE-0121';
       extra.refusedWhy = retiring.why;
-      log.debug("Leaving Authn.startSession(). The realm is being removed.");
+      log.debug("Leaving Authn.startSessionHere(). The realm is being removed.");
       return null;
     }
     // -------------------------------------------------------------------------
@@ -4364,7 +4691,7 @@ class Authn {
                   application: String(extra.application || '') }
       });
       extra.refusedWith = 'STS-AUTHN-0201';
-      log.debug("Leaving Authn.startSession(). The account is disabled.");
+      log.debug("Leaving Authn.startSessionHere(). The account is disabled.");
       return null;
     }
     // -------------------------------------------------------------------------
@@ -4399,7 +4726,7 @@ class Authn {
                   application: String(extra.application || '') }
       });
       extra.refusedWith = policyCode;
-      log.debug("Leaving Authn.startSession(). The policy refused.");
+      log.debug("Leaving Authn.startSessionHere(). The policy refused.");
       return null;
     }
     // -------------------------------------------------------------------------
@@ -4595,7 +4922,7 @@ class Authn {
                                 policy: sessionAnswer.policy });
         extra.refusedWith = code;
         extra.riskStepUp = sessionAnswer.risk.factor || '';
-        log.debug("Leaving Authn.startSession(). Refused on risk.");
+        log.debug("Leaving Authn.startSessionHere(). Refused on risk.");
         return null;
       }
       if (!sessionAnswer.allowed) {
@@ -4617,7 +4944,7 @@ class Authn {
             ? 'STS-DEVICE-0038' : 'STS-DEVICE-0037')
           : 'STS-AUTHN-0010';
         extra.refusedWhy = sessionAnswer.why;
-        log.debug("Leaving Authn.startSession(). The issuance policy refused " +
+        log.debug("Leaving Authn.startSessionHere(). The issuance policy refused " +
                   "it.");
         return null;
       }
@@ -4628,7 +4955,7 @@ class Authn {
       // device — so it leaves the device out (`deviceDeferred`), and the
       // question is asked here, of the credential the session actually
       // stands on, about the device alone.
-      log.debug("Leaving Authn.startSession(). Refused on the device.");
+      log.debug("Leaving Authn.startSessionHere(). Refused on the device.");
       return null;
     }
 
@@ -4689,7 +5016,7 @@ class Authn {
         // deliberately does not move.
         this.notifySession('presented', found, { via: via || found.via,
                                                  req: null });
-        log.debug("Leaving Authn.startSession(). The credential was " +
+        log.debug("Leaving Authn.startSessionHere(). The credential was " +
                   "presented " +
                   "again; session " + found.id +
                   " was touched rather than replaced.");
@@ -4708,7 +5035,7 @@ class Authn {
       this.settleRisk(risk, { decision: riskDecision, sessionId: again.id,
                               context: extra.risk &&
                                        extra.risk.sessionContext });
-      log.debug("Leaving Authn.startSession(). " + username +
+      log.debug("Leaving Authn.startSessionHere(). " + username +
                 " re-authenticated on " +
                 "session " + again.id + ".");
       return again;
@@ -4818,7 +5145,7 @@ class Authn {
                     ? String(extra.federation.autocreate !== false) : '' }
       });
       extra.refusedWith = 'STS-AUTHN-0180';
-      log.debug("Leaving Authn.startSession(). There is no entry to be the " +
+      log.debug("Leaving Authn.startSessionHere(). There is no entry to be the " +
                 "subject of.");
       return null;
     }
@@ -4915,6 +5242,8 @@ class Authn {
     // fixation, whatever the randomness of the id. Rotating the handle keeps
     // the correlation and ends the fixation.
     const cookieValue = this.mintSessionHandle(session);
+    // An upgraded arrival row keeps its id and is not an insert.
+    this.makeRoomForSession(sessions.realmMap(), sessionId);
     sessions.set(sessionId, session);
     // The sweep that ends it if nobody signs it out is the scheduler job
     // `authn.session-expiry` (see the header); nothing is armed here.
@@ -4975,6 +5304,13 @@ class Authn {
         acr: acr || '',
         authTime: session.authTime,
         expiresAt: new Date(session.expires).toISOString(),
+        // THE PASSKEY'S SIGNATURE ALGORITHM (2026-10-01), where a WebAuthn
+        // ceremony — the only factor or the second — signed this session in.
+        credentialAlgorithm: extra.credential && extra.credential.algorithm
+          ? String(extra.credential.algorithm) +
+            (extra.credential.coseAlg ? ' (' + extra.credential.coseAlg + ')'
+                                      : '')
+          : undefined,
         // The caller's own sentence where it has one. A federated sign-in's
         // "No password was checked" is true and useless — nothing was typed
         // here at all — and the row is the only place that distinction will
@@ -4999,10 +5335,89 @@ class Authn {
                             context: extra.risk &&
                                      extra.risk.sessionContext });
     this.assessRisk(session, firstEvent, via, extra);
-    log.debug("Leaving Authn.startSession(). " + username +
+    // THE SESSION THIS RESPONSE STARTED (#94), for afterSignIn(): the
+    // attribute sources read at sign-in are read between here and the
+    // browser being sent back, which is before the first artifact. Not for
+    // a keyed caller (SCIM, SPIRE), which is no person and has no browser.
+    if (res && res.locals && !extra.key) {
+      res.locals.stsStartedSession = {
+        id: sessionId, username: String((user && user.username) ||
+                                        username) };
+    }
+    log.debug("Leaving Authn.startSessionHere(). " + username +
               " is signed in (amr " +
               (amr || []).join(',') + ").");
     return session;
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE SIGN-IN'S LAST STEP: THE ATTRIBUTE SOURCES (#94).
+  //
+  // A source whose mode is `sign-in` — or `once`, for a person it has not
+  // read — is read AFTER the session exists (a first-time person has no
+  // entry until startSession() made one) and BEFORE the browser is sent
+  // back, which is before any artifact: every door here hands off with a
+  // redirect, and the code, the ID Token or the assertion is minted on the
+  // next request. So every door that leaves through returnToCaller() is
+  // covered, and federation's and the certificate sign-in's own redirects
+  // call this too.
+  //
+  // `go()` sends the browser on. A source that could not be read and says
+  // `refuse` ENDS the session just started (initiated by `policy`) and calls
+  // `refuse(why)` instead; any other failure proceeds, with what the entry
+  // already holds — `attribute_sources.ts` has logged and coded it.
+  // ---------------------------------------------------------------------------
+  /**
+   * Reads the attribute sources a sign-in reads, then sends the browser on,
+   * or ends the session and refuses when a refusing source failed.
+   *
+   * @param res - the response whose startSession() made a session
+   * @param go - sends the browser on
+   * @param refuse - answers the refusal, given why
+   */
+  afterSignIn(res, go: () => void, refuse: (why: string) => void): void {
+    const { log, errorCodes } = this.deps;
+    const self = this;
+    log.debug("Entering Authn.afterSignIn().");
+    const started = res && res.locals ? res.locals.stsStartedSession : null;
+    if (!started || !started.username) {
+      log.debug("Leaving Authn.afterSignIn(). No session was started.");
+      go();
+      return;
+    }
+    delete res.locals.stsStartedSession;
+    let sources: any = null;
+    try {
+      sources = require('../attribute-sources/attribute_sources');
+    } catch (e) {
+      log.debug("Caught in Authn.afterSignIn(): " + ((e && e.message) || e));
+      // No attribute sources in this process: nothing is read at sign-in.
+      sources = null;
+    }
+    if (!sources || typeof sources.refreshAtSignIn !== 'function') {
+      log.debug("Leaving Authn.afterSignIn(). No attribute sources.");
+      go();
+      return;
+    }
+    Promise.resolve().then(function () {
+      return sources.refreshAtSignIn(started.username);
+    }).then(function (outcome) {
+      if (outcome && outcome.refused) {
+        errorCodes.mark(res, 'STS-ATTR-0012');
+        self.dropSession(started.id, 'an attribute source at sign-in', true,
+                         res.req, 'policy');
+        refuse(String(outcome.why || 'An attribute source could not be ' +
+                                     'read.'));
+        return;
+      }
+      go();
+    }, function (e) {
+      log.debug("Caught in Authn.afterSignIn(): " + ((e && e.message) || e));
+      // A failure outside any one source's policy — the register itself —
+      // costs the refresh and never the sign-in.
+      go();
+    });
+    log.debug("Leaving Authn.afterSignIn(). Reading the sources.");
   }
 
   // ---------------------------------------------------------------------------
@@ -5070,8 +5485,19 @@ class Authn {
     // partition, so recursing without re-entering the child's realm would
     // delete nothing at all and the console session would survive the sign-out
     // — the exact defect the cascade exists to prevent, moved one layer along.
+    // **AND ONE LEVEL FURTHER SINCE 2026-09-30**, which the paragraph above
+    // said this service had no way to create: a portal session ADOPTED from a
+    // console session (`adoptRelyingPartySession()`) is a relying party's
+    // child of a relying party. The recursion below already reaches it — the
+    // child's own `dropSession()` walks the child's children — and the one
+    // thing it needed is where to look: a console session's adopted children
+    // live in the realm the console session's person signed in through, which
+    // is the console session's own `derivedFromRealm`, named here.
     if (id && session) {
-      this.derivedFrom(id).forEach(function (child) {
+      this.derivedFrom(id, undefined,
+                       session.rpSurface === 'admin'
+                         ? session.derivedFromRealm : '')
+        .forEach(function (child) {
         log.info('authn: ending the ' + (child.session.rpSurface || 'relying ' +
             'party') +
                  ' session ' + child.id + ' (realm ' + child.realm + ') with ' +
@@ -6141,7 +6567,8 @@ class Authn {
       log.debug("Leaving Authn.beginAuthentication(). Home realm.");
       return federation.PATHS.login + '/' + encodeURIComponent(hinted.fedId) +
         '?returnTo=' + encodeURIComponent(returnTo) +
-        '&application=' + encodeURIComponent(String(opts.application || ''));
+        '&application=' + encodeURIComponent(String(opts.application || '')) +
+        this.restartParameter(returnTo);
     }
     if (home && home.relationship && home.auto) {
       const target = federation.PATHS.login + '/' +
@@ -6157,7 +6584,8 @@ class Authn {
         // where it is spent: the parameter rides on an endpoint anybody can
         // reach, so what makes it safe to write down is that recordUse() checks
         // the pair against the live register rather than believing this.
-        '&application=' + encodeURIComponent(String(opts.application || ''));
+        '&application=' + encodeURIComponent(String(opts.application || '')) +
+        this.restartParameter(returnTo);
       log.info('authn: "' + String(opts.application) + '" authenticates ' +
                'through the federation relationship "' +
                home.relationship.fedId +
@@ -6303,6 +6731,9 @@ class Authn {
     const lockedUsername = String(opts.lockedUsername || '').trim();
     const record = {
       id: randomId(18),
+      // WHERE THIS FLOW STARTED, for a restart at the person's home cell
+      // (#98 D9). Null in single-cell mode.
+      restart: this.restartOrigin(),
       returnTo: returnTo,
       details: Array.isArray(opts.details) ? opts.details : [],
       hint: lockedUsername || String(opts.hint || ''),
@@ -6597,10 +7028,23 @@ class Authn {
     // WebAuthn step both leave through here, so there is one place where this
     // is decided rather than two that could come to differ.
     // ---------------------------------------------------------------------
-    res.redirect(303, target);
-    log.debug("Leaving Authn.returnToCaller(). Sent the browser to " + target +
-              " " +
-        "with a 303.");
+    //
+    // A SUCCESSFUL SIGN-IN READS ITS ATTRIBUTE SOURCES FIRST (#94), and a
+    // refusing source that failed turns the success into the caller's own
+    // access_denied — the same refusal a cancelled sign-in sends back.
+    if (error) {
+      res.redirect(303, target);
+    } else {
+      const self = this;
+      this.afterSignIn(res, function () {
+        res.redirect(303, target);
+      }, function (why) {
+        // error-code: none — afterSignIn() marked STS-ATTR-0012 on `res`
+        self.returnToCaller(res, record, 'access_denied', why);
+      });
+    }
+    log.debug("Leaving Authn.returnToCaller(). Sending the browser to " +
+              target + " with a 303.");
   }
 
   // ---------------------------------------------------------------------------
@@ -7259,6 +7703,12 @@ class Authn {
       log.debug("Leaving Authn.pendingFor(). It had expired.");
       return null;
     }
+    // A RESTART-ONLY RECORD (#98 D9, restartParameter()) is not a sign-in
+    // anybody may continue: it holds where a flow started and nothing else.
+    if (record.restartOnly) {
+      log.debug("Leaving Authn.pendingFor(). A restart-only record.");
+      return null;
+    }
     log.debug("Leaving Authn.pendingFor(). Found it.");
     return record;
   }
@@ -7383,11 +7833,19 @@ class Authn {
     const forApplication = String(application || '')
       ? '&application=' + encodeURIComponent(String(application))
       : '';
+    // AND THIS RECORD'S ID, in a service deployed as cells (#98 D9): a
+    // partner may assert a person homed in another cell, and the assertion
+    // consumer then restarts THIS flow there from the start the record
+    // holds (`restartPendingAtHome()`). It names a record and carries
+    // nothing else; single-cell mode adds nothing.
+    const forRestart = cells.isMulti() && record && record.id
+      ? '&authn=' + encodeURIComponent(String(record.id)) : '';
     const html = '<div class="fed"><p>' + blurb + '</p>' +
       options.map(function (one) {
         return '<a class="fedbtn" href="/federation/login/' +
           encodeURIComponent(one.id) +
-          '?returnTo=' + back + forApplication + '">' + xmlEscape(one.label) +
+          '?returnTo=' + back + forApplication + forRestart + '">' +
+          xmlEscape(one.label) +
           '<span>' + xmlEscape(one.protocolLabel) +
           (one.peer ? ' · ' + xmlEscape(one.peer) : '') + '</span></a>';
       }).join('') + '</div>';
@@ -7796,6 +8254,234 @@ class Authn {
       '</body></html>\n';
     log.debug("Leaving Authn.loginPage().");
     return page;
+  }
+
+  // ===========================================================================
+  // A PERSON HOMED IN ANOTHER CELL RESTARTS THEIR FLOW THERE (#98 D9).
+  //
+  // The sign-in screen is the first place a request says WHO it is about, and
+  // what a flow has made so far — the protocol's pending request, this
+  // record, the consent screen's — is held by the cell that made it. So a
+  // person homed elsewhere is not signed in here: the browser is PINNED to
+  // their home cell (`cell_placement.ts`'s affinity cookie) and sent back to
+  // the request that started the flow, which that cell then serves from the
+  // beginning — its own records, its own sign-in screen, its own second
+  // factor, all against the entry only it holds. Nothing personal crosses:
+  // not the typed password (never read here), not the entry.
+  //
+  // `restartOrigin()` records the starting request when the flow begins:
+  //
+  //   * the request as it arrived — a GET's URL, or a POST's URL and form
+  //     (a SAML HTTP-POST binding, an authorization request by POST), which
+  //     is re-posted from a page with a real button and no script;
+  //   * EXCEPT for this service's own hosted surfaces (`common/oidc_rp.ts`),
+  //     whose authorization request is itself step two of a flow the surface
+  //     started: the restart is the surface's root, which starts its own
+  //     flow at home rather than resuming one whose state is here.
+  //
+  // A pushed authorization request (RFC 9126) the start names is HANDED to
+  // the home cell first (`adopt-pushed-request`, `oauth-oidc/par.ts`), since
+  // its reference names this cell and the pinned browser reaches home.
+  // ===========================================================================
+  /**
+   * Records the request a sign-in flow started from, for a restart at the
+   * person's home cell.
+   *
+   * @returns `{ method, url, form }`, or null in single-cell mode or outside
+   *   a request
+   */
+  private restartOrigin(): { method: string; url: string;
+                             form: Record<string, string> | null } | null {
+    const { log } = this.deps;
+    log.debug("Entering Authn.restartOrigin().");
+    if (!cells.isMulti()) {
+      log.debug("Leaving Authn.restartOrigin(). Single-cell.");
+      return null;
+    }
+    const req = require('../common/jose_certificate_header').currentRequest();
+    if (!req) {
+      log.debug("Leaving Authn.restartOrigin(). No request.");
+      return null;
+    }
+    const method = String(req.method || 'GET').toUpperCase();
+    let form: Record<string, string> | null = null;
+    if (method === 'POST') {
+      const parsed = this.deps.parseBody(req) || {};
+      form = {};
+      Object.keys(parsed).slice(0, 64).forEach(function (k) {
+        form[k] = String(parsed[k] === undefined ? '' : parsed[k])
+          .slice(0, 65536);
+      });
+    }
+    const url = String(req.originalUrl || req.url || '/');
+    const clientId = String((req.query && req.query.client_id) ||
+                            (form && form.client_id) || '');
+    const surface = ({ 'sts-admin-console': '/admin',
+                       'sts-user-portal': '/portal' } as Record<string,
+                                                                 string>)[
+      clientId];
+    log.debug("Leaving Authn.restartOrigin().");
+    if (surface) {
+      return { method: 'GET', url: realms.currentPrefix() + surface,
+               form: null };
+    }
+    return { method: method, url: url, form: form };
+  }
+
+  /**
+   * Sends a browser whose person is homed in another cell back to the start
+   * of its flow, pinned to that cell.
+   *
+   * @param req - the sign-in POST
+   * @param res - the response
+   * @param record - the pending sign-in
+   * @param home - the person's home cell
+   * @returns a promise settled when the answer is sent
+   */
+  private async restartAtHome(req, res, record, home: string): Promise<void> {
+    const { log } = this.deps;
+    log.debug("Entering Authn.restartAtHome(). home=" + home);
+    const origin = record.restart;
+    pending.delete(record.id);
+    log.debug("Leaving Authn.restartAtHome().");
+    return this.sendHome(req, res, origin, home);
+  }
+
+  // ---------------------------------------------------------------------------
+  // WHERE A FLOW SENT STRAIGHT TO A PARTNER STARTED (#98 D9). Home realm
+  // discovery by configuration or by `domain_hint` sends the browser to a
+  // federation partner without drawing this screen, so there is no pending
+  // record — and the assertion consumer may find the person homed in another
+  // cell and have to restart the flow there. In a service deployed as cells
+  // this mints a RESTART-ONLY record (`restartOnly`: `pendingFor()` refuses
+  // it, so nobody can continue a sign-in on it) holding `restartOrigin()`,
+  // and answers the `&authn=` parameter naming it. Single-cell mode mints
+  // nothing and answers ''.
+  // ---------------------------------------------------------------------------
+  private restartParameter(returnTo: string): string {
+    const { log, randomId } = this.deps;
+    log.debug("Entering Authn.restartParameter().");
+    const restart = cells.isMulti() ? this.restartOrigin() : null;
+    if (!restart) {
+      log.debug("Leaving Authn.restartParameter(). Nothing to record.");
+      return '';
+    }
+    const id = randomId(18);
+    pending.set(id, { id: id, restartOnly: true, restart: restart,
+                      returnTo: returnTo,
+                      expires: Date.now() + this.pendingTtlMs() });
+    log.debug("Leaving Authn.restartParameter().");
+    return '&authn=' + encodeURIComponent(id);
+  }
+
+  /**
+   * Restarts, at the person's home cell, the sign-in flow a pending record
+   * names — for a door that found the person's home only after the sign-in
+   * screen let them through (federation's assertion consumer, #98 D9). The
+   * record is spent; with no such record the browser is sent to `fallback`,
+   * a path on this service, pinned home all the same.
+   *
+   * @param req - the request that found the home
+   * @param res - the response
+   * @param pendingId - the pending record the flow's sign-in screen held
+   * @param fallback - where to send the browser when there is no record
+   * @param home - the person's home cell
+   * @returns a promise settled when the answer is sent
+   */
+  async restartPendingAtHome(req, res, pendingId: string, fallback: string,
+                             home: string): Promise<void> {
+    const { log } = this.deps;
+    log.debug("Entering Authn.restartPendingAtHome(). home=" + home);
+    // A hard geofence refuses rather than sending the browser home (D4),
+    // exactly as the sign-in screen's own restart does.
+    if (!cellPlacement.CellPlacement.servePermitted(realms.currentId(), home,
+                                                    res)) {
+      if (pendingId) {
+        pending.delete(String(pendingId));
+      }
+      log.debug("Leaving Authn.restartPendingAtHome(). Geofenced.");
+      return;
+    }
+    const held = pendingId ? pending.get(String(pendingId)) : null;
+    const record = held && held.expires >= Date.now() ? held : null;
+    if (held && !record) {
+      pending.delete(held.id);
+    }
+    if (record && record.restart) {
+      log.debug("Leaving Authn.restartPendingAtHome(). The flow's start.");
+      return this.restartAtHome(req, res, record, home);
+    }
+    if (record) {
+      pending.delete(record.id);
+    }
+    const url = /^\/(?!\/)/.test(String(fallback || ''))
+      ? String(fallback) : realms.currentPrefix() + '/';
+    log.debug("Leaving Authn.restartPendingAtHome(). The return address.");
+    return this.sendHome(req, res, { method: 'GET', url: url, form: null },
+                         home);
+  }
+
+  /**
+   * Pins a browser to its person's home cell and sends it to the start of a
+   * flow: a redirect for a GET start, a re-post from a page with a real
+   * button for a POST one. A pushed request the start names is handed home
+   * first.
+   *
+   * @param req - the request
+   * @param res - the response
+   * @param origin - `{ method, url, form }`, as `restartOrigin()` records it
+   * @param home - the person's home cell
+   * @returns a promise settled when the answer is sent
+   */
+  private async sendHome(req, res, origin, home: string): Promise<void> {
+    const { log } = this.deps;
+    log.debug("Entering Authn.sendHome(). home=" + home);
+    const realmId = realms.currentId();
+    // A pushed request the start names goes home first.
+    const named = String(origin && origin.url && /request_uri=([^&]+)/
+      .exec(origin.url) ? decodeURIComponent(/request_uri=([^&]+)/
+        .exec(origin.url)[1]) : (origin && origin.form &&
+                                 origin.form.request_uri) || '');
+    if (named) {
+      try {
+        await require('../oauth-oidc/par').handOver(realmId, named, home);
+      } catch (e) {
+        log.warn(errorCodes.tag('STS-CELL-0041') + 'authn: the pushed ' +
+                 'authorization request of a flow restarting at cell "' +
+                 home + '" could not be handed over (' +
+                 ((e && e.message) || e) + '); the flow restarts without it ' +
+                 'and the client will be told the request_uri is unknown.');
+      }
+    }
+    cellPlacement.setAffinity(req, res, realmId, home);
+    log.info('authn: the person signing in is homed in cell "' + home +
+             '"; the browser is pinned there and sent back to the start of ' +
+             'its flow (#98 D9).');
+    res.set('Cache-Control', 'no-store');
+    if (!origin || origin.method !== 'POST' || !origin.form) {
+      log.debug("Leaving Authn.sendHome(). A redirect.");
+      res.redirect(303, origin ? origin.url : realms.currentPrefix() + '/');
+      return;
+    }
+    // A POST START IS RE-POSTED FROM A PAGE WITH A REAL BUTTON, the way a
+    // federation partner's HTTP-POST binding is sent: no script (the service's
+    // policy is script-src 'none'), the fields as hidden inputs.
+    const esc = function (v: string) {
+      return String(v).replace(/&/g, '&amp;').replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    };
+    const fields = Object.keys(origin.form).map(function (k) {
+      return '<input type="hidden" name="' + esc(k) + '" value="' +
+        esc(origin.form[k]) + '">';
+    }).join('');
+    log.debug("Leaving Authn.sendHome(). A re-post.");
+    res.status(200).type('html').send(
+      '<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">' +
+      '<title>Continue signing in</title></head><body>' +
+      '<p>Your account is held in another region of this service. Continue ' +
+      'to sign in there.</p>' +
+      '<form method="post" action="' + esc(origin.url) + '">' + fields +
+      '<button type="submit">Continue</button></form></body></html>');
   }
 
   private sendLoginPage(res, html) {
@@ -9239,10 +9925,27 @@ class Authn {
   expectedOriginFor(base, credential) {
     const { log } = this.deps;
     log.debug("Entering Authn.expectedOriginFor().");
-    const list = this.allowedOrigins();
-    if (!list.length) {
-      log.debug("Leaving Authn.expectedOriginFor(). Derived from the base.");
-      return this.originOf(base);
+    let list = this.allowedOrigins();
+    // EACH CELL'S OWN CONSOLE ADDRESS (#361, 2026-09-30). With no list, the
+    // base's origin was the only one — the shared public name wherever
+    // `global.publicBaseUrl` is pinned — so a passkey used at a cell's own
+    // console address (`cells.consoleUrl`, `https://cac1.<public name>`) was
+    // refused as another origin, even though its RP ID, the public name, is
+    // a valid parent of that host for the browser. Those addresses are
+    // configuration, so with no list of its own the base's origin and every
+    // configured cell console origin are accepted; a list, where set, is
+    // still the whole answer.
+    const implicit = !list.length;
+    if (implicit) {
+      const cells = require('../common/cells');
+      list = [this.originOf(base)].concat(cells.all().map(function (one) {
+        return String(one.consoleUrl || '');
+      }).filter(Boolean));
+      if (list.length === 1) {
+        log.debug("Leaving Authn.expectedOriginFor(). Derived from the " +
+                  "base.");
+        return list[0];
+      }
     }
     let claimed = '';
     try {
@@ -9265,7 +9968,8 @@ class Authn {
       return claimed;
     }
     log.debug("Leaving Authn.expectedOriginFor(). Not on the list; the " +
-              "verifier refuses.");
+              "verifier refuses." + (implicit ? " (The base's origin and " +
+              "the cells' console origins.)" : ''));
     return list[0];
   }
 
@@ -9394,7 +10098,12 @@ class Authn {
         aaguid: answered.aaguid
           ? credentials.Credentials.aaguidString(answered.aaguid) : '',
         backupEligible: typeof flags.be === 'boolean' ? flags.be : undefined,
-        backupState: typeof flags.bs === 'boolean' ? flags.bs : undefined } };
+        backupState: typeof flags.bs === 'boolean' ? flags.bs : undefined,
+        // THE SIGNATURE ALGORITHM THIS CEREMONY WAS VERIFIED WITH
+        // (2026-10-01): the registration's or the assertion's, which is
+        // the key's. On the event and the session.start row.
+        algorithm: String(verdict.algorithm || ''),
+        coseAlg: Number(verdict.coseAlg) || undefined } };
     const started = this.startSession(res, step.username, amr, acr,
                                       step.authn.protocol, said);
     if (this.refusedSession(res, base, step.authn, step.username, started,
@@ -10204,6 +10913,26 @@ class Authn {
         return this.sendLoginPage(res, this.loginPage(base, record,
           'Enter a username. It does not have to exist — it is the identity ' +
           'the issued tokens will describe.'));
+      }
+      // A PERSON HOMED IN ANOTHER CELL (#98 D9), before anything is verified,
+      // counted or spent here: see restartAtHome(). A name nobody knows is
+      // served here, as a name nobody knows always was.
+      if (cells.isMulti() && !req.stsCellRelay) {
+        const home = await cellRouting.homeOf(realms.currentId(), 'name',
+                                              username);
+        if (home && home !== cells.id() && cells.get(home)) {
+          // A hard geofence refuses rather than restarting at home (D4).
+          if (!cellPlacement.CellPlacement.servePermitted(realms.currentId(),
+                                                          home, res)) {
+            pending.delete(record.id);
+            log.debug("Leaving the authentication endpoint. Geofenced.");
+            return undefined;
+          }
+          await this.restartAtHome(req, res, record, home);
+          log.debug("Leaving the authentication endpoint. Restarted at " +
+                    "home.");
+          return undefined;
+        }
       }
       // ---------------------------------------------------------------------
       // AN EMAILED FIRST FACTOR (#64): the username alone, and the code or the
@@ -11187,7 +11916,8 @@ class Authn {
                 discoverable: this.discoverableFrom(credential),
                 userVerified: !!(verdict.flags && verdict.flags.uv),
                 aaguid: verdict.aaguid || null,
-                algorithm: verdict.algorithm || null
+                algorithm: verdict.algorithm || null,
+                coseAlg: verdict.coseAlg || null
               }, registration: verdict };
             }
           }
@@ -11233,7 +11963,10 @@ class Authn {
             // demanded user verification to enrol and not to sign in would be
             // demanding it exactly once, at the moment it matters least.
             requireUserVerification: webauthnPolicy.requireUserVerification(),
-            previousSignCount: known.signCount
+            previousSignCount: known.signCount,
+            // RS1 only where `webauthn.insecureAlgorithms` allows it
+            // (2026-10-01).
+            allowInsecure: webauthnPolicy.insecureAlgorithmsAllowed()
           });
           // A CLONE, BY THE ENTRY'S COUNTER (#231): everything else verified
           // and the counter did not go up. Refused below like any failed
@@ -11755,7 +12488,7 @@ class Authn {
       // screen.
       //
       // `common/credentials.ts`'s `verifyBackupCodeAsync()` puts the candidates
-      // on the worker pool in parallel and refuses in exactly the order the
+      // on libuv's thread pool in parallel and refuses in exactly the order the
       // synchronous door does, because both go through one `backupPrepare()`.
       credentials.verifyBackupCodeAsync(step.username, String(body.code || ''))
         .then(function (verdict) {
@@ -11952,6 +12685,9 @@ export = {
   // flow would be a caller inventing a session out of nothing, which is the
   // thing moving these surfaces onto OIDC was for.
   startRelyingPartySession: slot.forward('startRelyingPartySession'),
+  // And the one exception, which starts from a session the code flow already
+  // made (2026-09-30): the portal adopting a live console session.
+  adoptRelyingPartySession: slot.forward('adoptRelyingPartySession'),
   renewRelyingPartySession: slot.forward('renewRelyingPartySession'),
   tokensExpireAt: slot.forward('tokensExpireAt'),
   relyingPartySessionOf: slot.forward('relyingPartySessionOf'),
@@ -11979,10 +12715,16 @@ export = {
   sessionsMatching: slot.forward('sessionsMatching'),
   sessionById: slot.forward('sessionById'),
   endSessionById: slot.forward('endSessionById'),
+  afterSignIn: slot.forward('afterSignIn'),
   endEverySessionIn: slot.forward('endEverySessionIn'),
   pendingEndReports: slot.forward('pendingEndReports'),
   clearSessionCookie: slot.forward('clearSessionCookie'),
   beginAuthentication: slot.forward('beginAuthentication'),
+  /**
+   * Forwards to `Authn.restartPendingAtHome()`: restarts a pending sign-in's
+   * flow at the person's home cell (#98 D9).
+   */
+  restartPendingAtHome: slot.forward('restartPendingAtHome'),
   // THE SIGN-IN SCREEN'S STYLESHEET, for oauth-oidc/consent_screen.ts. A
   // person meets that screen and this one seconds apart in one flow, so two
   // hand-maintained copies would drift into looking like two services. It is

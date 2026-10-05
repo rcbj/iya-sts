@@ -1,0 +1,41 @@
+#!/bin/bash
+# SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+# SPDX-License-Identifier: BUSL-1.1
+#
+# DOCKER'S LOGIN TO THE FOUNDATION'S REGISTRY WITH THE VM'S OWN IDENTITY —
+# what COS's docker-credential-gcr did on GCP, without the Azure CLI: an
+# Entra ID token for the node's managed identity from the instance metadata
+# endpoint, exchanged at the registry for a refresh token, which is Docker's
+# password for the fixed user ACR names for it. Nothing is stored but
+# Docker's own config under HOME (/var/lib/sts), which is root's.
+#
+# RETRIED, because a VM can start while its identity's AcrPull grant is
+# still propagating (Entra ID and Azure RBAC are eventually consistent).
+set -euo pipefail
+registry=${registry}
+attempt=0
+until
+  token="$(curl -fsS -H Metadata:true \
+    "http://169.254.169.254/metadata/identity/oauth2/token?api-version=2018-02-01&resource=https://management.azure.com/&client_id=${client_id}" |
+    jq -r .access_token)" &&
+  refresh="$(curl -fsS -X POST \
+    -H 'Content-Type: application/x-www-form-urlencoded' \
+    --data-urlencode grant_type=access_token \
+    --data-urlencode "service=$${registry}" \
+    --data-urlencode "tenant=${tenant_id}" \
+    --data-urlencode "access_token=$${token}" \
+    "https://$${registry}/oauth2/exchange" | jq -r .refresh_token)" &&
+  [ -n "$${refresh}" ] && [ "$${refresh}" != "null" ] &&
+  printf '%s' "$${refresh}" |
+    docker login --username 00000000-0000-0000-0000-000000000000 \
+      --password-stdin "$${registry}" > /dev/null
+do
+  attempt=$((attempt + 1))
+  if [ "$${attempt}" -ge 20 ];
+  then
+    echo "sts-registry: could not log in to $${registry}." >&2
+    exit 1
+  fi
+  sleep 15
+done
+echo "sts-registry: logged in to $${registry}."

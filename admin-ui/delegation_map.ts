@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -986,6 +986,14 @@ class DelegationMap {
       log.debug("Leaving DelegationMap.edgeLook().");
       return { colour: INDIGO, dash: edge.asked ? '' : '6 4', weight: 1.5 };
     }
+    // A CONFIGURED DELEGATION PAIR (#186) is the same claim as a configured
+    // permission — this party MAY reach that one — so it is drawn the same
+    // way, rcbj's rule about one claim by two routes: indigo, DASHED until an
+    // act has crossed it, solid after.
+    if (edge.relation === 'may-delegate') {
+      log.debug("Leaving DelegationMap.edgeLook().");
+      return { colour: INDIGO, dash: edge.used ? '' : '6 4', weight: 1.5 };
+    }
     if (edge.relation === 'acts-for') {
       const colour = edge.mode === 'impersonation' ? AMBER
                    : edge.mode === 'delegation' ? GREEN : INDIGO;
@@ -1038,6 +1046,13 @@ class DelegationMap {
       // is what makes the two read as one picture.
       lines.push(edge.typeLabel ? self.shortType(edge.typeLabel)
                                 : 'issued for');
+    } else if (edge.relation === 'may-delegate') {
+      // THE MECHANISM AND WHETHER IT HAS BEEN USED, in words as well as in
+      // the dash, for may-reach's reason. The attribute is in the tooltip.
+      lines.push('may delegate');
+      lines.push(edge.mechanism === 'resource-based' ? 'resource-based'
+                                                     : 'constrained');
+      lines.push(edge.used ? 'used' : 'never used');
     } else if (edge.relation === 'may-reach') {
       // THE PERMISSION IS THE WHOLE LABEL, and it is the NAME rather than the
       // identifier: the base URI is what the box at the far end is called, so
@@ -1233,7 +1248,7 @@ class DelegationMap {
     log.debug("Entering DelegationMap.defaultResolve().");
     if (node.kind === 'sts') {
       log.debug("Leaving DelegationMap.defaultResolve().");
-      return { shape: 'sts', label: 'mock STS', sublabel: '', dashed: false };
+      return { shape: 'sts', label: 'IYA STS', sublabel: '', dashed: false };
     }
     const person = node.chiefRole === 'initial';
     log.debug("Leaving DelegationMap.defaultResolve().");
@@ -2204,6 +2219,20 @@ class DelegationMap {
     } else if (edge.relation === 'issued-for') {
       parts.push('A credential NAMING this party was issued to that one, by ' +
                  'an ordinary grant rather than by a delegation.');
+    } else if (edge.relation === 'may-delegate') {
+      parts.push('MAY delegate — a configured relationship, not something ' +
+                 'that has happened: ' + (edge.attribute || 'an attribute') +
+                 ' on ' + (edge.setOn || 'an entry') +
+                 (edge.mechanism === 'resource-based'
+                   ? ' (resource-based: the target names who may act ' +
+                     'toward it)'
+                   : ' (constrained: the source names where it may hand ' +
+                     'a subject on)') +
+                 '. The same controls decide the OAuth 2.0 token exchange, ' +
+                 'WS-Trust and Kerberos.');
+      parts.push(edge.used
+        ? 'An act HAS crossed it.'
+        : 'No act has crossed it yet.');
     } else if (edge.relation === 'may-reach') {
       // THE TOOLTIP CARRIES THE FULL IDENTIFIER, which the label deliberately
       // does not (see edgeLabelLines()). It is also the one thing on this
@@ -2297,6 +2326,12 @@ class DelegationMap {
     if ((edge.skipped || []).length) {
       parts.push('The ' + edge.skipped.join(' and ') + ' is NOT NAMED on ' +
                  'these acts, so this line jumps it.');
+    }
+    if (edge.relation === 'may-delegate') {
+      // NOTHING, for may-reach's reason below: a configured pair has no acts
+      // of its own to count, and whether one crossed it is said above.
+      log.debug("Leaving DelegationMap.edgeTitle(). may-delegate.");
+      return parts.join('\n');
     }
     if (edge.relation === 'may-reach') {
       // NOTHING, AND THAT IS THE POINT. A configured permission has no acts to

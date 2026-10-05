@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -182,27 +182,56 @@ function childMain() {
     const ruleIds = (built.policy && built.policy.rules || [])
       .map(function (r) { return r.id.split(':rule:')[1]; });
     note(built.ok && ruleIds.join(',') === 'device-compromised,' +
-         'device-required,risk-high,risk-medium-key,' +
+         'device-required,protocol-not-declared,risk-high,risk-medium-key,' +
          'risk-medium-second-factor,risk-protected-key,' +
          'risk-protected-second-factor,' +
          'native-sso-not-enabled-refused,native-sso-not-enabled-dropped,' +
          'protected-undeclared-refused,protected-undeclared-dropped,' +
          'undeclared-refused,undeclared-dropped,permission-not-granted,' +
+         'exchange-widens-scope,' +
          'scope-not-authorized,consent-outstanding,scope-kept,' +
          'detail-type-not-registered,detail-type-not-published,detail-kept,' +
+         // The per-right GNAP rules (#432 phases 3, 5 and 6): today's
+         // checks, the catalogue's, ownership, interaction and acr.
+         'gnap-bearer-refused,gnap-protected-undeclared,' +
+         'gnap-right-not-listed,gnap-reference-unknown,' +
+         'gnap-type-not-catalogued,gnap-type-bearer-refused,' +
+         'gnap-owner-unresolved,gnap-owner-mismatch,' +
+         'gnap-type-interaction-never,gnap-type-interaction-always,' +
+         'gnap-type-consent-action,gnap-type-acr,gnap-type-lifetime,' +
+         'gnap-right-kept,' +
+         'transfer-hold-relayed,transfer-hold-kept,' +
+         'transfer-serve-geofenced,transfer-serve-kept,' +
+         'transfer-release-withheld,transfer-release-kept,' +
+         // The exchange rules (#186): the semantics, the refusals in order,
+         // the allows, and the may_act question.
+         'exchange-semantics-requested,exchange-semantics-actor-default,' +
+         'exchange-semantics-subject-default,' +
+         'exchange-semantics-realm-default,exchange-may-act,' +
+         'exchange-several-targets,exchange-unregistered-target,' +
+         'exchange-no-target,exchange-protected-subject,' +
+         'exchange-unknown-actor,exchange-user-actor-role,' +
+         'exchange-semantics,exchange-subject-group,exchange-authority,' +
+         'exchange-delegation,exchange-impersonation,' +
+         'exchange-self-default-audience,exchange-self,exchange-allowed,' +
+         'may-act-subject-choice,' +
          'risk-protected-alarm,holds-a-required-role' &&
          /ordered-deny-overrides$/.test(built.policy.combiningAlgId),
          'A1. the built-in issuance policy carries the two device rules ' +
-         '(#164), the three risk rules, the console\'s two step-ups and ' +
+         '(#164), the protocol-declaration rule, the three risk rules, the console\'s two step-ups and ' +
          'its alarm ahead of the role rule, under ordered-deny-overrides',
          ruleIds.join(',') + ' ' + (built.policy || {}).combiningAlgId);
     const rolesOnly = templates.build('role-issuance',
-      { decideRisk: 'no', decideDevices: 'no', decideScopes: 'no' },
+      { decideRisk: 'no', decideDevices: 'no', decideProtocols: 'no',
+        decideScopes: 'no', decideTransfers: 'no', decideExchanges: 'no',
+        decideGnapRights: 'no' },
       { name: 'role-issuance' });
     note(rolesOnly.ok && rolesOnly.policy.rules.length === 1 &&
          /deny-unless-permit$/.test(rolesOnly.policy.combiningAlgId),
-         'A2. decideRisk: no (and decideDevices and decideScopes: no, #164 ' +
-         'and #304) builds the ' +
+         'A2. decideRisk: no (and decideDevices, decideProtocols, ' +
+         'decideScopes and ' +
+         'decideTransfers, decideExchanges and decideGnapRights: no, #164, ' +
+         '#304, #98, #186 and #432) builds the ' +
          'roles-only document it was');
     const request = rolePep.buildRequest({
       application: CLIENT, kind: 'start-session',
@@ -504,8 +533,11 @@ function childMain() {
     const plain = pdp.evaluate(unprotectedPolicy.policy, consoleRequest, {});
     note(unprotectedPolicy.ok && plain.decision === 'Deny' &&
          // The three risk rules, the role rule, #164's two device rules,
-         // and the thirteen scope and detail rules of #304 and #305.
-         unprotectedPolicy.policy.rules.length === 19,
+         // the fourteen scope and detail rules of #304, #305 and #186, the
+         // six transfer rules of #98, the protocol-declaration rule, the
+         // twenty exchange rules of #186, and the fourteen per-right GNAP
+         // rules of #432.
+         unprotectedPolicy.policy.rules.length === 61,
          'I5. neverLockOut none puts the console under the three rules, ' +
          'and HIGH refuses it', plain.decision);
 
@@ -678,6 +710,37 @@ function childMain() {
     note(riskEngine.riskOf(known).knownContext === true,
          'K2. the session carries the known context, so the rescore job ' +
          'caps what a list gained later can raise it to');
+
+    // --- L. an allow-listed network is not counted as hostile (#311) -------
+    // `network-failures` is refused passwords from anybody behind the
+    // address; an operator who allow-listed it declared it trusted.
+    const riskStore = require(ROOT + '/risk/risk_store');
+    config.setOverride('risk.networkFailureThreshold', 1);
+    await riskStore.recordFailure({ realm: 'default', at: Date.now(),
+      door: 'a test', subject: '', nameHmac: 'rd-l', addressSealed: '',
+      addressPrefix: riskStore.prefixOf('127.0.0.1'),
+      asn: 0, errorCode: 'STS-AUTHN-0054' }, false);
+    ldap.createUser('rd-ian', { invent: false });
+    const before = await riskEngine.assess(contextOf('rd-ian'));
+    const allowed = await riskDatasets.importVersion({
+      dataset: 'iplist.operator-allow', realm: 'default', format: 'ip-list',
+      content: '127.0.0.1\n', version: 'rd-allow-1', source: 'upload' });
+    ldap.createUser('rd-jon', { invent: false });
+    const after = await riskEngine.assess(contextOf('rd-jon'));
+    const named = function (a, id) {
+      return !!a && (a.signals || []).some(function (one) {
+        return one.signal === id;
+      });
+    };
+    note(named(before, 'network-failures') && allowed && allowed.ok &&
+         named(after, 'operator-allow') &&
+         !named(after, 'network-failures'),
+         'L1. refused passwords from the network count against a newcomer ' +
+         'until the operator allow-lists it, and not after',
+         JSON.stringify({ before: before && before.signals.map(function (x) {
+           return x.signal; }), after: after && after.signals.map(function (x) {
+           return x.signal; }), allowed: allowed && allowed.errors }));
+    config.clearOverride('risk.networkFailureThreshold');
     config.setOverride('risk.minimumHistory', 5);
 
     server.close();

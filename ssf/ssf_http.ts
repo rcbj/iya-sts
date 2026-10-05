@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -192,6 +192,12 @@ interface PushResult {
 
 interface PushOptions {
   authorizationHeader?: unknown;
+  // The receiving stream's own values (2026-10-01), where its owning
+  // application overrides ssf.pushTimeoutMs, ssf.pushRetries or
+  // ssf.pushRetryDelayMs; absent, the setting decides.
+  timeoutMs?: number;
+  retries?: number;
+  retryDelayMs?: number;
 }
 
 interface SsfHttpDeps {
@@ -210,7 +216,8 @@ interface SsfHttpDeps {
   userAgent: string;
   // `tls/tls_server.js`, required when first asked for. See `pushSet()`.
   loadTlsServer(): {
-    serverCertificate(): { trustAnchorPem?: string };
+    serverCertificate(): { trustAnchorPem?: string;
+                          fingerprint256?: string };
   };
 }
 
@@ -287,10 +294,11 @@ class SsfHttp {
     return OutboundTls.describe(PUSH_TRANSPORT);
   }
 
-  private timeoutMs(): any {
+  private timeoutMs(asked?: number): any {
     const { log, config } = this.deps;
     log.debug("Entering SsfHttp.timeoutMs().");
-    const value = config.value('ssf.pushTimeoutMs');
+    const value = typeof asked === 'number' && asked > 0 ? asked
+      : config.value('ssf.pushTimeoutMs');
     log.debug("Leaving SsfHttp.timeoutMs(). " + value);
     return value;
   }
@@ -652,12 +660,18 @@ class SsfHttp {
     // loaded and it is a cache hit.
     // -----------------------------------------------------------------------
     let anchor = null;
+    let ownLeaf = '';
     if (ours && secure) {
       try {
         // THE ANCHOR AND NOT THE CERTIFICATE — see common/oidc_rp.ts's
         // back channel, which pinned the leaf and stopped being able to reach
         // this service at all the hour that leaf acquired an issuer.
         anchor = loadTlsServer().serverCertificate().trustAnchorPem;
+        // The leaf's fingerprint, for a SUPPLIED certificate with no anchor
+        // (#311, below) — read as its own call so the anchor read above keeps
+        // the one shape tests/tls_trust_anchor.js holds every pin to.
+        ownLeaf = String(loadTlsServer().serverCertificate().fingerprint256 ||
+                         '');
       } catch (e) {
         // Reported as a push failure rather than thrown, like every other
         // outcome here: the stream's log is where a receiver's operator finds
@@ -695,7 +709,13 @@ class SsfHttp {
     // node's store and `ssf.pushCaFile`, and skipped only where development
     // mode and `ssf.pushSkipTlsVerification` both say so. Not asked for one
     // of our own receivers: the pin above is what that connection checks.
-    const policy = secure && !anchor
+    // Nor for one of our own with NO anchor (#311): a SUPPLIED, publicly
+    // issued certificate (testidp's ACM leaf) has none, and the ordinary
+    // policy then checked its name against 127.0.0.1, which it never
+    // carries — every push to this service's own two receivers failed and
+    // both streams were declared dead. Such a push is verified below against
+    // the system's store AND held to this process's own leaf.
+    const policy = secure && !anchor && !ours
       ? OutboundTls.tlsVerdict(PUSH_TRANSPORT, target.origin) : null;
     if (policy && !policy.ok) {
       log.debug("Leaving SsfHttp.pushSet(). " + policy.why);
@@ -718,7 +738,7 @@ class SsfHttp {
     // Read once per push, so a runtime change cannot move the bound half way
     // through one response.
     const limit = this.maxBodyBytes();
-    const timeoutMs = this.timeoutMs.bind(this);
+    const timeoutMs = this.timeoutMs.bind(this, opts.timeoutMs);
     log.debug("Leaving SsfHttp.pushSet(). Dialling " + target.origin + '.');
     return new Promise(function (resolve) {
       const done = function (result: PushResult): void {
@@ -765,6 +785,24 @@ class SsfHttp {
       if (anchor) {
         requestOptions.checkServerIdentity = function () {
           return undefined;
+        };
+      } else if (ours && secure) {
+        // THIS PROCESS, WITH A SUPPLIED CERTIFICATE (#311): the chain is
+        // verified against the system's store (rejectUnauthorized, above,
+        // with no `ca`), and in place of a name the loopback address cannot
+        // match, the peer must present EXACTLY the leaf this process serves
+        // — stronger than a name, and the same leaf the front process handed
+        // a request worker.
+        requestOptions.rejectUnauthorized = true;
+        requestOptions.checkServerIdentity = function (host: string,
+            cert: { fingerprint256?: string }) {
+          const norm = function (f: string): string {
+            return String(f || '').replace(/:/g, '').toLowerCase();
+          };
+          return ownLeaf && norm(cert && cert.fingerprint256) === norm(ownLeaf)
+            ? undefined
+            : new Error('the loopback peer did not present this ' +
+                        'process\'s own certificate');
         };
       } else if (policy && policy.checkServerIdentity) {
         // The host check, and the verified chain held to the path rules
@@ -923,8 +961,9 @@ class SsfHttp {
   // with `Promise.all()`, and a directory write is two events — so a SCIM
   // bulk load against forty-two push streams asked for eighty-four pushes per
   // person, all at once. Most were to this service's OWN receivers, which is
-  // a request back into the worker pool, so the burst was load on the service
-  // itself and it stopped answering. The cap makes that fan-out a queue.
+  // a request back into the request-worker pool, so the burst was load on the
+  // service itself and it stopped answering. The cap makes that fan-out a
+  // queue.
   //
   // **A PUSH THAT CANNOT WAIT IS NOT MADE**, and says so with a code: the SET
   // is dead-lettered by `transmit()`, which is where the bound on memory comes
@@ -1088,8 +1127,12 @@ class SsfHttp {
                      options?: PushOptions | null): Promise<PushResult> {
     const { log, config } = this.deps;
     log.debug("Entering SsfHttp.pushSetWithRetries().");
-    const retries = config.value('ssf.pushRetries');
-    const delay = config.value('ssf.pushRetryDelayMs');
+    const asked = options || {};
+    const retries = typeof asked.retries === 'number' && asked.retries >= 0
+      ? asked.retries : config.value('ssf.pushRetries');
+    const delay = typeof asked.retryDelayMs === 'number' &&
+      asked.retryDelayMs >= 0
+      ? asked.retryDelayMs : config.value('ssf.pushRetryDelayMs');
     const attempts = [];
     const attempt = (n: number): Promise<PushResult> => {
       log.debug("Entering attempt().");

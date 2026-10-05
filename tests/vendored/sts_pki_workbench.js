@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 //
 // File: sts_pki_workbench.js
 //
@@ -284,11 +284,14 @@ async function browse(url, options) {
 // hand-written links work in a realm without one of them being edited — so the
 // form this job is looking for posts to `/realm/<id>/admin/pki/certificate`.
 // Matching the bare path finds nothing, and the failure reads as "the pane is
-// not on the page".
+// not on the page". AND SINCE 2026-10-01 AN ACTION MAY END IN A FRAGMENT: the
+// console appends `#sec-<section>` so a press comes back to its own section
+// (admin-ui/admin.ts, withReturnAnchors()), so the path is followed by an
+// optional `#…` before the closing quote.
 function form(page, action) {
   log.debug("Entering form().");
   const at = page.search(new RegExp('action="[^"]*' +
-    action.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + '"'));
+    action.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + '(#[^"]*)?"'));
   assert.ok(at >= 0,
             "no form posting to " + action + " on " + page.slice(0, 200));
   const start = page.lastIndexOf("<form", at);
@@ -1129,7 +1132,7 @@ async function test() {
 const program = new Command();
 program
   .name("sts_pki_workbench")
-  .description("Drive the mock STS's Certificate & Key Configuration pane " +
+  .description("Drive IYA STS's Certificate & Key Configuration pane " +
       "through both its doors, in a throwaway trust realm: the form round " +
       "trip that is the whole mechanism with no script, an issue, a refusal " +
       "that keeps the form, the store as /admin-api reports it, the download " +

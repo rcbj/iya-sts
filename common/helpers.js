@@ -1,6 +1,6 @@
 // @ts-check
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -61,7 +61,14 @@ const crypto = require('crypto');
 const forge = require('node-forge');
 const jwt = require('jsonwebtoken');
 const bunyan = require("bunyan");
-const bbs2023 = require('./vendored/bbs2023.js');
+// THE VENDORED BBS SUITE IS REQUIRED AT FIRST USE (#348), through
+// `bbs2023Suite()` below: it requires `jsonld` at its top, and the two are
+// resident memory in every request worker that never makes a BBS key. By
+// hand rather than through `common/lazy_module.ts`, because this file is in
+// the parent project's Kerberos COPY closure (kerberos/CLAUDE.md) and a new
+// require here would add that file to it.
+/** @type {typeof import('./vendored/bbs2023.js') | null} */
+let bbs2023Loaded = null;
 // ---------------------------------------------------------------------------
 // THE ONE PLACE THIS SERVICE SIGNS, VERIFIES, ENCRYPTS AND DECRYPTS, since
 // 2026-08-27. It is a LEAF — it requires npm packages, the vendored XML signer
@@ -117,6 +124,31 @@ const clientAddress = require('./client_address');
  */
 const log = bunyan.createLogger({ name: 'sts',
                                 level: config.value('global.logLevel') });
+
+/**
+ * Returns the vendored BBS suite, requiring it the first time (#348).
+ *
+ * @returns {typeof import('./vendored/bbs2023.js')} the suite
+ */
+function bbs2023Suite() {
+  log.debug("Entering bbs2023Suite().");
+  if (!bbs2023Loaded) {
+    try {
+      bbs2023Loaded = require('./vendored/bbs2023.js');
+    } catch (e) {
+      // Thrown on to the caller, as the top-level require's failure was
+      // thrown at start; logged first, because it now happens mid-request.
+      log.error(errorCodes.tag('STS-CORE-0140') + 'helpers: ' +
+                'common/vendored/bbs2023.js, required at first use, did ' +
+                'not load: ' + ((e && e.message) || e));
+      log.debug("Leaving bbs2023Suite(). Threw.");
+      throw e;
+    }
+  }
+  log.debug("Leaving bbs2023Suite().");
+  return bbs2023Loaded;
+}
+
 // Registering it is what makes global.logLevel a setting rather than a claim:
 // bunyan takes a level when the logger is created, so without this
 // /admin/config could change the setting and every line after it would still be
@@ -962,6 +994,12 @@ function plainKeySet(realmId, stored) {
   if (stored.browserDeviceKeys) {
     set.browserDeviceKeys = stored.browserDeviceKeys;
   }
+  // AND THE KEM DECRYPTION KEYS (#82): dropped here, this process would
+  // publish keys of its own for an opted-in alg and fail to open what a
+  // client encrypted to the JWKS a sibling served.
+  if (stored.kemEncKeys) {
+    set.kemEncKeys = stored.kemEncKeys;
+  }
   // AND THE XML SIGNING KEY AND THE KEY GENERATIONS (2026-09-22, #42), for
   // the same reason: dropped here, this process would sign XML with a key of
   // its own, or publish a JWKS without the `next` key its siblings publish.
@@ -1722,6 +1760,56 @@ function lazyKeySet(realmId, stored) {
     }
   });
   // ---------------------------------------------------------------------
+  // **THE KEM DECRYPTION KEYS (#82)**, the request object keys' arrangement
+  // for a LIST: each public JWK resident, each private JWK a getter over the
+  // keystore's timed decryption, found by kid. `/oauth2/jwks` reads the
+  // public halves on every fetch, and publishing must not decrypt anything.
+  // ---------------------------------------------------------------------
+  const kemStored = Array.isArray(stored.kemEncKeys) ? stored.kemEncKeys
+    : null;
+  let kemGenerated = null;
+  Object.defineProperty(set, 'kemEncKeys', {
+    enumerable: true, configurable: true,
+    get: function () {
+      log.debug("Entering get().");
+      if (kemGenerated) {
+        log.debug("Leaving get().");
+        return kemGenerated;
+      }
+      if (!kemStored || !kemStored.length) {
+        log.debug("Leaving get().");
+        return undefined;
+      }
+      const views = kemStored.map(function (one) {
+        const view = { alg: one.alg, publicJwk: one.publicJwk };
+        Object.defineProperty(view, 'privateJwk', {
+          enumerable: true, configurable: true,
+          get: function () {
+            log.debug("Entering get().");
+            const held = keystore.privateMaterialFor(realmId);
+            const jwk = held && held.kem &&
+                        held.kem.get(one.publicJwk && one.publicJwk.kid);
+            if (!jwk) {
+              throw new Error('the "' + realmId + '" realm\'s ' + one.alg +
+                ' decryption key is held encrypted and could not be ' +
+                'decrypted; see the keystore errors above.');
+            }
+            log.debug("Leaving get().");
+            return jwk;
+          }
+        });
+        return view;
+      });
+      log.debug("Leaving get().");
+      return views;
+    },
+    set: function (made) {
+      log.debug("Entering set().");
+      kemGenerated = made || null;
+      log.debug("Leaving set().");
+    }
+  });
+  // ---------------------------------------------------------------------
   // **THE BROWSER DEVICE KEYS (#265)**, the request object keys' arrangement:
   // the public halves resident, both private keys getters over the keystore.
   // ---------------------------------------------------------------------
@@ -2284,12 +2372,10 @@ const stsKeysFor = realms.keyed(function (realm) {
 // thread — six curve keys, a certificate signature, four JWK exports — is tens
 // of milliseconds, and `prepareKeySets()` yields between realms.
 //
-// **NOT `common/worker_pool.js`**, and the reason is not the one
-// `pki_authoring.js` gives for its own generation (that one is about the
-// post-quantum encoders' byte layouts): an RSA or EC generation is node's own
-// OpenSSL either way, and node already has an asynchronous door to it that
-// costs no IPC round trip and no forked child. The pool is for computation
-// node has no asynchronous door to.
+// **NODE'S OWN ASYNCHRONOUS DOOR**: an RSA or EC generation is node's
+// OpenSSL, and `generateKeyPair()` runs it on libuv's thread pool with no IPC
+// round trip and no forked child — the same door the post-quantum keys have
+// used since #363 (`common/pq_native.js`).
 //
 // **THE FACTORY'S ORDER IS NOT CHANGED**: stored, then a sibling's, then
 // generated — and `prepared` is only ever the third. A set prepared here while
@@ -2571,6 +2657,180 @@ function refreshTokenKeysFor(keySet) {
   keystore.publishShared(realmId, keys);
   log.debug("Leaving refreshTokenKeysFor(). Backfilled.");
   return keys.refreshTokenEncKeys || made;
+}
+
+// ---------------------------------------------------------------------------
+// THE REALM'S KEM DECRYPTION KEYS (#82, 2026-09-27): one key pair for each
+// ML-KEM or HPKE JWE alg the ambient realm's `keys.encryptionKemAlgs` names,
+// in that order, as `[{ alg, publicJwk, privateJwk }]`. An EMPTY LIST BY
+// DEFAULT, and that is rcbj's decision rather than an unfinished feature: a
+// post-quantum or hybrid key in a realm's JWKS is a key type many clients'
+// JOSE libraries do not parse yet, so publishing one is an administrator's
+// choice, made per realm.
+//
+// Made the way `requestObjectKeysFor()` backfills: a key some process
+// already made (stored, then shared) is adopted before one is generated, and
+// a generated one is remembered and shared at once so every sibling
+// publishes and opens with the SAME key. A key for an alg the setting no
+// longer names is kept on the set but neither listed here nor published —
+// naming the alg again brings the same key back.
+// ---------------------------------------------------------------------------
+/**
+ * The ML-KEM and HPKE algs the ambient realm's `keys.encryptionKemAlgs`
+ * names (#82), valid and de-duplicated.
+ *
+ * @returns the algs, empty by default
+ */
+function kemAlgsConfigured() {
+  log.debug("Entering kemAlgsConfigured().");
+  const raw = config.value('keys.encryptionKemAlgs');
+  const listed = (Array.isArray(raw) ? raw : String(raw || '').split(','))
+    .map(function (one) {
+      return String(one).trim();
+    })
+    .filter(function (one, i, all) {
+      return one && all.indexOf(one) === i &&
+             stsCrypto.JWE_ASYMMETRIC_ALGS.indexOf(one) >= 0 &&
+             !!stsCrypto.describeJweKemAlg(one);
+    });
+  log.debug("Leaving kemAlgsConfigured(). " + listed.join(','));
+  return listed;
+}
+
+/**
+ * The realm's KEM decryption keys, one per configured alg, adopting or
+ * making any that are missing (#82).
+ *
+ * @param keySet - the key set; the ambient realm's when absent
+ * @returns `[{ alg, publicJwk, privateJwk }]`
+ */
+function kemEncryptionKeysFor(keySet) {
+  log.debug("Entering kemEncryptionKeysFor().");
+  const wanted = kemAlgsConfigured();
+  if (!wanted.length) {
+    log.debug("Leaving kemEncryptionKeysFor(). None configured.");
+    return [];
+  }
+  const keys = keySet || stsKeysFor();
+  const realmId = String(keys.realm || realms.currentId());
+  let have = keys.kemEncKeys || [];
+  const missing = function () {
+    log.debug("Entering missing().");
+    const algs = have.map(function (one) {
+      return one.alg;
+    });
+    log.debug("Leaving missing().");
+    return wanted.filter(function (alg) {
+      return algs.indexOf(alg) === -1;
+    });
+  };
+  if (missing().length) {
+    const held = keystore.kemEncKeysHeldFor(realmId) || [];
+    const heldAlgs = held.map(function (one) {
+      return one.alg;
+    });
+    const fromHeld = missing().filter(function (alg) {
+      return heldAlgs.indexOf(alg) >= 0;
+    });
+    const made = [];
+    missing().forEach(function (alg) {
+      const found = held.filter(function (one) {
+        return one.alg === alg;
+      })[0];
+      if (found) {
+        made.push(found);
+        return;
+      }
+      const pair = stsCrypto.generateJweKemKeyPair(alg);
+      const kid = 'sts-kem-' + alg.toLowerCase().replace(/[^a-z0-9]+/g, '') +
+                  '-' + stsCrypto.jwkThumbprint(
+                    stsCrypto.publicJweKemJwk(pair.publicJwk),
+                    { truncate: 16 });
+      pair.publicJwk.kid = kid;
+      pair.privateJwk.kid = kid;
+      made.push({ alg: alg, publicJwk: pair.publicJwk,
+                  privateJwk: pair.privateJwk });
+    });
+    have = have.concat(made);
+    keys.kemEncKeys = have;
+    if (made.length > fromHeld.length) {
+      log.info('KEM decryption keys were added to the "' + realmId + '" ' +
+               'realm\'s key set for ' + made.map(function (one) {
+                 return one.alg;
+               }).join(', ') + ' (keys.encryptionKemAlgs).');
+    }
+    keystore.remember(realmId, keys);
+    keystore.publishShared(realmId, keys);
+  }
+  const out = wanted.map(function (alg) {
+    return have.filter(function (one) {
+      return one.alg === alg;
+    })[0];
+  }).filter(Boolean);
+  log.debug("Leaving kemEncryptionKeysFor(). " + out.length + " key(s).");
+  return out;
+}
+
+// The realm's KEM decryption key for one alg, or null when the realm has not
+// opted in to it — what a decrypt site asks before it tries.
+/**
+ * The realm's KEM decryption key for one alg.
+ *
+ * @param alg - an ML-KEM or HPKE `alg`
+ * @param keySet - the key set; the ambient realm's when absent
+ * @returns `{ alg, publicJwk, privateJwk }`, or null when not held
+ */
+function kemDecryptionKeyFor(alg, keySet) {
+  log.debug("Entering kemDecryptionKeyFor(). " + alg);
+  const found = kemEncryptionKeysFor(keySet).filter(function (one) {
+    return one.alg === alg;
+  })[0] || null;
+  log.debug("Leaving kemDecryptionKeyFor(). " + (found ? 'held' : 'none'));
+  return found;
+}
+
+// The JWE algs this realm can DECRYPT, for a discovery list that describes
+// decryption: every classical alg in `base`, and of section 4a's only those
+// the realm holds a key for. `base` defaults to `JWE_DECRYPT_ALGS`.
+/**
+ * The JWE algs this realm can decrypt: every classical one in `base`,
+ * and of the ML-KEM and HPKE ones only those it holds a key for (#82).
+ *
+ * @param base - the list to narrow; `JWE_DECRYPT_ALGS` by default
+ * @returns the narrowed list
+ */
+function decryptableJweAlgs(base) {
+  log.debug("Entering decryptableJweAlgs().");
+  const held = kemAlgsConfigured();
+  const out = (base || stsCrypto.JWE_DECRYPT_ALGS).filter(function (alg) {
+    return !stsCrypto.describeJweKemAlg(alg) || held.indexOf(alg) >= 0;
+  });
+  log.debug("Leaving decryptableJweAlgs(). " + out.length);
+  return out;
+}
+
+// The JWE algs this realm OFFERS where it encrypts TO a key a client or a
+// wallet holds (2026-09-28, rcbj): every classical alg in `base`, and the
+// ML-KEM and HPKE ones only while `keys.offerKemEncryption` is on in the
+// ambient realm. The twin of `decryptableJweAlgs()` above for the other
+// direction; used for every outbound discovery list and every registration
+// check, so what is advertised and what is accepted cannot disagree.
+/**
+ * The JWE algs this realm offers for encryption to a client's or a wallet's
+ * key: the classical ones in `base`, and the ML-KEM and HPKE ones only while
+ * `keys.offerKemEncryption` is on.
+ *
+ * @param base - the list to narrow; `JWE_ASYMMETRIC_ALGS` by default
+ * @returns the narrowed list
+ */
+function offeredJweAlgs(base) {
+  log.debug("Entering offeredJweAlgs().");
+  const offered = config.value('keys.offerKemEncryption') === true;
+  const out = (base || stsCrypto.JWE_ASYMMETRIC_ALGS).filter(function (alg) {
+    return offered || !stsCrypto.describeJweKemAlg(alg);
+  });
+  log.debug("Leaving offeredJweAlgs(). " + out.length);
+  return out;
 }
 
 // ---------------------------------------------------------------------------
@@ -4160,7 +4420,7 @@ function allVerificationKeys() {
 
 /**
  * The same list as `allVerificationKeys()`, with the post-quantum keys
- * generated in the worker pool.
+ * generated on libuv's thread pool.
  *
  * @returns a promise of the rows
  */
@@ -4266,8 +4526,8 @@ function groupJwkEntries(keys) {
 
 // ---------------------------------------------------------------------------
 // MINTING ONE UNIT'S NEXT KEY — off the event loop where there is an async
-// door (RSA and the curves in node's thread pool, the post-quantum keys on the
-// worker pool), with the builders the current keys were made by.
+// door (RSA, the curves and the post-quantum keys all on libuv's thread
+// pool), with the builders the current keys were made by.
 // ---------------------------------------------------------------------------
 function curveSpecFor(unitRow) {
   log.debug("Entering curveSpecFor().");
@@ -4379,7 +4639,7 @@ async function mintStandbyKey(unitRow, role) {
     return entry;
   }
   if (unitRow.kind === 'bbs') {
-    const pair = await bbs2023.generateKeyPair();
+    const pair = await bbs2023Suite().generateKeyPair();
     const kid = bbsKidOf(pair.publicKey);
     log.debug("Leaving mintStandbyKey(). BBS " + kid);
     return Object.assign(base, {
@@ -4468,6 +4728,10 @@ function plainCopyOf(keys, overrides) {
     refreshTokenEncKeys: keys.refreshTokenEncKeys,
     requestObjectEncKeys: keys.requestObjectEncKeys,
     browserDeviceKeys: keys.browserDeviceKeys,
+    // The KEM decryption keys (#82) carry over a rotation unchanged: they are
+    // not signing keys, and a client holding the published key must still
+    // be able to encrypt to it after the realm's signer moves on.
+    kemEncKeys: keys.kemEncKeys,
     xmlKey: keys.xmlKey ? {
       privateKeyPem: keys.xmlKey.privateKeyPem,
       selfSignedCertPem: keys.xmlKey.selfSignedCertPem,
@@ -4815,6 +5079,55 @@ async function promoteGenerations(realmId, options) {
  * @param nowMs - the time now; `Date.now()` when absent
  * @returns `{ ok, dropped, generation }`
  */
+// A REALM'S KEY SET IF IT HAS ONE, NEVER A NEW ONE (2026-09-29). The
+// scheduled rotation jobs (`signing.rotate`, `signing.retire`) run in every
+// realm every minute, and asked `stsKeysFor.of()`, which GENERATES a set for a
+// realm that has none — four RSA pairs and a self-signed certificate on this
+// thread, hundreds of milliseconds each. A realm makes its keys on first use,
+// so every realm created since the last run had its keys made by the job:
+// measured with 400 realms, the event loop stalled 16 to 36 seconds every
+// minute, and in the suite's memory mode up to 20 seconds, which is what
+// failed `sts_attribute_sources`' 2-second connection and every "fetch failed"
+// whose socket the server's late keep-alive timer closed. There is nothing to
+// rotate or retire in a set that does not exist. A set that DOES exist — held
+// here, sealed in the store, or held by a sibling process — is restored as
+// `.of()` restores it; only generation is refused. `.existing()` is the
+// held-check that reads the cache, the certificate authority's realm
+// watcher's lesson (`common/CLAUDE.md`, *THE REALM WATCHER ASKS AND DOES NOT
+// TAKE*).
+/**
+ * Returns a realm's signing key set when one exists anywhere — held by this
+ * process, in the store, or shared by a sibling — and null otherwise; never
+ * generates one.
+ *
+ * @param {string} realmId - the realm, '' for the default realm
+ * @returns {any} the key set, or null when none is made or kept
+ */
+function keySetIfMade(realmId) {
+  log.debug("Entering keySetIfMade(). realm=" + realmId);
+  const id = String(realmId || '');
+  const canonical = id || realms.DEFAULT_ID;
+  const held = stsKeysFor.existing();
+  if (held.has(id) || held.has(canonical)) {
+    log.debug("Leaving keySetIfMade(). Held.");
+    return held.has(id) ? held.get(id) : held.get(canonical);
+  }
+  let elsewhere = false;
+  try {
+    elsewhere = !!(keystore.storedFor(canonical) ||
+                   keystore.sharedFor(canonical));
+  } catch (e) {
+    log.debug("Caught in keySetIfMade(): " + ((e && e.message) || e));
+    elsewhere = false;
+  }
+  if (!elsewhere) {
+    log.debug("Leaving keySetIfMade(). None made yet.");
+    return null;
+  }
+  log.debug("Leaving keySetIfMade(). Restored.");
+  return stsKeysFor.of(id);
+}
+
 function retireExpiredGenerations(realmId, nowMs) {
   log.debug("Entering retireExpiredGenerations(). realm=" + realmId);
   const id = String(realmId || '');
@@ -5141,7 +5454,7 @@ function bbsKeyFor(keys) {
     log.debug("Leaving bbsKeyFor(). One is already in flight.");
     return keys.bbsKeyPromise;
   }
-  keys.bbsKeyPromise = bbs2023.generateKeyPair().then(function (made) {
+  keys.bbsKeyPromise = bbs2023Suite().generateKeyPair().then(function (made) {
     if (!keys.bbsKey) {
       keys.bbsKey = { secretKey: Uint8Array.from(made.secretKey),
                       publicKey: Uint8Array.from(made.publicKey),
@@ -5547,7 +5860,7 @@ function pqKeysFor(keys) {
 // Nearly all of the ~1.9 seconds above is one SLH-DSA-SHAKE keygen, and it is
 // spent on the FIRST JWKS FETCH of a realm — a request that, until the worker
 // pool existed, stopped this whole service for two seconds while it was
-// answered. See common/worker.js.
+// answered. See common/pq_native.js.
 //
 // TWO THINGS HERE ARE NOT DECORATION.
 //
@@ -5754,12 +6067,12 @@ function pqKeysForAsync(keys) {
 // sign-in in the parent project's suite, reporting "the JWKS could not be
 // fetched", which is a sentence about a service that was working.
 //
-// So the keys are made when the realm is created, in the pool, where nothing
-// is waiting on them. That was not affordable before: eager generation used to
-// mean 5.8 seconds of a stopped service per realm, which is why they were lazy
-// in the first place. It is affordable now, and it is the whole point — the
-// pool does not merely move the cost off the request that pays it, it makes
-// paying it EARLY free.
+// So the keys are made when the realm is created, on libuv's thread pool, where
+// nothing is waiting on them. That was not affordable before: eager generation
+// used to mean 5.8 seconds of a stopped service per realm, which is why they
+// were lazy in the first place. It is affordable now, and it is the whole point
+// — the pool does not merely move the cost off the request that pays it, it
+// makes paying it EARLY free.
 //
 // `stsKeysFor.of(id)` rather than `stsKeysFor()`: this runs from a change
 // watcher, outside any request, so there is no ambient realm to read. See
@@ -5784,7 +6097,7 @@ function pqKeysForAsync(keys) {
 // **NO NEW RECIPE** (rcbj's rule of 2026-09-21): RSA through
 // generateRsaPairAsync(), the curves through generateCurvePairAsync() over
 // CURVE_KEY_SPECS' own rows, ML-DSA and SLH-DSA through
-// `pq_jose.generateAsync()` — the worker pool, which is what keeps an
+// `pq_jose.generateAsync()` — libuv's thread pool, which is what keeps an
 // SLH-DSA key generation from stopping this service answering.
 //
 // The `kid` is `sts-g-<group>-<slot>-<hash of the public key>`: from the key's
@@ -5908,8 +6221,8 @@ function certifySignerGroupsLater(realmId, members) {
 }
 
 /**
- * Returns a key set's signer-group keys, making them in the worker pool where
- * they do not exist yet; concurrent callers share one generation.
+ * Returns a key set's signer-group keys, making them on libuv's thread pool
+ * where they do not exist yet; concurrent callers share one generation.
  *
  * @param keys - the realm's key set
  * @returns a promise of the group members
@@ -5996,8 +6309,8 @@ function warmSignerGroups(realmId) {
 }
 
 /**
- * Generates a realm's post-quantum keys in the worker pool ahead of the first
- * JWKS fetch. Never rejects; a failure is logged (STS-CORE-0028).
+ * Generates a realm's post-quantum keys on libuv's thread pool ahead of the
+ * first JWKS fetch. Never rejects; a failure is logged (STS-CORE-0028).
  *
  * @param realmId - the realm
  * @returns a promise, resolving null where there is nothing to warm or it
@@ -6032,9 +6345,9 @@ function warmPqKeys(realmId) {
 // THERE IS NO WATCHER ANY MORE, AND THAT REVERSES HALF OF `5d9b51b` ON
 // EVIDENCE RATHER THAN ON TASTE (2026-08-30).
 //
-// It warmed every realm's eleven post-quantum keys as the realm was CREATED,
-// on `realms.onChange(… 'create')`. The argument was the paragraph above and
-// it is still correct as far as it goes: the pool makes paying early free, so
+// It warmed every realm's eleven post-quantum keys as the realm was CREATED, on
+// `realms.onChange(… 'create')`. The argument was the paragraph above and it is
+// still correct as far as it goes: the thread pool makes paying early free, so
 // pay early.
 //
 // What it did not account for is WHO CREATES REALMS HERE. In a deployment a
@@ -6049,15 +6362,15 @@ function warmPqKeys(realmId) {
 //
 // Over two minutes of both worker processes, under instrumentation, spent on
 // key material nothing would ever ask for — on the same two cores the job that
-// DOES sign is waiting for. Eager generation is free when the pool is idle and
-// is not free when something else needs it.
+// DOES sign is waiting for. Eager generation is free when the thread pool is
+// idle and is not free when something else needs it.
 //
-// So the eager path is now the DEFAULT REALM ALONE, warmed from `announce()`
-// in server.js once the port is open — the realm every process has, that every
+// So the eager path is now the DEFAULT REALM ALONE, warmed from `announce()` in
+// server.js once the port is open — the realm every process has, that every
 // protocol answers in, and the one whose first JWKS fetch a person actually
 // waits for. A realm created at runtime makes its keys on first use, the way
-// every realm did before that commit: about 1.7 seconds in the pool, off the
-// event loop, on a request nobody has made yet.
+// every realm did before that commit: about 1.7 seconds on the thread pool, off
+// the event loop, on a request nobody has made yet.
 //
 // **This is a latency optimisation and not a correctness one**, which is what
 // makes it safe to narrow: no behaviour depends on when the keys exist, only
@@ -6081,12 +6394,12 @@ function allSigningKeys() {
   return out;
 }
 
-// The same list, with the post-quantum half generated in the pool. It is what
-// the JWKS endpoint calls, because that endpoint is the one that brings those
-// eleven keys into being.
+// The same list, with the post-quantum half generated on libuv's thread pool.
+// It is what the JWKS endpoint calls, because that endpoint is the one that
+// brings those eleven keys into being.
 /**
  * The same list as `allSigningKeys()`, with the post-quantum keys generated in
- * the worker pool; what the JWKS endpoint calls.
+ * libuv's thread pool; what the JWKS endpoint calls.
  *
  * @returns a promise of the keys
  */
@@ -6446,12 +6759,12 @@ function signingKeyFor(alg, useCaseId) {
 // its post-quantum half is MADE on first use — eleven key generations, SLH-DSA
 // among them, SYNCHRONOUSLY, on this process's one thread. So the first ES256
 // signature in a new realm stopped the whole service while keys it could not
-// use were made: ten seconds on a CI runner, which a sign-in's connection
-// timed out against (sts_mail's reset link, sts_kerberos_krbtgt_rotation).
-// A curve algorithm can only ever be answered by a curve key, so it is looked
-// up among those and the post-quantum keys are left for whoever asks for
-// one — the JWKS, in the worker pool (`pqKeysForAsync()`), or a post-quantum
-// signature. The answer is the same key it always was.
+// use were made: ten seconds on a CI runner, which a sign-in's connection timed
+// out against (sts_mail's reset link, sts_kerberos_krbtgt_rotation). A curve
+// algorithm can only ever be answered by a curve key, so it is looked up among
+// those and the post-quantum keys are left for whoever asks for one — the JWKS,
+// on libuv's thread pool (`pqKeysForAsync()`), or a post-quantum signature. The
+// answer is the same key it always was.
 // ---------------------------------------------------------------------------
 /**
  * Lists this realm's curve signing keys (EC and EdDSA), without making its
@@ -6477,10 +6790,11 @@ function keyListFor(alg) {
   return allSigningKeys();
 }
 
-// The same key, with the post-quantum half of the list generated in the pool.
+// The same key, with the post-quantum half of the list generated off the
+// thread.
 /**
  * The same key as `signingKeyFor()`, with any post-quantum key generated in the
- * worker pool.
+ * libuv's thread pool.
  *
  * @param alg - the JWS algorithm
  * @param useCaseId - the certificate-header use case
@@ -6583,22 +6897,22 @@ function signJwtAs(payload, alg, secret, opts) {
 // Token (`id_token_signed_response_alg`) and the signed UserInfo response
 // (`userinfo_signed_response_alg`). An SLH-DSA-SHAKE-128s token took 14.6 and
 // 15.4 seconds on 2026-08-29, and for those seconds this service answered
-// nobody — see common/worker.js.
+// nobody — see common/pq_native.js.
 //
 // Everything else it can be asked for resolves with the value signJwtAs()
 // computed, unchanged and not deferred: an HS256 or RS256 signature is
 // microseconds, and an IPC round trip to save that would be a cost with no
-// saving. `opts.session` is the pool's routing hint and may be omitted.
+// saving.
 // ---------------------------------------------------------------------------
 /**
- * The same signature as `signJwtAs()`, made in the worker pool where the
+ * The same signature as `signJwtAs()`, made on libuv's thread pool where the
  * algorithm is post-quantum; anything else resolves with the value computed
  * here.
  *
  * @param payload - the claims
  * @param alg - the JWS algorithm
  * @param secret - the client secret, for HS*
- * @param opts - as `signJwtAs()`, and `session`, the pool's routing hint
+ * @param opts - as `signJwtAs()`
  * @returns a promise of the compact JWS
  */
 function signJwtAsAsync(payload, alg, secret, opts) {
@@ -6623,7 +6937,6 @@ function signJwtAsAsync(payload, alg, secret, opts) {
     .then(function (signer) {
       return stsCrypto.signJwsAsync(payload, signer.key,
         { algorithm: alg, keyid: publishedKidFor(signer.kid),
-          session: options.session,
           header: withCertificateHeader(options.header,
                                         options.certificateHeader, alg,
                                         signer.kid) });
@@ -6838,9 +7151,16 @@ function forwardedFrom(req) {
  *
  * @returns the pinned base, or '' when none is set
  */
+// A REALM WITH A LISTENER OF ITS OWN (#99, 2026-10-02) is built on its own
+// base: `listener.publicBaseUrl` is read in the ambient realm (it is
+// `realmOnly`, so only that realm's own value is ever seen) and wins over
+// `global.publicBaseUrl`. Every URL a realm builds goes through here — 529
+// calls of `baseUrlOf()` — background jobs with no request included, so one
+// line moves them all; the `/realm/<id>` prefix still follows the base.
 function pinnedBaseUrl() {
   log.debug("Entering pinnedBaseUrl().");
-  const raw = String(config.value('global.publicBaseUrl') || '').trim();
+  const own = String(config.value('listener.publicBaseUrl') || '').trim();
+  const raw = own || String(config.value('global.publicBaseUrl') || '').trim();
   log.debug("Leaving pinnedBaseUrl().");
   return raw ? raw.replace(/\/+$/, '') : '';
 }
@@ -7298,6 +7618,7 @@ module.exports = {
   ensureNextGenerations: ensureNextGenerations,
   promoteGenerations: promoteGenerations,
   retireExpiredGenerations: retireExpiredGenerations,
+  keySetIfMade: keySetIfMade,
   signingKeyFor: signingKeyFor,
   signingKeyForAsync: signingKeyForAsync,
   allSigningKeys: allSigningKeys,
@@ -7390,6 +7711,11 @@ module.exports = {
   rotateRefreshTokenKeys: rotateRefreshTokenKeys,
   retiredRefreshTokenKeysFor: retiredRefreshTokenKeysFor,
   requestObjectKeysFor: requestObjectKeysFor,
+  kemEncryptionKeysFor: kemEncryptionKeysFor,
+  kemDecryptionKeyFor: kemDecryptionKeyFor,
+  kemAlgsConfigured: kemAlgsConfigured,
+  decryptableJweAlgs: decryptableJweAlgs,
+  offeredJweAlgs: offeredJweAlgs,
   browserDeviceKeysFor: browserDeviceKeysFor,
   browserDeviceSigner: browserDeviceSigner,
   browserDeviceVerifiers: browserDeviceVerifiers,

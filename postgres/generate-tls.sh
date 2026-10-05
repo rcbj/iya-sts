@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: BUSL-1.1
 #
 # File: postgres/generate-tls.sh
 #
@@ -47,7 +47,7 @@ if [ -s "${CRT}" ] && [ -s "${KEY}" ]; then
 else
   echo "postgres-tls: generating a server key pair in ${TLS_DIR} for CN=${CN}."
   openssl req -new -x509 -nodes -newkey rsa:2048 -sha256 -days 825 \
-    -subj "/CN=${CN}/O=mock-sts" \
+    -subj "/CN=${CN}/O=iya-sts" \
     -addext "subjectAltName=DNS:${CN},DNS:localhost,IP:127.0.0.1" \
     -addext "basicConstraints=critical,CA:FALSE" \
     -addext "keyUsage=critical,digitalSignature,keyEncipherment" \

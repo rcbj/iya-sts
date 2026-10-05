@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 //
 // ---------------------------------------------------------------------------
 // MODULES THIS SERVICE LOADS ONLY WHEN A DEPLOYMENT ASKS FOR THEM (#50).
@@ -14,6 +14,10 @@ declare module '@google-cloud/secret-manager';
 declare module '@azure/keyvault-secrets';
 declare module '@azure/identity';
 declare module 'node-vault';
+// The key management services that wrap the data keys (#391 P3, P4).
+declare module '@aws-sdk/client-kms';
+declare module '@google-cloud/kms';
+declare module '@azure/keyvault-keys';
 // The mail channel's three cloud transports (#63), required by
 // `common/mail_transports.ts` when a realm chooses one.
 declare module '@aws-sdk/client-sesv2';

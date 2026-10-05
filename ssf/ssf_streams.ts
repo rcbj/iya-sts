@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 
@@ -151,7 +151,19 @@ const queued = realms.map({ persist: 'ssf_streams.queued' });
 // went in, the oldest past `ssf.deadLetterMaxPerStream`, a probe that
 // delivered it, and everything when its stream is deleted.
 // ---------------------------------------------------------------------------
-const deadLetters = realms.map({ persist: 'ssf_streams.deadLetters' });
+// `expiresAt` (#333): the sweep keeps a dead letter
+// `ssf.deadLetterRetentionS` (3600 when not a positive number) past
+// `deadAtMs`.
+const deadLetters = realms.map({
+  persist: 'ssf_streams.deadLetters',
+  // A hot path (every row a flush writes): no Entering/Leaving pair.
+  expiresAt: function (letter: any): number | null {
+    const at = Number(letter && letter.deadAtMs);
+    const keepS = Number(config.value('ssf.deadLetterRetentionS'));
+    const keep = Number.isFinite(keepS) && keepS > 0 ? keepS : 3600;
+    return at > 0 ? at + keep * 1000 : null;
+  }
+});
 
 // What this service has RECEIVED, when the debugger is the transmitter and
 // this service is the receiver. Also per realm, and capped the same way.
@@ -284,6 +296,35 @@ interface ApplicationsReader {
   ssfAllowedEventsFor(name: string): { identifier: string;
                                        values: string[];
                                        receiverIds?: string[] } | null;
+  ssfSettingFor?(name: string, key: string): { value: unknown;
+                                               source: string;
+                                               application: string };
+  clientConfigOf?(clientId: string): { subject_type?: string };
+}
+
+// `oauth-oidc/pairwise_subjects.ts`, as far as this module reads it: the
+// forward mapping of a person's public `sub` to what one client is told, and
+// the reverse of an ephemeral one.
+interface PairwiseReader {
+  subjectFor(clientId: string, localSub: string): string;
+  localFor(sub: string): string;
+}
+
+// `ssf/risc.ts`, as far as this module reads it: the account an `email`,
+// `phone_number`, `account` or `opaque` subject names.
+interface RiscReader {
+  accountIdOf(subject: unknown): string;
+}
+
+// WHO A PERSON-OWNED STREAM BELONGS TO (#336, 2026-09-28), recorded at
+// creation from the authenticated context and never from the body.
+interface OwnerPerson {
+  // The `sub` the owner's token carried: public, pairwise or ephemeral.
+  sub: string;
+  // The client the token was issued to; '' for a Basic owner.
+  client: string;
+  // The person's username, where the directory could say.
+  username: string;
 }
 
 // `persistence/persistence.js`, as far as this module reads it.
@@ -302,6 +343,14 @@ interface SsfStreamsDeps {
   events: typeof events;
   loadApplications: () => ApplicationsReader;
   loadPersistence: () => PersistenceReader;
+  // Who a person's subject names, and a person's subject: `helpers.js`'s
+  // two directory lookups, which answer '' with no directory.
+  nameForSubject: (sub: string) => string;
+  subjectForName: (name: string) => string;
+  // Lazy, like `loadApplications`: neither module is needed until a
+  // person-owned stream is asked about a subject.
+  loadPairwise: () => PairwiseReader;
+  loadRisc: () => RiscReader;
 }
 
 /**
@@ -324,10 +373,58 @@ class SsfStreams {
     deps.log.debug("Leaving SsfStreams.constructor().");
   }
 
-  private limit(key?, fallback?) {
-    const { log, config } = this.deps;
+  // ---------------------------------------------------------------------------
+  // ONE SETTING AS IT APPLIES TO ONE STREAM'S OWNER (2026-10-01). The owning
+  // application may override some caep.*, risc.* and ssf.* settings for its
+  // own streams (`common/applications.js`, the per-receiver Shared Signals
+  // rows, read by `ssfSettingFor()`). `owner` is a principal or a stream
+  // record; this service's own two streams, and a stream nobody owns, take
+  // the setting. A process with no registry takes the setting too.
+  // ---------------------------------------------------------------------------
+  /**
+   * Returns a setting's value for a stream's owner: the owning application's
+   * override where it carries one, else the setting.
+   *
+   * @param owner - a principal, or a stream record
+   * @param key - the setting
+   * @returns `{ value, source, application }`
+   */
+  ownerSetting(owner?, key?) {
+    const { log, config, loadApplications } = this.deps;
+    log.debug("Entering SsfStreams.ownerSetting(). " + key);
+    const plain = { value: config.value(key), source: 'setting',
+                    application: '' };
+    const record = owner && typeof owner === 'object' ? owner : null;
+    const principal = record ? record.createdBy : owner;
+    const name = String(principal || '');
+    if ((record && this.isInternal(record)) || !name ||
+        name === '(unauthenticated)') {
+      log.debug("Leaving SsfStreams.ownerSetting(). No owner to ask.");
+      return plain;
+    }
+    let applications;
+    try {
+      applications = loadApplications();
+    } catch (e) {
+      log.debug("Caught in SsfStreams.ownerSetting(): " +
+                ((e && e.message) || e));
+      log.debug("Leaving SsfStreams.ownerSetting(). No registry.");
+      // No registry in this process: the setting decides.
+      return plain;
+    }
+    if (!applications || typeof applications.ssfSettingFor !== 'function') {
+      log.debug("Leaving SsfStreams.ownerSetting(). No per-owner reader.");
+      return plain;
+    }
+    const answer = applications.ssfSettingFor(name, key);
+    log.debug("Leaving SsfStreams.ownerSetting(). " + answer.source);
+    return answer;
+  }
+
+  private limit(key?, fallback?, owner?) {
+    const { log } = this.deps;
     log.debug("Entering SsfStreams.limit(). " + key);
-    const value = Number(config.value(key));
+    const value = Number(this.ownerSetting(owner, key).value);
     const out = (Number.isFinite(value) && value > 0) ? value : fallback;
     log.debug("Leaving SsfStreams.limit(). " + out);
     return out;
@@ -379,7 +476,7 @@ class SsfStreams {
     // service's own two streams are not counted against anybody.
     const internal = !!ctx.internalSurface;
     if (!internal) {
-      const max = this.limit('ssf.maxStreams', 25);
+      const max = this.limit('ssf.maxStreams', 25, ctx.principal);
       const held = this.streamsOwnedBy(ctx.principal).length;
       if (held >= max) {
         errors.push('This receiver already holds ' + held + ' stream(s) ' +
@@ -425,7 +522,8 @@ class SsfStreams {
     }
 
     const interval = Number(body.min_verification_interval);
-    const configured = this.limit('ssf.minVerificationInterval', 60);
+    const configured = this.limit('ssf.minVerificationInterval', 60,
+                                  internal ? null : ctx.principal);
     if (Number.isFinite(interval) && interval > 0 && interval < configured) {
       errors.push('"min_verification_interval" is ' + interval + ' seconds ' +
           'and this transmitter will not go below ' + configured +
@@ -467,11 +565,19 @@ class SsfStreams {
       format: format,
       min_verification_interval: configured,
       description: String(body.description || ''),
-      status: String(config.value('ssf.streamStatusOnCreate') || 'enabled'),
+      status: String(this.ownerSetting(internal ? null : ctx.principal,
+                                       'ssf.streamStatusOnCreate').value ||
+                     'enabled'),
       statusReason: 'created',
       createdAt: now,
       updatedAt: now,
       createdBy: String(ctx.principal || '(unauthenticated)'),
+      // A PERSON WHO CREATED A STREAM WITH THEIR OWN CREDENTIAL (#336,
+      // 2026-09-28): who they are, so the stream is about them alone. From
+      // the context, never the body; absent for a client, a GNAP
+      // application, this service's own receivers and an unauthenticated
+      // caller.
+      ownerPerson: internal ? undefined : this.ownerPersonOf(ctx),
       // THIS SERVICE'S OWN RECEIVER, marked AT CREATION from the context and
       // never from the body (#144). Ownership is decided by this and not by
       // `createdBy`: in development any Basic username authenticates, so a
@@ -1124,14 +1230,17 @@ class SsfStreams {
   // The inactivity timeout this transmitter publishes, in seconds; 0 is none.
   /**
    * Returns the inactivity timeout this transmitter publishes
-   * (`ssf.inactivityTimeoutS`).
+   * (`ssf.inactivityTimeoutS`), for one stream when it is named: its owning
+   * application may override the setting.
    *
+   * @param record - the stream, when there is one
    * @returns the timeout, in seconds; 0 for none
    */
-  inactivityTimeout() {
-    const { log, config } = this.deps;
+  inactivityTimeout(record?) {
+    const { log } = this.deps;
     log.debug("Entering SsfStreams.inactivityTimeout().");
-    const value = Number(config.value('ssf.inactivityTimeoutS'));
+    const value = Number(this.ownerSetting(record || null,
+                                           'ssf.inactivityTimeoutS').value);
     log.debug("Leaving SsfStreams.inactivityTimeout().");
     return Number.isFinite(value) && value > 0 ? Math.floor(value) : 0;
   }
@@ -1404,9 +1513,14 @@ class SsfStreams {
   // A stream's subject list is who it is about. `ssf.defaultSubjects` decides
   // what an empty list MEANS, and the two answers are opposites:
   //
-  //   ALL    the stream is about everybody, and the list NARROWS nothing —
-  //          adding a subject to it is redundant.
+  //   ALL    an EMPTY list is about everybody. Naming a subject NARROWS the
+  //          stream to the named subjects (`streamCoversSubject()`), and
+  //          removing the last one widens it back to everybody.
   //   NONE   the stream is about nobody until somebody is added.
+  //
+  // It said until 2026-09-28 that with ALL the list "narrows nothing", which
+  // `streamCoversSubject()` never did: a receiver that believed it kept its
+  // list empty and was sent every event in the realm.
   //
   // This service publishes the value in its metadata (`default_subjects`),
   // because a receiver that guesses wrong either gets every event in the estate
@@ -1441,7 +1555,7 @@ class SsfStreams {
       log.debug("Leaving SsfStreams.addSubject(). Invalid subject.");
       return { ok: false, errors: verdict.errors };
     }
-    const max = this.limit('ssf.maxSubjectsPerStream', 100);
+    const max = this.limit('ssf.maxSubjectsPerStream', 100, record);
     const key = subjects.subjectKey(subject);
     const existing = record.subjects.filter((one) => {
       return one.key === key;
@@ -1514,6 +1628,212 @@ class SsfStreams {
     this.touch(record);
     log.debug("Leaving SsfStreams.removeSubject(). " + removed);
     return { ok: true, errors: [], removed: removed };
+  }
+
+  // ---------------------------------------------------------------------------
+  // A PERSON'S STREAM IS ABOUT THAT PERSON (#336, 2026-09-28).
+  //
+  // A stream is owned by whoever created it, and a person can: with an access
+  // token their client obtained for them by the authorization code grant
+  // (the principal is their `sub`), or with their own name and password over
+  // Basic. Until this date such a stream was treated like a relying party's:
+  // under `default_subjects: ALL`, with no subject named, it was sent every
+  // event about everybody in the realm — every sign-in, credential change and
+  // risk change of every other person — to anybody whose client may hold
+  // `ssf:read`. SSF 1.0 section 10.1 requires access controls so that "only
+  // authorized parties can access the shared signals", and a person is an
+  // authorized party for their own signals and nobody else's.
+  //
+  // So a person-owned stream covers a subject only when the subject names the
+  // owner, whatever the subject list and `default_subjects` say, and Add
+  // Subject refuses to name anybody else (`ssf.ts`, STS-SSF-0131). It is the
+  // same shape as GNAP's scope — it can take events away and never add one —
+  // but built in rather than registered, because it is about who OWNS the
+  // stream, which is this module's own fact. `ssf.personStreamsSelfOnly`
+  // (on) turns it off.
+  //
+  // WHO THE OWNER IS, and why it is recorded rather than re-derived:
+  //
+  //   OAuth   the token's `sub`. A public client's is the person's own
+  //           `urn:uuid:` subject; a pairwise client's is a per-sector hash
+  //           that cannot be reversed, so it is matched FORWARDS — the event's
+  //           public subject mapped through that client — and an ephemeral
+  //           client's is mapped back through `localFor()` at creation, while
+  //           the mapping still exists.
+  //   Basic   the username, when the directory holds that person. In
+  //           development any name authenticates over Basic; a name that is
+  //           nobody in the directory is not a person and keeps the old
+  //           behaviour, which is what every receiver under test relies on.
+  //
+  // A stream created before this change carries no `ownerPerson`. One whose
+  // `createdBy` is a person's `urn:uuid:` subject is recognised as theirs
+  // anyway, so an existing stream is narrowed without being recreated; a
+  // pairwise or Basic owner from before is not, and says so nowhere, which is
+  // why the console shows the owner.
+  // ---------------------------------------------------------------------------
+  private ownerPersonOf(ctx?): OwnerPerson | undefined {
+    const { log, nameForSubject, subjectForName, loadPairwise } = this.deps;
+    log.debug("Entering SsfStreams.ownerPersonOf().");
+    const owner = (ctx && ctx.owner) || {};
+    if (owner.kind === 'basic') {
+      const name = String(owner.name || '');
+      if (!name || !subjectForName(name)) {
+        log.debug("Leaving SsfStreams.ownerPersonOf(). A Basic name that is " +
+                  "nobody in the directory.");
+        return undefined;
+      }
+      log.debug("Leaving SsfStreams.ownerPersonOf(). A Basic person.");
+      return { sub: subjectForName(name), client: '', username: name };
+    }
+    if (owner.kind !== 'person' || !owner.sub) {
+      log.debug("Leaving SsfStreams.ownerPersonOf(). Not a person.");
+      return undefined;
+    }
+    const sub = String(owner.sub);
+    let username = nameForSubject(sub);
+    if (!username) {
+      // An ephemeral `sub` names its person only while its mapping lives.
+      try {
+        const local = loadPairwise().localFor(sub);
+        username = local ? nameForSubject(local) : '';
+      } catch (e) {
+        log.debug("Caught in SsfStreams.ownerPersonOf(): " +
+                  ((e && e.message) || e));
+        // No pairwise module here: a pairwise owner is matched forwards.
+        username = '';
+      }
+    }
+    log.debug("Leaving SsfStreams.ownerPersonOf(). " + (username || sub));
+    return { sub: sub, client: String(owner.client || ''),
+             username: username || '' };
+  }
+
+  // The owner a record carries, or the one a pre-2026-09-28 record's
+  // `createdBy` names, or null for a stream no person owns.
+  private ownerPersonOfRecord(record?): OwnerPerson | null {
+    const { log, nameForSubject } = this.deps;
+    log.debug("Entering SsfStreams.ownerPersonOfRecord().");
+    if (!record || record.internalSurface) {
+      log.debug("Leaving SsfStreams.ownerPersonOfRecord(). None.");
+      return null;
+    }
+    if (record.ownerPerson && record.ownerPerson.sub) {
+      log.debug("Leaving SsfStreams.ownerPersonOfRecord(). Recorded.");
+      return record.ownerPerson;
+    }
+    const by = String(record.createdBy || '');
+    const username = /^urn:uuid:/i.test(by) ? nameForSubject(by) : '';
+    log.debug("Leaving SsfStreams.ownerPersonOfRecord(). " +
+              (username ? 'From createdBy.' : 'None.'));
+    return username ? { sub: by, client: '', username: username } : null;
+  }
+
+  // Whether an `iss_sub` value names the owner: their own `sub`, their
+  // person's public subject, or — for a pairwise client — the public subject
+  // that client is told as their `sub`.
+  private subNamesOwner(owner: OwnerPerson, sub: string): boolean {
+    const { log, nameForSubject, loadPairwise, loadApplications } = this.deps;
+    log.debug("Entering SsfStreams.subNamesOwner().");
+    if (!sub) {
+      log.debug("Leaving SsfStreams.subNamesOwner(). No sub.");
+      return false;
+    }
+    if (sub === owner.sub) {
+      log.debug("Leaving SsfStreams.subNamesOwner(). Their own sub.");
+      return true;
+    }
+    if (owner.username && nameForSubject(sub) === owner.username) {
+      log.debug("Leaving SsfStreams.subNamesOwner(). Their person.");
+      return true;
+    }
+    if (!owner.client) {
+      log.debug("Leaving SsfStreams.subNamesOwner(). No client to map by.");
+      return false;
+    }
+    try {
+      const reader = loadApplications();
+      const cfg = typeof reader.clientConfigOf === 'function'
+        ? reader.clientConfigOf(owner.client) : {};
+      // Only a PAIRWISE mapping is asked: it is a pure function of the
+      // sector and the subject, where an ephemeral one would MINT a mapping
+      // for every event it was asked about.
+      if (!cfg || cfg.subject_type !== 'pairwise') {
+        log.debug("Leaving SsfStreams.subNamesOwner(). Not pairwise.");
+        return false;
+      }
+      const told = loadPairwise().subjectFor(owner.client, sub);
+      log.debug("Leaving SsfStreams.subNamesOwner(). Pairwise: " +
+                (told === owner.sub));
+      return told === owner.sub;
+    } catch (e) {
+      log.debug("Caught in SsfStreams.subNamesOwner(): " +
+                ((e && e.message) || e));
+      // A pairwise client with no sector names nobody by this route.
+      log.debug("Leaving SsfStreams.subNamesOwner(). The mapping threw.");
+      return false;
+    }
+  }
+
+  /**
+   * Says whether a subject names the person who owns a stream: undefined for a
+   * stream no person owns (or with `ssf.personStreamsSelfOnly` off), otherwise
+   * true or false. An `iss_sub` is matched through the owner's `sub`; an
+   * `email`, `phone_number`, `account` or `opaque` one through the account RISC
+   * knows it as; `aliases` when any alias does; a complex subject by its
+   * `user` member, and one with no `user` names nobody.
+   *
+   * @param record - the stream
+   * @param subject - the subject
+   * @returns true, false, or undefined when the stream is no person's
+   */
+  ownerPersonCovers(record?, subject?): boolean | undefined {
+    const { log, config, loadRisc } = this.deps;
+    log.debug("Entering SsfStreams.ownerPersonCovers().");
+    if (config.value('ssf.personStreamsSelfOnly') === false) {
+      log.debug("Leaving SsfStreams.ownerPersonCovers(). Off.");
+      return undefined;
+    }
+    const owner = this.ownerPersonOfRecord(record);
+    if (!owner) {
+      log.debug("Leaving SsfStreams.ownerPersonCovers(). No person's.");
+      return undefined;
+    }
+    const one = subject && subject.format === 'complex'
+      ? subject.user : subject;
+    if (!one || typeof one !== 'object') {
+      log.debug("Leaving SsfStreams.ownerPersonCovers(). Names no user.");
+      return false;
+    }
+    if (one.format === 'aliases') {
+      const any = (Array.isArray(one.identifiers) ? one.identifiers : [])
+        .some((alias) => {
+          return this.ownerPersonCovers(record, alias) === true;
+        });
+      log.debug("Leaving SsfStreams.ownerPersonCovers(). Aliases: " + any);
+      return any;
+    }
+    if (one.format === 'iss_sub') {
+      const named = this.subNamesOwner(owner, String(one.sub || ''));
+      log.debug("Leaving SsfStreams.ownerPersonCovers(). iss_sub: " + named);
+      return named;
+    }
+    if (!owner.username) {
+      log.debug("Leaving SsfStreams.ownerPersonCovers(). An owner known " +
+                "only by a pairwise sub is named only by iss_sub.");
+      return false;
+    }
+    let account = '';
+    try {
+      account = loadRisc().accountIdOf(one);
+    } catch (e) {
+      log.debug("Caught in SsfStreams.ownerPersonCovers(): " +
+                ((e && e.message) || e));
+      // No RISC register here: nothing but an iss_sub can name the owner.
+      account = '';
+    }
+    log.debug("Leaving SsfStreams.ownerPersonCovers(). By account: " +
+              (account === owner.username));
+    return account === owner.username;
   }
 
   /**
@@ -1606,6 +1926,11 @@ class SsfStreams {
       log.debug("Leaving SsfStreams.streamCoversSubject(). No subject; " +
           "always.");
       return true;
+    }
+    if (this.ownerPersonCovers(record, subject) === false) {
+      log.debug("Leaving SsfStreams.streamCoversSubject(). A person's " +
+                "stream, and the subject is somebody else.");
+      return false;
     }
     if (this.scopeRefuses(record, subject)) {
       log.debug("Leaving SsfStreams.streamCoversSubject(). A family's " +
@@ -1838,7 +2163,7 @@ class SsfStreams {
       log.debug("Leaving SsfStreams.enqueue(). The stream is disabled.");
       return { ok: false, reason: 'the stream is disabled' };
     }
-    const max = this.limit('ssf.maxQueuedEvents', 200);
+    const max = this.limit('ssf.maxQueuedEvents', 200, record);
     const waiting = this.queueOf(record);
     let over = waiting.length - max + 1;
     while (over > 0 && waiting.length) {
@@ -1982,7 +2307,7 @@ class SsfStreams {
     }
     const held = (counts.get(record.stream_id) || 0) + 1;
     counts.set(record.stream_id, held);
-    const max = this.limit('ssf.deadLetterMaxPerStream', 1000);
+    const max = this.limit('ssf.deadLetterMaxPerStream', 1000, record);
     const seen = tally();
     if (held > max) {
       seen.trimmed += this.trimDeadLetters(record.stream_id, max);
@@ -2102,11 +2427,13 @@ class SsfStreams {
     expired.concat(orphaned).forEach((key) => {
       deadLetters.delete(key);
     });
-    const max = this.limit('ssf.deadLetterMaxPerStream', 1000);
     const seen = tally();
     const counts = deadCounts();
     counts.clear();
     perStream.forEach((held, streamId) => {
+      // Each stream's own cap: its owner may override the setting.
+      const max = this.limit('ssf.deadLetterMaxPerStream', 1000,
+                             streams.get(streamId) || null);
       if (held > max) {
         seen.trimmed += this.trimDeadLetters(streamId, max);
       } else {
@@ -2403,7 +2730,7 @@ class SsfStreams {
     // which section 8.1.5 requires to be sent BEFORE the stream stops and
     // which, on a poll stream, is only ever sent by being collected here.
     const stopped = record.status !== 'enabled';
-    const cap = this.limit('ssf.pollMaxEvents', 20);
+    const cap = this.limit('ssf.pollMaxEvents', 20, record);
     const wanted = Number(asked.maxEvents);
     const take = (Number.isFinite(wanted) && wanted >= 0)
       ? Math.min(wanted, cap) : cap;
@@ -2607,7 +2934,7 @@ class SsfStreams {
     // SSF 1.0 section 8.1.1, Transmitter-Supplied and OPTIONAL: published
     // while there is one to publish. Never on this service's own receivers,
     // which are never timed out.
-    const timeout = this.inactivityTimeout();
+    const timeout = this.inactivityTimeout(record);
     if (timeout && !this.isInternal(record)) {
       out.inactivity_timeout = timeout;
     }
@@ -2640,6 +2967,14 @@ class SsfStreams {
       },
       loadPersistence: function (): PersistenceReader {
         return require('../persistence/persistence');
+      },
+      nameForSubject: helpers.nameForSubject,
+      subjectForName: helpers.subjectForName,
+      loadPairwise: function (): PairwiseReader {
+        return require('../oauth-oidc/pairwise_subjects');
+      },
+      loadRisc: function (): RiscReader {
+        return require('./risc');
       }
     };
   }
@@ -2695,6 +3030,7 @@ export = {
   addSubject: slot.forward('addSubject'),
   removeSubject: slot.forward('removeSubject'),
   streamCoversSubject: slot.forward('streamCoversSubject'),
+  ownerPersonCovers: slot.forward('ownerPersonCovers'),
   complexSubjectsMatch: slot.forward('complexSubjectsMatch'),
   audiencesFor: slot.forward('audiencesFor'),
   isInternal: slot.forward('isInternal'),
@@ -2703,6 +3039,7 @@ export = {
   streamsOwnedBy: slot.forward('streamsOwnedBy'),
   noteActivity: slot.forward('noteActivity'),
   inactivityTimeout: slot.forward('inactivityTimeout'),
+  ownerSetting: slot.forward('ownerSetting'),
   isStreamUpdated: slot.forward('isStreamUpdated'),
   allowedEventsFor: slot.forward('allowedEventsFor'),
   deliversEvent: slot.forward('deliversEvent'),

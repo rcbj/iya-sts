@@ -1,6 +1,6 @@
 // @ts-check
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -186,6 +186,23 @@ const KDC_PORT = config.value('krb5.kdcPort');
 // registers no route, already in the parent project's copy set through
 // `common/app.js` and `krb5_principals.js`.
 const realms = require('../common/realms');
+
+// WHO MAY ACT FOR WHOM (#186): `kerberos/krb5_delegation.ts`, the Kerberos
+// side of the one delegation policy — the parties of an S4U request named as
+// the directory's entries, the issuance policy asked, the evidence ticket's
+// PAC checked, PA-S4U-X509-USER read and answered. Required LAZILY: only a
+// request that delegates (or asks for a forwardable ticket) needs it, and the
+// parent project's in-process jobs load this file without a directory. See
+// `kerberos/CLAUDE.md` for what that closure is owed.
+let delegationFacts = null;
+function krb5Delegation() {
+  log.debug("Entering krb5Delegation().");
+  if (!delegationFacts) {
+    delegationFacts = require('./krb5_delegation');
+  }
+  log.debug("Leaving krb5Delegation().");
+  return delegationFacts;
+}
 
 // THE KERBEROS REALM THIS KDC IS ANSWERING AS, which since 2026-09-15 is a
 // function of the AMBIENT TRUST REALM rather than a constant read at require
@@ -739,10 +756,17 @@ async function resolveS4u(ctx) {
   const forUserPa = (ctx.request.padata || []).filter(function (pa) {
     return pa.type === msgs.PA_TYPE.FOR_USER;
   })[0];
+  // PA-S4U-X509-USER ([MS-SFU] 2.2.2, #186): S4U2Self naming the user by
+  // name and realm or by CERTIFICATE. Where both padata are sent the KDC uses
+  // this one, as [MS-SFU] 3.2.5.1.2 says.
+  const x509Pa = (ctx.request.padata || []).filter(function (pa) {
+    return pa.type === msgs.PA_TYPE.S4U_X509_USER;
+  })[0];
+  const wantsSelf = !!(forUserPa || x509Pa);
   const wantsProxy = (body.kdcOptions || []).indexOf(
       msgs.KDC_OPTION.CNAME_IN_ADDL_TKT) !== -1;
 
-  if (!forUserPa && !wantsProxy) {
+  if (!wantsSelf && !wantsProxy) {
     log.debug('Leaving resolveS4u(). an ordinary TGS request.');
     return plain;
   }
@@ -784,7 +808,7 @@ async function resolveS4u(ctx) {
       '/') + '@' + ctx.answeringRealm;
   const intent = {
     protocol: 'Kerberos v5',
-    type: forUserPa ? 'krb5-s4u2self' : 'krb5-s4u2proxy-classic',
+    type: wantsSelf ? 'krb5-s4u2self' : 'krb5-s4u2proxy-classic',
     initial: {
       // Filled in when the request says who it is impersonating: out of
       // PA-FOR-USER for S4U2Self, out of the evidence ticket for S4U2Proxy.
@@ -799,7 +823,7 @@ async function resolveS4u(ctx) {
     },
     target: {
       application: targetPrincipal,
-      what: forUserPa
+      what: wantsSelf
         ? 'itself — S4U2Self is a request for a ticket to yourself'
         : 'the service being reached on the user\'s behalf'
     },
@@ -810,7 +834,7 @@ async function resolveS4u(ctx) {
   };
 
   // ----- S4U2Self -----
-  if (forUserPa) {
+  if (wantsSelf) {
     if (wantsProxy) {
       log.debug("Leaving resolveS4u().");
       return refuseS4u(intent, 13, {
@@ -825,58 +849,152 @@ async function resolveS4u(ctx) {
       });
     }
     let forUser;
-    try {
-      forUser = msgs.readPaForUser(forUserPa.value);
-    } catch (e) {
-      log.debug("Leaving resolveS4u().");
-      return refuseS4u(intent, 13, {
-        errorCode: 'STS-KRB-0003',
-        crealm: ticketPart.crealm, cname: ticketPart.cname,
-        realm: ctx.answeringRealm,
-        sname: body.sname, eText: 'PA-FOR-USER does not decode: ' + e.message
+    // PA-S4U-X509-USER, when sent (#186): its checksum under the TGT session
+    // key, the request's nonce, and the user by name or by certificate.
+    let x509 = null;
+    const tgtSessionKey = { etype: ticketPart.key.etype, key: ctx.sessionKey };
+    if (x509Pa) {
+      const delegationLib = krb5Delegation();
+      try {
+        x509 = delegationLib.readS4uX509User(x509Pa.value);
+      } catch (e) {
+        log.debug("Leaving resolveS4u().");
+        return refuseS4u(intent, 13, {
+          errorCode: 'STS-KRB-0170',
+          crealm: ticketPart.crealm, cname: ticketPart.cname,
+          realm: ctx.answeringRealm, sname: body.sname,
+          eText: 'PA-S4U-X509-USER does not decode: ' + e.message
+        });
+      }
+      intent.initial.presented = (x509.cname
+        ? x509.cname.name.join('/') : 'a certificate') + '@' + x509.crealm;
+      intent.consumed.push({
+        kind: 'PA-S4U-X509-USER',
+        note: 'names the user by ' + (x509.certificate
+          ? 'certificate' + (x509.cname ? ' and name' : '') : 'name') +
+          ', checksummed under the requester\'s TGT session key'
       });
-    }
+      if (!(await delegationLib.verifyS4uX509User(x509, tgtSessionKey))) {
+        log.info('krb5: the PA-S4U-X509-USER checksum does not verify for ' +
+                 requesterName);
+        log.debug("Leaving resolveS4u().");
+        return refuseS4u(intent, 41, {
+          errorCode: 'STS-KRB-0171',
+          crealm: ticketPart.crealm, cname: ticketPart.cname,
+          realm: ctx.answeringRealm, sname: body.sname,
+          eText: 'the PA-S4U-X509-USER checksum does not verify. It is the ' +
+                 'TGT session key\'s required checksum (HMAC-MD5 for RC4) at ' +
+                 'key usage 26, over the DER of the S4UUserID.'
+        });
+      }
+      if (x509.nonce !== body.nonce) {
+        log.debug("Leaving resolveS4u().");
+        return refuseS4u(intent, 13, {
+          errorCode: 'STS-KRB-0172',
+          crealm: ticketPart.crealm, cname: ticketPart.cname,
+          realm: ctx.answeringRealm, sname: body.sname,
+          eText: 'the S4UUserID\'s nonce (' + x509.nonce + ') is not the ' +
+                 'request body\'s (' + body.nonce + ')'
+        });
+      }
+      let userComponents = x509.cname ? x509.cname.name : null;
+      if (x509.certificate) {
+        const mapped = delegationLib.userFromCertificate(x509.certificate);
+        if (!mapped.ok) {
+          log.debug("Leaving resolveS4u().");
+          return refuseS4u(intent, 6, {
+            errorCode: 'STS-KRB-0173',
+            crealm: ticketPart.crealm, cname: ticketPart.cname,
+            realm: ctx.answeringRealm, sname: body.sname,
+            eText: 'the PA-S4U-X509-USER certificate names nobody here: ' +
+                   mapped.why
+          });
+        }
+        if (userComponents && userComponents.join('/') !== mapped.username) {
+          log.debug("Leaving resolveS4u().");
+          return refuseS4u(intent, 75, {
+            errorCode: 'STS-KRB-0174',
+            crealm: ticketPart.crealm, cname: ticketPart.cname,
+            realm: ctx.answeringRealm, sname: body.sname,
+            eText: 'the PA-S4U-X509-USER name ' + userComponents.join('/') +
+                   ' is not the person its certificate names (' +
+                   mapped.username + ')'
+          });
+        }
+        userComponents = [mapped.username];
+      }
+      if (!userComponents) {
+        log.debug("Leaving resolveS4u().");
+        return refuseS4u(intent, 13, {
+          errorCode: 'STS-KRB-0175',
+          crealm: ticketPart.crealm, cname: ticketPart.cname,
+          realm: ctx.answeringRealm, sname: body.sname,
+          eText: 'PA-S4U-X509-USER names no user: it carries neither a ' +
+                 'cname nor a subject-certificate'
+        });
+      }
+      forUser = {
+        userName: { type: x509.cname ? x509.cname.type : 1,
+                    name: userComponents },
+        userRealm: x509.crealm
+      };
+      intent.initial.presented = userComponents.join('/') + '@' +
+                                 x509.crealm;
+    } else {
+      try {
+        forUser = msgs.readPaForUser(forUserPa.value);
+      } catch (e) {
+        log.debug("Leaving resolveS4u().");
+        return refuseS4u(intent, 13, {
+          errorCode: 'STS-KRB-0003',
+          crealm: ticketPart.crealm, cname: ticketPart.cname,
+          realm: ctx.answeringRealm,
+          sname: body.sname, eText: 'PA-FOR-USER does not decode: ' + e.message
+        });
+      }
 
-    // Who is being impersonated, as soon as the padata says so — before the
-    // checksum is verified, deliberately. A request that named somebody and
-    // then failed the integrity check is precisely the row worth having: it
-    // says who somebody TRIED to become.
-    intent.initial.presented =
-      forUser.userName.name.join('/') + '@' + forUser.userRealm;
-    intent.consumed.push({
-      kind: 'PA-FOR-USER',
-      note: 'names the user, checksummed under the requester\'s TGT session ' +
-            'key — integrity, not authorization'
-    });
-
-    // The checksum is what stops a service naming a user it did not
-    // authenticate... and note exactly what it proves: only that whoever built
-    // this padata holds the TGT's session key. It is integrity, not
-    // authorization. [MS-SFU] section 2.2.1 fixes the algorithm as HMAC-MD5 at
-    // key usage 17 whatever the session key's etype.
-    const arcfour = kcrypto.etypeById(23);
-    const expected = await arcfour.checksum(ctx.sessionKey,
-      kcrypto.KEY_USAGE.PA_FOR_USER_CKSUM,
-      s4uByteArray(forUser.userName, forUser.userRealm, forUser.authPackage));
-    if (!prim.equalConstantTime(expected, forUser.cksum.checksum)) {
-      log.info('krb5: the PA-FOR-USER checksum does not verify for ' +
-               requesterName);
-      log.debug("Leaving resolveS4u().");
-      return refuseS4u(intent, 13, {
-        errorCode: 'STS-KRB-0004',
-        crealm: ticketPart.crealm, cname: ticketPart.cname,
-        realm: ctx.answeringRealm,
-        sname: body.sname,
-        eText: 'the PA-FOR-USER checksum does not verify. It is HMAC-MD5 ' +
-               '(not the session key\'s own checksum type) at key usage 17, ' +
-               'over the name type as four little-endian bytes then the name ' +
-               'components, the realm and the auth-package concatenated.'
+      // Who is being impersonated, as soon as the padata says so — before
+      // the checksum is verified, deliberately. A request that named
+      // somebody and then failed the integrity check is precisely the row
+      // worth having: it says who somebody TRIED to become.
+      intent.initial.presented =
+        forUser.userName.name.join('/') + '@' + forUser.userRealm;
+      intent.consumed.push({
+        kind: 'PA-FOR-USER',
+        note: 'names the user, checksummed under the requester\'s TGT ' +
+              'session key — integrity, not authorization'
       });
-    }
-    if (forUser.cksum.type !== arcfour.checksumType) {
-      log.info('krb5: PA-FOR-USER carries cksumtype ' + forUser.cksum.type +
-          ' ' +
-          'rather than -138');
+
+      // The checksum is what stops a service naming a user it did not
+      // authenticate... and note exactly what it proves: only that whoever
+      // built this padata holds the TGT's session key. It is integrity, not
+      // authorization. [MS-SFU] section 2.2.1 fixes the algorithm as HMAC-MD5
+      // at key usage 17 whatever the session key's etype.
+      const arcfour = kcrypto.etypeById(23);
+      const expected = await arcfour.checksum(ctx.sessionKey,
+        kcrypto.KEY_USAGE.PA_FOR_USER_CKSUM,
+        s4uByteArray(forUser.userName, forUser.userRealm, forUser.authPackage));
+      if (!prim.equalConstantTime(expected, forUser.cksum.checksum)) {
+        log.info('krb5: the PA-FOR-USER checksum does not verify for ' +
+                 requesterName);
+        log.debug("Leaving resolveS4u().");
+        return refuseS4u(intent, 13, {
+          errorCode: 'STS-KRB-0004',
+          crealm: ticketPart.crealm, cname: ticketPart.cname,
+          realm: ctx.answeringRealm,
+          sname: body.sname,
+          eText: 'the PA-FOR-USER checksum does not verify. It is ' +
+                 'HMAC-MD5 (not the session key\'s own checksum type) at ' +
+                 'key usage 17, over the name type as four little-endian ' +
+                 'bytes then the name components, the realm and the ' +
+                 'auth-package concatenated.'
+        });
+      }
+      if (forUser.cksum.type !== arcfour.checksumType) {
+        log.info('krb5: PA-FOR-USER carries cksumtype ' + forUser.cksum.type +
+            ' ' +
+            'rather than -138');
+      }
     }
 
     // Created on demand, exactly as at the AS exchange: a front-end may name
@@ -935,6 +1053,18 @@ async function resolveS4u(ctx) {
       'to itself on behalf ' +
       'of ' + forUser.userName.name.join('/') + '@' + forUser.userRealm + ' ' +
       '(no involvement from that account at all)');
+    // THE ISSUANCE POLICY (#186): S4U2Self is an IMPERSONATION by the service
+    // of itself. It is never refused for it — a ticket to yourself is not the
+    // privilege — but only an allowed one is FORWARDABLE, which is what
+    // S4U2Proxy's classic form then needs: the service's semantics must allow
+    // impersonation (Active Directory's TRUSTED_TO_AUTHENTICATE_FOR_
+    // DELEGATION), and the user must not be protected (NOT_DELEGATED,
+    // Protected Users).
+    const selfDecision = krb5Delegation().decide({
+      mechanism: 'self', requester: ticketPart.cname.name,
+      subject: forUser.userName.name, subjectRealm: forUser.userRealm,
+      target: ticketPart.cname.name, realm: ticketPart.crealm
+    });
     log.debug('Leaving resolveS4u(). mode=self');
     return {
       mode: 'self',
@@ -944,6 +1074,10 @@ async function resolveS4u(ctx) {
       requester: requester,
       evidencePart: null,
       transited: [],
+      // #186: whether the ticket is FORWARDABLE, the policy's answer; and a
+      // PA-S4U-X509-USER to answer in the reply.
+      forwardable: !!selfDecision.allowed,
+      x509: x509 ? { parsed: x509, sessionKey: tgtSessionKey } : null,
       // Carried out to handleTgsReq(), which records it once the ticket has
       // actually been built — an act recorded here would be one this KDC had
       // decided to allow and might still fail to encode.
@@ -954,18 +1088,18 @@ async function resolveS4u(ctx) {
       // check this KDC forgot to make.
       intent: Object.assign({}, intent, {
         outcome: 'issued',
-        authorizedBy: 'nothing — S4U2Self is a request for a ticket to ' +
-                      'YOURSELF, so any account with a service ticket can ' +
-                      'make it. The privilege is S4U2Proxy, which comes next.',
-        note: requester && requester.trustedToAuthenticateForDelegation
-          ? 'The requester is flagged ' +
-            'TRUSTED_TO_AUTHENTICATE_FOR_DELEGATION, so the ticket it gets ' +
-            'back is FORWARDABLE and classic S4U2Proxy can use it as evidence.'
-          : 'The requester is NOT flagged ' +
-            'TRUSTED_TO_AUTHENTICATE_FOR_DELEGATION, so the ticket it gets ' +
-            'back is NOT forwardable. This succeeds; a classic S4U2Proxy ' +
-            'with it as evidence will fail a step later, complaining about ' +
-            'the evidence rather than about this flag.'
+        authorizedBy: selfDecision.allowed
+          ? selfDecision.authorizedBy + ' The ticket is FORWARDABLE.'
+          : 'nothing — S4U2Self is a request for a ticket to YOURSELF, so ' +
+            'any account with a service ticket can make it; the issuance ' +
+            'policy did not allow it as an impersonation, so the ticket is ' +
+            'NOT forwardable: ' + selfDecision.why,
+        note: selfDecision.allowed
+          ? 'The issuance policy allowed this impersonation, so the ticket ' +
+            'is FORWARDABLE and classic S4U2Proxy can use it as evidence.'
+          : 'The ticket is NOT forwardable. This succeeds; a classic ' +
+            'S4U2Proxy with it as evidence will fail a step later, ' +
+            'complaining about the evidence rather than about why.'
       })
     };
   }
@@ -1056,7 +1190,24 @@ async function resolveS4u(ctx) {
             []).indexOf(msgs.TICKET_FLAG.FORWARDABLE) !== -1)
   });
 
-  const target = principals.find(body.sname.name, ctx.answeringRealm);
+  // THE EVIDENCE IS THIS KDC'S OWN (#186): its PAC's ticket and KDC
+  // signatures verify with the krbtgt key. The ticket is sealed in the
+  // REQUESTER's key, so the requester can rewrite it — set its forwardable
+  // flag (CVE-2020-17049, "Bronze Bit") or forge one for anybody — and only a
+  // signature it cannot make tells the two apart. Refused in every mode.
+  const evidenceCheck = await krb5Delegation().verifyEvidence(evidencePart,
+                                                              ctx.kdcKey);
+  if (!evidenceCheck.ok) {
+    log.info('krb5: REFUSING S4U2Proxy — ' + evidenceCheck.why);
+    log.debug("Leaving resolveS4u().");
+    return refuseS4u(intent, 41, {
+      errorCode: 'STS-KRB-0176',
+      crealm: ticketPart.crealm, cname: ticketPart.cname,
+      realm: ctx.answeringRealm, sname: body.sname,
+      eText: 'the evidence ticket was not accepted: ' + evidenceCheck.why
+    });
+  }
+
   const targetName = (body.sname.name || []).join('/');
   const resourceBased = (ctx.request.padata || []).some(function (pa) {
     if (pa.type !== msgs.PA_TYPE.PAC_OPTIONS) return false;
@@ -1073,10 +1224,16 @@ async function resolveS4u(ctx) {
     }
   });
 
-  const classicAllowed = !!requester &&
-    requester.allowedToDelegateTo.indexOf(targetName) !== -1;
-  const rbcdAllowed = !!target &&
-    target.allowedToActOnBehalfOf.indexOf(requesterName) !== -1;
+  // THE TWO MECHANISMS, read off the ENTRIES since #186: classic is the
+  // front end's appAllowedToDelegateTo naming the back end, resource-based
+  // the back end's appAllowedToActOnBehalfOf naming the front end — Active
+  // Directory's msDS-AllowedToDelegateTo and
+  // msDS-AllowedToActOnBehalfOfOtherIdentity, as one set of controls for
+  // every protocol.
+  const relation = krb5Delegation().relationship(ticketPart.cname.name,
+    body.sname.name, ctx.answeringRealm);
+  const classicAllowed = relation.classic;
+  const rbcdAllowed = relation.rbcd;
 
   // Narrow the provisional type now that the two attributes have been read.
   // Classic wins where both permit it, which is what the decision below does
@@ -1093,8 +1250,8 @@ async function resolveS4u(ctx) {
   if (!classicAllowed && !rbcdAllowed) {
     log.info('krb5: REFUSING S4U2Proxy — ' + requesterName + ' may not ' +
         'delegate to ' + targetName +
-      '. Neither its own msDS-AllowedToDelegateTo nor that target\'s ' +
-      'msDS-AllowedToActOnBehalfOfOtherIdentity permits it.');
+      '. Neither its own appAllowedToDelegateTo nor that target\'s ' +
+      'appAllowedToActOnBehalfOf permits it.');
     log.debug("Leaving resolveS4u().");
     return refuseS4u(intent, 13, {
       errorCode: 'STS-KRB-0010',
@@ -1103,16 +1260,14 @@ async function resolveS4u(ctx) {
       sname: body.sname,
       eText: requesterName + ' is not authorized to reach ' + targetName + ' ' +
              'on anybody\'s behalf. Two attributes could permit it and ' +
-             'neither does: msDS-AllowedToDelegateTo ' +
-             'on ' + requesterName + ' (classic ' +
+             'neither does: appAllowedToDelegateTo (Active Directory\'s ' +
+             'msDS-AllowedToDelegateTo) on ' + requesterName + ' (classic ' +
              'constrained delegation, currently ' +
-             '[' + (requester ? requester.allowedToDelegateTo.join(', ') : '') +
-             ']), ' +
-             'or msDS-AllowedToActOnBehalfOfOtherIdentity ' +
-             'on ' + targetName + ' ' +
-             '(resource-based, currently ' +
-             '[' + (target ? target.allowedToActOnBehalfOf.join(', ') : '') +
-             ']).'
+             '[' + relation.delegatesTo.join(', ') + ']), ' +
+             'or appAllowedToActOnBehalfOf ' +
+             '(msDS-AllowedToActOnBehalfOfOtherIdentity) on ' + targetName +
+             ' (resource-based, currently ' +
+             '[' + relation.accepts.join(', ') + ']).'
     });
   }
 
@@ -1150,11 +1305,35 @@ async function resolveS4u(ctx) {
       sname: body.sname,
       eText: 'the evidence ticket is not forwardable, which classic ' +
              'constrained delegation requires. A ticket from S4U2Self is ' +
-             'forwardable only when the requesting account has ' +
-             'TRUSTED_TO_AUTHENTICATE_FOR_DELEGATION set, so this usually ' +
-             'means that flag is missing ' +
-             'on ' + requesterName + ' — note that resource-based ' +
-             'delegation would not have needed either.'
+             'forwardable only when the requesting service allows ' +
+             'impersonation (appDelegationSemantics, Active Directory\'s ' +
+             'TRUSTED_TO_AUTHENTICATE_FOR_DELEGATION) and the user is not ' +
+             'protected, so this usually means one of those on ' +
+             requesterName + ' — note that resource-based delegation would ' +
+             'not have needed it.'
+    });
+  }
+
+  // THE ISSUANCE POLICY (#186): S4U2Proxy is a DELEGATION by the front end
+  // (S) to the back end (R). The relationship above is one of its rules; the
+  // rest — a protected user, the front end's subject groups, the semantics,
+  // authority — are its too. REFUSED IN EVERY MODE, as every Kerberos refusal
+  // here is (rcbj, #186): the development fixtures make each one reachable.
+  const proxyDecision = krb5Delegation().decide({
+    mechanism: 'proxy', requester: ticketPart.cname.name,
+    subject: evidencePart.cname.name, subjectRealm: evidencePart.crealm,
+    target: body.sname.name, realm: ctx.answeringRealm
+  });
+  if (!proxyDecision.allowed) {
+    log.info('krb5: REFUSING S4U2Proxy — the issuance policy refused it: ' +
+             proxyDecision.why);
+    log.debug("Leaving resolveS4u().");
+    return refuseS4u(intent, proxyDecision.refusal === 'target' ? 13 : 12, {
+      errorCode: 'STS-KRB-0177',
+      crealm: ticketPart.crealm, cname: ticketPart.cname,
+      realm: ctx.answeringRealm, sname: body.sname,
+      eText: 'the delegation policy refused this delegation: ' +
+             proxyDecision.why
     });
   }
 
@@ -1163,9 +1342,9 @@ async function resolveS4u(ctx) {
       'as ' +
     evidencePart.cname.name.join('/') + '@' + evidencePart.crealm + ', ' +
         'authorized by ' +
-    (classicAllowed ? 'msDS-AllowedToDelegateTo on ' + requesterName + ' ' +
+    (classicAllowed ? 'appAllowedToDelegateTo on ' + requesterName + ' ' +
         '(classic)'
-                    : 'msDS-AllowedToActOnBehalfOfOtherIdentity on ' +
+                    : 'appAllowedToActOnBehalfOf on ' +
                         targetName + ' ' +
                         '(RBCD)'));
   log.debug('Leaving resolveS4u(). mode=proxy');
@@ -1186,13 +1365,14 @@ async function resolveS4u(ctx) {
     // the ticket afterwards, and the whole reason the page is worth having.
     intent: Object.assign({}, intent, {
       outcome: 'issued',
-      authorizedBy: classicAllowed
-        ? 'msDS-AllowedToDelegateTo on ' + requesterPrincipal +
+      authorizedBy: (classicAllowed
+        ? 'appAllowedToDelegateTo on ' + requesterPrincipal +
           ' (classic constrained delegation — the permission is on the FRONT ' +
-          'END and only a domain admin can set it)'
-        : 'msDS-AllowedToActOnBehalfOfOtherIdentity on ' + targetPrincipal +
+          'END)'
+        : 'appAllowedToActOnBehalfOf on ' + targetPrincipal +
           ' (resource-based — the permission is on the BACK END, and whoever ' +
-          'controls that object can set it themselves)',
+          'controls that entry can set it)') + '; ' +
+        proxyDecision.authorizedBy,
       note: classicAllowed && rbcdAllowed
         ? 'BOTH attributes permit this. Classic is what the KDC attributes ' +
           'it to, so removing the resource-based entry alone would change ' +
@@ -2108,9 +2288,12 @@ async function answerAsReq(request, fast) {
   // the design: it works no matter which service the user visits, because a
   // ticket that was never forwardable cannot be forwarded by anybody. An error
   // here would break the user's logon instead of protecting it.
-  if (wantsForwardable && client.notDelegated) {
-    log.info('krb5: ' + client.name.join('/') + ' is flagged NOT_DELEGATED ' +
-      '(account is sensitive and cannot be delegated), so its TGT is NOT ' +
+  // #186: PROTECTED is read off the client's ENTRY — stsNotDelegated /
+  // appNotDelegated, or a protected group (delegation.protectedGroups, the
+  // console roster): Active Directory's NOT_DELEGATED and Protected Users.
+  if (wantsForwardable && krb5Delegation().isProtected(client.name, asRealm)) {
+    log.info('krb5: ' + client.name.join('/') + ' is protected from ' +
+      'delegation (NOT_DELEGATED or a protected group), so its TGT is NOT ' +
       'forwardable however it was asked for');
   } else if (wantsForwardable) {
     flags.push(msgs.TICKET_FLAG.FORWARDABLE);
@@ -2122,7 +2305,11 @@ async function answerAsReq(request, fast) {
   // an OTP added is the authentication indicator below, not a flag —
   // hw-authent claims hardware, and an authenticator app is not that.
   if (preauth) flags.push(msgs.TICKET_FLAG.PRE_AUTHENT);
-  if (service.okAsDelegate) flags.push(msgs.TICKET_FLAG.OK_AS_DELEGATE);
+  // #186: unconstrained delegation is `krb5TrustedForDelegation` on the
+  // service's entry, off by default.
+  if (krb5Delegation().trustedForDelegation(service.name, asRealm)) {
+    flags.push(msgs.TICKET_FLAG.OK_AS_DELEGATE);
+  }
   // RFC 6806 section 11, on every ticket issued (encPaRepData() above).
   if (request[REQUEST_BYTES]) flags.push(msgs.TICKET_FLAG.ENC_PA_REP);
   const renewTill = wantsRenewable ? kdcTime(renewLifetimeSeconds()) : null;
@@ -3164,12 +3351,17 @@ async function answerTgsReq(request, state) {
     }
     const forwardingClient = principals.find(ticketPart.cname.name,
                                              ticketPart.crealm);
-    if (forwardingClient && forwardingClient.notDelegated) {
+    // #186: protected is the client's ENTRY's word — stsNotDelegated or a
+    // protected group.
+    if (krb5Delegation().isProtected(ticketPart.cname.name,
+                                     ticketPart.crealm)) {
       log.info('krb5: REFUSING to forward — ' +
           ticketPart.cname.name.join('/') + ' ' +
           'is sensitive');
-      const eText = ticketPart.cname.name.join('/') + ' is flagged ' +
-             'NOT_DELEGATED, so its credentials may not be forwarded. ' +
+      const eText = ticketPart.cname.name.join('/') + ' is protected from ' +
+             'delegation (stsNotDelegated or a protected group, Active ' +
+             'Directory\'s NOT_DELEGATED and Protected Users), so its ' +
+             'credentials may not be forwarded. ' +
              'Re-checked here as well as at the AS exchange, because a ' +
              'forwardable ticket issued before the flag was set would ' +
              'otherwise still work.';
@@ -3279,7 +3471,10 @@ async function answerTgsReq(request, state) {
   // of delegation.
   const s4u = await resolveS4u({
     request: request, body: body, ticketPart: ticketPart, service: service,
-    answeringRealm: answeringRealm, sessionKey: sessionKey, apReq: apReq
+    answeringRealm: answeringRealm, sessionKey: sessionKey, apReq: apReq,
+    // #186: the krbtgt key an evidence ticket's PAC signatures verify with.
+    kdcKey: { etype: krbtgtEtype,
+              key: await principals.longTermKey(krbtgt, krbtgtEtype) }
   });
   // THE ONE PLACE AN S4U REFUSAL IS RECORDED. resolveS4u() can say no twelve
   // ways and every one of them comes back through here carrying its intent, so
@@ -3304,28 +3499,31 @@ async function answerTgsReq(request, state) {
     return f !== msgs.TICKET_FLAG.INITIAL;
   });
   let flags = inherited.slice();
-  if (service.okAsDelegate &&
+  // #186: unconstrained delegation is `krb5TrustedForDelegation` on the
+  // service's entry, off by default — its tickets carry ok-as-delegate.
+  if (krb5Delegation().trustedForDelegation(body.sname.name, answeringRealm) &&
       flags.indexOf(msgs.TICKET_FLAG.OK_AS_DELEGATE) === -1) {
     flags.push(msgs.TICKET_FLAG.OK_AS_DELEGATE);
   }
 
   if (s4u.mode === 'self') {
-    // The flags come from the SERVICE's own configuration, not from the TGT: a
-    // ticket out of S4U2Self is forwardable only if the requesting account has
-    // TRUSTED_TO_AUTHENTICATE_FOR_DELEGATION. Without it S4U2Self still
-    // succeeds and returns a ticket that cannot be used as evidence for classic
-    // S4U2Proxy — which then fails several steps later for a reason that looks
-    // nothing like this flag.
+    // The flags come from the POLICY, not from the TGT (#186): a ticket out
+    // of S4U2Self is forwardable only where the issuance policy allowed the
+    // impersonation — the service allows it (Active Directory's
+    // TRUSTED_TO_AUTHENTICATE_FOR_DELEGATION) and the user is not protected.
+    // Otherwise S4U2Self still succeeds and returns a ticket that cannot be
+    // used as evidence for classic S4U2Proxy — which then fails several steps
+    // later for a reason that looks nothing like this.
     flags = flags.filter(function (f) {
       return f !== msgs.TICKET_FLAG.FORWARDABLE;
     });
-    if (s4u.requester && s4u.requester.trustedToAuthenticateForDelegation) {
+    if (s4u.forwardable) {
       flags.push(msgs.TICKET_FLAG.FORWARDABLE);
     } else {
-      log.info('krb5: ' + ticketPart.cname.name.join('/') + ' does not have ' +
-        'TRUSTED_TO_AUTHENTICATE_FOR_DELEGATION, so its S4U2Self ticket is ' +
-        'NOT forwardable and cannot be used as evidence for classic ' +
-        'constrained delegation');
+      log.info('krb5: the issuance policy did not allow ' +
+        ticketPart.cname.name.join('/') + ' to impersonate this user, so its ' +
+        'S4U2Self ticket is NOT forwardable and cannot be used as evidence ' +
+        'for classic constrained delegation');
     }
   } else if (s4u.mode === 'proxy' &&
              flags.indexOf(msgs.TICKET_FLAG.FORWARDABLE) === -1) {
@@ -3579,11 +3777,20 @@ async function answerTgsReq(request, state) {
   // which section 5.4.3 makes a MUST in a TGS reply, so that nobody can strip
   // the FAST padata and make this KDC look as if it had none.
   let replyPadata = null;
+  // PA-S4U-X509-USER is answered in the reply ([MS-SFU] 2.2.2, #186): the
+  // request's S4UUserID with a checksum under the TGT session key.
+  const x509Reply = s4u.x509
+    ? await krb5Delegation().replyS4uX509User(s4u.x509.parsed,
+                                              s4u.x509.sessionKey)
+    : null;
+  if (x509Reply && !(state.fast && provider)) {
+    replyPadata = [x509Reply];
+  }
   if (state.fast && provider) {
     const finished = await provider.finishAsReply({
       fast: state.fast, ticket: ticket, crealm: clientRealm,
       cname: clientName, replyKey: { etype: replyEtype, key: replyKey },
-      padata: []
+      padata: x509Reply ? [x509Reply] : []
     });
     replyPadata = finished.padata;
     replyKey = finished.replyKey.key;

@@ -1,6 +1,6 @@
 // @ts-check
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -333,6 +333,13 @@ function clientAddressOf(req) {
   if (!req) {
     log.debug("Leaving clientAddressOf(). No request.");
     return 'unknown';
+  }
+  // A REQUEST RELAYED FROM ANOTHER CELL (#98): the address the sending cell
+  // resolved, as it resolved it — the socket here is that cell's node, and
+  // the header was read from an authenticated peer by `cell_channel.ts`.
+  if (req.stsCellRelay && req.stsCellRelay.client) {
+    log.debug("Leaving clientAddressOf(). As the sending cell resolved it.");
+    return normalise(req.stsCellRelay.client) || 'unknown';
   }
   const peer = peerOf(req);
   const chain = forwardedFor(req);

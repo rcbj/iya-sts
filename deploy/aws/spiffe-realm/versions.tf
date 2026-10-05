@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: BUSL-1.1
 #
 # ---------------------------------------------------------------------------
 # ONE TRUST REALM'S SPIFFE PORTS ON AN ENVIRONMENT'S LOAD BALANCER
@@ -11,7 +11,7 @@
 # share state and destroying one realm's ports leaves every other's alone.
 # It is under `environment/` because that is the one prefix the deployer role
 # may write state under (foundation/iam_deployer.tf, TerraformStateObjects):
-#   terraform init -backend-config="bucket=mock-sts-terraform-state-<account>" \
+#   terraform init -backend-config="bucket=iya-sts-terraform-state-<account>" \
 #                  -backend-config="key=environment/testidp/spiffe-realm/acme.tfstate"
 # entrypoint.sh builds that key from TF_ENV and TF_REALM.
 # ---------------------------------------------------------------------------

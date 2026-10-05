@@ -59,12 +59,14 @@ termination is a call into that same module:
 | WS-Federation realms | `wsfed.cleanupTargetsFor()` | forgotten, cleanup image |
 | SAML 2.0 service providers | `saml2_sso.logoutTargetsFor()` | forgotten, LogoutRequest link |
 | Federation partners (#167) | the session's `fedPartnerSession` | the partner's own sign-out, a link or form from `federation_slo.partnerLogoutFor()` — from `/logout` in the person's browser only |
+| OAuth grants (#432) | `grant_management.ts`'s register | `grantManagement.revoke()` — the client's DELETE, performed for the person |
 | Tokens | `admin_stats.js` | `stats.revoke()` — the ONE revocation set |
 | Authorization codes | `oauth2.outstandingCodesFor()` | `oauth2.dropCode()` |
 | Pre-authorized codes | `vc_offers.preAuthorizedCodes` | deleted there |
 | Directory connections | `ldap_server.boundConnections()` | `ldap_server.dropConnectionsFor()` — the only pair here that may be answering about another PROCESS's sockets; see the LDAP bullet below |
 | Kerberos tickets | `krb5_principals.signedOutAt()` | `krb5_principals.signOut()` |
 | Wallet credentials | `oid4vc/vc_issued.js`'s register | `vcIssued.disown()` — the one row here whose end this service ENFORCES, at `/authn/wallet` |
+| GNAP grants (#432) | `gnap/gnap_revocation.ts` (`grantsHeldBy()`) | `gnapRevocation.endGrant()` — the client's section 5.4 revocation, performed for the person |
 | Everything already issued | `admin_stats.js`'s artifacts | **nothing can** |
 
 **A cache here would be a second answer to "is this still live", and the wrong
@@ -342,6 +344,48 @@ LogoutRequest links and the two CSP relaxations they need — split out of
 `resultPage()` so the page a partner's sign-out answers with fans out exactly
 as this one does; `resultPage()` calls it too.
 
+## GNAP AND OAUTH GRANTS ARE FAMILIES, AND ONE OF THEM ENDS WITH ITS SESSION (#432, 2026-10-03)
+
+**This module never named GNAP**, so a global sign-out — and everything that
+goes through `terminate()`: an account disable, an administrator's sign-out,
+risk's lockout, a cell's `revoke-subject` — left every GNAP grant and token a
+person had approved live. Two families now, each read and ended by the module
+that owns it (rule 3m):
+
+* **`gnap`** (`endOrder` 27): the live grants the person approved, each ended
+  by `gnap_revocation.ts`'s `endGrant()` — tokens revoked, the grant
+  finalized, CAEP `session-revoked` about the grant with the door's
+  initiating entity. `gnap/CLAUDE.md` argues the rest.
+* **`oauth-grant`** (`endOrder` 19, just ahead of the tokens): the Grant
+  Management register (#142). A grant outlives the tokens in it — a client
+  can name its `grant_id` in the next authorization request — so a sign-out
+  that revoked the tokens and left the grant left what a client renews from.
+  Filed by the grant's `sub` under `holderKeyOf()`, like every other row.
+
+**`endsWithSession` IS A FAMILY FLAG, AND `gnap` IS THE ONE THAT SETS IT.** A
+row of such a family whose `sessionId` is a session this act ends is ended
+with it, ticked or not — so a Revoke of one session on `/admin/sessions`, or a
+partner's sign-out (#167, `endPartnerSession()`), takes the grants approved on
+that session. That is #432's "a grant tied to an ended session ends with it",
+held to THIS module's doors: an ordinary sign-out (`authn.dropSession()`) and
+an expiry never reach here, so a person signing out of one application keeps
+the grants they gave others — the `wallet-credential` family's rule, for its
+reason. A family added later sets the flag only when its rows hang off a
+session in that sense.
+
+**`revokeGrantsOf(key, opts)` IS A PERSON'S GRANTS AND TOKENS AND NOTHING
+ELSE** — what a federation partner's `signal-revoke-grants` calls
+(`ssf/CLAUDE.md`): a SELECTIVE `terminate()` of `oauth-grant`, `token`,
+`code` and `gnap`, narrowed by `sessionIds` to what was issued on those
+sessions. **AN EMPTY SELECTION IS A GLOBAL SIGN-OUT TO `terminate()`**, so it
+answers without calling it when the person holds none of them; a signal about
+somebody holding nothing must not sign them out of everything.
+
+**`liveSessions()` HAS A FOURTH KIND OF ROW**, a `GNAP grant` (family `gnap`):
+a grant is a delegated session (`gnap/gnap_signals.ts`), CAEP already reports
+its end as `session-revoked`, and its Revoke is `terminate()` with a selection
+of one. Its rule is `SESSION_EXPIRY_RULES.gnap`: no expiry of its own.
+
 ## `liveSessions()` — the same question asked across everybody (2026-09-04)
 
 `inventoryFor()` answers *what is alice still signed into*. `liveSessions()`
@@ -358,7 +402,8 @@ acts on something other than the row it sits beside. The button therefore calls
 `terminate(key, [id])`, the same function a global logout goes through, with a
 selection of one — same audit row, same settings honoured, same refusals.
 
-**THREE OF THE TWELVE FAMILIES HAVE A SESSION AND THE OTHER NINE DO NOT**, and the
+**THREE OF THE TWELVE FAMILIES HAVE A SESSION AND THE OTHER NINE DO NOT** (four
+since #432 — a GNAP grant, above — of fourteen), and the
 distinction is the page's whole subject rather than a simplification. A session
 is state THIS SERVICE holds that makes somebody currently authenticated; a
 token, an assertion, a code and an SVID are things it has HANDED OUT, they
@@ -494,3 +539,28 @@ and a GLOBAL logout with `logout.ldapDisconnect` on sends the instruction even
 when nothing was listed and adds **`acrossCluster`** to the result and a
 sentence to `message`. `pending` and `acrossCluster` are additive; nothing that
 read the old shape loses a member.
+
+## WHAT A PERSON HOLDS IS WHAT A SIGN-OUT CAN END, AND A SET OF PEOPLE IS READ ONCE (#351, 2026-09-29)
+
+**`heldIds()` lists only terminable rows.** It listed every row, and the
+`krb5` family always has one — "no such principal in this KDC" or "this trust
+realm has no KDC", `terminable: false` — because the PAGE must say Kerberos
+was looked at. So every person held one thing; every deleted person was
+scheduled a selective sign-out that ended "0 of 1 live item(s)" and was
+audited refused (`STS-LOGOUT-0007`). A row nothing can end is not something a
+later `terminate(key, ids)` could end either, so it is not held. The page
+(`inventoryFor()`) is unchanged: it still draws the row with its reason.
+
+**`heldIdsFor(keys)` and `terminateEach(list)` are the batch forms**, and the
+single forms are a batch of one. Three families read a store that grows with
+the service rather than with the person — the sessions (`sessionsForKey()`),
+the token and artifact register (`token`, `issued`, through
+`admin_stats.holdingsOf()`, which replaced two `userDetail()` folds of the
+whole register per read) and the wallet credentials — and `withIndex()` reads
+each ONCE for every key, grouped by the same `holderKeyOf()` the per-key read
+compared with. The index lives only for the synchronous call that built it; a
+key it was not built for falls through to the unindexed read. Each
+`terminate()` in a `terminateEach()` is exactly the single one — its own audit
+row, back-channel deliveries and CAEP — and `quiet` moves its info line to
+debug for a caller that logs one line for the set (`account_state.ts`).
+

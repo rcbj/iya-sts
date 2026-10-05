@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 
@@ -190,9 +190,18 @@ function runBody(t) {
 function run(t) {
   log.debug("Entering run().");
   const listPeople = krb5PersonKeys.listPeople;
+  const listPeopleKeys = krb5PersonKeys.listPeopleKeys;
+  const describePeople = krb5PersonKeys.describePeople;
   const listServices = krb5PersonKeys.listServices;
   krb5PersonKeys.listPeople = function () {
     return PEOPLE.slice();
+  };
+  // The page reads the population and describes its slice (#352).
+  krb5PersonKeys.listPeopleKeys = function () {
+    return PEOPLE.slice();
+  };
+  krb5PersonKeys.describePeople = function (rows) {
+    return rows.slice();
   };
   krb5PersonKeys.listServices = function () {
     return SERVICES.slice();
@@ -201,6 +210,8 @@ function run(t) {
     runBody(t);
   } finally {
     krb5PersonKeys.listPeople = listPeople;
+    krb5PersonKeys.listPeopleKeys = listPeopleKeys;
+    krb5PersonKeys.describePeople = describePeople;
     krb5PersonKeys.listServices = listServices;
   }
   log.debug("Leaving run().");

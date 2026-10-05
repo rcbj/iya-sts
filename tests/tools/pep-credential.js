@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -87,7 +87,7 @@
 // USAGE
 //
 //   node tests/tools/pep-credential.js --url=https://localhost:8081 \
-//        --out=/tmp/pep-certs --subject="CN=remote-pep-1,OU=remote-peps,O=mock-sts"
+//        --out=/tmp/pep-certs --subject="CN=remote-pep-1,OU=remote-peps,O=iya-sts"
 //
 // **EVERY FLAG TAKES `=`.** `--url https://…` leaves `--url` empty and reports
 // the URL as an unknown option; this block showed that form until it was fixed,
@@ -132,7 +132,7 @@ const REPO = process.env.MOCK_STS_DIR ||
 const x509 = require(path.join(REPO, 'common', 'vendored', 'x509.js'));
 const keys = require(path.join(REPO, 'common', 'vendored', 'key_material.js'));
 
-const DEFAULT_SUBJECT = 'CN=remote-pep-1,OU=remote-peps,O=mock-sts';
+const DEFAULT_SUBJECT = 'CN=remote-pep-1,OU=remote-peps,O=iya-sts';
 
 // ---------------------------------------------------------------------------
 // The arguments. Hand-parsed for `tests/run.js`'s reason: this directory takes
@@ -364,12 +364,12 @@ async function mint(opts) {
   const issuingList = host ? await host.reserve('issuing')
     : (options.crlBase ? { url: options.crlBase + '/issuing.crl' } : null);
   const root = await issue({
-    subject: options.rootSubject || 'CN=mock-sts test Root CA,O=mock-sts tests',
+    subject: options.rootSubject || 'CN=iya-sts test Root CA,O=iya-sts tests',
     ca: true, pathLen: 1, years: 10
   });
   const issuing = await issue({
     subject: options.issuingSubject ||
-             'CN=mock-sts test Issuing CA,O=mock-sts tests',
+             'CN=iya-sts test Issuing CA,O=iya-sts tests',
     ca: true, pathLen: 0, years: 5,
     crl: rootList ? rootList.url : '',
     issuer: { certificatePem: root.pem, privateKeyPem: root.privateKeyPem,
@@ -512,7 +512,7 @@ async function main() {
 
 // Guarded so that a test can require this file for `mint()` and `trustAnchor()`
 // without it parsing arguments and writing files — the same guard
-// `xacml-pep/pep.js` and `common/worker.js` carry, for the same reason.
+// `xacml-pep/pep.js` and `common/request_worker.ts` carry, for the same reason.
 if (require.main === module) {
   main().catch(function (error) {
     process.stderr.write((error && error.stack ? error.stack : String(error)) +

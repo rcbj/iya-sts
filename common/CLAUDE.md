@@ -19,8 +19,8 @@ more than one family needs it, not because it felt general.
 | `used_assertions.js` | **EVERY RFC 7523 JWT AND RFC 7522 SAML ASSERTION ACCEPTED, SO NONE IS ACCEPTED TWICE, EVER (2026-09-13).** One history for client authentication and the grant, both profiles, per realm; persisted in every store with one and in BOTH modes; claimed atomically on postgres; spent only when the token request issues tokens. A LIBRARY (rule 3ae) with its own logger, installed by `persistence.js`. |
 | `signing_history.ts` | **EVERY SIGNING KEY A REALM HAS EVER HELD (2026-09-22, #42's follow-up)** — the record that outlives the key. `signing.retire` drops a retired key past its grace and its private half is gone; this keeps the metadata and the CERTIFICATE, so a signature captured months ago can still be read back. Append-only, never swept, and DERIVED from the key set rather than from the rotation events — see below. A LIBRARY over `realms` and `error_codes`, with `helpers` and `pki` reached lazily. |
 | `applications.js` | Every application this service has been asked about, stored in the directory under `ou=applications`. |
-| `delegation.js` | Who acted on whose behalf, through what, to reach what — eight mechanisms across three protocol families in ONE model. What HAPPENED. |
-| `delegation_policy.ts` | **WHO MAY ACT FOR WHOM AT WS-TRUST AND RFC 8693 (2026-09-23, #108)** — Kerberos's model on application entries (four attributes) and the person's `stsNotDelegated` and `stsMayAct`, decided at the act, enforced in product and recorded in development, with a deny-only XACML layer on top. Rule 3az, below. |
+| `delegation.js` | Who acted on whose behalf, through what, to reach what — twelve mechanisms across four protocol families (GNAP's two since #432) in ONE model. What HAPPENED. |
+| `delegation_policy.ts` | **WHO MAY ACT FOR WHOM, AND AS WHAT (#108; #186, 2026-10-03)** — the FACTS of a delegation or impersonation (the actor, the subject, S and R, read off the entries) for the issuance policy, which decides the semantics and the act; enforced in product and recorded in development. The settings are common to WS-Trust, RFC 8693, Kerberos and GNAP (#432). Rule 3az, below. |
 | `app_permissions.ts` | **Who MAY reach what, decided in advance** — delegated permissions between two OAuth application entries, in Microsoft Entra ID's shape. The CONFIGURED twin of the file above it, and never to be drawn as one register with it. |
 | `user_graph.ts` | ONE PERSON, END TO END: that register UNIONED with the issued one, so a picture can show every grant, flow, assertion, ticket and SVID in somebody's name beside every delegation naming them. |
 | `credential_graph.ts` | ONE CREDENTIAL, END TO END: where it came from — who held it, in whose name, to reach what — and every generation of exchange behind it, back to the issuance the line rests on. |
@@ -28,6 +28,7 @@ more than one family needs it, not because it felt general.
 | `group_claims.ts` | The groups claim, in all five claim sets at once. |
 | `pki_authoring.ts` | **THE CERTIFICATE & KEY CONFIGURATION PANE, AS A MODEL (2026-09-10)** — the parent project's *PKI / X.509* workflow: fourteen profiles, five cryptographic approaches, a subject DN, twenty-two X.509v3 extensions, PKCS#10 and four keystore formats, over the same vendored encoder. A LEAF (rule 3aa): it draws no HTML and holds no store. |
 | `pqc_support.ts` | **DOES THIS KEY PAIR USE A POST-QUANTUM ALGORITHM — ONE ANSWER (2026-09-13).** Behind the icon on `/admin/pki` and `/admin/keys`, the `pqc` member on those pages' JSON, and the mark in the certificate details dialog. It reads every spelling the two pages hold a key in — a JOSE `alg`, a key-material id, a node key type, an OID, a certificate's SubjectPublicKeyInfo — and answers one of FOUR kinds, because "PQC" is four claims: `pq` (ML-DSA, SLH-DSA), `composite` (one key with a post-quantum and a classical half), `kem` (ML-KEM, which signs nothing), and `hybrid` (a CLASSICAL key whose certificate carries an alternative post-quantum key under X.509 (2019) clause 9.8 — the key itself is not post-quantum). **The key decides, never the signature on its certificate**: an ML-DSA key under an RSA CA is marked and an EC key under an ML-DSA CA is not. A classical key is `null`. A LEAF over `pq_jose.js` and the vendored registry. |
+| `cell_transfer.ts` | **MAY A PERSON'S DATA GO WHERE THEY ARE — THE TRANSFER DECISION AS POLICY (#98 D4 and D11, 2026-09-28)** — `holdDecision()`, `serveDecision()` and `releaseDecision()`, three questions a cell puts to the ISSUANCE POLICY (`hold-session`, `serve-request`, `release-attributes`) with the facts as attributes; the built-in rule is the strict default, a realm's own policy may say otherwise, and single-cell mode asks nothing. Rule 3bu, below. |
 | `certificate_details.ts` | **ONE CERTIFICATE, EVERY FIELD, AND THE PATH IT BUILDS (2026-09-13)** — the model behind the certificate details dialog on `/admin/pki` and `/admin/crypto-metadata` and `GET /admin-api/certificates`: the tbsCertificate in RFC 5280 section 4.1's order (both signature algorithms, every RDN with its OID, each validity bound's ASN.1 time type, the key's parameters and bytes, both unique identifiers, every extension decoded) and a trust chain BUILT by matching each issuer's name AND verifying its signature, because a stored chain is a snapshot and a replaced Root has the same subject as the one it replaced. Built on the vendored inspector (`describeCertificate()`, `verifyChain()`); fingerprints are node's, and a post-quantum key is named from the PQC registry because the inspector summarises a composite by its classical half. A LEAF: it reads no caller's PEM and decides nothing about where a certificate came from — `admin-core/certificate_views.ts` does. |
 | `pki_merge.js` | **ONE CERTIFICATE AUTHORITY ROW WRITTEN BY SEVERAL NODES AT ONCE (2026-09-14, #46).** The three-way merge `keystore.js` applies under the row's lock: revocations and issued serials are unions, a CA tier or certificate slot is first writer wins, the register's CRL number adds. Pure JSON in, JSON out; a LEAF over config and bunyan. Its header argues why a merge and not a row per revocation. |
 | `pki.js` | **A CERTIFICATE AUTHORITY, since 2026-09-10 — ONE ROOT FOR THE SERVICE AND AN INTERMEDIATE PER TRUST REALM since 2026-09-11 (3w)** — Root, Intermediate, an Issuing CA per use case, and the leaves it issues (signing key pairs, TLS certificates, enrolled certificates, and since #168 a federation relationship's ENCRYPTION key pair — `issueEncryptionKeyPair()`, the signing door with keyEncipherment or keyAgreement and never digitalSignature, reached through a marker only this module can make). **And since 2026-09-11 the SPIFFE authority every X509-SVID is minted under**, which is the one Issuing CA here with room beneath it and the one door that issues WITHOUT recording (`issueUnder()`). **And since 2026-09-21 (#40) SOMEBODY ELSE'S certificates**: `verifyPathToAnchors()` — a path to a caller's trust anchors, Go's `x509.Certificate.Verify()` as SPIRE's node attestors use it, failing closed on an unhandled critical extension; since #201 a BACKTRACKING builder over the one set of RFC 5280 rules (`pathRuleProblem()`, name constraints EVALUATED — see *3w, CONTINUED: ONE SET OF PATH RULES*) — and OpenSSH certificates (`parseSshPublicKey()`, `parseSshAuthorizedKey()`, `checkSshHostCertificate()`), moved here from `spiffe/` the day they were written at rcbj's direction; their signatures are `crypto.js`'s section 8. **And since 2026-09-23 (#105) a WebAuthn attestation certificate's facts** — `attestationCertificateFacts()` (version, subject, basicConstraints, EKU, the SAN's directoryName types, the extensions' raw values, the key) and `attestationKeyIdentifier()`, the key identifier FIDO MDS lists a fido-u2f model under; a certificate with an EMPTY subject (a TPM AIK) is named by its SAN in `verifyPathToAnchors()`'s sentences, which read `x509.subject` unguarded until then. The AWS and Azure certificates SPIRE embeds for its cloud attestors are here too, GENERATED into `pki_cloud_anchors.json` (`awsIidCertificate()`, `azureImdsRoots()`). A LEAF (rule 3w): it holds no store, registers no route, and requires `config`, `crypto`, `keystore`, `realms`, `error_codes`, `cluster/cluster_capabilities`, `pkijs` and four vendored modules. |
@@ -38,6 +39,8 @@ more than one family needs it, not because it felt general.
 | `tls_client_certificates.js` | **A PERSON'S — AND SINCE 2026-09-13 AN APPLICATION'S — TLS CLIENT CERTIFICATE, AND THE GATE THAT MAKES TRUSTING THE SERVICE ROOT SAFE (2026-09-13).** Issues a `clientAuth` leaf from the realm's `tls-client` Issuing CA through `pki.certify()` (so OCSP, the CRL and `/admin/pki`'s revocation pane know it), packages it as a password-protected PKCS#12 and PEM files through the vendored exporter, and revokes one only among the holder's own. **And `identityOf()`**, which every door that turns a verified client certificate into an identity asks — see *3ag* below. A LIBRARY: it registers nothing. |
 | `certificate_subject.js` | **RFC 8705 SECTION 2.1.2's FIVE CERTIFICATE SUBJECT PARAMETERS, READ AND COMPARED (2026-09-13)** — an RFC 4514 DN compared as a name (types, OIDs, escapes, caseIgnoreMatch, a multi-valued RDN in any order), the four subjectAltName kinds off node's `X509Certificate` (a host name without case, an IP by value, an email's domain without case, a URI exactly), and the grammar a registration may hold. `applications.js` asks it what may be written and `oauth-oidc/client_auth.js` whether a certificate matches. A LEAF over `helpers.js`. |
 | `realm_chooser.ts` | **WHICH REALM TO SIGN IN THROUGH (2026-09-14, #32).** A GET of exactly `/admin` or `/portal`, in the default realm, with no session and realms defined, asks which realm first — a list in development and a text box in product (`mode.listsRealmsBeforeSignIn()`) — and `?realm=<id>` redirects to that realm's surface, BUILT from the registry and never echoed. A LIBRARY both surfaces call from their own gate, so they cannot ask differently; `admin-ui/CLAUDE.md` 8d. |
+| `access_limits.ts` | **WHAT A RIGHT'S LIMITS MEAN (#432 phase 5, 2026-10-03).** A catalogue type's `limits` schema says a limit's shape; this static utility class says what its six meaningful members mean — `amount` with its `currency`, `count`, `receiver`, an ISO 8601 repeating `interval`, a `window` — to the three parties that must agree: `authorization_details.conformance()` (RFC 9396 and GNAP alike), the GNAP approval page that lets a person LOWER a limit (`raised()`, member by member; a shorter period is a raise), and the resource server counting against it (`periodAt()`, amounts in millionths as BigInt). A leaf: no route, no store. `gnap/CLAUDE.md`, *Ownership and limits*. |
+| `limits_form.ts` | **A LIMIT AS A FORM A PERSON CAN LOWER (#432 phase 5).** The controls under each right or detail carrying `limits`, and the reading back that accepts only lower values and values still meeting the type: one static utility class for GNAP's approval page, `/portal/ciba`'s absent-owner approvals and OAuth's consent screen, so the three cannot draw or judge a limit differently. In `common/` because two protocol directories read it. |
 | `account_state.ts` | **A DISABLED ACCOUNT — THE ONE PLACE ONE IS DISABLED, ENABLED AND ASKED ABOUT (2026-09-17).** `pwdAccountLockedTime` on the person's entry, written by the console's Disable button, `POST /admin-api/users/disable` and SCIM's `active: false` alike; a disable ENDS everything the person holds through the same global logout. A LIBRARY (rule 3at) that finds `logout/logout.ts` in `require.cache` and never requires it. |
 | `outbound_tls.ts` | **WHETHER AN OUTBOUND REQUEST MAY BE PLAIN HTTP, AND WHETHER THE CERTIFICATE OF WHOEVER ANSWERS IS VERIFIED (#171, 2026-09-23)** — one policy for GNAP's push finish, SSF push, federation's back channels (and every requester that borrows them) and the XACML nudge, each handing in its three settings and two codes. A static utility class. See *`outbound_tls.ts`* below. |
 | `lingering_close.js` | **AN ANSWER SENT BEFORE AN UPLOAD HAS ALL ARRIVED, CLOSED WITHOUT A RESET (2026-09-26).** `arm(req, res)` in place of `res.set('Connection', 'close')`: after the answer is flushed the socket half-closes and discards what the client is still sending (until it closes, 5 s idle or 30 s), instead of node's immediate destroy — which, with unread data in the buffer, sends a TCP RESET that throws away the answer the peer had not read. The risk upload routes and `request_pool.js`'s early-answer path use it, and **since 2026-09-27 `request_worker.ts` arms it for every dispatched request**: the front asks each for `Connection: close` (#77), so any early answer — a refusal, a 404, a sign-out with no session — closed a socket the front was still writing, and the answer was lost to `write EPIPE` and a 502 (`STS-WORKER-0030`; 17 in 2000 races measured, none armed). A LEAF over `config`. |
@@ -55,7 +58,8 @@ UNGUARDED and would die with `MODULE_NOT_FOUND` naming a path nobody typed, and
 the eleven guarded readers would quietly fall back to `info`. So the variable is
 made absolute once, in place, before anything reads it. Five callers require it
 first and between them cover every way this service is loaded — `server.js`,
-`worker.js`, `request_worker.ts`, `config.js` and `helpers.js` — and it is
+`request_worker.ts`, `config.js` and `helpers.js` (and `worker.js` until #363
+removed it) — and it is
 idempotent, so all of them calling costs nothing. Those counts are from
 2026-08-23; on 2026-09-16 nineteen modules read the file directly and sixteen of
 them are VENDORED (the `common/vendored/` modules and the Kerberos codec copies)
@@ -593,6 +597,100 @@ external references (this service fetches nothing a signed document names),
 XSLT, and the Decryption Transform. `tests/w3c_xmlsec.js`'s `EXCEPTIONS`
 names each.
 
+## `crypto.js` SECTION 4a: POST-QUANTUM AND HPKE KEY ESTABLISHMENT (#82, 2026-09-27)
+
+**JWE had RSA-OAEP and ECDH-ES only, so every encrypted token this service
+sent was harvest-now-decrypt-later material.** Section 4a of `crypto.js` adds
+two families behind the SAME two functions, `encryptJweCompact()` and
+`decryptJweCompact()`. No second JWE path exists, and a caller reaches the new
+algs by naming them.
+
+* **ML-KEM**, per draft-ietf-jose-pqc-kem-**05**. **-06 (2026-07-06) is
+  COSE-only**; the parent project's `tests/vendored/pqc.js` read -06 and
+  concluded there was no JWE binding. -05 has one: the KEM ciphertext goes in
+  `ek`, and the key comes from KMAC256 over RFC 7518's AlgorithmID ||
+  SuppPubInfo, with PartyU and PartyV left out. It is direct (`ML-KEM-768`)
+  or wraps the CEK (`ML-KEM-768+A192KW`). `priv` is the 64-octet d || z seed
+  that -06 corrected -05's "32-byte seed" to.
+* **HPKE**, per draft-ietf-jose-hpke-encrypt-22 (HPKE-0..7) and
+  draft-reddy-cose-jose-pqc-hybrid-hpke-11 (HPKE-8..16, an expired
+  individual draft and the ONLY document naming a hybrid JWE alg; X-Wing is
+  HPKE-10/11).
+  * The engine follows draft-ietf-hpke-hpke: the DHKEMs, ML-KEM, and
+    hpke-pq-05's three CG-framework hybrids, with HKDF, SHAKE and TurboSHAKE,
+    in mode_base and mode_psk.
+  * **Integrated** (`HPKE-n`) has no `enc` header, and its IV and tag are
+    empty. **Key Encryption** (`HPKE-n-KE`) is an ordinary JWE.
+
+**AN AKP KEY NAMES EXACTLY ONE ALG, AND `kemPublicKeyFor()` IS STRICT ABOUT
+IT.** A key made for `ML-KEM-768` is refused for `ML-KEM-768+A192KW` and for
+`HPKE-15`. That is draft-ietf-cose-dilithium's rule, which both KEM drafts
+apply, and jose-hpke-encrypt-22 section 10.1 argues it. `jweRecipientKeyFits()`
+is the one answer to "which of a client's keys does this alg take", and
+`recipientKey()` in `oauth-oidc/introspection_jwt.ts` asks it. That covers
+every outward encryption: ID and Logout Tokens, UserInfo, JARM and
+introspection. OID4VCI's response checks it directly.
+
+**WHERE THE PRIMITIVES COME FROM.**
+* ML-KEM is node's OpenSSL through `pq_native.js` (#363; `@noble/post-quantum`
+  until then), which takes the seed. FIPS 203's encapsulation-key modulus
+  check is made by `mlkemCheckEncapsulationKey()` here whatever the primitive
+  does.
+* Curves, AES-GCM, ChaCha20-Poly1305, HKDF and SHA-3 are node's OpenSSL.
+  KMAC256 and TurboSHAKE are `@noble/hashes`.
+* **Not the worker pool, and that was measured.** One encrypt+decrypt costs
+  RSA-OAEP-256 0.5 ms, ML-KEM-768 1.3 ms, X-Wing 3.4 ms, and
+  ML-KEM-1024+P-384 7.4 ms. The pool is for SLH-DSA's seconds.
+  `tests/jwe_pq_kem.js` prints the figures on every run.
+
+**THE REALM'S OWN KEYS ARE OFF BY DEFAULT, BY rcbj'S DECISION ON #82.** An AKP
+key in a JWKS is a key type many clients cannot parse, and some reject the
+whole set.
+* `keys.encryptionKemAlgs` (empty by default) lists the algs a realm holds a
+  decryption key for.
+* `helpers.js`'s `kemEncryptionKeysFor()` makes them lazily, adopting a key a
+  sibling made first.
+* `keystore.js` carries them as a NINTH key-set member, a LIST (`kemEncKeys`).
+  **`decideKeys()` unions that member BY ALG**: a list member was otherwise
+  joined only when the stored blob had none, so an alg added later would never
+  have been written, and would have been regenerated after a restart under a
+  different key.
+* `helpers.decryptableJweAlgs()` narrows every decryption list to the algs
+  held: discovery, registration, the request-object door and the console.
+  **Encrypting to a client needs none of this, but OFFERING it does
+  (2026-09-28)**: `keys.offerKemEncryption`, off by default per realm.
+  `helpers.offeredJweAlgs()` is the one list that discovery, registration,
+  `protectUserinfo`, OID4VCI and `/admin/crypto-metadata` read. With it off,
+  the ML-KEM and HPKE algs are not advertised and a registration naming one is
+  refused. The OpenID conformance suite rejected the widened lists (CI run
+  36415737694).
+
+**THE OTHER TWO DECISIONS.**
+* **OpenID4VP offers the X-Wing key first and the HAIP P-256 ECDH-ES key
+  second** (`oid4vp.responseEncryptionKeyAlgs`, `oid4vc/CLAUDE.md`).
+* **A refresh token's KEM key pair is DERIVED**, from the realm's
+  refresh-token secret through the KEM's own DeriveKeyPair
+  (`deriveJweKemKeyPair()`). That secret is already persisted, sealed, shared
+  and rotated, so the derived pair is too, and nothing new is stored.
+
+**WHAT HOLDS IT TO SOMEBODY ELSE'S ANSWERS** (`tests/jwe_pq_kem.js`,
+`tests/acvp_pqc.js`, `tests/wycheproof.js`):
+* all 13 of hpke-pq-05's suites;
+* the concrete hybrid KEM draft's 30 vectors;
+* the JOSE working group's 14 HPKE JWEs (HPKE-4-KE and HPKE-6-KE are not
+  applicable: -22 removed them);
+* node 24's OpenSSL ML-KEM in both directions;
+* NIST ACVP's encapsulation, seed decapsulation and key-check groups;
+* Wycheproof's `mlkem_*` and `x25519`/`x448` files.
+
+**No draft has a vector for pqc-kem-05's KMAC derivation**, so the test
+rebuilds it from the draft's text. That makes it the construction most likely
+to disagree with another implementation.
+
+**XML Encryption stays classical**: no post-quantum key transport is defined
+for it. **TLS was already post-quantum** by #212's `tls.groups`.
+`/admin/crypto-metadata` says both, surface by surface.
+
 ## `applications.js` GREW A FOURTH ATTRIBUTE ROLE, AND THE NAME IS THE ARGUMENT
 
 `declarationAttributes()` walks the `PROTOCOLS` table for an `identifier`, a
@@ -684,6 +782,60 @@ registered one**, and it does not guess — "anything a sighting could have
 written" would refuse addresses operators really did register. That half stays
 a review by hand and every surface says so. `tests/return_address_provenance.js`
 pins it, seventeen mutants caught.
+
+## `applicationFields()`: THE CATALOGUE THE CONSOLE'S FIELD GRID DRAWS (2026-09-30)
+
+One row per editable attribute the grid shows: `{ attribute, type (array |
+boolean | string), long, editable, sensitive, overrides, what, families,
+everyFamily, declaration, group }`. The type is the SCHEMA's — `multi` is a
+list — and `BOOLEAN_ATTRIBUTES` names the single-valued ones that hold TRUE or
+FALSE; `LONG_TEXT_ATTRIBUTES` the ones drawn as a textarea (a JSON document).
+A name in either table that is not a single-valued editable attribute is
+logged at load (`STS-ADMIN-0833`) and drawn as an ordinary field. Families come
+from the PROTOCOLS table (declaration attributes), a schema row's own
+`families`, or `FIELD_FAMILY_PREFIXES`; `FIELD_GROUPS` orders the sections.
+`gridExcludedAttributes()` is what the grid leaves to another control, and
+`oauthScope` is among them since 2026-10-01: it records what a client ASKED
+FOR, written by `seen()`, so the form offers nothing to type there.
+`tests/application_form_roles.js` holds it to the schema.
+
+**A CLOSED SET IS OFFERED, NOT TYPED (2026-10-01).** `ATTRIBUTE_CHOICES` lists
+every editable attribute whose values are a closed set. Each list is read from
+the constant the service checks it against: `client_auth.js`'s `METHODS`, the
+JWS and JWE tables, `GNAP_MTLS_TRUSTS`, the GNAP settings' own enums and
+`federation.MECHANISM_IDS`. `applicationFields()` hands each row its
+`choices`, and the grid draws a single value as radios and a list as
+checkboxes. Seven of them had no check at a console or API write until this
+change (`CHOICES_CHECKED_HERE`), so `choiceProblem()` refuses a value outside
+them at update and create (`STS-REG-0203`). The rest already have a validator
+that says more. `oauthGrantType` and `oauthResponseType` are not on the list,
+because they are an open record of what a client was seen doing.
+
+**A GENERATED SECRET SETS ITS METHOD.** `regenerateClientSecret()` (and so
+Regenerate and Rotate) writes `client_secret_basic`, RFC 7591's default, where
+the entry names no `oauthTokenEndpointAuthMethod` or names `none`. The create
+page's Generate Secret fills the same value into the form. A method somebody
+chose is left alone.
+
+## `ssfSettingFor()` AND THE `strictOverride` ROWS (2026-10-01)
+
+Twenty `ssf*` application attributes override a `caep.*`, `risc.*` or `ssf.*`
+setting for the Shared Signals streams that application owns
+(`ssf/CLAUDE.md`, *A receiver application's streams*, argues which and why).
+`ssfSettingFor(principal, key)` answers `{ value, source: 'application' |
+'setting', application }`, finding the owner by identifier or
+`ssfReceiverId` through the same cached lookup `ssfAllowedEventsFor()` uses,
+and parsing the stored text with `config.parseAs()` and `mode.inForce()`.
+`ssfOverrideRows()` lists them.
+
+**THEY ARE THE FIRST OVERRIDE ROWS REFUSED AT THE WRITE.** The older ones
+(`saml2SignAssertion` and the rest) warn when a stored value does not parse and
+let the setting decide; a row carrying `strictOverride: true` is refused at a
+create and an update instead (`strictOverrideProblem()`, `STS-REG-0202`), and a
+reason language must also be a BCP 47 tag. A value an `ldapmodify` wrote that
+does not parse is still read as the setting, with `STS-REG-0025` logged. They
+are `families: ['ssf']` and `'set'` in `EDITABLE`, so the field grid draws them
+in its Shared Signals group and `update-fields` writes them.
 
 ## `appHomePageUrl`: THE ONE URL ON AN APPLICATION ENTRY THAT IS FOR A PERSON
 
@@ -794,153 +946,93 @@ it vouches for that it does not serve (the parent debugger in a test stack).
 **`tests/cors.js`** drives the decision over HTTP through the real middlewares;
 nothing drives it against the running container yet.
 
-## `worker.js` and `worker_pool.js`: the computation that must not run here
+## `pq_native.js`: the computation that must not run here, on libuv's thread pool (#363, 2026-09-30)
 
-Node runs this service's six listener families on ONE THREAD, so a synchronous
-computation does not slow it down, it STOPS it. Post-quantum signing is that
-computation — stalls of 14.6, 15.4, 17.8 and 23.3 seconds were measured on
-2026-08-29 — and the cross-cutting argument and the table of those stalls are
-immediately below, moved from the root `CLAUDE.md`'s *One listener process, N
-stateless workers*. Everything else about the pool is here, including the
-five things to know, which used to be over there.
+**This service is one node process and it owns every listener** — the express
+app (on the main port and on the plain-HTTP revocation port), the KDC on TCP
+and UDP 88, the Kerberos service on 8888, the LDAP directory, the gRPC
+surfaces and the embedded debugger's listener — and node runs all of them on
+ONE THREAD, so a synchronous computation does not slow it down, it STOPS it.
+**A KDC that does not answer looks from the outside exactly like a KDC that is
+not there.**
 
-**This service is one node process and it owns six listener families** — the
-express app (on the main port and on the plain-HTTP revocation port), the KDC
-on TCP and UDP 88, the Kerberos service on 8888, the LDAP directory, two gRPC
-surfaces and the embedded debugger's listener. (The two HTTPS endpoints on 8443
-and 9443 were the sixth until they were deleted on 2026-09-16.) Node runs all
-of them on ONE THREAD, so a synchronous computation does not slow this service
-down, it STOPS it.
+Post-quantum signing was that computation. On `@noble/post-quantum`, the
+JavaScript implementation this service used until #363, stalls of 14.6, 15.4,
+17.8 and 23.3 SECONDS were measured on 2026-08-29 (two SLH-DSA-SHAKE-128s
+signatures and two composite verifications), and from 2026-08-30 to #363 the
+answer was `common/worker_pool.js`: a pool of forked node processes, each a
+whole runtime of about 90 MB, running a job table of four leaf computations
+(`pq.sign`, `pq.verify`, `pq.generate`, `scrypt.derive`). Every request
+worker forked one of its own (#347 turned that off by default). #339 measured
+what that cost a node in memory.
 
-Post-quantum signing is that computation, and until 2026-08-30 it ran on that
-thread. Stalls measured on 2026-08-29 while the parent project's suite ran:
+**#363 REMOVED THE POOL, AND THE ANSWER IS NATIVE CODE ON LIBUV'S THREADS.**
+Node 24 is built on OpenSSL 3.5, which implements ML-DSA (FIPS 204), SLH-DSA
+(FIPS 205) and ML-KEM (FIPS 203) in C. `common/pq_native.js` is those three on
+node's crypto, in `@noble/post-quantum` 0.4.1's shape (argument order
+included), so `pq_jose.js`, `crypto.js`, `vendored/pqc.js` and
+`vendored/pqc_x509.js` each changed a require and not their callers. Measured
+in the service image (node 24.16, OpenSSL 3.5.6):
 
-| Stall | Operation |
+| Operation | Native |
 |---|---|
-| 23.3s | a composite `verify()` |
-| 17.8s | a composite `verify()` |
-| 15.4s | `signJwtAs()` SLH-DSA-SHAKE-128s |
-| 14.6s | `signJwtAs()` SLH-DSA-SHAKE-128s |
+| ML-DSA keygen / sign | 1-2 ms / ~1 ms |
+| ML-KEM keygen | 0.1-0.3 ms |
+| SLH-DSA-SHA2-128s sign | 234 ms |
+| SLH-DSA-SHAKE-128s sign | 637 ms |
 
-For those seconds this service answered nobody, and **a KDC that does not answer
-looks from the outside exactly like a KDC that is not there** — which is why not
-one of the failures they caused named one. They were a Kerberos reply that never
-came, a Populate button never drawn, a login screen that never arrived, and a
-refresh request whose socket this service closed on its way back out. The parent
-project marked two of its jobs `EXCLUSIVE` to work around it (its issue #268)
-and this is what that marking was interim to.
+The SLH-DSA `s` sets are slow by design, in C too, so the `*Async` doors
+(`pq_jose.signAsync()` / `verifyAsync()` / `generateAsync()`, and
+`crypto.hashSecretAsync()` / `verifySecretAsync()` for scrypt) run on
+**libuv's thread pool** through node's own asynchronous crypto
+(`crypto.sign(..., callback)`, `generateKeyPair()`, `crypto.scrypt()`):
+native threads, no second V8 heap, no process hop, no key or signature
+serialised across a channel. A 662 ms SLH-DSA signature let the event loop
+tick 65 times while it ran. libuv's pool has four threads unless
+`UV_THREADPOOL_SIZE` says otherwise, and it is shared with node's own file
+and DNS work.
 
-**The design is one front process and N stateless children.** This process keeps
-every socket AND ALL THE STATE; a child is handed everything it needs in the job
-and hands back everything it produced.
+**Five things to know before touching it:**
 
-**Workers hold no state, and that is load-bearing rather than a
-simplification.** The state here is read and written ACROSS sessions, not within
-one: `operatorConfig`, `realms`, the KDC `replayCache`, `digestNonces` /
-`hobaChallenges` / `hobaSeen`, `principals`, the SPIFFE registry, and the tokens
-this service mints — minted on one worker and introspected from another. Split
-N ways those fail SILENTLY: replay detection that stops detecting, a config
-change that lands on one worker of four, an introspection 404 for a token that
-exists. Session affinity narrows that window; it does not close it. So nothing
-is split, and **two workers can never disagree about anything because neither
-remembers anything.**
+1. **THE KEY FORMS ARE THE STANDARDS', UNCHANGED**, which is what made this a
+   drop-in for keys product mode had already stored. Checked against
+   `@noble/post-quantum` before it was removed: from the same 32-octet ML-DSA
+   seed, 64-octet ML-KEM seed (d || z) or SLH-DSA secret key, OpenSSL derives
+   the same public key, and each verifies the other's signatures and
+   decapsulates the other's ciphertexts. `secretKey` is the EXPANDED key for
+   ML-DSA and ML-KEM, exactly as noble returned it; the seeds stay the stored
+   form (RFC 9964 section 3.2, pqc-kem section 8).
+2. **HEDGED, ALWAYS.** OpenSSL signs FIPS 204/205's hedged variant — the one
+   both standards recommend — and node has no switch. `pq_jose.js`'s
+   `deterministic` option (#203), which existed only to reproduce NIST's
+   deterministic vectors, is gone; `tests/acvp_pqc.js` and
+   `tests/wycheproof.js` verify NIST's signatures and hold the service's own
+   hedged ones to NIST's public keys instead.
+3. **THREE THINGS NOBLE HAD ARE REFUSED, NOT APPROXIMATED**: derandomized
+   encapsulation (FIPS 203 Encaps_internal with a given m — only vectors
+   passed it; `tests/jwe_pq_kem.js` and the ACVP ML-KEM groups now check the
+   receiving side), SLH-DSA key generation from given seeds, and the pre-hash
+   variants (HashML-DSA, HashSLH-DSA). Nothing in the service asked for any of
+   them; each throws naming what it is.
+4. **node's type declarations lag node.** The `raw-public`, `raw-private` and
+   `raw-seed` key formats and the PQ key types are node 24's documented API
+   but not in the `@types/node` this repository checks against, so
+   `pq_native.js` holds node's crypto as `any` and says why.
+5. **`pq_jose.js` STAYS INDEPENDENT OF THE ENGINE the PKI uses** — it builds
+   the composite construction, the AKP JWK and the traditional halves from the
+   specifications — and since #363 its lattice primitive is OpenSSL where the
+   debugger's is `@noble/post-quantum`, so the cross-check now covers ML-DSA
+   itself too.
 
-**`worker.js` is the child process AND the job table**, and it is one file for
-that reason: the table it exports is what the pool runs in THIS process when
-`workers.count` is 0, so "a pooled signature and an unpooled one are the same
-bytes" is true by construction rather than by a test that happens to pass. The
-wiring that makes a process a worker is guarded on `require.main === module`, so
-requiring this file to reach the table does not turn the requiring process into
-a worker. FOUR jobs since 2026-09-07: `pq.sign`, `pq.verify`, `pq.generate`
-and `scrypt.derive`. Each is
-**synchronous on purpose** — blocking is what a worker is for, and a table of
-promises would invite a second job onto a process that is already computing,
-which does not make it finish sooner and makes the pool's idea of "least loaded"
-a fiction.
+### scrypt is the other slow thing, and it is on libuv's thread pool too
 
-**`worker_pool.js` is fork, route, restart and drain**, and four of its
-decisions are worth knowing before changing any of them.
-
-* **The pool is lazy and re-read per job.** Nothing is forked until the first
-  post-quantum job, which is what keeps every in-process loader of this tree —
-  the parent project's Kerberos jobs, `npm test`, `env/generate_defaults.js` —
-  free of children they would never use. Re-reading `workers.count` on every
-  call is what makes it genuinely runtime rather than runtime-in-the-table.
-
-* **A worker is REFERENCED only while it is owed an answer, and BOTH halves have
-  to be** — the child process handle and the IPC channel. This is the one that
-  cost an afternoon: with the process handle left unreferenced, node drained its
-  event loop the instant a worker was SIGKILLed, so the `exit` that fails that
-  worker's jobs was never delivered and the promise never settled. It looked
-  like a hang, and it was **LOG-LEVEL DEPENDENT** — at `debug`, bunyan's writes
-  to a piped stdout were themselves enough to hold the loop open, so the same
-  code passed at one level and hung at another.
-
-* **A worker that dies FAILS its jobs, with a sentence.** A promise nobody
-  settles is a request that hangs, which is the symptom this whole module
-  exists to remove. The replacement is forked by the next job rather than
-  immediately, and after `QUICK_EXIT_LIMIT` short-lived exits in a row the pool
-  **gives up on children and computes here** — a child that cannot start is a
-  broken `CONFIG_FILE` or a machine out of memory, and forking it forever would
-  turn a service that works slowly into one that does nothing but fork. One
-  finished job resets the count.
-
-* **Affinity is a preference and never a correctness requirement.** A worker
-  remembers nothing, so forgetting a session costs a re-route and nothing else —
-  which is why the map is capped and drops its oldest entry rather than growing
-  for as long as a test suite mints sessions.
-
-**Requiring `worker_pool.js` is what arms `pq_jose.js`.** The reference is
-handed down from the foot of that file, because the pool requires `worker.js`
-which requires `pq_jose.js` and a require back up would close a cycle (rule 2).
-The side effect is the point, and it is the shape rule 1 had until #50's R1 —
-requiring a protocol module was what registered its routes (it still is for the
-JavaScript ones; a converted module now waits for `common/protocol_stack.ts` to
-call its `registerRoutes(app)`). **A worker is never armed**,
-because a child requires `worker.js` and `worker.js` does not require the pool.
-
-`common/crypto.js` is what requires it, because that is the module that routes
-an `alg` to `pq_jose.js` in the first place. `crypto.js` gained
-`signJwsAsync()`, `verifyCompactJwsAsync()` and `verifyJwsAsync()` beside their
-synchronous namesakes rather than in place of them: every other caller in this
-service verifies RS256 in microseconds and has nothing to gain from a promise.
-`verifyCompactJws()` was split into `prepareVerification()` / `verifyBytes()` /
-`finishVerification()` so that both entry points run the same reading of the
-token and refuse in the same ORDER — a token whose `alg` is not in the caller's
-list is refused for that and never for its signature, whichever was used.
-
-### `scrypt.derive` is the fourth job and the first that is not post-quantum (2026-09-07)
-
-It earns its place on the same measurement the other three do, with a different
-shape. `crypto.js` sets scrypt's N to 2^15 deliberately, so **one password hash
-or one verification measured 68ms on this machine** — and for those 68ms this
-process answers nobody: not the next HTTP caller, not the KDC on port 88, not
-the LDAP socket. That is not the 14.6 seconds an SLH-DSA signature costs, and it
-is paid FAR more often: **once per authentication, in five protocols** — the
-sign-in screen, an LDAP bind, SCIM Basic, WS-Trust and the portal's password
-form — rather than on the few signatures a client points at a post-quantum
-algorithm.
-
-Measured with ten hashes back to back, with a 5ms heartbeat running: the
-synchronous path took 616ms wall and **the event loop ticked zero times**; the
-pooled path took 154ms and it ticked 29. The wall-clock difference is the five
-workers computing at once; the tick count is the whole point.
-
-**THE JOB IS A PRIMITIVE AND HOLDS NO POLICY, AND THAT IS WHAT LETS IT BE THERE
-AT ALL.** `crypto.js` remains the one place this service decides the cost
-parameters, the stored form, how it is parsed and how the comparison is made,
-and NONE of that is in `worker.js`. Every parameter travels in the job, exactly
-as `pq.sign` is handed the key it is to use.
-
-**The reason it must be that way round is a hard constraint rather than
-tidiness.** `crypto.js` requires `worker_pool.js` — that require is what arms
-the pool — so a worker that required `crypto.js` back would reach the line at
-the foot of `worker_pool.js` and **start forking children of its own**. So the
-derivation is written out in `worker.js` against node's own crypto, which that
-file may require freely because it is a leaf. It is also why `crypto.js` hands
-the pool this job DIRECTLY rather than through `pq_jose.js`: a scrypt
-derivation is not a JOSE operation, and routing it there would have put a
-password in a file about post-quantum signing.
+`crypto.js` sets scrypt's N to 2^15 deliberately, so **one password hash or
+one verification measured 68ms on this machine** — paid **once per
+authentication, in five protocols** (the sign-in screen, an LDAP bind, SCIM
+Basic, WS-Trust and the portal's password form). The async doors compute it
+with node's `crypto.scrypt()`, on libuv's thread pool; a recovery code's ten
+comparisons go in parallel there. `crypto.js` remains the one place that
+decides the cost parameters, the stored form and the comparison.
 
 ### The cost of a NEW hash is a setting, and nothing already stored moves (2026-09-12)
 
@@ -950,9 +1042,9 @@ the NEXT hash is written under; the constants are the defaults and N's floor is
 thing this file must never do is write a hash cheaper than it promises. N is set
 as its logarithm because scrypt accepts only a power of two. **Every stored hash
 keeps verifying** — `$scrypt$N$r$p$salt$hash` names its own parameters, which is
-why the stored form was made self-describing — and the worker-pool job is handed
-the parameters read ONCE, so the encoded value always names the cost the
-derivation really used. `tests/password_policy.js` pins both halves.
+why the stored form was made self-describing — and the async door reads the
+parameters ONCE, so the encoded value always names the cost the derivation
+really used. `tests/password_policy.js` pins both halves.
 
 ### The four scrypt functions are one implementation with two doors
 
@@ -976,114 +1068,9 @@ file exists to prevent: `verify()` is the one place a presented password is
 checked, and two copies of "when do we say no" would eventually say it in two
 different sets of circumstances.
 
-**THE SYNC DOORS ARE KEPT AND ARE NOT DEPRECATED.** `workers.count = 0` is a
-supported configuration, the parent project loads this tree in process, and a
-caller that cannot be made asynchronous is better off blocking than wrong.
-
-**WHAT IS NOT DONE YET, SAID PLAINLY: no protocol surface calls the async door.**
-Eleven call sites still reach the synchronous one — `scim/scim_auth.ts`,
-`authn/authn.ts`, `ldap/ldap_server.js`, `ws-trust/wstrust.ts`, `portal/portal.ts`
-(three) and `admin-ui/admin.ts` (four) — and every one of them needs its
-enclosing handler chain made asynchronous first. That is not incidental: it is
-the same prerequisite the whole move-request-processing-to-workers plan needs,
-so it is phase 1 of that plan rather than eleven separate conversions, and
-converting some of them now would leave one policy behaving two ways across
-five protocols.
-
-### Five things to know before touching any of it
-
-**These moved here from the root `CLAUDE.md` when that file was broken up.** The
-root keeps what is genuinely cross-cutting — that this process owns six listener
-families on one thread, and the stalls that measured — and this is the rest.
-
-1. **NOTHING IS FORKED UNTIL THE FIRST POST-QUANTUM JOB.** A process that never
-   signs one never pays for a pool, which is what keeps the parent project's
-   in-process Kerberos jobs, this repository's own `npm test` and
-   `node env/generate_defaults.js` free of children they would never use and
-   would then have to wait for. It also makes `workers.count` genuinely runtime:
-   the pool is reconciled with the setting on the NEXT job, so raising it forks
-   the difference and setting it to 0 drains the pool and computes here.
-
-2. **`workers.count = 0` IS A SUPPORTED CONFIGURATION AND PRODUCES THE SAME
-   BYTES.** The pool runs the SAME job table in this process — `worker.js`
-   exports it, and the child wiring below it is guarded on
-   `require.main === module` — so "a pooled signature and an unpooled one agree"
-   is true by construction rather than by a test that happens to pass. Nine of
-   the eleven algorithms sign deterministically and `tests/worker_pool.js`
-   asserts byte equality for those; the three composite ECDSA ones cannot be
-   equal (node's ECDSA is randomized, and it must be) and are held to
-   cross-verification instead.
-
-3. **REQUIRING `common/worker_pool.js` IS WHAT ARMS `common/pq_jose.js`.** The
-   pool requires `worker.js`, which requires `pq_jose.js`, so pq_jose.js cannot
-   require the pool back without closing a cycle (rule 2) — the reference is
-   handed DOWN, from the foot of worker_pool.js. That also means **a worker
-   process is never armed**, because a child requires worker.js and worker.js
-   does not require the pool: `signAsync()` inside a worker computes in the
-   worker, which is what a worker is for and what stops a child forking a pool
-   of its own. `common/crypto.js` filled that slot for one afternoon, and a
-   process that required pq_jose.js WITHOUT crypto.js then computed everything
-   in itself while reporting no pool and no error.
-
-4. **FOUR CALL PATHS ARE ASYNCHRONOUS BECAUSE OF THIS AND NO OTHERS.** They are
-   the four a CLIENT can point at a post-quantum algorithm: the ID Token
-   (`id_token_signed_response_alg`), the signed UserInfo response
-   (`userinfo_signed_response_alg`), a `private_key_jwt` client assertion, and
-   an OID4VCI proof of possession — plus the JWKS, which is where a realm's
-   eleven post-quantum keys are GENERATED. Everything else still signs and
-   verifies synchronously on purpose: an RS256 signature is microseconds, and an
-   IPC round trip to save that would be a cost with no saving. The token
-   endpoint and `issueAuthorizationResponse()` became `async` as a consequence,
-   and the token endpoint is now registered through **a wrapper that catches** —
-   express 4 does not look at what a handler returns, so an `async` handler's
-   throw is an unhandled rejection and a request that hangs where it used to be
-   a 500.
-
-5. **A REALM MAY NOT CARRY `workers.count`.** It is the first setting marked
-   `perProcess`, which is a SECOND rule beside the `realms.*` prefix rather than
-   the same one spelt twice: a pool belongs to the OS process, and one realm
-   resizing it would resize every other realm's too. Both ends go through
-   `config.isPerProcess()` — the reading end in `config.js`'s `realmFor()` and
-   the writing end in `realms.js`'s `checkRealmOverride()` — because the two
-   ends of the `realms.*` rule were written separately and disagreed within the
-   hour.
-
-**A REALM'S ELEVEN KEYS ARE MADE WHEN THE REALM IS**, and that is the pool's
-second consequence rather than a sixth thing to know about it. One of the
-eleven is expensive out of all proportion: an SLH-DSA-SHAKE-128s KEY GENERATION
-is about 5.1 of the 5.8 seconds the whole set takes, and it is one indivisible
-job that no pool size divides. That put a realm's first JWKS fetch a little
-over five seconds — and `federation.outboundTimeoutMs` is FIVE, deliberately,
-because a browser is waiting on that request.
-
-It never failed, and why it never failed is the part worth keeping: while the
-generation was SYNCHRONOUS it blocked this process's event loop, so the timer
-enforcing that budget could not fire until the keys were already made. **The
-response won a race the timeout was never allowed to run in.** The moment the
-computation moved to a worker and the loop stayed free, the timer fired
-correctly at five seconds and aborted a fetch three tenths of a second from
-finishing — one federated sign-in in the parent project's suite, reporting
-"the JWKS could not be fetched", which is a sentence about a service that was
-working perfectly.
-
-So `helpers.js` warms a realm's post-quantum keys on `realms.onChange`'s
-`create`, through `stsKeysFor.of(id)` because a watcher has no ambient realm.
-That was not affordable before — eager generation meant 5.8 seconds of a
-stopped service per realm, which is exactly why they were lazy — and it is the
-point rather than a workaround: **the pool does not merely move the cost off
-the request that pays it, it makes paying it EARLY free.** Measured: a realm
-created through `/admin-api/realms/create` answers its first JWKS in 8ms.
-
-**THE WATCHER WAS REMOVED ON 2026-08-30 AND THE PARAGRAPH ABOVE IS HISTORY.**
-Test suites create realms constantly and never sign a post-quantum token in
-them, so eager generation spent minutes of worker time on keys nobody asked
-for. `warmPqKeys()` is now called for the DEFAULT realm alone, from
-`server.js`'s `announce()`; a realm created at runtime makes its keys on first
-use. `helpers.js`'s block below `warmPqKeys()` carries the measurement.
-
-`tests/worker_pool.js` has the four contracts and the measurement that shows the
-loop is free.
-
+**THE SYNC DOORS ARE KEPT AND ARE NOT DEPRECATED.** The parent project loads
+this tree in process, and a caller that cannot be made asynchronous is better
+off blocking than wrong.
 
 ## `protocol_stack.ts`: THE REQUIRE ORDER MOVED OUT OF `server.js` (2026-09-07), AND BECAME THE COMPOSITION ROOT (2026-09-16)
 
@@ -1155,7 +1142,156 @@ predates this change by a fortnight, made for a different reason (binding can
 fail and a `require` that throws takes the process down), and is what makes a
 request worker possible at all.
 
-## `request_pool.js` and `request_worker.ts`: THE SECOND POOL, AND IT IS A DIFFERENT KIND OF WORKER
+### `lazy_module.ts`: A PACKAGE REQUIRED AT FIRST USE (#348, 2026-09-29)
+
+**Every process loads this whole stack, so a package required at a module's
+top is paid for in every request and surface worker**, used or not (#339: a
+node runs five). `LazyModule.of(what, load, log)` returns a stand-in that
+requires the package on the first property READ and forwards to it after;
+holding it, destructuring it out of a deps object or exporting it loads
+nothing, so call sites keep their shape. A load that fails is thrown to the
+reader and logged under `STS-CORE-0140` first, because it now happens
+mid-request.
+
+**Deferred, because a worker never needs them**: `@grpc/grpc-js` and
+`@grpc/proto-loader` in `spiffe/spiffe_grpc.ts` (the protos too — see
+`spiffe/CLAUDE.md`), `jsonld` in `oid4vc/vc_jsonld.ts`, and the vendored
+`bbs2023.js`, which requires `jsonld` at its top, in `vc_issuer`, `vc_did`,
+`vc_verifier` and `admin-ui/crypto_metadata`. **`helpers.js` defers
+`bbs2023.js` BY HAND** (`bbs2023Suite()`), because it is in the parent
+project's Kerberos COPY closure and a require of `lazy_module` from it would
+add a file to that closure (`kerberos/CLAUDE.md`). Together about 8 MB of heap
+and 10 MB of resident memory per process, and 250 fewer modules; the
+measurements are on #348.
+
+**Not deferred, and why** (measured in a stack that has already loaded what
+they share): `@dagrejs/dagre`, `scimmy` and `qrcode` cost under 1 MB each, and
+`oid4vc/vc_api` — required and registered in product mode only to answer 404 —
+is about 0.1 MB of its own once `jsonld` is deferred, and keeping its
+registration keeps the route list and `sts_metadata`'s drift check as they
+were. **Only a PACKAGE (or a vendored copy) with no effect on this service at
+load may be deferred**: a module of this service stays an ordinary require,
+because where its load-time effects run is the require order.
+
+`tests/lazy_requires.js` loads a request worker's order in a child and fails
+if any deferred package is in the require cache — one top-level `require` of
+it anywhere in the stack would bring it back into every worker with nothing
+else failing.
+
+### `fault_boundary.ts`: NO STARTED PROCESS EXITS OVER AN UNEXPECTED ERROR (#355, 2026-09-29)
+
+**rcbj: a worker or leader process exiting "severely impacts availability of
+the cluster … It needs to recover gracefully."** Until #355 nothing listened
+for `uncaughtException` or `unhandledRejection`, so one bug in a timer
+callback, an unlistened `'error'` event, a promise chain with no `.catch()` or
+a failing `async` Express handler (Express 4 does not see a rejection) ended
+the front process — listeners, open connections, the scheduler's leadership —
+or a worker with its requests in flight.
+
+**Two boundaries, not a `try` in every function** (rcbj chose this over
+wrapping ~14.7k functions, which would log each fault once per stack frame):
+
+* `installProcessHandlers(role, log)` — logs under `STS-CORE-0141` (uncaught
+  exception) / `STS-CORE-0142` (unhandled rejection) WITH THE STACK, and the
+  process carries on. **Installed only once a process has STARTED**: the front
+  process in `server.js`'s `announce()`, a request worker once
+  `service_state.start()` is up (a worker thread's
+  `process` events are its own, #364). A
+  failure while starting stays fatal, as it always was: a process that could
+  not come up must not present itself as one that did.
+* `guardExpress(log)` — replaces express 4.22's `Layer.prototype.handle_request`
+  and `handle_error` with the same code plus an observer on the returned
+  promise: a rejection is logged (`STS-CORE-0143`) and handed to `next()` as a
+  PLAIN 500 (the final handler writes an error's stack into the page outside
+  `NODE_ENV=production`, which the image now sets for the thrown road too —
+  the `Dockerfile` says why it is not `global.mode`). **Nothing is routed
+  when the handler already answered or already called `next()`** — the chain
+  would run twice — it is only logged. One prototype, so it covers every
+  express app in the process, the debugger's included; a Layer of another
+  shape is `STS-CORE-0144` and no guard.
+
+**Throttled per distinct fault** (kind, name, message, first frame): logged at
+occurrences 1, 2, 3 and each power of ten with the count — never a line per
+request, and no timer (a summary would be a scheduler job). `figures()` has
+the totals.
+
+**The remote PEP has its own copy of the process half** (`xacml-pep/pep.js`,
+`STS-XPEP-0033`/`0034`): its image compiles no TypeScript.
+
+**Not from `app.js`**, which is in the parent project's Kerberos COPY closure
+(`kerberos/CLAUDE.md`): `server.js` and `request_worker.ts` call the guard. (The
+computation worker that also installed it went with its pool in #363.)
+
+**What it does not change**: every existing `catch`, its line and its code.
+The AST audit that went with it (every `catch`, `.catch()` and `.then(ok,
+fail)` that neither logs, rethrows nor reads its error) found ten: two here,
+now logged (`risk/risk_failures.ts`'s ASN fallback, `scep/scep.ts`'s turn
+guard), and eight in the vendored Kerberos codecs, which are the parent
+project's to change. `tests/fault_boundary.js` holds both halves, in children.
+
+## `request_pool.js` and `request_worker.ts`: THE REQUEST WORKERS, THREADS OF THE FRONT PROCESS SINCE #364
+
+### A worker is a `worker_threads` Worker (#364, 2026-09-30)
+
+**Until #364 a request or surface worker was a forked process**: a whole node
+runtime each, which #339 measured at about 1.3 GB per process on testidp with
+five per node. **Since #364 it is a thread of the front process** — its own V8
+isolate, heap and event loop — and everything that made the design work is
+unchanged: it loads the whole stack in the same order, answers real HTTP on
+its own unix socket (so `res.send()`'s link rewriting and CSP re-check still
+run on node's real `ServerResponse`), and shares state with the front only
+through the store and its change log. Memory is not shared: a worker's heap is
+a whole second copy of the service's, which is why the default is ONE worker.
+
+What changed, and where it lives:
+
+* **The start.** `request_pool.js`'s `startThread()` is `new Worker(file,
+  { argv, env, resourceLimits })`, wrapped in the members the pool used of a
+  ChildProcess (`send`, `pid`, `connected`, `exitCode`, `kill`, the three
+  events), so the rest of the file still says "fork" and speaks to
+  `entry.child`. A thread's `process.env` is a copy taken at the start, as a
+  forked child's was, so the three `STS_REQUEST_WORKER*` markers and the
+  worker's own `STS_TLS_SERVER_*` writes are the thread's alone.
+* **The channel.** `common/worker_channel.ts` — `parentPort` in the thread,
+  the adapter's `postMessage` in the front. **`postMessage` delivers a Buffer
+  as a plain Uint8Array** (child_process's `advanced` serialisation did not),
+  so both ends REVIVE every message: SPIFFE's dispatched gRPC operations carry
+  `bytes` fields, and protobuf refuses a Uint8Array naming a field, one
+  thread from the cause.
+* **Identity.** Every thread has the process's pid. A worker is known by its
+  `threadId` — the pool table, affinity, the `sts_pool` pin cookie (still
+  numeric), `x-sts-pool-protocol-worker`, pending operations, status answers
+  — captured when the thread starts, because `threadId` reads -1 after it
+  exits. Where the pid told PROCESSES apart — the scheduler's per-process run
+  key, the claim holder on an outbound delivery or a mail, a risk row's
+  origin, the cache report — it is `WorkerChannel.processTag()`, pid AND
+  thread: in a container the front is pid 1 and the first thread's id is 1.
+* **Exits.** `process.exit()` in a thread ends the thread, so a worker's own
+  exits (stop, a lost persistence origin, a fenced write) mean what they
+  meant. `kill()` is `terminate()`. A thread receives no signal, so the unused
+  SIGUSR2 status and the `disconnect` handling are gone.
+* **Memory.** Each thread gets the heap budget as `resourceLimits`
+  (`maxOldGenerationSizeMb`) — every isolate has its own old space, so the
+  budget still divides by 1 + workers. A thread that exhausts it ends with
+  **ERR_WORKER_OUT_OF_MEMORY** and the process carries on: `STS-WORKER-0046`,
+  where it was a SIGABRT. **The kernel's OOM killer can no longer pick a
+  worker**: a container at its limit loses the whole process, so
+  `STS-WORKER-0047` is retired, and that is the argument for few threads.
+  `process.memoryUsage().rss` and `process.cpuUsage()` are PROCESS-WIDE in a
+  thread; only the heap figures are the isolate's own, which is what Node
+  Health draws per thread.
+* **The defaults (rcbj).** `workers.requestCount` 1, `workers.dispatch` `*`,
+  `workers.readYourWrite` on. `process_memory.ts`'s `requestWorkers()` is the
+  rule every reader of the count asks: the DEFAULT of one is none where the
+  store cannot coordinate (persistence.mode not postgres, or
+  persistence.coordinate off), so a development service on the memory store
+  is one thread as it always was; an operator's explicit count without
+  coordination is still refused at startup (`STS-WORKER-0024`). It is decided
+  from the settings because the heap budget divides by the same count before
+  the store is opened. `/admin` and `/portal` go to the request workers with
+  everything else; `workers.surfaceCount` above 0 starts a separate pool of
+  threads for them.
+
 
 **This moved here from the root `CLAUDE.md` when that file was broken up.** The
 family-specific halves — the directory's operations and its sockets, SPIFFE's
@@ -1174,21 +1310,25 @@ at load it requires `config_file`, `config` and `error_codes`, and `start()`
 requires `app`, `protocol_stack` and only then `service_state` — lazily,
 because loading it first made every worker fail in dispatch mode (2026-09-17),
 and the process-wide `deferToRoot()` that first fixed that broke the
-in-process suite, where several files require this module. `request_pool.js` forks `request_worker.js`, which is the COMPILED
-file and the only one in the image; a source-reading test reads the `.ts`.
+in-process suite, where several files require this module. `request_pool.js`
+starts `request_worker.js` as a thread, which is the COMPILED file and the only
+one in the image; a source-reading test reads the `.ts`.
 
-| | `common/worker_pool.js` | `common/request_pool.js` |
-|---|---|---|
-| A worker runs | a JOB TABLE — four leaf computations | THE SERVICE — the whole protocol stack |
-| Handed | everything the job needs | an HTTP request |
-| Speaks | the IPC channel, structured clone | real HTTP over a unix socket |
-| Forked | LAZILY, on the first post-quantum job | EAGERLY, before the listener binds |
-| Setting | `workers.count` (5) | `workers.requestCount` (0) |
-| Off by default | no | **yes, and nothing is dispatched until `workers.dispatch` names a path** |
+| | `common/request_pool.js` |
+|---|---|
+| A worker runs | THE SERVICE — the whole protocol stack, in a thread of this process |
+| Handed | an HTTP request |
+| Speaks | real HTTP over a unix socket |
+| Started | EAGERLY, ONE AT A TIME (#342); the listener binds once each pool's first has settled |
+| Setting | `workers.requestCount` (1; none where the store cannot coordinate) |
+| Dispatched by default | **everything (`workers.dispatch` `*`)**, where there is a worker |
 
-**The goal of the second one is one sentence: the front process should be doing
-request/response I/O and nothing else.** The first moved four computations off
-that thread; every handler still ran on it.
+(Until #363 there was a first pool, `common/worker_pool.js`, of processes
+running four leaf computations; *`pq_native.js`*, above, says what replaced
+it.)
+
+**The goal is one sentence: the front process should be doing
+request/response I/O and nothing else.**
 
 **ROUTING IS THE PART TO GET RIGHT AND THE CUT IS NOT THE OBVIOUS ONE.** It is
 **sessionless versus session-bearing**, not stateless versus stateful.
@@ -1346,6 +1486,89 @@ worker that can never start is tried three times rather than forked for ever.
 them. `tests/request_worker_replacement.js` drives the real `fork()` and
 `reap()` with a stub worker.
 
+**WORKERS START ONE AT A TIME (#342, 2026-09-29).** Each worker's start
+restores the whole store into its own heap, and `start()` forked every worker
+in the same instant. On testidp's node-a on 2026-09-28, a new task's four
+workers were SIGKILLed by the Fargate memory limit within three seconds of each
+other, twice. The node was over its limit only while they were starting. Every
+fork now goes through one gate (`queueFork()`), and replacements go through it
+too, because an OOM kill takes several workers at once. At most
+`workers.startConcurrency` workers (default 1) are between their fork and
+their first answer, and the next is forked when one settles (ready, `ready:
+false`, a failed channel, or an exit). Four decisions:
+
+* **One count for both pools.** The gate limits the node's memory, and a
+  surface worker's restore costs what a protocol worker's does. A count per
+  pool would still allow two restores at once at the default.
+* **The listener no longer waits for every worker.** `server.js` binds when
+  `start()` resolves, and `start()` resolved when every worker had settled.
+  With serial forks that is the sum of the starts, about 4 × 68 s on testidp.
+  It now resolves once the FIRST worker of each pool has settled. The queue is
+  interleaved (protocol 0, surfaces 0, protocol 1, …), and the rest start
+  behind a listener that is already answering, which routing always allowed
+  for a replacement. `STS-WORKER-0025`/`0026` still judge the whole initial
+  set, when it has settled.
+* **The start timeout is each worker's own.** It is armed in the child after
+  `begin`, so a worker waiting in the queue uses none of its time.
+* **A queued fork is dropped** when the pool is stopping or has given up. A
+  fork that throws is `STS-WORKER-0045`, and the gate moves on to the next.
+
+`stats().starts` reports the width of the gate, the number starting and the
+number queued. `tests/request_worker_replacement.js` section 5 holds it.
+
+**EVERY PROCESS HAS A HEAP LIMIT, AND A DEATH BY MEMORY SAYS WHICH KIND (#341,
+2026-09-29).** Nothing set a V8 heap limit, so each process's heap was sized to
+the machine, and a task that ran out got an anonymous SIGKILL from the kernel:
+`worker N was killed with SIGKILL`, with no code and no figure.
+`common/process_memory.ts` argues the whole design. What a maintainer needs:
+
+* **One budget for every process of the node.** `workers.heapLimitMb` when it
+  is above 0. **-1 is OFF** (rcbj, 2026-09-29: testidp runs with it while its
+  processes are larger than a derived budget): no re-exec, no flag on a worker
+  (its options are passed on unchanged), and STS-WORKER-0046 cannot occur. The
+  memory report and the OOM-kill attribution (0047) work the same. At 0 it is
+  (container limit − headroom) ÷ (1 + requestCount + surfaceCount) − 48 MiB,
+  one share per isolate (the front's and each worker thread's, #364), where
+  the headroom is 15 % and at least 256 MiB and the 48 MiB is the isolate's
+  young generation, set explicitly and taken out of the share (#366:
+  `--max-semi-space-size=16` for the front, `maxYoungGenerationSizeMb` for a
+  thread — V8's own young ceiling is 192 MiB on top of the old space, which
+  two isolates in 1 GiB could not afford). The old space is floored at 192
+  MiB. The limit is read from
+  cgroup v2 `memory.max`, then v1 `memory.limit_in_bytes`, then v1's
+  `hierarchical_memory_limit`, then the ECS task metadata endpoint. `ecs.tf`
+  sets `memory` on the TASK, so on Fargate a container's own cgroup may show
+  none. With no visible limit, nothing is set. The flag bounds the OLD SPACE;
+  V8's `heap_size_limit` adds the young generation's ceiling (192 MiB in
+  node 24).
+* **The front process RE-EXECUTES ITSELF** with `--max-old-space-size`, through
+  `process.execve()`, from `server.js` right after `config_file` (row 1a of the
+  require order). It keeps the same pid and descriptors, and works for every
+  way the image is started. `v8.setFlagsFromString()` was refused because the
+  heap is already sized by then. NODE_OPTIONS from an entrypoint was refused
+  because every child and every `node -e` would inherit it, and the compose
+  files and ECS do not go through one entrypoint. A spawning launcher was
+  refused because it doubles the processes and puts signal forwarding in front
+  of the service. An operator's own flag is left alone. With no `execve`, the
+  front runs without a limit and says so (`STS-WORKER-0048`).
+* **Each worker is forked with `execArgv`** carrying the same budget.
+* **`reap()` names the cause.** SIGABRT is V8 ending a heap at its limit
+  (`STS-WORKER-0046`; V8's own lines are just above in the log). SIGKILL while
+  the cgroup's `oom_kill` count (v2 `memory.events`, v1 `memory.oom_control`)
+  rose since the last read is the kernel's OOM killer (`STS-WORKER-0047`).
+  Either line carries the worker's last memory report, and
+  `stats().memory.exits` keeps the last twenty exits.
+* **`process.memory-report`**, a per-process scheduler job every five minutes
+  (registered in `protocol_stack.ts` beside the scheduler's page, so every
+  process lists it). It logs one line per process with the role, rss, heap
+  used and total, the heap limit, external memory and array buffers. A request
+  worker also sends its figures to the front process over the pool's channel.
+  The scheduler records the run's summary, so Monitoring → Scheduler shows
+  every process's latest figures.
+
+`tests/process_memory.js` holds it, including a real re-exec and a real heap
+exhaustion.
+
 **DISPATCH WITHOUT COORDINATION IS REFUSED, AND THE SERVICE DOES NOT START.**
 Everything else about the pool degrades — no workers means the front process
 does the work, a dead worker's requests in flight are a 502 and the worker is
@@ -1387,6 +1610,16 @@ Measured cost, three workers on one PostgreSQL store: 37ms to 43ms per read and
 30ms to 37ms per write. **It is OFF by default** because that is the behaviour
 that existed before it, and because whether the wait is worth it is a question
 about the callers rather than about the pool.
+
+**A WORKER NO LONGER ANSWERS A WRITE BEFORE IT COMMITS (2026-09-29, #351).**
+`request_worker.ts`'s header still says the worker "answers immediately" and
+announces the commit afterwards; in postgres mode the first half stopped being
+true when `cluster/cluster_barrier.js`'s rule 2 was turned on for every
+postgres process — the worker holds a writing response until its commit and
+answers 503 when it fails. The announcement and the tickets are unchanged and
+still needed: they tell the FRONT process which answered requests have landed,
+and a request whose response was held has landed by the time it arrives.
+`persistence/CLAUDE.md`, *A write is answered after its commit*, has the design.
 
 **THE BARRIER HAS A SECOND HALF — THE TICKETS — AND A 502 WEDGED IT FOR THE
 LIFE OF THE PROCESS (2026-09-11).** The generation says whether a worker is
@@ -1625,6 +1858,44 @@ minutes. rcbj asked for batch throughput balanced against everything else.
 `tests/request_batch_lane.js` pins it, four mutants caught and one equivalent
 removed.
 
+### WHAT THE POOLS COUNT, FOR MONITORING → WORKER POOLS (#327, 2026-09-28)
+
+`stats()` answered what each pool IS; #327's page (`admin-ui/CLAUDE.md`,
+`/admin/worker-pools`) also needs what has HAPPENED to it. Each pool keeps it
+beside what it counts, cumulative from the process's start and cleared only
+by the test-only `reset()`:
+
+* **`request_pool.js`: `stats().pools[].history`** — `initial` and
+  `startedAt` (what `start()` forked into the pool), `forked`, `crashed`
+  apart from `stoppedExits` (`stop()` sets `retiring`), `failedStarts`, and
+  `answered`, `answerMs`, `maxAnswerMs` and `recentMs` — a request streamed by
+  `proxy()` or an operation, from dispatch to the end of the answer, and not
+  a 502 for a worker that never answered. `recentMs` is an exponentially
+  weighted average (0.1 for the newest), because a mean since start stops
+  moving within the hour. Plus `running`, `busy`, `free`, `averageMs` and
+  `recentAverageMs` on each pool.
+
+**THE HOT PATH PAYS ONE `Date.now()` AND FOUR ADDITIONS PER DISPATCHED
+REQUEST** (`noteAnswered()`, which carries no Entering/Leaving pair and says
+why); nothing is a list, nothing grows.
+
+**AND A REQUEST WORKER IS ASKED FOR WHAT ONLY IT CAN READ.**
+`askWorkerPoolStatus(timeoutMs)` sends each ready worker one `{ poolStatus,
+id }` message; `request_worker.ts`'s `reportPoolStatus()` answers, and what
+has not answered by the bound is simply absent. (Until #363 the answer
+carried the worker's own post-quantum pool too.) It is a message and not the
+SIGUSR2 status `request_worker.ts` already answers, because a signal to a
+worker that has not installed its handler ends it and that reply overwrites
+`served` with the worker's own tally. And `/admin/worker-pools` with its API
+are in `NEVER_DISPATCHED`: only the front process has the request pools.
+
+**THE QUESTION CARRIES EACH WORKER'S OWN MEMORY (#329).** Monitoring → Node
+Health asks it too: `{ poolStatus, id, error, memory, cpu, uptimeS }` — the
+worker's `process.memoryUsage()`, `process.cpuUsage()` and uptime, which
+nothing outside the process can read (the heap is in no `/proc` file). Node
+Health's paths are in
+`NEVER_DISPATCHED` for the same reason as Worker Pools'.
+
 ### A RATE-LIMIT COUNT IS WRITTEN DOWN EVERY TIME IT MOVES (2026-09-14)
 
 `websecurity.ts`'s buckets are a persisted `sharedMap()`, and `attempt()` set a
@@ -1729,6 +2000,21 @@ name before the deferred step runs from losing the session they have.
 names no entry is ended through `dropSession()` the next time it is presented,
 which is how a delete made on another node ends the sessions this node holds.
 `tests/account_delete.js` holds all three.
+
+**SEVERAL DELETES ARE ONE BATCH (#351, 2026-09-29).** `directoryDeleted()` is
+`directoryDeletedMany()` with one change, and the directory hands a batch over
+whole (`ldap/CLAUDE.md`, *Deleting people in bulk*): what everybody in it held
+is read with ONE read of the session, token and wallet stores
+(`logout.heldIdsFor()`), a person holding nothing is dropped there and costs
+nothing after, and the rest are ended later with one index
+(`logout.terminateEach()`), in chunks of 500 a macrotask apart. Each person's
+sign-out is still their own act — their own `logout.selective` row, CAEP and
+Logout Tokens — and the batch logs ONE line. Until then every deleted person
+was scheduled a selective sign-out whether they held anything or not, because
+`heldIds()` listed the `krb5` family's "no such principal" row, which nothing
+can end: a SCIM Bulk of a hundred deletes on testidp logged a hundred
+`STS-LOGOUT-0007` "ended 0 of 1 live item(s)" refusals, a quarter of a second
+each. `tests/directory_bulk_delete.js` holds the batch and the root cause.
 
 ## `realms.js`: several logical copies of this service, in one process
 
@@ -2722,6 +3008,30 @@ with `Cannot find module` naming a file the operator never mentioned.
    act is one row at this funnel**, and a caller that starts a session must not
    also record the authentication that started it.
 
+   **A REVOCATION IS KEPT UNTIL ITS TOKEN WOULD HAVE EXPIRED, AND NO LONGER
+   (#345, 2026-09-29).** `revokedJtis` holds `{ exp }` — the token's `exp`
+   in epoch seconds, 0 where nobody stated it — where it held `true`; a row
+   from before reads as "not stated". `revoke()` takes the `exp` as a fourth
+   argument, and otherwise from the register's record. The doors that hold
+   the claims pass it: `/oauth2/revoke`, the refresh grant's rotation and
+   superseded grant, Grant Management's `revokeIssued()` (from its row), and
+   GNAP's three. A family revoked by a replay or a withdrawn consent passes
+   jtis only and relies on the record, which the register's 5,000 cap may
+   already have forgotten — those are dated by the cap, and the family is
+   refused by id anyway (`oauth2_bcp.js`'s `revokeFamily()`).
+   - **The hourly `oauth2.expired-token-purge` drops it** at `exp` plus the
+     clock skew, with or without its record. Before, a revocation whose
+     record had been forgotten was kept for ever. A CLUSTER job, although
+     the ticket asked for a per-process one: the store is replicated, so a
+     delete on the leader reaches every process, and a per-process job would
+     journal one delete per process (`cluster/CLAUDE.md`'s job table).
+   - **`oauth2.maxRevokedJtis` (100,000 per realm) bounds it at insert**
+     (`makeRoomForRevocation()`): the expired revocations go first, free;
+     only when there are none is the one whose token expires SOONEST
+     forgotten — the shortest window in which a revoked token works again —
+     with an undated one last, and `STS-OAUTH-0787` logged at most once a
+     minute. `tests/revoked_jti_expiry.js` holds all three.
+
 3c. **`audit.js` is a library too, it sits BESIDE `admin_stats.js` rather than
    under it, and one dependency into it is inverted.** `admin_stats.js` answers
    "how much"; this answers "what, when, and to whom", as a list of discrete
@@ -2875,7 +3185,7 @@ with `Cannot find module` naming a file the operator never mentioned.
 
    A library that RETURNS a refusal to a caller that sends it (a verdict, an
    `{ ok: false }` action result) attaches the code under the same
-   `Symbol.for('mock-sts.errorCode')` that `mark()` uses, NON-ENUMERABLY, and
+   `Symbol.for('iya-sts.errorCode')` that `mark()` uses, NON-ENUMERABLY, and
    the caller marks `errorCodes.codeOf(result) || '<its own fallback>'`. The
    symbol is what makes that safe: several of those results are serialised
    whole to `/admin-api` clients, and an enumerable `errorCode` member would
@@ -2937,6 +3247,29 @@ with `Cannot find module` naming a file the operator never mentioned.
    registers no
    route and requires `helpers.js`, `admin_stats.js`, `vc_claims.js` and
    `audit.js`, none of which requires it back.
+
+   **ATTRIBUTE CLAIMS (#94, 2026-09-28) ARE THE OTHER WAY TO PUT AN ATTRIBUTE
+   IN A TOKEN, and they go beside the catalogue rather than into it.** The
+   catalogue fixes the claim name for each attribute; an attribute claim is a
+   row in a claim set (`admin_stats.js`'s `setClaimSet()`, `attribute` in place
+   of `value`) naming ANY attribute under a name the administrator chooses. It
+   is how a value a federation partner or an attribute source wrote reaches a
+   token. Rows are validated there against `sourced_attributes.ts`'s
+   `releaseRefusal()`: no secret, no binary value, nothing this service keeps.
+   It shares the typed claims' funnel, audit and CAEP announcement, since names
+   are unique within one set.
+
+   The entry is read through a **third member of the same slot**,
+   `entryAttributes(context)`. This module fills it from `vc_claims.ts`'s
+   `entryAttributes()`, the whole entry lower-cased. It is a member, not a new
+   slot, because rule 3e's test was already passed by this slot, for this
+   direction.
+
+   **An attribute claim reads only the directory**: there is no persona in
+   either mode, and an entry without the attribute adds no claim.
+   `ssf/caep.ts`'s `claimsChangeFor()` reads `attributeClaimRows()`, so a write
+   that moves such an attribute sends token-claims-change as a catalogue
+   attribute does.
 
    **The catalogue is not copied and the three selections are not shared**, and
    both halves of that matter. One catalogue, because two lists of spellings is
@@ -3211,13 +3544,20 @@ with `Cannot find module` naming a file the operator never mentioned.
    which is the `EDITABLE` line above applied to a pair that would otherwise
    look like a duplicate to anybody tidying up.
 
-   **DECLARING A FAMILY GRANTS AND REFUSES NOTHING, and the sentence to change
-   if that ever stops being true is the one in `PROTOCOLS`'s header rather than
-   a page's.** No endpoint reads the attribute: an application declared for
-   `saml2` alone is still issued an access token, because a mock that refused a
-   protocol would remove a test case rather than add one. It is a record of
-   intent, exactly as being in this registry at all is — the same claim
-   `/admin/applications`'s caveat already makes about the whole entry.
+   **DECLARING A FAMILY GRANTS NOTHING, AND IN PRODUCT MODE IT REFUSES THE
+   REST (2026-10-01); the sentence to change if that stops being true is the
+   one in `PROTOCOLS`'s header rather than a page's.** The issuance gate
+   (`issuance_gate.js`'s `protocolFactsOf()`) reads the declaration off the
+   entry and the families the issuance satisfies (`FAMILIES_OF_KIND`, or the
+   caller's own `protocolFamilies` — the SAML and GNAP sites pass theirs), and
+   the issuance policy's `protocol-not-declared` rule refuses, in product
+   mode, an issuance whose families and the declaration share none
+   (`STS-XACML-0084`; `mode.issuesThroughUndeclaredProtocols()`). An access
+   token is OAuth 2.0's, OpenID Connect's, OpenID4VCI's and mutual TLS's; an
+   ID Token is OpenID Connect's alone. An application declared for nothing is
+   refused nothing in either mode; in development the declaration is a record
+   of intent. `xacml/CLAUDE.md` and `tests/protocol_declaration.js` carry the
+   rule.
 
    **EVERY PROTOCOL FAMILY NOW NAMES THE ATTRIBUTES ITS CONFIGURATION LANDS
    ON**, and that is what removed the KIND select from the create form rather
@@ -3478,12 +3818,26 @@ with `Cannot find module` naming a file the operator never mentioned.
      identifier and a change), so this bullet described a behaviour nothing had
      ever performed. `common/oidc_rp.ts`'s `ensureRedirectUri()` carries both.
 
-   **TWO ATTRIBUTES HOLD CREDENTIALS IN THE CLEAR** — `oauthClientSecret` and
-   `appRegistrationAccessToken` — which is the `/krb5/principals` decision about
-   the Kerberos passwords, made again and for the same reason. Now that RFC 9700
-   mode CHECKS that secret, anyone who can read the directory can authenticate as
-   that client; that is the honest state of a service that authenticates nobody.
-   They are never given to `audit.js`, whose no-credential rule is untouched.
+   **NO APPLICATION CREDENTIAL IS STORED IN THE CLEAR UNDER A DURABLE KEY SINCE
+   2026-10-01.** `appRegistrationAccessToken` is sealed in `setField()` and
+   opened by `registrationAccessTokenOf()` (the RFC 7592 endpoints, the view,
+   section 2's revocation, which clears rather than removes because the stored
+   value never equals the presented one), and `oauthClientSecret` is SEALED
+   wherever the process holds a DURABLE key-encryption key (`sealsClientSecrets()`: `keystore.persists()`, as for
+   the issued private keys, and a key that is not development's ephemeral one —
+   so a product-mode realm on a development container writes it as it is
+   rather than refusing every registration): each value — one record per
+   secret — is sealed WHOLE (`sealClientSecretText()`, label `client-secret`),
+   `parseClientSecretValue()` opens what it reads so every verifier and the
+   sweep meet one shape, and `view()` opens them for a reader that came through
+   this module. A value written before that date stays in the clear until the
+   secret is next written; nothing migrates it (no database here is
+   anything but deletable). A seal that fails is a refusal (`STS-REG-0213`),
+   one that will not open authenticates nothing (`STS-REG-0212`). Neither is
+   ever given to `audit.js`. A federation relationship's `fedClientSecret`
+   (`federation/CLAUDE.md`) and a person's `stsIdaVerification`
+   (`credentials.ts`, under the home cell's key) are sealed by the same
+   durable-key rule.
 
 
 ---
@@ -4070,80 +4424,114 @@ console (the application's page — the console's own gate is a session, which
 this does not touch) or by `ldapmodify`, since `/admin-api` then refuses its
 tokens; or delete the entry and restart.
 
-## 3az. `delegation_policy.ts`: who may act for whom at WS-Trust and RFC 8693 (#108, 2026-09-23)
+## 3az. `delegation_policy.ts`: who may act for whom, and as what (#108, 2026-09-23; #186, 2026-10-03)
 
-Until #108 the two delegating families other than Kerberos decided nothing about
-the act: a WS-Trust requester that could authenticate got a token about anybody
-for any `AppliesTo` through `OnBehalfOf` or `ActAs`, and any client could
-exchange any verified token (RFC 8693) for one about its subject addressed
-anywhere. The act was recorded (3l) with "authorized by nothing". This file is
-the policy.
+Until #108 WS-Trust and RFC 8693 decided nothing about the act; #108 gave them
+Kerberos's model as code with a deny-only XACML layer on top. **#186 MOVED THE
+DECISION INTO THE ISSUANCE POLICY** (rcbj: "as much of it as possible ...
+implemented in xacml policy"), and this file became what gathers the FACTS:
+`decide()` reads the entries, asks `issuance_gate.checkExchange()` — the PEP's
+`exchangeQuestion`, `xacml/xacml_exchange_verdicts.js` — and translates the
+answer for the doors. The rules are `xacml/xacml_templates.ts`'s exchange
+rules (`xacml/CLAUDE.md`); a realm's own issuance policy may decide first, and
+the built-in one answers where it does not.
 
-**KERBEROS'S MODEL, BY NAME, ON THE ENTRIES THAT ALREADY EXIST.** No new store
-and no new object class — `ou=applications` and the person's entry are the
-store, so an `ldapmodify` IS a policy change and rule 7 holds by construction
-(`/admin/applications/<id>` and `POST /admin-api/applications/update`):
+**THE FOUR PARTIES**, the same in every protocol:
 
-| Attribute | On | Kerberos analogue |
-|---|---|---|
-| `appAllowedToDelegateTo` | the INTERMEDIARY | `msDS-AllowedToDelegateTo` |
-| `appAllowedToActOnBehalfOf` | the TARGET | `msDS-AllowedToActOnBehalfOfOtherIdentity` |
-| `appDelegationSubjectGroup` | the intermediary | (none — the people it may act for, by group DN; empty is anybody unprotected) |
-| `appTrustedToImpersonate` | the intermediary, default FALSE | `TRUSTED_TO_AUTHENTICATE_FOR_DELEGATION` |
-| `stsNotDelegated` | the PERSON | `NOT_DELEGATED` |
-| `stsMayAct` | the PERSON | (none — RFC 8693 section 4.4's `may_act`, the person's own choice) |
+| | OAuth 2.0 token exchange | WS-Trust | Kerberos (#186 phase 3) |
+|---|---|---|---|
+| the ACTOR | the actor_token's subject, else the client | the requester | S4U2Self: the service; S4U2Proxy: S |
+| the SUBJECT | the subject_token's | the delegated token's | the impersonated principal |
+| S, what the subject's token was issued for | its `aud`, else `client_id` / `azp` | the delegated assertion's Audience | the evidence ticket's service |
+| R, the target | the one `audience` / `resource` | the `AppliesTo` | the requested service |
 
-**THE ORDER OF `decide()` IS THE ARGUMENT.** A self case (a client exchanging its
-own token acts for nobody) needs nothing. Then the SUBJECT, because a protected
-person is refused whoever asks — `stsNotDelegated`, or a member of the console's
-Admin Read / Admin Write roster, COMPUTED from `admin.readGroup` /
-`admin.writeGroup` at decision time rather than seeded, so a role granted later
-is covered. Then the INTERMEDIARY must be an application entry. Then
-IMPERSONATION (`OnBehalfOf`, an exchange with no `actor_token`) needs the flag.
-Then the subject groups. Then every TARGET — resolved to the application that
-registered it first (`forAudience()`/`forClientId()` for OAuth,
-`forAppliesTo()` for WS-Trust, then `get()`), and allowed by either attribute,
-the raw string included so an unregistered audience can be named without
-inventing an entry. None named is refused: a token about somebody else with no
-audience restriction is one no attribute describes. Last, THE DENY-ONLY XACML
-LAYER: `issuance_gate.checkDelegation()` asks the issuance policy about
-action-id `delegate` with the intermediary as XACML 3.0's intermediary-subject,
-and only an explicit Deny refuses (`xacml/CLAUDE.md`). The attribute model stays
-the readable one; the policy engine is where an administrator writes something
-stricter.
+**GNAP IS THE FOURTH PROTOCOL (#432 phase 1, 2026-10-03)** and asks the same
+two questions with the same settings — no GNAP setting decides who may act
+(`gnap/gnap_delegation.ts`, `gnap/CLAUDE.md` *Delegation*). Its two acts are
+the two S4U shapes: a `gnapSkipInteraction` client presenting a verified user
+assertion is impersonation (actor the client, subject the person, no S, R
+each resource server the rights resolve to — or the client itself, S4U2Self's
+ticket to yourself); a resource server DERIVING a token (RFC 9767 section 4)
+is delegation (actor and S the deriving resource server, R each downstream one
+— or itself, which the policy calls self). One question per R; `protocol` is
+`GNAP` and the register types are `gnap-impersonation` / `gnap-derivation`.
 
-**`may_act` STANDS IN FOR TWO QUESTIONS, NEVER THE THIRD.** A verified
-subject_token naming the actor answers *may this party act for this subject*
-(the groups) and *may it do so invisibly* (the flag) — the subject said so. It
-does not answer *where*, so the targets are still checked. A mismatch is the
-token endpoint's refusal in EVERY mode, not this file's: the token itself says
-no. `mayActClaimFor()` is the ISSUING half, from `stsMayAct` only (the owner's
-decision on #108) — a person by `urn:uuid:`, an application by its client_id.
+Parties are named by application identifier or username (`partyFacts()`,
+application first); a target is resolved to the application that registered
+it (`resolveTarget()`), and S's candidates are taken in order until one
+resolves.
 
-**MODE-FREE, AND `enforced` SAYS WHETHER A REFUSAL REFUSES**
-(`mode.authorizesDelegation()`). Both doors ask in both modes; development
-issues and `rowText()` puts "WOULD HAVE BEEN REFUSED in product: …" on the act,
-which is Kerberos's development fixtures' arrangement. `refusal` names the kind
-so each door speaks its own protocol: `target` is RFC 8693's `invalid_target`,
-the rest `invalid_request`; WS-Trust answers every one with
-`wst:RequestFailed`, and an `intermediary` refusal there is "only an application
-may delegate" (`STS-WSTRUST-0019`).
+**THE SEMANTICS ARE THE POLICY'S CHOICE** (action `choose-exchange-semantics`):
+the request (RFC 8693's extension `exchange_semantics`; WS-Trust's element,
+`OnBehalfOf` impersonation and `ActAs` delegation), else the actor's default,
+else the subject's, else `delegation.defaultSemantics` (delegation). DELEGATION
+issues a token whose `act` names the actor; IMPERSONATION does not; a SELF
+exchange — the actor is the subject, or is S and the token stays with S — acts
+for nobody.
+
+**THE SETTINGS ARE COMMON TO THE FOUR PROTOCOLS** (rcbj; GNAP since #432), on the entries —
+`ou=applications` and the person's entry are the store, so an `ldapmodify` IS
+a policy change and rule 7 holds by construction:
+
+| Attribute | On | What it says | Kerberos analogue |
+|---|---|---|---|
+| `appAllowedToDelegateTo` | S (or the actor, for impersonation) | the applications it may hand a subject to | `msDS-AllowedToDelegateTo` |
+| `appAllowedToActOnBehalfOf` | R | the applications — and people — it accepts acting for others | `msDS-AllowedToActOnBehalfOfOtherIdentity` |
+| `appDelegationSemantics`, `appDefaultDelegationSemantics` | an application | the semantics it allows (EMPTY is delegation only, as an actor) and its default. Replaced `appTrustedToImpersonate` | `TRUSTED_TO_AUTHENTICATE_FOR_DELEGATION` (impersonation) |
+| `stsDelegationSemantics`, `stsDefaultDelegationSemantics` | a person | the semantics they allow being acted for with (EMPTY is both) and their default | (none) |
+| `appDelegationSubjectGroup` | the actor | the people it may act for, by group DN; empty is anybody unprotected | (none) |
+| `stsNotDelegated`, `appNotDelegated` | a subject | never acted for | `NOT_DELEGATED` |
+| `stsMayAct` | a person | RFC 8693 section 4.4's `may_act` on their tokens | (none) |
+| `delegation.protectedGroups` (setting) | the realm | groups whose members are never acted for, beside the console roster | Protected Users |
+| `delegation.actorRole` (setting) | the realm | the role a PERSON needs to be an actor | (none) |
+| `delegation.defaultSemantics` (setting) | the realm | the last word on semantics | (none) |
+
+**THE ORDER OF THE REFUSALS IS THE POLICY'S RULE ORDER** (ordered
+deny-overrides; `xacml/CLAUDE.md` lists it): may_act naming somebody else
+(ENFORCED IN EVERY MODE — the token itself says no), several targets, an
+unregistered target, no target unless self, a protected subject, an actor
+nobody knows or a person without the role, semantics nobody allows, the
+actor's subject groups (a may_act naming the actor stands in for them),
+authority (the subject's roles against what S requires for a delegation, R
+otherwise), the delegation relationship (S delegates to R — its
+`appAllowedToDelegateTo` or R's `appAllowedToActOnBehalfOf` — AND the actor is
+S, R, or one R accepts by name), and the impersonation reach (R is the actor,
+on its `appAllowedToDelegateTo`, or accepts it).
+
+**`enforced` IS THE POLICY'S**, computed from the mode on each refusal's
+obligation: product refuses, development issues and `rowText()` puts "WOULD
+HAVE BEEN REFUSED in product: …" on the act. Do NOT read `decision.enforced`
+as "product mode" — it is false on every allow; the token endpoint's scope
+check made that mistake once. That check is the policy's too now: the
+per-scope question at stage `exchange` (`exchange-widens-scope`, refused in
+product with `STS-OAUTH-0621`), whose facts are whether the subject token has a
+`scope` claim and carries the scope asked for.
+`refusal` names the kind so each door speaks its own protocol (the codes are
+in `oauth-oidc/CLAUDE.md` and `ws-trust/CLAUDE.md`). Where not even the
+built-in policy answers, the act is REFUSED (`STS-XACML-0085`).
 
 **THE PERSON'S HALF IS `credentials.ts`'s**, through the directory slot it
 already has (`readDelegationFacts`, `writeNotDelegated`, `writeMayAct`,
-`delegationFlaggedPersons` on `ldap_server.js`'s side) — one read answers the
-two flags, the groups and the delegate resolved. `setMayAct()` refuses a DN that
-names nobody in the realm, or the person themselves (`STS-AUTHN-0227`).
+`writeDelegationSemantics`, `delegationFlaggedPersons` on `ldap_server.js`'s
+side). `setMayAct()` refuses a DN that names nobody in the realm, or the
+person themselves (`STS-AUTHN-0227`); `setDelegationSemantics()` a value that
+is neither semantics (`STS-AUTHN-0295`). `mayActClaimFor()` is the ISSUING
+half, from `stsMayAct` — a person by `urn:uuid:`, an application by its
+client_id.
 
 **A LIBRARY (rule 3), built by the composition root** beside `scope_policy`. It
-requires `applications`, `config`, `mode`, `credentials` and `issuance_gate` —
-libraries every caller already requires — and adds NO slot (rule 3e): the
-groups come through the credential store's directory rather than the
-`admin_stats` group resolver, which answers claims and is off when
-`groups.claim` is. `list()` is the register `/admin/delegation`'s section and
-`GET /admin-api/delegation/policy` page through `adminViews.delegationPolicyView()`.
-`tests/delegation_policy.js` is the truth table; `tests/token_exchange_product.js`
-and `tests/vendored/sts_delegation_policy.js` the doors.
+requires `applications`, `config`, `mode`, `credentials`, `roles` and
+`issuance_gate` and adds NO slot (rule 3e). `list()` is the register
+`/admin/delegation`'s section and `GET /admin-api/delegation/policy` page
+through `adminViews.delegationPolicyView()`.
+
+**THE TESTS, in three layers**: `tests/exchange_policy.js` holds the policy to
+a truth table and an independent oracle (`tests/tools/exchange_oracle.js`)
+over 20,976 combinations, `tests/exchange_policy_exhaustive.js` over all
+2,488,320 — the policy alone, no directory; `tests/delegation_policy.js`
+gathers the facts from real entries in both modes and drives WS-Trust's
+`handleRst()`; `tests/token_exchange_product.js` and the local job
+`tests/vendored/sts_delegation_policy.js` are every outcome at the doors.
 
 ## An OAuth client is not a person, and now it has somewhere to be
 
@@ -5419,9 +5807,10 @@ thread and its lifetime*, has the numbers either side of the fix).
   drill-down on both admin surfaces, and `settleSigningKeys()`. A read reached
   another way — an LDAP bind, a KDC exchange, a background sweep — still
   generates on the thread, one realm.
-* **Not `worker_pool.js`**: RSA and EC generation is node's own OpenSSL with an
-  asynchronous door of its own, which costs no IPC and no child. 3aa's reason
-  for keeping `pki_authoring.ts` off the pool is about the post-quantum
+* **Node's own asynchronous door**: RSA and EC generation is node's OpenSSL
+  with an asynchronous door of its own, on libuv's thread pool, which costs no
+  IPC and no child — the door the post-quantum keys use too since #363. 3aa's
+  reason for keeping `pki_authoring.ts` synchronous is about the post-quantum
   encoders and is untouched — and that pane's SLH-DSA signature (13.7s
   measured) is what `cluster.nodeTtlMs`'s new default is sized against.
 
@@ -5545,11 +5934,18 @@ would produce signatures nothing can verify, and the failure would surface at a
 relying party as "the signature is invalid" — as far from the cause as it is
 possible to get.
 
-**A per-record subkey, derived with HKDF.** The KEK never encrypts anything
-directly: each record uses HKDF-SHA256(KEK, random salt, purpose), so the same
-KEK protects the whole store without any record's IV mattering to any other —
-and a single key encrypting many records under many IVs is one IV-reuse bug away
-from catastrophic in GCM.
+**ENVELOPE ENCRYPTION SINCE #391 (2026-10-01): THE KEK WRAPS DATA KEYS AND
+NOTHING ELSE.** A value is AES-256-GCM under a DATA ENCRYPTION KEY (32 random
+bytes), and only the DEK is encrypted under the KEK. The envelope is
+`$aesgcm$2$<dek id>$<iv>$<tag>$<ciphertext>`, its version and DEK id the
+additional authenticated data; a wrapped DEK is `$dekwrap$1$…` under
+HKDF-SHA256(KEK, info `sts dek wrapping v1`), with the DEK's id, scope, realm
+and class as its AAD, so a wrapped DEK moved onto another realm's row does not
+unwrap. `crypto.js` holds the primitives (`encryptWithDek()`,
+`decryptWithDek()`, `wrapDek()`, `unwrapDek()`, `deriveDek()`); `keystore.js`
+holds the registry. **Version 1 — a per-value HKDF subkey of the KEK, no DEK —
+is gone, and a store written before #391 is recreated, not migrated**
+(rcbj's decision; `STS-KEYS-0095` stops the start).
 
 **A KEK shorter than 32 bytes is refused rather than stretched.** Stretching
 would let a four-character password protect every signing key this service holds
@@ -5557,67 +5953,231 @@ while the log said AES-256, which is the kind of comfortable lie this repository
 refuses everywhere else. Hex is tried before base64, because a 64-character hex
 string is also valid base64 and reading it that way produces 48 different bytes.
 
-### ONE KEK FOR THE SERVICE, NOT ONE PER REALM — AND THE HKDF ABOVE IS NOT THAT (2026-09-12)
+### THE DATA ENCRYPTION KEYS: ONE PER REALM PER CLASS, HELD UNWRAPPED (#391)
 
-Asked directly, and written down here because the per-record subkey paragraph
-above reads like an answer to it and is not.
+rcbj's decisions on #391: **one DEK per realm per data class, never shared
+between realms**; the DEKs **unwrapped once and held in memory** (a minted
+flush seals thousands of values, so a KEK in a key management service is asked
+per DEK, never per value). The design is in `keystore.js`'s *DATA ENCRYPTION
+KEYS* block; what a caller needs:
 
-**There is a single key-encryption key per PROCESS.** `keystore.js` holds one
-module-level `kek`, filled by the only call to `secrets.readKek()` there is;
-that function takes no realm and reads one value from one provider. `seal()` and
-`open()` take `(plaintext, label)` and **no realm** — the `label` is accounting
-for `/admin/encryption`'s per-kind counters and reaches no key derivation, which
-that function's own header says in as many words. Every call site agrees:
-`'totp-secret'`, `'application-private-key'`, `'person-private-key'`,
-`'minted-rows'`. Labels, never realms.
+* **`seal(plaintext, label, tier, options)`**: the class is the LABEL (made
+  safe by `dekClass()`); the realm is `options.realm`, else the AMBIENT realm.
+  A writer of another realm's rows outside a request passes the realm —
+  `persistence_minted.js`'s flush does, per row. `open()` needs neither: the
+  envelope names its DEK.
+* **A SCOPE beside the realm**: `service`, or `cell.<cells.id>` for
+  `seal(…, 'cell')` where a cell key is held (#98) — wrapped under the cell's
+  own key. Another cell's DEK rows are held unopened and never written here.
+* **WHERE KEYS PERSIST A DEK IS RANDOM AND STORED**, wrapped, in a
+  `dek:<scope>:<realm>` row of `sts_keys` (plain JSON; the global tier). The
+  row is a UNION merged under the row's lock, so two processes making a DEK for
+  one class at once keep both, and all converge on one as current: the usable
+  DEK ACTIVATED most recently (`activateAt` at or before now), then the lowest
+  id (`chooseActive()`, cached per slot until the next activation).
+  **ORDER is what makes a DEK known before anything sealed under it is read**:
+  a new DEK's row is queued at once, and every writer of sealed rows waits for
+  `keystore.settleDeks()` first — this file's own key and PKI rows,
+  `persistence.js`'s flush, `persistence_minted.js`'s flush, and
+  `cluster_secrets.ts`. **A new direct writer of sealed values owes the same
+  wait.** A value under a DEK not held is refused (`STS-KEYS-0092`) and the
+  rows are read again in the background.
+* **WHERE NOTHING IS STORED A DEK IS DERIVED** from the KEK (`deriveDek()`),
+  and its id (`d.` + the base64url context) names what it was derived for, so a
+  sibling thread with the same ephemeral KEK derives it from the id alone.
+  "Stored or derived" is a PROCESS fact (`start()` read a KEK for a store), not
+  `persists()`, which follows the ambient realm's mode.
+* **What a realm IS at rest now**: no DEK is shared between realms, but every
+  DEK is wrapped under the one KEK, so whoever holds the KEK unwraps every
+  realm's. A realm is a separate key, not an independent boundary; a KEK per
+  realm is still not built, and the costs of one are below.
+* **`open()` still swallows a failure** rather than throwing: a value under a
+  DEK this process cannot hold is reported and dropped by its reader, and the
+  alternative is a service that will not start because of a session from last
+  week. **A DEK of this process's own scope that will not unwrap at START is
+  fatal** (`STS-KEYS-0091`), for the signing key's reason.
 
-**The HKDF `info` IS A CONSTANT** (`'sts key material v1'`), so the
-separation the paragraph above buys is **per record and not per tenant**: every
-sealed value has its own key and IV, and one master key opens all of them in
-every realm.
+`docs/encryption-at-rest.md` is the operator-facing half.
 
-**THE DISTINCTION TO KEEP STRAIGHT IS WHICH KEY IS THE SUBJECT.** Realm
-separation in this service is about *which keys exist* — signing keys per realm
-in `material`, a certificate-authority branch per realm since the Root was
-shared — not about *which key encrypts them*. A reader who knows the first can
-reasonably assume the second, and it is not true.
+### ROTATION, RE-SEALING, DESTRUCTION AND A ROTATED KEK (#391 P2)
 
-Three consequences, and the third is already visible in the code:
+rcbj's decision: a yearly scheduled rotation of every DEK, a re-encryption job,
+a rotation by hand on the console and the API, and a rotated KEK RE-WRAPS the
+DEKs. The mechanism is `keystore.js`'s *THE DEK LIFECYCLE* block; WHEN is
+`common/data_key_rotation.ts`'s three cluster jobs (`keys.data-key-rotate`
+daily, `keys.data-key-rotate-now` by hand, `keys.data-key-reencrypt` hourly),
+built at 23b-ii beside the signing rotation. What a maintainer needs:
 
-* whoever can read the KEK can open **every realm's** sealed data, so a realm is
-  not a cryptographic boundary at rest;
-* rotating the KEK rotates every realm at once;
-* **and that is why `open()` swallows a failure rather than throwing.** A value
-  written under a previous KEK is the ordinary outcome of a rotation, so the
-  restore counts them and drops them — the alternative is a service that will
-  not start because of a session from last week.
+* **A ROTATION PUBLISHES BEFORE IT SEALS.** `rotateDeks()` makes the successor
+  with `activateAt` `keys.dataKeyActivationLeadSeconds` (300) ahead, so every
+  process and node has read its row before a value names it. The DEK it
+  replaces is SUPERSEDED: it opens, nothing new is sealed under it.
+* **RE-SEALING NEEDS NO KNOWLEDGE OF THE VALUE**: a DEK records its scope,
+  realm and class, so `reseal(cipher)` opens under the old DEK and seals under
+  that slot's current one. The store does the walk (`countSealed()` and
+  `resealSealed()` in `persistence_postgres.js`, a compare-and-set UPDATE per
+  row with a change-log row, over `sts_keys`, `sts_minted`,
+  `sts_ldap_entries` and `sts_cluster_secrets`); `resealOwnRows()` rewrites
+  this file's own key and PKI rows. **The process running the pass applies the
+  directory rows it re-sealed to its own copy** (`persistence.js`'s hook,
+  through `applyDirectoryChange()`): the applier skips a process's own change
+  rows, and this process holds sealed attributes as ciphertext, so a copy left
+  naming the old DEK would be written back by its next flush — after the DEK
+  may be gone. A minted row is held in the clear and re-sealed at its next
+  flush; a cluster secret is held opened.
+* **A DEK IS DESTROYED ONLY ON A COUNT OF ZERO**, and only once superseded for
+  `keys.dataKeyRetireAfterDays` (7, at least 1). A store that cannot count
+  (`ldif`, `memory`) never says zero, so nothing is destroyed there. The
+  destruction is written to the row and WINS every merge (`unionDekRows()`,
+  `adoptDekRow()`), so no stale copy brings a key back.
+* **A ROTATED KEK**: `keys.previousKek*` (a sixth secret descriptor,
+  `secrets.PREVIOUS_KEK`, restart-only) is read at start beside the new key; a
+  service DEK that unwraps only under it is re-wrapped and its row written
+  (`rewrapRotated()`, `STS-KEYS-0096`). A start with only the new key over rows
+  wrapped under the old refuses (`STS-KEYS-0091`). **Cell keys are not covered**
+  — a rotated cell key has no previous-key descriptor yet.
+* **THE DIGEST KEY.** `keyedDigest()` (the cell routing index, a cell locator's
+  tag) was HKDF of the KEK, so a rotated KEK would have changed every digest.
+  Where DEKs are stored it is one random key of its own, class `keyed-digest`
+  in the service scope's default-realm row, FIRST WRITER WINS in the merge
+  (`ensureDigestKey()` at start, `pruneDigestKeys()` for the loser), and never
+  rotated, superseded or destroyed. Where DEKs are derived the KEK-derived key
+  is kept — nothing a digest names outlives the process there.
+* **The settings are per process** (`perProcess`): the jobs run once for the
+  service, and a realm cannot carry them.
 
-`docs/encryption-at-rest.md` is the operator-facing half, and
-`docs/trust-realms.md`'s *what a realm does not separate* names it beside the
-three socket families.
+### WHAT THE CONSOLE AND THE API SHOW AND DO (#391 P5)
 
-#### Making it per realm, if it is ever asked for — NEITHER IS IMPLEMENTED
+rcbj's P5 list: the KEK provider (never the key), every DEK's id, scope,
+class, state, age and value count, and the rotate acts on both surfaces (rule
+7). `admin-ui/encryption_admin.ts` draws it; `GET /admin-api/encryption`
+returns the same model; `POST /admin-api/encryption/:action` and the page's
+forms go through one `dataKeysAction()` with FOUR acts (`ACTIONS`):
+`rotate-data-keys`, `reencrypt-data-keys`, `count-data-keys`, `rotate-kek`.
 
-Written down so the costs are not re-derived. **Nothing below describes code
-that exists.**
+* **A VALUE COUNT IS A JOB, NEVER A PAGE VIEW.** `countSealed()` is a pattern
+  scan per key; `countAllSealed()` (postgres) is ONE pass per table that pulls
+  every DEK id out with `regexp_matches()` and groups — a count of VALUES, so
+  a row holding two counts two. `keys.data-key-count` runs it daily and by
+  hand and records each count ON THE KEY (`keystore.recordCounts()`: `values`
+  and `countedAt` on the record and its row, merged newest-count-wins in
+  `unionDekRows()` and `adoptDekRow()`), so every node draws the same figure.
+  A key nobody counted shows `—`, never 0. The re-encryption pass records the
+  superseded keys' counts it took anyway. Off where the store cannot count
+  (`countOffReason()`). Only this process's own scopes are recorded: another
+  cell's values are in a database this one did not count.
+* **THE KEK IS ROTATED FROM HERE ONLY WHERE IT IS IN A KMS.** Each KMS handle
+  has `rotate()` (Transit's `/keys/<k>/rotate`; Cloud KMS a new version made
+  primary; Key Vault `rotateKey`; AWS `RotateKeyOnDemand`, behind the same
+  key id, re-wrapping nothing); `keystore.rotateKek()` then runs
+  `rewrapRotated()`, which re-wraps every DEK `isStale()` names and writes the
+  rows LIVE — no restart; the other nodes adopt the newer wrap through the
+  row's merge, and their own new DEKs are wrapped by the KMS under its newest
+  version anyway. The job is `keys.kek-rotate-now` (manual only). A KEK READ
+  into the process is refused (`STS-KEYS-0104`, with the previousKek* way to
+  do it): its successor is bytes an operator supplies, and this service never
+  writes a KEK. A KMS that refuses (the deployments here grant use, not
+  rotation, and rotate on the KMS's own schedule) fails the run
+  (`STS-KEYS-0105`), audited `keys.kek-rotate`.
+* **`key.kmsKey`** is the KMS key's NAME (its handle's label). A KMS key has
+  no bytes this process could show, which is why it is safe to print.
 
-* **A per-realm subkey from the one master key.** Put the realm id into the
-  HKDF `info` beside the constant, thread the realm through `seal()` / `open()`,
-  and bump the envelope version (`$aesgcm$2$…`) so records written before the
-  change still open under v1. Cryptographic separation per realm from one
-  secret, no new provisioning, no extra secret-store round trips — and it is
-  SEPARATION rather than INDEPENDENCE: an operator holding the master key still
-  opens everything.
-* **A key-encryption key per realm, from the secret store.** Genuine
-  independence and a much larger change. `secrets.js` grows a keyed read;
-  `keystore.start()` can no longer read one value before the realm registry
-  exists, which inverts the ordering `start()` is built on; every call site
-  needs an ambient realm, **and `persistence_minted.js`'s flush does not have
-  one** — it runs on a timer rather than inside a request, which is the same
-  shape of problem the request pool's barrier hit from the other direction.
-  Creating a realm would also become a key-provisioning act, where today it is
-  one API call.
+#### A key-encryption key per realm — NOT IMPLEMENTED
 
+Written down so the cost is not re-derived. Genuine independence per realm
+needs `secrets.js` to grow a keyed read; `keystore.start()` could no longer read
+one value before the realm registry exists, and creating a realm would become a
+key-provisioning act, where today it is one API call. With DEKs per realm it is
+now a change to what WRAPS a realm's DEKs and nothing else.
+
+
+### A KEK IN A KEY MANAGEMENT SERVICE, AND AES-256-SIV FOR THE DIRECTORY (#391 P3, P4)
+
+**`keys.kekProvider` may name a KMS key rather than a secret: `vault-transit`
+(OpenBao or HashiCorp Vault's Transit engine, mount `keys.kekTransitMount`),
+`aws-kms`, `gcp-kms` (Cloud KMS) or `azure-keys` (a Key Vault or Managed HSM
+key).** rcbj's decision: **the KMS key wraps EACH DEK directly** — there
+is no root key unwrapped into memory, so the KEK's bytes never enter the
+process. `secrets.js` returns a HANDLE for such a provider rather than bytes
+(`{ remote, provider, keyRef, wrap(dek, aad), unwrap(text, aad), owns(text),
+isStale(text) }`), and only for `kek` and `previous-kek` (`KMS_CAPABLE`); any
+other secret naming one is refused `STS-KEYS-0101`. What follows from it:
+
+* **A wrapped DEK under a KMS is `$dekkms$1$<provider>$<b64url key>$<ct>`.**
+  The DEK's AAD (`dekAad()`: id, scope, realm, class) goes with it — Transit's
+  `associated_data`, which is why a Transit key must be an AEAD type
+  (`aes256-gcm96`, `aes128-gcm96`, `chacha20-poly1305`; anything else is
+  `STS-KEYS-0102` at start), and AWS's `EncryptionContext {'sts-dek': aad}`,
+  on a key DescribeKey shows enabled, `ENCRYPT_DECRYPT` and
+  `SYMMETRIC_DEFAULT`; Cloud KMS's `additionalAuthenticatedData` on an
+  `ENCRYPT_DECRYPT` / `GOOGLE_SYMMETRIC_ENCRYPTION` key; an Azure `oct-HSM`
+  key's A256GCM AAD. So a wrapped DEK moved to another realm's row is refused
+  by the KMS, as `$dekwrap$` is refused locally.
+* **AN AZURE RSA KEY IS THE ONE EXCEPTION, AND IT IS HELD HERE.** A standard
+  Key Vault has no symmetric key, and RSA-OAEP-256 takes no AAD, so the wrapped
+  plaintext is the DEK followed by SHA-256 of its AAD and the unwrap refuses a
+  digest that is not the row's (`STS-KEYS-0103`): the vault unwraps a moved
+  key, and this service refuses it. OAEP is not malleable, so that is a
+  binding. Under 3072 bits is refused (2048 is ~112-bit, below the AES-256 it
+  would protect), and RSA is not post-quantum — an `oct-HSM` key is the
+  recommendation wherever a Managed HSM is available.
+* **THE KEY'S REFERENCE IS IN EVERY WRAPPED DEK, AND A DIFFERENT ONE IS
+  REFUSED** (`owns()`): every node and every cell must name the key
+  identically — a multi-region AWS key by its `mrk-` id with `keys.kekRegion`
+  per node, never a regional ARN; Cloud KMS by the KEY, never a version (a
+  version is refused, `STS-KEYS-0102`); Azure as vault URL plus name.
+* **WRAPPING AND UNWRAPPING ARE ASYNCHRONOUS, AND `seal()` IS NOT.** A DEK made
+  under a remote KEK is held with `needsWrap` and wrapped by `wrapPending()`
+  before its row is written (`writeDekRow()` awaits it), and a DEK read from
+  the store is unwrapped in the background (`unwrapLater()`) — `dekFor()`
+  answers null until it is, which is the same refusal-and-reread a DEK not yet
+  held already got (`STS-KEYS-0092`). `start()`, the change-log adoption and
+  `refreshDekRows()` await the unwraps, so a started process holds every DEK
+  it read. A KMS failure is `STS-KEYS-0103`.
+* **A key version rotated in the KMS is a re-wrap**, the same as a rotated
+  KEK: `rewrapRotated()` asks `isStale()` and re-wraps at start. Transit's
+  version is in its `vault:vN:` ciphertext; Cloud KMS and Azure name versions
+  outside the ciphertext, so their wrapped text is `<version>:<ciphertext>`,
+  and stale is "not the primary / current version". AWS rotates its backing
+  key inside one key id and needs nothing.
+* **Moving a local KEK into a KMS, or back, is `keys.previousKek*`** — the
+  previous KEK may be either kind, so the P2 re-wrap is the migration.
+* **The keyed digests need bytes, not a handle**, so under a KMS they are made
+  under the stored digest key (P2), which is wrapped like a DEK.
+* **`tests/kms_kek.js` holds it against a fake Transit server and fake
+  AWS KMS, Cloud KMS and Key Vault clients** injected through
+  `secrets.setSdkLoader()`; no test runs against a real KMS yet.
+* **The four SDKs are optional peers** (`package.json`), like every cloud
+  SDK here: a deployment adds `@aws-sdk/client-kms`, `@google-cloud/kms` or
+  `@azure/keyvault-keys` (with `@azure/identity`) to `STS_CLOUD_SDKS`.
+
+**`keys.directoryCipher` (`aes-256-gcm`, the default, or `aes-256-siv`)
+chooses the cipher of NEW data keys of the classes stored on directory
+entries** (`keystore.DIRECTORY_CLASSES` — the `/admin/encryption` page's
+directory classes). It exists because rcbj asked for "AES-512", which does not
+exist: AES's key is 128, 192 or 256 bits. **AES-256-SIV (RFC 5297) is the
+honest reading of it** — a 512-bit key, two AES-256 keys, one for S2V
+(AES-CMAC, RFC 4493) and one for CTR — and it is nonce-misuse resistant, which
+GCM is not. Its strength is still 256-bit AES; say so wherever it is offered.
+
+* **node has no AES-SIV**, so `crypto.js` builds it from AES-256-ECB
+  (`aesBlock()`) and AES-256-CTR: `aesCmac()`, `sivS2v()`, `aesSivEncrypt()`,
+  `aesSivDecrypt()`. **Wycheproof's `aes_siv_cmac_test` 512-bit groups hold
+  it** (`tests/wycheproof.js`); the other key sizes are not a door here.
+* **The envelope is `$aessiv$2$<dek id>$<nonce>$<siv>$<ciphertext>`**, with a
+  random 16-byte nonce as the last AD component (so one value sealed twice is
+  two ciphertexts) and the envelope's AAD first. `encryptWithDek()` chooses by
+  the KEY's length (64 bytes is SIV); `decryptWithDek()` by the envelope, and
+  a GCM envelope under a 64-byte key is refused.
+* **A DEK's cipher is fixed when it is made** (`rec.alg`, the key length the
+  truth). Changing the setting makes every directory class due a rotation
+  (`rotationDue()` compares the newest key's cipher with `cipherFor()`), and the
+  P2 re-encryption moves the values — no migration path of its own.
+* **Every "is this sealed?" test is `crypto.isEncryptedWithKek()`** now; five
+  modules matched `$aesgcm$` themselves and would have stored a SIV value as
+  plaintext-looking text. A new one owes the same.
+* **A derived (development) DEK is always GCM**: nothing persists there, so
+  nothing would be gained.
 
 ### `storeReport()`: THE SAME MODULE ANSWERING A MONITORING QUESTION (2026-09-12)
 
@@ -6678,6 +7238,22 @@ entry rather than of any reply, and a certificate issued to somebody who has
 since been deleted is a state no sequence of endpoint calls can produce while
 still holding the key that goes with it.
 
+**`holders()` REPORTS PRESENCE AND OPENS NOTHING (#352, 2026-09-29).** It was
+`persons()` — every name in the realm, uncapped — then `recordFor()` for each:
+a directory read per person, and a `keystore.open()` of both private keys per
+holder, to build a list that carries no private key. It asks the directory's
+optional `holdingAny(names)` instead — every person holding any of the two
+issuer declarations or the two `present` attributes, with those raw values, in
+the directory's own order, in one walk (#349's `withAttribute()` under
+`ou=users`, one statement) — and builds each record through `recordOf(...,
+openKeys false)`, which leaves the private keys out altogether rather than
+copying them sealed. The test that makes somebody a row is the old one, applied
+to the same record, so the rows and their order are unchanged; a directory
+without `holdingAny()` is walked the old way, still without an unseal.
+`recordFor()` itself still opens, because its callers — the grant, `clear()`,
+`write()` — need the key or its absence. `tests/certificate_listing_bounds.js`
+holds both.
+
 
 ### THE REALM WATCHER ASKS AND DOES NOT TAKE (2026-09-12)
 
@@ -7071,10 +7647,11 @@ refusal names the line rather than the field.
 
 ### The cost that is stated rather than discovered
 
-Generating a post-quantum key pair is slow and it runs on this thread.
-**`common/worker_pool.js` is deliberately not used**: that pool's job table runs
-`common/pq_jose.js`, which is this service's OWN reading of the post-quantum
-constructions and is independent of the vendored one on purpose — and handing a
+Generating a post-quantum key pair can be slow (an SLH-DSA `s` set takes
+hundreds of milliseconds even natively) and it runs on this thread.
+**`pq_jose.generateAsync()` is deliberately not used**: `common/pq_jose.js` is
+this service's OWN reading of the post-quantum constructions and is
+independent of the engine's on purpose — and handing a
 key generated by one to an encoder that expects the other's byte layout is
 exactly the class of defect that independence exists to expose.
 `common/vendored/CLAUDE.md` argues the same thing from the other end.
@@ -7482,32 +8059,6 @@ published. Bounded at three retries, then refused with `STS-PKI-0186`.
 `tests/pki_rebuild_recertifies.js` section B drives it deterministically by
 replacing the authority from inside a wrapped encoder.
 
-### The pool had no bound on a job, only on a worker's life (2026-09-11)
-
-`worker_pool.js`'s header states the principle — *a promise nobody settles is
-a request that hangs* — and `reap()` honours it for a worker that DIES: every
-job in flight is rejected with a sentence naming the pid. **Nothing covered a
-worker that stays alive and never answers.**
-
-One did. Five idle children, no CPU anywhere in the process tree, the service
-answering every other request in eleven milliseconds, and a single HTTP request
-parked until the test runner's 300-second watchdog killed the job. Twice per
-mode, in every mode, which is ten minutes a run.
-
-`workers.jobTimeoutS` is the bound, 120 seconds by default and `0` to remove
-it. The default is generous deliberately: the stalls this pool exists to move
-off the event loop were measured at 15 to 23 seconds, so two minutes is far
-beyond any real job and far short of a watchdog.
-
-**It is a backstop and not a diagnosis.** Why a reply goes missing is not
-known; what changed is that the caller is told instead of waiting for ever. The
-worker is left alone when it fires — it is alive, and it holds no state, so it
-is kept for the next job. `tests/worker_pool.js` section F drives it, and the
-way that test first passed for the wrong reason is written down beside it: an
-earlier section leaves the pool computing in the FRONT process, where there is
-no worker to time out, so a bound cannot fire and the assertion recorded a
-resolve.
-
 ## 3y. `backup_codes.ts`: the third second factor, the only mechanism here that no specification defines — and the one whose design REVERSED on 2026-09-11
 
 A short list of single-use strings that stands in for whichever second factor a
@@ -7591,10 +8142,10 @@ listener families on one thread, so that is not a slow request; it is a service
 that answers nobody for most of a second, every time somebody mistypes ten
 characters off a printed list.
 
-So `credentials.verifyBackupCodeAsync()` puts the candidates on the worker pool
-in parallel — **263ms, with the loop ticking 56 times** — and `/authn/backup-code`
-uses it. The synchronous door is kept for `workers.count = 0`, for `npm test`,
-and because a caller that cannot be made asynchronous is better off blocking
+So `credentials.verifyBackupCodeAsync()` puts the candidates on libuv's thread
+pool in parallel (the forked worker pool until #363, measured then at **263ms,
+with the loop ticking 56 times**) and `/authn/backup-code` uses it. The
+synchronous door is kept for `npm test`, and because a caller that cannot be made asynchronous is better off blocking
 than wrong. Both go through one `backupPrepare()`, so they refuse in the same
 ORDER: a password typed into the code box is refused on its SHAPE and costs no
 hashing at all.
@@ -8228,6 +8779,18 @@ asks again. It is fixed at `oidc_rp.ts`'s one choke point and is idempotent,
 because a prefix a caller has to remember to add is one the eighth call site
 will not have.
 
+**A THIRD WAY A SURFACE SESSION IS MADE, AND IT RUNS ONE WAY (2026-09-30).**
+The portal ADOPTS a live console session in the same browser rather than
+running its code flow, because the console outlives the sign-on session its
+single sign-on rested on (section 4, above). The adopted row names the CONSOLE
+session as its parent, in the default partition, and holds no tokens. So
+`relyingPartySessionOf()` ends it as soon as the console session is gone, and
+`dropSession()`'s cascade now walks one more NAMED partition: a console
+session's `derivedFromRealm`, where its adopted children live (`derivedFrom()`'s
+`alsoRealm`). That makes the recursion two levels deep for the first time.
+`portal/CLAUDE.md` argues the rest. `authn.adoptRelyingPartySession()` is the
+function, and the portal is its only caller.
+
 ## `version.js`: M.N.O, and why the build number is not computed at startup (2026-09-06)
 
 **It is a PORT of the parent project's `client/version.js`, not an invention**,
@@ -8358,7 +8921,7 @@ project's own `--sync-manifests` carries `sts` in its manifest list and rewrites
 `sts/package.json` to the PARENT's M.N.0. That checkout is this repository, so
 after a parent sync the two say different things — which is correct: they answer
 *which release of the debugger is this submodule pinned into* and *which release
-of the mock STS is this*, and those are different questions. `--check-manifests`
+of IYA STS is this*, and those are different questions. `--check-manifests`
 here checks this tree only, and `../id-proto-debugger/sts` is read-only forever.
 
 ## 3w, CONTINUED: A CERTIFICATE UPLOADED IN PLACE OF AN ISSUED KEY PAIR (2026-09-13)
@@ -8793,11 +9356,103 @@ entry's credential however well it verifies.
 `/pki/ocsp` answers `good` and the CRL can list it. A branch built before the use
 cases existed is topped up by `ensureScope()`.
 
+**IN A SERVICE DEPLOYED AS CELLS (#98 D10, 2026-09-28), THE TWO CREDENTIALS
+NAME THEIR CELL AND A CERTIFICATE ITS ENTRY.** `credentialId()` appends
+`cell_locator.ts`'s twelve-character tag after the sixteen hex digits
+(`entryOfCredentialId()` accepts it or nothing), so the enrollment families
+can send an ACME newAccount or a SCEP PKCSReq to the cell that minted its
+credential before anything is verified — for a person they use the person's
+home instead, which is where it was minted and where the entry is; the tag
+is what places an APPLICATION's, whose entry is global and whose binding
+claim is one cell's. `entryNamedByCertificate()` reads the one entry a
+certificate's urn:sts: SAN names WITHOUT verifying it, for the same purpose:
+it chooses only where `authenticatePresentedCertificate()` then runs. Every
+write onto an entry here happens in the cell that serves the request, which
+after that placement is the entry's home; a person not resident in the
+serving cell is `STS-ENROLL-0012` from `resolveEntry()`, never a write in
+the wrong cell. `acme/`, `est/` and `scep/`'s `CLAUDE.md` have where each
+request goes, and EST's one exception.
+
 `tests/cert_enrollment.js` holds it in process — 238 assertions; fifteen mutants,
 fourteen caught and one recorded as EQUIVALENT (the canonical-base64url check in
 `entryOfCredentialId()`, which the exact kid comparison makes unobservable). Two
 survived the first version and both were the fixture: the non-canonical kid never
 got past the regex, and no certificate was presented that its entry did not hold.
+
+### An application's own ACME, EST and SCEP rules (2026-10-01)
+
+ACME, EST and SCEP are three protocol families an application may be
+declared for (`acme`, `est`, `scep` in `applications.js`'s `PROTOCOLS`), and
+an application's *Certificate enrollment* configuration tab carries its own
+rules. `applicationRules()` applies them in `issue()`, after
+`authorizeTarget()`, when the certificate is FOR an application. A person's
+certificate is not affected. The rules, in order:
+
+1. **The declaration.** The issuance gate is asked the tenth kind,
+   `issue-certificate`, with the request's one family. In product mode the
+   `protocol-not-declared` rule refuses an application declared for other
+   families (`STS-ENROLL-0094`). Development refuses nothing, and an
+   application declared for nothing is refused nothing, as for every other
+   kind (#380). Roles and the device rules are waived: the identity rule
+   above has already decided who may ask.
+2. **The profile.** `<family>AllowedProfiles`, where it lists something,
+   REPLACES the realm's `<family>.allowedProfiles` for the application —
+   wider or narrower; only a known profile counts, so the five never issued
+   stay refused. A profile outside it is `STS-ENROLL-0095`.
+   `<family>DefaultProfile` replaces the realm's default for a request that
+   named no profile (`asked.profileDefaulted`: an unlabelled EST request, a
+   SCEP challenge made with none, an ACME order with no `profile`), where
+   the list in force allows it; `issue()` resolves that default against the
+   TARGET before it checks the profile.
+3. **EST's switches**, `estSwitch(name, entry)`: an application's own
+   `estBasicAuthentication`, `estCertificateAuthentication` and
+   `estServerKeyGeneration` decide for it where set, TRUE or FALSE; the
+   realm's otherwise. A FALSE is `STS-ENROLL-0096`. Because a TRUE can turn
+   on what the realm turned off, EST's checks before the credential consult
+   the application the Basic name or the certificate NAMES (read, not
+   believed — the credential is verified next), `/serverkeygen` lets an
+   administrator past its early check, and `issue()` refuses a person
+   target while the realm's switch is off. The label is checked only
+   structurally before the credential (`checkProfile(..., { structural })`).
+4. **The lifetime and the cap** are the application's where it set them
+   (`<family>CertificateLifetimeDays`, `enrollMaxCertificates`), longer or
+   shorter, higher or lower; a certificate is still shortened to its Issuing
+   CA's expiry.
+
+**THE APPLICATION'S VALUE OVERRIDES THE REALM'S (rcbj, 2026-10-01).** The
+first version that day only narrowed (an intersection, the smaller value,
+FALSE-only switches); rcbj asked for an override. What no application value
+reaches: the CA, OCSP and KDC profiles, the Issuing CA's expiry, the
+declaration rule, and `<family>.enabled`.
+
+**Every refusal goes out in its protocol's own words**, which is what keeps
+the three specifications intact: ACME answers a problem document
+(`invalidProfile` for 0095, RFC 8555 section 6.7 and the profiles draft),
+EST an HTTP status (RFC 7030 section 4.2.3), SCEP a `failInfo` (RFC 8894
+section 3.3.2.2). Nothing new is put on the wire. `tests/application_enrollment.js`
+holds the four rules in process.
+
+### The realm listings read in one walk and parse one family (#352, 2026-09-29)
+
+`certificatesInRealm()`, `eabsInRealm()`, `challengesInRealm()` and
+`hostNamesInRealm()` were `holdersOf()` — a walk of the realm that FOUND each
+holder's values — and then `readAttribute()` per holder, a second lookup
+(`resolveEntry()`, eight attributes copied) of a value the walk had in hand;
+and every certificate record of every family was `JSON.parse`d before the
+family was compared. They read through `holdersWithValuesOf()` now, over the
+directory's `holdersWithValues()` (one walk, the values unparsed, #349's
+`withAttribute()` — one statement), falling back to the old reads for a
+directory without it. **A record of another family is recognised on its TEXT
+and never parsed** (`mayBeOfFamily()`): without a `\u` escape anywhere in the
+value, a record whose `family` is `scep` must contain `"family"`, a colon and
+`"scep"` literally, so the absence is proof; with one, the value is parsed —
+the test can only skip what cannot match, so the list is unchanged.
+**`certificateCountsInRealm()`** answers the monitors' tiles (held, valid,
+revoked, expired) with `publicRecord()`'s own state rule and builds no row; the
+three monitors called the list to read its length. The consoles page before
+they decorate (`acme/CLAUDE.md`). `tests/certificate_listing_bounds.js`
+compares every listing with the read-per-holder walk and counts the reads and
+the parses.
 
 
 ### The `device` profile (#164 decision 6c, phase 2, 2026-09-26)
@@ -8926,6 +9581,35 @@ What is this directory's is where it is decided and what an app password is.
 
 `tests/second_factor_doors.js` is the in-process half;
 `tests/vendored/sts_second_factor_doors.js` drives the five doors over the wire.
+
+### An application's own claim sets (2026-10-01)
+
+Each of `admin_stats.js`'s five claim sets may also be configured on an
+APPLICATION: one JSON array of rows per set on its entry
+(`APP_CLAIM_ATTRIBUTES`: `oauthClaimsAccessToken`, `oauthClaimsIdToken`,
+`oauthClaimsUserinfo`, `saml2CustomAttributes`, `saml11CustomAttributes`).
+`jwtClaims()` and `samlAttributes()` read `effectiveClaimSet(id, context)`
+instead of `claimSet(id)`. That is the realm's rows, with the application's
+**added and winning by name** (rcbj's choice), so an application with none
+issues exactly what the realm does.
+
+* **Which application:** `applicationForClaims()` finds it by `client_id`
+  for the three JSON sets and by `audience` for the two SAML sets, reading
+  by identifier, then `forClientId()`, then `forAppliesTo()`. Those are the
+  keys `applications.settingFor()` already answers per-application settings
+  for.
+* **One set of rules:** `checkClaimEntries()` was lifted out of
+  `setClaimSet()` so a realm row and an application row are refused for the
+  same reasons.
+* **Checked at the write and at issuance:** `applications.claimRowsProblem()`
+  holds every write (`STS-REG-0206`). A stored array that fails the rules at
+  issuance is dropped with a warning (`STS-REG-0205`) and the realm's set
+  goes out: a bad row costs the application's claims, never the issuance.
+* **Not done:** changing an application's rows does not send CAEP
+  `token-claims-change` the way a realm set change does
+  (`announceClaimsReshaped()`); the live-holder fan-out is realm-wide today.
+
+`tests/application_claims.js` holds it.
 
 ## 3ay. `identity_assurance.ts`: a person's identity verifications, and `verified_claims` (#127, 2026-09-23)
 
@@ -9181,6 +9865,30 @@ What this directory owns:
   device is marked COMPROMISED (`STS-DEVICE-0041`, CAEP and RISC through
   `setStatus()`). The next sign-in clears the cookie so the victim is not
   refused on it again.
+* **A COMPROMISE REACHES WHAT THE DEVICE'S KEYS WERE TRUSTED WITH (#432,
+  2026-10-03)**: `endGrantsBoundTo()` ends the GNAP grants whose client key's
+  JWK or SubjectPublicKeyInfo thumbprint is one of the device's keys
+  (`gnap/gnap_revocation.ts`, found in `require.cache` for `loadedAuthn()`'s
+  reason) and revokes the OAuth tokens DPoP-bound (`jkt`) to its JWK keys
+  and the ones bound by mutual TLS (`x5t#S256`) to a certificate one of its
+  `x509` keys holds — or to ANY certificate over one of its keys — whose
+  observer reports the grant each ends (#239). The mutual-TLS half was a
+  stated gap until `admin_stats.js` recorded the certificate binding beside
+  `jkt` (rcbj: close gaps, don't document them), and then a narrower one —
+  a certificate over the device's key that the register never held — until
+  it also recorded the KEY under the bound certificate (`x5tSpki`, its
+  SubjectPublicKeyInfo SHA-256, from `mtls.presentedKeyThumbprint()` via
+  `oauth2.ts`'s `issuanceContext()`). A GNAP client proving by mutual TLS is
+  matched the same two ways: the certificate's x5t#S256, and the key under
+  the certificate it proved with (`client.certSpki`, recorded on the grant).
+  `crypto.publicKeySpkiThumbprint()` is the key-side twin of
+  `certificateSpkiThumbprint()` that makes a GNAP key comparable with an
+  `x509` device key.
+* **AN APPLICATION ENTRY DELETED, OR ITS GNAP KEY REMOVED OR REPLACED, ENDS
+  ITS GNAP GRANTS (#432)**: `applications.js`'s `endGnapGrants()`, after
+  `deleteApplication()` and an `updateApplication()` of `gnapKey`,
+  `gnapKeyIdentity` or `gnapKeyReference` — `gnap/CLAUDE.md` has the rule.
+  There is no "disabled" application state to watch.
 * **ATTESTATION `bearer`** (a level below `self-asserted`). Such a device is
   never compliant (`STS-DEVICE-0039`) and never earns a lowering risk signal.
   Three signals raise risk instead (`risk/CLAUDE.md`).
@@ -9532,7 +10240,15 @@ Five decisions:
     `oauth2.redeemedCodeCacheSize`, `gnap.replayCacheSize`,
     `oid4vci.cNonceCacheSize`, `oid4vp.maxTransactions` and
     `oid4vp.signInRegisterMaxEntries`. A cache that only costs a rebuild keeps
-    a constant, as the 256s and 512s before it did.
+    a constant, as the 256s and 512s before it did. **#346 (2026-09-29)
+    lowered the DPoP, GNAP and wallet sign-in defaults from 100,000 to
+    10,000 and made ACME's spent-nonce literal a setting
+    (`acme.maxSpentNonces`, 10,000)**: each store is whole in every process
+    of every node, per realm (#339). The three replay stores REFUSE at the
+    bound, so the lower number costs throughput (about 16 or 33 requests a
+    second, `docs/caches.md`) and never the replay window; the register
+    fails closed, so it costs a wallet its sign-in. VC status entries
+    (131,072) were left alone: that bound is the status list's size.
   - **The Kerberos long-term keys are bounded by PRINCIPALS**: at most 4,096
     hold keys at once, least recently used first, and one whose keys were
     cleared derives or reads them again at its next ticket.
@@ -9574,6 +10290,47 @@ dead-letters a pending delivery before its retention ends and would be
 bypassed; and `keys.plaintext`, whose decrypted key is dropped by a one-shot
 deadline re-armed at each use — to the second, where a minute-long job would
 leave it decrypted up to a minute longer than `keys.plaintextTtlS` says.
+
+### `bounded_lru.ts`: THE FIRST SHARED CACHE CLASS (#349 phase 1, 2026-09-29)
+
+**The registry's "there is no shared cache class" stopped being true here, on
+purpose.** Every cache above evicts the OLDEST INSERTED entry through
+`makeRoom()`, which is right for a replay history and a fetched document.
+#349's request-worker window onto the directory needs the entry least
+recently READ to go, and recency of use is a policy worth writing once.
+`BoundedLru` is a Map in recency order with three additions: the bound is a
+function asked at every insert (an unusable bound is one, never unbounded); a
+PINNED key is never evicted — what a worker changed and has not written, and a
+running request's working set — so with every key pinned the cache stays over
+its bound and `stats().overBound` says by how much; and it registers with the
+cache registry when handed one, a row carrying the key as `rowOf` shows it and
+never the value. A leaf (rule 3): the registry arrives through the
+constructor. **Nothing in the service builds one yet** — the directory window
+is #349's next phase, behind its own setting — so it has no row in
+`docs/caches.md` until something does. `tests/bounded_lru.js`.
+
+
+### `sync_query.ts` and `sync_query_thread.ts`: A SYNCHRONOUS QUESTION TO THE STORE (#349 phase 3, 2026-09-29)
+
+**rcbj's decision on #349: the directory API stays synchronous.** It is
+synchronous at about a thousand call sites, the parent project's locked
+Kerberos files among them, so a windowed worker's miss cannot become an
+`await`. Instead it crosses a thread boundary and WAITS: a `worker_thread`
+holds a `pg` client of its own (the driver's `bridgeConnection()`, the read
+side's options) and runs the named statement from
+`persistence/directory_queries.js`; this side posts the question and blocks
+on `Atomics.wait()` over a shared COUNTER the thread bumps after posting its
+answer (a flag loses a wake to a late answer), then takes the answer with
+`receiveMessageOnPort()` — the `synckit` pattern. **The price is the whole
+event loop for one round trip**, which is why only a miss pays it, and it is
+bounded by `ldap.workerDirectoryTimeoutMs` (also the thread's statement
+timeout): past it `STS-LDAP-0130`, a database error `STS-LDAP-0131`, and the
+request is refused rather than answered out of a window that cannot say what
+it is missing. A thread that dies is seen as a timeout, because its `exit`
+event is delivered by the loop the question holds; the next question starts a
+new one (`STS-LDAP-0132` is logged when the event arrives). The thread has no
+logger and so no Entering/Leaving pairs — the style's child-process exemption,
+stated in its header. `tests/sync_query.js`.
 
 
 ## 3ba. The mail channel: `mail.ts`, `mail_transports.ts`, `mail_templates.ts`, `mail_uses.ts` (#63, 2026-09-22)
@@ -9799,3 +10556,173 @@ slot**: neither module calls the other, so rule 3e's test is never reached.
 Its three rules (an empty form or query value is absent, case is exact, an
 enum inside an alternative is ajv's) are argued in its header; the design is
 `mgmt-api/CLAUDE.md`'s *Every closed set is held, at every door*.
+
+## 3bx. Cells: `cells.ts`, `cell_channel.ts`, `cell_locator.ts`, `cell_routing.ts`, `cell_placement.ts`, `cell_sessions.ts`, `cell_attributes.ts` (#98, 2026-09-28)
+
+**One logical service can be deployed as CELLS** — a copy of the whole stack
+per cloud region, each with its own postgres, each in one legal JURISDICTION.
+A person is HOMED in one cell and their entry exists only there; realms,
+settings, applications, policies, keys and the routing index are the GLOBAL
+tier every cell reads (`persistence/CLAUDE.md`, *Tiers*). Issue #98's body is
+the design, with its decisions D1–D11; these six libraries are the code.
+**Empty `cells.id` is single-cell mode**: every one of them answers "here",
+stamps nothing and dials nothing, and the service behaves exactly as before.
+
+**A CELL IS NEVER PUBLISHED.** Every name, issuer, certificate and document
+names the service; no token, cookie, page or error names a cell. Where a cell
+has to travel with something a client holds, it is a KEYED TAG
+(`cell_locator.ts`) that only a cell can read.
+
+**EXCEPT ON ONE CONSOLE PAGE, BY rcbj'S DECISION (#361, 2026-09-30).** Each
+cell may have a console address of its own — `cells.consoleUrl`, and
+`consoleUrl` on each `cells.peers` entry; on AWS `https://<cell>.<public
+name>`, a DNS record aimed at that cell's load balancer alone and a name on
+its certificate — because the shared public name goes to whichever cell is
+nearest and an operator needs a way into each. Server configuration → Cells
+(and `GET /admin-api/cells`) draws those links and NOTHING else does: no
+token, metadata document, error or public page names a cell, and the
+channel's `url` is still never drawn. The console signs in AT such an
+address: `oidc_rp.ts`'s `cellConsoleBase()` puts the console's callback and
+authorization request on the configured origin the request's Host names
+(this cell's or a peer's — a relayed request arrives at a peer's), and
+`ensureRedirectUri()` registers that callback on `sts-admin-console` as
+configuration, in both modes. A Host that is not a configured console
+address, and every other surface, keeps the shared name.
+
+**EVERY CELL'S CLUSTER ON EVERY CELL'S CLUSTER PAGE (#361).** Each cell
+answers `cluster-summary` over the channel (`admin-ui/cells_admin.ts`'s
+`clusterSummaryHere()`): its members folded by name (`cluster.
+foldMembers()`), its leases by holder NAME, each node's worker pools —
+never a host, port or pid. The Cluster page's row has a `prepare` step
+(`admin.ts`'s `prepareClusterPage()`, run by the page route and by
+`GET /admin-api/cluster` through `preparedSettingsJsonFor()`) that asks
+every peer before the synchronous status block draws; a cell that does not
+answer is drawn unreachable (`STS-CELL-0194`), never dropped.
+
+| Module | What it is |
+|---|---|
+| `cells.ts` | The map: this cell, its jurisdiction, the peers (`cells.peers`, JSON), where a new person is homed (`homeFor()`, D1), what a realm lists as permitted transfers, and the startup check (STS-CELL-0001). A leaf: config, error codes, a logger. |
+| `cell_channel.ts` | Mutual TLS 1.3 on `cells.port`, in the front process; both sides present a short-lived leaf from the process branch's `cell` Issuing CA (`pki.js`), and a peer is a cell only when its chain verifies to the Root AND its issuer is that CA AND its `urn:sts:cell:` name is a peer. JSON operations modules register (`registerOp()` / `call()`), and the relay of a whole request (`relay()`). A relayed request is served by the public app as the client's own: the client's address, TLS fingerprint and certificate travel in `x-sts-cell-*` headers the sender strips from the client and the receiver reads only from a peer, and the socket is shimmed as a request worker's is — the peer cell's leaf is never read as the caller's certificate. One hop. A cell that cannot be reached is answered 503 (D6, fail-closed). |
+| `cell_locator.ts` | Twelve base64url characters appended to an artifact — 72 bits of an HMAC of the minting cell under the service key — and read back by trying each cell's tag (D10). No separator, so no validation pattern changes; nothing readable names a cell. |
+| `cell_routing.ts` | Where a person is homed: resident here (and not a projection), or the global routing index by keyed digest. `claimName()` is the creation's first step. |
+| `cell_placement.ts` | The placement table `ROWS` — a row per route prefix, `local`, `affinity`, `selector`, `artifact`, `bearer` or `handler`, each with its reason — the `sts_cell` affinity cookie that pins a browser (per realm, keyed tags), the edge middleware `app.js` runs above the request pool before any body is read, and the helpers a handler calls with the parsed body (`relayIfElsewhere()`, `relayToHome()`). On a browser row the pin wins over an artifact's tag. `tests/cell_placement.js` holds every route to a row and every handler row to a module that asks. |
+| `cell_sessions.ts` | A session held away from home (D4, D6): exported (copied) from home to the cell a relayed request came from when the transfer policy's `holdDecision()` permits, with a credential-free PROJECTION of the person (`memberOf` from home's groups) held sealed under the visiting cell's key and materialized into every process's directory without becoming a row; a write to it sent home (`projection-write`, credentials refused); home pushing `revoke-subject` / `refresh-projection` and the visiting cell asking `subject-state` before a refresh or exchange and after `cells.subjectCheckS`. A projection never counts as a resident. |
+| `cell_attributes.ts` | `fetch-attributes` (#98 section 5): a cell serving a token ABOUT a person homed elsewhere — a WS-Trust OnBehalfOf / ActAs served at its requester's home — asks their home, which answers `cell_sessions.ts`'s credential-free projection only when `cell_transfer.ts`'s `releaseDecision()` (purpose `attributes`) permits; no decision available is a refusal. The projection is held in this process's directory for ONE synchronous call (`withPerson()`) and never stored. Home refusing (`STS-CELL-0124`) or unreachable (`STS-CELL-0125`) refuses the token (D6). |
+
+**D9, THE TRAVELLER'S SIGN-IN, IS `authn.ts`'s** (`restartAtHome()`): the
+login form asks the routing index for the typed name before anything is
+verified, and a person homed elsewhere is pinned to home and sent back to
+where the flow started — the request as it arrived, a POST re-posted from a
+page with a button, or the hosted surface's root — with a pushed
+authorization request handed home first. Nothing personal crosses; the typed
+password is never read at the visiting cell. The same restart is how federation's
+assertion consumer sends home a partner's assertion about a person homed
+elsewhere (`restartPendingAtHome()`, `federation/CLAUDE.md`).
+
+**THE TRANSFER, SERVE AND RELEASE DECISIONS ARE POLICY**, asked of the
+issuance policy through `cell_transfer.ts` — the facts are attributes and the
+built-in rules are the strict default (D4): nothing personal leaves its
+jurisdiction unless the realm lists the transfer. See that module's own rule.
+
+**ORDER.** All six are libraries. `app.js` requires `cell_placement` and
+`cell_sessions` for their middlewares at #2 (they require only leaves at
+load); `persistence.js` requires `cells` at 4a; `common/protocol_stack.ts`
+calls `cell_sessions.install()` at 23b-vii to register its operations, and
+`admin-ui/cells_admin.ts` (18k-ii) registers `cell-ping` and
+`directory-people`. `server.js` binds the channel from `listen()`.
+## 3bu. `cell_transfer.ts`: WHERE A PERSON'S DATA MAY GO IS A RULE OF THE ISSUANCE POLICY (#98 D4 and D11, 2026-09-28)
+
+When the service is deployed as cells (`cells.ts`), a person is homed in one
+jurisdiction and turns up at a cell in another. The design's section 6 —
+*geofencing is policy, not code* — makes each residency question a question
+to the issuance policy, and this module is where every caller asks one. All
+three are synchronous, like `issuance_gate.check()`, because they sit on the
+edge of every request a cell relays.
+
+| Question | Asked by | action-id | A Deny means |
+|---|---|---|---|
+| `holdDecision()` | the handoff of #98 D9: may a session, and the credential-free projection of the entry it stands on, be HELD by the serving cell? | `hold-session` | not a refusal: the session stays at home and every request is relayed there (D4's "strict, with relay") |
+| `serveDecision()` | the edge: may a request about the person be served here at all, even by relaying? | `serve-request` | a REFUSAL, marked `STS-CELL-0183` on the answer for the caller's response — the realm's hard geofence |
+| `releaseDecision()` | the cell that HOLDS the people, before it answers a reader at another cell (#98 D11: another cell's residents on the console, `/admin-api` with `?cell=`) | `release-attributes` | the residents are withheld, `STS-CELL-0184` on the answer |
+
+**NOTHING HERE DECIDES.** rcbj's rule — every authorization decision is a
+rule of the issuance policy, and a subsystem sends facts — is followed the
+way #304/#305 followed it for scopes: the module gathers the home and
+serving jurisdictions (`cells.jurisdictionOf()`), the client's country when a
+caller knows it, whether the realm LISTS the transfer
+(`cells.transferListed()`, the realm's stated loosening in
+`cells.permittedTransfers`), the data category, the realm, a release's
+purpose and `cells.hardGeofence`, and puts them to
+`issuance_gate.checkTransfer()`. The attributes are `xacml_request.js`'s
+vocabulary; the rules are the built-in `role-issuance` document's
+(`xacml/CLAUDE.md`, *The transfer questions*). **The strict default**: a
+session is held away from home, and residents released to another
+jurisdiction's reader, only where the realm lists the transfer; a request is
+refused only under a hard geofence, for an unlisted transfer; everything
+else is relayed. A realm's own issuance policy may state anything else — "`us`
+subjects may hold sessions in `eu`" is one rule — and is honoured in that
+realm only.
+
+**The three are not members of `ISSUANCE`**, for `DELEGATE`'s reason and
+the scope question's: none of them issues anything, and every reader of
+`KINDS` lists issuances (the `/admin/roles` preview, `/admin-api`'s closed set
+`issuanceKinds`, the realm-retiring test). They are `issuance_gate.TRANSFER`,
+action-ids of the same policy.
+
+**The facts are read IN THE SUBJECT'S REALM.** `cells.permittedTransfers` and
+`cells.hardGeofence` are realm settings, and the realm's issuance policy is a
+realm's repository entry, so a question naming a realm other than the ambient
+one is asked with that realm ambient (`realms.run()`). A realm this service
+does not have is refused whole — nothing held, served or released,
+`STS-CELL-0182` — rather than decided under a guess at which realm was meant.
+
+**Two readings of an absent fact, both strict.** A home cell NOT RECORDED
+(`''`) is the serving cell, as `cells.isHere('')` reads it: the person is
+resident where they are and there is no transfer. A home cell the service
+does NOT HAVE has jurisdiction `''`, and no rule reads `''` as anybody's home
+or as listed — `*>us` loosens the default for every KNOWN home only.
+
+**Single-cell mode asks nothing**: with `cells.id` empty all three answer
+allowed (and nothing relayed) without reaching the gate, so the service is
+exactly what it was before cells.
+
+**Where no policy answers, the strict default still holds.** With no decider
+the gate evaluates the built-in document itself (`xacml_transfer_verdicts.js`
+loaded lazily, the #305 arrangement); a decider that throws, answers no
+verdict, or a realm override built without the transfer rules falls back to
+the built-in document; and only if not even that can be evaluated is the
+strict rule read from the facts (`strictReading()` in the library, a copy in
+the gate for the process that cannot load it — `STS-CELL-0180`,
+`STS-CELL-0181`). `tests/cell_transfer.js` holds the document and both copies
+to one truth table, so the three cannot drift apart.
+
+## THE APPLICATION REGISTRY IS PARSED ONCE PER VERSION, AND A LIST OPENS NO KEY (#352, 2026-09-29)
+
+`applications.list()` read every entry, rebuilt a record from each (a pass over
+the whole SCHEMA per entry), built a view of each and opened every sealed key;
+and five lookups — `forClientId()`, `forAudience()`, `forAppliesTo()`,
+`forPermission()`, `forPermissionBase()` — were filters over it. So a console
+page that asked one per row was quadratic in the registry with a
+`keystore.open` inside the square (`/admin/consent`, `/admin/roles`, the
+delegation policy), and so was the token endpoint's own `forClientId()`.
+
+**What is kept is the parse, not the view.** Per realm, the entries, the
+records and a Map per lookup, in `list()`'s order — keyed on the store's
+`applicationsVersion()`, the `ou=applications` subtree clock, which every write
+there moves, a replicated one included (`ldap/CLAUDE.md`, the eighth section).
+The kept records are frozen and never handed out: **every caller still gets
+views of its own**, built by copying the kept values, because two hundred call
+sites read these views and nobody ever checked that none of them writes to one.
+`get()` does not use it — one entry by its DN is cheaper than a rebuild after a
+sighting moved the clock, which every authentication does. The mode is not in
+the key: the one mode-dependent member of a view is computed when it is built.
+`applications.listing` on `/admin/caches`.
+
+**A sealed field opens when it is READ.** `view()` makes each sealed member of
+`fields` an accessor that calls `keystore.open` on access and keeps nothing
+(key-material residency): a caller that wants the PEM gets it as before, and a
+reply's `JSON.stringify` opens the keys of the rows it carries — the page, not
+the population. `requiredRolesFrom()` and `consent.globalConsentsFrom()` read a
+view already in hand, which is what `/admin/roles` and `/admin/consent` do now
+instead of reading each entry back out of the directory by identifier.
+

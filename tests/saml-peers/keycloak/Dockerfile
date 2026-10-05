@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: BUSL-1.1
 #
 # ===========================================================================
 # KEYCLOAK AS A SAML 2.0 BROKERING SERVICE PROVIDER (#192).

@@ -318,26 +318,121 @@ Both modes schedule; they differ only in the delay.
 | `postgres` | 0 | Every change made while handling one request coalesces into ONE transaction that runs the moment that request's synchronous work is done. Write-through at the granularity anybody cares about, and what stops a bulk SCIM import from becoming one transaction per entry. |
 | `ldif` | `persistence.writeDelay`, 1500ms | The unit of writing there is a whole FILE. A realm build writes thirteen entries; three of those in one file rewrite is the point of the delay. |
 
+A response that wrote waits for this flush in postgres mode (#351; the next
+section): the zero delay is not waited out — the wait starts the flush.
+
 Both flush on the way out: `server.js` traps SIGTERM and SIGINT and calls
 `stop()`. `kill -9` sends SIGKILL, which cannot be trapped by anything, and what
 that costs is up to `writeDelay` milliseconds in ldif mode and nothing in
 postgres mode.
 
-## A failed write is logged and never thrown
+## A failed write is logged and never thrown — and in postgres mode never acknowledged (#351)
 
-The service keeps answering out of memory, `GET /admin/ldap/service` and `/admin/persistence`
-both carry the error, and the next flush recomputes the same diff — **the shadow
-is only advanced on success**, so nothing is lost by a failure and the retry
-needs no queue.
+The service keeps answering out of memory, `GET /admin/ldap/service` and
+`/admin/persistence` both carry the error, and the write is retried — **the
+shadow is only advanced on success**, so the retry recomputes the same diff.
 
-The alternative — refusing the LDAP operation whose write failed — was
-considered and rejected: it would make a database outage take down sixteen
-protocol families that do not need a database, and no other refusal in this
-service is that expensive. This was verified by stopping the database under a
-running service: the `POST /admin-api/users/create` succeeded, `/healthcheck`
-answered 200, `/admin/ldap/service` reported `healthy: false` with the connection error, and
-when the database came back the next change wrote the entry made during the
-outage along with the new one.
+**What this section said until 2026-09-29, and why it stopped being true.** It
+said the next CHANGE retries, and that refusing the operation whose write
+failed "would make a database outage take down sixteen protocol families that
+do not need a database". On testidp (#351) a SCIM Bulk load starved a request
+worker's pool: its deletes were answered 204 while their writes failed
+(STS-STORE-0002), the worker then exited on a lost origin claim
+(STS-STORE-0061), and ~600 people it had reported deleted came back from the
+database. No `try`/`catch` fixes that — nothing threw, and nothing survives a
+SIGKILL, an OOM kill or a lost node. The guarantee that holds is **never
+answer a write until it is committed**, and it is now the rule.
+
+### A write is answered after its commit
+
+* **Where it waits: `cluster/cluster_barrier.js`, rule 2** — the same
+  `res.end()` hold active-active mode already had, installed in `common/app.js`
+  directly below the request pool, so it runs in whichever process SERVES the
+  request (a worker, or the front process for what it keeps) and covers every
+  route, including redirects (`res.redirect()` ends through `res.end()`).
+  `persistence.answersAfterCommit()` turns it on for every postgres process,
+  one node or many. Rule 1 (catching up with other nodes) stays active-active
+  only. There is no second mechanism: the request worker's commit
+  announcement (`request_worker.ts`) is unchanged and still tells the front
+  process which tickets committed.
+* **Which flush carries a request's changes: the write position.** A request
+  reads `writeGeneration()` — the directory generation (which the realm and
+  settings writes move too) and the minted generation less its observation
+  tallies — when it arrives and again when it answers; if it moved,
+  `commitThrough()` waits for the flush in flight that took that position, or
+  starts one. The position is process-wide, so a request that overlapped
+  another's write waits for that too — conservative, never wrong. The call
+  log's own success row is left out, as it always was for active-active.
+* **No debounce is waited out.** In postgres mode the schedule's delay is 0,
+  and `directoryThrough()` / `flushThrough()` call `flush()` at once rather
+  than waiting for the timer; a commit is the cost of the rows written.
+* **The stores it covers**: the directory, the realm registry and the
+  settings overrides (one flush, one generation); every minted store
+  (`flushThrough()`); and the keystore's queued rows — a key set or a
+  certificate authority row whose write fails is now a failure of the
+  request that caused it (its outcome's `error` was dropped before; a realm
+  was answered as created and generated different keys at the next restart).
+  Nothing a request writes goes to the store any other way.
+* **A failed commit is 503 with `Retry-After`** (STS-STORE-0066, marked on the
+  response and recorded as a second audit row carrying the 503) and the
+  handler's response is discarded whole — its body, `Location`, `Set-Cookie`
+  and `Content-*`; the security headers and CORS stay. A response whose
+  headers already left (a handler that streamed or called `writeHead()`
+  itself; none that writes does) is destroyed rather than completed. An
+  **LDAP** operation is wrapped at registration in `ldap/ldap_server.js`,
+  inside what a worker runs, and answered **`unavailable` (52)**
+  (STS-STORE-0067) — RFC 4511's "a subsystem necessary to complete the
+  operation is offline", which is true, where `busy` (51) is not; it is also
+  what a worker that dies mid-operation is already answered. An LDAP read
+  (search, compare) is held only for directory or key changes, never for its
+  audit rows — the HTTP call log's reason.
+* **The change a refused request made is still in memory, and is retried**:
+  a failed flush puts its dirty bits AND ITS JOURNAL back (the journal was
+  lost until #351, so the next journalled flush advanced the commit position
+  past the failed DNs and they reached the store only if a full walk ever
+  ran), and arms ONE retry of the whole flush — 1 s, doubling to 30 s, reset
+  by the first success; the failed key rows are queued again with it
+  (`keystore.retryFailed()`). It is the retry of one failed write, not a
+  periodic job, and it exists only while a write is failing.
+* **A client's retry must be safe against a change already in memory.** A
+  retried DELETE finds the entry gone and answers 404, a retried create finds
+  it and answers 409. So while a refused write waits for its retry
+  (`commitBacklog()`), a request with a WRITING method (POST, PUT, PATCH,
+  DELETE; add, delete, modify, modifyDN) is held for that retry's commit too,
+  even when it changed nothing itself: its 404 then means the delete is in the
+  store, or it is 503 again. Reads are answered from memory as always.
+* **What is NOT waited for**: `ldif` (its unit is a whole file on
+  `persistence.writeDelay`; waiting would put 1.5 s on every write of a
+  development store) and memory mode. Both behave as before, except that a
+  failed ldif write now keeps its journal and retries on its own.
+
+`tests/answer_after_commit.js` holds each of these in process; what it cannot
+hold is a real pool starved by a real load, which only a run against postgres
+shows.
+
+### The liveness connection
+
+The origin-claim renewal, the cluster heartbeat and the lease statements run
+on a `pg.Client` of their own (`liveQuery()` in `persistence_postgres.js`) —
+like the LISTEN connection, opened on first use and again after it drops, with
+no timer — so write load cannot starve the lease that keeps a process writing.
+If it cannot be opened (a server at `max_connections`) the statement goes
+through the pool once rather than failing (STS-STORE-0070). A write's own
+fence checks stay inside its transaction. Each process now holds up to
+`poolMax() + 2` connections; `POOL_FLOOR` stays 4, argued above it.
+
+**A lapsed origin claim is not purged with the other claims** (for a day):
+`purgeClaims()` deleted every expired claim, so a claim that lapsed during a
+stall was deleted at the next purge, the owner's renewal matched no row, and it
+exited reading "another process took it" when nobody had — a likely route to
+the testidp STS-STORE-0061.
+
+**And a late renewal says why**: `persistence.event-loop-lag`, a per-process
+scheduler job, reads `perf_hooks.monitorEventLoopDelay()` every ten seconds
+into `status().eventLoop` and warns STS-STORE-0068 past 5 s; a renewal that
+started or answered more than half the claim's lifetime late logs
+STS-STORE-0069 naming the loop's worst delay, so the next lost origin says
+whether the loop, the pool or the database was the cause.
 
 ### IT BINDS NOTHING, AND IT STILL GOES FIRST — THE ORDERING IS A DEPENDENCY
 
@@ -866,8 +961,12 @@ argument — then writes `directory_merge.js`'s answer: an attribute one side
 changed takes that side; both changed, a list (`member`, `objectClass`, the
 security keys, or any attribute with more than one value on some side) is merged
 by value and anything else takes mine, a credential never becoming a union; two
-adds of one DN under different `entryUUID`s keep the FIRST committed
-(`STS-STORE-0052`); a change to an entry deleted elsewhere is dropped
+adds of one DN under different `entryUUID`s keep the FIRST committed as the
+entry — its `entryUUID` and its single values (`STS-STORE-0052` when mine adds
+nothing) — **plus, since 2026-10-02, what mine added: an attribute only mine
+holds and a list value theirs lacks** (`mergeCreations()`; two nodes seeding a
+realm's role group lost a grant's member otherwise); a change to an entry
+deleted elsewhere is dropped
 (`STS-STORE-0053`). A new row is `INSERT … ON CONFLICT DO NOTHING`, and losing
 that race locks the row and merges again. The driver answers `{ outcomes }` —
 what the store decided that this process does not hold — and
@@ -984,6 +1083,125 @@ the list merge, the session rank).
 * The capability `ops.change-log-retention` is provided by
   `persistence_replication.js`, not `persistence.js` as the row first named.
 
+## EVERY DIRECTORY ENTRY IS SEALED (#391 phase 6, 2026-10-01)
+
+rcbj's decision on #391: an entry's attributes are stored as ONE sealed blob
+under its realm's `directory` data key, in `sts_ldap_entries.attrs` — the cell
+tier's key for a cell's people, the service's for the global tier's entries —
+and the DN stays readable. `directory_codec.js` is the whole of it; the
+postgres driver writes and reads every entry through it.
+
+* **THE BLOB NAMES ITS DN** (`{ dn, a }`), and an open refuses a blob whose
+  DN is not its row's: a blob copied onto another entry's row does not open
+  as that entry.
+* **THE LOOKUPS ARE KEYED DIGESTS THE SERVICE WRITES** (schema version 14):
+  `name_keys`, `mail_keys`, `uuid_keys`, `class_keys` stopped being generated
+  from `attrs`, and `value_keys` (the `byAttribute()` attributes:
+  `VALUE_INDEXED`) and `attr_names` (the NAMES, in the clear) are new.
+  `parent_key` and `rdn_value` are still generated from the DN. A database
+  built before version 14 is refused at open (STS-STORE-0074): #391 recreates
+  rather than migrates, and the service's role may not alter the schema.
+* **A QUERY IS KEYED AND OPENED ON THE THREAD THAT HOLDS THE KEYS.** The
+  windowed directory's bridge thread builds a statement and shapes its rows
+  with no keystore, so `persistence.js` wraps the bridge: `keyArgs()` before
+  the question, `openAnswer()` after. The driver's own `directoryQuery()`
+  does the same.
+* **AN ENTRY THAT DOES NOT OPEN IS NEVER TAKEN FOR ONE THAT IS ABSENT.**
+  `readEntry()` and the flush's lock read THROW (STS-STORE-0072) rather than
+  answer null — the change applier would remove it, a merge would write over
+  it. The restore leaves it out and says how many.
+* **THE RE-ENCRYPTION JOB WALKS THE DIRECTORY.** A blob hides the values
+  sealed inside it (a TOTP secret, Kerberos keys) from LIKE, and a key counted
+  as unused is destroyed. `countSealed()`, `countAllSealed()` and
+  `resealSealed()` open every entry, a page at a time, and count or re-seal
+  the blob's key and every key inside it (STS-STORE-0073 if the walk fails).
+* **The keystore starts before the directory is restored** (see
+  `persistence.js`): a blob cannot be opened before the key-encryption key is
+  read.
+* `cell_convert.js` opens the source entries to plan them (a group's members
+  split between tiers) and seals what it writes for the tier it writes to.
+* A file (ldif) store is not sealed.
+
+## A MINTED ROW'S NAME IS A DIGEST, AND THE NAME IS SEALED (#222, 2026-10-01)
+
+`sts_minted.key` held the name a store filed a record under, and that is
+often the credential: a session id (the cookie), a SAML artifact. It is now
+the name's KEYED DIGEST (`persistence_minted.js`'s `keyColumnOf()`, under the
+keystore's digest key, the same on every node), and `key_sealed` (schema
+version 14) holds the name sealed (label `minted-key`). Three readers, three
+answers:
+
+* **a reader that has the name** (a change's reader, read-your-write) asks for
+  the digest of it;
+* **the restore** has no name to start from, and opens `key_sealed`;
+* **a change-log row** carries the SEALED name (the driver's
+  `recordChanges()`), not the digest, because a reader told of a DELETE must
+  drop that name from its own store and a digest cannot say which.
+
+A row with an empty `key_sealed` (written with no key held, or by a test) is
+read with its `key` as its name. Both new places are on `EXTRA_SEALED`, so the
+re-encryption job re-seals them. `cell_convert.js` carries `key_sealed` with
+the row.
+
+## SECRET SETTINGS ARE SEALED AT THE DRIVER'S DOOR (#222, 2026-10-01)
+
+A runtime setting marked `secret: true` in `common/config.js` (today only
+`scim.digestPassword`) is sealed when `sts_appconfig` or a realm's
+`sts_realms.overrides` is written, and opened when it is read —
+`sealed_settings.js` wraps the four settings methods of whatever driver
+`openStore()` made (the tiered one in a cell, whose settings go to the global
+tier). **Not earlier**: the settings are saved as a delta against a shadow of
+plaintext values, and a fresh ciphertext per flush would make every flush a
+change. A value that does not open is dropped (STS-STORE-0071) and the setting
+falls back to its configured value. Both columns are on the postgres driver's
+`EXTRA_SEALED` list, so the re-encryption job counts and re-seals them — **a
+column that holds sealed values and is not on that list is one whose data key
+the job destroys with the values still in it**.
+
+## A WINDOWED WORKER'S DIRECTORY (#349, 2026-09-29)
+
+With `ldap.workerDirectory=postgres-lru` the directory slot carries a
+`window` (`ldap/directory_window.ts`) and a `forgetEntry()`, and this module
+does four things differently. `ldap/CLAUDE.md` argues the window itself.
+
+* **`start()` refuses** postgres-lru without a postgres store or with cells
+  (`STS-LDAP-0133`), in every process, before anything is opened; and on
+  postgres it hands the window its bridge (`common/sync_query.ts`, dialled
+  with the driver's `bridgeConnection()`) BEFORE the restore. `stop()` ends
+  the bridge's thread after the last flush.
+* **The flush asks the window first** — `collect()`, with the journal or null
+  for a write that named nothing — before deciding whether anything is dirty:
+  an entry edited in place is found only by comparison, and the window lets go
+  of what it handed out only when a flush has looked. Its upserts (each with
+  its own base) and deletes go in the SAME `saveDirectory()` transaction as the
+  resident diff; `committed()` or `failed()` answers them, and the write
+  shadow is never advanced by them (a windowed key is never in it:
+  `realmEntries()` and `entryAt()` answer the resident half).
+* **`directoryTouched()`** is a fifth door: an entry was handed out, so a
+  flush is scheduled; it marks nothing and moves no generation, because a
+  read is not a write and the barrier must not wait on one.
+* **`applyDirectoryChange()` merges nothing for a windowed key**: it reads
+  the row, as it always does, and hands it to `forgetEntry()` — which notes a
+  person another process made in the identity register, as `applyEntry()`
+  does — and a busy key (changed, in flight or handed out) is left for this
+  process's own flush, which the store merges against the window's base,
+  while any other is forgotten and read again when asked for.
+  `applyDirectoryOutcomes()` leaves windowed
+  keys to `committed()`.
+
+* **The restore reads the RESIDENT entries only** (`loadDirectoryRows()`,
+  the `residentOnly` question with each realm's windowed containers from the
+  slot's `windowedContainers()`): the people and devices are read when first
+  asked for, which takes the directory out of a worker's start (#333 measured
+  it at a fifth of a sixty-eight-second start). The identity register is
+  still filled with every restored person: `replaceRealm()` reads their
+  NAMES from the store a page at a time (`ldap/CLAUDE.md`). A realm's seed is
+  still built at require time in every process.
+
+`tests/directory_window.js` section F drives all of it through this module
+over a `pg` double, including a change made here and one made there to the
+same entry both surviving, and the resident-only restore.
+
 ## WHAT A RESTART MUST NOT LOSE (2026-09-18)
 
 A redeploy of the testidp cluster showed `/admin/users` with one authenticated
@@ -1001,9 +1219,10 @@ where it was:
   `'keep'`, the default, is never dropped by age; `'age'` is the short-lived
   stores — nonces, codes, pending flows, in-flight transactions — whose rows
   are left behind only by a process that stopped before sweeping them, and
-  whose every lifetime is far below the retention. `purgeMinted(cutoff,
-  handles)` deletes only those handles; without the list it is the
-  ephemeral-key clear, where nothing in the table can be opened anyway. An
+  whose every lifetime is far below the retention. (Since #333 the restore
+  only SKIPS those rows, in its query, and the `persistence.minted-expiry-purge`
+  job deletes them — see the next section; `purgeMinted(before)` is now only
+  the ephemeral-key clear, where nothing in the table can be opened anyway.) An
   unknown word is `STS-CORE-0098` and read as `'keep'`: a retention policy
   that fails must keep data. Forty-three stores are `'age'`.
 * **A RESTARTED PROCESS WAS A NEW ORIGIN.** The origin was `pid-<uuid>` per
@@ -1044,6 +1263,113 @@ where it was:
 `tests/persistence_origin.js` holds B, C and D against a fake `pg` whose
 claims table two drivers share; `tests/minted_persistence.js` section 6 holds
 retention both ways. Ten mutants across the two, all caught.
+
+## A START READS ONLY LIVE ROWS OF DEFINED REALMS (2026-09-28, #333)
+
+Measured on testidp (build c8a2327b): each process — front, three request
+workers and a surface worker, on every node — spent **31 s** in
+`persistence_minted.restore()` reading `127131 minted row(s) … across 138
+declared store(s)`, which pushed a request worker's start past its 60 s limit
+and made the pool give up. `loadMinted()` was a `SELECT` of the whole of
+`sts_minted` with no `WHERE`; every row was fetched, decrypted and parsed, and
+the only filter was in JavaScript — `retain: 'age'`'s seven days of WRITE age.
+Rows of the 132 realms the suite had left behind, and every code, nonce and
+pending flow that had expired days earlier but was written within the week,
+were all read back.
+
+rcbj's decision: **the startup query asks only for currently valid data in
+currently defined realms.** Four parts:
+
+* **The read says what it wants.** `restoreFilter()` in
+  `persistence_minted.js` hands `loadMinted(filter)` the realm partitions that
+  exist (`''` for the shared stores, the default realm, and `realms.list()` —
+  the registry `persistence.start()` has already loaded), the instant, and the
+  `retain: 'age'` handles with the retention cutoff. The driver turns it into
+  `realm = ANY($2) AND (expires_at IS NULL OR expires_at > $3) AND NOT
+  (expires_at IS NULL AND handle = ANY($4) AND written_at < $5)`. The filter is
+  REQUIRED: a caller that does not say what it wants is refused rather than
+  handed the table. A realm created on another node in the seconds between
+  this process loading the registry and reading its rows is not in the list;
+  that window is the one that already existed between the restore and
+  `coordinate()`'s starting sequence number, and the realm's later writes
+  arrive through the change log as before.
+* **A row carries its own expiry.** A store declares `expiresAt(value, key)`
+  beside `retain` (`common/realms.js`; `realms.expiryField(field, scale)` is
+  the common shape), the flush writes its answer to `sts_minted.expires_at`
+  (epoch ms on the writing process's clock, compared with the reading
+  process's `Date.now()` — `sts_used_assertions`' arrangement), a merged row
+  writes the MERGED record's answer, and a tombstone writes NULL so only its
+  own purge ever takes it. The hook runs inside the row's realm, so a lifetime
+  setting is read for the realm the row belongs to. A hook that throws writes
+  NULL (`STS-STORE-0064`, once per store): kept is the safe failure. **The rule
+  a hook must keep: never earlier than the store itself would drop the row.**
+  So a store that keeps a record past its expiry on purpose answers that later
+  instant — `admin_stats.tokens` its `exp` plus the skew plus
+  `oauth2.expiredTokenRetentionS`, CIBA and device codes a finished request's
+  end plus their hour of retention — and a record whose ending does something
+  has NO hook: a pending CIBA request (its expiry sends the push client
+  `expired_token`), `authn.sessions` (the sweep audits, signals CAEP and plans
+  back-channel logout for each), the three outbound delivery queues and
+  `mail.outbox` (a stale pending row becomes a dead letter, audited, first),
+  `gnap.tokens` (RFC 9635 section 6.1.1 lets an EXPIRED token be rotated,
+  and this AS does), and `vc_status.entries` (a dropped entry would publish
+  its bit as VALID). Those stores' own sweeps delete their rows, and each
+  delete reaches the table like any other write.
+* **The restore deletes nothing.** It used to purge stale rows in EVERY
+  process at every start; now the CLUSTER job `persistence.minted-expiry-purge`
+  does (every five minutes): expired rows, rows of a realm not in `sts_realms`
+  written over an hour ago (a realm another node is creating writes its minted
+  rows and its registry row in two transactions, and the grace covers the
+  gap), and stale short-lived rows with no expiry. Each batch is one `DELETE …
+  WHERE ctid = ANY(ARRAY(SELECT ctid … LIMIT 5000))`, so a row rewritten
+  between the two halves has a new ctid and is left alone; at most twenty
+  batches of each kind per run, the rest left for the next — a start skips
+  them meanwhile, so a backlog costs disk and never start-up time. One summary
+  line per run that deleted anything; `STS-STORE-0065` when it fails.
+  `STS-STORE-0025` (the restore's purge failing) is retired.
+* **A removed realm's rows.** `realms.remove()` already deletes its
+  `sts_minted` rows in the directory transaction (`saveDirectory()`'s
+  `removedRealms`), for a realm this process removed. What could still leave
+  one behind is another process's flush in flight for that realm; the
+  orphan clause of the job collects it.
+
+**Schema version 12**: `sts_minted.expires_at bigint` and the partial index
+`sts_minted_expires ON sts_minted (expires_at) WHERE expires_at IS NOT NULL`
+(`postgres/CLAUDE.md` for the upgrade). Existing rows get NULL and fall under
+the write-age rule once; there is no other migration. The index is partial
+because the rows with no expiry are never looked up by it, and every INSERT
+into this, the busiest table, pays for an index.
+
+**`scheduler.runs` has a hook too, and it is not a record's own expiry
+(#338).** A run row has no lifetime of its own; what ends it is the history's
+BOUND — per job, its last `scheduler.runHistoryCount` runs or its last
+`scheduler.runHistoryHours`, whichever keeps more — and `scheduler.history`,
+not the expiry purge, deletes it, through the store (tombstoned, so every
+process drops it). The hook answers an instant past the first moment that
+purge could delete the row, so a start skips most of what it has not got to
+yet, and the purge PINS (`keepUntil`) a kept row whose instant is near — a job
+that stopped running, a bound raised later — so the hook's rule, never
+earlier than the store would drop the row, holds. `cluster/CLAUDE.md`, *The
+scheduler*, argues it. Rows written before #338 carry NULL and are read until
+the purge has deleted them.
+
+**What is still read whole, and why.** The `merge: 'own'` accumulators —
+`audit.events` above all — carry no expiry: a row is a process's share of a
+ring or a counter, not a record with a lifetime. `audit.events` is one row per
+32-event segment, per realm, per ORIGIN, up to `audit.maxEvents` (5000) events
+each — about 157 rows per origin per realm that has any events — and a start
+decrypts every origin's: its own into its ring, every other origin's into the
+replication fan-in (`replication.contribute()`), which the console reads. With
+five processes per node, a three-node cluster has fifteen origins, and a
+random origin left by a process that could not take its stable one is never
+aged out. That is kept as it is here and reported on #333.
+
+`tests/minted_persistence.js` sections 6 and 6b hold it against a stub driver
+that applies the same WHERE: the filter's realms, cutoff and short-lived
+handles; an expired row not restored, a live one and a non-expiring one
+restored; the undefined realm's row left out and purged; the hook's value
+written, NULL for a hook that throws; the job a cluster
+job; one run bounded at 100,000 rows with `more`, the next finishing.
 
 ## Adding a driver
 
@@ -1189,8 +1515,10 @@ confuse, since the `kid` is derived from the key material.
 ### What goes in the store is CIPHERTEXT, and neither driver ever holds a key
 
 `common/keystore.js` encrypts with AES-256-GCM before anything reaches a driver,
-so `keys.json` and `sts_keys.material` hold `$aesgcm$1$salt$iv$tag$body` and
-nothing else. That is what makes it acceptable for private keys to live beside
+so `keys.json` and `sts_keys.material` hold `$aesgcm$2$<dek id>$iv$tag$body`
+and, beside them, the `dek:<scope>:<realm>` rows of DATA ENCRYPTION KEYS each
+wrapped under the key-encryption key (#391, `common/CLAUDE.md`) — nothing
+else. That is what makes it acceptable for private keys to live beside
 the directory in the same store — and it is asserted rather than assumed:
 `tests/keystore.js` checks that no `BEGIN` survives into the stored form.
 
@@ -1230,6 +1558,26 @@ write ever clears one, and `restoreRealms()` hands it to a replicated
 and not finished). This module's `realms.onRetire()` hook is a `mark` that
 flushes, so the row and its change-log row are committed before `retire()`
 ends anything. The ldif driver needs nothing: it writes the rows as JSON.
+
+### Each node's snapshot is a table of its own (#332, schema version 11)
+
+`sts_node_snapshots` holds each cluster node's latest Monitoring → Worker
+Pools and → Node Health views, one row per node NAME, overwritten every
+fifteen seconds by `cluster/node_snapshots.ts`'s per-process job and read by
+whichever node draws those pages. The driver's `putNodeSnapshot()` (one
+upsert at the database's clock), `nodeSnapshots()` (every row, at most 64,
+with the database's `now`) and `purgeNodeSnapshots(olderThanMs, keepNames)`
+(one DELETE of the rows older than the age by the database's clock whose name
+is not kept, answering the names; an empty keep list is refused, because it
+means a membership read that failed) are the whole interface, reached through
+`clusterStore()`; memory and ldif have neither, and the pages say there is
+no cluster store. **Not `sts_cluster_nodes.info`**, which is where another
+node's cache figures ride: that column is rewritten on every heartbeat and
+read, for every retained row, on every heartbeat — a snapshot is kilobytes,
+and the heartbeat is what a node's life depends on. The write is not fenced:
+it is a report, not state anything acts on, and its age is drawn.
+`schema.sql` adds it with `CREATE TABLE IF NOT EXISTS`, and the grants on
+every table in the schema cover it.
 
 ### The schema version moved to 2
 
@@ -1429,3 +1777,137 @@ entry through the real directory and reading it back from a second process.
 **AND THE DIRECTORY NOW CARRIES THE CLIENT TRUSTSTORE'S RUNTIME ANCHORS**, in
 `ou=trustAnchors` in the default realm — so "the embedded directory persists"
 includes them. `tls/CLAUDE.md` argues it.
+
+## TIERS: A CELL'S STORE IS TWO DATABASES (#98, 2026-09-28)
+
+**A service deployed as cells** (`common/cells.ts`, `cells.id` set) keeps its
+store in two places per cell, and this directory is where the split lives.
+The design and its decisions are issue #98's body; this section is the part a
+maintainer of this directory has to know.
+
+| Tier | Where | What |
+|---|---|---|
+| GLOBAL | one writer for the service (`persistence.globalDatabaseUrl`), read from this cell's replica (`…ReadUrl`) | realms, settings, signing keys and the certificate authorities, the shared cluster secrets, the used-assertion history, the routing index, applications, policies and the other configuration entries, and the minted stores `tiers.js` lists as global |
+| CELL | this cell's own database (`persistence.databaseUrl`) | the people homed here and their devices, group membership of those people, and everything this cell mints — sessions, codes, tokens, deliveries, the audit log, risk history, the cluster's membership and leases |
+
+**`tiers.js` IS THE ONE PLACE A STORE'S TIER IS DECIDED, AND EVERY STORE IS
+IN IT.** A directory entry's tier comes from where it sits (below `ou=users`
+is a person, cell tier; a device by its owner's kind; a group is SPLIT — its
+definition global, its person members in their cell — `splitGroup()` and
+`joinGroup()`); a minted store's from its handle, listed global or cell by
+name. `tests/cell_tiers.js` reads every `persist:` in the tree and fails on
+one in neither list: a default tier would be a default answer to a residency
+question, and the wrong default is a person's data in another country with
+nothing failing. A GLOBAL minted store is the exception that is argued beside
+its name — configuration, a revocation every cell must see, or a replay set a
+CLIENT chooses the keys of (a DPoP `jti`, a Kerberos authenticator), which a
+per-cell set would accept once per cell.
+
+**`persistence_tiered.js` IS THE DRIVER THE SERVICE SEES**, with the postgres
+driver's whole interface: the cell driver's methods bound by default (the
+cluster is the cell's), the global ones over them, and the directory and the
+minted rows split row by row. Three things it does beyond routing:
+
+* **The routing index** (`sts_cell_routing`, schema version 11) is kept at the
+  flush, the one place every person passes: a person written for the first
+  time claims their login name and entryUUID as keyed digests
+  (`common/cell_routing.ts` makes them), a delete releases both, and a claim
+  answered with another cell is counted (STS-CELL-0020) rather than failing
+  the flush — creation paths claim first, and this is the race that check
+  cannot close.
+* **A projected entry is never written here** (origin `projection:<home>`,
+  `common/cell_sessions.ts`); a change to one is handed to the sessions module,
+  which sends it home. `persistence.materializeEntry()` is how a projection
+  enters the directory without becoming a row: `restoring` set and the shadow
+  advanced, exactly as a replicated entry is applied.
+* **What is not atomic across the two databases** is said in its header: a
+  flush touching both tiers is two transactions, global first, and a failure
+  between them is written by the next flush because the shadow only advances
+  on success. A global write is not fenced by the cell's membership.
+
+**TWO CHANGE LOGS, TWO FOLLOWERS.** `persistence_replication.js` is a factory
+since #98: the module's own exports are the instance for the process's main
+log (the cell's, or the only one), and `persistence.js`'s `coordinate()`
+builds `createReplication('global')` on the global driver itself, so its own
+rows are skipped by the origin the global driver stamps. Its pull and trim
+jobs carry `global` in their ids. The two may pull at once; the one thing they
+share, `persistence_minted.js`'s page prefetch, never answers across them
+because a handle is in exactly one tier. **The read barrier waits on the
+cell's log only**: a global change made in another cell arrives after the
+replica's lag, which `/admin/cells` shows — a barrier on it would put a
+cross-region round trip on every request, which #98 D3 declined.
+
+**THE READ POOL.** `persistence_postgres.js` takes a `readUrl`: every
+statement that only reads (the restore, the change log, the row a change
+points at, the routing lookups) goes to it, and everything that writes, locks
+or claims stays on the writer. A change row and its data row are read from the
+same replica, which replays the writer's commits whole and in order, so a
+pointer is never read ahead of what it points at.
+
+**A GLOBAL JOB RUNS IN ONE CELL, NOT IN EVERY CELL.** A cluster job claims its
+run in its cluster's database, and a cell is a cluster — so a job whose work
+is the global tier's (a realm signing-key rotation, the krbtgt key, a SPIFFE
+authority, the OpenID Federation key, a client secret's expiry, the global
+used-assertion purge; `tiers.js`'s `GLOBAL_JOBS`) claimed there would run once
+per cell. In multi-cell mode the scheduler claims those runs under
+`scheduler.run.global` (`tiers.GLOBAL_RUN_SCOPE`), and the tiered driver keeps
+that scope in the global database (`claimTierOf()`); `purgeClaims()` runs on
+both. A new job that writes global state belongs on that list.
+
+**SEALING BY TIER.** A cell-tier minted row is sealed under the cell's own
+key-encryption key (`keys.cellKek*`, `keystore.seal(…, 'cell')`), which lives
+only in the cell's region and has no fallback; `keystore.open()` tries the
+cell key and then the service key, since AES-GCM's tag makes the wrong one
+fail rather than answer. Single-cell mode seals everything under the service
+key, as it always did.
+
+**WHAT A CELL REFUSES AT START** (`checkCells()`): inconsistent cell settings
+(STS-CELL-0001), a store that is not postgres or no global database (0002), no
+cell key in product mode (0003), keys that are not persisted or no operator
+key-encryption key (0004 — every cell must sign with the same realm keys, #98
+D8), and no `global.publicBaseUrl` (0005 — a relayed request reaches the
+owning cell under a private name).
+
+### Converting a single-cell store (#98, 2026-09-28)
+
+**`cell_convert.js` turns a single-cell deployment's database into a cell,
+ONCE** — `node persistence/cell_convert.js [--dry-run]`, run in the image and
+configured exactly as the cell it becomes (`cells.id`, the cell's
+`databaseUrl` pointing at the old database, the global database built empty,
+the service KEK). It dials both through `databaseConnection()`,
+`globalDatabaseConnection()` and the driver's `dialOptions()`, and holds the
+KEK through `keystore.start()`, which also proves that key opens the stored
+key sets — a routing digest under the wrong key would route nobody.
+
+**IT WRITES WHAT THE TIERED DRIVER WOULD HAVE.** Every row of the tables
+whose methods are in `GLOBAL_METHODS` moves (realms, appconfig, keys, used
+assertions, cluster secrets), the directory is split by
+`tiers.directoryTierOf()`, a group into its `splitGroup()` halves (a cell half
+that is empty is DELETED, as `splitChange()` deletes it), a minted row moves
+when `mintedTierOf()` says global (an unclassified handle stays, as
+`byHandleTier()` keeps it), and a `scheduler.run.global` claim moves. The
+routing index is backfilled through `persistence.routingDigest()` — the one
+digest, now also the one the tiered driver is built with — from
+`persistence_tiered.loginNameOf()` and `uuidOf()`, so a backfilled row is the
+row `indexPeople()` writes. Rows are copied verbatim, jsonb as parsed values
+and timestamps as UTC text; nothing is re-sealed (`keystore.open()` falls back
+to the service key). `sts_risk_*` is only ever counted.
+
+**COPY, VERIFY, THEN DELETE**, one transaction each on the global and then
+the cell database, so the only states a failure leaves are *not started*
+(global empty), *copied* (global holds exactly the cell's realms and keys: a
+re-run copies again and finishes) and *converted* (the cell holds no realm and
+no key: nothing moves, a missing index row is claimed, exit 0). A global
+database whose realms or keys differ, or whose index names another cell, is a
+second source and is refused (STS-CELL-0203); STS-CELL-0200 to 0209 are its
+codes.
+
+**THE CHANGE LOGS ARE NOT COPIED.** Nothing runs across a conversion, and a
+process that starts restores the tables and follows each log from its end —
+so the global database's `sts_changes` and `sts_change_readers` start empty,
+and the old deployment's readers and nodes in the cell database are dropped
+by the next trim and the dead-node purge like any dead node's.
+
+`tests/cell_convert.js` holds the rules over two in-memory databases;
+`tests/tools/rehearse-cell-conversion.sh` rehearses it against real
+PostgreSQL (`tests/CLAUDE.md`).

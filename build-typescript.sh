@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: BUSL-1.1
 #
 # File: build-typescript.sh
 #
@@ -33,6 +33,19 @@
 #      files, for the service image's final stage to copy the tree without
 #      them. The tests image does NOT strip: `tests/typecheck.js` checks a
 #      pristine copy of the sources there (STS_TYPECHECK_ROOT).
+#   4. With `--strip`, too (#365, 2026-09-30): takes the COMMENTS out of every
+#      `.js` the service image ships — the compiled ones and the ones written
+#      in JavaScript — with `tests/tools/strip-comments.js`. V8 keeps every
+#      script's source for the life of the process, as UTF-16 when a comment
+#      holds an em-dash, and that was 79 MB of every process's heap (#339).
+#      Names, whitespace between tokens and every line break are kept, so a
+#      line number in a stack trace from the image is the repository's; the
+#      tool proves each file's token stream unchanged and fails the build
+#      otherwise. Since #369 it also writes every character above U+00FF in
+#      a string or regular-expression literal as a \uXXXX escape (proved the
+#      same value), so V8 stores the script one-byte: another ~20 MB per
+#      isolate. Its header says what it skips and why. The tests image does
+#      not strip here either: its tests read the sources as text.
 #
 # The compiler is `tests/node_modules/.bin/tsc`, a dependency of
 # `tests/package.json` for `.npmrc`'s reason; the caller installs it first.
@@ -101,4 +114,7 @@ if [ "$STRIP" = true ]; then
   rm -rf ./types ./tsconfig.json ./tsconfig.build.json
   echo "build-typescript.sh: stripped $STRIPPED .ts source(s), types/ and" \
        "the tsconfig files"
+  # The comments, from what is left (#365). Its parser is a dependency of
+  # tests/package.json, installed by the caller with the compiler.
+  node tests/tools/strip-comments.js .
 fi

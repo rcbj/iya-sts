@@ -131,7 +131,11 @@ Claims worth knowing:
   read it to tell an access token from an ID Token or a refresh token, all
   three being signed by one key.
 * `auth_time`, `amr` and `acr` are copied from the session. A
-  `client_credentials` token has none of them, and its `sub` is the client.
+  `client_credentials` token has none of them, and no `username` or
+  `preferred_username` either: it is about no person. Its `sub` is the client
+  application (the `client_id`, or `urn:sts:client:<client_id>` in RFC 9700
+  mode), and its `roles` are the roles the application holds as itself
+  (`roleMemberApplication`), with the roles of the application it is for.
 * `groups` comes from the person's directory groups.
 
 ## OpenID Connect ID Token
@@ -277,8 +281,6 @@ curl -X POST https://127.0.0.1:38081/oauth2/token \
   "access_token": "eyJhbGciOiJSUzI1NiIsInR5cCI6Im…WgQY_nzkzS2Jvz3aUyWg",
   "token_type": "Bearer",
   "expires_in": 3600,
-  "scope": "",
-  "id_token": "eyJhbGciOiJSUzI1NiIsInR5cCI6Ik…pbF4jTS4SWDAXv04ZEig",
   "issued_token_type": "urn:ietf:params:oauth:token-type:access_token"
 }
 ```
@@ -304,8 +306,13 @@ curl -X POST https://127.0.0.1:38081/oauth2/token \
 }
 ```
 
-The empty `scope` and the unrequested `id_token` are a bug,
-[#156](https://github.com/rcbj/iya-sts/issues/156).
+No `scope` was asked for, so the exchange carried the subject token's
+`openid profile` forward. Those are OpenID Connect scopes, which belong to
+this service's own UserInfo, so they are not put on a token for another API
+(RFC 9068 section 2.2.3). The token therefore carries no scope. The response
+leaves the `scope` member out, and no `id_token` comes back
+([#156](https://github.com/rcbj/iya-sts/issues/156)). See
+[Delegation and impersonation](delegation.html#oauth-20-token-exchange-rfc-8693).
 
 ### Introspection response as a JWT (RFC 9701)
 
@@ -2541,9 +2548,9 @@ curl -X POST https://127.0.0.1:38081/oauth2/token \
 ```json
 {
   "iss": "https://127.0.0.1:38081",
-  "sub": "",
+  "sub": "urn:uuid:<diploma.student's entryUUID>",
   "aud": "https://127.0.0.1:38081/resource",
-  "client_id": "",
+  "client_id": "urn:sts:oid4vci:anonymous-wallet",
   "typ": "Bearer",
   "jti": "ge_28dKJ77xm4FJRc0QjpA",
   "iat": 1790111821,
@@ -2555,8 +2562,15 @@ curl -X POST https://127.0.0.1:38081/oauth2/token \
 }
 ```
 
-The empty `sub` and `client_id` are a bug,
-[#158](https://github.com/rcbj/iya-sts/issues/158).
+`sub` is the offered person's subject, the same `urn:uuid:` value their ID
+Token carries. It is resolved when the code is redeemed, so it is set even when
+the offer was made before the person had a directory entry. (This sample was
+captured before [#158](https://github.com/rcbj/iya-sts/issues/158) was fixed,
+when both claims were empty strings, so `sub` is shown as a placeholder.) The
+wallet named no client, which OpenID4VCI section 6.1 allows. RFC 9068 section
+2.2 still requires `client_id`, so the token carries
+`urn:sts:oid4vci:anonymous-wallet`. A wallet that sends a `client_id` gets
+that value instead.
 
 ### Token Status List as a CWT (`statuslist+cwt`)
 
@@ -2660,14 +2674,15 @@ that key's signature.
 
 ### `jwt-signed`
 
-The header's `typ` is `JWT`, and `GNAP` is the payload's `typ` claim.
-[GNAP](gnap.md) says otherwise, which is
-[#157](https://github.com/rcbj/iya-sts/issues/157).
+The header's `typ` is `gnap-at+jwt`, a private media type
+([GNAP](gnap.md#the-jwt-formats-type) argues it), and is what a resource
+server checks. `GNAP` in the payload's `typ` is this service's own marker for
+its token register, as `Bearer` is on an OAuth access token.
 
 *Encoded (shortened):*
 
 ```text
-eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6InN0cy1mNzA0NTI0…4Ssgn6IN5TfYAj-LyOpw
+eyJhbGciOiJSUzI1NiIsInR5cCI6ImduYXAtYXQrand0Iiwia2lkIjoic3RzLWY3MDQ1MjQx…4Ssgn6IN5TfYAj-LyOpw
 ```
 
 *Header:*
@@ -2675,7 +2690,7 @@ eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6InN0cy1mNzA0NTI0…4Ssgn6IN5TfYAj-Ly
 ```json
 {
   "alg": "RS256",
-  "typ": "JWT",
+  "typ": "gnap-at+jwt",
   "kid": "sts-f7045241e6b0",
   "x5u": "https://127.0.0.1:38081/pki/chain/default/8f1e19cfeec3d56c499825b1ef7094961166198463b14e301914bef595c199dc.pem"
 }

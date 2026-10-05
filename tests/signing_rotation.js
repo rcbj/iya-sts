@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -137,6 +137,20 @@ function childMain() {
     note(/rotationIntervalDays is 0/.test(own.offReason()),
          'A4. and an interval of 0 switches it off', own.offReason());
     config.clearOverride('signing.rotationIntervalDays');
+
+    // A realm that has not made its key set has nothing to rotate or retire,
+    // and the two jobs must not MAKE one: that is a synchronous RSA
+    // generation on the thread, once per realm per minute, and with a few
+    // hundred realms it held the event loop for tens of seconds (2026-09-29).
+    const bare = 'srbare' + Date.now().toString(36);
+    realms.create({ id: bare, name: 'rotation, no keys' });
+    const bareRotate = await own.rotateDue(bare);
+    const bareRetire = own.retireDue(bare);
+    note(!helpers.stsKeysFor.existing().has(bare) &&
+         bareRotate.minted.length === 0 && bareRetire.dropped.length === 0,
+         'A5. a realm with no key set yet is left without one by both jobs',
+         JSON.stringify({ made: helpers.stsKeysFor.existing().has(bare),
+                          rotate: bareRotate, retire: bareRetire }));
 
     // --- B. the schedule ---------------------------------------------------------
     const units = helpers.signingUnitsOf(keysNow()).map(function (u) {
