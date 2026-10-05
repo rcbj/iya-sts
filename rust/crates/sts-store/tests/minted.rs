@@ -212,6 +212,29 @@ async fn minted_state_on_postgres() {
         c.carts.get("c").unwrap()["items"].as_array().unwrap().len(),
         3
     );
+    // The purges: expired rows and a realm nobody defines go; so does an
+    // ended row's tombstone once it is past the retention.
+    raw(
+        &url,
+        "INSERT INTO sts_minted (handle, realm, key, body, written_at, expires_at) VALUES \
+         ('test.sessions', 'default', 'x-expired', 'b', now(), 1), \
+         ('test.sessions', 'no-such-realm', 'x-orphan', 'b', now() - interval '2 hours', NULL)",
+    )
+    .await;
+    let minted = c.persistence.minted().unwrap();
+    let now = sts_core::time::now_ms_f64() as i64;
+    let purged = minted.purge_expired(now).await.unwrap();
+    assert!(purged["expired"].as_u64().unwrap() >= 2, "{}", purged);
+    assert!(purged["orphaned"].as_u64().unwrap() >= 1, "{}", purged);
+    assert_eq!(purged["more"], false);
+    assert_eq!(minted.tombstone_sweep_off(), "");
+    assert!(minted.sweep_tombstones(far).await.unwrap() >= 1);
+    let left = raw(
+        &url,
+        "SELECT key FROM sts_minted WHERE handle = 'test.sessions'",
+    )
+    .await;
+    assert_eq!(left.len(), 1, "only the live session is left");
     let status = c.persistence.status();
     assert!(
         status["minted"]["restored"].as_u64().unwrap() >= 2,

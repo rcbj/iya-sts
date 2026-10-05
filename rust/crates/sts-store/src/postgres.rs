@@ -45,7 +45,8 @@ use tokio_postgres::Row;
 use crate::codec;
 use crate::driver::{
     ChangeLog, ChangeRow, Directory, Driver, KeyMerge, MintedDecided,
-    MintedFilter, MintedRow, MintedWrite, StoreError, StoreFuture, StoreResult,
+    MintedFilter, MintedRow, MintedWrite, PurgeKind, StoreError, StoreFuture,
+    StoreResult,
 };
 use crate::merge::{merge_entry, Outcome};
 use crate::model::{
@@ -375,7 +376,7 @@ impl Driver for PostgresDriver {
                     .query(
                         &format!(
                             "{} AND NOT (expires_at IS NULL AND handle = ANY($4::text[]) AND written_at < \
-                             to_timestamp($5 / 1000.0))",
+                             to_timestamp($5::float8 / 1000.0))",
                             base
                         ),
                         &[
@@ -583,12 +584,78 @@ impl Driver for PostgresDriver {
         })
     }
 
+    fn purge_tombstones(&self, before_ms: i64) -> StoreFuture<'_, u64> {
+        Box::pin(async move {
+            let client = self.client().await?;
+            client
+                .execute(
+                    "DELETE FROM sts_minted WHERE body = $1 AND written_at < to_timestamp($2::float8 / 1000.0)",
+                    &[&TOMBSTONE, &(before_ms as f64)],
+                )
+                .await
+                .map_err(err)
+        })
+    }
+
+    // BOUNDED: one batch of `limit` rows by ctid, so a backlog is a few
+    // short statements over several runs, never one delete holding locks
+    // on the busiest table here.
+    fn purge_expired_minted(
+        &self,
+        kind: PurgeKind,
+        limit: i64,
+    ) -> StoreFuture<'_, u64> {
+        Box::pin(async move {
+            let client = self.client().await?;
+            let limit = limit.max(1);
+            let wrap = |filter: &str| {
+                format!(
+                    "DELETE FROM sts_minted WHERE ctid = ANY(ARRAY(SELECT ctid FROM sts_minted WHERE {} LIMIT {}))",
+                    filter, limit
+                )
+            };
+            match kind {
+                PurgeKind::Expired { now_ms } => {
+                    client
+                        .execute(&wrap("expires_at IS NOT NULL AND expires_at <= $1"), &[&now_ms])
+                        .await
+                }
+                PurgeKind::Orphan { default_realm, before_ms } => {
+                    client
+                        .execute(
+                            &wrap(
+                                "realm <> '' AND realm <> $1 AND written_at < to_timestamp($2::float8 / 1000.0) AND NOT \
+                                 EXISTS (SELECT 1 FROM sts_realms r WHERE r.id = sts_minted.realm)",
+                            ),
+                            &[&default_realm, &(before_ms as f64)],
+                        )
+                        .await
+                }
+                PurgeKind::Stale { handles, before_ms } => {
+                    if handles.is_empty() || before_ms <= 0 {
+                        return Ok(0);
+                    }
+                    client
+                        .execute(
+                            &wrap(
+                                "expires_at IS NULL AND body <> $1 AND handle = ANY($2::text[]) AND written_at < \
+                                 to_timestamp($3::float8 / 1000.0)",
+                            ),
+                            &[&TOMBSTONE, &handles, &(before_ms as f64)],
+                        )
+                        .await
+                }
+            }
+            .map_err(err)
+        })
+    }
+
     fn purge_minted(&self, before_ms: i64) -> StoreFuture<'_, u64> {
         Box::pin(async move {
             let client = self.client().await?;
             client
                 .execute(
-                    "DELETE FROM sts_minted WHERE written_at < to_timestamp($1 / 1000.0)",
+                    "DELETE FROM sts_minted WHERE written_at < to_timestamp($1::float8 / 1000.0)",
                     &[&(before_ms as f64)],
                 )
                 .await

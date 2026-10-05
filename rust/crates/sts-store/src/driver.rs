@@ -186,6 +186,18 @@ pub trait Driver: Send + Sync {
     ) -> StoreFuture<'_, Vec<MintedRow>> {
         Box::pin(async { Ok(Vec::new()) })
     }
+    /// Removes the tombstones written before `before_ms`.
+    fn purge_tombstones(&self, _before_ms: i64) -> StoreFuture<'_, u64> {
+        Box::pin(async { Ok(0) })
+    }
+    /// Removes at most `limit` rows of one kind no restore will read again.
+    fn purge_expired_minted(
+        &self,
+        _kind: PurgeKind,
+        _limit: i64,
+    ) -> StoreFuture<'_, u64> {
+        Box::pin(async { Ok(0) })
+    }
     /// Removes every minted row written before `before_ms`.
     fn purge_minted(&self, _before_ms: i64) -> StoreFuture<'_, u64> {
         Box::pin(async { Ok(0) })
@@ -273,6 +285,23 @@ pub struct MintedDecided {
     /// `(handle, realm, journal key, body)` of an upsert merged with the
     /// stored row.
     pub merged: Vec<(String, String, String, String)>,
+}
+
+/// The three kinds of minted row nothing will read again (#333).
+#[derive(Clone, Debug)]
+pub enum PurgeKind {
+    /// Past its own expiry.
+    Expired { now_ms: i64 },
+    /// Of a realm no longer defined, written before `before_ms`.
+    Orphan {
+        default_realm: String,
+        before_ms: i64,
+    },
+    /// A short-lived store's row with no expiry, written before `before_ms`.
+    Stale {
+        handles: Vec<String>,
+        before_ms: i64,
+    },
 }
 
 /// What [`Driver::merge_keys`] decides with.

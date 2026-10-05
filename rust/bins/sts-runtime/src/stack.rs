@@ -244,6 +244,63 @@ impl Stack {
             })
         }));
         scheduler.register(pull)?;
+        // The two sweeps of the minted table, each once for the cluster:
+        // the tombstones of ended rows past persistence.mintedRetention, and
+        // the rows no start will read again (#333).
+        for (id, title, describe, every_ms) in [
+            (
+                "persistence.tombstone-purge",
+                "Expired tombstones sweep",
+                "Deletes the tombstones of ended minted rows older than persistence.mintedRetention from the \
+                 shared store.",
+                10.0 * 60.0 * 1000.0,
+            ),
+            (
+                "persistence.minted-expiry-purge",
+                "Expired minted rows purge",
+                "Deletes from the shared store, in batches of 5000 and at most 20 batches of each kind per run, \
+                 the minted rows no start will read again: past their own expiry, of a realm that is no longer \
+                 defined (written over an hour ago), and a short-lived store's rows with no expiry older than \
+                 persistence.mintedRetention.",
+                5.0 * 60.0 * 1000.0,
+            ),
+        ] {
+            let mut job = sts_cluster::schedule::JobSpec::new(
+                id,
+                title,
+                describe,
+                "persistence/persistence_minted.js",
+                sts_cluster::schedule::Schedule::Every(Arc::new(move || every_ms)),
+            );
+            let tombstones = id == "persistence.tombstone-purge";
+            let watched = Arc::downgrade(&persistence);
+            job.off = Some(Arc::new(move |_realm: &str| {
+                Ok(match watched.upgrade().and_then(|p| p.minted()) {
+                    Some(m) if tombstones => m.tombstone_sweep_off(),
+                    Some(_) => String::new(),
+                    None => "minted state is not persisted here".to_string(),
+                })
+            }));
+            let owner = Arc::downgrade(&persistence);
+            job.run = Some(Arc::new(move |_ctx| {
+                let owner = owner.clone();
+                Box::pin(async move {
+                    let Some(minted) = owner.upgrade().and_then(|p| p.minted()) else {
+                        return Ok(Json::Null);
+                    };
+                    let now = sts_core::time::now_ms_f64() as i64;
+                    if tombstones {
+                        minted
+                            .sweep_tombstones(now)
+                            .await
+                            .map(|n| serde_json::json!({ "removed": n }))
+                    } else {
+                        minted.purge_expired(now).await
+                    }
+                })
+            }));
+            scheduler.register(job)?;
+        }
         Ok(Stack {
             settings,
             mode,
