@@ -1709,7 +1709,9 @@ dependencies = [
  "openssl",
  "serde_json",
  "sts-core",
+ "sts-crypto",
  "tracing",
+ "url",
 ]
 
 [[package]]
