@@ -11,6 +11,7 @@ members = [
   "crates/sts-pki",
   "crates/sts-cache",
   "crates/sts-store",
+  "crates/sts-cluster",
   "crates/sts-xml",
   "crates/sts-core",
   "crates/sts-xacml",
@@ -32,12 +33,14 @@ sts-core = { path = "crates/sts-core" }
 sts-crypto = { path = "crates/sts-crypto" }
 sts-pki = { path = "crates/sts-pki" }
 sts-store = { path = "crates/sts-store" }
+sts-cluster = { path = "crates/sts-cluster" }
 sts-xacml = { path = "crates/sts-xacml" }
 sts-xml = { path = "crates/sts-xml" }
 axum = "0.8"
 base64 = "0.23"
 flate2 = "1"
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+croner = "4"
 hyper = { version = "1", features = ["server", "http1", "http2"] }
 hyper-util = { version = "0.1", features = ["server", "server-auto", "tokio", "service"] }
 # OpenSSL 3.5+ built from source, so every machine and image has the same

@@ -2367,6 +2367,195 @@ function mergeVectors() {
            single: merge.SINGLE, multi: merge.MULTI };
 }
 
+// THE SCHEDULER'S CORE (`cluster/scheduler.ts`, #49): a Scheduler built with
+// stand-in deps over settings the vectors carry, and a set of job
+// descriptors both sides build the same jobs from. Slots, schedule text,
+// off-reasons, next delays, run ids, row ranks and expiries, refused
+// registrations, and croner's previous and next occurrence (the npm
+// package's, which the Rust crate must read alike).
+function schedulerVectors() {
+  const S = require(path.join(ROOT, 'cluster', 'scheduler.js')).Scheduler;
+  const bunyan = require('bunyan');
+  const settings = { 'scheduler.enabled': true, 'scheduler.tickS': 15,
+                     'scheduler.disabledJobs': ['x.listed'],
+                     'scheduler.maxConcurrentRuns': 4,
+                     'scheduler.runTimeoutS': 300,
+                     'scheduler.runHistoryCount': 50,
+                     'scheduler.runHistoryHours': 24,
+                     'a.everyS': 30, 'a.everyMin': 0, 'a.everyH': 2,
+                     'a.everyDays': 3, 'a.everyMs': 250 };
+  let pool = 0;
+  const sched = new S({
+    log: bunyan.createLogger({ name: 'vectors', level: 'fatal' }),
+    config: { value: function (k) { return settings[k]; } },
+    realms: { list: function () { return [{ id: 'default' }]; },
+              run: function (r, fn) { return fn(); },
+              get: function () { return null; }, DEFAULT_ID: 'default' },
+    errorCodes: require(path.join(ROOT, 'common', 'error_codes.js')),
+    audit: { record: function () {} },
+    cluster: {}, claims: {}, store: { realmMap: function () {
+      return new Map();
+    } },
+    dbNow: function () { return Promise.resolve(0); },
+    now: function () { return 0; },
+    setTimer: function () { return null; }, clearTimer: function () {},
+    cronPrev: S.cronPrev, cronNext: S.cronNext,
+    storeConnections: function () { return pool; },
+    host: 'h', pid: 1, isRequestWorker: function () { return false; }
+  });
+  const descriptors = [
+    { id: 'a.seconds', everySetting: 'a.everyS' },
+    { id: 'a.minutes', everySetting: 'a.everyMin', unit: 'min' },
+    { id: 'a.hours', everySetting: 'a.everyH', unit: 'h', scope: 'realm',
+      off: { acme: 'acme is retiring' } },
+    { id: 'a.days', everySetting: 'a.everyDays', unit: 'days',
+      timeoutS: 7 },
+    { id: 'a.millis', everySetting: 'a.everyMs', unit: 'ms',
+      kind: 'per-process', quiet: true },
+    { id: 'b.fixed', everyMs: 90000, kind: 'per-process' },
+    { id: 'b.fraction', everyMs: 1500.5 },
+    { id: 'c.nightly', cron: '0 3 * * *' },
+    { id: 'c.seconds', cron: '*/20 * * * * *' },
+    { id: 'd.manual', manualOnly: true },
+    { id: 'x.listed', everyMs: 1000 },
+    { id: 'x.throws', everyMs: 5000, offThrows: 'no store' }
+  ];
+  const specOf = function (d) {
+    const spec = { id: d.id, title: 'T ' + d.id, describe: 'D', owner: 'O',
+                   run: function () { return null; } };
+    ['kind', 'scope', 'quiet', 'cron', 'manualOnly', 'everySetting',
+     'timeoutS'].forEach(function (k) {
+      if (d[k] !== undefined) {
+        spec[k] = d[k];
+      }
+    });
+    if (d.unit) {
+      spec.everySettingUnit = d.unit;
+    }
+    if (d.everyMs !== undefined) {
+      spec.everyMs = function () { return d.everyMs; };
+    }
+    if (d.off) {
+      spec.off = function (realm) { return d.off[realm] || ''; };
+    }
+    if (d.offThrows) {
+      spec.off = function () { throw new Error(d.offThrows); };
+    }
+    return spec;
+  };
+  descriptors.forEach(function (d) {
+    sched.register(specOf(d));
+  });
+  const times = [0, 999, 1000, 29999, 30000, Date.UTC(2026, 0, 2, 3, 0, 0),
+                 Date.UTC(2026, 0, 2, 3, 0, 0, 999),
+                 Date.UTC(2026, 0, 2, 2, 59, 59, 999),
+                 Date.UTC(2026, 9, 5, 9, 17, 41, 123)];
+  const jobs = descriptors.map(function (d) {
+    const job = sched.job(d.id);
+    return {
+      id: d.id,
+      interval: sched.intervalMs(job),
+      text: sched.scheduleText(job),
+      off: ['default', 'acme'].map(function (r) {
+        return sched.offReason(job, r);
+      }),
+      timeout: sched.timeoutMsOf(job),
+      slots: times.map(function (t) { return sched.slotAt(job, t); }),
+      runIds: [0, 1, 1767322800000].map(function (slot) {
+        return sched.runIdFor(job, 'acme', slot);
+      })
+    };
+  });
+  const delays = times.map(function (t) {
+    sched.deps.now = function () { return t; };
+    return { cluster: sched.nextDelayMs('cluster'),
+             perProcess: sched.nextDelayMs('per-process') };
+  });
+  const concurrency = [0, 1, 2, 3, 10].map(function (n) {
+    pool = n;
+    return sched.maxConcurrentRuns();
+  });
+  const refused = [
+    { id: 'Bad', title: '', describe: 'd', owner: 'o', everyMs: 1 },
+    { id: 'one', title: 't', describe: 'd', owner: 'o', everyMs: 1 },
+    { id: 'c.broken', title: 't', describe: 'd', owner: ' ',
+      cron: '61 * * * *' },
+    { id: 'q.quiet', title: 't', describe: 'd', owner: 'o', everyMs: 1,
+      quiet: true },
+    { id: 'p.manual', title: 't', describe: 'd', owner: 'o',
+      kind: 'per-process', manualOnly: true },
+    { id: 'a.seconds', title: 't', describe: 'd', owner: 'o', everyMs: 1 }
+  ].map(function (d) {
+    try {
+      sched.register(specOf(d));
+      return { descriptor: d, error: null };
+    } catch (e) {
+      return { descriptor: d, error: e.message };
+    }
+  });
+  const rows = [
+    { kind: 'run', jobId: 'a.seconds', state: 'succeeded', endedAt: 1000 },
+    { kind: 'run', jobId: 'a.seconds', state: 'running', endedAt: 1000 },
+    { kind: 'run', jobId: 'c.nightly', state: 'failed', endedAt: 1000 },
+    { kind: 'run', jobId: 'nope.job', state: 'failed', endedAt: 1000 },
+    { kind: 'run', jobId: 'a.hours', state: 'abandoned', updatedAt: '5000',
+      keepUntil: 9e12 },
+    { kind: 'process', jobId: 'a.millis', endedAt: 7 },
+    { kind: 'process', jobId: 'b.fixed', queuedAt: 7 },
+    { kind: 'process', jobId: 'b.fixed' },
+    { kind: 'command', state: 'queued', queuedAt: 3 },
+    { kind: 'command', state: 'succeeded', queuedAt: 3 },
+    { kind: 'leader', updatedAt: 3 }
+  ];
+  const expiries = rows.map(function (r) { return sched.expiryOf(r); });
+  const ranks = [
+    [{ attempt: 1 }, { attempt: 2 }],
+    [{ attempt: 2, fenceAt: 1 }, { attempt: 2, fenceAt: 0 }],
+    [{ state: 'running' }, { state: 'queued' }],
+    [{ state: 'failed' }, { state: 'running', updatedAt: 9 }],
+    [{ state: 'failed', updatedAt: 2 }, { state: 'succeeded', updatedAt: 2 }],
+    [{ attempt: '3' }, { attempt: 3 }],
+    [{ attempt: 'x' }, {}]
+  ].map(function (pair) {
+    return { a: pair[0], b: pair[1], order: S.compareRows(pair[0], pair[1]) };
+  });
+  const exprs = ['0 3 * * *', '*/20 * * * * *', '15 14 1 * *',
+                 '0 0 * * MON', '0 0 29 2 *', '5 4 * * SUN',
+                 '61 * * * *', 'not cron', '* * * *'];
+  const cron = exprs.map(function (expr) {
+    let error = null;
+    try {
+      S.cronNext(expr, 0);
+    } catch (e) {
+      error = e.message;
+    }
+    return { expr: expr, valid: error === null,
+             at: error ? [] : times.map(function (t) {
+               // croner 10 THROWS for some previous occurrences before the
+               // epoch's first (a TypeError inside recurseBackward); that is
+               // recorded as the answer, and Rust answers none there.
+               const guard = function (fn) {
+                 try {
+                   return fn(expr, t);
+                 } catch (e) {
+                   return 'throws';
+                 }
+               };
+               return { t: t, prev: guard(S.cronPrev),
+                        next: guard(S.cronNext) };
+             }) };
+  });
+  return { settings: settings, descriptors: descriptors, times: times,
+           jobs: jobs, delays: delays, concurrency: concurrency,
+           refused: refused, rows: rows, expiries: expiries, ranks: ranks,
+           cron: cron,
+           spans: [0, 499, 500, 1000, 59499, 59500, 60000, 252000, 3600000,
+                   3660000, 7500000, 86400000, 7776000000, 90061000, -5],
+           spanText: [0, 499, 500, 1000, 59499, 59500, 60000, 252000,
+                      3600000, 3660000, 7500000, 86400000, 7776000000,
+                      90061000, -5].map(S.span) };
+}
+
 const VECTORS = [{ file: 'jws-node.json', build: jws },
                  { file: 'jwe-node.json', build: jwe },
                  { file: 'c14n-node.json', build: c14n },
@@ -2383,7 +2572,8 @@ const VECTORS = [{ file: 'jws-node.json', build: jws },
                  { file: 'foreign-node.json', build: foreign },
                  { file: 'realms-node.json', build: realmsVectors },
                  { file: 'ldif-node.json', build: ldifVectors },
-                 { file: 'merge-node.json', build: mergeVectors }];
+                 { file: 'merge-node.json', build: mergeVectors },
+                 { file: 'scheduler-node.json', build: schedulerVectors }];
 
 if (require.main === module) {
   fs.mkdirSync(OUT, { recursive: true });
