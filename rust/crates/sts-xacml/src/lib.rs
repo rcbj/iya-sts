@@ -30,6 +30,7 @@
 
 #![forbid(unsafe_code)]
 
+pub mod access;
 pub mod builder;
 pub mod combining;
 pub mod datatypes;
